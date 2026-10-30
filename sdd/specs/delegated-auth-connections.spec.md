@@ -237,7 +237,13 @@ class Principal(BaseModel):
 
 # parrot/auth/oauth2/descriptor.py  (new, M3)
 class RefreshPolicy(BaseModel):
-    rotating: bool = False
+    """Informational refresh facts per provider (R6, verified 2026-10-30 — see §7 External provider facts).
+
+    Regardless of `rotating`, a `refresh_token` present in a token response ALWAYS replaces the stored one
+    (Microsoft issues a new one on every use but does not revoke the old one)."""
+    rotating: bool = False              # True: the used refresh token is disabled on use (old one must never be re-sent)
+    sliding: bool = False               # True: refresh_lifetime_s is an inactivity window reset by each refresh;
+                                        # False: refresh_lifetime_s is absolute from issue (re-consent when it lapses)
     refresh_lifetime_s: Optional[int] = None
     access_lifetime_s: Optional[int] = None
 
@@ -308,9 +314,12 @@ class UsersIntegrationRow(BaseModel):      # keyed (user_id, provider); v1 singl
     cloud_id: Optional[str] = None
     site_url: Optional[str] = None
     connected_at: datetime
+    updated_at: Optional[datetime] = None      # NEW (S-4 pre-check): bumped on every save / replace-on-reconnect / status change
     last_used_at: Optional[datetime] = None
 
-class IntegrationDescriptor(BaseModel):    # enabled_on_agent REMOVED (U2); NEW: channels, scopes_granted, expires_at
+class IntegrationDescriptor(BaseModel):    # enabled_on_agent REMOVED (U2); NEW: channels, scopes_granted, expires_at, updated_at
+                                           # (an out-of-process CLI polls GET /api/v1/connections and detects a completed
+                                           #  connect OR reconnect by status + updated_at > its start time)
 
 class AuthRequiredEnvelope(BaseModel):     # NEW optional fields: auth_kind, user_code, verification_uri, expires_in
 ```
@@ -636,7 +645,8 @@ class ConnectionsHandler(BaseView)                          # handlers/connectio
       available_sites: List[Dict[str, Any]] = []
 
   JIRA_DESCRIPTOR = OAuth2ProviderDescriptor(provider_id="jira", authorization_url=AUTHORIZATION_URL, token_url=TOKEN_URL,
-                                             pkce="none", client_type="confidential", refresh_policy=RefreshPolicy(rotating=True),
+                                             pkce="none", client_type="confidential",
+                                             refresh_policy=RefreshPolicy(rotating=True, sliding=True, refresh_lifetime_s=90 * 86400),  # R6: Atlassian docs
                                              extra_authorize_params={"audience": "api.atlassian.com", "prompt": "consent"},
                                              post_exchange="atlassian_accessible_resources", ...)   # values verified: jira_oauth.py:102-131 build_authorization_url
 
@@ -728,18 +738,37 @@ class ConnectionsHandler(BaseView)                          # handlers/connectio
   #   user_id: Optional[str] = field(default=None)  # verified: client.py:236 — docstring: M2M only; per-user tokens flow via inject_broker_credential (client.py:242)
   ```
 
-### Module 10: Docs and legacy-key audit
-- **Path**: `docs/auth/connections.md` (new), `docs/auth/jira-credential-ownership.md` (modify), `packages/ai-parrot/src/parrot/auth/oauth2/legacy_audit.py` (new)
+### Module 10: Docs, legacy-key audit and Identity Vault re-encryption
+- **Path**: `docs/auth/connections.md` (new), `docs/auth/jira-credential-ownership.md` (modify), `packages/ai-parrot/src/parrot/auth/oauth2/legacy_audit.py` (new), `packages/ai-parrot/src/parrot/auth/oauth2/reencrypt.py` (new)
 - **Responsibility**: provider onboarding (descriptor + secrets), channel adapter guide (`ChannelNotifier`,
-  `PrincipalResolver`), key layout and migration window; update the ownership doc ("Identity Vault owns every 3LO
+  `PrincipalResolver`), key layout and migration window (cutover = deploy + 30 days, §8); update the ownership doc ("Identity Vault owns every 3LO
   provider"); `python -m parrot.auth.oauth2.legacy_audit` prints, per provider and channel, the count of legacy
   keys with and without a resolvable principal (the U3 cutover metric) — read-only.
-- **Depends on**: M2, M7.
+  **Re-encryption job** (§8, key rotation): `python -m parrot.auth.oauth2.reencrypt [--apply] [--provider P ...]`
+  re-seals every `auth.user_identities` row of a descriptor-registered provider whose `key_version` differs from the
+  active vault key (`VAULT_ACTIVE_KEY_ID`). Per row: take the M2 per-principal refresh lock (a concurrent refresh
+  must not be overwritten by older tokens) → `IdentityStore.decrypt_credential(row)` → `IdentityStore.save_linked_identity(row.user_id,
+  row.auth_provider, token, userinfo=row.auth_data)`. It must use `save_linked_identity`, not `update_tokens`: the latter
+  re-seals only `access_token`/`refresh_token` and leaves `id_token` on the old key (navigator_auth 0.28.7
+  `identity/store.py:261-278`), so retiring the old key would break `decrypt_credential` for that row. Dry-run by
+  default (counts only); a row that fails to decrypt (`IdentityCredentialError`) is counted as `failed` and left
+  untouched — it already needs a re-link. Never logs or prints token values. Ops procedure documented in
+  `docs/auth/connections.md`: add `VAULT_MASTER_KEY_v{N+1}` → set `VAULT_ACTIVE_KEY_ID=N+1` → deploy → run the job with
+  `--apply` → re-run dry-run until `stale == 0` → only then remove `VAULT_MASTER_KEY_v{N}`. Key generation, storage and
+  the cipher itself stay in navigator-auth / navigator-session.
+- **Depends on**: M2, M7, M8 (`IdentityVaultCredentialStore` path and the principal lock).
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot/src/parrot/auth/oauth2/legacy_audit.py  (new)
   async def audit_legacy_keys(redis: Any, resolver: PrincipalResolver, *, providers: Sequence[str]) -> Dict[str, Dict[str, int]]:
       """{provider: {channel: {"bound": n, "unbound": m}}} over oauth2:{p}:{c}:{u} and jira:oauth:{c}:{u}; never prints token values."""
+  def main(argv: Optional[Sequence[str]] = None) -> int: ...
+
+  # packages/ai-parrot/src/parrot/auth/oauth2/reencrypt.py  (new)
+  async def reencrypt_identities(store: "IdentityStore", db_pool: Any, lock: Callable[[str, str], AsyncContextManager[Any]], *,
+                                 providers: Sequence[str], active_key_id: int,
+                                 apply: bool = False) -> Dict[str, Dict[str, int]]:
+      """{provider: {"current": n, "stale": m, "resealed": k, "failed": f}}; dry-run unless apply; never prints token values."""
   def main(argv: Optional[Sequence[str]] = None) -> int: ...
   ```
 
@@ -770,6 +799,7 @@ class ConnectionsHandler(BaseView)                          # handlers/connectio
 | `test_oauth_resolver_resolves_principal_first` | M5 | telegram id → principal → `get_valid_token(principal)` |
 | `test_service_pbac_on_connect_and_disconnect` | M6 | missing PDP or denial → no OAuth state / no deletion (S4) |
 | `test_service_list_for_principal_cross_channel` | M6 | connection made as `channel=telegram` is listed for the same principal on web |
+| `test_descriptor_updated_at_bumps_on_reconnect` | M6 | `updated_at` changes on first connect, replace-on-reconnect and status change; `connected_at` keeps the first-connect time |
 | `test_confirm_enable_removed_enable_route_noop` | M6 | `/enable` returns the descriptor without writing rows (S5) |
 | `test_hydration_from_connections` | M6 | `configure_tool_manager` registers toolkits for every connected provider |
 | `test_connections_handler_principal_from_session` | M6 | body `user_id` ignored; 401 without session |
@@ -784,6 +814,10 @@ class ConnectionsHandler(BaseView)                          # handlers/connectio
 | `test_register_oauth2_providers_from_descriptors` | M8 | BotManager registers descriptor providers and the principal resolver |
 | `test_mcp_user_id_optional_injects_broker` | M9 | `user_id=None` → `inject_broker_credential=True`; per-call bearer from `_CREDENTIAL_VAR` |
 | `test_legacy_audit_counts` | M10 | bound/unbound counts per provider/channel; no token values in output |
+| `test_reencrypt_dry_run_counts_only` | M10 | rows on an old `key_version` are counted `stale`; no row is written without `--apply` |
+| `test_reencrypt_reseals_all_columns` | M10 | with two keys in the ring and v2 active, `--apply` leaves access/refresh/**id_token** decryptable after v1 is removed from the ring; `auth_data` preserved |
+| `test_reencrypt_undecryptable_row_counted_failed` | M10 | `IdentityCredentialError` row → `failed`, untouched; job continues; no token value in output |
+| `test_reencrypt_takes_principal_lock` | M10 | a refresh holding the principal lock is not overwritten (job waits for the lock, re-reads the row) |
 
 ### Integration Tests
 | Test | Description |
@@ -875,6 +909,9 @@ def jira_descriptor() -> OAuth2ProviderDescriptor:
 - [ ] **AC-15** `docs/auth/connections.md` exists; `docs/auth/jira-credential-ownership.md` states the Identity Vault owns every 3LO provider.
 - [ ] **AC-16** The Validation Contract passes; no `print`, no `requests`/`httpx`, Pydantic v2 only; `ruff check` clean on touched files.
 - [ ] **AC-17 (S11)** The isolation matrix passes: cross-principal read denied, unlinked-user rejection, legacy deletion, concurrent refresh single-flight, notifier-failure isolation, durable-write-required callback, `CredentialRequired` serialization.
+- [ ] **AC-18 (§8 key rotation)** `python -m parrot.auth.oauth2.reencrypt` is dry-run by default; with `--apply` every stale `auth.user_identities` row of a registered provider is re-sealed (access, refresh **and** id token) under the active key while holding the principal refresh lock, so the previous key can be removed from the ring with no decrypt failure; undecryptable rows are reported as `failed`, never modified; no token value is logged or printed.
+- [ ] **AC-19 (§8 S-4 pre-check)** `UsersIntegrationRow` and `IntegrationDescriptor` carry `updated_at`, bumped on every save, replace-on-reconnect and status change; `GET /api/v1/connections` returns `provider`, `status` and `updated_at`; `CredentialStore` and `Principal` live in `packages/ai-parrot` with no import from `ai-parrot-server`.
+- [ ] **AC-20 (§8 R6)** Every `refresh_token` present in a token response replaces the stored one, whatever `RefreshPolicy.rotating` says; `JIRA_DESCRIPTOR.refresh_policy == RefreshPolicy(rotating=True, sliding=True, refresh_lifetime_s=7776000)`.
 
 ---
 
@@ -1184,6 +1221,7 @@ Verified against: `65aa79dfe` (`dev`, 2026-10-30). `/sdd-task` MUST re-run `grep
 | `packages/ai-parrot/src/parrot/auth/oauth2/descriptor.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/auth/oauth2/events.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/auth/oauth2/legacy_audit.py` | CREATE | — | — | — |
+| `packages/ai-parrot/src/parrot/auth/oauth2/reencrypt.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/auth/oauth2/__init__.py` | MODIFY | `    UserAgentToolkitRow,` | `oauth2/__init__.py:26` | 1 (second occurrence is the `__all__` string `"UserAgentToolkitRow",` at :47 — distinct text) |
 | `packages/ai-parrot/src/parrot/auth/oauth2/registry.py` | MODIFY | `def register_oauth2_provider(provider: OAuth2Provider) -> None:` | `registry.py:126` | 1 |
 | `packages/ai-parrot/src/parrot/auth/oauth2/service.py` | MODIFY | `_IDENTITY_OWNED_PROVIDERS = frozenset({"jira"})` | `service.py:53` | 1 |
@@ -1260,7 +1298,10 @@ Verified against: `65aa79dfe` (`dev`, 2026-10-30). `/sdd-task` MUST re-run `grep
 - **High blast radius** in `AbstractOAuth2Manager` (O365 live path) and `ToolManager.execute_tool` (every tool). Mitigation: the Validation Contract runs `tests/auth/test_oauth2_base.py` and the AgentTalk envelope tests on every task; the `CredentialRequired` catch is gated on the exception type only.
 - **MCP** — `add_oauth_mcp_server(user_id=…)` callers in `bots/agent.py:1038-1200` keep working (optional param); `NetSuiteM2MAuth(user_id="m2m")` is M2M and untouched.
 - **Audit ledger material** — `credential_material` is fingerprinted (audit_ledger.py:338-352); pass the event kind + account id, never a token.
-- **External provider facts (R6)** — Atlassian rotating refresh tokens, Microsoft refresh lifetime and NetSuite 7-day rotation were not verified in research (C23); confirm against provider docs when filling the Jira/O365 descriptors' `refresh_policy`.
+- **External provider facts (R6)** — verified against provider docs on 2026-10-30 (closes C23):
+  - **Atlassian** ([3LO apps](https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/)): rotating refresh tokens — each refresh returns a new refresh token and disables the one used; 90-day **inactivity** expiry reset by each refresh (no absolute expiry stated); 10-minute reuse interval for concurrent exchanges. → `RefreshPolicy(rotating=True, sliding=True, refresh_lifetime_s=7776000)`. Persisting the new refresh token durable-first (S2) is mandatory: losing it loses the grant.
+  - **Microsoft identity platform** ([refresh tokens](https://learn.microsoft.com/en-us/entra/identity-platform/refresh-tokens)): 90 days default (24 h for `spa` redirect URIs); a new refresh token is issued on every use but the **old one is not revoked** — store the new one and discard the old. Can be revoked early (password reset, admin revoke) → surfaces as `invalid_grant` → `InvalidGrantError` (S7). → O365 keeps its subclass; if it adopts a descriptor: `RefreshPolicy(rotating=False, sliding=True, refresh_lifetime_s=7776000)`.
+  - **NetSuite** ([refresh token request](https://docs.oracle.com/en/cloud/saas/netsuite/ns-online-help/section_158082518856.html)): access token always 3600 s. **Public clients**: the refresh response returns a new refresh token, one-time use, valid 2 days by default, configurable 1–720 h on the integration record (absolute). **Confidential clients**: Oracle documents no refresh-token lifetime and the refresh response carries no new refresh token; the widely-reported 7-day limit comes from community/vendor posts only, so it stays unverified. Expiry → `invalid_grant` → re-consent. Not used in S-1 (NetSuite is M2M via `NetSuiteM2MAuth` / M9); recorded for a future descriptor.
 
 ### External Dependencies
 | Package | Version | Reason |
@@ -1268,7 +1309,7 @@ Verified against: `65aa79dfe` (`dev`, 2026-10-30). `/sdd-task` MUST re-run `grep
 | `pydantic` | `>=2` | descriptor, principal, event and payload models (existing core dep) |
 | `aiohttp` | existing | token endpoints, identity probes, handlers |
 | `redis.asyncio` | existing | hot cache, nonce state, refresh locks |
-| `navigator-auth` | `>=0.28.8` (0.28.7 in `.venv`; TASK-4664 noted the real-DB Jira write needs 0.28.8) | `IdentityStore`, `TokenResponse`, `auth.user_identities` |
+| `navigator-auth` | `>=0.28.8` (0.28.7 in `.venv` / `uv.lock`; TASK-4664 noted the real-DB Jira write needs 0.28.8). 0.28.8 and 0.28.9 are on PyPI since 2026-10-23 — floor bumped as a pre-implementation step (Worktree Strategy → Exclusive resources) | `IdentityStore`, `TokenResponse`, `auth.user_identities` |
 | `navigator-session` | existing | `KeyRing` for the default `VaultUtilsCredentialStore` |
 | `navigator-eventbus` | existing | optional publish-only Streams bus |
 | `PyYAML` | existing | `OAUTH2_PROVIDERS_FILE` loader |
@@ -1290,12 +1331,12 @@ Verified against: `65aa79dfe` (`dev`, 2026-10-30). `/sdd-task` MUST re-run `grep
 - [x] Vault durable backend for non-Jira providers — *Resolved at spec time*: Identity Vault for every 3LO provider through `CredentialStore`; `VaultTokenSync` stays for static keys and device-code.
 - [x] `requires_auth` on toolkit vs tool — *Resolved by research*: the existing `credential_provider` (toolkit default, per-tool override, toolkit.py:331/717) is the declaration; no `requires_auth`.
 - [x] Hot-swap vs declare-once — *Resolved by research + scope*: `JiraToolkit` declares `credential_provider="jira"` (declare-once on the broker seam); removing the AgentTalk placeholder is S-3a.
-- [ ] Legacy key cutover date (`OAUTH2_LEGACY_KEYS_UNTIL`) and the acceptable unbound count from `legacy_audit` — *Owner: Jesus* (ops decision before S-2 deletes `jira:oauth:*`).
-- [ ] PBAC allowlist shape for providers/scopes: policy in navigator-auth PDP vs tenant config in parrot — *Owner: Jesus*; S-1 evaluates `integration:connect` with `scopes` in the context and leaves policy authoring to ops.
-- [ ] Encryption key management for the Identity Vault columns (navigator-auth `key_version` rotation) — *Owner: Jesus* (navigator-auth side).
-- [ ] R6 provider refresh facts (Atlassian rotation, Microsoft refresh lifetime, NetSuite 7-day) for the descriptors' `refresh_policy` — *Owner: implementer of M3/M7* (verify against provider docs; C23).
-- [ ] navigator-auth `>=0.28.8` availability in the deployment image (TASK-4664 xfail on 0.28.7) — *Owner: Jesus / ops*.
-- [ ] S-4 pre-check (keep the CLI sub-spec cheap): `list_for_principal` / `GET /api/v1/connections` must expose `provider`, `status` and `updated_at` so an out-of-process CLI can poll for completion, and `CredentialStore` must admit an HTTP-backed implementation without importing server code — *Owner: implementer of M2 / M6* (confirm while implementing; no new module in S-1).
+- [x] Legacy key cutover date (`OAUTH2_LEGACY_KEYS_UNTIL`) and the acceptable unbound count — *Resolved 2026-10-30 (Jesus)*: ops sets `OAUTH2_LEGACY_KEYS_UNTIL` = **S-1 prod deploy + 30 days** (every active user migrates on first token use, read-once/rewrite/delete). **No unbound-count gate**: unbound legacy keys belong to unlinked Telegram users, who re-connect by design (U3). `legacy_audit` runs before cutover and its bound/unbound counts go into the user announcement. (M10 docs, AC-13.)
+- [x] PBAC allowlist shape — *Resolved 2026-10-30 (Jesus)*: **navigator-auth PDP only**. Policies for `integration:connect` / `integration:disconnect` are authored in the PDP that `_check_pbac` already calls (service.py:490, fail-closed); parrot passes `provider` and `scopes` in the evaluation context and keeps **no** policy store or tenant allowlist of its own. `docs/auth/connections.md` (M10) ships a sample policy. (M6, AC-8.)
+- [x] Identity Vault encryption key management — *Resolved 2026-10-30 (Jesus)*: navigator-auth / navigator-session keep owning key material and the cipher (`VAULT_MASTER_KEY_v{N}` + `VAULT_ACTIVE_KEY_ID`; `key_version` stamped on every write); **S-1 adds a re-encryption job** (`python -m parrot.auth.oauth2.reencrypt`, M10) so a rotated-out key can be retired. Research finding that shaped it: `IdentityStore.update_tokens` (the refresh path) re-seals only access/refresh, never `id_token`, so rows silently stay on the old key without the job. (M10, AC-18.)
+- [x] R6 provider refresh facts — *Resolved by research 2026-10-30*: verified against Atlassian, Microsoft and Oracle docs (§7 External provider facts). `RefreshPolicy` gains `sliding`; Jira descriptor = `rotating=True, sliding=True, 90 d`; a returned refresh token always replaces the stored one (Microsoft does not revoke the old one). NetSuite confidential-client lifetime is undocumented by Oracle (the "7-day" figure is community-only) — not needed in S-1. (M3, M7, AC-20.)
+- [x] navigator-auth `>=0.28.8` availability — *Resolved by research 2026-10-30*: 0.28.8 (2026-10-23 01:37 UTC) and 0.28.9 (2026-10-23 23:59 UTC) are on PyPI. The `.venv` and `uv.lock` are still on 0.28.7 and both pyproject floors say `>=0.28.3`; the operator raises both floors to `>=0.28.8` and re-locks on `dev` before the feature worktree is created (Worktree Strategy → Exclusive resources). The deployment image picks it up from the lock.
+- [x] S-4 pre-check — *Resolved by code check 2026-10-30*: (a) **gap found**: neither `UsersIntegrationRow` nor `IntegrationDescriptor` (models.py:21) had `updated_at`, and `connected_at` is first-connect only, so a CLI could not detect a completed *re*connect → `updated_at` added to both (§2 Data Models, M6, AC-19). (b) **holds**: `CredentialStore` is a Protocol in core `parrot/auth/oauth2_base.py` depending only on core `Principal`; core `persistence.py` imports only `parrot.interfaces.documentdb` and `parrot.auth.oauth2.models` — an HTTP-backed store can live outside `ai-parrot-server`. No new module in S-1.
 
 ---
 
@@ -1336,7 +1377,7 @@ Summary: **11** confirmed (3 with modifications) · **0** rejected · **0** esca
   - M9 → none (FEAT-264 path); M10 → M2, M7 (key templates, audit)
   - Concurrent after M1 + M4 land: M2 ∥ M5 ∥ M9; after M2: M3 ∥ M6; then M7 + M8 (serialized on shared files); M10 last.
 - **Shared files** (tasks serialized): `parrot/auth/oauth2/__init__.py` (M3, M4, M6 exports); `parrot/auth/oauth2/models.py` (M5, M6); `parrot/auth/credentials.py` (M5 only, but M1 export touches `auth/__init__.py`); `parrot/auth/jira_oauth.py` (M7 only); `ai-parrot-server manager/manager.py` (M6 routes, M8 registration); `ai-parrot-integrations integrations/manager.py` (M8 only); `tools/manager.py` (M5 only).
-- **Exclusive resources**: none (no compiled extensions, no lockfile, no DB migration — `auth.user_identities` already exists; `user_agent_toolkits` removal is a code change, DocumentDB collection left in place).
+- **Exclusive resources**: the `navigator-auth>=0.28.8` floor bump touches `packages/ai-parrot/pyproject.toml`, the root `pyproject.toml` constraint and `uv.lock` (locked at 0.28.7) — done by the main-checkout operator on `dev` **before** the feature worktree is created (worktree agents never lock/install, worktree-management §4); no task owns it. Otherwise none (no compiled extensions, no DB migration — `auth.user_identities` already exists; `user_agent_toolkits` removal is a code change, DocumentDB collection left in place).
 - **Cross-feature dependencies**: none in flight on these files (git lane: `mcp/client.py` frozen since 2026-06-29; `parrot/auth/` last changed by FEAT-735/FEAT-729, both merged 2026-10-23). Consumer specs S-2 / S-3a / S-3b / S-4 depend on FEAT-773 being merged.
 
 ---
@@ -1347,3 +1388,4 @@ Summary: **11** confirmed (3 with modifications) · **0** rejected · **0** esca
 |---|---|---|---|
 | 0.1 | 2026-10-30 | Jesus Lara (with Claude Fable 5.1) | Initial draft from proposal FEAT-773 (accepted). S-1 scope; decisions U1–U5 + vault owner carried forward; codex design research folded (11 CONFIRM). Codebase Contract verified against `65aa79dfe`. |
 | 0.2 | 2026-10-30 | Jesus Lara (with Claude Fable 5.1) | Declared S-4 (CLI-based agents + MCP-based tools in a CLI) as a fifth consumer sub-spec: Non-Goals, §8 spec-count trail, S-4 pre-check item, Worktree Strategy dependency. No module or AC changes. |
+| 0.3 | 2026-10-30 | Jesus Lara (with Claude Opus 5.5) | Resolved all six §8 open questions. Decisions: legacy cutover = deploy + 30 d with no unbound gate; PBAC policy in the navigator-auth PDP only; S-1 adds the Identity Vault re-encryption job (M10, AC-18). Research: R6 provider facts verified (`RefreshPolicy.sliding`, Jira descriptor values, AC-20); navigator-auth 0.28.8/0.28.9 on PyPI → floor bump + re-lock as a pre-implementation step; S-4 pre-check found a missing `updated_at` (added, AC-19). |
