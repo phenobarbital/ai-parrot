@@ -14,6 +14,7 @@
 
   import { config } from "$lib/config";
   import ProviderButtons, { type AuthMethodInfo } from "$lib/components/ProviderButtons.svelte";
+  import PasskeySignIn from "$lib/components/auth/PasskeySignIn.svelte";
   import { isInAppPath, router } from "$lib/router.svelte";
   import { authStore } from "$lib/stores/auth.svelte";
   import { Button } from "$lib/ui/internal/shadcn/ui/button/index.js";
@@ -102,7 +103,7 @@
             bind:value={username}
             disabled={loading}
             required
-            autocomplete="username"
+            autocomplete="username webauthn"
           />
         </div>
 
@@ -134,6 +135,12 @@
           {loading ? "Signing in…" : "Sign In"}
         </Button>
       </form>
+
+      <PasskeySignIn
+        {username}
+        disabled={loading}
+        onSuccess={() => router.navigate(nextTarget(), { replace: true })}
+      />
 
       <ProviderButtons {methods} />
     </CardContent>
