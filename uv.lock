@@ -48,7 +48,7 @@ members = [
 constraints = [
     { name = "asyncdb", specifier = ">=2.16.2" },
     { name = "navconfig", specifier = ">=2.5.2" },
-    { name = "navigator-auth", specifier = ">=0.28.3" },
+    { name = "navigator-auth", specifier = ">=0.28.8" },
     { name = "navigator-session", specifier = ">=1.0.1" },
     { name = "opentelemetry-instrumentation", specifier = ">=0.60b0" },
     { name = "opentelemetry-instrumentation-aiohttp-client", specifier = ">=0.60b0" },
@@ -953,7 +953,7 @@ requires-dist = [
     { name = "msgraph-sdk", marker = "extra == 'msgraph'", specifier = ">=1.8.0" },
     { name = "navconfig", extras = ["default"], specifier = ">=2.5.2" },
     { name = "navigator-api", extras = ["google", "locale", "uvloop"], specifier = ">=3.2.2" },
-    { name = "navigator-auth", specifier = ">=0.28.3" },
+    { name = "navigator-auth", specifier = ">=0.28.8" },
     { name = "navigator-eventbus", specifier = ">=0.4.0" },
     { name = "navigator-eventbus", extras = ["grpc"], marker = "extra == 'grpc'" },
     { name = "navigator-session", specifier = ">=1.0.1" },
