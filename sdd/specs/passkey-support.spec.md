@@ -10,7 +10,7 @@ tags: [passkey, webauthn, authentication, admin-ui, navigator-auth, login]   # F
 **Feature ID**: FEAT-772 (reserved 2026-10-30 by `reserve_ids.py`, commit `ed44ca4fa`)
 **Date**: 2026-10-30
 **Author**: Jesus Lara (Claude Code, Fable 5.1)
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-server 1.4.0 (the Admin UI ships inside the server wheel; current server version 1.3.5, core 1.2.6)
 **Exploration**: `sdd/proposals/passkey-support.brainstorm.md` (Recommended Option A, all 12 open questions resolved 2026-10-30)
 **Upstream dependency**: navigator-auth `PasskeyAuth` backend — [phenobarbital/navigator-auth#607](https://github.com/phenobarbital/navigator-auth/pull/607) (FEAT-101, merged 2026-10-02), present in the installed `navigator-auth 0.28.9`
@@ -873,8 +873,8 @@ Verified against: `1ee364d41` (dev, 2026-10-30; HEAD `ed44ca4fa` differs only by
   call `authStore.handle401()`, clear storage and rewrite `/login?next=` with the login page itself.
   Mitigation: §2 rule 1 (bare axios), AC04, M2 tests assert `apiClient` is never used for those two
   calls. *Pre-existing, out of scope*: the BasicAuth `login()` already routes through `apiClient`, so
-  a `401` on a wrong password has the same latent effect today; recorded here for a follow-up ledger
-  issue, not changed by this feature.
+  a `401` on a wrong password has the same latent effect today; filed as ledger `issue:ea1e3a3f2488`,
+  not changed by this feature.
 - **`appSections` ↔ `SPA_SECTIONS` drift** — a mismatch 404s `/account/security` on hard reload or
   lets `?next=` drop it. Mitigation: M6 and M7 land in the same PR; AC08; both files' comments already
   say "MUST match".
@@ -938,7 +938,7 @@ Verified against: `1ee364d41` (dev, 2026-10-30; HEAD `ed44ca4fa` differs only by
 
 ### Unresolved
 
-- [ ] Q1. Should the pre-existing BasicAuth `login()` → `apiClient` → `handle401()` path (§7 first risk) be filed as a ledger issue for a separate fix? — *Owner: Jesus Lara* (does not block this feature)
+- [x] Q1. Should the pre-existing BasicAuth `login()` → `apiClient` → `handle401()` path (§7 first risk) be filed as a ledger issue for a separate fix? — *Owner: Jesus Lara*: Yes — filed as ledger `issue:ea1e3a3f2488` (bug/minor, discovered-from `spec:FEAT-772`); fixed outside this feature.
 
 <!-- §9 ESCALATE rows, if any, are appended here as Q2… -->
 
