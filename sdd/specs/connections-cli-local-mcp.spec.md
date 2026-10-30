@@ -12,7 +12,7 @@ depends_on: [FEAT-773]
 **Feature ID**: FEAT-774
 **Date**: 2026-10-30
 **Author**: Jesus Lara (with Claude Fable 5.1)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.4.0
 
 > **Source**: proposal `sdd/proposals/connections-cli-local-mcp.proposal.md` (FEAT-774, status `accepted`,
@@ -606,7 +606,7 @@ def auth_required_result(payload: AuthRequiredPayload) -> Dict[str, Any]: ...
   ```python
   # packages/ai-parrot/src/parrot/cli/agent_repl.py  (modifies _run, agent_repl.py:134-252)
   #   login = LoginStore().load_optional()                                                    # after loader selection (:161-164)
-  #   if server: loader = ServerAgentProxy(server, token=token or (login.access_token if login else None))   # replaces :162
+  #   if server: loader = ServerAgentProxy(server, token=token or (login.access_token if login else None), login_store=store if login else None)   # replaces :162 (Q5: auto-refresh on 401)
   #   if not server and login and user_id: error "--user is not allowed when logged in; identity comes from `parrot login`" (exit 2)  # mirrors :186-191
   #   permission_context = None                                                              # :218 — replaces the O365-only block (:215-224)
   #   if not server and login:
@@ -980,7 +980,7 @@ class SlashCommandDispatcher: def register(self, cmd: SlashCommand) -> None (:13
 # packages/ai-parrot/src/parrot/cli/loaders.py
 class StandaloneAgentLoader: async def load(self, name: str) -> AbstractBot   # :90, :141
 class _ServerBotProxy: async def configure(self, app: Any = None) -> None (no-op :242) ; async def ask(..., user_id: Optional[str] = None, ...) (:249 ; never sends user_id :280)
-class ServerAgentProxy: def __init__(self, server_url: str, timeout: int = 30, *, token: Optional[str] = None) -> None   # :466, :477-483 ; Bearer header :506
+class ServerAgentProxy: def __init__(self, server_url: str, timeout: int = 30, *, token: Optional[str] = None) -> None   # :466, :477-483 ; Bearer header :506 ; M7 adds login_store: Optional[LoginStore] = None (Q5: auto-refresh on 401)
 
 # packages/ai-parrot-integrations/src/parrot/integrations/agentd/server.py
 def _read_peercred(sock: socket.socket) -> tuple[int, int, int]:          # :62
@@ -1213,11 +1213,11 @@ Verified against: `370a62d9b` (`dev`, 2026-10-30). `/sdd-task` MUST re-run `grep
 - [x] U5 — Is agentd in S-4 scope? — *Resolved in proposal*: yes, per-OS-user login file: the daemon resolves the peer's OS user (SO_PEERCRED) and reads that user's `~/.parrot` login file to obtain the Navigator principal. *Constrained (S11)*: owner/mode/symlink checks, `to_thread`, fallback, `AGENTD_LOGIN_FILE_LOOKUP`.
 - [x] Token-pull endpoint policy (proposal §5 unresolved) — *Resolved at spec time (S5)*: PBAC action `integration:use` with the provider in context; audit event `connection.token_pulled`; refresh tokens never leave the server.
 - [x] Login token shape (proposal §5 unresolved) — *Resolved at spec time (S6)*: see U1 refinement.
-- [ ] **Q1 — Rollout of the navigator-auth prerequisites**: enabling `navigator_auth.backends.oauth2.Oauth2Provider` in each deployment's `AUTHENTICATION_BACKENDS`, creating the static `parrot-cli` public client (grants, scopes), and the `OAUTH_DEVICE_VERIFICATION_URI` shown to users — *Owner: Jesus / ops* (before `/sdd-done FEAT-774`; AC-2 covers the failure mode until then).
-- [ ] **Q2 — Cache key owner (S4)**: keep the random `cache_key` in `login.json` (spec default) or add an optional OS-keyring backend (new dependency `keyring`, DPAPI/Keychain/Secret Service) with the file as fallback — *Owner: Jesus*.
-- [ ] **Q3 — agentd privilege model (S11)**: is the daemon expected to run per-user (reads only its own login file) or as a shared service user with read access to peers' homes? The spec implements the checks either way; the deployment guidance differs — *Owner: Jesus*.
-- [ ] **Q4 — First device-code providers**: which descriptors get `device_authorization_url` (Microsoft `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/devicecode`, Google `https://oauth2.googleapis.com/device/code`) and whether Atlassian (no device grant) is documented as poll + paste only — *Owner: implementer of M8 descriptors; verify against provider docs*.
-- [ ] **Q5 — `--server` mode token refresh**: when the login's access token expires mid-session, should `ServerAgentProxy` refresh through `refresh_login` (needs the store) or fail with a re-login hint? Spec default: refresh once per 401 in the proxy's `_get_session` — *Owner: implementer of M7; confirm UX with Jesus*.
+- [x] **Q1 — Rollout of the navigator-auth prerequisites** — *Resolved 2026-10-30*: **pre-task**. Ops enables `navigator_auth.backends.oauth2.Oauth2Provider` in `AUTHENTICATION_BACKENDS`, creates the static `parrot-cli` public client (`client_type="public"`, `allowed_grant_types` ⊇ {device_code, refresh_token}, `default_scopes` ⊇ {openid, profile, email}), and sets `OAUTH_DEVICE_VERIFICATION_URI` **before `/sdd-task FEAT-774` runs**. Tasks can integration-test against the real AS. AC-2 remains the runtime guard for deployments that have not yet enabled it.
+- [x] **Q2 — Cache key owner (S4)** — *Resolved 2026-10-30*: **file only**. The random `cache_key` stays in `login.json` (0600). No `keyring` dependency. This is sufficient for the current deployment model; an OS-keyring backend can be added in a follow-up if desktop hardening requires it.
+- [x] **Q3 — agentd privilege model (S11)** — *Resolved 2026-10-30*: **per-user daemon**. Each user runs their own agentd instance; it reads only `~/.parrot/login.json` owned by the same uid (enforced by the owner check in `LoginStore.load_optional(expected_uid=uid)`). Docs describe only the per-user deployment pattern. A shared-service-user model (daemon running as a different uid reading peers' homes) is out of scope.
+- [x] **Q4 — First device-code providers** — *Resolved 2026-10-30*: **all providers that support RFC 8628**. Microsoft (`https://login.microsoftonline.com/{tenant}/oauth2/v2.0/devicecode`), Google (`https://oauth2.googleapis.com/device/code`), and any other provider whose docs confirm device-grant support get `device_authorization_url` set in their `OAuth2ProviderDescriptor`. Atlassian (no device grant) is documented as poll + paste only.
+- [x] **Q5 — `--server` mode token refresh** — *Resolved 2026-10-30*: **auto-refresh once**. On a 401 in `ServerAgentProxy`, call `refresh_login` once via `LoginStore`, update the stored record, and retry the request. If the refresh also fails (expired refresh token, revoked, network), print `"Session expired — run 'parrot login' again"` and exit 2. `ServerAgentProxy.__init__` accepts an optional `LoginStore`; when absent (legacy callers), the 401 is surfaced without retry.
 
 ---
 
@@ -1272,3 +1272,4 @@ Summary: **12** confirmed (4 with modifications, 2 of which also raise a §8 que
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-30 | Jesus Lara (with Claude Fable 5.1) | Initial draft from proposal FEAT-774 (accepted). S-4 scope; U1–U5 carried forward; codex design research folded (12 CONFIRM, 2 with §8 escalations). Codebase Contract verified against `370a62d9b`; S-1 symbols marked planned pending FEAT-773 merge. |
+| 0.2 | 2026-10-30 | Jesus Lara (with Claude Opus 4.6) | Resolved Q1–Q5: pre-task ops rollout; file-only cache key (no keyring); per-user agentd daemon; all RFC 8628 providers + Atlassian poll+paste; auto-refresh once on 401 in --server mode (ServerAgentProxy gains login_store). |
