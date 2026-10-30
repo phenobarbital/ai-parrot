@@ -16,15 +16,16 @@
       "feature_id": "FEAT-780",
       "feature": "oauth2-service-tech-debt",
       "spec": "sdd/specs/oauth2-service-tech-debt.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "sole task in this feature, no shared-file collisions",
-      "assigned_to": "unassigned",
+      "assigned_to": "agent:sdd-fix",
       "file": "sdd/tasks/active/TASK-4910-oauth2-service-tech-debt.md",
-      "discovered_from": "issue:267fb119e6f1"
+      "discovered_from": "issue:267fb119e6f1",
+      "started_at": "2026-10-30T19:07:17Z"
     }
   ]
 }
