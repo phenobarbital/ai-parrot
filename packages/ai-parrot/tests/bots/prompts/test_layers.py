@@ -41,8 +41,8 @@ class TestLayerPriority:
         assert LayerPriority.OUTPUT < LayerPriority.BEHAVIOR
         assert LayerPriority.BEHAVIOR < LayerPriority.CUSTOM
 
-    def test_all_nine_levels(self):
-        assert len(LayerPriority) == 9
+    def test_all_ten_levels(self):
+        assert len(LayerPriority) == 10  # FEAT-778 added RULES
 
 
 # ── RenderPhase tests ──────────────────────────────────────────

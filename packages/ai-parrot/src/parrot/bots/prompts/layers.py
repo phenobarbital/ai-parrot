@@ -22,6 +22,7 @@ from typing import Optional, Dict, Any, Callable
 class LayerPriority(IntEnum):
     """Execution order. Lower = rendered first in the prompt."""
     IDENTITY = 10
+    RULES = 12  # FEAT-778: expert governance rules, after identity, before pre-instructions
     PRE_INSTRUCTIONS = 15
     SECURITY = 20
     KNOWLEDGE = 30
@@ -196,6 +197,23 @@ KNOWLEDGE_LAYER = PromptLayer(
 $knowledge_content
 </knowledge_context>""",
     condition=lambda ctx: bool(ctx.get("knowledge_content", "").strip()),
+)
+
+# ── EXPERT LAYERS (FEAT-778) ────────────────────────────────────
+# Literal: authored bundle text is never template-substituted (AC17).
+EXPERT_RULES_LAYER = PromptLayer(
+    name="expert_rules",
+    priority=LayerPriority.RULES,
+    phase=RenderPhase.CONFIGURE,
+    template="",
+    literal=True,
+)
+EXPERT_KNOWLEDGE_LAYER = PromptLayer(
+    name="expert_knowledge",
+    priority=LayerPriority.KNOWLEDGE,
+    phase=RenderPhase.CONFIGURE,
+    template="",
+    literal=True,
 )
 
 # ── USER SESSION LAYER ──────────────────────────────────────────
