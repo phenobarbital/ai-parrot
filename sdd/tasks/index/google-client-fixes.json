@@ -29,7 +29,7 @@
     "digest": "sha256:79650fa6c7a10d1050be5005829fa8fb81167da6a3955d34f3d4346979aa1755"
   },
   "created_at": "2026-10-30T19:45:00Z",
-  "completed_at": null,
+  "completed_at": "2026-10-30T19:55:44+00:00",
   "parallel_semantics": "exclusive",
   "tasks": [
     {
@@ -39,15 +39,18 @@
       "feature_id": "FEAT-781",
       "feature": "google-client-fixes",
       "spec": "sdd/specs/google-client-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "first of three sequential edits to client.py (ask cache block)",
-      "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-4911-google-client-cache-attach.md",
-      "discovered_from": "issue:71716068e28f"
+      "assigned_to": "agent:sdd-fix",
+      "file": "sdd/tasks/completed/TASK-4911-google-client-cache-attach.md",
+      "discovered_from": "issue:71716068e28f",
+      "started_at": "2026-10-30T19:43:27Z",
+      "completed_at": "2026-10-30T19:45:41+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-4912",
@@ -56,7 +59,7 @@
       "feature_id": "FEAT-781",
       "feature": "google-client-fixes",
       "spec": "sdd/specs/google-client-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -64,9 +67,12 @@
       ],
       "parallel": false,
       "parallelism_notes": "edits _safe_extract_text in client.py after TASK-4911",
-      "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-4912-google-client-verbatim-stream-chunks.md",
-      "discovered_from": "issue:d34e3f558f8e"
+      "assigned_to": "agent:sdd-fix",
+      "file": "sdd/tasks/completed/TASK-4912-google-client-verbatim-stream-chunks.md",
+      "discovered_from": "issue:d34e3f558f8e",
+      "started_at": "2026-10-30T19:46:03Z",
+      "completed_at": "2026-10-30T19:48:17+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-4913",
@@ -75,7 +81,7 @@
       "feature_id": "FEAT-781",
       "feature": "google-client-fixes",
       "spec": "sdd/specs/google-client-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -83,9 +89,12 @@
       ],
       "parallel": false,
       "parallelism_notes": "touches client.py typing import + openai_backend.py; last in the chain",
-      "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-4913-google-client-feat719-leftovers.md",
-      "discovered_from": "issue:461ceca67d43"
+      "assigned_to": "agent:sdd-fix",
+      "file": "sdd/tasks/completed/TASK-4913-google-client-feat719-leftovers.md",
+      "discovered_from": "issue:461ceca67d43",
+      "started_at": "2026-10-30T19:48:31Z",
+      "completed_at": "2026-10-30T19:49:41+00:00",
+      "verification": "verified"
     }
   ]
 }

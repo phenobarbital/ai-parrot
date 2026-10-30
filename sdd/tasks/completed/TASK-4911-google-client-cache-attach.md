@@ -55,4 +55,12 @@ close with `scripts/sdd/close_task.sh TASK-4911 google-client-fixes verified`.
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+**Completed by**: agent:sdd-fix (Claude Opus 5.5)
+**Date**: 2026-10-30
+**Notes**: Added kw-only `system_instruction` to `_maybe_apply_gemini_cache` and the new
+`_attach_gemini_cache`, which `ask()` now calls. Skipped when `tools`/`tool_config` are set; otherwise the full
+system instruction goes into the cache and the request's `system_instruction` is cleared. 5 new tests plus
+`test_prompt_caching_gemini.py` (12) and `test_google_client.py` (84) pass. Ruff findings in client.py are unchanged from base (40 old ones).
+**Deviations from spec**: the helper takes the genai `client` as its first argument (`AbstractClient.client`
+is a loop-local property that cannot be mocked by assignment); the spec skeleton was updated to match.
+Resolves `issue:71716068e28f`.
