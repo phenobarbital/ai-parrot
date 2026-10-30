@@ -10,7 +10,7 @@ tags: [domain-experts, knowledge-resolver, prompt-layers, agent-registry, adr, f
 **Feature ID**: FEAT-778
 **Date**: 2026-10-30
 **Author**: Jesus Lara (with Claude Fable 5.1)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 
 > **Source**: proposal `sdd/proposals/domain-experts.proposal.md` (FEAT-778, status `accepted`, research state
