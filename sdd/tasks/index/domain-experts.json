@@ -252,7 +252,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -263,8 +263,9 @@
       "parallelism_notes": "Calls KnowledgeResolver.has_handle/search_kb/invalidate from TASK-4919 (knowledge/resolver.py); the 'kb' handle it routes on is produced by LegacyKBSource from TASK-4922 (sources/kb.py).",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4923-kb-fold-in.md"
+      "completed_at": "2026-10-30T21:58:41+00:00",
+      "file": "sdd/tasks/completed/TASK-4923-kb-fold-in.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4924",
@@ -318,7 +319,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -335,8 +336,9 @@
       "parallelism_notes": "Integration hub: imports policy functions from TASK-4917 (policy.py), BundledSource/WorkspaceSource/ADRSource from TASK-4920, WikiSource from TASK-4921, BookstoreSource/GraphIndexSource from TASK-4922, ExpertAgent from TASK-4924 (agent.py), discover_expert_bundles/ExpertView from TASK-4925 (loader.py, view.py); its toolkit factory instantiates ExpertKnowledgeToolkit from TASK-4927 (parrot_tools/experts) and CVEToolkit from TASK-4929 (parrot_tools/security/cve).",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4926-expert-registry.md"
+      "completed_at": "2026-10-30T21:58:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4926-expert-registry.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4927",
@@ -406,7 +408,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -416,8 +418,9 @@
       "parallelism_notes": "Writes under parrot/experts/bundled/ whose package marker TASK-4925 creates; its test calls parse_expert_bundle/BUNDLED_EXPERTS_DIR from TASK-4925 (loader.py).",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4930-bundle-cve-analyst.md"
+      "completed_at": "2026-10-30T21:58:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4930-bundle-cve-analyst.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4931",
@@ -426,7 +429,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -436,8 +439,9 @@
       "parallelism_notes": "Writes under parrot/experts/bundled/ (package marker from TASK-4925); its test uses parse_expert_bundle from TASK-4925 (loader.py).",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4931-bundle-cve-remediation.md"
+      "completed_at": "2026-10-30T21:58:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4931-bundle-cve-remediation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4932",
