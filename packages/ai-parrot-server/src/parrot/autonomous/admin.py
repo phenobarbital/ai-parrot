@@ -243,7 +243,7 @@ _ADMIN_LOGIN_HTML = """\
 
         <div class="quick-links" id="quickLinks" style="display:none;">
             <a href="/api/whatsapp/dashboard">📱 WhatsApp Dashboard</a>
-            <a href="/account/security">🔑 Manage passkeys</a>
+            <a href="/account/security" id="passkeyLink" hidden>🔑 Manage passkeys</a>
         </div>
 
         <button class="logout-btn" id="logoutBtn" onclick="handleLogout()">Sign Out</button>
@@ -495,6 +495,7 @@ _ADMIN_LOGIN_HTML = """\
         }
 
         async function run(started, mediation) {
+            var controller = new AbortController();
             try {
                 // Abort any pending request
                 if (pending) {
@@ -503,7 +504,6 @@ _ADMIN_LOGIN_HTML = """\
                 }
                 
                 // Create new abort controller for this request
-                var controller = new AbortController();
                 pending = controller;
                 
                 var signal = controller.signal;
@@ -544,7 +544,8 @@ _ADMIN_LOGIN_HTML = """\
                     window.location.href = '/api/whatsapp/dashboard';
                 }, 1500);
             } catch (err) {
-                pending = null;
+                // Only clear the slot if no newer request replaced it
+                if (pending === controller) { pending = null; }
                 // Silent cancel for NotAllowedError or AbortError
                 if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
                     return;
@@ -557,14 +558,21 @@ _ADMIN_LOGIN_HTML = """\
             hideAlerts();
             if (pending) { pending.abort(); pending = null; }
             var typed = document.getElementById('username').value.trim();
-            var started = await fetchOptions(typed || undefined);
+            var started = null;
+            try {
+                started = await fetchOptions(typed || undefined);
+            } catch (err) {
+                started = null;
+            }
             if (!started) { showAlert('error', 'Passkey sign-in failed. Use your password instead.'); return; }
             run(started);
         });
 
-        fetchOptions().then(async function (started) {
+        fetchOptions().catch(function () { return null; }).then(async function (started) {
             if (!started) { return; }           // backend disabled / origin not an RP → page unchanged
             button.hidden = false;
+            var link = document.getElementById('passkeyLink');
+            if (link) { link.hidden = false; }
             if (PublicKeyCredential.isConditionalMediationAvailable &&
                 await PublicKeyCredential.isConditionalMediationAvailable()) {
                 run(started, 'conditional');
