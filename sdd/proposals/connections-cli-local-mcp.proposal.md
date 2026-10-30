@@ -4,7 +4,7 @@ title: "S-4 of FEAT-773: CLI-based agents and MCP-based tools in a CLI consuming
 slug: connections-cli-local-mcp
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: inline
   jira_key: null
