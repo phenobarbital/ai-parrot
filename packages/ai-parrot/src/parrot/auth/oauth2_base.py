@@ -715,7 +715,7 @@ class AbstractOAuth2Manager(ABC):
             return None
 
         principal = Principal(user_id=user_id, channel=channel, channel_user_id=channel_user_id)
-        await self._persist_token(principal, token, minted=False)
+        await self._persist_token(principal, token, minted=True)
         try:
             await self.redis.delete(legacy_key)
         except Exception as exc:

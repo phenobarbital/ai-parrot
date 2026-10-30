@@ -85,6 +85,7 @@ class FakeCredentialStore:
         self.rows: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self.calls: list[Tuple[str, str, str]] = []
         self.fail_next_save = False
+        self.minted_flags: list[bool] = []
 
     async def load(self, user_id: str, provider: str) -> Optional[Dict[str, Any]]:
         """Load a copied payload when present."""
@@ -103,7 +104,8 @@ class FakeCredentialStore:
         state_payload: Optional[Dict[str, Any]],
     ) -> None:
         """Save a copied payload or raise once when requested."""
-        del minted, principal, state_payload
+        del principal, state_payload
+        self.minted_flags.append(minted)
         self.calls.append(("save", user_id, provider))
         if self.fail_next_save:
             self.fail_next_save = False

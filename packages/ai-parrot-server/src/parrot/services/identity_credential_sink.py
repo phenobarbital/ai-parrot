@@ -281,6 +281,13 @@ async def list_credential_rows(db_pool: Any, providers: Sequence[str]) -> List[A
         return list(await raw.fetch(query, *args))
 
 
+async def fetch_credential_row(db_pool: Any, identity_id: Any) -> Optional[Any]:
+    """Re-read one identity row by id (fresh snapshot, e.g. to verify a re-seal); ``None`` when gone."""
+    async with await db_pool.acquire() as conn:
+        raw = _raw_connection(conn)
+        return await raw.fetchrow(f"SELECT {_ROW_COLUMNS} FROM {_IDENTITY_TABLE} WHERE identity_id = $1", identity_id)
+
+
 async def reseal_identity_row(db_pool: Any, row: Any, *, cipher: Optional[Any] = None) -> None:
     """Re-seal every present token column of one row under the active key; preserve all metadata.
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import inspect
 import logging
 from contextlib import asynccontextmanager
 from typing import (
@@ -81,7 +82,10 @@ async def reencrypt_identities(
                 try:
                     await reseal_row(row)
                     # Verify with active key only after re-seal
-                    if verify_active(row):
+                    verified = verify_active(row)
+                    if inspect.isawaitable(verified):
+                        verified = await verified
+                    if verified:
                         counts[provider]["resealed"] += 1
                     else:
                         counts[provider]["failed"] += 1
@@ -115,6 +119,11 @@ def retirement_allowed(counts: Dict[str, Dict[str, int]], *, provider_filter: Se
     # Provider-filtered runs cannot authorize global retirement
     if provider_filter:
         logger.warning("Provider-filtered scan cannot authorize key retirement")
+        return False
+
+    # An empty scan proves nothing: never authorize retirement without scanned rows
+    if not any(sum(c.get(k, 0) for k in ('current', 'stale', 'failed')) > 0 for c in counts.values()):
+        logger.warning("Key retirement blocked: no rows were scanned")
         return False
 
     # Check for any stale or failed rows across all providers
@@ -165,6 +174,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # Lazy import of server helpers - exit 2 if unavailable
     try:
         from parrot.services.identity_credential_sink import (
+            fetch_credential_row,
             list_credential_rows,
             reseal_identity_row,
             verify_active_only,
@@ -227,6 +237,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 blocking_timeout=5,
             )
             acquired = await lock.acquire()
+            if not acquired:
+                raise RuntimeError(f"could not acquire refresh lock {lock_key}")
             try:
                 yield lock
             finally:
@@ -236,14 +248,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     except Exception:
                         pass
 
-        # Get database pool from server config (lazy)
-        try:
-            from navigator_session import get_database_pool
+        # Real pool bootstrap (asyncdb "pg" pool on the default DSN); failure aborts the run.
+        from asyncdb import AsyncPool
+        from parrot.conf import default_dsn
 
-            db_pool = get_database_pool()
-        except ImportError:
-            logger.error("navigator_session not available")
-            return {}
+        db_pool = AsyncPool("pg", dsn=default_dsn)
+        await db_pool.connect()
 
         # List credential rows
         rows = await list_credential_rows(db_pool, args.providers)
@@ -252,9 +262,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             """Wrapper to re-seal a row."""
             await reseal_identity_row(db_pool, row, cipher=cipher)
 
-        def verify_wrapper(row: Any) -> bool:
-            """Wrapper to verify with active key only."""
-            return verify_active_only(row, active_cipher=cipher)
+        async def verify_wrapper(row: Any) -> bool:
+            """Re-read the row (fresh ciphertext) and verify it with the active key only."""
+            fresh = await fetch_credential_row(db_pool, row["identity_id"])
+            return fresh is not None and verify_active_only(fresh, active_cipher=cipher)
 
         # Run the re-encryption job
         counts = await reencrypt_identities(
@@ -266,11 +277,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             apply=args.apply,
         )
 
-        await redis_client.close()
-        return counts
+        try:
+            return counts
+        finally:
+            await redis_client.aclose()
+            await db_pool.close()
 
     # Run the async job
-    counts = asyncio.run(run())
+    try:
+        counts = asyncio.run(run())
+    except Exception as exc:  # setup/pool/lock errors must never look like success
+        logger.error("Re-encryption aborted: %s", type(exc).__name__)
+        print(f"Error: re-encryption aborted ({type(exc).__name__}); key retirement NOT allowed.")
+        return 1
 
     # Print summary (no token values)
     print("\nRe-encryption summary:")
@@ -285,6 +304,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # Check retirement gate
     can_retire = retirement_allowed(counts, provider_filter=args.providers)
     print(f"\nKey retirement allowed: {can_retire}")
+    if args.apply and any(c.get('failed', 0) for c in counts.values()):
+        return 1
 
     if not args.apply:
         print("\n(Dry-run: no rows were modified)")

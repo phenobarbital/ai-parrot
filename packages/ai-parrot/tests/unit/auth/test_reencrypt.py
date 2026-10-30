@@ -422,3 +422,64 @@ async def test_reencrypt_handles_multiple_providers():
     assert counts["o365"]["current"] == 0
     assert counts["o365"]["stale"] == 0
     assert counts["o365"]["failed"] == 1
+
+
+# --- Review fixes: fail-closed retirement, fresh verification (FEAT-773) ---
+
+
+def test_retirement_denied_when_nothing_was_scanned() -> None:
+    """An empty scan (e.g. setup failure) must never authorize key retirement."""
+    assert retirement_allowed({}, provider_filter=[]) is False
+    assert retirement_allowed({"jira": {"current": 0, "stale": 0, "failed": 0}}, provider_filter=[]) is False
+
+
+@pytest.mark.asyncio
+async def test_async_verifier_is_awaited_after_reseal() -> None:
+    """verify_active may be a coroutine (it re-reads the row); its result decides resealed vs failed."""
+    lock = MockLock()
+    seen: List[Any] = []
+
+    async def reseal(row: Any) -> None:
+        seen.append(("reseal", row["user_id"]))
+
+    async def verify_ok(row: Any) -> bool:
+        seen.append(("verify", row["user_id"]))
+        return True
+
+    async def verify_bad(row: Any) -> bool:
+        return False
+
+    row = MockRow("jira", 1)
+    ok = await reencrypt_identities(
+        [row], lock, reseal_row=reseal, verify_active=verify_ok, classify=lambda r: "stale", apply=True
+    )
+    assert ok["jira"]["resealed"] == 1 and ("verify", 1) in seen
+    bad = await reencrypt_identities(
+        [row], lock, reseal_row=reseal, verify_active=verify_bad, classify=lambda r: "stale", apply=True
+    )
+    assert bad["jira"]["failed"] == 1 and bad["jira"].get("resealed", 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_lock_failure_aborts_without_resealing() -> None:
+    """If the principal lock cannot be acquired the row is never re-sealed."""
+    resealed: List[Any] = []
+
+    @asynccontextmanager
+    async def refusing_lock(provider: str, user_id: str):
+        raise RuntimeError("could not acquire refresh lock")
+        yield  # pragma: no cover
+
+    async def reseal(row: Any) -> None:
+        resealed.append(row)
+
+    with pytest.raises(RuntimeError):
+        await reencrypt_identities(
+            [MockRow("jira", 1)],
+            refusing_lock,
+            reseal_row=reseal,
+            verify_active=lambda r: True,
+            classify=lambda r: "stale",
+            apply=True,
+        )
+    assert resealed == []

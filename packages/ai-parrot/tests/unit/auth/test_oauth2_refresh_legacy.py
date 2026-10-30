@@ -96,6 +96,9 @@ async def test_legacy_key_read_rewrite_delete(monkeypatch: pytest.MonkeyPatch) -
     assert await redis.get("oauth2:fake:1042") is not None
     assert await redis.get(legacy_key) is None
     assert store.rows[("1042", "fake")]["access_token"] == "legacy"
+    # Migration must UPSERT into the durable store (minted=True): an update-only save would silently
+    # skip a missing row and the legacy source is deleted right after.
+    assert store.minted_flags == [True]
     assert vault_deletes == [("88123", "oauth2_fake_telegram_88123")]
 
     await redis.delete("oauth2:fake:1042")
