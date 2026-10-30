@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import importlib
+import os
+import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -93,7 +96,26 @@ def test_models_import_is_light() -> None:
 
     assert "parrot.experts.agent" not in sys.modules
     assert "parrot.experts.registry" not in sys.modules
-    assert "parrot_tools" not in sys.modules
     assert experts.ExpertManifest is ExpertManifest
     with pytest.raises(AttributeError):
         experts.not_an_expert_export
+
+    environment = os.environ.copy()
+    source_root = str(Path(__file__).parents[2] / "src")
+    environment["PYTHONPATH"] = os.pathsep.join(filter(None, (source_root, environment.get("PYTHONPATH"))))
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import parrot.experts.models; "
+            "assert 'parrot.experts.agent' not in sys.modules; "
+            "assert 'parrot.experts.registry' not in sys.modules; "
+            "assert 'parrot_tools' not in sys.modules",
+        ],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
