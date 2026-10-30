@@ -16,6 +16,7 @@ import pytest
 from parrot.launcher import script_path
 from parrot.sdd.installer import (
     GITIGNORE_BEGIN,
+    GITIGNORE_END,
     GUARD_HOOK_LINE,
     RECEIPT_PATH,
     guard_hook_command,
@@ -37,6 +38,22 @@ def empty_repo(tmp_path: Path) -> Path:
 def _claude_targets() -> list[str]:
     """Claude assets the installer records (seeds are team-owned: written once, never recorded or removed)."""
     return [e["target"] for e in load_manifest() if "claude" in e["hosts"] and not e.get("seed", False)]
+
+
+def test_sdd_install_gitignores_worktrees_and_artifacts(empty_repo: Path) -> None:
+    """issue:4a534ef4f3ee — the managed block ignores `artifacts/` so sdd-worker logs never block
+    `git worktree remove` at /sdd-done closeout; an old block (worktrees only) is upgraded in place."""
+    stale = f"{GITIGNORE_BEGIN}\n.claude/worktrees/\n{GITIGNORE_END}\n"
+    (empty_repo / ".gitignore").write_text("node_modules/\n" + stale)
+    install_sdd_integration(empty_repo)
+    text = (empty_repo / ".gitignore").read_text()
+    assert text.startswith("node_modules/\n")
+    assert text.count(GITIGNORE_BEGIN) == 1
+    block = text.partition(GITIGNORE_BEGIN)[2].partition(GITIGNORE_END)[0]
+    assert ".claude/worktrees/\n" in block and "artifacts/\n" in block
+    for probe in ("artifacts/logs/merge-tests-TASK-1.log", ".claude/worktrees/feat-FEAT-1-x/README"):
+        rc = subprocess.run(["git", "check-ignore", "-q", probe], cwd=empty_repo, check=False).returncode
+        assert rc == 0, probe
 
 
 def test_sdd_install_into_empty_repo(empty_repo: Path) -> None:
