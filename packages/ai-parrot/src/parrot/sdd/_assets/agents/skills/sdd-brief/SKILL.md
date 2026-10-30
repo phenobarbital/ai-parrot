@@ -28,7 +28,7 @@ brief — research first, a short Q&A, no FEAT/TASK id reservation.
 
 ## Procedure
 
-1. **Parse** `<source>` and flags. `--base-branch` accepts any branch name; `--research` accepts `full|light`. If questions cannot be asked, act as `--no-interview`.
+1. **Parse** `<source>` and flags. `--base-branch` accepts only a long-lived branch configured in `sdd/config.json` (`hotfix_base`, `base_branch`, and `staging_branch` when it is set; `main` and `dev` by default); `--research` accepts `full|light`. If questions cannot be asked, act as `--no-interview`.
 2. **Detect and fetch** the source: `cs:<n>` code-scanning alert (`gh api repos/{owner}/{repo}/code-scanning/alerts/<n>`; refuse when `dismissed` or `fixed`), GitHub issue/PR (`gh issue view` / `gh pr view`), Jira key (`jiratoolkit`), ledger (`wikitoolkit ledger show <id>`, `wikitoolkit ledger plan-fix --json`), free text, or a local file.
 3. **Resolve base and identity.** Ledger sources base on the configured `base_branch`; if `--base-branch <hotfix_base>` was supplied stop with: `⚠️  Ledger-sourced briefs always base on the configured base_branch; --base-branch <hotfix_base> is refused.` Other sources default to the `hotfix_base` in `sdd/config.json`. `KEY` is the Jira key, the ledger short id, or the slug.
 4. **Claim a ledger source** with `wikitoolkit ledger claim <id> --actor agent:sdd-brief`; release any abort before step 8 with `wikitoolkit ledger unclaim <id> --reason "<why>" --actor agent:sdd-brief`, printing the recovery command if release fails.

@@ -166,3 +166,21 @@ def test_packaged_assets_do_not_advertise_sdd_insight() -> None:
             if "sdd-insight" in line and "does not ship it" not in line:
                 offenders.append(f"{path.relative_to(_ASSETS)}:{number}: {line.strip()}")
     assert not offenders, "\n".join(offenders)
+
+
+_BRIEF_COPIES: tuple[str, ...] = (
+    ".claude/commands/sdd-brief.md", ".agent/workflows/sdd-brief.md", ".agents/skills/sdd-brief/SKILL.md",
+)
+
+
+def test_sdd_brief_documents_the_real_default_branches() -> None:
+    """rev 0.8 C29: every /sdd-brief copy names the branches brief_meta accepts by default (main, dev)."""
+    from parrot.sdd.config import default_sdd_config
+    from parrot.sdd.scripts.brief_meta import brief_base_branches
+
+    assert brief_base_branches(default_sdd_config()) == {"main", "dev"}
+    root = Path(__file__).resolve().parents[4]
+    for rel in _BRIEF_COPIES:
+        text = " ".join((root / rel).read_text(encoding="utf-8").split())
+        assert "`main` and `dev` by default" in text, rel
+        assert "accepts any branch name" not in text and "Accept only `main`, `dev`, or `staging`" not in text, rel

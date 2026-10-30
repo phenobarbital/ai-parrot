@@ -27,8 +27,8 @@ Replaces `/sdd-spec --type hotfix`.
 
 Parse `<source>` and the optional flags from the usage line. Accept for
 `--base-branch` only a long-lived branch configured in `sdd/config.json`
-(`hotfix_base`, `base_branch` or `staging_branch`; `main`, `dev` and
-`staging` by default), and only `full` or `light` for `--research`. If questions cannot be asked, behave as though
+(`hotfix_base`, `base_branch`, and `staging_branch` when it is set; `main`
+and `dev` by default), and only `full` or `light` for `--research`. If questions cannot be asked, behave as though
 `--no-interview` was supplied.
 
 ### 2. Detect and Fetch the Source

@@ -173,9 +173,13 @@ git -C "$WT" fetch origin <base_branch>
 mapfile -t PY < <(git -C "$WT" diff --name-only --diff-filter=ACMR "origin/<base_branch>...HEAD" -- '*.py')
 RUFF_CONFIGURED=0
 { [ -f "$WT/ruff.toml" ] || [ -f "$WT/.ruff.toml" ] || grep -q '^\[tool\.ruff' "$WT/pyproject.toml" 2>/dev/null; } && RUFF_CONFIGURED=1
+if [ "$RUFF_CONFIGURED" -eq 1 ] && ! command -v ruff >/dev/null 2>&1; then
+  echo "lint: the repository configures ruff but ruff is not installed — skipped (report it under Lint residual)"
+  RUFF_CONFIGURED=0
+fi
 if [ "$RUFF_CONFIGURED" -eq 1 ] && [ ${#PY[@]} -gt 0 ]; then
   (cd "$WT" && ruff check --fix --exit-zero --quiet "${PY[@]}")
-  if grep -q '^\[tool\.black\]' "$WT/pyproject.toml"; then (cd "$WT" && black -q "${PY[@]}"); fi
+  if grep -q '^\[tool\.black\]' "$WT/pyproject.toml" 2>/dev/null && command -v black >/dev/null 2>&1; then (cd "$WT" && black -q "${PY[@]}"); fi
   git -C "$WT" add -- "${PY[@]}"
   git -C "$WT" diff --cached --quiet || git -C "$WT" commit -m "style(<slug>): FEAT-<ID> — full lint pass"
   (cd "$WT" && ruff check --output-format concise "${PY[@]}")

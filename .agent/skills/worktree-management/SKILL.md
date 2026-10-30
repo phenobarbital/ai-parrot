@@ -22,7 +22,7 @@ how-to.
 ## 2. Create (idempotent)
 
 ```bash
-source .venv/bin/activate
+if [ -f .venv/bin/activate ]; then source .venv/bin/activate; fi   # only a repo with a project venv
 parrot sdd run ensure_worktree --slug <slug> --feature-id FEAT-<NNN>   # feature → origin/<base_branch>
 parrot sdd run ensure_worktree --slug <slug> --jira-key <JIRA-KEY>     # hotfix  → origin/<hotfix_base>
 ```
