@@ -176,9 +176,12 @@ file tools ─ retained hook → existing environment check + native write-polic
      dispatcher logs a warning and labels the dispatch; Bash runs with **no OS write boundary** and the
      session is told so.
    - `off`: never compile the `sandbox` block (ephemeral CI, disposable containers); hooks still apply.
-   Resolution order: `PARROT_SDD_SANDBOX_MODE` environment variable, then `[tool.parrot.sdd]
-   sandbox = "..."` in the repository root `pyproject.toml`, then `required`. Any other value is an
-   error (launcher exit 2, dispatcher `DispatchExecutionError`). Availability is decided before launch
+   Resolution order: `PARROT_SDD_SANDBOX_MODE` environment variable (empty/whitespace = unset), then
+   `[tool.parrot.sdd] sandbox = "required" | "preferred"` in the repository root `pyproject.toml`, then
+   `required`. `off` is accepted from the environment variable only: the worktree's `pyproject.toml` is
+   writable by the sandboxed session, so a repository value of `off` would be a self-disable path and is
+   rejected. Any other value, or an unreadable/malformed `pyproject.toml`, is an error (launcher exit 2,
+   dispatcher `DispatchExecutionError`). Availability is decided before launch
    by a cheap probe (`bwrap --unshare-user --unshare-pid --ro-bind / / true` plus the `socat`/`claude`
    prerequisites); the probe's outcome and the resolved mode are recorded in the session record and
    dispatch telemetry. Degradation is never silent and never automatic under `required`. The default
