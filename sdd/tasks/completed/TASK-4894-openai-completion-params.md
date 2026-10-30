@@ -128,4 +128,18 @@ Implement exactly the scope above inside the FEAT-770 worktree; run tests with
 
 ## Completion Note
 
-*(filled in on close)*
+**Completed**: 2026-10-30 — verified. Implementing commit `08655037b`.
+
+- `OpenAIBaseClient`: `_uses_max_completion_tokens` / `_fixed_temperature_prefixes` (inert defaults) and
+  `_adapt_completion_params`, run as the first statement of `_chat_completion` (before the budgeted branch).
+- `OpenAIClient` opts in (`gpt-5`, `o1`, `o3`, `o4`); `ask_to_image` and `image_identification` now call
+  `_chat_completion(use_tools=True)` instead of the SDK directly.
+- Tests: 14 new in `test_openai_completion_params.py`, all pass. Validation Contract: 201 passed; the 8 failures
+  (`test_openai_client.py` ×4 — assigns the loop-local `client.client`; `test_vllm_client.py` list_models ×3;
+  `test_nvidia_client.py` live kimi e2e) fail identically on unmodified `dev` 5879b0ade — pre-existing, not touched.
+- Live check 2026-10-30 against the OpenAI API on this tree: `OpenAIClient().ask(temperature=0.2)` (default
+  `gpt-5-mini`) and `invoke(model="gpt-5-mini")` both returned "OK" (both 400'd before).
+- `ruff --fix` also rewrote 3 unrelated pre-existing lines in `client.py`; reverted to keep scope. Remaining
+  `ASYNC240` at `client.py` image_identification is pre-existing.
+
+Resolves `issue:d641d02cf6b5`.
