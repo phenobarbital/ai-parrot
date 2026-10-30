@@ -2386,6 +2386,9 @@ class BotManager:
         self.app["bot_manager"] = self
         # Register OAuth2 providers after startup (FEAT-144)
         # Uses a deferred callback so app["jira_oauth_manager"] is available.
+        # Descriptor managers must be wired before aiohttp freezes the router
+        # and startup signal; their setup adds both routes and lifecycle hooks.
+        self._register_descriptor_oauth2_providers(self.app)
         self.app.on_startup.append(self._register_oauth2_providers)
         # FEAT-598 (TASK-3805): default data-plane guard wiring, in two phases.
         # 1. Build PBAC + the guard NOW, while the app is still mutable:
@@ -2791,6 +2794,31 @@ Available documentation UIs:
                 self.logger.error(f"Error in cleanup task: {e}", exc_info=True)
                 # Continue running even if there's an error
 
+    def _register_descriptor_oauth2_providers(self, app: web.Application) -> None:
+        """Register configured descriptor providers while the app is mutable."""
+        from parrot.conf import OAUTH2_PROVIDERS_FILE
+
+        if not OAUTH2_PROVIDERS_FILE or app.get("_descriptor_oauth2_providers_registered"):
+            return
+
+        try:
+            from parrot.auth.oauth2.descriptor import load_provider_descriptors, register_descriptor_providers
+            from parrot.services.identity_credential_sink import IdentityVaultCredentialStore
+
+            descriptors = load_provider_descriptors(OAUTH2_PROVIDERS_FILE)
+            authdb = app.get("authdb")
+            credential_store = IdentityVaultCredentialStore(authdb) if authdb is not None else None
+            providers = register_descriptor_providers(
+                descriptors,
+                app=app,
+                credential_store=credential_store,
+                event_publisher=app.get("connection_event_publisher"),
+            )
+            app["_descriptor_oauth2_providers_registered"] = True
+            self.logger.info("Registered %d descriptor OAuth2 providers", len(providers))
+        except Exception:  # noqa: BLE001
+            self.logger.exception("Failed to register descriptor OAuth2 providers")
+
     async def _register_oauth2_providers(self, app: web.Application) -> None:
         """Register OAuth2 providers with the global registry (FEAT-144).
 
@@ -2811,6 +2839,15 @@ Available documentation UIs:
                     "JiraOAuth2Provider not registered.  "
                     "Ensure JiraOAuthManager.setup(app) is called before startup."
                 )
+
+            authdb = app.get("authdb")
+            if authdb is not None:
+                from parrot.auth.principal import set_principal_resolver
+                from parrot.services.identity_principal import IdentityPrincipalResolver
+
+                set_principal_resolver(IdentityPrincipalResolver(authdb))
+
+            self._register_descriptor_oauth2_providers(app)
         except Exception:  # noqa: BLE001
             self.logger.exception(
                 "Failed to register OAuth2 providers — integrations endpoints " "will return empty provider lists."
