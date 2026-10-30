@@ -1,4 +1,5 @@
 """FEAT-772: the documented passkey settings example is accepted by navigator-auth as-is."""
+
 from __future__ import annotations
 
 import json
