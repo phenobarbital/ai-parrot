@@ -23,6 +23,7 @@ a single callback route via :func:`setup_oauth2_routes`. The handler:
 The Jira-specific callback path at ``/api/auth/jira/callback`` is a
 compatibility alias for the generic Jira callback handler.
 """
+
 from __future__ import annotations
 
 import html

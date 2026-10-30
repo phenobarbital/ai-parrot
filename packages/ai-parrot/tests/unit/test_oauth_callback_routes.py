@@ -24,8 +24,7 @@ async def _invoke_callback(app: web.Application, path: str) -> web.Response:
     route = next(
         route
         for route in app.router.routes()
-        if route.method == "GET"
-        and route.get_info().get("path") == "/api/auth/jira/callback"
+        if route.method == "GET" and route.get_info().get("path") == "/api/auth/jira/callback"
     )
     request = make_mocked_request("GET", path, app=app)
     return await route.handler(request)
@@ -155,10 +154,7 @@ class TestJiraOAuthCallback:
         app = _make_app(manager)
 
         with patch("parrot.auth.oauth2_routes.IntegrationsService") as service:
-            response = await _invoke_callback(
-                app,
-                "/api/auth/jira/callback?error=access_denied&state=nonce"
-            )
+            response = await _invoke_callback(app, "/api/auth/jira/callback?error=access_denied&state=nonce")
 
         assert response.status == 400
         assert "cancelled or denied" in response.text
@@ -176,10 +172,7 @@ class TestJiraOAuthCallback:
         manager.redis.delete = AsyncMock(side_effect=RuntimeError("redis unavailable"))
         app = _make_app(manager)
 
-        response = await _invoke_callback(
-            app,
-            "/api/auth/jira/callback?error=access_denied&state=nonce"
-        )
+        response = await _invoke_callback(app, "/api/auth/jira/callback?error=access_denied&state=nonce")
 
         assert response.status == 400
         manager.handle_callback.assert_not_awaited()
@@ -188,9 +181,7 @@ class TestJiraOAuthCallback:
         return sum(
             1
             for route in app.router.routes()
-            if getattr(route.resource, "canonical", None)
-            == "/api/auth/jira/callback"
-            and route.method == "GET"
+            if getattr(route.resource, "canonical", None) == "/api/auth/jira/callback" and route.method == "GET"
         )
 
     def test_manager_setup_mounts_route_and_signals(self) -> None:

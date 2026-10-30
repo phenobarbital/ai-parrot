@@ -47,15 +47,16 @@ class TestWebCallbackBranch:
     async def test_web_branch_renders_postmessage_html(self) -> None:
         token_set = _make_token_set()
         manager = MagicMock()
-        manager.handle_callback = AsyncMock(
-            return_value=(token_set, _make_state_payload())
-        )
+        manager.handle_callback = AsyncMock(return_value=(token_set, _make_state_payload()))
         request = _make_request(manager)
 
-        with patch(
-            "parrot.auth.oauth2_routes.WEB_OAUTH_ALLOWED_ORIGINS",
-            ["https://app.example.com"],
-        ), patch("parrot.auth.oauth2_routes.IntegrationsService") as service:
+        with (
+            patch(
+                "parrot.auth.oauth2_routes.WEB_OAUTH_ALLOWED_ORIGINS",
+                ["https://app.example.com"],
+            ),
+            patch("parrot.auth.oauth2_routes.IntegrationsService") as service,
+        ):
             service.return_value.persist_credential = AsyncMock()
             response = await make_oauth2_callback("jira")(request)
 
@@ -68,16 +69,17 @@ class TestWebCallbackBranch:
     async def test_web_branch_calls_persist_credential(self) -> None:
         token_set = _make_token_set()
         manager = MagicMock()
-        manager.handle_callback = AsyncMock(
-            return_value=(token_set, _make_state_payload())
-        )
+        manager.handle_callback = AsyncMock(return_value=(token_set, _make_state_payload()))
         request = _make_request(manager)
         persist_credential = AsyncMock()
 
-        with patch(
-            "parrot.auth.oauth2_routes.WEB_OAUTH_ALLOWED_ORIGINS",
-            ["https://app.example.com"],
-        ), patch("parrot.auth.oauth2_routes.IntegrationsService") as service:
+        with (
+            patch(
+                "parrot.auth.oauth2_routes.WEB_OAUTH_ALLOWED_ORIGINS",
+                ["https://app.example.com"],
+            ),
+            patch("parrot.auth.oauth2_routes.IntegrationsService") as service,
+        ):
             service.return_value.persist_credential = persist_credential
             await make_oauth2_callback("jira")(request)
 
@@ -92,15 +94,16 @@ class TestWebCallbackBranch:
     @pytest.mark.asyncio
     async def test_invalid_return_origin_renders_error_template(self) -> None:
         manager = MagicMock()
-        manager.handle_callback = AsyncMock(
-            return_value=(_make_token_set(), _make_state_payload("https://evil.com"))
-        )
+        manager.handle_callback = AsyncMock(return_value=(_make_token_set(), _make_state_payload("https://evil.com")))
         request = _make_request(manager)
 
-        with patch(
-            "parrot.auth.oauth2_routes.WEB_OAUTH_ALLOWED_ORIGINS",
-            ["https://app.example.com"],
-        ), patch("parrot.auth.oauth2_routes.IntegrationsService") as service:
+        with (
+            patch(
+                "parrot.auth.oauth2_routes.WEB_OAUTH_ALLOWED_ORIGINS",
+                ["https://app.example.com"],
+            ),
+            patch("parrot.auth.oauth2_routes.IntegrationsService") as service,
+        ):
             response = await make_oauth2_callback("jira")(request)
 
         assert response.status == 400
