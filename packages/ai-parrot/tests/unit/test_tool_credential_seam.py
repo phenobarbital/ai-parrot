@@ -14,7 +14,6 @@ from parrot.auth.credentials import CredentialRequired
 from parrot.auth.broker import CredentialBroker
 from parrot.tools.manager import ToolManager
 
-
 # ---------------------------------------------------------------------------
 # Fake tool implementations
 # ---------------------------------------------------------------------------
