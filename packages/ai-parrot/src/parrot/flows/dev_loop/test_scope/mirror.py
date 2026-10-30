@@ -7,6 +7,10 @@ from collections.abc import Sequence
 from pathlib import PurePosixPath
 
 
+# Support files under a tests tree: pytest collects nothing from them (a bare operand exits 5, "no tests ran").
+_NON_TEST_MODULES = frozenset({"__init__.py", "conftest.py"})
+
+
 def pytest_targets(files: Sequence[str], worktree_path: str) -> list[str]:
     """Map changed files to the narrowest existing test targets (was QANode._pytest_targets, qa.py:588).
 
@@ -101,7 +105,7 @@ def pytest_file_target_for(path: str, worktree_path: str) -> str | None:
         An existing repo-relative test file, or ``None`` when no file maps.
     """
     parts = PurePosixPath(path).parts
-    if not parts or PurePosixPath(path).suffix != ".py" or parts[-1] == "__init__.py":
+    if not parts or PurePosixPath(path).suffix != ".py" or parts[-1] in _NON_TEST_MODULES:
         return None
 
     changed_path = os.path.join(worktree_path, *parts)

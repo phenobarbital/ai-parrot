@@ -108,3 +108,20 @@ def test_file_mirror_maps_existing_test_to_itself(tmp_path):
 )
 def test_file_mirror_rejects_deleted_non_python_and_init_files(tmp_path, path):
     assert pytest_file_target_for(path, str(tmp_path)) is None
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "packages/ai-parrot/tests/experts/conftest.py",
+        "tests/conftest.py",
+    ],
+)
+def test_file_mirror_skips_existing_conftest(tmp_path, path):
+    """A conftest is test infrastructure: as a bare pytest operand it collects nothing and exits 5."""
+    target = tmp_path / path
+    target.parent.mkdir(parents=True)
+    target.write_text("")
+
+    assert pytest_file_target_for(path, str(tmp_path)) is None
+    assert pytest_file_targets([path], str(tmp_path)) == []
