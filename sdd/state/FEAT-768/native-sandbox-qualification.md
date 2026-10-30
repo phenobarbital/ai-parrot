@@ -77,3 +77,23 @@ sandbox state the CLI reports (operator-run).
 
 **Verdict: NOT QUALIFIED on both paths.** Do not merge FEAT-768: TASK-4888 makes the native sandbox
 mandatory for sandboxed seats, so on this host it would currently run seats with no write boundary.
+
+## Root-cause investigation (2026-10-30, operator-run diagnostics)
+
+Hand-built reproductions through `launch_worker.sh` (real or temporary `HOME`, API-key auth, with and
+without `--debug`, and a verbatim rebuild of the `filesystem-matrix` fixture outside pytest) all
+**enforced**: Bash writes outside the allowances failed with `Read-only file system`, `Write` was denied by
+the retained hook, the sandbox set `TMPDIR=/tmp/claude-1000`.
+
+A raw-captured harness session (`PARROT_NATIVE_QUAL_RAW_DIR`, `filesystem-matrix`, claude 2.1.312) shows
+the difference: the model issued ONE multi-line Bash call beginning `cd <feature> 2>/dev/null && pwd …`.
+For that command the native hook returns `permissionDecision: deny` (the leading `cd` is not the exact
+`cd <abs> && <cmd>` form) and no `updatedInput`. The transcript shows the CLI then executed the ORIGINAL
+command **outside the sandbox**: all five protected writes `exit=0`, `mktemp -d` in the real `/tmp`.
+Deterministic hook check reproduces the `deny` for that command and `updatedInput` for the exact form.
+
+Working conclusion: a PreToolUse `deny` on Bash is not honoured by claude 2.1.312 under
+`bypassPermissions` + native sandbox, and the command runs unsandboxed — a fail-open on the hook's deny
+path. Pending: minimal CLI repro (diag3) and the raw capture of `file-tool-bypass` (Write path).
+Network: `strictAllowlist: true` added to the compiled policy (commit 7e82f4f58) — `allowedDomains`
+alone only prompts, and `bypassPermissions` auto-approves.
