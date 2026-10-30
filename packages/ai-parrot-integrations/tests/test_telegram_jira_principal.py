@@ -114,6 +114,39 @@ def test_connection_publisher_is_shared_and_registers_all_adapters() -> None:
     }
 
 
+@pytest.mark.asyncio
+async def test_connection_publisher_audits_events_without_token_material() -> None:
+    """AC-7: the production publisher carries an audit ledger and records every connection event."""
+    import time
+
+    from parrot.auth.oauth2.events import ConnectionEvent
+
+    app: dict[str, object] = {}
+    publisher = _connection_publisher(app)
+    ledger = app["connection_audit_ledger"]
+    assert publisher._audit is ledger
+
+    await publisher.publish(
+        ConnectionEvent(
+            kind="connection.completed",
+            user_id="1042",
+            provider="jira",
+            account_id="acct-1",
+            channel="telegram",
+            occurred_at=time.time(),
+        )
+    )
+
+    entries = list(ledger._entries.values())
+    assert len(entries) == 1
+    assert (entries[0].user_id, entries[0].tool, entries[0].provider, entries[0].channel) == (
+        "1042",
+        "connections",
+        "jira",
+        "telegram",
+    )
+
+
 def test_build_principal_resolver_registers_authdb() -> None:
     """An auth database produces and registers the server resolver."""
     db_pool = object()

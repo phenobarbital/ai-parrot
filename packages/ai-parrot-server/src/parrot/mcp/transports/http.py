@@ -3,6 +3,7 @@ import hashlib
 import json
 import ssl
 import webbrowser
+from collections import OrderedDict
 from typing import Dict, Any, Optional, Tuple
 from aiohttp import web
 import aiohttp
@@ -203,6 +204,9 @@ class HttpMCPServer(OAuthRoutesMixin, RemoteMCPServerBase):
 class HttpMCPSession:
     """MCP session for HTTP/SSE transport using aiohttp."""
 
+    #: Cap on concurrently cached principal partitions (LRU-evicted beyond this).
+    MAX_PARTITIONS: int = 256
+
     def __init__(self, config: MCPClientConfig, logger):
         self.config = config
         self.logger = logger
@@ -219,7 +223,8 @@ class HttpMCPSession:
         self._protocol_version: Optional[str] = None
         # Principal-partitioned MCP sessions (key = sha256(per-call
         # Authorization)[:16]); the default partition (None) uses the fields above.
-        self._partitions: Dict[str, Dict[str, Optional[str]]] = {}
+        # Bounded LRU: a token refresh changes the key, so stale partitions must age out.
+        self._partitions: "OrderedDict[str, Dict[str, Optional[str]]]" = OrderedDict()
         self._partition_locks: Dict[str, asyncio.Lock] = {}
 
     async def _setup_oauth2(self) -> None:
@@ -564,7 +569,20 @@ class HttpMCPSession:
         if partition is None:
             return self._mcp_session_id, self._protocol_version
         state = self._partitions.get(partition) or {}
+        if partition in self._partitions:
+            self._partitions.move_to_end(partition)
         return state.get("session_id"), state.get("protocol_version")
+
+    def _evict_partitions(self) -> None:
+        """Drop least-recently-used idle partitions beyond ``MAX_PARTITIONS`` (they re-handshake on next use)."""
+        for key in list(self._partitions):
+            if len(self._partitions) <= self.MAX_PARTITIONS:
+                return
+            lock = self._partition_locks.get(key)
+            if lock is not None and lock.locked():
+                continue
+            self._partitions.pop(key, None)
+            self._partition_locks.pop(key, None)
 
     @staticmethod
     def _partition_for(headers: Optional[Dict[str, str]]) -> Optional[str]:
@@ -599,7 +617,9 @@ class HttpMCPSession:
             except Exception:
                 # Do not leave a half-initialized partition behind.
                 self._partitions.pop(partition, None)
+                self._partition_locks.pop(partition, None)
                 raise
+            self._evict_partitions()
             self.logger.debug("Initialized MCP session for partition %s", partition)
 
     async def _send_notification(

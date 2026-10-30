@@ -99,3 +99,26 @@ async def test_retry_keeps_per_call_headers():
     finally:
         await session.disconnect()
         await server.close()
+
+
+@pytest.mark.asyncio
+async def test_partitions_are_bounded_lru():
+    """Token refreshes mint new partitions; idle ones are evicted and simply re-handshake."""
+    rec = _Recorder()
+    server, session = await _make(rec)
+    try:
+        session.MAX_PARTITIONS = 2
+        for token in ("A", "B", "C"):
+            await session.call_tool("t", {}, headers={"Authorization": f"Bearer {token}"})
+        assert len(session._partitions) == 2
+        assert len(session._partition_locks) <= 2
+        # A was the least recently used -> evicted; B and C remain.
+        keys_after = set(session._partitions)
+        assert session._partition_for({"Authorization": "Bearer A"}) not in keys_after
+        # Evicted principal still works (fresh handshake) and its bearer is still its own.
+        await session.call_tool("t", {}, headers={"Authorization": "Bearer A"})
+        assert _calls(rec)[-1]["Authorization"] == "Bearer A"
+        assert len(session._partitions) == 2
+    finally:
+        await session.disconnect()
+        await server.close()

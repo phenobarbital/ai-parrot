@@ -20,7 +20,8 @@ from aiohttp import web
 
 from navconfig import BASE_DIR
 from navconfig.logging import logging
-from parrot.auth.oauth2.events import ChannelNotifierRegistry, ConnectionEventPublisher
+from parrot.auth.oauth2.events import ChannelNotifierRegistry, ConnectionEventPublisher, setup_connection_fanout
+from parrot.security.audit_ledger import AuditLedger
 from parrot.auth.principal import set_principal_resolver
 from parrot.conf import AGENTS_DIR, REDIS_URL
 from parrot.human import (
@@ -147,9 +148,26 @@ def _connection_publisher(app: Any) -> ConnectionEventPublisher:
     registry = _register_channel_notifiers(app)
     publisher = app.get("connection_event_publisher")
     if publisher is None:
-        publisher = ConnectionEventPublisher(notifiers=registry)
+        audit_ledger = app.get("connection_audit_ledger")
+        if audit_ledger is None:
+            audit_ledger = AuditLedger()
+            app["connection_audit_ledger"] = audit_ledger
+        publisher = ConnectionEventPublisher(notifiers=registry, audit_ledger=audit_ledger)
+        _attach_fanout_bus(publisher)
         app["connection_event_publisher"] = publisher
     return publisher
+
+
+def _attach_fanout_bus(publisher: ConnectionEventPublisher) -> None:
+    """Attach the shared publish-only fan-out bus when observability fan-out is enabled (additive)."""
+    try:
+        from parrot.observability.fanout import get_event_fanout_bus
+
+        bus = get_event_fanout_bus()
+        if bus is not None:
+            setup_connection_fanout(bus, publisher)
+    except Exception:  # noqa: BLE001 — the bus is additive; never block integration startup
+        logging.getLogger(__name__).warning("Connection event fan-out bus not attached", exc_info=True)
 
 
 async def handle_a2a_directory(request: web.Request) -> web.Response:
