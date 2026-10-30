@@ -20,9 +20,10 @@ a single callback route via :func:`setup_oauth2_routes`. The handler:
   vs. satellite ai-parrot-server) is respected: no direct import of
   :class:`~parrot.a2a.server.A2AServer` in this module.
 
-The Jira-specific callback at ``/api/auth/jira/callback`` remains unchanged
-(decision: parallel infrastructure, no Jira refactor in this branch).
+The Jira-specific callback path at ``/api/auth/jira/callback`` is a
+compatibility alias for the generic Jira callback handler.
 """
+
 from __future__ import annotations
 
 import html
@@ -210,8 +211,6 @@ def make_oauth2_callback(provider_id: str):
     async def handler(request: web.Request) -> web.Response:
         code = request.query.get("code")
         state = request.query.get("state")
-        if not code or not state:
-            return _error_response("Missing code or state parameter.", status=400)
 
         slot = f"oauth2_manager_{provider_id}"
         manager = request.app.get(slot)
@@ -221,6 +220,30 @@ def make_oauth2_callback(provider_id: str):
                 f"OAuth manager '{provider_id}' not configured on the server.",
                 status=500,
             )
+
+        provider_error = request.query.get("error")
+        if provider_error:
+            if state:
+                try:
+                    await manager.redis.delete(manager._nonce_key(state))
+                except Exception:  # noqa: BLE001 - nonce deletion is best-effort on provider denial
+                    logger.warning(
+                        "Failed to consume denied OAuth nonce for provider=%s",
+                        provider_id,
+                        exc_info=True,
+                    )
+            logger.info(
+                "OAuth authorization denied for provider=%s error=%s",
+                provider_id,
+                provider_error,
+            )
+            return _error_response(
+                "Authorization was cancelled or denied at the provider.",
+                status=400,
+            )
+
+        if not code or not state:
+            return _error_response("Missing code or state parameter.", status=400)
 
         try:
             token_set, state_payload = await manager.handle_callback(code, state)
