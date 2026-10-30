@@ -889,10 +889,34 @@ tests:
 - packages/ai-parrot/tests/registry/test_yaml_roundtrip.py
 - packages/ai-parrot/tests/knowledge/wiki/decisions/test_ingest.py
 - packages/ai-parrot/tests/bots/test_knowledge_index_flags.py
+- packages/ai-parrot/tests/experts/test_models.py
+- packages/ai-parrot/tests/experts/test_rules.py
+- packages/ai-parrot/tests/auth/test_policy_rule_resource.py
+- tests/auth/test_policy_rules_integration.py
+- packages/ai-parrot/tests/experts/test_policy.py
+- packages/ai-parrot/tests/experts/test_render.py
+- packages/ai-parrot/tests/experts/test_resolver.py
+- packages/ai-parrot/tests/experts/test_sources_inline.py
+- packages/ai-parrot/tests/experts/test_wiki_source.py
+- packages/ai-parrot/tests/experts/test_sources_retrieval.py
+- packages/ai-parrot/tests/bots/test_kb_context_resolver.py
+- packages/ai-parrot/tests/experts/test_agent_activation.py
+- packages/ai-parrot/tests/experts/test_loader_view.py
+- packages/ai-parrot/tests/experts/test_registry.py
+- packages/ai-parrot-tools/tests/experts/test_expert_toolkit.py
+- packages/ai-parrot-tools/tests/security/cve/test_cve_models.py
+- packages/ai-parrot-tools/tests/security/cve/test_cve_toolkit.py
+- packages/ai-parrot/tests/experts/test_bundled_cve_analyst.py
+- packages/ai-parrot/tests/experts/test_bundled_cve_remediation.py
+- packages/ai-parrot/tests/experts/test_bundled_wheel.py
+- packages/ai-parrot/tests/experts/test_bootstrap.py
+- packages/ai-parrot-server/tests/manager/test_load_bots_experts.py
+- packages/ai-parrot/tests/experts/test_integration.py
+- packages/ai-parrot/tests/experts/test_cve_docs.py
 markers: none
 
 > New test files land under `packages/ai-parrot/tests/experts/`, `packages/ai-parrot-tools/tests/experts/` and
-> `packages/ai-parrot-tools/tests/security/cve/`; `/sdd-task` appends them to this list once their node ids are frozen.
+> `packages/ai-parrot-tools/tests/security/cve/`; `/sdd-task` appended them to this list (2026-10-30, TASK-4914..4935).
 > CVE tests use recorded JSON fixtures (`tests/security/cve/fixtures/{osv,nvd,epss}_CVE-2026-98432.json`) and
 > monkeypatch `CVEToolkit._get_json`; no test opens a network connection.
 
