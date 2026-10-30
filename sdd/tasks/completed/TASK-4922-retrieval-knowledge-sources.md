@@ -204,10 +204,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker; Seat: opus (native) · Attempts: 1
+**Date**: 2026-10-30
+**Notes**: Merged; task-tier and chunk merge-tier validation green.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

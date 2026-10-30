@@ -189,7 +189,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -199,8 +199,9 @@
       "parallelism_notes": "Imports sha256_revision from TASK-4919 (knowledge/budget.py) and implements the KnowledgeSource protocol of TASK-4919 (sources/base.py).",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4920-inline-knowledge-sources.md"
+      "completed_at": "2026-10-30T21:46:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4920-inline-knowledge-sources.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4921",
@@ -209,7 +210,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -219,8 +220,9 @@
       "parallelism_notes": "Imports sha256_revision from TASK-4919 (knowledge/budget.py); implements TASK-4919's KnowledgeSource protocol.",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4921-wiki-source-probe-seed.md"
+      "completed_at": "2026-10-30T21:46:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4921-wiki-source-probe-seed.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4922",
@@ -229,7 +231,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -239,8 +241,9 @@
       "parallelism_notes": "Imports sha256_revision from TASK-4919 (knowledge/budget.py); implements TASK-4919's KnowledgeSource protocol.",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4922-retrieval-knowledge-sources.md"
+      "completed_at": "2026-10-30T21:46:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4922-retrieval-knowledge-sources.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4923",
@@ -270,7 +273,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -282,8 +285,9 @@
       "parallelism_notes": "Imports install_layers from TASK-4918 (knowledge/render.py), KnowledgeResolver from TASK-4919 (knowledge/resolver.py) and ExpertBundle from TASK-4914.",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4924-expert-agent-activation.md"
+      "completed_at": "2026-10-30T21:46:05+00:00",
+      "file": "sdd/tasks/completed/TASK-4924-expert-agent-activation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4925",
