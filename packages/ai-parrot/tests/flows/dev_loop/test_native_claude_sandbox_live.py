@@ -138,6 +138,14 @@ def qual_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> QualificationR
     _run_checked(["git", "init", "--bare", "-q", str(remote)], primary)
     _run_checked(["git", "remote", "add", "origin", str(remote)], primary)
     monkeypatch.setattr(policy, "CLAUDE_SCRATCH_ROOT", tmp_path / "scratch")
+    # The bundled path runs through ClaudeCodeDispatcher, whose default auth policy blanks
+    # ANTHROPIC_API_KEY when a subscription login exists in the REAL home. This fixture replaces
+    # HOME with an empty one (home canary), so the subprocess would have no credentials at all and
+    # the scenario would read as "sandbox did not start". Authenticate with the API key, exactly as
+    # the `path` branch does; the dispatcher's billing policy is not what this harness qualifies.
+    from parrot import conf as parrot_conf
+
+    monkeypatch.setattr(parrot_conf, "CLAUDE_CODE_DISPATCH_AUTH", "api-key", raising=False)
     env = {**os.environ, "HOME": str(home), "XDG_DATA_HOME": str(tmp_path / "data")}
     return QualificationRepo(primary, feature, pool, remote, protected, writable, env)
 
