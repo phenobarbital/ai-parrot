@@ -97,3 +97,20 @@ Working conclusion: a PreToolUse `deny` on Bash is not honoured by claude 2.1.31
 path. Pending: minimal CLI repro (diag3) and the raw capture of `file-tool-bypass` (Write path).
 Network: `strictAllowlist: true` added to the compiled policy (commit 7e82f4f58) — `allowedDomains`
 alone only prompts, and `bypassPermissions` auto-approves.
+
+## Root cause (2026-10-30 02:00) — harness artifact, policy enforces
+
+`PARROT_NATIVE_QUAL_RAW_DIR` captures show `argv[0] = /home/jesuslara/proyectos/ai-parrot/scripts/sdd/launch_worker.sh`:
+the **primary checkout's** (dev-branch) launcher, not this worktree's. The harness resolved
+`Path("scripts/sdd/launch_worker.sh")` relative to the process cwd, and importing `parrot` runs navconfig, which
+`chdir()`s pytest to the main checkout. Every qualification session therefore ran a launcher without native
+settings or the native hook — the canary writes were a harness artifact. The earlier "hook deny runs unsandboxed"
+hypothesis is withdrawn: diag3 shows the CLI honours the deny (`PreToolUse:Bash hook error`) and the sandbox
+blocks the exact-form command.
+
+Fix: commit `b5bac5641` anchors `REPO_ROOT`/`LAUNCHER`/`LOG_DIR` to `__file__`, asserts the in-process `parrot`
+modules come from this checkout, and records `repo_root`. Ledger `issue:94a4fa450148` closed as not-a-defect.
+Model feedback for the TASK-4890 attempt (`1038c99605cf4231be1490336e7c81fe`, codex/gpt-5.6-terra, pattern
+`cwd-dependent-relative-path-in-test`) was **NOT recorded**: `coder_record_feedback` rejected the attempt identity.
+
+Qualification must now be re-run on both paths with the corrected harness; nothing above is a PASS.
