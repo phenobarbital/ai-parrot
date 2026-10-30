@@ -59,7 +59,7 @@
       "feature_id": "FEAT-781",
       "feature": "google-client-fixes",
       "spec": "sdd/specs/google-client-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -67,9 +67,10 @@
       ],
       "parallel": false,
       "parallelism_notes": "edits _safe_extract_text in client.py after TASK-4911",
-      "assigned_to": null,
+      "assigned_to": "agent:sdd-fix",
       "file": "sdd/tasks/active/TASK-4912-google-client-verbatim-stream-chunks.md",
-      "discovered_from": "issue:d34e3f558f8e"
+      "discovered_from": "issue:d34e3f558f8e",
+      "started_at": "2026-10-30T19:46:03Z"
     },
     {
       "id": "TASK-4913",
