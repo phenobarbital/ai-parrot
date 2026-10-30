@@ -44,6 +44,10 @@ auth system for the Admin UI.
 - Login: `POST /api/v1/login` with a `BasicAuth` username/password form.
   Any other configured auth backend (`GET /api/v1/auth/methods` discovers
   them) shows up as an extra sign-in option on the login page.
+- Passkeys (FEAT-772): with navigator-auth's `PasskeyAuth` enabled, the login page offers
+  "Sign in with a passkey" plus passkey autofill, and **Account** (`/account/security`) lets each
+  user add, rename and delete passkeys. The passkey ceremony calls skip the 401 interceptor, so a
+  failed passkey attempt never clears your session or `?next=`.
 - Any authenticated user may enter — the Admin UI does not layer its own
   authorization on top of navigator-auth.
 - The SPA authenticates its own API calls with a **Bearer token** (stored
@@ -220,6 +224,25 @@ Open `http://localhost:5000/` → sign in → **Agents** → **Chat**.
   `auth.users` table) and Redis are required at startup.
 - **Login**: set `AUTHENTICATION_BACKENDS=navigator_auth.backends.BasicAuth`
   (plus any SSO backend) and create users in `auth.users`.
+- **Passkeys**: enable WebAuthn sign-in by installing the passkey extra and configuring relying parties:
+  ```bash
+  pip install "ai-parrot-server[passkey]"  # pulls navigator-auth[passkey]>=0.28.9 → webauthn
+  ```
+  Then add `navigator_auth.backends.PasskeyAuth` to `AUTHENTICATION_BACKENDS` and set
+  `PASSKEY_RELYING_PARTIES` to a JSON list with one entry per exact browser origin (scheme://host:port).
+  Each entry's `rp_id` must be that host or a parent domain. Example for production and local development:
+  ```bash
+  # docs/examples/passkey.settings.example
+  PASSKEY_RELYING_PARTIES='[{"origin": "https://parrot.example.com", "rp_id": "parrot.example.com", "rp_name": "AI-Parrot"}, {"origin": "http://localhost:5000", "rp_id": "localhost", "rp_name": "AI-Parrot (dev)"}, {"origin": "http://localhost:5173", "rp_id": "localhost", "rp_name": "AI-Parrot (vite dev)"}]'
+  ```
+  Notes:
+  - The Vite dev server (`pnpm dev`, :5173) is a different origin from the backend (:5000). The proxy
+    rewrites `Host`, not `Origin`, so a passkey enrolled on :5173 is not offered on :5000.
+  - Redis >= 6.2 is required (for `GETDEL`).
+  - `AUTH_SECRET_KEY` is still mandatory for multi-worker token signing.
+  - Startup fails with `ConfigError` if `PASSKEY_RELYING_PARTIES` is empty/invalid or `webauthn` is missing.
+  - Set `PASSKEY_LOGIN_OPTIONS_RATE=0` behind a reverse proxy (it keys on the socket address); rate-limit
+    login/options at the proxy instead.
 - **`AUTH_SECRET_KEY`**: always set it in production. Without it navigator-auth
   generates a random signing key per process, so tokens die on restart and,
   under gunicorn with several workers, a token minted by one worker is

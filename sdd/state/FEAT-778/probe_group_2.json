@@ -1,0 +1,254 @@
+[
+{
+"id": "c44",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py",
+"symbol": "DecisionRecord"
+},
+{
+"id": "c45",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py",
+"symbol": "EvidenceRef"
+},
+{
+"id": "c46",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py",
+"symbol": "GenerationInfo"
+},
+{
+"id": "c47",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py",
+"symbol": "ReviewRequest"
+},
+{
+"id": "c121",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py",
+"symbol": "_normalize_prefix"
+},
+{
+"id": "c143",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py",
+"symbol": "DecisionConfig"
+},
+{
+"id": "c144",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/service.py",
+"symbol": "why"
+},
+{
+"id": "c48",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/toolkit.py",
+"symbol": "__getattr__"
+},
+{
+"id": "c148",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/wiki/export.py",
+"symbol": "export_okf_bundle"
+},
+{
+"id": "c149",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/wiki/export.py",
+"symbol": "page_frontmatter"
+},
+{
+"id": "c87",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/wiki/mcp_server.py",
+"symbol": "WikiToolBundle"
+},
+{
+"id": "c55",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+"symbol": "hashing"
+},
+{
+"id": "c103",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/memory/compaction/budget.py",
+"symbol": "resolve_window"
+},
+{
+"id": "c104",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/memory/compaction/budget.py",
+"symbol": "compaction_disabled_by_env"
+},
+{
+"id": "c105",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/memory/compaction/budget.py",
+"symbol": "apply_commit"
+},
+{
+"id": "c79",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/memory/compaction/policies.py",
+"symbol": "mention"
+},
+{
+"id": "c154",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/memory/unified/manager.py",
+"symbol": "__init__"
+},
+{
+"id": "c57",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/models/crew_definition.py",
+"symbol": "AgentDefinition"
+},
+{
+"id": "c58",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/models/crew_definition.py",
+"symbol": "CrewDefinition"
+},
+{
+"id": "c61",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/models/crew_definition.py",
+"symbol": "ExecutionMode"
+},
+{
+"id": "c88",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/observability/context.py",
+"symbol": "current_tenant"
+},
+{
+"id": "c89",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/observability/context.py",
+"symbol": "invocation_context"
+},
+{
+"id": "c90",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/observability/context.py",
+"symbol": "usage_attribution"
+},
+{
+"id": "c150",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/observability/context.py",
+"symbol": "agent_identity"
+},
+{
+"id": "c100",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/outputs/a2ui/catalog/parrot/mermaiddiagram.py",
+"symbol": "component"
+},
+{
+"id": "c97",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/outputs/a2ui/graph/mermaid.py",
+"symbol": "docstring"
+},
+{
+"id": "c99",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/outputs/a2ui/graph/mermaid_c4.py",
+"symbol": "mermaid"
+},
+{
+"id": "c98",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/outputs/a2ui/graph/models.py",
+"symbol": "models"
+},
+{
+"id": "c120",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/registry/",
+"symbol": "commits"
+},
+{
+"id": "c22",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/registry/registry.py",
+"symbol": "PromptConfig"
+},
+{
+"id": "c23",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/registry/registry.py",
+"symbol": "BotConfig"
+},
+{
+"id": "c24",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/registry/registry.py",
+"symbol": "register"
+},
+{
+"id": "c25",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/registry/registry.py",
+"symbol": "load_agent_definition_file"
+},
+{
+"id": "c26",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/registry/registry.py",
+"symbol": "create_agent_definition"
+},
+{
+"id": "c27",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/registry/registry.py",
+"symbol": "BotMetadata"
+},
+{
+"id": "c28",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/registry/registry.py",
+"symbol": "AgentRegistry"
+},
+{
+"id": "c29",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/registry/registry.py",
+"symbol": "_apply_prompt_config"
+},
+{
+"id": "c30",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/registry/registry.py",
+"symbol": "load_agent_definition_file"
+},
+{
+"id": "c31",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/registry/registry.py",
+"symbol": "update_agent_tooling"
+},
+{
+"id": "c33",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/registry/registry.py",
+"symbol": "get_bots_by_tag"
+},
+{
+"id": "c119",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/registry/registry.py",
+"symbol": "AgentKind"
+},
+{
+"id": "c125",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/skills/",
+"symbol": "commits"
+}
+]

@@ -113,7 +113,7 @@ dependencies = [
     # Python 3.13+; 0.28.3 keeps abac_middleware after the auth middlewares
     # when PDP.setup() runs before AuthHandler.setup() (BotManager.setup()
     # builds PBAC first). Loose upper bound on purpose; only the floor is enforced.
-    "navigator-auth>=0.28.3",
+    "navigator-auth>=0.28.8",
     "navigator-session>=1.0.1",
     # navigator-auth>=0.28 pulls pysaml2; pysaml2 7.5.1+ caps pyopenssl<24.3,
     # which lets a plain pip resolve down to pyopenssl 22.0 — broken against

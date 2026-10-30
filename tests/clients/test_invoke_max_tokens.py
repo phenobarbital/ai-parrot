@@ -434,7 +434,11 @@ class TestBudgetReachesProvider:
         await client.invoke("hi")
         # OpenAI sets no _invoke_max_tokens of its own, so invoke() picks up
         # AbstractClient._default_max_tokens rather than a separate base value.
-        assert sdk.chat.completions.create.await_args.kwargs["max_tokens"] == AbstractClient._default_max_tokens
+        # OpenAIClient opts into _uses_max_completion_tokens (FEAT-770), so the
+        # cap travels as max_completion_tokens and max_tokens is never sent.
+        sent = sdk.chat.completions.create.await_args.kwargs
+        assert "max_tokens" not in sent
+        assert sent["max_completion_tokens"] == AbstractClient._default_max_tokens
 
     async def test_groq_stays_at_provider_cap(self, bind_sdk_client):
         from parrot.clients.groq import GroqClient

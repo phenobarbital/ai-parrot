@@ -238,7 +238,7 @@ class OpenAIBaseClient(AbstractClient):
     def _adapt_completion_params(self, model: str, kwargs: dict[str, Any]) -> dict[str, Any]:
         """Return a copy of ``kwargs`` rewritten for the quirks of ``model``.
 
-        OpenAI reasoning models (``gpt-5*``, o-series) reject ``max_tokens``
+        OpenAI reasoning models (the GPT-5 family, o-series) reject ``max_tokens``
         and any non-default ``temperature`` with a 400. Driven by the class
         attributes ``_uses_max_completion_tokens`` and
         ``_fixed_temperature_prefixes``, both inert by default (FEAT-770).
