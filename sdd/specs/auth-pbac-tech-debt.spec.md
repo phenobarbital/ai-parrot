@@ -88,6 +88,9 @@ tests:
 - packages/ai-parrot/tests/auth/test_pbac_setup.py
 markers: none
 
+### Test Data / Fixtures
+Existing fixtures in the file (`sample_policies_dir`, `empty_policies_dir`); none added.
+
 ---
 
 ## 5. Acceptance Criteria
