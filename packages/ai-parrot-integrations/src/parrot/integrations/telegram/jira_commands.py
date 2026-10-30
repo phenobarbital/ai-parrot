@@ -16,11 +16,12 @@ route can push a confirmation message back to the originating chat.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import Any, TYPE_CHECKING, Callable, Optional
 
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from parrot.auth.principal import Principal, resolve_principal
 
 if TYPE_CHECKING:  # pragma: no cover - type-checking only
     from aiogram import Bot
@@ -32,11 +33,13 @@ if TYPE_CHECKING:  # pragma: no cover - type-checking only
 # ``TelegramUserSession.jira_*`` fields so the user_context enrichment
 # stops advertising the Jira identity after /disconnect_jira.
 SessionClearer = Callable[[int], None]
+SessionLookup = Callable[[str], Any]
 
 
 logger = logging.getLogger(__name__)
 
 _TELEGRAM_CHANNEL = "telegram"
+_LOGIN_FIRST = "Please /login first to link your Telegram account, then run /connect_jira again."
 
 
 def _auth_keyboard(url: str) -> InlineKeyboardMarkup:
@@ -48,7 +51,9 @@ def _auth_keyboard(url: str) -> InlineKeyboardMarkup:
 
 
 async def connect_jira_handler(
-    message: Message, oauth_manager: "JiraOAuthManager"
+    message: Message,
+    oauth_manager: "JiraOAuthManager",
+    session_lookup: Optional[SessionLookup] = None,
 ) -> None:
     """Handle ``/connect_jira`` — send the authorization URL or a status.
 
@@ -64,12 +69,17 @@ async def connect_jira_handler(
         )
         return
 
-    user_id = str(message.from_user.id)
+    tid = str(message.from_user.id)
+    principal = await _telegram_principal(tid, session_lookup)
+    if principal is None:
+        await message.reply(_LOGIN_FIRST, parse_mode=None)
+        return
+
     # validate_token (not is_connected) so a stored-but-invalid token
     # gets auto-revoked here — otherwise the user would be stuck on
     # "already connected" without a way to refresh consent short of
     # running /disconnect_jira manually.
-    if await oauth_manager.validate_token(_TELEGRAM_CHANNEL, user_id) is not None:
+    if await oauth_manager.validate_token(_TELEGRAM_CHANNEL, principal.user_id) is not None:
         await message.reply(
             "You're already connected to Jira. Use /jira_status to see details.",
             parse_mode=None,
@@ -77,8 +87,10 @@ async def connect_jira_handler(
         return
 
     url, _nonce = await oauth_manager.create_authorization_url(
-        _TELEGRAM_CHANNEL, user_id,
+        _TELEGRAM_CHANNEL,
+        tid,
         extra_state={"chat_id": message.chat.id},
+        principal=principal,
     )
     await message.reply(
         "Click the button below to authorize your Jira account:",
@@ -87,10 +99,24 @@ async def connect_jira_handler(
     )
 
 
+async def _telegram_principal(tid: str, session_lookup: Optional[SessionLookup]) -> Optional[Principal]:
+    """Resolve a Telegram id to its Navigator principal, preferring the local session."""
+    session = session_lookup(tid) if session_lookup is not None else None
+    nav_user_id = getattr(session, "nav_user_id", None)
+    if nav_user_id:
+        return Principal(
+            user_id=str(nav_user_id),
+            channel=_TELEGRAM_CHANNEL,
+            channel_user_id=tid,
+        )
+    return await resolve_principal(_TELEGRAM_CHANNEL, tid)
+
+
 async def disconnect_jira_handler(
     message: Message,
     oauth_manager: "JiraOAuthManager",
     session_clearer: Optional[SessionClearer] = None,
+    session_lookup: Optional[SessionLookup] = None,
 ) -> None:
     """Handle ``/disconnect_jira`` — revoke stored tokens and clear session.
 
@@ -110,8 +136,12 @@ async def disconnect_jira_handler(
         )
         return
     telegram_id = message.from_user.id
-    user_id = str(telegram_id)
-    await oauth_manager.revoke(_TELEGRAM_CHANNEL, user_id)
+    tid = str(telegram_id)
+    principal = await _telegram_principal(tid, session_lookup)
+    if principal is None:
+        await message.reply(_LOGIN_FIRST, parse_mode=None)
+        return
+    await oauth_manager.revoke(_TELEGRAM_CHANNEL, principal.user_id, channel_user_id=tid)
     if session_clearer is not None:
         try:
             session_clearer(telegram_id)
@@ -126,7 +156,9 @@ async def disconnect_jira_handler(
 
 
 async def jira_status_handler(
-    message: Message, oauth_manager: "JiraOAuthManager"
+    message: Message,
+    oauth_manager: "JiraOAuthManager",
+    session_lookup: Optional[SessionLookup] = None,
 ) -> None:
     """Handle ``/jira_status`` — report the user's Jira connection state.
 
@@ -138,8 +170,12 @@ async def jira_status_handler(
     """
     if message.from_user is None:
         return
-    user_id = str(message.from_user.id)
-    token = await oauth_manager.validate_token(_TELEGRAM_CHANNEL, user_id)
+    tid = str(message.from_user.id)
+    principal = await _telegram_principal(tid, session_lookup)
+    if principal is None:
+        await message.reply(_LOGIN_FIRST, parse_mode=None)
+        return
+    token = await oauth_manager.validate_token(_TELEGRAM_CHANNEL, principal.user_id)
     if token is not None:
         await message.reply(
             f"Connected to Jira as {token.display_name}\n"
@@ -157,6 +193,7 @@ def register_jira_commands(
     router: Router,
     oauth_manager: "JiraOAuthManager",
     session_clearer: Optional[SessionClearer] = None,
+    session_lookup: Optional[SessionLookup] = None,
 ) -> None:
     """Register the three Jira commands on *router*.
 
@@ -171,18 +208,24 @@ def register_jira_commands(
             identity on the ``TelegramUserSession``. Callers that track
             per-user sessions (``TelegramAgentWrapper``) should pass a
             closure over their ``_user_sessions`` dict.
+        session_lookup: Optional callback returning the caller's in-memory
+            Telegram session. The registered principal resolver is used when
+            the session does not carry a Navigator user id.
     """
 
     async def _connect(message: Message) -> None:
-        await connect_jira_handler(message, oauth_manager)
+        await connect_jira_handler(message, oauth_manager, session_lookup=session_lookup)
 
     async def _disconnect(message: Message) -> None:
         await disconnect_jira_handler(
-            message, oauth_manager, session_clearer=session_clearer
+            message,
+            oauth_manager,
+            session_clearer=session_clearer,
+            session_lookup=session_lookup,
         )
 
     async def _status(message: Message) -> None:
-        await jira_status_handler(message, oauth_manager)
+        await jira_status_handler(message, oauth_manager, session_lookup=session_lookup)
 
     router.message.register(_connect, Command("connect_jira"))
     router.message.register(_disconnect, Command("disconnect_jira"))

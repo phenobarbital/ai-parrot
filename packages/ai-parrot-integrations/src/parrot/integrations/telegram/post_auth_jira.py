@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
+from parrot.auth.principal import Principal
 from parrot.integrations.telegram.jira_commands import _TELEGRAM_CHANNEL
 
 if TYPE_CHECKING:
@@ -79,8 +80,8 @@ class JiraPostAuthProvider:
         retrieve it when the user returns from Atlassian.
 
         Args:
-            session: Current Telegram user session (may or may not be
-                authenticated yet — both are fine).
+            session: Current authenticated Telegram user session. It must
+                carry the Navigator user id established by ``/login``.
             config: Telegram agent config (unused today, reserved for
                 per-agent overrides).
             callback_base_url: Public base URL the callback is mounted at
@@ -91,6 +92,10 @@ class JiraPostAuthProvider:
         Returns:
             Atlassian authorization URL.
         """
+        nav_user_id = getattr(session, "nav_user_id", None)
+        if not nav_user_id:
+            raise ValueError("Jira authorization requires an authenticated Navigator principal")
+
         extra_state: Dict[str, Any] = {
             "flow": "combined",
             "telegram_id": session.telegram_id,
@@ -99,8 +104,7 @@ class JiraPostAuthProvider:
         }
         # Include already-known primary auth details if present — they'll be
         # echoed back in the callback for the wrapper to re-apply.
-        if getattr(session, "nav_user_id", None):
-            extra_state["nav_user_id"] = session.nav_user_id
+        extra_state["nav_user_id"] = nav_user_id
         if getattr(session, "nav_display_name", None):
             extra_state["nav_display_name"] = session.nav_display_name
         if getattr(session, "nav_email", None):
@@ -110,6 +114,11 @@ class JiraPostAuthProvider:
             channel=_TELEGRAM_CHANNEL,
             user_id=str(session.telegram_id),
             extra_state=extra_state,
+            principal=Principal(
+                user_id=str(nav_user_id),
+                channel=_TELEGRAM_CHANNEL,
+                channel_user_id=str(session.telegram_id),
+            ),
         )
         self.logger.info(
             "JiraPostAuthProvider: built auth URL for telegram_id=%s nonce=%s…",
