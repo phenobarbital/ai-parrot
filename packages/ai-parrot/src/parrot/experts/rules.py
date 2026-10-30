@@ -1,4 +1,5 @@
 """Governance rules: strict ALWAYS/NEVER grammar and the additive org→team→project→expert chain (FEAT-778 M8)."""
+
 from __future__ import annotations
 
 import hashlib

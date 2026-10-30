@@ -1,4 +1,5 @@
 """Tests for the domain-expert governance rules chain (FEAT-778 M8)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -6,7 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from parrot.experts.models import ExpertBundle, ExpertManifest, KnowledgeSourceKind, KnowledgeSourceSpec, RuleSet, RuleSyntaxError
+from parrot.experts.models import (
+    ExpertBundle,
+    ExpertManifest,
+    KnowledgeSourceKind,
+    KnowledgeSourceSpec,
+    RuleSet,
+    RuleSyntaxError,
+)
 from parrot.experts.rules import parse_rules, resolve_chain, rules_to_layer
 
 
