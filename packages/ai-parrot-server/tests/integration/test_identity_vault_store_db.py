@@ -75,8 +75,12 @@ def _payload(account_id: str, access_token: str) -> dict[str, Any]:
 async def test_replace_a_with_b_then_cold_load_returns_b(store_db) -> None:
     """A minted reconnect leaves only account B and reloads it from Postgres."""
     store, user_id, provider = store_db
-    await store.save(user_id, provider, _payload("account-a", "token-a"), minted=True, principal=None, state_payload=None)
-    await store.save(user_id, provider, _payload("account-b", "token-b"), minted=True, principal=None, state_payload=None)
+    await store.save(
+        user_id, provider, _payload("account-a", "token-a"), minted=True, principal=None, state_payload=None
+    )
+    await store.save(
+        user_id, provider, _payload("account-b", "token-b"), minted=True, principal=None, state_payload=None
+    )
     loaded = await store.load(user_id, provider)
     assert loaded is not None
     assert loaded["account_id"] == "account-b"
@@ -87,7 +91,9 @@ async def test_replace_a_with_b_then_cold_load_returns_b(store_db) -> None:
 async def test_failure_inside_replacement_keeps_a(store_db) -> None:
     """A validation failure before SQL leaves the previously selected grant intact."""
     store, user_id, provider = store_db
-    await store.save(user_id, provider, _payload("account-a", "token-a"), minted=True, principal=None, state_payload=None)
+    await store.save(
+        user_id, provider, _payload("account-a", "token-a"), minted=True, principal=None, state_payload=None
+    )
     with pytest.raises(ValueError, match="account_id"):
         await store.save(user_id, provider, {"access_token": "broken"}, minted=True, principal=None, state_payload=None)
     loaded = await store.load(user_id, provider)
@@ -99,6 +105,8 @@ async def test_failure_inside_replacement_keeps_a(store_db) -> None:
 async def test_disconnect_then_cold_load_returns_none(store_db) -> None:
     """Deleting a provider removes its durable row and cold load returns no grant."""
     store, user_id, provider = store_db
-    await store.save(user_id, provider, _payload("account-a", "token-a"), minted=True, principal=None, state_payload=None)
+    await store.save(
+        user_id, provider, _payload("account-a", "token-a"), minted=True, principal=None, state_payload=None
+    )
     await store.delete(user_id, provider)
     assert await store.load(user_id, provider) is None

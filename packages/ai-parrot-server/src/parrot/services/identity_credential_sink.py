@@ -189,8 +189,7 @@ class IdentityVaultCredentialStore:
                         *values.values(),
                     )
                 await raw.execute(
-                    f"DELETE FROM {_IDENTITY_TABLE} WHERE user_id = $1 AND auth_provider = $2 "
-                    "AND identity_id <> $3",
+                    f"DELETE FROM {_IDENTITY_TABLE} WHERE user_id = $1 AND auth_provider = $2 " "AND identity_id <> $3",
                     user_id,
                     provider,
                     selected_id,
