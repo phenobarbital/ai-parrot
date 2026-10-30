@@ -217,10 +217,6 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker orchestrator; seat glm5 (nova zai.glm-5)
+**Date**: 2026-10-30
+**Notes**: Implemented per task; merged, engine lint clean. Merge-tier validation: expected red tests/integration/oauth2/test_e2e_web_connect.py::test_persist_credential_writes_integration_row (asserts removed row.channel; rewritten by TASK-4964) plus pre-existing test_invalid_state_returns_400 (issue:e7b7e5906b6e).

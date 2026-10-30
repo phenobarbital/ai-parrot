@@ -269,7 +269,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -279,8 +279,9 @@
       "parallelism_notes": "second edit of oauth2/models.py after TASK-4945 (AuthRequiredEnvelope fields); adds list_users_integrations to persistence.py, consumed by TASK-4947/4948",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4946-users-integrations-model-fields.md"
+      "completed_at": "2026-10-30T22:24:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4946-users-integrations-model-fields.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4947",
@@ -436,7 +437,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -447,8 +448,9 @@
       "parallelism_notes": "subclasses StandardOAuth2Manager/uses post_exchange_hooks from TASK-4943 (oauth2/descriptor.py); call sites in integrations/manager.py switch to IdentityVaultCredentialStore from TASK-4950 (identity_credential_sink.py); first edit of integrations/manager.py (TASK-4955 follows)",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4954-jira-oauth-manager-on-standard-engine.md"
+      "completed_at": "2026-10-30T22:24:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4954-jira-oauth-manager-on-standard-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4955",
@@ -543,7 +545,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -553,8 +555,9 @@
       "parallelism_notes": "relies on principal-first OAuthCredentialResolver.resolve/get_auth_url from TASK-4944 (auth/credentials.py) and resolve_principal from TASK-4937; touches only jiratoolkit.py",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4959-jiratoolkit-principal-cache.md"
+      "completed_at": "2026-10-30T22:24:05+00:00",
+      "file": "sdd/tasks/completed/TASK-4959-jiratoolkit-principal-cache.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4960",
@@ -625,7 +628,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -636,8 +639,9 @@
       "parallelism_notes": "drives reseal_identity_row/verify_active_only/list_credential_rows from TASK-4951 (identity_credential_sink.py) through injected callables, under AbstractOAuth2Manager.principal_lock semantics from TASK-4940/4941",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4963-identity-vault-reencrypt-job.md"
+      "completed_at": "2026-10-30T22:24:05+00:00",
+      "file": "sdd/tasks/completed/TASK-4963-identity-vault-reencrypt-job.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4964",
