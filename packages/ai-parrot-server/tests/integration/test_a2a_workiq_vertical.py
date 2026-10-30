@@ -364,7 +364,7 @@ class TestWorkIQVertical:
 
         # Broker internal dict has the resolver.
         assert "workiq" in broker._resolvers
-        assert broker._resolvers["workiq"] is resolver
+        assert broker._resolvers["workiq"][0] is resolver  # stored as (resolver, auth_kind)
 
         # A2AServer built with the broker uses it for gating.
         agent = MagicMock()
