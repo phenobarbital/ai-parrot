@@ -1,4 +1,5 @@
 """Tests for parrot_tools.security.cve.models."""
+
 import pytest
 
 from parrot_tools.security.cve.models import CVERecord, severity_from_score, validate_cve_id

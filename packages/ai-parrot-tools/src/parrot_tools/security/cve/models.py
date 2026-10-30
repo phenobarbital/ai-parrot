@@ -1,4 +1,5 @@
 """CVE records, search results and download receipts (FEAT-778 M12)."""
+
 from __future__ import annotations
 
 import re
