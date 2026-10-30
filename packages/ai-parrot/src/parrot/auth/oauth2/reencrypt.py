@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import inspect
 import logging
+import sys
 from contextlib import asynccontextmanager
 from typing import (
     Any,
@@ -146,6 +147,11 @@ def retirement_allowed(counts: Dict[str, Dict[str, int]], *, provider_filter: Se
     return True
 
 
+def _emit(message: str = "") -> None:
+    """Write one CLI output line to stdout (the CLI's result channel; not logging)."""
+    sys.stdout.write(f"{message}\n")
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """CLI entry point: --apply, --provider P (repeatable).
 
@@ -181,7 +187,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
     except ImportError as e:
         logger.error("Server helpers not available: %s", e)
-        print("Error: server helpers not available. Run from ai-parrot-server environment.")
+        _emit("Error: server helpers not available. Run from ai-parrot-server environment.")
         return 2
 
     # Lazy import of Redis and config
@@ -288,27 +294,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         counts = asyncio.run(run())
     except Exception as exc:  # setup/pool/lock errors must never look like success
         logger.error("Re-encryption aborted: %s", type(exc).__name__)
-        print(f"Error: re-encryption aborted ({type(exc).__name__}); key retirement NOT allowed.")
+        _emit(f"Error: re-encryption aborted ({type(exc).__name__}); key retirement NOT allowed.")
         return 1
 
     # Print summary (no token values)
-    print("\nRe-encryption summary:")
-    print("=" * 50)
+    _emit("\nRe-encryption summary:")
+    _emit("=" * 50)
     for provider, provider_counts in sorted(counts.items()):
-        print(f"\n{provider}:")
-        print(f"  current:  {provider_counts.get('current', 0)}")
-        print(f"  stale:    {provider_counts.get('stale', 0)}")
-        print(f"  resealed: {provider_counts.get('resealed', 0)}")
-        print(f"  failed:   {provider_counts.get('failed', 0)}")
+        _emit(f"\n{provider}:")
+        _emit(f"  current:  {provider_counts.get('current', 0)}")
+        _emit(f"  stale:    {provider_counts.get('stale', 0)}")
+        _emit(f"  resealed: {provider_counts.get('resealed', 0)}")
+        _emit(f"  failed:   {provider_counts.get('failed', 0)}")
 
     # Check retirement gate
     can_retire = retirement_allowed(counts, provider_filter=args.providers)
-    print(f"\nKey retirement allowed: {can_retire}")
+    _emit(f"\nKey retirement allowed: {can_retire}")
     if args.apply and any(c.get('failed', 0) for c in counts.values()):
         return 1
 
     if not args.apply:
-        print("\n(Dry-run: no rows were modified)")
+        _emit("\n(Dry-run: no rows were modified)")
 
     return 0
 

@@ -1888,15 +1888,15 @@ class MCPEnabledMixin:
         Args:
             configurations: List of MCPServerConfig objects
         """
-        for config in configurations:
+        for server_config in configurations:
             try:
-                tools = await self.add_mcp_server(config)
+                tools = await self.add_mcp_server(server_config)
                 # Check for logger, fallback to print if not available
                 if hasattr(self, "logger"):
-                    self.logger.info(f"Added MCP server '{config.name}' with tools: {tools}")
+                    self.logger.info(f"Added MCP server '{server_config.name}' with tools: {tools}")
             except Exception as e:
                 if hasattr(self, "logger"):
-                    self.logger.error(f"Failed to add MCP server '{config.name}': {e}", exc_info=True)
+                    self.logger.error(f"Failed to add MCP server '{server_config.name}': {e}", exc_info=True)
 
     async def shutdown(self, **kwargs):
         if hasattr(self, "tool_manager") and hasattr(self.tool_manager, "disconnect_all_mcp"):

@@ -1,18 +1,17 @@
-"""Unit tests for parrot.integrations.oauth2.models."""
+"""Unit tests for parrot.auth.oauth2.models."""
 from __future__ import annotations
 
 from datetime import datetime
 
 import pytest
 
-from parrot.integrations.oauth2.models import (
+from parrot.auth.oauth2.models import (
     AuthRequiredEnvelope,
     ConnectInitRequest,
     ConnectInitResponse,
     DisconnectResponse,
     EnableResponse,
     IntegrationDescriptor,
-    UserAgentToolkitRow,
     UsersIntegrationRow,
 )
 
@@ -62,7 +61,6 @@ class TestIntegrationDescriptor:
     def test_defaults(self) -> None:
         d = IntegrationDescriptor(provider="jira", display_name="Jira")
         assert d.connected is False
-        assert d.enabled_on_agent is False
         assert d.icon is None
         assert d.default_scopes == []
         assert d.account_id is None
@@ -75,14 +73,12 @@ class TestIntegrationDescriptor:
             icon="mdi:jira",
             default_scopes=["read:jira-work"],
             connected=True,
-            enabled_on_agent=True,
             account_id="acct-123",
             display_account_name="Test User",
             email="test@example.com",
             connected_at=now,
         )
         assert d.connected is True
-        assert d.enabled_on_agent is True
         assert d.connected_at == now
 
 
@@ -144,11 +140,9 @@ class TestEnableResponse:
             provider="jira",
             display_name="Jira",
             connected=True,
-            enabled_on_agent=True,
         )
         resp = EnableResponse(integration=desc)
         assert resp.integration.provider == "jira"
-        assert resp.integration.enabled_on_agent is True
 
 
 class TestUsersIntegrationRow:
@@ -164,7 +158,7 @@ class TestUsersIntegrationRow:
             connected_at=datetime.now(),
         )
         assert row.status == "active"
-        assert row.channel == "web"
+        assert row.channels == []  # FEAT-773: channel -> channels (every channel that used the connection)
 
     def test_optional_fields(self) -> None:
         row = UsersIntegrationRow(
@@ -191,18 +185,3 @@ class TestUsersIntegrationRow:
             status="revoked",
         )
         assert row.status == "revoked"
-
-
-class TestUserAgentToolkitRow:
-    """Tests for UserAgentToolkitRow."""
-
-    def test_all_fields(self) -> None:
-        row = UserAgentToolkitRow(
-            user_id="u1",
-            agent_id="agent1",
-            toolkit_id="jira",
-            provider="jira",
-            enabled_at=datetime.now(),
-        )
-        assert row.toolkit_id == "jira"
-        assert row.provider == "jira"

@@ -22,6 +22,8 @@ TOKEN_URL = "https://auth.atlassian.com/oauth/token"
 ACCESSIBLE_RESOURCES_URL = "https://api.atlassian.com/oauth/token/accessible-resources"
 
 _TOKEN_KEY_PREFIX = "jira:oauth"
+# Historical Jira layout (read-only during the migration window): jira:oauth:{channel}:{channel_user_id}
+_LEGACY_JIRA_TOKEN_KEY_TEMPLATE = "{prefix}:{channel}:{channel_user_id}"
 
 DEFAULT_SCOPES: List[str] = [
     "read:jira-work",
@@ -310,7 +312,9 @@ class JiraOAuthManager(StandardOAuth2Manager):
         if token is not None or not _legacy_window_open():
             return token  # type: ignore[return-value]
 
-        legacy_key = f"{_TOKEN_KEY_PREFIX}:{channel}:{channel_user_id}"
+        legacy_key = _LEGACY_JIRA_TOKEN_KEY_TEMPLATE.format(
+            prefix=_TOKEN_KEY_PREFIX, channel=channel, channel_user_id=channel_user_id
+        )
         raw = await self.redis.get(legacy_key)
         if raw is None:
             return None
