@@ -54,4 +54,9 @@ close with `scripts/sdd/close_task.sh TASK-4913 google-client-fixes verified`.
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+**Completed by**: agent:sdd-fix (Claude Opus 5.5)
+**Date**: 2026-10-30
+**Notes**: Added the `ComputerUseVocabulary` alias and annotation. Added `_iso_language` plus six new map entries in the
+Whisper backend. 14 new tests; the full Validation Contract (76 tests) passes. Ruff findings in both source files are unchanged from base.
+**Deviations from spec**: none. Side effect: a 3-letter code such as `"eng"` no longer becomes `"en"` (it is
+not ISO 639-1); it falls back to the hint, then `"en"`. Resolves `issue:461ceca67d43`.

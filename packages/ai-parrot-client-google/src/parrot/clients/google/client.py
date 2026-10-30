@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Union
+from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Sequence, Union
 from collections import defaultdict
 from enum import Enum
 import copy
@@ -87,6 +87,9 @@ from .generation import GoogleGeneration
 
 logging.getLogger(name="PIL.TiffImagePlugin").setLevel(logging.ERROR)  # Suppress TiffImagePlugin warnings
 logging.getLogger(name="google_genai").setLevel(logging.WARNING)  # Suppress GenAI warnings
+
+# Native computer-use action vocabulary: legacy computer-use models vs the Gemini 3.8 tool.
+ComputerUseVocabulary = Literal["legacy", "v3_8"]
 
 
 # Sentinel returned by ``_create_simple_summary`` when the LLM consumed
@@ -292,7 +295,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         """
         return bool(self.computer_use) or self._is_computer_use_model(model)
 
-    def _computer_use_vocabulary(self, model: str) -> str:
+    def _computer_use_vocabulary(self, model: str) -> ComputerUseVocabulary:
         """Return the native computer-use action vocabulary for ``model``."""
         return "legacy" if self._is_computer_use_model(model) else "v3_8"
 
@@ -306,12 +309,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
-        return (
-            model.startswith("gemini-2.5-pro")
-            or model.startswith("gemini-3.1-pro")
-            or model.startswith("gemini-3-pro")
-            or GoogleGenAIClient._is_computer_use_model(model)
-        )
+        return model.startswith(
+            ("gemini-2.5-pro", "gemini-3.1-pro", "gemini-3-pro")
+        ) or GoogleGenAIClient._is_computer_use_model(model)
 
     @staticmethod
     def _rejects_zero_thinking_budget(model: str) -> bool:
@@ -417,7 +417,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
-        return model.startswith("gemini-2.5-computer-use") or model.startswith("gemini-3-flash-preview")
+        return model.startswith(("gemini-2.5-computer-use", "gemini-3-flash-preview"))
 
     @staticmethod
     def _supports_combined_tools_and_schema(
@@ -551,6 +551,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model: str,
         payload: dict,
         segments: list,
+        *,
+        system_instruction: Optional[str] = None,
     ) -> dict:
         """Create a Gemini ``CachedContent`` resource and inject ``cached_content``.
 
@@ -567,6 +569,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             model: Model name string (e.g. ``"gemini-2.5-flash"``).
             payload: The ``generate_content`` payload dict to update.
             segments: The cacheable segments returned by ``_apply_cache_hints()``.
+            system_instruction: When given, the text stored in the cache instead of the
+                joined cacheable segments. A request that uses ``cached_content`` may not
+                also set ``system_instruction``, so callers pass the full prompt here.
 
         Returns:
             The (potentially updated) payload dict.
@@ -577,7 +582,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         try:
             from google.genai import types as genai_types
 
-            cacheable_text = "\n\n".join(s.text for s in segments if s.cacheable)
+            if system_instruction is not None:
+                cacheable_text = system_instruction
+            else:
+                cacheable_text = "\n\n".join(s.text for s in segments if s.cacheable)
             cached = await client.aio.caches.create(
                 model=model,
                 config=genai_types.CreateCachedContentConfig(
@@ -595,6 +603,51 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             )
 
         return payload
+
+    async def _attach_gemini_cache(self, client: Any, final_config: Any, model: str, segments: list) -> None:
+        """Attach an explicit ``CachedContent`` to ``final_config`` in place.
+
+        Gemini rejects a request that combines ``cached_content`` with
+        ``system_instruction``, ``tools`` or ``tool_config`` (400 INVALID_ARGUMENT).
+        So:
+
+        * tools or tool_config set → explicit caching is skipped; Gemini's implicit
+          prefix caching still applies to the plain ``system_instruction``.
+        * otherwise the cache holds the full ``system_instruction`` and the request's
+          own ``system_instruction`` is cleared.
+
+        A failed cache creation (fail-open) leaves ``final_config`` untouched.
+
+        Args:
+            client: The active ``genai.Client`` instance.
+            final_config: The ``GenerateContentConfig`` about to be sent.
+            model: Model name string.
+            segments: The cacheable segments returned by ``_apply_cache_hints()``.
+        """
+        if not segments:
+            return
+        if getattr(final_config, "tools", None) or getattr(final_config, "tool_config", None):
+            self.logger.debug(
+                "Gemini explicit CachedContent skipped: request carries tools/tool_config "
+                "(relying on implicit caching)."
+            )
+            return
+        system_instruction = getattr(final_config, "system_instruction", None)
+        if not isinstance(system_instruction, str) or not system_instruction:
+            return
+        cache_payload = await self._maybe_apply_gemini_cache(
+            client, model, {}, segments, system_instruction=system_instruction
+        )
+        cached_name = cache_payload.get("cached_content")
+        if not cached_name:
+            return
+        try:
+            final_config.cached_content = cached_name
+            final_config.system_instruction = None
+        except (AttributeError, TypeError):
+            self.logger.debug(
+                "GenerateContentConfig does not support cached_content assignment; continuing without cache."
+            )
 
     # ── End FEAT-181 ──────────────────────────────────────────────────────────
 
@@ -2215,7 +2268,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             # Lazy Loading Check
             if lazy_loading:
                 found_new = False
-                for fc, result in zip(function_calls, tool_results):
+                for fc, result in zip(function_calls, tool_results, strict=False):
                     if fc.name == "search_tools" and isinstance(result, str):
                         new_tools = self._check_new_tools(fc.name, result)
                         for nt in new_tools:
@@ -2230,7 +2283,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     self.logger.info(f"Updated tools for next turn. Count: {len(active_tool_names)}")
 
             # Update tool call objects
-            for tc, result in zip(tool_call_objects, tool_results):
+            for tc, result in zip(tool_call_objects, tool_results, strict=False):
                 tc.execution_time = execution_time / len(tool_call_objects)
                 if isinstance(result, HumanInteractionInterrupt):
                     result.session_id = session_id
@@ -2291,7 +2344,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
             is_computer_use = self._computer_use_enabled(model)
             function_response_parts = []
-            for fc, result in zip(function_calls, tool_results):
+            for fc, result in zip(function_calls, tool_results, strict=False):
                 tool_id = fc.id or f"call_{uuid.uuid4().hex[:8]}"
                 self.logger.notice(f"🔍 Tool: {fc.name}")
                 self.logger.notice(f"📤 Raw Result Type: {type(result)}")
@@ -2780,7 +2833,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if not has_content_parts and not has_function_call and not has_thought:
             try:
                 if hasattr(response, "text") and response.text:
-                    if text := response.text.strip():
+                    # Stream chunks are returned verbatim: stripping them loses the
+                    # whitespace at chunk boundaries (glued words, collapsed tables).
+                    text = response.text if is_stream_chunk else response.text.strip()
+                    if text:
                         self.logger.debug(f"Extracted text via response.text: '{text[:100]}...'")
                         return text
             except Exception as e:
@@ -2818,7 +2874,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
                     # Check for regular text content
                     if hasattr(part, "text") and part.text:
-                        if clean_text := part.text.strip():
+                        if clean_text := (part.text if is_stream_chunk else part.text.strip()):
                             text_parts.append(clean_text)
                             self.logger.debug(f"Found text part: '{clean_text[:50]}...'")
 
@@ -2849,7 +2905,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
                 # Combine text parts
                 if text_parts:
-                    if combined_text := "".join(text_parts).strip():
+                    combined_text = "".join(text_parts)
+                    if not is_stream_chunk:
+                        combined_text = combined_text.strip()
+                    if combined_text:
                         self.logger.debug(f"Successfully extracted text from {len(text_parts)} parts")
                         return combined_text
                 else:
@@ -3589,19 +3648,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 requested_tokens if requested_tokens is not None else generation_budget.max_output_tokens,
             )
         # FEAT-181: if we have pending cache segments, attempt to create
-        # a Gemini CachedContent resource (fail-open on any error).
+        # a Gemini CachedContent resource (fail-open on any error). The helper
+        # skips it when tools/tool_config are set and otherwise moves the system
+        # instruction into the cache: Gemini rejects cached_content combined
+        # with system_instruction, tools or tool_config.
         if _pending_cache_segs:
-            _cache_payload = {}
-            _cache_payload = await self._maybe_apply_gemini_cache(
-                self.client, model, _cache_payload, _pending_cache_segs
-            )
-            if _cache_payload.get("cached_content"):
-                try:
-                    final_config.cached_content = _cache_payload["cached_content"]
-                except (AttributeError, TypeError):
-                    self.logger.debug(
-                        "GenerateContentConfig does not support cached_content assignment; " "continuing without cache."
-                    )
+            await self._attach_gemini_cache(self.client, final_config, model, _pending_cache_segs)
 
         # Single execution path whether or not history was supplied. FEAT-524
         # removed the `stateless` flag: a caller that wants a stateless call
@@ -3811,9 +3863,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
                     # Check if text looks like JSON before trying to parse (avoids warnings)
                     text_to_check = assistant_response_text.strip()
-                    is_json_candidate = (
-                        text_to_check.startswith("{") or text_to_check.startswith("[") or "```json" in text_to_check
-                    )
+                    is_json_candidate = text_to_check.startswith(("{", "[")) or "```json" in text_to_check
 
                     if is_json_candidate:
                         # We accept the result if it is NOT just the original string (which implies parsing failure return)
@@ -4487,7 +4537,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
                         if lazy_loading:
                             found_new = False
-                            for fc, result in zip(collected_function_calls, tool_results):
+                            for fc, result in zip(collected_function_calls, tool_results, strict=False):
                                 if fc.name == "search_tools" and isinstance(result, str):
                                     new_tools = self._check_new_tools(fc.name, result)
                                     for nt in new_tools:
@@ -4502,7 +4552,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                                 chat._config.tools = new_tools_list
                                 self.logger.info(f"Updated tools for next turn. Count: {len(active_tool_names)}")
 
-                        for tc, fc, result in zip(tool_call_objects, collected_function_calls, tool_results):
+                        for tc, fc, result in zip(
+                            tool_call_objects, collected_function_calls, tool_results, strict=False
+                        ):
                             tc.execution_time = execution_time / len(tool_call_objects) if tool_call_objects else 0
                             if isinstance(result, HumanInteractionInterrupt):
                                 result.session_id = current_session_id.get()
@@ -4524,7 +4576,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         all_tool_calls_history.extend(tool_call_objects)
 
                         function_response_parts = []
-                        for fc, result in zip(collected_function_calls, tool_results):
+                        for fc, result in zip(collected_function_calls, tool_results, strict=False):
                             response_content = self._process_tool_result_for_api(result, tool_name=fc.name)
                             function_response_parts.append(
                                 Part(function_response=types.FunctionResponse(name=fc.name, response=response_content))
@@ -5643,7 +5695,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # Build contents for the stateless call
         contents = []
         if files:
-            for file_path in files:
+            for _file_path in files:
                 # In a real scenario, you'd handle file uploads to Gemini properly
                 # This is a placeholder for file content
                 contents.append(
@@ -5687,7 +5739,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
                 execution_time = time.time() - start_time
 
-                for tc, result in zip(tool_call_objects, tool_results):
+                for tc, result in zip(tool_call_objects, tool_results, strict=False):
                     tc.execution_time = execution_time / len(tool_call_objects)
                     if isinstance(result, Exception):
                         tc.error = str(result)
