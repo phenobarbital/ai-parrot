@@ -231,7 +231,10 @@ async def test_fresh_install_loads_both_cve_experts(tmp_path: Path) -> None:
         assert agent.knowledge_context is not None
         assert "<governance_rules>" in prompt
         assert "<expert_knowledge>" in prompt
-        assert any(layer.source == f"wiki:expert-{name}" and layer.handle["documents"] > 0 for layer in agent.knowledge_context.layers)
+        assert any(
+            layer.source == f"wiki:expert-{name}" and layer.handle["documents"] > 0
+            for layer in agent.knowledge_context.layers
+        )
 
 
 @pytest.mark.asyncio
@@ -260,10 +263,14 @@ async def test_cve_analyst_download_then_resolve(tmp_path: Path, monkeypatch: py
         return routes[url]
 
     monkeypatch.setattr(toolkit, "_get_json", recorded_get_json)
-    before = await analyst.knowledge_resolver.resolve(analyst.bundle, None, analyst.workspace, model=analyst.model_config.model)
+    before = await analyst.knowledge_resolver.resolve(
+        analyst.bundle, None, analyst.workspace, model=analyst.model_config.model
+    )
     async with activate_expert(analyst, run_id="run-cve", stage="research"):
         receipt = await toolkit.download_cve(cve_id)
-    after = await analyst.knowledge_resolver.resolve(analyst.bundle, None, analyst.workspace, model=analyst.model_config.model)
+    after = await analyst.knowledge_resolver.resolve(
+        analyst.bundle, None, analyst.workspace, model=analyst.model_config.model
+    )
 
     assert receipt["concept_id"] == f"expert-cve-analyst/cve/{cve_id}"
     assert next(layer for layer in after.layers if layer.source == "wiki:expert-cve-analyst").handle["documents"] == (
