@@ -7,6 +7,7 @@
 The patterns here mirror :mod:`parrot.handlers.mcp_persistence`  — same
 ``DocumentDb`` context-manager, same ``$set / $setOnInsert`` upsert idiom.
 """
+
 from __future__ import annotations
 
 import logging

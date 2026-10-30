@@ -5,6 +5,7 @@ These models represent the data contracts between:
 - the ``AgentTalk`` envelope response, and
 - the DocumentDB persistence layer (``UsersIntegrationRow``).
 """
+
 from __future__ import annotations
 
 from datetime import datetime
