@@ -99,7 +99,7 @@
     {
       "id": "TASK-4916",
       "slug": "policy-rule-resource-field",
-      "title": "PolicyRuleConfig.resource — per-resource PBAC rules",
+      "title": "PolicyRuleConfig.resource \u2014 per-resource PBAC rules",
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
@@ -117,7 +117,7 @@
     {
       "id": "TASK-4917",
       "slug": "expert-policy",
-      "title": "Expert policy — tier→ModelConfig, mandatory toolkits, allowlist, deny rule",
+      "title": "Expert policy \u2014 tier\u2192ModelConfig, mandatory toolkits, allowlist, deny rule",
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
@@ -158,7 +158,7 @@
     {
       "id": "TASK-4919",
       "slug": "knowledge-resolver-core",
-      "title": "KnowledgeResolver core — order, budget, trim, source protocol",
+      "title": "KnowledgeResolver core \u2014 order, budget, trim, source protocol",
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
@@ -179,7 +179,7 @@
     {
       "id": "TASK-4920",
       "slug": "inline-knowledge-sources",
-      "title": "Inline knowledge sources — bundled, workspace, ADR",
+      "title": "Inline knowledge sources \u2014 bundled, workspace, ADR",
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
@@ -199,7 +199,7 @@
     {
       "id": "TASK-4921",
       "slug": "wiki-source-probe-seed",
-      "title": "WikiSource — namespace handle, probe and LLM-free seeding",
+      "title": "WikiSource \u2014 namespace handle, probe and LLM-free seeding",
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
@@ -219,7 +219,7 @@
     {
       "id": "TASK-4922",
       "slug": "retrieval-knowledge-sources",
-      "title": "Retrieval sources — bookstore, GraphIndex, legacy KB",
+      "title": "Retrieval sources \u2014 bookstore, GraphIndex, legacy KB",
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
@@ -239,7 +239,7 @@
     {
       "id": "TASK-4923",
       "slug": "kb-fold-in",
-      "title": "KB fold-in — _build_kb_context delegates to the resolver (U5)",
+      "title": "KB fold-in \u2014 _build_kb_context delegates to the resolver (U5)",
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
@@ -303,7 +303,7 @@
     {
       "id": "TASK-4926",
       "slug": "expert-registry",
-      "title": "ExpertRegistry — two roots, seeding, build, register, deny rule",
+      "title": "ExpertRegistry \u2014 two roots, seeding, build, register, deny rule",
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
@@ -330,7 +330,7 @@
     {
       "id": "TASK-4927",
       "slug": "expert-knowledge-toolkit",
-      "title": "ExpertKnowledgeToolkit — knowledge search and ADR proposal tools",
+      "title": "ExpertKnowledgeToolkit \u2014 knowledge search and ADR proposal tools",
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
@@ -368,7 +368,7 @@
     {
       "id": "TASK-4929",
       "slug": "cve-toolkit",
-      "title": "CVEToolkit — lookup, search, download (OSV + NVD + EPSS, aiohttp)",
+      "title": "CVEToolkit \u2014 lookup, search, download (OSV + NVD + EPSS, aiohttp)",
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
@@ -388,7 +388,7 @@
     {
       "id": "TASK-4930",
       "slug": "bundle-cve-analyst",
-      "title": "Shipped expert bundle — cve-analyst",
+      "title": "Shipped expert bundle \u2014 cve-analyst",
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
@@ -408,7 +408,7 @@
     {
       "id": "TASK-4931",
       "slug": "bundle-cve-remediation",
-      "title": "Shipped expert bundle — cve-remediation",
+      "title": "Shipped expert bundle \u2014 cve-remediation",
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
@@ -440,7 +440,7 @@
         "TASK-4931"
       ],
       "parallel": false,
-      "parallelism_notes": "EXCLUSIVE: edits packages/ai-parrot/pyproject.toml (package-data) — a dependency manifest every task environment reads. Its wheel test needs the bundle files from TASK-4930 and TASK-4931.",
+      "parallelism_notes": "EXCLUSIVE: edits packages/ai-parrot/pyproject.toml (package-data) \u2014 a dependency manifest every task environment reads. Its wheel test needs the bundle files from TASK-4930 and TASK-4931.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -449,7 +449,7 @@
     {
       "id": "TASK-4933",
       "slug": "runtime-wiring-load-experts",
-      "title": "Runtime wiring — load_experts() in the REPL loader and BotManager.load_bots",
+      "title": "Runtime wiring \u2014 load_experts() in the REPL loader and BotManager.load_bots",
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
@@ -494,7 +494,7 @@
     {
       "id": "TASK-4935",
       "slug": "docs-experts-cve-guide",
-      "title": "Documentation — domain experts reference and the CVE operator guide",
+      "title": "Documentation \u2014 domain experts reference and the CVE operator guide",
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
@@ -511,6 +511,25 @@
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4935-docs-experts-cve-guide.md"
+    },
+    {
+      "id": "TASK-4965",
+      "slug": "selector-skip-non-test-operands",
+      "title": "Selector must not emit conftest.py / helper modules as pytest operands",
+      "feature_id": "FEAT-778",
+      "feature": "domain-experts",
+      "spec": "sdd/specs/domain-experts.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "independent: touches only test_scope/mirror.py + its test, no FEAT-778 task declares them",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4965-selector-skip-non-test-operands.md",
+      "discovered_from": "issue:55ad6c71c101"
     }
   ]
 }
