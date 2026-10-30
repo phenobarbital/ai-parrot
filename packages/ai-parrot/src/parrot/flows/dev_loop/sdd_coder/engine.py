@@ -3045,7 +3045,7 @@ class SddCoderEngine:
                 validation=ValidationVerdictModel.from_kernel(verdict),
                 diagnostics=(
                     f"task-tier validation {verdict.status}: " + "; ".join(verdict.notes)
-                    if verdict.status == "unavailable" and verdict.notes
+                    if not verdict.failures and verdict.notes
                     else f"task-tier validation {verdict.status}: {len(verdict.failures)} failure(s)"
                 ),
             )

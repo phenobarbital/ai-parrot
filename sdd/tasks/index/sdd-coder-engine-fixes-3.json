@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-30T20:15:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-30T20:26:29+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,15 +16,20 @@
       "feature_id": "FEAT-782",
       "feature": "sdd-coder-engine-fixes-3",
       "spec": "sdd/specs/sdd-coder-engine-fixes-3.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Single task.",
-      "discovered_from": ["issue:8c423c5612c2"],
+      "discovered_from": [
+        "issue:8c423c5612c2"
+      ],
       "assigned_to": "agent:sdd-fix",
-      "file": "sdd/tasks/active/TASK-4936-task-tier-gate-no-tests-collected.md"
+      "file": "sdd/tasks/completed/TASK-4936-task-tier-gate-no-tests-collected.md",
+      "started_at": "2026-10-30T20:20:00+00:00",
+      "completed_at": "2026-10-30T20:25:35+00:00",
+      "verification": "verified"
     }
   ]
 }
