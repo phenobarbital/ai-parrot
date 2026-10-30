@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Union
+from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Sequence, Union
 from collections import defaultdict
 from enum import Enum
 import copy
@@ -87,6 +87,9 @@ from .generation import GoogleGeneration
 
 logging.getLogger(name="PIL.TiffImagePlugin").setLevel(logging.ERROR)  # Suppress TiffImagePlugin warnings
 logging.getLogger(name="google_genai").setLevel(logging.WARNING)  # Suppress GenAI warnings
+
+# Native computer-use action vocabulary: legacy computer-use models vs the Gemini 3.8 tool.
+ComputerUseVocabulary = Literal["legacy", "v3_8"]
 
 
 # Sentinel returned by ``_create_simple_summary`` when the LLM consumed
@@ -292,7 +295,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         """
         return bool(self.computer_use) or self._is_computer_use_model(model)
 
-    def _computer_use_vocabulary(self, model: str) -> str:
+    def _computer_use_vocabulary(self, model: str) -> ComputerUseVocabulary:
         """Return the native computer-use action vocabulary for ``model``."""
         return "legacy" if self._is_computer_use_model(model) else "v3_8"
 

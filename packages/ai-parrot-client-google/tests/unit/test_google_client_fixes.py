@@ -124,3 +124,14 @@ class TestStreamChunkExtraction:
         client = _bare_client()
         chunk = _chunk(types.Part(text="planning", thought=True), types.Part(text=" visible "))
         assert client._safe_extract_text(chunk, is_stream_chunk=True) == " visible "
+
+
+def test_vocabulary_alias():
+    """issue:461ceca67d43 — _computer_use_vocabulary is typed with the Literal alias."""
+    from typing import get_args, get_type_hints
+
+    from parrot.clients.google.client import ComputerUseVocabulary
+
+    hints = get_type_hints(GoogleGenAIClient._computer_use_vocabulary)
+    assert hints["return"] is ComputerUseVocabulary
+    assert set(get_args(ComputerUseVocabulary)) == {"legacy", "v3_8"}
