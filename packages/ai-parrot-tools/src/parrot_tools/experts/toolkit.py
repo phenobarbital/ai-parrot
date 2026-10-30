@@ -1,4 +1,5 @@
 """Expert-facing tools: retrieval fan-out and ADR proposal (FEAT-778 M9)."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -25,8 +26,16 @@ class ExpertKnowledgeToolkit(AbstractToolkit):
 
     tool_prefix = "expert"
 
-    def __init__(self, context: KnowledgeContext, manifest: ExpertManifest, *, wiki: Any = None,
-                 bookstore: Any = None, decisions: Any = None, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        context: KnowledgeContext,
+        manifest: ExpertManifest,
+        *,
+        wiki: Any = None,
+        bookstore: Any = None,
+        decisions: Any = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self._context = context
         self._manifest = manifest
@@ -80,5 +89,11 @@ class ExpertKnowledgeToolkit(AbstractToolkit):
         if self._decisions is None:
             raise ExpertCapabilityError("no DecisionService configured for this expert")
         result = await self._decisions.generate(target)
-        return {"target": target, "rationale": rationale, "decision_ids": list(result.decision_ids),
-                "reused": list(result.reused), "origin": "inferred", "review_status": "unreviewed"}
+        return {
+            "target": target,
+            "rationale": rationale,
+            "decision_ids": list(result.decision_ids),
+            "reused": list(result.reused),
+            "origin": "inferred",
+            "review_status": "unreviewed",
+        }

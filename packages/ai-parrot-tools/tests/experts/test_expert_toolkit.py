@@ -1,4 +1,5 @@
 """Unit tests for ExpertKnowledgeToolkit."""
+
 from types import SimpleNamespace
 
 import pytest
@@ -14,7 +15,10 @@ from parrot_tools.experts import ExpertKnowledgeToolkit
 
 def _manifest(caps: list[str]) -> ExpertManifest:
     return ExpertManifest(
-        name="demo-expert", display_name="Demo", description="d", capabilities=caps,
+        name="demo-expert",
+        display_name="Demo",
+        description="d",
+        capabilities=caps,
         knowledge=[{"source": "wiki", "mode": "retrieval"}],
     )
 
@@ -45,7 +49,8 @@ class _Decisions:
 
 def _ctx() -> KnowledgeContext:
     return KnowledgeContext(
-        expert="demo-expert", budget_tokens=100,
+        expert="demo-expert",
+        budget_tokens=100,
         layers=[_layer("wiki", {"wiki_name": "w"}), _layer("bookstore", {})],
     )
 
