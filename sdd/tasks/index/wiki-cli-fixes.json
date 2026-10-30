@@ -80,7 +80,7 @@
       "feature_id": "FEAT-771",
       "feature": "wiki-cli-fixes",
       "spec": "sdd/specs/wiki-cli-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -89,7 +89,7 @@
       "parallel": false,
       "parallelism_notes": "touches cli.py like TASK-4896; serial to avoid same-file conflicts in one worktree",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T00:58:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4897-ddl-changed-range.md"
     }
