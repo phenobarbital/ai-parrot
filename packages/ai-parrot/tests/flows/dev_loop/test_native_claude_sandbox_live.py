@@ -34,7 +34,11 @@ MAX_SESSIONS = 8
 MAX_TURNS = 12
 SESSION_TIMEOUT_SECONDS = 180
 MAX_COST_USD = 5.0
-LOG_DIR = Path("artifacts/logs/feat-768")
+# Anchor every repository path to this file: importing ``parrot`` runs navconfig, which chdir()s the
+# process to the MAIN checkout, so a cwd-relative path silently selects another checkout's launcher.
+REPO_ROOT = Path(__file__).resolve().parents[5]
+LAUNCHER = REPO_ROOT / "scripts" / "sdd" / "launch_worker.sh"
+LOG_DIR = REPO_ROOT / "artifacts" / "logs" / "feat-768"
 
 
 @dataclass
@@ -250,12 +254,18 @@ def _session_command(
     selected = os.environ.get("PARROT_NATIVE_QUAL_CLI", "path")
     if selected not in {"path", "bundled"}:
         pytest.skip("NOT QUALIFIED: PARROT_NATIVE_QUAL_CLI must be path or bundled")
+    for module in (native, policy):
+        module_file = Path(module.__file__).resolve()
+        assert (
+            REPO_ROOT in module_file.parents
+        ), f"harness imported {module.__name__} from another checkout: {module_file}"
     if selected == "path":
         executable = shutil.which("claude")
         if executable is None:
             pytest.skip("NOT QUALIFIED: Claude is absent from PATH")
+        assert LAUNCHER.is_file(), f"launcher missing: {LAUNCHER}"
         command = [
-            str(Path("scripts/sdd/launch_worker.sh").resolve()),
+            str(LAUNCHER),
             "-p",
             prompt,
             "--model",
@@ -330,6 +340,7 @@ def _record(
         "settings_sha256": digest,
         "allow_all_unix_sockets": settings["sandbox"]["network"]["allowAllUnixSockets"],
         "cli_version": version,
+        "repo_root": str(REPO_ROOT),
         "cost_usd": result.cost_usd,
         "child_tool_calls": result.child_tool_calls,
     }
