@@ -4108,25 +4108,58 @@ def _schema_service() -> "SchemaPlaneService":
     return SchemaPlaneService.from_root()
 
 
-def _changed_ddl_paths(root: Path, origin: str) -> list[Path]:
-    """Return configured DDL files touched by the merge leading to ``HEAD``."""
+#: Reflog subjects of operations whose changes span ``ORIG_HEAD..HEAD`` (the post-merge hook's case).
+_MERGE_REFLOG_PREFIXES: tuple[str, ...] = ("merge", "pull", "commit (merge)")
+
+
+def _git_changed_files(root: Path, diff_range: str | None) -> list[str]:
+    """Return the paths changed by the operation that last moved ``HEAD``.
+
+    The post-commit and post-merge hooks share one block, so the range is
+    inferred: after a merge or pull it is ``ORIG_HEAD..HEAD``; after anything
+    else (a plain commit) it is the last commit's own changes. ``ORIG_HEAD``
+    is only set by merge/reset/rebase/pull, so diffing it after a plain
+    commit would scan a stale range, or fail when it does not exist.
+
+    Args:
+        root: Repository root.
+        diff_range: Explicit ``git diff`` range (e.g. ``HEAD~3..HEAD``); ``None`` infers it.
+
+    Raises:
+        click.ClickException: git could not report the changed files.
+    """
+    try:
+        if diff_range:
+            cmd = ["git", "-C", str(root), "diff", "--name-only", diff_range]
+        else:
+            reflog = subprocess.run(
+                ["git", "-C", str(root), "reflog", "-1", "--format=%gs", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            subject = reflog.stdout.strip() if reflog.returncode == 0 else ""
+            if subject.startswith(_MERGE_REFLOG_PREFIXES):
+                cmd = ["git", "-C", str(root), "diff", "--name-only", "ORIG_HEAD", "HEAD"]
+            else:
+                # --root also lists the files of a repository's first commit.
+                cmd = ["git", "-C", str(root), "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", "HEAD"]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=True)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise click.ClickException(f"Could not determine changed DDL files: {exc}") from exc
+    return proc.stdout.splitlines()
+
+
+def _changed_ddl_paths(root: Path, origin: str, diff_range: str | None = None) -> list[Path]:
+    """Return configured DDL files touched by the last ``HEAD`` move (or ``diff_range``)."""
     config = load_effective_config(root).config
     source = config.schema_plane.sources.get(origin)
     if source is None:
         raise click.UsageError(f"Unknown schema source {origin!r}.")
     if not source.ddl_paths:
         return []
-    try:
-        proc = subprocess.run(
-            ["git", "-C", str(root), "diff", "--name-only", "ORIG_HEAD", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=True,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise click.ClickException(f"Could not determine changed DDL files: {exc}") from exc
-    changed = proc.stdout.splitlines()
+    changed = _git_changed_files(root, diff_range)
     return [
         root / path
         for path in changed
@@ -4205,17 +4238,32 @@ def schema_sync(origin: str, tables: str | None, changed: bool, as_json: bool) -
     help="SQL dialect; defaults to the source's configured dialect.",
 )
 @click.option("--changed", is_flag=True)
+@click.option(
+    "--range",
+    "diff_range",
+    default=None,
+    help="git range scanned by --changed (e.g. HEAD~3..HEAD); default: inferred from the last HEAD move.",
+)
 @click.option("--json", "as_json", is_flag=True)
 @click.option("--quiet", is_flag=True)
 def schema_ingest_ddl(
-    paths: tuple[Path, ...], origin: str | None, dialect: str | None, changed: bool, as_json: bool, quiet: bool
+    paths: tuple[Path, ...],
+    origin: str | None,
+    dialect: str | None,
+    changed: bool,
+    diff_range: str | None,
+    as_json: bool,
+    quiet: bool,
 ) -> None:
     """Fold SQL files into the schema plane without requiring a database.
 
-    With ``--changed`` and neither PATHS nor ``--origin`` (the post-merge
-    hook's invocation), every declared ``schema.sources`` entry is scanned
-    for DDL files touched by the merge, each ingested with its own dialect.
+    With ``--changed`` and neither PATHS nor ``--origin`` (the post-commit /
+    post-merge hook's invocation), every declared ``schema.sources`` entry is
+    scanned for DDL files touched by the last ``HEAD`` move, each ingested
+    with its own dialect. ``--range`` names the scanned range explicitly.
     """
+    if diff_range and not changed:
+        raise click.UsageError("--range requires --changed.")
     _refuse_in_linked_worktree(Path.cwd())
     root = find_shared_root(Path.cwd()) or Path.cwd().resolve()
     sources = load_effective_config(root).config.schema_plane.sources
@@ -4233,7 +4281,7 @@ def schema_ingest_ddl(
     for alias in origins:
         alias_files = files
         if not alias_files and changed:
-            alias_files = _changed_ddl_paths(root, alias)
+            alias_files = _changed_ddl_paths(root, alias, diff_range)
             if not alias_files:
                 continue
         alias_dialect = dialect or sources[alias].dialect
