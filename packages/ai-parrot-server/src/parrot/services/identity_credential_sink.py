@@ -6,7 +6,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
 from navigator_auth.identity.store import _IDENTITY_TABLE, IdentityCredentialError
 from parrot.services.identity_mapping import _raw_connection
@@ -235,3 +235,109 @@ class IdentityVaultCredentialStore:
                     row["identity_id"],
                     *values.values(),
                 )
+
+
+_TOKEN_COLUMNS = ("access_token", "refresh_token", "id_token")
+_ROW_COLUMNS = (
+    "identity_id, user_id, auth_provider, provider_user_id, access_token, refresh_token, id_token, "
+    "enabled, key_version"
+)
+_logger = logging.getLogger(__name__)
+
+
+def _open_column(cipher: Any, row: Any, field: str) -> Any:
+    """Decrypt one token column of ``row``; raise ``IdentityCredentialError`` on any failure."""
+    try:
+        return cipher.decrypt(
+            row[field],
+            user_id=row["user_id"],
+            auth_provider=row["auth_provider"],
+            provider_user_id=row["provider_user_id"],
+            field=field,
+        )
+    except Exception as exc:
+        _logger.error(
+            "Identity re-seal decrypt failure: identity=%s provider=%s field=%s error=%s",
+            row["identity_id"],
+            row["auth_provider"],
+            field,
+            type(exc).__name__,
+        )
+        raise IdentityCredentialError(row["auth_provider"], field, type(exc).__name__) from None
+
+
+async def list_credential_rows(db_pool: Any, providers: Sequence[str]) -> List[Any]:
+    """Every credential-bearing identity row (disabled included) for ``providers`` (empty -> all)."""
+    query = (
+        f"SELECT {_ROW_COLUMNS} FROM {_IDENTITY_TABLE} "
+        "WHERE (access_token IS NOT NULL OR refresh_token IS NOT NULL OR id_token IS NOT NULL)"
+    )
+    args: List[Any] = []
+    if providers:
+        query += " AND auth_provider = ANY($1)"
+        args.append(list(providers))
+    async with await db_pool.acquire() as conn:
+        raw = _raw_connection(conn)
+        return list(await raw.fetch(query, *args))
+
+
+async def reseal_identity_row(db_pool: Any, row: Any, *, cipher: Optional[Any] = None) -> None:
+    """Re-seal every present token column of one row under the active key; preserve all metadata.
+
+    Raises:
+        IdentityCredentialError: A present column cannot be decrypted; nothing is written.
+    """
+    if cipher is None:
+        from navigator_auth.identity.crypto import IdentityCipher
+
+        cipher = IdentityCipher()
+    async with await db_pool.acquire() as conn:
+        raw = _raw_connection(conn)
+        async with raw.transaction():
+            current = await raw.fetchrow(
+                f"SELECT {_ROW_COLUMNS} FROM {_IDENTITY_TABLE} WHERE identity_id = $1 FOR UPDATE",
+                row["identity_id"],
+            )
+            if current is None:
+                return
+            # Decrypt everything first: any failure must leave the row untouched.
+            plain = {
+                field: _open_column(cipher, current, field) for field in _TOKEN_COLUMNS if current[field] is not None
+            }
+            if not plain:
+                return
+            values: Dict[str, Any] = {
+                field: cipher.encrypt(
+                    value,
+                    user_id=current["user_id"],
+                    auth_provider=current["auth_provider"],
+                    provider_user_id=current["provider_user_id"],
+                    field=field,
+                )
+                for field, value in plain.items()
+            }
+            values["key_version"] = cipher.key_id
+            assignments = ", ".join(f"{key} = ${index}" for index, key in enumerate(values, start=2))
+            await raw.execute(
+                f"UPDATE {_IDENTITY_TABLE} SET {assignments} WHERE identity_id = $1",
+                current["identity_id"],
+                *values.values(),
+            )
+
+
+def verify_active_only(row: Any, *, active_cipher: Any) -> bool:
+    """True iff every present token column decrypts with a ring holding ONLY the active key."""
+    for field in _TOKEN_COLUMNS:
+        if row[field] is None:
+            continue
+        try:
+            active_cipher.decrypt(
+                row[field],
+                user_id=row["user_id"],
+                auth_provider=row["auth_provider"],
+                provider_user_id=row["provider_user_id"],
+                field=field,
+            )
+        except Exception:
+            return False
+    return True
