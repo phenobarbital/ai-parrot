@@ -20,10 +20,17 @@ from aiohttp import web
 
 from navconfig import BASE_DIR
 from navconfig.logging import logging
+from parrot.auth.oauth2.events import ChannelNotifierRegistry, ConnectionEventPublisher
+from parrot.auth.principal import set_principal_resolver
 from parrot.conf import AGENTS_DIR, REDIS_URL
 from parrot.human import (
     HumanInteractionManager,
     set_default_human_manager,
+)
+from parrot.integrations.core.auth.notifiers import (
+    MSTeamsJiraNotifierAdapter,
+    SlackJiraNotifierAdapter,
+    TelegramJiraNotifierAdapter,
 )
 from .models import (
     IntegrationBotConfig,
@@ -104,6 +111,45 @@ def _build_credential_store(app: Any) -> Any:
             "IdentityVaultCredentialStore unavailable; Jira will use the default credential store."
         )
         return None
+
+
+def _build_principal_resolver(app: Any) -> Any:
+    """Build and register the server principal resolver, else return ``None``."""
+    db_pool = app.get("authdb") if app is not None else None
+    if db_pool is None:
+        return None
+
+    try:
+        from parrot.services.identity_principal import IdentityPrincipalResolver  # noqa: PLC0415
+
+        resolver = IdentityPrincipalResolver(db_pool)
+        set_principal_resolver(resolver)
+        return resolver
+    except Exception:  # noqa: BLE001 - server package is optional for integrations
+        logging.getLogger(__name__).warning("IdentityPrincipalResolver unavailable; non-web channels will fail closed.")
+        return None
+
+
+def _register_channel_notifiers(app: Any) -> ChannelNotifierRegistry:
+    """Register the three Jira channel adapters in the shared registry."""
+    registry = ChannelNotifierRegistry()
+    if app.get("connection_channel_notifiers_registered"):
+        return registry
+    registry.register(TelegramJiraNotifierAdapter(app))
+    registry.register(SlackJiraNotifierAdapter(app))
+    registry.register(MSTeamsJiraNotifierAdapter(app))
+    app["connection_channel_notifiers_registered"] = True
+    return registry
+
+
+def _connection_publisher(app: Any) -> ConnectionEventPublisher:
+    """Return the app's shared publisher with all Jira adapters registered."""
+    registry = _register_channel_notifiers(app)
+    publisher = app.get("connection_event_publisher")
+    if publisher is None:
+        publisher = ConnectionEventPublisher(notifiers=registry)
+        app["connection_event_publisher"] = publisher
+    return publisher
 
 
 async def handle_a2a_directory(request: web.Request) -> web.Response:
@@ -351,6 +397,7 @@ class IntegrationBotManager:
 
         # Wire JiraOAuthManager if Jira OAuth is configured (FEAT-225).
         app = self.bot_manager.get_app()
+        _build_principal_resolver(app)
         jira_oauth_manager = None
         if getattr(config, "jira_client_id", None):
             existing = app.get("jira_oauth_manager")
@@ -370,6 +417,7 @@ class IntegrationBotManager:
                         redirect_uri=config.jira_redirect_uri,
                         app=app,
                         credential_store=_build_credential_store(app),
+                        event_publisher=_connection_publisher(app),
                     )
                     self.logger.info("MS Teams bot '%s': initialized JiraOAuthManager", name)
                 except Exception as exc:  # noqa: BLE001
@@ -913,6 +961,7 @@ class IntegrationBotManager:
         # Reuse an existing manager on the app if one was already set up by
         # another integration (same Atlassian app registration, single callback).
         app = self.bot_manager.get_app()
+        _build_principal_resolver(app)
         jira_oauth_manager = None
         if getattr(config, "jira_client_id", None):
             existing = app.get("jira_oauth_manager")
@@ -929,6 +978,7 @@ class IntegrationBotManager:
                         redirect_uri=config.jira_redirect_uri,
                         app=app,
                         credential_store=_build_credential_store(app),
+                        event_publisher=_connection_publisher(app),
                     )
                     self.logger.info("Slack bot '%s': initialized JiraOAuthManager", name)
                 except Exception as exc:  # noqa: BLE001
