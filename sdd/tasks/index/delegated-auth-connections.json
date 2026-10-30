@@ -333,7 +333,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -345,8 +345,9 @@
       "parallelism_notes": "deletes code whose last readers go away in TASK-4947 (service.py) and TASK-4948 (user_objects.py); third edit of oauth2/models.py + persistence.py after TASK-4946; exports StandardOAuth2Manager/descriptor names from TASK-4943 and events from TASK-4938",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4949-remove-user-agent-toolkits-exports.md"
+      "completed_at": "2026-10-30T22:56:32+00:00",
+      "file": "sdd/tasks/completed/TASK-4949-remove-user-agent-toolkits-exports.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4950",
@@ -505,7 +506,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -518,8 +519,9 @@
       "parallelism_notes": "second edit of server manager/manager.py after TASK-4948 (routes); calls register_descriptor_providers/load_provider_descriptors from TASK-4943/4939, IdentityPrincipalResolver from TASK-4952 and IdentityVaultCredentialStore from TASK-4950",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4957-botmanager-register-descriptor-providers.md"
+      "completed_at": "2026-10-30T22:56:32+00:00",
+      "file": "sdd/tasks/completed/TASK-4957-botmanager-register-descriptor-providers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4958",
