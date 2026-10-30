@@ -312,7 +312,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -322,8 +322,9 @@
       "parallelism_notes": "calls list_for_principal/start_connect/status/disconnect created by TASK-4947 (service.py) and list_users_integrations from TASK-4946 (persistence.py); first edit of server manager/manager.py (TASK-4957 follows)",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4948-connections-handler-hydration.md"
+      "completed_at": "2026-10-30T22:48:22+00:00",
+      "file": "sdd/tasks/completed/TASK-4948-connections-handler-hydration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4949",
@@ -527,7 +528,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -538,8 +539,9 @@
       "parallelism_notes": "switches the route only after TASK-4955 registered the notifier adapters + publisher (integrations/manager.py); second edit of oauth2_routes.py and routes.py after TASK-4947",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4958-jira-callback-generic-alias.md"
+      "completed_at": "2026-10-30T22:48:22+00:00",
+      "file": "sdd/tasks/completed/TASK-4958-jira-callback-generic-alias.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4959",
@@ -609,7 +611,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -621,8 +623,9 @@
       "parallelism_notes": "counts keys of the _LEGACY_TOKEN_KEY_TEMPLATE layout from TASK-4941 (oauth2_base.py) and the jira:oauth layout handled by TASK-4954; docs describe the wiring finished in TASK-4955",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4962-legacy-audit-cli-and-docs.md"
+      "completed_at": "2026-10-30T22:48:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4962-legacy-audit-cli-and-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4963",

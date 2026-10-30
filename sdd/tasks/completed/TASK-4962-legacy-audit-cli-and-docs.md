@@ -218,10 +218,6 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker orchestrator; seat gpt-5.6-luna (codex)
+**Date**: 2026-10-30
+**Notes**: Implemented per task; merged, engine lint clean. Merge-tier validation: only reds are legacy tests/integration/oauth2/test_e2e_{web_connect,telegram_regression,auth_envelope}.py, intentionally rewritten by TASK-4964.
