@@ -70,6 +70,19 @@ async def test_knowledge_search_fans_out():
     assert len((await tk.knowledge_search("q", top_k=1))["results"]) == 1
 
 
+async def test_knowledge_search_uses_real_wiki_source_layer_shape():
+    """WikiSource emits ``source="wiki:<namespace>"``; the search must dispatch on it."""
+    ctx = KnowledgeContext(
+        expert="demo-expert",
+        budget_tokens=100,
+        layers=[_layer("wiki:expert-demo-expert", {"toolkit": "wiki", "wiki_name": "expert-demo-expert"})],
+    )
+    tk = ExpertKnowledgeToolkit(ctx, _manifest([]), wiki=_Wiki())
+    out = await tk.knowledge_search("q")
+    assert out["errors"] == []
+    assert [r["source"] for r in out["results"]] == ["wiki:expert-demo-expert"]
+
+
 async def test_knowledge_search_captures_backend_error():
     tk = ExpertKnowledgeToolkit(_ctx(), _manifest([]), wiki=_Wiki(), bookstore=_Boom())
     out = await tk.knowledge_search("q")

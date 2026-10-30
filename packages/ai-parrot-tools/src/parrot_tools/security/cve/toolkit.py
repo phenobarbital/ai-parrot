@@ -130,7 +130,8 @@ class CVEToolkit(AbstractToolkit):
         if status >= 400:
             raise CVEToolkitError(f"OSV query failed with HTTP {status}")
         records: list[CVERecord] = []
-        for vuln in body.get("vulns") or []:
+        limit = max(int(limit), 0)
+        for vuln in (body.get("vulns") or []) if limit else []:
             if not isinstance(vuln, dict):
                 continue
             ids = [vuln.get("id", "")] + list(vuln.get("aliases") or [])
@@ -138,7 +139,7 @@ class CVEToolkit(AbstractToolkit):
             if cve is None:
                 continue
             records.append(self._parse_osv(vuln, cve))
-            if len(records) >= max(limit, 0):
+            if len(records) >= limit:
                 break
         return CVESearchResult(package=package, ecosystem=ecosystem, version=version, records=records).model_dump(
             mode="json", exclude={"records": {"__all__": {"raw"}}}
@@ -148,7 +149,10 @@ class CVEToolkit(AbstractToolkit):
         """Download a CVE advisory into your knowledge (wiki) so later answers can cite it."""
         cve_id = validate_cve_id(cve_id)
         agent = current_agent_name.get()
-        wiki_name = wiki_name or (f"expert-{agent}" if agent else None)
+        own_wiki = f"expert-{agent}" if agent else None
+        if own_wiki is not None and wiki_name not in (None, own_wiki):
+            raise CVEToolkitError(f"an active expert may only download into its own wiki {own_wiki!r}")
+        wiki_name = wiki_name or own_wiki
         if wiki_name is None or self._store_resolver is None:
             raise CVEToolkitError("download_cve needs an active expert or an explicit wiki_name, and a store")
         if self._sources_dir is None:
@@ -196,27 +200,46 @@ class CVEToolkit(AbstractToolkit):
         return target
 
     @staticmethod
+    def _escape(text: object) -> str:
+        """Neutralise markup in provider text so it cannot close the untrusted wrapper (stored otherwise verbatim)."""
+        return str(text).replace("<", "&lt;")
+
+    @staticmethod
+    def _meta(value: object) -> str:
+        """Make one provider-supplied metadata value a single inert line (no control chars, fences or markup)."""
+        cleaned = "".join(" " if (ord(ch) < 32 or ord(ch) == 127) else ch for ch in str(value))
+        return " ".join(cleaned.replace("`", "'").replace("<", "&lt;").split())[:300]
+
+    @staticmethod
     def _render_markdown(record: CVERecord) -> str:
-        """Render the advisory: untrusted provider text wrapped, metadata block outside the wrapper."""
-        sources = ",".join(s for s in record.sources if s != "epss") or "osv"
-        refs = "\n".join(record.references)
+        """Render the advisory: provider text wrapped and escaped; metadata values sanitised, outside the wrapper."""
+        esc, meta_value = CVEToolkit._escape, CVEToolkit._meta
+        sources = meta_value(",".join(s for s in record.sources if s != "epss") or "osv").replace('"', "'")
+        refs = "\n".join(esc(r) for r in record.references)
         untrusted = (
             f'<untrusted_data source="{sources}" cve="{record.id}">\n'
-            f"{record.summary}\n\n{record.details}\n"
+            f"{esc(record.summary)}\n\n{esc(record.details)}\n"
             f"{refs}\n"
             f"</untrusted_data>"
         )
-        meta_lines = [f"severity: {record.severity.value if hasattr(record.severity, 'value') else record.severity}"]
+        meta_lines = [
+            f"severity: {meta_value(record.severity.value if hasattr(record.severity, 'value') else record.severity)}"
+        ]
         for c in record.cvss:
-            meta_lines.append(f"cvss: {c.version} {c.score} {c.vector} ({c.source})")
+            meta_lines.append(
+                f"cvss: {meta_value(c.version)} {meta_value(c.score)} {meta_value(c.vector)} ({meta_value(c.source)})"
+            )
         if record.epss is not None:
-            meta_lines.append(f"epss: {record.epss}")
+            meta_lines.append(f"epss: {meta_value(record.epss)}")
         if record.cwe_ids:
-            meta_lines.append(f"cwe: {', '.join(record.cwe_ids)}")
+            meta_lines.append(f"cwe: {', '.join(meta_value(c) for c in record.cwe_ids)}")
         for a in record.affected:
-            meta_lines.append(f"affected: {a.ecosystem}/{a.name} introduced={a.introduced} fixed={a.fixed}")
+            meta_lines.append(
+                f"affected: {meta_value(a.ecosystem)}/{meta_value(a.name)} "
+                f"introduced={meta_value(a.introduced)} fixed={meta_value(a.fixed)}"
+            )
         for r in record.references:
-            meta_lines.append(f"reference: {r}")
+            meta_lines.append(f"reference: {meta_value(r)}")
         meta = "```yaml\n" + "\n".join(meta_lines) + "\n```"
         return f"# {record.id}\n\n{untrusted}\n\n{meta}\n"
 

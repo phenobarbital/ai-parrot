@@ -13,7 +13,7 @@ def test_bundled_manifest_validates() -> None:
 
     assert bundle.manifest.name == "cve-analyst"
     assert bundle.manifest.tier.value == "judgment"
-    assert bundle.manifest.toolkits == ["CVEToolkit", "LLMWikiToolkit", "BookstoreToolkit"]
+    assert bundle.manifest.toolkits == ["CVEToolkit", "ExpertKnowledgeToolkit", "LLMWikiToolkit", "BookstoreToolkit"]
     assert bundle.manifest.capabilities == ["validate", "write", "review"]
     assert bundle.manifest.produces == ["vulnerability-report", "adr"]
     assert bundle.manifest.global_only is False

@@ -122,7 +122,8 @@ class ExpertRegistry:
             elif toolkit_name == "CVEToolkit":
                 from parrot_tools.security.cve import CVEToolkit
 
-                toolkits.append(CVEToolkit(store_resolver=wiki_source.store_for))
+                sources_dir = self.agents_dir / ".experts_wiki" / bundle.manifest.name
+                toolkits.append(CVEToolkit(store_resolver=wiki_source.store_for, sources_dir=sources_dir))
             elif toolkit_name == "ExpertKnowledgeToolkit":
                 from parrot_tools.experts import ExpertKnowledgeToolkit
 
@@ -173,8 +174,13 @@ class ExpertRegistry:
         for bundle in self._discover():
             if not await self._admit(bundle):
                 continue
-            agent = await self._build(bundle)
             name = bundle.manifest.name
+            try:
+                agent = await self._build(bundle)
+            except Exception as exc:  # noqa: BLE001 - one broken bundle must not disable its siblings
+                self.logger.error("Skipping expert bundle %s: build failed: %s", bundle.root, exc)
+                self._report["skipped"].append({"path": str(bundle.root), "reason": f"build-failed: {exc}"})
+                continue
             if self.agent_registry.has(name):
                 raise DuplicateExpertError(f"agent name {name!r} is already registered")
             self.agent_registry.register_instance(

@@ -58,7 +58,7 @@ class ExpertKnowledgeToolkit(AbstractToolkit):
         for layer in self._context.retrieval_handles():
             handle = layer.handle or {}
             try:
-                if layer.source == "wiki":
+                if layer.source == "wiki" or layer.source.startswith("wiki:"):
                     if self._wiki is None:
                         raise RuntimeError("no wiki toolkit configured")
                     payload = await self._wiki.query(wiki_name=handle["wiki_name"], question=question)
