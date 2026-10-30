@@ -19,13 +19,14 @@ Errors (exit 1):
     over-broad ``pytest`` invocation (FEAT-563).
   * ``directory-validation-target`` — a task's validation command targets an
     existing directory instead of a file or node id (FEAT-563).
-  * ``non-pytest-validation-command`` — a task's declared validation command is
-    not a pytest invocation at all (e.g. ``true`` or ``ruff check .``); it is
+  * ``non-pytest-validation-command`` — no registered test runner (pytest, vitest,
+    cargo, parrot-e2e or a ``.parrot/test_runners.toml`` extension) recognises a
+    task's declared validation command (e.g. ``true`` or ``ruff check .``); it is
     silently invisible to ``select_tests.py``'s declared-command handling, so
     the task effectively has no enforced test coverage (FEAT-563). A warning
     instead when ``sdd/config.json`` sets ``test_command`` (FEAT-633 rev 0.8 C29):
     that repository runs its own command instead of ``select_tests``, so a
-    non-pytest command (``npm test ...``, ``cargo test ...``) is its normal case.
+    command no runner recognises (``go test ./...``, ``make test``) is acceptable there.
   * ``test-contract-malformed`` — the index header's cached ``test_contract``
     cannot be validated (FEAT-699).
   * ``test-contract-operand-missing`` — a ``test_contract`` test operand does
@@ -279,22 +280,51 @@ def _isolated_extension_errors(root: Path) -> list[str]:
     return errors
 
 
+def _validation_registry(root: Path):
+    """Runner registry for ``root``; an unreadable ``.parrot/test_runners.toml`` falls back to the built-ins.
+
+    The TOML's own problems are reported once by the test-contract check (``test-contract-settings-invalid``
+    / ``test-contract-extension-invalid``), so this helper never duplicates them.
+
+    Args:
+        root: Repository root holding the optional ``.parrot/test_runners.toml``.
+
+    Returns:
+        A ``RunnerRegistry`` — the configured one, or an empty (built-ins only) one.
+    """
+    registry_mod = _load_registry_module()
+    try:
+        return registry_mod.load_registry(root)
+    except ValueError:
+        return registry_mod.RunnerRegistry({}, {})
+
+
 def _check_validation_contract(
     tasks: dict[str, _Task], root: Path, required: bool, test_command: str | None = None
 ) -> list[Finding]:
-    """Emit the four validation-contract findings for every task.
+    """Emit the validation-contract findings for every task.
+
+    A declared command is accepted when any registered runner recognises it (built-ins: pytest, vitest,
+    cargo, parrot-e2e; extensions from ``.parrot/test_runners.toml``), so the gate works for non-Python
+    repositories. Over-broad commands are rejected for every runner; the path checks apply to pytest only
+    (its operands are files or node ids — vitest filters and cargo test names are not paths). A command no
+    runner recognises is an error, or a warning when ``sdd/config.json`` sets ``test_command`` (FEAT-633 rev 0.8
+    C29): that command runs instead of ``select_tests``, so the declared one is never selected anyway.
 
     Args:
         tasks: Parsed tasks (``text`` and ``files`` populated).
-        root: Repository root for existence checks.
+        root: Repository root for existence checks and registry loading.
         required: True when the index header declares ``"validation_contract": "required"``.
         test_command: ``sdd/config.json`` ``test_command``; when set, a non-pytest command is a warning.
 
     Returns:
-        Findings: missing-validation-commands, non-pytest-validation-command,
+        Findings: missing-validation-commands, non-pytest-validation-command (no runner recognises it),
         broad-validation-command, directory-validation-target, validation-path-unknown.
     """
     contract = _load_contract()
+    registry_mod = _load_registry_module()
+    registry = _validation_registry(root)
+    builtins = ", ".join(registry_mod.BUILTIN_MODULES)
     findings: list[Finding] = []
     for tid, task in tasks.items():
         if not task.text:
@@ -310,19 +340,22 @@ def _check_validation_contract(
                 )
             )
             continue
-        for argv in commands:
-            if not contract.is_pytest_invocation(argv):
+        for declared in commands:
+            argv = registry.normalize(declared)
+            adapter = registry.adapter_for_argv(argv)
+            if adapter is None:
                 if test_command:
                     message = (
-                        f"{tid}: validation command is not a pytest invocation; accepted because "
-                        f"sdd/config.json sets test_command ({test_command!r}), which runs instead of "
-                        f"select_tests: {' '.join(argv)}"
+                        f"{tid}: no registered test runner recognises the validation command; accepted because "
+                        f"sdd/config.json sets test_command ({test_command!r}), which runs instead of select_tests: "
+                        f"{' '.join(declared)}"
                     )
                 else:
                     message = (
-                        f"{tid}: validation command is not a pytest invocation, so it is "
-                        f"invisible to select_tests.py's declared-command handling: {' '.join(argv)} "
-                        f"(a non-Python repository sets test_command in sdd/config.json)"
+                        f"{tid}: no registered test runner recognises the validation command "
+                        f"(built-ins: {builtins}; declare others under [extensions] in "
+                        f".parrot/test_runners.toml, or set test_command in sdd/config.json), "
+                        f"so select_tests.py would never run it: {' '.join(declared)}"
                     )
                 findings.append(
                     Finding(
@@ -333,15 +366,17 @@ def _check_validation_contract(
                     )
                 )
                 continue
-            if contract.is_broad_pytest(argv):
+            if adapter.is_broad(argv, worktree=root):
                 findings.append(
                     Finding(
                         level="error",
                         code="broad-validation-command",
                         tasks=[tid],
-                        message=f"{tid}: over-broad validation command: {' '.join(argv)}",
+                        message=f"{tid}: over-broad validation command: {' '.join(declared)}",
                     )
                 )
+                continue
+            if adapter.kind != "pytest":
                 continue
             for operand in _pytest_targets(argv):
                 candidate = root / operand

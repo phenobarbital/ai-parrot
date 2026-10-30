@@ -102,12 +102,14 @@ must contain no unfinished placeholders.
 #### Validation Commands (mandatory, per task — FEAT-563)
 
 Place `## Validation Commands` immediately after `## Acceptance Criteria`.
-Use one backticked pytest command per bullet, targeting test files or node IDs;
-never bare pytest or directory-wide test operands. Set new index headers to
+Use one backticked command per bullet that a registered test runner recognises (pytest, vitest, `cargo test`,
+`parrot e2e` or a `.parrot/test_runners.toml` extension; `npm`/`pnpm`/`yarn test` stand for `vitest run`). Pytest
+commands target test files or node IDs, never bare pytest or directory-wide operands; other runners only need a
+filter (never over-broad). Set new index headers to
 `"validation_contract": "required"` so missing or broad commands fail validation.
-When `sdd/config.json` sets `test_command` (tests are not pytest: `npm test`, `cargo test`, ...), each bullet is
-the narrowest command of the repository's own runner for the task's tests; `check_task_graph` then reports
-`non-pytest-validation-command` as a warning that may stay unresolved. Without `test_command` it is an error.
+A command no registered runner (pytest, vitest, cargo, parrot-e2e, `.parrot/test_runners.toml` extensions)
+recognises is an error, unless `sdd/config.json` sets `test_command`: then `check_task_graph` reports
+`non-pytest-validation-command` as a warning that may stay unresolved (FEAT-633 rev 0.8 C29).
 
 When `sdd/config.json` sets `test_command`, skip caching (and continue past a missing Validation Contract section); `cache_test_contract` itself stays strict and, when the `test_scope` kernel cannot be loaded, exits non-zero with a one-line stderr message.
 

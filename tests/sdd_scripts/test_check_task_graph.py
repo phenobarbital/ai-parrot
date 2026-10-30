@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.sdd.check_task_graph import _load_contract, check_graph, main, module_of, parse_declared_files
 
 _TASK = """# {tid}: demo
@@ -214,7 +216,55 @@ def test_non_pytest_validation_command_is_error(tmp_path):
     index = _with_validation(tmp_path, ["true"], required=True)
     report = check_graph(index, tmp_path)
     assert "non-pytest-validation-command" in _codes(report)
+    assert "no registered test runner recognises" in report.findings[0].message
     assert main([str(index), "--root", str(tmp_path)]) == 1
+
+
+@pytest.mark.parametrize(
+    ("command", "files"),
+    [
+        ("vitest run tests/foo.test.ts", {"tests/foo.test.ts": "CREATE"}),
+        ("pnpm test tests/foo.test.ts", {"tests/foo.test.ts": "CREATE"}),
+        ("npm test -- tests/foo.test.ts", {"tests/foo.test.ts": "CREATE"}),
+        ("cargo test parser::tests", {"src/parser.rs": "CREATE"}),
+    ],
+)
+def test_registered_non_pytest_runner_commands_pass(tmp_path, command, files):
+    """issue:1523f61d81d9 — the gate resolves commands through the FEAT-709 runner registry, so a
+    vitest or cargo validation command is accepted and /sdd-task works in a non-Python repository."""
+    index = _with_validation(tmp_path, [command], required=True, files=files)
+    report = check_graph(index, tmp_path)
+    assert "non-pytest-validation-command" not in _codes(report)
+    assert "broad-validation-command" not in _codes(report)
+    assert main([str(index), "--root", str(tmp_path)]) == 0
+
+
+def test_broad_non_pytest_runner_command_is_error(tmp_path):
+    """A recognised runner with no filter (`npm test` → `vitest run`) is over-broad, like a bare pytest."""
+    index = _with_validation(tmp_path, ["npm test"], required=True)
+    report = check_graph(index, tmp_path)
+    assert _codes(report) == ["broad-validation-command"]
+    assert main([str(index), "--root", str(tmp_path)]) == 1
+
+
+def test_non_pytest_runner_operands_skip_path_checks(tmp_path):
+    """cargo test filters are test names, not paths — no directory/unknown-path findings for them."""
+    index = _with_validation(tmp_path, ["cargo test tests"], required=True)
+    (tmp_path / "tests").mkdir()
+    report = check_graph(index, tmp_path)
+    assert not {"directory-validation-target", "validation-path-unknown"} & set(_codes(report))
+
+
+def test_invalid_runner_toml_keeps_builtin_recognition(tmp_path):
+    """An unreadable .parrot/test_runners.toml is reported by the test-contract check; the validation
+    gate still recognises the built-in runners instead of rejecting every command."""
+    (tmp_path / ".parrot").mkdir()
+    (tmp_path / ".parrot/test_runners.toml").write_text("runners = 1\n")
+    index = _with_validation(
+        tmp_path, ["vitest run tests/foo.test.ts"], required=True, files={"tests/foo.test.ts": "CREATE"}
+    )
+    report = check_graph(index, tmp_path)
+    assert "non-pytest-validation-command" not in _codes(report)
 
 
 def _set_test_command(root: Path, command: str | None) -> None:
@@ -222,19 +272,19 @@ def _set_test_command(root: Path, command: str | None) -> None:
     (root / "sdd" / "config.json").write_text(json.dumps({"test_command": command}), encoding="utf-8")
 
 
-def test_non_pytest_validation_command_is_warning_when_test_command_is_set(tmp_path):
-    """FEAT-633 rev 0.8 C29: a repo that sets test_command (a Node repo here) runs its own command
-    instead of select_tests, so `npm test ...` is its normal validation, never a blocking error."""
-    index = _with_validation(tmp_path, ["npm test -- src/x.test.ts"], required=True)
-    _set_test_command(tmp_path, "npm test")
+def test_unrecognised_command_is_warning_when_test_command_is_set(tmp_path):
+    """FEAT-633 rev 0.8 C29: a repo that sets test_command (a Go repo here) runs that command instead
+    of select_tests, so a validation command no registered runner knows is never a blocking error."""
+    index = _with_validation(tmp_path, ["go test ./pkg/cart"], required=True)
+    _set_test_command(tmp_path, "go test ./...")
     report = check_graph(index, tmp_path)
     finding = next(f for f in report.findings if f.code == "non-pytest-validation-command")
     assert finding.level == "warning" and "test_command" in finding.message
     assert main([str(index), "--root", str(tmp_path)]) == 0
 
 
-def test_non_pytest_validation_command_still_errors_without_test_command(tmp_path):
-    index = _with_validation(tmp_path, ["npm test -- src/x.test.ts"], required=True)
+def test_unrecognised_command_still_errors_without_test_command(tmp_path):
+    index = _with_validation(tmp_path, ["make test"], required=True)
     _set_test_command(tmp_path, None)
     report = check_graph(index, tmp_path)
     finding = next(f for f in report.findings if f.code == "non-pytest-validation-command")
@@ -243,7 +293,7 @@ def test_non_pytest_validation_command_still_errors_without_test_command(tmp_pat
 
 
 def test_unreadable_sdd_config_keeps_the_strict_gate(tmp_path):
-    index = _with_validation(tmp_path, ["npm test"], required=True)
+    index = _with_validation(tmp_path, ["go test ./pkg/cart"], required=True)
     (tmp_path / "sdd").mkdir(exist_ok=True)
     (tmp_path / "sdd" / "config.json").write_text("{not json", encoding="utf-8")
     report = check_graph(index, tmp_path)

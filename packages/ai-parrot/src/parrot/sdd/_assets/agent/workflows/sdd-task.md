@@ -426,8 +426,13 @@ Kinds, tiers and settings are validated against the runner registry (`.parrot/te
 
 Every generated task MUST carry a `## Validation Commands` section placed right
 after `## Acceptance Criteria`: one bullet per command, each a backticked
-`pytest` invocation whose operands are **test files or node ids** — never a
-directory, never a tests root such as `<tests>/`, never a bare `pytest`.
+invocation that a **registered test runner** recognises — `pytest`, `vitest`,
+`cargo test`, `parrot e2e`, or an `[extensions]` entry in
+`.parrot/test_runners.toml` (`pnpm`/`npm`/`yarn test` stand for `vitest run`
+unless the vitest runner's `test_script` setting says otherwise). A pytest
+command's operands are **test files or node ids** — never a directory, never
+a tests root such as `<tests>/`, never a bare `pytest`; the other runners are
+rejected only when over-broad (e.g. `vitest run` with no filter).
 
 ```markdown
 ## Validation Commands
@@ -437,15 +442,15 @@ directory, never a tests root such as `<tests>/`, never a bare `pytest`.
 
 This is what the sdd-coder guard rewrites a broad pytest to. New per-spec index
 headers MUST include `"validation_contract": "required"`; `check_task_graph`
-then reports `missing-validation-commands`, `broad-validation-command` and
+then reports `missing-validation-commands`, `non-pytest-validation-command`
+(no registered runner recognises the command), `broad-validation-command` and
 `directory-validation-target` as errors (`validation-path-unknown` warns).
 
-When `sdd/config.json` sets `test_command` (a repository whose tests are not
-pytest: `npm test`, `cargo test`, `go test ./...`), each bullet is instead the
-narrowest command of that repository's own runner for the task's tests (e.g.
-`npm test -- src/cart.test.ts`). `check_task_graph` then reports the
-`non-pytest-validation-command` warning for it and does not block; without
-`test_command`, a non-pytest command is an error.
+A command no registered runner recognises (`go test ./pkg/cart`, `make test`)
+is an error, unless `sdd/config.json` sets `test_command` (FEAT-633 rev 0.8
+C29): that command runs instead of `select_tests`, so `check_task_graph` only
+warns `non-pytest-validation-command`. Write the narrowest command of the
+repository's own runner for the task's tests either way.
 
 #### Complexity Contract (mandatory, per task)
 
@@ -493,12 +498,13 @@ parrot sdd run check_task_graph sdd/tasks/index/<feature-slug>.json
   `possible-missing-dependency` → add the edge or confirm the reference is not
   a use; `duplicate-notes` / `exclusive-without-notes` → write per-task notes.
 - FEAT-563 validation-contract codes: `missing-validation-commands`,
-  `broad-validation-command`, `directory-validation-target` (errors when the
-  header requires the contract) and `validation-path-unknown` (warning) — add
-  or fix the task's `## Validation Commands` section.
-  `non-pytest-validation-command` is an error unless `sdd/config.json` sets
-  `test_command`; with it, the warning is expected for every task and is the
-  only warning you may leave unresolved.
+  `non-pytest-validation-command` (no registered runner — pytest, vitest,
+  cargo, parrot-e2e or a `.parrot/test_runners.toml` extension — recognises
+  the command), `broad-validation-command`, `directory-validation-target`
+  (errors when the header requires the contract) and `validation-path-unknown`
+  (warning) — add or fix the task's `## Validation Commands` section.
+  `non-pytest-validation-command` is a warning instead when `sdd/config.json`
+  sets `test_command`; that warning may stay unresolved.
 - Copy the report's first line (`<N> tasks, <W> waves, max width <M>`) into the
   §6 output. A width of 1 on a multi-task feature needs a one-line justification.
 
