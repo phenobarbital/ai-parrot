@@ -85,7 +85,7 @@
       "feature_id": "FEAT-772",
       "feature": "passkey-support",
       "spec": "sdd/specs/passkey-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -95,8 +95,9 @@
       "parallelism_notes": "calls postPasskeyLogin from TASK-4899 (ui/src/lib/api/passkey.ts); sole editor of stores/auth.svelte.ts + auth.test.ts.",
       "assigned_to": null,
       "started_at": "2026-10-30T15:27:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4900-auth-store-passkey-login.md"
+      "completed_at": "2026-10-30T15:52:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4900-auth-store-passkey-login.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4901",
