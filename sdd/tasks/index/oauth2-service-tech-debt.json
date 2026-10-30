@@ -1,0 +1,30 @@
+{
+  "feature": "oauth2-service-tech-debt",
+  "feature_id": "FEAT-780",
+  "spec": "sdd/specs/oauth2-service-tech-debt.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-30T20:10:00Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "manual",
+  "tasks": [
+    {
+      "id": "TASK-4910",
+      "slug": "oauth2-service-tech-debt",
+      "title": "Split integration-status tests by credential owner (Session vs Identity Vault)",
+      "feature_id": "FEAT-780",
+      "feature": "oauth2-service-tech-debt",
+      "spec": "sdd/specs/oauth2-service-tech-debt.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "sole task in this feature, no shared-file collisions",
+      "assigned_to": "unassigned",
+      "file": "sdd/tasks/active/TASK-4910-oauth2-service-tech-debt.md",
+      "discovered_from": "issue:267fb119e6f1"
+    }
+  ]
+}
