@@ -1,4 +1,5 @@
 """Tests for the FEAT-778 retrieval-handle knowledge sources."""
+
 from __future__ import annotations
 
 import asyncio
@@ -35,15 +36,20 @@ def test_bookstore_handle_carries_scope():
 def test_graphindex_handle_shape(tmp_path):
     [layer] = _run(GraphIndexSource(), _spec("graphindex"), workspace=tmp_path)
     _check(layer, "graphindex")
-    assert layer.handle == {"toolkit": "graphindex", "scope": {}, "workspace": str(tmp_path),
-                            "budget": {"max_tokens": 4000, "max_llm_calls": 0}}
+    assert layer.handle == {
+        "toolkit": "graphindex",
+        "scope": {},
+        "workspace": str(tmp_path),
+        "budget": {"max_tokens": 4000, "max_llm_calls": 0},
+    }
     [none_ws] = _run(GraphIndexSource(), _spec("graphindex"))
     assert none_ws.handle["workspace"] is None
 
 
 def test_legacy_kb_handle_names():
-    bot = SimpleNamespace(knowledge_bases=[SimpleNamespace(name="low", priority=1),
-                                           SimpleNamespace(name="high", priority=9)])
+    bot = SimpleNamespace(
+        knowledge_bases=[SimpleNamespace(name="low", priority=1), SimpleNamespace(name="high", priority=9)]
+    )
     [layer] = _run(LegacyKBSource(bot), _spec("kb"))
     _check(layer, "kb")
     assert layer.handle == {"toolkit": "kb", "names": ["high", "low"]}
