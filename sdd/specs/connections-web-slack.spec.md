@@ -67,10 +67,12 @@ and Slack surfaces cannot see or benefit from it:
   Redis pub/sub channel. No WebSocket is added (FEAT-476's non-goal stands); `UserSocketManager` is untouched.
 - **G3 — Needs-auth in every chat mode, with automatic retry.** Streaming and non-streaming AgentTalk
   responses carry the `AuthRequiredPayload`; the UI renders the Connect pill in both, and after a successful
-  connect re-sends the originating prompt once, idempotently.
+  connect re-sends the originating prompt at most once only when the server proves no tool body ran;
+  otherwise the user explicitly chooses whether to retry.
 - **G4 — Slack linking through the web session (D2).** Slack `/login` (and `/connect` when unlinked) DMs a
-  signed one-time link; opening it in the logged-in admin UI writes the `slack` identity row for that
-  session's Navigator user. Slack `/connect <provider>`, `/disconnect <provider>`, `/connections` are generic;
+  opaque one-time link; the logged-in admin UI previews both identities and requires explicit confirmation
+  before exclusively claiming the Slack identity for that session's Navigator user.
+  Slack `/connect <provider>`, `/disconnect <provider>`, `/connections` are generic;
   `/connect_jira` etc. stay as aliases.
 - **G5 — One O365 credential (D3, full consolidation).** O365 3LO and device-code grants live in one
   principal-keyed record (Identity Vault via S-1's `CredentialStore`, Redis hot cache via
@@ -82,7 +84,8 @@ and Slack surfaces cannot see or benefit from it:
 ### Non-Goals (explicitly out of scope)
 
 - Anything S-1 owns: principal keys, `CredentialStore`, PBAC on connect/disconnect, `AuthRequiredPayload`,
-  the event publisher and bus, multi-account (v1 is single account per provider).
+  the event publisher and bus, multi-account (v1 is single account per provider). M2 extends the PBAC
+  invocation seam for Slack while retaining S-1's policy authority and fail-closed decisions.
 - A WebSocket route, or changes to `UserSocketManager` / `wsService` (D1 keeps FEAT-476's decision).
 - Telegram (S-2) and MS Teams (S-3b) commands and notifiers.
 - The CLI surface and a generic RFC 8628 device-code engine (S-4, FEAT-774). S-3a moves the **existing**
@@ -113,17 +116,22 @@ reads the stream with `fetch` + `ReadableStream` (the same pattern as `stream.ts
 
 **Slack linking (M2, D2).** Core gets a small `ChannelLinkIssuer` over Redis: `issue(channel,
 channel_user_id, extra)` stores a 10-minute single-use nonce `channel_link:{nonce}` and returns
-`{CONNECTIONS_LINK_BASE_URL}/account/link?token={nonce}`; `consume(nonce)` deletes and returns the claim. The
-Slack `/login` command DMs that URL. The admin UI page `/account/link` (requires login) calls
-`POST /api/v1/channel-links/{nonce}/confirm`; the server consumes the nonce and calls
-`IdentityMappingService.upsert_identity(nav_user_id=<session user>, auth_provider="slack",
-provider_user_id="{team_id}:{slack_user_id}", auth_data={team_id, slack_user_id})`. The principal therefore
+`{CONNECTIONS_LINK_BASE_URL}/account/link?token={nonce}`; `peek(nonce)` reads without consuming and
+`consume(nonce)` atomically deletes and returns the claim. Slack `/login` DMs that URL. The admin UI
+page `/account/link` (requires login) first requests `GET /api/v1/channel-links/{nonce}` and displays
+the Slack workspace/user IDs and the current Navigator account, explaining that this Slack account
+will gain access to the user's connections. Loading the page never confirms or consumes the claim.
+Only an explicit Confirm click calls `POST /api/v1/channel-links/{nonce}/confirm` with
+`{confirm: true}`; Cancel performs no write. The server consumes the nonce and calls the new
+`IdentityMappingService.claim_channel_identity` exclusive ownership operation (M2). The principal therefore
 comes only from an authenticated web session; the nonce only says *which Slack user* is being linked. The
 Slack `provider_user_id` is the team-qualified id everywhere (link handler, OAuth callback, S-1's
 `IdentityPrincipalResolver` lookup), matching the `user_id` the Slack commands already build
 (`jira_commands.py:77-79`). Slack `/connect <provider>` resolves the principal; `None` → "link your account
 first: /login" and no OAuth state; otherwise `IntegrationsService.start_connect(channel="slack",
-principal=…)`. A provider-agnostic `SlackConnectionNotifier` (`channel = "slack"`) replaces S-1's
+principal=…)` through the injected principal-aware authorization contract in M2. List, status and
+disconnect use that same contract; missing PDP or trusted identity context denies the command.
+A provider-agnostic `SlackConnectionNotifier` (`channel = "slack"`) replaces S-1's
 `SlackJiraNotifierAdapter` and DMs completion / revocation / refresh failure for any provider.
 
 **O365 consolidation (M3, D3).** The 3LO path already inherits S-1's principal keys and `CredentialStore`
@@ -139,18 +147,29 @@ is the e-mail/OID; it now resolves the principal first (`resolve_principal(chann
 canonical-identity path that AC-3 of S-1 requires for `a2a`), failing closed on `None`. Legacy `o365:*`
 entries in `VaultTokenSync` (keyed by the e-mail/OID) are read once per principal, rewritten, and deleted,
 until `OAUTH2_LEGACY_KEYS_UNTIL` (S-1 config); the 3LO legacy vault name `oauth2_o365_web_{u}` is already
-covered by S-1's `_read_legacy_token`.
+covered by S-1's `_read_legacy_token`. Device-code legacy records contain absolute `expires_at`, not
+token-endpoint `expires_in`: migration uses a separate conversion method that preserves expiry and
+refreshes expired/near-expiry tokens before identity discovery. It never passes a legacy dict to
+`store_device_grant` as though it were a newly minted response (M3).
 
 **Chat (M4).** AgentTalk detects an `authorization_required` `ToolResult` among the turn's tool calls
 (`AIMessage.tool_calls[*].result`) and S-1's re-raised exceptions, and emits S-1's `AuthRequiredPayload`:
 non-streaming → the existing `AuthRequiredEnvelope` JSON; streaming → a trailer frame
-`\n\x00{"auth_required": {…payload}, "turn_id": …}` after the envelope, the same framing as the FEAT-752
+`\n\x00{"auth_required": {…payload}, "turn_id": …, "retry_safe": false}` after the envelope, the same framing as the FEAT-752
 suggestions trailer (`agent.py:2625`). `stream.ts` gains the `auth_required` `StreamChunk`; `AgentChat`
 inserts the Connect pill in both modes. The pill uses `startConnect` (S-1 route) rather than the raw
 `auth_url`, so origin validation and PBAC apply; on success — popup `postMessage` **or** an SSE
 `connection.completed` for the same provider — it calls `onConnected`, and `AgentChat` re-sends the user
-message that produced the `auth_required` message, at most once (keyed by that message id), and only if no
-newer user message exists; otherwise the pill shows a Retry button wired to the existing `handleRetry`.
+message only when server-authored `retry_safe=true`, at most once keyed by the originating user message
+ID, and only if no newer user message exists. The server sets this flag only from complete turn-local
+execution evidence showing no tool body began; missing evidence, any begun tool (even failed/cancelled),
+delegation or an uninstrumented execution path means false. A tool's own metadata cannot assert safety.
+Both response modes carry the flag outside `AuthRequiredPayload`; absent means false. Otherwise the pill
+shows a manual Retry button explaining that completed actions may repeat. Popup and SSE notifications
+share the same retry guard, marked before awaiting resend. A retried response retains the originating
+message ID so repeated auth failures cannot reset the budget. Refetch connection status and verify the
+required provider/scopes before resending; a matching provider event alone is insufficient. Multiple
+outstanding auth requirements disable auto-retry; v1 exposes the first pill and requires manual retry.
 
 **Panel and cleanup (M5, M6).** `ConnectionsPanel` (account page) and the per-agent `IntegrationsMenu` both
 read `lib/stores/connections.svelte.ts`, which owns the list, the SSE reader and refetch-on-event. The
@@ -178,11 +197,11 @@ read `lib/stores/connections.svelte.ts`, which owns the list, the SSE reader and
    ├── ConnectionsPanel (/account/connections)            [M5]
    ├── IntegrationsMenu (per-agent header)                 [M5]
    └── AgentChat: auth_required (stream trailer | JSON) → ConnectIntegrationPill
-                    → POST /api/v1/connections/{p}/start → popup → onConnected → resend once   [M4]
+                    → POST /api/v1/connections/{p}/start → completion → safety gate → retry   [M4]
 
  Slack /login ─► ChannelLinkIssuer.issue ─► DM https://<ui>/account/link?token=N
- browser (logged in) /account/link ─► POST /api/v1/channel-links/N/confirm
-        ─► ChannelLinkIssuer.consume ─► IdentityMappingService.upsert_identity(slack, "T:U")    [M2]
+ browser (logged in) /account/link ─► GET preview ─► explicit Confirm ─► POST confirm
+        ─► ChannelLinkIssuer.consume ─► IdentityMappingService.claim_channel_identity(slack, "T:U") [M2]
 ```
 
 ### Integration Points
@@ -196,7 +215,9 @@ read `lib/stores/connections.svelte.ts`, which owns the list, the SSE reader and
 | `handlers/agent.py` AgentTalk | modifies | `auth_required` detection on both paths; streaming trailer; hot-swap bootstrap removed |
 | `handlers/integrations.py::IntegrationsHandler` | modifies | `/enable` branch and `_post_enable` removed |
 | `manager/manager.py` | modifies | routes (SSE, channel-link confirm), `/enable` route removed, sink + O365 provider registration |
-| `services/identity_mapping.py::IdentityMappingService.upsert_identity` | uses | slack identity row on link confirm |
+| `services/identity_mapping.py::IdentityMappingService` | extends | exclusive `claim_channel_identity`; route every Slack write through it |
+| `parrot/auth/oauth2/service.py::IntegrationsService` | extends | injected `ConnectionAuthorizer`, principal-aware list/status/disconnect |
+| `parrot/tools/manager.py::ToolManager._observed` | modifies | mark turn-local execution before any tool body; preserve existing observer |
 | `slack/commands/jira_commands.py`, `slack/oauth_callback.py`, `slack/wrapper.py` | modifies | generic commands, team-qualified identity, notifier registration |
 | `parrot/auth/o365_oauth.py::O365OAuthManager` | extends | `store_device_grant`, `grant_origin` |
 | `parrot/auth/oauth2/o365_devicecode_provider.py::O365DeviceCodeCredentialResolver` | modifies | manager-backed read/write, principal resolution, legacy migration |
@@ -217,12 +238,21 @@ class ChannelLinkClaim(BaseModel):
     extra: Dict[str, str] = {}      # {team_id, slack_user_id}; never secrets
     issued_at: float
 
+# parrot/auth/oauth2/models.py (M5; generated TS type)
+class ChannelLinkPreview(BaseModel):
+    channel: str
+    channel_user_id: str
+    team_id: str
+    nav_user_id: str
+
+# AuthRequiredEnvelope (M5 model, M4 producer): retry_safe: bool = False, populated by the server only.
+
 # parrot/auth/oauth2/events.py  (S-1 file, extended by M1)
 class ConnectionEventSink(Protocol):
     async def deliver(self, event: ConnectionEvent) -> None: ...
 
 # AgentTalk streaming trailer (M4) — one NUL-framed JSON object, after the envelope frame:
-#   {"auth_required": AuthRequiredPayload.model_dump(), "turn_id": "<turn id>"}
+#   {"auth_required": AuthRequiredPayload.model_dump(), "turn_id": "<turn id>", "retry_safe": false}
 # SSE frame (M1):
 #   event: connection
 #   data: ConnectionEvent.model_dump_json()      # S-1 model; no token material
@@ -234,7 +264,7 @@ export type StreamChunk =
   | { type: "chunk"; text: string }
   | { type: "done"; message: AgentChatResponse | BotChatResponse }
   | { type: "suggestions"; suggestions: AgentChatSuggestion[]; turn_id?: string }
-  | { type: "auth_required"; payload: AuthRequiredPayload; turn_id?: string };   // new
+  | { type: "auth_required"; payload: AuthRequiredPayload; turn_id?: string; retry_safe?: boolean }; // absent = false
 ```
 
 ### New Public Interfaces
@@ -243,6 +273,7 @@ export type StreamChunk =
 # ai-parrot (core)
 class ChannelLinkIssuer:                               # parrot/auth/channel_link.py
     async def issue(self, channel: str, channel_user_id: str, extra: Dict[str, str] | None = None) -> str: ...
+    async def peek(self, nonce: str) -> Optional[ChannelLinkClaim]: ...
     async def consume(self, nonce: str) -> Optional[ChannelLinkClaim]: ...
 class O365OAuthManager:                                # parrot/auth/o365_oauth.py (added method)
     async def store_device_grant(self, principal: Principal, payload: Dict[str, Any], *, channel: str) -> O365TokenSet: ...
@@ -252,11 +283,11 @@ class RedisConnectionPush:                             # services/connection_pus
     async def deliver(self, event: ConnectionEvent) -> None: ...
     def subscribe(self, user_id: str) -> AsyncIterator[ConnectionEvent]: ...
 class ConnectionEventsHandler(BaseView)                # handlers/connection_events.py — GET /api/v1/connections/events (SSE)
-class ChannelLinksHandler(BaseView)                    # handlers/channel_links.py — POST /api/v1/channel-links/{nonce}/confirm
+class ChannelLinksHandler(BaseView)                    # handlers/channel_links.py — GET preview + POST confirm
 
 # ai-parrot-integrations
 class SlackConnectionNotifier:                         # slack/notifier.py — ChannelNotifier, channel = "slack"
-def register_connection_commands(router, *, link_issuer, oauth_registry=None) -> None   # slack/commands/connection_commands.py
+def register_connection_commands(router, *, link_issuer, service_factory) -> None   # slack/commands/connection_commands.py
 ```
 
 ---
@@ -316,13 +347,18 @@ def register_connection_commands(router, *, link_issuer, oauth_registry=None) ->
 ### Module 2: Slack linking, generic Slack commands, Slack notifier
 - **Path**: `packages/ai-parrot/src/parrot/auth/channel_link.py` (new); `packages/ai-parrot/src/parrot/conf.py`
   (`CONNECTIONS_LINK_BASE_URL`, `CHANNEL_LINK_TTL_SECONDS`); `packages/ai-parrot-server/src/parrot/handlers/channel_links.py` (new);
+  `packages/ai-parrot-server/src/parrot/services/identity_mapping.py` (exclusive channel claim);
+  `packages/ai-parrot/src/parrot/auth/oauth2/authorization.py` (new core Protocol);
+  `packages/ai-parrot/src/parrot/auth/oauth2/service.py` (inject authorizer and principal-aware operations);
+  `packages/ai-parrot-server/src/parrot/services/connection_authorization.py` (new PDP adapter);
+  `packages/ai-parrot-server/src/parrot/manager/manager.py` (routes, authorizer injection);
   `packages/ai-parrot-server/src/parrot/services/identity_principal.py` (modify — S-1 file);
   `packages/ai-parrot-integrations/src/parrot/integrations/slack/commands/connection_commands.py` (new);
   `slack/commands/jira_commands.py`, `slack/oauth_callback.py`, `slack/wrapper.py` (modify); `slack/notifier.py` (new);
   `packages/ai-parrot-integrations/src/parrot/integrations/core/auth/notifiers.py` (modify — S-1 file: drop the Slack adapter)
-- **Responsibility**: signed single-use link nonce; session-authenticated confirm that writes the `slack`
+- **Responsibility**: opaque single-use link nonce; read-only preview and explicit session-authenticated confirm that claims the `slack`
   identity row; `/login`, `/connect <p>`, `/disconnect <p>`, `/connections` (Jira commands become aliases);
-  team-qualified Slack `provider_user_id`; provider-agnostic Slack notifier.
+  team-qualified Slack `provider_user_id`; exclusive ownership; principal-aware PBAC; provider-agnostic Slack notifier.
 - **Depends on**: S-1 M1 (`resolve_principal`), M4 (`ChannelNotifier`), M6 (`start_connect(channel=, principal=)`, `disconnect`, `list_for_principal`), M8 (`IdentityPrincipalResolver`, notifier registration site).
 - **Interface Skeleton**:
   ```python
@@ -332,28 +368,36 @@ def register_connection_commands(router, *, link_issuer, oauth_registry=None) ->
       def __init__(self, redis_client: Any, *, base_url: str, ttl_seconds: int = 600) -> None: ...
       async def issue(self, channel: str, channel_user_id: str, extra: Optional[Dict[str, str]] = None) -> str:
           """Return f"{base_url}/account/link?token={nonce}"; raises ValueError on empty channel_user_id."""
+      async def peek(self, nonce: str) -> Optional[ChannelLinkClaim]:
+          """Read without deletion or TTL extension; None when missing or expired."""
       async def consume(self, nonce: str) -> Optional[ChannelLinkClaim]:
           """Single use: None when missing/expired/already consumed."""
 
   # packages/ai-parrot-server/src/parrot/handlers/channel_links.py  (new)
   class ChannelLinksHandler(BaseView):
+      async def get(self) -> web.Response:
+          """Authenticated GET /api/v1/channel-links/{nonce}: preview Slack team/user IDs and session account;
+          Cache-Control: no-store; 410 on absent claim. No identity write and no nonce consumption."""
       async def post(self) -> web.Response:
-          """POST /api/v1/channel-links/{nonce}/confirm. 401 without session; 410 when consume() is None;
-          nav_user_id = session user (must be numeric, else 403); IdentityMappingService.upsert_identity(
-          nav_user_id=…, auth_provider=claim.channel, provider_user_id=claim.channel_user_id, auth_data=claim.extra)
-          (identity_mapping.py:173-183); returns {channel, linked: true}. The body is ignored."""
+          """POST /api/v1/channel-links/{nonce}/confirm. 401 without session; 403 non-numeric session id;
+          require confirm is True (400 otherwise) before consume; 410 when consume() is None;
+          nav_user_id from session only; claim_channel_identity for claim.channel/user_id/extra.
+          Reject non-slack/malformed team-qualified claims. 409 on ownership conflict, without owner details;
+          success returns {channel, linked: true}. Never accept identity/principal overrides from the body."""
 
   # packages/ai-parrot-integrations/src/parrot/integrations/slack/commands/connection_commands.py  (new)
   def register_connection_commands(router: Any, *, link_issuer: ChannelLinkIssuer, service_factory: Callable[[], IntegrationsService]) -> None:
       """/login → DM link; /connect <provider> → resolve_principal("slack", "T:U"); None → 'link first: /login';
-      else start_connect(channel="slack", principal=p, extra_state={team_id, slack_user_id}) → DM button;
-      /disconnect <provider>; /connections → list_for_principal summary. Unknown provider → list of registered ids."""
+      else start_connect(user_id=p.user_id, provider_id=provider, channel="slack", principal=p,
+      extra_state={team_id, slack_user_id}) → DM button; injected authorizer evaluates every operation.
+      /disconnect <provider>; /connections → list_for_principal summary with principal=p.
+      Unknown provider → list of registered ids; missing/denied PDP → no state, deletion or account data."""
 
   # slack/commands/jira_commands.py  (modifies; register_jira_commands verified :166)
   #   connect_jira_handler (:60) / disconnect_jira_handler (:103) / jira_status_handler (:132) delegate to the generic handlers with provider="jira"
 
   # slack/oauth_callback.py  (modifies; :251)
-  #   provider_user_id=f"{team_id}:{slack_user_id}"   (was slack_user_id)
+  #   provider_user_id=f"{team_id}:{slack_user_id}"; use the exclusive claim operation, never raw upsert
 
   # packages/ai-parrot-integrations/src/parrot/integrations/slack/notifier.py  (new)
   class SlackConnectionNotifier:
@@ -363,9 +407,44 @@ def register_connection_commands(router, *, link_issuer, oauth_registry=None) ->
           """DM extra.slack_user_id: completed / revoked / refresh_failed for any provider (display_name from the registry)."""
 
   # packages/ai-parrot-server/src/parrot/services/identity_principal.py  (modifies S-1 M8)
-  #   slack: find_user_by_provider_account("slack", "{team_id}:{slack_user_id}")
+  #   slack: read all owners of ("slack", "{team_id}:{slack_user_id}"); exactly one enabled owner or fail closed
   #   cli:   same canonical-identity path as a2a (e-mail / OID) — needed by M3's device-code resolver until S-4
   ```
+
+**Exclusive ownership contract (M2).** Add
+`claim_channel_identity(*, nav_user_id, auth_provider, provider_user_id, auth_data)` to
+`IdentityMappingService`. In one DB transaction, acquire a transaction-scoped advisory lock keyed by
+`(auth_provider, provider_user_id)`, read all matching rows (including disabled rows), and insert only
+when no owner exists. The same enabled owner is idempotent; any other owner, disabled ownership or
+multiple owners returns conflict. Every in-tree Slack writer, including OAuth callbacks and the generic
+`upsert_identity` Slack branch, must use this operation and lock. The existing unique constraint includes
+`user_id` and cannot enforce this invariant alone. Existing ambiguous rows are not silently repaired:
+resolution fails closed and logs a non-secret diagnostic. Ownership transfer/reactivation is outside v1;
+the UI directs users to an administrator rather than overwriting another account. DB failure after
+nonce consumption requires a fresh `/login` link; it must never report success or restore a spent nonce.
+
+**Request-independent authorization contract (M2).** Add core `ConnectionAuthorizer` Protocol with
+`async authorize(principal: Principal, action: str, provider_id: Optional[str], scopes: List[str]) -> bool`.
+`IntegrationsService` accepts an optional injected authorizer; `list_for_principal`, `status` and
+`disconnect` gain keyword-only `principal: Optional[Principal] = None`, matching `start_connect`.
+For non-web calls, require principal, exact `user_id` match, and the authorizer; never use `request=None`
+as permission or fabricate a logged-in HTTP request. Keep the existing authenticated web PBAC path.
+The server's `NavigatorConnectionAuthorizer` reloads enabled Navigator user, roles and tenant membership
+from trusted auth storage, verifies the current exclusive Slack binding, then evaluates
+`integration:list` (list/status), `integration:connect` or `integration:disconnect` through the configured
+navigator-auth PDP. Connect evaluates the effective requested scopes, including provider defaults.
+No user/role/tenant attributes come from Slack command text, `extra_state` or an HTTP body.
+
+The adapter uses the PDP's tenant evaluator and `PolicyEvaluator.check_access` with a request-independent
+evaluation context containing trusted user/userinfo, tenant org/client pair, channel, provider and scopes;
+the resource is `integration:<provider_id>` (`integration:*` for list). Select tenants as the installed
+PDP does; never evaluate only a global policy set when tenant SQL filtering is enabled. Only an explicit
+ALLOW effect succeeds (not truthiness of a response object). Missing identity/PDP/tenant context,
+unsupported request-dependent policy attributes, evaluator errors and denial all fail closed. Server
+startup injects this adapter through the Slack service factory; core/integrations never import server.
+Contract tests must exercise the real installed evaluator with allowed/denied tenants, not only a mock
+authorizer. Re-verify the navigator-auth evaluator API after S-1's dependency upgrade; no dependency
+change is authorized by this spec.
 
 ### Module 3: O365 store consolidation
 - **Path**: `packages/ai-parrot/src/parrot/auth/o365_oauth.py`, `packages/ai-parrot/src/parrot/auth/oauth2/o365_devicecode_provider.py`,
@@ -385,6 +464,9 @@ def register_connection_commands(router, *, link_issuer, oauth_registry=None) ->
           """Build O365TokenSet(grant_origin="device_code") from an MSAL/token-endpoint payload (+ _discover_identity :190),
           then _persist_token(principal, ts, minted=True) (durable first, S-1) and upsert the users_integrations row
           with channels=[channel]; publishes connection.completed via the manager's event publisher."""
+      async def migrate_legacy_device_grant(self, principal: Principal, legacy: Dict[str, Any], *, channel: str) -> O365TokenSet:
+          """Convert stored absolute expiry; refresh if needed before identity discovery; durable-first persistence.
+          Never treat legacy data as a freshly minted token-endpoint response. See migration rules below."""
 
   # packages/ai-parrot/src/parrot/auth/oauth2/o365_devicecode_provider.py  (modifies)
   class O365DeviceCodeCredentialResolver(CredentialResolver):       # verified: :73
@@ -395,8 +477,8 @@ def register_connection_commands(router, *, link_issuer, oauth_registry=None) ->
           """principal = await resolve_principal(channel, user_id) → None: raise PermissionError (fail closed);
           ts = await manager.get_valid_token(channel, principal.user_id); None → _migrate_legacy → device flow.""" # verified: :117
       async def _migrate_legacy(self, canonical_id: str, principal: Principal) -> Optional[str]:
-          """Before OAUTH2_LEGACY_KEYS_UNTIL: legacy_vault.read_tokens(canonical_id, "o365") → store_device_grant →
-          legacy_vault.delete_tokens(canonical_id, "o365"); else None."""
+          """Before OAUTH2_LEGACY_KEYS_UNTIL: read legacy under S-1 migration/replacement exclusion;
+          manager.migrate_legacy_device_grant → delete legacy only after durable success; else None."""
       async def _persist_token_set(...)                             # verified: :237 — now delegates to manager.store_device_grant
   # _O365_VAULT_PREFIX (:46) kept only for the legacy read
 
@@ -410,11 +492,29 @@ def register_connection_commands(router, *, link_issuer, oauth_registry=None) ->
   #   register_oauth2_provider(O365OAuth2Provider(manager=…))  (o365_provider.py:32)
   ```
 
+**Legacy conversion and ordering (M3).** Parse `expires_at` as an absolute epoch. Preserve that value
+exactly for an unexpired token outside the existing expiry skew; never supply a default lifetime.
+Missing, invalid, expired or near-expiry values require refresh using the legacy refresh token before
+`_discover_identity`. A successful refresh uses its returned expiry and retains the previous refresh
+token only when the provider omitted a replacement. Terminal invalid-grant/no usable refresh token
+returns a needs-auth outcome/device flow; transient refresh or discovery failures propagate as retryable
+errors and preserve legacy data. Neither failure reports a successful migration or deletes credentials.
+Identity discovery uses only a usable access token; preserve scope/tenant/id-token metadata and validate
+the provider account before persistence. Persist the normalized `O365TokenSet` with `grant_origin=device_code`
+through S-1's durable-first path, then remove legacy fields. Serialize against reconnect/disconnect with
+S-1's principal/provider migration lock and generation checks: a stale migration cannot overwrite a newer
+grant or resurrect a disconnected account. If a current record already exists, it wins. Deletion failure
+is retryable cleanup and must not cause the old grant to be re-imported or a second completion event.
+
 ### Module 4: Needs-auth in every chat mode + automatic retry
 - **Path**: `packages/ai-parrot-server/src/parrot/handlers/agent.py`; UI `src/lib/api/stream.ts`,
-  `src/lib/components/agents/AgentChat.svelte`, `src/lib/components/agents/integrations/ConnectIntegrationPill.svelte`
+  `src/lib/components/agents/AgentChat.svelte`, `src/lib/components/agents/integrations/ConnectIntegrationPill.svelte`;
+  `packages/ai-parrot/src/parrot/auth/retry_safety.py` (new turn-local tracker),
+  `packages/ai-parrot/src/parrot/tools/manager.py` (`_observed` execution boundary),
+  UI `src/lib/types/agent.ts` (consume generated envelope/retry field)
 - **Responsibility**: emit `AuthRequiredPayload` on streaming (trailer) and non-streaming (envelope) paths when
-  the turn hit `authorization_required`; render the pill in both; connect through S-1's start route; auto-resend once.
+  the turn hit `authorization_required`; render the pill in both; connect through S-1's start route;
+  auto-resend at most once only with complete server evidence of no tool execution.
 - **Depends on**: S-1 M5 (`AuthRequiredPayload`, both exceptions' `to_payload`), S-1 M6 (`POST /api/v1/connections/{p}/start`), M1 (store events), M5 (`connections.svelte.ts`).
 - **Interface Skeleton**:
   ```python
@@ -424,7 +524,7 @@ def register_connection_commands(router, *, link_issuer, oauth_registry=None) ->
       payload = AuthRequiredPayload(**result.metadata). ToolCall.result verified: models/basic.py:28;
       ToolResult.status/metadata: tools/abstract.py (:255, :258)."""
   async def _write_auth_required_trailer(self, stream_resp: web.StreamResponse, ai_message: AIMessage) -> None:
-      """Write b"\\n\\x00" + json {"auth_required": payload, "turn_id": …} after the envelope frame; mirrors
+      """Write b"\\n\\x00" + json {"auth_required": payload, "turn_id": …, "retry_safe": safe} after the envelope; mirrors
       _write_suggestions_trailer (agent.py:2625); never raises (client cancellation excepted)."""
   #   non-streaming: after bot.ask (agent.py:1901), if _auth_required_from(response) → AuthRequiredEnvelope JSON (as :1916-1927)
   ```
@@ -434,9 +534,24 @@ def register_connection_commands(router, *, link_issuer, oauth_registry=None) ->
     provider: string; message: string; agentId: string;
     onConnected?: (provider: string) => void;          // new; authUrl prop REMOVED (start via startConnect)
   } = $props();
-  // AgentChat.svelte: autoRetried: Set<string> keyed by the auth_required message id; resend via handleSend(...) (:757)
-  // only when no newer user message exists; else render a Retry button → handleRetry (:1946)
+  // autoRetried: Set<string> keyed by the originating user message ID, retained across retry responses.
+  // Require server retry_safe === true, the required connection/scopes ready, and no newer message.
+  // Mark before handleSend; duplicate popup/SSE completion cannot schedule a second resend.
+  // Otherwise show explicit Retry with completed-actions warning → handleRetry (:1946).
   ```
+
+**Execution evidence (M4).** AgentTalk opens a fresh ContextVar-backed tracker around the entire turn
+(including stream iteration) and resets it in `finally`. Parallel child tasks share that turn's tracker;
+unrelated turns never share it. `ToolManager._observed` marks `body_started` before either observed or
+unobserved `call()` execution; do not replace the existing per-manager invocation observer. The tracker
+records completeness separately from the count: empty/missing tool-call results are not proof of safety.
+Only a verified execution path wholly covered by this boundary, with settled child tasks and no begun
+body, may produce `retry_safe=true`. Direct provider-side execution, unknown/custom agents, delegation,
+incomplete/cancelled traces and exceptions without complete coverage default false. Any tool body
+beginning, including one that later raises authorization_required, permanently disables auto-retry for
+that turn. Multiple outstanding auth requirements also force false; v1's first-payload helper does not
+represent the other requirements to the client. Both response modes use the same decision; clients never calculate it
+from tool status. This conservative gate does not claim general tool-operation idempotency.
 
 ### Module 5: Connections panel, store, API client, `/enable` removal
 - **Path**: UI `src/lib/api/connections.ts` (new), `src/lib/stores/connections.svelte.ts` (new),
@@ -448,8 +563,9 @@ def register_connection_commands(router, *, link_issuer, oauth_registry=None) ->
   `scripts/generate_ts_types.py` (register models); `ui/schemas/*.json` + `src/lib/types/generated/*` (generated)
 - **Responsibility**: user-level panel and link page; a single rune store for the list + SSE; menu reads the
   store; `/enable` removed everywhere; generated TS types for `IntegrationDescriptor`, `ConnectInitResponse`,
-  `DisconnectResponse`, `AuthRequiredPayload`, `ConnectionEvent`.
-- **Depends on**: M1 (SSE endpoint), S-1 M6 (routes and models).
+  `DisconnectResponse`, `AuthRequiredPayload`, `AuthRequiredEnvelope` (add `retry_safe: bool = False`),
+  `ConnectionEvent`, `ChannelLinkPreview`. M4 consumes these generated contracts after M5.
+- **Depends on**: M1 (SSE endpoint), M2 (link preview/confirm contract), S-1 M6 (routes and models).
 - **Interface Skeleton**:
   ```ts
   // ui/src/lib/api/connections.ts  (new; axios client as integrations.ts:49)
@@ -457,6 +573,7 @@ def register_connection_commands(router, *, link_issuer, oauth_registry=None) ->
   export async function getConnection(provider: string): Promise<IntegrationDescriptor>;     // GET /api/v1/connections/{p}
   export async function startConnect(provider: string, returnOrigin: string, scopes?: string[]): Promise<ConnectInitResponse>; // POST …/{p}/start
   export async function disconnect(provider: string): Promise<DisconnectResponse>;          // DELETE …/{p}
+  export async function previewChannelLink(token: string): Promise<ChannelLinkPreview>;     // GET /api/v1/channel-links/{token}
   export async function confirmChannelLink(token: string): Promise<{ channel: string; linked: boolean }>; // POST /api/v1/channel-links/{token}/confirm
   export function openConnectionEvents(onEvent: (e: ConnectionEvent) => void, signal: AbortSignal): Promise<void>; // fetch + getAuthHeaders (auth-headers.ts:16)
 
@@ -472,14 +589,15 @@ def register_connection_commands(router, *, link_issuer, oauth_registry=None) ->
 
   // ConnectionsPanel.svelte: rows = provider, status badge (connected | needs_reconnect | disconnected),
   //   account (display_account_name / email), scopes_granted, expires_at, channels; Connect / Reconnect / Disconnect.
-  // LinkChannel.svelte: reads ?token, calls confirmChannelLink once, shows linked / expired (410) / error.
+  // LinkChannel.svelte: GET preview only on load; display both identities and access implications.
+  // Confirm click sends {confirm: true}; Cancel does not write. Show 409 conflict / 410 expired / error.
   // App.svelte routes: /account/connections, /account/link (requiresAuth: true; pattern App.svelte:21-63)
   // REMOVED: confirmIntegrationEnable (integrations.ts:89), EnableResponse TS type (:36-38), the menu's /enable call (IntegrationsMenu.svelte:64)
   ```
   ```python
   # handlers/integrations.py: REMOVED `if path.endswith("/enable")` branch (:103-104) and _post_enable (:163)
   # manager/manager.py: REMOVED route "/api/v1/agents/integrations/{agent_id}/{provider}/enable" (:2467-2468);
-  #   ADDED "/api/v1/connections/events" (M1) and "/api/v1/channel-links/{nonce}/confirm" (M2) next to S-1's ConnectionsHandler routes
+  #   ADDED "/api/v1/connections/events" (M1), "/api/v1/channel-links/{nonce}" and "…/{nonce}/confirm" (M2)
   # parrot/auth/oauth2/models.py: REMOVED EnableResponse (models.py:95) + its export
   # server/ui/serving.py: SPA_SECTIONS gains "/account" (:39) unless FEAT-772 TASK-4904 already added it
   ```
@@ -496,7 +614,8 @@ def register_connection_commands(router, *, link_issuer, oauth_registry=None) ->
 - **Path**: `docs/auth/connections.md` (modify — created by S-1), `docs/auth/jira-credential-ownership.md`,
   `docs/integrations/office365-oauth2.md`, `docs/integrations/slack.md` (modify if present, else a Slack section in `connections.md`)
 - **Responsibility**: Connections panel and SSE endpoint (frame format, auth, semantics); Slack linking flow
-  and commands; close the "Known gap" (`jira-credential-ownership.md:60-84`) for Slack; O365 store section
+  and commands (explicit consent, ownership conflict, no v1 relinking, PDP context); conditional auto-retry
+  and manual retry implications; close the "Known gap" (`jira-credential-ownership.md:60-84`) for Slack; O365 store section
   rewritten (one record, `grant_origin`, legacy migration; fixes the `:10` vs `:153` contradiction).
 - **Depends on**: M1–M6.
 
@@ -513,9 +632,15 @@ def register_connection_commands(router, *, link_issuer, oauth_registry=None) ->
 | `test_sse_frames_and_keepalive` | M1 | `event: connection` frames; keep-alive comment; unsubscribes on client disconnect |
 | `test_sse_cross_worker_delivery` | M1 | two app instances on one Redis: publish on A, stream on B receives it |
 | `test_channel_link_issue_consume_single_use` | M2 | consume once → claim; second consume / after TTL → None |
-| `test_channel_link_confirm_uses_session_principal` | M2 | identity row written for the session user; body ignored; 410 on spent nonce; 403 non-numeric session id |
+| `test_channel_link_preview_read_only` | M2 | authenticated preview shows session account + Slack IDs; repeated GET never consumes nonce, extends TTL or writes identity |
+| `test_channel_link_confirm_uses_session_principal` | M2 | explicit confirm required before consumption; principal from session only; body identity overrides rejected; 410 spent nonce; 403 non-numeric session id |
+| `test_channel_link_exclusive_claim` | M2 | separate nonces concurrently confirmed by different Navigator users for one T:U yield one owner and one 409; same enabled owner idempotent |
+| `test_channel_link_existing_ambiguous_or_disabled_owner` | M2 | no automatic ownership transfer/reactivation; resolver fails closed on ambiguity; callback and generic upsert obey the same lock |
+| `test_channel_link_db_failure` | M2 | no success on persistence failure; nonce stays spent and a fresh link is required |
 | `test_slack_connect_unlinked_replies_login` | M2 | no principal → "/login" reply, no OAuth state created |
 | `test_slack_connect_linked_starts_with_principal` | M2 | `start_connect(channel="slack", principal=…)` called; DM button with auth URL |
+| `test_slack_connection_pbac` | M2 | real navigator-auth evaluator permits authorized principal and denies another tenant for list/status/connect/disconnect; effective scopes evaluated |
+| `test_slack_connection_pbac_fail_closed` | M2 | missing PDP/context, disabled user, stale binding, errors and DENY result cause no state/deletion/account disclosure; response truthiness never grants access |
 | `test_slack_jira_aliases_delegate` | M2 | `/connect_jira` ≡ `/connect jira` |
 | `test_slack_identity_key_team_qualified` | M2 | callback and link both write `provider_user_id="T:U"`; resolver finds it |
 | `test_slack_connection_notifier_any_provider` | M2 | completed / revoked / refresh_failed DMs for jira and o365 |
@@ -523,10 +648,15 @@ def register_connection_commands(router, *, link_issuer, oauth_registry=None) ->
 | `test_devicecode_resolver_reads_through_manager` | M3 | cache hit and refresh go through `get_valid_token`; no `VaultTokenSync` call |
 | `test_devicecode_resolver_fails_closed_without_principal` | M3 | `resolve_principal` → None raises, no device flow |
 | `test_devicecode_legacy_migration_once` | M3 | legacy `o365:*` read, rewritten, deleted; second resolve does not read legacy; no read after `OAUTH2_LEGACY_KEYS_UNTIL` |
+| `test_devicecode_legacy_expiry_preserved` | M3 | absolute expiry preserved exactly for usable token; no default-hour extension; missing/invalid/near-expiry/expired values trigger refresh before identity probe |
+| `test_devicecode_legacy_refresh_and_failure` | M3 | valid refresh enables expired-token migration; rotated refresh token retained; transient/probe/persistence failure preserves legacy; terminal invalid grant requires auth |
+| `test_devicecode_legacy_concurrent_replace_revoke` | M3 | concurrent reconnect wins; disconnect prevents resurrection; failed legacy deletion retries cleanup without reimport or duplicate completion |
 | `test_o365_provider_registered_when_configured` | M3 | `O365_CLIENT_ID` set → `OAuth2ProviderRegistry.get("o365")`; unset → absent |
 | `test_broker_device_code_deps_without_vault` | M3 | `_build_device_code` builds with `o365` + `o365_oauth_manager` only |
 | `test_agenttalk_auth_required_from_tool_result` | M4 | non-streaming: tool result `authorization_required` → `AuthRequiredEnvelope` |
 | `test_agenttalk_stream_auth_required_trailer` | M4 | streaming: trailer frame after envelope with full payload incl. device-code fields |
+| `test_agenttalk_retry_safety` | M4 | both modes: complete single pre-dispatch auth failure with no begun bodies is safe; successful mutation followed by auth failure or multiple outstanding auth requirements is unsafe |
+| `test_retry_safety_unknown_and_concurrent_paths` | M4 | unknown/delegated/cancelled/incomplete paths default false; parallel tool start disables retry; concurrent turns isolated; existing invocation observer retained |
 | `test_enable_route_removed` | M5 | `POST …/{provider}/enable` → 404; `EnableResponse` not importable |
 | `test_jira_connect_tool_removed` | M6 | module absent; AgentTalk bootstrap gone |
 
@@ -534,17 +664,20 @@ def register_connection_commands(router, *, link_issuer, oauth_registry=None) ->
 | Test | Module | Description |
 |---|---|---|
 | `stream.test.ts` › auth_required trailer | M4 | parser yields `{type:"auth_required"}` |
-| `AgentChat.test.ts` › streaming pill + auto-retry once | M4 | pill rendered in streaming mode; completion → one resend; second completion → none; newer user message → Retry button only |
+| `AgentChat.test.ts` › streaming pill + auto-retry once | M4 | safe turn + required scopes ready → one resend; popup/SSE race and repeated auth response cannot reset original-message budget; newer message → manual retry |
+| `AgentChat.test.ts` › unsafe retry | M4 | missing/false retry_safe → no automatic resend; manual Retry warns completed actions may repeat; matching provider event without required scopes does not resend |
 | `ConnectIntegrationPill.test.ts` | M4 | uses `startConnect`; `onConnected` on popup success or matching SSE event |
 | `connections.test.ts` (store) | M5 | refresh on open and per event; backoff; `stop` aborts |
 | `ConnectionsPanel.test.ts` | M5 | renders status/account/scopes/expiry/channels; connect/disconnect actions |
-| `LinkChannel.test.ts` | M5 | success, 410 expired, error |
+| `LinkChannel.test.ts` | M5 | URL load only previews; Cancel writes nothing; both identities displayed; explicit Confirm POST only once; success, 409 conflict, 410 expired, error |
 | `IntegrationsMenu.test.ts` | M5 | reads the store; never calls `/enable` |
 
 ### Integration Tests
 | Test | Description |
 |---|---|
-| `test_e2e_slack_link_then_connect` | Slack `/login` → link confirm as web user → `/connect jira` → callback → Slack DM + identity-vault row for that Navigator user |
+| `test_e2e_slack_link_then_connect` | Slack `/login` → read-only preview → explicit confirm as web user → authorized `/connect jira` → callback → Slack DM + identity-vault row for that Navigator user |
+| `test_e2e_forwarded_slack_link` | opening another Slack user's link never binds it automatically; rejecting preview leaves identities untouched |
+| `test_e2e_chat_partial_execution_auth` | mutation completes before another tool needs auth; connection completion causes no automatic replay or duplicate mutation in either response mode |
 | `test_e2e_web_panel_live_update` | connect via callback for `channel="telegram"` → SSE subscriber of the same principal receives `connection.completed`; another principal's stream receives nothing |
 | `test_e2e_o365_device_and_web_share_record` | device grant stored → `GET /api/v1/connections` shows o365 connected (`grant_origin` device_code) → 3LO reconnect replaces it |
 
@@ -586,7 +719,7 @@ def redis_push(redis_url):             # real Redis db 15 + unique prefix, skip 
     ...
 
 @pytest.fixture
-def fake_identity_mapping():           # records upsert_identity kwargs; raises ValueError on non-numeric nav_user_id like the real one
+def fake_identity_mapping():           # exclusive claim double; ownership races also require real-DB tests above
     ...
 
 @pytest.fixture
@@ -602,15 +735,17 @@ def legacy_vault():                    # in-memory VaultTokenSync double: read_t
 - [ ] **AC-2 (G2, D1)** `GET /api/v1/connections/events` streams `text/event-stream` frames for the session principal only; the principal is never taken from the query or body; a keep-alive is sent at least every 30 s.
 - [ ] **AC-3 (G2)** An event published by any worker (and for any originating channel) reaches every open stream of that principal on any worker within 2 s; no stream of another principal receives it; frames contain only `ConnectionEvent` fields.
 - [ ] **AC-4 (G2)** No WebSocket route is added and `UserSocketManager` / `wsService` are unchanged.
-- [ ] **AC-5 (G4, D2)** The `slack` identity row is written only by `POST /api/v1/channel-links/{nonce}/confirm` from an authenticated session (or by the OAuth callback when the state already carries a bound principal); nonces are single-use and expire after `CHANNEL_LINK_TTL_SECONDS`.
+- [ ] **AC-5 (G4, D2)** Link page load only previews both identities; no nonce consumption or identity write until explicit confirmation. Confirm uses the authenticated session principal, requires `confirm=true`, and consumes a single-use expiring nonce. Every Slack writer atomically enforces exclusive ownership; conflicting/disabled owners return 409, same enabled owner is idempotent, and ambiguous reverse lookup fails closed. Concurrent distinct-nonce confirmations cannot create two owners.
 - [ ] **AC-6 (G4)** Slack `/connect <provider>` for an unlinked user replies with the `/login` instruction and creates no OAuth state; for a linked user it starts the flow with the resolved principal; completion, revocation and refresh failure are DMed for any provider; `/connect_jira`, `/disconnect_jira`, `/jira_status` keep working as aliases; Slack `provider_user_id` is `"{team_id}:{slack_user_id}"` everywhere.
-- [ ] **AC-7 (G3)** Streaming and non-streaming AgentTalk responses carry the `AuthRequiredPayload` when a tool returned `authorization_required`; the UI shows the Connect pill in both modes; after a successful connect the originating prompt is re-sent exactly once, and never when a newer user message exists.
+- [ ] **AC-7 (G3)** Both response modes carry `AuthRequiredPayload` and server-authored `retry_safe` (default false), and show the Connect pill. Auto-resend requires complete evidence that no tool body began, exactly one outstanding auth requirement with its provider/scopes ready, no newer message and an unused originating-message retry budget. Unsafe/unknown/multiple-auth turns offer manual retry with a completed-actions warning. Popup/SSE races and repeated auth responses cannot replay the originating prompt more than once automatically; mutation-before-auth tests prove no duplicate side effects.
 - [ ] **AC-8 (G5, D3)** O365 3LO and device-code grants are one principal-keyed record (`O365TokenSet.grant_origin`); `VaultTokenSync` is not called for `o365` by any code path except the one-time legacy read; `O365OAuth2Provider` is registered when `O365_CLIENT_ID` is set; the device-code resolver fails closed without a principal.
 - [ ] **AC-9 (G6)** `/enable` (route, handler branch, `EnableResponse`, `confirmIntegrationEnable`) is gone; `IntegrationsMenu` and `ConnectIntegrationPill` call only `/api/v1/connections*`.
 - [ ] **AC-10 (G6)** `jira_connect_tool.py`, `_bootstrap_jira_oauth_session` and `test_agentalk_jira_connect.py` are deleted with no remaining reference in `packages/`.
 - [ ] **AC-11** API TS types for the connection models are generated from Pydantic (`scripts/generate_ts_types.py` → `schemas/` → `src/lib/types/generated/`), not hand-written.
 - [ ] **AC-12** The Validation Contract passes, including the vitest runner; the multi-worker SSE, Slack linked/unlinked and O365 exactly-once migration tests pass; `ruff check` clean on touched Python files; Svelte 5 runes only; no `print`, `requests`/`httpx`.
 - [ ] **AC-13** `docs/auth/connections.md`, `docs/auth/jira-credential-ownership.md` (Slack gap closed) and `docs/integrations/office365-oauth2.md` (one O365 record) are updated.
+- [ ] **AC-14 (G4)** Slack list/status/connect/disconnect use an injected navigator-auth PDP adapter with trusted current principal, binding, roles, tenant and effective scopes. Only explicit ALLOW succeeds; absent context/PDP, denial or errors cause no protected operation. Real-evaluator tests cover allowed and denied tenants; no HTTP request is fabricated and web PBAC remains enforced.
+- [ ] **AC-15 (G5)** Legacy O365 conversion preserves absolute expiry, refreshes expired/near-expiry/invalid-expiry tokens before identity discovery, and deletes legacy data only after durable success. Failure retains recoverable data; concurrent replacement/revocation cannot be overwritten or resurrected, and cleanup retries do not mint duplicate completion events.
 
 ---
 
@@ -714,7 +849,9 @@ scripts/generate_ts_types.py: _models() (:46-83); export_schemas (:117)
 |---|---|---|---|
 | `RedisConnectionPush` | S-1 `ConnectionEventPublisher.add_sink` | sink registration at startup | S-1 spec §3 M4 (not in tree) |
 | `ConnectionEventsHandler` | `RedisConnectionPush.subscribe` | async iterator | — (new) |
-| `ChannelLinksHandler` | `IdentityMappingService.upsert_identity` | method call | `identity_mapping.py:173` |
+| `ChannelLinksHandler` | new `IdentityMappingService.claim_channel_identity` | exclusive transaction, shared by every Slack writer | existing upsert at `identity_mapping.py:173`; new method does not exist yet |
+| `IntegrationsService` | new `NavigatorConnectionAuthorizer` via core Protocol | server startup injection into Slack service factory | existing `_check_pbac` at `service.py:490`; request=None currently denies |
+| AgentTalk retry tracker | `ToolManager._observed` | ContextVar-owned turn evidence before tool body | `tools/manager.py:1734`; both observer branches |
 | Slack `/connect` | S-1 `resolve_principal`, `IntegrationsService.start_connect(channel=, principal=)` | function/method | S-1 spec §3 M1/M6 |
 | `SlackConnectionNotifier` | S-1 `ChannelNotifierRegistry.register` | registration in `slack/wrapper.py` | `slack/wrapper.py:132` (replaces) |
 | `O365DeviceCodeCredentialResolver` | `O365OAuthManager.get_valid_token` / `store_device_grant` | method calls | `o365_devicecode_provider.py:142, :272` (replaced sites) |
@@ -725,6 +862,7 @@ scripts/generate_ts_types.py: _models() (:46-83); export_schemas (:117)
 ### Does NOT Exist (Anti-Hallucination)
 - ~~S-1 symbols~~ `Principal`, `resolve_principal`, `CredentialStore`, `ConnectionEvent`, `ConnectionEventPublisher`, `ChannelNotifier`, `ChannelNotifierRegistry`, `AuthRequiredPayload`, `ConnectionsHandler`, `IdentityPrincipalResolver`, `IdentityVaultCredentialStore`, `SlackJiraNotifierAdapter`, `OAUTH2_LEGACY_KEYS_UNTIL`, `/api/v1/connections*` — **FEAT-773, not merged at spec time**.
 - ~~`ConnectionEventSink`, `add_sink`, `RedisConnectionPush`, `ConnectionEventsHandler`, `ChannelLinkIssuer`, `ChannelLinkClaim`, `ChannelLinksHandler`, `SlackConnectionNotifier`, `register_connection_commands`, `store_device_grant`, `O365TokenSet.grant_origin`, `CONNECTIONS_LINK_BASE_URL`, `CHANNEL_LINK_TTL_SECONDS`~~ — new in this spec.
+- ~~`ChannelLinkPreview`, `claim_channel_identity`, `ConnectionAuthorizer`, `NavigatorConnectionAuthorizer`, `migrate_legacy_device_grant`, `AuthRequiredEnvelope.retry_safe`, `auth/retry_safety.py`~~ — new review-remediation contracts; not existing upstream APIs.
 - ~~A WebSocket client in the admin UI~~ — `websocket-service.ts` is a no-op stub (FEAT-476); ~~`UserSocketManager` in ai-parrot-server's app~~ — only repo-root `app.py:229-235` builds it.
 - ~~`EventSource` with an `Authorization` header~~ — browsers cannot set headers on `EventSource`; use fetch streaming.
 - ~~A Slack login / auth strategy / session `nav_user_id`~~ — none under `integrations/slack/` (Telegram: `telegram/auth.py:377`; Teams: `msteams/auth.py:256`).
@@ -748,6 +886,13 @@ exist until FEAT-773 merges; `/sdd-task` MUST re-verify every row with `grep -c`
 | `packages/ai-parrot-server/src/parrot/services/connection_push.py` | CREATE | — | — | — |
 | `packages/ai-parrot-server/src/parrot/handlers/connection_events.py` | CREATE | — | — | — |
 | `packages/ai-parrot-server/src/parrot/handlers/channel_links.py` | CREATE | — | — | — |
+| `packages/ai-parrot-server/src/parrot/services/identity_mapping.py` | MODIFY | `    async def upsert_identity(` | `identity_mapping.py:173`; route Slack writes through new exclusive claim | 1 |
+| `packages/ai-parrot/src/parrot/auth/oauth2/authorization.py` | CREATE | — | — | — |
+| `packages/ai-parrot-server/src/parrot/services/connection_authorization.py` | CREATE | — | — | — |
+| `packages/ai-parrot/src/parrot/auth/oauth2/service.py` | MODIFY | `    async def _check_pbac(` | `service.py:490`; re-verify after S-1 | 1 |
+| `packages/ai-parrot/src/parrot/auth/retry_safety.py` | CREATE | — | — | — |
+| `packages/ai-parrot/src/parrot/tools/manager.py` | MODIFY | `    async def _observed(` | `manager.py:1734` | 1 |
+| `packages/ai-parrot-server/ui/src/lib/types/agent.ts` | MODIFY | `export interface AgentMessage {` | `agent.ts:25`; retry field consumption | 1 |
 | `packages/ai-parrot-server/src/parrot/manager/manager.py` | MODIFY | `            "/api/v1/agents/integrations/{agent_id}/{provider}/enable",` | `manager.py:2467` | 1 |
 | `packages/ai-parrot-server/src/parrot/manager/manager.py` | MODIFY | `    async def _register_oauth2_providers(self, app: web.Application) -> None:` | `manager.py:2789` | 1 |
 | `packages/ai-parrot-server/src/parrot/services/identity_principal.py` | MODIFY (S-1) | `class IdentityPrincipalResolver` | (unverified — created by FEAT-773 M8) | — |
@@ -814,7 +959,7 @@ exist until FEAT-773 merges; `/sdd-task` MUST re-verify every row with `grep -c`
 - **Legacy `o365:*` keys are keyed by e-mail/OID**, not by Navigator id; the migration needs the canonical id from the principal. Unresolvable legacy entries stay until the window closes and are then ignored.
 - **SSE behind proxies** — buffering proxies break streams; send `X-Accel-Buffering: no` and keep-alives ≤ 25 s. Gunicorn worker timeouts must not kill idle streams (keep-alive covers it).
 - **Redis connection count** — one pubsub connection per open panel tab; the store opens at most one stream per tab and closes it on `stop()` / page hide.
-- **Auto-retry replays a whole turn.** Tools that ran before the auth failure in the same turn run again; the at-most-once rule and the "no newer message" rule bound it. If a provider requires several connects in one turn, only the last completion triggers the resend.
+- **Whole-turn replay is not operation idempotency.** Any begun tool, incomplete execution evidence or multiple outstanding auth requirements disables automatic resend; manual retry warns about repeated completed actions. The originating user-message ID retains its retry budget across repeated auth failures. A single required provider must satisfy requested scopes before a safe turn can auto-resend.
 - **`/account` collides with FEAT-772** (TASK-4903/4904 pending) on `App.svelte`, `nav.ts`, `config.ts`, `serving.py`. Check `origin/dev` before editing; never duplicate the section entry.
 - **Removing `/enable`** breaks any external client still calling it (the TROC AgentChat repo was not inspected in FEAT-773 research). S-1 kept it as a no-op precisely for the admin UI; confirm no other caller before deleting.
 - **Slack identity key change** — existing `slack` rows with a bare `slack_user_id` are effectively none (the callback writes them only when `nav_user_id` is present, which Slack never sent); no migration needed, but the resolver must not fall back to the bare id.
@@ -832,10 +977,10 @@ exist until FEAT-773 merges; `/sdd-task` MUST re-verify every row with `grep -c`
 ## 8. Open Questions
 
 - [x] Push transport for the web panel — *Resolved at spec time (D1)*: SSE endpoint fed by per-principal Redis pub/sub; FEAT-476's no-WebSocket decision kept.
-- [x] Slack user ↔ Navigator principal link — *Resolved at spec time (D2)*: Slack `/login` DMs a signed one-time link; the logged-in web session confirms it and writes the `slack` identity row. E-mail auto-link rejected.
+- [x] Slack user ↔ Navigator principal link — *D2, hardened in review*: Slack `/login` DMs an opaque one-time link; the web page previews both identities and requires explicit consent before an exclusive claim. E-mail auto-link and automatic confirmation on load are rejected.
 - [x] O365 scope in S-3a — *Resolved at spec time (D3)*: full consolidation — 3LO and device code share one principal-keyed record; `VaultTokenSync` stops serving `o365`.
 - [x] Multi-account, PBAC on connect/disconnect, needs-auth payload, durable-first persistence — *Resolved in S-1* (S3, S4/AC-8, S8/M5, S2/AC-5); not reopened here.
-- [ ] PBAC evaluation for chat-channel starts (Slack `/connect`) when there is no HTTP request — S-3a calls `IntegrationsService.start_connect(channel="slack", principal=…)` and must not bypass whatever S-1 M6 settles — *Owner: implementer of S-1 M6 / Jesus*.
+- [x] PBAC without an HTTP request — *Resolved in review*: M2 adds the core authorizer Protocol and server PDP adapter for all Slack connection operations, using trusted identity/tenant context and explicit ALLOW only. Re-verify installed evaluator signatures after S-1; AC-14 requires real-evaluator contract tests.
 - [ ] `CONNECTIONS_LINK_BASE_URL` default — first entry of `WEB_OAUTH_ALLOWED_ORIGINS` or required config — *Owner: Jesus*.
 - [ ] External callers of `/api/v1/agents/integrations/{agent}/{provider}/enable` (TROC AgentChat repo) before removal — *Owner: Jesus*.
 - [ ] Ordering with FEAT-772 for the `/account` section — *Owner: whoever starts second* (check `origin/dev`).
@@ -860,12 +1005,28 @@ exist until FEAT-773 merges; `/sdd-task` MUST re-verify every row with `grep -c`
 | S6 | Apply PBAC to connect and revoke (risk) | REJECT | S-1 AC-8; new confirm route is session-bound to the caller. | — |
 | S7 | Route push events by principal, cross-process (architecture) | CONFIRM (modified) | SSE instead of WS (D1); Redis per-principal channel; refetch-on-event semantics. | §2, M1, AC-2/AC-3 |
 | S8 | Define connection events separately from usage fanout (architecture) | REJECT | S-1 M4 owns the event model and fanout; S-3a tests SSE frames carry only its fields. | — |
-| S9 | Specify an idempotent retry contract for the UI (api) | CONFIRM | At-most-once resend keyed by message id; no-newer-message rule. | §2, M4, AC-7 |
+| S9 | Specify an idempotent retry contract for the UI (api) | CONFIRM (hardened in review) | Server proof of no tool execution gates resend; budget belongs to originating message, with no-newer-message rule. General operation idempotency is not claimed. | §2, M4, AC-7 |
 | S10 | Normalize needs-auth at a shared boundary (alternative) | REJECT | S-1 M5; the streaming trailer carries the full payload. | — |
 | S11 | Keep provider-specific store capabilities explicit during O365 migration (alternative) | CONFIRM (modified) | Full consolidation per D3, with `grant_origin` recorded; one refresh path already shared. | M3, §7 |
 | S12 | Make migration correctness a cross-channel acceptance gate (testing) | CONFIRM | Multi-worker SSE, Slack linked/unlinked, O365 exactly-once tests. | §4, AC-12 |
 
 Summary: **6** confirmed (2 modified) · **6** rejected (owned by S-1) · **0** escalated.
+
+### Specification review remediation (2026-10-30)
+
+All five findings were confirmed and addressed in revision 0.2. This records specification corrections,
+not passing implementation evidence; the corresponding acceptance criteria remain unchecked.
+Independent follow-up confirmed the remediation contracts and identified the singular-payload/multiple-auth
+retry mismatch. Disposition: CONFIRM; resolved by forcing `retry_safe=false` for multiple outstanding
+auth requirements, with coverage in `test_agenttalk_retry_safety` and AC-7.
+
+| Ledger issue | Correction | Verification required during implementation |
+|---|---|---|
+| `0cbfeffa739c` | Preview and explicit Slack-link consent (M2/M5) | Page-load/Cancel no-write tests; AC-5 |
+| `70af2e92c9ce` | Transactional exclusive identity claim and fail-closed ambiguous lookup (M2) | Concurrent distinct-nonce real-DB tests; AC-5 |
+| `4922e610f80d` | Server execution-safety gate and persistent original-message retry budget (M4) | Partial execution, unknown path, concurrency and popup/SSE race tests; AC-7 |
+| `1798735be196` | Dedicated absolute-expiry legacy conversion and refresh-before-probe (M3) | Expiry/failure/concurrent replacement tests; AC-15 |
+| `7cf5f968e860` | Injected principal-aware navigator-auth PDP adapter (M2) | Allowed/denied tenant and missing-context real-evaluator tests; AC-14 |
 
 ---
 
@@ -873,7 +1034,7 @@ Summary: **6** confirmed (2 modified) · **6** rejected (owned by S-1) · **0** 
 
 - **Isolation**: ONE feature worktree (`feat-FEAT-777-connections-web-slack`), created only after FEAT-773 is merged into `dev`; the `sdd-coder` engine gives each task its own sub-worktree.
 - **Module dependency graph**:
-  - M1 → S-1 M4 (publisher); M5 → M1 (`connections.svelte.ts` reads the SSE endpoint)
+  - M1 → S-1 M4 (publisher); M5 → M1/M2 (SSE endpoint and link preview/confirm contract)
   - M4 → M5 (pill and AgentChat use `connections.svelte.ts` / `connections.ts`), M4 → S-1 M5
   - M2 → S-1 M1/M6/M8; M3 → S-1 M2/M8; M6 → S-1 M7; M7 → M1–M6
   - Concurrent: M1 ∥ M2 ∥ M3 ∥ M6; then M5; then M4; M7 last.
@@ -888,3 +1049,4 @@ Summary: **6** confirmed (2 modified) · **6** rejected (owned by S-1) · **0** 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-30 | Jesus Lara (with Claude Opus 5.5) | Initial draft from the S-3a row of the FEAT-773 proposal and the S-1 Non-Goals. Decisions D1 (SSE, keep FEAT-476), D2 (Slack link via web session), D3 (full O365 consolidation). Codex design research: 6 confirm / 6 reject (S-1-owned). Contract verified at `370a62d9b`. |
+| 0.2 | 2026-10-30 | Codex | Address all five review findings: explicit link consent, exclusive Slack identity ownership, safe conditional auto-retry, legacy O365 expiry conversion, and request-independent Slack PBAC. Align module scope, interfaces, generated types, tests and AC-5/7/14/15. |

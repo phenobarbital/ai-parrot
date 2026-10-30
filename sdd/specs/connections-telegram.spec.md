@@ -16,6 +16,10 @@ tags: [oauth2, connections, telegram, principal, credentials, pbac]
 **Status**: approved
 **Target version**: 1.3.0
 
+**Implementation gate**: approval does not resolve §8 Q1. M3 and its dependent modules must not start until
+the owner records the shared web/channel PBAC resource contract and a matching policy fixture. Independent
+modules may proceed after FEAT-773 merges; no implementer may choose a resource mapping implicitly.
+
 > **Source**: proposal `sdd/proposals/delegated-auth-connections.proposal.md` (FEAT-773, `accepted`) §6 row
 > "S-2 Telegram migration", and `sdd/specs/delegated-auth-connections.spec.md` (FEAT-773, S-1) §1 Non-Goals
 > ("Generic `/connect <provider>` channel commands, `ConnectionChannel` protocol work and the Telegram legacy-key
@@ -82,7 +86,8 @@ parity: a Jira notifier adapter, a "/login first" reply in `/connect_jira`, and 
   and `connection.refresh_failed` reach the user's chat for any provider, through the bot that issued the flow.
   Provider-specific session effects (the Jira `<jira>` prompt block) become registered session hooks.
 - **G6 — Generic combined login.** `post_auth_actions` accepts any registered provider; `JiraPostAuthProvider`
-  becomes a preset of the generic provider.
+  becomes a preset of the generic provider. Primary authentication precedes provider authorization; required
+  secondary steps gate identity publication and session activation.
 - **G7 — Telegram legacy cutover.** After `OAUTH2_LEGACY_KEYS_UNTIL` (FEAT-773), a guarded purge deletes the
   Telegram legacy keys; the raw-`telegram_id` credential paths and comments are removed.
 
@@ -113,12 +118,15 @@ FEAT-775), a request-less PBAC entry point and the `_execute_tool` message fix; 
 link/unlink; the channel-neutral half of the commands lands in `integrations/core/auth/` so other channels can reuse it.
 
 **Principal link (M4).** `IdentityMappingService.link_channel_identity()` writes the channel row in one
-transaction: delete every `(auth_provider, provider_user_id)` row owned by a *different* Navigator user, then the
-existing upsert. `unlink_channel_identity(auth_provider, provider_user_id)` deletes by the channel id. The wrapper
-calls a single `_persist_principal_link(session)` after both login success sites (single-step wrapper.py:2362,
-combined wrapper.py:2404) — strategy-agnostic — and `unlink` in `handle_logout` before `session.clear_auth()`. A
+transaction: acquire the channel-account transaction lock defined in M4, delete every
+`(auth_provider, provider_user_id)` row owned by a *different* Navigator user, then the existing upsert.
+`unlink_channel_identity(auth_provider, provider_user_id)` takes the same lock before deleting by channel id.
+The wrapper calls `_persist_principal_link(session)` only at final login success — after primary authentication
+for single-step login, and after **all required secondary actions succeed** for combined login — and `unlink`
+in `handle_logout` before `session.clear_auth()`. A
 `principal_link_persisted` flag on `TelegramUserSession` makes `_ensure_principal_link(session)` a once-per-session
-backfill, called from the connection commands and `_invoke_agent`. A failed write never fails the login: the user
+backfill, called from the connection commands and `_invoke_agent`. Pending combined-login candidates are not
+eligible for backfill, command principals, or agent execution. A failed write never fails the login: the user
 is told connections are unavailable, and resolution fails closed. `principal_for_session(session)` builds the
 FEAT-773 `Principal(user_id=nav_user_id, channel="telegram", channel_user_id=str(telegram_id), …)` or `None`.
 The Telegram identity write in the combined flow moves from `JiraPostAuthProvider` to this path.
@@ -173,11 +181,16 @@ distinct provider it runs the M6 connect routine (fresh state with this chat's `
 
 **Combined login (M9).** `telegram/post_auth_connection.py::ConnectionPostAuthProvider(provider_id, …)`
 implements the existing `PostAuthProvider` Protocol (post_auth.py:34-90) for any registered provider:
-`build_auth_url` calls `start_connect` with the principal from the in-progress session; `handle_result` calls
-`manager.handle_callback(code, state)` (FEAT-773 persists durably and publishes `connection.completed`) and runs
-the provider's session hook. `JiraPostAuthProvider` becomes a thin preset (`provider_name = "jira"`) so imports
-and YAML keep working. `_init_post_auth_providers` resolves any provider from the registry; the
-`_KNOWN_POST_AUTH_PROVIDERS` warning becomes "not a registered provider at startup".
+`/login` first shows the primary login WebApp without constructing a provider URL. Its successful, validated
+primary callback creates a **pending candidate**, separate from the active user session. Only then does
+`build_auth_url` call `start_connect` with that candidate's Navigator principal and send the secondary Connect
+button. This intentionally replaces the pre-authentication `next_auth_url` redirect with a staged interaction;
+YAML and provider names remain compatible. Provider callback completion advances the pending attempt; it does
+not independently authenticate the active Telegram session. After every required action succeeds, the wrapper
+publishes the identity link and activates the candidate. Failure, cancellation or expiry discards the candidate
+without publishing, deleting or replacing an identity link. M9 defines callback correlation and finalization.
+`JiraPostAuthProvider` becomes a thin preset (`provider_name = "jira"`). `_init_post_auth_providers` resolves
+any provider from the registry; the `_KNOWN_POST_AUTH_PROVIDERS` warning becomes "not a registered provider at startup".
 
 **Cutover (M10).** FEAT-773's `legacy_audit` gains `purge_legacy_keys(redis, *, channel, providers, dry_run=True)`
 and CLI flags `--purge --channel telegram [--confirm] [--force]`. It deletes `jira:oauth:telegram:*` and
@@ -197,7 +210,7 @@ dry-run unless `--confirm`. Runbook: audit → announce to the unbound users (U3
 ### Component Diagram
 
 ```
-/login (any strategy) ─► handle_web_app_data ─► _persist_principal_link ─► IdentityMappingService.link_channel_identity   [M4]
+/login ─► primary callback ─► pending secondary actions (if configured) ─► final success ─► persist link + activate    [M4, M9]
 /logout               ─► unlink_channel_identity("telegram", tg_id) ─► session.clear_auth()                                [M4]
 
 /connect [p] | /connect_jira | conn:<p> button
@@ -222,7 +235,7 @@ ops: python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram --conf
 
 | Existing Component | Integration Type | Notes |
 |---|---|---|
-| `telegram/wrapper.py::TelegramAgentWrapper` | modifies | link/unlink at login/logout; `_ensure_principal_link`; `_register_connection_commands` replaces `_register_jira_commands` / `_register_office365_commands`; notifier `attach` + Jira session hook; collector around `agent.ask` in `_invoke_agent` + Connect buttons; generic `_init_post_auth_providers` |
+| `telegram/wrapper.py::TelegramAgentWrapper` | modifies | final-success link/logout unlink; `_ensure_principal_link`; staged login and pending-attempt finalization; generic commands; notifier attach + session hooks; needs-auth collector; generic `_init_post_auth_providers` |
 | `telegram/auth.py::TelegramUserSession` | extends | `principal_link_persisted: bool` (non-repr, non-compare, like `post_login_ran`) |
 | `telegram/jira_commands.py` | modifies (reduce) | aliases only; `TelegramOAuthNotifier` deleted |
 | `telegram/office365_commands.py` | modifies | alias registration when `o365` is connectable |
@@ -353,6 +366,8 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
 - **Responsibility**: evaluate `integration:connect` / `integration:disconnect` / `integration:list` for a
   `Principal` without an aiohttp request, fail closed; wire it into `IntegrationsService` via `permission_app`.
 - **Depends on**: FEAT-773 M1 (`Principal`), FEAT-773 M6 (`IntegrationsService` signatures).
+- **Start gate**: §8 Q1 must specify identical resource type/name/action semantics for the web and channel
+  paths, with an allow/deny policy fixture used by both. No guessed resource type or private channel-only policy.
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot/src/parrot/auth/oauth2/channel_pbac.py  (new)
@@ -395,6 +410,15 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
   (`app.get("authdb") or app.get("database")`, wrapper.py:583). No pool ⇒ one warning at startup, link writes are
   skipped, connection commands reply "Connections are not available on this bot".
 - **Depends on**: FEAT-773 M1 (`Principal`).
+- **Concurrency contract**: every channel link/unlink takes `pg_advisory_xact_lock` on the same stable key
+  derived from the namespaced, unambiguous encoding of `(auth_provider, provider_user_id)`, on the same DB
+  connection and transaction as the delete/upsert. Use a deterministic digest-to-signed-bigint conversion,
+  never Python's process-randomized `hash()`. Acquire the lock before reading or mutating rows; it must also
+  serialize first links when no row exists. All Telegram identity writers, including legacy combined-login
+  paths, must delegate here. A transaction alone or `SELECT FOR UPDATE` on a possibly absent row is insufficient.
+  Link and unlink share the protocol; the existing user-inclusive unique constraint remains unchanged.
+  Real-DB tests with separate connections must prove one owner after competing first links and relinks,
+  rollback of a failed replacement, and serialized link/unlink outcomes.
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot-server/src/parrot/services/identity_mapping.py  (modifies)
@@ -405,11 +429,11 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
       async def link_channel_identity(self, *, nav_user_id: str, auth_provider: str, provider_user_id: str,
                                       auth_data: Dict[str, Any], display_name: Optional[str] = None,
                                       email: Optional[str] = None) -> None:
-          """One transaction: _DELETE_CHANNEL_OTHERS_SQL then _UPSERT_SQL (identity_mapping.py:43-53).
+          """One transaction: acquire channel-account lock, then _DELETE_CHANNEL_OTHERS_SQL and _UPSERT_SQL.
           Same validation as upsert_identity (numeric nav_user_id, non-empty provider_user_id, no secrets in
           auth_data, identity_mapping.py:207-225). Token-bearing providers are rejected (ValueError) — channel rows only."""
       async def unlink_channel_identity(self, auth_provider: str, provider_user_id: str) -> int:
-          """Delete every row for (auth_provider, provider_user_id); return the count. No-op → 0."""
+          """Acquire the same channel-account lock in the deletion transaction; delete rows and return count; absent → 0."""
 
   # packages/ai-parrot-integrations/src/parrot/integrations/telegram/auth.py  (modifies)
   @dataclass
@@ -426,10 +450,12 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
           """link_channel_identity(nav_user_id, "telegram", str(telegram_id), {"telegram_id", "username"}, display_name, email);
           sets session.principal_link_persisted on success; logs and returns False on any failure."""
       async def _ensure_principal_link(self, session: TelegramUserSession) -> bool:
-          """No-op when principal_link_persisted or not authenticated; else _persist_principal_link."""
-      # handle_web_app_data: after `success = await self._auth_strategy.handle_callback(data, session)` (wrapper.py:2362)
-      #   and after `basic_ok = …` (wrapper.py:2404) succeed → await self._persist_principal_link(session)
+          """Only finalized active sessions may backfill; pending/failed candidates never write a link.
+          No-op when principal_link_persisted or not authenticated; else _persist_principal_link."""
+      # Single-step: persist after validated primary success; combined: persist only at M9 final success.
+      # Never persist immediately after `basic_ok` (wrapper.py:2404) while required steps remain.
       # handle_logout (wrapper.py:2310): before session.clear_auth() → unlink_channel_identity("telegram", str(telegram_id))
+      # clear_auth resets principal_link_persisted; cancellation also invalidates any pending login attempt.
   ```
 
 ### Module 5: Channel-neutral connection command core
@@ -506,6 +532,8 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
 ### Module 7: Telegram `ChannelNotifier` and session hooks
 - **Path**: `packages/ai-parrot-integrations/src/parrot/integrations/telegram/connection_notifier.py` (new); `integrations/core/auth/notifiers.py` *(FEAT-773)* (drop `TelegramJiraNotifierAdapter`); `integrations/manager.py` (register once); `telegram/wrapper.py` (attach + Jira hook)
 - **Responsibility**: §2 "Notifier".
+  For `extra_state.combined=True`, dispatch completion to M9's attempt coordinator before ordinary session
+  hooks; defer those hooks until final login success. Correlation failure never stamps an active session.
 - **Depends on**: FEAT-773 M4 (`ChannelNotifier`, `ConnectionEvent`, `ChannelNotifierRegistry`), M4 (identity row
   lookup via `IdentityMappingService.get_identity`, identity_mapping.py:270).
 - **Interface Skeleton**:
@@ -547,11 +575,48 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
   ```
 
 ### Module 9: Generic combined login (`post_auth_actions`)
-- **Path**: `packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_connection.py` (new); `telegram/post_auth_jira.py` (modify → preset); `telegram/wrapper.py` (modify `_init_post_auth_providers`); `telegram/models.py` (modify validation)
-- **Responsibility**: §2 "Combined login". The Telegram identity row is written by M4 after the primary auth
-  succeeds — `ConnectionPostAuthProvider` writes no identity rows and no tokens (FEAT-773 persists them).
-  Rollback semantics of `_handle_combined_auth` (wrapper.py:2379-2450) are unchanged.
-- **Depends on**: M4, M5 (provider resolution), FEAT-773 M2/M7 (`handle_callback` persists + publishes).
+- **Path**: `packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_connection.py` (new);
+  `telegram/post_auth_jira.py` (modify → preset); `telegram/wrapper.py` (modify login, callbacks, pending attempts,
+  finalization and `_init_post_auth_providers`); `telegram/auth.py` (separate primary validation from eager
+  post-auth execution); `telegram/connection_notifier.py` (correlated completion dispatch); `telegram/models.py`
+  (modify validation).
+- **Responsibility**: §2 "Combined login". `ConnectionPostAuthProvider` writes no identity rows or tokens;
+  FEAT-773 persists connections and M4 publishes the Telegram link only at final login success.
+- **Depends on**: M4, M5, M7 (completion dispatch), FEAT-773 M2/M7 (callback persistence and events).
+- **Lifecycle contract**:
+  1. `handle_login` must not call `_build_next_auth_url` on an unauthenticated session. Show primary login
+     first. After its validated callback, store a candidate separately from `_user_sessions`; strategies must
+     not execute secondary providers eagerly. Apply this ordering to Basic, Azure, Google and composite paths.
+  2. A pending attempt has an unpredictable `attempt_id`, issuing `bot_id`, Telegram user/private chat,
+     validated Navigator principal, configured action order, completion set and expiry. Bind it to the primary
+     login attempt; never accept a Navigator user id solely because it appears in WebApp JSON. Re-verify the
+     primary credential-to-user validation seam during decomposition; if unavailable, implementing that
+     verification is part of M9 before any provider state is minted.
+  3. Construct provider state only after primary verification, using M3 PBAC and server-owned scopes. Send
+     the next Connect button (or device-code instructions) in the private chat. A missing required provider,
+     denied request, URL construction failure or unsupported auth mode is a required-step failure, never an
+     implicit skip. Existing connections may satisfy a step only after checking the candidate principal.
+  4. Store `attempt_id`, `bot_id`, `chat_id` and `combined=True` in OAuth `extra_state`. The normal FEAT-773
+     callback is the sole code exchanger. Its completion dispatch correlates the stored attempt, principal,
+     provider and issuing bot before advancing the chain; duplicate, stale or mismatched callbacks cannot
+     activate a session. Do not exchange the same code again through `handle_result` after that callback.
+     Retained WebApp code/state submissions must use the same single-consumer callback path.
+  5. Once all required steps succeed and optional steps have completed or been skipped, finalize exactly once:
+     M4 persists the link, the wrapper promotes the candidate to the active session, then applies deferred
+     session hooks and initializes user context. A link-write failure follows AC-3 for this finalized session.
+     Notifier delivery errors cannot prevent finalization: dispatch lifecycle handling independently of sending
+     the notification. Session hooks must never stamp an unrelated active session during the pending phase.
+     Serialize finalization with cancellation/logout for the same attempt, including the awaited link write;
+     recheck attempt validity before publication so an in-flight completion cannot revive a cancelled login.
+  6. Required failure, cancellation, timeout, logout or superseding `/login` invalidates the pending attempt and
+     clears its candidate without publishing a link. It must neither delete nor restore an existing DB link:
+     a different login may have legitimately moved ownership. Set attempt expiry to no later than the earliest
+     outstanding OAuth state expiry; after restart, missing attempts fail closed and require a new `/login`.
+     A late callback cannot promote a discarded candidate. No pending candidate is visible to command principal
+     lookup, `_ensure_principal_link`, `_invoke_agent` or eager user-context initialization.
+  7. Already completed provider grants remain principal-owned if a later required step fails; do not revoke
+     pre-existing or concurrently updated connections as compensation. The rollback guarantee concerns this
+     login's session and identity publication. Document that distinction and test it explicitly.
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_connection.py  (new)
@@ -560,10 +625,12 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
       def __init__(self, provider_id: str, *, service: "IntegrationsService", app: Mapping[str, Any],
                    session_hook: Optional[SessionHook] = None) -> None: ...
       async def build_auth_url(self, session: Any, config: Any, callback_base_url: str) -> str:
-          """principal_for_session(session) (None → ValueError); start_connect(..., channel="telegram",
-          extra_state={"chat_id": session.telegram_id, "combined": True}, permission_app=app).auth_url."""
+          """Called only with a verified pending candidate; start_connect(..., channel="telegram",
+          principal=candidate_principal, extra_state={chat_id, bot_id, attempt_id, combined=True}, permission_app=app).
+          URL-capable providers return auth_url; device-code providers use the typed M5 outcome in the coordinator."""
       async def handle_result(self, data: Dict[str, Any], session: Any, primary_auth_data: Dict[str, Any]) -> bool:
-          """manager.handle_callback(data["code"], data["state"]); session_hook on success; False on any exception (logged)."""
+          """Compatibility entry for an unconsumed code/state: route through the single callback consumer.
+          Verify attempt/principal/provider correlation; never re-exchange a completed callback or publish a link."""
 
   # packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py  (modifies)
   class JiraPostAuthProvider(ConnectionPostAuthProvider):                      # verified: post_auth_jira.py:38
@@ -593,8 +660,9 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
 - **Path**: `docs/integrations/telegram-connections.md` (new); `docs/auth/connections.md` *(created by FEAT-773 M10)* (modify)
 - **Responsibility**: user commands and aliases; `connection_providers`; the `/login` link and `/logout` unlink;
   PBAC deploy precondition (policy for `integration:connect` / `integration:disconnect` with the §8 Q1 resource);
-  needs-auth behaviour; cutover runbook (audit → announce → date → purge); `post_auth_actions` for any provider.
-  `connections.md` gains the Telegram row in the channel adapter table.
+  needs-auth behaviour; cutover runbook (audit → announce → date → purge); `post_auth_actions` for any provider;
+  staged primary-then-secondary login, required-step failure/expiry and the distinction between discarding a
+  login attempt and revoking principal-owned connections. `connections.md` gains the Telegram adapter row.
 
 ---
 
@@ -612,12 +680,14 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
 | `test_channel_pbac_uses_navigator_principal` | M3 | `EvalContext` username/user_id = `principal.user_id`, never the Telegram id |
 | `test_service_request_less_pbac_branch` | M3 | `request=None` + `permission_app` + `principal` → evaluator consulted; without them → denied |
 | `test_link_channel_identity_moves_ownership` | M4 | telegram id linked to user A, then linked to B → only B's row remains |
+| `test_channel_identity_lock_shared_by_mutations` | M4 | link/unlink acquire the same deterministic channel-account lock before SQL mutations, on the transaction connection |
 | `test_link_channel_identity_rejects_bad_input` | M4 | non-numeric nav id, empty provider id, secret in auth_data → `ValueError` |
 | `test_unlink_channel_identity_counts` | M4 | returns deleted rows; 0 when absent |
-| `test_login_persists_link_both_paths` | M4 | single-step and combined login call `link_channel_identity` once |
+| `test_login_persists_link_both_paths` | M4 | single-step success and final combined success call `link_channel_identity` once; primary-only combined success does not |
 | `test_login_succeeds_when_link_write_fails` | M4 | DB error → login message still sent, flag stays false, warning logged |
 | `test_logout_unlinks_before_clear` | M4 | `/logout` calls `unlink_channel_identity("telegram", id)` then clears the session |
 | `test_ensure_principal_link_backfills_once` | M4 | authenticated session without flag → one write; second call no-op |
+| `test_pending_login_never_backfills` | M4/M9 | pending, failed and expired candidates cannot invoke link backfill, agent execution or command principal lookup |
 | `test_connectable_providers_filter` | M5 | MCP providers, manager `None`, and non-allowlisted providers excluded |
 | `test_connect_outcomes` | M5 | needs_login / unknown_provider / already_connected / auth_url / device_code / denied mapping |
 | `test_scopes_never_from_user` | M5 | `start_connect` called with provider default scopes only |
@@ -634,7 +704,10 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
 | `test_jira_session_hook_stamps_and_clears` | M7 | completed → `set_jira_authenticated`; revoked → `clear_jira_auth` |
 | `test_invoke_agent_collects_and_prompts` | M8 | tool needs-auth during `ask` → reply sent, then one Connect button per provider |
 | `test_auth_prompt_device_code_and_no_principal` | M8 | device_code → code + URI text; no principal → one "/login first" |
-| `test_connection_post_auth_build_and_handle` | M9 | `build_auth_url` uses principal + `start_connect`; `handle_result` calls `handle_callback`, runs hook, writes no identity rows |
+| `test_connection_post_auth_build_and_handle` | M9 | provider state starts after validated primary auth; callback exchanged once; correlated completion advances attempt; hooks wait for final success |
+| `test_combined_login_required_failure` | M9 | required denial, missing provider, callback failure or expiry discards candidate without link writes; optional failure permits final success |
+| `test_combined_login_callback_correlation` | M9 | wrong principal/provider/bot/attempt rejected; duplicate completion idempotent; late completion after logout/restart cannot promote a session |
+| `test_combined_login_notifier_send_failure` | M7/M9 | completion still finalizes once when Telegram notification delivery raises |
 | `test_jira_post_auth_preset_compat` | M9 | `JiraPostAuthProvider.provider_name == "jira"`; YAML `post_auth_actions: [{provider: jira}]` still registers |
 | `test_post_auth_any_registered_provider` | M9 | `post_auth_actions: [{provider: o365}]` registers when `o365` is in the registry; unknown → warning |
 | `test_purge_dry_run_and_date_gate` | M10 | dry run deletes nothing; before the date → refused unless `--force`; counts only, no values |
@@ -644,6 +717,9 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
 | Test | Description |
 |---|---|
 | `test_e2e_telegram_login_link_resolves` | plain `/login` → `telegram` row → FEAT-773 `IdentityPrincipalResolver.resolve("telegram", id)` returns the principal; `/logout` → `None` |
+| `test_db_concurrent_channel_identity_links` | real DB, separate connections: competing first links and relinks leave exactly one owner; failed replacement rolls back; link/unlink serialize |
+| `test_e2e_combined_login_from_unauthenticated` | fresh session → primary WebApp (no provider state) → validated primary callback → secondary authorization → callback → one link and active session; cover Basic/Azure/Google/composite and device-code outcomes |
+| `test_e2e_combined_required_failure_no_link` | primary success followed by required failure/expiry → no new resolver-visible identity, no active candidate; pre-existing or concurrently moved link untouched; completed grants remain principal-owned |
 | `test_e2e_telegram_connect_any_provider` | `/connect <dummy descriptor provider>` → callback with the state → `TelegramConnectionNotifier` message in the issuing chat → tool resolves |
 | `test_e2e_telegram_jira_parity` | (FEAT-773 test, updated) `/connect_jira` alias → callback → notifier → Jira tool resolves; `<jira>` prompt block present |
 | `test_e2e_needs_auth_button` | Jira tool without connection → LLM sees the needs-auth message → Telegram reply then Connect button |
@@ -651,6 +727,11 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
 | `test_e2e_unlinked_user_forced_reconnect` | legacy `jira:oauth:telegram:<id>` with no identity row → no resolution; "/login first" on `/connect` |
 
 ### Validation Contract
+
+The runners below are the existing regression baseline. Task decomposition must additionally bind every new
+test named above to a package-local test path and include those paths in the feature validation contract.
+The M4 concurrency and M9 fresh-login/rollback integration tests are mandatory evidence, not optional mocks;
+missing DB fixtures or credentials must be reported as blocked validation, never counted as a pass.
 
 runners:
 - kind: pytest
@@ -702,7 +783,7 @@ def fake_pdp_app():                         # {"abac": obj with _evaluator.check
 
 > This feature is complete when ALL of the following are true:
 
-- [ ] **AC-1 (G1)** After a successful Telegram `/login` (single-step or combined, any strategy), `auth.user_identities` holds exactly one `telegram` row for that Telegram id, owned by the logged-in Navigator user; linking the same Telegram id to another user moves the row.
+- [ ] **AC-1 (G1)** After a successful Telegram `/login` (single-step or combined, any strategy), `auth.user_identities` holds exactly one `telegram` row for that Telegram id, owned by the logged-in Navigator user; linking the same Telegram id to another user moves the row. Real-DB tests prove exclusive ownership under competing first links/relinks and serialized unlink, using the M4 shared transaction-lock protocol.
 - [ ] **AC-2 (G1)** `/logout` deletes the `telegram` row before clearing the session; afterwards FEAT-773's resolver returns `None` for that Telegram id and no connection resolves from Telegram.
 - [ ] **AC-3 (G1)** A failed link write never fails the login; the session flag stays false and the next connection command or agent turn retries once (`_ensure_principal_link`).
 - [ ] **AC-4 (G2)** `/connect [<provider>]`, `/disconnect <provider>`, `/connections` work for every connectable provider; MCP providers, providers without a manager, and providers outside `connection_providers` are never offered or accepted; user input never sets scopes.
@@ -713,7 +794,7 @@ def fake_pdp_app():                         # {"abac": obj with _evaluator.check
 - [ ] **AC-9 (G4)** When a tool needs auth during a Telegram turn, the agent's reply is sent first, then one Connect button per distinct provider (fresh OAuth state carrying this `chat_id`/`bot_id`); device-code payloads show code and URI; unlinked users get one "/login first" line.
 - [ ] **AC-10 (G5)** `connection.completed`, `connection.revoked`, `connection.refresh_failed` for any provider produce one plain-text Telegram message through the issuing bot; a notifier failure never fails the callback; `TelegramOAuthNotifier`, `TelegramJiraNotifierAdapter` and `app["telegram_jira_session_stamper"]` no longer exist in `packages/`.
 - [ ] **AC-11 (G5)** The `<jira>` user-context block appears after a Jira connection and disappears after disconnect/revoke, through the registered session hook.
-- [ ] **AC-12 (G6)** `post_auth_actions` registers any provider present in `OAuth2ProviderRegistry`; `JiraPostAuthProvider` is a preset of `ConnectionPostAuthProvider` and writes no identity rows or tokens.
+- [ ] **AC-12 (G6)** `post_auth_actions` registers any provider present in `OAuth2ProviderRegistry`; `JiraPostAuthProvider` is a preset of `ConnectionPostAuthProvider` and writes no identity rows or tokens. A fresh unauthenticated login completes the staged flow without pre-primary provider state. All required actions succeed before link publication/session promotion; required failure, cancellation or expiry never publishes a link or backfills the candidate and leaves any pre-existing/concurrently moved link untouched. Callback correlation and duplicate/late handling satisfy M9.
 - [ ] **AC-13 (G7)** `python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram` is a dry run without `--confirm`, refuses before `OAUTH2_LEGACY_KEYS_UNTIL` without `--force`, deletes only Telegram legacy keys, and prints counts only.
 - [ ] **AC-14** `parrot/auth/pending.py` exists once with the FEAT-775 M5 contract; `grep -rn "def collect_auth_requirements" packages/` matches one definition.
 - [ ] **AC-15** `docs/integrations/telegram-connections.md` exists and documents the PBAC deploy precondition and the cutover runbook.
@@ -881,10 +962,12 @@ class TelegramAgentWrapper:
 | `packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py` | MODIFY | `    def _register_jira_commands(self) -> None:` | `wrapper.py:400` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py` | MODIFY | `    def _register_office365_commands(self) -> None:` | `wrapper.py:475` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py` | MODIFY | `    def _init_post_auth_providers(self) -> None:` | `wrapper.py:557` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py` | MODIFY (M9: remove pre-primary provider URL creation) | `            next_url, required = await self._build_next_auth_url(session)` | `wrapper.py:2276` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py` | MODIFY | `    async def _invoke_agent(` | `wrapper.py:1464` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py` | MODIFY | `        old_name = session.display_name` / `        session.clear_auth()` (handle_logout) | `wrapper.py:2322-2323` | 1 (pair) |
 | `packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py` | MODIFY | `        success = await self._auth_strategy.handle_callback(data, session)` | `wrapper.py:2362` | 1 |
-| `packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py` | MODIFY | `        basic_ok = await self._auth_strategy.handle_callback(basic_data, session)` | `wrapper.py:2404` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py` | MODIFY (M9: candidate only; no link publication here) | `        basic_ok = await self._auth_strategy.handle_callback(basic_data, session)` | `wrapper.py:2404` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py` | MODIFY (M9: discard candidate, preserve DB link) | `        if failures_required:` | `wrapper.py:2445` | 1 |
 | `docs/integrations/telegram-connections.md` | CREATE | — | — | — |
 | `docs/auth/connections.md` | MODIFY | *(FEAT-773 M10 — unverified until merge)* | — | — |
 
@@ -911,7 +994,11 @@ class TelegramAgentWrapper:
 - **Logout semantics change.** Today `/logout` leaves Jira usable (the token is keyed by the Telegram id). After S-2
   `/logout` unlinks, so connections stop resolving from that Telegram account until the next `/login` — intended.
 - **Same Telegram id, different Navigator user.** `link_channel_identity` moves the row; the previous user's
-  connections become unreachable from that Telegram account (they remain on other channels).
+  connections become unreachable from that Telegram account (they remain on other channels). All channel
+  mutations must use M4's shared lock, including absent-row cases; SQL transaction atomicity alone is insufficient.
+- **Combined-login publication boundary.** Primary success creates a pending candidate, not a resolver-visible
+  link. Required failure discards only that attempt; it must not unlink a newer owner. No lazy backfill or
+  session hook may bypass this boundary. The staged UI replaces the pre-authentication secondary redirect.
 - **Unlinked legacy users (U3).** Users who connected Jira without `/login` lose it at cutover; run
   `legacy_audit` before the date and announce.
 - **Multi-bot deployments.** The notifier must send through the bot that issued the flow (`bot_id` in state);
@@ -938,7 +1025,8 @@ class TelegramAgentWrapper:
   `resource_type` / `resource_name` does `check_integration_access` pass (e.g. `ResourceType.TOOL` +
   `"integration:<provider>"`, or a new navigator-auth resource type), and must it match what
   `abac.is_allowed(request, {"action", "provider"})` evaluates on the web so one policy covers both? —
-  *Owner: Jesus* (also FEAT-773 §8 "PBAC allowlist shape"). Blocks M3.
+  *Owner: Jesus* (also FEAT-773 §8 "PBAC allowlist shape"). Blocks M3 and dependent modules until the exact
+  web/channel resource type, name and action mapping plus shared allow/deny policy fixture are recorded here.
 - [ ] **Q2 — Codex S3: legacy rollback.** Should the Telegram purge keep a rollback path (e.g. export the
   `jira:oauth:telegram:*` keys to an encrypted backup before deletion) or is the date gate + dry run enough? —
   *Owner: Jesus*.
@@ -993,9 +1081,12 @@ Summary: **6** confirmed (one partly) · **5** rejected · **1** escalated.
     `TelegramOAuthNotifier` only after the notifier replaces the FEAT-773 adapter).
   - M8 → M1 (`collect_auth_requirements`), M4, M5, M6 (`render_connect_outcome`).
   - M9 → M4 (identity row moves to the link path), M5.
+    M9 also depends on M7 for correlated completion dispatch; final identity publication belongs to M4/M9 together.
   - M11 → all.
-  - M1, M2, M3, M4, M7, M10 have no edges between them and can run concurrently.
+  - M1, M2, M3, M4 and M10 have no module edges between them; M3 remains gated on Q1. M7 follows M4 as
+    declared in its module contract. M9 must not land early link publication while awaiting completion wiring.
 - **Shared files** (tasks serialized): `telegram/wrapper.py` (M4, M6, M7, M8, M9); `telegram/models.py` (M6, M9);
+  `telegram/auth.py` (M4, M9); `telegram/connection_notifier.py` (M7, M9);
   `telegram/jira_commands.py` (M6, M7 via the notifier removal — M6 owns the edit).
 - **Exclusive resources**: none (no migrations: `auth.user_identities` is unchanged; no lockfile change).
 - **Cross-feature dependencies**: **FEAT-773 merged** (hard). FEAT-775 (S-3b) shares `parrot/auth/pending.py`
@@ -1008,3 +1099,4 @@ Summary: **6** confirmed (one partly) · **5** rejected · **1** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-30 | Jesus Lara (with Claude Opus 5.5) | Initial draft — S-2 of FEAT-773 |
+| 0.2 | 2026-10-30 | Codex | Review corrections: serialized channel ownership, staged combined login, deferred link publication/rollback isolation, mandatory regression evidence and explicit Q1 gate. Addresses design issues `b5a13e2c4c23`, `aff9e16ebca9`, `b8c17b33af2a`; runtime implementation remains future work. |
