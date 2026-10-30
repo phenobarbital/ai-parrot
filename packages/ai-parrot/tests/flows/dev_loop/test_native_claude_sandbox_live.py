@@ -123,7 +123,13 @@ def qual_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> QualificationR
     rtk_dir.mkdir(parents=True)
     home = tmp_path / "home"
     home.mkdir()
+    # A hook control file inside the (writable) task worktree: the compiled policy must deny it for Bash.
+    hook_control = (
+        feature / "packages" / "ai-parrot" / "src" / "parrot" / "flows" / "dev_loop" / "worktree_environment.py"
+    )
+    hook_control.parent.mkdir(parents=True)
     protected = {
+        "hook_control": hook_control,
         "primary": primary / "primary-source-canary.txt",
         "home": home / "home-canary.txt",
         "venv": shared_venv / "venv-canary.txt",
