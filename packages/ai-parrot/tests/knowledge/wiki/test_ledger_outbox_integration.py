@@ -12,6 +12,7 @@ from parrot.knowledge.wiki.ledger.events import LedgerEvent, canonical_json_dump
 from parrot.knowledge.wiki.ledger.integration import (
     LedgerIntegrator,
     build_scratch_snapshot,
+    drop_redundant_closes,
     find_transition_conflicts,
     merge_batch,
     read_logical_log,
@@ -318,3 +319,113 @@ async def test_check_feature_diff_reports_contamination(two_clones: tuple[Path, 
     outbox = LedgerOutbox(first / ".parrot" / "ledger")
 
     assert await LedgerIntegrator(first, outbox).check_feature_diff("feature-ledger") == ["sdd/ledger/events.jsonl"]
+
+
+# FEAT-771 / TASK-4895 — redundant closes never block delivery.
+
+
+def test_drop_redundant_closes_moves_close_of_closed_issue() -> None:
+    """A close of an issue already closed on the destination is set aside, not conflicted."""
+    subject = "issue:one"
+    remote = [_opened(subject, 1), _ev("issue.closed", subject, {"closed_by": "agent:one", "reason": "done"}, 2)]
+    close = _ev("issue.closed", subject, {"closed_by": "agent:two", "reason": "different"}, 3)
+
+    plan = drop_redundant_closes(remote, merge_batch([], [(_line(close), close)]))
+
+    assert plan.redundant_closes == [close.event_id]
+    assert plan.new_events == []
+    assert plan.new_lines == []
+    assert find_transition_conflicts(remote, plan.new_events) == []
+
+
+def test_drop_redundant_closes_keeps_first_close_and_drops_in_batch_repeat() -> None:
+    """The first close of an open issue lands; a second close in the same batch is redundant."""
+    subject = "issue:two"
+    first = _ev("issue.closed", subject, {"closed_by": "agent:one", "reason": "done"}, 2)
+    second = _ev("issue.closed", subject, {"closed_by": "agent:two", "reason": "again"}, 3)
+
+    plan = drop_redundant_closes([_opened(subject, 1)], merge_batch([], [(_line(e), e) for e in (first, second)]))
+
+    assert plan.new_events == [first]
+    assert plan.new_lines == [_line(first)]
+    assert plan.redundant_closes == [second.event_id]
+
+
+def test_drop_redundant_closes_keeps_non_close_events() -> None:
+    """Claims, opens and non-issue events are kept in order; duplicates are carried over."""
+    closed_subject = "issue:closed"
+    opened = _opened(closed_subject, 1)
+    remote = [opened, _ev("issue.closed", closed_subject, {"closed_by": "agent:one", "reason": "done"}, 2)]
+    claim = _ev("issue.claimed", closed_subject, {"claimed_by": "agent:two"}, 3)
+    fresh = _opened("issue:fresh", 4)
+    insight = _ev("insight.recorded", "spec:x", {"fact": "x", "title": "x", "derived_from": "spec:FEAT-771"}, 5)
+    batch = [(_line(e), e) for e in (opened, claim, fresh, insight)]
+
+    plan = drop_redundant_closes(remote, merge_batch([(_line(e), e) for e in remote], batch))
+
+    assert plan.new_events == [claim, fresh, insight]
+    assert plan.redundant_closes == []
+    assert plan.duplicates == 1
+
+
+async def _batch_of(repo: Path, *events: LedgerEvent):
+    """Write several local journal events and seal them into one delivery batch."""
+    ledger_dir = repo / ".parrot" / "ledger"
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    (ledger_dir / "events.jsonl").write_bytes(b"".join(_line(event) + b"\n" for event in events))
+    outbox = LedgerOutbox(ledger_dir)
+    batch = await outbox.prepare(repo_root=repo, source_ref="HEAD", source_head=_run_git(repo, "rev-parse", "HEAD"))
+    assert batch is not None
+    return outbox, batch
+
+
+async def _close_on_dev(clone: Path, subject: str) -> None:
+    """Deliver an opened + closed pair for ``subject`` from ``clone``."""
+    closed = _ev("issue.closed", subject, {"closed_by": "agent:one", "reason": "fixed", "resolved_by": "task:T-1"}, 21)
+    outbox, batch = await _batch_of(clone, _opened(subject, 20), closed)
+    assert (await LedgerIntegrator(clone, outbox).integrate(batch)).status == "delivered"
+
+
+async def test_redundant_close_delivers_rest_and_records_skipped(two_clones: tuple[Path, Path, Path]) -> None:
+    """The batch's other events land; the redundant close is skipped, receipted and never re-sealed."""
+    _, first, second = two_clones
+    await _close_on_dev(second, "issue:dup")
+    redundant = _ev("issue.closed", "issue:dup", {"closed_by": "agent:two", "reason": "fixed by PR"}, 22)
+    fresh = _opened("issue:fresh", 23)
+    outbox, batch = await _batch_of(first, _opened("issue:dup", 20), redundant, fresh)
+    integrator = LedgerIntegrator(first, outbox)
+
+    report = await integrator.integrate(batch)
+
+    assert report.status == "delivered", report
+    assert report.added == 1
+    assert report.skipped == [redundant.event_id]
+    receipt = await outbox.receipt_for(batch.batch_id)
+    assert receipt is not None
+    assert receipt.skipped_event_ids == [redundant.event_id]
+    remote_ids = await integrator.remote_event_ids()
+    assert fresh.event_id in remote_ids
+    assert redundant.event_id not in remote_ids
+    head = _run_git(first, "rev-parse", "HEAD")
+    assert await outbox.prepare(repo_root=first, source_ref="HEAD", source_head=head, known_ids=remote_ids) is None
+    assert (await outbox.status(known_ids=remote_ids))["unsealed_events"] == 0
+
+
+async def test_all_redundant_is_already_delivered_without_commit(two_clones: tuple[Path, Path, Path]) -> None:
+    """A batch holding only a redundant close creates no commit but is acknowledged."""
+    _, first, second = two_clones
+    await _close_on_dev(second, "issue:only")
+    redundant = _ev("issue.closed", "issue:only", {"closed_by": "agent:two", "reason": "dup"}, 22)
+    outbox, batch = await _batch_of(first, redundant)
+    _run_git(first, "fetch", "origin", "dev")
+    before = _run_git(first, "rev-parse", "origin/dev")
+
+    report = await LedgerIntegrator(first, outbox).integrate(batch)
+
+    assert report.status == "already_delivered", report
+    assert report.skipped == [redundant.event_id]
+    _run_git(first, "fetch", "origin", "dev")
+    assert _run_git(first, "rev-parse", "origin/dev") == before
+    receipt = await outbox.receipt_for(batch.batch_id)
+    assert receipt is not None
+    assert receipt.skipped_event_ids == [redundant.event_id]

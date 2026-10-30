@@ -172,3 +172,44 @@ async def test_second_preparer_is_locked_out(ledger_dir: Path, tmp_path: Path) -
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         with pytest.raises(OutboxLockedError):
             await outbox.prepare(repo_root=tmp_path, source_ref="HEAD", source_head="abc")
+
+
+# FEAT-771 / TASK-4895 — receipts record skipped redundant closes.
+
+
+async def test_prepare_never_reseals_skipped_event(ledger_dir: Path, tmp_path: Path) -> None:
+    """An id a receipt lists as skipped is never sealed again nor counted as unsealed."""
+    log = LedgerLog(str(ledger_dir / "events.jsonl"))
+    delivered, _ = log.append(_event(1))
+    skipped, _ = log.append(_event(2))
+    outbox = LedgerOutbox(ledger_dir)
+    batch = await outbox.prepare(repo_root=tmp_path, source_ref="HEAD", source_head="abc")
+    assert batch is not None
+
+    await outbox.acknowledge(batch, remote_head="r" * 40, verified_digest="d" * 64, skipped_event_ids=[skipped])
+
+    assert await outbox.prepare(repo_root=tmp_path, source_ref="HEAD", source_head="abc", known_ids={delivered}) is None
+    assert (await outbox.status(known_ids={delivered}))["unsealed_events"] == 0
+    receipt = await outbox.receipt_for(batch.batch_id)
+    assert receipt is not None
+    assert receipt.skipped_event_ids == [skipped]
+
+
+async def test_old_receipt_without_skipped_field_loads(ledger_dir: Path, tmp_path: Path) -> None:
+    """Receipts written before FEAT-771 have no skipped_event_ids and still load."""
+    log = LedgerLog(str(ledger_dir / "events.jsonl"))
+    log.append(_event(1))
+    outbox = LedgerOutbox(ledger_dir)
+    batch = await outbox.prepare(repo_root=tmp_path, source_ref="HEAD", source_head="abc")
+    assert batch is not None
+    await outbox.acknowledge(batch, remote_head="r" * 40, verified_digest="d" * 64)
+    receipt_path = outbox.receipts_dir / f"{batch.batch_id}.json"
+    legacy = json.loads(receipt_path.read_text(encoding="utf-8"))
+    legacy.pop("skipped_event_ids")
+    receipt_path.write_text(json.dumps(legacy), encoding="utf-8")
+
+    receipt = await outbox.receipt_for(batch.batch_id)
+
+    assert receipt is not None
+    assert receipt.skipped_event_ids == []
+    assert (await outbox.status())["pending_batches"] == 0

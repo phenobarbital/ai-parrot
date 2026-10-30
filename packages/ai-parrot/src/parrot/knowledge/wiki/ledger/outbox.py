@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import uuid
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -59,6 +60,7 @@ class LedgerDeliveryReport(BaseModel):
     added: int
     remaining: int
     conflicts: list[LedgerDeliveryConflict] = Field(default_factory=list)
+    skipped: list[str] = Field(default_factory=list)
     error_code: str | None = None
     recovery_path: str | None = None
 
@@ -74,6 +76,8 @@ class LedgerReceipt(BaseModel):
     remote_head: str
     verified_digest: str
     acknowledged_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    #: Redundant closes set aside at delivery; ``prepare`` never re-seals them.
+    skipped_event_ids: list[str] = Field(default_factory=list)
 
 
 class StrictLedgerReadError(ValueError):
@@ -292,10 +296,11 @@ class LedgerOutbox:
             try:
                 source = read_strict_events(self.source_path)
                 pending_ids = {event_id for batch in self._load_pending_sync() for event_id in batch.event_ids}
+                excluded = known_ids | pending_ids | self._skipped_ids_sync()
                 selected = [
                     (raw, event)
                     for raw, event in zip(source.raw_lines, source.events, strict=True)
-                    if is_shareable(event) and event.event_id not in known_ids and event.event_id not in pending_ids
+                    if is_shareable(event) and event.event_id not in excluded
                 ]
                 if not selected:
                     return None
@@ -355,11 +360,27 @@ class LedgerOutbox:
             raise StrictLedgerReadError(f"sealed batch event ids mismatch: {events_path}")
         return events
 
-    async def acknowledge(self, batch: LedgerBatch, *, remote_head: str, verified_digest: str) -> None:
-        """Persist a receipt only for the exact remotely verified batch."""
-        await asyncio.to_thread(self._acknowledge_sync, batch, remote_head, verified_digest)
+    async def acknowledge(
+        self,
+        batch: LedgerBatch,
+        *,
+        remote_head: str,
+        verified_digest: str,
+        skipped_event_ids: Sequence[str] = (),
+    ) -> None:
+        """Persist a receipt only for the exact remotely verified batch.
 
-    def _acknowledge_sync(self, batch: LedgerBatch, remote_head: str, verified_digest: str) -> None:
+        Args:
+            batch: The sealed batch that was verified on the remote.
+            remote_head: Remote commit the verification ran against.
+            verified_digest: Digest of the verified (delivered) events.
+            skipped_event_ids: Redundant closes deliberately not delivered.
+        """
+        await asyncio.to_thread(self._acknowledge_sync, batch, remote_head, verified_digest, list(skipped_event_ids))
+
+    def _acknowledge_sync(
+        self, batch: LedgerBatch, remote_head: str, verified_digest: str, skipped_event_ids: list[str]
+    ) -> None:
         """Blocking half of :meth:`acknowledge`."""
         self._ensure_dirs()
         batch_dir = self._batch_dir(batch.batch_id)
@@ -379,6 +400,7 @@ class LedgerOutbox:
             branch=batch.branch,
             remote_head=remote_head,
             verified_digest=verified_digest,
+            skipped_event_ids=skipped_event_ids,
         )
         _atomic_write_bytes(
             self._receipt_path(batch.batch_id), canonical_json_dumps(receipt.model_dump(mode="json")).encode("utf-8")
@@ -397,6 +419,19 @@ class LedgerOutbox:
             return None
         return LedgerReceipt.model_validate_json(receipt_path.read_bytes())
 
+    def _skipped_ids_sync(self) -> set[str]:
+        """Return every event id a receipt recorded as a skipped redundant close."""
+        if not self.receipts_dir.exists():
+            return set()
+        if self.receipts_dir.is_symlink():
+            raise StrictLedgerReadError(f"receipts directory is a symlink: {self.receipts_dir}")
+        skipped: set[str] = set()
+        for receipt_path in self.receipts_dir.glob("*.json"):
+            if receipt_path.is_symlink():
+                raise StrictLedgerReadError(f"receipt is a symlink: {receipt_path}")
+            skipped.update(LedgerReceipt.model_validate_json(receipt_path.read_bytes()).skipped_event_ids)
+        return skipped
+
     async def status(self, known_ids: set[str] | None = None) -> dict[str, int | bool]:
         """Read-only counts for sealed and unsealed events without acquiring the preparation lock."""
         return await asyncio.to_thread(self._status_sync, known_ids or set())
@@ -405,12 +440,9 @@ class LedgerOutbox:
         """Blocking half of :meth:`status`."""
         pending = self._load_pending_sync()
         pending_ids = {event_id for batch in pending for event_id in batch.event_ids}
+        excluded = known_ids | pending_ids | self._skipped_ids_sync()
         source = read_strict_events(self.source_path)
-        unsealed = sum(
-            1
-            for event in source.events
-            if is_shareable(event) and event.event_id not in known_ids and event.event_id not in pending_ids
-        )
+        unsealed = sum(1 for event in source.events if is_shareable(event) and event.event_id not in excluded)
         return {
             "pending_batches": len(pending),
             "pending_events": sum(len(batch.event_ids) for batch in pending),

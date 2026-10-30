@@ -158,3 +158,56 @@ def test_status_reports_contamination_exit_4(tmp_path: Path) -> None:
         )
     assert result.exit_code == 4, result.output
     assert "sdd/ledger/events.jsonl" in result.output
+
+
+# FEAT-771 / TASK-4895 — a conflicting batch does not hold later batches back.
+
+
+def _report(status: str, batch_id: str) -> LedgerDeliveryReport:
+    """Build a minimal typed report for one batch."""
+    return LedgerDeliveryReport(
+        status=status, batch_id=batch_id, attempts=1, remote_head=None, commit_sha=None, added=0, remaining=0
+    )
+
+
+def _invoke_integrate(tmp_path: Path, batches: list[LedgerBatch], reports: list[LedgerDeliveryReport]):
+    """Run ``outbox integrate --json`` against mocked batches and integrator reports."""
+    outbox = MagicMock()
+    outbox.pending = AsyncMock(return_value=batches)
+    integrator = MagicMock()
+    integrator.integrate = AsyncMock(side_effect=reports)
+    with (
+        patch("parrot.knowledge.wiki.cli.LedgerOutbox", return_value=outbox),
+        patch("parrot.knowledge.wiki.cli.LedgerIntegrator", return_value=integrator),
+    ):
+        result = CliRunner().invoke(
+            ledger, ["outbox", "integrate", "--repo-root", str(tmp_path), "--ledger-dir", str(tmp_path), "--json"]
+        )
+    return result, integrator
+
+
+def test_integrate_continues_past_conflict(tmp_path: Path) -> None:
+    """A later batch is still delivered after a conflicting one; the exit code is the highest."""
+    first = _batch()
+    second = first.model_copy(update={"batch_id": "123e4567-e89b-42d3-a456-426614174001"})
+
+    result, integrator = _invoke_integrate(
+        tmp_path, [first, second], [_report("conflict", first.batch_id), _report("delivered", second.batch_id)]
+    )
+
+    assert result.exit_code == 3, result.output
+    assert integrator.integrate.await_count == 2
+    assert [item["status"] for item in json.loads(result.output)] == ["conflict", "delivered"]
+
+
+def test_integrate_stops_on_pending(tmp_path: Path) -> None:
+    """A pending (I/O, lock, push) batch stops the run before later batches."""
+    first = _batch()
+    second = first.model_copy(update={"batch_id": "123e4567-e89b-42d3-a456-426614174001"})
+
+    result, integrator = _invoke_integrate(
+        tmp_path, [first, second], [_report("pending", first.batch_id), _report("delivered", second.batch_id)]
+    )
+
+    assert result.exit_code == 2, result.output
+    assert integrator.integrate.await_count == 1

@@ -3717,6 +3717,10 @@ def _emit_delivery_reports(reports: list[LedgerDeliveryReport], json_output: boo
         )
         if report.error_code:
             click.echo(f"  error: {report.error_code}")
+        for conflict in report.conflicts:
+            click.echo(f"  conflict: {conflict.event_id} on {conflict.subject} ({conflict.reason})")
+        if report.skipped:
+            click.echo(f"  skipped redundant close(s): {', '.join(report.skipped)}")
         if report.recovery_path:
             click.echo(f"  recovery path: {report.recovery_path}")
         if _OUTBOX_EXIT[report.status] != 0:
@@ -3879,10 +3883,13 @@ def ledger_outbox_integrate(repo_root: str, ledger_dir: str | None, batch_id: st
     for batch in batches:
         report = _run(integrator.integrate(batch))
         reports.append(report)
-        if _OUTBOX_EXIT[report.status] != 0:
+        # A conflicting batch needs review but must not hold later batches back; a batch that
+        # depends on one of its events reports its own missing-predecessor conflict. A pending
+        # report (I/O, lock, push) would hit every later batch too, so stop there.
+        if report.status == "pending":
             break
     _emit_delivery_reports(reports, json_output, repo_root)
-    exit_code = _OUTBOX_EXIT[reports[-1].status]
+    exit_code = max(_OUTBOX_EXIT[report.status] for report in reports)
     if exit_code:
         raise SystemExit(exit_code)
 
