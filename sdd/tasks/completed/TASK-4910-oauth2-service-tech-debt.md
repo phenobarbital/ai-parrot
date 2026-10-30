@@ -53,4 +53,10 @@ ruff check packages/ai-parrot/tests/auth/test_integrations_status.py
 
 ## Completion Note
 
-_(filled on close)_
+**Completed**: 2026-10-30 by agent:sdd-fix (Claude Opus 5.5). Verification: verified.
+
+- Code commit: `3a8db069c`. Only `packages/ai-parrot/tests/auth/test_integrations_status.py` changed; no diff under `packages/ai-parrot/src`.
+- Session-Vault tests moved to `o365` and now assert `sync.calls == 1`; new `TestIdentityVaultStatus` (5 tests) for `jira`, store injected via `_identity_store_instance`. Added a guard test pinning which provider is identity-owned.
+- `IdentityCredentialError` takes `(provider, field, reason)` — spec §6 listed only the import.
+- Evidence: new file 15 passed; the `origin/dev` version of the file still fails the 2 `test_unusable_tokens_need_reconnect` cases against the same code. `ruff check` clean.
+- Resolves `issue:267fb119e6f1`.
