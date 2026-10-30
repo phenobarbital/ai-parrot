@@ -94,8 +94,8 @@ def test_models_import_is_light() -> None:
     """The package exports models without loading future expert runtime modules."""
     experts = importlib.import_module("parrot.experts")
 
-    assert "parrot.experts.agent" not in sys.modules
-    assert "parrot.experts.registry" not in sys.modules
+    # Laziness is asserted in the subprocess below: sibling test modules legitimately
+    # import parrot.experts.agent in this process, so sys.modules here is order-dependent.
     assert experts.ExpertManifest is ExpertManifest
     with pytest.raises(AttributeError):
         experts.not_an_expert_export
