@@ -1,4 +1,5 @@
 """Unit tests for delegated connection principal resolution (FEAT-773)."""
+
 from __future__ import annotations
 
 from typing import Optional

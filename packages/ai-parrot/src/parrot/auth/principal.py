@@ -4,6 +4,7 @@ A connection belongs to the Navigator user (``auth.users.user_id``), never to a
 ``(channel, channel_user_id)`` pair. Core defines the resolver seam; the server
 registers an implementation over ``auth.user_identities`` at startup.
 """
+
 from __future__ import annotations
 
 import logging
