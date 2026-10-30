@@ -1,4 +1,4 @@
-# FEAT-768 native sandbox — live qualification (INTERIM, NOT QUALIFIED)
+# FEAT-768 native sandbox — live qualification (NOT QUALIFIED)
 
 Date: 2026-10-30. Run by the sdd-worker orchestrator. **Overall verdict: NOT QUALIFIED. The `path` run is
 invalid as a host qualification, and the `bundled` run was not performed.**
@@ -37,3 +37,43 @@ A scenario that skipped or failed is not a pass (AC10). Ledger: `issue:94a4fa450
    from an unsandboxed operator shell.
 2. Confirm the AppArmor profile name and that strict start succeeds.
 3. TASK-4891 stays pending; TASK-4892 stays blocked. The feature must not merge on this evidence.
+
+## Operator rerun (unsandboxed shell, 2026-10-30 01:06–01:08)
+
+The nesting hypothesis is ruled out: the operator ran both commands from a plain shell.
+
+| Path | Result |
+|---|---|
+| `path` (`claude` 2.1.312 via `launch_worker.sh`) | 4 failed, 1 passed, 2 skipped, 1 xfailed |
+| `bundled` (SDK CLI 2.1.301) | 8 skipped: strict sandbox did not start a workload (exit 1 on first session) — restricted-host / fail-closed evidence |
+
+Per-scenario records (written to the MAIN checkout's `artifacts/logs/feat-768/` because importing parrot
+runs navconfig, which changes directory to the main checkout):
+
+| Scenario | exit | Canaries changed |
+|---|---|---|
+| filesystem-matrix | 0 | home, primary, rtk, venv, venv_alias (all targeted) |
+| file-tool-bypass (Write/Edit only) | 0 | venv |
+| settings-widening | 0 | primary |
+| retry-failure | 0 | home |
+| git-controls | 0 | none |
+| egress | 1 | none |
+
+## Deterministic check of the retained hook (no LLM)
+
+A real linked worktree was built outside every allowance, and the hook was fed `Write` payloads with
+`PARROT_SDD_SANDBOX_BACKEND=claude-native`. It **denies** shared venv, venv alias, primary checkout and home
+targets and allows the task-worktree write. `validate_native_write_path` and the compiled
+allow/deny lists are correct for that layout.
+
+## Assessment
+
+In the live 2.1.312 session, both enforcement layers were absent: Bash writes escaped (OS sandbox) and a
+`Write` to the venv canary was not denied (hook). Because the same hook denies deterministically, the
+likeliest cause is that the CLI did not apply the launcher's `--settings` object (sandbox + hooks) in this
+launch (precedence with `--agent` / `--setting-sources`, or a version behaviour). That is unconfirmed.
+Diagnostic: one haiku session through `launch_worker.sh` with `--debug`, recording which settings and
+sandbox state the CLI reports (operator-run).
+
+**Verdict: NOT QUALIFIED on both paths.** Do not merge FEAT-768: TASK-4888 makes the native sandbox
+mandatory for sandboxed seats, so on this host it would currently run seats with no write boundary.
