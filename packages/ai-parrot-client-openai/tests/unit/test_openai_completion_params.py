@@ -3,6 +3,7 @@
 Covers ``OpenAIBaseClient._adapt_completion_params`` and that every ``OpenAIClient`` chat path
 reaches the SDK through the ``_chat_completion`` funnel with adapted kwargs.
 """
+
 import io
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
