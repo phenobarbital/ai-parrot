@@ -288,3 +288,31 @@ def test_module_imports_as_script_sibling() -> None:
     code = f"import sys; sys.path.insert(0, {module_dir!r}); import native_claude_sandbox"
     result = subprocess.run([sys.executable, "-S", "-c", code], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
+
+
+def test_hook_command_uses_the_launching_interpreter(linked: tuple[Path, Path]) -> None:
+    feature, _main = linked
+    command = native.native_sandbox_settings(feature)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert command.startswith((native.shlex.quote(sys.executable), sys.executable))
+
+
+def test_sibling_worktree_admin_dirs_are_denied(linked: tuple[Path, Path]) -> None:
+    feature, main = linked
+    sibling = main / ".git" / "worktrees" / "other"
+    sibling.mkdir()
+    deny = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["denyWrite"]
+    assert str(sibling.resolve()) in deny
+    assert str((main / ".git" / "worktrees" / "feat").resolve()) not in deny  # our own admin dir stays usable
+
+
+def test_frozen_roots_win_over_a_forged_git_marker(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    feature, main = linked
+    root_env = native.native_root_env(feature)
+    frozen = root_env[native.ROOTS_ENV].split(native.os.pathsep)
+    assert [Path(p) for p in frozen] == list(native._native_roots(feature))
+
+    monkeypatch.setenv(native.ROOTS_ENV, root_env[native.ROOTS_ENV])
+    (feature / ".git").write_text("gitdir: /nonexistent/forged\n", encoding="utf-8")  # session-writable marker
+    assert native._native_roots(feature / "sub") == tuple(Path(p) for p in frozen)
+    with pytest.raises(ValueError):  # a cwd outside the frozen root still derives (and here fails) on its own
+        native._native_roots(main / "elsewhere")

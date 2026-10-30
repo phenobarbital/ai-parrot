@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any, AsyncIterator, List
 from unittest.mock import AsyncMock
@@ -859,6 +860,15 @@ class TestNativeSandboxDispatch:
         assert json.loads(options.extra_args["settings"]) == {"hooks": {}}
         assert options.env["PARROT_SDD_SANDBOX_DEGRADED"] == "1"
         assert "native sandbox DEGRADED" in caplog.text
+
+    def test_sandboxed_dispatch_freezes_policy_roots(self, dispatcher, linked_worktree, monkeypatch):
+        from parrot.flows.dev_loop import native_claude_sandbox as native
+
+        monkeypatch.delenv(native.MODE_ENV, raising=False)
+        monkeypatch.setattr(native, "native_sandbox_available", lambda: (True, ""))
+        options = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
+        roots = options.env[native.ROOTS_ENV].split(os.pathsep)
+        assert len(roots) == 3 and roots[0] == str(linked_worktree.resolve())
 
     def test_real_settings_follow_probe_outcome(self, dispatcher, linked_worktree, monkeypatch, caplog):
         """Only the probe is stubbed: the real plan compiles hook-only settings when degraded, strict otherwise."""

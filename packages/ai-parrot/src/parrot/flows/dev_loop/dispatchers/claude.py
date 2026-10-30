@@ -93,6 +93,22 @@ _WRITE_CAPABLE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
 # (issue:6756c929a450).
 _SANDBOXED_SUBAGENTS = frozenset({"sdd-worker", "sdd-coder"})
 
+
+def _remove_owned_cache_dir(cache_dir: Path) -> None:
+    """Remove a per-dispatch cache directory, but only one this process allocated under the scratch root.
+
+    Runs in a worker thread: ``Path.resolve`` and ``rmtree`` are blocking.
+    """
+    cache_root = worktree_environment.claude_scratch_root() / "parrot-sdd-cache"
+    try:
+        resolved_root = cache_root.resolve()
+        owned = cache_dir.parent.resolve() == resolved_root and cache_dir.resolve().is_relative_to(resolved_root)
+    except (OSError, RuntimeError):
+        owned = False
+    if owned:
+        shutil.rmtree(cache_dir, True)
+
+
 # FEAT-496: per-dispatch tool_use_id -> tool_name correlation map. Bound in
 # dispatch() alongside _SESSION_HOST_CTX/_DISPATCH_LABELS_CTX — NEVER instance
 # state on self, since one dispatcher instance is shared across concurrent
@@ -515,18 +531,7 @@ class ClaudeCodeDispatcher:
                 if run_options is not None and run_options.env is not None:
                     cache_dir_value = run_options.env.get(native_claude_sandbox.CACHE_DIR_ENV)
                     if cache_dir_value:
-                        cache_dir = Path(cache_dir_value)
-                        cache_root = worktree_environment.claude_scratch_root() / "parrot-sdd-cache"
-                        try:
-                            resolved_root = cache_root.resolve()
-                            owned_cache_dir = (
-                                cache_dir.parent.resolve() == resolved_root
-                                and cache_dir.resolve().is_relative_to(resolved_root)
-                            )
-                        except (OSError, RuntimeError):
-                            owned_cache_dir = False
-                        if owned_cache_dir:
-                            await asyncio.to_thread(shutil.rmtree, cache_dir, True)
+                        await asyncio.to_thread(_remove_owned_cache_dir, Path(cache_dir_value))
                 _SESSION_HOST_CTX.reset(_host_token)
                 _DISPATCH_LABELS_CTX.reset(_labels_token)
                 _TOOL_NAMES_CTX.reset(_tools_token)
@@ -655,6 +660,7 @@ class ClaudeCodeDispatcher:
             extra_args = {"settings": json.dumps(settings)}
             env = dict(env or {})
             env[native_claude_sandbox.BACKEND_ENV] = native_claude_sandbox.BACKEND_NATIVE
+            env.update(native_claude_sandbox.native_root_env(Path(cwd)))
             if degraded:
                 self.logger.warning("native sandbox DEGRADED for %s (mode=%s): %s", profile.subagent, mode, reason)
                 env[native_claude_sandbox.DEGRADED_ENV] = "1"

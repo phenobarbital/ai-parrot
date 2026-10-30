@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from parrot.flows.dev_loop.native_claude_sandbox import validate_allowed_domains
+
 
 class ClaudeCodeDispatchProfile(BaseModel):
     """Declarative profile consumed by ``ClaudeCodeDispatcher.dispatch()``.
@@ -89,8 +91,6 @@ class ClaudeCodeDispatchProfile(BaseModel):
     @classmethod
     def _validate_sandbox_domains(cls, value: List[str]) -> List[str]:
         """Normalize and validate exact hostnames (spec policy 6)."""
-        from parrot.flows.dev_loop.native_claude_sandbox import validate_allowed_domains
-
         return validate_allowed_domains(value)
 
     model: str = "claude-sonnet-4-6"

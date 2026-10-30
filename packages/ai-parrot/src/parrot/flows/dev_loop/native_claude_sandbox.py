@@ -28,6 +28,7 @@ BACKEND_ENV = "PARROT_SDD_SANDBOX_BACKEND"
 BACKEND_NATIVE = "claude-native"
 BACKEND_BUBBLEWRAP = "bubblewrap"
 CACHE_DIR_ENV = "PARROT_SDD_CACHE_DIR"
+ROOTS_ENV = "PARROT_SDD_SANDBOX_ROOTS"  # root, common git dir, primary checkout — frozen at launch
 MODE_ENV = "PARROT_SDD_SANDBOX_MODE"
 DEGRADED_ENV = "PARROT_SDD_SANDBOX_DEGRADED"
 SANDBOX_MODES = ("required", "preferred", "off")
@@ -119,6 +120,9 @@ def _native_roots(cwd: Path) -> tuple[Path, Path, Path]:
     Raises:
         ValueError: If ``cwd`` is not a valid linked worktree.
     """
+    frozen = _frozen_roots(cwd)
+    if frozen is not None:
+        return frozen
     root, git_dir = _we.repository_paths(cwd)
     if git_dir is None:
         raise ValueError("Native sandbox requires a Git worktree")
@@ -134,6 +138,30 @@ def _native_roots(cwd: Path) -> tuple[Path, Path, Path]:
     if _canonical(admin_dir / common.read_text(encoding="utf-8").strip()) != git_dir:
         raise ValueError("Linked worktree does not resolve to its common Git directory")
     return root, git_dir, primary
+
+
+def _frozen_roots(cwd: Path) -> tuple[Path, Path, Path] | None:
+    """Return the roots the launcher froze in :data:`ROOTS_ENV` when ``cwd`` lies inside them.
+
+    The worktree's ``.git`` marker is writable by the session; re-deriving the policy roots from it on
+    every hook call would let a forged marker steer the hook. The launcher/dispatcher therefore pins the
+    three roots in the child environment; a cwd outside the frozen root (a pool sub-worktree) still
+    derives its own roots, exactly as before.
+    """
+    raw = os.environ.get(ROOTS_ENV, "")
+    parts = raw.split(os.pathsep) if raw else []
+    if len(parts) != 3 or not all(parts):
+        return None
+    root, git_dir, primary = (Path(part) for part in parts)
+    if not _is_within(_canonical(cwd), root):
+        return None
+    return root, git_dir, primary
+
+
+def native_root_env(cwd: Path) -> dict[str, str]:
+    """Return the :data:`ROOTS_ENV` entry that freezes ``cwd``'s policy roots for a child session."""
+    root, git_dir, primary = _native_roots(cwd)
+    return {ROOTS_ENV: os.pathsep.join((str(root), str(git_dir), str(primary)))}
 
 
 def _rtk_data_dir() -> Path:
@@ -160,6 +188,11 @@ def _denied_write_paths(root: Path, git_dir: Path) -> list[str]:
         admin_dir / "config.worktree",
         admin_dir / "hooks",
     ]
+    # Other linked worktrees' administration directories: the common Git directory is writable so this
+    # worktree can commit, but a sibling's config.worktree/hooks/HEAD are not this session's business.
+    worktrees_dir = git_dir / "worktrees"
+    if worktrees_dir.is_dir():
+        paths.extend(sorted(entry for entry in worktrees_dir.iterdir() if _canonical(entry) != admin_dir))
     denied: list[str] = []
     for path in paths:
         canonical = str(_canonical(path))
@@ -287,7 +320,7 @@ def native_sandbox_settings(
         canonical = str(_canonical(path))
         if canonical not in allow_write:
             allow_write.append(canonical)
-    hook_command = shlex.join(["python3", str(Path(_we.__file__).resolve()), "--hook"]) + " || exit 2"
+    hook_command = shlex.join([sys.executable, str(Path(_we.__file__).resolve()), "--hook"]) + " || exit 2"
     settings: dict[str, Any] = {
         "hooks": {
             "PreToolUse": [
@@ -442,7 +475,14 @@ def native_command_environment(cwd: Path) -> dict[str, str]:
     return env
 
 
-_REJECTED_OPTIONS = ("--settings", "--add-dir")
+_REJECTED_OPTIONS = (
+    "--settings",
+    "--add-dir",
+    "--dangerously-skip-permissions",
+    "--plugin-dir",
+    "--mcp-config",
+    "--agents",
+)
 _DEFAULT_MODEL = "sonnet"
 
 
@@ -598,6 +638,7 @@ def launch_worker(argv: Sequence[str]) -> int:
         return 1
     env = dict(os.environ)
     env[BACKEND_ENV] = BACKEND_NATIVE
+    env.update(native_root_env(Path.cwd()))
     if degraded:
         print(
             f"launch_worker: WARNING native sandbox unavailable ({reason}); mode={mode} launches DEGRADED "

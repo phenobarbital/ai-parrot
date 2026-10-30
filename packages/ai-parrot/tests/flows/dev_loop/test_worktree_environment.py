@@ -984,3 +984,22 @@ def test_real_rtk_cannot_write_its_trust_store_from_the_sandbox(
     # Control: outside the sandbox the same command writes the trust store, so the check above is not vacuous.
     subprocess.run(["rtk", "trust", "-y"], cwd=main, capture_output=True, text=True, timeout=30)
     assert (data_dir / "trusted_filters.json").is_file()
+
+
+def test_hook_refuses_legacy_fallback_when_native_markers_are_present(tmp_path: Path) -> None:
+    """A native launch without PARROT_SDD_SANDBOX_BACKEND is a broken launch, never a Bubblewrap session."""
+    import json as _json
+    import os as _os
+    import subprocess as _subprocess
+    import sys as _sys
+
+    hook = Path(policy.__file__).resolve()
+    env = {k: v for k, v in _os.environ.items() if not k.startswith("PARROT_SDD_")}
+    env["PARROT_SDD_CACHE_DIR"] = str(tmp_path)
+    payload = _json.dumps({"cwd": str(tmp_path), "tool_name": "Bash", "tool_input": {"command": "true"}})
+    result = _subprocess.run(
+        [_sys.executable, str(hook), "--hook"], input=payload, capture_output=True, text=True, env=env, timeout=20
+    )
+    output = _json.loads(result.stdout)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    assert "PARROT_SDD_SANDBOX_BACKEND is unset" in output["permissionDecisionReason"]

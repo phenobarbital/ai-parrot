@@ -31,6 +31,7 @@ def fake_claude_path(tmp_path: Path) -> str:
         "printf 'BACKEND=%s\\n' \"$PARROT_SDD_SANDBOX_BACKEND\"\n"
         "printf 'DEGRADED=%s\\n' \"$PARROT_SDD_SANDBOX_DEGRADED\"\n"
         "printf 'CACHE=%s\\n' \"$PARROT_SDD_CACHE_DIR\"\n"
+        "printf 'ROOTS=%s\\n' \"$PARROT_SDD_SANDBOX_ROOTS\"\n"
         "printf '%s\\n' \"$@\"\n",
     )
     _write_executable(bin_dir / "bwrap")
@@ -74,8 +75,8 @@ def _clean_sandbox_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def _output(result: subprocess.CompletedProcess[str]) -> tuple[dict[str, str], list[str]]:
     """Split the Claude stub's environment markers from its argv."""
     lines = result.stdout.splitlines()
-    environment = dict(line.split("=", 1) for line in lines[:3])
-    return environment, lines[3:]
+    environment = dict(line.split("=", 1) for line in lines[:4])
+    return environment, lines[4:]
 
 
 def test_defaults_exclude_user_source(fake_claude_path: str, linked_cwd: Path) -> None:
@@ -147,6 +148,10 @@ def test_allow_domain_repeatable_and_normalized(fake_claude_path: str, linked_cw
         ["--agent=x"],
         ["--setting-sources", "user,project"],
         ["--setting-sources=project,user"],
+        ["--dangerously-skip-permissions"],
+        ["--plugin-dir", "/tmp/x"],
+        ["--mcp-config", "/tmp/x.json"],
+        ["--agents", "{}"],
     ],
 )
 def test_policy_overrides_rejected(
@@ -285,3 +290,12 @@ def test_invalid_mode_exits_2(fake_claude_path: str, linked_cwd: Path, monkeypat
 
     assert result.returncode == 2
     assert "PARROT_SDD_SANDBOX_MODE" in result.stderr
+
+
+def test_policy_roots_are_frozen_for_the_child(fake_claude_path: str, linked_cwd: Path) -> None:
+    result = _run(fake_claude_path, linked_cwd)
+
+    assert result.returncode == 0
+    environment, _argv = _output(result)
+    roots = environment["ROOTS"].split(os.pathsep)
+    assert len(roots) == 3 and roots[0] == str(linked_cwd.resolve())

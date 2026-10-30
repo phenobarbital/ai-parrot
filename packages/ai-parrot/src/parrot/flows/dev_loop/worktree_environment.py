@@ -556,8 +556,15 @@ def main() -> None:
     parser.add_argument("--hook", action="store_true", required=True)
     parser.parse_args()
     try:
-        backend = os.environ.get("PARROT_SDD_SANDBOX_BACKEND") or "bubblewrap"
-        result = hook_response(json.load(sys.stdin), backend=backend)
+        backend = os.environ.get("PARROT_SDD_SANDBOX_BACKEND")
+        native_markers = ("PARROT_SDD_CACHE_DIR", "PARROT_SDD_SANDBOX_ROOTS", "PARROT_SDD_SANDBOX_DEGRADED")
+        if not backend and any(os.environ.get(name) for name in native_markers):
+            # A native launch always sets the backend; its absence next to the launcher's other markers
+            # means a broken launch, not a legacy session — never fall back to the Bubblewrap wrapper.
+            raise RuntimeError(
+                "native launch markers present but PARROT_SDD_SANDBOX_BACKEND is unset; refusing the legacy wrapper"
+            )
+        result = hook_response(json.load(sys.stdin), backend=backend or "bubblewrap")
     except Exception as exc:
         # A nonzero hook failure normally fails open. Emit an explicit denial.
         result = {

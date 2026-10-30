@@ -79,14 +79,20 @@ announced release once the FEAT-633 installer provisions the host prerequisites.
 - Defaults: `--model sonnet`, `--setting-sources project,local`; both can be overridden, but
   `--setting-sources` must not include `user`.
 - `--sandbox-allow-domain HOST` (repeatable, or `=HOST`): exact DNS hostnames only.
-- Rejected caller options (the launcher owns them): `--settings`, `--add-dir`, any `--agent` other
-  than `sdd-worker`, a `--setting-sources` value containing `user`.
+- Rejected caller options (the launcher owns them): `--settings`, `--add-dir`, `--dangerously-skip-permissions`,
+  `--plugin-dir`, `--mcp-config`, `--agents`, any `--agent` other than `sdd-worker`, a `--setting-sources`
+  value containing `user`.
 - Exit codes: **1** — a host prerequisite is missing (`claude`, `bwrap` or `socat` not on `PATH`);
   **2** — the caller's input violates the policy (rejected option, invalid domain, or the cwd is not a
   linked Git worktree: the primary checkout and non-repositories are refused). Any other status is
   the CLI's own.
-- The hook that rides with the settings runs with `PARROT_SDD_SANDBOX_BACKEND=claude-native`; an
-  unset value means the legacy Bubblewrap mode, and any other value makes the hook deny every call.
+- The hook that rides with the settings runs under the launching interpreter (`sys.executable`) with
+  `PARROT_SDD_SANDBOX_BACKEND=claude-native` and `PARROT_SDD_SANDBOX_ROOTS=<worktree>:<common git dir>:<primary>`.
+  The roots are frozen at launch so a session cannot steer the hook by rewriting its own `.git` marker; a
+  cwd outside the frozen root (a pool sub-worktree) derives its own roots. An unset backend means the legacy
+  Bubblewrap mode — unless the launcher's other markers (`PARROT_SDD_CACHE_DIR`, `…_ROOTS`, `…_DEGRADED`) are
+  present, in which case the hook denies every call instead of silently falling back; any other backend value
+  denies too.
 
 ## Host prerequisites and qualified matrix
 
@@ -128,7 +134,12 @@ version change requires re-qualification):
    under the primary checkout's `.claude/worktrees/` remains possible (needed by `/sdd-done`).
 4. A native `sdd-coder` seat prefixes every Bash command with `cd <its sub-worktree> && …`: `cd` does
    not persist between tool calls, and the hook uses that exact prefix to pick the task cwd for the
-   scope guard and `PYTHONPATH`.
+   scope guard and `PYTHONPATH`. Known limitation: only that exact form is recognised — `cd X; …`,
+   `cd\tX && …` and `pushd` fall through to the session cwd (any other leading `cd` form is denied). This
+   affects the test-scope guard only; the OS boundary does not depend on cwd.
+5. Sibling linked worktrees' administration directories under `.git/worktrees/*` are read-only: the
+   common Git directory stays writable so this worktree can commit, but another worktree's
+   `config.worktree`/`hooks` are not this session's business.
 
 ## Failure handling and rollback
 
