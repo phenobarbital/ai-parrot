@@ -748,6 +748,20 @@ def test_native_hook_uses_cd_prefix_task_cwd(tmp_path: Path, monkeypatch: pytest
     )
 
 
+def test_native_hook_prepends_degraded_banner_only_with_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
+
+    normal = policy.hook_response(payload, backend="claude-native")
+    assert "degraded sandbox" not in normal["hookSpecificOutput"]["updatedInput"]["command"]
+
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_DEGRADED", "1")
+    degraded = policy.hook_response(payload, backend="claude-native")
+    assert shlex.split(degraded["hookSpecificOutput"]["updatedInput"]["command"])[-1] == (
+        "echo '[sdd] degraded sandbox: no OS write boundary' >&2; true"
+    )
+
+
 def test_legacy_hook_output_unchanged(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
     """The omitted backend and explicit Bubblewrap backend produce identical output."""
     monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")

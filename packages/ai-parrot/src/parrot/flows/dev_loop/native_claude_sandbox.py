@@ -12,7 +12,9 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import subprocess
 import sys
+import tomllib
 from typing import Any, Sequence
 import uuid
 
@@ -25,6 +27,9 @@ BACKEND_ENV = "PARROT_SDD_SANDBOX_BACKEND"
 BACKEND_NATIVE = "claude-native"
 BACKEND_BUBBLEWRAP = "bubblewrap"
 CACHE_DIR_ENV = "PARROT_SDD_CACHE_DIR"
+MODE_ENV = "PARROT_SDD_SANDBOX_MODE"
+DEGRADED_ENV = "PARROT_SDD_SANDBOX_DEGRADED"
+SANDBOX_MODES = ("required", "preferred", "off")
 _HOSTNAME_LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 _NUMERIC_LABEL = re.compile(r"^(0x[0-9a-f]+|[0-9]+)$")
 _CD_PREFIX = re.compile(r"^\s*cd\s+(?P<target>\S+)\s*&&\s*(?P<rest>.+)$", re.DOTALL)
@@ -162,7 +167,79 @@ def _denied_write_paths(root: Path, git_dir: Path) -> list[str]:
     return denied
 
 
-def native_sandbox_settings(cwd: Path, *, allowed_domains: Sequence[str] = ()) -> dict[str, Any]:
+def resolve_sandbox_mode(repo_root: Path) -> str:
+    """Resolve the native sandbox transition mode for a repository.
+
+    Args:
+        repo_root: Linked worktree root containing the repository configuration.
+
+    Returns:
+        One of :data:`SANDBOX_MODES`.
+
+    Raises:
+        ValueError: If an environment or project value is malformed.
+    """
+    environment_value = os.environ.get(MODE_ENV)
+    if environment_value is not None:
+        mode = environment_value.strip().lower()
+        source = MODE_ENV
+    else:
+        config_path = repo_root / "pyproject.toml"
+        mode = "required"
+        source = "default"
+        if config_path.is_file():
+            try:
+                with config_path.open("rb") as handle:
+                    configuration = tomllib.load(handle)
+            except tomllib.TOMLDecodeError as exc:
+                raise ValueError(f"Invalid sandbox mode in {config_path}: malformed TOML") from exc
+            configured: Any = configuration
+            for table in ("tool", "parrot", "sdd"):
+                if not isinstance(configured, dict):
+                    raise ValueError(f"Invalid sandbox mode in {config_path}: [{table}] is not a table")
+                configured = configured.get(table)
+                if configured is None:
+                    break
+            if isinstance(configured, dict):
+                configured = configured.get("sandbox")
+            if configured is not None:
+                if not isinstance(configured, str):
+                    raise ValueError(f"Invalid sandbox mode in {config_path}: {configured!r}")
+                mode = configured.strip().lower()
+                source = str(config_path)
+    if mode not in SANDBOX_MODES:
+        raise ValueError(f"Invalid sandbox mode from {source}: {mode!r}")
+    return mode
+
+
+def native_sandbox_available() -> tuple[bool, str]:
+    """Probe whether the native Claude sandbox can start on this host.
+
+    Returns:
+        Whether the sandbox is available and a human-readable failure reason.
+    """
+    executables = {name: shutil.which(name) for name in ("claude", "bwrap", "socat")}
+    missing = [name for name, executable in executables.items() if executable is None]
+    if missing:
+        return False, f"missing prerequisite(s): {', '.join(missing)}"
+    try:
+        probe = subprocess.run(
+            [executables["bwrap"] or "bwrap", "--unshare-user", "--unshare-pid", "--ro-bind", "/", "/", "true"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "bwrap probe timed out"
+    if probe.returncode:
+        return False, next((line for line in probe.stderr.splitlines() if line.strip()), "bwrap probe failed")
+    return True, ""
+
+
+def native_sandbox_settings(
+    cwd: Path, *, allowed_domains: Sequence[str] = (), include_sandbox: bool = True
+) -> dict[str, Any]:
     """Build strict CLI settings including hooks.
 
     Args:
@@ -182,16 +259,7 @@ def native_sandbox_settings(cwd: Path, *, allowed_domains: Sequence[str] = ()) -
         if canonical not in allow_write:
             allow_write.append(canonical)
     hook_command = shlex.join(["python3", str(Path(_we.__file__).resolve()), "--hook"]) + " || exit 2"
-    return {
-        "sandbox": {
-            "enabled": True,
-            "failIfUnavailable": True,
-            "allowUnsandboxedCommands": False,
-            "excludedCommands": [],
-            "allowNestedUserNamespaces": False,
-            "network": {"allowAllUnixSockets": False, "strictAllowlist": True, "allowedDomains": domains},
-            "filesystem": {"allowWrite": allow_write, "denyWrite": _denied_write_paths(root, git_dir)},
-        },
+    settings: dict[str, Any] = {
         "hooks": {
             "PreToolUse": [
                 {
@@ -199,8 +267,50 @@ def native_sandbox_settings(cwd: Path, *, allowed_domains: Sequence[str] = ()) -
                     "hooks": [{"type": "command", "command": hook_command, "timeout": 10}],
                 }
             ]
-        },
+        }
     }
+    if include_sandbox:
+        settings["sandbox"] = {
+            "enabled": True,
+            "failIfUnavailable": True,
+            "allowUnsandboxedCommands": False,
+            "excludedCommands": [],
+            "allowNestedUserNamespaces": False,
+            "network": {"allowAllUnixSockets": False, "strictAllowlist": True, "allowedDomains": domains},
+            "filesystem": {"allowWrite": allow_write, "denyWrite": _denied_write_paths(root, git_dir)},
+        }
+    return settings
+
+
+def plan_native_launch(cwd: Path, *, allowed_domains: Sequence[str] = ()) -> tuple[str, bool, str, dict[str, Any]]:
+    """Resolve native-sandbox policy and settings for one Claude launch.
+
+    Args:
+        cwd: A path inside the linked worktree to launch from.
+        allowed_domains: Exact DNS hostnames permitted for network egress.
+
+    Returns:
+        Mode, degraded flag, reason, and the corresponding Claude settings.
+
+    Raises:
+        ValueError: If the mode or working tree is invalid.
+        RuntimeError: If required sandboxing cannot be started.
+    """
+    root, _git_dir, _primary = _native_roots(cwd)
+    mode = resolve_sandbox_mode(root)
+    if mode == "off":
+        return (
+            mode,
+            True,
+            "sandbox mode off",
+            native_sandbox_settings(cwd, allowed_domains=allowed_domains, include_sandbox=False),
+        )
+    available, reason = native_sandbox_available()
+    if not available:
+        if mode == "required":
+            raise RuntimeError(reason)
+        return mode, True, reason, native_sandbox_settings(cwd, allowed_domains=allowed_domains, include_sandbox=False)
+    return mode, False, "", native_sandbox_settings(cwd, allowed_domains=allowed_domains)
 
 
 def _control_path(root: Path, target: Path) -> bool:
@@ -442,18 +552,32 @@ def launch_worker(argv: Sequence[str]) -> int:
     """Launch sdd-worker with strict settings; return policy or host errors."""
     try:
         domains, forwarded, has_model, has_sources = _parse_launch_arguments(argv)
-        settings = native_sandbox_settings(Path.cwd(), allowed_domains=domains)
     except ValueError as exc:
         print(f"launch_worker: {exc}", file=sys.stderr)
         return 2
-    missing = [name for name in ("claude", "bwrap", "socat") if shutil.which(name) is None]
-    if missing:
-        print(f"launch_worker: missing host prerequisite(s): {', '.join(missing)}", file=sys.stderr)
+    claude = shutil.which("claude")
+    if claude is None:
+        print("launch_worker: missing host prerequisite(s): claude", file=sys.stderr)
+        return 1
+    try:
+        mode, degraded, reason, settings = plan_native_launch(Path.cwd(), allowed_domains=domains)
+    except ValueError as exc:
+        print(f"launch_worker: {exc}", file=sys.stderr)
+        return 2
+    except RuntimeError as exc:
+        print(f"launch_worker: native sandbox unavailable ({exc}); mode=required refuses to start", file=sys.stderr)
         return 1
     env = dict(os.environ)
     env[BACKEND_ENV] = BACKEND_NATIVE
+    if degraded:
+        print(
+            f"launch_worker: WARNING native sandbox unavailable ({reason}); mode={mode} launches DEGRADED "
+            "(hook only, no OS write boundary)",
+            file=sys.stderr,
+        )
+        env[DEGRADED_ENV] = "1"
     env[CACHE_DIR_ENV] = str(_allocate_session_cache())
-    command = [shutil.which("claude") or "claude", "--agent", "sdd-worker"]
+    command = [claude, "--agent", "sdd-worker"]
     if not has_sources:
         command += ["--setting-sources", "project,local"]
     if not has_model:

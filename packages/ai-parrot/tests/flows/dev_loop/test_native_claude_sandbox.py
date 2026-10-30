@@ -83,6 +83,43 @@ def test_settings_are_strict_and_explicit(linked: tuple[Path, Path]) -> None:
     assert settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"].endswith(" || exit 2")
 
 
+def test_sandbox_mode_resolution_prefers_environment_then_pyproject(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feature, _main = linked
+    (feature / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'preferred'\n", encoding="utf-8")
+
+    assert native.resolve_sandbox_mode(feature) == "preferred"
+    monkeypatch.setenv(native.MODE_ENV, " OFF ")
+    assert native.resolve_sandbox_mode(feature) == "off"
+    monkeypatch.setenv(native.MODE_ENV, "invalid")
+    with pytest.raises(ValueError, match=native.MODE_ENV):
+        native.resolve_sandbox_mode(feature)
+
+
+def test_settings_can_omit_native_sandbox(linked: tuple[Path, Path]) -> None:
+    feature, _main = linked
+
+    settings = native.native_sandbox_settings(feature, include_sandbox=False)
+
+    assert "sandbox" not in settings
+    assert settings["hooks"]["PreToolUse"]
+
+
+def test_plan_native_launch_degrades_or_refuses(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    feature, _main = linked
+    monkeypatch.setattr(native, "native_sandbox_available", lambda: (False, "probe failed"))
+
+    (feature / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'preferred'\n", encoding="utf-8")
+    mode, degraded, reason, settings = native.plan_native_launch(feature)
+    assert (mode, degraded, reason) == ("preferred", True, "probe failed")
+    assert "sandbox" not in settings
+
+    (feature / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'required'\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="probe failed"):
+        native.plan_native_launch(feature)
+
+
 @pytest.mark.parametrize(
     "bad",
     [

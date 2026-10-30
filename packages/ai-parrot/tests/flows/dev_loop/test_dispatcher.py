@@ -874,6 +874,27 @@ class TestNativeSandboxDispatch:
         assert settings["sandbox"]["enabled"] is True
         assert settings["hooks"]["PreToolUse"]
 
+    def test_degraded_sandbox_marks_environment_and_warns(self, dispatcher, linked_worktree, monkeypatch, caplog):
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.claude.native_claude_sandbox.plan_native_launch",
+            lambda *args, **kwargs: ("preferred", True, "probe failed", {"hooks": {}}),
+        )
+
+        options = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
+
+        assert json.loads(options.extra_args["settings"]) == {"hooks": {}}
+        assert options.env["PARROT_SDD_SANDBOX_DEGRADED"] == "1"
+        assert "native sandbox DEGRADED" in caplog.text
+
+    def test_required_sandbox_unavailability_refuses_dispatch(self, dispatcher, linked_worktree, monkeypatch):
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.claude.native_claude_sandbox.plan_native_launch",
+            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("probe failed")),
+        )
+
+        with pytest.raises(DispatchExecutionError, match="Native sandbox refused"):
+            dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
+
     @pytest.mark.asyncio
     async def test_dispatch_removes_owned_cache_directory(self, dispatcher, linked_worktree, monkeypatch, tmp_path):
         scratch_root = tmp_path / "claude-scratch"

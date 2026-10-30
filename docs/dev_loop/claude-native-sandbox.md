@@ -31,6 +31,34 @@ Bubblewrap: nested bwrap is not used, and the policy is compiled by
 A bare `claude --agent sdd-worker` is **not** a qualified native launch: it loads the `user` setting
 source (competing hooks) and carries no compiled policy.
 
+## Sandbox mode
+
+The default is `required`. Resolve the mode in this order: a non-empty
+`PARROT_SDD_SANDBOX_MODE` environment value (case-insensitive), then
+`[tool.parrot.sdd] sandbox` in the linked worktree's `pyproject.toml`, then `required`.
+Invalid values fail the launch rather than silently falling back.
+
+| Mode | Native sandbox available | Native sandbox unavailable |
+|---|---|---|
+| `required` | strict settings and hook | refuses to start |
+| `preferred` | strict settings and hook | launches degraded with the hook only |
+| `off` | not probed | launches degraded with the hook only |
+
+```toml
+[tool.parrot.sdd]
+sandbox = "preferred"
+```
+
+For a degraded launcher run, stderr contains exactly:
+
+```text
+launch_worker: WARNING native sandbox unavailable (<reason>); mode=<mode> launches DEGRADED (hook only, no OS write boundary)
+```
+
+The hook prepends `[sdd] degraded sandbox: no OS write boundary` to each Bash command's stderr.
+Degraded mode retains hook-level command, path, and test-scope checks, but it does **not** provide an OS
+write boundary; it does not make unsandboxed operation safe and must be an explicit operator choice.
+
 ### `launch_worker.sh` reference
 
 - Defaults: `--model sonnet`, `--setting-sources project,local`; both can be overridden, but
@@ -96,5 +124,5 @@ version change requires re-qualification):
   policy working; rewrite the command or path, do not widen the policy.
 - Project/local `.claude/settings*.json` cannot loosen the compiled policy (qualified: settings-widening
   scenario); a user-level source is excluded on purpose.
-- Rollback is a code/deployment revert of the feature (the launcher and dispatcher wiring); there is
-  no runtime switch that turns protection off while keeping the native launch paths.
+- Rollback is a code/deployment revert of the feature (the launcher and dispatcher wiring), or setting
+  the mode back to `required`; there is no silent runtime fallback that turns protection off.
