@@ -45,7 +45,7 @@
       "feature_id": "FEAT-772",
       "feature": "passkey-support",
       "spec": "sdd/specs/passkey-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -53,8 +53,9 @@
       "parallelism_notes": "Leaf module: creates ui/src/lib/webauthn.ts (browser globals only, no repo imports); no shared files.",
       "assigned_to": null,
       "started_at": "2026-10-30T15:27:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4898-webauthn-browser-helper.md"
+      "completed_at": "2026-10-30T15:41:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4898-webauthn-browser-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4899",
