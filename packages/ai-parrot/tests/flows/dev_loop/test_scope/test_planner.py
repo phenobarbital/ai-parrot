@@ -265,7 +265,9 @@ def test_mirror_target_keeps_agent_marker(tmp_path: Path):
 
 def test_declared_only_with_marked_contract_adds_no_sweep(tmp_path: Path):
     """The contract marker sweep still requires a contract target in the distribution."""
-    contract = TestContract(schema=1, tests=("packages/b/tests/test_c.py",), markers=("integration",), digest="sha256:t")
+    contract = TestContract(
+        schema=1, tests=("packages/b/tests/test_c.py",), markers=("integration",), digest="sha256:t"
+    )
     plan = build_plan(
         [_t("packages/a/tests/test_d.py", "a", "declared")],
         tier="task",
