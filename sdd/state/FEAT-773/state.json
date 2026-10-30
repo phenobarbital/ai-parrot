@@ -3,7 +3,7 @@
   "feat_id": "FEAT-773",
   "feature_slug": "delegated-auth-connections",
   "started_at": "2026-10-30T11:52:11Z",
-  "updated_at": "2026-10-30T13:02:23Z",
+  "updated_at": "2026-10-30T13:02:49Z",
   "source": {
     "kind": "file",
     "jira_key": null,
@@ -14,7 +14,7 @@
     "summary_oneline": "Generic OAuth2 3LO connections core (parrot.connections) with principal-keyed vault, consumed by web, Telegram and Teams channels"
   },
   "mode": "auto",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "phases": {
     "source": {
       "status": "completed",
@@ -116,12 +116,12 @@
       "skipped_reason": null
     },
     "output": {
-      "status": "running",
+      "status": "completed",
       "started_at": "2026-10-30T13:02:23Z",
-      "completed_at": null,
-      "duration_seconds": null,
+      "completed_at": "2026-10-30T13:02:49Z",
+      "duration_seconds": 0,
       "proposal_path": "sdd/proposals/delegated-auth-connections.proposal.md",
-      "commit_sha": null,
+      "commit_sha": "b9c70ff673a767dc6f6b1111c913c4fa23b51d56",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "Localization/constraints high-confidence; Option B settled in the brainstorm; U1-U5 decided; remaining medium/low items are spec-time verifications."
     }
@@ -142,8 +142,8 @@
   },
   "errors": [],
   "resume_hint": {
-    "next_phase": "committed",
-    "next_action": "Commit proposal + state (Step 9a)"
+    "next_phase": "done",
+    "next_action": "/sdd-spec FEAT-773"
   },
   "detected_mode": "enrichment"
 }
