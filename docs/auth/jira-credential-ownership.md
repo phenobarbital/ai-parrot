@@ -1,4 +1,9 @@
-# Who owns the Jira credential
+# Who owns an OAuth2 (3LO) credential
+
+The Identity Vault (`auth.user_identities`) owns every 3LO provider's grant
+through `CredentialStore` (FEAT-773). Redis is the hot cache for live tool
+calls; it is not the durable owner. The Jira history below remains as context
+for how this ownership decision was made.
 
 > Decided by **FEAT-735** (2026-10-23), from `issue:2e85cce93cab`.
 > Before this, one Atlassian 3LO grant lived in three places, written by three
