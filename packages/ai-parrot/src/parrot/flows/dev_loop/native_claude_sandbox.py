@@ -14,6 +14,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 import tomllib
 from typing import Any, Sequence
 import uuid
@@ -179,9 +180,9 @@ def resolve_sandbox_mode(repo_root: Path) -> str:
     Raises:
         ValueError: If an environment or project value is malformed.
     """
-    environment_value = os.environ.get(MODE_ENV)
-    if environment_value is not None:
-        mode = environment_value.strip().lower()
+    environment_value = (os.environ.get(MODE_ENV) or "").strip().lower()
+    if environment_value:
+        mode = environment_value
         source = MODE_ENV
     else:
         config_path = repo_root / "pyproject.toml"
@@ -191,13 +192,17 @@ def resolve_sandbox_mode(repo_root: Path) -> str:
             try:
                 with config_path.open("rb") as handle:
                     configuration = tomllib.load(handle)
-            except tomllib.TOMLDecodeError as exc:
-                raise ValueError(f"Invalid sandbox mode in {config_path}: malformed TOML") from exc
+            except (OSError, ValueError) as exc:  # TOMLDecodeError and UnicodeDecodeError are ValueErrors
+                raise ValueError(
+                    f"Invalid sandbox mode in {config_path}: unreadable or malformed TOML ({exc})"
+                ) from exc
             configured: Any = configuration
+            seen = ""
             for table in ("tool", "parrot", "sdd"):
                 if not isinstance(configured, dict):
-                    raise ValueError(f"Invalid sandbox mode in {config_path}: [{table}] is not a table")
+                    raise ValueError(f"Invalid sandbox mode in {config_path}: [{seen}] is not a table")
                 configured = configured.get(table)
+                seen = f"{seen}.{table}" if seen else table
                 if configured is None:
                     break
             if isinstance(configured, dict):
@@ -207,34 +212,58 @@ def resolve_sandbox_mode(repo_root: Path) -> str:
                     raise ValueError(f"Invalid sandbox mode in {config_path}: {configured!r}")
                 mode = configured.strip().lower()
                 source = str(config_path)
+                if mode == "off":
+                    # The worktree's pyproject is writable by the sandboxed session itself; letting it
+                    # switch the boundary off would be a self-disable path. Only the operator's
+                    # environment may select "off"; a repository may go as far as "preferred".
+                    raise ValueError(f"Invalid sandbox mode in {config_path}: 'off' may only be set through {MODE_ENV}")
     if mode not in SANDBOX_MODES:
         raise ValueError(f"Invalid sandbox mode from {source}: {mode!r}")
     return mode
 
 
+_PROBE_TTL_SECONDS = 60.0
+_probe_cache: tuple[float, bool, str] | None = None
+
+
 def native_sandbox_available() -> tuple[bool, str]:
     """Probe whether the native Claude sandbox can start on this host.
+
+    The probe is a weaker proxy than Claude's own runtime (user and PID namespaces plus a read-only
+    root bind, no network namespace); a false positive still fails closed because the compiled
+    settings carry ``failIfUnavailable``. The result is cached for :data:`_PROBE_TTL_SECONDS` so a
+    long-lived dispatcher does not block on ``bwrap`` for every launch.
 
     Returns:
         Whether the sandbox is available and a human-readable failure reason.
     """
-    executables = {name: shutil.which(name) for name in ("claude", "bwrap", "socat")}
+    global _probe_cache
+    now = time.monotonic()
+    if _probe_cache is not None and now - _probe_cache[0] < _PROBE_TTL_SECONDS:
+        return _probe_cache[1], _probe_cache[2]
+    executables = {name: shutil.which(name) for name in ("bwrap", "socat")}
     missing = [name for name, executable in executables.items() if executable is None]
     if missing:
-        return False, f"missing prerequisite(s): {', '.join(missing)}"
-    try:
-        probe = subprocess.run(
-            [executables["bwrap"] or "bwrap", "--unshare-user", "--unshare-pid", "--ro-bind", "/", "/", "true"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return False, "bwrap probe timed out"
-    if probe.returncode:
-        return False, next((line for line in probe.stderr.splitlines() if line.strip()), "bwrap probe failed")
-    return True, ""
+        outcome = (False, f"missing prerequisite(s): {', '.join(missing)}")
+    else:
+        try:
+            probe = subprocess.run(
+                [executables["bwrap"] or "bwrap", "--unshare-user", "--unshare-pid", "--ro-bind", "/", "/", "true"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            outcome = (False, "bwrap probe timed out")
+        else:
+            if probe.returncode:
+                reason = next((line for line in probe.stderr.splitlines() if line.strip()), "bwrap probe failed")
+                outcome = (False, reason)
+            else:
+                outcome = (True, "")
+    _probe_cache = (now, outcome[0], outcome[1])
+    return outcome
 
 
 def native_sandbox_settings(
@@ -576,6 +605,8 @@ def launch_worker(argv: Sequence[str]) -> int:
             file=sys.stderr,
         )
         env[DEGRADED_ENV] = "1"
+    else:
+        env.pop(DEGRADED_ENV, None)
     env[CACHE_DIR_ENV] = str(_allocate_session_cache())
     command = [claude, "--agent", "sdd-worker"]
     if not has_sources:

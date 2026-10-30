@@ -64,6 +64,13 @@ def _run(path: str, cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+@pytest.fixture(autouse=True)
+def _clean_sandbox_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Never inherit a developer's mode or degraded marker into launcher tests."""
+    monkeypatch.delenv("PARROT_SDD_SANDBOX_MODE", raising=False)
+    monkeypatch.delenv("PARROT_SDD_SANDBOX_DEGRADED", raising=False)
+
+
 def _output(result: subprocess.CompletedProcess[str]) -> tuple[dict[str, str], list[str]]:
     """Split the Claude stub's environment markers from its argv."""
     lines = result.stdout.splitlines()
@@ -225,13 +232,41 @@ def test_pyproject_preferred_mode_degrades_after_failing_probe(
     environment, argv = _output(result)
     assert environment["DEGRADED"] == "1"
     assert "sandbox" not in json.loads(argv[argv.index("--settings") + 1])
-    assert "WARNING native sandbox unavailable (unavailable); mode=preferred launches DEGRADED" in result.stderr
+    assert (
+        "launch_worker: WARNING native sandbox unavailable (unavailable); mode=preferred launches DEGRADED "
+        "(hook only, no OS write boundary)"
+    ) in result.stderr
+
+
+def test_preferred_mode_with_working_probe_is_strict(
+    fake_claude_path: str, linked_cwd: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (linked_cwd / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'preferred'\n", encoding="utf-8")
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_DEGRADED", "1")  # inherited marker must be cleared
+
+    result = _run(fake_claude_path, linked_cwd)
+
+    assert result.returncode == 0
+    environment, argv = _output(result)
+    assert environment["DEGRADED"] == ""
+    assert json.loads(argv[argv.index("--settings") + 1])["sandbox"]["failIfUnavailable"] is True
+    assert "DEGRADED" not in result.stderr
+
+
+def test_pyproject_off_is_rejected(fake_claude_path: str, linked_cwd: Path) -> None:
+    (linked_cwd / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'off'\n", encoding="utf-8")
+
+    result = _run(fake_claude_path, linked_cwd)
+
+    assert result.returncode == 2
+    assert "may only be set through PARROT_SDD_SANDBOX_MODE" in result.stderr
 
 
 def test_off_mode_skips_probe(fake_claude_path: str, linked_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PARROT_SDD_SANDBOX_MODE", "off")
     bin_dir = Path(fake_claude_path.split(os.pathsep)[0])
-    _write_executable(bin_dir / "bwrap", "#!/bin/sh\necho probe-called >&2\nexit 1\n")
+    marker = bin_dir / "probe-called"
+    _write_executable(bin_dir / "bwrap", f"#!/bin/sh\ntouch {marker}\nexit 1\n")
 
     result = _run(fake_claude_path, linked_cwd)
 
@@ -239,7 +274,8 @@ def test_off_mode_skips_probe(fake_claude_path: str, linked_cwd: Path, monkeypat
     environment, argv = _output(result)
     assert environment["DEGRADED"] == "1"
     assert "sandbox" not in json.loads(argv[argv.index("--settings") + 1])
-    assert "probe-called" not in result.stderr
+    assert "mode=off launches DEGRADED" in result.stderr
+    assert not marker.exists(), "off mode must not run the bwrap probe"
 
 
 def test_invalid_mode_exits_2(fake_claude_path: str, linked_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:

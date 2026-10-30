@@ -33,31 +33,46 @@ source (competing hooks) and carries no compiled policy.
 
 ## Sandbox mode
 
-The default is `required`. Resolve the mode in this order: a non-empty
-`PARROT_SDD_SANDBOX_MODE` environment value (case-insensitive), then
-`[tool.parrot.sdd] sandbox` in the linked worktree's `pyproject.toml`, then `required`.
-Invalid values fail the launch rather than silently falling back.
+The SDD flow runs in many consumer repositories whose developers cannot all harden their hosts at once
+(FEAT-633). The native sandbox therefore has an explicit, auditable mode (spec §4 policy 10, AC13):
 
-| Mode | Native sandbox available | Native sandbox unavailable |
+| Mode | Native sandbox can start | Cannot start |
 |---|---|---|
-| `required` | strict settings and hook | refuses to start |
-| `preferred` | strict settings and hook | launches degraded with the hook only |
-| `off` | not probed | launches degraded with the hook only |
+| `required` (**default**) | strict settings | launcher exit 1 with the probe reason; dispatcher `DispatchExecutionError` |
+| `preferred` | strict settings (identical to `required`) | **degraded** launch: hooks only, no `sandbox` block, no OS write boundary — declared, never silent |
+| `off` | never compiles the `sandbox` block (ephemeral CI, disposable containers); hooks still apply | — |
+
+Resolution order: `PARROT_SDD_SANDBOX_MODE` (empty or whitespace counts as unset) → `[tool.parrot.sdd]
+sandbox = "required" | "preferred"` in the repository root `pyproject.toml` → `required`. **`off` can only be
+set through the environment variable**: the worktree's `pyproject.toml` is writable by the sandboxed session
+itself, so letting it select `off` would be a self-disable path; a repository may go as far as `preferred`,
+which on a host where the sandbox starts is the same as `required`. Any other value, a non-string value,
+`[tool.parrot.sdd] sandbox = "off"` or an unreadable/malformed `pyproject.toml` fails the launch (exit 2 /
+`DispatchExecutionError`).
 
 ```toml
 [tool.parrot.sdd]
-sandbox = "preferred"
+sandbox = "preferred"   # a developer workstation during the transition; ai-parrot keeps the default "required"
 ```
 
-For a degraded launcher run, stderr contains exactly:
+Availability is decided before launch by a cheap probe — `bwrap` and `socat` on `PATH`, then
+`bwrap --unshare-user --unshare-pid --ro-bind / / true` with a 10 s timeout — cached for 60 s per process so a
+long-lived dispatcher does not block on it for every launch. The probe is a weaker proxy than Claude's own
+runtime (no network namespace); a false positive still fails closed because the strict settings carry
+`failIfUnavailable`. `off` never runs the probe.
 
-```text
-launch_worker: WARNING native sandbox unavailable (<reason>); mode=<mode> launches DEGRADED (hook only, no OS write boundary)
-```
+What a degraded launch looks like:
 
-The hook prepends `[sdd] degraded sandbox: no OS write boundary` to each Bash command's stderr.
-Degraded mode retains hook-level command, path, and test-scope checks, but it does **not** provide an OS
-write boundary; it does not make unsandboxed operation safe and must be an explicit operator choice.
+- launcher stderr: `launch_worker: WARNING native sandbox unavailable (<reason>); mode=<mode> launches DEGRADED (hook only, no OS write boundary)`
+- dispatcher log: `native sandbox DEGRADED for <subagent> (mode=<mode>): <reason>` (no free-form telemetry field
+  exists on `DispatchLabels`; the log line is the record)
+- child environment: `PARROT_SDD_SANDBOX_BACKEND=claude-native` and `PARROT_SDD_SANDBOX_DEGRADED=1`
+  (a marker inherited from the parent is cleared on strict launches)
+- every Bash call in the session is prefixed by the hook with `[sdd] degraded sandbox: no OS write boundary` on stderr
+
+Degraded keeps the test-scope guard, the RTK rewrite, the bounded shell and the native file-tool checks; it
+does **not** stop Bash from writing anywhere the user can. The default flips to a hardened posture only by an
+announced release once the FEAT-633 installer provisions the host prerequisites.
 
 ### `launch_worker.sh` reference
 

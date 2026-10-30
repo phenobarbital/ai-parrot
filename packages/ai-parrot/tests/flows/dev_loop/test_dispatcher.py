@@ -23,7 +23,6 @@ from parrot.flows.dev_loop import (
     ResearchOutput,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers / fakes
 # ---------------------------------------------------------------------------
@@ -170,9 +169,7 @@ class TestProfileResolution:
             "prefer-subscription",
             raising=False,
         )
-        monkeypatch.setattr(
-            dispatcher, "_subscription_available", lambda: False
-        )
+        monkeypatch.setattr(dispatcher, "_subscription_available", lambda: False)
         opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(subagent="sdd-qa"), str(linked_worktree))
         # env None/empty means "inherit parent env unchanged".
         assert not opts.env
@@ -194,15 +191,11 @@ class TestProfileResolution:
             "subscription",
             raising=False,
         )
-        monkeypatch.setattr(
-            dispatcher, "_subscription_available", lambda: False
-        )
+        monkeypatch.setattr(dispatcher, "_subscription_available", lambda: False)
         opts = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(subagent="sdd-qa"), str(linked_worktree))
         assert opts.env == {"ANTHROPIC_API_KEY": ""}
 
-    def test_subscription_available_reads_credentials(
-        self, dispatcher, monkeypatch, tmp_path
-    ):
+    def test_subscription_available_reads_credentials(self, dispatcher, monkeypatch, tmp_path):
         """_subscription_available honours CLAUDE_CONFIG_DIR + OAuth block."""
         cfg = tmp_path / "cfgdir"
         cfg.mkdir()
@@ -211,20 +204,15 @@ class TestProfileResolution:
         assert dispatcher._subscription_available() is False
         # OAuth block with an access token → True.
         (cfg / ".credentials.json").write_text(
-            '{"claudeAiOauth": {"accessToken": "tok", '
-            '"subscriptionType": "max"}}'
+            '{"claudeAiOauth": {"accessToken": "tok", ' '"subscriptionType": "max"}}'
         )
         assert dispatcher._subscription_available() is True
         # Block present but no token → False.
         (cfg / ".credentials.json").write_text('{"claudeAiOauth": {}}')
         assert dispatcher._subscription_available() is False
 
-    def test_generic_session_fallback(
-        self, dispatcher, _patch_worktree_base
-    ):
-        profile = ClaudeCodeDispatchProfile(
-            subagent=None, system_prompt_override="be terse"
-        )
+    def test_generic_session_fallback(self, dispatcher, _patch_worktree_base):
+        profile = ClaudeCodeDispatchProfile(subagent=None, system_prompt_override="be terse")
         cwd = str(_patch_worktree_base)
         opts = dispatcher._resolve_run_options(profile, cwd)
         assert opts.agents is None
@@ -276,13 +264,9 @@ class TestCwdSafetyCheck:
         with pytest.raises(DispatchExecutionError):
             dispatcher._enforce_cwd_under_worktree_base("/etc", write)
 
-    def test_cwd_outside_rejected_when_plan_mode_but_edit_tool_present(
-        self, dispatcher
-    ):
+    def test_cwd_outside_rejected_when_plan_mode_but_edit_tool_present(self, dispatcher):
         # plan mode alone is not enough: an Edit tool makes it write-capable.
-        mixed = ClaudeCodeDispatchProfile(
-            permission_mode="plan", allowed_tools=["Read", "Edit"]
-        )
+        mixed = ClaudeCodeDispatchProfile(permission_mode="plan", allowed_tools=["Read", "Edit"])
         with pytest.raises(DispatchExecutionError):
             dispatcher._enforce_cwd_under_worktree_base("/etc", mixed)
 
@@ -302,9 +286,7 @@ class TestCwdSafetyCheck:
             allow_project_root_cwd=True,
         )
         # Must NOT raise.
-        dispatcher._enforce_cwd_under_worktree_base(
-            str(conf.PROJECT_ROOT), ideation
-        )
+        dispatcher._enforce_cwd_under_worktree_base(str(conf.PROJECT_ROOT), ideation)
 
     def test_project_root_waiver_is_exactly_one_path(self, dispatcher):
         # The waiver names a single directory. A parent, a sibling, or any
@@ -328,9 +310,7 @@ class TestCwdSafetyCheck:
             allowed_tools=["Read", "Edit", "Write"],
         )
         with pytest.raises(DispatchExecutionError):
-            dispatcher._enforce_cwd_under_worktree_base(
-                str(conf.PROJECT_ROOT), write
-            )
+            dispatcher._enforce_cwd_under_worktree_base(str(conf.PROJECT_ROOT), write)
 
 
 # ---------------------------------------------------------------------------
@@ -545,13 +525,9 @@ class TestDispatchSessionFailure:
         )
 
         class _ErrAfterResultClient:
-            async def stream_messages(
-                self, prompt: str, *, run_options: Any
-            ):
+            async def stream_messages(self, prompt: str, *, run_options: Any):
                 yield err_result
-                raise Exception(
-                    "Claude Code returned an error result: success"
-                )
+                raise Exception("Claude Code returned an error result: success")
 
         monkeypatch.setattr(
             "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
@@ -644,9 +620,7 @@ class TestSemaphore:
                 active["n"] += 1
                 active["max"] = max(active["max"], active["n"])
                 await gate.wait()
-                yield _AssistantMessage(
-                    content=[_TextBlock(_make_research_payload())]
-                )
+                yield _AssistantMessage(content=[_TextBlock(_make_research_payload())])
                 yield _ResultMessage(success=True)
                 active["n"] -= 1
 
@@ -885,6 +859,30 @@ class TestNativeSandboxDispatch:
         assert json.loads(options.extra_args["settings"]) == {"hooks": {}}
         assert options.env["PARROT_SDD_SANDBOX_DEGRADED"] == "1"
         assert "native sandbox DEGRADED" in caplog.text
+
+    def test_real_settings_follow_probe_outcome(self, dispatcher, linked_worktree, monkeypatch, caplog):
+        """Only the probe is stubbed: the real plan compiles hook-only settings when degraded, strict otherwise."""
+        from parrot.flows.dev_loop import native_claude_sandbox as native
+
+        monkeypatch.delenv(native.MODE_ENV, raising=False)
+        monkeypatch.setenv(native.DEGRADED_ENV, "1")  # inherited marker must not leak into a strict launch
+        (linked_worktree / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'preferred'\n", encoding="utf-8")
+
+        monkeypatch.setattr(native, "native_sandbox_available", lambda: (False, "probe failed"))
+        degraded = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
+        degraded_settings = json.loads(degraded.extra_args["settings"])
+        assert "sandbox" not in degraded_settings and degraded_settings["hooks"]["PreToolUse"]
+        assert degraded.env["PARROT_SDD_SANDBOX_DEGRADED"] == "1"
+
+        monkeypatch.setattr(native, "native_sandbox_available", lambda: (True, ""))
+        strict = dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
+        assert json.loads(strict.extra_args["settings"])["sandbox"]["failIfUnavailable"] is True
+        assert "PARROT_SDD_SANDBOX_DEGRADED" not in strict.env
+
+        (linked_worktree / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'required'\n", encoding="utf-8")
+        monkeypatch.setattr(native, "native_sandbox_available", lambda: (False, "probe failed"))
+        with pytest.raises(DispatchExecutionError, match="probe failed"):
+            dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
 
     def test_required_sandbox_unavailability_refuses_dispatch(self, dispatcher, linked_worktree, monkeypatch):
         monkeypatch.setattr(

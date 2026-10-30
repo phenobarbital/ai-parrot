@@ -659,6 +659,7 @@ class ClaudeCodeDispatcher:
                 self.logger.warning("native sandbox DEGRADED for %s (mode=%s): %s", profile.subagent, mode, reason)
                 env[native_claude_sandbox.DEGRADED_ENV] = "1"
             else:
+                env.pop(native_claude_sandbox.DEGRADED_ENV, None)
                 self.logger.info("native sandbox ready for %s (mode=%s)", profile.subagent, mode)
             cache_dir = worktree_environment.claude_scratch_root() / "parrot-sdd-cache" / uuid4().hex
             env[native_claude_sandbox.CACHE_DIR_ENV] = str(cache_dir)

@@ -83,17 +83,46 @@ def test_settings_are_strict_and_explicit(linked: tuple[Path, Path]) -> None:
     assert settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"].endswith(" || exit 2")
 
 
+@pytest.fixture(autouse=True)
+def _clean_sandbox_mode_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Never inherit a developer's mode/marker or a cached probe result into a test."""
+    monkeypatch.delenv(native.MODE_ENV, raising=False)
+    monkeypatch.delenv(native.DEGRADED_ENV, raising=False)
+    monkeypatch.setattr(native, "_probe_cache", None)
+
+
 def test_sandbox_mode_resolution_prefers_environment_then_pyproject(
     linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     feature, _main = linked
-    (feature / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'preferred'\n", encoding="utf-8")
+    assert native.resolve_sandbox_mode(feature) == "required"  # no pyproject, no env
 
+    (feature / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'preferred'\n", encoding="utf-8")
+    assert native.resolve_sandbox_mode(feature) == "preferred"
+    monkeypatch.setenv(native.MODE_ENV, "   ")  # empty/whitespace is "unset"
     assert native.resolve_sandbox_mode(feature) == "preferred"
     monkeypatch.setenv(native.MODE_ENV, " OFF ")
     assert native.resolve_sandbox_mode(feature) == "off"
     monkeypatch.setenv(native.MODE_ENV, "invalid")
     with pytest.raises(ValueError, match=native.MODE_ENV):
+        native.resolve_sandbox_mode(feature)
+
+
+@pytest.mark.parametrize(
+    ("content", "match"),
+    [
+        ("[tool.parrot.sdd]\nsandbox = 'off'\n", "may only be set through"),
+        ("[tool.parrot.sdd]\nsandbox = 'unsafe'\n", "pyproject.toml"),
+        ("[tool.parrot.sdd]\nsandbox = 3\n", "pyproject.toml"),
+        ("[tool.parrot]\nsdd = 'x'\n[tool.parrot.sdd]\n", "malformed"),
+        ("[tool]\nparrot = 1\n", r"\[tool\.parrot\] is not a table"),
+    ],
+)
+def test_sandbox_mode_pyproject_errors(linked: tuple[Path, Path], content: str, match: str) -> None:
+    """A repository may choose required/preferred only; anything else is an error naming the source."""
+    feature, _main = linked
+    (feature / "pyproject.toml").write_text(content, encoding="utf-8")
+    with pytest.raises(ValueError, match=match):
         native.resolve_sandbox_mode(feature)
 
 
@@ -118,6 +147,58 @@ def test_plan_native_launch_degrades_or_refuses(linked: tuple[Path, Path], monke
     (feature / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'required'\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="probe failed"):
         native.plan_native_launch(feature)
+
+
+def test_plan_native_launch_strict_when_available_and_off_skips_probe(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    feature, _main = linked
+    (feature / "pyproject.toml").write_text("[tool.parrot.sdd]\nsandbox = 'preferred'\n", encoding="utf-8")
+    monkeypatch.setattr(native, "native_sandbox_available", lambda: (True, ""))
+    mode, degraded, reason, settings = native.plan_native_launch(feature)
+    assert (mode, degraded, reason) == ("preferred", False, "")
+    assert settings["sandbox"]["failIfUnavailable"] is True  # preferred + available == required + available
+
+    def _never() -> tuple[bool, str]:
+        raise AssertionError("probe must not run in off mode")
+
+    monkeypatch.setattr(native, "native_sandbox_available", _never)
+    monkeypatch.setenv(native.MODE_ENV, "off")
+    mode, degraded, reason, settings = native.plan_native_launch(feature)
+    assert (mode, degraded, reason) == ("off", True, "sandbox mode off")
+    assert "sandbox" not in settings
+
+
+def test_native_sandbox_available_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    class _Completed:
+        def __init__(self, returncode: int, stderr: str = "") -> None:
+            self.returncode, self.stderr = returncode, stderr
+
+    monkeypatch.setattr(native.shutil, "which", lambda name: None if name == "socat" else f"/usr/bin/{name}")
+    assert native.native_sandbox_available() == (False, "missing prerequisite(s): socat")
+
+    monkeypatch.setattr(native, "_probe_cache", None)
+    monkeypatch.setattr(native.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        native.subprocess, "run", lambda argv, **kw: calls.append(argv) or _Completed(1, "\nbwrap: denied\n")
+    )
+    assert native.native_sandbox_available() == (False, "bwrap: denied")
+    assert calls[0][:3] == ["/usr/bin/bwrap", "--unshare-user", "--unshare-pid"]
+    assert native.native_sandbox_available() == (False, "bwrap: denied") and len(calls) == 1  # cached
+
+    monkeypatch.setattr(native, "_probe_cache", None)
+
+    def _timeout(argv: list[str], **kw: object) -> _Completed:
+        raise native.subprocess.TimeoutExpired(argv, 10)
+
+    monkeypatch.setattr(native.subprocess, "run", _timeout)
+    assert native.native_sandbox_available() == (False, "bwrap probe timed out")
+
+    monkeypatch.setattr(native, "_probe_cache", None)
+    monkeypatch.setattr(native.subprocess, "run", lambda argv, **kw: _Completed(0))
+    assert native.native_sandbox_available() == (True, "")
 
 
 @pytest.mark.parametrize(
