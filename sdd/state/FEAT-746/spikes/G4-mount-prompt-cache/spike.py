@@ -7,13 +7,16 @@ import importlib
 import json
 import os
 import sys
+import uuid
 from typing import Any
 
-from parrot.bots.prompts.segments import CacheableSegment
 from parrot.clients.base import AbstractClient
-from parrot.tools.manager import ToolDefinition, ToolManager
+from parrot.tools.manager import ToolDefinition
 
-PAD = "You are a careful HR analytics assistant. " * 400
+# A per-run nonce at the head of the prefix keeps every run cold: without it a provider can
+# serve turn 3 from the 9-tool prefix an earlier run cached, which looks like a free mount.
+RUN_NONCE = os.environ.get("G4_RUN_NONCE") or uuid.uuid4().hex
+PAD = f"[spike run {RUN_NONCE}] " + "You are a careful HR analytics assistant. " * 400
 PROMPT = "List the tools you can use."
 
 
@@ -143,6 +146,10 @@ def _usage_for(message: Any) -> dict[str, Any]:
 async def run_provider(client: AbstractClient, label: str) -> dict[str, Any]:
     """Measure cache counters for baseline, repeat, and mounted-tool turns.
 
+    Tools are registered on the client's own ``ToolManager`` (the path every provider
+    client reads when ``use_tools=True``); ``ask(tools=[...])`` is not used because the
+    Google client only accepts tool objects there and silently drops schema dicts.
+
     Args:
         client: Configured provider client to measure.
         label: Stable provider label written into the result table.
@@ -150,48 +157,47 @@ async def run_provider(client: AbstractClient, label: str) -> dict[str, Any]:
     Returns:
         The three measured turns and their normalized cache counters.
     """
-    tool_manager = ToolManager()
-    for definition in baseline_tools(6):
-        tool_manager.register_tool(tool=definition)
-
     turns: list[dict[str, Any]] = []
-    # SQUAWK_G4_MODEL_<PROVIDER> overrides a client default; enums are sent by value.
-    model = os.environ.get(f"SQUAWK_G4_MODEL_{label.upper()}") or getattr(client.model, "value", client.model)
-    try:
-        # Clients are lazy: the provider SDK handle only exists inside the async context.
-        async with client:
-            for turn in range(1, 4):
-                if turn == 3:
-                    for definition in extra_tools(3):
-                        tool_manager.register_tool(tool=definition)
+    async with client:
+        client.register_tools(baseline_tools(6))
+        await _run_turns(client, label, turns)
+    model = getattr(client, "model", None) or getattr(client, "_model", None)
+    return {
+        "provider": label,
+        "client": type(client).__name__,
+        "model": str(model),
+        "run_nonce": RUN_NONCE,
+        "turns": turns,
+    }
 
-                schemas = tool_manager.get_tool_schemas(client._resolve_tool_format())
-                message = await client.ask(
-                    prompt=PROMPT,
-                    # The production path (AbstractBot) sends CacheableSegments; Anthropic only
-                    # emits cache_control blocks for a segment list, never for a plain string.
-                    system_prompt=[CacheableSegment(text=PAD, cacheable=True)],
-                    model=model,
-                    tools=schemas,
-                    use_tools=True,
-                )
-                turns.append(
-                    {
-                        "turn": turn,
-                        "tool_count": len(schemas),
-                        "usage": cache_fields(_usage_for(message)),
-                    }
-                )
-    except Exception as exc:  # noqa: BLE001 - one provider's failure is a recorded verdict, not a crash
-        return {
-            "provider": label,
-            "client": type(client).__name__,
-            "model": str(model),
-            "error": f"{type(exc).__name__}: {exc}"[:300],
-            "turns": turns,
-        }
 
-    return {"provider": label, "client": type(client).__name__, "model": str(model), "turns": turns}
+def _system_prompt(label: str) -> Any:
+    """Return the system prompt in the shape that engages each provider's prompt cache.
+
+    Anthropic only emits ``cache_control`` (FEAT-181) for a ``CacheableSegment`` list;
+    OpenAI and Google cache a repeated prefix implicitly, so they get the plain string.
+    """
+    if label == "anthropic":
+        from parrot.bots.prompts.segments import CacheableSegment
+
+        return [CacheableSegment(text=PAD, cacheable=True)]
+    return PAD
+
+
+async def _run_turns(client: AbstractClient, label: str, turns: list[dict[str, Any]]) -> None:
+    """Run the baseline, repeat, and mounted-tool turns on an opened client."""
+    for turn in range(1, 4):
+        if turn == 3:
+            client.register_tools(extra_tools(3))
+        message = await client.ask(prompt=PROMPT, system_prompt=_system_prompt(label), use_tools=True)
+        turns.append(
+            {
+                "turn": turn,
+                "tool_count": len(client.tool_manager.list_tools()),
+                "tool_calls": len(getattr(message, "tool_calls", None) or []),
+                "usage": cache_fields(_usage_for(message)),
+            }
+        )
 
 
 def _configured_clients() -> list[tuple[str, AbstractClient]]:
@@ -207,14 +213,26 @@ def _configured_clients() -> list[tuple[str, AbstractClient]]:
             client_class = getattr(importlib.import_module(module_name), class_name)
         except ImportError:
             continue
-        if client_class.has_server_credentials():
+        if not client_class.has_server_credentials():
+            continue
+        if label == "openai":
+            # The client's default model (gpt-5-mini) rejects the ``max_tokens`` that ``ask()``
+            # sends (400 unsupported_parameter), so pin a chat-completions model for the spike.
+            configured.append((label, client_class(model=os.environ.get("G4_OPENAI_MODEL", "gpt-4.1-mini"))))
+        else:
             configured.append((label, client_class()))
     return configured
 
 
 async def main_async() -> list[dict[str, Any]]:
     """Run one three-turn measurement for every configured provider."""
-    return [await run_provider(client, label) for label, client in _configured_clients()]
+    results: list[dict[str, Any]] = []
+    for label, client in _configured_clients():
+        try:
+            results.append(await run_provider(client, label))
+        except Exception as exc:  # one provider failing must not hide the others' evidence
+            results.append({"provider": label, "client": type(client).__name__, "error": repr(exc), "turns": []})
+    return results
 
 
 def main() -> int:

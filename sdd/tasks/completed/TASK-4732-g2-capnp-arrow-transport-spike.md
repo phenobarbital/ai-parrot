@@ -289,4 +289,4 @@ See the blueprint test; skipped by default, `importorskip("capnp")` guards envir
 
 **Deviations from spec**: none in the file set.
 
-**Gap closed 2026-10-30** (`51c2f45f8`): G2 now PASS on all four criteria (loopback mTLS, 1.5M rows: 106 frames <= 1 MiB, ~222 MiB/s; cancel -> PARTIAL with 11 valid frames; SAN + Hello token observed; pycapnp under asyncio). The earlier FAIL came from the sandbox plus three spike bugs (un-awaited capnp.run, private _AsyncIoStream.protocol, listener-first teardown hanging on Python 3.12 wait_closed). Amendment: PASS, no gRPC fallback. Verification upgraded to `verified`.
+**Gap closed 2026-10-30**: G2 rerun with real evidence by TASK-4893 (issue:60de633baac2): PASS on all four criteria; spec amended (v0.4) — M3/M4 stay on Cap'n Proto, no gRPC fallback. A parallel rerun in this session reached identical numbers (106 frames <= 1 MiB, PARTIAL after 11 frames, SAN + Hello token) and was superseded by TASK-4893's files on merge. Verification `verified`.

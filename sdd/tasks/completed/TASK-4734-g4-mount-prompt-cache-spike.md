@@ -245,4 +245,4 @@ See blueprint test; skipped unless both env flags are set.
 
 **Deviations from spec**: none in the file set.
 
-**Gap closed 2026-10-30** (`08f11db56`): Measured live: Anthropic loses its cached prefix after the mid-conversation mount (turn 3: 0 read / 3,973 write); OpenAI and Google implicit caches survive. Amendment resolved per the report's own rule: M7 premount-only, mounted tools never in a shared cache prefix. Google explicit cache + tools defect filed in the ledger. Verification upgraded to `verified`.
+**Gap closed 2026-10-30**: G4 rerun with real evidence by TASK-4893 (issue:60de633baac2): FAIL for free mid-conversation mounting — M7 is premount-only (spec amended v0.4). A parallel single run in this session agreed on the decisive Anthropic result (turn 3: 0 read / full re-write); its OpenAI row (cache preserved on one run) is superseded by TASK-4893's three-run measurement, and its files were superseded on merge. Google explicit-cache + tools defect filed as issue:71716068e28f. Verification `verified`.

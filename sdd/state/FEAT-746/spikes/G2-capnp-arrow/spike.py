@@ -223,9 +223,8 @@ def build_frame(rows: int) -> pd.DataFrame:
 def _peer_san(transport: asyncio.BaseTransport) -> str:
     """Extract the client URI SAN from the server-side TLS transport.
 
-    pycapnp 2.2.4 keeps ``_AsyncIoStream.protocol`` private (``cdef``), so the
-    transport is taken from the connection's ``_PyAsyncIoStreamProtocol``, whose
-    ``transport`` attribute is ``cdef public`` (see ``create_server`` below).
+    pycapnp 2.2.4 keeps ``AsyncIoStream.protocol`` private (a ``cdef`` attribute), so the
+    transport is captured by the protocol factory in :func:`run` instead of read off the stream.
     """
     ssl_object = transport.get_extra_info("ssl_object")
     if ssl_object is None:
@@ -247,6 +246,7 @@ async def run(rows: int, cancel_at_frame: int | None) -> dict[str, object]:
     done = asyncio.Event()
     observations: dict[str, object] = {}
     client_op: object | None = None
+    op_ready = asyncio.Event()
 
     class SinkImpl(SCHEMA.Sink.Server):
         """Client callback capability that validates frame order and requests cancellation."""
@@ -261,8 +261,7 @@ async def run(rows: int, cancel_at_frame: int | None) -> dict[str, object]:
                 raise AssertionError(f"received frame {index} after {len(received)} frames")
             received.append(bytes(data))
             if cancel_at_frame is not None and index == cancel_at_frame:
-                while client_op is None:  # noqa: ASYNC110 - spike: yields until the caller binds its op handle
-                    await asyncio.sleep(0)
+                await op_ready.wait()
                 await client_op.cancel()
 
         async def done(self, status: str, **kwargs: object) -> None:
@@ -284,18 +283,22 @@ async def run(rows: int, cancel_at_frame: int | None) -> dict[str, object]:
             server_instances.append(server)
             await server.on_disconnect()
 
+        def protocol_factory() -> asyncio.BaseProtocol:
+            """Build pycapnp's stream protocol while keeping a handle on its TLS transport.
+
+            ``AsyncIoStream.create_server`` hides the transport from the callback; this mirrors its
+            body (``loop.create_server(lambda: AsyncIoStream._connect(callback), ...)``) so the
+            callback can read the mTLS peer certificate.
+            """
+            holder: dict[str, object] = {}
+
+            def callback(stream: capnp.AsyncIoStream) -> object:
+                return on_connection(stream, holder["protocol"].transport)
+
+            holder["protocol"] = capnp.AsyncIoStream._connect(callback)
+            return holder["protocol"]
+
         async with capnp.kj_loop():
-
-            def protocol_factory() -> asyncio.BaseProtocol:
-                """Same factory pycapnp's create_server uses, keeping the protocol for its TLS transport."""
-                holder: dict[str, asyncio.BaseProtocol] = {}
-
-                async def connected(stream: capnp.AsyncIoStream) -> None:
-                    await on_connection(stream, holder["protocol"].transport)
-
-                holder["protocol"] = capnp.AsyncIoStream._connect(connected)
-                return holder["protocol"]
-
             listener = await asyncio.get_running_loop().create_server(
                 protocol_factory,
                 "127.0.0.1",
@@ -318,13 +321,16 @@ async def run(rows: int, cancel_at_frame: int | None) -> dict[str, object]:
             hello = await remote.hello(agentId="external/caller", token=HELLO_TOKEN)
             operation = await remote.stream(rows=rows, maxFrameBytes=DEFAULT_FRAME, sink=sink)
             client_op = operation.op
-            await asyncio.wait_for(done.wait(), timeout=30)
-            # Close the client side first: since Python 3.12 Server.wait_closed()
-            # waits for every open connection, so closing the listener first hangs.
-            client.close()
-            stream.close()
-            listener.close()
-            await asyncio.wait_for(listener.wait_closed(), timeout=10)
+            op_ready.set()
+            try:
+                await asyncio.wait_for(done.wait(), timeout=120)
+            finally:
+                # Close the client side first: since Python 3.12 ``Server.wait_closed()`` waits for
+                # every accepted connection, so awaiting it with our own stream open deadlocks.
+                client.close()
+                stream.close()
+                listener.close()
+                await asyncio.wait_for(listener.wait_closed(), timeout=10)
     elapsed = time.perf_counter() - started
     frame_sizes = [len(frame) for frame in received]
     frames_valid = all(pa.ipc.open_stream(frame).read_all().num_rows > 0 for frame in received)
