@@ -229,9 +229,7 @@ class OAuthCredentialResolver(CredentialResolver):
         self._manager = oauth_manager
         self._principal_resolver = principal_resolver
 
-    async def _principal(
-        self, channel: str, user_id: str
-    ) -> Optional["Principal"]:
+    async def _principal(self, channel: str, user_id: str) -> Optional["Principal"]:
         """Resolve the platform principal, failing closed when unbound."""
         from parrot.auth.principal import resolve_principal
 
@@ -243,9 +241,7 @@ class OAuthCredentialResolver(CredentialResolver):
         principal = await self._principal(channel, user_id)
         if principal is None:
             return None
-        return await self._manager.get_valid_token(
-            channel, principal.user_id, channel_user_id=user_id
-        )
+        return await self._manager.get_valid_token(channel, principal.user_id, channel_user_id=user_id)
 
     async def get_auth_url(self, channel: str, user_id: str) -> str:
         from parrot.auth.exceptions import AuthorizationRequired
@@ -257,9 +253,7 @@ class OAuthCredentialResolver(CredentialResolver):
                 message="Link your account to the platform first (/login).",
                 provider=getattr(self._manager, "provider_id", "unknown"),
             )
-        url, _ = await self._manager.create_authorization_url(
-            channel, principal.user_id, principal=principal
-        )
+        url, _ = await self._manager.create_authorization_url(channel, principal.user_id, principal=principal)
         return url
 
 

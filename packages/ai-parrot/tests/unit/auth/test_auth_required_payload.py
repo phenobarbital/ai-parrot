@@ -21,9 +21,7 @@ class _PrincipalResolver:
     def __init__(self, principals: Dict[Tuple[str, str], Principal]) -> None:
         self._principals = principals
 
-    async def resolve(
-        self, channel: str, channel_user_id: str
-    ) -> Optional[Principal]:
+    async def resolve(self, channel: str, channel_user_id: str) -> Optional[Principal]:
         """Return the principal bound to the channel identity."""
         return self._principals.get((channel, channel_user_id))
 
@@ -37,9 +35,7 @@ class _OAuthManager:
         self.token_calls: list[Tuple[str, str, str]] = []
         self.auth_calls: list[Tuple[str, str, Principal]] = []
 
-    async def get_valid_token(
-        self, channel: str, user_id: str, *, channel_user_id: str
-    ) -> str:
+    async def get_valid_token(self, channel: str, user_id: str, *, channel_user_id: str) -> str:
         """Record and return a deterministic token."""
         self.token_calls.append((channel, user_id, channel_user_id))
         return f"token-{user_id}"
@@ -124,15 +120,10 @@ async def test_oauth_resolver_auth_url_uses_principal() -> None:
     manager = _OAuthManager()
     resolver = OAuthCredentialResolver(
         manager,
-        principal_resolver=_PrincipalResolver(
-            {("a2a", "user@example.com"): principal}
-        ),
+        principal_resolver=_PrincipalResolver({("a2a", "user@example.com"): principal}),
     )
 
-    assert (
-        await resolver.get_auth_url("a2a", "user@example.com")
-        == "https://auth.example/connect"
-    )
+    assert await resolver.get_auth_url("a2a", "user@example.com") == "https://auth.example/connect"
     assert manager.auth_calls == [("a2a", "1042", principal)]
 
 
