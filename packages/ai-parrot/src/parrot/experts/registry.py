@@ -93,7 +93,9 @@ class ExpertRegistry:
             if pages == 0:
                 raise ExpertKnowledgeError(f"empty-wiki-namespace: expert-{name}")
         except ExpertKnowledgeError as exc:
-            reason = "wiki-not-writable" if "writable" in str(exc) or "read only" in str(exc) else "empty-wiki-namespace"
+            reason = (
+                "wiki-not-writable" if "writable" in str(exc) or "read only" in str(exc) else "empty-wiki-namespace"
+            )
             self.logger.error("Skipping expert bundle %s: %s", bundle.root, exc)
             self._report["skipped"].append({"path": str(bundle.root), "reason": reason})
             return False
@@ -110,7 +112,9 @@ class ExpertRegistry:
                     toolkits.append(self.wiki_toolkit)
             elif toolkit_name == "BookstoreToolkit":
                 if self.bookstore is None:
-                    self.logger.warning("expert %s: BookstoreToolkit requires a configured bookstore; skipping", bundle.manifest.name)
+                    self.logger.warning(
+                        "expert %s: BookstoreToolkit requires a configured bookstore; skipping", bundle.manifest.name
+                    )
                 else:
                     from parrot.knowledge.bookstore.toolkit import BookstoreToolkit
 

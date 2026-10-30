@@ -72,10 +72,14 @@ def _copy_bundle(source: Path, target: Path, name: str) -> Path:
 
 
 @pytest.mark.asyncio
-async def test_duplicate_expert_fails_load(expert_bundle: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_duplicate_expert_fails_load(
+    expert_bundle: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Repeated names emitted within one root fail deterministically."""
     bundle, _ = registry_module.discover_expert_bundles(tmp_path / "experts")
-    monkeypatch.setattr(registry_module, "discover_expert_bundles", lambda *args, **kwargs: ([bundle[0], bundle[0]], []))
+    monkeypatch.setattr(
+        registry_module, "discover_expert_bundles", lambda *args, **kwargs: ([bundle[0], bundle[0]], [])
+    )
     registry = _registry(tmp_path, InMemoryWikiStore(tmp_path / "wiki"))
     with pytest.raises(DuplicateExpertError):
         await registry.load()
