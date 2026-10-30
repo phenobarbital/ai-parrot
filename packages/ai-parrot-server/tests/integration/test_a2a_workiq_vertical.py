@@ -237,7 +237,7 @@ class TestWorkIQVertical:
                     assert FAKE_ENTRA_TOKEN not in part.text
                     assert FAKE_WORKIQ_TOKEN not in part.text
                     assert "access_token" not in part.text
-            for key, val in (art.metadata or {}).items():
+            for _key, val in (art.metadata or {}).items():
                 assert FAKE_WORKIQ_TOKEN not in str(val)
                 assert FAKE_ENTRA_TOKEN not in str(val)
 
