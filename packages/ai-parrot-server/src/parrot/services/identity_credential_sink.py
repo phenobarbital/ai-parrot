@@ -48,6 +48,10 @@ def _metadata(payload: Any) -> Dict[str, Any]:
     return {key: payload[key] for key in _METADATA_KEYS if key in payload and payload[key] is not None}
 
 
+class StaleCredentialError(RuntimeError):
+    """A refresh targeted a credential row that no longer owns the refreshed account."""
+
+
 class IdentityVaultCredentialStore:
     """``CredentialStore`` over navigator-auth's Identity Vault for any 3LO provider (FEAT-773 M8).
 
@@ -199,8 +203,7 @@ class IdentityVaultCredentialStore:
         """Refresh only the row that still owns the payload's selected account."""
         account_id = payload.get("account_id")
         if not account_id:
-            self.logger.warning("Skipping %s refresh for user %s without account id", provider, user_id)
-            return
+            raise ValueError("refreshed credential payload requires account_id")
         cipher = self._identity_cipher()
         async with await self._db_pool.acquire() as conn:
             raw = _raw_connection(conn)
@@ -213,8 +216,10 @@ class IdentityVaultCredentialStore:
                     provider,
                 )
                 if row is None or row["provider_user_id"] != str(account_id):
-                    self.logger.info("Skipping stale %s refresh for user %s", provider, user_id)
-                    return
+                    # Fail closed: a refresh for a row that is gone (disconnect) or now belongs to
+                    # another account (reconnect) must not look durable -- the caller would
+                    # otherwise repopulate the Redis hot cache with a token the store no longer owns.
+                    raise StaleCredentialError(f"no active {provider} credential row for the refreshed account")
                 values: Dict[str, Any] = {
                     "expires_at": _as_datetime(payload.get("expires_at")),
                     "refreshed_at": datetime.now(timezone.utc),

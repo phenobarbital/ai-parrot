@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from parrot.services.identity_credential_sink import IdentityVaultCredentialStore
+from parrot.services.identity_credential_sink import IdentityVaultCredentialStore, StaleCredentialError
 
 
 class _Transaction:
@@ -152,20 +152,32 @@ async def _async_value(value):
 
 @pytest.mark.asyncio
 async def test_refresh_updates_selected_row_only():
-    """A refresh for a replaced account is a no-op, while the selected one updates."""
+    """A refresh for a replaced/missing account fails closed; the selected account updates."""
     pool = _Pool()
     store = IdentityVaultCredentialStore(pool, cipher=_Cipher())
     await store.save("42", "jira", _payload("account-a"), minted=True, principal=None, state_payload=None)
 
-    await store.save(
-        "42",
-        "jira",
-        {"account_id": "account-old", "access_token": "stale", "expires_at": 1_900_000_001},
-        minted=False,
-        principal=None,
-        state_payload=None,
-    )
+    with pytest.raises(StaleCredentialError):
+        await store.save(
+            "42",
+            "jira",
+            {"account_id": "account-old", "access_token": "stale", "expires_at": 1_900_000_001},
+            minted=False,
+            principal=None,
+            state_payload=None,
+        )
     assert pool.raw.rows[0]["access_token"] == b"sealed:access-a"
+
+    # No row at all (e.g. disconnected meanwhile) is equally a hard failure, never a silent skip.
+    with pytest.raises(StaleCredentialError):
+        await store.save(
+            "99",
+            "jira",
+            {"account_id": "account-a", "access_token": "x", "expires_at": 1_900_000_001},
+            minted=False,
+            principal=None,
+            state_payload=None,
+        )
 
     await store.save(
         "42",

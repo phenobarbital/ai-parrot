@@ -18,16 +18,6 @@ from parrot.services.identity_credential_sink import IdentityVaultCredentialStor
 asyncpg = pytest.importorskip("asyncpg")
 
 
-class _PoolAdapter:
-    """Adapt asyncpg's pool acquire context to asyncdb's awaitable acquire API."""
-
-    def __init__(self, pool: Any) -> None:
-        self._pool = pool
-
-    async def acquire(self):
-        return self._pool.acquire()
-
-
 @pytest.fixture
 async def store_db() -> AsyncIterator[tuple[IdentityVaultCredentialStore, str, str]]:
     """Yield a store for an existing test user, skipping unreachable databases."""
@@ -46,9 +36,15 @@ async def store_db() -> AsyncIterator[tuple[IdentityVaultCredentialStore, str, s
     except Exception as exc:  # pragma: no cover - depends on external Postgres
         pytest.skip(f"auth database is unreachable: {exc}")
     provider = f"task-4950-{uuid.uuid4()}"
+    # The store reads through navigator-auth's IdentityStore, which needs the real asyncdb pool API.
+    from asyncdb import AsyncPool
+
+    store_pool = AsyncPool("pg", dsn=dsn)
+    await store_pool.connect()
     try:
-        yield IdentityVaultCredentialStore(_PoolAdapter(pool)), user_id, provider
+        yield IdentityVaultCredentialStore(store_pool), user_id, provider
     finally:
+        await store_pool.close()
         async with pool.acquire() as connection:
             await connection.execute(
                 "DELETE FROM auth.user_identities WHERE user_id = $1::bigint AND auth_provider = $2",
@@ -110,3 +106,80 @@ async def test_disconnect_then_cold_load_returns_none(store_db) -> None:
     )
     await store.delete(user_id, provider)
     assert await store.load(user_id, provider) is None
+
+
+@pytest.mark.asyncio
+async def test_refresh_updates_selected_row_and_stale_account_fails_closed(store_db) -> None:
+    """A refresh persists on the selected account; a stale/missing one raises and changes nothing."""
+    from parrot.services.identity_credential_sink import StaleCredentialError
+
+    store, user_id, provider = store_db
+    await store.save(
+        user_id, provider, _payload("account-a", "token-a"), minted=True, principal=None, state_payload=None
+    )
+    refreshed = {"account_id": "account-a", "access_token": "token-a2", "expires_at": 2_100_000_000}
+    await store.save(user_id, provider, refreshed, minted=False, principal=None, state_payload=None)
+    loaded = await store.load(user_id, provider)
+    assert loaded is not None and loaded["access_token"] == "token-a2"
+    assert loaded["refresh_token"] == "refresh-account-a"  # untouched when the response carries none
+
+    stale = {"account_id": "account-OLD", "access_token": "token-old", "expires_at": 2_100_000_000}
+    with pytest.raises(StaleCredentialError):
+        await store.save(user_id, provider, stale, minted=False, principal=None, state_payload=None)
+    again = await store.load(user_id, provider)
+    assert again is not None and again["access_token"] == "token-a2"
+
+    await store.delete(user_id, provider)
+    with pytest.raises(StaleCredentialError):
+        await store.save(user_id, provider, refreshed, minted=False, principal=None, state_payload=None)
+    assert await store.load(user_id, provider) is None
+
+
+@pytest.mark.asyncio
+async def test_legacy_migration_upsert_creates_the_durable_row(store_db) -> None:
+    """minted=True (used by legacy migration) creates the row when none exists; minted=False cannot."""
+    from parrot.services.identity_credential_sink import StaleCredentialError
+
+    store, user_id, provider = store_db
+    payload = _payload("account-m", "token-m")
+    with pytest.raises(StaleCredentialError):
+        await store.save(user_id, provider, payload, minted=False, principal=None, state_payload=None)
+    await store.save(user_id, provider, payload, minted=True, principal=None, state_payload=None)
+    loaded = await store.load(user_id, provider)
+    assert loaded is not None and loaded["access_token"] == "token-m"
+
+
+@pytest.mark.asyncio
+async def test_reseal_preserves_metadata_and_verifies_against_a_fresh_row(store_db) -> None:
+    """Re-seal keeps enabled/scopes/expiry; the fresh re-read verifies under the active key only."""
+    from navigator_auth.identity.crypto import IdentityCipher
+
+    from parrot.services.identity_credential_sink import (
+        _raw_connection,
+        fetch_credential_row,
+        list_credential_rows,
+        reseal_identity_row,
+        verify_active_only,
+    )
+
+    store, user_id, provider = store_db
+    await store.save(
+        user_id, provider, _payload("account-r", "token-r"), minted=True, principal=None, state_payload=None
+    )
+    pool = store._db_pool
+    async with await pool.acquire() as conn:
+        await _raw_connection(conn).execute(
+            "UPDATE auth.user_identities SET enabled = FALSE WHERE user_id = $1::bigint AND auth_provider = $2",
+            int(user_id),
+            provider,
+        )
+    rows = await list_credential_rows(pool, [provider])
+    assert len(rows) == 1 and rows[0]["enabled"] is False  # disabled rows are included
+
+    cipher = IdentityCipher()
+    await reseal_identity_row(pool, rows[0], cipher=cipher)
+    fresh = await fetch_credential_row(pool, rows[0]["identity_id"])
+    assert fresh is not None
+    assert fresh["enabled"] is False  # metadata preserved
+    assert verify_active_only(fresh, active_cipher=cipher) is True
+    assert await fetch_credential_row(pool, "00000000-0000-0000-0000-000000000000") is None
