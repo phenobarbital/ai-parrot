@@ -4,7 +4,7 @@ title: "Domain Experts: declarative expert bundles (identity + two-tier knowledg
 slug: domain-experts
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: file
   jira_key: null
