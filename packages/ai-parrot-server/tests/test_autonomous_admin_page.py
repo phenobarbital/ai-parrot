@@ -23,7 +23,8 @@ async def test_page_keeps_basic_auth_login(aiohttp_client) -> None:
 
 async def test_page_offers_passkey_sign_in(aiohttp_client) -> None:
     body = await _page(aiohttp_client)
-    assert 'autocomplete="username webauthn"' in body
+    assert 'autocomplete="username"' in body  # webauthn token is added by JS only when available
+    assert "'username webauthn'" in body
     assert "/api/v1/auth/passkey/login/options" in body
     assert "'X-Auth-Method':'PasskeyAuth'" in body.replace(" ", "")
     assert 'id="passkeyBtn" hidden' in body

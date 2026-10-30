@@ -28,6 +28,9 @@
   let loading = $state(false);
   let error = $state("");
   let methods = $state<Record<string, AuthMethodInfo> | null>(null);
+  // Gated: "webauthn" autofill token is only emitted once passkeys are confirmed
+  // available, so the markup is unchanged when PasskeyAuth is disabled (AC01).
+  let passkeyAvailable = $state(false);
 
   function nextTarget(): string {
     const params = new URLSearchParams(window.location.search);
@@ -103,7 +106,7 @@
             bind:value={username}
             disabled={loading}
             required
-            autocomplete="username webauthn"
+            autocomplete={passkeyAvailable ? "username webauthn" : "username"}
           />
         </div>
 
@@ -139,6 +142,7 @@
       <PasskeySignIn
         {username}
         disabled={loading}
+        onAvailable={() => (passkeyAvailable = true)}
         onSuccess={() => router.navigate(nextTarget(), { replace: true })}
       />
 

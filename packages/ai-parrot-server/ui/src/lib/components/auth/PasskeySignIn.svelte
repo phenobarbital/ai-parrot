@@ -5,7 +5,7 @@
   the pending conditional request and fetches a fresh, username-scoped challenge.
 -->
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
 
   import { fetchLoginOptions, type PasskeyLoginOptions } from "$lib/api/passkey";
   import { authStore } from "$lib/stores/auth.svelte";
@@ -25,9 +25,11 @@
     onSuccess: () => void;
     /** Disabled while the password form submits. */
     disabled?: boolean;
+    /** Called once passkeys are confirmed available (before conditional UI starts). */
+    onAvailable?: () => void;
   }
 
-  let { username, onSuccess, disabled = false }: Props = $props();
+  let { username, onSuccess, disabled = false, onAvailable }: Props = $props();
 
   const FAILED = "Passkey sign-in failed. Use your password instead.";
   let available = $state(false);
@@ -88,6 +90,9 @@
     const started = await fetchLoginOptions();
     if (!started) return;
     available = true;
+    onAvailable?.();
+    // Let the parent apply autocomplete="username webauthn" before conditional get().
+    await tick();
     if (await isConditionalMediationAvailable()) void runCeremony(started, "conditional");
   });
 

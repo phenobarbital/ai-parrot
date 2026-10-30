@@ -221,7 +221,7 @@ _ADMIN_LOGIN_HTML = """\
             <div class="form-group">
                 <label for="username">Username</label>
                 <input type="text" id="username" name="user" required
-                       placeholder="Enter your username" autocomplete="username webauthn">
+                       placeholder="Enter your username" autocomplete="username">
             </div>
 
             <div class="form-group">
@@ -571,6 +571,7 @@ _ADMIN_LOGIN_HTML = """\
         fetchOptions().catch(function () { return null; }).then(async function (started) {
             if (!started) { return; }           // backend disabled / origin not an RP → page unchanged
             button.hidden = false;
+            document.getElementById('username').setAttribute('autocomplete', 'username webauthn');
             var link = document.getElementById('passkeyLink');
             if (link) { link.hidden = false; }
             if (PublicKeyCredential.isConditionalMediationAvailable &&

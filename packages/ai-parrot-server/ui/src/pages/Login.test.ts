@@ -104,9 +104,9 @@ describe("Login", () => {
     expect(queryByTestId("provider-buttons")).toBeNull();
   });
 
-  it("marks the username input for passkey autofill", () => {
+  it("keeps plain autocomplete=username while passkeys are unavailable (AC01)", () => {
     const { getByLabelText } = render(Login);
-    expect(getByLabelText("Username").getAttribute("autocomplete")).toBe("username webauthn");
+    expect(getByLabelText("Username").getAttribute("autocomplete")).toBe("username");
   });
 
   it("never renders the PasskeyAuth discovery entry as a provider button", async () => {
