@@ -7,7 +7,6 @@ from parrot.experts.loader import BUNDLED_EXPERTS_DIR, parse_expert_bundle
 from parrot.experts.models import ExpertTier, KnowledgeSourceKind
 from parrot.experts.rules import parse_rules
 
-
 _BUNDLE_DIR = BUNDLED_EXPERTS_DIR / "cve-remediation"
 
 
