@@ -215,10 +215,8 @@ dispatcher and plan tests; `caplog` for the dispatcher warning.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-terra (codex), attempt 1
+**Date**: 2026-10-30
+**Notes**: Delivered resolve_sandbox_mode / native_sandbox_available / plan_native_launch, launcher and dispatcher wiring, degraded hook banner, docs and 10 tests; merge-tier validation green (228+23). Independent review confirmed no silent fallback and that `required` never degrades; its six important findings were fixed by the orchestrator in 367578efbdd496acb51377bce4baeb9becdf4deb: `off` is env-only (a worktree pyproject may choose required/preferred only — closes the self-disable path), empty env = unset, probe no longer needs `claude` and is cached 60 s (no event-loop stall per dispatch), inherited degraded marker cleared on strict launches, vacuous off-mode test replaced by a marker-file assertion, docs rewritten; 204 tests green after fixes. No free-form telemetry field exists on DispatchLabels, so the resolved mode/probe outcome are recorded as log lines (allowed by the task). Feedback recorded: coder-feedback:ad72866f558e3f7ee2fb73b8 (vacuous-assertion). Pre-existing ruff residuals (ASYNC240 at the cache cleanup, B023) are not from this task.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `off` restricted to the environment variable (spec policy 10 lists both sources for every mode); recorded in the docs and justified by the self-disable risk — flag for spec text alignment at /sdd-done.
