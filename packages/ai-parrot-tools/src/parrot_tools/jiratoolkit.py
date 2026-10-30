@@ -33,6 +33,7 @@ import os
 import re
 import logging
 import asyncio
+import contextvars
 import importlib
 import aiohttp
 from datetime import datetime
@@ -1417,7 +1418,7 @@ class JiraToolkit(AbstractToolkit):
         token_hash = (_at[:16] + _at[-8:]) if len(_at) > 24 else _at
         cached = self._client_cache.get(user_key)
         if cached is not None and cached[1] == token_hash:
-            self.jira = cached[0]
+            self._bind_request_client(cached[0])
             return None
 
         client = self._init_jira_client_from_token(token_set)
@@ -1427,8 +1428,38 @@ class JiraToolkit(AbstractToolkit):
             oldest_key = next(iter(self._client_cache))
             self._client_cache.pop(oldest_key, None)
         self._client_cache[user_key] = (client, token_hash)
-        self.jira = client
+        self._bind_request_client(client)
         return None
+
+    # -----------------------------
+    # Request-scoped Jira client (FEAT-773: per-principal isolation)
+    # -----------------------------
+    def _client_var(self) -> contextvars.ContextVar:
+        """Return this toolkit's context variable holding the current call's Jira client."""
+        var = self.__dict__.get("_jira_client_var")
+        if var is None:
+            var = contextvars.ContextVar(f"jira_client_{id(self)}", default=None)
+            self.__dict__["_jira_client_var"] = var
+        return var
+
+    @property
+    def jira(self) -> Any:
+        """The Jira client for the current call.
+
+        In ``oauth2_3lo`` mode ``_pre_execute`` binds the calling principal's client to the
+        current asyncio context, so two principals interleaving on one toolkit instance can
+        never see each other's client. Static modes use the single client set at init.
+        """
+        scoped = self._client_var().get()
+        return scoped if scoped is not None else self.__dict__.get("_static_jira")
+
+    @jira.setter
+    def jira(self, client: Any) -> None:
+        self.__dict__["_static_jira"] = client
+
+    def _bind_request_client(self, client: Any) -> None:
+        """Bind ``client`` to the current asyncio context only (never to shared state)."""
+        self._client_var().set(client)
 
     @staticmethod
     def _read_key_cert(value: Optional[str]) -> Optional[str]:
@@ -1481,6 +1512,10 @@ class JiraToolkit(AbstractToolkit):
             The shared, lazily-constructed ``JiraInterface``, with
             ``self.jira`` attached as its client.
         """
+        if self.auth_type == "oauth2_3lo":
+            # A shared interface would have its client swapped between awaits by another
+            # principal; build a cheap, call-local one bound to this call's client instead.
+            return self._build_read_interface(self.jira)
         if self.__read_interface is None:
             from parrot.interfaces.jira import JiraInterface
 
@@ -1504,6 +1539,19 @@ class JiraToolkit(AbstractToolkit):
             )
         self.__read_interface.attach_client(self.jira)
         return self.__read_interface
+
+    def _build_read_interface(self, client: Any):
+        """Build a call-local ``JiraInterface`` bound to ``client`` (no network, no shared state)."""
+        from parrot.interfaces.jira import JiraInterface
+
+        interface = JiraInterface(
+            server_url=self.server_url,
+            auth_type=self.auth_type,
+            request_timeout=self.request_timeout,
+            verify_credentials=False,
+        )
+        interface.attach_client(client)
+        return interface
 
     # -----------------------------
     # Utility

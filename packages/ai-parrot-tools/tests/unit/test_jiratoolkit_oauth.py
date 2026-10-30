@@ -474,3 +474,50 @@ class TestGetProjectsAuthProbe:
         assert result["count"] == 1
         assert result["authenticated"] is True
         tk._probe_auth_sync.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Per-principal isolation on a shared toolkit instance (FEAT-773)
+# ---------------------------------------------------------------------------
+
+
+class TestPrincipalIsolation:
+    @pytest.mark.asyncio
+    async def test_interleaved_principals_never_see_each_others_client(self) -> None:
+        """Two concurrent calls on ONE toolkit each keep their own bearer across awaits."""
+        import asyncio
+
+        async def resolve(channel: str, user_id: str):
+            return _make_token(f"token-for-{user_id}-{'x' * 30}")
+
+        resolver = MagicMock()
+        resolver.resolve = AsyncMock(side_effect=resolve)
+        tk = JiraToolkit(auth_type="oauth2_3lo", credential_resolver=resolver)
+        seen: dict[str, str] = {}
+
+        async def call(user_id: str, pause: float) -> None:
+            await tk._pre_execute("jira_get_issue", _permission_context=_permission_context(user_id=user_id))
+            await asyncio.sleep(pause)  # the other principal runs _pre_execute in between
+            seen[user_id] = tk.jira.kwargs["options"]["headers"]["Authorization"]
+
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            await asyncio.gather(call("alice", 0.05), call("bob", 0.01))
+
+        assert seen["alice"] != seen["bob"]
+        # Alice's client carries Alice's token even though Bob bound his client meanwhile.
+        assert seen["alice"].split("Bearer ")[1][:16] == f"token-for-alice-{'x' * 30}"[:16]
+        assert seen["bob"].split("Bearer ")[1][:14] == f"token-for-bob-{'x' * 30}"[:14]
+
+    @pytest.mark.asyncio
+    async def test_read_interface_is_call_local_in_3lo(self) -> None:
+        """The shared read interface is rebuilt per call so another principal cannot re-point it."""
+        resolver = MagicMock()
+        resolver.resolve = AsyncMock(return_value=_make_token())
+        tk = JiraToolkit(auth_type="oauth2_3lo", credential_resolver=resolver)
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            await tk._pre_execute("jira_get_issue", _permission_context=_permission_context())
+
+        first = tk._read_interface
+        second = tk._read_interface
+        assert first is not second
+        assert first._client is tk.jira and second._client is tk.jira
