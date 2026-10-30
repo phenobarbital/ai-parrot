@@ -1,7 +1,7 @@
 ---
 type: feature
 base_branch: dev
-projects: [ai-parrot, ai-parrot-tools, sdd-tooling, docs]
+projects: [ai-parrot, ai-parrot-tools, ai-parrot-server, sdd-tooling, docs]
 tags: [domain-experts, knowledge-resolver, prompt-layers, agent-registry, adr, flows, gates, skills, cve, security-tools]
 ---
 
@@ -75,6 +75,9 @@ chain, every new expert re-invents the same plumbing and none of them behave the
   vulnerability report, ADR proposal) and `cve-remediation` (tier `templated`: remediation plan with version pins and
   verification steps) ship inside the wheel as package-bundled experts and load on a fresh install with an empty
   wiki store.
+- **G12 — Reachable from every host.** Experts are registered into the same `AgentRegistry` the REPL (`parrot agent
+  <name>`) and the HTTP server (`/api/v1/chat/<name>`, `/api/v1/agents/chat/<name>`) resolve names against, and both
+  hosts run `ExpertRegistry.load()` as part of their discovery pipeline — no per-host code for a new expert.
 - **G11 — CVE tooling.** A `parrot_tools.security.cve.CVEToolkit` (aiohttp, `auto_open` lifecycle) with
   `lookup_cve`, `search_cves` and `download_cve`, backed by OSV with NVD 2.0 enrichment; `download_cve` lands the
   advisory in the calling expert's wiki namespace wrapped as untrusted data.
@@ -280,6 +283,7 @@ async with activate_expert(expert, run_id="run-1", stage="research"):
 | M10: Tier policy, allowlist + PBAC deny | yes | policy table, `spawn_sub_agent` exclusion, `ModelConfig` output, `PolicyRuleConfig.resource` extension + `expert_policy_rules()` | — |
 | M11: Docs | yes | `docs/experts/domain-experts.md` mirroring `docs/skills/per-tenant-skills.md` | — |
 | M12: `CVEToolkit` | yes | OSV/NVD/EPSS endpoints, models, `_get_json` seam, wiki upsert contract all fixed in §3 | — |
+| M14: Runtime wiring (`bootstrap.load_experts`) | yes | one helper, two 3-line call sites, fail-open; anchors fixed in §6 | — |
 | M13: Shipped experts | partly | manifests, identity files, rules and the loading test are mechanical | the Tier-1 method documents (triage method, remediation patterns) are domain prose — thinking model writes them |
 
 ### Module 1: Manifest & models
@@ -612,12 +616,90 @@ async with activate_expert(expert, run_id="run-1", stage="research"):
 
 ### Module 11: Documentation
 - **Path**: `docs/experts/domain-experts.md`, `docs/experts/cve-experts.md`
-- **Responsibility**: bundle layout (two roots, shadowing, seeding), manifest reference, load order and trim rules,
-  rules grammar and the optional-rules behaviour, tenant shadowing, ADR consume/produce flow, the
-  `persona.md`-is-documentation rule, the ordinary-agent guarantee (AC24), the `SPAWN_DENY_PRIORITY` exception;
-  `cve-experts.md`: a walkthrough — `lookup_cve("CVE-2026-98432")` → `cve-analyst` report → `cve-remediation` plan —
-  with the `NVD_API_KEY` note and what the phase 3–4 stage adds later.
+- **Responsibility**: `domain-experts.md` — bundle layout (two roots, shadowing, seeding), manifest reference, load
+  order and trim rules, rules grammar and the optional-rules behaviour, tenant shadowing, ADR consume/produce flow,
+  the `persona.md`-is-documentation rule, the ordinary-agent guarantee (AC24), the `SPAWN_DENY_PRIORITY` exception,
+  the runtime wiring (M14). `cve-experts.md` — **"Running the CVE experts"**, the operator's guide to asking both
+  experts and triggering their actions from every host. Fixed section list (AC30 checks the headings and that every
+  name/endpoint in a snippet exists in this spec):
+  1. *Prerequisites* — a writable wiki store (seeding at load), optional `NVD_API_KEY` (rate limit without it), what
+     `parrot agent --list` / `GET /api/v1/chats` show once the experts are loaded (`origin:bundled` tag).
+  2. *From Python* —
+     ```python
+     from parrot.registry import agent_registry
+     from parrot.experts import activate_expert
+     from parrot.experts.bootstrap import load_experts
+     experts = await load_experts(agent_registry)               # M14: bundled → workspace, seeds wiki, registers
+     analyst = experts.get("cve-analyst")
+     async with activate_expert(analyst, run_id="run-1", stage="triage"):
+         report = await analyst.ask("Triage CVE-2026-98432 against this workspace and cite the evidence.")
+     remediation = experts.get("cve-remediation")
+     async with activate_expert(remediation, run_id="run-1", stage="remediate"):
+         plan = await remediation.ask(f"Plan the remediation for this report:\n{report.content}")
+     ```
+     (`AbstractBot.ask(question, session_id=None, user_id=None, …)` verified `bots/abstract.py:4921`; the hand-off
+     analyst → remediation is done by the caller — the conductor is a human or, from phase 4, the stage.)
+  3. *From the CLI* — `parrot agent cve-analyst` (standalone; `cli/__init__.py:121` → `agent_repl.py:97`) and
+     `parrot agent cve-remediation --server http://localhost:8080 --token …` (server-proxy mode); the REPL's
+     `StandaloneAgentLoader` runs the same discovery pipeline, so experts appear in the picker.
+  4. *Over HTTP* — `POST /api/v1/chat/cve-analyst` with `{"query": "…"}` (`ChatHandler`, `manager.py:2404`,
+     body shape `handlers/chat.py:236`) and `POST /api/v1/agents/chat/cve-analyst` with
+     `{"query": "…", "output_format": "markdown"}` (`AgentTalk`, `manager.py:2407`, body `docs/agent.md:87-101`);
+     one `curl` per expert; the server resolves the name through `BotManager.get_bot` → `AgentRegistry.has/get_instance`
+     (`manager.py:905-913`) — no route per expert.
+  5. *Prompts that trigger each action* — a table, one row per tool, with a prompt and the expected tool call:
+     | Expert | Prompt | Tool triggered |
+     |---|---|---|
+     | cve-analyst | "Look up CVE-2026-98432" | `lookup_cve` |
+     | cve-analyst | "Which advisories affect `requests` 2.31.0 on PyPI?" | `search_cves(package="requests", ecosystem="PyPI", version="2.31.0")` |
+     | cve-analyst | "Download the advisory for CVE-2026-98432 into your knowledge" | `download_cve` → page in `expert-cve-analyst` |
+     | cve-analyst | "Is this workspace affected by CVE-2026-98432? Cite the symbols." | `lookup_cve` + GraphIndex retrieval handle |
+     | cve-analyst | "Propose an ADR pinning our dependency policy for this CVE" | `expert_propose_adr` (M9, needs `write`) |
+     | cve-remediation | "Plan the remediation for CVE-2026-98432 (uv/PyPI)" | `lookup_cve` → plan from `remediation-plan-template.md` |
+     | cve-remediation | "Verify that `requests` 2.32.4 clears CVE-2026-98432" | `search_cves(version="2.32.4")` |
+  6. *Reading the result* — where the tool calls show up (response `metadata`, the `activated_kbs`/retrieval handles,
+     OTEL seat `<stage>.<expert>`), what a report / plan looks like, how the downloaded advisory appears on the next
+     activation (`documents` incremented in the wiki handle).
+  7. *Overriding and extending* — put `AGENTS_DIR/experts/cve-analyst/` in the workspace to shadow the bundled one;
+     add a tenant overlay; add Tier-2 knowledge; where `NVD_API_KEY` is read.
+  8. *Troubleshooting* — `empty-wiki-namespace`, `wiki-not-writable`, `DuplicateExpertError`, NVD 429, "expert not in
+     `parrot agent --list`" (bootstrap not run / `enable_experts=False`), the `$`-placeholder identity error.
 - **Depends on**: all modules (written last).
+
+### Module 14: Runtime wiring — `parrot.experts.bootstrap`
+- **Path**: `packages/ai-parrot/src/parrot/experts/bootstrap.py`; modifies
+  `packages/ai-parrot/src/parrot/cli/loaders.py:138` (`StandaloneAgentLoader._ensure_discovered`) and
+  `packages/ai-parrot-server/src/parrot/manager/manager.py:454-458` (`BotManager.load_bots`)
+- **Responsibility**: make experts reachable wherever ordinary registry agents are — one helper both hosts call right
+  after `load_agent_definitions()`; fail-open (an expert problem never stops a REPL or a server from starting).
+- **Depends on**: M2 (`ExpertRegistry`); `agent_registry` singleton (verified `parrot/registry/__init__.py`, used by
+  `cli/loaders.py:21`); `BotManager.load_bots` (verified `manager.py:430`, discovery at `:442-458`);
+  `BotManager.get_bot` registry fallback (verified `:905-913`); `BotMetadata.get_instance` cached singleton
+  (verified `registry.py:110-129`, `register_instance` sets `singleton=True`, `:654-666`).
+- **Interface Skeleton**:
+  ```python
+  # packages/ai-parrot/src/parrot/experts/bootstrap.py  (new)
+  async def load_experts(agent_registry: AgentRegistry, *, agents_dir: Path | None = None, workspace: Path | None = None,
+                         wiki_toolkit: "LLMWikiToolkit | None" = None, enabled: bool = True) -> ExpertRegistry | None:
+      """Build ExpertRegistry(agents_dir or AGENTS_DIR, agent_registry, …), await load(), log report() at INFO
+      ("experts: N loaded, M skipped, K seeded, shadowing=…"), return it. enabled=False → None, nothing touched.
+      Any exception is logged at ERROR with the report so far and swallowed — hosts keep starting (fail-open).
+      Stores the registry on agent_registry as `agent_registry.experts` (attribute set by this module only) so
+      `parrot agent --list` and `/api/v1/chats` can show the origin tag without re-loading."""
+
+  # packages/ai-parrot/src/parrot/cli/loaders.py  (modifies _ensure_discovered, :109-139 — after :138)
+  #     def_count = agent_registry.load_agent_definitions(definitions_dir)
+  #   + await load_experts(agent_registry)                       # experts show up in the picker / `parrot agent <name>`
+
+  # packages/ai-parrot-server/src/parrot/manager/manager.py  (modifies load_bots, :430 — between :454 and :458)
+  #     def_count = self.registry.load_agent_definitions(definitions_dir)
+  #   + await load_experts(self.registry, enabled=self.enable_experts)   # new ctor flag, default True, mirrors enable_registry_bots (:239)
+  #     startup_results = await self.registry.instantiate_startup_agents(app)
+  ```
+- **Why not a startup agent**: `instantiate_startup_agents` only handles `register()`-ed factories; experts are
+  instances with per-bundle seeding and policy registration, so they need their own loader call, not an `at_startup` flag.
+
+---
 
 ### Module 12: `CVEToolkit` (`parrot_tools.security.cve`)
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/security/cve/__init__.py`, `.../cve/models.py`,
@@ -777,6 +859,11 @@ async with activate_expert(expert, run_id="run-1", stage="research"):
 | `test_cve_toolkit_lifecycle` | M12 | `auto_open` creates one `ClientSession`, `cleanup_toolkits` closes it |
 | `test_bundled_manifests_validate` | M13 | both `expert.yaml` parse into `ExpertManifest`; names match dirs; `CVEToolkit` in `toolkits`; wiki source present |
 | `test_bundled_identity_and_rules_grammar` | M13 | five identity files present and `$`-free; `rules/governance.md` parses with ≥3 `ALWAYS` and ≥2 `NEVER`, includes `NEVER delegate` |
+| `test_standalone_loader_discovers_experts` | M14 | `StandaloneAgentLoader._ensure_discovered()` with a bundled-only setup → `agent_registry.has("cve-analyst")`; `load("cve-analyst")` returns the `ExpertAgent` |
+| `test_bot_manager_load_bots_wires_experts` | M14 | `BotManager(enable_registry_bots=True).load_bots(app)` with a stub registry → `load_experts` called once after `load_agent_definitions` and before `instantiate_startup_agents`; `enable_experts=False` → never called |
+| `test_expert_reachable_through_get_bot` | M14 | `manager.get_bot("cve-analyst")` returns the registered `ExpertAgent` via the registry fallback (`manager.py:905-913`), no `_bots` entry needed |
+| `test_load_experts_is_fail_open` | M14 | `ExpertRegistry.load` raising → `load_experts` logs ERROR, returns `None`, host discovery continues |
+| `test_cve_docs_reference_real_names` | M11 | `docs/experts/cve-experts.md` has the eight AC30 headings; every backticked tool name, endpoint and CLI flag in it appears in this spec or in the code (`lookup_cve`, `search_cves`, `download_cve`, `expert_propose_adr`, `/api/v1/chat/`, `/api/v1/agents/chat/`, `parrot agent`) |
 | `test_bundled_files_in_wheel` | M13 | `importlib.resources.files("parrot.experts.bundled")` lists both bundles with their `expert.yaml` (package-data declared) |
 | `test_dollar_placeholders_stay_literal` | M2/M6 | `$name` in a rules/knowledge file survives `configure()`; `$` in an identity file is rejected at load (S3) |
 | `test_wiki_source_unresolvable_and_empty_both_raise` | M5 | unresolvable namespace and zero-document namespace both raise `ExpertKnowledgeError`; a populated one returns `handle["documents"] > 0` (S10, §8 Q2) |
@@ -873,6 +960,8 @@ def plain_yaml_agent(tmp_path: Path) -> "AbstractBot":
 - [ ] AC25 — `rules/governance.md` is optional: a bundle without it loads with exactly one WARNING, `bundle.rules is None`, and its rules layer still contains the org/team/project rules (§8 Q8).
 - [ ] AC26 — `CVEToolkit`: `lookup_cve` validates ids against `^CVE-\d{4}-\d{4,}$`, returns a `CVERecord` merged from OSV and (when enabled) NVD, degrades to OSV-only on NVD failure, raises `CVENotFoundError` on OSV 404; `search_cves` rejects unknown ecosystems; `download_cve` writes the raw JSON under the confined `sources_dir` and exactly one `WikiPageRecord` (`origin="download"`, body wrapped in `<untrusted_data …>`) into `expert-<current_agent_name>` or the explicit `wiki_name`, and raises without either; all tests run with `_get_json` monkeypatched and no network.
 - [ ] AC27 — On a fresh install (empty wiki store, no `AGENTS_DIR/experts`), `ExpertRegistry.load()` registers `cve-analyst` and `cve-remediation`, seeds their namespaces, and each renders a system prompt containing its identity, its rules and its Tier-1 knowledge summary; both manifests name `CVEToolkit`, `LLMWikiToolkit`, `BookstoreToolkit`.
+- [ ] AC29 — `parrot agent cve-analyst` (standalone) and `BotManager.get_bot("cve-analyst")` both resolve the bundled expert without any per-expert configuration: `load_experts()` runs in `StandaloneAgentLoader._ensure_discovered` and in `BotManager.load_bots` right after `load_agent_definitions`, is fail-open, and is skipped when `enable_experts=False`.
+- [ ] AC30 — `docs/experts/cve-experts.md` exists with the eight sections of M11 (prerequisites, Python, CLI, HTTP, prompt→tool table, reading the result, overriding, troubleshooting); its Python snippet imports only names this spec defines, its HTTP snippets use `/api/v1/chat/{name}` and `/api/v1/agents/chat/{name}` with `{"query": …}`, and its prompt table covers all three `CVEToolkit` tools plus `expert_propose_adr` (pinned by `test_cve_docs_reference_real_names`).
 - [ ] AC28 — The built wheel contains every file of both bundles (`importlib.resources.files("parrot.experts.bundled")` lists `cve-analyst/expert.yaml` and `cve-remediation/expert.yaml`), via a `[tool.setuptools.package-data]` entry for `parrot.experts.bundled`.
 
 ---
@@ -915,6 +1004,9 @@ from parrot.knowledge.wiki.file_store import InMemoryWikiStore         # verifie
 from parrot_tools.security.models import SeverityLevel                 # verified: parrot_tools/security/models.py:14
 import aiohttp                                                         # core dependency (interfaces/http.py wraps `requests` — banned, not used)
 import importlib.resources                                             # stdlib; pattern: parrot.flows.conventions / pyproject.toml:987-992
+from parrot.registry import agent_registry                             # verified: used by cli/loaders.py:21 (module singleton)
+from parrot.cli.loaders import StandaloneAgentLoader                   # verified: parrot/cli/loaders.py:90
+from parrot.manager.manager import BotManager                          # verified: ai-parrot-server manager.py:214 (server package)
 ```
 
 ### Existing Class Signatures
@@ -972,6 +1064,19 @@ class AbstractToolkit(ServerManagedToolkit, ABC):   # parrot/tools/toolkit.py:22
 class HTTPService(CredentialsInterface, PandasDataframe):   # parrot/interfaces/http.py:140
     async def request(self, url: str, method: str = "GET", data: dict = None, use_proxy: bool = False, accept: Optional[str] = None) -> tuple   # :689 — uses `requests` (partial(requests.get)) → banned by TID251, never import in M12
 IDENTITY_FILES: tuple[str, ...] = ("role", "goal", "capabilities", "backstory", "rationale")   # bots/prompts/identity.py:27-28
+class AbstractBot:
+    async def ask(self, question: str, session_id: Optional[str] = None, user_id: Optional[str] = None, ...)   # bots/abstract.py:4921
+class BotMetadata:
+    async def get_instance(self, *args, **kwargs) -> AbstractBot   # registry.py:110 — returns the cached `_instance` for singletons (:122-129); register_instance creates singleton metadata (:654-666)
+class StandaloneAgentLoader:   # parrot/cli/loaders.py:90
+    async def _ensure_discovered(self) -> None   # :109 — load_modules (:128) → discover_config_agents (:132) → load_agent_definitions (:138); runs once (`_discovered`)
+    async def load(self, name: str) -> AbstractBot   # :141 — agent_registry.get_instance(name) (:158)
+class BotManager:   # ai-parrot-server manager.py:214
+    async def load_bots(self, app: web.Application) -> None   # :430 — registry.setup (:442) → load_modules (:445) → discover_config_agents (:448) → load_agent_definitions (:454) → instantiate_startup_agents (:458); gated by enable_registry_bots (:239)
+    async def get_bot(self, name: str, new: bool = False, session_id: str = "", request=None, **kwargs)   # :790 — falls back to self.registry.has(name) / get_instance(name) (:905-913)
+# routes (manager.py:2403-2407): "/api/v1/chats", "/api/v1/chat/{chatbot_name}", "/api/v1/chat/{chatbot_name}/{method_name}" → ChatHandler (handlers/chat.py:41, body {"query": …} :236);
+#                                "/api/v1/agents/chat/{agent_id}" → AgentTalk (handlers/agent.py:125; body agent_name/query/output_format, docs/agent.md:87-101)
+# CLI: `parrot agent [NAME] [--server URL] [--token …] [--list]` — cli/__init__.py:121 → cli/agent_repl.py:97 (standalone: StandaloneAgentLoader; --server: ServerAgentProxy)
 class PolicyRuleConfig(BaseModel): action: str, effect: Literal["allow","deny"]="allow", groups: Optional[list[str]]=None, roles: Optional[list[str]]=None, priority: int=10, description, conditions   # parrot/auth/models.py:32 — NO `resource` field today (M10 adds it)
     def to_resource_policy(self, agent_name: str) -> dict   # models.py:108 — resources hard-coded to [f"agent:{agent_name}"] at :153
 class AgentRegistry:
@@ -1089,6 +1194,8 @@ class ModelConfig(BaseModel)                                           # line 40
 - ~~`parrot.experts.bundled`~~ and any package-data entry for it — not in `pyproject.toml:975-992`; M2 adds both.
 - ~~A public store accessor on `LLMWikiToolkit`~~ — only the private `_store_for` exists; M5 wraps it once in `WikiSource.store`/`store_for`, nothing else in this feature touches the private name.
 - ~~An LLM-free `ingest_source`~~ — `ingest_source` goes through `TwoStepIngester`; seeding uses `upsert_pages` directly.
+- ~~`parrot.experts.bootstrap`~~, ~~`BotManager.enable_experts`~~, ~~`agent_registry.experts`~~ — none exist; M14 adds them. Neither `StandaloneAgentLoader._ensure_discovered` nor `BotManager.load_bots` knows about experts today, so without M14 `parrot agent cve-analyst` and `/api/v1/chat/cve-analyst` would 404.
+- ~~A `parrot experts` CLI subcommand~~ — not added; experts are reached through the existing `parrot agent` REPL.
 - ~~`AgentKind.EXPERT`~~ — not added (U3); `AgentKind` is `{LOCAL, A2A, SQUAWK}`.
 - ~~`LayerPriority.RULES`~~, ~~`EXPERT_RULES_LAYER`~~, ~~`EXPERT_KNOWLEDGE_LAYER`~~ — do not exist yet (M6 adds them).
 - ~~`DecisionRecord.tags`~~ — ADR records have no tags/components field; filter by `source_status`, `review_status`, `links`, `evidence`.
@@ -1106,6 +1213,8 @@ Verified against: `b9502bfe3`
 
 - `packages/ai-parrot/src/parrot/auth/models.py:153` — anchor `"resources": [f"agent:{agent_name}"],` → M10 replaces with the `self.resource` fallback; field block ends before `def to_resource_policy` (`:108`).
 - `packages/ai-parrot/pyproject.toml:989` — anchor `"parrot.flows.dev_loop" = ["_subagent_data/*.md"]` → M2 appends the `"parrot.experts.bundled"` package-data entry after the `parrot.flows.dev_flow` line (`:992`).
+- `packages/ai-parrot/src/parrot/cli/loaders.py:138` — anchor `def_count = agent_registry.load_agent_definitions(definitions_dir)` inside `_ensure_discovered` → M14 appends `await load_experts(agent_registry)` after the enclosing `if`.
+- `packages/ai-parrot-server/src/parrot/manager/manager.py:454-458` — anchors `def_count = self.registry.load_agent_definitions(definitions_dir)` and `startup_results = await self.registry.instantiate_startup_agents(app)` → M14 inserts the `load_experts` call between them; `enable_experts` goes next to `enable_registry_bots` in `__init__` (`:239`).
 - `packages/ai-parrot-tools/src/parrot_tools/security/__init__.py:30-36` — the eager `from .x import …` export block → M12 adds `from .cve import CVEToolkit, CVERecord, CVESearchResult, DownloadReceipt` and the `__all__` names (`:62-86`).
 
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
@@ -1149,6 +1258,7 @@ Verified against: `b9502bfe3`
 - **No modification** of `clients/base.py`; `tier` → `ModelConfig` lives in `experts/policy.py`.
 
 ### Known Risks / Gotchas
+- **`manager.py` is a 2 400-line server file under active FEAT-746/747 churn**: M14's edit is exactly one call plus one constructor flag; if the anchor lines moved, re-anchor on the `load_agent_definitions` / `instantiate_startup_agents` calls, never re-indent surrounding code. Server startup now probes the wiki store once per expert — fail-open by contract (AC29), so a down wiki backend logs and continues.
 - **Package-data is opt-in with setuptools** (`pyproject.toml:975`): without the `parrot.experts.bundled` entry the wheel ships `__init__.py` and nothing else, and every test passes from the source tree. AC28 reads through `importlib.resources`, and the task must build a wheel once (`uv build`) to prove it.
 - **Seeding writes at load time**: `upsert_pages` on a read-only or federated-remote store raises in `_assert_writable` (`store.py:881`); M2 must catch it, reject the bundle with reason `wiki-not-writable`, and never crash `load()`. Seeding also means `ExpertRegistry.load()` is no longer side-effect-free — document it, and keep seeding behind `seed_knowledge: bool = True` on the constructor for tests that want a pure probe.
 - **NVD rate limit**: 5 requests / 30 s without `NVD_API_KEY`, 50 with. `CVEToolkit` serializes NVD calls behind an `asyncio.Lock` and treats 429/403 as "enrichment unavailable", never as a lookup failure. CI never calls it (`_get_json` is monkeypatched).
@@ -1196,6 +1306,7 @@ Verified against: `b9502bfe3`
 - [x] Q5 — ADR inline cap — *Adopted by spec, confirmed 2026-10-30*: `DecisionService.why(budget_tokens=3000, limit=10)` per source call; filtering by `source_status`/`review_status` plus the optional `filter.links` match (S6); no tags exist. → §3 M5, AC9.
 - [x] Q7 — Shipped experts and CVE tooling — *Resolved 2026-10-30*: pull two experts from phase 5 into this spec. (a) **Home**: package-bundled under `parrot/experts/bundled/<slug>/`, discovered before `AGENTS_DIR/experts/`, workspace shadows bundled by name (`global_only` lock). (b) **Fail-at-load vs fresh install**: seed an empty `expert-<slug>` namespace from Tier-1 `knowledge/*.md` via `BaseWikiStore.upsert_pages` (LLM-free), then re-probe; Q2 unchanged otherwise. (c) **Which two**: `cve-analyst` (judgment: intake + triage + workspace impact + report + ADR) and `cve-remediation` (templated: remediation plan). (d) **Tool**: `parrot_tools.security.cve.CVEToolkit` (aiohttp; OSV primary, NVD 2.0 enrichment with optional `NVD_API_KEY`, optional EPSS); `download_cve` writes the advisory into the calling expert's wiki namespace as untrusted data. → §1 G9–G11, §3 M2, M5, M12, M13, AC22–AC23, AC26–AC28.
 - [x] Q8 — Fail-over for agents and bundles without governance — *Resolved 2026-10-30*: `rules/governance.md` is **optional** in a bundle (WARNING at load, org/team/project layers still apply — AC25); missing `AGENTS_DIR/governance/*.md` files are skipped (M8); an ordinary `BotConfig` agent declared in `AGENTS_DIR/agents/*.yaml` is **unaffected** by this feature — governance binds `ExpertAgent` only, stated as a Non-Goal and pinned by AC24. Binding org rules to every `AbstractBot` is a separate feature.
+- [x] Q9 — How does an operator run, ask and trigger the experts? — *Resolved 2026-10-30*: through the hosts that already exist, never a new one. `parrot agent <name>` (REPL, standalone or `--server`), `POST /api/v1/chat/<name>` / `POST /api/v1/agents/chat/<name>` (server), and the Python API (`load_experts` → `activate_expert` → `ask`). Research showed neither host would see an expert today (`StandaloneAgentLoader._ensure_discovered`, `BotManager.load_bots`), hence M14 `parrot.experts.bootstrap.load_experts` wired into both after `load_agent_definitions`, fail-open, `enable_experts` flag. The operator guide is `docs/experts/cve-experts.md` (M11, eight sections, prompt→tool table, AC30). → G12, M11, M14, AC29–AC30.
 - [ ] Q6 — Promoted rules persistence/audit, contributions storage, scope grid, `tier` → seat/OTEL attribute, expert memory and migration order — deferred to the phases 3–5 brainstorm (not blocking this spec). Design constraint carried from codex S9 for the U4 gate lift: extract a gate *protocol* with string identifiers plus a compatibility adapter for persisted `ApprovalGate` envelopes; never import dev-loop Literals into the expert runtime, never duplicate `parrot/human`. — *Owner: follow-up brainstorm*
 
 ---
@@ -1238,10 +1349,11 @@ Summary: **9** confirmed (S7 partial) · **1** rejected · **0** escalated (S7 r
   - M9 → M1, M4, M5 (`LLMWikiToolkit`, `BookstoreToolkit`, `DecisionService` are existing)
   - M10 → M1
   - M12 → `parrot.knowledge.wiki.store`, `parrot_tools.security.models` (no `parrot.experts` import — the toolkit is usable without experts)
-  - M13 → M1, M2 (discovery/seeding/package-data), M9, M12 (toolkit name resolution) — last code module before M11
+  - M13 → M1, M2 (discovery/seeding/package-data), M9, M12 (toolkit name resolution)
+  - M14 → M2 (`ExpertRegistry`); modifies `cli/loaders.py` and server `manager/manager.py` (no other module touches them) — last code module before M11
   - M11 → all
   - Modules without an edge (M1 ∥ nothing; M6 ∥ M8 ∥ M10 once M1 exists; M5 ∥ M8; M9 ∥ M7) are expected to run concurrently.
-- **Shared files**: none across modules — `skills/tenancy.py` (M2 only), `bots/prompts/layers.py` (M6 only), `bots/abstract.py` (M7 only), `auth/models.py` (M10 only), `packages/ai-parrot/pyproject.toml` (M2 only), `parrot_tools/security/__init__.py` (M12 only), `parrot/experts/__init__.py` (exports added by M1, M2, M3, M4 — serialize those four tasks' edits to it or let M1 pre-declare the export list).
+- **Shared files**: none across modules — `skills/tenancy.py` (M2 only), `bots/prompts/layers.py` (M6 only), `bots/abstract.py` (M7 only), `auth/models.py` (M10 only), `packages/ai-parrot/pyproject.toml` (M2 only), `parrot_tools/security/__init__.py` (M12 only), `cli/loaders.py` and server `manager/manager.py` (M14 only), `parrot/experts/__init__.py` (exports added by M1, M2, M3, M4 — serialize those four tasks' edits to it or let M1 pre-declare the export list).
 - **Exclusive resources**: none (no extension rebuild, no lockfile change, no migration). M2's `pyproject.toml` edit is package-data only — no dependency change, so `uv.lock` is untouched.
 - **Cross-feature dependencies**: none to merge first. **Risk**: FEAT-746/747 follow-ups on `registry.py` — this feature does not edit that file.
 
@@ -1253,4 +1365,5 @@ Summary: **9** confirmed (S7 partial) · **1** rejected · **0** escalated (S7 r
 |---|---|---|---|
 | 0.1 | 2026-10-30 | Jesus Lara (with Claude Fable 5.1) | Initial draft from FEAT-778 proposal (phases 1–2); codex design research folded (8 confirm / 1 reject / 1 escalate) |
 | 0.2 | 2026-10-30 | Jesus Lara (with Claude Fable 5.1) | §8 Q1–Q5 resolved: Q2 wiki fail-at-load (M2/M5 probe, AC19); Q3 allowlist + PBAC deny (`PolicyRuleConfig.resource`, `expert_policy_rules`, `register_db_bot_policies`, AC20–AC21; S7 → confirm partial); Q1/Q4/Q5 defaults confirmed |
+| 0.4 | 2026-10-30 | Jesus Lara (with Claude Fable 5.1) | Q9: operator guide `docs/experts/cve-experts.md` (M11 — Python / CLI / HTTP / prompt→tool table, AC30) and M14 runtime wiring `load_experts` into `StandaloneAgentLoader._ensure_discovered` + `BotManager.load_bots` (G12, AC29); `ai-parrot-server` added to projects; 5 new tests |
 | 0.3 | 2026-10-30 | Jesus Lara (with Claude Fable 5.1) | Q7/Q8: two shipped experts (`cve-analyst`, `cve-remediation`) package-bundled with workspace shadowing (M2, AC22, AC28), LLM-free wiki seeding at load (G9, M5 `seed`, AC23), new `CVEToolkit` (M12, AC26), M13 bundles (AC27); `rules/governance.md` optional (AC25); ordinary `BotConfig` agents unaffected (Non-Goal, AC24); 22 new tests |
