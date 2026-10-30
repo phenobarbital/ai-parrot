@@ -83,7 +83,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -91,8 +91,9 @@
       "parallelism_notes": "root task: creates parrot/auth/principal.py (Principal, PrincipalResolver, resolve_principal) imported by TASK-4940/4944/4952/4955/4956/4959; touches only principal.py + auth/__init__.py",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4937-principal-model-resolver.md"
+      "completed_at": "2026-10-30T21:20:40+00:00",
+      "file": "sdd/tasks/completed/TASK-4937-principal-model-resolver.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4938",
@@ -101,7 +102,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -109,8 +110,9 @@
       "parallelism_notes": "root task: creates parrot/auth/oauth2/events.py (ConnectionEvent, ChannelNotifierRegistry, ConnectionEventPublisher) consumed by TASK-4940/4953/4954; no shared file",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4938-connection-events-notifier-registry.md"
+      "completed_at": "2026-10-30T21:20:41+00:00",
+      "file": "sdd/tasks/completed/TASK-4938-connection-events-notifier-registry.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4939",
@@ -119,7 +121,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -127,8 +129,9 @@
       "parallelism_notes": "root task: creates parrot/auth/oauth2/descriptor.py (models, PostExchangeHookRegistry, load_provider_descriptors); TASK-4943 extends the same file",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4939-oauth2-provider-descriptor-models.md"
+      "completed_at": "2026-10-30T21:20:41+00:00",
+      "file": "sdd/tasks/completed/TASK-4939-oauth2-provider-descriptor-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4940",
@@ -550,7 +553,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -558,8 +561,9 @@
       "parallelism_notes": "root task: only touches the server HTTP transport (mcp/transports/http.py); TASK-4961 forwards headers into the call_tool kwarg added here",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4960-http-mcp-session-per-call-headers.md"
+      "completed_at": "2026-10-30T21:20:41+00:00",
+      "file": "sdd/tasks/completed/TASK-4960-http-mcp-session-per-call-headers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4961",
