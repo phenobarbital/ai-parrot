@@ -22,6 +22,7 @@ Or in BotConfig YAML::
 Public API:
     - ``PolicyRuleConfig``: Pydantic model for a single policy rule.
 """
+
 from __future__ import annotations
 
 from typing import Any, Literal, Optional

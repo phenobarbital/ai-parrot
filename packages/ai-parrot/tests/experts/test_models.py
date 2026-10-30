@@ -98,7 +98,7 @@ def test_models_import_is_light() -> None:
     # import parrot.experts.agent in this process, so sys.modules here is order-dependent.
     assert experts.ExpertManifest is ExpertManifest
     with pytest.raises(AttributeError):
-        experts.not_an_expert_export
+        _ = experts.not_an_expert_export
 
     environment = os.environ.copy()
     source_root = str(Path(__file__).parents[2] / "src")

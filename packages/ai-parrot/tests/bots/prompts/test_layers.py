@@ -1,4 +1,5 @@
 """Unit tests for PromptLayer dataclass and built-in layers."""
+
 import pytest
 from parrot.bots.prompts.layers import (
     PromptLayer,
@@ -13,7 +14,6 @@ from parrot.bots.prompts.layers import (
     OUTPUT_LAYER,
     BEHAVIOR_LAYER,
 )
-
 
 # ── LayerPriority tests ────────────────────────────────────────
 
@@ -174,7 +174,9 @@ class TestPromptLayerPartialRender:
         assert new_layer.required_vars == frozenset()
 
     def test_partial_render_clears_condition_after_success(self):
-        cond = lambda ctx: True
+        def cond(ctx):
+            return True
+
         layer = PromptLayer(
             name="test",
             priority=LayerPriority.IDENTITY,
@@ -382,25 +384,40 @@ class TestLayerOrdering:
 
     def test_all_builtin_layers_have_distinct_priorities(self):
         layers = [
-            IDENTITY_LAYER, PRE_INSTRUCTIONS_LAYER, SECURITY_LAYER,
-            KNOWLEDGE_LAYER, USER_SESSION_LAYER, TOOLS_LAYER,
-            OUTPUT_LAYER, BEHAVIOR_LAYER,
+            IDENTITY_LAYER,
+            PRE_INSTRUCTIONS_LAYER,
+            SECURITY_LAYER,
+            KNOWLEDGE_LAYER,
+            USER_SESSION_LAYER,
+            TOOLS_LAYER,
+            OUTPUT_LAYER,
+            BEHAVIOR_LAYER,
         ]
-        priorities = [l.priority for l in layers]
+        priorities = [layer.priority for layer in layers]
         assert len(set(priorities)) == len(priorities), "Duplicate priorities found"
 
     def test_builtin_layers_sort_correctly(self):
         layers = [
-            BEHAVIOR_LAYER, TOOLS_LAYER, IDENTITY_LAYER,
-            KNOWLEDGE_LAYER, SECURITY_LAYER, USER_SESSION_LAYER,
-            OUTPUT_LAYER, PRE_INSTRUCTIONS_LAYER,
+            BEHAVIOR_LAYER,
+            TOOLS_LAYER,
+            IDENTITY_LAYER,
+            KNOWLEDGE_LAYER,
+            SECURITY_LAYER,
+            USER_SESSION_LAYER,
+            OUTPUT_LAYER,
+            PRE_INSTRUCTIONS_LAYER,
         ]
-        sorted_layers = sorted(layers, key=lambda l: l.priority)
-        names = [l.name for l in sorted_layers]
+        sorted_layers = sorted(layers, key=lambda layer: layer.priority)
+        names = [layer.name for layer in sorted_layers]
         assert names == [
-            "identity", "pre_instructions", "security",
-            "knowledge", "user_session", "tools",
-            "output", "behavior",
+            "identity",
+            "pre_instructions",
+            "security",
+            "knowledge",
+            "user_session",
+            "tools",
+            "output",
+            "behavior",
         ]
 
 

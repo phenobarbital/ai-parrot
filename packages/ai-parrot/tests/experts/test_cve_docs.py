@@ -59,7 +59,7 @@ def test_cve_docs_reference_real_names() -> None:
     missing: list[str] = []
     for name in backtick_names:
         # Skip generic references like "run-1", "stage", etc.
-        if name.startswith("http") or name.startswith("CVE-") or name.startswith("acme"):
+        if name.startswith(("http", "CVE-", "acme")):
             continue
         if name in ["question", "target", "rationale", "top_k", "limit", "cve_id", "package", "ecosystem", "version"]:
             continue
