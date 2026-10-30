@@ -16,7 +16,6 @@ import pytest
 from parrot.auth.oauth2_base import AbstractOAuth2Manager, AbstractOAuth2TokenSet
 from parrot.auth.principal import Principal
 
-
 pytest.importorskip("fakeredis")
 import fakeredis.aioredis  # noqa: E402
 

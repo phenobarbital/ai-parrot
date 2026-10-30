@@ -492,7 +492,9 @@ class AbstractOAuth2Manager(ABC):
 
         self.logger.info(
             "Stored %s token for principal %s (%s)",
-            self.provider_id, principal.user_id, token_set.display_name or token_set.account_id,
+            self.provider_id,
+            principal.user_id,
+            token_set.display_name or token_set.account_id,
         )
         return token_set, state_payload
 
