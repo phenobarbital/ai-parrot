@@ -26,6 +26,7 @@ FEAT-264 additions
 """
 from __future__ import annotations
 
+import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional, TYPE_CHECKING
@@ -229,6 +230,11 @@ class OAuthCredentialResolver(CredentialResolver):
         self._manager = oauth_manager
         self._principal_resolver = principal_resolver
 
+    def _manager_accepts(self, method_name: str, parameter: str) -> bool:
+        """Return whether a manager method implements a principal-aware parameter."""
+        method = getattr(self._manager, method_name)
+        return parameter in inspect.signature(method).parameters
+
     async def _principal(self, channel: str, user_id: str) -> Optional["Principal"]:
         """Resolve the platform principal, failing closed when unbound."""
         from parrot.auth.principal import resolve_principal
@@ -240,20 +246,30 @@ class OAuthCredentialResolver(CredentialResolver):
     async def resolve(self, channel: str, user_id: str) -> Optional[Any]:
         principal = await self._principal(channel, user_id)
         if principal is None:
-            return None
-        return await self._manager.get_valid_token(channel, principal.user_id, channel_user_id=user_id)
+            if self._manager_accepts("get_valid_token", "channel_user_id"):
+                return None
+            return await self._manager.get_valid_token(channel, user_id)
+        if self._manager_accepts("get_valid_token", "channel_user_id"):
+            return await self._manager.get_valid_token(channel, principal.user_id, channel_user_id=user_id)
+        return await self._manager.get_valid_token(channel, principal.user_id)
 
     async def get_auth_url(self, channel: str, user_id: str) -> str:
         from parrot.auth.exceptions import AuthorizationRequired
 
         principal = await self._principal(channel, user_id)
         if principal is None:
+            if not self._manager_accepts("create_authorization_url", "principal"):
+                url, _ = await self._manager.create_authorization_url(channel, user_id)
+                return url
             raise AuthorizationRequired(
                 tool_name="",
                 message="Link your account to the platform first (/login).",
                 provider=getattr(self._manager, "provider_id", "unknown"),
             )
-        url, _ = await self._manager.create_authorization_url(channel, principal.user_id, principal=principal)
+        if self._manager_accepts("create_authorization_url", "principal"):
+            url, _ = await self._manager.create_authorization_url(channel, principal.user_id, principal=principal)
+        else:
+            url, _ = await self._manager.create_authorization_url(channel, principal.user_id)
         return url
 
 
