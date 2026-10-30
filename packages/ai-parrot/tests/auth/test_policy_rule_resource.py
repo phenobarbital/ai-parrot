@@ -3,7 +3,6 @@
 from parrot.auth.agent_guard import parse_bot_permissions
 from parrot.auth.models import PolicyRuleConfig
 
-
 PINNED = {
     "name": "code_rule_finance_bot_agent:chat",
     "effect": "allow",
@@ -44,9 +43,7 @@ def test_policy_rule_resource_names_do_not_collide() -> None:
 
 def test_parse_bot_permissions_accepts_resource() -> None:
     """The public parser accepts and preserves an explicit resource."""
-    rules = parse_bot_permissions(
-        [{"action": "tool:execute", "effect": "deny", "resource": "tool:spawn_sub_agent"}]
-    )
+    rules = parse_bot_permissions([{"action": "tool:execute", "effect": "deny", "resource": "tool:spawn_sub_agent"}])
 
     assert len(rules) == 1
     assert rules[0].resource == "tool:spawn_sub_agent"
