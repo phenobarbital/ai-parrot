@@ -230,9 +230,9 @@ class MCPClientConfig:
     oauth2: Optional[MCPOAuth2Config] = field(default=None)
     # Preset name for the OAuth2 configuration (resolved in from_yaml_config)
     auth_preset: Optional[str] = field(default=None)
-    # User identifier used to scope OAuth2 token storage per user + per server.
-    # Maps to VaultTokenStore key: mcp_oauth_{server}_{user_id}.
-    # When None, token storage falls back to "default" (shared, non-user-scoped).
+    # M2M ONLY (e.g. NetSuiteM2MAuth(user_id="m2m")). Scopes OAuth2 token storage
+    # (VaultTokenStore key: mcp_oauth_{server}_{user_id}). Per-user tokens flow per
+    # call via inject_broker_credential; never use this as a delegated identity.
     user_id: Optional[str] = field(default=None)
 
     # FEAT-264: When True, read the per-call CredentialBroker-resolved token from
@@ -240,6 +240,8 @@ class MCPClientConfig:
     # ``Authorization: Bearer <token>`` at call time (not connect time).
     # Set this on MCP servers whose provider has auth="mcp" in the broker config.
     inject_broker_credential: bool = False
+    # Broker provider whose per-call credential authenticates delegated (user_id=None) servers.
+    credential_provider: Optional[str] = None
 
     async def get_headers(self, context: Optional['ReadonlyContext'] = None) -> Dict[str, str]:
         """Get merged static, auth, and dynamic headers.
@@ -470,7 +472,6 @@ class MCPAuthHandler:
 
 class MCPConnectionError(Exception):
     """MCP connection related errors."""
-    pass
 
 
 # JSON-RPC error code servers use to signal rate limiting (mirrors HTTP 429).

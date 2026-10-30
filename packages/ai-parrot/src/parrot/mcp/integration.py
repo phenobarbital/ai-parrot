@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import asyncio
 from navconfig import BASE_DIR, config
 from .context import ReadonlyContext
+from ..auth.exceptions import AuthorizationRequired
 from ..tools.abstract import AbstractTool, ToolResult
 from .oauth import (
     InMemoryTokenStore,  # noqa: F401 — public re-export for backward compat
@@ -40,7 +41,6 @@ from .client import (
 # its symbols are resolved lazily — see parrot.mcp._quic. Importing them here
 # would make every other transport unusable on a bare install.
 from ._quic import quic_attr
-from .filtering import ToolPredicate, filter_tools
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .chrome import ChromeManager
@@ -89,6 +89,11 @@ logging.getLogger("MCPClient").setLevel(logging.INFO)
 _chrome_managers: Dict[int, "ChromeManager"] = {}
 
 
+def _is_delegated(config: Any) -> bool:
+    """Return True when the server authenticates per call via the broker (no bound user_id)."""
+    return bool(getattr(config, "inject_broker_credential", False)) and getattr(config, "user_id", None) is None
+
+
 class MCPToolProxy(AbstractTool):
     """Proxy tool that wraps an individual MCP tool."""
 
@@ -106,6 +111,8 @@ class MCPToolProxy(AbstractTool):
         self.mcp_client = mcp_client
         self.server_name = server_name
         self.require_confirmation = require_confirmation
+        # Declare the broker provider so AbstractTool.execute resolves the per-call credential.
+        self.credential_provider = getattr(mcp_client.config, "credential_provider", None)
 
         self.name = f"mcp_{server_name}_{mcp_tool_def['name']}"
         self.description = mcp_tool_def.get("description", f"MCP tool: {mcp_tool_def['name']}")
@@ -273,6 +280,12 @@ class MCPToolProxy(AbstractTool):
 
             # Get headers (including dynamic ones from context)
             headers = await self.mcp_client.config.get_headers(context)
+            if _is_delegated(self.mcp_client.config) and "Authorization" not in headers:
+                raise AuthorizationRequired(
+                    tool_name=self.name,
+                    message=f"No delegated credential available for MCP server {self.server_name!r}",
+                    provider=self.mcp_client.config.credential_provider or "unknown",
+                )
 
             result = await self.mcp_client.call_tool(self.mcp_tool_def["name"], kwargs, headers=headers)
 
@@ -292,6 +305,8 @@ class MCPToolProxy(AbstractTool):
                 },
             )
 
+        except AuthorizationRequired:
+            raise  # ToolManager turns this into status='authorization_required'
         except Exception as e:
             self.logger.error(f"Error executing MCP tool {self.name}: {e}")
             return ToolResult(
@@ -419,6 +434,22 @@ class MCPClient:
             await self.disconnect()
             raise
 
+    async def _call_session(
+        self, tool_name: str, arguments: Dict[str, Any], headers: Optional[Dict[str, str]]
+    ) -> Any:
+        """Dispatch one call; delegated mode requires and forwards per-call headers (http only)."""
+        if not _is_delegated(self.config):
+            return await self._session.call_tool(tool_name, arguments)
+        if self._detect_transport() != "http":
+            raise MCPConnectionError("delegated MCP auth requires the http transport")
+        if not headers or "Authorization" not in headers:
+            raise AuthorizationRequired(
+                tool_name=tool_name,
+                message=f"No delegated credential available for MCP server {self.config.name!r}",
+                provider=self.config.credential_provider or "unknown",
+            )
+        return await self._session.call_tool(tool_name, arguments, headers=dict(headers))
+
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any], headers: Optional[Dict[str, str]] = None):
         """Call an MCP tool.
 
@@ -439,7 +470,7 @@ class MCPClient:
         attempt = 0
         while True:
             try:
-                return await self._session.call_tool(tool_name, arguments)
+                return await self._call_session(tool_name, arguments, headers)
             except MCPRateLimitError as exc:
                 delay = exc.retry_after if exc.retry_after is not None else base_delay * (2**attempt)
                 if attempt >= max_retries or delay > max_wait:
@@ -728,8 +759,9 @@ def create_oauth_mcp_server(
     *,
     name: str,
     url: str,
-    user_id: str,
+    user_id: Optional[str] = None,
     oauth2: Optional[MCPOAuth2Config] = None,
+    credential_provider: Optional[str] = None,
     # Legacy backward-compat params — used when oauth2 is None:
     client_id: Optional[str] = None,
     auth_url: Optional[str] = None,
@@ -747,7 +779,9 @@ def create_oauth_mcp_server(
     Args:
         name: Server name / registry key.
         url: MCP server base URL.
-        user_id: User identifier for token storage scoping.
+        user_id: Optional user identifier. ``None`` selects delegated mode: the
+            per-call broker credential is injected and ``credential_provider`` is required.
+        credential_provider: Broker provider for delegated mode.
         oauth2: Pre-built OAuth2 configuration.  When ``None``, a config is
             constructed from the legacy ``client_id`` / ``auth_url`` / etc. params.
         client_id: OAuth2 client ID (used when ``oauth2`` is ``None``).
@@ -762,6 +796,8 @@ def create_oauth_mcp_server(
         :class:`~parrot.mcp.client.MCPClientConfig` ready for use with
         :class:`~parrot.mcp.transports.http.HttpMCPSession`.
     """
+    if user_id is None and not credential_provider:
+        raise ValueError("delegated MCP server requires credential_provider")
     if oauth2 is None:
         oauth2 = MCPOAuth2Config(
             client_id=client_id,
@@ -780,6 +816,9 @@ def create_oauth_mcp_server(
         oauth2=oauth2,
         **kwargs,
     )
+    if user_id is None:
+        cfg.inject_broker_credential = True
+        cfg.credential_provider = credential_provider
     # Register the provider so it can be discovered (local import avoids circular dep)
     from parrot.auth.oauth2.mcp_provider import register_mcp_oauth2_provider  # noqa: PLC0415
 
@@ -803,9 +842,10 @@ def create_netsuite_mcp_server(
     *,
     account_id: str,
     client_id: str,
-    user_id: str,
+    user_id: Optional[str] = None,
     name: str = "netsuite",
     headers: Optional[Dict[str, Any]] = None,
+    credential_provider: Optional[str] = None,
 ) -> MCPServerConfig:
     """Create a NetSuite MCP server configuration using OAuth2 Authorization Code + PKCE.
 
@@ -834,6 +874,8 @@ def create_netsuite_mcp_server(
         ...     user_id="user@co.com",
         ... )
     """
+    if user_id is None and not credential_provider:
+        raise ValueError("delegated MCP server requires credential_provider")
     url = NETSUITE_MCP_URL.format(account_id=account_id)
     auth_url = NETSUITE_AUTH_URL.format(account_id=account_id)
     token_url = NETSUITE_TOKEN_URL.format(account_id=account_id)
@@ -864,6 +906,9 @@ def create_netsuite_mcp_server(
         auth_type="oauth2",
         oauth2=oauth2,
     )
+    if user_id is None:
+        cfg.inject_broker_credential = True
+        cfg.credential_provider = credential_provider
     # Register the provider so it can be discovered (local import avoids circular dep)
     from parrot.auth.oauth2.mcp_provider import register_mcp_oauth2_provider  # noqa: PLC0415
 
@@ -1395,8 +1440,9 @@ class MCPEnabledMixin:
         self,
         name: str,
         url: str,
-        user_id: str,
+        user_id: Optional[str] = None,
         oauth2: Optional[MCPOAuth2Config] = None,
+        credential_provider: Optional[str] = None,
         # Legacy backward-compat params:
         client_id: Optional[str] = None,
         auth_url: Optional[str] = None,
@@ -1431,6 +1477,7 @@ class MCPEnabledMixin:
             url=url,
             user_id=user_id,
             oauth2=oauth2,
+            credential_provider=credential_provider,
             client_id=client_id,
             client_secret=client_secret,
             auth_url=auth_url,
@@ -1707,7 +1754,8 @@ class MCPEnabledMixin:
         self,
         account_id: str,
         client_id: str,
-        user_id: str,
+        user_id: Optional[str] = None,
+        credential_provider: Optional[str] = None,
         **kwargs,
     ) -> List[str]:
         """Add NetSuite MCP server capability via OAuth2 Authorization Code + PKCE.
@@ -1737,6 +1785,7 @@ class MCPEnabledMixin:
             account_id=account_id,
             client_id=client_id,
             user_id=user_id,
+            credential_provider=credential_provider,
             **kwargs,
         )
         return await self.add_mcp_server(config)
