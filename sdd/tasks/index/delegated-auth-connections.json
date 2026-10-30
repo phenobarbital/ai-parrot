@@ -162,7 +162,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -172,8 +172,9 @@
       "parallelism_notes": "second serialized edit of oauth2_base.py after TASK-4940 (uses its principal_lock, _persist_token, CredentialStore, InvalidGrantError/RefreshTransientError and _oauth2_fakes.py); also owns conf.py keys",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4941-oauth2-base-legacy-refresh-revoke.md"
+      "completed_at": "2026-10-30T21:55:21+00:00",
+      "file": "sdd/tasks/completed/TASK-4941-oauth2-base-legacy-refresh-revoke.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4942",
@@ -223,7 +224,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -234,8 +235,9 @@
       "parallelism_notes": "imports resolve_principal/PrincipalResolver from TASK-4937 (parrot/auth/principal.py); calls create_authorization_url(..., principal=) added by TASK-4940 (oauth2_base.py)",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4944-auth-required-payload-principal-resolver.md"
+      "completed_at": "2026-10-30T21:55:22+00:00",
+      "file": "sdd/tasks/completed/TASK-4944-auth-required-payload-principal-resolver.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4945",
@@ -347,7 +349,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -357,8 +359,9 @@
       "parallelism_notes": "implements the CredentialStore Protocol + uses Principal created by TASK-4940/4937 (parrot/auth/oauth2_base.py); first of two serialized edits to identity_credential_sink.py (TASK-4951 follows)",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4950-identity-vault-credential-store.md"
+      "completed_at": "2026-10-30T21:55:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4950-identity-vault-credential-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4951",
