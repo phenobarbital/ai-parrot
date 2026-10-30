@@ -90,12 +90,61 @@ def test_global_dry_run_writes_nothing(tmp_path: Path) -> None:
 
 def test_global_flags_parse(tmp_path: Path) -> None:
     """--version pins the spec (ai-parrot and ai-parrot-tools alike, rev 0.5 C20); --with announces one `parrot self add` per component."""
-    result = _run_global(tmp_path, "--version", "9.9.9", "--with", "sdd,scraping")
+    result = _run_global(tmp_path, "--version", "9.9.9", "--with", "scraping,sdd-coder")
     assert result.returncode == 0, result.stderr
     assert "==9.9.9" in result.stdout
     assert "ai-parrot-tools==9.9.9" in result.stdout
-    assert "self add sdd" in result.stdout
     assert "self add scraping" in result.stdout
+    assert "self add sdd-coder" in result.stdout
+
+
+def _script_components(text: str) -> set[str]:
+    """The names in the installer's KNOWN_COMPONENTS line."""
+    line = next(ln for ln in text.splitlines() if ln.startswith("KNOWN_COMPONENTS="))
+    return set(line.split("=", 1)[1].strip('"').split())
+
+
+def test_known_components_match_the_packaged_templates() -> None:
+    """--with is validated against a static list; it must equal the packaged toolkit templates."""
+    from parrot.mcp.toolkit_seed import available_templates
+
+    assert _script_components(SCRIPT.read_text(encoding="utf-8")) == set(available_templates())
+
+
+def test_global_rejects_unknown_component_before_anything(tmp_path: Path) -> None:
+    """`--with sdd` (never a component) fails before the plan, under --dry-run too, and writes nothing."""
+    result = _run_global(tmp_path, "--with", "scraping,sdd")
+    assert result.returncode == 1
+    assert "unknown component 'sdd' for --with; available: bounded-source, browsing" in result.stderr
+    assert "This installer will" not in result.stdout and "→" not in result.stdout
+    assert not (tmp_path / "home").exists()
+
+
+def test_global_skips_empty_component_entries(tmp_path: Path) -> None:
+    """Stray commas never become `parrot self add ''`."""
+    result = _run_global(tmp_path, "--with", ",scraping,")
+    assert result.returncode == 0, result.stderr
+    adds = [ln for ln in result.stdout.splitlines() if "add component" in ln]
+    assert len(adds) == 1 and adds[0].endswith("self add scraping")
+
+
+@pytest.mark.parametrize("flags", [("--with", "scraping"), ("--version", "1.2.3")])
+def test_project_mode_rejects_global_only_flags(tmp_path: Path, flags: tuple[str, str]) -> None:
+    """--with/--version without --global used to be silently ignored; now they fail before any step."""
+    result = subprocess.run(
+        ["bash", str(SCRIPT), "--dry-run", *flags], capture_output=True, text=True, check=False, cwd=tmp_path
+    )
+    assert result.returncode == 1
+    assert "only apply to --global" in result.stderr
+    assert "→" not in result.stdout
+
+
+def test_help_stops_at_the_contract() -> None:
+    """`--help` prints the header comment only, never the script body."""
+    result = subprocess.run(["bash", str(SCRIPT), "--help"], capture_output=True, text=True, check=False)
+    assert result.returncode == 0
+    assert result.stdout.rstrip().endswith("echoed with its purpose before it runs.")
+    assert "set -euo" not in result.stdout
 
 
 def test_global_rejects_project_only_flags(tmp_path: Path) -> None:

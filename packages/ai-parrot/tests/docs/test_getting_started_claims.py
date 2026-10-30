@@ -428,3 +428,26 @@ def test_failure_message_names_file_and_line(tmp_path: Path) -> None:
         assert str(doc) in message
         assert str(claims[0].line) in message
         assert "does-not-exist" in message
+
+
+#: Component names cited after `--with` / `-With` / `self add` / `toolkits install` (placeholders like `<c>` excluded).
+_COMPONENT_REFS = re.compile(
+    r"(?:--with|-With)\s+([A-Za-z0-9][A-Za-z0-9,-]*)"
+    r"|self add\s+(?:--here\s+)?([a-z][a-z0-9-]*)"
+    r"|toolkits (?:install|uninstall|enable|disable)\s+([a-z][a-z0-9-]*)"
+)
+
+
+def test_cited_components_exist() -> None:
+    """Every component named in the docs is a packaged toolkit template (`--with sdd` named none, FEAT-633)."""
+    from parrot.mcp.toolkit_seed import available_templates
+
+    known = set(available_templates())
+    seen = 0
+    for doc in CLI_DOCS:
+        for lineno, text in enumerate(doc.read_text(encoding="utf-8").splitlines(), start=1):
+            for match in _COMPONENT_REFS.finditer(text):
+                for name in filter(None, ",".join(g for g in match.groups() if g).split(",")):
+                    seen += 1
+                    assert name in known, f"{doc}:{lineno} unknown component {name!r}; known: {sorted(known)}"
+    assert seen, "no component references found - the guides must show --with / self add / toolkits install"

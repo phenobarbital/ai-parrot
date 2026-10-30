@@ -65,6 +65,43 @@ def test_global_params_declared() -> None:
     assert "[string]$With" in _TEXT
 
 
+def test_known_components_match_the_packaged_templates() -> None:
+    """-With is validated against a static list; it must equal the packaged toolkit templates."""
+    from parrot.mcp.toolkit_seed import available_templates
+
+    line = next(ln for ln in _TEXT.splitlines() if ln.startswith("$KnownComponents = @("))
+    assert set(re.findall(r"'([^']+)'", line)) == set(available_templates())
+
+
+def test_components_checked_before_the_plan() -> None:
+    """Test-Components runs before Write-Plan (nothing announced or written for a wrong name)."""
+    body = _TEXT[_TEXT.index("function Install-Global {"):]
+    assert body.index("Test-Components") < body.index("Write-Plan $url")
+
+
+def test_project_mode_rejects_global_only_params() -> None:
+    """-With/-Version without -Global fail instead of being silently ignored."""
+    tail = _TEXT[_TEXT.index("if ($GlobalMode) { Install-Global"):]
+    assert "if ($With -or $Version)" in tail and tail.index("if ($With -or $Version)") < tail.index("# Python guard (AC10)")
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh not installed")
+def test_global_rejects_unknown_component(tmp_path: Path) -> None:
+    """-With sdd (never a component) fails before the plan, under -DryRun, and writes nothing."""
+    home = tmp_path / "parrot-home"
+    result = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(SCRIPT), "-Global", "-DryRun", "-With", "sdd"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_pwsh_env(PARROT_HOME=str(home)),
+    )
+    assert result.returncode != 0
+    assert "unknown component 'sdd' for -With" in _flat(result.stdout + result.stderr)
+    assert "never used or modified" not in _flat(result.stdout)
+    assert not home.exists()
+
+
 def test_global_branch_precedes_python_guard() -> None:
     """The -Global dispatch appears before the system-Python guard (codex S10)."""
     assert _TEXT.index("if ($GlobalMode)") < _TEXT.index("# Python guard (AC10)")
@@ -175,7 +212,7 @@ def test_global_dry_run(tmp_path: Path) -> None:
     home = tmp_path / "parrot-home"
     result = subprocess.run(
         ["pwsh", "-NoProfile", "-File", str(SCRIPT), "-Global", "-DryRun", "-Python", "C:/nonexistent",
-         "-Version", "9.9.9", "-With", "sdd"],
+         "-Version", "9.9.9", "-With", "scraping"],
         capture_output=True,
         text=True,
         check=False,
@@ -183,7 +220,7 @@ def test_global_dry_run(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "unsupported Python" not in result.stderr
-    assert "==9.9.9" in result.stdout and "self add sdd" in result.stdout
+    assert "==9.9.9" in result.stdout and "self add scraping" in result.stdout
     assert "ai-parrot-tools==9.9.9" in result.stdout      # rev 0.5 C20: same version pin as ai-parrot
     assert not home.exists()
     # C14a/C14b: plan paragraph and gate summary precede the first "->" announcement

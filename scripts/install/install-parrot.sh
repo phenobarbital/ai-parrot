@@ -25,7 +25,10 @@
 #                            parrot/wikitoolkit/bookstore on PATH. Needs no system
 #                            Python; incompatible with --venv/--with-wiki/--system-deps
 #   --version <X>            (--global) pin ai-parrot and ai-parrot-tools to <X>
-#   --with <c>[,<c>...]      (--global) run `parrot self add <c>` per component
+#   --with <c>[,<c>...]      (--global) run `parrot self add <c>` per component: install
+#                            the packages an MCP toolkit needs (e.g. scraping). One of:
+#                            bounded-source, browsing, database-query, lsp, memory,
+#                            querysource, scraping, sdd-coder, targeted-writer
 #   -h, --help               Show this help and exit
 #
 # Contract: idempotent (reuses an existing venv, never deletes one); refuses
@@ -47,7 +50,7 @@ MIN_FREE_KB=2097152   # C14b gate: 2 GiB free under PARROT_HOME (managed CPython
 RAW_BASE="https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install"   # C14a non-piped alternative
 
 usage() {
-  sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # run "<purpose>" cmd...
@@ -167,6 +170,22 @@ Prefer not to pipe a download into bash? Fetch $RAW_BASE/install-parrot.sh and
 $RAW_BASE/SHA256SUMS, run 'sha256sum -c --ignore-missing SHA256SUMS', read the script, then run it.
 PLAN
 }
+# Components --with accepts: the packaged toolkit templates (parrot/mcp/_toolkit_templates/*.yaml). Checked before
+# the plan, so a wrong name fails before anything is downloaded, under --dry-run too. Kept equal to the templates by
+# tests/docs/test_install_posix.py::test_known_components_match_the_packaged_templates.
+KNOWN_COMPONENTS="bounded-source browsing database-query lsp memory querysource scraping sdd-coder targeted-writer"
+check_components() {
+  local c _comps
+  [ -n "$WITH_COMPONENTS" ] || return 0
+  IFS=',' read -ra _comps <<< "$WITH_COMPONENTS"
+  for c in "${_comps[@]}"; do
+    [ -n "$c" ] || continue
+    case " $KNOWN_COMPONENTS " in
+      *" $c "*) ;;
+      *) echo "unknown component '$c' for --with; available: ${KNOWN_COMPONENTS// /, }" >&2; exit 1 ;;
+    esac
+  done
+}
 gate_fail() { echo "preflight: $1 — fix: $2" >&2; exit 1; }   # C14b — nothing has been written yet
 uv_target() {
   case "$(uname -s)-$(uname -m)" in
@@ -257,6 +276,7 @@ global_install() {
   if [ "$WITH_WIKI" -eq 1 ]; then echo "--global cannot be combined with --with-wiki: there is no project to build a wiki for" >&2; exit 1; fi
   if [ "$SYSTEM_DEPS" -eq 1 ]; then echo "--global cannot be combined with --system-deps: uv supplies the Python runtime" >&2; exit 1; fi
   PARROT_HOME="${PARROT_HOME:-$HOME/.parrot}"; [ "$PYTHON_SET" -eq 1 ] || PYTHON="3.12"; resolve_extras
+  check_components
   target="$(uv_target 2>/dev/null || true)"; asset="uv-$target.tar.gz"; uv="$PARROT_HOME/bin/uv"
   url="https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$asset"
   spec="ai-parrot[$ALL_EXTRAS]"; [ -z "$PARROT_VERSION" ] || spec="$spec==$PARROT_VERSION"
@@ -303,6 +323,7 @@ global_install() {
   if [ -n "$WITH_COMPONENTS" ]; then  # guard: empty "${arr[@]}" + set -u breaks macOS bash 3.2
     IFS=',' read -ra _comps <<< "$WITH_COMPONENTS"
     for c in "${_comps[@]}"; do
+      [ -n "$c" ] || continue
       if ! run "add component $c" "$PARROT_HOME/bin/parrot" self add "$c"; then
         echo "warning: 'parrot self add $c' failed; the base runtime stays installed" >&2
         failed=1
@@ -312,6 +333,10 @@ global_install() {
   return "$failed"
 }
 if [ "$GLOBAL" -eq 1 ]; then global_install; echo "Done."; exit 0; fi
+if [ -n "$WITH_COMPONENTS" ] || [ -n "$PARROT_VERSION" ]; then
+  echo "--with and --version only apply to --global (the managed runtime); add --global or drop them" >&2
+  exit 1
+fi
 
 # Python guard — refuse anything outside >=3.11,<3.14 (AC10). Runs BEFORE any
 # other step (including --dry-run) so an unsupported interpreter is caught

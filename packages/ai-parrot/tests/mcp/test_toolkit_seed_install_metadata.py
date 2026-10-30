@@ -70,6 +70,23 @@ def test_browser_templates_ship_playwright_install(name: str) -> None:
     tpl = load_template(name)
     assert tpl.requires_pip == ("ai-parrot-tools[scraping]",)
     assert tpl.post_install == ("python", "-m", "playwright", "install", "chromium")
+    # parrot_tools is always in the managed runtime (rev 0.5 C20); probing playwright is what tells
+    # `parrot toolkits install` / `self doctor` that `parrot self add <name>` is still needed.
+    assert tpl.requires_dist == ("parrot_tools", "playwright")
+
+
+@pytest.mark.parametrize("name", ["browsing", "scraping"])
+def test_browser_templates_report_missing_playwright(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With parrot_tools importable but playwright absent, the toolkit's distribution counts as missing."""
+    import importlib.util
+
+    from parrot.mcp import toolkit_install
+
+    real = importlib.util.find_spec
+    monkeypatch.setattr(
+        toolkit_install.importlib.util, "find_spec", lambda n, *a: None if n == "playwright" else real(n, *a)
+    )
+    assert toolkit_install.dist_available(load_template(name).requires_dist) is False
 
 
 def test_lsp_and_querysource_metadata() -> None:

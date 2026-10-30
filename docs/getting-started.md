@@ -147,39 +147,58 @@ Instead of a per-project venv you can install AI-Parrot once per machine. One co
 **Linux / macOS:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/install-parrot.sh | bash -s -- --global --with sdd
+curl -fsSL https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/install-parrot.sh | bash -s -- --global
 ```
 
 **Downloads:** the script above and, from GitHub, the pinned `uv 0.11.28` archive plus its `.sha256` file
 (`https://github.com/astral-sh/uv/releases/download/0.11.28/uv-<target>.tar.gz`), then `ai-parrot` and
 `ai-parrot-tools` from PyPI. A uv already on your PATH is never used or modified.
 **Writes:** `~/.parrot/bin`, `~/.parrot/venv` and `~/.parrot/python`, plus a `# >>> parrot >>>` PATH block
-in your shell profile. Existing `~/.parrot` data (wikis, library, skills, brains, `parrot.db`) is never touched.
+in your shell profile. If they are missing, it also writes the credentials file `~/.parrot/env/.env` (mode 0600,
+every key commented out) and an empty `~/.parrot/etc/config.ini` for navconfig. Existing `~/.parrot` data (wikis,
+library, skills, brains, `parrot.db`, an existing `env/.env`) is never touched.
 **Verified by:** the uv archive checksum, then `parrot self doctor --runtime-only`; a failure removes only
 what the run created. Before writing anything the script checks the platform, `curl`/`wget`, `sha256sum`,
 `git`, 2 GiB of free space under `PARROT_HOME` and that GitHub and PyPI are reachable, and prints a plan first.
 **Without piping:** download `install-parrot.sh` and `SHA256SUMS` from
 `https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/`, run
 `sha256sum -c --ignore-missing SHA256SUMS` (macOS: `shasum -a 256 -c --ignore-missing SHA256SUMS`), read the
-script, then run `bash install-parrot.sh --global --with sdd`. Add `--dry-run` to print the plan only.
+script, then run `bash install-parrot.sh --global`. Add `--dry-run` to print the plan only.
 
 **Windows (PowerShell):**
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/install-parrot.ps1))) -Global -With sdd"
+powershell -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/install-parrot.ps1))) -Global"
 ```
 
 **Downloads:** the script above and, from GitHub, the pinned `uv 0.11.28` zip plus its `.sha256` file, then
 `ai-parrot` and `ai-parrot-tools` from PyPI.
 **Writes:** `~\.parrot\bin`, `~\.parrot\venv` and `~\.parrot\python`, and adds `~\.parrot\bin` to your
-USER PATH (never the Machine PATH); reopen the terminal afterwards.
+USER PATH (never the Machine PATH); reopen the terminal afterwards. If they are missing, it also writes
+`~\.parrot\env\.env` (readable only by you, every key commented out) and an empty `~\.parrot\etc\config.ini`.
 **Verified by:** the uv checksum (`Get-FileHash`), then `parrot self doctor --runtime-only`; a failure
 removes only what the run created.
 **Without piping:** `Invoke-WebRequest` both `install-parrot.ps1` and `SHA256SUMS` from the same folder,
 compare `(Get-FileHash install-parrot.ps1).Hash` with its line in `SHA256SUMS`, read the script, then run
-`powershell -ExecutionPolicy Bypass -File install-parrot.ps1 -Global -With sdd`.
+`powershell -ExecutionPolicy Bypass -File install-parrot.ps1 -Global`.
 
 > **Windows status (pending CI verification):** the `-Global` path has not yet run on a Windows runner. CI checks the script's syntax, its `-DryRun` plan and its pre-write gates under `pwsh` on Linux; the install itself, the post-install rollback and the USER PATH restore are covered only by an offline harness that is still marked expected-to-fail. They become verified claims when the install-matrix Windows leg passes.
+
+**Options** (PowerShell name in parentheses):
+
+- `--provider <k>[,<k>...]` (`-Provider`): the LLM provider extras of the managed venv: `anthropic` (the
+  default), `openai`, `google`, `claude-code`, `codex-code`. To add a provider later, run the installer again
+  with `--provider <k>`; it reuses the existing venv.
+- `--with <component>[,...]` (`-With`): also install the packages an MCP toolkit needs, for example
+  `--with scraping` (Playwright and Chromium). It is the same as running `parrot self add <component>` later
+  (see [MCP toolkits](#mcp-toolkits-parrot-self-add-and-parrot-toolkits-install) below). An unknown name fails
+  before anything is downloaded and lists the valid ones.
+- `--version <X>` (`-Version`): pin `ai-parrot` and `ai-parrot-tools` to one release.
+
+`--with` and `--version` only apply to `--global`.
+
+Your API keys go in `~/.parrot/env/.env`: uncomment the lines you need and fill them in. The SDD flow and
+`wikitoolkit` need no key.
 
 Reference detail (gate, plan text, launcher order, `--portable`, version skew) is in
 [docs/install/global-runtime.md](install/global-runtime.md).
@@ -189,15 +208,45 @@ Reference detail (gate, plan text, launcher order, `--portable`, version skew) i
 <!-- verify: cli-verb=self add -->
 <!-- verify: flag=self add:--here -->
 <!-- verify: cli-verb=self env -->
+<!-- verify: flag=self env:--init -->
 <!-- verify: cli-verb=self update -->
 <!-- verify: cli-verb=self uninstall -->
 <!-- verify: flag=self uninstall:--yes -->
-- `parrot self add <component>` installs a component's packages into the managed venv; `--here` installs
-  into the current project venv instead, and is the only way a dependency enters a project venv.
-- `parrot self env` prints the venv the launcher resolves, the rule that picked it and the versions.
+- `parrot self add <component>` installs the packages an MCP toolkit needs into the managed venv; `--here`
+  installs into the current project venv instead, and is the only way a dependency enters a project venv.
+- `parrot self env` prints the venv the launcher resolves, the rule that picked it and the versions;
+  `parrot self env --init` creates `env/.env` and `etc/config.ini` if they are missing.
 - `parrot self doctor` diagnoses the runtime, host configs and toolkit requirements.
-- `parrot self update` upgrades `ai-parrot` in the managed venv (`--version` pins one).
-- `parrot self uninstall` removes only `bin/`, `venv/` and `python/` (`--yes` skips the prompt).
+- `parrot self update` upgrades `ai-parrot` and `ai-parrot-tools` together in the managed venv (`--version`
+  pins one).
+- `parrot self uninstall` removes only `bin/`, `venv/` and `python/`; your credentials (`env/`), `etc/` and
+  data stay (`--yes` skips the prompt). The PATH block in your shell profile stays too; delete it by hand.
+
+### MCP toolkits: `parrot self add` and `parrot toolkits install`
+
+<!-- verify: cli-verb=toolkits install -->
+<!-- verify: flag=toolkits install:--host -->
+<!-- verify: flag=toolkits install:--yes -->
+<!-- verify: cli-verb=toolkits list -->
+A toolkit (scraping, querysource, sdd-coder, ...) is an MCP server your coding assistant can call. Using one
+takes up to two steps, with different scopes:
+
+1. `parrot self add <name>`: installs the Python packages the toolkit needs (and a post-install step, such as
+   downloading Chromium) into the managed venv. Once per machine. `--with <name>` at install time does the same.
+   Only `scraping` and `browsing` (Playwright and Chromium) and `querysource` (`ai-parrot-tools[db]`) need it;
+   the other toolkits run on the base runtime.
+2. `parrot toolkits install <name> --yes`: adds the toolkit to the repository's `.parrot/mcp-toolkits.yaml` and
+   registers its MCP server with Claude Code, Codex or Antigravity (`--host claude|codex|google`; default: every
+   host detected in the repository). Once per repository. Without a name it opens an interactive picker.
+
+```bash
+parrot self add scraping                                # once per machine
+cd my-repo && parrot toolkits install scraping --yes    # once per repository
+parrot toolkits list                                    # state, hosts and missing packages per toolkit
+```
+
+`parrot toolkits install` does not install packages. If a toolkit's packages are missing it prints
+`run: parrot self add <name>`, and `parrot self doctor` reports it.
 
 ---
 
@@ -318,7 +367,10 @@ if __name__ == "__main__":
 
 Run it with `python hello_world.py` (after activating your venv). It makes
 one real network call to whichever provider you chose in step 3 — expect a
-one-line answer.
+one-line answer. With the global install there is no venv to activate: run
+`~/.parrot/venv/bin/python hello_world.py` and put the key in `~/.parrot/env/.env`
+(the managed venv already has the `anthropic` provider unless you chose another
+`--provider`).
 
 Two things this snippet deliberately avoids:
 
@@ -435,6 +487,7 @@ Confirm each of these before moving on:
       prints a **non-empty** dict. An empty `{}` means no provider satellite
       is installed yet — go back to step 3.
 - [ ] `wikitoolkit --help` runs without error.
+- [ ] Global install: in a new terminal, `parrot self doctor` shows no `✗`.
 - [ ] The hello-world snippet in step 4 prints an answer instead of raising.
 
 **Common failures:**

@@ -166,21 +166,24 @@ the managed runtime, `parrot self ...` and the SDD flow: [docs/install/global-ru
 
 ### Create Configuration Directories
 
-AI-Parrot uses the `kardex` CLI tool to initialize the project structure:
+AI-Parrot reads its settings through navconfig, whose `kardex` CLI initializes the project structure:
 
 ```bash
-# Create env/ and etc/ directories with default structure
-kardex create
+# Create env/, etc/, logs/ and templates/ with a base .env and etc/config.ini
+kardex env create
 ```
 
 This command creates:
-- `env/`: Directory for environment configuration files (`.env` files)
-- `etc/`: Directory for additional configuration files
-- Default configuration templates
+- `env/`: Directory for environment configuration files (`.env` files; `--env` names the environment, default `dev`)
+- `etc/`: Directory for additional configuration files, starting with `config.ini`
+- `logs/` and `templates/`
+
+The global install (`install-parrot.sh --global`) does not need this step: it creates `~/.parrot/env/.env` and
+`~/.parrot/etc/config.ini` for the managed runtime (see [docs/install/global-runtime.md](docs/install/global-runtime.md)).
 
 ### Directory Structure
 
-After running `kardex create`, your project should look like:
+After running `kardex env create`, your project should look like:
 
 ```
 your-project/

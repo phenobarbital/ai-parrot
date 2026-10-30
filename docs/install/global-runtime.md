@@ -5,8 +5,9 @@
 `--global` installs AI-Parrot once per machine under `~/.parrot` (or `$PARROT_HOME`): a pinned `uv`, a
 uv-managed Python 3.12, `~/.parrot/venv` (`ai-parrot` plus `ai-parrot-tools` at the same version, which
 `wikitoolkit mcp` needs) and `parrot` / `wikitoolkit` / `bookstore` on PATH. Your existing `~/.parrot` data
-(`wikis.json`, `library/`, `skills/`, `brains/`, `parrot.db`) is never touched; the installer only adds
-`bin/`, `venv/` and `python/`, and a failed run removes only what it created.
+(`wikis.json`, `library/`, `skills/`, `brains/`, `parrot.db`) is never touched; the installer adds `bin/`,
+`venv/` and `python/` and, only when they are missing, `env/.env` and `etc/config.ini` (see
+[Credentials](#credentials-parrot_homeenvenv)). A failed run removes only what it created.
 
 > **Supported platforms.** The global install is officially supported on **Linux x86_64** only. Linux aarch64 (ARM
 > servers) is not supported: no wheel is published for it and the installer refuses it. On macOS arm64 and Windows
@@ -68,7 +69,7 @@ If you export `SITE_ROOT`, navconfig uses that directory as its root instead, an
 curl -fsSLO https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/install-parrot.sh
 curl -fsSLO https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/SHA256SUMS
 sha256sum -c --ignore-missing SHA256SUMS   # macOS: shasum -a 256 -c --ignore-missing SHA256SUMS
-bash install-parrot.sh --global --with sdd
+bash install-parrot.sh --global
 ```
 
 ## Install (Windows, PowerShell)
@@ -77,14 +78,24 @@ bash install-parrot.sh --global --with sdd
 Invoke-WebRequest https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/install-parrot.ps1 -OutFile install-parrot.ps1
 Invoke-WebRequest https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/SHA256SUMS -OutFile SHA256SUMS
 (Get-FileHash install-parrot.ps1).Hash        # compare with the install-parrot.ps1 line of SHA256SUMS
-powershell -ExecutionPolicy Bypass -File install-parrot.ps1 -Global -With sdd
+powershell -ExecutionPolicy Bypass -File install-parrot.ps1 -Global
 ```
 
 The installer edits the USER PATH (never the Machine PATH); reopen the terminal afterwards. The `-Global`
-switch accepts `-Version`, `-With` and `-DryRun`, mirroring the POSIX flags.
+switch accepts the same options as the POSIX `--global`, listed next.
 
-Flags: `--version <X>` pins `ai-parrot` and `ai-parrot-tools`, `--python <v>` picks the managed Python
-(default 3.12), `--with a,b` runs `parrot self add` per component, `--dry-run` prints the plan only.
+## Installer options
+
+| Option (PowerShell) | Effect |
+|---|---|
+| `--provider <k>[,<k>...]` (`-Provider`) | LLM provider extras of the managed venv: `anthropic` (default), `openai`, `google`, `claude-code`, `codex-code`. Run the installer again with another `--provider` to add one; the venv is reused. |
+| `--with <c>[,<c>...]` (`-With`) | Runs `parrot self add <c>` for each component after the runtime is verified (see [Components and toolkits](#components-and-toolkits)). Names are checked before anything is downloaded, under `--dry-run` too; an unknown name exits 1 with the valid list. A component that fails to install leaves the runtime in place and makes the installer exit 1. |
+| `--version <X>` (`-Version`) | Pins `ai-parrot` and `ai-parrot-tools` to `X`. |
+| `--python <v>` (`-Python`) | Python version for the managed venv (default `3.12`). |
+| `--dry-run` (`-DryRun`) | Prints the plan and every command without running anything. |
+
+`--with` and `--version` only apply to `--global`; without it they are refused. `--venv`, `--with-wiki` and
+`--system-deps` are project-mode flags and are refused with `--global`.
 
 ## Managing the runtime
 
@@ -119,9 +130,46 @@ parrot self uninstall --yes
   Python, entry points, PATH) and is mutually exclusive with `--sdd`.
 - `self add <component>` installs a component's packages (and post-install step) into the managed venv.
   `--here` installs into the project venv instead, and is the only way a dependency enters a project venv.
-- `self update` upgrades `ai-parrot` in the managed venv; `--version` pins an exact release.
+  See [Components and toolkits](#components-and-toolkits).
+- `self update` upgrades `ai-parrot` and `ai-parrot-tools` together in the managed venv; `--version` pins an
+  exact release.
 - `self uninstall` removes `bin/`, `venv/` and `python/`; wikis, library, skills, brains, `parrot.db`, `env/`
-  (credentials) and `etc/` stay.
+  (credentials) and `etc/` stay. The `# >>> parrot >>>` PATH block stays in your shell profile; delete it by
+  hand (on Windows, remove `~\.parrot\bin` from your USER PATH).
+
+## Components and toolkits
+
+<!-- verify: cli-verb=toolkits install -->
+<!-- verify: flag=toolkits install:--host -->
+<!-- verify: flag=toolkits install:--yes -->
+<!-- verify: cli-verb=toolkits list -->
+A component is one of the MCP toolkits that ship with ai-parrot. Using a toolkit from a coding assistant takes up
+to two commands, with different scopes:
+
+- `parrot self add <name>` (or `--with <name>` at install time) installs the toolkit's Python packages and runs
+  its post-install step, in the managed venv. Once per machine.
+- `parrot toolkits install <name> --yes` adds the toolkit to the repository's `.parrot/mcp-toolkits.yaml` and
+  registers its MCP server with each host (`--host claude|codex|google`, repeatable; default: every host
+  detected in the repository). Once per repository. Without a name it opens an interactive picker, which needs
+  a terminal; scripts pass the names and `--yes`.
+
+`parrot toolkits install` never installs packages. When a toolkit's packages are missing it prints
+`run: parrot self add <name>`; `parrot toolkits list` shows them as missing and `parrot self doctor` reports them.
+
+| Component | What `parrot self add` installs |
+|---|---|
+| `scraping`, `browsing` | `ai-parrot-tools[scraping]` (Playwright, Selenium), then `python -m playwright install chromium` |
+| `querysource` | `ai-parrot-tools[db]` (QuerySource); the toolkit also needs `PG_USER` and `PG_PWD` |
+| `bounded-source`, `lsp`, `targeted-writer` | `ai-parrot-tools`, already part of the base runtime: nothing to add |
+| `database-query`, `memory`, `sdd-coder` | nothing: they run on the core package |
+
+The SDD flow is not a component: it ships with the base runtime and is enabled per repository with
+`parrot sdd install` (next sections).
+
+```bash
+parrot self add scraping                              # once per machine
+cd my-repo && parrot toolkits install scraping --yes  # once per repository
+```
 
 ## Which venv runs? (launcher resolution)
 
@@ -169,9 +217,15 @@ form for monorepo developers: the portable form only works once the global insta
 parrot sdd install --host claude --dry-run
 parrot sdd install --host claude
 parrot sdd status
+git add sdd .claude .gitignore .gitattributes   # what --host claude wrote
+git commit -m "sdd: install the SDD flow" && git push   # reserve_ids reads the ledger from git
 parrot sdd run reserve_ids --kind task --count 1 --base-branch dev --label demo
 parrot sdd uninstall --dry-run
 ```
+
+`reserve_ids` needs the base branch (`dev` above, `base_branch` in `sdd/config.json`) on `origin`, with the seeded
+`sdd/tasks/.id_ledger.json` committed and pushed to it. `parrot self doctor --sdd` checks that the branch exists on
+`origin` and that the ledger is tracked by git.
 
 - Helpers run as `parrot sdd run <name>`, never `python -m ...`: in a global-only install the repo's `python`
   cannot import parrot.

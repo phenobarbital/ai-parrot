@@ -12,7 +12,13 @@ tags: [installer, bootstrap, uv, launcher, mcp, windows, sdd-packaging]
 **Author**: Jesus Lara (brainstorm + decisions); spec drafted with Claude
 **Status**: approved
 **Target version**: Next release (assigned by release tooling)
-**Revision**: 0.7 (2026-10-28) — Jesus Lara's decisions on the PR #1823 merge-readiness review:
+**Revision**: 0.8 (2026-10-30) — Arturo Martinez's decisions after the end-to-end install test in a clean
+`ubuntu:24.04` container: C28 drops `sdd` from every `--with` example (it was never a component: the SDD flow
+ships in the base runtime and is enabled per repo by `parrot sdd install`); both installers check `--with`
+names against the packaged toolkit templates before the plan (also under `--dry-run`) and refuse
+`--with`/`--version` without `--global`; `scraping`/`browsing` probe `playwright` in `requires_dist`, so
+`parrot toolkits install` and `doctor` report the missing `parrot self add` in a managed runtime.
+**Revision 0.7** (2026-10-28) — Jesus Lara's decisions on the PR #1823 merge-readiness review:
 C26 re-derives the shipped asset inventory (**84** manifest entries; the 80 of rev 0.5 predates
 `code-reviewer`, `qa-runner`, the packaged `docs/sdd/CODEX.md` and FEAT-764's
 `sdd_hooks.example.toml`), and C27 makes Claude break the bare-`wikitoolkit` tie exactly as Codex
@@ -38,7 +44,7 @@ ships through the installer (amends TASK-4070, 4085, 4089, 4090, 4091, 4299).
 `worktree_environment` enters scope (amends TASK-4085, 4072, 4089, 4090, 4091).
 **Revision 0.2** (2026-10-14) — folds in the approved amendments of the same proposal
 (rev 0.3): C2–C6, C8–C15, Q1, C7.
-Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`, `[rev 0.4 C17]`, `[rev 0.5 C<n>]`, `[rev 0.5 D<n>]`, `[rev 0.6 C25]`, `[rev 0.7 C26]`, `[rev 0.7 C27]`) mark every changed clause.
+Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`, `[rev 0.4 C17]`, `[rev 0.5 C<n>]`, `[rev 0.5 D<n>]`, `[rev 0.6 C25]`, `[rev 0.7 C26]`, `[rev 0.7 C27]`, `[rev 0.8 C28]`) mark every changed clause.
 
 > Source brainstorm: `sdd/proposals/parrot-installer.brainstorm.md` (accepted, Option B′,
 > all 16 open questions resolved). Supersedes `sdd/specs/portable-sdd-flow.spec.md`
@@ -397,8 +403,11 @@ class ToolkitTemplate(BaseModel):
 - **Depends on**: M1 (the installed package must expose the launcher-fronted scripts).
 - **Interface Skeleton** *(shell contract — flags only)*:
   ```
-  install-parrot.sh  --global [--version X] [--python 3.12] [--with sdd,scraping] [--dry-run]
-  install-parrot.ps1 -Global  [-Version X]  [-Python 3.12]  [-With sdd,scraping]  [-DryRun]
+  install-parrot.sh  --global [--version X] [--python 3.12] [--with scraping,sdd-coder] [--dry-run]
+  install-parrot.ps1 -Global  [-Version X]  [-Python 3.12]  [-With scraping,sdd-coder]  [-DryRun]
+  # [rev 0.8 C28] --with/-With names = packaged toolkit templates (available_templates()), checked
+  # before the plan (also under --dry-run); unknown name ⇒ exit 1 with the valid list. `sdd` is not
+  # a component. --with/--version without --global ⇒ refused.
   # existing flags keep working unchanged (sh case loop verified scripts/install/install-parrot.sh:56-99;
   # ps1 param block verified scripts/install/install-parrot.ps1:37-46)
   ```

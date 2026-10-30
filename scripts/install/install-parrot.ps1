@@ -38,7 +38,10 @@ before it runs.
     With -Global: pin ai-parrot and ai-parrot-tools to this version.
 
 .PARAMETER With
-    With -Global: comma-separated components to add via `parrot self add`.
+    With -Global: comma-separated components to add via `parrot self add`
+    (installs the packages an MCP toolkit needs, e.g. scraping). One of:
+    bounded-source, browsing, database-query, lsp, memory, querysource,
+    scraping, sdd-coder, targeted-writer.
 
 .PARAMETER Help
     Show this help and exit.
@@ -162,6 +165,19 @@ function Add-UserPath([string]$Dir) {
   Write-Host "Added $Dir to your user PATH — reopen your terminal to pick it up."
 }
 
+# Components -With accepts: the packaged toolkit templates (parrot/mcp/_toolkit_templates/*.yaml). Checked before the
+# plan, so a wrong name fails before anything is downloaded, under -DryRun too. Kept equal to the templates by
+# tests/docs/test_install_powershell.py::test_known_components_match_the_packaged_templates.
+$KnownComponents = @('bounded-source', 'browsing', 'database-query', 'lsp', 'memory', 'querysource', 'scraping', 'sdd-coder', 'targeted-writer')
+
+function Test-Components {
+  foreach ($c in ($With -split ',' | Where-Object { $_ })) {
+    if ($KnownComponents -notcontains $c) {
+      Write-Error "unknown component '$c' for -With; available: $($KnownComponents -join ', ')"; exit 1
+    }
+  }
+}
+
 function Install-Global {
   if ($script:VenvSet -or $WithWiki -or $SystemDeps) {
     Write-Error '-Global cannot be combined with -Venv, -WithWiki or -SystemDeps'; exit 1
@@ -172,6 +188,7 @@ function Install-Global {
   $home_ = if ($env:PARROT_HOME) { $env:PARROT_HOME } else { Join-Path $HOME '.parrot' }
   $py = if ($script:PythonSet) { $Python } else { '3.12' }
   Resolve-Extras
+  Test-Components
   $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
   $target = if ("$arch" -eq 'Arm64') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
   $asset = "uv-$target.zip"
@@ -256,6 +273,9 @@ function Install-Global {
 }
 
 if ($GlobalMode) { Install-Global; Write-Host 'Done.'; if ($script:ComponentFailed) { exit 1 }; exit 0 }
+if ($With -or $Version) {
+  Write-Error '-With and -Version only apply to -Global (the managed runtime); add -Global or drop them'; exit 1
+}
 
 # Python guard (AC10) — refuse anything outside >=3.11,<3.14 BEFORE any
 # other step (including -DryRun), same as the POSIX installer.

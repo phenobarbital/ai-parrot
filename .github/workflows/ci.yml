@@ -226,14 +226,14 @@ jobs:
       - name: POSIX installer global dry run
         env:
           PARROT_HOME: ${{ runner.temp }}/parrot-home
-        run: bash scripts/install/install-parrot.sh --global --dry-run --version 0.0.0 --with sdd
+        run: bash scripts/install/install-parrot.sh --global --dry-run --version 0.0.0 --with scraping
 
       - name: PowerShell installer global dry run (soft)
         env:
           PARROT_HOME: ${{ runner.temp }}/parrot-home
         run: |
           if command -v pwsh >/dev/null 2>&1; then
-            pwsh -NoProfile -File scripts/install/install-parrot.ps1 -Global -DryRun -Version 0.0.0 -With sdd
+            pwsh -NoProfile -File scripts/install/install-parrot.ps1 -Global -DryRun -Version 0.0.0 -With scraping
           else
             echo "pwsh not available on this runner; skipping -Global dry run (single-OS scope)."
           fi
