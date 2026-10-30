@@ -434,9 +434,7 @@ class MCPClient:
             await self.disconnect()
             raise
 
-    async def _call_session(
-        self, tool_name: str, arguments: Dict[str, Any], headers: Optional[Dict[str, str]]
-    ) -> Any:
+    async def _call_session(self, tool_name: str, arguments: Dict[str, Any], headers: Optional[Dict[str, str]]) -> Any:
         """Dispatch one call; delegated mode requires and forwards per-call headers (http only)."""
         if not _is_delegated(self.config):
             return await self._session.call_tool(tool_name, arguments)

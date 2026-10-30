@@ -35,7 +35,11 @@ def _client(cfg: MCPClientConfig) -> MCPClient:
 
 def test_mcp_user_id_optional_injects_broker():
     cfg = create_oauth_mcp_server(
-        name="d", url="http://x/mcp", client_id="c", auth_url="http://a", token_url="http://t",
+        name="d",
+        url="http://x/mcp",
+        client_id="c",
+        auth_url="http://a",
+        token_url="http://t",
         credential_provider="prov",
     )
     assert cfg.user_id is None
@@ -47,7 +51,12 @@ def test_mcp_user_id_optional_injects_broker():
 
 def test_bound_user_id_is_not_delegated():
     cfg = create_oauth_mcp_server(
-        name="b", url="http://x/mcp", user_id="u1", client_id="c", auth_url="http://a", token_url="http://t",
+        name="b",
+        url="http://x/mcp",
+        user_id="u1",
+        client_id="c",
+        auth_url="http://a",
+        token_url="http://t",
     )
     assert cfg.inject_broker_credential is False
     assert cfg.credential_provider is None
