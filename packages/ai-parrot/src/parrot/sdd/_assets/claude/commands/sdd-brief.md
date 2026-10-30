@@ -17,7 +17,7 @@ Replaces `/sdd-spec --type hotfix`.
 - Never manually create a worktree; provision it only through
   `parrot sdd run ensure_worktree`.
 - Never call `reserve_ids.py`; brief task IDs are local `HOTFIX-<KEY>-<N>` IDs.
-- Never push to or merge into `main`.
+- Never push to or merge into the `hotfix_base` branch (`main` by default).
 - Never run `git checkout <base>` in the main checkout; it remains on its
   current branch.
 
@@ -25,9 +25,10 @@ Replaces `/sdd-spec --type hotfix`.
 
 ### 1. Parse Input
 
-Parse `<source>` and the optional flags from the usage line. Accept only
-`main`, `dev`, or `staging` for `--base-branch`, and only `full` or `light`
-for `--research`. If questions cannot be asked, behave as though
+Parse `<source>` and the optional flags from the usage line. Accept for
+`--base-branch` only a long-lived branch configured in `sdd/config.json`
+(`hotfix_base`, `base_branch` or `staging_branch`; `main`, `dev` and
+`staging` by default), and only `full` or `light` for `--research`. If questions cannot be asked, behave as though
 `--no-interview` was supplied.
 
 ### 2. Detect and Fetch the Source
@@ -58,7 +59,8 @@ For a ledger source, select the `base_branch` from `sdd/config.json`. If the use
 ⚠️  Ledger-sourced briefs always base on the configured base_branch; --base-branch <hotfix_base> is refused.
 ```
 
-For every other source, default to `main` unless `--base-branch` overrides
+For every other source, default to the `hotfix_base` in `sdd/config.json`
+(`main` unless configured otherwise) unless `--base-branch` overrides
 it. Set `KEY` to the Jira key when present, the ledger short id for a ledger
 source, or the slug otherwise. Derive a safe kebab-case `slug` from the
 source title or text.
@@ -165,7 +167,7 @@ git -C <wt> commit -m "sdd: add brief for <KEY> — <slug>"
 git -C <wt> push -u origin <branch>
 ```
 
-Do not push to or merge into `main`.
+Do not push to or merge into the `hotfix_base` branch (`main` by default).
 
 ### 12. Hand Off
 

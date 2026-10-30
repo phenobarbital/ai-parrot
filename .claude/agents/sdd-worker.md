@@ -478,7 +478,8 @@ For model lessons, record the confirmed finding with
 - `correction`: the action this model must take to avoid repeating the defect.
 - `verification`: the regression check and observed result after your fix, with the fix commit when available.
 
-Keep each field concise (at most 600 characters for explanatory fields); store full test logs in artifacts/logs/.
+Keep each field concise (at most 600 characters for explanatory fields); store full test logs under
+`${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/<FEAT-ID>/` (outside the worktree, so `/sdd-done` can remove it).
 File one confirmed pattern per attempt. A repeated recording call is not another recurrence. Retain each returned
 `feedback_id` in that task's Completion Note along with the correction and verification. Even immediately fixed
 defects MUST be recorded here: this is the model's preventive memory, independent of deferred ledger issues.
@@ -566,13 +567,15 @@ VERIFICATION CHECKLIST for TASK-<NNN>:
 If ANY check fails, fix or STOP.
 
 ### e) Validate (in worktree)
-- Lint mechanically, never by hand (this path has no engine to do it): `ruff check --fix <task .py files>`, then
-  `black <task .py files>` only if `pyproject.toml` has `[tool.black]`. Fix only syntax errors / undefined names
-  (`ruff check --select E9,F63,F7,F82`); leave remaining style findings to `/sdd-done`.
+- Lint mechanically, never by hand (this path has no engine to do it), and only with the linters the repository
+  configures. When it configures ruff (`ruff.toml`, `.ruff.toml` or `[tool.ruff]` in `pyproject.toml`):
+  `ruff check --fix <task .py files>`, then `black <task .py files>` only if `pyproject.toml` has `[tool.black]`;
+  fix only syntax errors / undefined names (`ruff check --select E9,F63,F7,F82`) and leave remaining style
+  findings to `/sdd-done`. A repository without a ruff config gets no ruff run.
 - When `test_command` in `sdd/config.json` is set, run it once from the repo root INSTEAD of the `select_tests` merge-tier sweep below: record the command, exit code and output tail; a non-zero exit blocks the merge; zero tests run → report "⚠️ not run — no tests selected", never ✅. When it is null, the sweep below is unchanged.
-- Run the task's `## Validation Commands`, then `mkdir -p artifacts/logs;
-  parrot sdd run select_tests --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
-  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --feature FEAT-<NNN> --report-task TASK-<NNN> --run > artifacts/logs/merge-tests-TASK-<NNN>.log 2>&1`
+- Run the task's `## Validation Commands`, then `LOGS="${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/FEAT-<NNN>";
+  mkdir -p "$LOGS"; parrot sdd run select_tests --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
+  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --feature FEAT-<NNN> --report-task TASK-<NNN> --run > "$LOGS/merge-tests-TASK-<NNN>.log" 2>&1`
   as a background Bash call (`run_in_background: true`, no `timeout`), then read that log — a foreground call is
   bounded at 120 s and this sweep is routinely longer
   (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).

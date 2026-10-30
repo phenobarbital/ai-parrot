@@ -84,7 +84,8 @@ do not run task closure again on base_branch and do not clean worktrees with unk
      worktree
    - do not rerun the whole test suite here; tests should have run during task
      execution
-4.5. Full lint pass, once per feature:
+4.5. Full lint pass, once per feature, only when the repository configures ruff (`ruff.toml`,
+   `.ruff.toml` or `[tool.ruff]` in `pyproject.toml`); otherwise skip it and report "lint: ruff not configured":
    - resolve changed Python files with `git diff --name-only --diff-filter=ACMR
      origin/<base_branch>...HEAD -- '*.py'` from the feature worktree
    - `--dry-run`: run only `ruff check` and report; never fix or commit

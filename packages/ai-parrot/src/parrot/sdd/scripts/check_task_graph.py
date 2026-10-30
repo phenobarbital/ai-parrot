@@ -22,7 +22,10 @@ Errors (exit 1):
   * ``non-pytest-validation-command`` — a task's declared validation command is
     not a pytest invocation at all (e.g. ``true`` or ``ruff check .``); it is
     silently invisible to ``select_tests.py``'s declared-command handling, so
-    the task effectively has no enforced test coverage (FEAT-563).
+    the task effectively has no enforced test coverage (FEAT-563). A warning
+    instead when ``sdd/config.json`` sets ``test_command`` (FEAT-633 rev 0.8 C29):
+    that repository runs its own command instead of ``select_tests``, so a
+    non-pytest command (``npm test ...``, ``cargo test ...``) is its normal case.
   * ``test-contract-malformed`` — the index header's cached ``test_contract``
     cannot be validated (FEAT-699).
   * ``test-contract-operand-missing`` — a ``test_contract`` test operand does
@@ -62,6 +65,8 @@ from collections import Counter
 from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, Field
+
+from parrot.sdd.config import SddConfigError, load_sdd_config
 
 PARALLEL_SEMANTICS = "exclusive"
 VALIDATION_CONTRACT = "required"
@@ -274,13 +279,16 @@ def _isolated_extension_errors(root: Path) -> list[str]:
     return errors
 
 
-def _check_validation_contract(tasks: dict[str, _Task], root: Path, required: bool) -> list[Finding]:
+def _check_validation_contract(
+    tasks: dict[str, _Task], root: Path, required: bool, test_command: str | None = None
+) -> list[Finding]:
     """Emit the four validation-contract findings for every task.
 
     Args:
         tasks: Parsed tasks (``text`` and ``files`` populated).
         root: Repository root for existence checks.
         required: True when the index header declares ``"validation_contract": "required"``.
+        test_command: ``sdd/config.json`` ``test_command``; when set, a non-pytest command is a warning.
 
     Returns:
         Findings: missing-validation-commands, non-pytest-validation-command,
@@ -304,15 +312,24 @@ def _check_validation_contract(tasks: dict[str, _Task], root: Path, required: bo
             continue
         for argv in commands:
             if not contract.is_pytest_invocation(argv):
+                if test_command:
+                    message = (
+                        f"{tid}: validation command is not a pytest invocation; accepted because "
+                        f"sdd/config.json sets test_command ({test_command!r}), which runs instead of "
+                        f"select_tests: {' '.join(argv)}"
+                    )
+                else:
+                    message = (
+                        f"{tid}: validation command is not a pytest invocation, so it is "
+                        f"invisible to select_tests.py's declared-command handling: {' '.join(argv)} "
+                        f"(a non-Python repository sets test_command in sdd/config.json)"
+                    )
                 findings.append(
                     Finding(
-                        level="error",
+                        level="warning" if test_command else "error",
                         code="non-pytest-validation-command",
                         tasks=[tid],
-                        message=(
-                            f"{tid}: validation command is not a pytest invocation, so it is "
-                            f"invisible to select_tests.py's declared-command handling: {' '.join(argv)}"
-                        ),
+                        message=message,
                     )
                 )
                 continue
@@ -626,8 +643,15 @@ def check_graph(index_path: Path, root: Path) -> GraphReport:
                         message=f"{tid} is exclusive but names no resource",
                     )
                 )
+    try:
+        test_command = load_sdd_config(root).test_command
+    except SddConfigError as exc:
+        test_command = None
+        add(Finding(level="warning", code="sdd-config-unreadable", message=str(exc)))
     report.findings.extend(
-        _check_validation_contract(tasks, root, data.get("validation_contract") == VALIDATION_CONTRACT)
+        _check_validation_contract(
+            tasks, root, data.get("validation_contract") == VALIDATION_CONTRACT, test_command
+        )
     )
     report.findings.extend(_check_test_contract(data, root, tasks))
     return report

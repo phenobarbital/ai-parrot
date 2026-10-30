@@ -42,9 +42,11 @@ $sdd-fix ... --kind K --severity S --lane fast|sdd   # --lane fast is REFUSED (e
    - **Fast lane** (`lane == "fast"`): one worktree and one PR per group.
      `parrot sdd run ensure_worktree --json --slug <suggested_slug> --brief-key <issue-short-id> --base-branch <base_branch>`
      plans `fix-<issue-short-id>-<suggested_slug>` off `origin/<base_branch>` and returns `<wt>`;
-     `--base-branch <base_branch>` is what selects the `fix-` prefix. Edit inside `<wt>`, run the affected
-     package's tests from `<wt>` with `PYTHONPATH` set to the worktree's package source (a bare `pytest` there
-     imports the main checkout), `ruff check --fix` the changed files, `git -C <wt> commit`,
+     `--base-branch <base_branch>` is what selects the `fix-` prefix. Edit inside `<wt>`, then test from `<wt>`:
+     when `sdd/config.json` sets `test_command`, run it once; otherwise run the affected package's tests, with
+     `PYTHONPATH` set to the worktree's package source when the repository's shared venv is editable-installed
+     against the main checkout (a bare `pytest` there imports the main checkout). Lint the changed files with
+     the linters the repository configures (`ruff check --fix` only when it configures ruff), `git -C <wt> commit`,
      `git -C <wt> push -u origin fix-<issue-short-id>-<suggested_slug>` (the tree has no
      upstream by design), then `gh pr create --base <base_branch> --title … --body …`.
      ALWAYS a PR — there is no direct-push path. Once step 6 has closed the group's issues, reap

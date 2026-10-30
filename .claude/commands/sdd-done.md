@@ -163,13 +163,17 @@ test -f <worktree-path>/<filepath>
 Per-task lint is engine-owned and only auto-fixes (`sdd-coder` engine, merge
 boundary). This step is the ONE place the repo's full ruff rule set is enforced
 for the feature — never per task. With `--dry-run`, run only the final
-`ruff check` and report; do not fix or commit.
+`ruff check` and report; do not fix or commit. It runs only in a repository that
+configures ruff (`ruff.toml`, `.ruff.toml` or `[tool.ruff]` in `pyproject.toml`);
+anywhere else it is skipped and the report says "lint: ruff not configured".
 
 ```bash
 WT="<worktree-path>"
 git -C "$WT" fetch origin <base_branch>
 mapfile -t PY < <(git -C "$WT" diff --name-only --diff-filter=ACMR "origin/<base_branch>...HEAD" -- '*.py')
-if [ ${#PY[@]} -gt 0 ]; then
+RUFF_CONFIGURED=0
+{ [ -f "$WT/ruff.toml" ] || [ -f "$WT/.ruff.toml" ] || grep -q '^\[tool\.ruff' "$WT/pyproject.toml" 2>/dev/null; } && RUFF_CONFIGURED=1
+if [ "$RUFF_CONFIGURED" -eq 1 ] && [ ${#PY[@]} -gt 0 ]; then
   (cd "$WT" && ruff check --fix --exit-zero --quiet "${PY[@]}")
   if grep -q '^\[tool\.black\]' "$WT/pyproject.toml"; then (cd "$WT" && black -q "${PY[@]}"); fi
   git -C "$WT" add -- "${PY[@]}"
@@ -202,7 +206,7 @@ write_hook_context() {
   FEAT_ID="$FEAT_ID" BRANCH="$BRANCH" BASE_BRANCH="$BASE_BRANCH" WORKTREE_PATH="$WORKTREE_PATH" \
   SPEC_PATH="${SPEC_PATH:-sdd/specs/<feature-slug>.spec.md}" TEST_REPORT_MD="${TEST_REPORT_MD:-}" \
   GATE_JSON="${GATE_JSON:-}" PR_URL="${PR_URL:-}" MERGE_SHA="${MERGE_SHA:-}" \
-  HOOK_ABORT_REASON="$1" DRY_RUN="${DRY_RUN:-}" python - "$HOOKS_DIR/context.json" <<'PY'
+  HOOK_ABORT_REASON="$1" DRY_RUN="${DRY_RUN:-}" python3 - "$HOOKS_DIR/context.json" <<'PY'
 import json, os, pathlib, sys
 env = os.environ
 def _text(path):

@@ -99,6 +99,18 @@ def test_no_publication_findings_in_shipped_files() -> None:
     assert not offenders, "\n".join(f"{f.path}:{f.line}: [{f.kind}] {f.snippet}" for f in offenders)
 
 
+#: rev 0.8 C29 — fixed in every shipped file and gated in CI (`--fail-on`). The report-only C29 kinds
+#: (jira-org-default, unshipped-command, nonexistent-cli) are open ledger issues; add them here once fixed.
+_C29_GATED_KINDS: tuple[str, ...] = ("bare-python", "worktree-artifact")
+
+
+def test_no_c29_findings_in_shipped_files() -> None:
+    """No bare `python` and no workflow file written inside the worktree, over the shipped set (C29)."""
+    findings = scan_paths(_shipped_files())
+    offenders = [f for f in findings if f.kind in _C29_GATED_KINDS]
+    assert not offenders, "\n".join(f"{f.path}:{f.line}: [{f.kind}] {f.snippet}" for f in offenders)
+
+
 def test_every_invocation_uses_parrot_sdd_run() -> None:
     """Every helper invocation in an asset is ``parrot sdd run <moved name>`` (Q1)."""
     bad = re.compile(r"python3?[ \t]+-m[ \t]+parrot\.sdd\.scripts\.")

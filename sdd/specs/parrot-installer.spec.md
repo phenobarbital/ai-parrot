@@ -18,6 +18,14 @@ ships in the base runtime and is enabled per repo by `parrot sdd install`); both
 names against the packaged toolkit templates before the plan (also under `--dry-run`) and refuse
 `--with`/`--version` without `--global`; `scraping`/`browsing` probe `playwright` in `requires_dist`, so
 `parrot toolkits install` and `doctor` report the missing `parrot self add` in a managed runtime.
+C29 (same day, from the foreign-repo asset review and Jesus Lara's verification): `check_task_graph` downgrades
+`non-pytest-validation-command` to a warning when `sdd/config.json` sets `test_command`; the shipped assets run
+`python3`, never `python`; worker logs and codex review output go to
+`${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/<FEAT-ID>/` instead of `artifacts/` inside the worktree;
+`/sdd-brief` accepts the branches configured in `sdd/config.json`; `qa-runner`, `worktree-management`,
+`/sdd-done` §4.5, `/sdd-fix` and the `sdd-worker` fallback lint treat `.venv` and ruff as optional. `parrot.sdd.audit`
+gains five detectors; `bare-python` and `worktree-artifact` gate CI, the other three are report-only until their
+ledger issues close.
 **Revision 0.7** (2026-10-28) — Jesus Lara's decisions on the PR #1823 merge-readiness review:
 C26 re-derives the shipped asset inventory (**84** manifest entries; the 80 of rev 0.5 predates
 `code-reviewer`, `qa-runner`, the packaged `docs/sdd/CODEX.md` and FEAT-764's
@@ -44,7 +52,7 @@ ships through the installer (amends TASK-4070, 4085, 4089, 4090, 4091, 4299).
 `worktree_environment` enters scope (amends TASK-4085, 4072, 4089, 4090, 4091).
 **Revision 0.2** (2026-10-14) — folds in the approved amendments of the same proposal
 (rev 0.3): C2–C6, C8–C15, Q1, C7.
-Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`, `[rev 0.4 C17]`, `[rev 0.5 C<n>]`, `[rev 0.5 D<n>]`, `[rev 0.6 C25]`, `[rev 0.7 C26]`, `[rev 0.7 C27]`, `[rev 0.8 C28]`) mark every changed clause.
+Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`, `[rev 0.4 C17]`, `[rev 0.5 C<n>]`, `[rev 0.5 D<n>]`, `[rev 0.6 C25]`, `[rev 0.7 C26]`, `[rev 0.7 C27]`, `[rev 0.8 C28]`, `[rev 0.8 C29]`) mark every changed clause.
 
 > Source brainstorm: `sdd/proposals/parrot-installer.brainstorm.md` (accepted, Option B′,
 > all 16 open questions resolved). Supersedes `sdd/specs/portable-sdd-flow.spec.md`

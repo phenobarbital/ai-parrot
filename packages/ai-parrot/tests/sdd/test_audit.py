@@ -57,6 +57,46 @@ def test_c11a_kinds_skip_placeholders_and_prose(line: str, kind: str) -> None:
     assert kind not in {f.kind for f in scan_text(line, "x.md")}
 
 
+@pytest.mark.parametrize(
+    ("line", "kind"),
+    [
+        ('DRY_RUN="${DRY_RUN:-}" python - "$HOOKS_DIR/context.json" <<\'PY\'', "bare-python"),          # rev 0.8 C29
+        ("python -c \"import hashlib\" pkg/__init__.py", "bare-python"),
+        ("`python -m json.tool x.json`", "bare-python"),
+        ("python <<'PY'", "bare-python"),
+        ("mkdir -p artifacts/logs; pytest > artifacts/logs/x.log", "worktree-artifact"),
+        ("codex exec -o artifacts/reviews/<task>-codex.txt", "worktree-artifact"),
+        ("Default target: Project `NAV`, Component `Nav-AI`", "jira-org-default"),
+        ("acceptance criteria live in customfield_10021", "jira-org-default"),
+        ("reap it with `/remove-worktree` for the branch", "unshipped-command"),
+        ("- `/pr-review` to auto-detect the Jira key", "unshipped-command"),
+        ("| `/sdd-insight` | `sdd-insight` |", "unshipped-command"),
+        ("| Jira | Jira key | Fetch with `jiratoolkit` |", "nonexistent-cli"),
+    ],
+)
+def test_scan_text_c29_kinds(line: str, kind: str) -> None:
+    assert kind in {f.kind for f in scan_text(line, "x.md")}
+
+
+@pytest.mark.parametrize(
+    ("line", "kind"),
+    [
+        ('python3 - "$HOOKS_DIR/context.json" <<\'PY\'', "bare-python"),
+        ("$WT/.venv/bin/python -m pytest", "bare-python"),
+        ("changed Python files; the python files under src/", "bare-python"),
+        ("SDD_LOGS=${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/FEAT-1", "worktree-artifact"),
+        ("ai-parrot's tool-artifacts/ cache", "worktree-artifact"),
+        ("NAVIGATOR and navigation are not the project key", "jira-org-default"),
+        ("run `/sdd-spec` then `/sdd-task`, `/compact` or `/parrotwiki`", "unshipped-command"),
+        ("a GitHub `/security/code-scanning/<n>` URL or `/tmp/claude-<uid>`", "unshipped-command"),
+        ("leave this as a `Write`/copy and the file stays", "unshipped-command"),
+        ("MODIFY `parrot_tools/jiratoolkit.py` and jiratoolkit.py tests", "nonexistent-cli"),
+    ],
+)
+def test_c29_kinds_skip_valid_forms(line: str, kind: str) -> None:
+    assert kind not in {f.kind for f in scan_text(line, "x.md")}
+
+
 def test_main_fail_on_exits_1_and_names_the_line(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     (tmp_path / "a.md").write_text("ok line\nticket NAV-1 here\n", encoding="utf-8")
     assert audit.main([str(tmp_path), "--root", str(tmp_path), "--fail-on", "org-data"]) == 1

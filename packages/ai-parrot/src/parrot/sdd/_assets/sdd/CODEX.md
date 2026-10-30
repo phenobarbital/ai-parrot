@@ -401,7 +401,8 @@ Keep these rules intact when running the flow:
    the user.
 5. Do not invent imports, symbols, or dependencies. Verify with wiki, `rg`, and
    source reads.
-6. Store persisted test logs under `artifacts/logs/`.
+6. Store persisted test logs under `${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/<FEAT-ID>/`, outside the worktree:
+   an untracked file inside it makes `git worktree remove` refuse.
 7. Do not run `$sdd-task` or `$sdd-done` from inside a worktree.
 8. Do not direct-merge hotfixes to `main`.
 

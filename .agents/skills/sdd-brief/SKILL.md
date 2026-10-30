@@ -24,7 +24,7 @@ brief — research first, a short Q&A, no FEAT/TASK id reservation.
 - Write committed artifacts only inside the provisioned worktree. The git-ignored draft staging directory in step 8 is the sole exception under the main checkout's `sdd/`.
 - Provision the worktree only through `parrot sdd run ensure_worktree`.
 - Brief task IDs are local `HOTFIX-<KEY>-<N>` IDs; never allocate global IDs.
-- Never push to or merge into `main`; never check out a base branch in the main checkout.
+- Never push to or merge into the `hotfix_base` branch (`main` by default); never check out a base branch in the main checkout.
 
 ## Procedure
 

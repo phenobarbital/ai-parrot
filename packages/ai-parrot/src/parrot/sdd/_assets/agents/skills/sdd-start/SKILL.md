@@ -120,7 +120,7 @@ implement the task yourself — the normal route is the default.
 9. Validate:
    - run task-specified tests
    - run task-specified lint/format checks
-   - store test logs in `artifacts/logs/` when logs are persisted
+   - store test logs under `${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/<FEAT-ID>/` (outside the worktree) when logs are persisted
    - fix failures within scope
    - stop after three failed attempts if the failure is not understood
 10. Commit code:

@@ -122,13 +122,15 @@ jobs:
 
       # FEAT-633 C11c: the asset tree goes into the PUBLIC wheel. Fail on any organisation data,
       # CLAUDE.md reference or hardcoded flow branch in a shipped file (kinds from TASK-4070).
+      # rev 0.8 C29: also a bare `python` (absent on Ubuntu/Debian/macOS) and any workflow file written
+      # inside the feature worktree (`artifacts/logs|reviews/` blocks `git worktree remove` in a foreign repo).
       # Fix: edit the SOURCE file (.claude/, .agents/, …), then `check_asset_sync.py --write`.
       - name: Scan packaged SDD assets for publication-unsafe content (FEAT-633)
         run: >
           uv run --no-sync python -m parrot.sdd.audit
           packages/ai-parrot/src/parrot/sdd/_assets
           --root packages/ai-parrot/src/parrot/sdd/_assets
-          --fail-on org-data,claude-md-ref,branch-literal
+          --fail-on org-data,claude-md-ref,branch-literal,bare-python,worktree-artifact
 
       # FEAT-712: sdd/ledger/issues.jsonl has silently lost open issues twice
       # (ccbfef606, 769ca8516 — 25 issues, 14 of them open, including a

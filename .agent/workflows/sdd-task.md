@@ -440,6 +440,13 @@ headers MUST include `"validation_contract": "required"`; `check_task_graph`
 then reports `missing-validation-commands`, `broad-validation-command` and
 `directory-validation-target` as errors (`validation-path-unknown` warns).
 
+When `sdd/config.json` sets `test_command` (a repository whose tests are not
+pytest: `npm test`, `cargo test`, `go test ./...`), each bullet is instead the
+narrowest command of that repository's own runner for the task's tests (e.g.
+`npm test -- src/cart.test.ts`). `check_task_graph` then reports the
+`non-pytest-validation-command` warning for it and does not block; without
+`test_command`, a non-pytest command is an error.
+
 #### Complexity Contract (mandatory, per task)
 
 Every generated task MUST carry a `## Complexity Contract` section containing
@@ -489,6 +496,9 @@ parrot sdd run check_task_graph sdd/tasks/index/<feature-slug>.json
   `broad-validation-command`, `directory-validation-target` (errors when the
   header requires the contract) and `validation-path-unknown` (warning) — add
   or fix the task's `## Validation Commands` section.
+  `non-pytest-validation-command` is an error unless `sdd/config.json` sets
+  `test_command`; with it, the warning is expected for every task and is the
+  only warning you may leave unresolved.
 - Copy the report's first line (`<N> tasks, <W> waves, max width <M>`) into the
   §6 output. A width of 1 on a multi-task feature needs a one-line justification.
 

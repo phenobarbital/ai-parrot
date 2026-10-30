@@ -434,7 +434,9 @@ parrot sdd status                            # missing | current | outdated | ed
   `sdd/tasks/.id_ledger.json`, a `.claude/worktrees/` ignore block, a marked `.gitattributes` block
   (`merge=union` for the ledger log) and the four `parrot-ledger` git hooks. What it wrote is recorded in
   `sdd/.sdd-installed.json`; commit it. `/sdd-insight` is not installed.
-- Edit `sdd/config.json`: `base_branch`, `hotfix_base`, `issue_tracker`, `test_command`, ... When
+- Edit `sdd/config.json`: `base_branch`, `hotfix_base`, `issue_tracker`, `test_command`, ... A repository whose
+  tests are not pytest (Node, Rust, Go, ...) MUST set `test_command` (e.g. `"npm test"`): without it, `/sdd-task`
+  rejects every non-pytest validation command. When
   `test_command` is set, the shipped test steps run it once from the repo root instead of the selection/report
   steps (`cache_test_contract` in `/sdd-task`, `select_tests` / `test_report` in `/sdd-done`), and a run with no
   tests shows "not run". When it is null the ai-parrot selection path applies, and `parrot sdd install` warns.

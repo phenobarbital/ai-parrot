@@ -37,9 +37,9 @@ also edits can mask the very defects it should surface.
 - **Determinism over judgement.** Pass/fail is decided by process exit
   codes, never by "reading the output and deciding it looks fine". Capture
   stdout/stderr tails for the report, but the verdict follows exit codes.
-- **Activate the venv first.** Per the project instructions file (AGENTS.md or the host equivalent), ALWAYS
-  `source .venv/bin/activate` before any `python`/`pytest`/`ruff`/`mypy`/`uv`
-  command. Never invoke them without activating first.
+- **Use the repository's own environment.** When the repository has a project virtualenv (`.venv/`), activate it
+  (`source .venv/bin/activate`) before any `python`/`pytest`/`ruff`/`mypy`/`uv` command. A repository without one
+  is normal (a non-Python repo, or one whose tools are on PATH) — never a failure.
 - **Stay in scope.** Validate the feature's new/modified files via the feature tier;
   a pre-existing unrelated failure inside that selection must be reported as such — do not blame it on this feature.
 
@@ -53,9 +53,9 @@ also edits can mask the very defects it should surface.
      git diff --name-only "$(git merge-base HEAD origin/<base_branch>)"...HEAD
      git diff --name-only            # uncommitted, if any
      ```
-2. **Activate the environment.**
+2. **Activate the environment, when there is one.**
    ```bash
-   source .venv/bin/activate
+   if [ -f .venv/bin/activate ]; then source .venv/bin/activate; fi
    ```
 3. **Run the test suite** (capture exit codes — they decide the verdict):
    If `test_command` in `sdd/config.json` is set (non-blank), do NOT run `select_tests`: run that command once from the repo root, record the command, exit code and output tail, and let a non-zero exit decide `verdict: FAIL`. When it is null, run the feature tier below. A run that executed zero tests is reported "⚠️ not run — no tests selected", never ✅.
@@ -78,15 +78,16 @@ also edits can mask the very defects it should surface.
    **Note**: Non-pytest runners in the plan (vitest, cargo, parrot-e2e) gate on **any** red 
    in v1 (no green cache, no baseline classification). Cache and baseline are explicitly 
    pytest-scoped.
-4. **Lint and type-check the changed files only:**
+4. **Lint and type-check the changed files only, with the tools the repository configures:**
    ```bash
-   ruff check <changed-files>
+   ruff check <changed-files>      # only if the repo configures ruff (ruff.toml, .ruff.toml, [tool.ruff])
    mypy <changed-files>            # only if a mypy config exists in the repo
    ```
+   A repository that configures neither gets no lint step; record "lint: not configured" in the report.
 5. **Map acceptance criteria to tests.** For each AC in the spec, find at
    least one covering test. Flag any AC with no test as a coverage gap.
 6. **Decide the verdict.** `PASS` only if: the feature's targeted tests all
-   pass AND `ruff` returns 0 AND `mypy` returns 0 (when configured) AND no
+   pass AND `ruff` returns 0 (when configured) AND `mypy` returns 0 (when configured) AND no
    acceptance criterion is left without a test. Otherwise `FAIL`.
 7. **Keep E2E separate.** The outer dev-loop runs `parrot e2e run --plan`
    after final QA/review edits and deterministic rechecks. Do not add E2E to

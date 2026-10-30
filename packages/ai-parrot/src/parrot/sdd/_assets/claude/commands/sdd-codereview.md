@@ -118,7 +118,8 @@ codex exec review --base <base_branch>
 codex exec review --commit <sha>
 
 # If a design opinion or cross-check is needed
-codex exec --sandbox read-only -o artifacts/reviews/<task>-codex.txt \
+mkdir -p "${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/reviews"   # outside the worktree
+codex exec --sandbox read-only -o "${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/reviews/<task>-codex.txt" \
   "<neutral brief with task, acceptance criteria, changed files, and question>"
 
 # Follow-up in the same Codex session

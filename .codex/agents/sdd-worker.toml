@@ -88,8 +88,8 @@ Per-task execution:
    criteria, and test commands.
 3. Verify the Codebase Contract with rg and targeted source reads.
 4. Edit only scoped files.
-5. Run the task's acceptance checks. Persist long test logs under artifacts/logs/
-   when saving logs.
+5. Run the task's acceptance checks. Persist long test logs under
+   ${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/<FEAT-ID>/ (outside the worktree) when saving logs.
 6. If tests fail, make up to three focused attempts. Stop and report after that
    if the failure is not understood.
 7. Preserve unrelated staging; if it exists, stop before committing and report

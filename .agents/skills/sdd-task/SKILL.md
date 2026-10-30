@@ -105,6 +105,9 @@ Place `## Validation Commands` immediately after `## Acceptance Criteria`.
 Use one backticked pytest command per bullet, targeting test files or node IDs;
 never bare pytest or directory-wide test operands. Set new index headers to
 `"validation_contract": "required"` so missing or broad commands fail validation.
+When `sdd/config.json` sets `test_command` (tests are not pytest: `npm test`, `cargo test`, ...), each bullet is
+the narrowest command of the repository's own runner for the task's tests; `check_task_graph` then reports
+`non-pytest-validation-command` as a warning that may stay unresolved. Without `test_command` it is an error.
 
 When `sdd/config.json` sets `test_command`, skip caching (and continue past a missing Validation Contract section); `cache_test_contract` itself stays strict and, when the `test_scope` kernel cannot be loaded, exits non-zero with a one-line stderr message.
 

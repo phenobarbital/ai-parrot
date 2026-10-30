@@ -239,7 +239,9 @@ parrot sdd uninstall --dry-run
   `parrot-ledger` git hooks; `parrot self doctor --sdd` checks both.
 - `sdd/config.json` fields: `base_branch` (default `dev`), `staging_branch`, `hotfix_base` (default `main`),
   `issue_tracker` (`jira` | `none`), `jira_host`, `reviewer` (`codex` | `none`), `test_command`, `projects`.
-- `test_command`: when set (non-blank), `cache_test_contract` in `/sdd-task` and `select_tests` / `test_report`
+- `test_command`: required for a repository whose tests are not pytest. When set (non-blank), each task's
+  `## Validation Commands` may use the repository's own runner (`check_task_graph` only warns about a non-pytest
+  command instead of rejecting it), `cache_test_contract` in `/sdd-task` and `select_tests` / `test_report`
   in `/sdd-done` are skipped and the command runs once from the repo root; a non-zero exit blocks the merge and
   a run that executed zero tests is reported as "not run", never as passing. When null, the ai-parrot selection
   steps apply and, if the FEAT-699 kernel cannot be loaded or the planned test runner (e.g. `pytest`) is not

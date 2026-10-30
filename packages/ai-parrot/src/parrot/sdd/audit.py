@@ -18,6 +18,8 @@ from pathlib import Path
 KINDS: tuple[str, ...] = (
     "repo-script", "venv-path", "uv-run", "external-tool", "posix-shell", "monorepo-path",
     "org-data", "claude-md-ref", "branch-literal",            # C11a — publication safety
+    # rev 0.8 C29 — foreign-repo breakage found by the 2026-10-30 end-to-end review
+    "bare-python", "worktree-artifact", "jira-org-default", "unshipped-command", "nonexistent-cli",
 )
 EXTERNAL_TOOLS: tuple[str, ...] = ("jq", "gh", "tmux", "codex", "git-lfs", "agy", "black", "pylint")
 #: Placeholders shipped files MUST use instead of real organisation data (TASK-4089 rewrites to these).
@@ -63,6 +65,27 @@ POSIX_SHELL_RE = re.compile(
     r"|^#!\s*/(?:usr/)?(?:bin/env\s+)?(?:ba|z)?sh\b"
 )
 MONOREPO_PATH_RE = re.compile(r"\bpackages/ai-parrot\w*|\.claude/worktrees/")
+# bare-python: `python` (never `python3`) run as a command — many hosts ship no `python` (Ubuntu, Debian, macOS).
+# `.venv/bin/python`, `sys.executable`-style names and prose ("Python", "python files") never match.
+BARE_PYTHON_RE = re.compile(r"(?<![\w/.$-])python(?![\w.])(?=\s+(?:-|<<))")
+# worktree-artifact: a file the workflow writes inside the feature worktree; an untracked one makes
+# `git worktree remove` refuse in a repo that does not ignore it. Use ${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}.
+WORKTREE_ARTIFACT_RE = re.compile(r"(?<![\w/-])artifacts/(?:logs|reviews)/")
+# jira-org-default: the ai-parrot organisation's Jira project, component and custom-field ids shipped as defaults.
+JIRA_ORG_DEFAULT_RE = re.compile(r"\bNAV\b|\bNav-AI\b|\bcustomfield_100(?:21|22|35)\b|(?<![\w.])100(?:21|22|35)(?![\w.])")
+#: Host built-ins and commands other parrot installers write; any other backticked `/name` must be a shipped
+#: `/sdd-*` command (the asset globs ship every `sdd-*` except `/sdd-insight`, rev 0.5 C22).
+HOST_COMMANDS: tuple[str, ...] = (
+    "agent", "agents", "clear", "compact", "config", "copy", "help", "init", "mcp", "model", "parrotwiki",
+    "permissions", "reload-plugins", "review", "security-review", "skills", "subagents", "tmp",
+)
+UNSHIPPED_COMMAND_RE = re.compile(
+    r"(?<![\w`])`/(?!(?:sdd-(?!insight\b)[a-z0-9-]*|sdd-|" + "|".join(map(re.escape, HOST_COMMANDS)) + r")(?=[\s`]))"
+    r"(?P<cmd>[a-z][a-z0-9-]*)(?=[\s`])"
+)
+#: Commands the assets tell an agent to run that exist nowhere (`parrot jiratoolkit` has only auth/status/logout).
+NONEXISTENT_CLIS: tuple[str, ...] = ("jiratoolkit",)
+NONEXISTENT_CLI_RE = re.compile(r"(?<![\w/.])(?:" + "|".join(map(re.escape, NONEXISTENT_CLIS)) + r")(?![\w.])")
 # The three C11a kinds are FIXED above; `org-data` is the union of ORG_HOST_RE and TICKET_KEY_RE (one finding per line).
 _ORG_DATA_RE = re.compile("|".join((ORG_HOST_RE.pattern, TICKET_KEY_RE.pattern)))
 _KIND_PATTERNS: dict[str, re.Pattern[str]] = {
@@ -75,6 +98,11 @@ _KIND_PATTERNS: dict[str, re.Pattern[str]] = {
     "org-data": _ORG_DATA_RE,
     "claude-md-ref": CLAUDE_MD_RE,
     "branch-literal": BRANCH_LITERAL_RE,
+    "bare-python": BARE_PYTHON_RE,
+    "worktree-artifact": WORKTREE_ARTIFACT_RE,
+    "jira-org-default": JIRA_ORG_DEFAULT_RE,
+    "unshipped-command": UNSHIPPED_COMMAND_RE,
+    "nonexistent-cli": NONEXISTENT_CLI_RE,
 }
 
 

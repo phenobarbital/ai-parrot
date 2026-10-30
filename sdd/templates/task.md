@@ -165,7 +165,7 @@ safety net against shipping an unverified packet:
 ```bash
 sha256sum pkg/__init__.py
 # or, without coreutils:
-python -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" pkg/__init__.py
+python3 -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" pkg/__init__.py
 ```
 
 A `create` target MUST have a block tagged with `path=<target>`; that block
@@ -267,7 +267,7 @@ anchor unique` instead of a bare one-line anchor.
 
 - [ ] Implementation complete per scope
 - [ ] All tests pass: `pytest <test_path> -v`
-- [ ] No linting errors: `ruff check parrot/<path>`
+- [ ] No linting errors from the linters the repository configures (e.g. `ruff check <path>` when it configures ruff)
 - [ ] Imports work: `from parrot.<module> import <Component>`
 - [ ] Criterion N
 
