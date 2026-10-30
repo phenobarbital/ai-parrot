@@ -83,14 +83,14 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: creates parrot/auth/principal.py (Principal, PrincipalResolver, resolve_principal) imported by TASK-4940/4944/4952/4955/4956/4959; touches only principal.py + auth/__init__.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4937-principal-model-resolver.md"
     },
@@ -101,14 +101,14 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: creates parrot/auth/oauth2/events.py (ConnectionEvent, ChannelNotifierRegistry, ConnectionEventPublisher) consumed by TASK-4940/4953/4954; no shared file",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4938-connection-events-notifier-registry.md"
     },
@@ -119,14 +119,14 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: creates parrot/auth/oauth2/descriptor.py (models, PostExchangeHookRegistry, load_provider_descriptors); TASK-4943 extends the same file",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4939-oauth2-provider-descriptor-models.md"
     },
@@ -137,7 +137,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -147,7 +147,7 @@
       "parallel": true,
       "parallelism_notes": "imports Principal/resolve_principal from TASK-4937 (parrot/auth/principal.py) and ConnectionEvent/ConnectionEventPublisher from TASK-4938 (parrot/auth/oauth2/events.py); first of two serialized edits to oauth2_base.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4940-oauth2-base-principal-binding-durable-first.md"
     },
@@ -158,7 +158,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -167,7 +167,7 @@
       "parallel": true,
       "parallelism_notes": "second serialized edit of oauth2_base.py after TASK-4940 (uses its principal_lock, _persist_token, CredentialStore, InvalidGrantError/RefreshTransientError and _oauth2_fakes.py); also owns conf.py keys",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4941-oauth2-base-legacy-refresh-revoke.md"
     },
@@ -178,7 +178,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -187,7 +187,7 @@
       "parallel": true,
       "parallelism_notes": "raises InvalidGrantError/RefreshTransientError defined in TASK-4940 and relies on TASK-4941's _refresh_tokens classification (oauth2_base.py); reuses _oauth2_fakes.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4942-o365-typed-refresh-errors.md"
     },
@@ -198,7 +198,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -208,7 +208,7 @@
       "parallel": true,
       "parallelism_notes": "extends descriptor.py created by TASK-4939 (same file); subclasses AbstractOAuth2Manager and uses InvalidGrantError/RefreshTransientError/_post_exchange/_revoke_remote from TASK-4940/4941 (oauth2_base.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4943-standard-oauth2-manager-descriptor-provider.md"
     },
@@ -219,7 +219,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -229,7 +229,7 @@
       "parallel": true,
       "parallelism_notes": "imports resolve_principal/PrincipalResolver from TASK-4937 (parrot/auth/principal.py); calls create_authorization_url(..., principal=) added by TASK-4940 (oauth2_base.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4944-auth-required-payload-principal-resolver.md"
     },
@@ -240,7 +240,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -249,7 +249,7 @@
       "parallel": true,
       "parallelism_notes": "calls to_payload() on AuthorizationRequired/CredentialRequired created by TASK-4944 (auth/credentials.py, auth/exceptions.py); first edit of oauth2/models.py (TASK-4946/4949 follow)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4945-toolmanager-agenttalk-unified-auth-signal.md"
     },
@@ -260,7 +260,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -269,7 +269,7 @@
       "parallel": true,
       "parallelism_notes": "second edit of oauth2/models.py after TASK-4945 (AuthRequiredEnvelope fields); adds list_users_integrations to persistence.py, consumed by TASK-4947/4948",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4946-users-integrations-model-fields.md"
     },
@@ -280,7 +280,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -290,7 +290,7 @@
       "parallel": true,
       "parallelism_notes": "uses the TASK-4946 row fields and list_users_integrations (oauth2/models.py, persistence.py); passes principal= to every provider manager, which Jira only accepts after TASK-4954 re-bases JiraOAuthManager; CredentialPersistenceError from TASK-4940",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4947-integrations-service-channel-neutral.md"
     },
@@ -301,7 +301,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -310,7 +310,7 @@
       "parallel": true,
       "parallelism_notes": "calls list_for_principal/start_connect/status/disconnect created by TASK-4947 (service.py) and list_users_integrations from TASK-4946 (persistence.py); first edit of server manager/manager.py (TASK-4957 follows)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4948-connections-handler-hydration.md"
     },
@@ -321,7 +321,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -332,7 +332,7 @@
       "parallel": true,
       "parallelism_notes": "deletes code whose last readers go away in TASK-4947 (service.py) and TASK-4948 (user_objects.py); third edit of oauth2/models.py + persistence.py after TASK-4946; exports StandardOAuth2Manager/descriptor names from TASK-4943 and events from TASK-4938",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4949-remove-user-agent-toolkits-exports.md"
     },
@@ -343,7 +343,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -352,7 +352,7 @@
       "parallel": true,
       "parallelism_notes": "implements the CredentialStore Protocol + uses Principal created by TASK-4940/4937 (parrot/auth/oauth2_base.py); first of two serialized edits to identity_credential_sink.py (TASK-4951 follows)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4950-identity-vault-credential-store.md"
     },
@@ -363,7 +363,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -372,7 +372,7 @@
       "parallel": true,
       "parallelism_notes": "second serialized edit of identity_credential_sink.py after TASK-4950 (reuses its _raw_connection/IdentityCipher transaction path); consumed by TASK-4963 (reencrypt job)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4951-identity-vault-reseal-helper.md"
     },
@@ -383,7 +383,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -392,7 +392,7 @@
       "parallel": true,
       "parallelism_notes": "implements PrincipalResolver/Principal from TASK-4937 (parrot/auth/principal.py); new server file only",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4952-identity-principal-resolver.md"
     },
@@ -403,7 +403,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -412,7 +412,7 @@
       "parallel": true,
       "parallelism_notes": "implements ChannelNotifier over ConnectionEvent created by TASK-4938 (parrot/auth/oauth2/events.py); new integrations file only",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4953-channel-notifier-adapters.md"
     },
@@ -423,7 +423,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -433,7 +433,7 @@
       "parallel": true,
       "parallelism_notes": "subclasses StandardOAuth2Manager/uses post_exchange_hooks from TASK-4943 (oauth2/descriptor.py); call sites in integrations/manager.py switch to IdentityVaultCredentialStore from TASK-4950 (identity_credential_sink.py); first edit of integrations/manager.py (TASK-4955 follows)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4954-jira-oauth-manager-on-standard-engine.md"
     },
@@ -444,7 +444,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -455,7 +455,7 @@
       "parallel": true,
       "parallelism_notes": "second edit of integrations/manager.py after TASK-4954 (needs its credential_store kwarg); registers IdentityPrincipalResolver from TASK-4952 and the adapters from TASK-4953 (core/auth/notifiers.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4955-integrations-wiring-telegram-principal.md"
     },
@@ -466,7 +466,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -475,7 +475,7 @@
       "parallel": true,
       "parallelism_notes": "calls the re-based JiraOAuthManager API from TASK-4954 (principal= kwarg, principal-keyed validate_token/revoke) and resolve_principal from TASK-4937; touches only the two command modules",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4956-slack-msteams-jira-commands-principal.md"
     },
@@ -486,7 +486,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -498,7 +498,7 @@
       "parallel": true,
       "parallelism_notes": "second edit of server manager/manager.py after TASK-4948 (routes); calls register_descriptor_providers/load_provider_descriptors from TASK-4943/4939, IdentityPrincipalResolver from TASK-4952 and IdentityVaultCredentialStore from TASK-4950",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4957-botmanager-register-descriptor-providers.md"
     },
@@ -509,7 +509,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -519,7 +519,7 @@
       "parallel": true,
       "parallelism_notes": "switches the route only after TASK-4955 registered the notifier adapters + publisher (integrations/manager.py); second edit of oauth2_routes.py and routes.py after TASK-4947",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4958-jira-callback-generic-alias.md"
     },
@@ -530,7 +530,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -539,7 +539,7 @@
       "parallel": true,
       "parallelism_notes": "relies on principal-first OAuthCredentialResolver.resolve/get_auth_url from TASK-4944 (auth/credentials.py) and resolve_principal from TASK-4937; touches only jiratoolkit.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4959-jiratoolkit-principal-cache.md"
     },
@@ -550,14 +550,14 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: only touches the server HTTP transport (mcp/transports/http.py); TASK-4961 forwards headers into the call_tool kwarg added here",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4960-http-mcp-session-per-call-headers.md"
     },
@@ -568,7 +568,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -577,7 +577,7 @@
       "parallel": true,
       "parallelism_notes": "forwards per-call headers into HttpMCPSession.call_tool(..., headers=) added by TASK-4960 (server mcp/transports/http.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4961-mcp-delegated-principal-per-call.md"
     },
@@ -588,7 +588,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -599,7 +599,7 @@
       "parallel": true,
       "parallelism_notes": "counts keys of the _LEGACY_TOKEN_KEY_TEMPLATE layout from TASK-4941 (oauth2_base.py) and the jira:oauth layout handled by TASK-4954; docs describe the wiring finished in TASK-4955",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4962-legacy-audit-cli-and-docs.md"
     },
@@ -610,7 +610,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -620,7 +620,7 @@
       "parallel": true,
       "parallelism_notes": "drives reseal_identity_row/verify_active_only/list_credential_rows from TASK-4951 (identity_credential_sink.py) through injected callables, under AbstractOAuth2Manager.principal_lock semantics from TASK-4940/4941",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4963-identity-vault-reencrypt-job.md"
     },
@@ -631,7 +631,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -643,7 +643,7 @@
       "parallel": true,
       "parallelism_notes": "exercises the finished flow: user_agent_toolkits removal (TASK-4949), generic Jira callback (TASK-4958), principal-keyed toolkit (TASK-4959), Telegram channel commands (TASK-4955, via TASK-4958) and provider registration (TASK-4957); sole owner of tests/integration/oauth2/*",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-30T21:13:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4964-connections-e2e-isolation-matrix.md"
     }
