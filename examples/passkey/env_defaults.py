@@ -14,20 +14,20 @@ from pathlib import Path
 PORT = os.environ.get("DEMO_PORT", "5000")
 
 _DEFAULTS = {
-    # Postgres + Redis from docker-compose.yml
+    # Local dev stack: docker_postgres_1 (navigator DB, real auth.users) + docker_redis_1
     "DBHOST": "localhost",
-    "DBPORT": "55432",
-    "DBUSER": "passkey",
-    "DBPWD": "passkey",
-    "DBNAME": "passkey_demo",
-    "REDIS_AUTH_URL": "redis://localhost:56379/1",
+    "DBPORT": "5432",
+    "DBUSER": "troc_pgdata",
+    "DBPWD": "12345678",
+    "DBNAME": "navigator",
+    "REDIS_AUTH_URL": "redis://localhost:6379/10",
     "CACHE_HOST": "localhost",
-    "CACHE_PORT": "56379",
-    "CACHEDB": "2",
+    "CACHE_PORT": "6379",
+    "CACHEDB": "11",
     "REDIS_HOST": "localhost",
-    "REDIS_PORT": "56379",
-    "REDIS_DB": "1",
-    "REDIS_URL": "redis://localhost:56379/1",
+    "REDIS_PORT": "6379",
+    "REDIS_DB": "10",
+    "REDIS_URL": "redis://localhost:6379/10",
     # Isolation: no database-backed bots and an empty agents directory (the repo's own agents/ is NOT loaded).
     "ENABLE_DATABASE_BOTS": "false",
     "AGENTS_DIR": str(Path(tempfile.gettempdir()) / "parrot-passkey-demo-agents"),
