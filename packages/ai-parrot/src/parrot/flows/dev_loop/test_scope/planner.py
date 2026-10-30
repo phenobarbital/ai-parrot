@@ -111,9 +111,19 @@ def build_plan(
             )
             continue
 
+        # Declared targets are the files the task itself names in its Validation Commands, so
+        # they run under the permissive marker exactly like contract targets: the agent marker
+        # would deselect a task's own tests/integration files and pytest would exit 5
+        # (issue:8c423c5612c2). One permissive invocation per distribution keeps suite_name()
+        # keys unique; a declared copy of a contract path is dropped so the contract reason wins.
         contract_paths = {target.path for target in group if target.reason == "contract"}
-        default_targets = [target for target in group if target.path not in contract_paths]
-        contract_targets = [target for target in group if target.reason == "contract"]
+        permissive_targets = [
+            target
+            for target in group
+            if target.reason == "contract" or (target.reason == "declared" and target.path not in contract_paths)
+        ]
+        permissive_paths = {target.path for target in permissive_targets}
+        default_targets = [target for target in group if target.path not in permissive_paths]
 
         if default_targets:
             invocations.append(
@@ -126,16 +136,22 @@ def build_plan(
                     report_path="",
                 )
             )
-        if contract_targets:
+        if permissive_targets:
+            has_declared = any(target.reason == "declared" for target in permissive_targets)
             invocations.append(
                 _invocation(
                     distribution,
-                    contract_targets,
+                    permissive_targets,
                     worktree=worktree,
                     policy=policy,
-                    marker_expression=marker_expression_for(contract_targets, contract=contract, policy=policy),
+                    marker_expression=(
+                        OVERRIDE_MARKER_EXPRESSION
+                        if has_declared
+                        else marker_expression_for(permissive_targets, contract=contract, policy=policy)
+                    ),
                 )
             )
+        if contract_paths:
             markers = _contract_markers(contract)
             if markers:
                 tests_root = "tests" if distribution == "root" else f"packages/{distribution}/tests"
