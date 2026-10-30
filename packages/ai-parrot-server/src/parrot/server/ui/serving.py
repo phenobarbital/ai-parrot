@@ -13,6 +13,7 @@ Library-owned: :func:`setup_admin_ui` is called from
 same ``setup_*_routes(app)`` pattern as
 ``parrot.handlers.credentials.setup_credentials_routes``.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
