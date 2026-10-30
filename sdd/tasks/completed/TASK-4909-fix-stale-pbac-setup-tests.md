@@ -158,8 +158,15 @@ The existing six tests in `test_pbac_setup.py` are the specification; no new tes
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: claude-opus-5-5 via /sdd-fix (session ea963be2)
+**Date**: 2026-10-30
+**Notes**: Converted 4 stale async tests to sync calls of `setup_pbac`, dropped the unused `AsyncMock`
+import, reworded the `pbac.py` module docstring (line 3 only). Code commit `9b1cb1be2`.
+`pytest packages/ai-parrot/tests/auth/test_pbac_setup.py -q` → 6 passed; `ruff check` clean on both files.
 
-**Deviations from spec**: none
+**Deviations from spec**: `test_setup_pbac_navigator_auth_unavailable` had to be rewritten, not just
+de-awaited — the spec listed this as a non-goal, but removing `await` alone left it failing:
+it patched `builtins.__import__` to always raise (so its own `from parrot.auth import pbac` failed) and
+mocked the function under test. It now imports `pbac` first, sets `sys.modules["navigator_auth.abac.pdp"]`
+to `None`, forces `PARROT_SAAS_MODE=False`, and calls the real `setup_pbac`, asserting the
+`(None, None, None)` fail-open triple.

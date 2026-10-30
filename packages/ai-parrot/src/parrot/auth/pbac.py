@@ -1,6 +1,6 @@
 """PBAC (Policy-Based Access Control) setup and initialization for AI-Parrot.
 
-This module provides the ``setup_pbac()`` async helper that boots the full
+This module provides the synchronous ``setup_pbac()`` helper that boots the full
 PBAC stack during application startup and wires it into the aiohttp app.
 
 Typical usage in app.py::
