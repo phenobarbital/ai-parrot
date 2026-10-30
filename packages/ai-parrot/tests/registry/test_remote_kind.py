@@ -62,3 +62,27 @@ def test_remote_definition_round_trips_through_yaml(tmp_path):
     assert meta.kind == AgentKind.SQUAWK
     assert meta.endpoint == "squawk://hr:7470"
     assert meta.contract_categories == ["hr.reports"]
+
+
+async def test_remote_entry_is_pbac_checked_before_the_remote_refusal(tmp_path):
+    """A denied caller gets AgentAccessDenied; an allowed one gets the typed refusal without the endpoint."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    pytest.importorskip("navigator_auth.abac.policies.resources")
+    from parrot.auth.agent_guard import AgentAccessDenied
+
+    reg = AgentRegistry(agents_dir=tmp_path)
+    reg.register_remote(_cfg())
+    evaluator = MagicMock()
+    reg._evaluator = evaluator
+    eval_ctx = MagicMock()
+    eval_ctx.username = "user-42"
+    with patch("parrot.auth.agent_guard._build_eval_context_from_request", new=AsyncMock(return_value=eval_ctx)):
+        evaluator.check_access.return_value = MagicMock(allowed=False, matched_policy="deny", reason="no")
+        with pytest.raises(AgentAccessDenied):
+            await reg.get_instance("hr", request=MagicMock())
+
+        evaluator.check_access.return_value = MagicMock(allowed=True)
+        with pytest.raises(RemoteAgentNotInstantiable) as exc_info:
+            await reg.get_instance("hr", request=MagicMock())
+    assert "squawk://" not in str(exc_info.value)

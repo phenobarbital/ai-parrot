@@ -110,7 +110,7 @@ class BotMetadata:
         """
         if self.kind != AgentKind.LOCAL:
             raise RemoteAgentNotInstantiable(
-                f"{self.name} is a {self.kind.value} agent at {self.endpoint}; use the protocol client"
+                f"{self.name} is a {self.kind.value} agent; use the protocol client"
             )
         # Singleton path
         if self.singleton and self._instance is not None:
@@ -724,9 +724,10 @@ class AgentRegistry:
 
         metadata = self._registered_agents[name]
         if metadata.kind != AgentKind.LOCAL:
-            raise RemoteAgentNotInstantiable(
-                f"{name} is a {metadata.kind.value} agent at {metadata.endpoint}; use the protocol client"
-            )
+            # Authorize first: an unauthorized caller must get AgentAccessDenied, not
+            # learn that the entry exists and is remote.
+            await enforce_agent_access(self._evaluator, name, request)
+            raise RemoteAgentNotInstantiable(f"{name} is a {metadata.kind.value} agent; use the protocol client")
         try:
             instance = await metadata.get_instance(**kwargs)
             self.logger.debug(f"Retrieved instance for bot: {name}")
@@ -896,7 +897,7 @@ class AgentRegistry:
         """
         if config.kind != AgentKind.LOCAL:
             raise RemoteAgentNotInstantiable(
-                f"{config.name} is a {config.kind.value} agent at {config.endpoint}; use the protocol client"
+                f"{config.name} is a {config.kind.value} agent; use the protocol client"
             )
         # Import module and class dynamically
         try:

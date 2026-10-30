@@ -913,6 +913,26 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
         except Exception as exc:
             return self.error(response={"message": f"Failed to write YAML: {exc}"}, status=500)
 
+        from ..registry.registry import AgentKind
+
+        if config.kind != AgentKind.LOCAL:
+            # Remote (a2a / squawk) entries have no factory and are never instantiated
+            # locally: register the protocol endpoint only; BotManager cannot host them.
+            try:
+                registry.register_remote(config)
+            except Exception as exc:
+                self.logger.warning(f"YAML written but remote registration failed: {exc}")
+            return self.json_response(
+                {
+                    "message": f"Remote agent '{config.name}' registered",
+                    "name": config.name,
+                    "kind": config.kind.value,
+                    "file_path": str(file_path),
+                    "source": "registry",
+                },
+                status=201,
+            )
+
         # Register into AgentRegistry runtime
         try:
             factory = registry.create_agent_factory(config)
