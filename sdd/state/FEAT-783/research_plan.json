@@ -1,0 +1,78 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Source is a design brainstorm with a recommended option (C), an explicit 'Does NOT exist' list, an impact table naming ~13 concrete files, and a 4-part 'Research directives' section. Verbs are additive ('extend', 'new', 'reuse'), not failure verbs. The job is to confirm/refute each existence claim against real code and to find the patterns the new usage plane must follow -> enrichment.",
+  "queries": [
+    {"id":"Q001","intent":"Orient: where and how does AbstractClient extract provider token usage today, and is there a normalised Usage object.","type":"wiki_query","priority":0,"params":{"question":"AbstractClient token usage input_tokens output_tokens usage extraction"}},
+    {"id":"Q002","intent":"Orient: the sdd_coder execution lifecycle between coder_begin_execution and coder_end_execution.","type":"wiki_query","priority":0,"params":{"question":"sdd_coder engine begin_execution end_execution attempt_uid execution_id lifecycle"}},
+    {"id":"Q003","intent":"Orient: sdd_coder/telemetry.py - an existing telemetry surface the brainstorm did not mention.","type":"wiki_query","priority":0,"params":{"question":"sdd_coder telemetry module events emitted"}},
+    {"id":"Q004","intent":"Orient: clients/budget.py and budget_scope.py - possible existing token accounting the plane could reuse.","type":"wiki_query","priority":0,"params":{"question":"clients token budget budget_scope cost accounting"}},
+    {"id":"Q005","intent":"Orient: ledger index schema, plane tables and migration pattern.","type":"wiki_query","priority":0,"params":{"question":"ledger index sqlite schema tables migration reducer plane"}},
+    {"id":"Q006","intent":"Orient: ConversationMemory report_usage callback - implemented or design only.","type":"wiki_query","priority":0,"params":{"question":"conversation memory compaction report_usage callback token counting"}},
+    {"id":"Q007","intent":"Orient: existing OpenTelemetry/observability subsystem in parrot (FEAT-724/725).","type":"wiki_query","priority":0,"params":{"question":"observability opentelemetry tracing metrics exporter setup"}},
+    {"id":"Q008","intent":"Orient: how codex is spawned as a coder backend and whether --json is parsed.","type":"wiki_query","priority":0,"params":{"question":"codex dispatcher codex exec json backend subprocess"}},
+    {"id":"Q009","intent":"Orient: wikitoolkit CLI command group structure, to place a new 'usage' group.","type":"wiki_query","priority":0,"params":{"question":"wikitoolkit cli command groups ledger subcommands registration"}},
+    {"id":"Q010","intent":"Full API outline of the top ledger events page returned by Q005.","type":"wiki_page","priority":0,"params":{"page_id":"<top result of Q005>"}},
+    {"id":"Q011","intent":"Follow typed edges from the sdd_coder engine page to find its usage/telemetry neighbours.","type":"wiki_related","priority":0,"params":{"page_id":"<top result of Q002>"}},
+    {"id":"Q012","intent":"Follow typed edges from the AbstractClient page to find who consumes its usage output.","type":"wiki_related","priority":0,"params":{"page_id":"<top result of Q001>"}},
+
+    {"id":"Q013","intent":"Read the LedgerEventKind enum and LedgerEvent envelope verbatim - the exact extension point for usage.* kinds.","type":"read","priority":1,"params":{"path":"packages/ai-parrot/src/parrot/knowledge/wiki/ledger/events.py","lines":null}},
+    {"id":"Q014","intent":"Read the ledger index: table DDL, reducers, migration/versioning pattern a usage plane must follow.","type":"read","priority":1,"params":{"path":"packages/ai-parrot/src/parrot/knowledge/wiki/ledger/index.py","lines":null}},
+    {"id":"Q015","intent":"Read sdd_coder/telemetry.py in full - confirm or refute that a telemetry sink already exists.","type":"read","priority":1,"params":{"path":"packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/telemetry.py","lines":null}},
+    {"id":"Q016","intent":"Locate every place a provider usage payload is parsed in the client layer.","type":"grep","priority":1,"params":{"pattern":"input_tokens|output_tokens|usageMetadata|cache_read|cache_creation|prompt_tokens","path":"packages/ai-parrot/src/parrot/clients/","case_sensitive":false,"max_results":60}},
+    {"id":"Q017","intent":"Find the execution boundary methods in the sdd_coder engine to see what is available to accumulate per execution_id.","type":"grep","priority":1,"params":{"pattern":"def (begin_execution|end_execution|record_|_usage)|execution_id","path":"packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py","case_sensitive":true,"max_results":60}},
+    {"id":"Q018","intent":"Confirm whether a normalised Usage/TokenUsage model already exists anywhere in parrot.","type":"grep","priority":1,"params":{"pattern":"class (Token)?Usage|total_tokens|cost_usd|usd","path":"packages/ai-parrot/src/parrot/","case_sensitive":false,"max_results":60}},
+    {"id":"Q019","intent":"Read clients/budget.py - existing token budget accounting that the usage plane may subscribe to instead of duplicating.","type":"read","priority":1,"params":{"path":"packages/ai-parrot/src/parrot/clients/budget.py","lines":null}},
+
+    {"id":"Q020","intent":"Read coder_feedback.py - the per-execution plane whose key and retry-dedup rule the usage plane is supposed to copy.","type":"read","priority":2,"params":{"path":"packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_feedback.py","lines":null}},
+    {"id":"Q021","intent":"Read LedgerService.from_root / export_snapshot / compact / audit signatures to see what a new plane inherits for free.","type":"read","priority":2,"params":{"path":"packages/ai-parrot/src/parrot/knowledge/wiki/ledger/service.py","lines":null}},
+    {"id":"Q022","intent":"Read the shared append-only log to confirm the concurrency guarantees claimed for multi-worktree writers.","type":"read","priority":2,"params":{"path":"packages/ai-parrot/src/parrot/knowledge/wiki/ledger/shared_log.py","lines":null}},
+    {"id":"Q023","intent":"Find any existing OTel wiring in the repo (env vars, exporters, collector config).","type":"grep","priority":2,"params":{"pattern":"OTEL_|opentelemetry|CLAUDE_CODE_ENABLE_TELEMETRY|otlp","path":".","case_sensitive":false,"max_results":60}},
+    {"id":"Q024","intent":"Read the Claude Code settings for this repo: which hooks are registered and whether telemetry env vars are set.","type":"read","priority":2,"params":{"path":".claude/settings.json","lines":null}},
+    {"id":"Q025","intent":"List the hook scripts actually present, to size the new SessionStart/SubagentStop hooks.","type":"tree","priority":2,"params":{"path":".claude/hooks","max_depth":2}},
+    {"id":"Q026","intent":"Read the sdd state schema fields that identify the current task/attempt, so a hook can resolve cwd -> feat_id -> task_id deterministically.","type":"read","priority":2,"params":{"path":"sdd/templates/state.schema.json","lines":null}},
+    {"id":"Q027","intent":"Read the sdd_coder toolkit to see the exact MCP tool surface coder_end_execution exposes today.","type":"read","priority":2,"params":{"path":"packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/toolkit.py","lines":null}},
+    {"id":"Q028","intent":"Confirm whether report_usage exists in the memory/compaction subsystem or is design-only.","type":"grep","priority":2,"params":{"pattern":"report_usage|ContextBudget|token_counter","path":"packages/ai-parrot/src/parrot/memory/","case_sensitive":false,"max_results":40}},
+
+    {"id":"Q029","intent":"Locate how codex is invoked as a coder backend and whether --json / the event stream is parsed.","type":"grep","priority":3,"params":{"pattern":"codex","path":"packages/ai-parrot/src/parrot/flows/dev_loop/","case_sensitive":false,"max_results":60}},
+    {"id":"Q030","intent":"Read the codex dispatcher located by Q029 to see stdout handling and whether usage events are available.","type":"read","priority":3,"params":{"path":"<path from Q029>","lines":null}},
+    {"id":"Q031","intent":"Read the local Codex config to determine whether an [otel] block / telemetry export is configured or supported.","type":"read","priority":3,"params":{"path":"~/.codex/config.toml","lines":null}},
+    {"id":"Q032","intent":"Read the sdd_coder roster to see the seat/model vocabulary the usage plane must key on (seat, backend, model).","type":"read","priority":3,"params":{"path":"packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/roster.py","lines":null}},
+    {"id":"Q033","intent":"Find the wikitoolkit CLI group registration site for a future 'usage' group.","type":"grep","priority":3,"params":{"pattern":"add_parser|ledger_parser|subparsers","path":"packages/ai-parrot/src/parrot/knowledge/wiki/cli.py","case_sensitive":true,"max_results":50}},
+    {"id":"Q034","intent":"Check whether the local MCP CLI exposes ledger targets that a usage target would sit beside.","type":"grep","priority":3,"params":{"pattern":"ledger_|def .*tool|TOOLS","path":"packages/ai-parrot/src/parrot/mcp/","case_sensitive":false,"max_results":40}},
+
+    {"id":"Q035","intent":"Recent history of the ledger package - the migration/compaction pattern in motion and any in-flight work that would collide.","type":"git_log","priority":2,"params":{"path":"packages/ai-parrot/src/parrot/knowledge/wiki/ledger/","since":"90.days.ago","max_results":30}},
+    {"id":"Q036","intent":"Recent history of sdd_coder - how fast the execution boundary is changing under a new ingestor.","type":"git_log","priority":2,"params":{"path":"packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/","since":"90.days.ago","max_results":30}},
+    {"id":"Q037","intent":"Recent history of the client layer - whether usage extraction was touched recently.","type":"git_log","priority":3,"params":{"path":"packages/ai-parrot/src/parrot/clients/","since":"90.days.ago","max_results":25}},
+    {"id":"Q038","intent":"Recent history of .claude/hooks and settings - the hook surface's stability.","type":"git_log","priority":3,"params":{"path":".claude/","since":"60.days.ago","max_results":25}},
+    {"id":"Q039","intent":"Any prior attempt at usage/cost accounting in this repo, merged or abandoned.","type":"git_log","priority":4,"params":{"path":".","since":"180.days.ago","grep":"usage|token|cost|telemetry|otel","max_results":30}},
+
+    {"id":"Q040","intent":"Find existing tests for the ledger planes - the test pattern a usage plane must match.","type":"glob","priority":4,"params":{"pattern":"**/test_ledger*.py","max_results":30}},
+    {"id":"Q041","intent":"Confirm the correlation key vocabulary actually used across the coder planes (task_id, attempt_uid, execution_id, backend, model).","type":"grep","priority":4,"params":{"pattern":"attempt_uid","path":"packages/ai-parrot/src/parrot/","case_sensitive":true,"max_results":50}},
+    {"id":"Q042","intent":"Read the ledger store to see how a plane persists and queries rows.","type":"read","priority":4,"params":{"path":"packages/ai-parrot/src/parrot/knowledge/wiki/ledger/store.py","lines":null}}
+  ],
+  "expected_findings": [
+    "Whether a normalised Usage/token object already exists in AbstractClient, and which of the four counters survive",
+    "The exact LedgerEventKind enum and LedgerEvent envelope, plus the index DDL/migration pattern a usage plane must follow",
+    "Whether sdd_coder/telemetry.py and clients/budget.py already provide a usage sink the brainstorm missed",
+    "The real execution lifecycle around coder_begin_execution/coder_end_execution and where a client instance is reachable per execution_id",
+    "The dedup rule coder_feedback.py uses, confirmed verbatim, as the model for usage idempotency",
+    "What the SDD plugin's hook surface looks like today and what a SessionStart/SubagentStop hook would cost",
+    "Whether parrot already has an OTel/observability subsystem that the collector lane could reuse",
+    "How codex is spawned today and whether its JSON event stream is already parsed",
+    "Which of the brainstorm's 'Does NOT exist' claims are true, and which are already partly built"
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": ["LedgerEventKind","LedgerLog","LedgerService","coder_feedback.py","coder_end_execution","coder_begin_execution","AbstractClient","sdd/state/<FEAT-ID>/state.json","prices.yaml","wikitoolkit usage","OTEL_RESOURCE_ATTRIBUTES","claude_code.api_request","SubagentStop","codex exec --json","Grafana"],
+      "verbs": ["extend","new","reuse","record","bind","resolve","price"],
+      "polarity": "additive"
+    },
+    "estimated_budget_use": {"wiki_queries": 12, "files_read": 16, "grep_calls": 12, "git_calls": 5}
+  },
+  "external_probes": [
+    {"id":"X1","intent":"Pin the Claude Code and Codex CLI versions against the feature gates named in the source (agent_id >= 2.1.310, raw bodies >= 2.1.274).","command":"claude --version; codex --version","result":"Claude Code 2.1.314; codex-cli 0.164.0 (captured 2026-10-30, pre-plan)"},
+    {"id":"X2","intent":"Determine whether the Codex CLI exposes OTel export, a session id, and a --json usage event, from its own help/config surface.","command":"codex --help; codex exec --help"},
+    {"id":"X3","intent":"Verify, against official Claude Code documentation, the three attribution facts the source marks 'implied, not stated': parent session.id on sub-agent api_request events, agent.name population, and query_source=auxiliary coverage.","agent":"claude-code-guide"}
+  ]
+}

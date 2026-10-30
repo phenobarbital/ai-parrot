@@ -1,0 +1,189 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-783",
+  "feature_slug": "unified-usage",
+  "started_at": "2026-10-30T22:29:05Z",
+  "updated_at": "2026-10-31T00:22:00Z",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "sdd/proposals/unified-usage.proposal.md",
+    "raw_path": "sdd/state/FEAT-783/source.md",
+    "source_commit": "282d95d0c6",
+    "fetched_at": "2026-10-30T22:29:05Z",
+    "summary_oneline": "Unified usage & cost metrics per SDD spec: one correlation key and one ledger-owned usage plane across the dev-loop, Claude Code and Codex seats"
+  },
+  "mode": "auto",
+  "phase": "committed",
+  "wiki_available": true,
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-10-30T22:29:05Z",
+      "completed_at": "2026-10-30T22:29:05Z",
+      "duration_seconds": 0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-10-30T22:30:00Z",
+      "completed_at": "2026-10-30T22:34:00Z",
+      "queries_total": 42,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-783/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-10-30T22:36:00Z",
+      "parallel": {
+        "enabled": true,
+        "fallback_reason": null,
+        "lanes": {
+          "codebase": {
+            "status": "completed",
+            "started_at": "2026-10-30T22:36:00Z",
+            "completed_at": "2026-10-30T23:12:00Z",
+            "duration_seconds": null,
+            "findings_count": 17,
+            "queries_executed": 25,
+            "queries_skipped": 0,
+            "files_read": 22,
+            "grep_calls": 18,
+            "git_calls": 0,
+            "error": null
+          },
+          "git": {
+            "status": "completed",
+            "started_at": "2026-10-30T22:36:00Z",
+            "completed_at": "2026-10-30T23:12:00Z",
+            "duration_seconds": null,
+            "findings_count": 5,
+            "queries_executed": 5,
+            "queries_skipped": 0,
+            "files_read": 4,
+            "grep_calls": 0,
+            "git_calls": 10,
+            "error": null
+          },
+          "wiki": {
+            "status": "completed",
+            "started_at": "2026-10-30T22:36:00Z",
+            "completed_at": "2026-10-30T23:12:00Z",
+            "duration_seconds": null,
+            "findings_count": 11,
+            "queries_executed": 12,
+            "queries_skipped": 0,
+            "files_read": 6,
+            "grep_calls": 5,
+            "git_calls": 0,
+            "error": null
+          }
+        },
+        "merge": {
+          "started_at": "2026-10-30T23:14:00Z",
+          "completed_at": "2026-10-30T23:14:00Z",
+          "input_count": 36,
+          "output_count": 31,
+          "merged_count": 5,
+          "audit_dir": "findings/.audit"
+        },
+        "external_probes": {
+          "status": "completed",
+          "findings_count": 3,
+          "probes": [
+            {
+              "id": "X1",
+              "result": "Claude Code 2.1.314; codex-cli 0.164.0"
+            },
+            {
+              "id": "X2",
+              "result": "codex exec --json confirmed; codex_otel crate with gen_ai.usage.* + codex.turn.cost_microusd"
+            },
+            {
+              "id": "X3",
+              "result": "official docs read; parent session.id on sub-agent api_request NOT documented"
+            }
+          ]
+        }
+      },
+      "completed_at": "2026-10-30T23:14:00Z",
+      "queries_executed": 42,
+      "queries_skipped": 0,
+      "depth_reached": 2,
+      "files_read": 32,
+      "grep_calls": 23,
+      "git_calls": 10,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-10-30T23:20:00Z",
+      "completed_at": "2026-10-30T23:34:00Z",
+      "duration_seconds": 840,
+      "synthesis_path": "sdd/state/FEAT-783/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 30,
+      "claims_high_conf": 23,
+      "claims_medium_conf": 7,
+      "claims_low_conf": 0,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1,
+      "citation_probe": {
+        "probes_run": 2,
+        "checks": 45,
+        "stale": 0,
+        "missing": 0,
+        "manual_reverifications": [
+          "C12 price tiers",
+          "C18 state.schema.json",
+          "C20 .claude/settings.json",
+          "C6/C7/C11 dataset recount"
+        ],
+        "contradictions_resolved": [
+          {
+            "against": "FW-007",
+            "for": "FC-014",
+            "claim": "C27"
+          }
+        ]
+      }
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-10-31T00:05:00Z",
+      "completed_at": "2026-10-31T00:12:00Z",
+      "duration_seconds": 420,
+      "questions_total": 5,
+      "questions_answered": 5,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-10-31T00:15:00Z",
+      "completed_at": "2026-10-31T00:22:00Z",
+      "duration_seconds": 420,
+      "proposal_path": "sdd/proposals/unified-usage.proposal.md",
+      "commit_sha": "997c16ce92"
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 32,
+    "grep_calls": 23,
+    "git_calls": 10,
+    "depth_reached": 2,
+    "wall_seconds": 2700
+  },
+  "detected_mode": "enrichment"
+}
