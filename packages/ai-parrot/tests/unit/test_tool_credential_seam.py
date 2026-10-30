@@ -12,6 +12,7 @@ import pytest
 from parrot.tools.abstract import AbstractTool, ToolResult, current_credential
 from parrot.auth.credentials import CredentialRequired
 from parrot.auth.broker import CredentialBroker
+from parrot.tools.manager import ToolManager
 
 
 # ---------------------------------------------------------------------------
@@ -42,6 +43,23 @@ class CredentialedTool(AbstractTool):
             status="success",
             result=f"got-cred:{cred}",
             metadata={"credential_received": cred is not None},
+        )
+
+
+class CredentialRequiredTool(AbstractTool):
+    """Tool that raises the broker's structured authorization signal."""
+
+    name = "device_code_tool"
+    description = "Raises CredentialRequired for testing."
+
+    async def _execute(self, **kwargs) -> ToolResult:
+        raise CredentialRequired(
+            "o365",
+            "https://dev",
+            "device_code",
+            user_code="ABCD",
+            verification_uri="https://microsoft.com/devicelogin",
+            expires_in=900,
         )
 
 
@@ -153,6 +171,25 @@ async def test_credential_required_raised_on_miss():
     assert exc.provider == "testprovider"
     assert exc.auth_url == "https://app/auth"
     assert exc.auth_kind in ("obo", "oauth2", "static_key", "mcp")
+
+
+@pytest.mark.asyncio
+async def test_toolmanager_catches_credential_required():
+    """ToolManager serializes CredentialRequired into the common ToolResult."""
+    manager = ToolManager()
+    manager.add_tool(CredentialRequiredTool())
+
+    result = await manager.execute_tool("device_code_tool", {}, return_tool_result=True)
+
+    assert isinstance(result, ToolResult)
+    assert result.success is False
+    assert result.status == "authorization_required"
+    assert result.metadata["provider"] == "o365"
+    assert result.metadata["tool_name"] == "device_code_tool"
+    assert result.metadata["auth_kind"] == "device_code"
+    assert result.metadata["user_code"] == "ABCD"
+    assert result.metadata["verification_uri"] == "https://microsoft.com/devicelogin"
+    assert result.metadata["expires_in"] == 900
 
 
 @pytest.mark.asyncio

@@ -129,6 +129,10 @@ class AuthRequiredEnvelope(BaseModel):
             provider could not generate one at exception time).
         scopes: Scopes needed by the provider.
         message: Human-readable explanation surfaced in the chat UI.
+        auth_kind: Authentication flow used by the provider.
+        user_code: Device-code flow code for the user to enter.
+        verification_uri: Device-code flow verification URL.
+        expires_in: Seconds until the device code expires.
     """
 
     type: Literal["auth_required"] = "auth_required"
@@ -137,6 +141,10 @@ class AuthRequiredEnvelope(BaseModel):
     auth_url: Optional[str] = None
     scopes: List[str] = Field(default_factory=list)
     message: str
+    auth_kind: Optional[str] = None
+    user_code: Optional[str] = None
+    verification_uri: Optional[str] = None
+    expires_in: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------
