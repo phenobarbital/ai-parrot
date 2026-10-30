@@ -6,6 +6,7 @@ Tests cover:
 - Graceful degradation when policy directory is empty.
 - Graceful degradation when navigator-auth is unavailable.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -80,9 +81,7 @@ def test_setup_pbac_empty_dir_initializes_zero_policies(empty_policies_dir: Path
 
         mock_setup.side_effect = _fake_setup
 
-        pdp, evaluator, guardian = setup_pbac(
-            app, policy_dir=str(empty_policies_dir)
-        )
+        pdp, evaluator, guardian = setup_pbac(app, policy_dir=str(empty_policies_dir))
 
     assert pdp is not None
     assert evaluator is not None
@@ -111,9 +110,7 @@ def test_setup_pbac_with_policies_loads_and_registers(sample_policies_dir: Path)
 
         mock_setup.side_effect = _fake_setup
 
-        pdp, evaluator, guardian = setup_pbac(
-            app, policy_dir=str(sample_policies_dir)
-        )
+        pdp, evaluator, guardian = setup_pbac(app, policy_dir=str(sample_policies_dir))
 
     assert pdp is not None
     assert evaluator is not None
@@ -143,9 +140,7 @@ def test_setup_pbac_cache_ttl_applied(sample_policies_dir: Path):
 
         mock_setup.side_effect = _fake_setup
 
-        _, evaluator, _ = setup_pbac(
-            app, policy_dir=str(sample_policies_dir), cache_ttl=custom_ttl
-        )
+        _, evaluator, _ = setup_pbac(app, policy_dir=str(sample_policies_dir), cache_ttl=custom_ttl)
 
     assert evaluator is not None
     assert evaluator._cache_ttl == custom_ttl
