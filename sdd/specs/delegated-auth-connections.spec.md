@@ -16,7 +16,7 @@ reuse_feature_id: FEAT-773
 **Feature ID**: FEAT-773
 **Date**: 2026-10-30
 **Author**: Jesus Lara (with Claude Fable 5.1)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 
 > **Source**: proposal `sdd/proposals/delegated-auth-connections.proposal.md` (FEAT-773, status `accepted`,
