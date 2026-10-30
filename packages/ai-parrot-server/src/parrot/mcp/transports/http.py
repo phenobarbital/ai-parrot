@@ -472,9 +472,9 @@ class HttpMCPSession:
                     if partition is None:
                         self._mcp_session_id = issued_session
                     else:
-                        self._partitions.setdefault(
-                            partition, {"session_id": None, "protocol_version": None}
-                        )["session_id"] = issued_session
+                        self._partitions.setdefault(partition, {"session_id": None, "protocol_version": None})[
+                            "session_id"
+                        ] = issued_session
 
                 content_type = response.headers.get("Content-Type", "")
                 if "text/event-stream" in content_type:
@@ -572,9 +572,7 @@ class HttpMCPSession:
         auth = (headers or {}).get("Authorization")
         return hashlib.sha256(auth.encode()).hexdigest()[:16] if auth else None
 
-    async def _ensure_partition_initialized(
-        self, partition: Optional[str], headers: Optional[Dict[str, str]]
-    ) -> None:
+    async def _ensure_partition_initialized(self, partition: Optional[str], headers: Optional[Dict[str, str]]) -> None:
         """Run the MCP handshake once per principal partition."""
         if partition is None or partition in self._partitions:
             return
@@ -593,15 +591,11 @@ class HttpMCPSession:
                     headers=headers,
                     partition=partition,
                 )
-                state = self._partitions.setdefault(
-                    partition, {"session_id": None, "protocol_version": None}
-                )
+                state = self._partitions.setdefault(partition, {"session_id": None, "protocol_version": None})
                 negotiated = (init_result or {}).get("protocolVersion")
                 if negotiated:
                     state["protocol_version"] = negotiated
-                await self._send_notification(
-                    "notifications/initialized", headers=headers, partition=partition
-                )
+                await self._send_notification("notifications/initialized", headers=headers, partition=partition)
             except Exception:
                 # Do not leave a half-initialized partition behind.
                 self._partitions.pop(partition, None)
@@ -666,9 +660,7 @@ class HttpMCPSession:
 
         return tool_objects
 
-    async def call_tool(
-        self, tool_name: str, arguments: dict, *, headers: Optional[Dict[str, str]] = None
-    ):
+    async def call_tool(self, tool_name: str, arguments: dict, *, headers: Optional[Dict[str, str]] = None):
         """Call a tool via HTTP; per-call ``headers`` apply to this request only."""
         if not self._initialized:
             raise MCPConnectionError("Session not initialized")

@@ -1,4 +1,5 @@
 """Unit tests for HttpMCPSession per-call headers and principal-partitioned sessions."""
+
 import logging
 
 import pytest
