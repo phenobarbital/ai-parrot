@@ -179,10 +179,6 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker orchestrator; seat haiku (native); orchestrator adapted legacy Slack/Teams Jira command tests (fix 9f3ea1ecf0); blueprint deviation accepted: raw id to validate_token, principal.user_id to revoke
+**Date**: 2026-10-30
+**Notes**: Implemented per task; merged, engine lint clean. Merge-tier validation: expected reds from intentional API changes in legacy web-service tests (start_connect agent_id, confirm_enable removed, persist_credential channel kwarg) owned by TASK-4958 / TASK-4964; plus pre-existing test_invalid_state_returns_400.

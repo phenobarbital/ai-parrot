@@ -290,7 +290,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -301,8 +301,9 @@
       "parallelism_notes": "uses the TASK-4946 row fields and list_users_integrations (oauth2/models.py, persistence.py); passes principal= to every provider manager, which Jira only accepts after TASK-4954 re-bases JiraOAuthManager; CredentialPersistenceError from TASK-4940",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4947-integrations-service-channel-neutral.md"
+      "completed_at": "2026-10-30T22:42:02+00:00",
+      "file": "sdd/tasks/completed/TASK-4947-integrations-service-channel-neutral.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4948",
@@ -459,7 +460,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -471,8 +472,9 @@
       "parallelism_notes": "second edit of integrations/manager.py after TASK-4954 (needs its credential_store kwarg); registers IdentityPrincipalResolver from TASK-4952 and the adapters from TASK-4953 (core/auth/notifiers.py)",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4955-integrations-wiring-telegram-principal.md"
+      "completed_at": "2026-10-30T22:42:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4955-integrations-wiring-telegram-principal.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4956",
@@ -481,7 +483,7 @@
       "feature_id": "FEAT-773",
       "feature": "delegated-auth-connections",
       "spec": "sdd/specs/delegated-auth-connections.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -491,8 +493,9 @@
       "parallelism_notes": "calls the re-based JiraOAuthManager API from TASK-4954 (principal= kwarg, principal-keyed validate_token/revoke) and resolve_principal from TASK-4937; touches only the two command modules",
       "assigned_to": null,
       "started_at": "2026-10-30T21:13:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4956-slack-msteams-jira-commands-principal.md"
+      "completed_at": "2026-10-30T22:42:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4956-slack-msteams-jira-commands-principal.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4957",
