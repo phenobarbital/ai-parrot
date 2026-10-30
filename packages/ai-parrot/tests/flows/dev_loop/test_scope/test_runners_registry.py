@@ -51,6 +51,11 @@ class FakeAdapter:
         (["pnpm", "exec", "vitest", "run"], ["vitest", "run"]),
         (["pnpm", "test"], ["vitest", "run"]),
         (["npx", "vitest"], ["vitest"]),
+        (["npm", "test"], ["vitest", "run"]),
+        (["npm", "run", "test", "tests/a.test.ts"], ["vitest", "run", "tests/a.test.ts"]),
+        (["npm", "exec", "vitest", "run"], ["vitest", "run"]),
+        (["yarn", "test"], ["vitest", "run"]),
+        (["yarn", "run", "test"], ["vitest", "run"]),
     ],
 )
 def test_normalize_launcher_argv(argv, expected):
@@ -58,9 +63,21 @@ def test_normalize_launcher_argv(argv, expected):
     assert normalize_launcher_argv(argv) == expected
 
 
+def test_registry_normalize_matches_adapter_resolution():
+    """`normalize()` yields the argv the resolved adapter actually parses (operands/is_broad)."""
+    registry = RunnerRegistry({}, {})
+    normalized = registry.normalize(["npm", "test", "--", "tests/a.test.ts"])
+    adapter = registry.adapter_for_argv(normalized)
+    assert adapter is not None and adapter.kind == "vitest"
+    assert adapter.operands(normalized) is not None
+    assert registry.normalize(normalized) == normalized
+
+
 def test_normalize_launcher_argv_respects_disabled_pnpm_test_mapping():
     """A configured non-vitest test script remains unchanged."""
     assert normalize_launcher_argv(["pnpm", "test"], pnpm_test_is_vitest=False) == ["pnpm", "test"]
+    assert normalize_launcher_argv(["npm", "test"], pnpm_test_is_vitest=False) == ["npm", "test"]
+    assert normalize_launcher_argv(["yarn", "run", "test"], pnpm_test_is_vitest=False) == ["yarn", "run", "test"]
 
 
 def test_registry_uses_injected_adapter_and_validates_configured_tiers():
