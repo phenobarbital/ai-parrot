@@ -38,10 +38,16 @@ class _FakeResolver:
             expert=expert.manifest.name,
             budget_tokens=1000,
             layers=[
-                KnowledgeLayer(layer="rules", source="r", mode=KnowledgeMode.INLINE, revision="1",
-                               content="ALWAYS cite sources"),
-                KnowledgeLayer(layer="tier1_expert", source="k", mode=KnowledgeMode.INLINE, revision="1",
-                               content="Use primary sources."),
+                KnowledgeLayer(
+                    layer="rules", source="r", mode=KnowledgeMode.INLINE, revision="1", content="ALWAYS cite sources"
+                ),
+                KnowledgeLayer(
+                    layer="tier1_expert",
+                    source="k",
+                    mode=KnowledgeMode.INLINE,
+                    revision="1",
+                    content="Use primary sources.",
+                ),
             ],
         )
 
