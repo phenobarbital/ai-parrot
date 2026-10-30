@@ -246,9 +246,8 @@ class OAuthCredentialResolver(CredentialResolver):
     async def resolve(self, channel: str, user_id: str) -> Optional[Any]:
         principal = await self._principal(channel, user_id)
         if principal is None:
-            if self._manager_accepts("get_valid_token", "channel_user_id"):
-                return None
-            return await self._manager.get_valid_token(channel, user_id)
+            # Fail closed: an unbound channel identity never reaches a manager by its raw id.
+            return None
         if self._manager_accepts("get_valid_token", "channel_user_id"):
             return await self._manager.get_valid_token(channel, principal.user_id, channel_user_id=user_id)
         return await self._manager.get_valid_token(channel, principal.user_id)
@@ -258,9 +257,6 @@ class OAuthCredentialResolver(CredentialResolver):
 
         principal = await self._principal(channel, user_id)
         if principal is None:
-            if not self._manager_accepts("create_authorization_url", "principal"):
-                url, _ = await self._manager.create_authorization_url(channel, user_id)
-                return url
             raise AuthorizationRequired(
                 tool_name="",
                 message="Link your account to the platform first (/login).",

@@ -32,10 +32,16 @@ class ConnectionsHandler(BaseView):
                 if session is None:
                     session = await get_session(self.request)
                 if session is not None:
-                    user_id = session.get("user_id") or session.get("id") or session.get("username")
+                    # Principal ids are Navigator user ids; a username/e-mail is never a principal key.
+                    user_id = session.get("user_id") or session.get("id")
             except Exception:  # noqa: BLE001
                 pass
-        return user_id
+        return str(user_id) if user_id else None
+
+    def _is_start_route(self) -> bool:
+        """True for ``/connections/{provider}/start`` (POST-only)."""
+        provider = self.request.match_info.get("provider")
+        return bool(provider) and self.request.path.rstrip("/").endswith(f"/{provider}/start")
 
     async def get(self) -> web.Response:
         """List all connections, or return one provider's connection status.
@@ -43,6 +49,8 @@ class ConnectionsHandler(BaseView):
         Returns:
             A JSON response containing serialized integration descriptors.
         """
+        if self._is_start_route():
+            return web.json_response({"error": "method not allowed"}, status=405)
         user_id = await self._get_user_id()
         if not user_id:
             return web.json_response({"error": "Authenticated user not identified."}, status=401)
@@ -59,9 +67,9 @@ class ConnectionsHandler(BaseView):
             return web.json_response({"error": "forbidden"}, status=403)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.exception("Error listing connections for user=%s", user_id)
-            return web.json_response({"error": str(exc)}, status=500)
+            return web.json_response({"error": "internal_error"}, status=500)
 
     async def post(self) -> web.Response:
         """Start an OAuth connection flow for the requested provider.
@@ -95,9 +103,9 @@ class ConnectionsHandler(BaseView):
             return web.json_response({"error": "forbidden"}, status=403)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.exception("Error starting connection for user=%s provider=%s", user_id, provider)
-            return web.json_response({"error": str(exc)}, status=500)
+            return web.json_response({"error": "internal_error"}, status=500)
 
         return web.json_response(response.model_dump(mode="json"))
 
@@ -107,6 +115,8 @@ class ConnectionsHandler(BaseView):
         Returns:
             A JSON response containing the disconnect result.
         """
+        if self._is_start_route():
+            return web.json_response({"error": "method not allowed"}, status=405)
         user_id = await self._get_user_id()
         if not user_id:
             return web.json_response({"error": "Authenticated user not identified."}, status=401)
@@ -119,8 +129,8 @@ class ConnectionsHandler(BaseView):
             return web.json_response({"error": "forbidden"}, status=403)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.exception("Error disconnecting provider=%s for user=%s", provider, user_id)
-            return web.json_response({"error": str(exc)}, status=500)
+            return web.json_response({"error": "internal_error"}, status=500)
 
         return web.json_response(response.model_dump(mode="json"))
