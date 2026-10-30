@@ -158,7 +158,7 @@ class InMemoryHandleStore:
         """
         async with self._lock:
             handle = self._items.get((key, owner))
-            if handle is None:
+            if handle is None or handle.expires_at <= datetime.now(timezone.utc):
                 raise HandleClaimError()
             if grantee in handle.grants:
                 return handle

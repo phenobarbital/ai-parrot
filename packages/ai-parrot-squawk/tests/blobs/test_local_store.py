@@ -252,3 +252,21 @@ async def test_failed_stream_leaves_no_temp_file(tmp_path: Path, blob_key: str) 
     with pytest.raises(RuntimeError):
         await store.put_stream(_raising_frames(), media_type=MediaType.GENERIC, owner=_owner(), ttl_s=60)
     assert list((tmp_path / ".tmp").iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_size_cap_and_no_grant_on_expired(tmp_path: Path, blob_key: str) -> None:
+    """put_stream refuses objects over max_bytes; grant refuses an expired record."""
+    store = LocalDiskBlobStore(tmp_path, max_bytes=4)
+    with pytest.raises(SquawkError) as exc_info:
+        await store.put_stream(_frames(b"too big"), media_type=MediaType.GENERIC, owner=_owner(), ttl_s=60)
+    assert exc_info.value.detail == "blob_too_large"
+    assert list((tmp_path / ".tmp").iterdir()) == []
+
+    store = LocalDiskBlobStore(tmp_path)
+    owner = _owner()
+    meta = await store.put_stream(_frames(b"x"), media_type=MediaType.GENERIC, owner=owner, ttl_s=60)
+    expired = meta.model_copy(update={"expires_at": datetime.now(timezone.utc) - timedelta(seconds=1)})
+    store._paths(meta.key, owner)[1].write_text(expired.model_dump_json())
+    with pytest.raises(HandleClaimError):
+        await store.grant(meta.key, owner=owner, grantee="late")

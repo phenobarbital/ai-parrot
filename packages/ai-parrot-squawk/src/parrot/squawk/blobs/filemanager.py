@@ -9,7 +9,6 @@ import logging
 import os
 import re
 import tempfile
-import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -39,6 +38,7 @@ class FileManagerBlobStore(SquawkBlobStore):
         encrypt_classes: frozenset[str] = frozenset({"hr", "pii"}),
         key_env: str = "SQUAWK_BLOB_KEY",
         orphan_grace_s: int = 3600,
+        max_bytes: int = 1024 * 1024 * 1024,
     ) -> None:
         """Initialize file-manager-backed blob storage.
 
@@ -47,6 +47,7 @@ class FileManagerBlobStore(SquawkBlobStore):
             prefix: Object-name prefix reserved for Squawk blobs.
             encrypt_classes: Data classes encrypted before publication.
             key_env: Environment variable containing the Fernet key.
+            max_bytes: Largest plaintext object accepted by ``put_stream`` (default 1 GiB).
             orphan_grace_s: Age after which a ``.bin`` without metadata is swept (when
                 the manager reports a modification time).
 
@@ -61,6 +62,7 @@ class FileManagerBlobStore(SquawkBlobStore):
             raise SquawkError(SquawkErrorCode.UPSTREAM_FAILED, "no_blob_key")
         self._fernet = Fernet(key.encode()) if key else None
         self._orphan_grace_s = orphan_grace_s
+        self._max_bytes = max_bytes
         self._meta_lock = asyncio.Lock()
         self.logger = logging.getLogger(__name__)
 
@@ -209,14 +211,19 @@ class FileManagerBlobStore(SquawkBlobStore):
         """
         digest = hashlib.sha256()
         byte_size = 0
-        temp_path = Path(tempfile.gettempdir()) / f"squawk-{uuid.uuid4().hex}.part"
-        temp_file = await asyncio.to_thread(temp_path.open, "wb")
+        # mkstemp creates the file atomically with mode 0600 (O_EXCL): plaintext of an
+        # hr/pii blob is staged unreadable to other users before it is encrypted.
+        fd, temp_name = await asyncio.to_thread(tempfile.mkstemp, prefix="squawk-", suffix=".part")
+        temp_path = Path(temp_name)
+        temp_file = await asyncio.to_thread(os.fdopen, fd, "wb")
         try:
             try:
                 async for chunk in frames:
                     digest.update(chunk)
                     await asyncio.to_thread(temp_file.write, chunk)
                     byte_size += len(chunk)
+                    if byte_size > self._max_bytes:
+                        raise SquawkError(SquawkErrorCode.UPSTREAM_FAILED, "blob_too_large")
             finally:
                 await asyncio.to_thread(temp_file.close)
 
@@ -370,7 +377,7 @@ class FileManagerBlobStore(SquawkBlobStore):
         meta_name = self._names(key, owner)[1]
         async with self._meta_lock:
             metadata = await self._read_meta(meta_name)
-            if metadata is None:
+            if metadata is None or metadata.expires_at <= datetime.now(timezone.utc):
                 raise HandleClaimError()
             if grantee in metadata.grants:
                 return metadata

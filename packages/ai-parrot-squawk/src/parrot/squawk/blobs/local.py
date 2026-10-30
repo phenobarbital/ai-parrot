@@ -96,6 +96,7 @@ class LocalDiskBlobStore(SquawkBlobStore):
         encrypt_classes: frozenset[str] = frozenset({"hr", "pii"}),
         key_env: str = "SQUAWK_BLOB_KEY",
         orphan_grace_s: int = 3600,
+        max_bytes: int = 1024 * 1024 * 1024,
     ) -> None:
         """Initialize local storage and optional encryption.
 
@@ -103,6 +104,7 @@ class LocalDiskBlobStore(SquawkBlobStore):
             root: Directory that owns blob data and metadata.
             encrypt_classes: Data classes encrypted before publication.
             key_env: Environment variable containing the Fernet key.
+            max_bytes: Largest plaintext object accepted by ``put_stream`` (default 1 GiB).
             orphan_grace_s: Age after which a ``.bin`` without metadata is swept.
 
         Raises:
@@ -116,6 +118,7 @@ class LocalDiskBlobStore(SquawkBlobStore):
             raise SquawkError(SquawkErrorCode.UPSTREAM_FAILED, "no_blob_key")
         self._fernet = Fernet(key.encode()) if key else None
         self._orphan_grace_s = orphan_grace_s
+        self._max_bytes = max_bytes
         self._meta_lock = asyncio.Lock()
         self.logger = logging.getLogger(__name__)
         self._tmp.mkdir(parents=True, exist_ok=True)
@@ -212,6 +215,8 @@ class LocalDiskBlobStore(SquawkBlobStore):
                     digest.update(chunk)
                     await asyncio.to_thread(file_handle.write, chunk)
                     byte_size += len(chunk)
+                    if byte_size > self._max_bytes:
+                        raise SquawkError(SquawkErrorCode.UPSTREAM_FAILED, "blob_too_large")
             finally:
                 await asyncio.to_thread(file_handle.close)
 
@@ -367,7 +372,7 @@ class LocalDiskBlobStore(SquawkBlobStore):
         meta_path = self._paths(key, owner)[1]
         async with self._meta_lock:
             metadata = await asyncio.to_thread(_read_meta, meta_path)
-            if metadata is None:
+            if metadata is None or metadata.expires_at <= datetime.now(timezone.utc):
                 raise HandleClaimError()
             if grantee in metadata.grants:
                 return metadata

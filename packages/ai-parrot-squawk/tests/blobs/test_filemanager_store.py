@@ -298,8 +298,29 @@ async def test_failed_stream_leaves_no_temp_file(blob_key: str, tmp_path, monkey
     """A raising frame iterator never leaks its staging file."""
     import tempfile
 
-    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     store = FileManagerBlobStore(_FakeFileManager())
     with pytest.raises(RuntimeError):
         await store.put_stream(_raising_frames(), media_type=MediaType.GENERIC, owner=_owner(), ttl_s=60)
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_staging_file_is_private(blob_key: str, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plaintext is staged in a 0600 file, never with default (world-readable) permissions."""
+    import os
+    import stat
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    modes: list[int] = []
+
+    async def frames() -> AsyncIterator[bytes]:
+        for p in tmp_path.glob("squawk-*.part"):
+            modes.append(stat.S_IMODE(os.stat(p).st_mode))
+        yield b"secret rows"
+
+    store = FileManagerBlobStore(_FakeFileManager())
+    await store.put_stream(frames(), media_type=MediaType.GENERIC, owner=_owner(), ttl_s=60, data_class="hr")
+    assert modes == [0o600]
+    assert list(tmp_path.glob("squawk-*.part")) == []
