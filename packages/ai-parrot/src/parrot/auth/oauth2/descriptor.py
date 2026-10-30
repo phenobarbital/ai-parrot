@@ -3,6 +3,7 @@
 Descriptors are data; provider-specific post-exchange behaviour is a Python callable registered by name.
 Client credentials never live in a descriptor — they come from navconfig ``OAUTH2_<PROVIDER>_*``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -123,7 +124,9 @@ def load_provider_descriptors(
             raise ValueError(f"invalid provider descriptor for {provider_name}")
         for forbidden_key in _FORBIDDEN_KEYS:
             if forbidden_key in entry:
-                raise ValueError(f"invalid provider descriptor for {provider_name}: descriptor must not include {forbidden_key}")
+                raise ValueError(
+                    f"invalid provider descriptor for {provider_name}: descriptor must not include {forbidden_key}"
+                )
         try:
             descriptor = OAuth2ProviderDescriptor.model_validate(entry)
         except ValidationError as exc:

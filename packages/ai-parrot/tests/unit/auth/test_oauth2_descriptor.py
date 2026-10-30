@@ -43,7 +43,10 @@ def test_post_exchange_hook_registry_is_typed():
 
 def test_load_provider_descriptors_accepts_yaml_path_and_provider_mapping(tmp_path: Path):
     descriptor_file = tmp_path / "providers.yaml"
-    descriptor_file.write_text("providers:\n  - provider_id: yaml\n    display_name: YAML\n    authorization_url: https://idp/authorize\n    token_url: https://idp/token\n    default_scopes: [read]\n", encoding="utf-8")
+    descriptor_file.write_text(
+        "providers:\n  - provider_id: yaml\n    display_name: YAML\n    authorization_url: https://idp/authorize\n    token_url: https://idp/token\n    default_scopes: [read]\n",
+        encoding="utf-8",
+    )
 
     descriptors = load_provider_descriptors(descriptor_file)
 
