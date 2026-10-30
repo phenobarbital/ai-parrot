@@ -106,7 +106,7 @@
       "feature_id": "FEAT-772",
       "feature": "passkey-support",
       "spec": "sdd/specs/passkey-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -118,8 +118,9 @@
       "parallelism_notes": "uses toRequestOptions/credentialToJSON/isUserCancelled from TASK-4898, fetchLoginOptions from TASK-4899, authStore.loginWithPasskey from TASK-4900; sole editor of Login.svelte, Login.test.ts, ProviderButtons.svelte.",
       "assigned_to": null,
       "started_at": "2026-10-30T15:27:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4901-passkey-sign-in.md"
+      "completed_at": "2026-10-30T16:00:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4901-passkey-sign-in.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4902",
