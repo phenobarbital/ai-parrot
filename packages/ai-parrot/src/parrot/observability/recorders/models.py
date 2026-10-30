@@ -89,3 +89,30 @@ class UsageRecord(BaseModel):
     def total_tokens(self) -> int:
         """Sum of input and output tokens."""
         return self.input_tokens + self.output_tokens
+
+
+# FEAT-746 M12 (S11): a sibling of UsageRecord, never fields on it.
+class CapabilityCallRecord(BaseModel):
+    """One Squawk capability call, served or received.
+
+    Carries no provider/model/PII fields (no user_id/session_id); tokens are
+    only meaningful for ``llm_backed`` capabilities.
+    """
+
+    side: Literal["served", "received"]
+    agent: str
+    peer_agent: str
+    cap_id: str
+    category: str
+    backing: Literal["deterministic", "llm_backed"]
+    status: str
+    duration_ms: float = 0.0
+    rows: Optional[int] = None
+    bytes: Optional[int] = None
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cost_usd: Optional[float] = None
+    policy_applied: tuple[str, ...] = ()
+    trace_id: str
+    correlation_id: Optional[str] = None
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
