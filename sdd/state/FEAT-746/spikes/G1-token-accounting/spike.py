@@ -42,26 +42,40 @@ def inline_payload(df: pd.DataFrame) -> str:
     return json.dumps(df.to_dict(orient="records"), default=str)
 
 
-def descriptor_payload(df: pd.DataFrame, *, preview_rows: int, summary_chars: int) -> str:
-    """JSON of the HandleDescriptor the external LLM would see."""
+def descriptor_summary(
+    df: pd.DataFrame, *, preview_rows: int, summary_chars: int, float_digits: int | None = 3
+) -> dict[str, Any]:
+    """Bounded summary: rows, column dtypes, preview rows (floats rounded), null counts.
+
+    Preview rows are dropped from the end until the JSON fits ``summary_chars``;
+    ``summary["preview"]`` therefore holds the rows that actually survived.
+    """
+    preview = df.head(preview_rows)
+    if float_digits is not None:
+        preview = preview.round(float_digits)
     summary: dict[str, Any] = {
         "rows": int(len(df)),
         "columns": [{"name": c, "dtype": str(t)} for c, t in df.dtypes.items()],
-        "preview": json.loads(df.head(preview_rows).to_json(orient="records", date_format="iso")),
+        "preview": json.loads(preview.to_json(orient="records", date_format="iso")),
         "null_counts": {c: int(n) for c, n in df.isna().sum().items() if n},
     }
     text = json.dumps(summary, separators=(",", ":"))
-    # Truncate `text` to summary_chars by dropping preview rows first, then null_counts
     while len(text) > summary_chars:
-        if len(summary["preview"]) > 0:
+        if summary["preview"]:
             summary["preview"] = summary["preview"][:-1]
-        elif len(summary["null_counts"]) > 0:
+        elif summary["null_counts"]:
             summary["null_counts"] = {}
         else:
             break
         text = json.dumps(summary, separators=(",", ":"))
+    return summary
+
+
+def descriptor_payload(df: pd.DataFrame, *, preview_rows: int, summary_chars: int, float_digits: int | None = 3) -> str:
+    """JSON of the HandleDescriptor the external LLM would see (validated against MAX_SUMMARY_CHARS)."""
+    summary = descriptor_summary(df, preview_rows=preview_rows, summary_chars=summary_chars, float_digits=float_digits)
     desc = HandleDescriptor(
-        media_type=MediaType.ARROW, byte_size=int(df.memory_usage(deep=True).sum()), summary=json.loads(text)
+        media_type=MediaType.ARROW, byte_size=int(df.memory_usage(deep=True).sum()), summary=summary
     )
     return desc.model_dump_json()
 
@@ -79,11 +93,15 @@ def count_tokens(text: str) -> dict[str, int]:
 
 
 def main() -> int:
+    """Print the sweep: surviving preview rows and token counts per (preview_rows, summary_chars, rounding)."""
     df = build_frame()
     print("inline", count_tokens(inline_payload(df)))
-    for pr in (3, 5, 10):
-        for sc in (600, 1000, 1500):
-            print("descriptor", pr, sc, count_tokens(descriptor_payload(df, preview_rows=pr, summary_chars=sc)))
+    for digits in (None, 3):
+        for pr in (1, 3, 5):
+            for sc in (600, 1000):  # 1000 == MAX_SUMMARY_CHARS; larger summaries are rejected by HandleDescriptor
+                kept = len(descriptor_summary(df, preview_rows=pr, summary_chars=sc, float_digits=digits)["preview"])
+                tokens = count_tokens(descriptor_payload(df, preview_rows=pr, summary_chars=sc, float_digits=digits))
+                print("descriptor", f"round={digits}", pr, sc, f"kept={kept}", tokens)
     return 0
 
 

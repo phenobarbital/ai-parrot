@@ -16,29 +16,42 @@ This spike measures the token cost of a descriptor path vs inline JSON for a 10,
 
 ```bash
 python sdd/state/FEAT-746/spikes/G1-token-accounting/spike.py
+PARROT_SPIKE=1 pytest packages/ai-parrot-squawk/tests/spikes/test_g1_token_accounting.py -q
 ```
 
-The script builds a deterministic 10,000 × 12 frame (seed 746) and sweeps `preview_rows ∈ {3, 5, 10}` and `summary_chars ∈ {600, 1000, 1500}`, printing token counts for both tokenizers.
+The script builds a deterministic 10,000 × 12 frame (seed 746) and sweeps
+`preview_rows ∈ {1, 3, 5}`, `summary_chars ∈ {600, 1000}` and float rounding
+(none / 3 decimals). Preview rows are dropped until the summary JSON fits
+`summary_chars`; `kept` is the number of preview rows that actually survived.
+`summary_chars` stops at 1000 because `HandleDescriptor` rejects larger
+summaries (`MAX_SUMMARY_CHARS = 1000`).
 
-## Results
+## Results (re-measured 2026-10-30)
 
-| path | preview_rows | summary_chars | heuristic | tiktoken |
-|------|--------------|---------------|-----------|----------|
-| inline | - | - | 764,475 | 1,158,737 |
-| descriptor | 3 | 600 | 141 | 145 |
-| descriptor | 3 | 1000 | 209 | 238 |
-| descriptor | 3 | 1500 | 346 | 423 |
-| descriptor | 5 | 600 | 141 | 145 |
-| descriptor | 5 | 1000 | 209 | 238 |
-| descriptor | 5 | 1500 | 346 | 423 |
-| descriptor | 10 | 600 | 141 | 145 |
-| descriptor | 10 | 1000 | 209 | 238 |
-| descriptor | 10 | 1500 | 346 | 423 |
+| path | summary_chars | preview kept | rounding | heuristic (len/4) | tiktoken cl100k |
+|------|---------------|--------------|----------|-------------------|-----------------|
+| inline | – | all 10,000 rows | – | 764,475 | 1,158,737 |
+| descriptor | 600 | 0 | any | 141 | 145 |
+| descriptor | 1000 | 1 | none | 209 | 238 |
+| descriptor | 1000 | 1 | 3 decimals | 202 | 226 |
+
+`preview_rows` 1, 3 and 5 give identical rows: for a 12-column frame the column
+schema uses most of the 1000-character budget, so at most **one** preview row fits.
+The earlier table's `summary_chars = 1500` rows (346 / 423 tokens) came from a
+build before the descriptor cap existed and are no longer producible.
 
 ## Verdict
 
-**PASS** against < 250 tokens (both tokenizers) for the descriptor path with `preview_rows = 3` and `summary_chars = 1000`.
+**PASS** against < 250 tokens on both tokenizers at the descriptor cap
+(`MAX_SUMMARY_CHARS = 1000`): worst case 238 tiktoken tokens. The margin is
+thin (12 tokens), so the cap must not be raised without re-measuring.
 
 ## Proposed amendment (spec §3 M6)
 
-preview_rows = 3; summary_chars = 1000; max_sample_rows = 50; max_text_tokens = 800
+- The bound is the **summary character budget**, not a row count:
+  `summary_chars = 1000` (already enforced as `MAX_SUMMARY_CHARS`).
+- Preview rows are best-effort: include rows while the summary fits, rounding
+  floats to 3 decimals; a wide frame may carry zero or one preview row, and
+  callers must not promise a fixed number.
+- `max_sample_rows` / `max_text_tokens` for the affordance tools were **not
+  measured** by this spike and are left to M6.
