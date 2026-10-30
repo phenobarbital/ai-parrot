@@ -65,7 +65,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -73,8 +73,9 @@
       "parallelism_notes": "Root of the graph: creates parrot/experts/{models,__init__}.py, both knowledge __init__ export maps and the tests/experts conftest; no dependency.",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4914-expert-models-and-exports.md"
+      "completed_at": "2026-10-30T21:28:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4914-expert-models-and-exports.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4915",
@@ -103,7 +104,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -111,8 +112,9 @@
       "parallelism_notes": "Independent: edits only parrot/auth/models.py (PolicyRuleConfig) and adds its own test.",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4916-policy-rule-resource-field.md"
+      "completed_at": "2026-10-30T21:28:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4916-policy-rule-resource-field.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4917",
@@ -354,7 +356,7 @@
       "feature_id": "FEAT-778",
       "feature": "domain-experts",
       "spec": "sdd/specs/domain-experts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -362,8 +364,9 @@
       "parallelism_notes": "Independent: new parrot_tools/security/cve/models.py over the existing SeverityLevel; no FEAT-778 import.",
       "assigned_to": null,
       "started_at": "2026-10-30T20:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4928-cve-models.md"
+      "completed_at": "2026-10-30T21:28:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4928-cve-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4929",

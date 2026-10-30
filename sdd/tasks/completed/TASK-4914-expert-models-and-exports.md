@@ -490,10 +490,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (resumed run; coder deliverable merged by engine in a prior run)
+**Date**: 2026-10-30
+**Notes**: Delivery merged on the feature branch; closed on resume after the combined task tests passed (23 passed: tests/experts, tests/auth/test_policy_rule_resource.py, ai-parrot-tools tests/security/cve). Closed via close_task.sh (no engine evidence refs available on resume).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
