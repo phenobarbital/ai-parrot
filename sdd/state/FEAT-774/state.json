@@ -3,7 +3,7 @@
   "feat_id": "FEAT-774",
   "feature_slug": "connections-cli-local-mcp",
   "started_at": "2026-10-30T15:16:24Z",
-  "updated_at": "2026-10-30T15:45:44Z",
+  "updated_at": "2026-10-30T15:46:07Z",
   "source": {
     "kind": "inline",
     "jira_key": null,
@@ -14,7 +14,7 @@
     "summary_oneline": "S-4 of FEAT-773: CLI-based agents and MCP-based tools in a CLI consuming delegated-auth connections"
   },
   "mode": "auto",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "phases": {
     "source": {
       "status": "completed",
@@ -116,12 +116,12 @@
       "skipped_reason": null
     },
     "output": {
-      "status": "running",
+      "status": "completed",
       "started_at": "2026-10-30T15:45:44Z",
-      "completed_at": null,
-      "duration_seconds": null,
+      "completed_at": "2026-10-30T15:46:07Z",
+      "duration_seconds": 0,
       "proposal_path": "sdd/proposals/connections-cli-local-mcp.proposal.md",
-      "commit_sha": null,
+      "commit_sha": "799a4d66ea5cd3f171f336e6fcfad2302032f02d",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "Localization/constraints high-confidence; S-1 contracts fix the shape; U1-U5 decided; spec after FEAT-773 merges."
     }
@@ -142,8 +142,8 @@
   },
   "errors": [],
   "resume_hint": {
-    "next_phase": "committed",
-    "next_action": "commit proposal + state"
+    "next_phase": "done",
+    "next_action": "/sdd-spec FEAT-774 after FEAT-773 merges"
   },
   "detected_mode": "enrichment"
 }
