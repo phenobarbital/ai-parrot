@@ -63,7 +63,7 @@ all live on `dev` @ `ec55de512f`:
 
 ### Overview
 
-**M1 — cache attach.** A new helper `_attach_gemini_cache(final_config, model, segments)` takes over the
+**M1 — cache attach.** A new helper `_attach_gemini_cache(client, final_config, model, segments)` takes over the
 inline block at client.py:3593-3605:
 - `final_config.tools` or `final_config.tool_config` set → skip explicit caching (debug log); Gemini 2.5+/3.x
   implicit prefix caching still applies to the plain `system_instruction`.
@@ -112,7 +112,8 @@ None public. `ComputerUseVocabulary` is a module-level type alias.
   async def _maybe_apply_gemini_cache(self, client, model: str, payload: dict, segments: list,
                                       *, system_instruction: Optional[str] = None) -> dict:
       """As today; caches ``system_instruction`` instead of the joined cacheable segments when given."""
-  async def _attach_gemini_cache(self, final_config: GenerateContentConfig, model: str, segments: list) -> None:
+  async def _attach_gemini_cache(self, client, final_config: GenerateContentConfig, model: str,
+                                 segments: list) -> None:
       """Attach an explicit CachedContent to ``final_config`` in place, or skip when tools/tool_config are set."""
   ```
 

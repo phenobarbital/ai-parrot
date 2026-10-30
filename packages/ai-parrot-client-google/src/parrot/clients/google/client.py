@@ -551,6 +551,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model: str,
         payload: dict,
         segments: list,
+        *,
+        system_instruction: Optional[str] = None,
     ) -> dict:
         """Create a Gemini ``CachedContent`` resource and inject ``cached_content``.
 
@@ -567,6 +569,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             model: Model name string (e.g. ``"gemini-2.5-flash"``).
             payload: The ``generate_content`` payload dict to update.
             segments: The cacheable segments returned by ``_apply_cache_hints()``.
+            system_instruction: When given, the text stored in the cache instead of the
+                joined cacheable segments. A request that uses ``cached_content`` may not
+                also set ``system_instruction``, so callers pass the full prompt here.
 
         Returns:
             The (potentially updated) payload dict.
@@ -577,7 +582,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         try:
             from google.genai import types as genai_types
 
-            cacheable_text = "\n\n".join(s.text for s in segments if s.cacheable)
+            if system_instruction is not None:
+                cacheable_text = system_instruction
+            else:
+                cacheable_text = "\n\n".join(s.text for s in segments if s.cacheable)
             cached = await client.aio.caches.create(
                 model=model,
                 config=genai_types.CreateCachedContentConfig(
@@ -595,6 +603,51 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             )
 
         return payload
+
+    async def _attach_gemini_cache(self, client: Any, final_config: Any, model: str, segments: list) -> None:
+        """Attach an explicit ``CachedContent`` to ``final_config`` in place.
+
+        Gemini rejects a request that combines ``cached_content`` with
+        ``system_instruction``, ``tools`` or ``tool_config`` (400 INVALID_ARGUMENT).
+        So:
+
+        * tools or tool_config set → explicit caching is skipped; Gemini's implicit
+          prefix caching still applies to the plain ``system_instruction``.
+        * otherwise the cache holds the full ``system_instruction`` and the request's
+          own ``system_instruction`` is cleared.
+
+        A failed cache creation (fail-open) leaves ``final_config`` untouched.
+
+        Args:
+            client: The active ``genai.Client`` instance.
+            final_config: The ``GenerateContentConfig`` about to be sent.
+            model: Model name string.
+            segments: The cacheable segments returned by ``_apply_cache_hints()``.
+        """
+        if not segments:
+            return
+        if getattr(final_config, "tools", None) or getattr(final_config, "tool_config", None):
+            self.logger.debug(
+                "Gemini explicit CachedContent skipped: request carries tools/tool_config "
+                "(relying on implicit caching)."
+            )
+            return
+        system_instruction = getattr(final_config, "system_instruction", None)
+        if not isinstance(system_instruction, str) or not system_instruction:
+            return
+        cache_payload = await self._maybe_apply_gemini_cache(
+            client, model, {}, segments, system_instruction=system_instruction
+        )
+        cached_name = cache_payload.get("cached_content")
+        if not cached_name:
+            return
+        try:
+            final_config.cached_content = cached_name
+            final_config.system_instruction = None
+        except (AttributeError, TypeError):
+            self.logger.debug(
+                "GenerateContentConfig does not support cached_content assignment; continuing without cache."
+            )
 
     # ── End FEAT-181 ──────────────────────────────────────────────────────────
 
@@ -3589,19 +3642,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 requested_tokens if requested_tokens is not None else generation_budget.max_output_tokens,
             )
         # FEAT-181: if we have pending cache segments, attempt to create
-        # a Gemini CachedContent resource (fail-open on any error).
+        # a Gemini CachedContent resource (fail-open on any error). The helper
+        # skips it when tools/tool_config are set and otherwise moves the system
+        # instruction into the cache: Gemini rejects cached_content combined
+        # with system_instruction, tools or tool_config.
         if _pending_cache_segs:
-            _cache_payload = {}
-            _cache_payload = await self._maybe_apply_gemini_cache(
-                self.client, model, _cache_payload, _pending_cache_segs
-            )
-            if _cache_payload.get("cached_content"):
-                try:
-                    final_config.cached_content = _cache_payload["cached_content"]
-                except (AttributeError, TypeError):
-                    self.logger.debug(
-                        "GenerateContentConfig does not support cached_content assignment; " "continuing without cache."
-                    )
+            await self._attach_gemini_cache(self.client, final_config, model, _pending_cache_segs)
 
         # Single execution path whether or not history was supplied. FEAT-524
         # removed the `stateless` flag: a caller that wants a stateless call
