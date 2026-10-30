@@ -61,3 +61,5 @@ The spike opens each client with `async with client:` and records a provider err
 for all four formats and live on all four providers. M7 should note that
 `SquawkRemoteToolkit` inherits whatever model its host client resolves, so the two
 client defects above block OpenAI/Groq defaults until fixed.
+
+Raw output of the recorded run: `sdd/state/FEAT-746/spikes/G3-contract-tool-defs/results.json`.

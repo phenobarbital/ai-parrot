@@ -53,7 +53,6 @@ def authorize(
     cap_id: str,
     caller: str,
     now: int,
-    exp: int,
 ) -> bool:
     """The rule M10 will ship: facts from the call, checks from the token, one allow policy."""
     token = Biscuit.from_bytes(token_bytes, public_key)
@@ -97,7 +96,6 @@ def main() -> int:
     """Run the four test cases and return 0 if all match expected."""
     kp = KeyPair()
     now = int(datetime.now(timezone.utc).timestamp())
-    exp = int((datetime.now(timezone.utc) + timedelta(hours=24)).timestamp())
 
     root = issue_root(kp, caller="external-agent")
     sub = attenuate(root, "hr.reports.headcount_by_dept")
@@ -109,7 +107,6 @@ def main() -> int:
             cap_id="hr.reports.manager_of",
             caller="external-agent",
             now=now,
-            exp=exp,
         ),
         "sub_on_headcount": authorize(
             sub.to_bytes(),
@@ -117,7 +114,6 @@ def main() -> int:
             cap_id="hr.reports.headcount_by_dept",
             caller="external-agent",
             now=now,
-            exp=exp,
         ),
         "sub_on_people": authorize(
             sub.to_bytes(),
@@ -125,7 +121,6 @@ def main() -> int:
             cap_id="hr.people.lookup",
             caller="external-agent",
             now=now,
-            exp=exp,
         ),
         "root_wrong_caller": authorize(
             root.to_bytes(),
@@ -133,7 +128,6 @@ def main() -> int:
             cap_id="hr.reports.manager_of",
             caller="other",
             now=now,
-            exp=exp,
         ),
     }
 

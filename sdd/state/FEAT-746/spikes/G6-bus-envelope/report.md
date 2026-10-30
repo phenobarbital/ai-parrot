@@ -85,3 +85,5 @@ format, and bound decoded payload size. The reply helper should expose
 consumer-owned `idempotency_key` handling rather than claiming exactly-once
 delivery, and should provide a durable-DLQ inspection/replay API for replies
 whose consumers exhaust retries.
+
+Raw output of the recorded run: `sdd/state/FEAT-746/spikes/G6-bus-envelope/results.json`.

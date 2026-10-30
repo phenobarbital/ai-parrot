@@ -1,7 +1,7 @@
 # G5 — Biscuit Attenuation Spike Report
 
 **Feature**: FEAT-746 — Squawk: typed binary inter-agent protocol
-**Date**: 2026-10-27
+**Date**: 2026-10-27 (updated 2026-10-30)
 **Status**: PASS
 
 ---
@@ -58,14 +58,14 @@ regression (`finance.ledger.*`) allows `finance.ledger.balance` and refuses
 - **Facts**: `capability_glob("hr.reports.*")`, `caller("external-agent")`, `expires(1793151635)`
 - **Checks**: `check if caller($c), peer($c)` — verifies caller identity
 - **Checks**: `check if expires($e), time($t), $t < $e` — verifies not expired
-- **Checks**: `check if capability($c), capability_glob($g), $c.starts_with("hr.reports.")` — glob matching via string method
+- **Checks**: `check if capability($c), capability_prefix($p), $c.starts_with($p)` — `capability_prefix` is derived from each verified `capability_glob` fact
 - **Policies**: `allow if true` — simple allow-all when checks pass
 
 ### Important Notes
 
-1. **Glob prefix is a constant in the spike**: `spike.py` hardcodes `starts_with("hr.reports.")` and does not derive it from the token's `capability_glob` fact, so the authorizer does not yet prove glob-from-token matching. M10 MUST compute the prefix from the verified `capability_glob` fact (see M10 Implementation Notes, item 1) and add a regression for a second glob.
+1. **Glob prefix is derived from the token** (fixed 2026-10-30): each verified `capability_glob("x.y.*")` becomes an authorizer fact `capability_prefix("x.y.")`; a `finance.ledger.*` regression covers a second glob. Globs not ending in `.*` are rejected.
 
-2. **Glob matching**: The installed `biscuit-python` does NOT support `.matches()` or `prefix()` in the way expected. Instead, we use the string method `$c.starts_with("hr.reports.")` to match the glob prefix. This is a pragmatic solution that works for the `*` glob pattern.
+2. **Glob matching**: The installed `biscuit-python` does NOT support `.matches()` or `prefix()` in the way expected. Instead, we use the string method `$c.starts_with($p)` against the derived `capability_prefix` fact. This is a pragmatic solution that works for the `*` glob pattern.
 
 3. **Token facts extraction**: The authorizer must include facts from the token's authority block. We extract these by parsing `token.block_source(0)` with a regex and adding them as facts to the authorizer.
 
@@ -95,7 +95,7 @@ expires(<expiry_timestamp>)
 ```
 check if caller($c), peer($c)
 check if expires($e), time($t), $t < $e
-check if capability($c), capability_glob($g), $c.starts_with("<glob_prefix>")
+check if capability($c), capability_prefix($p), $c.starts_with($p)   # capability_prefix derived from capability_glob
 ```
 
 ### Attenuation Block Checks (from token blocks)
