@@ -524,7 +524,7 @@ def credential_channel_user_id(context: PermissionContext) -> Optional[str]:
 | `test_connect_requires_principal` | M3 | no principal → "/login first", `start_connect` not called |
 | `test_connect_personal_only` | M3 | group conversation → hint, no service call |
 | `test_connect_calls_start_connect_with_teams_state` | M3 | `channel="msteams"`, `principal`, `extra_state` has `conversation_reference` + `bot_app_id` |
-| `test_connect_already_connected` | M3 | `status` active and granted scopes sufficient → account reply, no new state |
+| `test_connect_already_connected` | M3 | `status == "connected"` and `scopes_granted` sufficient → account reply, no new state |
 | `test_jira_aliases_map_to_generic` | M3 | `/connect_jira`, `/disconnect_jira`, `/jira_status`, `jira`, `integrations` route to the generic handlers |
 | `test_pbac_denied_renders_message` | M3 | `start_connect` raising the FEAT-773 PBAC denial → "not allowed" reply |
 | `test_notifier_completed_uses_state_ref` | M4 | callback state ref + `bot_app_id` → that adapter's `continue_conversation` |
@@ -699,8 +699,8 @@ class MSTeamsAuthStrategy:                                                      
 class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):                       # :100
     def __init__(self, agent, config, app, forms_directory=None, voice_config=None, oauth_manager=None)  # :132-140
     #   Jira block :202-221 (register_jira_commands; app["msteams_jira_oauth_notifier"] = MSTeamsOAuthNotifier(...) :215)
-    #   self._session_store :224; self._auth (MSTeamsAuthStrategy) :230-239; register_auth_commands :239
-    async def _effective_user_id(self, turn_context, fallback: str) -> str        # :351
+    #   self._session_store :225; self._auth (MSTeamsAuthStrategy) :230-239; register_auth_commands :239
+    async def _effective_user_id(self, turn_context, fallback: str) -> str        # :350
     #   card Submit → command router :601-605; text commands :715-723; orchestrator call :810-816
 
 # msteams/dialogs/orchestrator.py
@@ -730,7 +730,7 @@ TokenExchange: store.save_linked_identity(uid, req.provider, ext, userinfo)     
 | `MSTeamsPrincipalSource` | `MSTeamsSessionStore.get_or_create` / `is_expired` | method call | `auth.py:134`, `:130` |
 | Teams `permission_context` | `FormOrchestrator.process_message` → `agent.ask(permission_context=)` | kwargs passthrough | `orchestrator.py:320`, `base.py:1083` |
 | `command_args` | `MSTeamsCommandRouter.try_dispatch*` | `turn_context.turn_state` | `commands/__init__.py:97`, `:138` |
-| `TeamsConnector` | `IntegrationsService.start_connect/status/disconnect/list_for_principal` *(FEAT-773)* | method call | `auth/oauth2/service.py:79, :282, :360, :371` |
+| `TeamsConnector` | `IntegrationsService.start_connect/status/disconnect/list_for_principal` *(FEAT-773)* | method call | `auth/oauth2/service.py:81, :288, :360, :371` |
 | `MSTeamsConnectionNotifier` | `ChannelNotifierRegistry.register` *(FEAT-773)*; `BotFrameworkAdapter.continue_conversation` | Protocol / method call | `auth/oauth2/events.py:59`; `oauth_callback.py:136` |
 | `record_auth_requirement` | `ToolManager.execute_tool` needs-auth branch | function call | `manager.py:2274` |
 | resolver alias | `IdentityStore.find_user_by_provider_account` | method call | `navigator_auth/identity/store.py:497` |
@@ -799,7 +799,7 @@ Teams/Slack respectively; edit the Teams call only. Core OAuth URL changes belon
 ## 7. Implementation Notes & Constraints
 
 ### Patterns to Follow
-- Card shape and send path: `_connect_jira_card` / `_send_adaptive_card` (jira_commands.py:54-81, :198-217); reuse
+- Card shape and send path: `_connect_jira_card` / `_send_adaptive_card` (jira_commands.py:54-81, :225-248); reuse
   `DEFAULT_ADAPTIVE_CARD_VERSION`.
 - Proactive messaging: `ConversationReference.deserialize` + `adapter.continue_conversation(ref, cb, app_id)`
   inside a broad `except` that logs (oauth_callback.py:119-142).
