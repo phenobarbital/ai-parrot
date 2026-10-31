@@ -45,8 +45,8 @@ class TestConceptType:
 
     def test_total_count(self) -> None:
         """ConceptType member count (11 pageindex + 5 FEAT-239 + 5 wiki
-        FEAT-260 + OTHER FEAT-216 + RUN/CLAIM lineage types)."""
-        assert len(ConceptType) == 24
+        FEAT-260 + OTHER FEAT-216 + RUN/CLAIM + ISSUE/PERSON/PROJECT types)."""
+        assert len(ConceptType) == 27
 
     def test_string_round_trip(self) -> None:
         """ConceptType(value) must reconstruct the correct enum member."""
@@ -174,4 +174,4 @@ class TestReExportCompat:
         from parrot.knowledge.pageindex.okf.ontology import ConceptType as CT
 
         assert CT.GUIDELINE.value == "Guideline"
-        assert len(CT) == 24
+        assert len(CT) == 27
