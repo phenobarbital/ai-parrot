@@ -34,6 +34,8 @@ class IntegrationDescriptor(BaseModel):
         display_account_name: Human-readable account name.
         email: Account email (if the provider exposes it).
         connected_at: Timestamp when the credential was first stored.
+        grant_origin: ``authorization_code`` | ``device_code``; display/audit
+            only (FEAT-777 M3).
     """
 
     provider: str
@@ -46,6 +48,7 @@ class IntegrationDescriptor(BaseModel):
     display_account_name: Optional[str] = None
     email: Optional[str] = None
     connected_at: Optional[datetime] = None
+    grant_origin: Optional[str] = None
     channels: List[str] = Field(default_factory=list)
     scopes_granted: List[str] = Field(default_factory=list)
     expires_at: Optional[float] = None
@@ -134,6 +137,8 @@ class AuthRequiredEnvelope(BaseModel):
         user_code: Device-code flow code for the user to enter.
         verification_uri: Device-code flow verification URL.
         expires_in: Seconds until the device code expires.
+        retry_safe: Server-authored; True only when the server proved no tool
+            body began. Absent/False means no automatic resend.
     """
 
     type: Literal["auth_required"] = "auth_required"
@@ -146,6 +151,26 @@ class AuthRequiredEnvelope(BaseModel):
     user_code: Optional[str] = None
     verification_uri: Optional[str] = None
     expires_in: Optional[int] = None
+    retry_safe: bool = Field(default=False, exclude_if=lambda value: value is False)
+
+
+class ChannelLinkPreview(BaseModel):
+    """Read-only preview of a pending channel link (FEAT-777 M2/M5).
+
+    Returned by ``GET /api/v1/channel-links/{nonce}`` before the user confirms.
+    Never carries the nonce or any credential material.
+
+    Attributes:
+        channel: Channel being linked (``"slack"`` in v1).
+        channel_user_id: Team-qualified channel id, ``"{team_id}:{slack_user_id}"``.
+        team_id: Slack workspace id shown to the user.
+        nav_user_id: Navigator user id of the logged-in session that would own the link.
+    """
+
+    channel: str
+    channel_user_id: str
+    team_id: str
+    nav_user_id: str
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +202,8 @@ class UsersIntegrationRow(BaseModel):
         connected_at: When the credential was first stored.
         updated_at: When the credential status or token data was last updated.
         last_used_at: When the credential was last used (updated by the toolkit).
+        grant_origin: ``authorization_code`` | ``device_code``; display/audit
+            only (FEAT-777 M3).
     """
 
     user_id: str
@@ -193,6 +220,7 @@ class UsersIntegrationRow(BaseModel):
     cloud_id: Optional[str] = None
     site_url: Optional[str] = None
     connected_at: datetime
+    grant_origin: Optional[str] = None
     updated_at: Optional[datetime] = None
     last_used_at: Optional[datetime] = None
 
