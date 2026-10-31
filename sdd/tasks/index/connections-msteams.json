@@ -96,7 +96,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -106,8 +106,9 @@
       "parallelism_notes": "imports credential_channel_user_id from TASK-5061 (auth/credentials.py)",
       "assigned_to": null,
       "started_at": "2026-10-31T23:12:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5062-toolkits-channel-identity.md"
+      "completed_at": "2026-10-31T23:23:59+00:00",
+      "file": "sdd/tasks/completed/TASK-5062-toolkits-channel-identity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5063",
@@ -116,7 +117,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -126,8 +127,9 @@
       "parallelism_notes": "reads PermissionContext.channel_user_id from TASK-5061 (auth/permission.py) in the identity guard",
       "assigned_to": null,
       "started_at": "2026-10-31T23:12:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5063-service-permission-context.md"
+      "completed_at": "2026-10-31T23:24:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5063-service-permission-context.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5064",
@@ -175,7 +177,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -185,8 +187,9 @@
       "parallelism_notes": "sets PermissionContext.channel_user_id added by TASK-5061 (auth/permission.py)",
       "assigned_to": null,
       "started_at": "2026-10-31T23:12:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5066-teams-principal-source.md"
+      "completed_at": "2026-10-31T23:24:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5066-teams-principal-source.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5067",
