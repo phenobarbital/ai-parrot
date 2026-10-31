@@ -3,6 +3,7 @@
 A channel wrapper binds a collector around one agent turn; ``ToolManager`` appends every
 ``AuthRequiredPayload`` it produces. Unbound, recording is a no-op.
 """
+
 from __future__ import annotations
 
 from contextlib import contextmanager

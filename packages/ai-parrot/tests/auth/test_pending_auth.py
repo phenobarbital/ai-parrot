@@ -1,4 +1,5 @@
 """FEAT-775 M5: needs-auth collector."""
+
 from __future__ import annotations
 
 import asyncio
