@@ -83,20 +83,29 @@ async def test_principal_mismatch_denies(principal: Principal) -> None:
 @pytest.mark.asyncio
 async def test_truthy_non_bool_denies(principal: Principal) -> None:
     """Only the literal True decision grants access."""
-    assert await IntegrationsService(authorizer=RecordingAuthorizer(object()))._authorize(
-        None, principal, "1042", "integration:list"
-    ) is False
-    assert await IntegrationsService(authorizer=RecordingAuthorizer(True))._authorize(
-        None, principal, "1042", "integration:list"
-    ) is True
+    assert (
+        await IntegrationsService(authorizer=RecordingAuthorizer(object()))._authorize(
+            None, principal, "1042", "integration:list"
+        )
+        is False
+    )
+    assert (
+        await IntegrationsService(authorizer=RecordingAuthorizer(True))._authorize(
+            None, principal, "1042", "integration:list"
+        )
+        is True
+    )
 
 
 @pytest.mark.asyncio
 async def test_authorizer_exception_denies(principal: Principal) -> None:
     """Authorizer failures are swallowed and deny the operation."""
-    assert await IntegrationsService(authorizer=RaisingAuthorizer())._authorize(
-        None, principal, "1042", "integration:list"
-    ) is False
+    assert (
+        await IntegrationsService(authorizer=RaisingAuthorizer())._authorize(
+            None, principal, "1042", "integration:list"
+        )
+        is False
+    )
 
 
 @pytest.mark.asyncio
