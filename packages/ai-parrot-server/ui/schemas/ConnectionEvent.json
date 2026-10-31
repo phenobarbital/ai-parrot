@@ -1,0 +1,85 @@
+{
+  "description": "A connection state change. Never carries token material.",
+  "properties": {
+    "account_id": {
+      "default": "",
+      "title": "Account Id",
+      "type": "string"
+    },
+    "canonical_identity": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Canonical Identity"
+    },
+    "channel": {
+      "title": "Channel",
+      "type": "string"
+    },
+    "display_name": {
+      "default": "",
+      "title": "Display Name",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "connection.completed",
+        "connection.revoked",
+        "connection.refresh_failed"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "occurred_at": {
+      "title": "Occurred At",
+      "type": "number"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason"
+    },
+    "tenant_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tenant Id"
+    },
+    "user_id": {
+      "title": "User Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "user_id",
+    "provider",
+    "channel",
+    "occurred_at"
+  ],
+  "title": "ConnectionEvent",
+  "type": "object"
+}
