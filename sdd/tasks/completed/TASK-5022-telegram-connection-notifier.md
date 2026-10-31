@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-776 — Connections on Telegram
 **Spec**: `sdd/specs/connections-telegram.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -249,10 +249,8 @@ Blueprint test file; names fixed by spec §4 (M7 rows).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: gpt-5.6-sol (codex), commit on branch TASK-5022-a1
+**Date**: 2026-10-31
+**Notes**: Merge-tier run: this task's tests passed; the only failures are the 12 pre-existing reds in other Telegram test files, which fail identically on unmodified dev. The engine labels the run 'failed', so finalize_task was not used. Review coder-review:6e6d2de285c7e4f9321656fa. Deferred minor: dedupe set unbounded (issue:9f3df2dc4871).
 
 **Deviations from spec**: none

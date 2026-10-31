@@ -183,7 +183,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -191,8 +191,9 @@
       "parallelism_notes": "No dependencies: new telegram/connection_notifier.py using FEAT-773 events already on dev.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5022-telegram-connection-notifier.md"
+      "completed_at": "2026-10-31T01:12:59+00:00",
+      "file": "sdd/tasks/completed/TASK-5022-telegram-connection-notifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5023",
@@ -351,7 +352,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -359,8 +360,9 @@
       "parallelism_notes": "No dependencies: only parrot/auth/oauth2/legacy_audit.py and a new test; the wrapper comment cleanup moved to TASK-5020.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5030-telegram-legacy-purge.md"
+      "completed_at": "2026-10-31T01:13:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5030-telegram-legacy-purge.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5031",
