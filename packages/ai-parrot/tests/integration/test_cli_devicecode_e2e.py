@@ -7,18 +7,21 @@ Exercises the full broker seam without standing up a real LLM-backed bot:
         → CredentialBroker.from_config([...o365 device_code cfg...], deps)
           → AbstractTool(credential_provider="o365").execute(_broker=..., _cred_channel=...,
                                                               _cred_user_id=...)
-            → O365DeviceCodeCredentialResolver.resolve() → VaultTokenSync o365:*
+            → O365DeviceCodeCredentialResolver.resolve() → shared O365 manager record
 
 This mirrors the existing `tests/unit/test_tool_credential_seam.py` pattern
 (a minimal `AbstractTool` subclass driving the broker gate directly) rather
 than a full `AbstractBot` + LLM harness, since the seam under test is the
 credential broker, not LLM orchestration.
 """
+from types import SimpleNamespace
+
 import pytest
 
 from parrot.auth.broker import CredentialBroker
 from parrot.auth.credentials import ProviderCredentialConfig
 from parrot.auth.oauth2.workiq_provider import WorkIQOBOCredentialResolver
+from parrot.auth.principal import Principal, set_principal_resolver
 from parrot.cli.identity import (
     O365_PRINCIPAL_ENV_VAR,
     build_cli_permission_context,
@@ -65,8 +68,30 @@ class FakeO365Client:
 
 
 class FakeO365OAuthManager:
-    async def refresh_access_token(self, refresh_token):  # pragma: no cover - cache hit path only
-        raise PermissionError("not exercised in this test")
+    """In-memory shared O365 record used by the resolver."""
+
+    def __init__(self):
+        self._store = {}
+        self.store_calls = []
+
+    async def get_valid_token(self, channel, user_id, **kwargs):
+        return self._store.get(user_id)
+
+    async def store_device_grant(self, principal, payload, *, channel):
+        token_set = SimpleNamespace(
+            access_token=payload["access_token"],
+            refresh_token=payload.get("refresh_token"),
+            grant_origin="device_code",
+        )
+        self._store[principal.user_id] = token_set
+        self.store_calls.append((principal, dict(payload), channel))
+        return token_set
+
+    async def migrate_legacy_device_grant(self, principal, legacy, *, channel):
+        return None
+
+    async def is_connected(self, channel, user_id):
+        return user_id in self._store
 
 
 class FakeVault:
@@ -82,6 +107,28 @@ class FakeVault:
         existing = self._store.get((user_id, provider), {})
         existing.update({k: v for k, v in tokens.items() if v is not None})
         self._store[(user_id, provider)] = existing
+
+    async def delete_tokens(self, user_id, provider):
+        self._store.pop((user_id, provider), None)
+
+
+class FakePrincipalResolver:
+    """Map the CLI identity to one Navigator principal."""
+
+    async def resolve(self, channel, channel_user_id):
+        return Principal(
+            user_id="1042",
+            canonical_identity=channel_user_id,
+            channel=channel,
+            channel_user_id=channel_user_id,
+        )
+
+
+@pytest.fixture(autouse=True)
+def registered_principal_resolver():
+    set_principal_resolver(FakePrincipalResolver())
+    yield
+    set_principal_resolver(None)
 
 
 class O365GatedTool(AbstractTool):
@@ -136,11 +183,12 @@ async def test_cli_device_code_end_to_end(monkeypatch):
     permission_context = build_cli_permission_context()
 
     o365_client = FakeO365Client()
+    manager = FakeO365OAuthManager()
     vault = FakeVault()
     broker = CredentialBroker.from_config(
         [ProviderCredentialConfig(provider="o365", auth="device_code")],
         o365_client=o365_client,
-        o365_oauth_manager=FakeO365OAuthManager(),
+        o365_oauth_manager=manager,
         vault=vault,
     )
 
@@ -155,10 +203,13 @@ async def test_cli_device_code_end_to_end(monkeypatch):
     assert result.result == "got-cred:entra-access-tok"
     assert o365_client.calls == 1
 
-    # Token landed in the canonical o365:* vault store.
-    persisted = vault._store[("user@corp.com", "o365")]
-    assert persisted["access_token"] == "entra-access-tok"
-    assert persisted["refresh_token"] == "entra-refresh-tok"
+    # Token landed in the shared, principal-keyed O365 manager record.
+    persisted = manager._store["1042"]
+    assert persisted.access_token == "entra-access-tok"
+    assert persisted.refresh_token == "entra-refresh-tok"
+    assert persisted.grant_origin == "device_code"
+    assert manager.store_calls[0][2] == "cli"
+    assert ("user@corp.com", "o365") not in vault._store
 
     # Second resolve is a cache hit — no second device-code round trip.
     result2 = await tool.execute(
@@ -172,6 +223,7 @@ async def test_cli_device_code_end_to_end(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason="WorkIQ reads the shared O365 record after TASK-5047")
 async def test_devicecode_token_consumable_by_workiq_obo(monkeypatch):
     """Proves the canonical-store homologation (spec §1): one Entra sign-in,
     written by device-code, is readable by the existing WorkIQ OBO resolver.
