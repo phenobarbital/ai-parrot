@@ -1,0 +1,329 @@
+{
+  "feature": "unified-usage",
+  "feature_id": "FEAT-783",
+  "spec": "sdd/specs/unified-usage.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-31T00:12:46+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/observability/test_usage_attribution.py",
+          "packages/ai-parrot/tests/observability/test_usage_record_attribution.py",
+          "packages/ai-parrot/tests/observability/test_run_ledger_recorder.py",
+          "packages/ai-parrot/tests/unit/observability/test_cost_calculator.py",
+          "packages/ai-parrot/tests/unit/observability/test_cost_computed_once.py",
+          "packages/ai-parrot/tests/unit/observability/test_shared_cost_calculator.py",
+          "packages/ai-parrot/tests/unit/observability/test_usage_models.py",
+          "packages/ai-parrot/tests/unit/observability/test_usage_subscriber.py",
+          "packages/ai-parrot/tests/unit/observability/test_metrics_subscriber.py",
+          "packages/ai-parrot/tests/unit/events/lifecycle/test_usage_event_fields.py",
+          "packages/ai-parrot/tests/test_completion_usage.py",
+          "packages/ai-parrot/tests/unit/models/test_completion_usage_add.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_usage_report.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_cli_dispatcher_usage_events.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_codex_dispatcher.py",
+          "packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_telemetry.py",
+          "packages/ai-parrot/tests/observability/test_attribution_snapshot.py",
+          "packages/ai-parrot/tests/unit/models/test_completion_usage_cache_counters.py",
+          "packages/ai-parrot/tests/observability/test_usage_record_sdd_attribution.py",
+          "packages/ai-parrot/tests/unit/observability/test_metrics_label_whitelist.py",
+          "packages/ai-parrot/tests/unit/observability/test_usage_cache_counters_carriage.py",
+          "packages/ai-parrot/tests/unit/observability/test_cost_revisioning.py",
+          "packages/ai-parrot/tests/unit/observability/test_client_event_tenant_cost.py",
+          "tests/sdd_scripts/test_price_coverage.py",
+          "packages/ai-parrot/tests/unit/observability/test_pricing_policy.py",
+          "packages/ai-parrot/tests/unit/observability/test_spec_usage_recorder.py",
+          "packages/ai-parrot/tests/unit/observability/test_config.py",
+          "packages/ai-parrot/tests/observability/test_run_ledger_attempt_cycles.py",
+          "packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_attempt_row_from_spec_rows.py",
+          "packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_usage_attribution.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_codex_usage_codec.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_spec_usage_report.py",
+          "packages/ai-parrot/tests/knowledge/wiki/test_cli_usage_report.py",
+          "packages/ai-parrot/tests/knowledge/wiki/test_mcp_manifest_golden.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:f59f33fe4131a081f568123a12106deff5f3890c6dc70e3b1ccc7f46a85d33b2"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4983",
+      "slug": "attribution-model-event-carriage",
+      "title": "UsageAttribution model, ContextVar binding and event snapshot",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "spec": "sdd/specs/unified-usage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "none: creates attribution.py; first editor of events/client.py and context.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4983-attribution-model-event-carriage.md"
+    },
+    {
+      "id": "TASK-4984",
+      "slug": "completion-usage-four-counters",
+      "title": "CompletionUsage cache and reasoning counters",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "spec": "sdd/specs/unified-usage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "none: sole editor of models/basic.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4984-completion-usage-four-counters.md"
+    },
+    {
+      "id": "TASK-4985",
+      "slug": "usage-record-sdd-attribution",
+      "title": "UsageRecord SDD identity, event-first subscriber read, label whitelist test",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "spec": "sdd/specs/unified-usage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4983"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4983: reads AfterClientCallEvent.attribution and current_usage_attribution (events/client.py, observability/context.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4985-usage-record-sdd-attribution.md"
+    },
+    {
+      "id": "TASK-4986",
+      "slug": "event-cache-counters-claude-forward",
+      "title": "Event cache/reasoning counters, source_cost_usd, Claude dispatcher forward",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "spec": "sdd/specs/unified-usage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4983",
+        "TASK-4984",
+        "TASK-4985"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4983: same file events/client.py (inserts after its attribution field); TASK-4984: mirrors CompletionUsage counter names (models/basic.py); TASK-4985: same files recorders/models.py + subscriber.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4986-event-cache-counters-claude-forward.md"
+    },
+    {
+      "id": "TASK-4987",
+      "slug": "cost-calculator-revisioning",
+      "title": "CostCalculator cache-creation tier, valid_from, price revision stamping",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "spec": "sdd/specs/unified-usage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4986"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4986: resolve_event_cost reads event.cache_read_tokens/cache_creation_tokens it adds; serializes edits to events/client.py, recorders/models.py, subscriber.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4987-cost-calculator-revisioning.md"
+    },
+    {
+      "id": "TASK-4988",
+      "slug": "price-table-refresh-coverage",
+      "title": "Refresh price tables, add cache-creation tier, prove >=90% coverage",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "spec": "sdd/specs/unified-usage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4987"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4987: cache_creation_per_1m is only read by the calculator it extends (cost/calculator.py); coverage script calls widened cost_usd",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4988-price-table-refresh-coverage.md"
+    },
+    {
+      "id": "TASK-4989",
+      "slug": "pricing-policy",
+      "title": "PricingPolicy: subscription seats report $0 + equivalent_usd",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "spec": "sdd/specs/unified-usage.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4987"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4987: serializes edits to events/client.py, recorders/models.py, subscriber.py; imports PricedCost (cost/calculator.py); claude.py also edited by TASK-4986 (transitive)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4989-pricing-policy.md"
+    },
+    {
+      "id": "TASK-4990",
+      "slug": "spec-usage-recorder",
+      "title": "SpecUsageRecorder: durable per-feature usage sink",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "spec": "sdd/specs/unified-usage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4985"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4985: persists UsageRecord.feat_id/attempt_uid it adds (recorders/models.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4990-spec-usage-recorder.md"
+    },
+    {
+      "id": "TASK-4991",
+      "slug": "attempt-rollup-by-attempt-uid",
+      "title": "Attempt roll-up derived from the sink; by_seat aggregates by attempt_uid",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "spec": "sdd/specs/unified-usage.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4990"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4990: build_attempt_row(spec_rows=...) consumes SpecUsageRecorder rows (recorders/spec_usage.py); UsageRecord.attempt_uid via TASK-4985",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4991-attempt-rollup-by-attempt-uid.md"
+    },
+    {
+      "id": "TASK-4992",
+      "slug": "engine-attribution-binding",
+      "title": "sdd-coder engine builds and binds UsageAttribution; registers the durable sink",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "spec": "sdd/specs/unified-usage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4983",
+        "TASK-4990",
+        "TASK-4991"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4983: UsageAttribution + usage_attribution(attribution=) (attribution.py, context.py); TASK-4990: SpecUsageRecorder/read_spec_usage (recorders/spec_usage.py); TASK-4991: build_attempt_row spec_rows kwarg (sdd_coder/telemetry.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4992-engine-attribution-binding.md"
+    },
+    {
+      "id": "TASK-4993",
+      "slug": "codex-usage-codec",
+      "title": "CodexUsageCodec and codex dispatcher usage emission",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "spec": "sdd/specs/unified-usage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4984",
+        "TASK-4986",
+        "TASK-4989"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4984: CompletionUsage.cache_read_tokens/reasoning_output_tokens (models/basic.py); TASK-4986: event counter + source_cost_usd fields (events/client.py); TASK-4989: event pricing_policy field (events/client.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4993-codex-usage-codec.md"
+    },
+    {
+      "id": "TASK-4994",
+      "slug": "spec-usage-report",
+      "title": "build_spec_usage_report: per-feature roll-up by task/model/seat",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "spec": "sdd/specs/unified-usage.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4989",
+        "TASK-4990"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4989: sums UsageRecord.equivalent_usd it adds (recorders/models.py); TASK-4990: rows shape from SpecUsageRecorder (recorders/spec_usage.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4994-spec-usage-report.md"
+    },
+    {
+      "id": "TASK-4995",
+      "slug": "usage-cli-mcp",
+      "title": "wikitoolkit usage report CLI + paired MCP tool + AC-14 guard",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "spec": "sdd/specs/unified-usage.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4994"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4994: calls build_spec_usage_report (flows/dev_loop/usage_report.py); read_spec_usage via TASK-4990 (transitive)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4995-usage-cli-mcp.md"
+    }
+  ]
+}
