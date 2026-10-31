@@ -44,3 +44,37 @@ def test_main_exit_code_follows_threshold(tmp_path: Path, capsys) -> None:
     assert main(["--rows-dir", str(tmp_path), "--threshold", "0.6"]) == 0
     assert json.loads(capsys.readouterr().out)["rows"] == 3
     assert main(["--rows-dir", str(tmp_path), "--threshold", "0.9"]) == 1
+
+
+def test_bundled_tables_price_the_published_roster_models() -> None:
+    """Every roster model with a published price resolves; unpublished ones stay unpriced (never guessed)."""
+    from parrot.observability.cost.calculator import CostCalculator
+
+    calc = CostCalculator()
+    priced = [
+        ("openai", "gpt-5.6-sol"),
+        ("gemini", "gemini-3.8-flash"),
+        ("aws.bedrock", "zai.glm-4.7-flash"),
+        ("aws.bedrock", "minimax.minimax-m2.5"),
+        ("aws.bedrock", "mistral.devstral-2-123b"),
+        ("aws.bedrock", "qwen.qwen3-coder-480b-a35b-instruct"),
+        ("anthropic", "claude-fable-5-1"),
+        ("anthropic", "claude-opus-5-5"),
+        ("anthropic", "claude-sonnet-5-5"),
+        ("anthropic", "claude-haiku-5-5"),
+    ]
+    for provider, model in priced:
+        assert calc.cost_usd(provider=provider, model=model, input_tokens=1000, output_tokens=1000) is not None, model
+    assert calc.cost_usd(provider="openai", model="gpt-5.6-terra", input_tokens=1, output_tokens=1) is None
+
+
+def test_anthropic_models_carry_a_cache_creation_tier() -> None:
+    """AC-6: every Anthropic entry has `cache_creation_per_1m`, and it is the 1.25x write premium."""
+    import json
+
+    from parrot.observability.cost.calculator import _BUNDLED_DIR
+
+    models = json.loads((_BUNDLED_DIR / "anthropic.json").read_text(encoding="utf-8"))["models"]
+    assert models
+    for name, entry in models.items():
+        assert entry["cache_creation_per_1m"] == round(entry["input_per_1m"] * 1.25, 6), name

@@ -49,6 +49,9 @@ data/judgement call that needs current vendor pricing.
 | `packages/ai-parrot/src/parrot/observability/cost/pricing/README.md` | MODIFY | Coverage evidence + tier docs |
 | `scripts/sdd/price_coverage.py` | CREATE | Coverage reporter |
 | `tests/sdd_scripts/test_price_coverage.py` | CREATE | Script test on a fixture |
+| `packages/ai-parrot/src/parrot/observability/cost/pricing/aws.bedrock.json` | CREATE | New provider file: Bedrock-hosted roster models |
+| `packages/ai-parrot/src/parrot/observability/attributes.py` | MODIFY | Map dev-loop backend ids `codex`->`openai`, `google-compat`->`gemini` |
+| `packages/ai-parrot/tests/unit/observability/test_attributes.py` | MODIFY | Test the new backend-id mappings |
 
 ---
 
