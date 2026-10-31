@@ -53,7 +53,9 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
     unchanged by this class's existence.
     """
 
-    def __init__(self, config: LocalServerConfig, toolkit: AbstractToolkit, *, login_file: Optional[Path] = None) -> None:
+    def __init__(
+        self, config: LocalServerConfig, toolkit: AbstractToolkit, *, login_file: Optional[Path] = None
+    ) -> None:
         super().__init__(config)
         self._owned_toolkit = toolkit
         self._login_file = login_file
@@ -93,9 +95,7 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
             return
         principal, roles = resolved
         providers = {
-            adapter.tool.credential_provider
-            for adapter in self.tools.values()
-            if adapter.tool.credential_provider
+            adapter.tool.credential_provider for adapter in self.tools.values() if adapter.tool.credential_provider
         }
         broker = build_cli_broker(store, providers, client=client) if providers else None
         context = ToolExecutionContext(
