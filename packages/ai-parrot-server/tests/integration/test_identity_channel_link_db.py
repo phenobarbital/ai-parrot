@@ -83,8 +83,12 @@ async def test_db_concurrent_channel_identity_links(link_db) -> None:
     svc1, svc2, user_a, user_b, puid = link_db
     for _ in range(5):
         await asyncio.gather(
-            svc1.link_channel_identity(nav_user_id=user_a, auth_provider="telegram", provider_user_id=puid, auth_data={}),
-            svc2.link_channel_identity(nav_user_id=user_b, auth_provider="telegram", provider_user_id=puid, auth_data={}),
+            svc1.link_channel_identity(
+                nav_user_id=user_a, auth_provider="telegram", provider_user_id=puid, auth_data={}
+            ),
+            svc2.link_channel_identity(
+                nav_user_id=user_b, auth_provider="telegram", provider_user_id=puid, auth_data={}
+            ),
         )
         owners = await _owners(svc1, puid)
         assert len(owners) == 1 and owners[0] in (user_a, user_b)
