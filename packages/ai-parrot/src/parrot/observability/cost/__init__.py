@@ -97,11 +97,17 @@ def resolve_event_cost(event: "AfterClientCallEvent", fallback: "Optional[CostCa
     from parrot.observability.attributes import resolve_gen_ai_system  # noqa: PLC0415
 
     try:
+        extra: dict[str, int] = {}
+        if getattr(event, "cache_read_tokens", None):
+            extra["cached_input_tokens"] = event.cache_read_tokens
+        if getattr(event, "cache_creation_tokens", None):
+            extra["cache_creation_tokens"] = event.cache_creation_tokens
         return calc.cost_usd(
             provider=resolve_gen_ai_system(event.client_name),
             model=event.model,
             input_tokens=event.input_tokens or 0,
             output_tokens=event.output_tokens or 0,
+            **extra,
         )
     except Exception:  # noqa: BLE001 — cost must never break telemetry
         logger.debug("resolve_event_cost failed", exc_info=True)

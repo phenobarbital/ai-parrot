@@ -113,9 +113,18 @@ class UsageRecordingSubscriber:
         output_tokens = event.output_tokens or 0
         usage_reported = not (event.input_tokens is None and event.output_tokens is None)
 
-        from parrot.observability.cost import resolve_event_cost
+        from parrot.observability.cost import get_shared_cost_calculator, resolve_event_cost
 
         cost_usd = resolve_event_cost(event, self._cost)
+        price_revision = event.price_revision
+        price_valid_from = event.price_valid_from
+        if event.cost_usd is None and cost_usd is not None:
+            calc = get_shared_cost_calculator() or self._cost
+            if calc is not None and hasattr(calc, "revision_for"):
+                try:
+                    price_revision, price_valid_from = calc.revision_for(provider, event.model)
+                except Exception:  # noqa: BLE001 — telemetry must never break recording
+                    logger.debug("price revision lookup failed", exc_info=True)
         cumulative: Optional[float] = None
         if cost_usd is not None or self._cost is not None:
             with self._lock:
@@ -147,6 +156,8 @@ class UsageRecordingSubscriber:
             cache_creation_tokens=event.cache_creation_tokens or 0,
             reasoning_output_tokens=event.reasoning_output_tokens or 0,
             source_cost_usd=event.source_cost_usd,
+            price_revision=price_revision,
+            price_valid_from=price_valid_from,
             **_attribution_fields(event),
         )
 

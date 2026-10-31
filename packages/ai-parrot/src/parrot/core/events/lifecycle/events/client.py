@@ -102,6 +102,8 @@ class AfterClientCallEvent(LifecycleEvent):
 
     Reconciliation input ONLY — never the reported value (FEAT-710 G5, AC-5).
     """
+    price_revision: Optional[str] = None  # FEAT-783 S9
+    price_valid_from: Optional[str] = None  # FEAT-783 S9
 
 
 @dataclass(frozen=True)

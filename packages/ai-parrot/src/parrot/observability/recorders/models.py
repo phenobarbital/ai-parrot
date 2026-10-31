@@ -103,6 +103,8 @@ class UsageRecord(BaseModel):
     cache_creation_tokens: int = 0
     reasoning_output_tokens: int = 0
     source_cost_usd: Optional[float] = None
+    price_revision: Optional[str] = None
+    price_valid_from: Optional[str] = None
 
     # ── FEAT-479: honesty + failure. ──
     usage_reported: bool = True
