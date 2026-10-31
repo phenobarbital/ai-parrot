@@ -91,8 +91,8 @@ class TestRelationType:
 
     def test_total_count(self) -> None:
         """RelationType member count (8 existing + 4 FEAT-239 + 1 FEAT-240
-        + 2 wiki FEAT-260 + 3 lineage relations)."""
-        assert len(RelationType) == 18
+        + 2 wiki FEAT-260 + 3 lineage relations + 3 FEAT-784 normative relations)."""
+        assert len(RelationType) == 21
 
     def test_string_round_trip(self) -> None:
         """RelationType(value) must reconstruct the correct enum member."""
