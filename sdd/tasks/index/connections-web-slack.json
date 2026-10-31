@@ -436,7 +436,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -447,8 +447,9 @@
       "parallelism_notes": "TASK-5035: both modify parrot/auth/oauth2/models.py and tests/unit/integrations/oauth2/test_models.py (serialize; keep its retry_safe/ChannelLinkPreview). TASK-5047: both modify manager/manager.py (serialize). Step 1 is a hard gate on spec §8 /enable external-callers question.",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5048-enable-route-removal-server.md"
+      "completed_at": "2026-10-31T02:21:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5048-enable-route-removal-server.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5049",
