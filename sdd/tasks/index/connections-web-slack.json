@@ -583,7 +583,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -594,8 +594,9 @@
       "parallelism_notes": "uses startConnect + connectionsStore from TASK-5053 (lib/api/connections.ts, lib/stores/connections.svelte.ts); consumes the auth_required StreamChunk variant from TASK-5054 (lib/api/stream.ts)",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5055-ui-chat-pill-auto-retry.md"
+      "completed_at": "2026-10-31T02:46:15+00:00",
+      "file": "sdd/tasks/completed/TASK-5055-ui-chat-pill-auto-retry.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5056",
@@ -604,7 +605,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -614,8 +615,9 @@
       "parallelism_notes": "uses connectionsStore + startConnect/disconnect/previewChannelLink/confirmChannelLink from TASK-5053 (lib/stores/connections.svelte.ts, lib/api/connections.ts)",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5056-ui-account-connections-pages.md"
+      "completed_at": "2026-10-31T02:46:16+00:00",
+      "file": "sdd/tasks/completed/TASK-5056-ui-account-connections-pages.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5057",
