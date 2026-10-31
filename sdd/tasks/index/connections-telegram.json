@@ -143,7 +143,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -153,8 +153,9 @@
       "parallelism_notes": "Calls IdentityMappingService.link_channel_identity/unlink_channel_identity created by TASK-5019 (services/identity_mapping.py).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5020-telegram-principal-link-lifecycle.md"
+      "completed_at": "2026-10-31T01:17:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5020-telegram-principal-link-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5021",
