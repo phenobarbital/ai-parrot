@@ -23,6 +23,7 @@ Resolution steps:
    ``VaultTokenSync``; an optional legacy vault is read/deleted only during
    migration.
 """
+
 from __future__ import annotations
 
 import logging

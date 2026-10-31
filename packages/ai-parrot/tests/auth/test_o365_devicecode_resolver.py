@@ -8,7 +8,6 @@ import pytest
 from parrot.auth.oauth2.o365_devicecode_provider import O365DeviceCodeCredentialResolver
 from parrot.auth.principal import Principal, set_principal_resolver
 
-
 class FakeO365Client:
     """Controllable stand-in for the O365 device-code client."""
 
@@ -161,9 +160,7 @@ async def test_devicecode_legacy_concurrent_replace_revoke():
     cleanup_manager.migrate_legacy_device_grant.return_value = migrated
     cleanup_legacy = FakeLegacyVault({"access_token": "legacy-token"})
     cleanup_legacy.delete_tokens.side_effect = [RuntimeError("delete unavailable"), None]
-    cleanup_resolver = O365DeviceCodeCredentialResolver(
-        FakeO365Client(), cleanup_manager, legacy_vault=cleanup_legacy
-    )
+    cleanup_resolver = O365DeviceCodeCredentialResolver(FakeO365Client(), cleanup_manager, legacy_vault=cleanup_legacy)
 
     assert await cleanup_resolver.resolve("cli", "user@x") == "migrated-token"
     assert await cleanup_resolver.resolve("cli", "user@x") == "current-token"

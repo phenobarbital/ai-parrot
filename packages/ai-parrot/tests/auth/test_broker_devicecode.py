@@ -14,9 +14,7 @@ def _config():
 def test_broker_device_code_deps_without_vault():
     o365 = object()
     manager = object()
-    resolver = CredentialResolverFactory(
-        deps={"o365_client": o365, "o365_oauth_manager": manager}
-    ).build(_config())
+    resolver = CredentialResolverFactory(deps={"o365_client": o365, "o365_oauth_manager": manager}).build(_config())
 
     assert isinstance(resolver, O365DeviceCodeCredentialResolver)
     assert resolver._legacy_vault is None
@@ -32,9 +30,9 @@ def test_broker_device_code_deps_without_vault():
 
 
 def test_factory_builds_device_code_via_o365_interface_alias():
-    resolver = CredentialResolverFactory(
-        deps={"o365_interface": object(), "o365_oauth_manager": object()}
-    ).build(_config())
+    resolver = CredentialResolverFactory(deps={"o365_interface": object(), "o365_oauth_manager": object()}).build(
+        _config()
+    )
 
     assert isinstance(resolver, O365DeviceCodeCredentialResolver)
 

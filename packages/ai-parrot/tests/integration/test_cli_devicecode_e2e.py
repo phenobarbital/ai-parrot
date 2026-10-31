@@ -14,6 +14,7 @@ This mirrors the existing `tests/unit/test_tool_credential_seam.py` pattern
 than a full `AbstractBot` + LLM harness, since the seam under test is the
 credential broker, not LLM orchestration.
 """
+
 from types import SimpleNamespace
 
 import pytest
