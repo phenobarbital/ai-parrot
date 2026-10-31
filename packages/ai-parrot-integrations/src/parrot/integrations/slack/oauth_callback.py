@@ -14,6 +14,7 @@ The notifier must be registered on the aiohttp app as
 ``app["slack_jira_oauth_notifier"]`` by :class:`SlackAgentWrapper` during
 ``__init__`` (wired in TASK-1470).
 """
+
 from __future__ import annotations
 
 import asyncio

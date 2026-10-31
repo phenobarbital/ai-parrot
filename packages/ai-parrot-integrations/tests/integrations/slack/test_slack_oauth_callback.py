@@ -194,9 +194,7 @@ class TestHandleSlackJiraCallback:
         assert "Jira Connected" in response.text
 
     @pytest.mark.asyncio
-    async def test_claim_uses_team_qualified_provider_user_id(
-        self, mock_token_set, slack_state_payload_with_nav_user
-    ):
+    async def test_claim_uses_team_qualified_provider_user_id(self, mock_token_set, slack_state_payload_with_nav_user):
         """The team-qualified Slack identity is not confused with the Navigator user id."""
         from parrot.integrations.slack.oauth_callback import handle_slack_jira_callback
 
@@ -230,9 +228,7 @@ class TestHandleSlackJiraCallback:
         )
 
         with patch("asyncio.create_task") as mock_create_task:
-            response = await handle_slack_jira_callback(
-                mock_request, mock_token_set, slack_state_payload_with_nav_user
-            )
+            response = await handle_slack_jira_callback(mock_request, mock_token_set, slack_state_payload_with_nav_user)
 
         assert response.status == 200
         assert "Jira Connected" in response.text
