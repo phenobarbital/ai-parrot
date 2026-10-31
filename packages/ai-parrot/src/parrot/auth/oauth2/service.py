@@ -432,6 +432,7 @@ class IntegrationsService:
             user_id=user_id,
             extra_state=state,
             principal=principal,
+            scopes=requested_scopes,
         )
         return ConnectInitResponse(
             auth_url=auth_url,
