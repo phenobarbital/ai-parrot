@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-786 — fixgroup-0a1d456b8ed9
 **Spec**: `sdd/specs/fixgroup-0a1d456b8ed9.spec.md`
-**Status**: pending
+**Status**: in-progress
 **Priority**: high
 **Estimated effort**: S (1-2h)
 **Depends-on**: none
