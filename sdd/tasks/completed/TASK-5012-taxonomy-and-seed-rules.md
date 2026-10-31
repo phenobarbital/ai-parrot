@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-784 — SDD Decision Audit
 **Spec**: `sdd/specs/sdd-decision-audit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4999, TASK-5000, TASK-5002
@@ -358,4 +358,8 @@ See blueprint: `test_taxonomy_loads`, `test_all_nine_seeds_present`, `test_seed_
 
 ## Completion Note
 
-*(Agent fills this in when done — include the seed commit sha.)*
+Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 88s · Tokens: n/a
+
+- Seed commit: d1e02ea06f (taxonomy `sdd/taxonomy/subsystems.yaml` + 9 `docs/decisions/*.md` seed rules + test_seed_rules.py).
+- Delivered files match the task list; no review fixes.
+- Merge-tier validation (chunk 3): 234 passed, 1 failed — pre-existing env-gated test_backend_parity_is_reported (fails identically on origin/dev).
