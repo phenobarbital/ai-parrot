@@ -242,7 +242,11 @@ def provider_picker_card(providers: List[Tuple[str, str]]) -> Dict[str, Any]:
     return _card(
         [_text("Choose an integration to connect:")],
         [
-            {"type": "Action.Submit", "title": f"Connect {display_name}", "data": {"command": f"/connect {provider_id}"}}
+            {
+                "type": "Action.Submit",
+                "title": f"Connect {display_name}",
+                "data": {"command": f"/connect {provider_id}"},
+            }
             for provider_id, display_name in providers
         ],
     )
