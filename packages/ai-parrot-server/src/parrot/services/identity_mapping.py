@@ -224,9 +224,7 @@ class IdentityMappingService:
                 rows = await raw.fetch(_CLAIM_OWNERS_SQL, auth_provider, provider_user_id)
                 if rows:
                     same_owner = (
-                        len(rows) == 1
-                        and bool(rows[0]["enabled"])
-                        and str(rows[0]["user_id"]) == str(nav_user_id)
+                        len(rows) == 1 and bool(rows[0]["enabled"]) and str(rows[0]["user_id"]) == str(nav_user_id)
                     )
                     if not same_owner:
                         self.logger.warning(
