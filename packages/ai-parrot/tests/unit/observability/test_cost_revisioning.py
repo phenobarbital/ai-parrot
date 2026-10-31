@@ -65,19 +65,27 @@ def test_valid_from_selects_window() -> None:
 
 def test_revision_changes_with_file_content() -> None:
     """A different provider file content yields a different pricing revision."""
-    revision_a = CostCalculator(override_path=str(FIXTURES / "rev_a")).price_call(
-        provider="anthropic",
-        model="claude-revision-test",
-        input_tokens=1,
-        output_tokens=1,
-    ).price_revision
+    revision_a = (
+        CostCalculator(override_path=str(FIXTURES / "rev_a"))
+        .price_call(
+            provider="anthropic",
+            model="claude-revision-test",
+            input_tokens=1,
+            output_tokens=1,
+        )
+        .price_revision
+    )
     _reset_pricing_cache_for_tests()
-    revision_b = CostCalculator(override_path=str(FIXTURES / "rev_b")).price_call(
-        provider="anthropic",
-        model="claude-revision-test",
-        input_tokens=1,
-        output_tokens=1,
-    ).price_revision
+    revision_b = (
+        CostCalculator(override_path=str(FIXTURES / "rev_b"))
+        .price_call(
+            provider="anthropic",
+            model="claude-revision-test",
+            input_tokens=1,
+            output_tokens=1,
+        )
+        .price_revision
+    )
 
     assert revision_a is not None
     assert revision_b is not None
@@ -96,12 +104,15 @@ def test_unpriced_pair_still_none() -> None:
     )
 
     assert result.priced is False
-    assert calculator.cost_usd(
-        provider="anthropic",
-        model="not-priced",
-        input_tokens=1,
-        output_tokens=1,
-    ) is None
+    assert (
+        calculator.cost_usd(
+            provider="anthropic",
+            model="not-priced",
+            input_tokens=1,
+            output_tokens=1,
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio

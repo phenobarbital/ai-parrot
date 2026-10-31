@@ -773,7 +773,11 @@ $backstory
             session_id=current_session_id.get(),
             tenant=current_tenant.get(),
             cost_usd=cost_usd,
-            **(self._price_revision_fields(client_name, model, cost_usd) if hasattr(self, "_price_revision_fields") else {}),
+            **(
+                self._price_revision_fields(client_name, model, cost_usd)
+                if hasattr(self, "_price_revision_fields")
+                else {}
+            ),
         )
         await self.events.emit(event)
         # Forward to global so cost/token recorders and OTel subscribers

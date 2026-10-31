@@ -299,9 +299,7 @@ class CostCalculator:
         revision, valid_from = self.revision_for(provider, model, kwargs.get("at"))
         return PricedCost(usd=round(total, 6), price_revision=revision, valid_from=valid_from, priced=True)
 
-    def revision_for(
-        self, provider: str, model: str, at: Optional[date] = None
-    ) -> tuple[Optional[str], Optional[str]]:
+    def revision_for(self, provider: str, model: str, at: Optional[date] = None) -> tuple[Optional[str], Optional[str]]:
         """Return the revision and date for a price entry without computing cost."""
         file_key = "google" if provider == "gemini" else provider
         provider_pricing = self._pricing.get(file_key)
