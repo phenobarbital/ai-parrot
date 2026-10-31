@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-31T01:32:03+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-31T02:56:20+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -626,7 +626,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -637,8 +637,9 @@
       "parallelism_notes": "uses connectionsStore/startConnect/disconnect from TASK-5053; deletes confirmIntegrationEnable from integrations.ts, which TASK-5055 must first remove from ConnectIntegrationPill.svelte; menu onMount start() relies on TASK-5055's store mock in the AgentChat-rendering tests",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5057-ui-integrations-menu-store.md"
+      "completed_at": "2026-10-31T02:56:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5057-ui-integrations-menu-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5058",
