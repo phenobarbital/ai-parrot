@@ -39,7 +39,7 @@ def _hit(symbol_id: str) -> SymbolHit:
 class _StubStructural:
     """read_repair=False structural stub with a controllable blast radius."""
 
-    _read_repair = False
+    read_repair = False
 
     def __init__(self) -> None:
         self.impacted: list[ImpactedSymbol] = []
@@ -224,6 +224,25 @@ async def test_reverse_contradiction_blocks(plane):
     assert report.status == "conflict"
 
 
+async def test_dangling_contradicts_ref_is_invalid(plane):
+    report = await plane.service.evaluate(_write(plane.root, _spec(_entry_contradicting("adr:doc:does-not-exist"))))
+    assert report.status == "invalid"
+    assert any(d.code == "SPEC_DANGLING_REF" and "adr:doc:does-not-exist" in d.message for d in report.diagnostics)
+
+
+async def test_ineligible_contradicts_ref_is_skipped(plane):
+    report = await plane.service.evaluate(_write(plane.root, _spec(_entry_contradicting("adr:doc:rejected"))))
+    assert not any(d.code == "SPEC_DANGLING_REF" for d in report.diagnostics)
+    assert not any(f.kind == "contradiction" for f in report.findings)
+
+
+async def test_historical_contradicts_ref_names_active_head(plane):
+    report = await plane.service.evaluate(_write(plane.root, _spec(_entry_contradicting("adr:doc:chain-a1"))))
+    assert report.status == "conflict"
+    [diagnostic] = [d for d in report.diagnostics if d.code == "DECISION_REF_HISTORICAL"]
+    assert "adr:doc:chain-a1" in diagnostic.message and "active head" in diagnostic.message
+
+
 async def test_prospective_supersession_resolves_contradiction(plane):
     entry = (
         _entry_contradicting("adr:doc:filler-03")
@@ -343,7 +362,7 @@ async def test_truncated_impact_is_incomplete(plane):
 
 
 async def test_read_repair_structural_is_incomplete(plane):
-    plane.structural._read_repair = True
+    plane.structural.read_repair = True
     report = await plane.service.evaluate(_write(plane.root, _spec(_ENTRY_A)))
     assert report.status == "incomplete"
 

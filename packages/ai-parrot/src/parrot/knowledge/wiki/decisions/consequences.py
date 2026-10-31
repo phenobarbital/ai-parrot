@@ -26,9 +26,11 @@ from parrot.knowledge.wiki.decisions.models import (
     ADR_SOURCE_UNAVAILABLE,
     APPROVAL_MANIFEST_INVALID,
     AUDIT_NOT_CONFIGURED,
+    DECISION_REF_HISTORICAL,
     SCOPE_INCOMPLETE,
     SNAPSHOT_UNSTABLE,
     SPEC_BLOCK_MISSING,
+    SPEC_DANGLING_REF,
     SPEC_INVALID_ID,
     SUPERSESSION_INVALID,
     TARGET_FOREIGN,
@@ -401,7 +403,7 @@ class ConsequenceService:
             self._validate_about(block, taxonomy, diagnostics, rel)
             resolved = await self._resolve_targets(block, diagnostics, coverage, rel)
             impacts = await self._impacts(resolved, coverage, diagnostics, rel)
-        if getattr(self.structural, "_read_repair", False):
+        if self.structural.read_repair:
             coverage.impact_complete = False
             diagnostics.append(
                 DecisionDiagnostic(
@@ -698,7 +700,7 @@ class ConsequenceService:
         refs = {
             decision_id: DecisionRef(decision_id=decision_id, revision=e.revision) for decision_id, e in entries.items()
         }
-        findings = self._contradictions(entries, refs, comparison, snapshot)
+        findings = self._contradictions(entries, refs, comparison, snapshot, diagnostics, rel)
         explicit = {frozenset((p.decision_id for p in f.participants)) for f in findings}
         findings += await self._polarity_and_supersession(entries, refs, comparison, resolved, explicit)
         findings += self._blast_findings(entries, refs, impacts)
@@ -711,8 +713,16 @@ class ConsequenceService:
         refs: dict[str, DecisionRef],
         comparison: list[DecisionRecord],
         snapshot: InventorySnapshot,
+        diagnostics: list[DecisionDiagnostic],
+        rel: str,
     ) -> list[Finding]:
-        """Blocking contradictions from explicit ``contradicts`` refs only (AC4, AC5, AC8)."""
+        """Blocking contradictions from explicit ``contradicts`` refs only (AC4, AC5, AC8).
+
+        A ref naming no decision in the inventory is a dangling reference and makes the
+        report ``invalid``; a ref naming a known but ineligible decision is skipped. A ref
+        naming a superseded predecessor blocks against the active head and emits a
+        diagnostic listing that head (AC8).
+        """
         heads = {record.decision_id: record for record in comparison}
         prospective = {(ref.decision_id, ref.revision) for entry in entries.values() for ref in entry.supersedes}
         pairs: dict[tuple[tuple[str, int], ...], tuple[list[DecisionRef], str]] = {}
@@ -732,9 +742,29 @@ class ConsequenceService:
                         f"{decision_id} contradicts {other.decision_id} in the same spec",
                     )
                     continue
+                if ref.decision_id not in snapshot.manifest.inventory:
+                    diagnostics.append(
+                        DecisionDiagnostic(
+                            code=SPEC_DANGLING_REF,
+                            message=f"{decision_id} contradicts unknown decision {ref.decision_id}",
+                            path=rel,
+                        )
+                    )
+                    continue
                 head = snapshot.effective_head(ref.decision_id)
                 if head is None or head.decision_id not in heads:
                     continue
+                if head.decision_id != ref.decision_id:
+                    diagnostics.append(
+                        DecisionDiagnostic(
+                            code=DECISION_REF_HISTORICAL,
+                            message=(
+                                f"{decision_id} contradicts historical decision {ref.decision_id}; "
+                                f"active head: {head.decision_id}@{head.revision}"
+                            ),
+                            path=rel,
+                        )
+                    )
                 add(
                     [refs[decision_id], head],
                     head,
