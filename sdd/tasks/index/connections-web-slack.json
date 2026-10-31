@@ -241,7 +241,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -251,8 +251,9 @@
       "parallelism_notes": "TASK-5038: implements ConnectionAuthorizer from parrot/auth/oauth2/authorization.py (created by TASK-5038).",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5039-navigator-connection-authorizer.md"
+      "completed_at": "2026-10-31T01:59:37+00:00",
+      "file": "sdd/tasks/completed/TASK-5039-navigator-connection-authorizer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5040",
@@ -261,7 +262,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -271,8 +272,9 @@
       "parallelism_notes": "imports RedisConnectionPush from TASK-5033 (services/connection_push.py) and calls add_sink from TASK-5032 (transitive); first in the manager.py chain TASK-5040→TASK-5041→TASK-5047→TASK-5048",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5040-sse-connection-events-handler.md"
+      "completed_at": "2026-10-31T01:59:37+00:00",
+      "file": "sdd/tasks/completed/TASK-5040-sse-connection-events-handler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5041",
@@ -324,7 +326,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -334,8 +336,9 @@
       "parallelism_notes": "TASK-5036: calls IdentityMappingService.claim_channel_identity / ClaimResult (services/identity_mapping.py, created by TASK-5036) via app['identity_mapping_service'].",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5043-slack-oauth-callback-team-qualified.md"
+      "completed_at": "2026-10-31T01:59:38+00:00",
+      "file": "sdd/tasks/completed/TASK-5043-slack-oauth-callback-team-qualified.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5044",
@@ -367,7 +370,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -377,8 +380,9 @@
       "parallelism_notes": "needs UsersIntegrationRow.grant_origin from TASK-5035 (oauth2/models.py). No dependency: extends O365OAuthManager (o365_oauth.py) and _METADATA_KEYS (identity_credential_sink.py), files no other FEAT-777 task touches; new test file test_o365_device_grant.py.",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5045-o365-device-grant-store.md"
+      "completed_at": "2026-10-31T01:59:38+00:00",
+      "file": "sdd/tasks/completed/TASK-5045-o365-device-grant-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5046",
