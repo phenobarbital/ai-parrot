@@ -39,8 +39,7 @@ $sdd-brainstorm -> review -> $sdd-spec -> $sdd-task -> $sdd-start
   numbers.
 - Verify packages in project dependency files before recommending them.
 - Commit only the brainstorm file unless the user explicitly asks otherwise.
-- Fill frontmatter `projects` (parts of the codebase, vocabulary `KNOWN_PROJECTS` in
-  `scripts/sdd/sdd_meta.py`; unknown values warn) and `tags` (2–6 kebab-case keywords) — FEAT-576.
+- Fill frontmatter `projects` (parts of the codebase, vocabulary: the project areas in `sdd/CONVENTIONS.md` (§ Project areas), or the `projects` list in `sdd/config.json` when set; unknown values warn) and `tags` (2–6 kebab-case keywords) — FEAT-576.
 
 ## Flow Type
 
@@ -51,12 +50,12 @@ Ask these first unless the user already supplied explicit values:
    release freeze or a parent feature branch for sub-features. For `hotfix`,
    base is always `main`.
 
-Defaults when unanswered: `type: feature`, `base_branch: dev`.
+Defaults when unanswered: `type: feature` with the `base_branch` from `sdd/config.json`.
 
 Validation:
 
-- `type: hotfix` requires `base_branch: main`.
-- `type: feature` with `base_branch: main` is invalid. Stop and explain that
+- `type: hotfix` requires `base_branch` to be the `hotfix_base` in `sdd/config.json`.
+- `type: feature` with `base_branch` equal to the `hotfix_base` is invalid. Stop and explain that
   features land on `dev`, `staging`, or a non-main parent feature branch.
 
 ## Workflow

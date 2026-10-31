@@ -6,6 +6,8 @@ The local journal at `<ledger-dir>/events.jsonl` (resolved by `LedgerService.fro
 
 Feature PRs contain code and task artifacts only. Canonical ledger data is delivered independently to `origin/dev`.
 
+The destination branch comes from `sdd/config.json` (FEAT-633): `ledger_branch` when set, otherwise `base_branch`, which defaults to `dev`. This document says `origin/dev` for that default. A batch records its destination when sealed, so changing `ledger_branch` while a batch is pending leaves that batch for its original branch.
+
 ## Commands and exit codes
 
 All commands require `--repo-root PATH`; `--ledger-dir PATH` explicitly selects the private local journal. Add `--json` for structured output.

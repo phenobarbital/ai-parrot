@@ -278,7 +278,9 @@ def test_scope_guard_import_error_allows(checkout: tuple[Path, Path], monkeypatc
 
 
 def test_standalone_loader_resolves_kernel_by_path() -> None:
-    hook_dir = str(Path(policy.__file__).parent)
+    from parrot.sdd.scripts import worktree_environment as moved
+
+    hook_dir = str(Path(moved.__file__).parent)
     code = (
         f"import sys; sys.path.insert(0, {hook_dir!r}); "
         "import worktree_environment as we; "
@@ -298,7 +300,8 @@ def test_programmatic_claude_protection_does_not_depend_on_project_settings(tmp_
     hook = json.loads(options.extra_args["settings"])["hooks"]["PreToolUse"][0]
     assert "Bash" in hook["matcher"]
     command = hook["hooks"][0]["command"]
-    assert "worktree_environment.py" in command
+    assert "-m parrot.sdd.scripts.worktree_environment --hook" in command
+    assert "packages/" not in command and "flows/dev_loop" not in command
     assert command.endswith(" || exit 2")
 
 
@@ -685,6 +688,20 @@ def test_hook_applies_verdict_command(checkout: tuple[Path, Path], monkeypatch: 
     )
     updated = response["hookSpecificOutput"]["updatedInput"]
     assert shlex.split(updated["command"])[-3:] == ["/bin/bash", "-c", "cd /w && python v.py"]
+
+
+def test_module_imports_without_os_getuid() -> None:
+    """Windows has no os.getuid: the installed hook must still import (it used to crash before reading its payload)."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[3] / "src"
+    code = "import os; del os.getuid; import parrot.sdd.scripts.worktree_environment as m; print(m.CLAUDE_SCRATCH_ROOT)"
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False, env={"PYTHONPATH": str(src)}
+    )
+    assert result.returncode == 0, result.stderr
 
 
 # ---------------------------------------------------------------------------

@@ -53,7 +53,8 @@ from scripts.sdd.check_e2e_closeout import evaluate_closeout_gate  # noqa: E402
 
 _SDD_DONE_COMMAND = _REPO_ROOT / ".claude" / "commands" / "sdd-done.md"
 _SDD_DONE_SKILL = _REPO_ROOT / ".agents" / "skills" / "sdd-done" / "SKILL.md"
-_DOC_SURFACES = (_SDD_DONE_COMMAND, _SDD_DONE_SKILL)
+_SDD_DONE_WORKFLOW = _REPO_ROOT / ".agent" / "workflows" / "sdd-done.md"
+_DOC_SURFACES = (_SDD_DONE_COMMAND, _SDD_DONE_SKILL, _SDD_DONE_WORKFLOW)
 
 _FEATURE_ID = "FEAT-581"
 _SPEC_RELATIVE = "sdd/specs/example.spec.md"
@@ -437,7 +438,7 @@ async def test_none_policy_never_reads_a_plan_or_evidence(git_worktree: Path) ->
 def test_each_surface_invokes_the_gate_script(path: Path) -> None:
     """FEAT-703: enforcement is an invocation, not an instruction."""
     text = path.read_text(encoding="utf-8")
-    assert "scripts.sdd.check_e2e_closeout" in text
+    assert "parrot sdd run check_e2e_closeout" in text
     for keyword in ("stamp", "push", "merge", "cleanup"):
         assert keyword in text.lower()
 

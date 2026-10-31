@@ -1,12 +1,12 @@
 ---
 # SDD flow type and base branch (FEAT-145).
-# - type: feature  (default)  → base_branch: dev (or any non-main branch)
-# - type: hotfix              → base_branch MUST be: main
+# - type: feature  (default)  → base_branch: the base_branch in sdd/config.json (or any non-hotfix branch)
+# - type: hotfix              → base_branch MUST be the hotfix_base in sdd/config.json
 type: feature
-base_branch: dev
-# projects: parts of the codebase this doc concerns. Use `packages/*` dir names
-#   (ai-parrot, ai-parrot-server, parrot-formdesigner, …) or an area
-#   (sdd-tooling, dev-loop, admin-ui, docs, ci). Unknown values warn, not fail.
+base_branch: <base_branch>   # default: the base_branch in sdd/config.json
+# projects: parts of the codebase this doc concerns. Use the project areas of your
+#   repository (`sdd/CONVENTIONS.md` § Project areas, or the `projects` list in
+#   `sdd/config.json`). Unknown values warn, not fail.
 projects: []
 # tags: free-form kebab-case keywords for organizing specs (e.g. memory, mcp).
 tags: []
@@ -148,14 +148,15 @@ writing the code is mechanical".
 
 > FEAT-699. Explicit pytest operands (repo-relative file or `file::node`) that gate this feature in ALL
 > tiers — task, merge, feature (`/sdd-done`) and QA. When present it REPLACES the heuristic breadth
-> (import impact, suite escalation); the nightly workflow covers everything else. Write
+> (import impact, suite escalation); a full-suite run covers everything else. Write
 > `none — fallback` to opt out explicitly (bounded fallback: tasks' own tests + direct importers).
+> Repos with `test_command` set in `sdd/config.json`: write `none — fallback`.
 > Never list `real_llm` tests. `integration`/`e2e`-marked operands listed here DO run.
 > `/sdd-task` caches this list into the per-spec index header (`test_contract`).
 
 tests:
-- packages/<dist>/tests/path/test_file.py
-- packages/<dist>/tests/path/test_file.py::test_node
+- <tests>/path/test_file.py
+- <tests>/path/test_file.py::test_node
 markers: none
 
 > Multi-runner form (FEAT-709) — use it INSTEAD of the flat form above when the feature has non-pytest tests
@@ -165,10 +166,10 @@ markers: none
 >     runners:
 >     - kind: pytest
 >       tests:
->       - packages/<dist>/tests/path/test_file.py
+>       - <tests>/path/test_file.py
 >       markers: none
 >     - kind: vitest
->       cwd: packages/ai-parrot-server/ui
+>       cwd: <ui-dir>
 >       tests:
 >       - src/lib/path/file.test.ts
 >     - kind: cargo
@@ -288,8 +289,8 @@ class ExistingClass(BaseClass):
 
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
-| `packages/<dist>/src/<pkg>/module/file.py` | MODIFY | `def existing_method(self) -> None:` | `file.py:NN` | 1 |
-| `packages/<dist>/src/<pkg>/module/new_file.py` | CREATE | — | — | — |
+| `<src>/<pkg>/module/file.py` | MODIFY | `def existing_method(self) -> None:` | `file.py:NN` | 1 |
+| `<src>/<pkg>/module/new_file.py` | CREATE | — | — | — |
 
 - A **CREATE** row declares only the path the module adds; it needs no anchor.
 - **Occurrences > 1** means the one-line anchor is ambiguous. Quote 2–3 lines of

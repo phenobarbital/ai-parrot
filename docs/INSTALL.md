@@ -5,7 +5,7 @@
 This guide explains how to install and run ai-parrot from source and using uv.
 
 ## Prerequisites
-- Python 3.10–3.12
+- Python 3.11–3.13
 - Git
 - System libs for science stack (Debian/Ubuntu):
   - `build-essential libffi-dev libssl-dev libxml2-dev libxslt1-dev zlib1g-dev libjpeg-dev`
@@ -17,26 +17,12 @@ git clone git@github.com:phenobarbital/ai-parrot.git
 cd ai-parrot
 ```
 
-## Install with uv (recommended)
-uv is a fast Python package manager.
+## Install
 
-- Install uv (see docs): `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- Create and activate environment, then install project:
-```bash
-uv venv --python 3.11
-source .venv/bin/activate
-uv pip install -e .[all]
-```
-- Optional extras by area:
-  - `.[agents]`, `.[loaders]`, `.[images]`, `.[vector]`, `.[anthropic]`, `.[openai]`, `.[google]`, `.[groq]`, `.[milvus]`, `.[chroma]`, `.[eda]`
-
-## Install from source with pip
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -U pip wheel
-pip install -e .[all]
-```
+Follow the canonical guide: [getting-started.md](getting-started.md). It covers the project-venv
+install, the machine-wide managed runtime (`install-parrot.sh --global` / `install-parrot.ps1
+-Global`, with what each command downloads, writes and verifies, and a non-piped alternative),
+providers and verification. Managed-runtime reference: [install/global-runtime.md](install/global-runtime.md).
 
 ## Environment configuration
 The app relies on `navconfig` for settings (env vars, .ini files). Common variables:

@@ -27,7 +27,6 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-import yaml
 from navconfig import BASE_DIR
 
 from parrot import conf
@@ -54,17 +53,11 @@ from parrot.flows.dev_loop.nodes.base import (
     transition_issue_with_candidates,
 )
 from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
-
-# FEAT-466 TASK-2504: WorkKind -> base branch, used ONLY as the fallback
-# when the committed spec's frontmatter cannot be read. Deliberately a
-# LOCAL copy of scripts/sdd/sdd_meta.WORK_KIND_FLOW's base-branch half
-# (not an import — `scripts.sdd` is not importable from this package's
-# actual install/test context; see TASK-2504 Completion Note).
-_WORK_KIND_BASE_BRANCH: Dict[str, str] = {
-    "bug": "main",
-    "enhancement": "dev",
-    "new_feature": "dev",
-}
+from parrot.knowledge.wiki.ledger.sdd_meta import (
+    DEFAULT_FEATURE_BASE,
+    WORK_KIND_FLOW,
+    read_declared_base_branch,
+)
 
 # Atlassian caps the description field at 32 767 chars; leave a 2K
 # headroom for the rest of the JSON body and any unicode-byte expansion.
@@ -154,45 +147,6 @@ def _plan_llm_default() -> str:
     if pinned:
         return pinned
     return _summarizer_llm_default()
-
-
-def _parse_flow_frontmatter(spec_path: Path) -> Optional[str]:
-    """Read the ``base_branch`` declared in a spec's YAML frontmatter.
-
-    FEAT-466 TASK-2504: mirrors ``scripts/sdd/sdd_meta.parse()``'s body
-    locally rather than importing it — ``scripts.sdd`` is not importable
-    from this package's actual install/test context (verified: it fails
-    once the interpreter's cwd is anything other than the repo root,
-    which is the normal case for an installed ``parrot`` package and for
-    this package's own test suite, run from ``packages/ai-parrot``). See
-    TASK-2504 Completion Note for the full verification.
-
-    Args:
-        spec_path: Path to the committed spec markdown file.
-
-    Returns:
-        The frontmatter's ``base_branch`` string when present and
-        non-empty, else ``None`` (missing file, no frontmatter, malformed
-        YAML, or a non-string/empty value) — callers must treat ``None``
-        as "unresolved", never as an error.
-    """
-    try:
-        text = spec_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    if not text.startswith("---"):
-        return None
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return None
-    try:
-        block = yaml.safe_load(parts[1]) or {}
-    except yaml.YAMLError:
-        return None
-    if not isinstance(block, dict):
-        return None
-    base = block.get("base_branch")
-    return base if isinstance(base, str) and base else None
 
 
 @register_dev_loop_node("dev_loop.research")
@@ -612,10 +566,10 @@ class ResearchNode(DevLoopNode):
         if override:
             resolved = override
         else:
-            resolved = _parse_flow_frontmatter(spec_path)
+            resolved = read_declared_base_branch(spec_path)
             if resolved is None:
                 kind = getattr(brief, "kind", None)
-                resolved = _WORK_KIND_BASE_BRANCH.get(kind, "dev")
+                resolved = WORK_KIND_FLOW.get(kind, ("feature", DEFAULT_FEATURE_BASE))[1]
                 self.logger.warning(
                     "Could not resolve base_branch from spec %s; falling back "
                     "to the kind mapping for kind=%r -> %r.",

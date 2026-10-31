@@ -7,6 +7,8 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from parrot.launcher import script_path
+
 if TYPE_CHECKING:
     from parrot.knowledge.wiki.project import WikiRemoteConfig
     from parrot.mcp.toolkit_config import ToolkitSection
@@ -20,6 +22,8 @@ RULES_END = "# <<< parrot-wiki Codex permissions <<<"
 MCP_TABLE = "mcp_servers.wikitoolkit"
 SKILL_PATH = Path(".codex/skills/parrot-wiki/SKILL.md")
 RULES_PATH = Path(".codex/rules/parrot-wiki.rules")
+#: Relative toolkit config used by portable toolkit tables (FEAT-633).
+PORTABLE_TOOLKIT_CONFIG = ".parrot/mcp-toolkits.yaml"
 
 CONVENTIONS_BEGIN = "<!-- parrot:conventions:codex:begin -->"
 CONVENTIONS_END = "<!-- parrot:conventions:codex:end -->"
@@ -54,17 +58,20 @@ for typed authoring, listing and local-plane back-fill.
 
 def resolve_binary(root: Path, name: str) -> str:
     """Resolve a project-venv binary, then PATH, then its bare name."""
-    venv_binary = root / ".venv" / "bin" / name
+    venv_binary = script_path(root / ".venv", name)
     if venv_binary.exists():
         return str(venv_binary)
     return shutil.which(name) or name
 
 
-def toolkit_mcp_block(root: Path, sections: dict[str, ToolkitSection]) -> str:
+def toolkit_mcp_block(root: Path, sections: dict[str, ToolkitSection], *, portable: bool = False) -> str:
     """Build one ``[mcp_servers.parrot-<name>]`` TOML table per name (FEAT-485).
 
     Args:
         root: Project root — used to resolve the ``parrot`` binary.
+        portable: Emit the bare ``parrot`` command and the relative ``--config``
+            (no absolute path anywhere; FEAT-633). The project root is then
+            supplied by the host cwd or ``PARROT_PROJECT`` set by the user.
         sections: Mapping of toolkit name -> its config section. Callers
             are responsible for pre-filtering to enabled, non-colliding
             sections — this function renders exactly what it is given.
@@ -76,8 +83,12 @@ def toolkit_mcp_block(root: Path, sections: dict[str, ToolkitSection]) -> str:
         (FEAT-556), so ``parrot mcp-local`` resolves the toolkit regardless
         of the cwd Codex starts the server from.
     """
-    command = json.dumps(resolve_binary(root, "parrot"))
-    config_path = str(root / ".parrot" / "mcp-toolkits.yaml")
+    if portable:
+        command = json.dumps("parrot")
+        config_path = PORTABLE_TOOLKIT_CONFIG
+    else:
+        command = json.dumps(resolve_binary(root, "parrot"))
+        config_path = str(root / ".parrot" / "mcp-toolkits.yaml")
     tables = []
     for name in sorted(sections):
         section = sections[name]
@@ -93,7 +104,9 @@ def toolkit_mcp_block(root: Path, sections: dict[str, ToolkitSection]) -> str:
     return "\n\n".join(tables)
 
 
-def mcp_block(root: Path, toolkit_block: str = "", *, remote: "WikiRemoteConfig | None" = None) -> str:
+def mcp_block(
+    root: Path, toolkit_block: str = "", *, remote: "WikiRemoteConfig | None" = None, portable: bool = False
+) -> str:
     """Return the managed project-scoped Codex MCP configuration.
 
     Args:
@@ -107,6 +120,7 @@ def mcp_block(root: Path, toolkit_block: str = "", *, remote: "WikiRemoteConfig 
             MCP (``url`` + ``bearer_token_env_var``, no ``command``/``args``)
             instead of the local stdio server. Codex documents no custom
             header key, so ``X-Wiki-Actor`` cannot be sent this way.
+        portable: Stdio branch only — emit the bare ``wikitoolkit`` command.
     """
     if remote is not None:
         lines = [
@@ -117,7 +131,7 @@ def mcp_block(root: Path, toolkit_block: str = "", *, remote: "WikiRemoteConfig 
             'default_tools_approval_mode = "approve"',
         ]
     else:
-        command = json.dumps(resolve_binary(root, "wikitoolkit"))
+        command = json.dumps("wikitoolkit" if portable else resolve_binary(root, "wikitoolkit"))
         lines = [
             MCP_BEGIN,
             f"[{MCP_TABLE}]",
@@ -132,14 +146,18 @@ def mcp_block(root: Path, toolkit_block: str = "", *, remote: "WikiRemoteConfig 
     return "\n".join(lines) + "\n"
 
 
-def rules_block(root: Path) -> str:
-    """Return allow rules for every supported WikiToolkit CLI surface."""
+def rules_block(root: Path, *, portable: bool = False) -> str:
+    """Return allow rules for every supported WikiToolkit CLI surface.
+
+    Portable mode emits only the bare-name patterns (no machine-specific path).
+    """
     patterns = [["wikitoolkit"], ["parrot", "wiki"]]
-    resolved_wiki = resolve_binary(root, "wikitoolkit")
-    resolved_parrot = resolve_binary(root, "parrot")
-    for pattern in ([resolved_wiki], [resolved_parrot, "wiki"]):
-        if pattern not in patterns:
-            patterns.append(pattern)
+    if not portable:
+        resolved_wiki = resolve_binary(root, "wikitoolkit")
+        resolved_parrot = resolve_binary(root, "parrot")
+        for pattern in ([resolved_wiki], [resolved_parrot, "wiki"]):
+            if pattern not in patterns:
+                patterns.append(pattern)
     rules = [RULES_BEGIN]
     for pattern in patterns:
         rules.append(

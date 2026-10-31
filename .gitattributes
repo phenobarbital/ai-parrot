@@ -1,3 +1,6 @@
 # FEAT-694: the shared ledger event log is append-only on every machine; take both sides.
 sdd/ledger/events.jsonl merge=union
 sdd/ledger/archive/*.jsonl merge=union
+
+# FEAT-633: installer scripts and their SHA256SUMS are hashed/executed as LF bytes on every platform.
+scripts/install/* text eol=lf

@@ -29,7 +29,7 @@ hooks:
     - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
       hooks:
         - type: command
-          command: 'python3 "$CLAUDE_PROJECT_DIR/packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py" --hook || exit 2'
+          command: 'parrot sdd run worktree_environment --hook || exit 2'
           timeout: 10
 ---
 
@@ -103,7 +103,7 @@ directory switching, no shared mutable state across features.
    Record deferred findings with `wikitoolkit ledger open` (or the `ledger_open` MCP tool) carrying the
    task/review attribution in `--discovered-from`. NEVER append to, edit or stage `sdd/ledger/events.jsonl`
    or `sdd/ledger/issues.jsonl` — feature commits must not change them. `/sdd-done` delivers events to
-   `origin/dev` through the outbox. Coder findings returned in a `DevelopmentOutput` are registered by you.
+   the ledger branch (`sdd/config.json`) through the outbox. Coder findings returned in a `DevelopmentOutput` are registered by you.
 
 ---
 
@@ -155,7 +155,7 @@ you were launched inside a linked worktree (the documented launch mode) or in
 the primary checkout:
 
 ```bash
-META=$(python -c "from pathlib import Path; from scripts.sdd.sdd_meta import parse; m = parse(Path('<spec-path>')); print(m.type, m.base_branch)")
+META=$(parrot sdd run sdd_meta parse "<spec-path>")
 TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 
@@ -181,11 +181,11 @@ instead of the local `$BASE_BRANCH`.
 `base_branch` defaults to `dev` for `type: feature` and is fixed to `main`
 for `type: hotfix`. `staging` is also a valid `base_branch` for `type: feature`
 during a release freeze (FEAT-187). Features MUST NOT base on `main` — if the
-spec declares `type: feature, base_branch: main`, abort with:
+spec declares `type: feature` with the `hotfix_base` as `base_branch`, abort with:
 ```
-⚠️  type='feature' cannot base on 'main'. Features land on dev (default)
-   or staging (during a release freeze). For changes that must base on
-   main, set type='hotfix' in the document frontmatter.
+⚠️  type='feature' cannot base on the hotfix base branch. Features land on the
+   configured base_branch (default) or staging_branch (during a release freeze).
+   For changes that must base on the hotfix base, set type='hotfix' in the document frontmatter.
 ```
 If the working tree is dirty or `--ff-only` fails,
 abort with a clear message — do NOT stash.
@@ -226,7 +226,7 @@ it exists only inside its worktree.
 - `IN_WORKTREE=0` ⇒ STOP: `⚠️  Briefs exist only inside their worktree: cd <worktree> and re-run sdd-worker.`
 - §3 provisions with `--brief-key "${FEATURE_ID#BRIEF-}" --base-branch "<base_branch>"` instead of `--feature-id`/`--jira-key`.
 - `INDEX` (§4.5, closure) is the matched `sdd/briefs/<slug>.index.json`; task files come from `tasks[].file`.
-- Closure: NO `close_task.sh`. Set one entry in place, fill its Completion Note in place, then stage the index and task file:
+- Closure: NO `parrot sdd run close_task`. Set one entry in place, fill its Completion Note in place, then stage the index and task file:
 
   ```bash
   jq --arg id "HOTFIX-<KEY>-<N>" --arg now "$NOW" \
@@ -254,7 +254,7 @@ ref (FEAT-552). The command is idempotent: it reuses an existing worktree and
 creates one only when absent.
 
 ```bash
-WORKTREE_PATH=$(python -m scripts.sdd.ensure_worktree \
+WORKTREE_PATH=$(parrot sdd run ensure_worktree \
   --slug "<feature-slug>" \
   --feature-id "<FEAT-ID>" \
   --spec "<spec-path>" \
@@ -267,15 +267,14 @@ the declaration lives in the root `pyproject.toml` under `[tool.parrot.worktree]
 `parrot.utils.types` and the other compiled extensions are gitignored, so without this
 step `import parrot.utils` fails inside the tree (FEAT-722). It builds a missing one
 automatically and prints a `warning:` line on **stderr** if it could not; only then run
-the build yourself (`cd packages/ai-parrot && python setup.py build_ext --inplace`, or
-`make -C packages/navrules build-rust-wheel`). Never hand-copy `.so` files, and never
-`maturin develop` — it rewrites the shared `.venv`.
+the build yourself with the repository's documented native build command. Never hand-copy
+`.so` files, and never `maturin develop` — it rewrites the shared `.venv`.
 
 For a hotfix (`type: hotfix` in the per-spec index header) pass
 `--jira-key <KEY>` instead of `--feature-id`. This is a real behaviour change:
 the previous block always produced `feat-<FEAT-ID>-<slug>` from `HEAD`, so a
 hotfix inherited unreleased `dev` commits (FEAT-466). Naming and base ref now
-come from `scripts.sdd.sdd_meta.plan_worktree`.
+come from `parrot.sdd.scripts.sdd_meta.plan_worktree`.
 
 If the command exits non-zero, STOP and report its message. Do not implement on
 `<BASE_BRANCH>`.
@@ -409,7 +408,7 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
      review evidence ref>`, `fix_commits`, and a `completion_facts["seat_summary"]` entry formatted
      `Seat: <seat_label> · Backend: <backend> · Model: <model> · Attempts: <n> · Duration: <sum duration_s> ·
      Tokens: <usage>` taken from `attempts[*]`) and run
-     `python -m scripts.sdd.finalize_task --evidence <path> --worktree <this worktree> --expected-head <post-merge HEAD>`.
+     `parrot sdd run finalize_task --evidence <path> --worktree <this worktree> --expected-head <post-merge HEAD>`.
      It renders the Completion Note deterministically and returns `staged_paths`, `removed_paths` and a suggested
      `message` — `git add` exactly the `staged_paths` and commit with that message WITHOUT a pathspec: the deletion of
      the old `active/` copy (`removed_paths`) is already staged, and `git commit -- <paths>` would leave it out and
@@ -479,7 +478,8 @@ For model lessons, record the confirmed finding with
 - `correction`: the action this model must take to avoid repeating the defect.
 - `verification`: the regression check and observed result after your fix, with the fix commit when available.
 
-Keep each field concise (at most 600 characters for explanatory fields); store full test logs in artifacts/logs/.
+Keep each field concise (at most 600 characters for explanatory fields); store full test logs under
+`${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/<FEAT-ID>/` (outside the worktree, so `/sdd-done` can remove it).
 File one confirmed pattern per attempt. A repeated recording call is not another recurrence. Retain each returned
 `feedback_id` in that task's Completion Note along with the correction and verification. Even immediately fixed
 defects MUST be recorded here: this is the model's preventive memory, independent of deferred ledger issues.
@@ -552,7 +552,7 @@ failure.
 - Use ONLY the class names, method signatures, and patterns specified.
 - Use ONLY the imports from the verified Codebase Contract.
 - Follow project conventions (asyncio-first, Pydantic v2, etc.) — the binding
-  set, per language, is `.claude/rules/codebase-conventions.md`.
+  set, per language, is `sdd/CONVENTIONS.md`.
 
 ### d) Post-Implementation Verification (MANDATORY, in worktree)
 ```
@@ -567,12 +567,15 @@ VERIFICATION CHECKLIST for TASK-<NNN>:
 If ANY check fails, fix or STOP.
 
 ### e) Validate (in worktree)
-- Lint mechanically, never by hand (this path has no engine to do it): `ruff check --fix <task .py files>`, then
-  `black <task .py files>` only if `pyproject.toml` has `[tool.black]`. Fix only syntax errors / undefined names
-  (`ruff check --select E9,F63,F7,F82`); leave remaining style findings to `/sdd-done`.
-- Run the task's `## Validation Commands`, then `mkdir -p artifacts/logs;
-  python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
-  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --feature FEAT-<NNN> --report-task TASK-<NNN> --run > artifacts/logs/merge-tests-TASK-<NNN>.log 2>&1`
+- Lint mechanically, never by hand (this path has no engine to do it), and only with the linters the repository
+  configures. When it configures ruff (`ruff.toml`, `.ruff.toml` or `[tool.ruff]` in `pyproject.toml`):
+  `ruff check --fix <task .py files>`, then `black <task .py files>` only if `pyproject.toml` has `[tool.black]`;
+  fix only syntax errors / undefined names (`ruff check --select E9,F63,F7,F82`) and leave remaining style
+  findings to `/sdd-done`. A repository without a ruff config gets no ruff run.
+- When `test_command` in `sdd/config.json` is set, run it once from the repo root INSTEAD of the `select_tests` merge-tier sweep below: record the command, exit code and output tail; a non-zero exit blocks the merge; zero tests run → report "⚠️ not run — no tests selected", never ✅. When it is null, the sweep below is unchanged.
+- Run the task's `## Validation Commands`, then `LOGS="${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/FEAT-<NNN>";
+  mkdir -p "$LOGS"; parrot sdd run select_tests --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
+  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --feature FEAT-<NNN> --report-task TASK-<NNN> --run > "$LOGS/merge-tests-TASK-<NNN>.log" 2>&1`
   as a background Bash call (`run_in_background: true`, no `timeout`), then read that log — a foreground call is
   bounded at 120 s and this sweep is routinely longer
   (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).
@@ -600,7 +603,7 @@ NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
 # verification/file), stage both, and HARD-VERIFY no active/ copy survives.
 # Never hand-roll this with mv/cp + jq: a copy leaves the active/ file behind
 # and it lands on the base branch as a stalled orphan.
-scripts/sdd/close_task.sh TASK-<NNN> <feature-slug> verified
+parrot sdd run close_task TASK-<NNN> <feature-slug> verified
 
 # Fill in Completion Note in the moved task file (in completed/).
 
@@ -622,7 +625,7 @@ After all tasks are done, at the development-to-review boundary:
    - **Settle children, close execution (engine path).** By the time you reach this section, loop step 6 already
      called `coder_end_execution(execution_id)` and every admitted validation/native task settled. Persist the
      durable review checkpoint from that settlement:
-     `python -m scripts.sdd.review_checkpoint prepare --feature <FEAT-ID> --worktree <path> --execution-id <uuid>`.
+     `parrot sdd run review_checkpoint prepare --feature <FEAT-ID> --worktree <path> --execution-id <uuid>`.
      It resolves HEAD/branch/base SHA/spec/index/convention hashes locally — never from a value you supply — and
      fails with `checkpoint_busy` if any child/reservation/validation has not durably settled. Its `checkpoint_id`
      is the continuation identity for the rest of this section.
@@ -641,7 +644,7 @@ After all tasks are done, at the development-to-review boundary:
      `unsupported_host`. Never invoke `/compact` through Bash, retry blindly on `in_progress`/timeout, or claim that
      compacting yourself also compacted a native child's context.
    - **Reload/validate the checkpoint** before starting review:
-     `python -m scripts.sdd.review_checkpoint validate --feature <FEAT-ID> --worktree <path> --execution-id <uuid>
+     `parrot sdd run review_checkpoint validate --feature <FEAT-ID> --worktree <path> --execution-id <uuid>
      --checkpoint-id <id>`. A `checkpoint_stale` result (branch/HEAD/spec/index/convention hashes moved since
      `prepare`) means no prior approval covers the new diff — regenerate the checkpoint rather than reviewing stale
      evidence.
@@ -664,7 +667,7 @@ After all tasks are done, at the development-to-review boundary:
        <output of: git diff --stat $BASE_BRANCH...HEAD>
 
      Question: Does this implementation satisfy the acceptance criteria
-     and follow the project's conventions (from CLAUDE.md)?
+     and follow the project's conventions (from `sdd/CONVENTIONS.md`)?
    ```
 
    **Handle findings:**
@@ -777,7 +780,7 @@ git status --porcelain --untracked-files=all               # not yet committed
 ```
 
 Use repo-relative paths exactly as git prints them (e.g.
-`packages/ai-parrot/tests/flows/dev_loop/test_qa.py`). `DevelopmentNode`
+`<tests>/path/test_module.py`). `DevelopmentNode`
 reconciles your list against git and appends whatever you left out, but it
 logs the omission as a warning — a run whose `files_changed` needed
 reconciling is a run that reported its work incorrectly.

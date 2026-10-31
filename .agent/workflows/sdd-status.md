@@ -41,7 +41,7 @@ indexes whose `spec` is in the list (AND across flags, OR within a repeated
 flag; `_orphans.json` is excluded because it has no spec):
 
 ```bash
-SPECS=$(python -m scripts.sdd.doc_taxonomy --kind spec --paths-only --project <p> --tag <t>)
+SPECS=$(parrot sdd run doc_taxonomy --kind spec --paths-only --project <p> --tag <t>)
 ALL=$(jq -s --arg specs "$SPECS" '[.[] | select(.spec as $s | ($specs | split("\n")) | index($s))]' sdd/tasks/index/*.json)
 ```
 
@@ -54,8 +54,8 @@ merges), and they can be ahead **on dev** (the worktree was branched before
 feature merged). So do **not** prefer one side — reconcile them:
 
 ```bash
-FEATURES=$(python -m scripts.sdd.worktree_status --reconcile --json 2>/dev/null || echo "[]")
-WT_REPORTS=$(python -m scripts.sdd.worktree_status --json 2>/dev/null || echo "[]")   # health, for §5
+FEATURES=$(parrot sdd run worktree_status --reconcile --json 2>/dev/null || echo "[]")
+WT_REPORTS=$(parrot sdd run worktree_status --json 2>/dev/null || echo "[]")   # health, for §5
 ```
 
 `--reconcile` merges every per-spec index on this branch with its worktree's
@@ -207,7 +207,7 @@ Summary: <N> done / ... / <N> total | <W> worktrees (<R> ready for /sdd-done)
 ```
 
 ## Reference
-- Worktree reconciliation: `scripts/sdd/worktree_status.py` (`--reconcile`)
+- Worktree reconciliation: `parrot.sdd.scripts.worktree_status` (`--reconcile`)
 - Per-spec index files: `sdd/tasks/index/*.json`
 - Orphans file: `sdd/tasks/index/_orphans.json` (only present if migration found unattributable tasks)
 - SDD methodology: `sdd/WORKFLOW.md`

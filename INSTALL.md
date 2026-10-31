@@ -6,8 +6,7 @@ This guide walks you through installing AI-Parrot and all its dependencies.
 
 - [Prerequisites](#prerequisites)
 - [System Dependencies](#system-dependencies)
-- [Python Environment Setup](#python-environment-setup)
-- [Install AI-Parrot](#install-ai-parrot)
+- [Installing](#installing)
 - [Initial Configuration](#initial-configuration)
 - [PostgreSQL with pgVector](#postgresql-with-pgvector)
 - [Spacy Setup](#spacy-setup)
@@ -155,89 +154,11 @@ brew services start postgresql@15
 
 ---
 
-## Python Environment Setup
+## Installing
 
-We use `uv` as the Python package manager for fast, reliable dependency management.
-
-### Install uv
-
-```bash
-# Install uv using the official installer
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Or via pip
-pip install uv
-```
-
-### Create Virtual Environment
-
-```bash
-# Create a new virtual environment with Python 3.11
-uv venv --python 3.11 .venv
-
-# Activate the virtual environment
-source .venv/bin/activate  # Linux/macOS
-# or
-.venv\Scripts\activate     # Windows
-```
-
-**Verify activation**:
-```bash
-which python
-# Should show: /path/to/your/project/.venv/bin/python
-
-python --version
-# Should show: Python 3.11.x
-```
-
----
-
-## Install AI-Parrot
-
-### Basic Installation
-
-Install AI-Parrot with core dependencies:
-
-```bash
-uv pip install ai-parrot
-```
-
-### Install with Optional Dependencies
-
-AI-Parrot supports several optional feature sets. Install based on your needs:
-
-```bash
-# Install with all LLM providers
-uv pip install ai-parrot[anthropic,openai,google,groq]
-
-# Install with vector database support
-uv pip install ai-parrot[milvus,chroma]
-
-# Install with agent and loader support
-uv pip install "ai-parrot[agents]" "ai-parrot-loaders[all]"
-
-# Install with image processing
-uv pip install ai-parrot[images]
-
-# Install everything (recommended for full features)
-uv pip install ai-parrot[all]
-
-# Development installation
-uv pip install ai-parrot[dev]
-```
-
-**Feature groups**:
-- `anthropic`: Claude API support
-- `openai`: OpenAI GPT models support
-- `google`: Google GenAI (Gemini) support
-- `groq`: Groq inference support
-- `milvus`: Milvus vector database
-- `chroma`: ChromaDB vector database
-- `agents`: Agent framework and tools
-- `loaders`: Document loaders and processors
-- `images`: Image processing and computer vision
-- `all`: All optional features
-- `dev`: Development tools (pytest, pylint, mypy, etc.)
+The install and first-use guide is [docs/getting-started.md](docs/getting-started.md) — project
+venv or the machine-wide managed runtime (`--global`), providers, verification. Reference detail for
+the managed runtime, `parrot self ...` and the SDD flow: [docs/install/global-runtime.md](docs/install/global-runtime.md).
 
 ---
 
@@ -245,21 +166,24 @@ uv pip install ai-parrot[dev]
 
 ### Create Configuration Directories
 
-AI-Parrot uses the `kardex` CLI tool to initialize the project structure:
+AI-Parrot reads its settings through navconfig, whose `kardex` CLI initializes the project structure:
 
 ```bash
-# Create env/ and etc/ directories with default structure
-kardex create
+# Create env/, etc/, logs/ and templates/ with a base .env and etc/config.ini
+kardex env create
 ```
 
 This command creates:
-- `env/`: Directory for environment configuration files (`.env` files)
-- `etc/`: Directory for additional configuration files
-- Default configuration templates
+- `env/`: Directory for environment configuration files (`.env` files; `--env` names the environment, default `dev`)
+- `etc/`: Directory for additional configuration files, starting with `config.ini`
+- `logs/` and `templates/`
+
+The global install (`install-parrot.sh --global`) does not need this step: it creates `~/.parrot/env/.env` and
+`~/.parrot/etc/config.ini` for the managed runtime (see [docs/install/global-runtime.md](docs/install/global-runtime.md)).
 
 ### Directory Structure
 
-After running `kardex create`, your project should look like:
+After running `kardex env create`, your project should look like:
 
 ```
 your-project/

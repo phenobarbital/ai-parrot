@@ -29,9 +29,21 @@ BOOKSTORE_SKIPPED = "bookstore — skipped: no indexed library found (run `books
 #: foreign/user entry and must never be overwritten or removed.
 _MANAGED_ARGS = ["-m", "parrot.knowledge.bookstore.cli", "mcp"]
 
+#: Portable (FEAT-633) managed shape: the ``bookstore`` console script, no ``cwd``.
+_PORTABLE_COMMAND = "bookstore"
+_PORTABLE_ARGS = ["mcp"]
 
-def mcp_json_entry(root: Path) -> dict:
-    """Build the managed ``.mcp.json`` entry for the bookstore MCP server."""
+
+def mcp_json_entry(root: Path, *, portable: bool = False) -> dict:
+    """Build the managed ``.mcp.json`` entry for the bookstore MCP server.
+
+    Args:
+        root: Project root (baked mode pins it as ``cwd``).
+        portable: Emit ``{"command": "bookstore", "args": ["mcp"], "env": {}}`` — no
+            ``sys.executable`` pin and no absolute ``cwd`` (the host's cwd scopes the library).
+    """
+    if portable:
+        return {"command": _PORTABLE_COMMAND, "args": list(_PORTABLE_ARGS), "env": {}}
     return {
         "command": sys.executable,
         "args": list(_MANAGED_ARGS),
@@ -42,7 +54,11 @@ def mcp_json_entry(root: Path) -> dict:
 
 def _is_managed_entry(entry: Any) -> bool:
     """Whether a ``.mcp.json['mcpServers']['bookstore']`` entry is ours."""
-    return isinstance(entry, dict) and entry.get("args") == _MANAGED_ARGS
+    if not isinstance(entry, dict):
+        return False
+    if entry.get("args") == _MANAGED_ARGS:
+        return True
+    return entry.get("command") == _PORTABLE_COMMAND and entry.get("args") == _PORTABLE_ARGS
 
 
 def _load_mcp_json(path: Path) -> dict:
@@ -69,7 +85,7 @@ def _write_mcp_json(path: Path, data: dict, servers: dict) -> None:
         path.unlink()
 
 
-def install_bookstore(root: Path) -> list[str]:
+def install_bookstore(root: Path, *, portable: bool = False) -> list[str]:
     """Install for an existing library; report (not install) when none exists."""
     path = root / ".mcp.json"
     data = _load_mcp_json(path)
@@ -88,7 +104,7 @@ def install_bookstore(root: Path) -> list[str]:
         return actions
 
     actions: list[str] = []
-    entry = mcp_json_entry(root)
+    entry = mcp_json_entry(root, portable=portable)
     existing = servers.get("bookstore")
     if existing == entry:
         actions.append("bookstore MCP — already current")

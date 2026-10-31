@@ -42,24 +42,26 @@ worktree-local ledger, and exit non-zero WITHOUT claiming anything.
 4. **Prime** — `wikitoolkit ledger context <group.files…> --max-tokens 3000` (full repo-relative paths from the plan, never basenames).
 5. **Route** by `group.lane`:
    - NEVER switch the main checkout's branch and never require it to be clean; every lane
-     works inside a worktree provisioned by `python -m scripts.sdd.ensure_worktree`.
+     works inside a worktree provisioned by `parrot sdd run ensure_worktree`.
      If execution cannot proceed, release successful claims in step 7.
    - **Fast lane** (`lane == "fast"`): one worktree and one PR per group.
-     `python -m scripts.sdd.ensure_worktree --json --slug <suggested_slug> --brief-key <issue-short-id> --base-branch dev`
-     plans `fix-<issue-short-id>-<suggested_slug>` off `origin/dev` and returns `<wt>`;
-     `--base-branch dev` is what selects the `fix-` prefix. Edit inside `<wt>`, run the affected
-     package's tests from `<wt>` with `PYTHONPATH=packages/<dist>/src` (a bare `pytest` there
-     imports the main checkout), `ruff check --fix` the changed files, `git -C <wt> commit`,
+     `parrot sdd run ensure_worktree --json --slug <suggested_slug> --brief-key <issue-short-id> --base-branch <base_branch>`
+     plans `fix-<issue-short-id>-<suggested_slug>` off `origin/<base_branch>` and returns `<wt>`;
+     `--base-branch <base_branch>` is what selects the `fix-` prefix. Edit inside `<wt>`, then test from `<wt>`:
+     when `sdd/config.json` sets `test_command`, run it once; otherwise run the affected package's tests, with
+     `PYTHONPATH` set to the worktree's package source when the repository's shared venv is editable-installed
+     against the main checkout (a bare `pytest` there imports the main checkout). Lint the changed files with
+     the linters the repository configures (`ruff check --fix` only when it configures ruff), `git -C <wt> commit`,
      `git -C <wt> push -u origin fix-<issue-short-id>-<suggested_slug>` (the tree has no
-     upstream by design), then `gh pr create --base dev --title … --body …`.
+     upstream by design), then `gh pr create --base <base_branch> --title … --body …`.
      ALWAYS a PR — there is no direct-push path. Once step 6 has closed the group's issues, reap
-     the tree: `python scripts/remove_worktree.py remove fix-<issue-short-id>-<suggested_slug>`
+     the tree: `/remove-worktree` for `fix-<issue-short-id>-<suggested_slug>`
      — never `--force`, never `--delete-branch` (the PR needs the remote branch). A refusal
      means something is uncommitted or unpushed: keep the tree and report it.
    - **SDD lane** (`lane == "sdd"`): if any `group.parents[].open` is true, reuse that parent spec (`/sdd-task <spec> --from-issue …` per issue);
-     otherwise `python -m scripts.sdd.reserve_ids --kind feature --count 1 --base-branch dev --label <suggested_slug>`, author
+     otherwise `parrot sdd run reserve_ids --kind feature --count 1 --base-branch <base_branch> --label <suggested_slug>`, author
      `sdd/specs/<suggested_slug>.spec.md` from the group, `/sdd-task`, then
-     `python -m scripts.sdd.ensure_worktree --slug <suggested_slug> --feature-id FEAT-<NNN>`. `/sdd-done <FEAT-ID>` closes it out, including the issues its verified tasks resolve.
+     `parrot sdd run ensure_worktree --slug <suggested_slug> --feature-id FEAT-<NNN>`. `/sdd-done <FEAT-ID>` closes it out, including the issues its verified tasks resolve.
      For a new spec, the slug comes from `suggested_slug`; never re-derive it. For a reused parent,
      use that parent index's existing slug, feature_id, spec and base_branch when provisioning the worktree.
      Task creation alone is not resolution: implement and validate the task in that worktree before step 6.

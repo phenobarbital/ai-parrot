@@ -74,6 +74,6 @@ def test_subagent_instructions_mention_base_branch():
 
     import parrot.flows.dev_flow.nodes.ideation as mod
 
-    text = (Path(mod.__file__).parent.parent / "_subagent_data" / "sdd-ideation.md").read_text(encoding="utf-8")
+    text = (Path(mod.__file__).parents[3] / "sdd" / "_assets" / "claude" / "agents" / "sdd-ideation.md").read_text(encoding="utf-8")
     assert "| `base_branch` |" in text
     assert "base_branch: dev\n" not in text.split("## Step 3")[1][:600]

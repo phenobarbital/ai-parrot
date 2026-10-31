@@ -60,17 +60,26 @@ def google() -> None:
     show_default=True,
     help="Install Bookstore MCP and skill when an indexed library exists (no indexing).",
 )
+@click.option(
+    "--portable/--no-portable",
+    default=None,
+    help="Emit bare launcher commands with no absolute paths or cwd — required for a multi-repo-safe "
+    "~/.gemini/config/mcp_config.json. Default: keep the current form (baked on a fresh install).",
+)
 def install(
     path_: Optional[str],
     gitignore: bool,
     build_now: bool,
     bookstore: bool,
+    portable: Optional[bool],
 ) -> None:
     """Install WikiToolkit and Bookstore MCP servers and skills for Google Antigravity."""
     root = _resolve_root(path_)
     try:
         config = load_effective_config(root).config
-        actions = install_google_integration(root, config, gitignore=gitignore, bookstore=bookstore)
+        actions = install_google_integration(
+            root, config, gitignore=gitignore, bookstore=bookstore, portable=portable
+        )
     except (RuntimeError, WikiConfigError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
 

@@ -327,7 +327,7 @@ def test_spec_template_still_preserves_flow_and_taxonomy_frontmatter() -> None:
     text = _SPEC_TEMPLATE.read_text(encoding="utf-8")
     front = text.split("---", 2)[1]
     assert "\ntype: feature\n" in front
-    assert "\nbase_branch: dev\n" in front
+    assert "\nbase_branch: <base_branch>" in front
     assert "\nprojects: []\n" in front
     assert "\ntags: []\n" in front
 

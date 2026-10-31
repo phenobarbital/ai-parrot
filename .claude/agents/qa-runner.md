@@ -58,6 +58,7 @@ also edits can mask the very defects it should surface.
    source .venv/bin/activate
    ```
 3. **Run the test suite** (capture exit codes — they decide the verdict):
+   If `test_command` in `sdd/config.json` is set (non-blank), do NOT run `select_tests`: run that command once from the repo root, record the command, exit code and output tail, and let a non-zero exit decide `verdict: FAIL`. When it is null, run the feature tier below. A run that executed zero tests is reported "⚠️ not run — no tests selected", never ✅.
    ```bash
    # Feature tier (FEAT-563): mirror of directories over the feature's changes ∪ every
    # task's `## Validation Commands` ∪ core escalation (paid once, ledger-deduped).
@@ -66,7 +67,7 @@ also edits can mask the very defects it should surface.
    # --task-file enumerates the feature's own tasks from its per-spec index, so the
    # "∪ declared Validation Commands" half of the feature tier is actually exercised.
    TASK_FILES=$(jq -r '.tasks[].file' "sdd/tasks/index/<feature-slug>.json")
-   python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> \
+   parrot sdd run select_tests --tier feature --base origin/<base_branch> \
      --index "sdd/tasks/index/<feature-slug>.json" \
      $(printf -- '--task-file %s ' $TASK_FILES) --run
    ```

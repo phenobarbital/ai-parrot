@@ -61,7 +61,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - **Documentation**: Docstrings, type annotations, clarity.
    - **Testing**: Test coverage against criteria, assertions, failure modes.
 4. Adversarial cross-check:
-   - Run external reviewer (`codex exec review`) or spawn a dedicated read-only subagent.
+   - Run the external reviewer (`codex exec review`) only when `reviewer` in `sdd/config.json` is `codex` and the `second-opinion` skill is installed; otherwise spawn a dedicated read-only subagent.
    - Supply only neutral brief: requirements, diff/commit, question.
    - Synthesize agreements and disagreements.
 5. Generate report:
