@@ -133,8 +133,23 @@ class ConnectionsHandler(BaseView):
                     request=self.request,
                 )
                 return web.json_response(response.model_dump(mode="json"))
-            if suffix in ("device/start", "device/poll"):
-                return web.json_response({"error": "not found"}, status=404)
+            if suffix == "device/start":
+                principal = Principal(user_id=user_id, channel="cli", channel_user_id=user_id)
+                started = await service.device_start(
+                    user_id,
+                    provider,
+                    principal=principal,
+                    request=self.request,
+                    scopes=body.get("scopes"),
+                )
+                return web.json_response(started)
+            if suffix == "device/poll":
+                handle = body.get("handle")
+                if not isinstance(handle, str) or not handle:
+                    return web.json_response({"error": "handle is required"}, status=400)
+                return web.json_response(
+                    await service.device_poll(user_id, provider, handle=handle, request=self.request)
+                )
 
             channel = body.get("channel", "web")
             if channel not in {"web", "cli"}:
