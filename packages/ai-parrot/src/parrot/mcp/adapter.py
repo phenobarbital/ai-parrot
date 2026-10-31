@@ -32,7 +32,7 @@ class ToolExecutionContext:
 
 def auth_required_result(payload: AuthRequiredPayload) -> Dict[str, Any]:
     """Return the MCP envelope for a tool that requires authorization."""
-    text = f"{payload.provider} authorization required — run `parrot connect {payload.provider}`"
+    text = f"{payload.provider} authorization required — run parrot connect {payload.provider}"
     if payload.auth_url:
         text += f" or open {payload.auth_url}"
     return {
@@ -96,6 +96,7 @@ class MCPToolAdapter:
 
     async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute the AI-Parrot tool and convert result to MCP format."""
+        arguments = dict(arguments)
         # The guard argument never reaches the tool itself.
         confirm = arguments.pop("confirm", None)
         if self._requires_confirmation() and confirm is not True:
