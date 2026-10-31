@@ -1,4 +1,5 @@
 """UsageAttribution — immutable SDD identity for one dispatched unit of work (FEAT-783 M1)."""
+
 from __future__ import annotations
 
 from typing import Optional
