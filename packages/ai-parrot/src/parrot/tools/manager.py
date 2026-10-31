@@ -18,6 +18,7 @@ from .mcp_mixin import MCPToolManagerMixin
 from ..a2a.models import RegisteredAgent, AgentCard
 from ..auth.credentials import CredentialRequired
 from ..auth.exceptions import AuthorizationRequired
+from ..auth.pending import record_auth_requirement
 from ..core.exceptions import BudgetError
 
 if TYPE_CHECKING:
@@ -2282,6 +2283,7 @@ class ToolManager(MCPToolManagerMixin):
                 tool_name,
                 payload.provider,
             )
+            record_auth_requirement(payload)
             return ToolResult(
                 success=False,
                 status="authorization_required",
