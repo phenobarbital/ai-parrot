@@ -444,3 +444,29 @@ def test_install_never_writes_through_a_symlink_out_of_the_repo(empty_repo: Path
     actions = install_sdd_integration(empty_repo)
     assert list(outside.iterdir()) == [], "managed assets were written outside the repository"
     assert any("outside the repository" in a for a in actions)
+
+
+def _ignored(repo: Path, rel: str) -> bool:
+    return subprocess.run(["git", "check-ignore", "-q", rel], cwd=repo).returncode == 0
+
+
+def test_gitignore_block_ignores_worktrees_and_parrot_state(empty_repo: Path) -> None:
+    """rev 0.8 C29: `parrot sdd run` creates .parrot/ (ledger index); the managed block ignores it, like the
+    claude/codex/google installers do, so a repo using only the SDD flow keeps a clean primary checkout."""
+    install_sdd_integration(empty_repo)
+    assert _ignored(empty_repo, ".parrot/ledger/index.db")
+    assert _ignored(empty_repo, ".claude/worktrees/feat-x/README.md")
+    assert not _ignored(empty_repo, "sdd/config.json")
+
+
+def test_reinstall_upgrades_an_old_gitignore_block(empty_repo: Path) -> None:
+    """A block written before rev 0.8 (worktrees only) gains .parrot/ on re-install, keeping user lines around it."""
+    (empty_repo / ".gitignore").write_text(
+        "node_modules/\n# >>> parrot sdd (managed) >>>\n.claude/worktrees/\n# <<< parrot sdd (managed) <<<\ndist/\n"
+    )
+    install_sdd_integration(empty_repo)
+    text = (empty_repo / ".gitignore").read_text()
+    assert text.startswith("node_modules/\n") and text.rstrip().endswith("dist/")
+    assert text.count(GITIGNORE_BEGIN) == 1 and "\n.parrot/\n" in text
+    uninstall_sdd_integration(empty_repo)
+    assert ".parrot/" not in (empty_repo / ".gitignore").read_text()

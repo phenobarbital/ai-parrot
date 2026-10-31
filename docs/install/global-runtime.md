@@ -27,7 +27,8 @@ Before writing anything the installer runs a read-only gate, in this order:
 4. a writable `PARROT_HOME` (its nearest existing ancestor) with at least 2 GiB free;
 5. `https://github.com` and `https://pypi.org/simple/` reachable (skipped under `--dry-run`).
 
-A failure prints `preflight: <what> - fix: <how>` and exits before any file is created. Then the script prints
+A failure prints `preflight: <what> - fix: <how>` and exits before any file is created. A missing `python3` is
+only a warning: the managed runtime brings its own Python, but the SDD workflow commands run `python3` snippets. Then the script prints
 its plan, which reads:
 
 ```text
@@ -126,7 +127,7 @@ parrot self uninstall --yes
 - `self doctor` diagnoses the runtime, host configs and toolkit requirements; it exits 1 only when a
   non-informational check in the selected scope fails. `--sdd` forces the repository-readiness checks (origin
   remote, base branch, committed ledger, worktrees ignore, `.gitattributes` block, ledger git hooks, `gh` auth,
-  `jq`, SDD files current; host CLIs informational). `--runtime-only` is the bootstrap's scope (managed uv,
+  `jq` and `python3` while the installed commands use them, SDD files current; host CLIs informational). `--runtime-only` is the bootstrap's scope (managed uv,
   Python, entry points, PATH) and is mutually exclusive with `--sdd`.
 - `self add <component>` installs a component's packages (and post-install step) into the managed venv.
   `--here` installs into the project venv instead, and is the only way a dependency enters a project venv.
@@ -234,7 +235,8 @@ parrot sdd uninstall --dry-run
 - Upgrade rule: a file whose hash matches the record is upgraded; one that differs is kept with a warning
   unless `--force`; one parrot did not write is skipped. Seeds are never overwritten, even with `--force`.
 - `parrot sdd uninstall` removes only files parrot wrote and you have not edited; seeds and state are kept.
-- It also seeds `sdd/tasks/.id_ledger.json` and a `.claude/worktrees/` ignore block, writes a marked
+- It also seeds `sdd/tasks/.id_ledger.json` and an ignore block for `.claude/worktrees/` and `.parrot/` (parrot's
+  local ledger index and wiki store), writes a marked
   `.gitattributes` block (`merge=union` for the shared ledger log, recorded in the receipt) and installs the four
   `parrot-ledger` git hooks; `parrot self doctor --sdd` checks both.
 - `sdd/config.json` fields: `base_branch` (default `dev`), `staging_branch`, `hotfix_base` (default `main`),

@@ -21,7 +21,9 @@ KINDS: tuple[str, ...] = (
     # rev 0.8 C29 — foreign-repo breakage found by the 2026-10-30 end-to-end review
     "bare-python", "worktree-artifact", "jira-org-default", "unshipped-command", "nonexistent-cli",
 )
-EXTERNAL_TOOLS: tuple[str, ...] = ("jq", "gh", "tmux", "codex", "git-lfs", "agy", "black", "pylint")
+#: python3 (rev 0.8 C29): the shipped commands run inline python3 snippets, and neither a minimal host (e.g. the
+#: ubuntu:24.04 image) nor the global runtime (parrot/wikitoolkit/bookstore/uv on PATH) guarantees one.
+EXTERNAL_TOOLS: tuple[str, ...] = ("jq", "gh", "tmux", "codex", "git-lfs", "agy", "black", "pylint", "python3")
 #: Placeholders shipped files MUST use instead of real organisation data (TASK-4089 rewrites to these).
 PLACEHOLDER_ATLASSIAN_HOST = "your-org.atlassian.net"
 PLACEHOLDER_TICKET_PREFIX = "PROJ"

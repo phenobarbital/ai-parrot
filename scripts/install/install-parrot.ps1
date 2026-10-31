@@ -137,6 +137,10 @@ function Test-Preflight([string]$Home_) {  # C14b — read-only gate, in order; 
   Write-Warning 'Windows is not officially supported yet (official: Linux x86_64): navigator-auth has no Windows wheel and uvloop (required by proxylists) does not run on Windows, so the install is expected to fail'
   foreach ($c in @('Invoke-WebRequest', 'Get-FileHash')) { if (-not (Get-Command $c -ErrorAction SilentlyContinue)) { Write-Error "preflight: $c unavailable — fix: use Windows PowerShell 5.1+ or PowerShell 7"; exit 1 } }
   if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Write-Error 'preflight: git not found — fix: install Git for Windows (the SDD flow and parrot self doctor need it)'; exit 1 }
+  # Safeguard, never a gate: the SDD workflow commands run python3 snippets; the managed runtime does not need it.
+  if (-not (Get-Command python3 -ErrorAction SilentlyContinue) -and -not (Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Warning 'python3 not found: the managed runtime does not need it, but the SDD workflow commands run python3 snippets; install Python (e.g. winget install Python.Python.3.12)'
+  }
   $anc = $Home_; while (-not (Test-Path $anc)) { $anc = Split-Path -Parent $anc }   # nearest existing ancestor
   $probe = Join-Path $anc ".parrot-write-probe-$PID"
   try { [IO.File]::Create($probe).Dispose(); Remove-Item -Force $probe }

@@ -215,6 +215,10 @@ and may fail" >&2
   command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || gate_fail "no checksum tool" "install coreutils (sha256sum) or perl (shasum)"
   command -v mktemp >/dev/null 2>&1 || gate_fail "no mktemp" "install coreutils (mktemp)"
   command -v git >/dev/null 2>&1 || gate_fail "git not found" "install git (the SDD flow and parrot self doctor need it)"
+  # Safeguard, never a gate: the managed runtime brings its own Python, but the SDD workflow commands run python3
+  # snippets, and a minimal host (e.g. the ubuntu:24.04 image) has none (rev 0.8 C29).
+  command -v python3 >/dev/null 2>&1 || echo "warning: python3 not found — the managed runtime does not need it, but the \
+SDD workflow commands run python3 snippets; install it (e.g. sudo apt-get install python3)" >&2
   anc="$PARROT_HOME"; while [ ! -e "$anc" ]; do anc="$(dirname "$anc")"; done   # nearest existing ancestor
   [ -w "$anc" ] || gate_fail "$anc is not writable" "set PARROT_HOME to a writable directory"
   free="$(df -Pk "$anc" | awk 'NR==2{print $4}')"

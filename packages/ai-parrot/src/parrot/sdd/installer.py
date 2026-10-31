@@ -41,7 +41,10 @@ RECEIPT_SCHEMA_VERSION = 1
 GITIGNORE_BEGIN = "# >>> parrot sdd (managed) >>>"
 GITIGNORE_END = "# <<< parrot sdd (managed) <<<"
 GITIGNORE_BLOCK = (
-    f"{GITIGNORE_BEGIN}\n# SDD feature worktrees (parrot sdd run ensure_worktree)\n.claude/worktrees/\n{GITIGNORE_END}"
+    f"{GITIGNORE_BEGIN}\n"
+    "# SDD feature worktrees (parrot sdd run ensure_worktree)\n.claude/worktrees/\n"
+    "# parrot's local state (ledger index, wiki store), ignored as parrot claude|codex|google install do\n.parrot/\n"
+    f"{GITIGNORE_END}"
 )
 #: rev 0.5 C23 — the shared ledger's union merge (FEAT-694), same marker pair as the .gitignore block.
 GITATTRIBUTES_BLOCK = (
@@ -472,14 +475,14 @@ def _seed_config(root: Path) -> str:
 
 
 def _install_gitignore(root: Path) -> str:
-    """Upsert the managed ``.claude/worktrees/`` block into ``<root>/.gitignore``."""
+    """Upsert the managed ``.claude/worktrees/`` + ``.parrot/`` block into ``<root>/.gitignore``."""
     path = root / ".gitignore"
     text = path.read_text(encoding="utf-8") if path.exists() else ""
     updated = _upsert_marker_block(text, GITIGNORE_BLOCK, GITIGNORE_BEGIN, GITIGNORE_END)
     if updated == text:
-        return ".gitignore — .claude/worktrees/ block up to date"
+        return ".gitignore — managed .claude/worktrees/ + .parrot/ block up to date"
     path.write_text(updated, encoding="utf-8")
-    return ".gitignore — managed .claude/worktrees/ block written"
+    return ".gitignore — managed .claude/worktrees/ + .parrot/ block written"
 
 
 def _install_gitattributes(root: Path, receipt: dict[str, Any]) -> str:

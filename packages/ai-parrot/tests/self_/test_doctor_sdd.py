@@ -194,3 +194,19 @@ def test_hung_ls_remote_times_out_as_informational(ready_repo: Path, tmp_path: P
     assert time.monotonic() - started < 10
     origin_check = next(c for c in result if c.name == "sdd: base branch on origin")
     assert origin_check.informational and "timed out" in origin_check.detail
+
+
+@pytest.mark.parametrize("missing", [None, "python3", "jq"])
+def test_sdd_tool_checks_follow_the_installed_assets(ready_repo: Path, monkeypatch: pytest.MonkeyPatch, missing) -> None:
+    """rev 0.8 C29: jq and python3 are checked while the installed SDD files invoke them; a missing one fails
+    with its install fix (a minimal host such as the ubuntu:24.04 image has no python3)."""
+    from parrot.sdd.installer import install_sdd_integration
+
+    install_sdd_integration(ready_repo)
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: None if name == missing else f"/usr/bin/{name}")
+    checks = {c.name: c for c in doctor._check_sdd(ready_repo)}
+    assert {"sdd: jq", "sdd: python3"} <= set(checks)
+    for tool in ("jq", "python3"):
+        check = checks[f"sdd: {tool}"]
+        assert check.ok is (tool != missing)
+        assert (f"install {tool}" in check.fix) is (tool == missing)

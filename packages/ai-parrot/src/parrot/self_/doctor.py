@@ -29,6 +29,11 @@ DoctorScope = Literal["full", "runtime-only", "sdd"]
 RUNTIME_ENTRYPOINTS: tuple[str, ...] = ("parrot", "wikitoolkit", "bookstore")
 HOST_CLIS: dict[str, str] = {"claude": "claude", "codex": "codex", "google": "agy"}
 SDD_LEDGER = Path("sdd/tasks/.id_ledger.json")
+#: Tools the installed SDD commands invoke, checked by ``doctor --sdd`` while referenced (rev 0.8 C29 adds python3).
+SDD_TOOL_FIXES: tuple[tuple[str, str], ...] = (
+    ("jq", "install jq (https://jqlang.github.io/jq/)"),
+    ("python3", "install python3 (e.g. sudo apt-get install python3); the SDD commands run python3 snippets"),
+)
 
 
 class DoctorCheck(BaseModel):
@@ -275,7 +280,7 @@ def _check_sdd_assets(root: Path, status: dict[str, Any] | None) -> list[DoctorC
             name="sdd: files current", ok=not problems,
             detail="all installed SDD files current" if not problems else "; ".join(problems),
             fix="" if not problems else ("parrot sdd status" if edited else "parrot sdd install")))
-    # jq — only while an installed shipped file still references it.
+    # jq and python3 — each only while an installed shipped file still references it.
     try:
         from parrot.sdd.audit import missing_tools, scan_paths  # TASK-4070 — lazy on purpose
     except ImportError:
@@ -286,14 +291,18 @@ def _check_sdd_assets(root: Path, status: dict[str, Any] | None) -> list[DoctorC
             if isinstance(targets, (list, tuple)) for t in targets
         ]
         try:
-            referenced = any(f.kind == "external-tool" and "jq" in f.snippet for f in scan_paths(installed))
+            findings = [f for f in scan_paths(installed) if f.kind == "external-tool"]
         except Exception as exc:  # noqa: BLE001
             logger.warning("sdd audit scan failed: %s", exc)
-            referenced = False
-        if referenced:
-            present = "jq" not in missing_tools(scan_paths(installed))
-            checks.append(DoctorCheck(name="sdd: jq", ok=present, detail="jq " + ("found" if present else "not found"),
-                                      fix="" if present else "install jq (https://jqlang.github.io/jq/)"))
+            findings = []
+        missing = missing_tools(findings) if findings else []
+        for tool, fix in SDD_TOOL_FIXES:
+            if not any(tool in f.snippet for f in findings):
+                continue
+            present = tool not in missing
+            checks.append(DoctorCheck(name=f"sdd: {tool}", ok=present,
+                                      detail=f"{tool} " + ("found" if present else "not found"),
+                                      fix="" if present else fix))
     for host, groups in hosts.items():
         if not (groups or {}).get("current"):
             continue

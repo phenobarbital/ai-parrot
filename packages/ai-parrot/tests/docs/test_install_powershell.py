@@ -277,3 +277,11 @@ def test_windows_warns_not_officially_supported() -> None:
     gate = _TEXT[_TEXT.index("function Test-Preflight") :]
     gate = gate[: gate.index("\n}\n")]
     assert "Write-Warning 'Windows is not officially supported yet (official: Linux x86_64)" in gate
+
+
+def test_preflight_warns_when_python_is_missing() -> None:
+    """rev 0.8 C29 safeguard: a warning (never an exit) when neither python3 nor python is on PATH."""
+    gate = _TEXT[_TEXT.index("function Test-Preflight") :]
+    gate = gate[: gate.index("\n}\n")]
+    assert "Get-Command python3" in gate and "Get-Command python " in gate
+    assert "Write-Warning 'python3 not found" in gate

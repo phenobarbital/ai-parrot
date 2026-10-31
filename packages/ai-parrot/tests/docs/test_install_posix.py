@@ -383,3 +383,18 @@ def test_gate_refuses_linux_arm(tmp_path: Path, machine: str) -> None:
     assert result.returncode == 1
     assert f"preflight: unsupported platform Linux-{machine}" in result.stderr and "ARM Linux is not supported" in result.stderr
     assert not (tmp_path / "home").exists()
+
+
+@pytest.mark.parametrize("with_python3", [True, False])
+def test_global_dry_run_warns_when_python3_is_missing(tmp_path: Path, with_python3: bool) -> None:
+    """rev 0.8 C29 safeguard: no python3 on PATH is a warning (the SDD commands need it), never a gate."""
+    path = _fake_bin(tmp_path, scripts={"uname": _FAKE_UNAME})
+    if with_python3:
+        (Path(path) / "python3").symlink_to(shutil.which("python3"))
+    env = {"HOME": str(tmp_path / "home"), "PARROT_HOME": str(tmp_path / "home" / ".parrot"), "SHELL": "/bin/bash",
+           "PATH": path}
+    result = subprocess.run(
+        ["bash", str(SCRIPT), "--global", "--dry-run"], capture_output=True, text=True, check=False, env=env
+    )
+    assert result.returncode == 0, result.stderr
+    assert ("warning: python3 not found" in result.stderr) is (not with_python3)

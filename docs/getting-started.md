@@ -426,12 +426,12 @@ flow:
 ```bash
 parrot sdd install --host claude --dry-run   # preview: write / skip / upgrade per file; changes nothing
 parrot sdd install --host claude             # deploy commands, skills, helpers and seeds
-parrot self doctor --sdd                     # origin, base branch, ledger, worktrees ignore, gh, jq, host CLIs
+parrot self doctor --sdd                     # origin, base branch, ledger, worktrees ignore, gh, jq, python3, host CLIs
 parrot sdd status                            # missing | current | outdated | edited | foreign
 ```
 
 - The install writes the host's `/sdd-*` commands, the seeds `sdd/config.json`, `sdd/CONVENTIONS.md` and
-  `sdd/tasks/.id_ledger.json`, a `.claude/worktrees/` ignore block, a marked `.gitattributes` block
+  `sdd/tasks/.id_ledger.json`, an ignore block for `.claude/worktrees/` and `.parrot/`, a marked `.gitattributes` block
   (`merge=union` for the ledger log) and the four `parrot-ledger` git hooks. What it wrote is recorded in
   `sdd/.sdd-installed.json`; commit it. `/sdd-insight` is not installed.
 - Edit `sdd/config.json`: `base_branch`, `hotfix_base`, `issue_tracker`, `test_command`, ... A repository whose

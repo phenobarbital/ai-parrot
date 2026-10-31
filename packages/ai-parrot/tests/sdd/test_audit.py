@@ -22,6 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
         ("source .venv/bin/activate", "venv-path"),
         ("uv run --no-sync pytest", "uv-run"),
         ("TASK_FILES=$(jq -r '.tasks[].file' idx.json)", "external-tool"),
+        ("python3 - \"<TASK-NNN>\" <<'PYEOF' || true", "external-tool"),               # rev 0.8 C29
         ("TASK_FILES=$(jq -r '.tasks[].file' idx.json)", "posix-shell"),
         ("cd .claude/worktrees/feat-FEAT-1-x", "monorepo-path"),
         ("Open https://trocglobal.atlassian.net/browse/NAV-1234 first", "org-data"),      # C11a
