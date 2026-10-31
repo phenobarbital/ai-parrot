@@ -12,7 +12,6 @@ from parrot.knowledge.wiki.decisions.consequences import (
 from parrot.knowledge.wiki.decisions.inventory import SnapshotManifest
 from parrot.knowledge.wiki.decisions.models import DecisionRef
 
-
 SPEC = "# T\n\n**Status**: draft\n\n## 2. Design\nbody\n"
 
 
