@@ -41,6 +41,8 @@ if TYPE_CHECKING:  # pragma: no cover — for type checkers only, never executed
         ReviewRequest,
         SyncResult,
     )
+    from parrot.knowledge.wiki.decisions.consequences import ConsequenceReport, ConsequenceService
+    from parrot.knowledge.wiki.decisions.publish import BatchPublisher
     from parrot.knowledge.wiki.decisions.service import DecisionService
     from parrot.knowledge.wiki.decisions.toolkit import DecisionToolkit
     from parrot.knowledge.wiki.decisions.tools import (
@@ -51,7 +53,10 @@ if TYPE_CHECKING:  # pragma: no cover — for type checkers only, never executed
     )
 
 __all__ = [
+    "BatchPublisher",
     "CandidateEdit",
+    "ConsequenceReport",
+    "ConsequenceService",
     "DecisionConfig",
     "DecisionDossier",
     "DecisionError",
@@ -86,6 +91,9 @@ _LAZY_SOURCES = {
     "ReviewRequest": "parrot.knowledge.wiki.decisions.models",
     "SyncResult": "parrot.knowledge.wiki.decisions.models",
     "DecisionService": "parrot.knowledge.wiki.decisions.service",
+    "ConsequenceService": "parrot.knowledge.wiki.decisions.consequences",
+    "ConsequenceReport": "parrot.knowledge.wiki.decisions.consequences",
+    "BatchPublisher": "parrot.knowledge.wiki.decisions.publish",
     "DecisionToolkit": "parrot.knowledge.wiki.decisions.toolkit",
     "WikiDecisionGenerateTool": "parrot.knowledge.wiki.decisions.tools",
     "WikiDecisionsForSymbolTool": "parrot.knowledge.wiki.decisions.tools",
