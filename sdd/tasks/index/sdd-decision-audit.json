@@ -175,7 +175,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -186,8 +186,9 @@
       "parallelism_notes": "consumes Taxonomy from TASK-5000 (taxonomy.py) and ApprovalManifest/ApprovalAdapter from TASK-5001 (approvals.py)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:37:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5003-inventory-snapshot-eligibility.md"
+      "completed_at": "2026-10-31T01:07:07+00:00",
+      "file": "sdd/tasks/completed/TASK-5003-inventory-snapshot-eligibility.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5004",

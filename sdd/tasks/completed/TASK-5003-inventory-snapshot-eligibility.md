@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-784 — SDD Decision Audit
 **Spec**: `sdd/specs/sdd-decision-audit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5000, TASK-5001
@@ -362,4 +362,7 @@ See blueprint test block (spec §4 `test_eligibility_predicate`, `test_supersess
 
 ## Completion Note
 
-*(filled in by the implementing agent)*
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 268s · Tokens: n/a
+
+- Delivered files match the task list.
+- Merge-tier validation: 223 passed, 1 failed — pre-existing env-gated test_backend_parity_is_reported (fails identically on origin/dev). No review fixes.
