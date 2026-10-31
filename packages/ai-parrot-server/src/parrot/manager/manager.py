@@ -38,6 +38,7 @@ from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
 from ..handlers.a2ui import A2UIHandler
+from ..handlers.connection_events import ConnectionEventsHandler
 from ..handlers.connections import ConnectionsHandler
 from ..handlers.integrations import IntegrationsHandler
 from ..handlers.infographic import InfographicTalk
@@ -2397,6 +2398,8 @@ class BotManager:
         # Uses a deferred callback so app["jira_oauth_manager"] is available.
         # Descriptor managers must be wired before aiohttp freezes the router
         # and startup signal; their setup adds both routes and lifecycle hooks.
+        # FEAT-777 M1: shared connection-event publisher + per-principal Redis push sink (SSE).
+        self._setup_connection_push(self.app)
         self._register_descriptor_oauth2_providers(self.app)
         self.app.on_startup.append(self._register_oauth2_providers)
         # FEAT-598 (TASK-3805): default data-plane guard wiring, in two phases.
@@ -2486,6 +2489,8 @@ class BotManager:
         )
         # Principal-level OAuth connection routes (FEAT-773).
         router.add_view("/api/v1/connections", ConnectionsHandler)
+        # FEAT-777 M1: register before /{provider} so "events" is not captured as a provider id.
+        router.add_view("/api/v1/connections/events", ConnectionEventsHandler)
         router.add_view("/api/v1/connections/{provider}", ConnectionsHandler)
         router.add_view("/api/v1/connections/{provider}/start", ConnectionsHandler)
         # User-defined bots: PUT/PATCH/GET/DELETE
@@ -2802,6 +2807,54 @@ Available documentation UIs:
             except Exception as e:
                 self.logger.error(f"Error in cleanup task: {e}", exc_info=True)
                 # Continue running even if there's an error
+
+    def _setup_connection_push(self, app: web.Application) -> None:
+        """Attach the shared connection publisher to the Redis-backed SSE sink."""
+        if app.get("connection_push") is not None:
+            return
+
+        try:
+            from parrot.auth.oauth2.events import (
+                ChannelNotifierRegistry,
+                ConnectionEventPublisher,
+                setup_connection_fanout,
+            )
+            from parrot.observability.fanout import get_event_fanout_bus
+            from parrot.security.audit_ledger import AuditLedger
+            from parrot.services.connection_push import RedisConnectionPush
+
+            publisher = app.get("connection_event_publisher")
+            if publisher is None:
+                audit_ledger = app.get("connection_audit_ledger")
+                if audit_ledger is None:
+                    audit_ledger = AuditLedger()
+                    app["connection_audit_ledger"] = audit_ledger
+                publisher = ConnectionEventPublisher(
+                    notifiers=ChannelNotifierRegistry(),
+                    audit_ledger=audit_ledger,
+                )
+                try:
+                    bus = get_event_fanout_bus()
+                    if bus is not None:
+                        setup_connection_fanout(bus, publisher)
+                except Exception:  # noqa: BLE001 - observability fan-out is additive
+                    self.logger.warning("Connection event fan-out bus not attached", exc_info=True)
+                app["connection_event_publisher"] = publisher
+
+            push = RedisConnectionPush(REDIS_URL)
+            publisher.add_sink(push)
+            app["connection_push"] = push
+
+            async def _start_push(_app: web.Application) -> None:
+                await push.start()
+
+            async def _close_push(_app: web.Application) -> None:
+                await push.close()
+
+            app.on_startup.append(_start_push)
+            app.on_cleanup.append(_close_push)
+        except Exception:  # noqa: BLE001 - SSE is additive; never block server setup
+            self.logger.exception("Connection event push not configured; /api/v1/connections/events will return 503")
 
     def _register_descriptor_oauth2_providers(self, app: web.Application) -> None:
         """Register configured descriptor providers while the app is mutable."""
