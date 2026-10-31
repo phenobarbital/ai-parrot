@@ -112,7 +112,7 @@ def _create_jira_ticket(
     impact: str = "",
 ) -> str:
     """Create the ticket. Production wiring would call the Jira REST API
-    (the framework's JiraConnectTool is the OAuth bridge). For the
+    (JiraToolkit, gated by the credential broker, is the OAuth bridge). For the
     example we always log to CSV so the demo is reproducible.
     """
     ticket_id = _new_ticket_id("INC")
