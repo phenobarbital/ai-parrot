@@ -9,16 +9,18 @@ EventBus by default. It must be explicitly opted in via forward_to_bus=True
 on the subscription.
 """
 from dataclasses import dataclass, field
-from typing import Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 from navigator_eventbus.lifecycle.base import LifecycleEvent
 
-from parrot.observability.attribution import UsageAttribution
-from parrot.observability.context import current_usage_attribution
+if TYPE_CHECKING:
+    from parrot.observability.attribution import UsageAttribution
 
 
-def _snapshot_attribution() -> Optional[UsageAttribution]:
+def _snapshot_attribution() -> Optional["UsageAttribution"]:
     """Read the bound SDD attribution at event construction (FEAT-783 S2)."""
+    from parrot.observability.context import current_usage_attribution
+
     return current_usage_attribution.get()
 
 
@@ -87,7 +89,7 @@ class AfterClientCallEvent(LifecycleEvent):
     session_id: Optional[str] = None   # per-session correlation (spans only)
     tenant: Optional[str] = None  # FEAT-710
     cost_usd: Optional[float] = None  # FEAT-710: computed once at the origin
-    attribution: Optional[UsageAttribution] = field(default_factory=_snapshot_attribution)  # FEAT-783
+    attribution: Optional["UsageAttribution"] = field(default_factory=_snapshot_attribution)  # FEAT-783
 
 
 @dataclass(frozen=True)
@@ -121,7 +123,7 @@ class ClientCallFailedEvent(LifecycleEvent):
     user_id: Optional[str] = None      # per-user usage attribution (spans only)
     session_id: Optional[str] = None   # per-session correlation (spans only)
     tenant: Optional[str] = None  # FEAT-710
-    attribution: Optional[UsageAttribution] = field(default_factory=_snapshot_attribution)  # FEAT-783
+    attribution: Optional["UsageAttribution"] = field(default_factory=_snapshot_attribution)  # FEAT-783
 
 
 @dataclass(frozen=True)
