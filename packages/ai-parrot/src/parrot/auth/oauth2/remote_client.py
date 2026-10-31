@@ -34,10 +34,25 @@ class ConnectAttempt(BaseModel):
 
 
 class ServerConnectionsClient:
-    """Call the remote connections API using the current CLI login bearer."""
+    """Call the remote connections API using the current CLI login bearer.
 
-    def __init__(self, store: LoginStore, *, session: Optional[aiohttp.ClientSession] = None) -> None:
+    Args:
+        store: Login store providing the bearer. A ``read_only`` store is never refreshed
+            or rewritten: an HTTP 401 raises :class:`LoginExpired` instead.
+        session: Optional injected aiohttp session (left open on close).
+        server_url: Pinned server base URL. When set it replaces the record's own
+            ``server_url``, so a login file can never redirect the bearer elsewhere.
+    """
+
+    def __init__(
+        self,
+        store: LoginStore,
+        *,
+        session: Optional[aiohttp.ClientSession] = None,
+        server_url: Optional[str] = None,
+    ) -> None:
         self.store = store
+        self._server_url = server_url
         self._session = session
         self._owns_session = session is None
         self._refresh_lock = asyncio.Lock()
@@ -78,7 +93,8 @@ class ServerConnectionsClient:
         request_json: Optional[Dict[str, Any]],
     ) -> tuple[int, Any]:
         """Send one request and parse its JSON response without logging secrets."""
-        url = f"{record.server_url.rstrip('/')}{path}"
+        base = self._server_url or record.server_url
+        url = f"{base.rstrip('/')}{path}"
         headers = {"Authorization": f"Bearer {record.access_token}"}
         async with session.request(method, url, headers=headers, json=request_json) as response:
             if response.status == 401:
@@ -96,6 +112,8 @@ class ServerConnectionsClient:
         status, body = await self._send(session, record, method, path, json)
         if status != 401:
             return status, body
+        if getattr(self.store, "read_only", False):
+            raise LoginExpired("login was rejected and this store is read-only; run `parrot login` again")
 
         async with self._refresh_lock:
             current_record = await self._record()

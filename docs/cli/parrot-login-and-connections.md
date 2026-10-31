@@ -123,9 +123,22 @@ that OS user's `~/.parrot/login.json` and accepts the file only when it is a
 regular, non-symlink file owned by the peer uid with mode `0600`. A valid login
 produces the Navigator principal with `identity_source="login_file"`.
 
-An absent or unsafe file, an invalid login, or a failed principal lookup falls
-back to the existing peer-credential or configured service identity. Set
-`AGENTD_LOGIN_FILE_LOOKUP=0` to disable login-file resolution. A shared daemon
+The login file is writable by its owner, so agentd trusts nothing in it except
+the bearer token. Login-file resolution is **off** until the operator sets
+`AGENTD_LOGIN_FILE_SERVER_URL` to the Navigator server agentd should trust:
+
+- the principal is always requested from that server, never from the
+  `server_url` written in the file;
+- a login file that names any other server is ignored;
+- agentd reads the file read-only: it never refreshes an expired login, never
+  rewrites the file and never creates a lock or temporary file in the peer's
+  directory. An expired or rejected login falls back like any other failure; the
+  user runs `parrot login` again.
+
+An absent or unsafe file, an invalid or expired login, an untrusted server, or a
+failed principal lookup falls back to the existing peer-credential or configured
+service identity. Set `AGENTD_LOGIN_FILE_LOOKUP=0` to disable login-file
+resolution even when a trusted server is configured. A shared daemon
 running as a service user and reading other users' home directories is not a
 supported deployment model.
 

@@ -68,16 +68,31 @@ class LoginRecord(BaseModel):
 
 
 class LoginStore:
-    """Atomic, locked, 0600 store for one login record."""
+    """Atomic, locked, 0600 store for one login record.
 
-    def __init__(self, path: Optional[Path] = None) -> None:
+    Args:
+        path: Login file path; defaults to ``PARROT_LOGIN_FILE`` or ``~/.parrot/login.json``.
+        expected_uid: Required owner for every load when reading another user's record.
+        read_only: Never write, lock or delete anything next to the login file. A process
+            reading another user's login (agentd) must never touch that user's directory.
+    """
+
+    def __init__(
+        self,
+        path: Optional[Path] = None,
+        *,
+        expected_uid: Optional[int] = None,
+        read_only: bool = False,
+    ) -> None:
         raw = path or os.environ.get("PARROT_LOGIN_FILE") or DEFAULT_LOGIN_PATH
         self.path = Path(raw).expanduser()
+        self.expected_uid = expected_uid
+        self.read_only = read_only
 
     @classmethod
-    def for_uid(cls, uid: int) -> "LoginStore":
-        """``pwd.getpwuid(uid).pw_dir / .parrot/login.json`` (agentd, TASK-4979)."""
-        return cls(Path(pwd.getpwuid(uid).pw_dir) / ".parrot" / "login.json")
+    def for_uid(cls, uid: int, *, read_only: bool = False) -> "LoginStore":
+        """``pwd.getpwuid(uid).pw_dir / .parrot/login.json`` owned by ``uid`` (agentd, TASK-4979)."""
+        return cls(Path(pwd.getpwuid(uid).pw_dir) / ".parrot" / "login.json", expected_uid=uid, read_only=read_only)
 
     @property
     def cache_path(self) -> Path:
@@ -91,9 +106,14 @@ class LoginStore:
 
     @contextlib.contextmanager
     def _locked(self) -> Iterator[None]:
-        """Hold an exclusive lock on the 0600 sidecar lock file."""
+        """Hold an exclusive lock on the 0600 sidecar lock file (never through a symlink)."""
+        if self.read_only:
+            raise LoginFileError(f"login store {self.path} is read-only")
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        except OSError as exc:
+            raise LoginFileError(f"lock file {self.lock_path} cannot be opened safely") from exc
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
             yield
@@ -107,7 +127,8 @@ class LoginStore:
         """Load a valid login record, or return ``None`` when the file is absent.
 
         Args:
-            expected_uid: Required file owner when loading another user's record.
+            expected_uid: Required file owner when loading another user's record;
+                defaults to the store's own ``expected_uid``.
 
         Returns:
             The validated login record, or ``None`` when the path does not exist.
@@ -115,6 +136,8 @@ class LoginStore:
         Raises:
             LoginFileError: The path is unsafe, unreadable, or contains invalid data.
         """
+        if expected_uid is None:
+            expected_uid = self.expected_uid
         flags = os.O_RDONLY | os.O_NOFOLLOW
         try:
             fd = os.open(self.path, flags)
