@@ -98,13 +98,14 @@ async def test_supersession_graph_validation(adr_store, tmp_path, case: str) -> 
     await repo.save(first, None)
     await repo.save(second, None)
     if case == "cycle":
-        first = first.model_copy(
-            update={"supersedes_refs": [DecisionRef(decision_id="adr:doc:second", revision=1)]}
-        )
+        first = first.model_copy(update={"supersedes_refs": [DecisionRef(decision_id="adr:doc:second", revision=1)]})
         await repo.save(first, (await repo.get(first.decision_id))[1])
     if case == "competing":
         third = _record(
-            "adr:doc:third", schema_version=2, targets=[target], supersedes_refs=[{"decision_id": "adr:doc:first", "revision": 1}]
+            "adr:doc:third",
+            schema_version=2,
+            targets=[target],
+            supersedes_refs=[{"decision_id": "adr:doc:first", "revision": 1}],
         )
         await repo.save(third, None)
     snapshot = await _snapshot(adr_store, tmp_path, repo)
@@ -118,7 +119,7 @@ async def test_snapshot_unstable_is_incomplete(adr_store, tmp_path, monkeypatch)
     await repo.save(_record("adr:doc:one"), None)
 
     async def changed_hashes(ids: list[str]) -> dict[str, str | None]:
-        return {concept_id: "changed" for concept_id in ids}
+        return dict.fromkeys(ids, "changed")
 
     monkeypatch.setattr(adr_store, "page_hashes", changed_hashes)
     with pytest.raises(DecisionError) as exc:
@@ -144,27 +145,43 @@ async def test_unpublished_batch_is_invisible(adr_store, tmp_path) -> None:
     manifest_path.write_text(
         json.dumps(
             {
-                "kind": "spec", "batch_id": "batch-1", "spec_path": "spec.md", "document_id": "feat",
-                "entries": [], "block_sha256": "a" * 64, "commit": "a" * 40,
-                "actor": "Ada <ada@example.com>", "recorded_at": "2026-10-31T00:00:00Z",
+                "kind": "spec",
+                "batch_id": "batch-1",
+                "spec_path": "spec.md",
+                "document_id": "feat",
+                "entries": [],
+                "block_sha256": "a" * 64,
+                "commit": "a" * 40,
+                "actor": "Ada <ada@example.com>",
+                "recorded_at": "2026-10-31T00:00:00Z",
             }
         ),
         encoding="utf-8",
     )
-    await DecisionRepository(adr_store).save(
-        _record("adr:spec:feat#one", schema_version=2, batch_id="batch-1"), None
-    )
+    await DecisionRepository(adr_store).save(_record("adr:spec:feat#one", schema_version=2, batch_id="batch-1"), None)
     approvals = ApprovalManifest.load(manifest_path)
     before = await InventorySnapshot.take(
-        DecisionRepository(adr_store), _taxonomy(tmp_path), approvals, _OkAdapter(), "structural-1",
-        store=adr_store, root=tmp_path, config_digest="config-1",
+        DecisionRepository(adr_store),
+        _taxonomy(tmp_path),
+        approvals,
+        _OkAdapter(),
+        "structural-1",
+        store=adr_store,
+        root=tmp_path,
+        config_digest="config-1",
     )
     assert before.eligible == []
     await adr_store.upsert_pages(
         [WikiPageRecord(concept_id=batch_marker_id("batch-1"), category="adr_batch", body='{"state":"published"}')]
     )
     after = await InventorySnapshot.take(
-        DecisionRepository(adr_store), _taxonomy(tmp_path), approvals, _OkAdapter(), "structural-1",
-        store=adr_store, root=tmp_path, config_digest="config-1",
+        DecisionRepository(adr_store),
+        _taxonomy(tmp_path),
+        approvals,
+        _OkAdapter(),
+        "structural-1",
+        store=adr_store,
+        root=tmp_path,
+        config_digest="config-1",
     )
     assert [record.decision_id for record in after.eligible] == ["adr:spec:feat#one"]
