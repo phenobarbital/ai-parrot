@@ -114,8 +114,11 @@ class UsageRecordingSubscriber:
         usage_reported = not (event.input_tokens is None and event.output_tokens is None)
 
         from parrot.observability.cost import get_shared_cost_calculator, resolve_event_cost
+        from parrot.observability.cost.policy import PricingPolicy
 
         cost_usd = resolve_event_cost(event, self._cost)
+        policy = PricingPolicy.from_label(getattr(event, "pricing_policy", None))
+        cost_usd, equivalent_usd = policy.apply(cost_usd)
         price_revision = event.price_revision
         price_valid_from = event.price_valid_from
         if event.cost_usd is None and cost_usd is not None:
@@ -158,6 +161,8 @@ class UsageRecordingSubscriber:
             source_cost_usd=event.source_cost_usd,
             price_revision=price_revision,
             price_valid_from=price_valid_from,
+            pricing_policy=policy.kind,
+            equivalent_usd=equivalent_usd,
             **_attribution_fields(event),
         )
 
