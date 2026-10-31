@@ -15,6 +15,11 @@ class CodexUsageCodec:
     """Fold a Codex JSONL event stream into one terminal usage observation."""
 
     _USAGE_KEYS = ("usage", "total_token_usage")
+    # Subtrees that carry agent/tool payloads (``item.completed`` command output, MCP
+    # tool results, messages). Their content is arbitrary user data, so a ``usage``
+    # key there must never be mistaken for the turn's usage. Verified against a real
+    # ``codex exec --json`` stream: usage arrives top-level on ``turn.completed``.
+    _OPAQUE_KEYS = frozenset({"item", "items"})
 
     def __init__(self) -> None:
         self._usage: Optional[dict[str, Any]] = None
@@ -24,12 +29,14 @@ class CodexUsageCodec:
 
     @classmethod
     def _find_value(cls, value: Any, keys: tuple[str, ...]) -> Any:
-        """Return the first matching value from a nested JSON-compatible value."""
+        """Return the first matching value from a nested JSON value, skipping opaque payload subtrees."""
         if isinstance(value, dict):
             for key in keys:
                 if key in value and value[key] is not None:
                     return value[key]
-            for nested in value.values():
+            for key, nested in value.items():
+                if key in cls._OPAQUE_KEYS:
+                    continue
                 found = cls._find_value(nested, keys)
                 if found is not None:
                     return found

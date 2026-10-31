@@ -806,6 +806,7 @@ class AnthropicClient(AbstractClient):
             input_tokens=getattr(_lc_usage, "input_tokens", None) if _lc_usage else None,
             output_tokens=getattr(_lc_usage, "output_tokens", None) if _lc_usage else None,
             finish_reason=getattr(ai_message, "stop_reason", None),
+            usage=_lc_usage,
         )
         return ai_message
 
@@ -1221,6 +1222,7 @@ class AnthropicClient(AbstractClient):
             input_tokens=getattr(_lc_stream_usage, "input_tokens", None) if _lc_stream_usage else None,
             output_tokens=getattr(_lc_stream_usage, "output_tokens", None) if _lc_stream_usage else None,
             finish_reason=getattr(ai_message, "stop_reason", None),
+            usage=_lc_stream_usage,
         )
         yield ai_message
 

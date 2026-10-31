@@ -171,3 +171,24 @@ async def test_dispatcher_emits_one_event_on_failure_path(tmp_path: Path, monkey
     assert event.reasoning_output_tokens == 125
     assert event.source_cost_usd == pytest.approx(0.0025)
     assert event.pricing_policy == "subscription"
+
+
+def test_real_codex_exec_stream() -> None:
+    """Spike S1: a stream captured from a real ``codex exec --json`` run (codex CLI, 2026-11-01)."""
+    usage = _feed("real_exec.jsonl").result()
+
+    assert usage is not None
+    assert usage.input_tokens == 30115
+    assert usage.cache_read_tokens == 27008
+    assert usage.output_tokens == 51
+
+
+def test_structured_tool_output_is_not_mistaken_for_usage() -> None:
+    """A usage-shaped dict inside an item payload (MCP tool result) is ignored."""
+    codec = _feed("structured_tool_decoy.jsonl")
+    usage = codec.result()
+
+    assert usage is not None
+    assert usage.input_tokens == 30115
+    assert codec.source_cost_usd is None
+    assert codec.pricing_policy() is None

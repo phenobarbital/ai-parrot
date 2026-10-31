@@ -1,0 +1,8 @@
+{"type":"thread.started","thread_id":"01a1943d-8869-7fe3-867d-081f838d62b4"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I’ll run `cat decoy.json`.\n"}}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/bash -lc 'cat decoy.json'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/bash -lc 'cat decoy.json'","aggregated_output":"{\"usage\": {\"input_tokens\": 999999}, \"total_token_usage\": 5}\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"DONE"}}
+{"type":"item.completed","item":{"id":"item_9","type":"mcp_tool_call","server":"x","tool":"y","status":"completed","result":{"structured_content":{"usage":{"input_tokens":999999,"output_tokens":999999},"total_token_usage":{"input_tokens":5},"auth_mode":"api_key","cost_microusd":123456789}}}}
+{"type":"turn.completed","usage":{"input_tokens":30115,"cached_input_tokens":27008,"cache_write_input_tokens":0,"output_tokens":51,"reasoning_output_tokens":0}}

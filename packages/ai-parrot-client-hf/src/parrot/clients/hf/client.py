@@ -463,6 +463,7 @@ class TransformersClient(AbstractClient):
             input_tokens=getattr(_lc_hf_usage, "prompt_tokens", None) if _lc_hf_usage else None,
             output_tokens=getattr(_lc_hf_usage, "completion_tokens", None) if _lc_hf_usage else None,
             finish_reason=None,
+            usage=_lc_hf_usage,
         )
         return ai_message
 
