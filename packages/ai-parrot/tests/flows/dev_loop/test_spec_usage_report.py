@@ -21,14 +21,43 @@ def _row(**kw) -> UsageRecord:
 
 def _rows() -> list[UsageRecord]:
     return [
-        _row(task_id="TASK-1", model="m-a", roster_seat="claude", attempt_uid="a1",
-             input_tokens=100, output_tokens=10, cost_usd=0.5),
-        _row(task_id="TASK-1", model="m-a", roster_seat="claude", attempt_uid="a1",
-             input_tokens=50, output_tokens=5, cost_usd=0.25),
-        _row(task_id="TASK-1", model="m-b", roster_seat="codex", attempt_uid="a2",
-             input_tokens=10, output_tokens=1, equivalent_usd=1.0, provider="openai"),
-        _row(task_id="TASK-2", model="m-b", roster_seat="codex", attempt_uid="a3",
-             input_tokens=999, output_tokens=999, usage_reported=False),
+        _row(
+            task_id="TASK-1",
+            model="m-a",
+            roster_seat="claude",
+            attempt_uid="a1",
+            input_tokens=100,
+            output_tokens=10,
+            cost_usd=0.5,
+        ),
+        _row(
+            task_id="TASK-1",
+            model="m-a",
+            roster_seat="claude",
+            attempt_uid="a1",
+            input_tokens=50,
+            output_tokens=5,
+            cost_usd=0.25,
+        ),
+        _row(
+            task_id="TASK-1",
+            model="m-b",
+            roster_seat="codex",
+            attempt_uid="a2",
+            input_tokens=10,
+            output_tokens=1,
+            equivalent_usd=1.0,
+            provider="openai",
+        ),
+        _row(
+            task_id="TASK-2",
+            model="m-b",
+            roster_seat="codex",
+            attempt_uid="a3",
+            input_tokens=999,
+            output_tokens=999,
+            usage_reported=False,
+        ),
         _row(model="m-a", input_tokens=1, output_tokens=1),
     ]
 

@@ -475,7 +475,11 @@ def _html_row(agent: AgentUsage, with_cost: bool = False) -> str:
         f"<td>{_fmt_value_html(agent.rounds)}</td>"
         f"<td>{_fmt_agent_tokens_html(agent)}</td>"
         f"<td>{escape(duration)}</td>"
-        + (f"<td>{escape(_fmt_usd(agent.cost_usd))}</td><td>{escape(_fmt_usd(agent.equivalent_usd))}</td>" if with_cost else "")
+        + (
+            f"<td>{escape(_fmt_usd(agent.cost_usd))}</td><td>{escape(_fmt_usd(agent.equivalent_usd))}</td>"
+            if with_cost
+            else ""
+        )
         + "</tr>"
     )
 
@@ -492,9 +496,7 @@ def _cycle_html_row(agent: AgentUsage, cycle: CycleUsage, with_cost: bool = Fals
         f"<td>{escape(cycle.model) if cycle.model else '—'}</td>"
         "<td>—</td>"
         f"<td>{_fmt_tokens_html(cycle.input_tokens, cycle.output_tokens)}</td>"
-        f"<td>{escape(duration)}</td>"
-        + ("<td>—</td><td>—</td>" if with_cost else "")
-        + "</tr>"
+        f"<td>{escape(duration)}</td>" + ("<td>—</td><td>—</td>" if with_cost else "") + "</tr>"
     )
 
 
