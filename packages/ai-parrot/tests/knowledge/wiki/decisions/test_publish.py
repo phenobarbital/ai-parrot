@@ -79,10 +79,15 @@ def _setup(tmp_path: Path, text: str) -> ApprovalManifest:
     block, _, diags = parse_spec_decisions(text, source_path=SPEC_PATH)
     assert block is not None, diags
     entry = ApprovalEntry(
-        kind="spec", batch_id=BATCH, spec_path=SPEC_PATH, document_id="demo",
+        kind="spec",
+        batch_id=BATCH,
+        spec_path=SPEC_PATH,
+        document_id="demo",
         entries=[DecisionRef(decision_id=f"adr:spec:demo#{e.id}", revision=1) for e in block.entries],
         block_sha256=hashlib.sha256(canonical_block_bytes(block)).hexdigest(),
-        commit="abcdef0", actor="me <me@x>", recorded_at="2026-10-31",
+        commit="abcdef0",
+        actor="me <me@x>",
+        recorded_at="2026-10-31",
     )
     return ApprovalManifest([entry], b"")
 
@@ -148,7 +153,9 @@ async def test_retirement_after_successor(adr_store, tmp_path, monkeypatch):
     original_cas = type(adr_store).compare_and_swap_page
 
     async def spy(self, page, expected):
-        order.append(f"{page.concept_id}:{page.summary}" if page.concept_id.startswith("adr-batch:") else page.concept_id)
+        order.append(
+            f"{page.concept_id}:{page.summary}" if page.concept_id.startswith("adr-batch:") else page.concept_id
+        )
         return await original_cas(self, page, expected)
 
     monkeypatch.setattr(type(adr_store), "compare_and_swap_page", spy)
@@ -216,12 +223,20 @@ async def test_project_links_about_and_normative_edges():
     from parrot.knowledge.wiki.decisions.models import DecisionLink, DecisionTarget
 
     active = DecisionRecord(
-        schema_version=2, decision_id="adr:spec:d#a", decision="a", origin="documented", source_status="accepted",
-        about=["memory"], normative="forbids", targets=[DecisionTarget(target_id="dir:src", kind="dir")],
+        schema_version=2,
+        decision_id="adr:spec:d#a",
+        decision="a",
+        origin="documented",
+        source_status="accepted",
+        about=["memory"],
+        normative="forbids",
+        targets=[DecisionTarget(target_id="dir:src", kind="dir")],
     )
     retired = active.model_copy(update={"decision_id": "adr:spec:d#b", "lifecycle": "retired"})
     legacy = DecisionRecord(
-        decision_id="adr:doc:x", decision="x", origin="documented",
+        decision_id="adr:doc:x",
+        decision="x",
+        origin="documented",
         links=[DecisionLink(target_id="file:a.py", relation="explains", provenance="extracted")],
     )
     store = _Store()
@@ -232,4 +247,3 @@ async def test_project_links_about_and_normative_edges():
         ("adr:spec:d#a", "concept:memory", "about", "asserted"),
         ("adr:spec:d#a", "dir:src", "forbids", "asserted"),
     }
-

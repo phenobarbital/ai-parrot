@@ -137,9 +137,11 @@ class BatchPublisher:
         # Phase 1 — marker pending (or already published).
         marker_hash = await self._ensure_pending(batch_id, decision_ids)
         if isinstance(marker_hash, PublishResult):
-            return marker_hash.model_copy(update={"skipped": len(records)}) if (
-                marker_hash.status == "already-published"
-            ) else marker_hash
+            return (
+                marker_hash.model_copy(update={"skipped": len(records)})
+                if (marker_hash.status == "already-published")
+                else marker_hash
+            )
 
         # Phase 2 — records, each through its own CAS.
         try:
@@ -170,7 +172,11 @@ class BatchPublisher:
 
     @staticmethod
     def _refused(
-        batch_id: str, code: str, message: str, path: str | None = None, decision_id: str | None = None,
+        batch_id: str,
+        code: str,
+        message: str,
+        path: str | None = None,
+        decision_id: str | None = None,
         extra: list[DecisionDiagnostic] | None = None,
     ) -> PublishResult:
         """Build a ``refused`` result with one leading diagnostic."""
@@ -202,21 +208,28 @@ class BatchPublisher:
         block, _, parse_diagnostics = parse_spec_decisions(spec_text, source_path=entry.spec_path, heading=heading)
         if block is None:
             return self._refused(
-                batch_id, APPROVAL_UNVERIFIED, "decisions block does not parse", entry.spec_path,
+                batch_id,
+                APPROVAL_UNVERIFIED,
+                "decisions block does not parse",
+                entry.spec_path,
                 extra=parse_diagnostics,
             )
         if (
             block.document_id != entry.document_id
             or hashlib.sha256(canonical_block_bytes(block)).hexdigest() != entry.block_sha256
         ):
-            return self._refused(batch_id, APPROVAL_UNVERIFIED, "decisions block no longer matches the approved digest",
-                                 entry.spec_path)
+            return self._refused(
+                batch_id, APPROVAL_UNVERIFIED, "decisions block no longer matches the approved digest", entry.spec_path
+            )
 
         report = await self.service.evaluate(Path(entry.spec_path), mode="replay")
         if report.status != "pass":
             return self._refused(
-                batch_id, APPROVAL_UNVERIFIED, f"replay evaluation is {report.status!r}, not 'pass'",
-                entry.spec_path, extra=list(report.diagnostics),
+                batch_id,
+                APPROVAL_UNVERIFIED,
+                f"replay evaluation is {report.status!r}, not 'pass'",
+                entry.spec_path,
+                extra=list(report.diagnostics),
             )
         return entry, entries_to_records(block, source_path=entry.spec_path, batch_id=batch_id)
 
@@ -258,20 +271,25 @@ class BatchPublisher:
             for ref in record.supersedes_refs:
                 got = await self.repo.get(ref.decision_id)
                 if got is None:
-                    sink.append(DecisionDiagnostic(
-                        code=ADR_REVISION_CONFLICT, message="superseded predecessor not found",
-                        decision_id=ref.decision_id,
-                    ))
+                    sink.append(
+                        DecisionDiagnostic(
+                            code=ADR_REVISION_CONFLICT,
+                            message="superseded predecessor not found",
+                            decision_id=ref.decision_id,
+                        )
+                    )
                     continue
                 predecessor, content_hash = got
                 if predecessor.lifecycle == "retired" and predecessor.source_status == "superseded":
                     continue
                 if predecessor.revision != ref.revision:
-                    sink.append(DecisionDiagnostic(
-                        code=ADR_REVISION_CONFLICT,
-                        message=f"predecessor is at revision {predecessor.revision}, batch supersedes {ref.revision}",
-                        decision_id=ref.decision_id,
-                    ))
+                    sink.append(
+                        DecisionDiagnostic(
+                            code=ADR_REVISION_CONFLICT,
+                            message=f"predecessor is at revision {predecessor.revision}, batch supersedes {ref.revision}",
+                            decision_id=ref.decision_id,
+                        )
+                    )
                     continue
                 update: dict[str, object] = {"source_status": "superseded"}
                 if predecessor.schema_version == 2:
