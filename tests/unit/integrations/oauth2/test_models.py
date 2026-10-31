@@ -16,7 +16,6 @@ from parrot.auth.oauth2.models import (
     UsersIntegrationRow,
 )
 
-
 class TestAuthRequiredEnvelope:
     """Tests for AuthRequiredEnvelope."""
 
