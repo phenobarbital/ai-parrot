@@ -15,8 +15,10 @@ from parrot.knowledge.wiki.decisions.operations import (
     DecisionGenerateInput,
     DecisionsForSymbolInput,
     DecisionWhyInput,
+    SpecConsequencesInput,
     op_decision_generate,
     op_decision_why,
+    op_spec_consequences,
     op_decisions_for_symbol,
 )
 from parrot.knowledge.wiki.ledger.operations import (
@@ -199,6 +201,12 @@ _SPECS: dict[str, _Spec] = {
         DecisionWhyInput,
         "Answer a 'why' question about the codebase with cited decision excerpts and supporting code. Documented decisions rank above inferred candidates, which are returned in their own labeled group.",
     ),
+    "wiki_spec_consequences": _Spec(
+        "decisions",
+        SpecConsequencesInput,
+        "Evaluate a spec's declared decisions against the accepted decision plane, or return the governing-decisions "
+        "dossier for its subsystems. Read-only; blocking only on an explicit unresolved contradiction.",
+    ),
     "wiki_decision_generate": _Spec(
         "decisions",
         DecisionGenerateInput,
@@ -364,6 +372,11 @@ def _operation_invoke(name: str, ctx: WikiOperationContext) -> Callable[[BaseMod
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_decision_why(None, params, service_factory=decisions)
 
+    elif name == "wiki_spec_consequences":
+
+        async def invoke(params: BaseModel) -> OperationResult:
+            return await op_spec_consequences(ctx.store, params, root=ctx.root, config=ctx.config)
+
     elif name == "wiki_decision_generate":
 
         async def invoke(params: BaseModel) -> OperationResult:
@@ -470,6 +483,8 @@ def mounted_operation_names(ctx: WikiOperationContext) -> list[str]:
     if ctx.include_bulk_tools:
         names += [name for name, spec in _SPECS.items() if spec.mount == "bulk"]
     names += ["wiki_decisions_for_symbol", "wiki_decision_why"]
+    if ctx.root is not None:
+        names.append("wiki_spec_consequences")
     if ctx.config.decisions.generation_enabled and ctx.root is not None:
         names.append("wiki_decision_generate")
     if ctx.schema_service is not None and ctx.config.schema_plane.enabled:
