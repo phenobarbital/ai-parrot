@@ -65,7 +65,9 @@ class ApprovalManifest:
                 raise DecisionError(APPROVAL_MANIFEST_INVALID, f"{path}:{lineno}: {exc}") from exc
 
         approval_batch_ids = [entry.batch_id for entry in entries if entry.kind in {"spec", "seed"}]
-        duplicate_batch_ids = sorted({batch_id for batch_id in approval_batch_ids if approval_batch_ids.count(batch_id) > 1})
+        duplicate_batch_ids = sorted(
+            {batch_id for batch_id in approval_batch_ids if approval_batch_ids.count(batch_id) > 1}
+        )
         if duplicate_batch_ids:
             raise DecisionError(
                 APPROVAL_MANIFEST_INVALID,

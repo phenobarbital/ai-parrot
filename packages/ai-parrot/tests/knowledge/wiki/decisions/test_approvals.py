@@ -9,9 +9,13 @@ from pathlib import Path
 import pytest
 
 from parrot.knowledge.wiki.decisions.approvals import ApprovalEntry, ApprovalManifest, GitCommitApprovalAdapter
-from parrot.knowledge.wiki.decisions.models import APPROVAL_LOCAL_BASE, APPROVAL_MANIFEST_INVALID, APPROVAL_UNVERIFIED, DecisionError
+from parrot.knowledge.wiki.decisions.models import (
+    APPROVAL_LOCAL_BASE,
+    APPROVAL_MANIFEST_INVALID,
+    APPROVAL_UNVERIFIED,
+    DecisionError,
+)
 from parrot.knowledge.wiki.decisions.spec_entries import canonical_block_bytes, parse_spec_decisions
-
 
 FENCE = "`" * 3
 SPEC_PATH = "sdd/specs/x.spec.md"
@@ -112,7 +116,15 @@ def test_manifest_load_and_malformed(tmp_path: Path) -> None:
     """Manifests preserve order, treat missing files as empty, and fail closed on invalid lines."""
     manifest_path = tmp_path / "approvals.jsonl"
     entry = _entry_for_manifest()
-    manifest_path.write_text("\n".join([entry.model_dump_json(), entry.model_copy(update={"kind": "retirement", "batch_id": "batch-2"}).model_dump_json()]), encoding="utf-8")
+    manifest_path.write_text(
+        "\n".join(
+            [
+                entry.model_dump_json(),
+                entry.model_copy(update={"kind": "retirement", "batch_id": "batch-2"}).model_dump_json(),
+            ]
+        ),
+        encoding="utf-8",
+    )
     manifest = ApprovalManifest.load(manifest_path)
     assert manifest.for_document("feat-784") == manifest.entries
     assert ApprovalManifest.load(tmp_path / "missing.jsonl").entries == []
@@ -139,7 +151,10 @@ def test_manifest_digest_changes_on_append(tmp_path: Path) -> None:
     manifest_path.write_bytes(entry.model_dump_json().encode("utf-8"))
     before = ApprovalManifest.load(manifest_path).digest()
     with manifest_path.open("ab") as manifest_file:
-        manifest_file.write(b"\n" + entry.model_copy(update={"kind": "retirement", "batch_id": "batch-2"}).model_dump_json().encode("utf-8"))
+        manifest_file.write(
+            b"\n"
+            + entry.model_copy(update={"kind": "retirement", "batch_id": "batch-2"}).model_dump_json().encode("utf-8")
+        )
     after = ApprovalManifest.load(manifest_path).digest()
     assert before != after
     assert after == hashlib.sha256(manifest_path.read_bytes()).hexdigest()
