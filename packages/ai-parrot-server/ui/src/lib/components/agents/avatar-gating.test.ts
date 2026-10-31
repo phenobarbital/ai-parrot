@@ -77,6 +77,14 @@ vi.mock("$lib/stores/notifications.svelte", () => ({
   notificationStore: { add: vi.fn(), remove: vi.fn() },
 }));
 
+vi.mock("$lib/stores/connections.svelte", () => ({
+  connectionsStore: {
+    items: [], loading: false, live: false, error: null,
+    start: vi.fn(), stop: vi.fn(), refresh: vi.fn(async () => {}),
+    onEvent: vi.fn(() => () => {}),
+  },
+}));
+
 // Stub the (real, LiveKit-backed) viewer entirely — it's reached only via
 // AgentChat's `{#if features.avatar}{#await import(...)}`, so mocking
 // exactly that specifier also doubles as proof of the gated import path.
