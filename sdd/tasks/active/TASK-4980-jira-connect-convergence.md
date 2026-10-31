@@ -109,15 +109,15 @@ def status(site) -> None   # :356 ; def logout(site) -> None :384 ; def sync_kb(
     },
     {
       "path": "packages/ai-parrot-tools/src/parrot_tools/jira_local_auth.py",
-      "action": "DELETE"
+      "action": "MODIFY"
     },
     {
       "path": "packages/ai-parrot-tools/tests/unit/test_jira_local_auth.py",
-      "action": "DELETE"
+      "action": "MODIFY"
     },
     {
       "path": "packages/ai-parrot-tools/tests/unit/test_oauth2_local_wiring.py",
-      "action": "DELETE"
+      "action": "MODIFY"
     },
     {
       "path": "packages/ai-parrot-tools/tests/unit/test_jira_cli.py",
