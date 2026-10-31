@@ -1069,6 +1069,7 @@ class SddCoderEngine:
         if self._execution_owners.get(canonical_worktree) == execution_id:
             del self._execution_owners[canonical_worktree]
 
+        await self._release_usage_sink_if_idle()
         return pool.view()
 
     async def _assert_no_pending_validations(self, execution_id: str) -> None:
@@ -3470,6 +3471,15 @@ class SddCoderEngine:
         except Exception:  # noqa: BLE001 - fail-open
             self.logger.warning("spec usage read failed for %s", feature_id, exc_info=True)
             return None
+
+    async def _release_usage_sink_if_idle(self) -> None:
+        """Unregister the usage sink once no execution owns a worktree (FEAT-783 M7).
+
+        The sink is re-registered lazily by ``_ensure_usage_sink`` on the next attempt, so a long-lived
+        server does not keep a process-wide global-registry subscription between features.
+        """
+        if self._usage_subscriber is not None and not self._execution_owners:
+            await self.aclose()
 
     async def aclose(self) -> None:
         """Unregister and flush the engine-scoped usage sink (FEAT-783 M7). Fail-open, idempotent."""

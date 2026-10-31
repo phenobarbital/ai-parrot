@@ -162,3 +162,31 @@ def test_attribution_dispatch_kind_per_backend() -> None:
         assert attr.accounting_seat == "development.sdd-coder-a"
         assert attr.execution_id is None
     assert kinds == {"claude-code": "sdk", "codex": "cli", "nova": "in-process"}
+
+
+async def test_usage_sink_released_when_idle_and_kept_while_owned(noop_probe, tmp_path) -> None:
+    """issue:b293d771587b — the global subscription is dropped once no execution owns a worktree."""
+    registry = get_global_registry()
+    before = len(getattr(registry, "_subscriptions", []))
+    engine = SddCoderEngine(
+        roster=_roster(("a", "nova"), ("b", "codex"), ("c", "google-compat")),
+        probe=noop_probe,
+        worktree_base_path=str(tmp_path / "worktrees"),
+        telemetry_dir=str(tmp_path / "telemetry"),
+    )
+    try:
+        assert engine._ensure_usage_sink() is True
+        assert len(getattr(registry, "_subscriptions", [])) > before
+
+        engine._execution_owners["/wt"] = "exec-1"
+        await engine._release_usage_sink_if_idle()
+        assert engine._usage_subscriber is not None, "sink must stay while an execution owns a worktree"
+
+        engine._execution_owners.clear()
+        await engine._release_usage_sink_if_idle()
+        assert engine._usage_subscriber is None
+        assert len(getattr(registry, "_subscriptions", [])) == before
+
+        assert engine._ensure_usage_sink() is True, "re-registers lazily for the next execution"
+    finally:
+        await engine.aclose()
