@@ -123,6 +123,11 @@ class SlackAgentWrapper:
 
         # Command router (Jira commands delegated here before built-in dispatch)
         self._command_router = SlackCommandRouter()
+        if config.bot_token:
+            from parrot.auth.oauth2.events import ChannelNotifierRegistry
+            from .notifier import SlackConnectionNotifier
+
+            ChannelNotifierRegistry().register(SlackConnectionNotifier(bot_token=config.bot_token))
         self._knowledge_upload = None
         if oauth_manager is not None:
             register_jira_commands(self._command_router, oauth_manager)
