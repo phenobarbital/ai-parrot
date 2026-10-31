@@ -11,7 +11,7 @@ import pytest
 
 from parrot.knowledge.wiki.file_store import InMemoryWikiStore
 from parrot.observability.context import current_agent_name
-from parrot_tools.security.cve.models import CVENotFoundError, CVEToolkitError
+from parrot_tools.security.cve.models import CVENotFoundError, CVEToolkitError, cvss3_base_score
 from parrot_tools.security.cve.toolkit import (
     EPSS_URL,
     NVD_CVE_URL,
@@ -76,6 +76,7 @@ async def test_lookup_cve_nvd_failure_degrades_to_osv(caplog: pytest.LogCaptureF
     calls = _install(tk, _default_routes(nvd=(429, {})))
     rec = await tk.lookup_cve(CVE)
     assert rec["sources"] == ["osv"]
+    assert rec["severity"].lower() == "medium"
     assert rec["affected"][0]["fixed"] == "2.32.4"
     assert any("NVD" in r.getMessage() for r in caplog.records)
     assert calls[1]["headers"] is None
@@ -210,3 +211,33 @@ async def test_search_cves_non_positive_limit_returns_nothing(limit: int) -> Non
     _install(tk, {OSV_QUERY_URL: (200, body)})
     result = await tk.search_cves("requests", "PyPI", limit=limit)
     assert result["records"] == []
+
+
+@pytest.mark.parametrize(
+    "vector,expected",
+    [
+        ("CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N", 5.3),
+        ("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", 9.8),
+        ("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H", 10.0),
+        ("CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:L/I:L/A:N", 6.4),
+        ("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0),
+        ("CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", 9.8),
+        ("CVSS:3.1/AV:N/AC:L/PR:N", None),
+        ("CVSS:3.1/AV:X/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", None),
+        ("garbage", None),
+        ("", None),
+        ("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N", None),
+    ],
+)
+def test_cvss3_base_score(vector: str, expected: float | None) -> None:
+    assert cvss3_base_score(vector) == expected
+
+
+@pytest.mark.asyncio
+async def test_lookup_cve_osv_only_scores_vector(monkeypatch) -> None:
+    monkeypatch.delenv("NVD_API_KEY", raising=False)
+    tk = CVEToolkit(enrich_nvd=False)
+    _install(tk, _default_routes())
+    rec = await tk.lookup_cve(CVE)
+    assert rec["severity"].lower() == "medium"
+    assert [c["score"] for c in rec["cvss"] if c["source"] == "osv"] == [5.3]
