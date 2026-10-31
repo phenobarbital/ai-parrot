@@ -24,7 +24,7 @@ from parrot.integrations.msteams.connections import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover
-    pass
+    from parrot.integrations.msteams.commands import MSTeamsCommandRouter
 
 logger = logging.getLogger(__name__)
 
