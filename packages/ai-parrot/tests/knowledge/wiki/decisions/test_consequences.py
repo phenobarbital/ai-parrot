@@ -102,12 +102,7 @@ _ENTRY_A = """\
 
 
 def _entry_contradicting(target: str) -> str:
-    return (
-        _ENTRY_A
-        + "    contradicts: [{decision_id: '"
-        + target
-        + "', revision: 1}]\n"
-    )
+    return _ENTRY_A + "    contradicts: [{decision_id: '" + target + "', revision: 1}]\n"
 
 
 @pytest.fixture
@@ -154,8 +149,9 @@ async def plane(adr_store, tmp_path):
         approvals_path=approvals,
         adapter=_Adapter({"waiver-1"}),
     )
-    return SimpleNamespace(root=root, store=adr_store, repo=repo, structural=structural, service=service,
-                           approvals=approvals)
+    return SimpleNamespace(
+        root=root, store=adr_store, repo=repo, structural=structural, service=service, approvals=approvals
+    )
 
 
 def _write(root: Path, text: str, name: str = "spec.md") -> Path:
@@ -167,8 +163,13 @@ async def test_unconfigured_repo_is_skipped(tmp_path, adr_store):
     (tmp_path / "spec.md").write_text("# Spec\n\nNo decisions here.\n", encoding="utf-8")
     assert not audit_configured(tmp_path / "t.yaml", tmp_path / "a.jsonl")
     service = ConsequenceService(
-        adr_store, tmp_path, DecisionConfig(), _StubStructural(),
-        taxonomy_path=tmp_path / "t.yaml", approvals_path=tmp_path / "a.jsonl", adapter=_Adapter(),
+        adr_store,
+        tmp_path,
+        DecisionConfig(),
+        _StubStructural(),
+        taxonomy_path=tmp_path / "t.yaml",
+        approvals_path=tmp_path / "a.jsonl",
+        adapter=_Adapter(),
     )
     report = await service.evaluate(Path("spec.md"))
     assert report.status == "skipped" and report.exit_code == 0
@@ -179,8 +180,13 @@ async def test_unconfigured_repo_is_skipped(tmp_path, adr_store):
 async def test_block_in_unconfigured_repo_is_invalid(tmp_path, adr_store):
     (tmp_path / "spec.md").write_text(_spec(_ENTRY_A), encoding="utf-8")
     service = ConsequenceService(
-        adr_store, tmp_path, DecisionConfig(), _StubStructural(),
-        taxonomy_path=tmp_path / "t.yaml", approvals_path=tmp_path / "a.jsonl", adapter=_Adapter(),
+        adr_store,
+        tmp_path,
+        DecisionConfig(),
+        _StubStructural(),
+        taxonomy_path=tmp_path / "t.yaml",
+        approvals_path=tmp_path / "a.jsonl",
+        adapter=_Adapter(),
     )
     report = await service.evaluate(Path("spec.md"))
     assert report.status == "invalid" and report.exit_code == 2
@@ -207,8 +213,11 @@ async def test_explicit_conflict_blocks_beyond_limit(plane):
 
 async def test_reverse_contradiction_blocks(plane):
     await plane.repo.save(
-        _record("adr:doc:reverse", schema_version=2, contradicts=[{"decision_id": "adr:spec:feat-x#use-aiohttp",
-                                                                    "revision": 1}]),
+        _record(
+            "adr:doc:reverse",
+            schema_version=2,
+            contradicts=[{"decision_id": "adr:spec:feat-x#use-aiohttp", "revision": 1}],
+        ),
         None,
     )
     report = await plane.service.evaluate(_write(plane.root, _spec(_ENTRY_A)))
@@ -216,7 +225,10 @@ async def test_reverse_contradiction_blocks(plane):
 
 
 async def test_prospective_supersession_resolves_contradiction(plane):
-    entry = _entry_contradicting("adr:doc:filler-03") + "    supersedes: [{decision_id: 'adr:doc:filler-03', revision: 1}]\n"
+    entry = (
+        _entry_contradicting("adr:doc:filler-03")
+        + "    supersedes: [{decision_id: 'adr:doc:filler-03', revision: 1}]\n"
+    )
     report = await plane.service.evaluate(_write(plane.root, _spec(entry)))
     assert not any(f.kind == "contradiction" for f in report.findings)
 
@@ -303,19 +315,22 @@ async def test_waiver_binding(plane):
             f"  actor: '{actor}'\n  reason: accepted risk\n  approval_ref: waiver-1\n"
         )
 
-    ok = await plane.service.evaluate(_write(plane.root, _spec(entry, waivers=waiver("Ada <ada@example.com>",
-                                                                                   participants))))
+    ok = await plane.service.evaluate(
+        _write(plane.root, _spec(entry, waivers=waiver("Ada <ada@example.com>", participants)))
+    )
     assert ok.status == "pass", ok.diagnostics
     assert next(f for f in ok.findings if f.kind == "contradiction").waived_by == "waiver-1"
 
-    forged = await plane.service.evaluate(_write(plane.root, _spec(entry, waivers=waiver("Mallory <m@x>",
-                                                                                       participants))))
+    forged = await plane.service.evaluate(
+        _write(plane.root, _spec(entry, waivers=waiver("Mallory <m@x>", participants)))
+    )
     assert forged.status == "conflict"
     assert WAIVER_INVALID in {d.code for d in forged.diagnostics}
 
     changed = participants.replace("filler-20", "filler-21")
-    moved = await plane.service.evaluate(_write(plane.root, _spec(entry, waivers=waiver("Ada <ada@example.com>",
-                                                                                      changed))))
+    moved = await plane.service.evaluate(
+        _write(plane.root, _spec(entry, waivers=waiver("Ada <ada@example.com>", changed)))
+    )
     assert moved.status == "conflict"
     assert WAIVER_INVALID in {d.code for d in moved.diagnostics}
 
@@ -335,8 +350,13 @@ async def test_read_repair_structural_is_incomplete(plane):
 
 async def test_supersession_fault_is_invalid(plane):
     await plane.repo.save(
-        _v2("adr:doc:bad", "constrains", ["file:pkg/q.py"], ["core"],
-            supersedes_refs=[{"decision_id": "adr:doc:legacy-accepted", "revision": 9}]),
+        _v2(
+            "adr:doc:bad",
+            "constrains",
+            ["file:pkg/q.py"],
+            ["core"],
+            supersedes_refs=[{"decision_id": "adr:doc:legacy-accepted", "revision": 9}],
+        ),
         None,
     )
     report = await plane.service.evaluate(_write(plane.root, _spec(_ENTRY_A)))

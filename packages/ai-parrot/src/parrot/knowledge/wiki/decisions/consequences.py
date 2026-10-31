@@ -380,7 +380,13 @@ class ConsequenceService:
         except DecisionError as exc:
             diagnostics.append(DecisionDiagnostic(code=exc.code, message=exc.message, path=rel))
             return self._finish(
-                status_precedence(_statuses_for(diagnostics)), text, block, waivers, None, [], diagnostics,
+                status_precedence(_statuses_for(diagnostics)),
+                text,
+                block,
+                waivers,
+                None,
+                [],
+                diagnostics,
                 CoverageSummary(),
             )
 
@@ -434,9 +440,18 @@ class ConsequenceService:
         if block is not None:
             comparison = self._baseline(block, snapshot, mode, diagnostics, rel)
             findings = await self._judge(
-                block, waivers, snapshot, resolved, coverage,
-                comparison=comparison, impacts=impacts, approvals=approvals, text=text,
-                diagnostics=diagnostics, rel=rel, taxonomy=taxonomy,
+                block,
+                waivers,
+                snapshot,
+                resolved,
+                coverage,
+                comparison=comparison,
+                impacts=impacts,
+                approvals=approvals,
+                text=text,
+                diagnostics=diagnostics,
+                rel=rel,
+                taxonomy=taxonomy,
             )
 
         statuses = _statuses_for(diagnostics)
@@ -570,7 +585,9 @@ class ConsequenceService:
             out = impacts[target_id]
             for impacted in out.impacted:
                 page_ids.add(impacted.symbol.symbol_id)
-                edges.append([target_id, impacted.symbol.symbol_id, impacted.via, impacted.distance, impacted.provenance])
+                edges.append(
+                    [target_id, impacted.symbol.symbol_id, impacted.via, impacted.distance, impacted.provenance]
+                )
             edges.append([target_id, "truncated", out.truncated])
         try:
             hashes = await self.store.page_hashes(sorted(page_ids))
@@ -678,7 +695,9 @@ class ConsequenceService:
     ) -> list[Finding]:
         """Produce findings from the full eligible set; never from a budgeted surface (F02)."""
         entries = {spec_decision_id(block.document_id, entry.id): entry for entry in block.entries}
-        refs = {decision_id: DecisionRef(decision_id=decision_id, revision=e.revision) for decision_id, e in entries.items()}
+        refs = {
+            decision_id: DecisionRef(decision_id=decision_id, revision=e.revision) for decision_id, e in entries.items()
+        }
         findings = self._contradictions(entries, refs, comparison, snapshot)
         explicit = {frozenset((p.decision_id for p in f.participants)) for f in findings}
         findings += await self._polarity_and_supersession(entries, refs, comparison, resolved, explicit)
@@ -707,7 +726,11 @@ class ConsequenceService:
             for ref in entry.contradicts:
                 if ref.decision_id in entries:
                     other = refs[ref.decision_id]
-                    add([refs[decision_id], other], other, f"{decision_id} contradicts {other.decision_id} in the same spec")
+                    add(
+                        [refs[decision_id], other],
+                        other,
+                        f"{decision_id} contradicts {other.decision_id} in the same spec",
+                    )
                     continue
                 head = snapshot.effective_head(ref.decision_id)
                 if head is None or head.decision_id not in heads:
@@ -757,10 +780,14 @@ class ConsequenceService:
             entry = entries[decision_id]
             linked = {ref.decision_id for ref in [*entry.contradicts, *entry.supersedes]}
             candidates = others + [
-                (refs[other_id], entries[other_id].relation, list(entries[other_id].targets),
-                 list(entries[other_id].about),
-                 {ref.decision_id for ref in [*entries[other_id].contradicts, *entries[other_id].supersedes]})
-                for other_id in ordered[index + 1:]
+                (
+                    refs[other_id],
+                    entries[other_id].relation,
+                    list(entries[other_id].targets),
+                    list(entries[other_id].about),
+                    {ref.decision_id for ref in [*entries[other_id].contradicts, *entries[other_id].supersedes]},
+                )
+                for other_id in ordered[index + 1 :]
             ]
             for other_ref, normative, targets, about, other_links in candidates:
                 pair = frozenset((decision_id, other_ref.decision_id))
