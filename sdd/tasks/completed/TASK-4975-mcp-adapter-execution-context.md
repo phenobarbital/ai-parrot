@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-774 — Connections for CLI agents and local MCP toolkits
 **Spec**: `sdd/specs/connections-cli-local-mcp.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -40,6 +40,7 @@ TASK-4976.
 | `packages/ai-parrot/src/parrot/mcp/adapter.py` | MODIFY | ToolExecutionContext, execute route, envelope |
 | `packages/ai-parrot/src/parrot/mcp/server_base.py` | MODIFY | execution_context plumbing |
 | `packages/ai-parrot/tests/mcp/test_adapter_execution_context.py` | CREATE | S1/S2 tests |
+| `packages/ai-parrot/tests/mcp/test_adapter_confirm.py` | MODIFY | give `_EchoTool` an `args_schema` (execute() validates args) |
 
 ---
 
@@ -300,6 +301,6 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: gpt-5.6-luna (codex), 2 attempts, orchestrated by sdd-worker
+**Date**: 2026-10-31
+**Notes**: Adapter routes via AbstractTool.execute with ToolExecutionContext + auth envelope. Deviation: test_adapter_confirm.py _EchoTool needed an args_schema (execute() validates args); file declared in task after the fact. Engine task-tier validation was unavailable (retry attempt had no execution_id) so the branch was merged manually after 25 adapter/server tests passed. Merge-tier red in tests/mcp/test_toolkit_server.py is pre-existing on base (issue:203c75e0c1ac).

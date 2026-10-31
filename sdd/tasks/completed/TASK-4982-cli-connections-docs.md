@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-774 — Connections for CLI agents and local MCP toolkits
 **Spec**: `sdd/specs/connections-cli-local-mcp.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4979, TASK-4980, TASK-4981
@@ -241,6 +241,6 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: gpt-5.6-sol (codex) (1 attempt), orchestrated by sdd-worker
+**Date**: 2026-10-31
+**Notes**: Implemented as specified; task tests green. Merge-tier: only sandbox-limited tests/cli/test_session.py::test_stream_closed_in_turn_task_after_final_message fails (read-only ~/.parrot/cli).

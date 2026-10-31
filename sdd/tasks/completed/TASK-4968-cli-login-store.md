@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-774 — Connections for CLI agents and local MCP toolkits
 **Spec**: `sdd/specs/connections-cli-local-mcp.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4966
@@ -412,6 +412,6 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: gpt-5.6-sol (codex) (1 attempt), orchestrated by sdd-worker
+**Date**: 2026-10-31
+**Notes**: Implemented as specified; task and merge-tier tests green.

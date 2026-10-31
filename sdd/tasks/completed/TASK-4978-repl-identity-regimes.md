@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-774 — Connections for CLI agents and local MCP toolkits
 **Spec**: `sdd/specs/connections-cli-local-mcp.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4974, TASK-4973
@@ -355,6 +355,6 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: gpt-5.6-terra (codex) (3 attempts luna/terra; merged manually after task tests run by orchestrator (28 passed)), orchestrated by sdd-worker
+**Date**: 2026-10-31
+**Notes**: Task tests green apart from sandbox-only test_session failure. Merge-tier reds are pre-existing/environmental only (tests/mcp/test_toolkit_server.py, issue:203c75e0c1ac; sandbox read-only ~/.parrot/cli in test_session).

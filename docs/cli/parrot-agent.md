@@ -93,3 +93,20 @@ When stdin or stdout is not a TTY (e.g., when piping input or running in a scrip
 * **`TERM=dumb`**: If your terminal is detected as `TERM=dumb`, the client automatically falls back to the inline console (`--ui inline`).
 * **Garbled Screen**: If the TUI workspace renders incorrectly or has visual artifacts, force the inline console using `--ui inline`.
 * **"No previous session"**: If you receive this error when trying to resume, run the agent once without the `--session` flag to establish a session first.
+
+## Identity
+
+`parrot agent` has three identity regimes:
+
+- With a valid `parrot login` in standalone mode, the CLI resolves and uses the
+  Navigator user id from the login. `--user` is refused with exit status 2 so a
+  caller cannot replace the authenticated identity. If no login exists,
+  standalone mode uses `--user USER_ID`, or `cli-user` when it is omitted.
+- With `--server URL`, identity is always determined by the bearer token on the
+  server. `--user` is refused. An explicit `--token` or
+  `PARROT_SERVER_TOKEN` takes precedence; otherwise the access token from the
+  current login is used.
+- When server mode uses the current login, the client refreshes that login once
+  after an HTTP 401, saves any rotated refresh token, and retries the request
+  once. If refresh or retry fails, log in again. Explicit `--token` callers do
+  not have a login store to refresh automatically.

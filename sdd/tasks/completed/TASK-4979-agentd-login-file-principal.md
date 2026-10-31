@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-774 — Connections for CLI agents and local MCP toolkits
 **Spec**: `sdd/specs/connections-cli-local-mcp.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4974
@@ -253,6 +253,7 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sonnet (native) (1 attempt), orchestrated by sdd-worker
+**Date**: 2026-10-31
+**Notes**: Added login-file identity lookup with a cheap pre-check (_peer_login_file_exists) to avoid a 1.4s lazy import breaking test_caller_identity timing. Pre-existing failure test_e2e.py::test_no_aiohttp_without_server_pkg is unrelated. Merge-tier reds are pre-existing/environmental only (tests/mcp/test_toolkit_server.py, issue:203c75e0c1ac; sandbox read-only ~/.parrot/cli in test_session).
+**Review fix** (c252e73ea6, issue:3658ef66a9a7): the login-file step is now off until `AGENTD_LOGIN_FILE_SERVER_URL` names a trusted Navigator server. Records naming any other server are ignored, and requests go to the pinned URL only. The peer store is read-only: no refresh, lock, temp file or rewrite, the owner is re-checked on every load, and a 401 falls back to peercred. The login lock file is opened with `O_NOFOLLOW`. This narrows AC-11, which the spec defines with file checks only; the spec text was not changed. Model feedback was NOT recorded, because the coder execution was already closed.
