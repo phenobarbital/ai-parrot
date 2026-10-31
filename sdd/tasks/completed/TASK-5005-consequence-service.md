@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-784 — SDD Decision Audit
 **Spec**: `sdd/specs/sdd-decision-audit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5004, TASK-4999, TASK-5002
@@ -360,4 +360,10 @@ async def test_evaluate_never_constructs_llm(monkeypatch): ...       # FILL IN �
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: orchestrator attempt 3 via opus sdd-coder (attempts 1-2 codex gpt-5.6-terra/sol: empty_delivery) · Backend: native · Model: opus · Attempts: 3 · Duration: 376s · commit 0e0046c7a7 · Tokens: n/a
+
+- Delivered files match the task list.
+- Decisions suite: 372 passed, 1 failed — pre-existing env-gated test_backend_parity_is_reported. 16 new tests in test_consequences.py; ruff clean.
+- Stale contract: InventorySnapshot.take also requires store, root, config_digest (passed self.store, self.root, sha256 of canonical config dump).
+- No error code exists for an unknown about id; SPEC_INVALID_ID used (maps to invalid) with closest() suggestions.
+- Judgement calls (FILL INs): targets resolved and blast_radius run BEFORE snapshot so the structural revision covers impact edges (AC10); WAIVER_INVALID stays a diagnostic and status is conflict (AC9); forward contradicts blocks regardless of the named revision (conservative); only an exact (id, revision) supersedes clears a contradiction; governing() returns GoverningDossier(truncated=True) on taxonomy/approvals/snapshot failure since the dossier has no diagnostics field.

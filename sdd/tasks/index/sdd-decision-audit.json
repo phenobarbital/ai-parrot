@@ -218,7 +218,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -230,8 +230,9 @@
       "parallelism_notes": "modifies consequences.py created by TASK-5004; calls parse_spec_decisions (TASK-4999 spec_entries.py) and TargetResolver (TASK-5002 scope.py)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:37:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5005-consequence-service.md"
+      "completed_at": "2026-10-31T01:19:43+00:00",
+      "file": "sdd/tasks/completed/TASK-5005-consequence-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5006",
