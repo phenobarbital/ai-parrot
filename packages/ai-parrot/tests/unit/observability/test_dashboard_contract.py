@@ -83,6 +83,8 @@ METRIC_LABELS: frozenset[str] = frozenset({
     "gen_ai.response.model", "parrot.agent.name", "gen_ai.token.type",
     "gen_ai.operation.name", "error.type", "parrot.round.number",
     "parrot.tool.name", "parrot.invoke.method",
+    # FEAT-783: bounded per-feature label (task/attempt/execution ids stay forbidden)
+    "parrot.feat_id",
 })
 
 # Span-only attributes — must NEVER appear as a dashboard grouping label.
