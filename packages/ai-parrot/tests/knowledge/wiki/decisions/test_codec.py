@@ -2,27 +2,32 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
 
 from parrot.knowledge.wiki.decisions.codec import (
     ENVELOPE_MARKER,
+    ENVELOPE_MARKER_V2,
     candidate_decision_id,
     content_fingerprint,
     decision_from_page,
     decision_to_page,
     documented_decision_id,
+    spec_decision_id,
 )
 from parrot.knowledge.wiki.decisions.models import (
+    ADR_CATEGORY,
+    ADR_INVALID_ID,
     MAX_RECORD_BYTES,
     DecisionError,
     DecisionLink,
     DecisionRecord,
+    DecisionTarget,
     EvidenceRef,
     ReviewEvent,
 )
-
 
 @pytest.fixture
 def documented() -> DecisionRecord:
@@ -185,3 +190,79 @@ class TestIdentity:
             )
         )
         assert content_fingerprint(revised) == original_fingerprint
+
+
+# --- FEAT-784 ------------------------------------------------------------------
+def test_v1_record_keeps_v1_marker_and_hash(documented):
+    """Schema-1 pages retain the established marker and JSON-only hash."""
+    page = decision_to_page(documented)
+    envelope = page.body.split("\n", 2)[1]
+    assert page.body.startswith(f"{ENVELOPE_MARKER}\n")
+    assert page.content_hash == hashlib.sha1(envelope.encode("utf-8")).hexdigest()  # noqa: S324
+
+
+def test_v2_record_round_trips():
+    """Schema-2 records use the v2 marker and preserve typed targets."""
+    record = DecisionRecord(
+        schema_version=2,
+        decision_id="adr:spec:feat-784#codec-v2",
+        decision="Write schema-2 records behind the v2 envelope.",
+        origin="documented",
+        source_status="accepted",
+        normative="requires",
+        about=["knowledge"],
+        targets=[
+            DecisionTarget(
+                target_id="file:packages/ai-parrot/src/parrot/knowledge/wiki/decisions/codec.py",
+                kind="file",
+            )
+        ],
+        document_id="feat-784",
+        entry_id="codec-v2",
+    )
+    page = decision_to_page(record)
+    assert page.body.startswith(f"{ENVELOPE_MARKER_V2}\n")
+    assert decision_from_page(page.model_dump()) == record
+
+
+@pytest.mark.parametrize("marker,schema", [("<!-- parrot-adr:v3 -->", 3), (None, 3), (None, 2)])
+def test_unsupported_schema_fails_explicitly(documented, marker, schema):
+    """Unknown markers and marker/payload disagreement fail before model validation."""
+    payload = documented.model_dump(mode="json")
+    payload["schema_version"] = schema
+    page = {
+        "concept_id": documented.decision_id,
+        "category": ADR_CATEGORY,
+        "body": f"{marker or ENVELOPE_MARKER}\n{json.dumps(payload)}",
+    }
+    with pytest.raises(DecisionError) as exc:
+        decision_from_page(page)
+    assert exc.value.code == "ADR_SCHEMA_UNSUPPORTED"
+
+
+@pytest.mark.parametrize(
+    "doc,entry,ok",
+    [
+        ("feat-784", "rule_1", True),
+        ("Feat", "x", False),
+        ("a b", "x", False),
+        ("doc", "", False),
+        ("doc", "a#b", False),
+    ],
+)
+def test_spec_decision_id_charset(doc, entry, ok):
+    """Spec decision ids accept only the frozen document and entry charset."""
+    if ok:
+        assert spec_decision_id(doc, entry) == f"adr:spec:{doc}#{entry}"
+        return
+    with pytest.raises(DecisionError) as exc:
+        spec_decision_id(doc, entry)
+    assert exc.value.code == ADR_INVALID_ID
+
+
+def test_lazy_exports():
+    """Schema-2 reference models remain available via lazy package exports."""
+    import parrot.knowledge.wiki.decisions as pkg
+
+    assert pkg.DecisionRef.__name__ == "DecisionRef"
+    assert "DecisionTarget" in pkg.__all__
