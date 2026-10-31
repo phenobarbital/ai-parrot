@@ -194,7 +194,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -204,8 +204,9 @@
       "parallelism_notes": "TASK-4987: serializes edits to events/client.py, recorders/models.py, subscriber.py; imports PricedCost (cost/calculator.py); claude.py also edited by TASK-4986 (transitive)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:24:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4989-pricing-policy.md"
+      "completed_at": "2026-10-31T00:48:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4989-pricing-policy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4990",
