@@ -592,22 +592,28 @@ tests:
 - packages/ai-parrot/tests/auth/test_connections_permission_context.py
 - packages/ai-parrot-tools/tests/test_teams_oauth_identity.py
 - packages/ai-parrot-server/tests/test_teams_connections_wiring.py
+- packages/ai-parrot/tests/auth/test_oauth2_scope_propagation.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_command_args.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_principal_source.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_connection_cards.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_connection_routing.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_wrapper_connections.py
+- packages/ai-parrot-integrations/tests/test_slack_msteams_jira_principal.py
+- packages/ai-parrot-integrations/tests/test_jira_notifier_adapters.py
+- packages/ai-parrot-server/tests/unit/test_identity_principal_resolver.py
+- packages/ai-parrot/tests/unit/auth/test_oauth2_principal_keys.py
+- packages/ai-parrot/tests/unit/auth/test_connection_events.py
 markers: none
 
 > `test_msteams_oauth_callback.py` is rewritten or deleted together with `MSTeamsOAuthNotifier` (M4); the task
 > must move surviving assertions into `test_msteams_connection_notifier.py`. Also migrate direct legacy-helper
 > imports in `test_msteams_auth_lane.py` and adapter imports/assertions in `test_jira_notifier_adapters.py`.
 > Paths for new functionality above are planned tests, not files claimed to exist at this baseline.
-> Retain the merged regression suites below:
+> The last five `tests:` entries are the retained merged regression suites; in
+> `test_jira_notifier_adapters.py` migrate the Teams assertions and retain Slack/Telegram.
 
-- `packages/ai-parrot-integrations/tests/test_slack_msteams_jira_principal.py`
-- `packages/ai-parrot-integrations/tests/test_jira_notifier_adapters.py` (migrate Teams assertions; retain Slack/Telegram)
-- `packages/ai-parrot-server/tests/unit/test_identity_principal_resolver.py`
-- `packages/ai-parrot/tests/unit/auth/test_oauth2_principal_keys.py`
-- `packages/ai-parrot/tests/unit/auth/test_connection_events.py`
-
-Add regression cases for notifier registration order (Jira setup before/after Teams), legacy migration
-with no connection row, closed legacy window, and provider URL scope isolation across concurrent requests.
+> Add regression cases for notifier registration order (Jira setup before/after Teams), legacy migration
+> with no connection row, closed legacy window, and provider URL scope isolation across concurrent requests.
 
 ### Test Data / Fixtures
 ```python
