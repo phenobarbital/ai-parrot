@@ -40,6 +40,7 @@ TASK-4976.
 | `packages/ai-parrot/src/parrot/mcp/adapter.py` | MODIFY | ToolExecutionContext, execute route, envelope |
 | `packages/ai-parrot/src/parrot/mcp/server_base.py` | MODIFY | execution_context plumbing |
 | `packages/ai-parrot/tests/mcp/test_adapter_execution_context.py` | CREATE | S1/S2 tests |
+| `packages/ai-parrot/tests/mcp/test_adapter_confirm.py` | MODIFY | give `_EchoTool` an `args_schema` (execute() validates args) |
 
 ---
 
