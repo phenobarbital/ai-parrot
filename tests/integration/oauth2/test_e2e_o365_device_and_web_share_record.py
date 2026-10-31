@@ -127,7 +127,9 @@ async def test_e2e_o365_device_and_web_share_record(monkeypatch: pytest.MonkeyPa
         assert web_token.grant_origin == "authorization_code"
 
     assert store.rows[("1042", "o365")]["access_token"] == "web-access"
-    listed_web = await IntegrationsService(authorizer=_AllowAuthorizer()).list_for_principal("1042", principal=principal)
+    listed_web = await IntegrationsService(authorizer=_AllowAuthorizer()).list_for_principal(
+        "1042", principal=principal
+    )
     assert listed_web[0].status == "connected"
     assert listed_web[0].grant_origin == "authorization_code"
     assert listed_web[0].account_id == "account-web"
