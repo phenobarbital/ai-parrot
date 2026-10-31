@@ -29,8 +29,8 @@ describe("ConnectionsStore", () => {
     store.onEvent(listener);
 
     store.start();
-    await vi.runOnlyPendingTimersAsync();
-    await Promise.resolve();
+    // Flush microtasks only: the 1 s reconnect backoff must not elapse (it would add a third refresh).
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(mocks.listConnections).toHaveBeenCalledTimes(2);
     expect(listener).toHaveBeenCalledWith(event);

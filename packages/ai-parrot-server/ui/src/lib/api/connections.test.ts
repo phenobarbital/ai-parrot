@@ -45,8 +45,8 @@ describe("connections API", () => {
   });
 
   it("parses connection events, including multiline data", () => {
-    expect(parseSseBlock('event: connection\ndata: {"kind":"connection.\ndata: completed"}')).toEqual({
-      kind: "connection.\ncompleted",
+    expect(parseSseBlock('event: connection\ndata: {"kind":\ndata: "connection.completed"}')).toEqual({
+      kind: "connection.completed",
     });
     expect(parseSseBlock(": keep-alive")).toBeNull();
     expect(parseSseBlock('event: other\ndata: {"kind":"ignored"}')).toBeNull();
