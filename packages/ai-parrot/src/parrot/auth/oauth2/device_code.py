@@ -1,4 +1,5 @@
 """Generic RFC 8628 device-authorization client engine (FEAT-774 M8)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -71,7 +72,9 @@ async def discover_authorization_server(session: aiohttp.ClientSession, issuer: 
     try:
         async with session.get(url) as response:
             if response.status != 200:
-                raise DeviceCodeError("discovery_failed", f"authorization server discovery failed at {url}: HTTP {response.status}")
+                raise DeviceCodeError(
+                    "discovery_failed", f"authorization server discovery failed at {url}: HTTP {response.status}"
+                )
             return await _response_json(response)
     except DeviceCodeError:
         raise
@@ -106,7 +109,9 @@ async def request_device_authorization(
     if isinstance(error, str):
         raise DeviceCodeError(error, str(body.get("error_description", error)))
     if response.status != 200:
-        raise DeviceCodeError(f"http_{response.status}", f"device authorization request failed at {url}: HTTP {response.status}")
+        raise DeviceCodeError(
+            f"http_{response.status}", f"device authorization request failed at {url}: HTTP {response.status}"
+        )
     try:
         return DeviceAuthorization.model_validate(body)
     except ValueError as exc:
@@ -141,7 +146,9 @@ async def request_device_token(
         raise DeviceCodeError(error, str(body.get("error_description", error)))
     if response.status == 200 and body.get("access_token"):
         return "approved", body
-    raise DeviceCodeError(f"http_{response.status}", f"device token request failed at {token_url}: HTTP {response.status}")
+    raise DeviceCodeError(
+        f"http_{response.status}", f"device token request failed at {token_url}: HTTP {response.status}"
+    )
 
 
 async def poll_device_token(

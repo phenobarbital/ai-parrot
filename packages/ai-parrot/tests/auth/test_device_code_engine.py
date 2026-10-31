@@ -1,4 +1,5 @@
 """RFC 8628 engine state machine (FEAT-774 M8, AC-10)."""
+
 import asyncio
 import base64
 import hashlib
@@ -17,7 +18,9 @@ from parrot.auth.oauth2.device_code import (
 
 
 def _authz(**kw) -> DeviceAuthorization:
-    base = dict(device_code="dc", user_code="ABCD-EFGH", verification_uri="https://as/device", expires_in=600, interval=5)
+    base = dict(
+        device_code="dc", user_code="ABCD-EFGH", verification_uri="https://as/device", expires_in=600, interval=5
+    )
     return DeviceAuthorization(**{**base, **kw})
 
 
@@ -96,7 +99,9 @@ async def test_timeout_and_cancellation(monkeypatch):
 
     monkeypatch.setattr(device_code, "request_device_token", pending)
     monkeypatch.setattr(asyncio, "sleep", sleep_forever)
-    task = asyncio.create_task(poll_device_token(object(), "https://as/token", client_id="client", authorization=_authz()))
+    task = asyncio.create_task(
+        poll_device_token(object(), "https://as/token", client_id="client", authorization=_authz())
+    )
     await waiting.wait()
     task.cancel()
 
