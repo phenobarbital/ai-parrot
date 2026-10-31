@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -339,6 +341,7 @@ class TestStatePayloadShapeParity:
 
     @pytest.mark.asyncio
     async def test_manager_payload_drives_identity_and_dm(self, mock_token_set):
+        from parrot.auth.principal import Principal
         from parrot.auth.jira_oauth import JiraOAuthManager
         from parrot.integrations.slack.oauth_callback import handle_slack_jira_callback
 
@@ -358,9 +361,10 @@ class TestStatePayloadShapeParity:
                 "slack_user_id": "U1234",
                 "nav_user_id": "4210",
             },
+            principal=Principal(user_id="4210", channel="slack", channel_user_id="T0001:U1234"),
         )
         # Exactly the payload handle_callback would return for this nonce.
-        state_payload = await mgr.consume_state(nonce)
+        state_payload = json.loads(await fake.get(mgr._nonce_key(nonce)))
 
         identity = MagicMock()
         identity.claim_channel_identity = AsyncMock(return_value=MagicMock(status="claimed"))
