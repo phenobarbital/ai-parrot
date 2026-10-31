@@ -283,7 +283,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -297,8 +297,9 @@
       "parallelism_notes": "needs ChannelLinkIssuer from TASK-5034 (auth/channel_link.py); ChannelLinkPreview from TASK-5035 (oauth2/models.py); claim_channel_identity from TASK-5036 (services/identity_mapping.py); NavigatorConnectionAuthorizer from TASK-5039 (services/connection_authorization.py); manager.py shared with TASK-5040 (anchors on its _setup_connection_push call)",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5041-channel-links-handler.md"
+      "completed_at": "2026-10-31T02:06:39+00:00",
+      "file": "sdd/tasks/completed/TASK-5041-channel-links-handler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5042",
@@ -391,7 +392,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -401,8 +402,9 @@
       "parallelism_notes": "needs O365OAuthManager.store_device_grant / migrate_legacy_device_grant / legacy_migration_allowed from TASK-5045 (auth/o365_oauth.py).",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5046-o365-devicecode-resolver-consolidation.md"
+      "completed_at": "2026-10-31T02:06:40+00:00",
+      "file": "sdd/tasks/completed/TASK-5046-o365-devicecode-resolver-consolidation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5047",
@@ -453,7 +455,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
@@ -461,8 +463,9 @@
       "parallelism_notes": "No dependency: deletes jira_connect_tool.py + its test and the AgentTalk bootstrap; handlers/agent.py is later edited by TASK-5051 (which depends on this task).",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5049-retire-jira-hotswap.md"
+      "completed_at": "2026-10-31T02:06:40+00:00",
+      "file": "sdd/tasks/completed/TASK-5049-retire-jira-hotswap.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5050",
@@ -471,7 +474,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -479,8 +482,9 @@
       "parallelism_notes": "No FEAT-777 dependency. Cross-feature: parrot/auth/pending.py and the ToolManager needs-auth record call are shared with FEAT-776 TASK-5016 / FEAT-775 M5 (first merged creates; Step 1 gate). Also edits tools/abstract.py (credential gate) — not touched by other FEAT-777 tasks.",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5050-retry-safety-tracker.md"
+      "completed_at": "2026-10-31T02:06:40+00:00",
+      "file": "sdd/tasks/completed/TASK-5050-retry-safety-tracker.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5051",
