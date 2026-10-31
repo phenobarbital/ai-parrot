@@ -36,6 +36,7 @@ def _write_login(path: Path, mode: int = 0o600) -> None:
 @pytest.fixture
 def login_path(tmp_path, monkeypatch) -> Path:
     path = tmp_path / "home" / ".parrot" / "login.json"
+    monkeypatch.setattr("parrot.integrations.agentd.server._peer_login_file_exists", lambda uid: True)
     monkeypatch.setattr(LoginStore, "for_uid", classmethod(lambda cls, uid: cls(path)))
 
     async def fake_me(self) -> WhoAmI:

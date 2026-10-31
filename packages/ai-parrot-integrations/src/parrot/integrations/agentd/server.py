@@ -211,6 +211,15 @@ class EventBroker:
                 self._subscribers.discard(session)
 
 
+def _peer_login_file_exists(uid: int) -> bool:
+    """Whether ``uid``'s ``~/.parrot/login.json`` exists (symlinks count; they are rejected later)."""
+    try:
+        home = pwd.getpwuid(uid).pw_dir
+    except KeyError:
+        return False
+    return os.path.lexists(os.path.join(home, ".parrot", "login.json"))
+
+
 class JsonRpcUnixServer:
     """JSON-RPC 2.0 / NDJSON server over a Unix domain socket.
 
@@ -367,6 +376,10 @@ class JsonRpcUnixServer:
 
     async def _login_file_identity(self, uid: int, username: str) -> PermissionContext | None:
         """Navigator principal from the peer's own login file (S11); ``None`` keeps peercred."""
+        # Cheap pre-check so peers without a login file never pay for (or
+        # trigger) the heavy CLI/aiohttp imports below.
+        if not await asyncio.to_thread(_peer_login_file_exists, uid):
+            return None
         from parrot.auth.oauth2.remote_client import ServerConnectionsClient
         from parrot.cli.login import LoginFileError, LoginStore
         from parrot.cli.principal import CliPrincipalResolver, build_cli_permission_context
