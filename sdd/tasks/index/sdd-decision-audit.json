@@ -411,7 +411,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -422,8 +422,9 @@
       "parallelism_notes": "asserts ADRSource == is_eligible (TASK-5003 inventory.py) incl. retirement semantics implemented by TASK-5007 (publish.py)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:37:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5014-feat778-compat-tests.md"
+      "completed_at": "2026-10-31T01:47:54+00:00",
+      "file": "sdd/tasks/completed/TASK-5014-feat778-compat-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5015",

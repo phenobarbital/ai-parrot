@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-784 — SDD Decision Audit
 **Spec**: `sdd/specs/sdd-decision-audit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5003, TASK-5007
@@ -265,4 +265,7 @@ See blueprint: `test_adr_source_equivalence`, `test_schema2_roundtrip_through_wh
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 88s · Tokens: n/a
+
+- Delivered files match the task list.
+- Merge-tier validation: tests/sdd_scripts/test_check_spec_consequences.py 10 passed; package 217 passed, 1 failed — pre-existing env-gated test_backend_parity_is_reported. No review fixes.
