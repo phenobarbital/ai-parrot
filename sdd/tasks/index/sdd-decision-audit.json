@@ -132,7 +132,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -143,8 +143,9 @@
       "parallelism_notes": "imports DecisionRef/APPROVAL_* from TASK-4997 and canonical_block_bytes/parse_spec_decisions from TASK-4999 (spec_entries.py)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:37:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5001-approval-manifest-adapter.md"
+      "completed_at": "2026-10-31T01:00:28+00:00",
+      "file": "sdd/tasks/completed/TASK-5001-approval-manifest-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5002",
