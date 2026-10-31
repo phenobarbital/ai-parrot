@@ -368,4 +368,12 @@ See the blueprint test module: `test_template_sections_in_order`, `test_sdd_spec
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Attempt 1 codex/gpt-5.6-sol: empty_delivery. Attempt 2 codex/gpt-5.6-terra (attempt_uid 664325b25e414a919fbd6b1d97bf7bd1):
+template + the four .claude/.agent twins only. Attempt 3 (orchestrator, commit 1d03de26) added the two Codex skill
+steps (`.agents/skills/sdd-spec/SKILL.md` 9b/10b, `.agents/skills/sdd-task/SKILL.md` 4b) and
+`tests/sdd_scripts/test_decision_audit_entry_points.py`.
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 3 · Duration: 213s (coder) · Tokens: n/a
+
+- Validation: test_decision_audit_entry_points + test_command_twin_parity + test_command_contracts → 36 passed.
+- review id coder-review:9e0ae930433ec62d2c7802f5 (fix_commits: 1d03de26). Model feedback NOT recorded: the omission
+  is confined to `.agents/` + a new test file and may be a seat sandbox restriction rather than a model defect (unconfirmed).
