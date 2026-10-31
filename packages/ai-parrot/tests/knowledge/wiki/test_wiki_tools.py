@@ -159,7 +159,7 @@ class TestWikiStatusTool:
 class TestFactory:
     def test_create_wiki_tools(self, mock_store):
         tools = create_wiki_tools(mock_store)
-        assert len(tools) == 7
+        assert len(tools) == 8
         names = {t.name for t in tools}
         assert names == {
             "wiki_query",

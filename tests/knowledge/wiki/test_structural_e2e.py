@@ -223,6 +223,7 @@ class TestMCPServerTools:
             "wiki_status",
             "wiki_lint",
             "wiki_standup",
+            "usage_report",
             "wiki_symbol_lookup",
             "wiki_code_outline",
             "wiki_blast_radius",

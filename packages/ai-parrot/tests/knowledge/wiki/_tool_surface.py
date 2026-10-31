@@ -21,6 +21,7 @@ LOCAL_NO_LEDGER: list[str] = sorted(
         "wiki_decisions_for_symbol",
         "wiki_lint",
         "wiki_standup",
+        "usage_report",
     ]
 )
 LEDGER: list[str] = sorted(
