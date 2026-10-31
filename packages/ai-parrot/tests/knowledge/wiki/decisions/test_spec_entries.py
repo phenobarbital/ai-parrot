@@ -23,7 +23,7 @@ from parrot.knowledge.wiki.decisions.spec_entries import (
 )
 
 FENCE = "`" * 3
-GOOD = f'''# Spec
+GOOD = f"""# Spec
 
 ## Decisions
 
@@ -43,7 +43,7 @@ entries:
     targets: [file:packages/ai-parrot/src/parrot/bots/abstract.py]
     contradicts: [{{decision_id: "adr:spec:feat-784#one", revision: 1}}]
 {FENCE}
-'''
+"""
 
 
 def test_parse_spec_block_happy() -> None:
@@ -62,10 +62,16 @@ def test_parse_spec_block_happy() -> None:
         (lambda text: text.replace("schema_version: 1", "schema_version: ["), SPEC_BLOCK_INVALID_YAML),
         (lambda text: text.replace("- id: two", "- id: one"), SPEC_DUPLICATE_ENTRY_ID),
         (lambda text: text.replace("document_id: feat-784", "document_id: bad/id"), SPEC_INVALID_ID),
-        (lambda text: text.replace("relation: forbids", "relation: forbids\n    unexpected: value"), SPEC_UNKNOWN_FIELD),
+        (
+            lambda text: text.replace("relation: forbids", "relation: forbids\n    unexpected: value"),
+            SPEC_UNKNOWN_FIELD,
+        ),
         (lambda text: text.replace("#one", "#missing"), SPEC_DANGLING_REF),
         (lambda text: text.replace("about: [clients, memory]", "about: []"), SPEC_EMPTY_ABOUT),
-        (lambda text: text.replace("targets: [dir:packages/ai-parrot/src/parrot/clients]", "targets: []"), SPEC_EMPTY_TARGETS),
+        (
+            lambda text: text.replace("targets: [dir:packages/ai-parrot/src/parrot/clients]", "targets: []"),
+            SPEC_EMPTY_TARGETS,
+        ),
     ],
 )
 def test_parse_spec_block_errors(mutation: object, code: str) -> None:

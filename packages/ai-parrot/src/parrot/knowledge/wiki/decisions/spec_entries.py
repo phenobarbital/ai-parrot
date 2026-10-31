@@ -102,9 +102,9 @@ def extract_block(text: str, heading: str) -> tuple[str | None, int, int]:
 
 def canonical_block_bytes(block: SpecDecisionsBlock) -> bytes:
     """Return deterministic JSON used by approvals and digests."""
-    return json.dumps(
-        block.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
+    return json.dumps(block.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
 
 
 def _diag(code: str, message: str, source_path: str, decision_id: str | None = None) -> DecisionDiagnostic:
@@ -206,17 +206,13 @@ def parse_spec_decisions(
                         except ValidationError as exc:
                             for diagnostic in _validation_diagnostics(exc, source_path):
                                 diagnostics.append(
-                                    diagnostic.model_copy(
-                                        update={"message": f"waivers.{index}: {diagnostic.message}"}
-                                    )
+                                    diagnostic.model_copy(update={"message": f"waivers.{index}: {diagnostic.message}"})
                                 )
 
     return (None if diagnostics else block), waivers, diagnostics
 
 
-def entries_to_records(
-    block: SpecDecisionsBlock, *, source_path: str, batch_id: str | None
-) -> list[DecisionRecord]:
+def entries_to_records(block: SpecDecisionsBlock, *, source_path: str, batch_id: str | None) -> list[DecisionRecord]:
     """Map entries to accepted, active schema-2 decision records."""
     records: list[DecisionRecord] = []
     for entry in block.entries:
