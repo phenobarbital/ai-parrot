@@ -15,6 +15,7 @@ from ..models.outputs import OutputMode
 from ..models.responses import AIMessage, AgentResponse
 from ..memory import ConversationTurn
 from ..roost.endpoint import RoostEndpoint, RoostFailure
+from ..roost.grant import GrantDenied
 
 if TYPE_CHECKING:
     from ..bots.abstract import AbstractBot
@@ -302,11 +303,25 @@ class AgentTool(AbstractTool):
             return error_msg
 
     async def _execute_roost(self, caller: RoostEndpoint, target: RoostEndpoint, question: str) -> str:
-        """Query a Roost-enabled agent and store its native answer by reference."""
+        """Query a Roost-enabled agent and store its native answer by reference.
+
+        The tool call's ``PermissionContext`` is published on ``_pctx_var`` for the duration of the
+        query only, so the fail-closed endpoint resolves this caller's authority; with no context on
+        the call, any already-bound request context is left as it is.
+        """
+        from ..auth.context import _pctx_var
+
+        pctx = getattr(self, "_current_pctx", None)
+        token = _pctx_var.set(pctx) if pctx is not None else None
         try:
             answer = await caller.query(question, receiver=target.address())
         except RoostFailure as exc:
             return f"Error: {exc}"
+        except GrantDenied as exc:
+            return f"Error: grant denied: {exc}"
+        finally:
+            if token is not None:
+                _pctx_var.reset(token)
 
         if caller.working_memory is None:
             return "Error: Roost caller has no working memory"

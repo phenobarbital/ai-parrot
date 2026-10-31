@@ -8,6 +8,7 @@ discover/post to swarm channels.
 """
 
 import logging
+from contextvars import ContextVar
 from typing import Any, Dict, List, Optional
 
 from parrot.tools import AbstractToolkit
@@ -19,6 +20,10 @@ from .registry import MatrixCrewRegistry
 from .tunnel import TunnelRegistry
 
 logger = logging.getLogger(__name__)
+
+# PermissionContext of the tool call in flight, captured by ``_pre_execute``. Task-local, so concurrent
+# calls on the shared toolkit never see each other's caller.
+_CALL_PCTX: ContextVar[Any] = ContextVar("swarm_toolkit_call_pctx", default=None)
 
 
 class AgentSwarmToolkit(AbstractToolkit):
@@ -50,6 +55,16 @@ class AgentSwarmToolkit(AbstractToolkit):
         self._as = appservice
         self._endpoint = kwargs.pop("endpoint", None)  # FEAT-747: optional RoostEndpoint — ask_agent becomes a Request
         super().__init__(**kwargs)
+
+    async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
+        """Capture the call's ``PermissionContext`` so a Roost query runs under this caller's authority.
+
+        Args:
+            tool_name: Name of the tool about to be executed.
+            **kwargs: Tool arguments plus ``_permission_context`` (always injected, possibly ``None``).
+        """
+        await super()._pre_execute(tool_name, **kwargs)
+        _CALL_PCTX.set(kwargs.get("_permission_context"))
 
     async def ask_agent(
         self,
@@ -120,7 +135,9 @@ class AgentSwarmToolkit(AbstractToolkit):
             The ``AgentAnswer`` envelope as a plain dict on success, or a
             ``{"status": ...}`` dict mapped to FEAT-463 status strings.
         """
+        from parrot.auth.context import _pctx_var
         from parrot.roost.endpoint import RoostFailure
+        from parrot.roost.grant import GrantDenied
         from parrot.roost.messages import AgentAddress
         from parrot.roost.performatives import FailureCode
 
@@ -131,6 +148,9 @@ class AgentSwarmToolkit(AbstractToolkit):
             FailureCode.TIMEOUT: "timeout",
             FailureCode.POLICY: "refused",
         }
+        # Bind the call's authority for this query only; with none, keep any ambient request context.
+        pctx = _CALL_PCTX.get()
+        token = _pctx_var.set(pctx) if pctx is not None else None
         try:
             result = await self._endpoint.query(
                 question,
@@ -143,6 +163,12 @@ class AgentSwarmToolkit(AbstractToolkit):
             status = status_map.get(exc.failure.code, "error")
             logger.debug("Roost ask_agent %s -> %s failed: %s", self._agent_name, agent, exc)
             return {"status": status, "detail": exc.failure.detail}
+        except GrantDenied as exc:
+            logger.debug("Roost ask_agent %s -> %s outside grant: %s", self._agent_name, agent, exc)
+            return {"status": "refused", "detail": f"grant denied: {exc}"}
+        finally:
+            if token is not None:
+                _pctx_var.reset(token)
         return AgentAnswer(answer=result, metadata={"via": "roost", "status": "ok"}).model_dump()
 
     async def send_feedback(
