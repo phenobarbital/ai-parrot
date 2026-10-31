@@ -39,6 +39,7 @@ from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
 from ..handlers.a2ui import A2UIHandler
 from ..handlers.connection_events import ConnectionEventsHandler
+from ..handlers.channel_links import ChannelLinksHandler
 from ..handlers.connections import ConnectionsHandler
 from ..handlers.integrations import IntegrationsHandler
 from ..handlers.infographic import InfographicTalk
@@ -2400,6 +2401,8 @@ class BotManager:
         # and startup signal; their setup adds both routes and lifecycle hooks.
         # FEAT-777 M1: shared connection-event publisher + per-principal Redis push sink (SSE).
         self._setup_connection_push(self.app)
+        # FEAT-777 M2: Slack account-link issuer + request-independent connection authorizer.
+        self._setup_channel_links(self.app)
         self._register_descriptor_oauth2_providers(self.app)
         self.app.on_startup.append(self._register_oauth2_providers)
         # FEAT-598 (TASK-3805): default data-plane guard wiring, in two phases.
@@ -2493,6 +2496,9 @@ class BotManager:
         router.add_view("/api/v1/connections/events", ConnectionEventsHandler)
         router.add_view("/api/v1/connections/{provider}", ConnectionsHandler)
         router.add_view("/api/v1/connections/{provider}/start", ConnectionsHandler)
+        # FEAT-777 M2: Slack account-link preview + explicit confirm (session principal only).
+        router.add_view("/api/v1/channel-links/{nonce}", ChannelLinksHandler)
+        router.add_view("/api/v1/channel-links/{nonce}/confirm", ChannelLinksHandler)
         # User-defined bots: PUT/PATCH/GET/DELETE
         router.add_view("/api/v1/user_agents", UserAgentHandler)
         router.add_view("/api/v1/user_agents/{chatbot_id}", UserAgentHandler)
@@ -2855,6 +2861,27 @@ Available documentation UIs:
             app.on_cleanup.append(_close_push)
         except Exception:  # noqa: BLE001 - SSE is additive; never block server setup
             self.logger.exception("Connection event push not configured; /api/v1/connections/events will return 503")
+
+    def _setup_channel_links(self, app: web.Application) -> None:
+        """Wire the channel-link issuer and request-independent connection authorizer."""
+        from parrot.conf import CHANNEL_LINK_TTL_SECONDS, CONNECTIONS_LINK_BASE_URL
+
+        if app.get("channel_link_issuer") is None:
+            if CONNECTIONS_LINK_BASE_URL:
+                from parrot.auth.channel_link import ChannelLinkIssuer
+
+                app["channel_link_issuer"] = ChannelLinkIssuer(
+                    app["redis"], base_url=CONNECTIONS_LINK_BASE_URL, ttl_seconds=CHANNEL_LINK_TTL_SECONDS
+                )
+            else:
+                self.logger.warning("CONNECTIONS_LINK_BASE_URL is not set — Slack account linking is disabled (D5)")
+        if app.get("connection_authorizer") is None:
+            try:
+                from parrot.services.connection_authorization import NavigatorConnectionAuthorizer
+
+                app["connection_authorizer"] = NavigatorConnectionAuthorizer(app)
+            except Exception:  # noqa: BLE001 - Slack operations fail closed without the adapter
+                self.logger.exception("Connection authorizer not configured; Slack operations will fail closed")
 
     def _register_descriptor_oauth2_providers(self, app: web.Application) -> None:
         """Register configured descriptor providers while the app is mutable."""
