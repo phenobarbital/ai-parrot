@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from navconfig.logging import logging  # noqa: F811
 
 from parrot.auth.oauth2 import _WEB_CHANNEL
+from parrot.auth.oauth2.authorization import ConnectionAuthorizer
 from parrot.auth.principal import Principal
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -74,14 +75,22 @@ class IntegrationsService:
             already hold one).
     """
 
-    def __init__(self, vault_token_sync: Any = None) -> None:
+    def __init__(
+        self,
+        vault_token_sync: Any = None,
+        *,
+        authorizer: Optional[ConnectionAuthorizer] = None,
+    ) -> None:
         self._vault_token_sync = vault_token_sync
         self._identity_store_instance: Any = None
+        self._authorizer = authorizer
 
     async def list_for_principal(
         self,
         user_id: str,
         request: Any = None,
+        *,
+        principal: Optional[Principal] = None,
     ) -> List[IntegrationDescriptor]:
         """Return one PBAC-filtered descriptor per registered provider.
 
@@ -90,6 +99,7 @@ class IntegrationsService:
             request: Optional aiohttp request used for PBAC evaluation. When
                 ``None`` or when ``abac`` is absent, the service fails closed
                 and returns an empty list.
+            principal: Bound platform principal for request-independent authorization.
 
         Returns:
             List of :class:`~parrot.integrations.oauth2.models.IntegrationDescriptor`
@@ -99,7 +109,7 @@ class IntegrationsService:
         providers = registry.all()
 
         # PBAC: fail-closed for integrations surface (Q-B resolution)
-        if not await self._check_pbac(request, "integration:list"):
+        if not await self._authorize(request, principal, user_id, "integration:list"):
             logger.debug(
                 "PBAC denied integration:list for user_id=%s — returning empty list",
                 user_id,
@@ -110,7 +120,7 @@ class IntegrationsService:
         rows = {row.provider: row for row in await list_users_integrations(user_id)}
 
         for provider in providers:
-            if not await self._check_pbac(request, "integration:list", provider.provider_id):
+            if not await self._authorize(request, principal, user_id, "integration:list", provider.provider_id):
                 continue
             result.append(await self._descriptor(user_id, provider, rows.get(provider.provider_id), request))
 
@@ -158,6 +168,7 @@ class IntegrationsService:
             connected_at=integration_row.connected_at if integration_row else None,
             channels=integration_row.channels if integration_row else [],
             scopes_granted=integration_row.scopes_granted if integration_row else [],
+            grant_origin=integration_row.grant_origin if integration_row else None,
             expires_at=integration_row.expires_at if integration_row else None,
             updated_at=integration_row.updated_at if integration_row else None,
         )
@@ -323,7 +334,7 @@ class IntegrationsService:
             raise ValueError(f"Unknown provider: {provider_id!r}")
 
         requested_scopes = list(scopes or provider.default_scopes)
-        if not await self._check_pbac(request, "integration:connect", provider_id, requested_scopes):
+        if not await self._authorize(request, principal, user_id, "integration:connect", provider_id, requested_scopes):
             raise PermissionError(f"Not permitted to connect provider {provider_id!r}")
 
         if channel == _WEB_CHANNEL:
@@ -357,13 +368,20 @@ class IntegrationsService:
             expires_in=600,
         )
 
-    async def status(self, user_id: str, provider_id: str, request: Any = None) -> IntegrationDescriptor:
+    async def status(
+        self,
+        user_id: str,
+        provider_id: str,
+        request: Any = None,
+        *,
+        principal: Optional[Principal] = None,
+    ) -> IntegrationDescriptor:
         """Return the PBAC-filtered descriptor for one provider."""
         registry = OAuth2ProviderRegistry()
         provider = registry.get(provider_id)
         if provider is None:
             raise ValueError(f"Unknown provider: {provider_id!r}")
-        if not await self._check_pbac(request, "integration:list", provider_id):
+        if not await self._authorize(request, principal, user_id, "integration:list", provider_id):
             raise PermissionError(f"Not permitted to list provider {provider_id!r}")
         row = await get_users_integration(user_id, provider_id)
         return await self._descriptor(user_id, provider, row, request)
@@ -373,6 +391,8 @@ class IntegrationsService:
         user_id: str,
         provider_id: str,
         request: Any = None,
+        *,
+        principal: Optional[Principal] = None,
     ) -> DisconnectResponse:
         """Revoke and delete one provider connection for a principal.
 
@@ -380,6 +400,7 @@ class IntegrationsService:
             user_id: Navigator user identifier.
             provider_id: Provider identifier, e.g. ``"jira"``.
             request: aiohttp request used for PBAC evaluation.
+            principal: Bound platform principal for request-independent authorization.
 
         Returns:
             :class:`~parrot.integrations.oauth2.models.DisconnectResponse` with
@@ -388,7 +409,14 @@ class IntegrationsService:
         provider = OAuth2ProviderRegistry().get(provider_id)
         if provider is None:
             raise ValueError(f"Unknown provider: {provider_id!r}")
-        if not await self._check_pbac(request, "integration:disconnect", provider_id, list(provider.default_scopes)):
+        if not await self._authorize(
+            request,
+            principal,
+            user_id,
+            "integration:disconnect",
+            provider_id,
+            list(provider.default_scopes),
+        ):
             raise PermissionError(f"Not permitted to disconnect provider {provider_id!r}")
         await provider.manager.revoke(channel=_WEB_CHANNEL, user_id=user_id)
         await delete_users_integration(user_id, provider_id)
@@ -467,6 +495,28 @@ class IntegrationsService:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _authorize(
+        self,
+        request: Any,
+        principal: Optional[Principal],
+        user_id: str,
+        action: str,
+        provider_id: Optional[str] = None,
+        scopes: Optional[List[str]] = None,
+    ) -> bool:
+        """Authorize web requests with PBAC and non-web calls with the adapter."""
+        if request is not None:
+            return await self._check_pbac(request, action, provider_id, scopes)
+        if principal is None or self._authorizer is None or str(principal.user_id) != str(user_id):
+            logger.debug("Denying %s: missing principal/authorizer or principal mismatch", action)
+            return False
+        try:
+            decision = await self._authorizer.authorize(principal, action, provider_id, list(scopes or []))
+        except Exception:  # noqa: BLE001 - evaluator errors fail closed
+            logger.exception("Connection authorizer failed for action=%s provider=%s — denying", action, provider_id)
+            return False
+        return decision is True
 
     async def _check_pbac(
         self,
