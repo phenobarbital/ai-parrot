@@ -382,7 +382,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -392,8 +392,9 @@
       "parallelism_notes": "calls run_connect from TASK-4977 (parrot/cli/connect.py) and re-exports parse_pasted_redirect from TASK-4977 (parrot/auth/oauth2/paste.py); uses open_connection_cache/RemoteConnectionResolver from TASK-4973 (transitive); sole writer of the Jira files",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4980-jira-connect-convergence.md"
+      "completed_at": "2026-10-31T01:41:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4980-jira-connect-convergence.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4981",
@@ -402,7 +403,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -415,8 +416,9 @@
       "parallelism_notes": "exercises the stdio binding from TASK-4976, run_connect from TASK-4977 and the device endpoints from TASK-4971; rewrites test_cli_devicecode_e2e.py after TASK-4978 edited it (same file, serialized)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4981-cli-connections-e2e.md"
+      "completed_at": "2026-10-31T01:41:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4981-cli-connections-e2e.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4982",
