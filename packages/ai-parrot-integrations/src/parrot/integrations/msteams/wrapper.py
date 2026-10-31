@@ -11,7 +11,7 @@ import asyncio
 import contextlib
 from http import HTTPStatus
 from pathlib import Path
-from typing import Dict, Optional, Any, Union
+from typing import Callable, Dict, Optional, Any, Union
 
 import aiohttp
 from aiohttp import web
@@ -44,9 +44,11 @@ from ..parser import parse_response, ParsedResponse
 from .dialogs.orchestrator import FormOrchestrator
 from .dialogs.factory import FormDialogFactory
 from .commands import MSTeamsCommandRouter
-from .commands.jira_commands import register_jira_commands
+from .commands.connect_commands import TeamsConnector, register_connection_commands
 from .commands.auth_commands import register_auth_commands
 from .auth import MSTeamsAuthStrategy, MSTeamsSessionStore
+from .connections import MSTeamsPrincipalSource
+from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 from parrot.auth.context import UserContext
 from parrot.auth.token_exchange import TokenExchangeClient
 from .oauth_callback import MSTeamsOAuthNotifier
@@ -77,6 +79,13 @@ logging.getLogger("msrest").setLevel(logging.WARNING)
 FORMDESIGNER_API_BASE_PATH: str = "/api/v1"  # fallback only; prefer config.formdesigner_api_base_path
 
 _debug_storage_logger = logging.getLogger(__name__)
+
+
+def _default_connection_service() -> Any:
+    """Build a fail-closed connection service until manager wiring injects an evaluator."""
+    from parrot.auth.oauth2.service import IntegrationsService
+
+    return IntegrationsService()
 
 
 class DebugMemoryStorage(MemoryStorage):
@@ -137,6 +146,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         forms_directory: Optional[str] = None,
         voice_config: Optional[VoiceTranscriberConfig] = None,
         oauth_manager: Optional["JiraOAuthManager"] = None,
+        connection_service_factory: Optional[Callable[[], Any]] = None,
     ):
         super().__init__()
         self.agent = agent
@@ -184,8 +194,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Initialize Adapter
         self.adapter = Adapter(config=self.config, logger=self.logger, conversation_state=self.conversation_state)
 
-        # Command router — always created for agent commands;
-        # Jira commands added only when oauth_manager is provided (FEAT-225).
+        # Command router is always created for agent commands.
         from .commands.agent_commands import AgentCommandHandler
 
         self._command_router: MSTeamsCommandRouter = MSTeamsCommandRouter()
@@ -200,13 +209,6 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             self._knowledge_upload = register_knowledge_upload_commands(self._command_router, self)
 
         if oauth_manager is not None:
-            register_jira_commands(
-                self._command_router,
-                oauth_manager,
-                # Resolved per turn, not here: the auth lane below is wired
-                # after this block, and an unauthenticated turn must yield "".
-                nav_user_id_resolver=lambda tc: self._effective_user_id(tc, ""),
-            )
             # Register the OAuth notifier for proactive messaging after callback.
             # continue_conversation needs a valid App ID, so skip (with a
             # warning) when client_id is not configured rather than registering
@@ -239,6 +241,18 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             register_auth_commands(self._command_router, self._auth)
         else:
             self.logger.info("MSTeams[%s]: no navigator_auth_url — auth lane disabled", config.name)
+
+        self._principal_source = MSTeamsPrincipalSource(self._session_store)
+        self._connector: Optional[TeamsConnector] = None
+        if OAuth2ProviderRegistry().all():
+            self._connector = TeamsConnector(
+                principal_source=self._principal_source,
+                service_factory=connection_service_factory or _default_connection_service,
+                provider_ids=lambda: [provider.provider_id for provider in OAuth2ProviderRegistry().all()],
+                bot_app_id=config.client_id or "",
+                auth_enabled=self._auth is not None,
+            )
+            register_connection_commands(self._command_router, connector=self._connector)
 
         # FEAT-734: TeamsFormDesignerMixin seams (no-op for agents without the mixin)
         self._wire_formdesigner_agent()
@@ -717,7 +731,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 # Secondary plain-text dispatch for discoverability keywords
                 # like "jira" or "integrations" that don't carry a "/" prefix.
                 plain = clean_text.lower().strip()
-                if plain in ("jira", "integrations"):
+                if plain in ("jira", "integrations", "connections"):
                     dispatched = await self._command_router.try_dispatch_plain(plain, turn_context)
             if dispatched:
                 return  # command handled — skip agent processing
