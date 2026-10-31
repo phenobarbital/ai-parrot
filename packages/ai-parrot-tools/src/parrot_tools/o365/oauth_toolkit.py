@@ -21,11 +21,11 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 import aiohttp
 
 from parrot.auth.exceptions import AuthorizationRequired
+from parrot.auth.credentials import credential_channel_user_id
 from parrot.tools.toolkit import AbstractToolkit
 
 if TYPE_CHECKING:  # pragma: no cover
     from parrot.auth.credentials import CredentialResolver
-    from parrot.auth.o365_oauth import O365TokenSet
 
 
 logger = logging.getLogger(__name__)
@@ -120,7 +120,7 @@ class Office365Toolkit(AbstractToolkit):
                 scopes=list(self._OAUTH_SCOPES),
             )
 
-        user_id = getattr(perm_ctx, "user_id", None)
+        user_id = credential_channel_user_id(perm_ctx)
         channel = getattr(perm_ctx, "channel", None) or "unknown"
         if not user_id:
             raise AuthorizationRequired(
