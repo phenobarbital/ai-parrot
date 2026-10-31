@@ -16,8 +16,7 @@ from parrot.cli.login import LoginRecord, LoginStore
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CORE_SRC = _REPO_ROOT / "packages" / "ai-parrot" / "src"
 
-_BOOTSTRAP = textwrap.dedent(
-    f"""
+_BOOTSTRAP = textwrap.dedent(f"""
     import sys, types
     sys.path.insert(0, {str(_CORE_SRC)!r})
 
@@ -49,11 +48,9 @@ _BOOTSTRAP = textwrap.dedent(
 
     from parrot.cli import cli
     cli(prog_name="parrot")
-    """
-)
+    """)
 
-_FAKE_SERVER = textwrap.dedent(
-    """
+_FAKE_SERVER = textwrap.dedent("""
     import asyncio
     import sys
     from aiohttp import web
@@ -97,8 +94,7 @@ _FAKE_SERVER = textwrap.dedent(
         await asyncio.Event().wait()
 
     asyncio.run(main())
-    """
-)
+    """)
 
 
 def _write_fixture_files(root: Path, server_url: str) -> Path:
@@ -116,8 +112,7 @@ def _write_fixture_files(root: Path, server_url: str) -> Path:
         )
     )
     (root / "stub_toolkit.py").write_text(
-        textwrap.dedent(
-            """
+        textwrap.dedent("""
             from parrot.tools.toolkit import AbstractToolkit
 
             class CredentialToolkit(AbstractToolkit):
@@ -128,8 +123,7 @@ def _write_fixture_files(root: Path, server_url: str) -> Path:
                 async def fetch(self) -> str:
                     \"\"\"Return a value after provider authorization.\"\"\"
                     return \"secret result\"
-            """
-        ),
+            """),
         encoding="utf-8",
     )
     (root / ".parrot" / "mcp-toolkits.yaml").write_text(
