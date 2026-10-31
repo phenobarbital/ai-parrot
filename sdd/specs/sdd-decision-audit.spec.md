@@ -82,9 +82,14 @@ consumer alone never enforces anything.
   recorded in `sdd/decisions/approvals.jsonl`; publication is all-or-nothing per
   batch, retries idempotent, retirement explicit.
 - G5 — **Reproducible gate.** `scripts/sdd/check_spec_consequences.py` exposes
-  the exit matrix `pass/0 · conflict/1 · invalid/2 · incomplete/3`; render and
-  check modes are byte-stable for identical inputs; a stale persisted report
-  fails check mode.
+  the exit matrix `pass/0 · skipped/0 · conflict/1 · invalid/2 · incomplete/3`;
+  render and check modes are byte-stable for identical inputs; a stale
+  persisted report fails check mode.
+- G8 — **Portability.** The SDD flow runs in repositories that will never
+  author ADRs, build the wiki plane or curate a taxonomy. A repository with no
+  decision-audit configuration gets `skipped` (exit 0) with a one-line note;
+  `/sdd-task` never refuses a spec for lacking a report and only warns when an
+  existing report is contrary.
 - G6 — **Seed and taxonomy.** A curated subsystem taxonomy
   (`sdd/taxonomy/subsystems.yaml`) and a seeded set of architecture rules
   (`docs/decisions/*.md`, extended metadata, approved as one batch) make the
@@ -108,8 +113,10 @@ targets; curated seed approved once.
   proposition language (subject/predicate/object/polarity) is a follow-up.
 - `allows` / partial-exception calculus; partial supersession; competing
   successors (all `invalid` in v1).
-- CI job for the gate; `/sdd-task` dossier propagation; `/sdd-brief` preview
-  (all deferred by owner decision, §8).
+- CI job for the gate; `/sdd-task` dossier *propagation* (the advisory check
+  in `/sdd-task` is in scope, Q3); `/sdd-brief` preview (deferred, §8).
+- Making decision audit a prerequisite of the SDD flow in other repositories:
+  an unconfigured repository is `skipped`, never blocked (G8).
 - Task certificates, scheduled evidence-drift job, historical backfill via
   `generation.py` (later phases).
 - External verifier (open-ontologies / RDF projection) — brainstorm Option C,
@@ -176,7 +183,19 @@ Surfaces: `wikitoolkit spec governing|consequences render|consequences check|
 decisions publish`, MCP `wiki_spec_consequences`, and
 `scripts/sdd/check_spec_consequences.py` with the exit matrix; `/sdd-spec`
 (Claude command, Antigravity workflow, Codex skill) retrieves before §5 and
-checks before §6.
+checks before §6; `/sdd-task` runs check mode in **advisory** form.
+
+**Portability principle (owner, 2026-10-31).** Decision audit is
+*configured* in a repository when `sdd/taxonomy/subsystems.yaml` or
+`sdd/decisions/approvals.jsonl` exists. When neither exists **and** the spec
+has no `## Decisions` block, every surface returns status `skipped` (exit 0),
+renders a single line ("decision audit not configured in this repository")
+instead of the two sections, and `/sdd-spec` proceeds normally. A spec that
+declares decisions in an unconfigured repository is `invalid` (it asked for an
+audit nobody can run). `/sdd-task` never refuses decomposition: with no report
+it stays silent; with a report that is `conflict`, `invalid`, `incomplete` or
+stale it prints a warning and continues. Only `/sdd-spec`'s `approved`
+transition is refused, and only on `conflict` / `invalid` / `incomplete`.
 
 ### Component Diagram
 
@@ -275,7 +294,7 @@ class Finding(_Strict):
     rule_version: int; fingerprint: str; participants: list[DecisionRef]; scope: list[str]
     blocking: bool; waived_by: str | None = None; message: str
 class ConsequenceReport(_Strict):
-    status: Literal["pass", "conflict", "invalid", "incomplete"]; exit_code: int
+    status: Literal["pass", "skipped", "conflict", "invalid", "incomplete"]; exit_code: int   # skipped = not configured
     input_digest: str; evaluation_digest: str; snapshot: SnapshotManifest
     findings: list[Finding]; diagnostics: list[DecisionDiagnostic]; coverage: CoverageSummary
 ```
@@ -314,11 +333,11 @@ wiki_spec_consequences(spec_path, mode="check"|"governing", budget_tokens)
 | M1: Schema 2 models + codec | yes | fields, literals, `spec_decision_id`, envelope marker v2, explicit `ADR_UNSUPPORTED_SCHEMA` | — |
 | M2: Spec Decisions parser | yes | YAML block grammar, id charset, validation error codes fixed below | — |
 | M3: Taxonomy + approvals adapter | yes | file formats, `GitCommitApprovalAdapter` checks fixed | — |
-| M4: Target resolver + scope | no | scope-completeness contract against the scan inventory needs a design pass on `repo_scan` coverage | coverage semantics |
+| M4: Target resolver + scope | no (owner-confirmed 2026-10-31) | scope-completeness contract against the scan inventory needs a design pass on `repo_scan` coverage | coverage semantics |
 | M5: Inventory snapshot + eligibility | yes | predicate, supersession validation rules, manifest hash inputs fixed | — |
-| M6: Consequence evaluator | no | finding fingerprint canonicalization and baseline/replay rules need the thinking model | digest/baseline semantics |
+| M6: Consequence evaluator | no (owner-confirmed 2026-10-31) | finding fingerprint canonicalization and baseline/replay rules need the thinking model | digest/baseline semantics |
 | M7: Section renderer + check | yes | section markers, byte-stable rendering, check comparison fixed | — |
-| M8: Batch publisher + ingest extension | no | batch-visibility marker on top of per-record CAS is a concurrency design | partial-batch invisibility |
+| M8: Batch publisher + ingest extension | no (owner-confirmed 2026-10-31) | batch-visibility marker on top of per-record CAS is a concurrency design | partial-batch invisibility |
 | M9: Surfaces (CLI, MCP, gate script) | yes | names, exit matrix, `_tool_surface.py` update fixed | — |
 | M10: SDD entry points, template, taxonomy, seed, docs | yes | section names and step placement fixed; seed content transcribed from `CLAUDE.md` / `CONTEXT.md` | — |
 | M11: FEAT-778 compatibility tests | yes | equivalence test on fixtures; no runtime change | — |
@@ -451,7 +470,7 @@ wiki_spec_consequences(spec_path, mode="check"|"governing", budget_tokens)
   class ConsequenceService:
       def __init__(self, store: BaseWikiStore, root: Path, config: DecisionConfig, structural: StructuralService, *, taxonomy_path: Path, approvals_path: Path, adapter: ApprovalAdapter) -> None
       async def evaluate(self, spec_path: Path, *, mode: Literal["preview", "replay"] = "preview") -> ConsequenceReport:
-          """Never raises for spec/content faults: status invalid|incomplete carries diagnostics. Precedence invalid > incomplete > conflict > pass."""
+          """Never raises for spec/content faults: status invalid|incomplete carries diagnostics. Precedence invalid > incomplete > conflict > pass; `skipped` only when the repo is unconfigured and no block is declared."""
       async def governing(self, spec_path: Path, *, budget_tokens: int = 3000) -> GoverningDossier:
           """Full eligible set collected first; budget applies to rendering only."""
   def input_digest(canonical_spec: bytes, block: bytes, waivers: bytes, config_digest: str, manifest: SnapshotManifest) -> str
@@ -495,7 +514,7 @@ wiki_spec_consequences(spec_path, mode="check"|"governing", budget_tokens)
 
 ### Module 9: Surfaces — CLI, MCP, gate script
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/operations.py`, `cli.py`, `transport.py`, `packages/ai-parrot/tests/knowledge/wiki/_tool_surface.py` (modify); `scripts/sdd/check_spec_consequences.py` (new)
-- **Responsibility**: `op_spec_consequences` operation + `SpecConsequencesInput`; MCP spec `wiki_spec_consequences` in the `decisions` group; `wikitoolkit spec governing|consequences render|consequences check` and `wikitoolkit decisions publish --batch`; the gate script with `--json` / `--render` and the exit matrix (`pass`=0, `conflict`=1, `invalid`=2, `incomplete`=3; operational failure never 0).
+- **Responsibility**: `op_spec_consequences` operation + `SpecConsequencesInput`; MCP spec `wiki_spec_consequences` in the `decisions` group; `wikitoolkit spec governing|consequences render|consequences check` and `wikitoolkit decisions publish --batch`; the gate script with `--json` / `--render` / `--advisory` and the exit matrix (`pass`=0, `skipped`=0, `conflict`=1, `invalid`=2, `incomplete`=3; operational failure never 0 except under `--advisory`, which downgrades 1/2/3 to a printed warning for `/sdd-task`).
 - **Depends on**: M6, M7, M8.
 - **Interface Skeleton**:
   ```python
@@ -505,12 +524,23 @@ wiki_spec_consequences(spec_path, mode="check"|"governing", budget_tokens)
   # transport.py  (modifies transport.py:202, :362)
   "wiki_spec_consequences": _Spec("decisions", SpecConsequencesInput, "Evaluate a spec's declared decisions against the accepted decision plane …")
   # scripts/sdd/check_spec_consequences.py  (new; shape: check_task_graph.py:651)
-  def main(argv: list[str] | None = None) -> int: """0 pass · 1 conflict · 2 invalid · 3 incomplete; --json emits the ConsequenceReport."""
+  def main(argv: list[str] | None = None) -> int: """0 pass|skipped · 1 conflict · 2 invalid · 3 incomplete; --json emits the ConsequenceReport; --advisory prints a warning on 1/2/3 and returns 0 (the /sdd-task form)."""
   ```
 
 ### Module 10: SDD entry points, template, taxonomy, seed and docs
-- **Path**: `sdd/templates/spec.md`, `.claude/commands/sdd-spec.md`, `.agent/workflows/sdd-spec.md`, `.agents/skills/sdd-spec/SKILL.md` (modify); `sdd/taxonomy/subsystems.yaml`, `sdd/decisions/approvals.jsonl`, `docs/decisions/*.md`, `docs/sdd/decision-audit.md` (new)
-- **Responsibility**: template gains `## Governing Decisions` (generated, before §2), `## Decisions` + optional `## Decision Waivers` (authored, after §7), `## Consequences` (generated, before §8); the three `/sdd-spec` entry points get "§4b Retrieve governing decisions" (render governing) before §5 and "§5b Consequence gate" (`check_spec_consequences --render` then `check`) before §6, refusing `approved` on non-zero exit or stale/missing sections; the initial taxonomy (memory, clients, bots, tools, flows, skills, knowledge-wiki, knowledge-graphindex, server, integrations, sdd-tooling, dev-loop …, each mapped to `KNOWN_PROJECTS`); the seed: one `docs/decisions/<rule>.md` per architecture rule transcribed from `CLAUDE.md` / `.agent/CONTEXT.md` (clients memory-less; `AbstractBot` sole history writer; no `requests`/`httpx`; concrete tools in `parrot_tools`; no LangChain; aiohttp-only HTTP; `clients/base.py` protected) with `## Decision Metadata`; the first `approvals.jsonl` seed batch; a docs page.
+- **Path**: `sdd/templates/spec.md`, `.claude/commands/sdd-spec.md`, `.agent/workflows/sdd-spec.md`, `.agents/skills/sdd-spec/SKILL.md`, `.claude/commands/sdd-task.md`, `.agent/workflows/sdd-task.md`, `.agents/skills/sdd-task/SKILL.md` (modify); `sdd/taxonomy/subsystems.yaml`, `sdd/decisions/approvals.jsonl`, `docs/decisions/*.md`, `docs/sdd/decision-audit.md` (new)
+- **Responsibility**: template gains `## Governing Decisions` (generated, before §2), `## Decisions` + optional `## Decision Waivers` (authored, after §7), `## Consequences` (generated, before §8); the three `/sdd-spec` entry points get "§4b Retrieve governing decisions" (render governing) before §5 and "§5b Consequence gate" (`check_spec_consequences --render` then `check`) before §6, refusing `approved` on non-zero exit or stale/missing sections (never on `skipped`); the three `/sdd-task` entry points get one advisory step (`check_spec_consequences --advisory <spec>` before decomposition: silent when no report, warning when contrary, never a refusal — owner Q3); the initial taxonomy (memory, clients, bots, tools, flows, skills, knowledge-wiki, knowledge-graphindex, server, integrations, config, auth, sdd-tooling, dev-loop, each mapped to `KNOWN_PROJECTS`); the seed: one `docs/decisions/<rule>.md` per architecture rule transcribed from `CLAUDE.md` / `.agent/CONTEXT.md` / `codebase-conventions.md`, each with `## Decision Metadata`; the first `approvals.jsonl` seed batch; a docs page.
+  Seed rules (owner-corrected 2026-10-31):
+  1. `clients-memoryless` — *forbids* `dir:packages/ai-parrot/src/parrot/clients`: clients neither load nor persist conversation history (FEAT-524).
+  2. `history-single-writer` — *requires* `file:packages/ai-parrot/src/parrot/bots/abstract.py`: `AbstractBot.save_conversation_turn()` is the only writer of conversation history.
+  3. `non-blocking-async-stack` — *forbids* blocking I/O in async code (`requests`, `time.sleep`, sync DB drivers) across `dir:packages`; rationale states explicitly that `httpx` is excluded for **stack consistency, not because it blocks** — it supports async; the project standardizes on aiohttp + asyncio + uvloop.
+  4. `http-stack-aiohttp` — *requires* aiohttp for HTTP client and server, served by gunicorn's aiohttp worker; *forbids* ASGI stacks (`uvicorn`, `starlette`, `fastapi`) as a consequence of the asyncio/uvloop choice.
+  5. `config-core-navconfig` — *requires* `navconfig` as the configuration core (no ad-hoc env parsing or settings frameworks) across `dir:packages`.
+  6. `auth-platform-navigator-auth` — *requires* `navigator-auth` as the authentication, authorization, ABAC and PBAC platform (no custom auth middleware) for `dir:packages/ai-parrot-server`.
+  7. `tools-live-in-parrot-tools` — *requires* `dir:packages/ai-parrot-tools/src/parrot_tools` for concrete tool implementations; `parrot/tools/` holds base machinery only.
+  8. `no-langchain` — *forbids* `langchain*`, `langgraph`, `langsmith` across `dir:packages` (parrot primitives instead).
+  9. `clients-base-protected` — *constrains* `file:packages/ai-parrot/src/parrot/clients/base.py`: not modified without an explicit spec decision.
+  The TID251 ban list in `ruff` is unchanged by this feature; aligning the literal "never `httpx`" wording of `codebase-conventions.md` (three byte-identical copies) with rule 3's intent is a one-line follow-up outside this spec.
 - **Depends on**: M2 (block grammar), M3 (formats), M9 (script names).
 - **Interface Skeleton**: documents only — section names and step ids as above; seed file shape:
   ```markdown
@@ -644,6 +674,8 @@ def git_base_repo(tmp_path):
 - [ ] AC16 — Taxonomy and seed are committed; the seed batch verifies through the adapter on `dev`; `_tool_surface.py` lists `wiki_spec_consequences`; all tests in the Validation Contract pass; `ruff check` clean on touched files.
 - [ ] AC17 — FEAT-778 `ADRSource` behaviour and tests unchanged; equivalence test passes.
 - [ ] AC18 — `docs/sdd/decision-audit.md` documents block grammar, exit matrix, approval flow and seed procedure.
+- [ ] AC19 — Portability: in a repository with neither `sdd/taxonomy/subsystems.yaml` nor `sdd/decisions/approvals.jsonl`, a spec without a `## Decisions` block yields `skipped` (exit 0) on every surface and `/sdd-spec` proceeds; `/sdd-task` never refuses decomposition and prints a warning only when an existing report is `conflict` / `invalid` / `incomplete` / stale (`--advisory`).
+- [ ] AC20 — The nine seed rules of M10 parse, resolve their targets on `dev`, and rule 3's rationale states that `httpx` is excluded for stack consistency, not for blocking.
 
 ---
 
@@ -831,6 +863,9 @@ Verified against: `56b24d87db`
 | `.agent/workflows/sdd-spec.md` | MODIFY | `### 5. Scaffold the Spec` | `sdd-spec.md:448` | 1 |
 | `.agent/workflows/sdd-spec.md` | MODIFY | `### 6. Commit the Spec` | `sdd-spec.md:584` | 1 |
 | `.agents/skills/sdd-spec/SKILL.md` | MODIFY | `## Workflow` | `SKILL.md:38` | 1 |
+| `.claude/commands/sdd-task.md` | MODIFY | `### 2. Read the Spec` (advisory check step inserted after it) | `sdd-task.md:101` | 1 |
+| `.agent/workflows/sdd-task.md` | MODIFY | `### 2. Read the Spec` | `sdd-task.md:97` | 1 |
+| `.agents/skills/sdd-task/SKILL.md` | MODIFY | `## Workflow` | `SKILL.md:43` | 1 |
 | `packages/ai-parrot/tests/experts/test_sources_inline.py` | MODIFY | (append tests; anchor = end of file) | — | — |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/spec_entries.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/decisions/taxonomy.py` | CREATE | — | — | — |
@@ -910,7 +945,7 @@ Verified against: `56b24d87db`
 - [x] External verifier spike — *Resolved in brainstorm*: deferred until task certificates exist.
 - [ ] Batch-visibility marker shape (M8): a dedicated `adr:batch:<id>` page vs a `pending` lifecycle value on each record — decide at M8 task time; both keep half-written batches invisible. — *Owner: spec author (implementation)*
 - [ ] Initial taxonomy granularity: start with the ~12 subsystems listed in M10 and grow by PR, or seed one subsystem per `KNOWN_PROJECTS` entry only? — *Owner: Jesús (can be decided at M10 task time)*
-- [ ] Q3 (escalated from design research S9): should `/sdd-task` also run `check_spec_consequences` in read-only check mode and refuse decomposition of a spec whose report is missing, stale or blocking? It is a one-line addition to the three `/sdd-task` entry points and does not propagate the dossier (which the owner deferred). — *Owner: Jesús*
+- [x] Q3 (escalated from design research S9): should `/sdd-task` run `check_spec_consequences` in read-only check mode and refuse decomposition of a spec whose report is missing, stale or blocking? — *Owner: Jesús (2026-10-31)*: **no refusal**. The SDD flow is used in other packages where nobody will author ADR documents or build the graph, so `/sdd-task` must never refuse a spec for lacking a report; it runs check mode and emits a **warning** only when a report exists and is contrary (`conflict`, `invalid`, `incomplete` or stale). Carried into §2 (portability principle, `skipped` status), §3 M9/M10 and AC19.
 
 ---
 
