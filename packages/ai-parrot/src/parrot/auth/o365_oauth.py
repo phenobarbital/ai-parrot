@@ -32,7 +32,7 @@ from parrot.auth.principal import Principal
 logger = logging.getLogger(__name__)
 
 _LEGACY_REVOKED_KEY = "oauth2:o365:legacy_revoked:{user_id}"
-_LEGACY_REVOKED_TTL_SECONDS = 400 * 24 * 60 * 60   # outlives any OAUTH2_LEGACY_KEYS_UNTIL window
+_LEGACY_REVOKED_TTL_SECONDS = 400 * 24 * 60 * 60  # outlives any OAUTH2_LEGACY_KEYS_UNTIL window
 
 
 # Default delegated scopes — see docs/integrations/office365-oauth2.md
@@ -252,7 +252,11 @@ class O365OAuthManager(AbstractOAuth2Manager):
     # ------------------------------------------------------------------ device code (FEAT-777 M3)
 
     async def store_device_grant(
-        self, principal: Principal, payload: Dict[str, Any], *, channel: str,
+        self,
+        principal: Principal,
+        payload: Dict[str, Any],
+        *,
+        channel: str,
     ) -> O365TokenSet:
         """Persist a freshly minted device-code token response as the principal's single O365 record.
 
@@ -272,7 +276,11 @@ class O365OAuthManager(AbstractOAuth2Manager):
         return token_set
 
     async def migrate_legacy_device_grant(
-        self, principal: Principal, legacy: Dict[str, Any], *, channel: str,
+        self,
+        principal: Principal,
+        legacy: Dict[str, Any],
+        *,
+        channel: str,
     ) -> Optional[O365TokenSet]:
         """Convert one legacy ``o365:*`` dict (absolute ``expires_at``); ``None`` when a current record already wins.
 
@@ -306,9 +314,7 @@ class O365OAuthManager(AbstractOAuth2Manager):
         try:
             identity = await self._discover_identity(usable_token)
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
-            raise RefreshTransientError(
-                f"O365 identity discovery failed: {type(exc).__name__}"
-            ) from None
+            raise RefreshTransientError(f"O365 identity discovery failed: {type(exc).__name__}") from None
         token_set = O365TokenSet(
             access_token=usable_token,
             refresh_token=refresh_token,
@@ -325,9 +331,8 @@ class O365OAuthManager(AbstractOAuth2Manager):
             grant_origin="device_code",
         )
         async with self.principal_lock(principal.user_id):
-            current = (
-                await self._read_token_from_cache(principal.user_id)
-                or await self._read_token_from_store(principal.user_id)
+            current = await self._read_token_from_cache(principal.user_id) or await self._read_token_from_store(
+                principal.user_id
             )
             if current is not None or not await self.legacy_migration_allowed(principal.user_id):
                 return None  # a newer grant or a disconnect wins; never overwrite / resurrect
@@ -364,8 +369,11 @@ class O365OAuthManager(AbstractOAuth2Manager):
         from parrot.auth.oauth2.persistence import upsert_users_integration
 
         row = await IntegrationsService().persist_credential(
-            principal.user_id, self.provider_id, token_set,
-            channel=channel, canonical_identity=principal.canonical_identity,
+            principal.user_id,
+            self.provider_id,
+            token_set,
+            channel=channel,
+            canonical_identity=principal.canonical_identity,
         )
         if getattr(row, "grant_origin", None) != token_set.grant_origin:
             # persist_credential is provider-agnostic and does not carry grant_origin.

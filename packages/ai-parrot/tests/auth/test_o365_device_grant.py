@@ -1,4 +1,5 @@
 """FEAT-777 M3: O365 device-code grants on the principal store (no fakeredis)."""
+
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -63,7 +64,12 @@ def _make(fail=False):
     redis, store, events = _MemRedis(), _MemStore(fail=fail), MagicMock()
     events.publish = AsyncMock()
     mgr = O365OAuthManager(
-        "cid", "secret", "http://x/cb", redis_client=redis, credential_store=store, event_publisher=events,
+        "cid",
+        "secret",
+        "http://x/cb",
+        redis_client=redis,
+        credential_store=store,
+        event_publisher=events,
     )
     return mgr, redis, store, events
 
@@ -115,7 +121,9 @@ async def test_devicecode_legacy_expiry_preserved(monkeypatch):
     mgr.refresh_access_token = AsyncMock()
     exp = now + 3600
     ts = await mgr.migrate_legacy_device_grant(
-        P, {"access_token": "a", "refresh_token": "r", "expires_at": exp, "scope": "User.Read"}, channel="web",
+        P,
+        {"access_token": "a", "refresh_token": "r", "expires_at": exp, "scope": "User.Read"},
+        channel="web",
     )
     assert ts.expires_at == exp
     assert ts.scopes == ["User.Read"]
@@ -129,9 +137,13 @@ async def test_devicecode_legacy_expiry_preserved(monkeypatch):
             side_effect=lambda rt, order=order: order.append("refresh") or {"access_token": "n", "expires_in": 600}
         )
         orig = mgr._discover_identity
-        mgr._discover_identity = AsyncMock(side_effect=lambda t, order=order, orig=orig: order.append("probe") or orig.return_value)
+        mgr._discover_identity = AsyncMock(
+            side_effect=lambda t, order=order, orig=orig: order.append("probe") or orig.return_value
+        )
         ts = await mgr.migrate_legacy_device_grant(
-            P, {"access_token": "a", "refresh_token": "r", "expires_at": bad}, channel="web",
+            P,
+            {"access_token": "a", "refresh_token": "r", "expires_at": bad},
+            channel="web",
         )
         assert order == ["refresh", "probe"]
         assert ts.access_token == "n"

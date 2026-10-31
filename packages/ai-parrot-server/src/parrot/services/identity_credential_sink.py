@@ -17,8 +17,15 @@ if TYPE_CHECKING:
 
 _METADATA_KEYS = frozenset(
     {
-        "account_id", "display_name", "email", "cloud_id", "site_url", "scopes_granted",
-        "grant_origin", "tenant_id", "user_principal_name",   # FEAT-777 M3: O365 fields must round-trip
+        "account_id",
+        "display_name",
+        "email",
+        "cloud_id",
+        "site_url",
+        "scopes_granted",
+        "grant_origin",
+        "tenant_id",
+        "user_principal_name",  # FEAT-777 M3: O365 fields must round-trip
     }
 )
 
