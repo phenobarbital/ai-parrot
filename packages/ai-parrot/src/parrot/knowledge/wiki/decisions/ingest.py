@@ -29,6 +29,7 @@ from parrot.knowledge.wiki.decisions.models import (
 )
 from parrot.knowledge.wiki.decisions.parser import parse_adr
 from parrot.knowledge.wiki.decisions.repository import DecisionRepository
+from parrot.knowledge.wiki.decisions.spec_entries import SEED_HEADING
 from parrot.knowledge.wiki.store import BaseWikiStore
 
 logger = logging.getLogger(__name__)
@@ -40,12 +41,16 @@ logger = logging.getLogger(__name__)
 _ResolvedLinks = dict[str, tuple[list[EvidenceRef], list[DecisionLink]]]
 
 
-def discover_adr_sources(root: Path, config: DecisionConfig) -> list[str]:
+def discover_adr_sources(root: Path, config: DecisionConfig, *, approved_specs: list[str] | None = None) -> list[str]:
     """Repository-relative POSIX paths of every eligible ADR document.
 
     Applies ``config.adr_globs`` AND the project's normal relevance /
     exclusion rules — a matching glob inside an excluded directory is still
-    excluded (spec §2).
+    excluded (spec §2). A file carrying a ``## Decision Metadata`` block is a
+    seed ADR and is never a legacy source: it enters only through its approved
+    batch (AC13). When ``approved_specs`` is given, the result is instead the
+    batch sources: those seed files plus every approved spec path that exists
+    under ``root`` (missing or out-of-root paths are skipped silently).
     """
     found: set[Path] = set()
     for pattern in config.adr_globs:
@@ -56,7 +61,27 @@ def discover_adr_sources(root: Path, config: DecisionConfig) -> list[str]:
             if any(part in SCAN_EXCLUDE_DIRS for part in rel_parts):
                 continue
             found.add(path)
-    return sorted(p.relative_to(root).as_posix() for p in found)
+    seeds = {p for p in found if _has_seed_metadata(p)}
+    legacy = sorted(p.relative_to(root).as_posix() for p in found if p not in seeds)
+    if approved_specs is None:
+        return legacy
+    batch_sources = {p.relative_to(root).as_posix() for p in seeds}
+    resolved_root = root.resolve()
+    for spec in approved_specs:
+        candidate = (root / spec).resolve()
+        if not candidate.is_relative_to(resolved_root) or not candidate.is_file():
+            continue
+        batch_sources.add(candidate.relative_to(resolved_root).as_posix())
+    return sorted(batch_sources)
+
+
+def _has_seed_metadata(path: Path) -> bool:
+    """True when the ADR carries a ``## Decision Metadata`` block — it enters only via its approved batch (AC13)."""
+    try:
+        with path.open(encoding="utf-8") as handle:
+            return any(line.strip() == SEED_HEADING for line in handle)
+    except (OSError, UnicodeDecodeError):
+        return False
 
 
 def _alias_index(inventory: list[DecisionRecord]) -> tuple[dict[str, str], set[str]]:
@@ -389,6 +414,14 @@ async def project_links(store: BaseWikiStore, records: list[DecisionRecord]) -> 
         for record in records
         for link in record.links
     ]
+    for record in records:
+        if record.schema_version != 2 or record.lifecycle != "active":
+            continue
+        edges.extend((record.decision_id, f"concept:{subsystem}", "about", "asserted") for subsystem in record.about)
+        if record.normative is not None:
+            edges.extend(
+                (record.decision_id, target.target_id, record.normative, "asserted") for target in record.targets
+            )
     if not edges:
         return 0
     return await store.add_edges(edges)
