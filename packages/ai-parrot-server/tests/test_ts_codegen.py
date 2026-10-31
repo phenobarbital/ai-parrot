@@ -100,3 +100,27 @@ def test_bots_list_schema_allows_registry_shape():
     dumped = response.agents[1].model_dump()
     for key, value in registry_item.items():
         assert dumped[key] == value
+
+
+CONNECTION_MODELS = {
+    "IntegrationDescriptor",
+    "ConnectInitResponse",
+    "DisconnectResponse",
+    "AuthRequiredPayload",
+    "AuthRequiredEnvelope",
+    "ConnectionEvent",
+    "ChannelLinkPreview",
+}
+
+
+def test_connection_models_exported(tmp_path):
+    """FEAT-777: every connection model the admin UI consumes has a generated schema."""
+    written = export_schemas(tmp_path / "out")
+
+    assert CONNECTION_MODELS <= set(written)
+    assert "EnableResponse" not in written
+
+    envelope_schema = json.loads(written["AuthRequiredEnvelope"].read_text())
+    retry_safe = envelope_schema["properties"]["retry_safe"]
+    assert retry_safe["type"] == "boolean"
+    assert retry_safe["default"] is False
