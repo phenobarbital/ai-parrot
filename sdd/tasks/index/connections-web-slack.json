@@ -104,7 +104,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -112,8 +112,9 @@
       "parallelism_notes": "no dependencies; sole editor of parrot/auth/oauth2/events.py in this feature",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5032-connection-event-sinks.md"
+      "completed_at": "2026-10-31T01:44:40+00:00",
+      "file": "sdd/tasks/completed/TASK-5032-connection-event-sinks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5033",
@@ -142,7 +143,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -150,8 +151,9 @@
       "parallelism_notes": "no dependencies; creates parrot/auth/channel_link.py and the CONNECTIONS_LINK_BASE_URL/CHANNEL_LINK_TTL_SECONDS conf values (sole conf.py editor)",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5034-channel-link-issuer.md"
+      "completed_at": "2026-10-31T01:44:40+00:00",
+      "file": "sdd/tasks/completed/TASK-5034-channel-link-issuer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5035",
@@ -160,7 +162,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -168,8 +170,9 @@
       "parallelism_notes": "No dependencies: adds fields/classes to existing parrot/auth/oauth2/models.py and its __init__ exports. First writer of models.py (TASK-5048 edits it later).",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5035-oauth2-models-retry-link.md"
+      "completed_at": "2026-10-31T01:44:41+00:00",
+      "file": "sdd/tasks/completed/TASK-5035-oauth2-models-retry-link.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5036",
@@ -178,7 +181,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -186,8 +189,9 @@
       "parallelism_notes": "no dependencies; sole editor of services/identity_mapping.py; real-DB race test writes and deletes uniquely-keyed rows only",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5036-identity-exclusive-claim.md"
+      "completed_at": "2026-10-31T01:44:41+00:00",
+      "file": "sdd/tasks/completed/TASK-5036-identity-exclusive-claim.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5037",

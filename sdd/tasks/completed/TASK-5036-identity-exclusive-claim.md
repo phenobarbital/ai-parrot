@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-777 — Connections — Web + Slack
 **Spec**: `sdd/specs/connections-web-slack.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -303,10 +303,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker orchestrator; seat sonnet (native)
+**Date**: 2026-10-31
+**Notes**: Implemented per task; merged and merge-tier validated. Only red were 3 pre-existing failures also failing on origin/dev (test_o365_refresh x2, slack test_manager_payload_drives_identity_and_dm).
 
 **Deviations from spec**: none | describe if any
