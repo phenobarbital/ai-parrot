@@ -92,6 +92,7 @@ async def test_401_refreshes_once_then_retries(aiohttp_server: Any, tmp_path: An
 
 async def test_pull_token_409_raises_not_connected(aiohttp_server: Any, tmp_path: Any) -> None:
     """A 409 response is exposed as NotConnected with its typed auth payload."""
+
     async def token(request: web.Request) -> web.Response:
         return web.json_response(
             {"provider": request.match_info["provider"], "auth_url": "https://auth.example/connect"}, status=409
