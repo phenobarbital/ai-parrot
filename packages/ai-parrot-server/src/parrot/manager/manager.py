@@ -2404,6 +2404,7 @@ class BotManager:
         # FEAT-777 M2: Slack account-link issuer + request-independent connection authorizer.
         self._setup_channel_links(self.app)
         self._register_descriptor_oauth2_providers(self.app)
+        self._register_o365_oauth2_provider(self.app)
         self.app.on_startup.append(self._register_oauth2_providers)
         # FEAT-598 (TASK-3805): default data-plane guard wiring, in two phases.
         # 1. Build PBAC + the guard NOW, while the app is still mutable:
@@ -2908,6 +2909,39 @@ Available documentation UIs:
         except Exception:  # noqa: BLE001
             self.logger.exception("Failed to register descriptor OAuth2 providers")
 
+    def _register_o365_oauth2_provider(self, app: web.Application) -> None:
+        """Wire the shared O365 manager and provider while the app is mutable."""
+        from parrot.conf import O365_CLIENT_ID, O365_CLIENT_SECRET, O365_REDIRECT_URI, O365_TENANT_ID
+
+        if not O365_CLIENT_ID or app.get("_o365_oauth2_provider_registered"):
+            return
+
+        try:
+            from parrot.auth.o365_oauth import O365OAuthManager
+            from parrot.auth.oauth2.o365_provider import O365OAuth2Provider
+            from parrot.auth.oauth2.registry import register_oauth2_provider
+            from parrot.services.identity_credential_sink import IdentityVaultCredentialStore
+
+            manager = app.get(f"oauth2_manager_{O365OAuthManager.provider_id}")
+            if manager is None:
+                authdb = app.get("authdb")
+                manager = O365OAuthManager(
+                    O365_CLIENT_ID,
+                    O365_CLIENT_SECRET,
+                    O365_REDIRECT_URI,
+                    tenant_id=O365_TENANT_ID or "common",
+                    app=app,
+                    credential_store=IdentityVaultCredentialStore(authdb) if authdb is not None else None,
+                    event_publisher=app.get("connection_event_publisher"),
+                )
+                manager.setup()
+
+            register_oauth2_provider(O365OAuth2Provider(manager=manager))
+            app["_o365_oauth2_provider_registered"] = True
+            self.logger.info("Registered O365OAuth2Provider with the global OAuth2ProviderRegistry")
+        except Exception:  # noqa: BLE001
+            self.logger.exception("Failed to register the O365 OAuth2 provider")
+
     async def _register_oauth2_providers(self, app: web.Application) -> None:
         """Register OAuth2 providers with the global registry (FEAT-144).
 
@@ -2928,6 +2962,15 @@ Available documentation UIs:
                     "JiraOAuth2Provider not registered.  "
                     "Ensure JiraOAuthManager.setup(app) is called before startup."
                 )
+
+            o365_manager = app.get("oauth2_manager_o365")
+            connection_event_publisher = app.get("connection_event_publisher")
+            if (
+                o365_manager is not None
+                and getattr(o365_manager, "_events", None) is None
+                and connection_event_publisher is not None
+            ):
+                o365_manager._events = connection_event_publisher
 
             authdb = app.get("authdb")
             if authdb is not None:

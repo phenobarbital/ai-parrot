@@ -224,7 +224,6 @@ async def test_cli_device_code_end_to_end(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="WorkIQ reads the shared O365 record after TASK-5047")
 async def test_devicecode_token_consumable_by_workiq_obo(monkeypatch):
     """Proves the canonical-store homologation (spec §1): one Entra sign-in,
     written by device-code, is readable by the existing WorkIQ OBO resolver.
@@ -233,15 +232,16 @@ async def test_devicecode_token_consumable_by_workiq_obo(monkeypatch):
     permission_context = build_cli_permission_context()
 
     o365_client = FakeO365Client()
+    manager = FakeO365OAuthManager()
     vault = FakeVault()
     broker = CredentialBroker.from_config(
         [ProviderCredentialConfig(provider="o365", auth="device_code")],
         o365_client=o365_client,
-        o365_oauth_manager=FakeO365OAuthManager(),
+        o365_oauth_manager=manager,
         vault=vault,
     )
 
-    # Step 1: device-code flow persists the canonical o365:* token set.
+    # Step 1: device-code flow persists the principal-keyed O365 token set.
     tool = O365GatedTool()
     await tool.execute(
         _broker=broker,
@@ -249,11 +249,10 @@ async def test_devicecode_token_consumable_by_workiq_obo(monkeypatch):
         _cred_user_id=permission_context.user_id,
     )
 
-    # Step 2: WorkIQOBOCredentialResolver reads the SAME vault instance and
-    # performs the OBO exchange using the Entra token device-code wrote.
+    # Step 2: WorkIQ reads the same O365 manager record and performs OBO.
     workiq_resolver = WorkIQOBOCredentialResolver(
         o365_interface=o365_client,
-        o365_oauth_manager=FakeO365OAuthManager(),
+        o365_oauth_manager=manager,
         vault_token_sync=vault,
     )
     obo_token = await workiq_resolver.resolve("cli", "user@corp.com")

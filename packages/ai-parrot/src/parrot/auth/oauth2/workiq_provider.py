@@ -12,8 +12,8 @@ automatically — no additional filtering is required on the adapter side.
 
 OBO flow:
 1. User signs in via the o365 / Entra 3LO flow (covered by the existing
-   ``O365OAuth2Provider``).  The Entra access token is stored in vault as
-   ``o365:access_token``.
+   ``O365OAuth2Provider``).  The Entra access token is stored in the shared,
+   principal-keyed O365 record.
 2. :class:`WorkIQOBOCredentialResolver` calls
    ``O365Client.acquire_token_on_behalf_of(user_assertion, scopes)`` to
    exchange the Entra token for a Work IQ OBO token.
@@ -44,6 +44,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from parrot.auth.credentials import CredentialResolver
 from parrot.auth.oauth2.registry import OAuth2Provider
+from parrot.auth.principal import resolve_principal
 
 if TYPE_CHECKING:  # pragma: no cover
     from parrot.interfaces.o365 import O365Client
@@ -59,10 +60,6 @@ WORKIQ_PROVIDER_ID: str = "workiq"
 #: Vault provider prefix for Work IQ OBO tokens.
 _WORKIQ_VAULT_PREFIX: str = "workiq"
 
-#: Vault provider prefix for the source Entra (o365) token used in OBO.
-_O365_VAULT_PREFIX: str = "o365"
-
-
 class WorkIQOBOCredentialResolver(CredentialResolver):
     """Credential resolver that exchanges an Entra assertion for a Work IQ OBO token.
 
@@ -73,7 +70,7 @@ class WorkIQOBOCredentialResolver(CredentialResolver):
     Resolution steps:
 
     1. Check vault for a cached ``workiq:access_token`` for *user_id*.
-    2. If absent, look for the user's Entra token (``o365:access_token`` in vault).
+    2. If absent, resolve the principal and read the shared O365 token record.
     3. If the Entra token exists, call
        :meth:`O365Client.acquire_token_on_behalf_of` with the Work IQ scope,
        cache the result as ``workiq:access_token``, and return the token.
@@ -136,22 +133,27 @@ class WorkIQOBOCredentialResolver(CredentialResolver):
             )
             return str(token)
 
-        # 2. Try to exchange via OBO using the user's Entra token.
-        entra_tokens: Optional[Dict[str, Any]] = await self._vault.read_tokens(
-            user_id, _O365_VAULT_PREFIX
-        )
-        if not entra_tokens or "access_token" not in entra_tokens:
+        # 2. Source Entra token from the single principal-keyed O365 record.
+        principal = await resolve_principal(self._principal_channel(channel), user_id)
+        if principal is None or self._o365_manager is None:
             logger.debug(
-                "WorkIQOBOCredentialResolver: no Entra token in vault for user=%s;"
-                " OBO exchange unavailable — Entra sign-in required",
+                "WorkIQOBOCredentialResolver: no principal/manager for user=%s; Entra sign-in required",
                 user_id,
             )
             return None
+        entra = await self._o365_manager.get_valid_token(channel, principal.user_id)
+        if entra is None:
+            logger.debug(
+                "WorkIQOBOCredentialResolver: no Entra connection for user=%s; sign-in required",
+                user_id,
+            )
+            return None
+        entra_access_token = entra.access_token
 
         # 3. Perform the OBO exchange.
         try:
             result: Dict[str, Any] = self._o365.acquire_token_on_behalf_of(
-                user_assertion=entra_tokens["access_token"],
+                user_assertion=entra_access_token,
                 scopes=[self._scope],
             )
             access_token: Optional[str] = result.get("access_token")
@@ -180,6 +182,11 @@ class WorkIQOBOCredentialResolver(CredentialResolver):
                 "WorkIQOBOCredentialResolver: OBO exchange failed for user=%s", user_id
             )
             return None
+
+    @staticmethod
+    def _principal_channel(channel: str) -> str:
+        """Map a qualified A2A channel to the principal resolver's base channel."""
+        return channel.split(":", 1)[0]
 
     async def get_auth_url(self, channel: str, user_id: str) -> str:
         """Return the Entra sign-in URL for the O365 delegated flow.
