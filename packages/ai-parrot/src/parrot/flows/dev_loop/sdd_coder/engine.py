@@ -132,6 +132,11 @@ from parrot.flows.dev_loop.sdd_coder.telemetry import (
     build_attempt_row,
     resolve_durable_root,
 )
+from parrot.core.events.lifecycle import EventRegistry, get_global_registry
+from parrot.observability.attribution import UsageAttribution
+from parrot.observability.context import usage_attribution
+from parrot.observability.recorders.spec_usage import SpecUsageRecorder, read_spec_usage
+from parrot.observability.recorders.subscriber import UsageRecordingSubscriber
 from parrot.knowledge.wiki.ledger.coder_suspensions import (
     CoderSuspensionStore,
     ModelKey,
@@ -516,6 +521,16 @@ class SddCoderEngine:
         # `telemetry_dir` constructor kwarg (e.g. from a test, or a future
         # toolkit YAML override) still wins over conf either way.
         self._sink: Optional[CoderTelemetrySink] = None
+        # FEAT-783 M7: engine-scoped durable usage sink, lazily registered on the global
+        # registry the first time a dispatcher exposes `set_event_registry_resolver`.
+        self._usage_root: Optional[Path] = None
+        self._usage_recorder: Optional[SpecUsageRecorder] = None
+        self._usage_subscriber: Optional[UsageRecordingSubscriber] = None
+        self._usage_subscription_ids: List[str] = []
+        self._usage_sink_disabled = False
+        # Private per-engine registry: emit() has no local subscribers, and its
+        # forward_to_global() delivers each event to the global registry exactly once.
+        self._usage_registry: EventRegistry = EventRegistry(forward_to_global=False)
         # FEAT-584 M2/R3: durable, out-of-worktree evidence store for
         # `record_native_observation` (and, later, other M2/M4 consumers).
         # Bound to the SAME resolved root the telemetry sink uses (spec R3:
@@ -566,6 +581,8 @@ class SddCoderEngine:
             )
             if telemetry_dir is not None or conf.DEV_LOOP_CODER_TELEMETRY:
                 self._sink = CoderTelemetrySink(durable_root)
+                # A subdirectory: the attempt sink writes flat `<feature_id>.jsonl` files at the root.
+                self._usage_root = durable_root / "spec-usage"
 
     def _resolve_durable_root(self, configured: Optional[str], *, strict: bool) -> Optional[Path]:
         """Resolve the out-of-worktree durable root, or `None` with a warning.
@@ -3397,6 +3414,80 @@ class SddCoderEngine:
             attempt=attempt,
         )
 
+    def _usage_attribution_for(
+        self, ctx: Any, task: PlannedTask, seat: RosterSeat, *, attempt_uid: str, execution_id: str
+    ) -> UsageAttribution:
+        """FEAT-783 M7: the one place an attempt's SDD attribution is built (never inferred from cwd)."""
+        backend = (seat.backend or "").lower()
+        # RosterSeat.backend spells the Claude SDK seat "claude-code".
+        dispatch_kind = "sdk" if backend in ("claude", "claude-code") else "cli" if backend == "codex" else "in-process"
+        return UsageAttribution(
+            feat_id=ctx.feature_id,
+            task_id=task.task_id,
+            attempt_uid=attempt_uid or None,
+            execution_id=execution_id or None,
+            dispatch_kind=dispatch_kind,
+            roster_seat=seat.label,
+            accounting_seat=f"development.sdd-coder-{seat.label}",
+        )
+
+    def _ensure_usage_sink(self) -> bool:
+        """Lazily register ONE engine-scoped durable usage subscriber (FEAT-783 M7).
+
+        Gated by the same switch as `CoderTelemetrySink`; idempotent; fail-open.
+
+        Returns:
+            True when the sink is registered on the global registry.
+        """
+        if self._usage_subscriber is not None:
+            return True
+        if self._usage_root is None or self._usage_sink_disabled:
+            return False
+        try:
+            recorder = SpecUsageRecorder(self._usage_root, worktree_base_path=self._base_path)
+        except ValueError as exc:
+            self._usage_sink_disabled = True
+            self.logger.warning("spec usage sink disabled: %s", exc)
+            return False
+        try:
+            subscriber = UsageRecordingSubscriber(recorders=[recorder])
+            self._usage_subscription_ids = list(get_global_registry().add_provider(subscriber))
+        except Exception:  # noqa: BLE001 - telemetry must never change a dispatch outcome
+            self._usage_sink_disabled = True
+            self.logger.warning("spec usage sink registration failed", exc_info=True)
+            return False
+        self._usage_recorder = recorder
+        self._usage_subscriber = subscriber
+        return True
+
+    async def _spec_rows_for(self, feature_id: str) -> Optional[list]:
+        """Flush pending durable usage writes and read the feature's rows off the loop."""
+        if self._usage_recorder is None:
+            return None
+        try:
+            await self._usage_recorder.aclose()  # awaits in-flight writes; the recorder stays usable
+            return await asyncio.to_thread(read_spec_usage, self._usage_recorder.root, feature_id)
+        except Exception:  # noqa: BLE001 - fail-open
+            self.logger.warning("spec usage read failed for %s", feature_id, exc_info=True)
+            return None
+
+    async def aclose(self) -> None:
+        """Unregister and flush the engine-scoped usage sink (FEAT-783 M7). Fail-open, idempotent."""
+        subscriber, self._usage_subscriber = self._usage_subscriber, None
+        self._usage_recorder = None
+        ids, self._usage_subscription_ids = self._usage_subscription_ids, []
+        registry = get_global_registry()
+        for sub_id in ids:
+            try:
+                registry.unsubscribe(sub_id)
+            except Exception:  # noqa: BLE001
+                self.logger.warning("failed to unsubscribe usage sink %s", sub_id, exc_info=True)
+        if subscriber is not None:
+            try:
+                await subscriber.aclose()
+            except Exception:  # noqa: BLE001
+                self.logger.warning("usage sink aclose failed", exc_info=True)
+
     async def _run_attempt(
         self,
         ctx: _FeatureCtx,
@@ -3578,36 +3669,51 @@ class SddCoderEngine:
             binder = getattr(dispatcher, "set_validation_runner", None)
             if callable(binder):
                 binder(capability)
+            resolver_setter = getattr(dispatcher, "set_event_registry_resolver", None)
+            if callable(resolver_setter):
+                try:
+                    if self._ensure_usage_sink():
+                        usage_registry = self._usage_registry
+                        resolver_setter(lambda _run_id: usage_registry)
+                except Exception:  # noqa: BLE001 - telemetry wiring is fail-open
+                    self.logger.warning("usage resolver wiring failed", exc_info=True)
             try:
-                output = await dispatcher.dispatch(
-                    brief=TaskScopedBrief(
-                        research=self._research_for(ctx, worktree_path=path),
-                        task_id=task.task_id,
-                        task_file=task.task_file,
-                        coder_feedback=feedback_context,
-                        validation_verdict=verdict or "",
+                with usage_attribution(
+                    job_id,
+                    seat=f"development.sdd-coder-{seat.label}",
+                    attribution=self._usage_attribution_for(
+                        ctx, task, seat, attempt_uid=attempt_uid, execution_id=execution_id or ""
                     ),
-                    profile=profile,
-                    output_model=DevelopmentOutput,
-                    run_id=job_id,
-                    # NOT f"sdd-coder.{seat.label}" (spec's literal wording): `_publish_event` rolls
-                    # `node_id` up via `_owning_node_id` (splits on the first '.') and hands it to
-                    # `action_from_dispatch_event`, which constructs a `DevLoopAction` typed with the
-                    # CLOSED `NodeId` Literal (session_state.py:140-158) — "sdd-coder" is not a member,
-                    # so that construction would raise and `_apply_to_session_host` silently swallows
-                    # it (by design — "the shim must never break a dispatch"), meaning
-                    # `AttemptTelemetryCollector.apply()` would NEVER fire and AC-10's usage capture
-                    # would silently no-op for every real dispatch. "development" IS a valid NodeId
-                    # (the same one the interactive DevAgentPool dispatches under) and is not touched
-                    # by this feature; per-seat identity for downstream consumers still flows through
-                    # `labels.seat` ("sdd-coder.<label>"), which `action_from_dispatch_event` reads
-                    # from `payload["seat"]` (stamped by `DispatchLabels.as_payload()`) in preference to
-                    # `node_id` — verified: dispatchers/_shared.py:92-117, session_state.py:1457-1489.
-                    node_id=f"development.sdd-coder-{seat.label}",
-                    cwd=path,
-                    session_host=collector,
-                    labels=self._labels_for(task, seat, attempt),
-                )
+                ):
+                    output = await dispatcher.dispatch(
+                        brief=TaskScopedBrief(
+                            research=self._research_for(ctx, worktree_path=path),
+                            task_id=task.task_id,
+                            task_file=task.task_file,
+                            coder_feedback=feedback_context,
+                            validation_verdict=verdict or "",
+                        ),
+                        profile=profile,
+                        output_model=DevelopmentOutput,
+                        run_id=job_id,
+                        # NOT f"sdd-coder.{seat.label}" (spec's literal wording): `_publish_event` rolls
+                        # `node_id` up via `_owning_node_id` (splits on the first '.') and hands it to
+                        # `action_from_dispatch_event`, which constructs a `DevLoopAction` typed with the
+                        # CLOSED `NodeId` Literal (session_state.py:140-158) — "sdd-coder" is not a member,
+                        # so that construction would raise and `_apply_to_session_host` silently swallows
+                        # it (by design — "the shim must never break a dispatch"), meaning
+                        # `AttemptTelemetryCollector.apply()` would NEVER fire and AC-10's usage capture
+                        # would silently no-op for every real dispatch. "development" IS a valid NodeId
+                        # (the same one the interactive DevAgentPool dispatches under) and is not touched
+                        # by this feature; per-seat identity for downstream consumers still flows through
+                        # `labels.seat` ("sdd-coder.<label>"), which `action_from_dispatch_event` reads
+                        # from `payload["seat"]` (stamped by `DispatchLabels.as_payload()`) in preference to
+                        # `node_id` — verified: dispatchers/_shared.py:92-117, session_state.py:1457-1489.
+                        node_id=f"development.sdd-coder-{seat.label}",
+                        cwd=path,
+                        session_host=collector,
+                        labels=self._labels_for(task, seat, attempt),
+                    )
             finally:
                 if callable(binder):
                     binder(None)
@@ -3685,6 +3791,7 @@ class SddCoderEngine:
                         job_id=job_id,
                         task_id=task.task_id,
                         declared_files=record.declared_files,
+                        spec_rows=await self._spec_rows_for(ctx.feature_id),
                     )
                 )
             except Exception:
