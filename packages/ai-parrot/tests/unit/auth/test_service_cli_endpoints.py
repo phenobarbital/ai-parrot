@@ -137,6 +137,7 @@ async def test_complete_connect_state_mismatch_rejected(monkeypatch: pytest.Monk
     )
     monkeypatch.setattr("parrot.auth.oauth2.service.OAuth2ProviderRegistry.get", lambda _self, _provider_id: provider)
     service = IntegrationsService()
+    service._check_pbac = AsyncMock(return_value=True)
     service.persist_credential = AsyncMock()
     descriptor = MagicMock()
     service.status = AsyncMock(return_value=descriptor)
@@ -170,3 +171,21 @@ async def test_complete_connect_state_mismatch_rejected(monkeypatch: pytest.Monk
         canonical_identity="person@example.com",
     )
     service.status.assert_awaited_once_with("user-1", "jira", "request")
+
+
+@pytest.mark.asyncio
+async def test_complete_connect_denied_without_pbac(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Paste completion checks PBAC integration:connect before touching the nonce (fail closed)."""
+    provider = provider_with_manager()
+    provider.manager.redis.get = AsyncMock(return_value=b'{"nav_user_id": "user-1"}')
+    provider.manager.handle_callback = AsyncMock()
+    monkeypatch.setattr("parrot.auth.oauth2.service.OAuth2ProviderRegistry.get", lambda _self, _provider_id: provider)
+    service = IntegrationsService()
+    service._check_pbac = AsyncMock(return_value=False)
+
+    with pytest.raises(PermissionError, match="Not permitted to connect"):
+        await service.complete_connect("user-1", "jira", code="code", state="state", channel="cli", request="r")
+
+    service._check_pbac.assert_awaited_once_with("r", "integration:connect", "jira", ANY)
+    provider.manager.redis.get.assert_not_awaited()
+    provider.manager.handle_callback.assert_not_awaited()

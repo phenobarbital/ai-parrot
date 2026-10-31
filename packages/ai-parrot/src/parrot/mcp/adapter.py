@@ -10,11 +10,17 @@ from parrot.tools.abstract import AbstractTool, ToolResult
 
 @dataclass(frozen=True)
 class ToolExecutionContext:
-    """Process-scoped identity for stdio servers; ``None`` keeps today's behavior."""
+    """Process-scoped identity for stdio servers; ``None`` keeps today's behavior.
+
+    ``identity_error`` is set when a login exists but could not be bound (unsafe file,
+    unresolvable principal). Tools that declare a ``credential_provider`` then fail closed
+    with an authorization-required result instead of running anonymously.
+    """
 
     permission_context: Optional[Any] = None
     broker: Optional[Any] = None
     channel: str = "cli"
+    identity_error: Optional[str] = None
 
     def exec_kwargs(self) -> Dict[str, Any]:
         """Return reserved kwargs for ``AbstractTool.execute``."""
@@ -28,6 +34,21 @@ class ToolExecutionContext:
         if self.broker is not None:
             kwargs["_broker"] = self.broker
         return kwargs
+
+
+def identity_unavailable_result(provider: str, tool_name: Optional[str], reason: str) -> Dict[str, Any]:
+    """Return the MCP envelope for a credential tool whose login identity could not be bound."""
+    payload = AuthRequiredPayload(provider=provider, tool_name=tool_name, message=reason)
+    return {
+        "isError": True,
+        "content": [
+            {
+                "type": "text",
+                "text": f"{provider} authorization required — {reason}; run parrot login, then restart this server",
+            }
+        ],
+        "structuredContent": payload.model_dump(exclude_none=True),
+    }
 
 
 def auth_required_result(payload: AuthRequiredPayload) -> Dict[str, Any]:
@@ -113,6 +134,9 @@ class MCPToolAdapter:
                 ],
                 "isError": True,
             }
+        provider = getattr(self.tool, "credential_provider", None)
+        if self.execution_context is not None and self.execution_context.identity_error and provider:
+            return identity_unavailable_result(str(provider), self.tool.name, self.execution_context.identity_error)
         try:
             # Execute the tool
             ctx_kwargs = self.execution_context.exec_kwargs() if self.execution_context else {}

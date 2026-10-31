@@ -61,8 +61,11 @@ async def test_device_poll_owner_check(monkeypatch: pytest.MonkeyPatch) -> None:
     provider.manager.redis.get.return_value = b'{"principal": {"user_id": "user-2"}}'
     monkeypatch.setattr("parrot.auth.oauth2.service.OAuth2ProviderRegistry.get", lambda _self, _provider_id: provider)
 
+    service = IntegrationsService()
+    service._check_pbac = AsyncMock(return_value=True)
+
     with pytest.raises(PermissionError, match="does not belong"):
-        await IntegrationsService().device_poll("user-1", "jira", handle="opaque-handle")
+        await service.device_poll("user-1", "jira", handle="opaque-handle")
 
     provider.manager.complete_device_authorization.assert_not_awaited()
 
@@ -80,6 +83,7 @@ async def test_device_poll_completed_persists_without_token(monkeypatch: pytest.
     }
     monkeypatch.setattr("parrot.auth.oauth2.service.OAuth2ProviderRegistry.get", lambda _self, _provider_id: provider)
     service = IntegrationsService()
+    service._check_pbac = AsyncMock(return_value=True)
     service.persist_credential = AsyncMock()
 
     result = await service.device_poll("user-1", "jira", handle="opaque-handle")
@@ -87,6 +91,38 @@ async def test_device_poll_completed_persists_without_token(monkeypatch: pytest.
     assert result == {"status": "completed", "account_id": "account-1"}
     assert "token_set" not in result
     service.persist_credential.assert_awaited_once_with("user-1", "jira", token_set, channel="cli")
+
+
+@pytest.mark.asyncio
+async def test_device_poll_denied_without_pbac(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Polling checks PBAC integration:connect before reading the device record (fail closed)."""
+    provider = _provider()
+    provider.manager.redis.get.return_value = b'{"principal": {"user_id": "user-1"}}'
+    monkeypatch.setattr("parrot.auth.oauth2.service.OAuth2ProviderRegistry.get", lambda _self, _provider_id: provider)
+    service = IntegrationsService()
+    service._check_pbac = AsyncMock(return_value=False)
+
+    with pytest.raises(PermissionError, match="Not permitted to connect"):
+        await service.device_poll("user-1", "jira", handle="opaque-handle", request=MagicMock())
+
+    provider.manager.redis.get.assert_not_awaited()
+    provider.manager.complete_device_authorization.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw", [b"not-json", b"\xff\xfe", "{truncated"])
+async def test_device_poll_corrupt_record_fails_cleanly(monkeypatch: pytest.MonkeyPatch, raw) -> None:
+    """An undecodable device record is a terminal ``failed`` status, never a 500."""
+    provider = _provider()
+    provider.manager.redis.get.return_value = raw
+    monkeypatch.setattr("parrot.auth.oauth2.service.OAuth2ProviderRegistry.get", lambda _self, _provider_id: provider)
+    service = IntegrationsService()
+    service._check_pbac = AsyncMock(return_value=True)
+
+    result = await service.device_poll("user-1", "jira", handle="opaque-handle")
+
+    assert result == {"status": "failed", "reason": "invalid device authorization record"}
+    provider.manager.complete_device_authorization.assert_not_awaited()
 
 
 class _Request:

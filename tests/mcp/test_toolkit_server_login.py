@@ -39,7 +39,7 @@ def _write_login(path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_toolkit_server_without_login_unchanged(tmp_path, monkeypatch):
-    """A missing or invalid login leaves the server and adapters without a context."""
+    """A missing login leaves the server and adapters without a context."""
     login_file = tmp_path / "missing-login.json"
     monkeypatch.setenv("PARROT_LOGIN_FILE", str(login_file))
     toolkit = CredentialToolkit()
@@ -51,12 +51,56 @@ async def test_toolkit_server_without_login_unchanged(tmp_path, monkeypatch):
     assert server.execution_context is None
     assert all(adapter.execution_context is None for adapter in server.tools.values())
 
+
+def _assert_auth_required(result: dict) -> None:
+    """The credential tool failed closed with an authorization-required envelope."""
+    assert result["isError"] is True
+    assert result["structuredContent"]["provider"] == "fake"
+    assert "parrot login" in result["content"][0]["text"]
+    assert "test-access-token" not in str(result)
+
+
+@pytest.mark.asyncio
+async def test_toolkit_server_unusable_login_fails_closed(tmp_path, monkeypatch):
+    """An unreadable login never runs credential tools anonymously."""
+    login_file = tmp_path / "broken-login.json"
     login_file.write_text("not-json", encoding="utf-8")
     login_file.chmod(0o600)
+    toolkit = CredentialToolkit()
+    server = _ToolkitStdioMCPServer(LocalServerConfig(name="test"), toolkit, login_file=login_file)
+    server.register_tools(toolkit.get_tools())
+
     await server._bind_identity()
 
-    assert server.execution_context is None
-    assert all(adapter.execution_context is None for adapter in server.tools.values())
+    assert server.execution_context is not None and server.execution_context.identity_error
+    assert server.execution_context.permission_context is None
+    for adapter in server.tools.values():
+        assert adapter.execution_context is server.execution_context
+        _assert_auth_required(await adapter.execute({}))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["none", "raises"])
+async def test_toolkit_server_unresolved_principal_fails_closed(tmp_path, monkeypatch, failure):
+    """A login whose principal cannot be resolved blocks credential tools instead of running anonymously."""
+    login_file = tmp_path / "login.json"
+    _write_login(login_file)
+    toolkit = CredentialToolkit()
+    server = _ToolkitStdioMCPServer(LocalServerConfig(name="test"), toolkit, login_file=login_file)
+    server.register_tools(toolkit.get_tools())
+
+    async def resolve_with_roles(self, channel, channel_user_id):
+        if failure == "raises":
+            raise RuntimeError("server unreachable")
+        return None
+
+    monkeypatch.setattr("parrot.cli.principal.CliPrincipalResolver.resolve_with_roles", resolve_with_roles)
+
+    await server._bind_identity()
+
+    assert server.execution_context is not None and server.execution_context.identity_error
+    for adapter in server.tools.values():
+        _assert_auth_required(await adapter.execute({}))
 
 
 @pytest.mark.asyncio

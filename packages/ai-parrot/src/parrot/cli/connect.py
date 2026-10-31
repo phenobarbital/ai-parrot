@@ -8,7 +8,7 @@ import logging
 import sys
 import time
 import webbrowser
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 import click
@@ -25,17 +25,28 @@ class ConnectFailed(RuntimeError):
     """A connect attempt ended without a connection (one-line reason)."""
 
 
-def _ts(value: Optional[str]) -> float:
-    """Convert an optional ISO datetime to a Unix timestamp."""
-    return datetime.fromisoformat(value).timestamp() if value else 0.0
+def _ts(value: Any) -> Optional[float]:
+    """Convert an ISO datetime to a Unix timestamp; naive values are UTC, bad values are ``None``."""
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
 
 
 def _completed_after(status: Dict[str, Any], started_at: float) -> bool:
-    """Return whether a connection was touched after this attempt started."""
-    return (
-        status.get("status") == "connected"
-        and max(_ts(status.get("connected_at")), _ts(status.get("updated_at"))) >= started_at
-    )
+    """Return whether a connection was established after this attempt started (AC-9).
+
+    Only ``connected_at`` counts: ``updated_at`` also moves on a token refresh of an
+    already-connected row, which must not be mistaken for this attempt completing. The API
+    descriptor reports ``"connected"`` (the row's internal ``"active"`` is never exposed).
+    """
+    connected_at = _ts(status.get("connected_at"))
+    return status.get("status") == "connected" and connected_at is not None and connected_at >= started_at
 
 
 async def _run_device_flow(

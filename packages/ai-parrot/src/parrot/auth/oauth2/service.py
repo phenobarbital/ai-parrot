@@ -568,6 +568,8 @@ class IntegrationsService:
         provider = OAuth2ProviderRegistry().get(provider_id)
         if provider is None:
             raise ValueError(f"Unknown provider: {provider_id!r}")
+        if not await self._check_pbac(request, "integration:connect", provider_id, list(provider.default_scopes)):
+            raise PermissionError(f"Not permitted to connect provider {provider_id!r}")
         manager = provider.manager
         raw_state = await manager.redis.get(manager._nonce_key(state))
         if not raw_state:
@@ -630,13 +632,19 @@ class IntegrationsService:
         provider = OAuth2ProviderRegistry().get(provider_id)
         if provider is None:
             raise ValueError(f"Unknown provider: {provider_id!r}")
+        if not await self._check_pbac(request, "integration:connect", provider_id, list(provider.default_scopes)):
+            raise PermissionError(f"Not permitted to connect provider {provider_id!r}")
         manager = provider.manager
         raw_record = await manager.redis.get(manager._device_key(handle))
         if not raw_record:
             return {"status": "expired"}
-        if isinstance(raw_record, bytes):
-            raw_record = raw_record.decode("utf-8")
-        record = json.loads(raw_record)
+        try:
+            if isinstance(raw_record, bytes):
+                raw_record = raw_record.decode("utf-8")
+            record = json.loads(raw_record)
+        except (UnicodeDecodeError, TypeError, json.JSONDecodeError):
+            logger.warning("Undecodable device authorization record for provider=%s", provider_id)
+            return {"status": "failed", "reason": "invalid device authorization record"}
         record_principal = record.get("principal", {}) if isinstance(record, dict) else {}
         owner_user_id = record_principal.get("user_id") if isinstance(record_principal, dict) else None
         if owner_user_id is None or not hmac.compare_digest(str(owner_user_id), user_id):

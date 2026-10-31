@@ -54,7 +54,7 @@ async def test_connect_poll_completes_only_new_connection():
                 },
                 {
                     "status": "connected",
-                    "connected_at": "1970-01-01T00:01:00+00:00",
+                    "connected_at": "1970-01-01T00:01:40+00:00",
                     "updated_at": "1970-01-01T00:01:40+00:00",
                 },
             ]
@@ -81,6 +81,62 @@ async def test_connect_poll_completes_only_new_connection():
     client.complete.assert_not_awaited()
     assert result == {"provider": "jira", "account_id": "acct-1", "status": "connected"}
     assert cache.entries[0].access_token == "secret-access-token"
+
+
+@pytest.mark.parametrize(
+    "status,expected",
+    [
+        # Stale row refreshed after the attempt started: updated_at moved, connected_at did not.
+        ({"status": "connected", "connected_at": "1970-01-01T00:01:00+00:00", "updated_at": "1970-01-01T00:05:00+00:00"}, False),
+        ({"status": "connected", "connected_at": "1970-01-01T00:01:40+00:00"}, True),
+        ({"status": "connected", "connected_at": "1970-01-01T00:01:40"}, True),  # naive ISO is read as UTC
+        ({"status": "connected", "connected_at": "1970-01-01T00:01:39"}, False),
+        ({"status": "connected", "connected_at": "not-a-date"}, False),
+        ({"status": "connected", "connected_at": None, "updated_at": "1970-01-01T00:05:00+00:00"}, False),
+        ({"status": "needs_reconnect", "connected_at": "1970-01-01T00:01:40+00:00"}, False),
+        ({"status": "active", "connected_at": "1970-01-01T00:01:40+00:00"}, False),  # internal row value, not API
+    ],
+)
+def test_completed_after_uses_connected_at_only(status, expected):
+    """AC-9: only a connected descriptor whose connected_at >= started_at completes the attempt."""
+    assert connect_module._completed_after(status, 100.0) is expected
+
+
+@pytest.mark.asyncio
+async def test_connect_poll_ignores_refreshed_stale_row():
+    """A refresh of an already-connected row never completes a new attempt; paste is required."""
+    stale = {"status": "connected", "connected_at": "1970-01-01T00:01:00+00:00", "updated_at": "1970-01-01T00:09:00+00:00"}
+    client = SimpleNamespace(
+        start_connect=AsyncMock(
+            return_value=ConnectAttempt(
+                provider="jira", state="state-1", auth_url="https://auth.example", started_at=100.0, expires_in=0
+            )
+        ),
+        status=AsyncMock(return_value=stale),
+        complete=AsyncMock(),
+        pull_token=AsyncMock(return_value=_pulled()),
+    )
+    prompts = []
+
+    def prompt(text):
+        prompts.append(text)
+        return "https://cb.example/?code=c-1&state=state-1"
+
+    await run_connect(
+        client,
+        _Cache(),
+        "jira",
+        scopes=None,
+        open_browser=False,
+        paste=False,
+        device=False,
+        prompt=prompt,
+        echo=lambda _: None,
+        poll_interval_s=0,
+    )
+
+    assert prompts == ["Paste the redirected URL"]
+    client.complete.assert_awaited_once_with("jira", code="c-1", state="state-1")
 
 
 @pytest.mark.asyncio

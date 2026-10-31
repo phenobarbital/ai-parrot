@@ -71,7 +71,12 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
             await self.stop()
 
     async def _bind_identity(self) -> None:
-        """Resolve the login principal + CLI broker once; no login keeps existing behavior."""
+        """Resolve the login principal + CLI broker once; no login keeps existing behavior.
+
+        A login that exists but cannot be used (unsafe/unreadable file, unresolvable principal)
+        fails closed: credential tools get an ``identity_error`` context and return an
+        authorization-required result instead of running anonymously.
+        """
         with contextlib.redirect_stdout(sys.stderr):
             from parrot.auth.oauth2.local_cache import build_cli_broker
             from parrot.auth.oauth2.remote_client import ServerConnectionsClient
@@ -84,14 +89,20 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
             record = await asyncio.to_thread(store.load_optional)
         except LoginFileError as exc:
             self.logger.error("Could not load the CLI login: %s", type(exc).__name__)
+            self._bind_context(ToolExecutionContext(identity_error="the CLI login file could not be loaded"))
             return
         if record is None:
             return
 
         client = ServerConnectionsClient(store)
-        resolved = await CliPrincipalResolver(store, client).resolve_with_roles("cli", record.user_id)
+        try:
+            resolved = await CliPrincipalResolver(store, client).resolve_with_roles("cli", record.user_id)
+        except Exception as exc:  # noqa: BLE001 — any resolver failure must fail closed, never crash startup
+            self.logger.error("Could not resolve the CLI principal: %s", type(exc).__name__)
+            resolved = None
         if resolved is None:
             self.logger.warning("Could not resolve the CLI principal")
+            self._bind_context(ToolExecutionContext(identity_error="the CLI login identity could not be resolved"))
             return
         principal, roles = resolved
         providers = {
@@ -102,6 +113,10 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
             permission_context=build_cli_permission_context(principal, roles=roles),
             broker=broker,
         )
+        self._bind_context(context)
+
+    def _bind_context(self, context: Any) -> None:
+        """Attach one execution context to the server and every registered adapter."""
         self.execution_context = context
         for adapter in self.tools.values():
             adapter.execution_context = context
