@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-774 — Connections for CLI agents and local MCP toolkits
 **Spec**: `sdd/specs/connections-cli-local-mcp.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4978, TASK-4976, TASK-4977, TASK-4971
@@ -105,4 +105,17 @@ pytest packages/ai-parrot/tests/cli/test_repl_identity_matrix.py packages/ai-par
 
 ## Completion Note
 
-*(filled in on close)*
+**Completed**: 2026-11-01 — code commit `af34f0e8fe`. Resolves `issue:91d35526d51d` (numbered findings 1–6).
+
+- Validation: the 7 listed test modules — 65 passed (`artifacts/logs/TASK-5081-validation.log`, run from
+  the worktree with `PYTHONPATH` on the branch sources; import path confirmed).
+- Merge tier (`select_tests --tier merge --base 220535b280`): 155 passed, 1 failed —
+  `test_policy.py::test_mcp_raw_argument_rejection`. Pre-existing on this branch: it also fails with the
+  base `adapter.py` restored and passes on `dev`, so FEAT-774 introduced it (not this task). Filed as
+  `issue:244d25c9370a` (major).
+- AC-9 erratum: the API descriptor status is `"connected"`, not `"active"`; implemented with the API
+  vocabulary. Trade-off accepted: a same-account reconnect keeps the old `connected_at` server-side, so
+  polling cannot see it and the command falls back to the paste prompt at expiry.
+- Origin binding: a login for another server now gets a one-line notice and no bearer (proceeds
+  unauthenticated rather than exiting) — explicit `--token` always wins.
+- The issue's trailing "Suggestions" list is out of scope, filed as `issue:73db45b2286a` (minor).
