@@ -13,6 +13,7 @@ from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from parrot.auth.credentials import AuthRequiredPayload
 
 #: Lifecycle of a user's integration as shown in the UI.
 IntegrationStatus = Literal["connected", "disconnected", "needs_reconnect"]
@@ -204,3 +205,32 @@ class UsersIntegrationRow(BaseModel):
             data = data.copy()
             data["channels"] = [data.pop("channel")]
         return data
+
+
+class WhoAmI(BaseModel):
+    """GET /api/v1/connections/me — the Navigator principal behind a CLI bearer."""
+
+    user_id: str
+    tenant_id: Optional[str] = None
+    canonical_identity: Optional[str] = None
+    email: Optional[str] = None
+    roles: List[str] = Field(default_factory=list)
+    scopes: List[str] = Field(default_factory=list)
+
+
+class PulledToken(BaseModel):
+    """POST /api/v1/connections/{provider}/token — access token only, NEVER a refresh token (S5)."""
+
+    provider: str
+    access_token: str
+    expires_at: float
+    scopes: List[str] = Field(default_factory=list)
+    account_id: str = ""
+
+
+class NotConnected(Exception):
+    """No active connection for the provider; ``payload`` is the 409 body."""
+
+    def __init__(self, payload: AuthRequiredPayload) -> None:
+        super().__init__(f"{payload.provider} is not connected")
+        self.payload = payload
