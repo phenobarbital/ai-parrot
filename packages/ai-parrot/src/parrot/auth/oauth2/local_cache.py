@@ -1,4 +1,5 @@
 """AES-GCM local cache of provider access tokens + remote resolver (FEAT-774 M4). Never stores refresh tokens."""
+
 from __future__ import annotations
 
 import asyncio
@@ -116,7 +117,9 @@ class ConnectionCache:
 class RemoteConnectionResolver(CredentialResolver):
     """Answer from cache, otherwise pull a token from the server once per provider."""
 
-    def __init__(self, provider: str, *, cache: ConnectionCache, client: ServerConnectionsClient, skew_s: int = 60) -> None:
+    def __init__(
+        self, provider: str, *, cache: ConnectionCache, client: ServerConnectionsClient, skew_s: int = 60
+    ) -> None:
         self.provider = provider
         self.cache = cache
         self.client = client

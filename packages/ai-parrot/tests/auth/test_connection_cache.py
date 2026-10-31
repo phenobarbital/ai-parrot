@@ -1,4 +1,5 @@
 """ConnectionCache / RemoteConnectionResolver / build_cli_broker (FEAT-774 M4, AC-6)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -123,7 +124,7 @@ def test_build_cli_broker_registers_declared_providers(tmp_path):
     store.save(_login_record())
     client = AsyncMock()
 
-    broker = build_cli_broker(store, {"jira", "fake", "jira"}, client=client)
+    broker = build_cli_broker(store, {"jira", "fake"}, client=client)
 
     assert set(broker._resolvers) == {"jira", "fake"}
     assert {auth_kind for _, auth_kind in broker._resolvers.values()} == {"oauth2"}
