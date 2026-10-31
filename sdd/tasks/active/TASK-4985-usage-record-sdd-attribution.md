@@ -25,7 +25,7 @@ cardinality regression test asserting that `attempt_uid`/`execution_id` never be
 - Add `feat_id`, `task_id`, `attempt_uid`, `execution_id`, `dispatch_kind`, `roster_seat` to `UsageRecord` (all `Optional[str] = None`). `run_id`/`seat` stay unchanged.
 - In `UsageRecordingSubscriber._on_client_after` and `_on_client_failed`, resolve the attribution as `event.attribution or current_usage_attribution.get()` and copy its fields onto the record.
 - Write a test that a record built from a forwarded event keeps the event's attribution even when a different ContextVar value is bound at handling time (AC-2).
-- Write a metrics label-whitelist test: emit an attributed event through `MetricsSubscriber` with mocked instruments, and assert that no recorded attribute key is in `{attempt_uid, execution_id, feat_id, task_id}` (AC-9).
+- Write a metrics label-whitelist test: emit an attributed event through `MetricsSubscriber` with mocked instruments, and assert that no recorded attribute key is in `{attempt_uid, execution_id, task_id}` (AC-9). `feat_id` is allowed as the bounded `parrot.feat_id` label that TASK-4996 adds.
 
 **NOT in scope**: cache counters/cost on the record (TASK-4986/4987); the durable sink (TASK-4990); modifying `subscribers/metrics.py` (it must stay untouched; the test only asserts).
 
@@ -209,7 +209,8 @@ async def test_failed_event_attributed() -> None:
 ### `packages/ai-parrot/tests/unit/observability/test_metrics_label_whitelist.py` (CREATE)
 ```python
 """FEAT-783 AC-9 — SDD ids never become metric labels."""
-FORBIDDEN = {"attempt_uid", "execution_id", "feat_id", "task_id", "parrot.attempt_uid", "parrot.execution_id"}
+# feat_id is ALLOWED as the bounded `parrot.feat_id` label (added by TASK-4996, user decision 2026-10-31).
+FORBIDDEN = {"attempt_uid", "execution_id", "task_id", "parrot.attempt_uid", "parrot.execution_id", "parrot.task_id"}
 
 
 async def test_attributed_event_adds_no_unbounded_labels() -> None:
