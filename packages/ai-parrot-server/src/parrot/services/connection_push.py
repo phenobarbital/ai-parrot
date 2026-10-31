@@ -41,7 +41,9 @@ class RedisConnectionPush:
     async def deliver(self, event: ConnectionEvent) -> None:
         """PUBLISH ``event.model_dump_json()`` on ``CHANNEL_TEMPLATE.format(user_id=event.user_id)``."""
         if self._redis is None:
-            self.logger.warning("RedisConnectionPush.deliver before start(); event for provider %s dropped", event.provider)
+            self.logger.warning(
+                "RedisConnectionPush.deliver before start(); event for provider %s dropped", event.provider
+            )
             return
         await self._redis.publish(CHANNEL_TEMPLATE.format(user_id=event.user_id), event.model_dump_json())
 
