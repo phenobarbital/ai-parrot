@@ -1,4 +1,5 @@
 """FEAT-776 M10 purge tests."""
+
 import fnmatch
 import sys
 import types
@@ -18,7 +19,7 @@ class MemRedis:
     """In-memory Redis double with scan_iter(match=) and unlink(*keys)."""
 
     def __init__(self, keys):
-        self.store = {k: "secret" for k in keys}
+        self.store = dict.fromkeys(keys, "secret")
         self.reads = 0
 
     async def scan_iter(self, match="*"):
@@ -67,7 +68,10 @@ async def test_purge_dry_run_and_date_gate(monkeypatch) -> None:
     # exactly at the cutoff the window is still open
     with pytest.raises(PermissionError):
         await purge_legacy_keys(
-            redis, channel="telegram", providers=["jira"], dry_run=False,
+            redis,
+            channel="telegram",
+            providers=["jira"],
+            dry_run=False,
             now=datetime(2030, 1, 1, tzinfo=timezone.utc),
         )
     assert len(redis.store) == len(KEYS)
