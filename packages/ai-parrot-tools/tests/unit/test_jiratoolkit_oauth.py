@@ -90,6 +90,10 @@ def _stub_principal_resolution(monkeypatch):
 
 
 class TestJiraToolkitOAuthInit:
+    def test_oauth2_local_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="oauth2_local.*removed"):
+            JiraToolkit(auth_type="oauth2_local")
+
     def test_oauth2_3lo_requires_resolver(self) -> None:
         with pytest.raises(ValueError, match="credential_resolver"):
             JiraToolkit(auth_type="oauth2_3lo")
