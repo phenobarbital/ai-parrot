@@ -35,7 +35,16 @@ def test_coverage_skips_blank_model_and_malformed_lines(tmp_path: Path) -> None:
         "not json\n" + json.dumps({"kind": "attempt", "backend": "openai", "configured_model": ""}) + "\n",
         encoding="utf-8",
     )
-    assert coverage(tmp_path) == {"rows": 0, "priced": 0, "ratio": 0.0, "unpriced": {}}
+    assert coverage(tmp_path) == {"rows": 0, "priced": 0, "ratio": 0.0, "unpriced": {}, "excluded": {}}
+
+
+def test_coverage_excludes_named_models_and_reports_them(tmp_path: Path) -> None:
+    """Excluded models leave the denominator but stay visible in the report."""
+    _write_rows(tmp_path)
+    report = coverage(tmp_path, exclude_models=["no-such-model"])
+    assert (report["rows"], report["priced"], report["ratio"]) == (2, 2, 1.0)
+    assert report["unpriced"] == {}
+    assert report["excluded"] == {"no-such-model": 1}
 
 
 def test_main_exit_code_follows_threshold(tmp_path: Path, capsys) -> None:
@@ -53,6 +62,8 @@ def test_bundled_tables_price_the_published_roster_models() -> None:
     calc = CostCalculator()
     priced = [
         ("openai", "gpt-5.6-sol"),
+        ("openai", "gpt-5.6-terra"),
+        ("openai", "gpt-5.6-luna"),
         ("gemini", "gemini-3.8-flash"),
         ("aws.bedrock", "zai.glm-4.7-flash"),
         ("aws.bedrock", "minimax.minimax-m2.5"),
@@ -65,7 +76,7 @@ def test_bundled_tables_price_the_published_roster_models() -> None:
     ]
     for provider, model in priced:
         assert calc.cost_usd(provider=provider, model=model, input_tokens=1000, output_tokens=1000) is not None, model
-    assert calc.cost_usd(provider="openai", model="gpt-5.6-terra", input_tokens=1, output_tokens=1) is None
+    assert calc.cost_usd(provider="openai", model="gpt-5.3-codex-spark", input_tokens=1, output_tokens=1) is None
 
 
 def test_anthropic_models_carry_a_cache_creation_tier() -> None:
