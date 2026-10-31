@@ -24,8 +24,10 @@ class _Request:
         user_id: str = "1042",
         issuer: object | None = None,
         authdb: object | None = object(),
+        content_type: str = "application/json",
     ) -> None:
         self._body = body
+        self.content_type = content_type
         self.match_info = {"nonce": nonce}
         self.path = path
         self.session = {"user_id": user_id}
@@ -165,3 +167,13 @@ async def test_channel_link_rejects_non_slack_claim(claim: ChannelLinkClaim) -> 
 
     assert response.status == 400
     issuer.consume.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_channel_link_confirm_rejects_non_json_content_type() -> None:
+    """A CORS-simple (text/plain) POST is refused before the nonce is touched (CSRF defence)."""
+    issuer = SimpleNamespace(consume=AsyncMock())
+    request = _Request({"confirm": True}, issuer=issuer, content_type="text/plain")
+    response = await _unwrap(ChannelLinksHandler.post)(_handler(request))
+    assert response.status == 415
+    issuer.consume.assert_not_awaited()

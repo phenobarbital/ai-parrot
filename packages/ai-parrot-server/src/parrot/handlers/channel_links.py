@@ -71,6 +71,11 @@ class ChannelLinksHandler(BaseView):
         if not user_id.isdigit():
             return web.json_response({"error": "invalid session user"}, status=403)
 
+        # CSRF defence: a non-JSON Content-Type is a CORS-simple request a cross-site page could send
+        # with the victim's session cookie; requiring application/json forces a preflight.
+        if self.request.content_type != "application/json":
+            return web.json_response({"error": "application/json required"}, status=415)
+
         try:
             body = await self.request.json()
         except Exception:  # noqa: BLE001

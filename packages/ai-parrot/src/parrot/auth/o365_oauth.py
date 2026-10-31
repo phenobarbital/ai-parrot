@@ -359,9 +359,14 @@ class O365OAuthManager(AbstractOAuth2Manager):
         return not await self.redis.get(_LEGACY_REVOKED_KEY.format(user_id=user_id))
 
     async def revoke(self, channel: str, user_id: str, *, channel_user_id: Optional[str] = None) -> None:
-        """Revoke as the base class does, then tombstone legacy migration for this principal."""
-        await super().revoke(channel, user_id, channel_user_id=channel_user_id)
+        """Tombstone legacy migration for this principal, then revoke as the base class does.
+
+        The tombstone is written first: ``migrate_legacy_device_grant`` re-checks it under
+        ``principal_lock``, so a concurrent migration can never re-import the legacy grant between
+        the delete and the tombstone. If the revoke itself then fails the tombstone stays (fail closed).
+        """
         await self.redis.set(_LEGACY_REVOKED_KEY.format(user_id=user_id), "1", ex=_LEGACY_REVOKED_TTL_SECONDS)
+        await super().revoke(channel, user_id, channel_user_id=channel_user_id)
 
     async def _upsert_row(self, principal: Principal, token_set: O365TokenSet, *, channel: str) -> None:
         """Write the ``users_integrations`` row the 3LO routes write after ``handle_callback``."""
