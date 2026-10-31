@@ -99,3 +99,48 @@ async def test_issue_validation(redis_client) -> None:
     link = await issuer.issue("slack", "T01:U02")
     assert link == f"https://admin.example/account/link?token={_nonce(link)}"
     assert await issuer.consume(_nonce(link)) is not None
+
+
+class _MemoryRedis:
+    """In-memory ``set``/``get``/``getdel`` double recording each write's TTL."""
+
+    def __init__(self) -> None:
+        self.data: dict[str, str] = {}
+        self.ttls: dict[str, int] = {}
+
+    async def set(self, key: str, value: str, ex: int | None = None, nx: bool = False) -> bool | None:
+        if nx and key in self.data:
+            return None
+        self.data[key] = value
+        self.ttls[key] = ex
+        return True
+
+    async def get(self, key: str) -> str | None:
+        return self.data.get(key)
+
+    async def getdel(self, key: str) -> str | None:
+        self.ttls.pop(key, None)
+        return self.data.pop(key, None)
+
+
+@pytest.mark.asyncio
+async def test_restore_puts_back_consumed_claim_for_remaining_ttl() -> None:
+    """A consumed claim comes back once, never past its original expiry, never over a live key."""
+    redis = _MemoryRedis()
+    issuer = ChannelLinkIssuer(redis, base_url="https://admin.example", ttl_seconds=600)
+    nonce = _nonce(await issuer.issue("slack", "T01:U02", {"team_id": "T01", "slack_user_id": "U02"}))
+
+    claim = await issuer.consume(nonce)
+    assert claim is not None
+    assert await issuer.consume(nonce) is None
+
+    assert await issuer.restore(nonce, claim) is True
+    assert 0 < redis.ttls[f"channel_link:{nonce}"] <= 600
+    assert await issuer.restore(nonce, claim) is False  # SET NX: never overwrites a live claim
+    restored = await issuer.consume(nonce)
+    assert restored is not None and restored.channel_user_id == "T01:U02"
+
+    expired = claim.model_copy(update={"issued_at": claim.issued_at - 601})
+    assert await issuer.restore(nonce, expired) is False
+    assert await issuer.consume(nonce) is None
+    assert await issuer.restore("", claim) is False

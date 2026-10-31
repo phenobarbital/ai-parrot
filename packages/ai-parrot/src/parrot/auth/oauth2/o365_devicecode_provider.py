@@ -209,13 +209,28 @@ class O365DeviceCodeCredentialResolver(CredentialResolver):
         except PermissionError:
             self.logger.info("Legacy o365 grant unusable for principal %s; device flow required", principal.user_id)
             return None
-        if token_set is None:
-            return None
+        # The legacy entry is spent either way: imported, or blocked for good by a current record or a
+        # disconnect tombstone (both checked under the principal lock, so it can never be imported later).
         await self._delete_legacy(canonical_id)
+        if token_set is None:
+            return await self._current_token(channel, principal)
         return str(token_set.access_token)
 
+    async def _current_token(self, channel: str, principal: Principal) -> Optional[str]:
+        """Return the grant that beat the legacy import, if any; ``None`` sends the caller to the device flow."""
+        try:
+            current = await self._manager.get_valid_token(channel, principal.user_id)
+        except PermissionError:
+            return None
+        return str(current.access_token) if current is not None else None
+
     async def _delete_legacy(self, canonical_id: str) -> None:
-        """Best-effort legacy delete; failure leaves a retry marker, never a re-import."""
+        """Best-effort legacy delete; failure leaves a retry marker, never a re-import.
+
+        The marker is in-process only. After a restart a leftover legacy entry stays inert: the
+        current-record-wins check and the revoke tombstone (which outlives the migration window) both
+        block a re-import, and the next miss that reads it deletes it.
+        """
         try:
             await self._legacy_vault.delete_tokens(canonical_id, _O365_VAULT_PREFIX)
         except Exception as exc:

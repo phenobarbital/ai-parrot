@@ -138,7 +138,28 @@ async def test_channel_link_confirm_conflict_and_db_failure(monkeypatch: pytest.
     assert json.loads(conflict.body) == {"error": "already_linked"}
     assert "owner" not in conflict.text
 
+    issuer.restore = AsyncMock(return_value=True)
     failure = await _unwrap(ChannelLinksHandler.post)(_handler(_Request({"confirm": True}, issuer=issuer)))
+    assert failure.status == 500
+    assert json.loads(failure.body) == {"error": "internal_error"}
+    # A transient failure gives the nonce back instead of burning the link.
+    issuer.restore.assert_awaited_once()
+    assert issuer.restore.await_args.args[0] == "nonce"
+    assert issuer.restore.await_args.args[1].channel_user_id == "T01:U02"
+
+
+@pytest.mark.asyncio
+async def test_channel_link_restore_failure_still_returns_500(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failing restore is logged; the response stays a plain 500."""
+    issuer = MagicMock()
+    issuer.consume = AsyncMock(return_value=_claim())
+    issuer.restore = AsyncMock(side_effect=RuntimeError("redis down"))
+    claim_service = MagicMock()
+    claim_service.claim_channel_identity = AsyncMock(side_effect=RuntimeError("db"))
+    monkeypatch.setattr("parrot.handlers.channel_links.IdentityMappingService", lambda _: claim_service)
+
+    failure = await _unwrap(ChannelLinksHandler.post)(_handler(_Request({"confirm": True}, issuer=issuer)))
+
     assert failure.status == 500
     assert json.loads(failure.body) == {"error": "internal_error"}
 

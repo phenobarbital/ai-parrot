@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, AsyncIterator, Optional
 
@@ -47,13 +48,21 @@ class RedisConnectionPush:
             return
         await self._redis.publish(CHANNEL_TEMPLATE.format(user_id=event.user_id), event.model_dump_json())
 
-    async def subscribe(self, user_id: str) -> AsyncIterator[ConnectionEvent]:
-        """Yield the principal's events; own pubsub per call; unsubscribes and closes on exit/cancellation."""
+    async def subscribe(self, user_id: str, *, ready: Optional[asyncio.Event] = None) -> AsyncIterator[ConnectionEvent]:
+        """Yield the principal's events; own pubsub per call; unsubscribes and closes on exit/cancellation.
+
+        Args:
+            user_id: Principal whose channel is subscribed.
+            ready: Set once Redis acknowledged the SUBSCRIBE, so a caller can wait for it before
+                announcing the stream (events published earlier are never delivered).
+        """
         if self._redis is None:
             raise RuntimeError("RedisConnectionPush.subscribe before start()")
         channel = CHANNEL_TEMPLATE.format(user_id=user_id)
         pubsub = self._redis.pubsub()
         await pubsub.subscribe(channel)
+        if ready is not None:
+            ready.set()
         try:
             async for raw in pubsub.listen():
                 if raw.get("type") != "message":

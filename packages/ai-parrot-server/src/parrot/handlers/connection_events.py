@@ -13,6 +13,7 @@ from navigator_session import get_session  # type: ignore[import]
 logger = logging.getLogger(__name__)
 
 KEEPALIVE_SECONDS = 25
+SUBSCRIBE_TIMEOUT_SECONDS = 5
 _SSE_HEADERS = {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
@@ -51,15 +52,40 @@ class ConnectionEventsHandler(BaseView):
         if push is None:
             return web.json_response({"error": "connection events unavailable"}, status=503)
 
-        response = web.StreamResponse(status=200, headers=_SSE_HEADERS)
-        await response.prepare(self.request)
         queue: asyncio.Queue[str] = asyncio.Queue()
+        ready = asyncio.Event()
 
         async def _produce() -> None:
-            async for event in push.subscribe(user_id):
+            async for event in push.subscribe(user_id, ready=ready):
                 await queue.put(event.model_dump_json())
 
         producer = asyncio.create_task(_produce(), name="connection-events-sse")
+        # Subscribe before the 200 goes out: the client refetches on open, so an event published
+        # between that refetch and a late SUBSCRIBE would otherwise be lost.
+        ready_wait = asyncio.create_task(ready.wait())
+        try:
+            await asyncio.wait(
+                {producer, ready_wait}, timeout=SUBSCRIBE_TIMEOUT_SECONDS, return_when=asyncio.FIRST_COMPLETED
+            )
+        except BaseException:
+            producer.cancel()
+            raise
+        finally:
+            ready_wait.cancel()
+        if producer.done() and not ready.is_set() and producer.exception() is not None:
+            logger.warning("Connection event subscription failed", exc_info=producer.exception())
+            return web.json_response({"error": "connection events unavailable"}, status=503)
+        if not ready.is_set() and not producer.done():
+            logger.warning(
+                "Connection event subscription not ready after %ss; streaming anyway", SUBSCRIBE_TIMEOUT_SECONDS
+            )
+
+        response = web.StreamResponse(status=200, headers=_SSE_HEADERS)
+        try:
+            await response.prepare(self.request)
+        except BaseException:
+            producer.cancel()
+            raise
         try:
             while True:
                 if producer.done() and queue.empty():

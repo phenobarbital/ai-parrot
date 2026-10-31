@@ -154,6 +154,24 @@ describe("AgentChat auth retry", () => {
     expect(connectionsStore.refresh).toHaveBeenCalledTimes(1);
   });
 
+  it("a duplicate connected while the auto-retry is in flight shows no manual-retry warning", async () => {
+    enableStreaming();
+    let releaseRefresh: () => void = () => {};
+    connectionsStore.refresh.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (releaseRefresh = resolve)),
+    );
+    render(AgentChat, { agentId: "agent-1", variant: "compact" });
+    await sendMessage();
+    await fireEvent.click(await screen.findByRole("button", { name: /connect jira/i }));
+    await waitFor(() => expect(connectionsStore.refresh).toHaveBeenCalledTimes(1));
+    // SSE reports the same connection while the popup's auto-retry is still refreshing.
+    for (const listener of listeners) listener({ kind: "connection.completed", provider: "jira" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByText(/Retrying may repeat actions that already completed/)).not.toBeInTheDocument();
+    releaseRefresh();
+    await waitFor(() => expect(streamChatWithAgent).toHaveBeenCalledTimes(2));
+  });
+
   it("repeated auth failure on the retried turn does not resend again", async () => {
     enableStreaming();
     render(AgentChat, { agentId: "agent-1", variant: "compact" });
@@ -163,6 +181,8 @@ describe("AgentChat auth retry", () => {
     await fireEvent.click(await screen.findByRole("button", { name: /connect jira/i }));
     await waitFor(() => expect(startConnect).toHaveBeenCalledTimes(2));
     expect(streamChatWithAgent).toHaveBeenCalledTimes(2);
+    // A new pill for an already auto-retried turn still asks for a manual retry.
+    expect(await screen.findByText(/Retrying may repeat actions that already completed/)).toBeInTheDocument();
   });
 
   it("no auto-retry when retry_safe is false or absent; manual Retry warns", async () => {

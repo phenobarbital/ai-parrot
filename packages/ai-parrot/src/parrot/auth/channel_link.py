@@ -86,6 +86,18 @@ class ChannelLinkIssuer:
         raw = await self._redis.getdel(f"{_KEY_PREFIX}{nonce}")
         return self._parse(raw)
 
+    async def restore(self, nonce: str, claim: ChannelLinkClaim) -> bool:
+        """Put back a consumed claim whose confirm failed transiently, for its remaining TTL only.
+
+        ``SET NX`` never overwrites, and an expired claim is not revived. Returns whether it was stored.
+        """
+        if not nonce:
+            return False
+        remaining = int(claim.issued_at + self._ttl - time.time())
+        if remaining <= 0:
+            return False
+        return bool(await self._redis.set(f"{_KEY_PREFIX}{nonce}", claim.model_dump_json(), ex=remaining, nx=True))
+
     def _parse(self, raw: Any) -> Optional[ChannelLinkClaim]:
         """Decode bytes/str JSON into a claim; malformed values are logged and ignored."""
         if raw is None:

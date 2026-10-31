@@ -142,18 +142,32 @@ async def test_devicecode_legacy_migration_once(monkeypatch):
 async def test_devicecode_legacy_concurrent_replace_revoke():
     current = SimpleNamespace(access_token="current-token")
 
+    # A current record won the race: the spent legacy entry is deleted and the winner is returned
+    # without a redundant device flow.
     losing_manager = FakeManager()
-    losing_manager.get_valid_token.side_effect = [None, current]
+    losing_manager.get_valid_token.side_effect = [None, current, current]
     losing_legacy = FakeLegacyVault({"access_token": "legacy-token"})
     losing_client = FakeO365Client(token_response={"access_token": "device-token", "expires_in": 3600})
     losing_resolver = O365DeviceCodeCredentialResolver(losing_client, losing_manager, legacy_vault=losing_legacy)
 
-    assert await losing_resolver.resolve("cli", "user@x") == "device-token"
+    assert await losing_resolver.resolve("cli", "user@x") == "current-token"
     assert await losing_resolver.resolve("cli", "user@x") == "current-token"
     losing_manager.migrate_legacy_device_grant.assert_awaited_once()
-    losing_legacy.delete_tokens.assert_not_awaited()
-    losing_manager.store_device_grant.assert_awaited_once()
-    assert len(losing_client.calls) == 1
+    losing_legacy.delete_tokens.assert_awaited_once_with("user@x", "o365")
+    losing_manager.store_device_grant.assert_not_awaited()
+    assert losing_client.calls == []
+
+    # A disconnect tombstone blocked the import: the legacy entry is deleted and the device flow runs.
+    revoked_manager = FakeManager()
+    revoked_legacy = FakeLegacyVault({"access_token": "legacy-token"})
+    revoked_client = FakeO365Client(token_response={"access_token": "device-token", "expires_in": 3600})
+    revoked_resolver = O365DeviceCodeCredentialResolver(revoked_client, revoked_manager, legacy_vault=revoked_legacy)
+
+    assert await revoked_resolver.resolve("cli", "user@x") == "device-token"
+    revoked_legacy.delete_tokens.assert_awaited_once_with("user@x", "o365")
+    assert revoked_legacy.legacy is None
+    revoked_manager.store_device_grant.assert_awaited_once()
+    assert len(revoked_client.calls) == 1
 
     migrated = SimpleNamespace(access_token="migrated-token")
     cleanup_manager = FakeManager()

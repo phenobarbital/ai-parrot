@@ -50,9 +50,11 @@ class _SingleEventPush:
     def __init__(self) -> None:
         self.user_ids: list[str] = []
 
-    async def subscribe(self, user_id: str) -> AsyncIterator[ConnectionEvent]:
+    async def subscribe(self, user_id: str, *, ready: asyncio.Event | None = None) -> AsyncIterator[ConnectionEvent]:
         """Yield one event for the requested principal."""
         self.user_ids.append(user_id)
+        if ready is not None:
+            ready.set()
         yield _event(user_id)
 
 
@@ -115,8 +117,12 @@ async def test_sse_frames_and_keepalive(monkeypatch: pytest.MonkeyPatch) -> None
     event = _event("session-user")
 
     class _Push:
-        async def subscribe(self, user_id: str) -> AsyncIterator[ConnectionEvent]:
+        async def subscribe(
+            self, user_id: str, *, ready: asyncio.Event | None = None
+        ) -> AsyncIterator[ConnectionEvent]:
             assert user_id == "session-user"
+            if ready is not None:
+                ready.set()
             try:
                 await asyncio.sleep(0.02)
                 yield event
@@ -155,6 +161,82 @@ async def test_sse_frames_and_keepalive(monkeypatch: pytest.MonkeyPatch) -> None
     assert b": keep-alive\n\n" in response.frames
     assert f"event: connection\ndata: {event.model_dump_json()}\n\n".encode() in response.frames
     assert unsubscribed.is_set()
+
+
+class _OrderedResponse:
+    """StreamResponse double that records when ``prepare`` ran relative to the subscription."""
+
+    log: list[str] = []
+
+    def __init__(self, *, status: int, headers: dict[str, str]) -> None:
+        self.status = status
+        self.headers = headers
+        self.frames: list[bytes] = []
+
+    async def prepare(self, request: object) -> None:
+        self.log.append("prepare")
+
+    async def write(self, data: bytes) -> None:
+        self.frames.append(data)
+        if data.startswith(b"event: connection"):
+            raise ConnectionResetError
+
+
+class _SessionRequest(dict):
+    """Request carrying a session user and one push double."""
+
+    def __init__(self, push: object) -> None:
+        super().__init__(user_id="session-user")
+        self.app = {"connection_push": push}
+
+
+@pytest.mark.asyncio
+async def test_sse_subscribes_before_prepare(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The 200 is not sent until the subscription is ready, so no event can fall in the gap."""
+    log: list[str] = []
+
+    class _SlowPush:
+        async def subscribe(
+            self, user_id: str, *, ready: asyncio.Event | None = None
+        ) -> AsyncIterator[ConnectionEvent]:
+            await asyncio.sleep(0.02)
+            log.append("subscribed")
+            assert ready is not None
+            ready.set()
+            yield _event(user_id)
+
+    monkeypatch.setattr(_OrderedResponse, "log", log)
+    monkeypatch.setattr("parrot.handlers.connection_events.web.StreamResponse", _OrderedResponse)
+    handler = ConnectionEventsHandler.__new__(ConnectionEventsHandler)
+    handler._request = _SessionRequest(_SlowPush())
+
+    response = await _unwrap(ConnectionEventsHandler.get)(handler)
+
+    assert response.status == 200
+    assert log == ["subscribed", "prepare"]
+
+
+@pytest.mark.asyncio
+async def test_sse_subscription_failure_returns_503(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A subscription that fails before it is ready is a 503, never an empty 200 stream."""
+    log: list[str] = []
+
+    class _BrokenPush:
+        async def subscribe(
+            self, user_id: str, *, ready: asyncio.Event | None = None
+        ) -> AsyncIterator[ConnectionEvent]:
+            raise RuntimeError("redis down")
+            yield _event(user_id)  # pragma: no cover - makes this an async generator
+
+    monkeypatch.setattr(_OrderedResponse, "log", log)
+    monkeypatch.setattr("parrot.handlers.connection_events.web.StreamResponse", _OrderedResponse)
+    handler = ConnectionEventsHandler.__new__(ConnectionEventsHandler)
+    handler._request = _SessionRequest(_BrokenPush())
+
+    response = await _unwrap(ConnectionEventsHandler.get)(handler)
+
+    assert response.status == 503
+    assert log == []
 
 
 async def _wait_for_numsub(push: RedisConnectionPush, channel: str, expected: int) -> None:

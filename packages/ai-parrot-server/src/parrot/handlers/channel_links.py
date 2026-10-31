@@ -93,7 +93,8 @@ class ChannelLinksHandler(BaseView):
         if issuer is None or authdb is None:
             return web.json_response({"error": "account linking is not configured"}, status=503)
 
-        claim = await issuer.consume(self.request.match_info.get("nonce", ""))
+        nonce = self.request.match_info.get("nonce", "")
+        claim = await issuer.consume(nonce)
         if claim is None:
             return web.json_response({"error": "link expired"}, status=410)
         if not self._valid_slack_claim(claim):
@@ -109,6 +110,11 @@ class ChannelLinksHandler(BaseView):
             )
         except Exception:  # noqa: BLE001
             logger.exception("Error claiming channel identity")
+            # A transient failure must not burn the link: give the nonce back so the user can retry.
+            try:
+                await issuer.restore(nonce, claim)
+            except Exception:  # noqa: BLE001
+                logger.warning("Could not restore channel-link nonce after a failed claim", exc_info=True)
             return web.json_response({"error": "internal_error"}, status=500)
 
         if result.status == "conflict":
