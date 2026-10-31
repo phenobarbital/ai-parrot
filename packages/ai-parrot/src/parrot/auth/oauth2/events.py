@@ -38,6 +38,16 @@ class ChannelNotifier(Protocol):
     async def notify(self, event: ConnectionEvent, state_payload: Dict[str, Any]) -> None: ...
 
 
+@runtime_checkable
+class ConnectionEventSink(Protocol):
+    """Receives every connection event regardless of ``event.channel`` (FEAT-777 M1).
+
+    May raise; the publisher logs the failure and continues with the next stage.
+    """
+
+    async def deliver(self, event: ConnectionEvent) -> None: ...
+
+
 class ChannelNotifierRegistry:
     """Process-wide singleton: one notifier per channel."""
 
@@ -81,6 +91,16 @@ class ConnectionEventPublisher:
         self._audit = audit_ledger
         self._bus = bus
         self.logger = logger
+        self._sinks: List[ConnectionEventSink] = []
+
+    def add_sink(self, sink: ConnectionEventSink) -> None:
+        """Register a channel-independent sink, called for every published event.
+
+        Order inside :meth:`publish`: notifier → sinks → audit → bus. Adding the same
+        instance twice registers it once.
+        """
+        if not any(existing_sink is sink for existing_sink in self._sinks):
+            self._sinks.append(sink)
 
     def attach_bus(self, bus: Any) -> None:
         """Attach a validated publish-only Streams bus."""
@@ -97,6 +117,12 @@ class ConnectionEventPublisher:
                 await notifier.notify(event, state_payload or {})
             except Exception:  # noqa: BLE001 — a notifier must never fail the callback
                 self.logger.exception("Connection notifier failed for channel %s", event.channel)
+
+        for sink in list(self._sinks):
+            try:
+                await sink.deliver(event)
+            except Exception:  # noqa: BLE001 — a sink must never fail the callback
+                self.logger.exception("Connection event sink %s failed for provider %s", type(sink).__name__, event.provider)
 
         if self._audit is not None:
             try:
