@@ -233,7 +233,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -243,8 +243,9 @@
       "parallelism_notes": "imports ServerConnectionsClient, NotConnected from TASK-4972 (parrot/auth/oauth2/remote_client.py) and LoginStore/CACHE_FILENAME from TASK-4968 (transitively done via TASK-4972)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4973-connection-cache-remote-resolver.md"
+      "completed_at": "2026-10-31T00:54:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4973-connection-cache-remote-resolver.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4974",
@@ -253,7 +254,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -264,8 +265,9 @@
       "parallelism_notes": "imports LoginStore and modifies parrot/cli/login.py created by TASK-4968 (adds whoami + roles fill at its `# roles/tenant ...` anchor); imports ServerConnectionsClient/NotLoggedIn/WhoAmI from TASK-4972 (parrot/auth/oauth2/remote_client.py)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4974-cli-principal-resolver.md"
+      "completed_at": "2026-10-31T00:54:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4974-cli-principal-resolver.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4975",
