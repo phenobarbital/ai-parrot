@@ -32,6 +32,7 @@ non-Telegram ``session_scheme`` (e.g. ``"cli-persistent"``) so tokens are not
 filed under :class:`~parrot.services.vault_token_sync.VaultTokenSync`'s
 default Telegram-namespaced session-uuid scheme.
 """
+
 from __future__ import annotations
 
 import logging

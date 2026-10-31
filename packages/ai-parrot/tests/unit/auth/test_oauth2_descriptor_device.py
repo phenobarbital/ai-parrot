@@ -142,9 +142,15 @@ async def test_server_device_start_poll(monkeypatch: pytest.MonkeyPatch) -> None
     manager._publish.assert_awaited_once()
 
     expired_handle, _ = await manager.start_device_authorization(principal)
-    assert await manager.complete_device_authorization(expired_handle) == {"status": "expired", "reason": "expired_token"}
+    assert await manager.complete_device_authorization(expired_handle) == {
+        "status": "expired",
+        "reason": "expired_token",
+    }
     assert manager._device_key(expired_handle) not in redis.rows
 
     failed_handle, _ = await manager.start_device_authorization(principal)
-    assert await manager.complete_device_authorization(failed_handle) == {"status": "failed", "reason": "invalid_client"}
+    assert await manager.complete_device_authorization(failed_handle) == {
+        "status": "failed",
+        "reason": "invalid_client",
+    }
     assert manager._device_key(failed_handle) not in redis.rows
