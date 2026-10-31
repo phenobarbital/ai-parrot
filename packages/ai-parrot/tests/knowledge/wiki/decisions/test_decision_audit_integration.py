@@ -87,7 +87,7 @@ def _entry(entry_id: str, *, relation: str = "requires", extra: str = "") -> str
         "    statement: Keep the fixture module governed.\n"
         f"    relation: {relation}\n"
         "    about: [core]\n"
-        "    targets: [\"file:src/pkg/mod.py\"]\n"
+        '    targets: ["file:src/pkg/mod.py"]\n'
         f"{extra}"
     )
 
@@ -102,7 +102,10 @@ def _approval(root: Path, spec: Path, batch_id: str) -> ApprovalEntry:
         batch_id=batch_id,
         spec_path=spec.as_posix(),
         document_id=block.document_id,
-        entries=[{"decision_id": f"adr:spec:{block.document_id}#{item.id}", "revision": item.revision} for item in block.entries],
+        entries=[
+            {"decision_id": f"adr:spec:{block.document_id}#{item.id}", "revision": item.revision}
+            for item in block.entries
+        ],
         block_sha256=hashlib.sha256(canonical_block_bytes(block)).hexdigest(),
         commit=_git(root, "rev-parse", "HEAD"),
         actor="Audit Tester <audit@example.test>",
@@ -116,7 +119,9 @@ def _approval(root: Path, spec: Path, batch_id: str) -> ApprovalEntry:
 async def _publish(root: Path, spec: Path, batch_id: str) -> None:
     """Approve and publish one fixture spec through the production publisher."""
     full_path = root / spec
-    full_path.write_text(full_path.read_text(encoding="utf-8").replace("**Status**: draft", "**Status**: approved"), encoding="utf-8")
+    full_path.write_text(
+        full_path.read_text(encoding="utf-8").replace("**Status**: draft", "**Status**: approved"), encoding="utf-8"
+    )
     _git(root, "add", spec.as_posix())
     _git(root, "commit", "-m", f"approve {batch_id}")
     _approval(root, spec, batch_id)
@@ -180,18 +185,26 @@ async def test_conflict_resolution_paths(audit_repo: Path) -> None:
         f"- finding_fingerprint: '{finding.fingerprint}'\n  participants:\n{participants}"
         "  actor: 'Audit Tester <audit@example.test>'\n  reason: accepted risk\n  approval_ref: waiver-batch\n"
     )
-    waived = _spec(audit_repo, "waived", _entry("replacement", extra=f"    contradicts: [{reference}]\n"), waivers=waiver)
+    waived = _spec(
+        audit_repo, "waived", _entry("replacement", extra=f"    contradicts: [{reference}]\n"), waivers=waiver
+    )
     assert (await open_consequence_service(audit_repo).evaluate(waived)).status == "conflict"
     with approvals_path(audit_repo).open("a", encoding="utf-8") as handle:
         handle.write(
             json.dumps(
                 {
-                    "kind": "waiver", "batch_id": "waiver-batch", "spec_path": waived.as_posix(),
-                    "document_id": "waived", "entries": [], "block_sha256": "0" * 64,
-                    "commit": _git(audit_repo, "rev-parse", "HEAD"), "actor": "Audit Tester <audit@example.test>",
+                    "kind": "waiver",
+                    "batch_id": "waiver-batch",
+                    "spec_path": waived.as_posix(),
+                    "document_id": "waived",
+                    "entries": [],
+                    "block_sha256": "0" * 64,
+                    "commit": _git(audit_repo, "rev-parse", "HEAD"),
+                    "actor": "Audit Tester <audit@example.test>",
                     "recorded_at": "2026-10-31T00:00:00Z",
                 }
-            ) + "\n"
+            )
+            + "\n"
         )
     assert (await open_consequence_service(audit_repo).evaluate(waived)).status == "pass"
 

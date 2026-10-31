@@ -216,7 +216,7 @@ class TestSchema2Parity:
             "---\nprojects: [ai-parrot]\n---\n# Spec\n\n## Decisions\n\n```yaml\n"
             "schema_version: 1\ndocument_id: parity\nentries:\n"
             "  - id: rule\n    statement: Govern the file.\n    relation: requires\n"
-            "    about: [core]\n    targets: [\"file:pkg/a.py\"]\n```\n",
+            '    about: [core]\n    targets: ["file:pkg/a.py"]\n```\n',
             encoding="utf-8",
         )
         await parity_store.upsert_pages([WikiPageRecord(concept_id="file:pkg/a.py", content_hash="fixture-file")])
