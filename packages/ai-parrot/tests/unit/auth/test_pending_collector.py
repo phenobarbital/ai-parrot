@@ -1,4 +1,5 @@
 """Tests for parrot.auth.pending (FEAT-776 M1)."""
+
 from __future__ import annotations
 
 import asyncio
