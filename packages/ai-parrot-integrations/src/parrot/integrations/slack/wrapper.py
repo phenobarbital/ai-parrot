@@ -14,7 +14,7 @@ from aiohttp import web, ClientSession
 
 from .assistant import SlackAssistantHandler
 from .commands import SlackCommandRouter
-from .commands.jira_commands import register_jira_commands
+from .commands.connection_commands import AppLinkIssuer, register_connection_commands
 from .dedup import EventDeduplicator
 from .interactive import SlackInteractiveHandler
 from .models import SlackAgentConfig
@@ -97,10 +97,8 @@ class SlackAgentWrapper:
             agent: The AI-Parrot agent to wrap.
             config: Slack configuration including tokens and settings.
             app: The aiohttp application to register routes on.
-            oauth_manager: Optional :class:`JiraOAuthManager` for Jira OAuth
-                commands (``/connect_jira``, ``/disconnect_jira``,
-                ``/jira_status``).  When provided, the Jira commands are
-                registered on the command router and a
+            oauth_manager: Optional :class:`JiraOAuthManager` retained for
+                Jira OAuth notifier compatibility. When provided, a
                 :class:`SlackOAuthNotifier` is stored on the app.
         """
         self.agent = agent
@@ -121,8 +119,15 @@ class SlackAgentWrapper:
         # Pre-LLM message interceptors (FEAT-555 M9): consulted in _handle_events and SlackSocketHandler._handle_event.
         self._message_interceptors: List[MessageInterceptor] = []
 
-        # Command router (Jira commands delegated here before built-in dispatch)
+        # Command router for generic provider connection commands and aliases.
         self._command_router = SlackCommandRouter()
+        from parrot.auth.oauth2.service import IntegrationsService
+
+        register_connection_commands(
+            self._command_router,
+            link_issuer=AppLinkIssuer(app),
+            service_factory=lambda: IntegrationsService(authorizer=app.get("connection_authorizer")),
+        )
         if config.bot_token:
             from parrot.auth.oauth2.events import ChannelNotifierRegistry
             from .notifier import SlackConnectionNotifier
@@ -130,7 +135,6 @@ class SlackAgentWrapper:
             ChannelNotifierRegistry().register(SlackConnectionNotifier(bot_token=config.bot_token))
         self._knowledge_upload = None
         if oauth_manager is not None:
-            register_jira_commands(self._command_router, oauth_manager)
             # Register the OAuth notifier on the app so the callback route
             # can send DMs after the Atlassian consent redirect.
             if config.bot_token:
