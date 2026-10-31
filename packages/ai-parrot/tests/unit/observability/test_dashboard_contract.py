@@ -78,14 +78,23 @@ _CONFIRMED_INSTRUMENTS: frozenset[str] = frozenset({
 })
 
 # Verified against metrics.py:204-220, 273-306.
-METRIC_LABELS: frozenset[str] = frozenset({
-    "gen_ai.system", "gen_ai.provider.name", "gen_ai.request.model",
-    "gen_ai.response.model", "parrot.agent.name", "gen_ai.token.type",
-    "gen_ai.operation.name", "error.type", "parrot.round.number",
-    "parrot.tool.name", "parrot.invoke.method",
-    # FEAT-783: bounded per-feature label (task/attempt/execution ids stay forbidden)
-    "parrot.feat_id",
-})
+METRIC_LABELS: frozenset[str] = frozenset(
+    {
+        "gen_ai.system",
+        "gen_ai.provider.name",
+        "gen_ai.request.model",
+        "gen_ai.response.model",
+        "parrot.agent.name",
+        "gen_ai.token.type",
+        "gen_ai.operation.name",
+        "error.type",
+        "parrot.round.number",
+        "parrot.tool.name",
+        "parrot.invoke.method",
+        # FEAT-783: bounded per-feature label (task/attempt/execution ids stay forbidden)
+        "parrot.feat_id",
+    }
+)
 
 # Span-only attributes — must NEVER appear as a dashboard grouping label.
 FORBIDDEN_LABELS: frozenset[str] = frozenset({"user_id", "session_id"})

@@ -40,8 +40,14 @@ def _wired() -> tuple[MetricsSubscriber, _Instrument, _Instrument, _Instrument, 
 
 def _after(**kw: object) -> AfterClientCallEvent:
     return AfterClientCallEvent(
-        trace_context=TraceContext.new_root(), client_name="openai", model="gpt-4o-mini",
-        duration_ms=10.0, input_tokens=11, output_tokens=7, cost_usd=0.5, **kw,
+        trace_context=TraceContext.new_root(),
+        client_name="openai",
+        model="gpt-4o-mini",
+        duration_ms=10.0,
+        input_tokens=11,
+        output_tokens=7,
+        cost_usd=0.5,
+        **kw,
     )
 
 
@@ -69,8 +75,12 @@ async def test_failure_metric_carries_feat_id() -> None:
     sub, _, _, _, err = _wired()
     with usage_attribution("run", "development", UsageAttribution(feat_id="FEAT-2")):
         event = ClientCallFailedEvent(
-            trace_context=TraceContext.new_root(), client_name="openai", model="m",
-            duration_ms=1.0, error_type="APIError", error_message="boom",
+            trace_context=TraceContext.new_root(),
+            client_name="openai",
+            model="m",
+            duration_ms=1.0,
+            error_type="APIError",
+            error_message="boom",
         )
     await sub._on_client_fail(event)
     assert err.calls[0][1]["parrot.feat_id"] == "FEAT-2"
