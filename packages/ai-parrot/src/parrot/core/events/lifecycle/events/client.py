@@ -8,10 +8,18 @@ Note: ClientStreamChunkEvent is high-frequency and NEVER dual-emits to
 EventBus by default. It must be explicitly opted in via forward_to_bus=True
 on the subscription.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Optional
 
 from navigator_eventbus.lifecycle.base import LifecycleEvent
+
+from parrot.observability.attribution import UsageAttribution
+from parrot.observability.context import current_usage_attribution
+
+
+def _snapshot_attribution() -> Optional[UsageAttribution]:
+    """Read the bound SDD attribution at event construction (FEAT-783 S2)."""
+    return current_usage_attribution.get()
 
 
 @dataclass(frozen=True)
@@ -65,6 +73,7 @@ class AfterClientCallEvent(LifecycleEvent):
             ``current_session_id`` ContextVar. Spans only.
         tenant: Optional server-resolved tenant identifier.
         cost_usd: Optional call cost in USD. None when pricing is unknown.
+        attribution: Immutable SDD attribution snapshot from construction time.
     """
 
     client_name: str = ""
@@ -78,6 +87,7 @@ class AfterClientCallEvent(LifecycleEvent):
     session_id: Optional[str] = None   # per-session correlation (spans only)
     tenant: Optional[str] = None  # FEAT-710
     cost_usd: Optional[float] = None  # FEAT-710: computed once at the origin
+    attribution: Optional[UsageAttribution] = field(default_factory=_snapshot_attribution)  # FEAT-783
 
 
 @dataclass(frozen=True)
@@ -99,6 +109,7 @@ class ClientCallFailedEvent(LifecycleEvent):
             Spans only — NEVER in metric labels.
         session_id: Optional session identifier. Spans only.
         tenant: Optional server-resolved tenant identifier.
+        attribution: Immutable SDD attribution snapshot from construction time.
     """
 
     client_name: str = ""
@@ -110,6 +121,7 @@ class ClientCallFailedEvent(LifecycleEvent):
     user_id: Optional[str] = None      # per-user usage attribution (spans only)
     session_id: Optional[str] = None   # per-session correlation (spans only)
     tenant: Optional[str] = None  # FEAT-710
+    attribution: Optional[UsageAttribution] = field(default_factory=_snapshot_attribution)  # FEAT-783
 
 
 @dataclass(frozen=True)
