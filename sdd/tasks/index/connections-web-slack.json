@@ -348,7 +348,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -361,8 +361,9 @@
       "parallelism_notes": "TASK-5034: ChannelLinkIssuer.issue (auth/channel_link.py). TASK-5038: IntegrationsService(authorizer=) + principal kw (oauth2/service.py). TASK-5041: app keys channel_link_issuer / connection_authorizer set in manager.py. TASK-5042: same file slack/wrapper.py (serialize).",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5044-slack-generic-connection-commands.md"
+      "completed_at": "2026-10-31T02:13:40+00:00",
+      "file": "sdd/tasks/completed/TASK-5044-slack-generic-connection-commands.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5045",
@@ -413,7 +414,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -424,8 +425,9 @@
       "parallelism_notes": "TASK-5041: both modify manager/manager.py (serialize). TASK-5046: both modify tests/integration/test_cli_devicecode_e2e.py (this task removes the xfail TASK-5046 adds) and WorkIQ must read the grant TASK-5046 now writes via store_device_grant.",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5047-o365-provider-registration.md"
+      "completed_at": "2026-10-31T02:13:40+00:00",
+      "file": "sdd/tasks/completed/TASK-5047-o365-provider-registration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5048",
@@ -493,7 +495,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -505,8 +507,9 @@
       "parallelism_notes": "TASK-5035: needs AuthRequiredEnvelope.retry_safe (auth/oauth2/models.py). TASK-5049: both modify handlers/agent.py (serialize). TASK-5050: imports collect_auth_requirements (auth/pending.py) and track_turn/current_turn_tracker (auth/retry_safety.py).",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5051-agenttalk-auth-required-both-modes.md"
+      "completed_at": "2026-10-31T02:13:41+00:00",
+      "file": "sdd/tasks/completed/TASK-5051-agenttalk-auth-required-both-modes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5052",
