@@ -208,3 +208,55 @@ def test_server_mode_explicit_token_wins(_isolated_login_file):
 def test_same_origin(left, right, expected):
     """Origins compare scheme, host (case-insensitive) and effective port; non-http(s) never match."""
     assert _same_origin(left, right) is expected
+
+
+# ---------------------------------------------------------------------------
+# TASK-5084 (issue:73db45b2286a a, d): insecure http warning + broker client lifecycle
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "server,warned",
+    [("http://parrot.example.com", True), ("https://parrot.example.com", False), ("http://localhost:5000", False)],
+)
+def test_server_mode_warns_before_sending_bearer_over_plain_http(server, warned):
+    """A bearer bound for a non-loopback http:// server triggers a warning; https and loopback do not."""
+    result, config, _, _ = _invoke(["--server", server, "--token", "explicit"])
+    assert result.exit_code == 0, result.output
+    assert ("plaintext http://" in result.output) is warned
+    assert config.server_token == "explicit"
+
+
+def test_standalone_broker_client_closed_on_exit(_isolated_login_file):
+    """The REPL owns the broker's ServerConnectionsClient and closes it when the REPL exits."""
+    _save_login(_isolated_login_file)
+    principal = Principal(user_id="nav-42", tenant_id="acme", channel="cli", channel_user_id="login-user")
+    bot = _bot()
+    bot.tool_manager.get_all_tools.return_value = [type("Tool", (), {"credential_provider": "jira"})()]
+    broker_client = MagicMock()
+    broker_client.close = AsyncMock()
+    resolver_client = MagicMock()
+    resolver_client.__aenter__ = AsyncMock(return_value=resolver_client)
+    resolver_client.__aexit__ = AsyncMock(return_value=None)
+    built = {}
+
+    def build_broker(store, providers, *, client=None):
+        built["client"] = client
+        built["providers"] = set(providers)
+        return object()
+
+    with (
+        patch("parrot.cli.agent_repl.StandaloneAgentLoader") as standalone_cls,
+        patch("parrot.cli.agent_repl.AgentREPL") as repl_cls,
+        patch("parrot.cli.agent_repl.ServerConnectionsClient", side_effect=[resolver_client, broker_client]),
+        patch("parrot.cli.agent_repl.CliPrincipalResolver") as resolver_cls,
+        patch("parrot.cli.agent_repl.build_cli_broker", build_broker),
+    ):
+        standalone_cls.return_value = _loader(bot)
+        repl_cls.return_value.run_batch = AsyncMock(return_value=0)
+        resolver_cls.return_value.resolve_with_roles = AsyncMock(return_value=(principal, frozenset()))
+        result = CliRunner().invoke(agent_cmd, ["a", "--ui", "inline"], input="hi\n")
+
+    assert result.exit_code == 0, result.output
+    assert built == {"client": broker_client, "providers": {"jira"}}
+    broker_client.close.assert_awaited_once()

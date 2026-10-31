@@ -118,7 +118,11 @@ class ConnectionsHandler(BaseView):
         try:
             if suffix == "token":
                 pulled = await service.pull_access_token(user_id, provider, request=self.request)
-                return web.json_response(pulled.model_dump(mode="json"))
+                # The body carries a live access token: never let a client or proxy cache it.
+                return web.json_response(
+                    pulled.model_dump(mode="json"),
+                    headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+                )
             if suffix == "complete":
                 code = body.get("code")
                 state = body.get("state")

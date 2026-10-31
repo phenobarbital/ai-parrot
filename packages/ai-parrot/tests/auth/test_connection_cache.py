@@ -88,7 +88,7 @@ async def test_cache_io_off_event_loop_and_single_flight(tmp_path, monkeypatch):
     assert results == ["pulled-access-token"] * 10
     client.pull_token.assert_awaited_once_with("jira")
     assert cache._read_sync in calls
-    assert cache._write_sync in calls
+    assert cache._update_sync in calls  # read-modify-write under the cross-process lock (TASK-5084)
 
 
 async def test_remote_resolver_hit_miss_not_connected(tmp_path):
@@ -129,3 +129,77 @@ def test_build_cli_broker_registers_declared_providers(tmp_path):
     assert set(broker._resolvers) == {"jira", "fake"}
     assert {auth_kind for _, auth_kind in broker._resolvers.values()} == {"oauth2"}
     assert all(isinstance(resolver, RemoteConnectionResolver) for resolver, _ in broker._resolvers.values())
+
+
+# ── TASK-5084 (issue:73db45b2286a): file checks + cross-process lock ──
+
+
+async def test_cache_rejects_symlink_and_loose_mode(tmp_path, caplog):
+    """A symlinked or group/other-accessible cache file is treated as empty, never decrypted."""
+    path = tmp_path / "connections.cache"
+    cache = ConnectionCache(path, b"k" * 32)
+    await cache.put(_entry())
+    assert (await cache.get("jira")) is not None
+
+    os.chmod(path, 0o644)
+    assert await cache.get("jira") is None
+    assert "treating as empty" in caplog.text
+
+    os.chmod(path, 0o600)
+    real = tmp_path / "real.cache"
+    path.rename(real)
+    path.symlink_to(real)
+    assert await cache.get("jira") is None
+
+
+async def test_cache_rejects_non_regular_and_foreign_owner(tmp_path, monkeypatch):
+    """A directory at the cache path, or a file owned by another uid, reads as empty."""
+    path = tmp_path / "connections.cache"
+    cache = ConnectionCache(path, b"k" * 32)
+    await cache.put(_entry())
+    monkeypatch.setattr(os, "getuid", lambda: os.stat(path).st_uid + 1)
+    assert await cache.get("jira") is None
+    monkeypatch.undo()
+
+    path.unlink()
+    path.mkdir()
+    assert await cache.get("jira") is None
+
+
+async def test_cache_writes_hold_sidecar_flock(tmp_path, monkeypatch):
+    """put/delete take an exclusive flock on the 0600 sidecar lock file."""
+    import fcntl
+
+    from parrot.auth.oauth2 import local_cache
+
+    path = tmp_path / "connections.cache"
+    cache = ConnectionCache(path, b"k" * 32)
+    operations = []
+    original_flock = fcntl.flock
+
+    def spying_flock(fd, operation):
+        operations.append(operation)
+        return original_flock(fd, operation)
+
+    monkeypatch.setattr(local_cache.fcntl, "flock", spying_flock)
+    await cache.put(_entry("jira"))
+    await cache.put(_entry("github"))
+    await cache.delete("jira")
+    await cache.delete()
+
+    assert operations.count(fcntl.LOCK_EX) == 4
+    assert cache.lock_path == tmp_path / "connections.cache.lock"
+    assert oct(os.stat(cache.lock_path).st_mode & 0o777) == oct(0o600)
+    assert not path.exists()
+
+
+async def test_cache_concurrent_processes_keep_every_entry(tmp_path):
+    """Two independent cache instances (two processes) writing concurrently lose no entry."""
+    path = tmp_path / "connections.cache"
+    first = ConnectionCache(path, b"k" * 32)
+    second = ConnectionCache(path, b"k" * 32)
+    providers = [f"p{index}" for index in range(12)]
+    await asyncio.gather(
+        *((first if index % 2 else second).put(_entry(provider)) for index, provider in enumerate(providers))
+    )
+    assert sorted((await asyncio.to_thread(first._read_sync)).keys()) == sorted(providers)

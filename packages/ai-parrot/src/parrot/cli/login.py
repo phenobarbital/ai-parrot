@@ -6,6 +6,7 @@ import asyncio
 import base64
 import contextlib
 import fcntl
+import ipaddress
 import json
 import logging
 import os
@@ -16,7 +17,8 @@ import tempfile
 import time
 import webbrowser
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Tuple
+from urllib.parse import urlsplit
 
 import aiohttp
 import click
@@ -35,6 +37,69 @@ DEFAULT_LOGIN_PATH = Path("~/.parrot/login.json")
 DEFAULT_CLIENT_ID = "parrot-cli"
 DEFAULT_SCOPES = ("openid", "profile", "email")
 CACHE_FILENAME = "connections.cache"  # TASK-4973's ConnectionCache lives next to the login file
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _url_origin(url: str) -> Optional[Tuple[str, str, int]]:
+    """Return ``(scheme, host, effective port)`` for an absolute http(s) URL, else ``None``."""
+    try:
+        parts = urlsplit(url.strip())
+        scheme = parts.scheme.lower()
+        host = (parts.hostname or "").lower()
+        port = parts.port or _DEFAULT_PORTS.get(scheme)
+    except ValueError:
+        return None
+    if scheme not in _DEFAULT_PORTS or not host or port is None:
+        return None
+    return scheme, host, port
+
+
+def _is_loopback_host(host: str) -> bool:
+    """Return whether ``host`` is ``localhost`` or a loopback IP address."""
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def is_insecure_remote_http(url: str) -> bool:
+    """Return whether ``url`` is plaintext ``http://`` to a non-loopback host.
+
+    Bearer tokens sent to such a URL cross the network unencrypted.
+
+    Args:
+        url: Server base URL.
+
+    Returns:
+        True for ``http://`` URLs whose host is not loopback; False otherwise.
+    """
+    origin = _url_origin(url)
+    return origin is not None and origin[0] == "http" and not _is_loopback_host(origin[1])
+
+
+def metadata_endpoint(meta: Dict[str, Any], key: str, server: str) -> Optional[str]:
+    """Return a metadata endpoint URL, requiring it to share the ``server`` origin.
+
+    Args:
+        meta: Authorization-server metadata document.
+        key: Endpoint field name (e.g. ``token_endpoint``).
+        server: The server base URL the login was issued against.
+
+    Returns:
+        The endpoint URL, or ``None`` when the field is absent or empty.
+
+    Raises:
+        DeviceCodeError: The endpoint points at a different origin than ``server``.
+    """
+    value = meta.get(key)
+    if not isinstance(value, str) or not value:
+        return None
+    expected = _url_origin(server)
+    if expected is None or _url_origin(value) != expected:
+        raise DeviceCodeError("invalid_metadata", f"server metadata {key} is not on the {server} origin")
+    return value
 
 
 class LoginFileError(RuntimeError):
@@ -222,8 +287,8 @@ async def refresh_login(record: LoginRecord, session: aiohttp.ClientSession) -> 
     if not record.refresh_token:
         raise LoginExpired("no refresh token; run `parrot login` again")
     meta = await discover_authorization_server(session, record.server_url)
-    token_url = meta.get("token_endpoint")
-    if not isinstance(token_url, str) or not token_url:
+    token_url = metadata_endpoint(meta, "token_endpoint", record.server_url)
+    if token_url is None:
         raise DeviceCodeError("invalid_metadata", "server metadata has no token_endpoint")
     try:
         async with session.post(
@@ -269,8 +334,11 @@ async def _login_flow(server: str, client_id: str, scopes: List[str], open_brows
             meta = await discover_authorization_server(session, server)
         except DeviceCodeError as exc:
             raise LoginPrerequisiteError(f"cannot discover the authorization server at {server}: {exc}") from exc
-        device_url = meta.get("device_authorization_endpoint")
-        if not isinstance(device_url, str) or not device_url:
+        try:
+            device_url = metadata_endpoint(meta, "device_authorization_endpoint", server)
+        except DeviceCodeError as exc:
+            raise LoginPrerequisiteError(str(exc)) from exc
+        if device_url is None:
             raise LoginPrerequisiteError("server metadata has no device_authorization_endpoint (enable Oauth2Provider)")
         verifier, challenge = make_pkce_pair()
         try:
@@ -293,8 +361,8 @@ async def _login_flow(server: str, client_id: str, scopes: List[str], open_brows
         if open_browser:
             webbrowser.open(authorization.verification_uri_complete or authorization.verification_uri)
 
-        token_url = meta.get("token_endpoint")
-        if not isinstance(token_url, str) or not token_url:
+        token_url = metadata_endpoint(meta, "token_endpoint", server)
+        if token_url is None:
             raise DeviceCodeError("invalid_metadata", "server metadata has no token_endpoint")
         token = await poll_device_token(
             session,
@@ -310,8 +378,8 @@ async def _login_flow(server: str, client_id: str, scopes: List[str], open_brows
         if not isinstance(token_type, str) or not token_type:
             raise DeviceCodeError("invalid_response", "device token response has invalid token_type")
 
-        userinfo_url = meta.get("userinfo_endpoint")
-        if not isinstance(userinfo_url, str) or not userinfo_url:
+        userinfo_url = metadata_endpoint(meta, "userinfo_endpoint", server)
+        if userinfo_url is None:
             raise DeviceCodeError("invalid_metadata", "server metadata has no userinfo_endpoint")
         try:
             async with session.get(userinfo_url, headers={"Authorization": f"{token_type} {access_token}"}) as response:
@@ -354,8 +422,22 @@ async def _login_flow(server: str, client_id: str, scopes: List[str], open_brows
 @click.option("--client-id", envvar="PARROT_CLI_CLIENT_ID", default=DEFAULT_CLIENT_ID, show_default=True)
 @click.option("--scopes", default=None, help="Space- or comma-separated scopes (default: openid profile email).")
 @click.option("--no-browser", is_flag=True, default=False, help="Print the verification URL instead of opening it.")
-def login(server: str, client_id: str, scopes: Optional[str], no_browser: bool) -> None:
+@click.option(
+    "--allow-insecure-http",
+    is_flag=True,
+    default=False,
+    help="Allow a plaintext http:// --server that is not loopback (tokens cross the network unencrypted).",
+)
+def login(server: str, client_id: str, scopes: Optional[str], no_browser: bool, allow_insecure_http: bool) -> None:
     """Log in with the RFC 8628 device grant and store ~/.parrot/login.json (0600)."""
+    if is_insecure_remote_http(server):
+        if not allow_insecure_http:
+            click.echo(
+                f"Error: refusing plaintext http:// server {server}; use https:// " "or pass --allow-insecure-http.",
+                err=True,
+            )
+            sys.exit(2)
+        click.echo(f"Warning: logging in over plaintext http:// to {server}.", err=True)
     wanted = scopes.replace(",", " ").split() if scopes else list(DEFAULT_SCOPES)
     store = LoginStore()
     try:
@@ -373,8 +455,8 @@ async def _revoke_login(record: LoginRecord) -> None:
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
             meta = await discover_authorization_server(session, record.server_url)
-            revocation_url = meta.get("revocation_endpoint")
-            if not isinstance(revocation_url, str) or not revocation_url:
+            revocation_url = metadata_endpoint(meta, "revocation_endpoint", record.server_url)
+            if revocation_url is None:
                 return
             token = record.refresh_token or record.access_token
             async with session.post(
@@ -397,10 +479,12 @@ def logout() -> None:
     if record is not None:
         asyncio.run(_revoke_login(record))
     store.delete()
-    try:
-        store.cache_path.unlink()
-    except FileNotFoundError:
-        pass
+    cache_lock = store.cache_path.with_name(store.cache_path.name + ".lock")  # ConnectionCache.lock_path
+    for path in (store.cache_path, cache_lock):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 async def _fill_from_me(store: LoginStore, record: LoginRecord) -> LoginRecord:

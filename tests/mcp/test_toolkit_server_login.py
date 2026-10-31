@@ -202,3 +202,62 @@ def test_mcp_local_login_file_option_reaches_factory(tmp_path, monkeypatch):
     assert captured["name"] == "stub"
     assert captured["login_file"] == login_file
     assert captured["overrides"] == {}
+
+
+# ── TASK-5084 (issue:73db45b2286a d): the owned ServerConnectionsClient is closed ──
+
+
+def _count_client_closes(monkeypatch) -> list:
+    """Record every ServerConnectionsClient.close() call."""
+    closes: list = []
+
+    async def close(self):
+        closes.append(self)
+
+    monkeypatch.setattr("parrot.auth.oauth2.remote_client.ServerConnectionsClient.close", close)
+    return closes
+
+
+@pytest.mark.asyncio
+async def test_toolkit_server_closes_client_on_stop(tmp_path, monkeypatch):
+    """A bound broker keeps the client open for tool calls; stop() closes it exactly once."""
+    login_file = tmp_path / "login.json"
+    _write_login(login_file)
+    toolkit = CredentialToolkit()
+    server = _ToolkitStdioMCPServer(LocalServerConfig(name="test"), toolkit, login_file=login_file)
+    server.register_tools(toolkit.get_tools())
+    closes = _count_client_closes(monkeypatch)
+
+    async def resolve_with_roles(self, channel, channel_user_id):
+        return Principal(user_id="u", tenant_id="t", channel="cli", channel_user_id="login-user"), frozenset()
+
+    monkeypatch.setattr("parrot.cli.principal.CliPrincipalResolver.resolve_with_roles", resolve_with_roles)
+    monkeypatch.setattr("parrot.auth.oauth2.local_cache.build_cli_broker", lambda store, providers, *, client: object())
+
+    await server._bind_identity()
+    assert closes == []
+
+    await server.stop()
+    await server.stop()
+    assert len(closes) == 1
+
+
+@pytest.mark.asyncio
+async def test_toolkit_server_closes_client_when_principal_unresolved(tmp_path, monkeypatch):
+    """A failed identity binding closes the client immediately instead of leaking its session."""
+    login_file = tmp_path / "login.json"
+    _write_login(login_file)
+    toolkit = CredentialToolkit()
+    server = _ToolkitStdioMCPServer(LocalServerConfig(name="test"), toolkit, login_file=login_file)
+    server.register_tools(toolkit.get_tools())
+    closes = _count_client_closes(monkeypatch)
+
+    async def resolve_with_roles(self, channel, channel_user_id):
+        return None
+
+    monkeypatch.setattr("parrot.cli.principal.CliPrincipalResolver.resolve_with_roles", resolve_with_roles)
+
+    await server._bind_identity()
+    assert len(closes) == 1
+    await server.stop()
+    assert len(closes) == 1
