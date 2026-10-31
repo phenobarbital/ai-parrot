@@ -178,15 +178,12 @@ class O365DeviceCodeCredentialResolver(CredentialResolver):
         )
 
         if not result or "access_token" not in result:
-            raise PermissionError(
-                "O365 device-code flow did not return an access_token for "
-                f"user={user_id}"
-            )
+            raise PermissionError("O365 device-code flow did not return an access_token for " f"user={user_id}")
 
         await self._persist_token_set(principal, result, channel=channel)
         self.logger.info(
-            "O365DeviceCodeCredentialResolver: device-code flow succeeded "
-            "for user=%s", user_id,
+            "O365DeviceCodeCredentialResolver: device-code flow succeeded " "for user=%s",
+            user_id,
         )
         return str(result["access_token"])
 

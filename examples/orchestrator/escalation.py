@@ -6,6 +6,7 @@ without SMTP configured; set ``HELPDESK_EMAIL=real`` (and the
 async-notify env vars) to send actual emails through
 :class:`parrot.notifications.NotificationMixin`.
 """
+
 from __future__ import annotations
 
 import csv
@@ -22,7 +23,6 @@ from parrot.tools import tool
 
 from examples.orchestrator.rules import TIER1_EMAIL, TIER2_EMAIL
 
-
 _LOG = logging.getLogger("orchestrator.escalation")
 _HERE = Path(__file__).parent
 _LOG_DIR = _HERE / "logs"
@@ -36,8 +36,7 @@ def _new_ticket_id(prefix: str) -> str:
 
 
 def _append_ticket_row(row: dict[str, Any]) -> None:
-    header = ["ticket_id", "tier", "priority", "category", "employee_id",
-              "summary", "impact", "created_at"]
+    header = ["ticket_id", "tier", "priority", "category", "employee_id", "summary", "impact", "created_at"]
     write_header = not _TICKETS_CSV.exists()
     with _TICKETS_CSV.open("a", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=header)
@@ -81,24 +80,28 @@ async def _send_email(
             _LOG.info("Real email sent to %s (subject=%s)", recipient, subject)
             return f"email-sent:{result.get('id', 'ok')}"
         except Exception as exc:  # pragma: no cover - depends on infra
-            _LOG.warning(
-                "Real email failed (%s); falling back to dry-run.", exc
-            )
+            _LOG.warning("Real email failed (%s); falling back to dry-run.", exc)
 
     # Dry-run path — always reached when HELPDESK_EMAIL != "real" or when
     # the real backend errored out.
     _LOG.info(
         "📧 DRY-RUN EMAIL to %s | importance=%s | subject=%s",
-        recipient, importance, subject,
+        recipient,
+        importance,
+        subject,
     )
-    _LOG.info("---- body ----\n%s\n---- /body ----", body)  # CodeQL[py/clear-text-logging-sensitive-data] — dry-run demo, body is generated test content
-    _append_audit({
-        "event": "email_dry_run",
-        "recipient": recipient,
-        "subject": subject,
-        "importance": importance,
-        "body_preview": body[:200],
-    })
+    _LOG.info(
+        "---- body ----\n%s\n---- /body ----", body
+    )  # CodeQL[py/clear-text-logging-sensitive-data] — dry-run demo, body is generated test content
+    _append_audit(
+        {
+            "event": "email_dry_run",
+            "recipient": recipient,
+            "subject": subject,
+            "importance": importance,
+            "body_preview": body[:200],
+        }
+    )
     return f"email-dryrun:{recipient}"
 
 
@@ -116,26 +119,30 @@ def _create_jira_ticket(
     example we always log to CSV so the demo is reproducible.
     """
     ticket_id = _new_ticket_id("INC")
-    _append_ticket_row({
-        "ticket_id": ticket_id,
-        "tier": tier,
-        "priority": priority,
-        "category": category,
-        "employee_id": employee_id,
-        "summary": summary,
-        "impact": impact,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    })
-    _append_audit({
-        "event": "ticket_created",
-        "ticket_id": ticket_id,
-        "tier": tier,
-        "priority": priority,
-        "category": category,
-        "employee_id": employee_id,
-        "summary": summary,
-        "impact": impact,
-    })
+    _append_ticket_row(
+        {
+            "ticket_id": ticket_id,
+            "tier": tier,
+            "priority": priority,
+            "category": category,
+            "employee_id": employee_id,
+            "summary": summary,
+            "impact": impact,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    _append_audit(
+        {
+            "event": "ticket_created",
+            "ticket_id": ticket_id,
+            "tier": tier,
+            "priority": priority,
+            "category": category,
+            "employee_id": employee_id,
+            "summary": summary,
+            "impact": impact,
+        }
+    )
     return ticket_id
 
 
@@ -178,10 +185,7 @@ async def escalate_tier1(
         body=body,
         importance="normal",
     )
-    return (
-        f"Tier-1 incident {ticket_id} created. Team manager "
-        f"({TIER1_EMAIL}) notified ({email_result})."
-    )
+    return f"Tier-1 incident {ticket_id} created. Team manager " f"({TIER1_EMAIL}) notified ({email_result})."
 
 
 @tool
@@ -230,10 +234,7 @@ async def escalate_tier2(
         body=body,
         importance="high",
     )
-    return (
-        f"Tier-2 Sev-1 incident {ticket_id} created. On-call director "
-        f"({TIER2_EMAIL}) paged ({email_result})."
-    )
+    return f"Tier-2 Sev-1 incident {ticket_id} created. On-call director " f"({TIER2_EMAIL}) paged ({email_result})."
 
 
 def reset_logs() -> None:

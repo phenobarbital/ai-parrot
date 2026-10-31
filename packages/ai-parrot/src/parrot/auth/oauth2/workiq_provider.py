@@ -61,6 +61,7 @@ WORKIQ_PROVIDER_ID: str = "workiq"
 #: Vault provider prefix for Work IQ OBO tokens.
 _WORKIQ_VAULT_PREFIX: str = "workiq"
 
+
 class WorkIQOBOCredentialResolver(CredentialResolver):
     """Credential resolver that exchanges an Entra assertion for a Work IQ OBO token.
 
@@ -124,9 +125,7 @@ class WorkIQOBOCredentialResolver(CredentialResolver):
             The Work IQ OBO access token as a plain string, or ``None``.
         """
         # 1. Check vault for a cached Work IQ OBO token.
-        workiq_tokens: Optional[Dict[str, Any]] = await self._vault.read_tokens(
-            user_id, _WORKIQ_VAULT_PREFIX
-        )
+        workiq_tokens: Optional[Dict[str, Any]] = await self._vault.read_tokens(user_id, _WORKIQ_VAULT_PREFIX)
         if workiq_tokens and (token := workiq_tokens.get("access_token")):
             logger.debug(
                 "WorkIQOBOCredentialResolver: cached OBO token found for user=%s",
@@ -160,8 +159,7 @@ class WorkIQOBOCredentialResolver(CredentialResolver):
             access_token: Optional[str] = result.get("access_token")
             if not access_token:
                 logger.warning(
-                    "WorkIQOBOCredentialResolver: OBO exchange returned no access_token"
-                    " for user=%s",
+                    "WorkIQOBOCredentialResolver: OBO exchange returned no access_token" " for user=%s",
                     user_id,
                 )
                 return None
@@ -179,9 +177,7 @@ class WorkIQOBOCredentialResolver(CredentialResolver):
             return access_token
 
         except Exception:
-            logger.exception(
-                "WorkIQOBOCredentialResolver: OBO exchange failed for user=%s", user_id
-            )
+            logger.exception("WorkIQOBOCredentialResolver: OBO exchange failed for user=%s", user_id)
             return None
 
     @staticmethod

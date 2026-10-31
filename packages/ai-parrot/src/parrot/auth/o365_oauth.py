@@ -10,6 +10,7 @@ abstract base already handles the moving parts (PKCE, nonces, refresh
 locks, vault persistence). The Graph SDK is only used by the toolkit
 when calling actual API endpoints.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -92,12 +93,8 @@ class O365OAuthManager(AbstractOAuth2Manager):
     ) -> None:
         # Templated endpoints (per-instance, derived from tenant_id).
         self.tenant_id = tenant_id
-        self.authorization_url = (
-            f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize"
-        )
-        self.token_url = (
-            f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
-        )
+        self.authorization_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize"
+        self.token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
         super().__init__(
             client_id=client_id,
             client_secret=client_secret,
@@ -122,7 +119,9 @@ class O365OAuthManager(AbstractOAuth2Manager):
     # ------------------------------------------------------------------ exchange
 
     async def _exchange_code(
-        self, code: str, code_verifier: Optional[str],
+        self,
+        code: str,
+        code_verifier: Optional[str],
     ) -> Dict[str, Any]:
         data: Dict[str, str] = {
             "grant_type": "authorization_code",
@@ -143,9 +142,7 @@ class O365OAuthManager(AbstractOAuth2Manager):
         ) as response:
             if response.status != 200:
                 text = await response.text()
-                raise ValueError(
-                    f"O365 token exchange failed with status {response.status}: {text}"
-                )
+                raise ValueError(f"O365 token exchange failed with status {response.status}: {text}")
             return await response.json()
 
     async def _refresh_request(self, refresh_token: str) -> Dict[str, Any]:
@@ -221,9 +218,7 @@ class O365OAuthManager(AbstractOAuth2Manager):
         ) as response:
             if response.status != 200:
                 text = await response.text()
-                raise ValueError(
-                    f"Graph /me failed with status {response.status}: {text}"
-                )
+                raise ValueError(f"Graph /me failed with status {response.status}: {text}")
             return await response.json()
 
     def _build_token_set(

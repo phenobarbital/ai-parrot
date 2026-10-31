@@ -30,7 +30,6 @@ from parrot.cli.identity import (
 )
 from parrot.tools.abstract import AbstractTool, ToolResult, current_credential
 
-
 # ---------------------------------------------------------------------------
 # Fakes
 # ---------------------------------------------------------------------------
@@ -47,13 +46,15 @@ class FakeO365Client:
     async def interactive_login(self, scopes=None, open_browser=True, device_flow_callback=None, **kwargs):
         self.calls += 1
         if device_flow_callback:
-            device_flow_callback({
-                "verification_uri": "https://microsoft.com/devicelogin",
-                "user_code": "A1B2-C3D4",
-                "expires_in": 900,
-                "message": "To sign in, use a web browser to open the page "
-                           "https://microsoft.com/devicelogin and enter the code A1B2-C3D4.",
-            })
+            device_flow_callback(
+                {
+                    "verification_uri": "https://microsoft.com/devicelogin",
+                    "user_code": "A1B2-C3D4",
+                    "expires_in": 900,
+                    "message": "To sign in, use a web browser to open the page "
+                    "https://microsoft.com/devicelogin and enter the code A1B2-C3D4.",
+                }
+            )
         return {
             "access_token": "entra-access-tok",
             "refresh_token": "entra-refresh-tok",

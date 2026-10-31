@@ -7,7 +7,6 @@ from typing import Any, Optional
 
 from parrot.auth.principal import Principal
 
-
 # FEAT-777 D4: providers whose provider_user_id is an Entra object id.
 _ENTRA_PROVIDERS: tuple[str, ...] = ("msteams",)
 _CANONICAL_CHANNELS = frozenset({"cli", "a2a"})

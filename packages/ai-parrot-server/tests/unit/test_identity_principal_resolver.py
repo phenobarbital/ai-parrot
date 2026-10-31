@@ -12,6 +12,7 @@ from parrot.services.identity_principal import (
     IdentityPrincipalResolver,
 )
 
+
 class StubIdentityStore:
     """Small in-memory substitute for navigator-auth's ``IdentityStore``."""
 

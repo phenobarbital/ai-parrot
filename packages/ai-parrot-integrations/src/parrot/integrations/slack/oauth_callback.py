@@ -73,6 +73,7 @@ min-height:100vh;margin:0;background:#f5f5f5}}
 # Notifier
 # ---------------------------------------------------------------------------
 
+
 class SlackOAuthNotifier:
     """Push a DM confirmation to a Slack user after a successful Jira OAuth callback.
 
@@ -88,8 +89,7 @@ class SlackOAuthNotifier:
             from slack_sdk.web.async_client import AsyncWebClient
         except ImportError as exc:  # pragma: no cover
             raise ImportError(
-                "slack-sdk is required for SlackOAuthNotifier. "
-                "Install it with: pip install slack-sdk"
+                "slack-sdk is required for SlackOAuthNotifier. " "Install it with: pip install slack-sdk"
             ) from exc
 
         self._bot_token = bot_token
@@ -156,6 +156,7 @@ class SlackOAuthNotifier:
 # Callback handler helper
 # ---------------------------------------------------------------------------
 
+
 async def handle_slack_jira_callback(
     request: "web.Request",
     token_set: Optional["JiraTokenSet"],
@@ -196,9 +197,7 @@ async def handle_slack_jira_callback(
     # Handle Atlassian consent denial or other OAuth errors carried as query params.
     error_code = request.rel_url.query.get("error")
     if error_code:
-        error_description = request.rel_url.query.get(
-            "error_description", error_code
-        )
+        error_description = request.rel_url.query.get("error_description", error_code)
         logger.warning(
             "Slack Jira OAuth callback received error: %s — %s",
             error_code,
@@ -206,9 +205,7 @@ async def handle_slack_jira_callback(
         )
         team_id_err: str = _field("team_id")
         slack_user_id_err: str = _field("slack_user_id")
-        notifier_err: Optional[SlackOAuthNotifier] = request.app.get(
-            "slack_jira_oauth_notifier"
-        )
+        notifier_err: Optional[SlackOAuthNotifier] = request.app.get("slack_jira_oauth_notifier")
         if notifier_err is not None and slack_user_id_err:
             asyncio.create_task(
                 notifier_err.notify_failure(

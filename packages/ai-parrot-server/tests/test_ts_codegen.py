@@ -12,6 +12,7 @@ the rest of the suite (see ``test_admin_status.py``) — ``scripts`` is a
 namespace package rooted at the worktree/repo root, importable without an
 ``__init__.py``.
 """
+
 from __future__ import annotations
 
 import json
@@ -89,9 +90,7 @@ def test_bots_list_schema_allows_registry_shape():
         assert item.name == raw["name"]
         assert item.source == raw["source"]
 
-    response = BotsListResponse.model_validate(
-        {"agents": [db_item, registry_item], "total": 2}
-    )
+    response = BotsListResponse.model_validate({"agents": [db_item, registry_item], "total": 2})
     assert response.total == 2
     assert [a.source for a in response.agents] == ["database", "registry"]
 

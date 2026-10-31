@@ -1,4 +1,5 @@
 """Unit tests for AgentTalk AuthorizationRequired → AuthRequiredEnvelope translation."""
+
 from __future__ import annotations
 
 import json

@@ -21,6 +21,7 @@ Validates:
 ``FakeO365OAuthManager`` simulates the O365 OAuth manager for auth-URL generation.
 ``FakeO365Interface`` simulates O365Interface.acquire_token_on_behalf_of.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -42,7 +43,6 @@ from parrot.auth.principal import Principal, set_principal_resolver
 from parrot.security.audit_ledger import AuditLedger, LocalHMACSigner
 from parrot.tools.workiq_tool import WorkIQTool
 
-
 # ---------------------------------------------------------------------------
 # Fakes
 # ---------------------------------------------------------------------------
@@ -59,14 +59,10 @@ class FakeVaultTokenSync:
         # {user_id: {provider: {field: value}}}
         self._store: Dict[str, Dict[str, Dict[str, Any]]] = {}
 
-    async def read_tokens(
-        self, user_id: str, provider: str
-    ) -> Optional[Dict[str, Any]]:
+    async def read_tokens(self, user_id: str, provider: str) -> Optional[Dict[str, Any]]:
         return self._store.get(user_id, {}).get(provider)
 
-    async def store_tokens(
-        self, user_id: str, provider: str, tokens: Dict[str, Any]
-    ) -> None:
+    async def store_tokens(self, user_id: str, provider: str, tokens: Dict[str, Any]) -> None:
         self._store.setdefault(user_id, {}).setdefault(provider, {}).update(tokens)
 
     def grant_workiq(self, user_id: str, token: str = FAKE_WORKIQ_TOKEN) -> None:
@@ -89,9 +85,7 @@ class FakeO365OAuthManager:
         """Return the principal's shared O365 record, when present."""
         return self._tokens.get(user_id)
 
-    async def create_authorization_url(
-        self, channel: str, user_id: str
-    ):
+    async def create_authorization_url(self, channel: str, user_id: str):
         return self._auth_url, "state-nonce"
 
 
@@ -218,6 +212,7 @@ class TestWorkIQVertical:
     async def test_workiq_import(self):
         """from parrot.tools.workiq_tool import WorkIQTool works."""
         from parrot.tools.workiq_tool import WorkIQTool as _WorkIQTool
+
         assert _WorkIQTool.credential_provider == "workiq"
         assert _WorkIQTool.name == "workiq_ask"
 
@@ -230,9 +225,7 @@ class TestWorkIQVertical:
         ledger = AuditLedger(signer=LocalHMACSigner(b"workiq-test"))
         server, _ = _make_workiq_server(vault, o365, store, ledger)
 
-        task = await server.process_message(
-            _workiq_tool_message("alice@example.com")
-        )
+        task = await server.process_message(_workiq_tool_message("alice@example.com"))
 
         assert task.status.state == TaskState.INPUT_REQUIRED
         assert len(task.artifacts) == 1
@@ -254,9 +247,7 @@ class TestWorkIQVertical:
         ledger = AuditLedger(signer=LocalHMACSigner(b"workiq-test"))
         server, _ = _make_workiq_server(vault, o365, store, ledger)
 
-        task = await server.process_message(
-            _workiq_tool_message("bob@example.com")
-        )
+        task = await server.process_message(_workiq_tool_message("bob@example.com"))
 
         for art in task.artifacts:
             for part in art.parts:
@@ -280,17 +271,11 @@ class TestWorkIQVertical:
         ledger = AuditLedger(signer=LocalHMACSigner(b"workiq-test"))
         server, _ = _make_workiq_server(vault, o365, store, ledger, o365_manager)
 
-        task = await server.process_message(
-            _workiq_tool_message("carol@example.com", query="Summarise my emails")
-        )
+        task = await server.process_message(_workiq_tool_message("carol@example.com", query="Summarise my emails"))
 
         assert task.status.state == TaskState.COMPLETED
         # WorkIQTool result should appear in artifacts
-        assert any(
-            "Work IQ" in (p.text or "")
-            for art in task.artifacts
-            for p in art.parts
-        )
+        assert any("Work IQ" in (p.text or "") for art in task.artifacts for p in art.parts)
         # OBO was called
         assert o365.obo_call_count == 1
 
@@ -329,9 +314,7 @@ class TestWorkIQVertical:
         ledger = AuditLedger(signer=LocalHMACSigner(b"workiq-test"))
         server, _ = _make_workiq_server(vault, o365, store, ledger, o365_manager)
 
-        task = await server.process_message(
-            _workiq_tool_message("eve@example.com")
-        )
+        task = await server.process_message(_workiq_tool_message("eve@example.com"))
 
         assert task.status.state == TaskState.INPUT_REQUIRED
         assert ledger.entry_count == 0  # tool never ran
@@ -347,9 +330,7 @@ class TestWorkIQVertical:
         ledger = AuditLedger(signer=LocalHMACSigner(b"workiq-test"))
         server, _ = _make_workiq_server(vault, o365, store, ledger)
 
-        task = await server.process_message(
-            _workiq_tool_message("frank@example.com")
-        )
+        task = await server.process_message(_workiq_tool_message("frank@example.com"))
 
         assert task.status.state == TaskState.COMPLETED
         assert o365.obo_call_count == 0  # Cached token used, no new OBO
@@ -413,9 +394,7 @@ class TestWorkIQVertical:
         ledger = AuditLedger(signer=LocalHMACSigner(b"workiq-test"))
         server, _ = _make_workiq_server(vault, o365, store, ledger)
 
-        task = await server.process_message(
-            _workiq_tool_message("henry@example.com")
-        )
+        task = await server.process_message(_workiq_tool_message("henry@example.com"))
 
         assert task.status.state == TaskState.INPUT_REQUIRED
         assert ledger.entry_count == 0  # tool never ran

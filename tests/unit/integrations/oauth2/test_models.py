@@ -1,4 +1,5 @@
 """Unit tests for parrot.auth.oauth2.models."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -15,6 +16,7 @@ from parrot.auth.oauth2.models import (
     IntegrationDescriptor,
     UsersIntegrationRow,
 )
+
 
 class TestAuthRequiredEnvelope:
     """Tests for AuthRequiredEnvelope."""

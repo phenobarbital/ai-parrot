@@ -8,6 +8,7 @@ import pytest
 from parrot.auth.oauth2.o365_devicecode_provider import O365DeviceCodeCredentialResolver
 from parrot.auth.principal import Principal, set_principal_resolver
 
+
 class FakeO365Client:
     """Controllable stand-in for the O365 device-code client."""
 

@@ -13,7 +13,6 @@ from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-
 #: Lifecycle of a user's integration as shown in the UI.
 IntegrationStatus = Literal["connected", "disconnected", "needs_reconnect"]
 
