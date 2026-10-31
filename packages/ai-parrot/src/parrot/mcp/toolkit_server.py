@@ -176,7 +176,7 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
 
 def create_toolkit_mcp_server(
     name: str,
-    root: Path = Path.cwd(),
+    root: Optional[Path] = None,
     *,
     login_file: Optional[Path] = None,
     **overrides: Any,
@@ -209,7 +209,7 @@ def create_toolkit_mcp_server(
         ImportError: If the toolkit class cannot be resolved (e.g., missing
             extra like ai-parrot-tools[scraping]).
     """
-    root = Path(root)
+    root = Path(root) if root is not None else Path.cwd()
 
     # Load config — honoring the documented `config_path` override (the
     # `parrot mcp-local --config` flag). Needed because stdio MCP servers
