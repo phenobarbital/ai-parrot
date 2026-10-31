@@ -128,6 +128,7 @@ async def test_fail_closed(case: str, principal: Principal, monkeypatch: pytest.
     monkeypatch.setattr(authorizer, "_load_trusted_user", load_user)
     monkeypatch.setattr(authorizer, "_binding_is_current", binding)
     if case == "error":
+
         async def broken_evaluator(*_: Any) -> Any:
             raise RuntimeError("tenant evaluator unavailable")
 
