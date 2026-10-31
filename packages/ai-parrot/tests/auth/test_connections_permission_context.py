@@ -256,9 +256,7 @@ async def test_teams_service_pbac_allow_and_deny(provider: SimpleNamespace, tmp_
     policy_file.write_text(_POLICY_YAML)
     evaluator = PolicyEvaluator(cache_size=64, cache_ttl_seconds=30)
     evaluator.load_from_file(policy_file)
-    service = IntegrationsService(
-        permission_evaluator=pdp_permission_evaluator(SimpleNamespace(evaluator=evaluator))
-    )
+    service = IntegrationsService(permission_evaluator=pdp_permission_evaluator(SimpleNamespace(evaluator=evaluator)))
     context = _context()
     principal = _principal()
     direct = evaluator.check_access(
@@ -283,15 +281,9 @@ async def test_teams_service_pbac_allow_and_deny(provider: SimpleNamespace, tmp_
     )
     assert connect_direct.allowed is True, connect_direct
 
-    assert len(
-        await service.list_for_principal(
-            "nav-user", principal=principal, permission_context=context
-        )
-    ) == 1
+    assert len(await service.list_for_principal("nav-user", principal=principal, permission_context=context)) == 1
     assert (
-        await service.status(
-            "nav-user", "o365", principal=principal, permission_context=context
-        )
+        await service.status("nav-user", "o365", principal=principal, permission_context=context)
     ).provider == "o365"
     assert (
         await service.start_connect(
