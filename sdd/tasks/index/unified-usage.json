@@ -71,14 +71,14 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "none: creates attribution.py; first editor of events/client.py and context.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:24:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4983-attribution-model-event-carriage.md"
     },
@@ -89,14 +89,14 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "none: sole editor of models/basic.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:24:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4984-completion-usage-four-counters.md"
     },
@@ -107,7 +107,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -116,7 +116,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4983: reads AfterClientCallEvent.attribution and current_usage_attribution (events/client.py, observability/context.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:24:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4985-usage-record-sdd-attribution.md"
     },
@@ -127,7 +127,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -138,7 +138,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4983: same file events/client.py (inserts after its attribution field); TASK-4984: mirrors CompletionUsage counter names (models/basic.py); TASK-4985: same files recorders/models.py + subscriber.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:24:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4986-event-cache-counters-claude-forward.md"
     },
@@ -149,7 +149,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -158,7 +158,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4986: resolve_event_cost reads event.cache_read_tokens/cache_creation_tokens it adds; serializes edits to events/client.py, recorders/models.py, subscriber.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:24:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4987-cost-calculator-revisioning.md"
     },
@@ -169,7 +169,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -178,7 +178,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4987: cache_creation_per_1m is only read by the calculator it extends (cost/calculator.py); coverage script calls widened cost_usd",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:24:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4988-price-table-refresh-coverage.md"
     },
@@ -189,7 +189,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -198,7 +198,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4987: serializes edits to events/client.py, recorders/models.py, subscriber.py; imports PricedCost (cost/calculator.py); claude.py also edited by TASK-4986 (transitive)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:24:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4989-pricing-policy.md"
     },
@@ -209,7 +209,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -218,7 +218,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4985: persists UsageRecord.feat_id/attempt_uid it adds (recorders/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:24:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4990-spec-usage-recorder.md"
     },
@@ -229,7 +229,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -238,7 +238,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4990: build_attempt_row(spec_rows=...) consumes SpecUsageRecorder rows (recorders/spec_usage.py); UsageRecord.attempt_uid via TASK-4985",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:24:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4991-attempt-rollup-by-attempt-uid.md"
     },
@@ -249,7 +249,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -260,7 +260,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4983: UsageAttribution + usage_attribution(attribution=) (attribution.py, context.py); TASK-4990: SpecUsageRecorder/read_spec_usage (recorders/spec_usage.py); TASK-4991: build_attempt_row spec_rows kwarg (sdd_coder/telemetry.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:24:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4992-engine-attribution-binding.md"
     },
@@ -271,7 +271,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -282,7 +282,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4984: CompletionUsage.cache_read_tokens/reasoning_output_tokens (models/basic.py); TASK-4986: event counter + source_cost_usd fields (events/client.py); TASK-4989: event pricing_policy field (events/client.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:24:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4993-codex-usage-codec.md"
     },
@@ -293,7 +293,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -303,7 +303,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4989: sums UsageRecord.equivalent_usd it adds (recorders/models.py); TASK-4990: rows shape from SpecUsageRecorder (recorders/spec_usage.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:24:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4994-spec-usage-report.md"
     },
@@ -314,7 +314,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -323,7 +323,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4994: calls build_spec_usage_report (flows/dev_loop/usage_report.py); read_spec_usage via TASK-4990 (transitive)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:24:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4995-usage-cli-mcp.md"
     },
@@ -334,7 +334,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -344,7 +344,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4985: its test_metrics_label_whitelist.py must allow parrot.feat_id, and event.attribution reaches metrics via TASK-4983 (transitive); TASK-4989: applies PricingPolicy + event.pricing_policy (cost/policy.py) to the cost counter in subscribers/metrics.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:24:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4996-grafana-feature-agent-usage-dashboard.md"
     }
