@@ -39,7 +39,16 @@ subcommand and its MCP tool ship in one task. The MCP surface has golden manifes
 | `packages/ai-parrot/src/parrot/knowledge/wiki/transport.py` | MODIFY | `_SPECS` entry + dispatch branch |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/usage_operations.py` | CREATE | `UsageReportInput` + `op_usage_report` |
 | `packages/ai-parrot-tools/src/parrot_tools/wiki/tools.py` | MODIFY | `UsageReportTool` wrapper + registration |
-| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/*.json` | MODIFY | Regenerated goldens (core-mounted manifests) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/bulk_off.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/bulk_on.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/decisions.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/federated.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/ledger.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/minimal_local.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/remote_proxy.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/schema_absent.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/schema_present.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/vault.json` | MODIFY | Regenerated golden (only the new tool may appear) |
 | `packages/ai-parrot/tests/knowledge/wiki/test_cli_usage_report.py` | CREATE | CLI + MCP + AC-14 tests |
 
 ---
@@ -89,7 +98,16 @@ class WikiLintTool(AbstractTool): name = "wiki_lint"; description = (...); args_
     {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/transport.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/usage_operations.py", "action": "CREATE"},
     {"path": "packages/ai-parrot-tools/src/parrot_tools/wiki/tools.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/*.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/bulk_off.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/bulk_on.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/decisions.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/federated.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/ledger.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/minimal_local.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/remote_proxy.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/schema_absent.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/schema_present.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/vault.json", "action": "MODIFY"},
     {"path": "packages/ai-parrot/tests/knowledge/wiki/test_cli_usage_report.py", "action": "CREATE"}
   ],
   "contract_symbols": [
@@ -230,7 +248,7 @@ def test_no_usage_ledger_event_kind() -> None:
 See blueprint.
 
 ## Agent Instructions
-Six target entries (goldens are a glob). `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-tools/src`.
+Six target entries (goldens listed explicitly, one per manifest file). `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-tools/src`.
 
 ## Completion Note
 _(filled at close)_
