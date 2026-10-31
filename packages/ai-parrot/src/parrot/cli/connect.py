@@ -32,9 +32,10 @@ def _ts(value: Optional[str]) -> float:
 
 def _completed_after(status: Dict[str, Any], started_at: float) -> bool:
     """Return whether a connection was touched after this attempt started."""
-    return status.get("status") == "connected" and max(
-        _ts(status.get("connected_at")), _ts(status.get("updated_at"))
-    ) >= started_at
+    return (
+        status.get("status") == "connected"
+        and max(_ts(status.get("connected_at")), _ts(status.get("updated_at"))) >= started_at
+    )
 
 
 async def _run_device_flow(

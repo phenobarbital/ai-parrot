@@ -169,7 +169,9 @@ class _SlashContext:
 
     def __init__(self) -> None:
         self.dispatcher = SlashCommandDispatcher()
-        self.renderer = SimpleNamespace(print=lambda *args, **kwargs: None, render_error=lambda exc: pytest.fail(str(exc)))
+        self.renderer = SimpleNamespace(
+            print=lambda *args, **kwargs: None, render_error=lambda exc: pytest.fail(str(exc))
+        )
         self.suspended = False
         self.suspend_entries = 0
 
