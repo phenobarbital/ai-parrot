@@ -38,6 +38,8 @@ _ENV_SERVICE_IDENTITY_DISPLAY_NAME = "AGENTD_SERVICE_IDENTITY_DISPLAY_NAME"
 _ENV_SERVICE_IDENTITY_USER_ID = "AGENTD_SERVICE_IDENTITY_USER_ID"
 _ENV_SERVICE_IDENTITY_TENANT_ID = "AGENTD_SERVICE_IDENTITY_TENANT_ID"
 _ENV_SERVICE_IDENTITY_ROLES = "AGENTD_SERVICE_IDENTITY_ROLES"
+#: Set to a falsy token (0/false/no/off) to disable the peer login-file lookup (FEAT-774).
+_ENV_LOGIN_FILE_LOOKUP = "AGENTD_LOGIN_FILE_LOOKUP"
 
 #: Default NDJSON line-size limit (bytes) for the UDS server (spec §2).
 _DEFAULT_MAX_LINE_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -164,6 +166,9 @@ class ServiceIdentityConfig(BaseModel):
     user_id: str = "1001"
     tenant_id: str = "default"
     roles: frozenset[str] = Field(default_factory=frozenset)
+    login_file_lookup: bool = (
+        True  # FEAT-774: read the peer's ~/.parrot/login.json (AGENTD_LOGIN_FILE_LOOKUP=0 disables)
+    )
 
     @property
     def window_seconds(self) -> int:
@@ -193,6 +198,9 @@ class ServiceIdentityConfig(BaseModel):
             kwargs["user_id"] = value
         if value := os.environ.get(_ENV_SERVICE_IDENTITY_TENANT_ID):
             kwargs["tenant_id"] = value
+        lookup_raw = os.environ.get(_ENV_LOGIN_FILE_LOOKUP)
+        if lookup_raw is not None and lookup_raw.strip().lower() in {"0", "false", "no", "off"}:
+            kwargs["login_file_lookup"] = False
         return cls(**kwargs)
 
     def to_permission_context(self, channel: str = "agentd") -> PermissionContext:
