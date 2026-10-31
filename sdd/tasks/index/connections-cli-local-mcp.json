@@ -87,14 +87,14 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: creates parrot/auth/oauth2/device_code.py (DeviceAuthorization, make_pkce_pair, discover_authorization_server, request_device_authorization, request_device_token, poll_device_token) imported by TASK-4967 (manager device grant) and TASK-4968 (parrot login); touches no existing file",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4966-device-code-engine.md"
     },
@@ -105,7 +105,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -114,7 +114,7 @@
       "parallel": true,
       "parallelism_notes": "imports DeviceAuthorization, DeviceCodeError, request_device_authorization, request_device_token, SLOW_DOWN_INCREMENT_S from TASK-4966 (parrot/auth/oauth2/device_code.py); sole writer of descriptor.py and o365_devicecode_provider.py in this feature",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4967-descriptor-device-grant.md"
     },
@@ -125,7 +125,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -134,7 +134,7 @@
       "parallel": true,
       "parallelism_notes": "imports discover_authorization_server, request_device_authorization, poll_device_token, make_pkce_pair, DeviceCodeError from TASK-4966 (parrot/auth/oauth2/device_code.py); sole writer of parrot/cli/__init__.py in this feature (adds all six lazy entries)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4968-cli-login-store.md"
     },
@@ -145,14 +145,14 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: only edits FEAT-773 core files (oauth2/models.py, oauth2/events.py, oauth2/service.py) that no other wave-1 task touches; creates WhoAmI/PulledToken/NotConnected consumed by TASK-4970 and TASK-4972",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4969-service-cli-endpoints.md"
     },
@@ -163,7 +163,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -172,7 +172,7 @@
       "parallel": true,
       "parallelism_notes": "calls IntegrationsService.whoami/pull_access_token/complete_connect and catches NotConnected created by TASK-4969 (parrot/auth/oauth2/service.py, models.py); sole writer of manager/manager.py in this feature",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4970-connections-handler-cli-routes.md"
     },
@@ -183,7 +183,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -194,7 +194,7 @@
       "parallel": true,
       "parallelism_notes": "calls StandardOAuth2Manager.start_device_authorization/complete_device_authorization/_device_key from TASK-4967 (descriptor.py); modifies service.py after TASK-4969 and handlers/connections.py after TASK-4970 (same files, serialized)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4971-server-device-endpoints.md"
     },
@@ -205,7 +205,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -215,7 +215,7 @@
       "parallel": true,
       "parallelism_notes": "imports LoginStore, LoginRecord, refresh_login, LoginExpired from TASK-4968 (parrot/cli/login.py) and WhoAmI, PulledToken, NotConnected from TASK-4969 (parrot/auth/oauth2/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4972-remote-connections-client.md"
     },
@@ -226,7 +226,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -235,7 +235,7 @@
       "parallel": true,
       "parallelism_notes": "imports ServerConnectionsClient, NotConnected from TASK-4972 (parrot/auth/oauth2/remote_client.py) and LoginStore/CACHE_FILENAME from TASK-4968 (transitively done via TASK-4972)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4973-connection-cache-remote-resolver.md"
     },
@@ -246,7 +246,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -256,7 +256,7 @@
       "parallel": true,
       "parallelism_notes": "imports LoginStore and modifies parrot/cli/login.py created by TASK-4968 (adds whoami + roles fill at its `# roles/tenant ...` anchor); imports ServerConnectionsClient/NotLoggedIn/WhoAmI from TASK-4972 (parrot/auth/oauth2/remote_client.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4974-cli-principal-resolver.md"
     },
@@ -267,14 +267,14 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: only edits parrot/mcp/adapter.py and server_base.py (no other task touches them); uses the existing FEAT-773 to_payload() on both auth exceptions",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4975-mcp-adapter-execution-context.md"
     },
@@ -285,7 +285,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -296,7 +296,7 @@
       "parallel": true,
       "parallelism_notes": "uses ToolExecutionContext + mutable adapter.execution_context from TASK-4975 (parrot/mcp/adapter.py); CliPrincipalResolver/build_cli_permission_context from TASK-4974 (parrot/cli/principal.py); build_cli_broker from TASK-4973 (parrot/auth/oauth2/local_cache.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4976-toolkit-server-login-binding.md"
     },
@@ -307,7 +307,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -316,7 +316,7 @@
       "parallel": true,
       "parallelism_notes": "imports ServerConnectionsClient/ConnectAttempt from TASK-4972 and ConnectionCache/CachedConnection/open_connection_cache from TASK-4973 (parrot/auth/oauth2/local_cache.py; TASK-4972 is transitive); cli/__init__.py entries were already added by TASK-4968",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4977-parrot-connect-commands.md"
     },
@@ -327,7 +327,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -337,7 +337,7 @@
       "parallel": true,
       "parallelism_notes": "imports CliPrincipalResolver/build_cli_permission_context from TASK-4974 (parrot/cli/principal.py) and build_cli_broker from TASK-4973 (parrot/auth/oauth2/local_cache.py); LoginStore/refresh_login from TASK-4968 (transitive); edits test_cli_devicecode_e2e.py before TASK-4981 rewrites it",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4978-repl-identity-regimes.md"
     },
@@ -348,7 +348,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -357,7 +357,7 @@
       "parallel": true,
       "parallelism_notes": "imports CliPrincipalResolver/build_cli_permission_context from TASK-4974 (parrot/cli/principal.py), LoginStore.for_uid from TASK-4968 and ServerConnectionsClient from TASK-4972 (both transitive via TASK-4974); sole writer of agentd/server.py and agentd/config.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4979-agentd-login-file-principal.md"
     },
@@ -368,7 +368,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -377,7 +377,7 @@
       "parallel": true,
       "parallelism_notes": "calls run_connect from TASK-4977 (parrot/cli/connect.py) and re-exports parse_pasted_redirect from TASK-4977 (parrot/auth/oauth2/paste.py); uses open_connection_cache/RemoteConnectionResolver from TASK-4973 (transitive); sole writer of the Jira files",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4980-jira-connect-convergence.md"
     },
@@ -388,7 +388,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -400,7 +400,7 @@
       "parallel": true,
       "parallelism_notes": "exercises the stdio binding from TASK-4976, run_connect from TASK-4977 and the device endpoints from TASK-4971; rewrites test_cli_devicecode_e2e.py after TASK-4978 edited it (same file, serialized)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4981-cli-connections-e2e.md"
     },
@@ -411,7 +411,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -422,7 +422,7 @@
       "parallel": true,
       "parallelism_notes": "documents the final behaviour of TASK-4979 (agentd), TASK-4980 (Jira aliases) and TASK-4981 (verified e2e flows); touches only docs/ + one docs smoke test",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T00:30:14+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4982-cli-connections-docs.md"
     }
