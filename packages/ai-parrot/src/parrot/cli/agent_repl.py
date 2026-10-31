@@ -204,8 +204,7 @@ async def _run(
         raise SystemExit(2)
     if not server and login and user_id:
         console.print(
-            "[bold red]Error:[/bold red] --user is not allowed when logged in; "
-            "identity comes from `parrot login`."
+            "[bold red]Error:[/bold red] --user is not allowed when logged in; " "identity comes from `parrot login`."
         )
         raise SystemExit(2)
 

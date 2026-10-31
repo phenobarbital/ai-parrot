@@ -2,6 +2,7 @@
 
 The CLI principal now comes from `parrot login` (see :mod:`parrot.cli.principal`).
 """
+
 from __future__ import annotations
 
 from parrot.cli.principal import build_cli_permission_context

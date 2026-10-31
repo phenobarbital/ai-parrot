@@ -1,4 +1,5 @@
 """Tests for the FEAT-774 CLI identity hard cut."""
+
 from __future__ import annotations
 
 import parrot.cli.identity as identity
