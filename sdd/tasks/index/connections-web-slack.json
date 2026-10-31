@@ -519,7 +519,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -530,8 +530,9 @@
       "parallelism_notes": "exclusive: regenerates shared generated code (ui/schemas/, ui/src/lib/types/generated/ via pnpm generate). needs ChannelLinkPreview + AuthRequiredEnvelope.retry_safe from TASK-5035 (parrot/auth/oauth2/models.py); needs EnableResponse removed by TASK-5048 (models.py) so the exported set is final",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5052-ts-types-connection-models.md"
+      "completed_at": "2026-10-31T02:25:08+00:00",
+      "file": "sdd/tasks/completed/TASK-5052-ts-types-connection-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5053",
