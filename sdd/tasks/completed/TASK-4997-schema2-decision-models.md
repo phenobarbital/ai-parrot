@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-784 — SDD Decision Audit
 **Spec**: `sdd/specs/sdd-decision-audit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -344,4 +344,11 @@ See the `test_models.py` blueprint block above (spec §4 `test_schema1_record_pa
 
 ## Completion Note
 
-*(filled in by the implementing agent)*
+Implemented by codex/gpt-5.6-terra (attempt 2, attempt_uid b06955bebe304328a1e3ebc286196ef8; attempt 1 by the same seat completed but was superseded).
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 2 · Duration: 283s · Tokens: n/a
+
+- Orchestrator review: diff matches the blueprint; no fix commits. review id coder-review:4dca55db371318fdd705aa16.
+- Acceptance-criteria note: the AC says "22 new constants", but the blueprint lists 21 (the 22nd is the existing
+  `ADR_SCHEMA_UNSUPPORTED`, deliberately not re-spelled). The delivery matches the blueprint — the "22" is a task count slip.
+- Merge-tier validation: 203 passed, 1 failed — `test_backend_parity.py::test_backend_parity_is_reported`, which fails
+  identically on origin/dev (needs live ArangoDB/Postgres or ADR_PARITY_ALLOW_PARTIAL=1). Pre-existing, not introduced here.

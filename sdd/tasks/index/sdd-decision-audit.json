@@ -49,7 +49,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -57,8 +57,9 @@
       "parallelism_notes": "root task: no inbound edge — creates DecisionRef/DecisionTarget, schema-2 fields and every new error code in models.py",
       "assigned_to": null,
       "started_at": "2026-10-31T00:37:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4997-schema2-decision-models.md"
+      "completed_at": "2026-10-31T00:47:31+00:00",
+      "file": "sdd/tasks/completed/TASK-4997-schema2-decision-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4998",
@@ -333,7 +334,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -341,8 +342,9 @@
       "parallelism_notes": "docs-only root task: template and entry-point text; the gate script name/flags are fixed by the spec, no symbol imported; prose references check_spec_consequences.py (TASK-5010) and docs/sdd/decision-audit.md (TASK-5013) by name only — no import or file consumption, so no edge",
       "assigned_to": null,
       "started_at": "2026-10-31T00:37:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5011-sdd-entry-points.md"
+      "completed_at": "2026-10-31T00:47:31+00:00",
+      "file": "sdd/tasks/completed/TASK-5011-sdd-entry-points.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5012",
