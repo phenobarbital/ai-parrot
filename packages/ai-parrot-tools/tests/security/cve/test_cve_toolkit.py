@@ -17,6 +17,7 @@ from parrot_tools.security.cve.toolkit import (
     NVD_CVE_URL,
     OSV_QUERY_URL,
     OSV_VULN_URL,
+    CVEResponseError,
     CVEToolkit,
 )
 
@@ -210,3 +211,109 @@ async def test_search_cves_non_positive_limit_returns_nothing(limit: int) -> Non
     _install(tk, {OSV_QUERY_URL: (200, body)})
     result = await tk.search_cves("requests", "PyPI", limit=limit)
     assert result["records"] == []
+
+
+# --------------------------------------------------- malformed bodies / size cap (issue:b26901f15d12)
+
+
+def _nvd_with(mutate) -> dict[str, Any]:
+    body = _fx(f"nvd_{CVE}.json")
+    mutate(body["vulnerabilities"][0]["cve"])
+    return body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda cve: cve["metrics"]["cvssMetricV31"][0]["cvssData"].__setitem__("baseScore", None),
+        lambda cve: cve["metrics"]["cvssMetricV31"][0]["cvssData"].__setitem__("baseScore", "high"),
+        lambda cve: cve["metrics"].__setitem__("cvssMetricV31", ["not-a-dict"]),
+        lambda cve: cve.__setitem__("weaknesses", [{"description": ["CWE-1"]}]),
+        lambda cve: cve.__setitem__("references", [42]),
+    ],
+)
+async def test_malformed_nvd_body_degrades_to_osv(mutate, caplog: pytest.LogCaptureFixture) -> None:
+    tk = CVEToolkit()
+    osv_only = await _lookup_with(CVEToolkit(enrich_nvd=False), _default_routes())
+    _install(tk, _default_routes(nvd=(200, _nvd_with(mutate))))
+    rec = await tk.lookup_cve(CVE)
+    assert rec["sources"] == ["osv"]
+    assert rec["cvss"] == osv_only["cvss"] and rec["references"] == osv_only["references"]
+    assert rec["cwe_ids"] == osv_only["cwe_ids"]
+    assert any("malformed" in r.getMessage() for r in caplog.records)
+
+
+async def _lookup_with(tk: CVEToolkit, routes: dict) -> dict[str, Any]:
+    _install(tk, routes)
+    return await tk.lookup_cve(CVE)
+
+
+@pytest.mark.asyncio
+async def test_malformed_osv_lookup_raises_toolkit_error() -> None:
+    tk = CVEToolkit(enrich_nvd=False)
+    osv = _fx(f"osv_{CVE}.json")
+    osv["affected"] = ["not-a-dict"]
+    _install(tk, {OSV_VULN_URL.format(cve_id=CVE): (200, osv)})
+    with pytest.raises(CVEToolkitError, match="malformed OSV"):
+        await tk.lookup_cve(CVE)
+
+
+@pytest.mark.asyncio
+async def test_search_cves_skips_malformed_record() -> None:
+    tk = CVEToolkit()
+    bad = {"id": "CVE-2026-0002", "affected": ["not-a-dict"]}
+    _install(tk, {OSV_QUERY_URL: (200, {"vulns": [bad, _fx(f"osv_{CVE}.json")]})})
+    res = await tk.search_cves("requests", "PyPI")
+    assert [r["id"] for r in res["records"]] == [CVE]
+
+
+@pytest.mark.asyncio
+async def test_malformed_epss_entry_is_ignored() -> None:
+    tk = CVEToolkit(enrich_nvd=False, enrich_epss=True)
+    routes = _default_routes()
+    routes[EPSS_URL.format(cve_id=CVE)] = (200, {"data": ["not-a-dict"]})
+    rec = await _lookup_with(tk, routes)
+    assert rec["epss"] is None and rec["sources"] == ["osv"]
+
+
+class _FakeContent:
+    def __init__(self, chunks: list[bytes]) -> None:
+        self._chunks = chunks
+        self.read_chunks = 0
+
+    async def iter_chunked(self, size: int):
+        for chunk in self._chunks:
+            self.read_chunks += 1
+            yield chunk
+
+
+class _FakeResponse:
+    def __init__(self, chunks: list[bytes], content_length: int | None = None) -> None:
+        self.content = _FakeContent(chunks)
+        self.content_length = content_length
+
+
+@pytest.mark.asyncio
+async def test_response_size_cap() -> None:
+    tk = CVEToolkit(max_response_bytes=10)
+    assert await tk._read_capped(_FakeResponse([b"12345", b"67890"]), "u") == b"1234567890"
+    with pytest.raises(CVEResponseError, match="exceeds"):
+        await tk._read_capped(_FakeResponse([b"12345", b"67890", b"1", b"never-read"]), "u")
+    declared = _FakeResponse([b"x"], content_length=11)
+    with pytest.raises(CVEResponseError, match="limit 10"):
+        await tk._read_capped(declared, "u")
+    assert declared.content.read_chunks == 0
+
+
+def test_decode_body_contract() -> None:
+    decode = CVEToolkit._decode_body
+    assert decode(b'{"a": 1}', 200, "u") == {"a": 1}
+    assert decode(b"  ", 200, "u") == {}
+    assert decode(b"<html>busy</html>", 503, "u") == {}
+    assert decode(b"[1, 2]", 404, "u") == {}
+    with pytest.raises(CVEResponseError, match="not valid JSON"):
+        decode(b"<html>", 200, "u")
+    with pytest.raises(CVEResponseError, match="JSON list"):
+        decode(b"[1, 2]", 200, "u")
+    assert issubclass(CVEResponseError, CVEToolkitError) and issubclass(CVEResponseError, ValueError)
