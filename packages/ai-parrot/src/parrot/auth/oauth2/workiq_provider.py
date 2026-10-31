@@ -37,6 +37,7 @@ Registration::
     register_oauth2_provider(provider)
     a2a_server.wire_workiq_resolver(provider.credential_resolver())
 """
+
 from __future__ import annotations
 
 import logging
