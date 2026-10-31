@@ -1,5 +1,35 @@
 [
   {
+    "description": "Report tokens and cost for one SDD feature, grouped by task, model or seat.",
+    "mount": "core",
+    "name": "usage_report",
+    "schema": {
+      "description": "Input for usage_report.",
+      "properties": {
+        "by": {
+          "default": "task",
+          "enum": [
+            "task",
+            "model",
+            "seat"
+          ],
+          "title": "By",
+          "type": "string"
+        },
+        "feat_id": {
+          "pattern": "^FEAT-\\d+$",
+          "title": "Feat Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "feat_id"
+      ],
+      "title": "UsageReportInput",
+      "type": "object"
+    }
+  },
+  {
     "description": "Ingest (or refresh) an Obsidian vault into the wiki knowledge base: one page per note, wikilink/embed/tag edges, FTS-searchable via wiki_query. Incremental \u2014 unchanged notes are skipped unless force=true. No LLM calls.",
     "mount": "vault",
     "name": "vault_ingest",
