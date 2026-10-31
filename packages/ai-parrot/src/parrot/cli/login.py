@@ -146,9 +146,7 @@ class LoginStore:
     def save(self, record: LoginRecord) -> None:
         """Atomically write a login record under the lock file with mode 0600."""
         with self._locked():
-            fd, temporary_name = tempfile.mkstemp(
-                dir=str(self.path.parent), prefix=self.path.name + ".", suffix=".tmp"
-            )
+            fd, temporary_name = tempfile.mkstemp(dir=str(self.path.parent), prefix=self.path.name + ".", suffix=".tmp")
             try:
                 os.fchmod(fd, 0o600)
                 with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -293,9 +291,7 @@ async def _login_flow(server: str, client_id: str, scopes: List[str], open_brows
         if not isinstance(userinfo_url, str) or not userinfo_url:
             raise DeviceCodeError("invalid_metadata", "server metadata has no userinfo_endpoint")
         try:
-            async with session.get(
-                userinfo_url, headers={"Authorization": f"{token_type} {access_token}"}
-            ) as response:
+            async with session.get(userinfo_url, headers={"Authorization": f"{token_type} {access_token}"}) as response:
                 if response.status != 200:
                     raise DeviceCodeError("userinfo_failed", f"userinfo request failed with HTTP {response.status}")
                 identity = _json_object(await response.json(), operation="userinfo request")

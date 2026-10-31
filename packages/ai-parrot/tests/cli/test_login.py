@@ -111,9 +111,7 @@ class _FakeAuthorizationServer:
             assert data == {"grant_type": "refresh_token", "refresh_token": "rt", "client_id": "parrot-cli"}
             self.refreshes += 1
             if self.refreshes == 1:
-                return _FakeResponse(
-                    200, {"access_token": "new-at", "refresh_token": "new-rt", "expires_in": 7200}
-                )
+                return _FakeResponse(200, {"access_token": "new-at", "refresh_token": "new-rt", "expires_in": 7200})
             return _FakeResponse(400, {"error": "invalid_grant"})
         if url == f"{self.base_url}/revoke":
             assert data == {"token": "rt", "client_id": "parrot-cli"}
