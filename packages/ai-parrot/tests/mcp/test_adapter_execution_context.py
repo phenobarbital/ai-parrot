@@ -90,7 +90,11 @@ async def test_adapter_auth_required_envelope_fields_survive(exception, capsys):
 
     adapter = MCPToolAdapter(AuthTool())
     result = await adapter.execute({})
-    payload = exception.to_payload(tool_name=adapter.tool.name) if isinstance(exception, CredentialRequired) else exception.to_payload()
+    payload = (
+        exception.to_payload(tool_name=adapter.tool.name)
+        if isinstance(exception, CredentialRequired)
+        else exception.to_payload()
+    )
 
     assert result == {
         "isError": True,
