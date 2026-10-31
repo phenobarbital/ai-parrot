@@ -10,7 +10,7 @@ tags: [usage-metrics, cost-attribution, observability, telemetry, sdd-coder, ote
 **Feature ID**: FEAT-783
 **Date**: 2026-10-31
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 
 ---
@@ -463,6 +463,24 @@ tests:
 - packages/ai-parrot/tests/flows/dev_loop/test_cli_dispatcher_usage_events.py
 - packages/ai-parrot/tests/flows/dev_loop/test_codex_dispatcher.py
 - packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_telemetry.py
+- packages/ai-parrot/tests/observability/test_attribution_snapshot.py
+- packages/ai-parrot/tests/unit/models/test_completion_usage_cache_counters.py
+- packages/ai-parrot/tests/observability/test_usage_record_sdd_attribution.py
+- packages/ai-parrot/tests/unit/observability/test_metrics_label_whitelist.py
+- packages/ai-parrot/tests/unit/observability/test_usage_cache_counters_carriage.py
+- packages/ai-parrot/tests/unit/observability/test_cost_revisioning.py
+- packages/ai-parrot/tests/unit/observability/test_client_event_tenant_cost.py
+- tests/sdd_scripts/test_price_coverage.py
+- packages/ai-parrot/tests/unit/observability/test_pricing_policy.py
+- packages/ai-parrot/tests/unit/observability/test_spec_usage_recorder.py
+- packages/ai-parrot/tests/unit/observability/test_config.py
+- packages/ai-parrot/tests/observability/test_run_ledger_attempt_cycles.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_attempt_row_from_spec_rows.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_usage_attribution.py
+- packages/ai-parrot/tests/flows/dev_loop/test_codex_usage_codec.py
+- packages/ai-parrot/tests/flows/dev_loop/test_spec_usage_report.py
+- packages/ai-parrot/tests/knowledge/wiki/test_cli_usage_report.py
+- packages/ai-parrot/tests/knowledge/wiki/test_mcp_manifest_golden.py
 markers: none
 
 ### Test Data / Fixtures
@@ -665,3 +683,4 @@ carried only the accepted exploration document and verified code anchors.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-31 | Jesus Lara | Initial spec from the FEAT-783 research proposal; 9 design-research suggestions folded in |
+| 0.2 | 2026-10-31 | Jesus Lara | Approved; §4 Validation Contract extended with the per-task test files from /sdd-task (TASK-4983..4995) |
