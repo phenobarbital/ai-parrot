@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-31T00:30:04+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-31T11:08:42+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -49,16 +49,17 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: no inbound edge — creates DecisionRef/DecisionTarget, schema-2 fields and every new error code in models.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4997-schema2-decision-models.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T00:47:31+00:00",
+      "file": "sdd/tasks/completed/TASK-4997-schema2-decision-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4998",
@@ -67,7 +68,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -76,9 +77,10 @@
       "parallel": true,
       "parallelism_notes": "needs schema_version Literal[1, 2] and ADR_INVALID_ID from TASK-4997 (decisions/models.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4998-codec-v2-envelope.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T00:52:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4998-codec-v2-envelope.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4999",
@@ -87,7 +89,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -97,9 +99,10 @@
       "parallel": true,
       "parallelism_notes": "imports DecisionRef + SPEC_* codes from TASK-4997 (models.py) and spec_decision_id from TASK-4998 (codec.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4999-spec-decisions-parser.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T00:55:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4999-spec-decisions-parser.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5000",
@@ -108,7 +111,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -117,9 +120,10 @@
       "parallel": true,
       "parallelism_notes": "imports TAXONOMY_INVALID added by TASK-4997 (models.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5000-subsystem-taxonomy.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T00:52:37+00:00",
+      "file": "sdd/tasks/completed/TASK-5000-subsystem-taxonomy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5001",
@@ -128,7 +132,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -138,9 +142,10 @@
       "parallel": true,
       "parallelism_notes": "imports DecisionRef/APPROVAL_* from TASK-4997 and canonical_block_bytes/parse_spec_decisions from TASK-4999 (spec_entries.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5001-approval-manifest-adapter.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T01:00:28+00:00",
+      "file": "sdd/tasks/completed/TASK-5001-approval-manifest-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5002",
@@ -149,7 +154,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -158,9 +163,10 @@
       "parallel": true,
       "parallelism_notes": "imports DecisionTarget and TARGET_*/SCOPE_INCOMPLETE from TASK-4997 (models.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5002-target-resolver-scope.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T00:52:37+00:00",
+      "file": "sdd/tasks/completed/TASK-5002-target-resolver-scope.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5003",
@@ -169,7 +175,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -179,9 +185,10 @@
       "parallel": true,
       "parallelism_notes": "consumes Taxonomy from TASK-5000 (taxonomy.py) and ApprovalManifest/ApprovalAdapter from TASK-5001 (approvals.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5003-inventory-snapshot-eligibility.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T01:07:07+00:00",
+      "file": "sdd/tasks/completed/TASK-5003-inventory-snapshot-eligibility.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5004",
@@ -190,7 +197,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -199,9 +206,10 @@
       "parallel": true,
       "parallelism_notes": "imports SnapshotManifest from TASK-5003 (inventory.py) into new consequences.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5004-consequence-report-models.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T01:10:05+00:00",
+      "file": "sdd/tasks/completed/TASK-5004-consequence-report-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5005",
@@ -210,7 +218,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -221,9 +229,10 @@
       "parallel": true,
       "parallelism_notes": "modifies consequences.py created by TASK-5004; calls parse_spec_decisions (TASK-4999 spec_entries.py) and TargetResolver (TASK-5002 scope.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5005-consequence-service.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T01:19:43+00:00",
+      "file": "sdd/tasks/completed/TASK-5005-consequence-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5006",
@@ -232,7 +241,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -241,9 +250,10 @@
       "parallel": true,
       "parallelism_notes": "imports ConsequenceService/ConsequenceReport/GoverningDossier from TASK-5005 (consequences.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5006-section-renderer-check.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T01:25:38+00:00",
+      "file": "sdd/tasks/completed/TASK-5006-section-renderer-check.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5007",
@@ -252,7 +262,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -261,9 +271,10 @@
       "parallel": true,
       "parallelism_notes": "BatchPublisher replays via ConsequenceService.evaluate from TASK-5005 (consequences.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5007-batch-publisher-ingest.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T01:25:44+00:00",
+      "file": "sdd/tasks/completed/TASK-5007-batch-publisher-ingest.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5008",
@@ -272,7 +283,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -282,9 +293,10 @@
       "parallel": false,
       "parallelism_notes": "exclusive: regenerates shared golden MCP manifests other tests load; imports render_spec/check_spec from TASK-5006 and exports BatchPublisher from TASK-5007; mentions sdd/taxonomy/subsystems.yaml only as the configured-detection path constant (tests use tmp repos) — not a use of TASK-5012's file",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5008-spec-audit-mcp-operation.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T01:35:01+00:00",
+      "file": "sdd/tasks/completed/TASK-5008-spec-audit-mcp-operation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5009",
@@ -293,7 +305,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -302,9 +314,10 @@
       "parallel": false,
       "parallelism_notes": "exclusive: regenerates shared golden cli_surface.json; uses open_consequence_service from TASK-5008 (spec_audit.py); mentions sdd/decisions/approvals.jsonl only as a default path — tests use tmp repos, not TASK-5013's file",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5009-spec-cli.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T01:42:43+00:00",
+      "file": "sdd/tasks/completed/TASK-5009-spec-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5010",
@@ -313,7 +326,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -322,9 +335,10 @@
       "parallel": true,
       "parallelism_notes": "uses is_configured/open_consequence_service from TASK-5008 (decisions/spec_audit.py); mentions sdd/taxonomy/subsystems.yaml only as the unconfigured/configured detection path — tests build tmp repos, not a use of TASK-5012's file",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5010-gate-script.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T01:47:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5010-gate-script.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5011",
@@ -333,16 +347,17 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "docs-only root task: template and entry-point text; the gate script name/flags are fixed by the spec, no symbol imported; prose references check_spec_consequences.py (TASK-5010) and docs/sdd/decision-audit.md (TASK-5013) by name only — no import or file consumption, so no edge",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5011-sdd-entry-points.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T00:47:31+00:00",
+      "file": "sdd/tasks/completed/TASK-5011-sdd-entry-points.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5012",
@@ -351,7 +366,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -362,9 +377,10 @@
       "parallel": true,
       "parallelism_notes": "seed test parses metadata with parse_spec_decisions (TASK-4999), loads Taxonomy (TASK-5000), resolves targets with TargetResolver (TASK-5002)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5012-taxonomy-and-seed-rules.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T01:00:34+00:00",
+      "file": "sdd/tasks/completed/TASK-5012-taxonomy-and-seed-rules.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5013",
@@ -373,7 +389,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -384,9 +400,10 @@
       "parallel": true,
       "parallelism_notes": "records the seed commit of TASK-5012, verifies it with GitCommitApprovalAdapter (TASK-5001), documents check_spec_consequences.py (TASK-5010)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5013-seed-approval-and-docs.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T01:53:21+00:00",
+      "file": "sdd/tasks/completed/TASK-5013-seed-approval-and-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5014",
@@ -395,7 +412,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -405,9 +422,10 @@
       "parallel": true,
       "parallelism_notes": "asserts ADRSource == is_eligible (TASK-5003 inventory.py) incl. retirement semantics implemented by TASK-5007 (publish.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5014-feat778-compat-tests.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T01:47:54+00:00",
+      "file": "sdd/tasks/completed/TASK-5014-feat778-compat-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5015",
@@ -416,7 +434,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -427,9 +445,10 @@
       "parallel": true,
       "parallelism_notes": "drives CLI from TASK-5009 (spec_cli.py), gate script from TASK-5010 and the approvals format/seed batch from TASK-5013",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5015-integration-tests.md"
+      "started_at": "2026-10-31T00:37:03+00:00",
+      "completed_at": "2026-10-31T02:01:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5015-integration-tests.md",
+      "verification": "verified"
     }
   ]
 }

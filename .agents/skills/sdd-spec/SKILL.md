@@ -113,6 +113,11 @@ stay with the thinking model — eligibility never delegates a design choice.
      `python -m scripts.sdd.reserve_ids --kind feature --count 1 --base-branch <base_branch> --label <feature-slug>`.
    - Use the returned `FEAT-NNN` verbatim.
    - Do not fall back to hand-computed IDs.
+9b. Retrieve governing decisions (FEAT-784), before drafting §2:
+   - write the draft spec with frontmatter (`projects`, `tags`) and §1 first
+   - run `wikitoolkit spec governing <spec>` and design within the listed decisions
+   - changing one requires an explicit `supersedes:` / `contradicts:` entry in `## Decisions`
+   - skip when it prints `decision audit not configured in this repository`
 10. Write the spec:
    - frontmatter `type` and `base_branch`
    - frontmatter `projects` and `tags`, carried from the exploration doc (FEAT-576)
@@ -146,6 +151,10 @@ stay with the thinking model — eligibility never delegates a design choice.
      `e2e-plan.md` frontmatter is generated later, at task decomposition,
      once pytest node IDs are frozen
    - Open Questions with resolved/unresolved state preserved
+10b. Consequence gate (FEAT-784):
+   - `python -m scripts.sdd.check_spec_consequences <spec> --render`, then the same without `--render`
+   - exit 0 pass/skipped · 1 conflict · 2 invalid · 3 incomplete/stale/missing
+   - refuse `**Status**: approved` on any non-zero exit; `skipped` proceeds
 11. Commit:
    - preserve unrelated staging; stop before committing if it is outside this run's scope
    - stage `sdd/specs/<feature-slug>.spec.md` and only this run's promoted artifacts

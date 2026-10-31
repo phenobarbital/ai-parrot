@@ -177,3 +177,19 @@ async def test_adr_source_links_filter(expert_bundle: Path) -> None:
     )
 
     assert [layer.source for layer in layers] == ["adr:matching"]
+
+
+@pytest.mark.asyncio
+async def test_adr_source_drops_retired_schema2_hits(expert_bundle: Path) -> None:
+    """A retired schema-2 projection is superseded and never becomes a layer."""
+    retired = _hit("adr:spec:demo#rule", status="superseded")
+    live = _hit("adr:spec:demo#rule2")
+
+    layers = await ADRSource(StubDecisionService(DecisionDossier(documented=[retired, live]))).layers(
+        _spec(KnowledgeSourceKind.ADR),
+        _bundle(expert_bundle),
+        workspace=None,
+        counter=CharacterCounter(),
+    )
+
+    assert [layer.source for layer in layers] == ["adr:adr:spec:demo#rule2"]
