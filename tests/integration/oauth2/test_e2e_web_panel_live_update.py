@@ -54,8 +54,8 @@ async def test_e2e_web_panel_live_update() -> None:
     receive_two = asyncio.create_task(anext(stream_two))
     receive_other = asyncio.create_task(anext(other_stream))
     try:
-        await _wait_for_numsub(subscriber_one, target_channel, 1)
-        await _wait_for_numsub(subscriber_two, target_channel, 1)
+        await _wait_for_numsub(subscriber_one, target_channel, 2)
+        await _wait_for_numsub(subscriber_two, target_channel, 2)
         await _wait_for_numsub(other_subscriber, other_channel, 1)
         publisher = ConnectionEventPublisher()
         publisher.add_sink(publisher_push)
