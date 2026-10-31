@@ -26,7 +26,6 @@ from parrot.tools.toolkit import AbstractToolkit
 
 if TYPE_CHECKING:  # pragma: no cover
     from parrot.auth.credentials import CredentialResolver
-    from parrot.auth.o365_oauth import O365TokenSet
 
 
 logger = logging.getLogger(__name__)
