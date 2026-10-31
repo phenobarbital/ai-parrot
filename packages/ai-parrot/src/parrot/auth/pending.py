@@ -1,4 +1,5 @@
 """Request-scoped collector of tool needs-auth payloads (FEAT-775 M5 / FEAT-776 M1 / FEAT-777 M4)."""
+
 from __future__ import annotations
 
 from contextlib import contextmanager

@@ -1,4 +1,5 @@
 """FEAT-777 M4: turn-local execution evidence."""
+
 import asyncio
 from types import SimpleNamespace
 
@@ -29,6 +30,7 @@ def test_single_pre_body_auth_failure_is_safe() -> None:
 
 def test_body_started_or_multiple_requirements_is_unsafe() -> None:
     """Any body start, two requirements, unexplained dispatch, or mark_incomplete -> unsafe."""
+
     def fresh() -> TurnExecutionTracker:
         t = TurnExecutionTracker()
         t.mark_dispatch()
@@ -54,6 +56,7 @@ def test_body_started_or_multiple_requirements_is_unsafe() -> None:
 @pytest.mark.asyncio
 async def test_parallel_children_share_tracker_and_turns_are_isolated() -> None:
     """gather() children update one tracker; two concurrent track_turn() contexts never mix."""
+
     async def child() -> None:
         await asyncio.sleep(0)
         current_turn_tracker().mark_dispatch()
@@ -146,8 +149,7 @@ async def test_plain_function_marks_body_and_observer_retained() -> None:
     for observer in (None, _Observer()):
         manager.set_invocation_observer(observer)
         with track_turn() as t:
-            result = await manager._observed(None if observer is None else SimpleNamespace(executed=False),
-                                             "fn", fn)
+            result = await manager._observed(None if observer is None else SimpleNamespace(executed=False), "fn", fn)
         assert result == "x"
         assert (t.dispatches, t.bodies_started) == (1, 1)
     assert [e[0] for e in observer.events] == ["begin", "finish"]

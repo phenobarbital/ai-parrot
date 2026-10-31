@@ -1,4 +1,5 @@
 """Turn-local evidence that no tool body began, for server-authored ``retry_safe`` (FEAT-777 M4)."""
+
 from __future__ import annotations
 
 from contextlib import contextmanager
