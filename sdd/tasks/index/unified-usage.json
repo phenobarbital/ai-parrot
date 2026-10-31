@@ -130,7 +130,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -142,8 +142,9 @@
       "parallelism_notes": "TASK-4983: same file events/client.py (inserts after its attribution field); TASK-4984: mirrors CompletionUsage counter names (models/basic.py); TASK-4985: same files recorders/models.py + subscriber.py",
       "assigned_to": null,
       "started_at": "2026-10-31T00:24:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4986-event-cache-counters-claude-forward.md"
+      "completed_at": "2026-10-31T00:39:43+00:00",
+      "file": "sdd/tasks/completed/TASK-4986-event-cache-counters-claude-forward.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4987",
@@ -212,7 +213,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -222,8 +223,9 @@
       "parallelism_notes": "TASK-4985: persists UsageRecord.feat_id/attempt_uid it adds (recorders/models.py)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:24:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4990-spec-usage-recorder.md"
+      "completed_at": "2026-10-31T00:39:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4990-spec-usage-recorder.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4991",
