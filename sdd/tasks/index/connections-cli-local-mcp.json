@@ -87,7 +87,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -95,8 +95,9 @@
       "parallelism_notes": "root task: creates parrot/auth/oauth2/device_code.py (DeviceAuthorization, make_pkce_pair, discover_authorization_server, request_device_authorization, request_device_token, poll_device_token) imported by TASK-4967 (manager device grant) and TASK-4968 (parrot login); touches no existing file",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4966-device-code-engine.md"
+      "completed_at": "2026-10-31T00:37:22+00:00",
+      "file": "sdd/tasks/completed/TASK-4966-device-code-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4967",
@@ -145,7 +146,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -153,8 +154,9 @@
       "parallelism_notes": "root task: only edits FEAT-773 core files (oauth2/models.py, oauth2/events.py, oauth2/service.py) that no other wave-1 task touches; creates WhoAmI/PulledToken/NotConnected consumed by TASK-4970 and TASK-4972",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4969-service-cli-endpoints.md"
+      "completed_at": "2026-10-31T00:37:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4969-service-cli-endpoints.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4970",
@@ -267,7 +269,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -275,8 +277,9 @@
       "parallelism_notes": "root task: only edits parrot/mcp/adapter.py and server_base.py (no other task touches them); uses the existing FEAT-773 to_payload() on both auth exceptions",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4975-mcp-adapter-execution-context.md"
+      "completed_at": "2026-10-31T00:37:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4975-mcp-adapter-execution-context.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4976",
