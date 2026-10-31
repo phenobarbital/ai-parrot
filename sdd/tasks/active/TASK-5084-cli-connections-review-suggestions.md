@@ -53,6 +53,7 @@ into `issue:73db45b2286a`. This task resolves those suggestions (a)–(f).
 - `packages/ai-parrot/tests/cli/test_login.py`
 - `packages/ai-parrot/tests/auth/test_connection_cache.py`
 - `packages/ai-parrot/tests/mcp/test_adapter_execution_context.py`
+- `packages/ai-parrot/tests/cli/test_repl_identity_matrix.py`
 - `packages/ai-parrot-server/tests/unit/test_connections_cli_routes.py`
 - `tests/mcp/test_toolkit_server_login.py`
 

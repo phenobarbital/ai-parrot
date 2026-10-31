@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
+import fcntl
 import json
 import logging
 import os
+import stat
 import tempfile
 import time
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, Iterator, List, Optional
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -38,7 +41,12 @@ class CachedConnection(BaseModel):
 
 
 class ConnectionCache:
-    """Encrypted JSON map provider → CachedConnection at ``path`` (0600)."""
+    """Encrypted JSON map provider → CachedConnection at ``path`` (0600).
+
+    Reads accept only a regular, non-symlink file owned by the current user with no group/other
+    permission bits. Writes hold an exclusive ``flock`` on the 0600 sidecar ``<path>.lock`` across
+    the whole read-modify-write, so concurrent processes (REPL, ``mcp-local``) never lose an entry.
+    """
 
     def __init__(self, path: Path, key: bytes) -> None:
         if len(key) != 32:
@@ -48,10 +56,47 @@ class ConnectionCache:
         self._lock = asyncio.Lock()
         self.logger = logger
 
-    def _read_sync(self) -> Dict[str, CachedConnection]:
-        """Read and decrypt cache entries, treating corrupt data as empty."""
+    @property
+    def lock_path(self) -> Path:
+        """Return the sidecar lock path held across read-modify-write cycles."""
+        return self.path.with_name(self.path.name + ".lock")
+
+    @contextlib.contextmanager
+    def _locked(self) -> Iterator[None]:
+        """Hold an exclusive cross-process lock on the sidecar lock file (never through a symlink)."""
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         try:
-            blob = self.path.read_bytes()
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            finally:
+                os.close(fd)
+
+    def _read_blob(self) -> bytes:
+        """Read the cache file, refusing symlinks, non-regular files, foreign owners and loose modes."""
+        fd = os.open(self.path, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            file_stat = os.fstat(fd)
+            if not stat.S_ISREG(file_stat.st_mode):
+                raise ValueError("connection cache is not a regular file")
+            if file_stat.st_uid != os.getuid():
+                raise ValueError("connection cache is not owned by the current user")
+            if file_stat.st_mode & 0o077:
+                raise ValueError("connection cache is accessible by group or other users")
+            with os.fdopen(fd, "rb") as handle:
+                fd = -1
+                return handle.read()
+        finally:
+            if fd >= 0:
+                os.close(fd)
+
+    def _read_sync(self) -> Dict[str, CachedConnection]:
+        """Read and decrypt cache entries, treating unsafe or corrupt data as empty."""
+        try:
+            blob = self._read_blob()
             if not blob.startswith(_MAGIC) or len(blob) <= len(_MAGIC) + 12:
                 raise ValueError("invalid connection cache format")
             nonce = blob[len(_MAGIC) : len(_MAGIC) + 12]
@@ -62,9 +107,21 @@ class ConnectionCache:
             return {provider: CachedConnection.model_validate(entry) for provider, entry in payload.items()}
         except FileNotFoundError:
             return {}
-        except (InvalidTag, OSError, TypeError, ValueError):
-            self.logger.warning("connection cache unreadable; treating as empty")
+        except (InvalidTag, OSError, TypeError, ValueError) as exc:
+            self.logger.warning("connection cache unreadable; treating as empty (%s)", type(exc).__name__)
             return {}
+
+    def _update_sync(self, mutate: Callable[[Dict[str, CachedConnection]], bool]) -> None:
+        """Read, mutate and (when ``mutate`` returns True) rewrite the cache under the file lock."""
+        with self._locked():
+            entries = self._read_sync()
+            if mutate(entries):
+                self._write_sync(entries)
+
+    def _delete_file_sync(self) -> None:
+        """Remove the cache file under the file lock."""
+        with self._locked():
+            self.path.unlink(missing_ok=True)
 
     def _write_sync(self, entries: Dict[str, CachedConnection]) -> None:
         """Atomically encrypt and persist cache entries with private permissions."""
@@ -97,21 +154,25 @@ class ConnectionCache:
 
     async def put(self, entry: CachedConnection) -> None:
         """Store or replace one provider's access-token entry."""
-        async with self._lock:
-            entries = await asyncio.to_thread(self._read_sync)
+
+        def _mutate(entries: Dict[str, CachedConnection]) -> bool:
             entries[entry.provider] = entry
-            await asyncio.to_thread(self._write_sync, entries)
+            return True
+
+        async with self._lock:
+            await asyncio.to_thread(self._update_sync, _mutate)
 
     async def delete(self, provider: Optional[str] = None) -> None:
         """Delete one provider, or the whole file when ``provider`` is None."""
+
+        def _mutate(entries: Dict[str, CachedConnection]) -> bool:
+            return entries.pop(provider, None) is not None
+
         async with self._lock:
             if provider is None:
-                await asyncio.to_thread(self.path.unlink, missing_ok=True)
+                await asyncio.to_thread(self._delete_file_sync)
                 return
-            entries = await asyncio.to_thread(self._read_sync)
-            if provider in entries:
-                del entries[provider]
-                await asyncio.to_thread(self._write_sync, entries)
+            await asyncio.to_thread(self._update_sync, _mutate)
 
 
 class RemoteConnectionResolver(CredentialResolver):

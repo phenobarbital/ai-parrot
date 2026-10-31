@@ -294,3 +294,132 @@ def test_cli_help_lists_connection_commands():
     assert result.exit_code == 0, result.output
     for command in ("login", "logout", "whoami", "connect", "connections", "disconnect"):
         assert command in result.output
+
+
+# ── TASK-5084 (issue:73db45b2286a): insecure http server + discovery origin ──
+
+
+@pytest.mark.parametrize(
+    ("url", "insecure"),
+    [
+        ("http://parrot.example.com", True),
+        ("http://10.0.0.5:5000", True),
+        ("https://parrot.example.com", False),
+        ("http://localhost:5000", False),
+        ("http://127.0.0.1:5000", False),
+        ("http://[::1]:5000", False),
+    ],
+)
+def test_is_insecure_remote_http(url, insecure):
+    """Only plaintext http:// to a non-loopback host counts as insecure."""
+    assert login_module.is_insecure_remote_http(url) is insecure
+
+
+def test_login_refuses_insecure_http_server(monkeypatch, tmp_path):
+    """A non-loopback http:// --server exits 2 before any network call, unless explicitly allowed."""
+
+    def no_session(**_kwargs):
+        raise AssertionError("no network call may happen for a refused server")
+
+    monkeypatch.setattr(login_module.aiohttp, "ClientSession", no_session)
+    result = CliRunner().invoke(
+        login,
+        ["--server", "http://parrot.example.com", "--no-browser"],
+        env={"PARROT_LOGIN_FILE": str(tmp_path / "login.json")},
+    )
+    assert result.exit_code == 2
+    assert "--allow-insecure-http" in result.output
+    assert not (tmp_path / "login.json").exists()
+
+
+def test_login_allows_loopback_and_explicit_insecure_http(monkeypatch, tmp_path):
+    """Loopback http is accepted silently; --allow-insecure-http accepts a remote http server with a warning."""
+    server = _FakeAuthorizationServer()
+
+    async def no_wait(_delay):
+        return None
+
+    monkeypatch.setattr(login_module.aiohttp, "ClientSession", server.session_factory)
+    monkeypatch.setattr(login_module, "poll_device_token", _poll_without_wait(no_wait))
+    server.base_url = "http://localhost:5000"
+    loopback = CliRunner().invoke(
+        login,
+        ["--server", server.base_url, "--no-browser"],
+        env={"PARROT_LOGIN_FILE": str(tmp_path / "a.json")},
+    )
+    assert loopback.exit_code == 0, loopback.output
+    assert "Warning" not in loopback.output
+
+    server.base_url = "http://parrot.example.com"
+    server.polls = 0
+    allowed = CliRunner().invoke(
+        login,
+        ["--server", server.base_url, "--no-browser", "--allow-insecure-http"],
+        env={"PARROT_LOGIN_FILE": str(tmp_path / "b.json")},
+    )
+    assert allowed.exit_code == 0, allowed.output
+    assert "plaintext http://" in allowed.output
+
+
+def test_metadata_endpoint_must_share_server_origin():
+    """Endpoints on the server origin pass; another host, scheme or port is rejected."""
+    server = "https://auth.example.test"
+    meta = {
+        "token_endpoint": "https://auth.example.test:443/token",
+        "userinfo_endpoint": "https://evil.example.test/userinfo",
+        "revocation_endpoint": "http://auth.example.test/revoke",
+        "device_authorization_endpoint": "https://auth.example.test:8443/device",
+    }
+    assert login_module.metadata_endpoint(meta, "token_endpoint", server) == meta["token_endpoint"]
+    assert login_module.metadata_endpoint(meta, "missing_endpoint", server) is None
+    for key in ("userinfo_endpoint", "revocation_endpoint", "device_authorization_endpoint"):
+        with pytest.raises(device_code.DeviceCodeError) as excinfo:
+            login_module.metadata_endpoint(meta, key, server)
+        assert excinfo.value.code == "invalid_metadata"
+
+
+class _CrossOriginServer(_FakeAuthorizationServer):
+    """Fake AS whose metadata advertises a token endpoint on another origin."""
+
+    def get(self, url: str, headers: Optional[Dict[str, str]] = None) -> _FakeResponse:
+        """Return metadata with a foreign token endpoint."""
+        if url.endswith("/.well-known/oauth-authorization-server"):
+            return _FakeResponse(
+                200,
+                {
+                    "device_authorization_endpoint": f"{self.base_url}/device",
+                    "token_endpoint": "https://attacker.example.test/token",
+                    "userinfo_endpoint": f"{self.base_url}/userinfo",
+                },
+            )
+        return super().get(url, headers)
+
+
+def test_login_rejects_cross_origin_token_endpoint(monkeypatch, tmp_path):
+    """Login never polls a token endpoint outside the --server origin."""
+    server = _CrossOriginServer()
+
+    async def no_wait(_delay):
+        return None
+
+    monkeypatch.setattr(login_module.aiohttp, "ClientSession", server.session_factory)
+    monkeypatch.setattr(login_module, "poll_device_token", _poll_without_wait(no_wait))
+    result = CliRunner().invoke(
+        login,
+        ["--server", server.base_url, "--no-browser"],
+        env={"PARROT_LOGIN_FILE": str(tmp_path / "login.json")},
+    )
+    assert result.exit_code == 2
+    assert "token_endpoint" in result.output
+    assert server.polls == 0
+    assert not (tmp_path / "login.json").exists()
+
+
+async def test_refresh_rejects_cross_origin_token_endpoint(login_record):
+    """A refresh never sends the refresh token to a token endpoint on another origin."""
+    server = _CrossOriginServer()
+    record = login_record.model_copy(update={"server_url": server.base_url})
+    with pytest.raises(device_code.DeviceCodeError) as excinfo:
+        await refresh_login(record, _FakeSession(server))
+    assert excinfo.value.code == "invalid_metadata"
+    assert server.refreshes == 0

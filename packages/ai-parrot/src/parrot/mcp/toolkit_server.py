@@ -59,6 +59,7 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
         super().__init__(config)
         self._owned_toolkit = toolkit
         self._login_file = login_file
+        self._connections_client: Any = None  # ServerConnectionsClient owned by _bind_identity
         self._stop_lock = asyncio.Lock()
         self._released = False
 
@@ -95,6 +96,7 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
             return
 
         client = ServerConnectionsClient(store)
+        self._connections_client = client
         try:
             resolved = await CliPrincipalResolver(store, client).resolve_with_roles("cli", record.user_id)
         except Exception as exc:  # noqa: BLE001 — any resolver failure must fail closed, never crash startup
@@ -102,6 +104,7 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
             resolved = None
         if resolved is None:
             self.logger.warning("Could not resolve the CLI principal")
+            await self._close_connections_client()
             self._bind_context(ToolExecutionContext(identity_error="the CLI login identity could not be resolved"))
             return
         principal, roles = resolved
@@ -109,11 +112,23 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
             adapter.tool.credential_provider for adapter in self.tools.values() if adapter.tool.credential_provider
         }
         broker = build_cli_broker(store, providers, client=client) if providers else None
+        if broker is None:
+            await self._close_connections_client()  # no credential tool will ever use it
         context = ToolExecutionContext(
             permission_context=build_cli_permission_context(principal, roles=roles),
             broker=broker,
         )
         self._bind_context(context)
+
+    async def _close_connections_client(self) -> None:
+        """Close the owned ``ServerConnectionsClient`` session, if any; never raises."""
+        client, self._connections_client = self._connections_client, None
+        if client is None:
+            return
+        try:
+            await client.close()
+        except Exception as exc:  # noqa: BLE001 -- isolated shutdown logging
+            self.logger.error("Error closing the connections client: %s", type(exc).__name__)
 
     def _bind_context(self, context: Any) -> None:
         """Attach one execution context to the server and every registered adapter."""
@@ -139,6 +154,7 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
             if self._released:
                 return
             self._released = True
+            await self._close_connections_client()
 
             try:
                 await asyncio.wait_for(self._release_toolkit(), timeout=_CLEANUP_TIMEOUT_SECONDS)

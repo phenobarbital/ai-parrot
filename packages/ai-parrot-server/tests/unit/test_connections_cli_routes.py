@@ -81,6 +81,9 @@ async def test_token_route_success_and_not_connected_409(monkeypatch: pytest.Mon
     assert response.status == 200
     assert json.loads(response.body) == token_payload
     service.pull_access_token.assert_awaited_once_with("session-user", "jira", request=request)
+    # TASK-5084 (issue:73db45b2286a e): a response carrying an access token is never cacheable.
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
 
     required = MagicMock(model_dump=MagicMock(return_value={"provider": "jira", "message": "not_connected"}))
     service.pull_access_token = AsyncMock(side_effect=NotConnected(required))

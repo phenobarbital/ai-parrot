@@ -123,3 +123,17 @@ async def test_no_context_keeps_today_behaviour():
 def test_tool_execution_context_without_permission_context_has_no_kwargs():
     """A context without identity cannot accidentally send partial auth state."""
     assert ToolExecutionContext(broker=_Broker()).exec_kwargs() == {}
+
+
+@pytest.mark.asyncio
+async def test_no_login_credential_tool_runs_without_broker():
+    """AC-4 (issue:73db45b2286a f): with no login, a credential tool still goes through
+    ``AbstractTool.execute`` (TASK-4975) but gets no reserved kwargs, no broker and no credential."""
+    tool = _ContextTool()
+    adapter = MCPToolAdapter(tool)
+
+    result = await adapter.execute({})
+
+    assert result["isError"] is False
+    assert tool.execute_kwargs == {}
+    assert "token-123" not in str(result)

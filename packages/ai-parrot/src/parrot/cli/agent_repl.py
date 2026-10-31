@@ -23,7 +23,7 @@ import click
 from parrot.cli.console import get_console  # provided by TASK-3400
 from parrot.auth.oauth2.local_cache import build_cli_broker
 from parrot.auth.oauth2.remote_client import ServerConnectionsClient
-from parrot.cli.login import LoginFileError, LoginStore
+from parrot.cli.login import LoginFileError, LoginStore, is_insecure_remote_http
 from parrot.cli.loaders import AgentLoadError, ServerAgentProxy, StandaloneAgentLoader
 from parrot.cli.modes import (  # provided by TASK-3401
     UIMode,
@@ -198,6 +198,11 @@ async def _run(
             f"{server}. Pass --token (or PARROT_SERVER_TOKEN) to authenticate.[/yellow]"
         )
     server_token = token or (login.access_token if implicit_login and login else None)
+    if server and server_token and is_insecure_remote_http(server):
+        console.print(
+            f"[yellow]Warning: {server} is plaintext http:// — your bearer token crosses the network "
+            "unencrypted. Use https://.[/yellow]"
+        )
 
     if server:
         loader = ServerAgentProxy(
@@ -264,6 +269,7 @@ async def _run(
 
     permission_context = None
     principal = None
+    broker_client: Optional[ServerConnectionsClient] = None
     if not server and login is not None:
         async with ServerConnectionsClient(store) as client:
             resolved = await CliPrincipalResolver(store, client).resolve_with_roles("cli", login.user_id)
@@ -278,7 +284,9 @@ async def _run(
         permission_context = build_cli_permission_context(principal, roles=roles)
         providers = _declared_providers(bot)
         if providers:
-            bot.tool_manager.set_broker(build_cli_broker(store, providers))
+            # The broker's client lives as long as the REPL; it is closed in the finally below.
+            broker_client = ServerConnectionsClient(store)
+            bot.tool_manager.set_broker(build_cli_broker(store, providers, client=broker_client))
 
     resume_id = session
     if session == "last":
@@ -342,6 +350,8 @@ async def _run(
     finally:
         if server and isinstance(loader, ServerAgentProxy):
             await loader.close()
+        if broker_client is not None:
+            await broker_client.close()
         # Clean up bot resources (aiohttp sessions, DB connections, etc.)
         # to avoid "Unclosed client session" warnings on exit.
         if hasattr(bot, "cleanup") and callable(bot.cleanup):
