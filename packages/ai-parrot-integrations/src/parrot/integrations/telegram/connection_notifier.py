@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, MutableMapping, Optional, Tuple
 
 from parrot.auth.oauth2.events import ChannelNotifierRegistry, ConnectionEvent
@@ -14,6 +15,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 SessionHook = Callable[[int, ConnectionEvent], "Awaitable[None] | None"]
 _APP_KEY = "telegram_connection_notifier"
+_SEEN_MAX = 1024
 
 
 class TelegramConnectionNotifier:
@@ -26,7 +28,8 @@ class TelegramConnectionNotifier:
         self._bots: Dict[str, "Bot"] = {}
         self._last_connect_bot: Dict[str, str] = {}
         self._hooks: Dict[str, Tuple[Optional[SessionHook], Optional[SessionHook]]] = {}
-        self._seen: set[Tuple[str, str, str, float]] = set()
+        # Bounded LRU of delivered event keys; only successful sends are recorded.
+        self._seen: "OrderedDict[Tuple[str, str, str, float], None]" = OrderedDict()
         self.logger = logging.getLogger(__name__)
 
     def attach(self, bot_id: str, bot: "Bot") -> None:
@@ -140,6 +143,13 @@ class TelegramConnectionNotifier:
                 event.kind,
             )
 
+    def _mark_seen(self, key: Tuple[str, str, str, float]) -> None:
+        """Record a delivered event key, evicting the oldest beyond ``_SEEN_MAX``."""
+        self._seen[key] = None
+        self._seen.move_to_end(key)
+        while len(self._seen) > _SEEN_MAX:
+            self._seen.popitem(last=False)
+
     async def notify(self, event: ConnectionEvent, state_payload: Dict[str, Any]) -> None:
         """Resolve target, send plain text, and run the session hook without raising."""
         try:
@@ -150,14 +160,15 @@ class TelegramConnectionNotifier:
 
             dedupe_key = (event.kind, event.provider, event.user_id, event.occurred_at)
             if dedupe_key in self._seen:
+                self._seen.move_to_end(dedupe_key)
                 return
-            self._seen.add(dedupe_key)
 
             target = await self._resolve_target(event, state_payload)
             if target is None:
                 return
             telegram_id, bot = target
             await bot.send_message(chat_id=telegram_id, text=text, parse_mode=None)
+            self._mark_seen(dedupe_key)
             await self._run_hook(telegram_id, event)
         except Exception:  # noqa: BLE001 - notifier contract: log, never raise
             self.logger.exception(

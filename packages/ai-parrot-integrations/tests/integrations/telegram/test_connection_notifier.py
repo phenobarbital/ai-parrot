@@ -197,6 +197,42 @@ async def test_duplicate_event_is_sent_once(fake_bot: FakeBot) -> None:
     assert len(fake_bot.messages) == 1
 
 
+@pytest.mark.asyncio
+async def test_failed_delivery_does_not_suppress_retry(fake_bot: FakeBot) -> None:
+    """A send error or unresolved target must not mark the event as delivered."""
+    notifier = TelegramConnectionNotifier()
+    event = make_event("connection.completed")
+    state = {"extra": {"chat_id": 123, "bot_id": "bot"}}
+
+    await notifier.notify(event, state)  # bot not attached yet -> unresolved target
+    notifier.attach("bot", fake_bot)
+    fake_bot.error = OptionalException("telegram down")
+    await notifier.notify(event, state)  # send fails
+    fake_bot.error = None
+    await notifier.notify(event, state)  # retry succeeds
+    await notifier.notify(event, state)  # now deduplicated
+
+    assert len(fake_bot.messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_dedupe_cache_is_bounded(fake_bot: FakeBot, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The dedupe cache evicts the oldest keys beyond its bound."""
+    from parrot.integrations.telegram import connection_notifier as module
+
+    monkeypatch.setattr(module, "_SEEN_MAX", 3)
+    notifier = TelegramConnectionNotifier()
+    notifier.attach("bot", fake_bot)
+    state = {"extra": {"chat_id": 123, "bot_id": "bot"}}
+
+    for i in range(5):
+        await notifier.notify(make_event("connection.completed", occurred_at=float(i)), state)
+    assert len(notifier._seen) == 3
+
+    await notifier.notify(make_event("connection.completed", occurred_at=0.0), state)  # evicted -> resent
+    assert len(fake_bot.messages) == 6
+
+
 def test_get_or_create_notifier_is_idempotent(fake_identity_service: FakeIdentityService) -> None:
     app: Dict[str, Any] = {}
 
