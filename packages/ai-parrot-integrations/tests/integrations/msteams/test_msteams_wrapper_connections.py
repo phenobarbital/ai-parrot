@@ -68,9 +68,7 @@ async def test_voice_and_resume_sites_pass_context() -> None:
     """The shared helper retains voice metadata and accepts resume session identifiers."""
     wrapper = _wrapper(_session())
 
-    voice_context = await wrapper._agent_context(
-        _turn(), "29:teams-user", "19:conversation", source="voice_note"
-    )
+    voice_context = await wrapper._agent_context(_turn(), "29:teams-user", "19:conversation", source="voice_note")
     resume_context = await wrapper._agent_context(_turn(), "29:teams-user", "resume-session")
 
     assert voice_context["source"] == "voice_note"
