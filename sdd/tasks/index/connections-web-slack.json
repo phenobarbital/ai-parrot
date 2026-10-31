@@ -687,6 +687,27 @@
       "completed_at": "2026-10-31T02:33:22+00:00",
       "file": "sdd/tasks/completed/TASK-5059-connections-web-slack-docs.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5078",
+      "slug": "review-robustness-fixes",
+      "title": "Review robustness fixes — SSE subscribe gap, O365 legacy cleanup, nonce restore, duplicate connected",
+      "feature_id": "FEAT-777",
+      "feature": "connections-web-slack",
+      "spec": "sdd/specs/connections-web-slack.spec.md",
+      "status": "in-progress",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5059"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Ledger follow-up issue:19c0633ffc61 after the FEAT-777 review.",
+      "assigned_to": "agent:sdd-fix",
+      "discovered_from": "issue:19c0633ffc61",
+      "started_at": "2026-10-31T23:12:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5078-review-robustness-fixes.md"
     }
   ]
 }
