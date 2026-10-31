@@ -18,8 +18,8 @@ tags: [oauth2, connections, msteams, adaptive-cards, principal, channel-notifier
 > commands") and the FEAT-773 spec `sdd/specs/delegated-auth-connections.spec.md` §1 Non-Goals ("Teams
 > `ChannelNotifier` beyond the compatibility adapter, Adaptive-Card connect action — **S-3b**").
 > This spec has no exploration document of its own; every decision U1–U5 / S1–S11 taken for FEAT-773 binds it.
-> **Hard dependency: FEAT-773 (S-1) merged.** Every core name used below that is marked *(FEAT-773)* is defined
-> by that spec and does not exist on `dev` today (see §6 "Does NOT Exist").
+> **Baseline: FEAT-773 (S-1) merged**, PR #1897, merge `6971b3fe3c`. Existing contracts below were
+> rechecked on local `dev` at `d4e4978cd2` (2026-10-31); *(FEAT-773)* identifies their owner, not future code.
 
 ---
 
@@ -29,30 +29,33 @@ tags: [oauth2, connections, msteams, adaptive-cards, principal, channel-notifier
 
 FEAT-773 makes connections principal-keyed and channel-neutral, but it only ports the Teams Jira flow onto a
 **compatibility adapter** (`MSTeamsJiraNotifierAdapter`, FEAT-773 M8). Teams users still cannot use the
-connections model as a first-class channel, and research at spec time found five concrete gaps:
+connections model as a first-class channel, and source review of the merged baseline confirms these remaining gaps:
 
 1. **Commands are Jira-only.** `/connect_jira`, `/disconnect_jira`, `/jira_status` and the `jira` / `integrations`
    menu (`msteams/commands/jira_commands.py`) are hard-wired to one `JiraOAuthManager`; Office 365 and every
-   descriptor-registered provider are unreachable from Teams. The commands key the token by the **AAD object id**
-   (`_get_user_id`, jira_commands.py:129), which FEAT-773 retires as a key.
+   descriptor-registered provider are unreachable from Teams. The commands already resolve a
+   Navigator principal through `_principal` (jira_commands.py:178), fail closed when unlinked, and revoke by
+   `principal.user_id` (:327). `_get_user_id` (:131) supplies channel identity, not the durable token key.
 2. **No Teams principal on tool calls.** The Teams agent call passes only `user_id` / `session_id`
    (`FormOrchestrator.process_message` → `agent.ask(..., **context)`, wrapper.py:810-816, orchestrator.py:320);
    no `PermissionContext` with `channel="msteams"` reaches `ToolManager`, so FEAT-773's
    `OAuthCredentialResolver` cannot resolve a Teams caller. The fallback `user_id` for an unauthenticated user is
-   `from_property.id` (`29:…`), not the AAD id the Jira store uses.
+   `from_property.id` (`29:…`), not the AAD identity used for principal lookup.
 3. **The identity-row lookup misses logged-in Teams users.** FEAT-773's `IdentityPrincipalResolver` looks up
-   `auth.user_identities` by `(channel, channel_user_id)` = `("msteams", aad_oid)`. The only writer of an
-   `msteams` row is `handle_msteams_jira_callback` (oauth_callback.py:283), gated on
-   `request.app.get("identity_mapping_service")` (:261) — **and nothing in `packages/` ever registers that app
-   key** (grep: only `.get` reads). Teams `/login` (FEAT-729) does write a row, but under provider **`azure`**
-   (navigator-auth `TokenExchange` → `store.save_linked_identity(uid, req.provider, …)`, exchange.py:190, called
-   with `provider="azure"` from `MSTeamsAuthStrategy._ensure_authenticated`, auth.py:~345).
-4. **Completion messages only work for one bot and one event.** `app["msteams_jira_oauth_notifier"]` is assigned
+   `auth.user_identities` by `(channel, channel_user_id)` = `("msteams", aad_oid)`
+   (`services/identity_principal.py:47`). Teams `/login` writes provider **`azure`** instead
+   (`auth.py:345`; navigator-auth `backends/exchange.py:190`). The merged
+   `MSTeamsJiraNotifierAdapter.notify` also attempts an `msteams` identity write
+   (`core/auth/notifiers.py:159`), as does the retained legacy callback helper. Both require
+   `app.get("identity_mapping_service")`; no production assignment to that key was found in repository
+   Python source. External application wiring is not ruled out. The generic callback no longer calls
+   `handle_msteams_jira_callback`; that helper is retained code, not the active route.
+4. **Notifier routing is app-global and depends on callback state.** `app["msteams_jira_oauth_notifier"]` is assigned
    by every `MSTeamsAgentWrapper.__init__` (wrapper.py:215), so with two Teams bots on one app the last one wins and
-   proactive messages go out through the wrong adapter / app id. Only the callback path has a conversation
-   reference; `connection.revoked` and `connection.refresh_failed` (no OAuth state) cannot reach the user at all.
+   proactive messages can go out through the wrong adapter / app id. The adapter handles all three lifecycle
+   kinds but requires a conversation reference in state (`core/auth/notifiers.py:139`); `connection.revoked` and `connection.refresh_failed` (no OAuth state) cannot reach the user at all.
 5. **A tool's needs-auth signal never reaches the Teams user as an action.** `ToolManager.execute_tool` returns
-   `ToolResult(status="authorization_required", metadata={auth_url, …})` (manager.py:2273-2290), but
+   `ToolResult(status="authorization_required", metadata=payload.model_dump())` (tools/manager.py:2274-2291), but
    `AbstractClient._execute_tool` returns `result.result` (`None`) for every non-error `ToolResult`
    (clients/base.py:1661-1668), and `AIMessage.tool_calls[*].result` therefore carries nothing. The Teams wrapper
    has no way to render a "Connect" button; the user sees whatever prose the LLM improvises.
@@ -77,7 +80,7 @@ connections model as a first-class channel, and research at spec time found five
   card per provider with a **Connect** button (or the device-code instructions), minted through
   `IntegrationsService.start_connect(channel="msteams")` so the OAuth state carries the conversation reference.
 - **G6 — No regression for the production Teams Jira flow:** an authenticated user who connected Jira before
-  FEAT-773's cutover keeps the connection (FEAT-773 legacy read), the success page and the proactive "connected"
+  FEAT-773's cutover keeps the connection while the configured legacy-read window is open, the success page and the proactive "connected"
   message behave as today.
 
 ### Non-Goals (explicitly out of scope)
@@ -104,12 +107,12 @@ connections model as a first-class channel, and research at spec time found five
 
 All Teams-specific code stays in `ai-parrot-integrations/…/msteams/`. Core gains the needs-auth collector,
 an explicit channel identity on permission contexts, and request-independent service authorization.
-Jira/O365 consumers select the channel identity for OAuth lookup; the server wires the shared PDP evaluator
+Jira/O365 consumers will select the channel identity for OAuth lookup; the server wires the shared PDP evaluator
 and gains an identity-provider alias. These are additive FEAT-775 extensions to the merged FEAT-773 APIs.
 
 **Principal (M1).** `MSTeamsPrincipalSource.principal_for_turn(turn_context)` reads the FEAT-729
 `MSTeamsUserSession` through the wrapper's `MSTeamsSessionStore` (never triggers an exchange — same rule as
-`_effective_user_id`, wrapper.py:351) and returns a FEAT-773 `Principal` or `None`. The wrapper passes
+`_effective_user_id`, wrapper.py:350) and returns a FEAT-773 `Principal` or `None`. The wrapper passes
 `permission_context=build_msteams_permission_context(session)` into the orchestrator `context` dict, which
 `FormOrchestrator` already forwards verbatim to `agent.ask(**context)` (orchestrator.py:320-324;
 `ask(permission_context=…)` verified at bots/base.py:1083). The `PermissionContext` carries
@@ -136,7 +139,7 @@ empty) behave exactly like the typed command.
 2. resolves the principal (M1) — `None` ⇒ "Please `/login` first" (or, with the auth lane disabled, "Connections
    need Navigator sign-in; ask an operator to enable it") and **no OAuth state is created**;
 3. calls `IntegrationsService` *(FEAT-773)* with `channel="msteams"` and `principal`:
-   `/connect <p>` → `status` (active and granted scopes cover the requested scopes ⇒ account reply)
+   `/connect <p>` → `status` (`status == "connected"` and `scopes_granted` cover the requested scopes ⇒ account reply)
    else `start_connect(..., scopes=requested_scopes, extra_state=
    {"conversation_reference": <serialized ref>, "bot_app_id": <app id>})` → Connect card;
    `/connect` with no provider → provider-picker card (one `Action.Submit {"command": "/connect <id>"}` per
@@ -150,7 +153,11 @@ connected". Never infer granted scopes from requested scopes or a status flag.
 `oauth2_base.py:435` uses manager-level `self.scopes`. A response reporting requested scopes is not proof
 of consent requesting them. Before decomposing scope-upgrade tasks, FEAT-775 M3 must specify the per-call
 scope propagation contract and affected manager overrides, without mutating shared manager scopes; record
-those edit sites here. FEAT-776 consumes that shared implementation. Until then, scope-upgrade tasks remain
+those edit sites here. Source-verified sites are `auth/oauth2/service.py:347` and
+`auth/oauth2_base.py:398`; JiraOAuthManager and O365OAuthManager inherit this method without an override
+(`auth/jira_oauth.py:226`, `auth/o365_oauth.py:60`; StandardOAuth2Manager at `auth/oauth2/descriptor.py:152`).
+The future contract must specify a keyword-only per-call scope list, a request-local copy, and precedence
+over any provider URL extra parameters, while preserving default behavior when omitted. FEAT-776 consumes that shared implementation. Until then, scope-upgrade tasks remain
 gated. Validate the provider URL's scopes, PBAC inputs and response together in concurrent-request tests.
 
 **Service authorization bridge (M3/M7), shared owner decision (2026-10-31).** FEAT-775 exclusively owns
@@ -163,8 +170,8 @@ The full shared signatures are recorded in FEAT-776 M3; this feature owns their 
 
 Every operation validates context.user_id against target user_id and principal.user_id, plus tenant and
 channel-user identity. Connect/disconnect additionally validate the supplied channel. Context roles/groups
-come only from verified session claims; absent claims remain empty. Pass channel and principal through
-`manager.revoke`, so a Teams/Telegram disconnect emits to that channel rather than the hard-coded web
+come only from verified session claims; absent claims remain empty. Call `manager.revoke(channel=channel, user_id=principal.user_id,
+channel_user_id=principal.channel_user_id)` (oauth2_base.py:743); it has no `principal` keyword, so a Teams/Telegram disconnect emits to that channel rather than the hard-coded web
 channel currently at service.py:393. Missing context/evaluator, mismatch, exception or deny fails closed;
 a context denial never falls back to HTTP. With no context preserve HTTP behavior and default web channel.
 List denial returns `[]`; status/connect/disconnect denial raises `PermissionError`.
@@ -183,6 +190,27 @@ policies for action/provider/scopes and trusted roles. If an adapter correction 
 mapping and edit sites in this spec before decomposition; this is a concrete compatibility gate, not a new
 policy-shape decision. Existing agent-handler `ResourceType.TOOL` patterns are not evidence for integration policy.
 
+**Parity gate resolved (2026-10-31, owner decision: URI parity).** Source check of navigator-auth 0.28.9:
+`is_allowed(request, ctx)` binds the attribute dict to `session`, finds no `resource`, and delegates to
+`authorize()` (pdp.py:393-444), which evaluates `ResourceType.URI` on `request.path` with
+`PolicyAdapter.METHOD_ACTION_MAP[request.method]` (adapter.py:23-30). The HTTP decision is therefore URI-based;
+action/provider/scopes are discarded. No file under `policies/` mentions connections. The request-less adapter
+mirrors that decision exactly, so existing URI policies apply unchanged to HTTP and channel callers:
+
+| Service operation | Resource (`ResourceType.URI`) | Action |
+|---|---|---|
+| `list_for_principal` (gate and per-provider filter) | `/api/v1/connections` | `uri:read` |
+| `status` | `/api/v1/connections/{provider}` | `uri:read` |
+| `start_connect` | `/api/v1/connections/{provider}/start` | `uri:write` |
+| `disconnect` | `/api/v1/connections/{provider}` | `uri:delete` |
+
+Routes verified at `parrot/manager/manager.py:2488-2490`. The adapter builds a navigator-auth `EvalContext`
+from the trusted `PermissionContext` (Navigator `user_id`, session roles/groups only, tenant), calls the app
+PDP's `evaluator.check_access(ctx, ResourceType.URI, path, action)`, and allows only on
+`EvaluationResult.allowed is True`. FEAT-773 attributes (`action`, `provider`, `scopes`) are still passed to
+the injected callable for audit and future policy use; they do not change the URI decision. The HTTP path
+(`abac.is_allowed(request, ctx)`) is unchanged by this feature.
+
 M7 introduces channel service construction at the integration manager startup seam; there is no existing
 FEAT-773 factory in `parrot/manager/manager.py`. HTTP handlers currently instantiate `IntegrationsService()`
 locally. Reuse the initialized app PDP when building channel services and inject a vault reader where needed.
@@ -193,7 +221,10 @@ locally. Reuse the initialized app PDP when building channel services and inject
 **Notifier (M4).** `MSTeamsConnectionNotifier` implements the FEAT-773 `ChannelNotifier` Protocol:
 - holds a map `bot_app_id → BotFrameworkAdapter`; each `MSTeamsAgentWrapper` calls `attach(app_id, adapter)`;
   one instance per aiohttp app at `app["msteams_connection_notifier"]`, registered once in FEAT-773's
-  `ChannelNotifierRegistry` (replacing `MSTeamsJiraNotifierAdapter`);
+  `ChannelNotifierRegistry` (replacing `MSTeamsJiraNotifierAdapter`). M7 must update the import and
+  `_register_channel_notifiers` registration at integrations/manager.py:134 so startup cannot reinstall the
+  removed adapter. The registry is process-wide; this design supports multiple bots in one app, not multiple
+  independent aiohttp apps sharing that process;
 - target conversation: `state_payload["extra"]["conversation_reference"]` when present (callback path), else the
   `MSTeamsConversationRefStore` entry for `event.user_id` (revoke / refresh paths);
 - the adapter is chosen by `bot_app_id` from the state, else by the conversation reference's `bot.id`
@@ -208,7 +239,7 @@ locally. Reuse the initialized app PDP when building channel services and inject
 **Needs-auth collector (M5, core).** `parrot/auth/pending.py`: `collect_auth_requirements()` is a context manager
 that binds a fresh list on a `ContextVar` and yields it; `record_auth_requirement(payload)` appends when a
 collector is bound (no-op otherwise). `ToolManager.execute_tool` calls it in the needs-auth branch FEAT-773 M5
-unifies (both `AuthorizationRequired` and `CredentialRequired`). The list object is shared by reference, so
+already unifies (both `AuthorizationRequired` and `CredentialRequired`). The list object is shared by reference, so
 appends made inside tasks spawned from the bound context are visible to the caller.
 
 **Connect card (M6).** The wrapper wraps the orchestrator call in `collect_auth_requirements()`. After sending
@@ -227,7 +258,8 @@ than treating a device challenge as an OAuth redirect.
 **Server (M7).** FEAT-773's `IdentityPrincipalResolver` gains a channel → identity-provider alias table
 `{"msteams": ("msteams", "azure")}` tried in order; `canonical_identity` = the AAD oid. `integrations/manager.py
 ::_start_msteams_bot` stops gating Teams connections on `config.jira_client_id`: the wrapper always registers
-connection commands when `app` exposes the FEAT-773 provider registry with at least one provider.
+connection commands when `OAuth2ProviderRegistry().all()` is nonempty. The registry is a process-wide singleton,
+not an app key. Preserve existing manager/provider setup; Jira credentials no longer gate command registration.
 
 ### Shared with FEAT-776
 
@@ -268,8 +300,8 @@ IdP consent ─► FEAT-773 generic callback ─► ConnectionEventPublisher
 |---|---|---|
 | `msteams/wrapper.py::MSTeamsAgentWrapper` | modifies | principal + `permission_context` into the orchestrator context; collector around the agent call; Connect cards after the response; conv-ref save; notifier `attach`; connection-command registration replaces the `oauth_manager`-gated Jira block (wrapper.py:202-221) |
 | `msteams/commands/__init__.py::MSTeamsCommandRouter` | modifies | stash command args in `turn_state`; handler signature unchanged |
-| `msteams/commands/jira_commands.py` | modifies (shrink) | aliases onto M3; `_get_user_id` AAD keying removed |
-| `msteams/oauth_callback.py::MSTeamsOAuthNotifier`, `handle_msteams_jira_callback` | replaces | superseded by `MSTeamsConnectionNotifier`; whatever FEAT-773 left of the Teams callback helper is deleted |
+| `msteams/commands/jira_commands.py` | modifies (shrink) | aliases onto M3; reuse the merged fail-closed principal behavior; replace manager-specific handlers |
+| `msteams/oauth_callback.py::MSTeamsOAuthNotifier`, `handle_msteams_jira_callback` | replaces | superseded by `MSTeamsConnectionNotifier`; remove the retained legacy helper and migrate its tests; the active generic callback is preserved |
 | `msteams/auth.py::MSTeamsSessionStore`, `MSTeamsUserSession` | uses | read-only source of the principal |
 | `msteams/dialogs/orchestrator.py::FormOrchestrator.process_message` | uses | already forwards `context` to `agent.ask` |
 | `parrot/tools/manager.py::ToolManager.execute_tool` | modifies | one `record_auth_requirement(...)` call in the FEAT-773 unified needs-auth branch |
@@ -348,7 +380,7 @@ def command_args(turn_context) -> str
       def __init__(self, store: Optional[MSTeamsSessionStore]) -> None: ...   # verified: auth.py:102
       async def principal_for_turn(self, turn_context: TurnContext) -> Optional[Principal]:
           """None unless session.authenticated, nav_user_id set and not store.is_expired(session)
-          (same rule as MSTeamsAgentWrapper._effective_user_id, wrapper.py:351-368).
+          (same rule as MSTeamsAgentWrapper._effective_user_id, wrapper.py:350-368).
           Also require session.aad_object_id; channel_user_id = canonical_identity = session.aad_object_id."""
 
   def build_msteams_permission_context(session: MSTeamsUserSession) -> PermissionContext:
@@ -391,7 +423,8 @@ def credential_channel_user_id(context: PermissionContext) -> Optional[str]:
 
 ### Module 3: Generic connection commands
 - **Path**: `packages/ai-parrot-integrations/src/parrot/integrations/msteams/commands/connect_commands.py` (new); `msteams/commands/jira_commands.py` (modify → aliases);
-  `packages/ai-parrot/src/parrot/auth/oauth2/service.py` (modify: authorization bridge described in §2)
+  `packages/ai-parrot/src/parrot/auth/oauth2/service.py` (modify: authorization bridge described in §2);
+  `packages/ai-parrot/src/parrot/auth/oauth2_base.py` (scope propagation, gated as described in §2)
 - **Responsibility**: `TeamsConnector` (principal + service calls + card building, reused by M6) and the command
   registrations described in §2 Overview "Commands".
 - **Depends on**: M1, M2, M4 (card builders live in `connections.py`); FEAT-773 M6 (`IntegrationsService`).
@@ -416,7 +449,7 @@ def credential_channel_user_id(context: PermissionContext) -> Optional[str]:
       """connect, disconnect, connections + aliases connect_jira, disconnect_jira, jira_status, plain 'jira', 'integrations', 'connections'."""
 
   # jira_commands.py (modifies)
-  def register_jira_commands(router, connector: TeamsConnector) -> None:      # verified: jira_commands.py:350 (signature changes: oauth_manager, nav_user_id_resolver → connector)
+  def register_jira_commands(router, connector: TeamsConnector) -> None:      # verified: jira_commands.py:399 (signature changes: oauth_manager, nav_user_id_resolver → connector)
   ```
 
 ### Module 4: Teams `ChannelNotifier` and conversation-reference store
@@ -451,7 +484,7 @@ def credential_channel_user_id(context: PermissionContext) -> Optional[str]:
       """Bind a fresh list; reset the ContextVar token on exit."""
   def record_auth_requirement(payload: AuthRequiredPayload) -> None:
       """Append when bound; otherwise no-op."""
-  # tools/manager.py — inside the FEAT-773 unified needs-auth branch (today: `except (AuthorizationRequired, CredentialRequired) as auth_exc:`, manager.py:2273)
+  # tools/manager.py — inside the FEAT-773 unified needs-auth branch (today: `except (AuthorizationRequired, CredentialRequired) as auth_exc:`, manager.py:2274)
   #   record_auth_requirement(payload)   # before returning the ToolResult
   ```
 
@@ -468,7 +501,7 @@ def credential_channel_user_id(context: PermissionContext) -> Optional[str]:
   async def _offer_connections(self, turn_context: TurnContext, pending: List[AuthRequiredPayload]) -> None:
       """Guard all auth kinds; group by provider, union scopes; device_code → card; OAuth → connect(scopes=...)."""
   # msteams/connections.py
-  def connect_card(provider_display: str, auth_url: str) -> Dict[str, Any]: ...      # shape verified: jira_commands.py:52-79
+  def connect_card(provider_display: str, auth_url: str) -> Dict[str, Any]: ...      # shape verified: jira_commands.py:54-81
   def device_code_card(provider_display: str, user_code: str, verification_uri: str, expires_in: Optional[int]) -> Dict[str, Any]: ...
   def provider_picker_card(providers: List[Tuple[str, str]]) -> Dict[str, Any]: ...  # Action.Submit {"command": "/connect <id>"}
   def connections_status_card(rows: List[IntegrationDescriptor]) -> Dict[str, Any]: ...
@@ -479,7 +512,8 @@ def credential_channel_user_id(context: PermissionContext) -> Optional[str]:
   `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` (modify: construct channel services
   with the shared PDP adapter; there is no pre-existing server service factory)
 - **Responsibility**: alias lookup; `_start_msteams_bot` builds the wrapper without requiring `jira_client_id`;
-  creates `app["msteams_connection_notifier"]` once and registers it in `ChannelNotifierRegistry`.
+  creates `app["msteams_connection_notifier"]` once and registers it in `ChannelNotifierRegistry`;
+  replaces the old adapter import/registration in `_register_channel_notifiers` without disturbing Slack/Telegram.
   Wire the shared evaluator into every Teams service instance; absence must deny connection operations.
   Introduce explicit channel construction in the integration manager using the app PDP; do not invent an app evaluator key.
 - **Depends on**: M3 (service authorization bridge), FEAT-773 M8.
@@ -488,7 +522,7 @@ def credential_channel_user_id(context: PermissionContext) -> Optional[str]:
   # services/identity_principal.py (FEAT-773 file, modifies)
   _CHANNEL_IDENTITY_PROVIDERS: Dict[str, Tuple[str, ...]] = {"msteams": ("msteams", "azure")}
   #   resolve(channel, id): for provider in _CHANNEL_IDENTITY_PROVIDERS.get(channel, (channel,)):
-  #       IdentityStore.find_user_by_provider_account(provider, id)   # verified: navigator_auth 0.28.7 identity/store.py:333
+  #       IdentityStore.find_user_by_provider_account(provider, id)   # verified: navigator_auth 0.28.9 identity/store.py:497
   ```
 
 ### Module 8: Docs
@@ -511,7 +545,7 @@ def credential_channel_user_id(context: PermissionContext) -> Optional[str]:
 | `test_connect_requires_principal` | M3 | no principal → "/login first", `start_connect` not called |
 | `test_connect_personal_only` | M3 | group conversation → hint, no service call |
 | `test_connect_calls_start_connect_with_teams_state` | M3 | `channel="msteams"`, `principal`, `extra_state` has `conversation_reference` + `bot_app_id` |
-| `test_connect_already_connected` | M3 | `status` active and granted scopes sufficient → account reply, no new state |
+| `test_connect_already_connected` | M3 | `status == "connected"` and `scopes_granted` sufficient → account reply, no new state |
 | `test_jira_aliases_map_to_generic` | M3 | `/connect_jira`, `/disconnect_jira`, `/jira_status`, `jira`, `integrations` route to the generic handlers |
 | `test_pbac_denied_renders_message` | M3 | `start_connect` raising the FEAT-773 PBAC denial → "not allowed" reply |
 | `test_notifier_completed_uses_state_ref` | M4 | callback state ref + `bot_app_id` → that adapter's `continue_conversation` |
@@ -558,10 +592,28 @@ tests:
 - packages/ai-parrot/tests/auth/test_connections_permission_context.py
 - packages/ai-parrot-tools/tests/test_teams_oauth_identity.py
 - packages/ai-parrot-server/tests/test_teams_connections_wiring.py
+- packages/ai-parrot/tests/auth/test_oauth2_scope_propagation.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_command_args.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_principal_source.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_connection_cards.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_connection_routing.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_wrapper_connections.py
+- packages/ai-parrot-integrations/tests/test_slack_msteams_jira_principal.py
+- packages/ai-parrot-integrations/tests/test_jira_notifier_adapters.py
+- packages/ai-parrot-server/tests/unit/test_identity_principal_resolver.py
+- packages/ai-parrot/tests/unit/auth/test_oauth2_principal_keys.py
+- packages/ai-parrot/tests/unit/auth/test_connection_events.py
 markers: none
 
 > `test_msteams_oauth_callback.py` is rewritten or deleted together with `MSTeamsOAuthNotifier` (M4); the task
-> that deletes it must move its surviving assertions into `test_msteams_connection_notifier.py`.
+> must move surviving assertions into `test_msteams_connection_notifier.py`. Also migrate direct legacy-helper
+> imports in `test_msteams_auth_lane.py` and adapter imports/assertions in `test_jira_notifier_adapters.py`.
+> Paths for new functionality above are planned tests, not files claimed to exist at this baseline.
+> The last five `tests:` entries are the retained merged regression suites; in
+> `test_jira_notifier_adapters.py` migrate the Teams assertions and retain Slack/Telegram.
+
+> Add regression cases for notifier registration order (Jira setup before/after Teams), legacy migration
+> with no connection row, closed legacy window, and provider URL scope isolation across concurrent requests.
 
 ### Test Data / Fixtures
 ```python
@@ -588,7 +640,7 @@ def personal_turn_context(teams_session): ...   # botbuilder TurnContext mock, c
 - [ ] **AC-7 (G4)** A notifier failure (adapter error, missing reference, unknown bot) is logged and never fails the callback or the refresh.
 - [ ] **AC-8 (G5)** An authenticated personal Teams turn with needs-auth sends the agent's response, then one card per provider requiring consent (sufficient active grants get an account reply); the card URL comes from `start_connect(channel="msteams")` with the conversation reference in its state; device-code payloads render the code and verification URI.
 - [ ] **AC-9 (G5)** `record_auth_requirement` is a no-op outside `collect_auth_requirements()`; non-Teams callers of `ToolManager` see no behaviour change.
-- [ ] **AC-10 (G6)** An authenticated user with a pre-cutover Jira grant gets `/jira_status` = connected without re-consent; the browser success page and the proactive "connected" message are still shown after a Teams-initiated connect.
+- [ ] **AC-10 (G6)** An authenticated user with a pre-cutover Jira grant within the legacy-read window gets `/jira_status` = connected without re-consent; the browser success page and the proactive "connected" message are still shown after a Teams-initiated connect.
 - [ ] **AC-11** `docs/integrations/msteams-connections.md` exists and covers commands, the `/login` prerequisite, personal-only rule and multi-bot routing.
 - [ ] **AC-12** The Validation Contract passes; no `print`, no `requests`/`httpx`, Pydantic v2 only; `ruff check` clean on touched files; no edit to `parrot/clients/base.py`.
 
@@ -607,36 +659,36 @@ def personal_turn_context(teams_session): ...   # botbuilder TurnContext mock, c
 
 ## 6. Codebase Contract
 
-> Verified against `dev` @ `145a6c603` (2026-10-30). Names marked *(FEAT-773)* come from the FEAT-773 spec and
-> must be re-verified against the merged FEAT-773 code by `/sdd-task`; they do not exist on `dev` today.
+> Verified against local `dev` @ `d4e4978cd2` (2026-10-31), including FEAT-773.
+> Existing contracts are source-verified; proposed APIs are explicitly marked additive. Installed dependency
+> anchors below refer to navigator-auth 0.28.9, not a claim about the deployed production version.
 
 ### Verified Imports
 ```python
-from botbuilder.core import TurnContext                                         # msteams/commands/jira_commands.py:32
-from botbuilder.schema import Activity, Attachment, ConversationReference         # jira_commands.py:207; oauth_callback.py:120
-from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION               # jira_commands.py:33
+from botbuilder.core import TurnContext                                         # msteams/commands/jira_commands.py:33
+from botbuilder.schema import Activity, Attachment, ConversationReference         # jira_commands.py:234; oauth_callback.py:120
+from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION               # jira_commands.py:34
 from parrot.auth.permission import build_principal_context, PermissionContext    # auth/permission.py:166
-from parrot.auth.exceptions import AuthorizationRequired                          # tools/manager.py:19
+from parrot.auth.exceptions import AuthorizationRequired                          # tools/manager.py:20
 from parrot.integrations.msteams.auth import MSTeamsSessionStore, MSTeamsUserSession, MSTeamsAuthStrategy, user_key  # auth.py:29,45,102,256
 from parrot.integrations.msteams.commands import MSTeamsCommandRouter             # commands/__init__.py:30
-from parrot.services.identity_mapping import IdentityMappingService               # used at telegram/wrapper.py:606
-# FEAT-773 (after merge):
-# from parrot.auth.principal import Principal, resolve_principal
-# from parrot.auth.oauth2.events import ChannelNotifier, ChannelNotifierRegistry, ConnectionEvent
-# from parrot.auth.credentials import AuthRequiredPayload
-# from parrot.auth.oauth2.service import IntegrationsService
+# FEAT-773 (merged):
+from parrot.auth.principal import Principal, resolve_principal
+from parrot.auth.oauth2.events import ChannelNotifier, ChannelNotifierRegistry, ConnectionEvent
+from parrot.auth.credentials import AuthRequiredPayload
+from parrot.auth.oauth2.service import IntegrationsService
 ```
 
 ### Additive contracts owned by this feature
 
-These do **not** exist yet; M1/M3 implement them after FEAT-773 merges:
+These do **not** exist at the verified baseline; M1/M3 implement them on top of FEAT-773:
 - `PermissionContext.channel_user_id: Optional[str] = None` and `credential_channel_user_id(context)`.
 - `IntegrationsService(..., permission_evaluator=None)` and keyword-only
   `permission_context=None` on `list_for_principal/status/start_connect/disconnect`, threaded into
   `_check_pbac` with target identity, provider and scopes. The HTTP request API remains compatible.
 - The injected callable adapter reuses the PDP initialized by `setup_pbac`; §2 records the installed
   `is_allowed` mismatch and mandatory real-policy parity gate. No tool-resource mapping is assumed.
-- Channel-aware disconnect is shared work here: pass channel/principal to revoke; retain web defaults.
+- Channel-aware disconnect is shared work here: pass channel, Navigator user_id and channel_user_id to revoke; retain web defaults.
 
 ### Existing Class Signatures
 ```python
@@ -647,11 +699,11 @@ class MSTeamsCommandRouter:                                                     
     async def try_dispatch_plain(self, text: str, turn_context) -> bool           # :111 handler(turn_context) at :138
 
 # msteams/commands/jira_commands.py
-def _connect_jira_card(auth_url: str) -> Dict[str, Any]                           # :52  Action.OpenUrl card
-def _get_user_id(turn_context) -> str                                             # :129 aad_object_id or from_property.id
-def _get_conversation_reference(turn_context) -> Dict[str, Any]                   # :176 TurnContext.get_conversation_reference(...).serialize()
-async def connect_jira_handler(turn_context, oauth_manager, nav_user_id_resolver=None) -> None  # :224
-def register_jira_commands(router, oauth_manager, nav_user_id_resolver=None) -> None            # :350 registers connect_jira, disconnect_jira, jira_status, jira, integrations
+def _connect_jira_card(auth_url: str) -> Dict[str, Any]                           # :54  Action.OpenUrl card
+def _get_user_id(turn_context) -> str                                             # :131 aad_object_id or from_property.id
+def _get_conversation_reference(turn_context) -> Dict[str, Any]                   # :203 TurnContext.get_conversation_reference(...).serialize()
+async def connect_jira_handler(turn_context, oauth_manager, nav_user_id_resolver=None) -> None  # :251
+def register_jira_commands(router, oauth_manager, nav_user_id_resolver=None) -> None            # :399 registers connect_jira, disconnect_jira, jira_status, jira, integrations
 
 # msteams/oauth_callback.py
 class MSTeamsOAuthNotifier:                                                       # :89
@@ -674,8 +726,8 @@ class MSTeamsAuthStrategy:                                                      
 class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):                       # :100
     def __init__(self, agent, config, app, forms_directory=None, voice_config=None, oauth_manager=None)  # :132-140
     #   Jira block :202-221 (register_jira_commands; app["msteams_jira_oauth_notifier"] = MSTeamsOAuthNotifier(...) :215)
-    #   self._session_store :224; self._auth (MSTeamsAuthStrategy) :230-239; register_auth_commands :239
-    async def _effective_user_id(self, turn_context, fallback: str) -> str        # :351
+    #   self._session_store :225; self._auth (MSTeamsAuthStrategy) :230-239; register_auth_commands :239
+    async def _effective_user_id(self, turn_context, fallback: str) -> str        # :350
     #   card Submit → command router :601-605; text commands :715-723; orchestrator call :810-816
 
 # msteams/dialogs/orchestrator.py
@@ -686,16 +738,16 @@ class FormOrchestrator: async def process_message(self, message, conversation_id
 async def ask(self, question, session_id=None, user_id=None, ..., permission_context: Optional[Any] = None, ...)  # :1069, kwarg :1083
 
 # parrot/tools/manager.py
-#   except (AuthorizationRequired, CredentialRequired) as auth_exc: → ToolResult(status="authorization_required", metadata={auth_url, provider, scopes, tool_name})  # :2273-2290
+#   except (AuthorizationRequired, CredentialRequired) as auth_exc: → ToolResult(status="authorization_required", metadata=payload.model_dump())  # :2274-2291
 
 # parrot/clients/base.py — DO NOT MODIFY
 #   _execute_tool: isinstance(result, ToolResult) and status != "error" → return result.result   # :1661-1668 (metadata lost)
 
 # integrations/manager.py
-async def _start_msteams_bot(self, name, config)                                  # :347; JiraOAuthManager gated on config.jira_client_id :355; wrapper(oauth_manager=...) :390
+async def _start_msteams_bot(self, name, config)                                  # :411; JiraOAuthManager gated on config.jira_client_id :420; wrapper(oauth_manager=...) :456
 
-# navigator_auth 0.28.7
-IdentityStore.find_user_by_provider_account(provider, provider_user_id) -> Optional[Any]   # identity/store.py:333
+# navigator_auth 0.28.9
+IdentityStore.find_user_by_provider_account(provider, provider_user_id) -> Optional[Any]   # identity/store.py:497
 TokenExchange: store.save_linked_identity(uid, req.provider, ext, userinfo)       # backends/exchange.py:190 (best-effort)
 ```
 
@@ -705,14 +757,14 @@ TokenExchange: store.save_linked_identity(uid, req.provider, ext, userinfo)     
 | `MSTeamsPrincipalSource` | `MSTeamsSessionStore.get_or_create` / `is_expired` | method call | `auth.py:134`, `:130` |
 | Teams `permission_context` | `FormOrchestrator.process_message` → `agent.ask(permission_context=)` | kwargs passthrough | `orchestrator.py:320`, `base.py:1083` |
 | `command_args` | `MSTeamsCommandRouter.try_dispatch*` | `turn_context.turn_state` | `commands/__init__.py:97`, `:138` |
-| `TeamsConnector` | `IntegrationsService.start_connect/status/disconnect/list_for_principal` *(FEAT-773)* | method call | FEAT-773 spec §3 M6 |
-| `MSTeamsConnectionNotifier` | `ChannelNotifierRegistry.register` *(FEAT-773)*; `BotFrameworkAdapter.continue_conversation` | Protocol / method call | FEAT-773 §2; `oauth_callback.py:136` |
-| `record_auth_requirement` | `ToolManager.execute_tool` needs-auth branch | function call | `manager.py:2273` |
-| resolver alias | `IdentityStore.find_user_by_provider_account` | method call | `navigator_auth/identity/store.py:333` |
+| `TeamsConnector` | `IntegrationsService.start_connect/status/disconnect/list_for_principal` *(FEAT-773)* | method call | `auth/oauth2/service.py:81, :288, :360, :371` |
+| `MSTeamsConnectionNotifier` | `ChannelNotifierRegistry.register` *(FEAT-773)*; `BotFrameworkAdapter.continue_conversation` | Protocol / method call | `auth/oauth2/events.py:59`; `oauth_callback.py:136` |
+| `record_auth_requirement` | `ToolManager.execute_tool` needs-auth branch | function call | `manager.py:2274` |
+| resolver alias | `IdentityStore.find_user_by_provider_account` | method call | `navigator_auth/identity/store.py:497` |
 
 ### Does NOT Exist (Anti-Hallucination)
-- ~~`app["identity_mapping_service"]`~~ — read at `oauth_callback.py:261` and `slack/oauth_callback.py:238`, **never assigned** anywhere in `packages/`; do not rely on it.
-- ~~an `msteams` identity row written at Teams `/login`~~ — login writes provider **`azure`** (navigator-auth exchange); only the Jira callback writes `msteams`, and only when the dead key above is set.
+- ~~`app["identity_mapping_service"]`~~ — read at `oauth_callback.py:261` and `slack/oauth_callback.py:238`, **no production assignment found** in repository Python source (external app setup may supply it); do not rely on it.
+- ~~an `msteams` identity row written at Teams `/login`~~ — login writes provider **`azure`** (navigator-auth exchange); the merged notifier adapter and legacy callback helper can write `msteams` only when the optional key above is supplied.
 - ~~`permission_context` on the Teams agent call~~ — today only `user_id` / `session_id` (wrapper.py:813-816).
 - ~~command arguments passed to `MSTeamsCommandRouter` handlers~~ — handlers receive only `turn_context`; agent commands re-read `activity.text` (agent_commands.py:65-67), which is empty for card Submits.
 - ~~`ToolResult.metadata` on `AIMessage.tool_calls[*].result`~~ — `_execute_tool` returns `result.result` (clients/base.py:1668).
@@ -720,7 +772,7 @@ TokenExchange: store.save_linked_identity(uid, req.provider, ext, userinfo)     
 - `Principal`, `ChannelNotifierRegistry`, `AuthRequiredPayload`, `IdentityPrincipalResolver` and
   `MSTeamsJiraNotifierAdapter` now exist on dev (FEAT-773, PR #1897); `channel` currently belongs to
   `start_connect`, not the service constructor or disconnect.
-- ~~a generic `/connect <provider>` command on any channel~~ — none exists (FEAT-773 proposal §3.4).
+- ~~a generic Teams `/connect <provider>` command~~ — current Teams registration remains Jira-only.
 
 ### Additional review-fix edit sites
 
@@ -735,7 +787,10 @@ TokenExchange: store.save_linked_identity(uid, req.provider, ext, userinfo)     
 
 ### Edit Sites (Blueprint Anchors)
 
-Verified against: `145a6c603`
+Verified against: `d4e4978cd2` (local `dev`, 2026-10-31). Counts are exact full-line matches,
+including indentation. Wrapper contexts are listed separately by indentation: normal chat/voice at
+813/1165, card resume at 568, deep-link resume at 523. Manager wrapper arguments at 456/1015 are
+Teams/Slack respectively; edit the Teams call only. Core OAuth URL changes belong to M3's scope-wire gate.
 
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
@@ -743,56 +798,71 @@ Verified against: `145a6c603`
 | `packages/ai-parrot-integrations/src/parrot/integrations/msteams/commands/connect_commands.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/auth/pending.py` | CREATE | — | — | — |
 | `docs/integrations/msteams-connections.md` | CREATE | — | — | — |
-| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/commands/__init__.py` | MODIFY | `            await handler(turn_context)` — context: `:97` follows `try:` inside `try_dispatch` (after `handler = self._handlers.get(cmd)`); `:138` inside `try_dispatch_plain` (after `handler = self._handlers.get(text)`) | `commands/__init__.py:97, :138` | 2 |
-| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/commands/jira_commands.py` | MODIFY | `def register_jira_commands(` | `jira_commands.py:350` | 1 |
-| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/oauth_callback.py` | MODIFY (delete notifier) | `class MSTeamsOAuthNotifier:` | `oauth_callback.py:89` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/commands/__init__.py` | MODIFY | `            await handler(turn_context)` | `__init__.py:97, 138` | 2 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/commands/jira_commands.py` | MODIFY | `def register_jira_commands(` | `jira_commands.py:399` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/oauth_callback.py` | MODIFY | `class MSTeamsOAuthNotifier:` | `oauth_callback.py:89` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/oauth_callback.py` | MODIFY | `async def handle_msteams_jira_callback(` | `oauth_callback.py:182` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `        if oauth_manager is not None:` | `wrapper.py:202` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `        command = submitted_data.get("command")` | `wrapper.py:601` | 1 |
-| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `                context={` — 4 call sites (`:523`, `:568`, `:813`, `:1165`); the chat path is `:813`, preceded by `result = await self.form_orchestrator.process_message(` | `wrapper.py:813` | 4 |
-| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `    async def _run_post_login(self, turn_context: TurnContext, session: Any) -> None:` (insert `_offer_connections` before it) | `wrapper.py:394` | 1 |
-| `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` | MODIFY | `            oauth_manager=jira_oauth_manager,` — `:390` is the Teams wrapper (under `wrapper = MSTeamsAgentWrapper(`); `:947` is Slack | `manager.py:390` | 2 |
-| `packages/ai-parrot/src/parrot/tools/manager.py` | MODIFY | `        except (AuthorizationRequired, CredentialRequired) as auth_exc:` (FEAT-773 M5 reshapes this branch — re-anchor after merge) | `manager.py:2273` | 1 |
-| `packages/ai-parrot-server/src/parrot/services/identity_principal.py` | MODIFY | (unverified — created by FEAT-773 M8; check before use) | — | — |
-| `packages/ai-parrot-integrations/src/parrot/integrations/core/auth/notifiers.py` | MODIFY | (unverified — created by FEAT-773 M8; remove `MSTeamsJiraNotifierAdapter`) | — | — |
+| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `                context={` | `wrapper.py:813, 1165` | 2 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `                    context={` | `wrapper.py:568` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `                            context={` | `wrapper.py:523` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `    async def _run_post_login(self, turn_context: TurnContext, session: Any) -> None:` | `wrapper.py:394` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` | MODIFY | `            oauth_manager=jira_oauth_manager,` | `manager.py:456, 1015` | 2 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` | MODIFY | `    MSTeamsJiraNotifierAdapter,` | `manager.py:32` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` | MODIFY | `def _register_channel_notifiers(app: Any) -> ChannelNotifierRegistry:` | `manager.py:134` | 1 |
+| `packages/ai-parrot/src/parrot/tools/manager.py` | MODIFY | `        except (AuthorizationRequired, CredentialRequired) as auth_exc:` | `manager.py:2274` | 1 |
+| `packages/ai-parrot-server/src/parrot/services/identity_principal.py` | MODIFY | `            nav_user_id = await store.find_user_by_provider_account(channel, channel_user_id)` | `identity_principal.py:45` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/core/auth/notifiers.py` | MODIFY | `class MSTeamsJiraNotifierAdapter(_JiraAdapterBase):` | `notifiers.py:139` | 1 |
+| `packages/ai-parrot/src/parrot/auth/permission.py` | MODIFY | `class PermissionContext:` | `permission.py:81` | 1 |
+| `packages/ai-parrot/src/parrot/auth/credentials.py` | MODIFY | `class OAuthCredentialResolver(CredentialResolver):` | `credentials.py:214` | 1 |
+| `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py` | MODIFY | `    async def _pre_execute(self, tool_name: str, /, **kwargs) -> None:` | `jiratoolkit.py:1319` | 1 |
+| `packages/ai-parrot-tools/src/parrot_tools/o365/oauth_toolkit.py` | MODIFY | `    async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:` | `oauth_toolkit.py:102` | 1 |
+| `packages/ai-parrot/src/parrot/auth/oauth2/service.py` | MODIFY | `class IntegrationsService:` | `service.py:65` | 1 |
+| `packages/ai-parrot/src/parrot/auth/oauth2_base.py` | MODIFY | `    async def create_authorization_url(` | `oauth2_base.py:398` | 1 |
 
 ---
 
 ## 7. Implementation Notes & Constraints
 
 ### Patterns to Follow
-- Card shape and send path: `_connect_jira_card` / `_send_adaptive_card` (jira_commands.py:52-79, :198-217); reuse
+- Card shape and send path: `_connect_jira_card` / `_send_adaptive_card` (jira_commands.py:54-81, :225-248); reuse
   `DEFAULT_ADAPTIVE_CARD_VERSION`.
 - Proactive messaging: `ConversationReference.deserialize` + `adapter.continue_conversation(ref, cb, app_id)`
   inside a broad `except` that logs (oauth_callback.py:119-142).
-- Session reads never trigger an exchange (`_effective_user_id`, wrapper.py:351); only `/login` and the auth gate
+- Session reads never trigger an exchange (`_effective_user_id`, wrapper.py:350); only `/login` and the auth gate
   call `ensure_authenticated`.
 - `nav_user_id` is never derived from `user_id` / the AAD id (FEAT-729 review, issue `187ce3fe3b93`, oauth_callback.py:249-256).
 - `self.logger`, Pydantic v2, async-only I/O; Redis via the app's existing client (`app['redis']`), no new client.
 
 ### Known Risks / Gotchas
-- **Teams users without the auth lane lose connect.** Today `/connect_jira` works with no Navigator sign-in
-  (AAD-keyed). Under FEAT-773 principal keys there is no principal without `/login`; deployments without
-  `navigator_auth_url` get the operator message. This is the Teams form of U3 — announce it with the S-2 cutover.
+- **Live-session requirement.** Merged `/connect_jira` already rejects an unresolved principal. FEAT-775
+  additionally requires a live FEAT-729 session with AAD oid, even if a persistent identity row exists;
+  deployments without `navigator_auth_url` get the operator message. Document this stricter prerequisite.
 - **Group conversations.** A conversation reference from a channel or group chat would post the "connected"
   message (account name) to everyone; connect is therefore personal-only and the ref store saves personal refs only.
 - **Collector and concurrency.** The ContextVar holds a *list*; `asyncio.create_task` copies the context, so
   children share the same list object — appends are visible, rebinding is not. Never rebind inside tools.
 - **Duplicate notification.** If the user connects from the card and the generic callback also renders a success
   page, both are expected (browser page + Teams message), as today.
-- **Dead identity write today.** `app["identity_mapping_service"]` is never registered, so the current Teams/Slack
-  callbacks never write identity rows in production; FEAT-773 M8's adapter must not assume they did. M7's `azure`
-  alias is what makes out-of-turn resolution work for Teams. *(Worth a ledger issue against FEAT-773 M8.)*
+- **Optional identity-service wiring.** Repository startup does not assign `identity_mapping_service`;
+  the merged notifier's guarded identity write cannot bootstrap resolution without external wiring.
+  M7's `azure` alias uses the login identity already persisted by navigator-auth.
 - **LLM sees `None` for needs-auth tools** (clients/base.py:1668). The card fixes the user path only; the LLM may
   still produce a confusing sentence before the card until FEAT-776 M2 lands (§8 Q3).
-- **FEAT-773 baseline.** Shared service contracts were rechecked at `70b0fb7d2b`; historical Teams-only
-  anchors below still require re-verification during decomposition. The production PDP and scope-wire
-  gates in §2 must be resolved before dependent tasks are generated.
+- **FEAT-773 baseline.** All blueprint anchors below were checked at `d4e4978cd2`. Source validation
+  does not establish deployed PDP policy parity. That implementation gate in §2 remains open.
+- **Legacy status is row-driven.** `IntegrationsService._descriptor` (service.py:138) reports disconnected
+  without a `users_integrations` row; it does not discover a legacy token. M3 must perform a principal-bound
+  manager token validation/migration before status for the legacy compatibility path, then re-read status.
+  Preserve `channel_user_id` for the legacy lookup and honor `OAUTH2_LEGACY_KEYS_UNTIL`
+  (oauth2_base.py:79, :647). AC-10 applies only while that window is open; add a closed-window case.
 
 ### External Dependencies
 | Package | Version | Reason |
 |---|---|---|
 | `botbuilder-core` / `botbuilder-schema` | already pinned | Adaptive Cards, proactive messaging |
-| `navigator-auth` | `>=0.28.7` (installed) | `find_user_by_provider_account` |
+| `navigator-auth` | `0.28.9` (locally installed) | `find_user_by_provider_account` |
 
 No new dependencies.
 
@@ -809,8 +879,8 @@ No new dependencies.
 - [x] **Q3** FEAT-776 M2 owns the approved message-only `_execute_tool` change. Teams consumes the shared
   collector independently and benefits from that message when it lands; it does not duplicate the base edit.
 - [ ] **Q4** Consent denial (`?error=` on the callback): FEAT-773's `ConnectionEventKind` has no failure kind, so the
-  Teams "authorization failed" proactive message (today `notify_failure`, oauth_callback.py:144) is lost unless
-  FEAT-773 publishes one. Accept the loss (the browser page still shows the error) or add a
+  active generic callback already returns an error page without publishing a failure event
+  (oauth2_routes.py:224). The legacy helper still contains `notify_failure`, but is not invoked by that route. Accept the loss (the browser page still shows the error) or add a
   `connection.failed` kind to FEAT-773? Default: accept — *Owner: Jesus*
 - [x] Teams principal mapping comes from FEAT-729, not a new `TeamsHumanChannel` — *Resolved in FEAT-773
   proposal* (C16, §2.4 "MOOT").
@@ -870,3 +940,5 @@ parity check in §2; there is no existing server service factory to re-anchor. N
 | 0.1 | 2026-10-30 | Jesus Lara (with Claude Opus 5.5) | Initial draft from FEAT-773 proposal §6 S-3b + spec §1 Non-Goals |
 | 0.2 | 2026-10-30 | Codex | Resolve review findings: explicit OAuth channel identity; shared PDP authorization without HTTP request; scope union and upgrade consent; shared personal/principal guard for device-code cards. Expand module ownership, tests and AC-13–16. |
 | 0.3 | 2026-10-31 | Codex | Own shared permission-context API and channel-aware revoke; align FEAT-776 ownership and close shared-core/message decisions. Record merged service signatures and production PDP adapter compatibility gate. |
+
+| 0.4 | 2026-10-31 | Codex | Revalidate against merged FEAT-773 at d4e4978cd2: principal-keyed commands, active callback/notifier path, revoke signature, singleton registry wiring, legacy status prerequisite, dependency version, and exact blueprint anchors. Preserve PDP/scope implementation gates. |

@@ -22,7 +22,8 @@ tags: [oauth2, connections, web-ui, sse, slack, o365]
 > `PrincipalResolver`, `CredentialStore`, `ConnectionEvent`, `ChannelNotifier`, `ConnectionEventPublisher`,
 > `AuthRequiredPayload`, `/api/v1/connections*`) and cannot start before FEAT-773 is merged.
 > Siblings: S-2 Telegram migration, S-3b MS Teams, S-4 CLI + local MCP (FEAT-774, `connections-cli-local-mcp`).
-> Spec-time decisions taken with the user on 2026-10-30 are marked **(D1–D3)**.
+> Spec-time decisions taken with the user on 2026-10-30 are marked **(D1–D3)**; decisions taken in the
+> post-FEAT-773 review on 2026-10-31 are marked **(D4–D5)**.
 
 ---
 
@@ -45,10 +46,12 @@ and Slack surfaces cannot see or benefit from it:
    prompt" (`ConnectIntegrationPill.svelte:31-33`). `auth_required` is detected only on the non-streaming
    path (`AgentChat.svelte:1344`); the streaming frame format has no `auth_required` variant
    (`stream.ts:27-30`), so in the default streaming mode the user never sees a Connect pill.
-4. **Slack first-link has no owner.** Slack has no login, so `/connect_jira` carries no `nav_user_id`
-   (`slack/commands/jira_commands.py:91-99`) and the durable Identity Vault write is skipped
-   (`docs/auth/jira-credential-ownership.md:60-84`, "Known gap"). After S-1, an unresolvable principal fails
-   closed, so Slack users could not connect at all.
+4. **Slack first-link has no owner.** Slack has no login. S-1 made `/connect_jira` resolve the
+   team-qualified id `"{team_id}:{slack_user_id}"` and fail closed with `_LINK_FIRST`
+   (`slack/commands/jira_commands.py:29`, `:93-99`), but nothing ever creates that `slack` identity row:
+   the callback still writes the bare `slack_user_id` (`oauth_callback.py:251`) and only when a
+   `nav_user_id` is present, which Slack never sends (`docs/auth/jira-credential-ownership.md:65`,
+   "Known gap"). So today every Slack user gets "link first" and has no way to link.
 5. **O365 lives in three stores.** Browser 3LO writes `vault_utils` DocumentDB `user_credentials` under
    `oauth2_o365_web_{user_id}`; device code writes navigator-session `VaultTokenSync` `o365:*` keyed by the
    e-mail/OID (`o365_devicecode_provider.py:142`, `:272`); `O365OAuth2Provider` is registered nowhere
@@ -143,8 +146,11 @@ refresh — device code already refreshes through `O365OAuthManager.refresh_acce
 `O365OAuthManager.store_device_grant(principal, payload)` that builds the token set and calls S-1's
 durable-first `_persist_token(..., minted=True)` and `upsert_users_integration`. The record carries
 `grant_origin ∈ {"authorization_code", "device_code"}` for display and audit. The resolver's `user_id` today
-is the e-mail/OID; it now resolves the principal first (`resolve_principal(channel, user_id)`, S-1's
-canonical-identity path that AC-3 of S-1 requires for `a2a`), failing closed on `None`. Legacy `o365:*`
+is the e-mail/OID; it now resolves the principal first (`resolve_principal(channel, user_id)`), failing
+closed on `None`. **(D4)** S-1 shipped no canonical-identity lookup: `IdentityPrincipalResolver` returns
+`None` for an `a2a` e-mail on purpose (`identity_principal.py:38-41`), and S-1's AC-3 was proven only with
+a fake resolver. M3 therefore adds that lookup to `IdentityPrincipalResolver` for `cli` and `a2a`
+(see M3 "Canonical-identity lookup"). Legacy `o365:*`
 entries in `VaultTokenSync` (keyed by the e-mail/OID) are read once per principal, rewritten, and deleted,
 until `OAUTH2_LEGACY_KEYS_UNTIL` (S-1 config); the 3LO legacy vault name `oauth2_o365_web_{u}` is already
 covered by S-1's `_read_legacy_token`. Device-code legacy records contain absolute `expires_at`, not
@@ -173,8 +179,9 @@ outstanding auth requirements disable auto-retry; v1 exposes the first pill and 
 
 **Panel and cleanup (M5, M6).** `ConnectionsPanel` (account page) and the per-agent `IntegrationsMenu` both
 read `lib/stores/connections.svelte.ts`, which owns the list, the SSE reader and refetch-on-event. The
-`/account` section is shared with FEAT-772 (passkeys, TASK-4902–4904, pending): whichever lands first adds
-`"account"` to `appSections`, the nav entry, and `/account` to `SPA_SECTIONS`; the other only adds its route.
+`/account` section already exists: FEAT-772 (passkeys) landed `"account"` in `appSections` (`config.ts:62`),
+`/account` in `SPA_SECTIONS` (`serving.py:40`), the `/account/security` route (`App.svelte:32-37`) and an
+"Account" nav entry (`nav.ts:37-41`). S-3a adds only its two routes and a "Connections" nav entry.
 `/enable` disappears end to end. API types are generated from the Pydantic models through
 `scripts/generate_ts_types.py` instead of hand-written in `integrations.ts`.
 
@@ -210,8 +217,9 @@ read `lib/stores/connections.svelte.ts`, which owns the list, the SSE reader and
 |---|---|---|
 | S-1 `parrot/auth/oauth2/events.py::ConnectionEventPublisher` | extends | `add_sink` / `ConnectionEventSink` (M1) |
 | S-1 `ConnectionsHandler`, `IntegrationsService.start_connect/list_for_principal` | uses | panel, pill, Slack commands |
-| S-1 `IdentityPrincipalResolver` | modifies | Slack lookup uses the team-qualified `provider_user_id`; `cli` resolves like `a2a` (canonical identity) |
+| S-1 `IdentityPrincipalResolver` | modifies | Slack: exactly-one-owner lookup on the team-qualified `provider_user_id` (M2); `cli`/`a2a`: new e-mail/OID canonical-identity lookup (M3, D4) |
 | S-1 `SlackJiraNotifierAdapter` (integrations `core/auth/notifiers.py`) | replaces | `SlackConnectionNotifier` |
+| integrations `manager.py` notifier registration (`:136-142`) | modifies | register `SlackConnectionNotifier` instead of `SlackJiraNotifierAdapter` (shared with S-3b) |
 | `handlers/agent.py` AgentTalk | modifies | `auth_required` detection on both paths; streaming trailer; hot-swap bootstrap removed |
 | `handlers/integrations.py::IntegrationsHandler` | modifies | `/enable` branch and `_post_enable` removed |
 | `manager/manager.py` | modifies | routes (SSE, channel-link confirm), `/enable` route removed, sink + O365 provider registration |
@@ -221,7 +229,7 @@ read `lib/stores/connections.svelte.ts`, which owns the list, the SSE reader and
 | `slack/commands/jira_commands.py`, `slack/oauth_callback.py`, `slack/wrapper.py` | modifies | generic commands, team-qualified identity, notifier registration |
 | `parrot/auth/o365_oauth.py::O365OAuthManager` | extends | `store_device_grant`, `grant_origin` |
 | `parrot/auth/oauth2/o365_devicecode_provider.py::O365DeviceCodeCredentialResolver` | modifies | manager-backed read/write, principal resolution, legacy migration |
-| `parrot/auth/broker/factory.py::_build_device_code` | modifies | deps: `o365`, `o365_oauth_manager`, optional `legacy_vault` (no required `vault`) |
+| `parrot/auth/broker/factory.py::_build_device_code` | modifies | deps: `o365_client` (or `o365_interface`), `o365_oauth_manager`, optional `legacy_vault` (no required `vault`) |
 | `services/vault_token_sync.py` | modifies (docs) | `o365` no longer served |
 | `parrot/tools/jira_connect_tool.py` | deletes | with its bootstrap and test |
 | Admin UI `AgentChat.svelte`, `ConnectIntegrationPill.svelte`, `IntegrationsMenu.svelte`, `api/integrations.ts`, `api/stream.ts`, `App.svelte`, `nav.ts`, `config.ts` | modifies | see M4, M5 |
@@ -355,17 +363,20 @@ def register_connection_commands(router, *, link_issuer, service_factory) -> Non
   `packages/ai-parrot-server/src/parrot/services/identity_principal.py` (modify — S-1 file);
   `packages/ai-parrot-integrations/src/parrot/integrations/slack/commands/connection_commands.py` (new);
   `slack/commands/jira_commands.py`, `slack/oauth_callback.py`, `slack/wrapper.py` (modify); `slack/notifier.py` (new);
-  `packages/ai-parrot-integrations/src/parrot/integrations/core/auth/notifiers.py` (modify — S-1 file: drop the Slack adapter)
+  `packages/ai-parrot-integrations/src/parrot/integrations/core/auth/notifiers.py` (modify — S-1 file: drop the Slack adapter);
+  `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` (modify — S-1 notifier registration, `:136-142`)
 - **Responsibility**: opaque single-use link nonce; read-only preview and explicit session-authenticated confirm that claims the `slack`
   identity row; `/login`, `/connect <p>`, `/disconnect <p>`, `/connections` (Jira commands become aliases);
   team-qualified Slack `provider_user_id`; exclusive ownership; principal-aware PBAC; provider-agnostic Slack notifier.
-- **Depends on**: S-1 M1 (`resolve_principal`), M4 (`ChannelNotifier`), M6 (`start_connect(channel=, principal=)`, `disconnect`, `list_for_principal`), M8 (`IdentityPrincipalResolver`, notifier registration site).
+- **Depends on**: S-1 M1 (`resolve_principal`), M4 (`ChannelNotifier`), M6 (`start_connect(channel=, principal=)`, `disconnect`, `list_for_principal`), M8 (`IdentityPrincipalResolver`; notifier registration site `integrations/manager.py:136-142`, not `slack/wrapper.py`).
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot/src/parrot/auth/channel_link.py  (new)
   class ChannelLinkIssuer:
       """Redis key channel_link:{nonce} (secrets.token_urlsafe(32)), TTL CHANNEL_LINK_TTL_SECONDS (default 600), GETDEL on consume."""
       def __init__(self, redis_client: Any, *, base_url: str, ttl_seconds: int = 600) -> None: ...
+      # base_url = CONNECTIONS_LINK_BASE_URL — required config, no default (D5). Unset → Slack /login replies
+      # "account linking is not configured" and logs a warning; no nonce is issued.
       async def issue(self, channel: str, channel_user_id: str, extra: Optional[Dict[str, str]] = None) -> str:
           """Return f"{base_url}/account/link?token={nonce}"; raises ValueError on empty channel_user_id."""
       async def peek(self, nonce: str) -> Optional[ChannelLinkClaim]:
@@ -407,8 +418,10 @@ def register_connection_commands(router, *, link_issuer, service_factory) -> Non
           """DM extra.slack_user_id: completed / revoked / refresh_failed for any provider (display_name from the registry)."""
 
   # packages/ai-parrot-server/src/parrot/services/identity_principal.py  (modifies S-1 M8)
-  #   slack: read all owners of ("slack", "{team_id}:{slack_user_id}"); exactly one enabled owner or fail closed
-  #   cli:   same canonical-identity path as a2a (e-mail / OID) — needed by M3's device-code resolver until S-4
+  #   slack: read all owners of ("slack", "{team_id}:{slack_user_id}"); exactly one enabled owner or fail closed.
+  #          IdentityStore.find_user_by_provider_account returns rows[0] even with several owners, so query
+  #          auth.user_identities directly over the resolver's pool (no navigator-auth change).
+  #   cli / a2a: canonical-identity lookup added by M3 (D4)
   ```
 
 **Exclusive ownership contract (M2).** Add
@@ -449,11 +462,13 @@ change is authorized by this spec.
 ### Module 3: O365 store consolidation
 - **Path**: `packages/ai-parrot/src/parrot/auth/o365_oauth.py`, `packages/ai-parrot/src/parrot/auth/oauth2/o365_devicecode_provider.py`,
   `packages/ai-parrot/src/parrot/auth/broker/factory.py`, `packages/ai-parrot-server/src/parrot/manager/manager.py`
-  (`_register_oauth2_providers`), `packages/ai-parrot-server/src/parrot/services/vault_token_sync.py` (docstring)
+  (`_register_oauth2_providers`), `packages/ai-parrot-server/src/parrot/services/vault_token_sync.py` (docstring),
+  `packages/ai-parrot-server/src/parrot/services/identity_principal.py` (canonical-identity lookup, D4 — shared with M2)
 - **Responsibility**: one principal-keyed O365 record for both grant types; device-code resolver backed by
   the manager; O365 registered as a connection provider; legacy `o365:*` migration.
 - **Depends on**: S-1 M1, M2 (`_persist_token(principal, token_set, minted=, state_payload=)`, `_read_legacy_token`,
-  `OAUTH2_LEGACY_KEYS_UNTIL`), M6 (`upsert_users_integration` row shape), M8 (`IdentityVaultCredentialStore` for any provider).
+  `OAUTH2_LEGACY_KEYS_UNTIL`), M6 (`upsert_users_integration` row shape), M8 (`IdentityVaultCredentialStore` for any provider,
+  `IdentityPrincipalResolver`). Shares `identity_principal.py` with M2 — tasks serialized.
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot/src/parrot/auth/o365_oauth.py  (modifies)
@@ -483,7 +498,8 @@ change is authorized by this spec.
   # _O365_VAULT_PREFIX (:46) kept only for the legacy read
 
   # packages/ai-parrot/src/parrot/auth/broker/factory.py  (modifies _build_device_code, :167-200)
-  #   required deps: "o365", "o365_oauth_manager"; optional "legacy_vault"; "vault" no longer required
+  #   required deps: "o365_client" (or "o365_interface", :184), "o365_oauth_manager"; optional "legacy_vault";
+  #   "vault" no longer required
 
   # packages/ai-parrot-server/src/parrot/manager/manager.py  (modifies _register_oauth2_providers, :2789)
   #   when O365_CLIENT_ID (conf.py:618) is set: reuse app["oauth2_manager_o365"] or build
@@ -491,6 +507,18 @@ change is authorized by this spec.
   #   tenant_id=O365_TENANT_ID (:620) or "common", app, credential_store=…, event_publisher=…); setup();
   #   register_oauth2_provider(O365OAuth2Provider(manager=…))  (o365_provider.py:32)
   ```
+
+**Canonical-identity lookup (M3, D4).** `IdentityPrincipalResolver.resolve` gains a branch for `cli` and
+`a2a` that replaces today's unconditional `None` for an e-mail. An id containing `@` is lower-cased and matched
+against `auth.users.email` with `is_active = true`; any other id is treated as an Entra OID and matched
+against enabled `auth.user_identities.provider_user_id` rows of the Entra-backed providers (the exact
+`auth_provider` values are verified by `/sdd-task`, never guessed). Exactly one distinct `user_id` must match;
+zero or several → `None` plus a non-secret diagnostic, never a pick. `alt_email` is never matched. The lookup
+queries the resolver's pool directly (navigator-auth `IdentityStore` has no e-mail lookup; no dependency
+change). The returned `Principal` carries `canonical_identity` = the lower-cased e-mail or the OID. The S-1
+test `test_a2a_email_fails_closed_without_email_lookup` is replaced by the match / no-match / ambiguous /
+inactive cases. This is a trust decision: only identities the auth DB already holds are accepted; a
+process without the auth DB pool still fails closed.
 
 **Legacy conversion and ordering (M3).** Parse `expires_at` as an absolute epoch. Preserve that value
 exactly for an unexpired token outside the existing expiry skew; never supply a default lifetime.
@@ -591,7 +619,8 @@ from tool status. This conservative gate does not claim general tool-operation i
   //   account (display_account_name / email), scopes_granted, expires_at, channels; Connect / Reconnect / Disconnect.
   // LinkChannel.svelte: GET preview only on load; display both identities and access implications.
   // Confirm click sends {confirm: true}; Cancel does not write. Show 409 conflict / 410 expired / error.
-  // App.svelte routes: /account/connections, /account/link (requiresAuth: true; pattern App.svelte:21-63)
+  // App.svelte routes: /account/connections, /account/link (requiresAuth: true), added next to the FEAT-772
+  //   /account/security route (App.svelte:32-37). nav.ts: a "Connections" entry (section "user") after "Account".
   // REMOVED: confirmIntegrationEnable (integrations.ts:89), EnableResponse TS type (:36-38), the menu's /enable call (IntegrationsMenu.svelte:64)
   ```
   ```python
@@ -599,7 +628,7 @@ from tool status. This conservative gate does not claim general tool-operation i
   # manager/manager.py: REMOVED route "/api/v1/agents/integrations/{agent_id}/{provider}/enable" (:2467-2468);
   #   ADDED "/api/v1/connections/events" (M1), "/api/v1/channel-links/{nonce}" and "…/{nonce}/confirm" (M2)
   # parrot/auth/oauth2/models.py: REMOVED EnableResponse (models.py:95) + its export
-  # server/ui/serving.py: SPA_SECTIONS gains "/account" (:39) unless FEAT-772 TASK-4904 already added it
+  # server/ui/serving.py: no change — FEAT-772 already added "/account" to SPA_SECTIONS (:40); config.ts likewise
   ```
 
 ### Module 6: Retire the FEAT-083 hot-swap placeholder
@@ -652,7 +681,8 @@ from tool status. This conservative gate does not claim general tool-operation i
 | `test_devicecode_legacy_refresh_and_failure` | M3 | valid refresh enables expired-token migration; rotated refresh token retained; transient/probe/persistence failure preserves legacy; terminal invalid grant requires auth |
 | `test_devicecode_legacy_concurrent_replace_revoke` | M3 | concurrent reconnect wins; disconnect prevents resurrection; failed legacy deletion retries cleanup without reimport or duplicate completion |
 | `test_o365_provider_registered_when_configured` | M3 | `O365_CLIENT_ID` set → `OAuth2ProviderRegistry.get("o365")`; unset → absent |
-| `test_broker_device_code_deps_without_vault` | M3 | `_build_device_code` builds with `o365` + `o365_oauth_manager` only |
+| `test_broker_device_code_deps_without_vault` | M3 | `_build_device_code` builds with `o365_client` + `o365_oauth_manager` only |
+| `test_resolver_canonical_identity_lookup` | M3 | `cli`/`a2a`: unique active e-mail (case-insensitive) and unique enabled OID resolve; no match, several users, inactive user, disabled identity and `alt_email` return `None`; replaces `test_a2a_email_fails_closed_without_email_lookup` |
 | `test_agenttalk_auth_required_from_tool_result` | M4 | non-streaming: tool result `authorization_required` → `AuthRequiredEnvelope` |
 | `test_agenttalk_stream_auth_required_trailer` | M4 | streaming: trailer frame after envelope with full payload incl. device-code fields |
 | `test_agenttalk_retry_safety` | M4 | both modes: complete single pre-dispatch auth failure with no begun bodies is safe; successful mutation followed by auth failure or multiple outstanding auth requirements is unsafe |
@@ -690,6 +720,7 @@ runners:
   - packages/ai-parrot/tests/auth/test_o365_devicecode_resolver.py
   - packages/ai-parrot/tests/auth/test_broker_devicecode.py
   - packages/ai-parrot-server/tests/unit/test_vault_token_sync_atomic_persist.py
+  - packages/ai-parrot-server/tests/unit/test_identity_principal_resolver.py
   - packages/ai-parrot-integrations/tests/integrations/slack/test_slack_jira_commands.py
   - packages/ai-parrot-integrations/tests/integrations/slack/test_slack_oauth_callback.py
   - packages/ai-parrot-integrations/tests/integrations/slack/test_slack_wrapper_jira.py
@@ -699,6 +730,46 @@ runners:
   - tests/unit/integrations/oauth2/test_models.py
   - tests/integration/oauth2/test_e2e_web_connect.py
   - tests/integration/oauth2/test_e2e_auth_envelope.py
+  - packages/ai-parrot-integrations/tests/integrations/slack/test_slack_connection_commands.py
+  - packages/ai-parrot-integrations/tests/integrations/slack/test_slack_connection_notifier.py
+  - packages/ai-parrot-integrations/tests/test_jira_notifier_adapters.py
+  - packages/ai-parrot-server/tests/integration/test_a2a_workiq_vertical.py
+  - packages/ai-parrot-server/tests/studio/test_tooling_identity.py
+  - packages/ai-parrot-server/tests/test_ts_codegen.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_account_connections.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_account_navigation.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_chat_auth_retry.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_connections_store.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_integrations_menu.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_suggestion_stream_trailer.py
+  - packages/ai-parrot-server/tests/unit/test_agenttalk_auth_required_stream.py
+  - packages/ai-parrot-server/tests/unit/test_channel_links_handler.py
+  - packages/ai-parrot-server/tests/unit/test_connection_authorization.py
+  - packages/ai-parrot-server/tests/unit/test_connection_events_handler.py
+  - packages/ai-parrot-server/tests/unit/test_connection_push.py
+  - packages/ai-parrot-server/tests/unit/test_connections_handler.py
+  - packages/ai-parrot-server/tests/unit/test_identity_mapping_claim.py
+  - packages/ai-parrot-server/tests/unit/test_jira_connect_tool_removed.py
+  - packages/ai-parrot-server/tests/unit/test_o365_provider_registration.py
+  - packages/ai-parrot-server/tests/unit/test_register_oauth2_providers.py
+  - packages/ai-parrot/tests/auth/test_credentials_devicecode.py
+  - packages/ai-parrot/tests/auth/test_integrations_service_authorizer.py
+  - packages/ai-parrot/tests/auth/test_integrations_status.py
+  - packages/ai-parrot/tests/auth/test_o365_device_grant.py
+  - packages/ai-parrot/tests/auth/test_o365_refresh.py
+  - packages/ai-parrot/tests/auth/test_retry_safety.py
+  - packages/ai-parrot/tests/integration/test_cli_devicecode_e2e.py
+  - packages/ai-parrot/tests/unit/auth/test_channel_link.py
+  - packages/ai-parrot/tests/unit/auth/test_connection_event_sinks.py
+  - packages/ai-parrot/tests/unit/auth/test_connection_events.py
+  - packages/ai-parrot/tests/unit/test_identity_mapping.py
+  - packages/ai-parrot/tests/unit/test_resolver_strategies.py
+  - packages/ai-parrot/tests/unit/test_tool_credential_seam.py
+  - tests/integration/oauth2/test_e2e_chat_partial_execution_auth.py
+  - tests/integration/oauth2/test_e2e_o365_device_and_web_share_record.py
+  - tests/integration/oauth2/test_e2e_slack_link.py
+  - tests/integration/oauth2/test_e2e_web_panel_live_update.py
+  - tests/unit/integrations/oauth2/test_service.py
   markers: none
 - kind: vitest
   cwd: packages/ai-parrot-server/ui
@@ -706,7 +777,7 @@ runners:
   - src/lib/api/stream.test.ts
   - src/lib/components/agents/AgentChat.test.ts
 
-> `/sdd-task` adds the new test files above to the contract once their paths are frozen.
+> New test files bound by `/sdd-task` on 2026-10-31 (TASK-5032–5059); paths frozen in the task files.
 
 ### Test Data / Fixtures
 ```python
@@ -739,6 +810,7 @@ def legacy_vault():                    # in-memory VaultTokenSync double: read_t
 - [ ] **AC-6 (G4)** Slack `/connect <provider>` for an unlinked user replies with the `/login` instruction and creates no OAuth state; for a linked user it starts the flow with the resolved principal; completion, revocation and refresh failure are DMed for any provider; `/connect_jira`, `/disconnect_jira`, `/jira_status` keep working as aliases; Slack `provider_user_id` is `"{team_id}:{slack_user_id}"` everywhere.
 - [ ] **AC-7 (G3)** Both response modes carry `AuthRequiredPayload` and server-authored `retry_safe` (default false), and show the Connect pill. Auto-resend requires complete evidence that no tool body began, exactly one outstanding auth requirement with its provider/scopes ready, no newer message and an unused originating-message retry budget. Unsafe/unknown/multiple-auth turns offer manual retry with a completed-actions warning. Popup/SSE races and repeated auth responses cannot replay the originating prompt more than once automatically; mutation-before-auth tests prove no duplicate side effects.
 - [ ] **AC-8 (G5, D3)** O365 3LO and device-code grants are one principal-keyed record (`O365TokenSet.grant_origin`); `VaultTokenSync` is not called for `o365` by any code path except the one-time legacy read; `O365OAuth2Provider` is registered when `O365_CLIENT_ID` is set; the device-code resolver fails closed without a principal.
+- [ ] **AC-16 (G5, D4)** `resolve_principal("cli"|"a2a", id)` resolves a unique active `auth.users.email` (case-insensitive) or a unique enabled Entra OID identity to its Navigator principal with `canonical_identity` set; zero or multiple matches, inactive users, disabled identities and `alt_email` resolve to `None`.
 - [ ] **AC-9 (G6)** `/enable` (route, handler branch, `EnableResponse`, `confirmIntegrationEnable`) is gone; `IntegrationsMenu` and `ConnectIntegrationPill` call only `/api/v1/connections*`.
 - [ ] **AC-10 (G6)** `jira_connect_tool.py`, `_bootstrap_jira_oauth_session` and `test_agentalk_jira_connect.py` are deleted with no remaining reference in `packages/`.
 - [ ] **AC-11** API TS types for the connection models are generated from Pydantic (`scripts/generate_ts_types.py` → `schemas/` → `src/lib/types/generated/`), not hand-written.
@@ -751,10 +823,10 @@ def legacy_vault():                    # in-memory VaultTokenSync double: read_t
 
 ## 6. Codebase Contract
 
-> **CRITICAL — Anti-Hallucination Anchor.** Verified 2026-10-30 against `dev` @ `370a62d9b`. S-1 (FEAT-773)
-> symbols are **not in the tree yet**; they are listed under "Does NOT Exist" and become available only when
-> FEAT-773 merges — re-verify their final signatures against `sdd/specs/delegated-auth-connections.spec.md` §2/§3
-> and the merged code before use.
+> **CRITICAL — Anti-Hallucination Anchor.** First verified 2026-10-30 at `370a62d9b`; **re-verified 2026-10-31
+> against `dev` @ `8ab2f60782` after FEAT-773 merged (PR #1897)**. S-1 symbols now exist ("S-1 surfaces
+> (merged)" below). Line numbers in the prose and in "Existing Class Signatures" are from `370a62d9b` and
+> have drifted by up to +42 lines; the Edit Sites table carries the current lines. Every anchor text is unique.
 
 ### Verified Imports
 ```python
@@ -776,6 +848,34 @@ from parrot.handlers.integrations import IntegrationsHandler                    
 from parrot.integrations.slack.oauth_callback import SlackOAuthNotifier, handle_slack_jira_callback  # verified: slack/oauth_callback.py:74, :157
 from parrot.integrations.slack.commands.jira_commands import register_jira_commands         # verified: slack/commands/jira_commands.py:166
 import redis.asyncio as aioredis                                                            # pattern: handlers/user.py:20, liveavatar_output.py:126
+```
+
+#### S-1 surfaces (merged, verified at `8ab2f60782`)
+```python
+from parrot.auth.principal import Principal, PrincipalResolver, resolve_principal, set_principal_resolver  # principal.py:18, :37, :73, :62
+from parrot.auth.oauth2_base import CredentialStore                                        # oauth2_base.py:113
+#   AbstractOAuth2Manager._persist_token(principal, token_set, *, minted, state_payload=None) :581;
+#   get_valid_token :642; _read_legacy_token :673
+from parrot.auth.oauth2.events import ConnectionEvent, ChannelNotifier, ChannelNotifierRegistry, ConnectionEventPublisher  # events.py:17, :33, :41, :70
+#   ConnectionEvent fields: kind, user_id, canonical_identity, tenant_id, provider, account_id, display_name, channel, occurred_at, reason
+#   ConnectionEventPublisher.__init__(*, notifiers, audit_ledger, bus); publish(event, state_payload) order: notifier → audit → bus (:89)
+from parrot.auth.credentials import AuthRequiredPayload                                    # credentials.py:114
+from parrot.conf import OAUTH2_LEGACY_KEYS_UNTIL                                           # conf.py:749
+#   IntegrationsService (oauth2/service.py): list_for_principal(user_id, request=None) :81;
+#   start_connect(user_id, provider_id, return_origin=None, *, channel, principal, scopes, request, extra_state) :288;
+#   status(user_id, provider_id, request=None) :360; disconnect(user_id, provider_id, request=None) :371;
+#   _check_pbac(request, action, provider_id, scopes) :471 — request None → False; web path uses bool(result)
+# ai-parrot-server
+from parrot.handlers.connections import ConnectionsHandler                                 # handlers/connections.py:19
+from parrot.services.identity_principal import IdentityPrincipalResolver                   # identity_principal.py:11 (a2a e-mail → None :38-41)
+from parrot.services.identity_credential_sink import IdentityVaultCredentialStore          # identity_credential_sink.py:55
+# ai-parrot-integrations
+from parrot.integrations.core.auth.notifiers import SlackJiraNotifierAdapter               # core/auth/notifiers.py:84; registered integrations/manager.py:140
+#   slack/commands/jira_commands.py: _LINK_FIRST :29; connect_jira_handler resolves principal + fails closed :93-99
+# navigator-auth (installed): IdentityStore.find_user_by_provider_account(provider, provider_user_id) returns rows[0] of
+#   enabled matches; no e-mail lookup. Models: auth.users (email, alt_email, is_active), auth.user_identities
+#   (user_id, auth_provider, provider_user_id, email, enabled).
+# JiraToolkit.credential_provider = "jira" (parrot_tools/jiratoolkit.py:838)
 ```
 
 ### Existing Class Signatures
@@ -860,7 +960,8 @@ scripts/generate_ts_types.py: _models() (:46-83); export_schemas (:117)
 | `connections.svelte.ts` | `GET /api/v1/connections/events` | fetch stream | `stream.ts` pattern, `auth-headers.ts:16` |
 
 ### Does NOT Exist (Anti-Hallucination)
-- ~~S-1 symbols~~ `Principal`, `resolve_principal`, `CredentialStore`, `ConnectionEvent`, `ConnectionEventPublisher`, `ChannelNotifier`, `ChannelNotifierRegistry`, `AuthRequiredPayload`, `ConnectionsHandler`, `IdentityPrincipalResolver`, `IdentityVaultCredentialStore`, `SlackJiraNotifierAdapter`, `OAUTH2_LEGACY_KEYS_UNTIL`, `/api/v1/connections*` — **FEAT-773, not merged at spec time**.
+- ~~A canonical-identity (e-mail/OID) lookup for `a2a`/`cli`~~ — `IdentityPrincipalResolver` returns `None` for an `a2a` e-mail and has no `cli` branch; `IdentityStore` has no e-mail lookup. Added by M3 (D4).
+- ~~`ConnectionEventPublisher.add_sink` / any sink list~~ — the publisher has notifiers, audit and bus only (`events.py:70-124`).
 - ~~`ConnectionEventSink`, `add_sink`, `RedisConnectionPush`, `ConnectionEventsHandler`, `ChannelLinkIssuer`, `ChannelLinkClaim`, `ChannelLinksHandler`, `SlackConnectionNotifier`, `register_connection_commands`, `store_device_grant`, `O365TokenSet.grant_origin`, `CONNECTIONS_LINK_BASE_URL`, `CHANNEL_LINK_TTL_SECONDS`~~ — new in this spec.
 - ~~`ChannelLinkPreview`, `claim_channel_identity`, `ConnectionAuthorizer`, `NavigatorConnectionAuthorizer`, `migrate_legacy_device_grant`, `AuthRequiredEnvelope.retry_safe`, `auth/retry_safety.py`~~ — new review-remediation contracts; not existing upstream APIs.
 - ~~A WebSocket client in the admin UI~~ — `websocket-service.ts` is a no-op stub (FEAT-476); ~~`UserSocketManager` in ai-parrot-server's app~~ — only repo-root `app.py:229-235` builds it.
@@ -869,7 +970,7 @@ scripts/generate_ts_types.py: _models() (:46-83); export_schemas (:117)
 - ~~`users.info` e-mail lookup in the Slack wrapper~~ — only in `slack/knowledge_upload.py:214-218` and `slack/devloop/actions.py:256-257`; not used for identity (D2 rejects e-mail auto-link).
 - ~~`O365OAuth2Provider` registration in src~~ — docstring example only (`o365_provider.py:8-14`).
 - ~~In-tree production wiring of the device-code resolver deps~~ — bot attrs `_vault`, `_o365_interface`, `_o365_oauth_manager` (`bots/abstract.py:1765-1777`) are set nowhere.
-- ~~A `/account` section, page or nav entry~~ — planned by FEAT-772 (TASK-4902–4904, pending); `SPA_SECTIONS` is `("/login", "/agents")`.
+- ~~`/account/connections` or `/account/link` routes/pages~~ — the `/account` section itself exists (FEAT-772: `/account/security`).
 - ~~`AuthRequiredEnvelope` / `IntegrationDescriptor` generated TS types or JSON schemas~~ — hand-written in `integrations.ts:16-43`; `AgentMessage` has loose `type/provider/auth_url/scopes` (`types/agent.ts:39-43`).
 - ~~An `auth_required` stream frame~~ — `StreamChunk` has `chunk|done|suggestions` only (`stream.ts:27-30`).
 - ~~A caller of `hotswap_to_full_toolkit`~~ — none in src; `agent.jira_credential_resolver` is set nowhere.
@@ -877,49 +978,49 @@ scripts/generate_ts_types.py: _models() (:46-83); export_schemas (:117)
 
 ### Edit Sites (Blueprint Anchors)
 
-Verified against: `370a62d9b` (`dev`, 2026-10-30). S-1 files are listed as **(S-1)** — their anchors do not
-exist until FEAT-773 merges; `/sdd-task` MUST re-verify every row with `grep -c`.
+Verified against: `8ab2f60782` (`dev`, 2026-10-31, FEAT-773 merged). Every anchor below returned `grep -cF` = 1
+unless noted; `/sdd-task` re-verifies with `grep -c`.
 
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
-| `packages/ai-parrot/src/parrot/auth/oauth2/events.py` | MODIFY (S-1) | `class ConnectionEventPublisher` | (unverified — created by FEAT-773 M4) | — |
+| `packages/ai-parrot/src/parrot/auth/oauth2/events.py` | MODIFY (S-1) | `class ConnectionEventPublisher` | `events.py:70` | 1 |
 | `packages/ai-parrot-server/src/parrot/services/connection_push.py` | CREATE | — | — | — |
 | `packages/ai-parrot-server/src/parrot/handlers/connection_events.py` | CREATE | — | — | — |
 | `packages/ai-parrot-server/src/parrot/handlers/channel_links.py` | CREATE | — | — | — |
 | `packages/ai-parrot-server/src/parrot/services/identity_mapping.py` | MODIFY | `    async def upsert_identity(` | `identity_mapping.py:173`; route Slack writes through new exclusive claim | 1 |
 | `packages/ai-parrot/src/parrot/auth/oauth2/authorization.py` | CREATE | — | — | — |
 | `packages/ai-parrot-server/src/parrot/services/connection_authorization.py` | CREATE | — | — | — |
-| `packages/ai-parrot/src/parrot/auth/oauth2/service.py` | MODIFY | `    async def _check_pbac(` | `service.py:490`; re-verify after S-1 | 1 |
+| `packages/ai-parrot/src/parrot/auth/oauth2/service.py` | MODIFY | `    async def _check_pbac(` | `service.py:471` | 1 |
 | `packages/ai-parrot/src/parrot/auth/retry_safety.py` | CREATE | — | — | — |
-| `packages/ai-parrot/src/parrot/tools/manager.py` | MODIFY | `    async def _observed(` | `manager.py:1734` | 1 |
+| `packages/ai-parrot/src/parrot/tools/manager.py` | MODIFY | `    async def _observed(` | `tools/manager.py:1735` | 1 |
 | `packages/ai-parrot-server/ui/src/lib/types/agent.ts` | MODIFY | `export interface AgentMessage {` | `agent.ts:25`; retry field consumption | 1 |
-| `packages/ai-parrot-server/src/parrot/manager/manager.py` | MODIFY | `            "/api/v1/agents/integrations/{agent_id}/{provider}/enable",` | `manager.py:2467` | 1 |
-| `packages/ai-parrot-server/src/parrot/manager/manager.py` | MODIFY | `    async def _register_oauth2_providers(self, app: web.Application) -> None:` | `manager.py:2789` | 1 |
-| `packages/ai-parrot-server/src/parrot/services/identity_principal.py` | MODIFY (S-1) | `class IdentityPrincipalResolver` | (unverified — created by FEAT-773 M8) | — |
+| `packages/ai-parrot-server/src/parrot/manager/manager.py` | MODIFY | `            "/api/v1/agents/integrations/{agent_id}/{provider}/enable",` | `manager.py:2480` | 1 |
+| `packages/ai-parrot-server/src/parrot/manager/manager.py` | MODIFY | `    async def _register_oauth2_providers(self, app: web.Application) -> None:` | `manager.py:2831` | 1 |
+| `packages/ai-parrot-server/src/parrot/services/identity_principal.py` | MODIFY (S-1) | `class IdentityPrincipalResolver` | `identity_principal.py:11` (M2 slack branch + M3 cli/a2a branch) | 1 |
 | `packages/ai-parrot/src/parrot/auth/channel_link.py` | CREATE | — | — | — |
-| `packages/ai-parrot/src/parrot/conf.py` | MODIFY | `WEB_OAUTH_ALLOWED_ORIGINS = config.get("WEB_OAUTH_ALLOWED_ORIGINS", fallback=[])` | `conf.py:751` | 1 |
+| `packages/ai-parrot/src/parrot/conf.py` | MODIFY | `WEB_OAUTH_ALLOWED_ORIGINS = config.get("WEB_OAUTH_ALLOWED_ORIGINS", fallback=[])` | `conf.py:756` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/slack/commands/connection_commands.py` | CREATE | — | — | — |
 | `packages/ai-parrot-integrations/src/parrot/integrations/slack/notifier.py` | CREATE | — | — | — |
-| `packages/ai-parrot-integrations/src/parrot/integrations/slack/commands/jira_commands.py` | MODIFY | `async def connect_jira_handler(` | `slack/commands/jira_commands.py:60` | 1 |
-| `packages/ai-parrot-integrations/src/parrot/integrations/slack/commands/jira_commands.py` | MODIFY | `def register_jira_commands(` | `slack/commands/jira_commands.py:166` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/slack/commands/jira_commands.py` | MODIFY | `async def connect_jira_handler(` | `slack/commands/jira_commands.py:76` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/slack/commands/jira_commands.py` | MODIFY | `def register_jira_commands(` | `slack/commands/jira_commands.py:201` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/slack/oauth_callback.py` | MODIFY | `provider_user_id=slack_user_id` | `slack/oauth_callback.py:251` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/slack/wrapper.py` | MODIFY | `app["slack_jira_oauth_notifier"] = SlackOAuthNotifier(` | `slack/wrapper.py:132` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/slack/wrapper.py` | MODIFY | `register_jira_commands(` | `slack/wrapper.py:128` | 1 |
-| `packages/ai-parrot-integrations/src/parrot/integrations/core/auth/notifiers.py` | MODIFY (S-1) | `class SlackJiraNotifierAdapter` | (unverified — created by FEAT-773 M8) | — |
+| `packages/ai-parrot-integrations/src/parrot/integrations/core/auth/notifiers.py` | MODIFY (S-1) | `class SlackJiraNotifierAdapter` | `core/auth/notifiers.py:84` | 1 |
+| `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` | MODIFY (S-1) | `    registry.register(SlackJiraNotifierAdapter(app))` | `integrations/manager.py:140` | 1 |
 | `packages/ai-parrot/src/parrot/auth/o365_oauth.py` | MODIFY | `class O365OAuthManager(AbstractOAuth2Manager)` | `o365_oauth.py:55` | 1 |
 | `packages/ai-parrot/src/parrot/auth/oauth2/o365_devicecode_provider.py` | MODIFY | `class O365DeviceCodeCredentialResolver` | `o365_devicecode_provider.py:73` | 1 |
 | `packages/ai-parrot/src/parrot/auth/oauth2/o365_devicecode_provider.py` | MODIFY | `async def _persist_token_set(` | `o365_devicecode_provider.py:237` | 1 |
 | `packages/ai-parrot/src/parrot/auth/broker/factory.py` | MODIFY | `def _build_device_code(` | `broker/factory.py:167` | 1 |
 | `packages/ai-parrot-server/src/parrot/services/vault_token_sync.py` | MODIFY | `Providers served here` | `vault_token_sync.py:12` | 1 |
-| `packages/ai-parrot-server/src/parrot/handlers/agent.py` | MODIFY | `async def _write_suggestions_trailer(` | `handlers/agent.py:2625` | 1 |
-| `packages/ai-parrot-server/src/parrot/handlers/agent.py` | MODIFY | `await self._bootstrap_jira_oauth_session(` | `handlers/agent.py:1035` | 1 |
-| `packages/ai-parrot-server/src/parrot/handlers/agent.py` | MODIFY | `async def _bootstrap_jira_oauth_session(` | `handlers/agent.py:1043` | 1 |
-| `packages/ai-parrot-server/src/parrot/handlers/integrations.py` | MODIFY | `if path.endswith("/enable"):` | `handlers/integrations.py:103` | 1 |
-| `packages/ai-parrot-server/src/parrot/handlers/integrations.py` | MODIFY | `async def _post_enable(self) -> web.Response:` | `handlers/integrations.py:163` | 1 |
-| `packages/ai-parrot/src/parrot/auth/oauth2/models.py` | MODIFY | `class EnableResponse(BaseModel):` | `models.py:95` | (verify — S-1 edits this file) |
+| `packages/ai-parrot-server/src/parrot/handlers/agent.py` | MODIFY | `async def _write_suggestions_trailer(` | `handlers/agent.py:2621` | 1 |
+| `packages/ai-parrot-server/src/parrot/handlers/agent.py` | MODIFY | `await self._bootstrap_jira_oauth_session(` | `handlers/agent.py:1036` | 1 |
+| `packages/ai-parrot-server/src/parrot/handlers/agent.py` | MODIFY | `async def _bootstrap_jira_oauth_session(` | `handlers/agent.py:1044` | 1 |
+| `packages/ai-parrot-server/src/parrot/handlers/integrations.py` | MODIFY | `if path.endswith("/enable"):` | `handlers/integrations.py:104` | 1 |
+| `packages/ai-parrot-server/src/parrot/handlers/integrations.py` | MODIFY | `async def _post_enable(self) -> web.Response:` | `handlers/integrations.py:170` | 1 |
+| `packages/ai-parrot/src/parrot/auth/oauth2/models.py` | MODIFY | `class EnableResponse(BaseModel):` | `models.py:96` | 1 |
 | `packages/ai-parrot/src/parrot/tools/jira_connect_tool.py` | DELETE | — | — | — |
 | `packages/ai-parrot/tests/unit/test_agentalk_jira_connect.py` | DELETE | — | — | — |
-| `packages/ai-parrot-server/src/parrot/server/ui/serving.py` | MODIFY | `SPA_SECTIONS: tuple[str, ...] = ("/login", "/agents")` | `serving.py:39` | 1 |
 | `scripts/generate_ts_types.py` | MODIFY | `def _models(` | `generate_ts_types.py:46` | 1 |
 | `packages/ai-parrot-server/ui/src/lib/api/connections.ts` | CREATE | — | — | — |
 | `packages/ai-parrot-server/ui/src/lib/stores/connections.svelte.ts` | CREATE | — | — | — |
@@ -932,12 +1033,11 @@ exist until FEAT-773 merges; `/sdd-task` MUST re-verify every row with `grep -c`
 | `packages/ai-parrot-server/ui/src/lib/components/agents/integrations/ConnectIntegrationPill.svelte` | MODIFY | `confirmIntegrationEnable(agentId, provider)` | `ConnectIntegrationPill.svelte:30` | 1 |
 | `packages/ai-parrot-server/ui/src/lib/components/agents/AgentChat.svelte` | MODIFY | `if (rawResult.type === "auth_required")` | `AgentChat.svelte:1344` | 1 |
 | `packages/ai-parrot-server/ui/src/lib/components/agents/AgentChat.svelte` | MODIFY | `<ConnectIntegrationPill` | `AgentChat.svelte:2469` | 1 |
-| `packages/ai-parrot-server/ui/src/App.svelte` | MODIFY | `path: "/agents"` | `App.svelte:23` | 1 |
-| `packages/ai-parrot-server/ui/src/lib/nav.ts` | MODIFY | `section: "user"` | `nav.ts:34` | 1 |
-| `packages/ai-parrot-server/ui/src/lib/config.ts` | MODIFY | `appSections:` | `config.ts:62` | 1 |
-| `docs/auth/jira-credential-ownership.md` | MODIFY | `Known gap` | `jira-credential-ownership.md:60` | 1 |
+| `packages/ai-parrot-server/ui/src/App.svelte` | MODIFY | `path: "/account/security",` | `App.svelte:34` | 1 |
+| `packages/ai-parrot-server/ui/src/lib/nav.ts` | MODIFY | `path: "/account/security",` | `nav.ts:37` (insert "Connections" after this entry) | 1 |
+| `docs/auth/jira-credential-ownership.md` | MODIFY | `Known gap` | `jira-credential-ownership.md:65` | 1 |
 | `docs/integrations/office365-oauth2.md` | MODIFY | `user_credentials` | `office365-oauth2.md:153` | 1 |
-| `docs/auth/connections.md` | MODIFY (S-1) | (created by FEAT-773 M10) | — | — |
+| `docs/auth/connections.md` | MODIFY (S-1) | exists (FEAT-773 M10); append sections | — | — |
 
 ---
 
@@ -953,14 +1053,16 @@ exist until FEAT-773 merges; `/sdd-task` MUST re-verify every row with `grep -c`
 - **Fail closed** — unresolvable principal (Slack, device code) means no OAuth state and no token, never a channel-keyed fallback (S-1).
 
 ### Known Risks / Gotchas
-- **Hard dependency on FEAT-773.** Every S-1 symbol in §6 "Does NOT Exist" must be merged; if S-1's final signatures differ from its spec, update this spec's skeletons first.
-- **Device-code principal before S-4.** The resolver's `user_id` today is an e-mail/OID. Until S-4's CLI resolver exists, `resolve_principal("cli", <email/OID>)` must use the same canonical-identity lookup S-1 builds for `a2a`; if that lookup cannot run in a process without the auth DB, the device-code path fails closed. In-tree production wiring of this resolver does not exist today (`bots/abstract.py:1765-1777` attrs set nowhere), so the blast radius is external deployments only — announce it. Coordinate with FEAT-774, which plans to turn this resolver into a generic RFC 8628 engine: S-3a changes its storage, S-4 its engine.
+- **Dependency on FEAT-773 — satisfied.** Merged to `dev` (PR #1897); §6 re-verified at `8ab2f60782`.
+- **Device-code principal before S-4 (D4).** The resolver's `user_id` today is an e-mail/OID. S-1 did not build a canonical-identity lookup, so M3 adds it (`cli` and `a2a`, exactly-one-match). It also changes `a2a` e-mail behaviour, which S-1 deliberately left fail-closed — a reviewed trust widening, limited to identities the auth DB already holds. A process without the auth DB pool still fails closed. In-tree production wiring of this resolver does not exist today (`bots/abstract.py:1765-1777` attrs set nowhere), so the blast radius is external deployments only — announce it. Coordinate with FEAT-774, which plans to turn this resolver into a generic RFC 8628 engine: S-3a changes its storage, S-4 its engine.
 - **One O365 record, two grant types.** A 3LO reconnect replaces a device-code grant and vice versa (single account per provider, S-1 S3). Both refresh through `O365OAuthManager.refresh_access_token`, so the confidential client registration must accept refresh tokens minted by device code; this is already true today (`o365_devicecode_provider.py:159-176`) — keep a regression test.
 - **Legacy `o365:*` keys are keyed by e-mail/OID**, not by Navigator id; the migration needs the canonical id from the principal. Unresolvable legacy entries stay until the window closes and are then ignored.
 - **SSE behind proxies** — buffering proxies break streams; send `X-Accel-Buffering: no` and keep-alives ≤ 25 s. Gunicorn worker timeouts must not kill idle streams (keep-alive covers it).
 - **Redis connection count** — one pubsub connection per open panel tab; the store opens at most one stream per tab and closes it on `stop()` / page hide.
 - **Whole-turn replay is not operation idempotency.** Any begun tool, incomplete execution evidence or multiple outstanding auth requirements disables automatic resend; manual retry warns about repeated completed actions. The originating user-message ID retains its retry budget across repeated auth failures. A single required provider must satisfy requested scopes before a safe turn can auto-resend.
-- **`/account` collides with FEAT-772** (TASK-4903/4904 pending) on `App.svelte`, `nav.ts`, `config.ts`, `serving.py`. Check `origin/dev` before editing; never duplicate the section entry.
+- **`/account` section owned by FEAT-772 (landed).** Add routes and a nav entry only; never re-add `"account"` to `appSections` or `SPA_SECTIONS`.
+- **Shared with S-3b (MS Teams).** `integrations/manager.py` notifier registration (`:136-142`) and `core/auth/notifiers.py` are edited by both specs; whichever lands second rebases.
+- **Web PBAC truthiness.** S-1's web `_check_pbac` returns `bool(result)` (`service.py:471-520`); AC-14's "explicit ALLOW only" applies to the new Slack adapter. Hardening the web path is out of scope — file a ledger issue rather than widening this spec.
 - **Removing `/enable`** breaks any external client still calling it (the TROC AgentChat repo was not inspected in FEAT-773 research). S-1 kept it as a no-op precisely for the admin UI; confirm no other caller before deleting.
 - **Slack identity key change** — existing `slack` rows with a bare `slack_user_id` are effectively none (the callback writes them only when `nav_user_id` is present, which Slack never sent); no migration needed, but the resolver must not fall back to the bare id.
 
@@ -981,10 +1083,10 @@ exist until FEAT-773 merges; `/sdd-task` MUST re-verify every row with `grep -c`
 - [x] O365 scope in S-3a — *Resolved at spec time (D3)*: full consolidation — 3LO and device code share one principal-keyed record; `VaultTokenSync` stops serving `o365`.
 - [x] Multi-account, PBAC on connect/disconnect, needs-auth payload, durable-first persistence — *Resolved in S-1* (S3, S4/AC-8, S8/M5, S2/AC-5); not reopened here.
 - [x] PBAC without an HTTP request — *Resolved in review*: M2 adds the core authorizer Protocol and server PDP adapter for all Slack connection operations, using trusted identity/tenant context and explicit ALLOW only. Re-verify installed evaluator signatures after S-1; AC-14 requires real-evaluator contract tests.
-- [ ] `CONNECTIONS_LINK_BASE_URL` default — first entry of `WEB_OAUTH_ALLOWED_ORIGINS` or required config — *Owner: Jesus*.
+- [x] `CONNECTIONS_LINK_BASE_URL` default — *Resolved 2026-10-31 (D5)*: required config, no default; unset → Slack `/login` replies "not configured" and logs a warning.
 - [ ] External callers of `/api/v1/agents/integrations/{agent}/{provider}/enable` (TROC AgentChat repo) before removal — *Owner: Jesus*.
-- [ ] Ordering with FEAT-772 for the `/account` section — *Owner: whoever starts second* (check `origin/dev`).
-- [ ] Device-code `resolve_principal("cli", …)` in processes without the auth DB until S-4 lands — accept fail-closed, or keep a time-boxed legacy read path — *Owner: Jesus, with FEAT-774*.
+- [x] Ordering with FEAT-772 for the `/account` section — *Resolved*: FEAT-772 landed the section first; S-3a adds routes only.
+- [x] Device-code principal before S-4 — *Resolved 2026-10-31 (D4)*: M3 adds an exactly-one-match e-mail/OID canonical-identity lookup for `cli` and `a2a` to `IdentityPrincipalResolver`; processes without the auth DB pool still fail closed. Coordinate the engine change with FEAT-774.
 
 ---
 
@@ -1032,15 +1134,15 @@ auth requirements, with coverage in `test_agenttalk_retry_safety` and AC-7.
 
 ## Worktree Strategy
 
-- **Isolation**: ONE feature worktree (`feat-FEAT-777-connections-web-slack`), created only after FEAT-773 is merged into `dev`; the `sdd-coder` engine gives each task its own sub-worktree.
+- **Isolation**: ONE feature worktree (`feat-FEAT-777-connections-web-slack`), created from `origin/dev` (FEAT-773 merged, PR #1897); the `sdd-coder` engine gives each task its own sub-worktree.
 - **Module dependency graph**:
   - M1 → S-1 M4 (publisher); M5 → M1/M2 (SSE endpoint and link preview/confirm contract)
   - M4 → M5 (pill and AgentChat use `connections.svelte.ts` / `connections.ts`), M4 → S-1 M5
   - M2 → S-1 M1/M6/M8; M3 → S-1 M2/M8; M6 → S-1 M7; M7 → M1–M6
   - Concurrent: M1 ∥ M2 ∥ M3 ∥ M6; then M5; then M4; M7 last.
-- **Shared files** (tasks serialized): `manager/manager.py` (M1 route, M2 route, M3 registration, M5 `/enable` removal); `handlers/agent.py` (M4, M6); `parrot/auth/oauth2/models.py` + `__init__.py` (M5 only, but S-1 edits them); `parrot/conf.py` (M2); `AgentChat.svelte` (M4 only).
+- **Shared files** (tasks serialized): `manager/manager.py` (M1 route, M2 route, M3 registration, M5 `/enable` removal); `handlers/agent.py` (M4, M6); `parrot/auth/oauth2/models.py` + `__init__.py` (M5 only, but S-1 edits them); `parrot/conf.py` (M2); `AgentChat.svelte` (M4 only); `services/identity_principal.py` (M2, M3).
 - **Exclusive resources**: `pnpm generate` rewrites `ui/schemas/` and `ui/src/lib/types/generated/` (M5 task `parallel: false`); no lockfile, no DB migration.
-- **Cross-feature dependencies**: **FEAT-773 (S-1) must be merged first.** Coordinate with FEAT-772 (`/account` section files) and FEAT-774 (S-4; `o365_devicecode_provider.py`).
+- **Cross-feature dependencies**: FEAT-773 (S-1) merged. S-3b (MS Teams) shares `integrations/manager.py` and `core/auth/notifiers.py`. Coordinate with FEAT-772 (`/account` section files) and FEAT-774 (S-4; `o365_devicecode_provider.py`).
 
 ---
 
@@ -1050,3 +1152,4 @@ auth requirements, with coverage in `test_agenttalk_retry_safety` and AC-7.
 |---|---|---|---|
 | 0.1 | 2026-10-30 | Jesus Lara (with Claude Opus 5.5) | Initial draft from the S-3a row of the FEAT-773 proposal and the S-1 Non-Goals. Decisions D1 (SSE, keep FEAT-476), D2 (Slack link via web session), D3 (full O365 consolidation). Codex design research: 6 confirm / 6 reject (S-1-owned). Contract verified at `370a62d9b`. |
 | 0.2 | 2026-10-30 | Codex | Address all five review findings: explicit link consent, exclusive Slack identity ownership, safe conditional auto-retry, legacy O365 expiry conversion, and request-independent Slack PBAC. Align module scope, interfaces, generated types, tests and AC-5/7/14/15. |
+| 0.3 | 2026-10-31 | Jesus Lara (with Claude Opus 5.5) | Post-FEAT-773 review: contract re-verified at `8ab2f60782`; S-1 surfaces moved to verified. D4 — M3 adds the e-mail/OID canonical-identity lookup S-1 never shipped (AC-16). D5 — `CONNECTIONS_LINK_BASE_URL` required. FEAT-772 `/account` landed (routes only). Slack notifier registration site corrected to `integrations/manager.py`; broker dep key `o365_client`; Slack exactly-one-owner query bypasses `find_user_by_provider_account`; stale Slack problem statement and anchor lines fixed. |

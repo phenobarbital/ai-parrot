@@ -756,10 +756,13 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
 
 ### Validation Contract
 
-The runners below are the existing regression baseline. Task decomposition must additionally bind every new
-test named above to a package-local test path and include those paths in the feature validation contract.
-The M4 concurrency and M9 fresh-login/rollback integration tests are mandatory evidence, not optional mocks;
-missing DB fixtures or credentials must be reported as blocked validation, never counted as a pass.
+> The runners below are the existing regression baseline. Task decomposition must additionally bind every new
+> test named above to a package-local test path and include those paths in the feature validation contract.
+> The M4 concurrency and M9 fresh-login/rollback integration tests are mandatory evidence, not optional mocks;
+> missing DB fixtures or credentials must be reported as blocked validation, never counted as a pass.
+>
+> Binding (2026-10-31, /sdd-task): the second group of paths below binds every new test to the task
+> (TASK-5016…5031) that creates or touches it. The selector skips contract files not yet on disk.
 
 runners:
 - kind: pytest
@@ -777,6 +780,26 @@ runners:
   - tests/unit/integrations/oauth2/test_service.py
   - tests/integration/oauth2/test_e2e_telegram_regression.py
   - packages/ai-parrot-integrations/tests/test_jira_notifier_adapters.py
+  - packages/ai-parrot/tests/unit/auth/test_pending_collector.py
+  - packages/ai-parrot/tests/unit/clients/test_needs_auth_tool_message.py
+  - packages/ai-parrot/tests/unit/auth/test_legacy_audit.py
+  - packages/ai-parrot/tests/unit/auth/test_legacy_audit_purge.py
+  - packages/ai-parrot-server/tests/test_identity_channel_link.py
+  - packages/ai-parrot-server/tests/integration/test_identity_channel_link_db.py
+  - packages/ai-parrot-integrations/tests/integrations/core/test_connection_command_service.py
+  - packages/ai-parrot-integrations/tests/integrations/telegram/test_connection_pbac_contract.py
+  - packages/ai-parrot-integrations/tests/integrations/telegram/test_principal_link_lifecycle.py
+  - packages/ai-parrot-integrations/tests/integrations/telegram/test_connection_notifier.py
+  - packages/ai-parrot-integrations/tests/integrations/telegram/test_notifier_startup_registration.py
+  - packages/ai-parrot-integrations/tests/integrations/telegram/test_connection_commands.py
+  - packages/ai-parrot-integrations/tests/integrations/telegram/test_config_validation_multi_auth.py
+  - packages/ai-parrot-integrations/tests/integrations/telegram/test_needs_auth_prompts.py
+  - packages/ai-parrot-integrations/tests/integrations/test_telegram_wrapper_send.py
+  - packages/ai-parrot-integrations/tests/integrations/telegram/test_post_auth_connection.py
+  - packages/ai-parrot-integrations/tests/integrations/telegram/test_pending_login_coordinator.py
+  - packages/ai-parrot-integrations/tests/integrations/telegram/test_staged_combined_login.py
+  - packages/ai-parrot-integrations/tests/integrations/telegram/test_azure_post_auth.py
+  - packages/ai-parrot-integrations/tests/integrations/telegram/test_post_auth_capability_gate.py
   markers: none
 
 ### Test Data / Fixtures
