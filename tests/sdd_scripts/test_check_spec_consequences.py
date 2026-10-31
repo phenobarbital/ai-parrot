@@ -10,7 +10,9 @@ import pytest
 import scripts.sdd.check_spec_consequences as gate
 
 _SPEC_NO_BLOCK = "# Feature Specification: demo\n\n## 2. Architectural Design\n\ntext\n"
-_SPEC_WITH_BLOCK = _SPEC_NO_BLOCK + "\n## Decisions\n\n```yaml\nschema_version: 1\ndocument_id: demo\nentries: []\n```\n"
+_SPEC_WITH_BLOCK = (
+    _SPEC_NO_BLOCK + "\n## Decisions\n\n```yaml\nschema_version: 1\ndocument_id: demo\nentries: []\n```\n"
+)
 
 
 class _Report:
@@ -113,7 +115,9 @@ def test_stale_and_missing_fail_check_mode(tmp_path: Path, monkeypatch: pytest.M
     assert gate.main([str(spec), "--root", str(tmp_path)]) == 3
 
 
-def test_advisory_never_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_advisory_never_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Advisory mode warns only for contrary reports and never blocks its caller."""
     _configured_repo(tmp_path)
     spec = _write(tmp_path, _SPEC_WITH_BLOCK)
@@ -155,4 +159,14 @@ def test_json_shape(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pyt
     _patch_check(monkeypatch, "pass")
     assert gate.main([str(spec), "--root", str(tmp_path), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert {"status", "exit_code", "input_digest", "evaluation_digest", "findings", "diagnostics", "coverage", "snapshot", "check"} <= payload.keys()
+    assert {
+        "status",
+        "exit_code",
+        "input_digest",
+        "evaluation_digest",
+        "findings",
+        "diagnostics",
+        "coverage",
+        "snapshot",
+        "check",
+    } <= payload.keys()

@@ -39,7 +39,9 @@ def _unconfigured(spec_text: str) -> tuple[int, dict[str, Any]]:
     }
 
 
-async def _run(spec: Path, root: Path, base_branch: str, *, render: bool, budget: int) -> tuple[int, dict[str, Any], str]:
+async def _run(
+    spec: Path, root: Path, base_branch: str, *, render: bool, budget: int
+) -> tuple[int, dict[str, Any], str]:
     """Return ``(exit_code, json_payload, check_status)`` for the configured repository."""
     service = open_consequence_service(root, base_branch=base_branch)
     if render:
