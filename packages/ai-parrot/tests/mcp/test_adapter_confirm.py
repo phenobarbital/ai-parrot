@@ -1,5 +1,6 @@
 """MCPToolAdapter confirm-gate tests (Obsidian-over-MCP guarded writes)."""
 import pytest
+from pydantic import BaseModel
 
 from parrot.mcp.adapter import MCPToolAdapter
 from parrot.tools.abstract import AbstractTool, ToolResult
@@ -10,6 +11,11 @@ pytestmark = pytest.mark.asyncio
 class _EchoTool(AbstractTool):
     name = "echo_tool"
     description = "Echo the payload."
+
+    class Args(BaseModel):
+        payload: str
+
+    args_schema = Args
 
     def __init__(self, requires_confirmation: bool = False):
         super().__init__(name=self.name, description=self.description)
