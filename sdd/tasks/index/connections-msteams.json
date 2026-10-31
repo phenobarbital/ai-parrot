@@ -241,7 +241,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -254,8 +254,9 @@
       "parallelism_notes": "calls permission_context service API (TASK-5063, service.py), start_connect scopes wiring (TASK-5064), MSTeamsPrincipalSource/build_msteams_permission_context (TASK-5066) and card builders + send_adaptive_card (TASK-5068, connections.py)",
       "assigned_to": null,
       "started_at": "2026-10-31T23:12:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5069-teams-connector.md"
+      "completed_at": "2026-10-31T23:40:15+00:00",
+      "file": "sdd/tasks/completed/TASK-5069-teams-connector.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5070",
