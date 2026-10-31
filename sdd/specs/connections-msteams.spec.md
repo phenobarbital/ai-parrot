@@ -190,6 +190,27 @@ policies for action/provider/scopes and trusted roles. If an adapter correction 
 mapping and edit sites in this spec before decomposition; this is a concrete compatibility gate, not a new
 policy-shape decision. Existing agent-handler `ResourceType.TOOL` patterns are not evidence for integration policy.
 
+**Parity gate resolved (2026-10-31, owner decision: URI parity).** Source check of navigator-auth 0.28.9:
+`is_allowed(request, ctx)` binds the attribute dict to `session`, finds no `resource`, and delegates to
+`authorize()` (pdp.py:393-444), which evaluates `ResourceType.URI` on `request.path` with
+`PolicyAdapter.METHOD_ACTION_MAP[request.method]` (adapter.py:23-30). The HTTP decision is therefore URI-based;
+action/provider/scopes are discarded. No file under `policies/` mentions connections. The request-less adapter
+mirrors that decision exactly, so existing URI policies apply unchanged to HTTP and channel callers:
+
+| Service operation | Resource (`ResourceType.URI`) | Action |
+|---|---|---|
+| `list_for_principal` (gate and per-provider filter) | `/api/v1/connections` | `uri:read` |
+| `status` | `/api/v1/connections/{provider}` | `uri:read` |
+| `start_connect` | `/api/v1/connections/{provider}/start` | `uri:write` |
+| `disconnect` | `/api/v1/connections/{provider}` | `uri:delete` |
+
+Routes verified at `parrot/manager/manager.py:2488-2490`. The adapter builds a navigator-auth `EvalContext`
+from the trusted `PermissionContext` (Navigator `user_id`, session roles/groups only, tenant), calls the app
+PDP's `evaluator.check_access(ctx, ResourceType.URI, path, action)`, and allows only on
+`EvaluationResult.allowed is True`. FEAT-773 attributes (`action`, `provider`, `scopes`) are still passed to
+the injected callable for audit and future policy use; they do not change the URI decision. The HTTP path
+(`abac.is_allowed(request, ctx)`) is unchanged by this feature.
+
 M7 introduces channel service construction at the integration manager startup seam; there is no existing
 FEAT-773 factory in `parrot/manager/manager.py`. HTTP handlers currently instantiate `IntegrationsService()`
 locally. Reuse the initialized app PDP when building channel services and inject a vault reader where needed.
