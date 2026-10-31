@@ -7,14 +7,16 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel
 
 from parrot.auth.oauth2.events import ConnectionEvent
+from parrot.auth.oauth2.models import IntegrationDescriptor
 from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 from parrot.auth.permission import PermissionContext, build_principal_context
 from parrot.auth.principal import Principal
+from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION
 
 from .auth import MSTeamsSessionStore, MSTeamsUserSession
 
@@ -186,3 +188,90 @@ class MSTeamsConnectionNotifier:
         if event.kind == "connection.refresh_failed":
             return f"{name} access expired — `/connect {event.provider}` to reconnect."
         raise ValueError(f"Unsupported connection event kind: {event.kind}")
+
+
+_ADAPTIVE_SCHEMA = "http://adaptivecards.io/schemas/adaptive-card.json"
+
+
+def _card(body: List[Dict[str, Any]], actions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Wrap body/actions in the standard Adaptive Card envelope."""
+    return {
+        "type": "AdaptiveCard",
+        "$schema": _ADAPTIVE_SCHEMA,
+        "version": DEFAULT_ADAPTIVE_CARD_VERSION,
+        "body": body,
+        "actions": actions,
+    }
+
+
+def _text(text: str) -> Dict[str, Any]:
+    """Build a wrapping Adaptive Card text block."""
+    return {"type": "TextBlock", "text": text, "wrap": True}
+
+
+def connect_card(provider_display: str, auth_url: str) -> Dict[str, Any]:
+    """Build a card with one ``Connect <Provider>`` OpenUrl button."""
+    return _card(
+        [_text(f"Click the button below to authorize your **{provider_display}** account:")],
+        [{"type": "Action.OpenUrl", "title": f"Connect {provider_display}", "url": auth_url}],
+    )
+
+
+def device_code_card(
+    provider_display: str,
+    user_code: str,
+    verification_uri: str,
+    expires_in: Optional[int],
+) -> Dict[str, Any]:
+    """Build device-code instructions without an OAuth redirect URL."""
+    body = [
+        _text(f"To connect your **{provider_display}** account, enter this code:"),
+        {"type": "TextBlock", "text": f"**{user_code}**", "wrap": True, "fontType": "Monospace"},
+        _text(f"at {verification_uri}"),
+    ]
+    if expires_in:
+        body.append(_text(f"This code expires in {expires_in} seconds."))
+    return _card(
+        body,
+        [{"type": "Action.OpenUrl", "title": "Open verification page", "url": verification_uri}],
+    )
+
+
+def provider_picker_card(providers: List[Tuple[str, str]]) -> Dict[str, Any]:
+    """Build one connect Submit action per provider."""
+    return _card(
+        [_text("Choose an integration to connect:")],
+        [
+            {"type": "Action.Submit", "title": f"Connect {display_name}", "data": {"command": f"/connect {provider_id}"}}
+            for provider_id, display_name in providers
+        ],
+    )
+
+
+def connections_status_card(rows: List[IntegrationDescriptor]) -> Dict[str, Any]:
+    """Build provider status lines and matching connect or disconnect actions."""
+    if not rows:
+        return _card([_text("No connections available.")], [])
+
+    body: List[Dict[str, Any]] = []
+    actions: List[Dict[str, Any]] = []
+    for row in rows:
+        if row.status == "connected":
+            account_name = row.display_account_name or row.account_id or row.email or "your account"
+            body.append(_text(f"{row.display_name}: connected as {account_name}"))
+            command = f"/disconnect {row.provider}"
+            title = f"Disconnect {row.display_name}"
+        else:
+            body.append(_text(f"{row.display_name}: not connected"))
+            command = f"/connect {row.provider}"
+            title = f"Connect {row.display_name}"
+        actions.append({"type": "Action.Submit", "title": title, "data": {"command": command}})
+    return _card(body, actions)
+
+
+async def send_adaptive_card(turn_context: "TurnContext", card: Dict[str, Any]) -> None:
+    """Send ``card`` as an Adaptive Card attachment."""
+    from botbuilder.schema import Activity, Attachment
+
+    attachment = Attachment(content_type="application/vnd.microsoft.card.adaptive", content=card)
+    await turn_context.send_activity(Activity(type="message", attachments=[attachment]))
