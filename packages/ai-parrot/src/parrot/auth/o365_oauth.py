@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Literal, Optional
 from urllib.parse import urlencode
 
 import aiohttp
@@ -26,8 +26,13 @@ from parrot.auth.oauth2_base import (
     InvalidGrantError,
     RefreshTransientError,
 )
+from parrot.auth.oauth2_base import CredentialPersistenceError  # noqa: F401  (re-raised, documented)
+from parrot.auth.principal import Principal
 
 logger = logging.getLogger(__name__)
+
+_LEGACY_REVOKED_KEY = "oauth2:o365:legacy_revoked:{user_id}"
+_LEGACY_REVOKED_TTL_SECONDS = 400 * 24 * 60 * 60   # outlives any OAUTH2_LEGACY_KEYS_UNTIL window
 
 
 # Default delegated scopes — see docs/integrations/office365-oauth2.md
@@ -55,6 +60,7 @@ class O365TokenSet(AbstractOAuth2TokenSet):
     tenant_id: str = ""
     user_principal_name: str = ""
     id_token: Optional[str] = None
+    grant_origin: Literal["authorization_code", "device_code"] = "authorization_code"
 
 
 class O365OAuthManager(AbstractOAuth2Manager):
@@ -242,3 +248,125 @@ class O365OAuthManager(AbstractOAuth2Manager):
             user_principal_name=identity.get("userPrincipalName", ""),
             id_token=token_response.get("id_token"),
         )
+
+    # ------------------------------------------------------------------ device code (FEAT-777 M3)
+
+    async def store_device_grant(
+        self, principal: Principal, payload: Dict[str, Any], *, channel: str,
+    ) -> O365TokenSet:
+        """Persist a freshly minted device-code token response as the principal's single O365 record.
+
+        Raises:
+            CredentialPersistenceError: durable write failed (no Redis key is written).
+            ValueError: identity discovery failed or ``payload`` has no access token.
+        """
+        if not payload.get("access_token"):
+            raise ValueError("Device-code payload carries no access_token")
+        identity = await self._discover_identity(payload["access_token"])
+        token_set = self._build_token_set(payload, identity).model_copy(update={"grant_origin": "device_code"})
+        async with self.principal_lock(principal.user_id):
+            await self._persist_token(principal, token_set, minted=True)
+        await self._upsert_row(principal, token_set, channel=channel)
+        await self._publish("connection.completed", principal, token_set)
+        self.logger.info("Stored o365 device-code grant for principal %s", principal.user_id)
+        return token_set
+
+    async def migrate_legacy_device_grant(
+        self, principal: Principal, legacy: Dict[str, Any], *, channel: str,
+    ) -> Optional[O365TokenSet]:
+        """Convert one legacy ``o365:*`` dict (absolute ``expires_at``); ``None`` when a current record already wins.
+
+        Raises:
+            InvalidGrantError: legacy refresh token is dead (caller falls back to the device flow; legacy kept).
+            RefreshTransientError: transient refresh/discovery failure (retryable; legacy kept).
+            CredentialPersistenceError: durable write failed (legacy kept).
+        """
+        if not await self.legacy_migration_allowed(principal.user_id):
+            return None
+        now = time.time()
+        access_token = legacy.get("access_token") or ""
+        refresh_token = legacy.get("refresh_token") or ""
+        expires_at = self._parse_absolute_expiry(legacy.get("expires_at"))
+        scope_str = legacy.get("scope") or ""
+        id_token = legacy.get("id_token")
+        granted_at = now
+        if access_token and expires_at is not None and expires_at > now + O365TokenSet._EXPIRY_LEEWAY_SECONDS:
+            usable_token = access_token  # keep the stored absolute expiry EXACTLY
+        else:
+            if not refresh_token:
+                raise InvalidGrantError("Legacy o365 grant has no usable access or refresh token")
+            refreshed = await self.refresh_access_token(refresh_token)  # InvalidGrant/Transient propagate
+            usable_token = refreshed.get("access_token") or ""
+            if not usable_token:
+                raise RefreshTransientError("O365 refresh returned no access token")
+            expires_at = now + int(refreshed.get("expires_in", 3600))
+            refresh_token = refreshed.get("refresh_token") or refresh_token
+            scope_str = refreshed.get("scope") or scope_str
+            id_token = refreshed.get("id_token") or id_token
+        try:
+            identity = await self._discover_identity(usable_token)
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+            raise RefreshTransientError(
+                f"O365 identity discovery failed: {type(exc).__name__}"
+            ) from None
+        token_set = O365TokenSet(
+            access_token=usable_token,
+            refresh_token=refresh_token,
+            expires_at=float(expires_at),
+            scopes=scope_str.split() if scope_str else list(self.scopes),
+            granted_at=granted_at,
+            last_refreshed_at=now,
+            account_id=identity.get("id", ""),
+            display_name=identity.get("displayName", ""),
+            email=identity.get("mail") or identity.get("userPrincipalName"),
+            tenant_id=legacy.get("tenant_id") or self.tenant_id,
+            user_principal_name=identity.get("userPrincipalName", ""),
+            id_token=id_token,
+            grant_origin="device_code",
+        )
+        async with self.principal_lock(principal.user_id):
+            current = (
+                await self._read_token_from_cache(principal.user_id)
+                or await self._read_token_from_store(principal.user_id)
+            )
+            if current is not None or not await self.legacy_migration_allowed(principal.user_id):
+                return None  # a newer grant or a disconnect wins; never overwrite / resurrect
+            await self._persist_token(principal, token_set, minted=True)
+        await self._upsert_row(principal, token_set, channel=channel)
+        await self._publish("connection.completed", principal, token_set)
+        return token_set
+
+    @staticmethod
+    def _parse_absolute_expiry(value: Any) -> Optional[float]:
+        """Return a finite positive epoch float, or ``None`` when missing/invalid."""
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+        if parsed != parsed or parsed in (float("inf"), float("-inf")) or parsed <= 0:
+            return None
+        return parsed
+
+    async def legacy_migration_allowed(self, user_id: str) -> bool:
+        """``False`` once the principal disconnected o365: its legacy grant must never be re-imported."""
+        return not await self.redis.get(_LEGACY_REVOKED_KEY.format(user_id=user_id))
+
+    async def revoke(self, channel: str, user_id: str, *, channel_user_id: Optional[str] = None) -> None:
+        """Revoke as the base class does, then tombstone legacy migration for this principal."""
+        await super().revoke(channel, user_id, channel_user_id=channel_user_id)
+        await self.redis.set(_LEGACY_REVOKED_KEY.format(user_id=user_id), "1", ex=_LEGACY_REVOKED_TTL_SECONDS)
+
+    async def _upsert_row(self, principal: Principal, token_set: O365TokenSet, *, channel: str) -> None:
+        """Write the ``users_integrations`` row the 3LO routes write after ``handle_callback``."""
+        from parrot.auth.oauth2.service import IntegrationsService  # lazy: service imports the registry
+        from parrot.auth.oauth2.persistence import upsert_users_integration
+
+        row = await IntegrationsService().persist_credential(
+            principal.user_id, self.provider_id, token_set,
+            channel=channel, canonical_identity=principal.canonical_identity,
+        )
+        if getattr(row, "grant_origin", None) != token_set.grant_origin:
+            # persist_credential is provider-agnostic and does not carry grant_origin.
+            await upsert_users_integration(row.model_copy(update={"grant_origin": token_set.grant_origin}))
