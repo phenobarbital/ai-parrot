@@ -26,6 +26,7 @@ Two write paths:
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -96,6 +97,47 @@ WHERE user_id = $1::text::bigint AND auth_provider = $2
 
 #: Keys that must never be written in cleartext into ``auth_data``.
 _SECRET_KEYS = frozenset({"access_token", "refresh_token", "id_token", "token", "client_secret"})
+
+_CHANNEL_LOCK_SQL = "SELECT pg_advisory_xact_lock($1::bigint)"
+_DELETE_CHANNEL_OTHERS_SQL = """DELETE FROM auth.user_identities
+    WHERE auth_provider = $1 AND provider_user_id = $2 AND user_id <> $3::text::bigint"""
+_DELETE_CHANNEL_SQL = "DELETE FROM auth.user_identities WHERE auth_provider = $1 AND provider_user_id = $2"
+
+
+def _channel_lock_key(auth_provider: str, provider_user_id: str) -> int:
+    """Return a stable signed-bigint advisory-lock key for one channel account."""
+    raw = b"parrot:channel-identity\0" + auth_provider.encode() + b"\0" + str(provider_user_id).encode()
+    return int.from_bytes(hashlib.sha256(raw).digest()[:8], "big", signed=True)
+
+
+def _validate_identity_input(
+    nav_user_id: Any, auth_provider: str, provider_user_id: Any, auth_data: Optional[Dict[str, Any]]
+) -> tuple:
+    """Validate identity write input; return ``(provider_user_id, json_payload)``.
+
+    Raises:
+        ValueError: non-numeric ``nav_user_id``, empty ``provider_user_id`` or secrets in ``auth_data``.
+    """
+    # auth.user_identities.user_id is bigint on both write paths — the SQL
+    # casts with ``$1::text::bigint`` and IdentityStore expects the same id.
+    # Reject a channel-scoped id (an AAD GUID, "team:user", ...) here, with a
+    # readable message, instead of as a Postgres cast error buried in a
+    # caller's ``except Exception`` (issue:187ce3fe3b93).
+    if not str(nav_user_id or "").isdigit():
+        raise ValueError(
+            "nav_user_id must be the numeric navigator-auth user_id "
+            "(auth.user_identities.user_id is bigint); got a non-numeric value of "
+            f"{len(str(nav_user_id or ''))} chars for provider {auth_provider!r}"
+        )
+    if provider_user_id is None or str(provider_user_id) == "":
+        raise ValueError(
+            "provider_user_id is required: a NULL falls outside the partial " "unique index on auth.user_identities"
+        )
+    data = dict(auth_data or {})
+    leaked = _SECRET_KEYS.intersection(data)
+    if leaked:
+        raise ValueError(f"auth_data must not carry secrets: {sorted(leaked)}")
+    return str(provider_user_id), json.dumps(data, default=str)
 
 
 def _raw_connection(conn: Any) -> Any:
@@ -205,27 +247,7 @@ class IdentityMappingService:
             Exception: Any database/cipher failure propagates — callers
                 decide how to surface it.
         """
-        # auth.user_identities.user_id is bigint on both write paths — the SQL
-        # casts with ``$1::text::bigint`` and IdentityStore expects the same id.
-        # Reject a channel-scoped id (an AAD GUID, "team:user", …) here, with a
-        # readable message, instead of as a Postgres cast error buried in a
-        # caller's ``except Exception`` (issue:187ce3fe3b93).
-        if not str(nav_user_id or "").isdigit():
-            raise ValueError(
-                "nav_user_id must be the numeric navigator-auth user_id "
-                "(auth.user_identities.user_id is bigint); got a non-numeric value of "
-                f"{len(str(nav_user_id or ''))} chars for provider {auth_provider!r}"
-            )
-        if provider_user_id is None or str(provider_user_id) == "":
-            raise ValueError(
-                "provider_user_id is required: a NULL falls outside the partial " "unique index on auth.user_identities"
-            )
-        provider_user_id = str(provider_user_id)
-        data = dict(auth_data or {})
-        leaked = _SECRET_KEYS.intersection(data)
-        if leaked:
-            raise ValueError(f"auth_data must not carry secrets: {sorted(leaked)}")
-        payload = json.dumps(data, default=str)
+        provider_user_id, payload = _validate_identity_input(nav_user_id, auth_provider, provider_user_id, auth_data)
 
         if token is not None:
             if token.provider_user_id is None:
@@ -320,6 +342,58 @@ class IdentityMappingService:
             nav_user_id,
             auth_provider,
         )
+
+    async def link_channel_identity(
+        self,
+        *,
+        nav_user_id: str,
+        auth_provider: str,
+        provider_user_id: str,
+        auth_data: Dict[str, Any],
+        display_name: Optional[str] = None,
+        email: Optional[str] = None,
+    ) -> None:
+        """Make ``nav_user_id`` the sole owner of a channel account, atomically.
+
+        One transaction: advisory lock, delete rows owned by other users, upsert.
+
+        Raises:
+            ValueError: invalid input (same rules as ``upsert_identity``) or secrets in ``auth_data``.
+            RuntimeError: the upsert returned no row (the transaction is rolled back).
+        """
+        provider_user_id, payload = _validate_identity_input(nav_user_id, auth_provider, provider_user_id, auth_data)
+        async with self._pool.acquire() as conn:
+            raw = _raw_connection(conn)
+            async with raw.transaction():
+                await raw.execute(_CHANNEL_LOCK_SQL, _channel_lock_key(auth_provider, provider_user_id))
+                await raw.execute(_DELETE_CHANNEL_OTHERS_SQL, auth_provider, provider_user_id, str(nav_user_id))
+                row = await raw.fetchrow(
+                    _UPSERT_SQL, str(nav_user_id), auth_provider, provider_user_id, payload, display_name, email
+                )
+                if row is None:
+                    raise RuntimeError(
+                        f"channel identity upsert returned no row (user={nav_user_id} provider={auth_provider})"
+                    )
+        self.logger.info("IdentityMappingService: linked %s account to user=%s", auth_provider, nav_user_id)
+
+    async def unlink_channel_identity(self, auth_provider: str, provider_user_id: str) -> int:
+        """Delete every row for a channel account under the shared lock.
+
+        Returns:
+            The number of deleted rows (0 when absent).
+        """
+        provider_user_id = str(provider_user_id)
+        async with self._pool.acquire() as conn:
+            raw = _raw_connection(conn)
+            async with raw.transaction():
+                await raw.execute(_CHANNEL_LOCK_SQL, _channel_lock_key(auth_provider, provider_user_id))
+                status = await raw.execute(_DELETE_CHANNEL_SQL, auth_provider, provider_user_id)
+        try:
+            count = int(str(status).rsplit(" ", 1)[-1])
+        except (ValueError, IndexError):
+            count = 0
+        self.logger.info("IdentityMappingService: unlinked %s account (%d row(s))", auth_provider, count)
+        return count
 
     @staticmethod
     def _row_to_dict(row: Any) -> Dict[str, Any]:
