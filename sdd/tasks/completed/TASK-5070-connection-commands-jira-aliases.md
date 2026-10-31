@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-775 — Connections on MS Teams
 **Spec**: `sdd/specs/connections-msteams.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5065, TASK-5069
@@ -294,7 +294,7 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by gpt-5.6-terra (codex), 1 attempt. Engine lint flagged F821 (MSTeamsCommandRouter undefined in annotation, connect_commands.py); fixed by orchestrator in f6a4ed17c3. Own validation: 15 passed. Note: test_msteams_oauth_callback::TestStatePayloadShapeParity::test_manager_payload_drives_proactive_notification fails on origin/dev too (pre-existing).
 
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD

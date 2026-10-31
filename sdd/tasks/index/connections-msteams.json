@@ -265,7 +265,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -276,8 +276,9 @@
       "parallelism_notes": "uses command_args from TASK-5065 (commands/__init__.py) and TeamsConnector from TASK-5069 (connect_commands.py, same file)",
       "assigned_to": null,
       "started_at": "2026-10-31T23:12:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5070-connection-commands-jira-aliases.md"
+      "completed_at": "2026-10-31T23:44:39+00:00",
+      "file": "sdd/tasks/completed/TASK-5070-connection-commands-jira-aliases.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5071",
