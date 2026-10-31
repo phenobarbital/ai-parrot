@@ -188,7 +188,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -200,8 +200,9 @@
       "parallelism_notes": "calls StandardOAuth2Manager.start_device_authorization/complete_device_authorization/_device_key from TASK-4967 (descriptor.py); modifies service.py after TASK-4969 and handlers/connections.py after TASK-4970 (same files, serialized)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4971-server-device-endpoints.md"
+      "completed_at": "2026-10-31T00:49:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4971-server-device-endpoints.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4972",
@@ -210,7 +211,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -221,8 +222,9 @@
       "parallelism_notes": "imports LoginStore, LoginRecord, refresh_login, LoginExpired from TASK-4968 (parrot/cli/login.py) and WhoAmI, PulledToken, NotConnected from TASK-4969 (parrot/auth/oauth2/models.py)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4972-remote-connections-client.md"
+      "completed_at": "2026-10-31T00:49:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4972-remote-connections-client.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4973",
