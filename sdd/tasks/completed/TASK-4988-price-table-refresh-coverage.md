@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-783 — Unified usage & cost metrics per SDD spec
 **Spec**: `sdd/specs/unified-usage.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4987
@@ -199,4 +199,15 @@ See blueprint.
 Not delegation-eligible: needs current vendor pricing and a user-confirmed threshold. Stop and ask if a model has no published price.
 
 ## Completion Note
-_(filled at close)_
+
+- Task: TASK-4988
+- Feature: unified-usage
+- Implementation SHA: 9ebdf9d8d27c2f935d0002010de9b7ce91d79aaa
+- Closed at (UTC): 2026-10-31T23:42:06+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: orchestrator (sdd-worker) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |
