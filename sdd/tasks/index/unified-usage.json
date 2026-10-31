@@ -360,6 +360,19 @@
       "completed_at": "2026-10-31T01:02:01+00:00",
       "file": "sdd/tasks/completed/TASK-4996-grafana-feature-agent-usage-dashboard.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5077",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "title": "FEAT-783 review fixes — strict price_call, per-model revision, ASYNC221",
+      "file": "sdd/tasks/completed/TASK-5077-unified-usage-review-fixes.md",
+      "status": "done",
+      "priority": "low",
+      "depends_on": [],
+      "discovered_from": "issue:d95710046fd7",
+      "completed_at": "2026-10-31T23:07:20+00:00",
+      "verification": "verified"
     }
   ]
 }
