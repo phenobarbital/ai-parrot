@@ -10,12 +10,11 @@ import asyncio
 import json
 import time
 from typing import Any, Dict, Optional
-from unittest.mock import AsyncMock
 
 import pytest
 
 from parrot.auth.oauth2_base import AbstractOAuth2Manager, AbstractOAuth2TokenSet
-
+from parrot.auth.principal import Principal
 
 pytest.importorskip("fakeredis")
 import fakeredis.aioredis  # noqa: E402
@@ -25,6 +24,35 @@ class _FakeTokenSet(AbstractOAuth2TokenSet):
     """Fake provider token set — adds a provider-specific identity field."""
 
     provider_user_handle: str = ""
+
+
+class _FakeCredentialStore:
+    """CredentialStore adapter over the test's backing dictionary."""
+
+    def __init__(self, rows: Dict[Any, Dict[str, Any]]) -> None:
+        self.rows = rows
+
+    async def load(self, user_id: str, provider: str) -> Optional[Dict[str, Any]]:
+        """Load the principal/provider credential."""
+        return self.rows.get((user_id, provider))
+
+    async def save(
+        self,
+        user_id: str,
+        provider: str,
+        payload: Dict[str, Any],
+        *,
+        minted: bool,
+        principal: Optional[Principal],
+        state_payload: Optional[Dict[str, Any]],
+    ) -> None:
+        """Save the principal/provider credential."""
+        del minted, principal, state_payload
+        self.rows[(user_id, provider)] = payload
+
+    async def delete(self, user_id: str, provider: str) -> None:
+        """Delete the principal/provider credential."""
+        self.rows.pop((user_id, provider), None)
 
 
 class _FakeManager(AbstractOAuth2Manager):
@@ -96,29 +124,13 @@ async def vault_store():
 @pytest.fixture
 async def manager(vault_store):
     redis_client = fakeredis.aioredis.FakeRedis(decode_responses=True)
-    writer = AsyncMock()
-
-    async def _write(user_id, vault_name, payload):
-        vault_store[(user_id, vault_name)] = payload
-        writer(user_id, vault_name, payload)
-
-    async def _read(user_id, vault_name):
-        try:
-            return vault_store[(user_id, vault_name)]
-        except KeyError:
-            raise KeyError(vault_name)
-
-    async def _delete(user_id, vault_name):
-        vault_store.pop((user_id, vault_name), None)
 
     mgr = _FakeManager(
         client_id="cid",
         client_secret="csec",
         redirect_uri="https://app.example.com/cb",
         redis_client=redis_client,
-        vault_writer=_write,
-        vault_reader=_read,
-        vault_deleter=_delete,
+        credential_store=_FakeCredentialStore(vault_store),
     )
     yield mgr
     close = getattr(redis_client, "aclose", None) or redis_client.close
@@ -164,10 +176,10 @@ async def test_handle_callback_exchanges_and_persists(manager, vault_store):
     assert state_payload["user_id"] == "42"
 
     # Redis cache populated.
-    cached = await manager.redis.get(manager._token_key("web", "42"))
+    cached = await manager.redis.get(manager._token_key("42"))
     assert json.loads(cached)["access_token"] == "AT-AUTHCODE"
     # Vault populated.
-    assert vault_store[("42", manager._vault_name("web", "42"))]["access_token"] == "AT-AUTHCODE"
+    assert vault_store[("42", manager.provider_id)]["access_token"] == "AT-AUTHCODE"
 
     # Nonce is single-use.
     assert await manager.redis.get(manager._nonce_key(nonce)) is None
@@ -201,14 +213,14 @@ async def test_get_valid_token_hydrates_from_vault_when_redis_empty(manager, vau
     await manager.handle_callback("CODE1", nonce)
 
     # Simulate a Redis flush — token only lives in the vault now.
-    await manager.redis.delete(manager._token_key("web", "42"))
-    assert await manager.redis.get(manager._token_key("web", "42")) is None
+    await manager.redis.delete(manager._token_key("42"))
+    assert await manager.redis.get(manager._token_key("42")) is None
 
     token = await manager.get_valid_token("web", "42")
     assert token is not None
     assert token.access_token == "AT-CODE1"
     # Cache has been re-populated.
-    assert await manager.redis.get(manager._token_key("web", "42")) is not None
+    assert await manager.redis.get(manager._token_key("42")) is not None
 
 
 @pytest.mark.asyncio
@@ -217,10 +229,10 @@ async def test_get_valid_token_refreshes_when_expired(manager):
     await manager.handle_callback("CODE1", nonce)
 
     # Force expiry on the cached token by rewriting it with past expiry.
-    cached_raw = await manager.redis.get(manager._token_key("web", "42"))
+    cached_raw = await manager.redis.get(manager._token_key("42"))
     cached = json.loads(cached_raw)
     cached["expires_at"] = time.time() - 100
-    await manager.redis.set(manager._token_key("web", "42"), json.dumps(cached))
+    await manager.redis.set(manager._token_key("42"), json.dumps(cached))
 
     token = await manager.get_valid_token("web", "42")
     assert token is not None
@@ -235,8 +247,8 @@ async def test_revoke_clears_both_layers(manager, vault_store):
     await manager.handle_callback("CODE1", nonce)
 
     await manager.revoke("web", "42")
-    assert await manager.redis.get(manager._token_key("web", "42")) is None
-    assert ("42", manager._vault_name("web", "42")) not in vault_store
+    assert await manager.redis.get(manager._token_key("42")) is None
+    assert ("42", manager.provider_id) not in vault_store
 
 
 @pytest.mark.asyncio
@@ -250,18 +262,18 @@ async def test_refresh_failure_revokes_locally(manager, vault_store):
     await manager.handle_callback("CODE1", nonce)
 
     # Force expiry + a 400/PermissionError on refresh.
-    cached_raw = await manager.redis.get(manager._token_key("web", "42"))
+    cached_raw = await manager.redis.get(manager._token_key("42"))
     cached = json.loads(cached_raw)
     cached["expires_at"] = time.time() - 100
-    await manager.redis.set(manager._token_key("web", "42"), json.dumps(cached))
+    await manager.redis.set(manager._token_key("42"), json.dumps(cached))
     manager._refresh_error = PermissionError("invalid_grant")
 
     with pytest.raises(PermissionError):
         await manager.get_valid_token("web", "42")
 
     # Both layers were revoked.
-    assert await manager.redis.get(manager._token_key("web", "42")) is None
-    assert ("42", manager._vault_name("web", "42")) not in vault_store
+    assert await manager.redis.get(manager._token_key("42")) is None
+    assert ("42", manager.provider_id) not in vault_store
 
 
 # ---------------------------------------------------------------------------
@@ -275,10 +287,10 @@ async def test_concurrent_refresh_invokes_endpoint_once(manager):
     await manager.handle_callback("CODE1", nonce)
 
     # Expire the cached token.
-    cached_raw = await manager.redis.get(manager._token_key("web", "42"))
+    cached_raw = await manager.redis.get(manager._token_key("42"))
     cached = json.loads(cached_raw)
     cached["expires_at"] = time.time() - 100
-    await manager.redis.set(manager._token_key("web", "42"), json.dumps(cached))
+    await manager.redis.set(manager._token_key("42"), json.dumps(cached))
 
     # Fire two concurrent get_valid_token calls.
     results = await asyncio.gather(

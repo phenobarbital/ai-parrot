@@ -1,0 +1,45 @@
+
+Recorded discovery constraints (Rounds 0–2, owner Jesús); the audit clarifications
+below are proposed contract corrections, not new owner answers:
+
+- Flow: `feature` on `dev`.
+- **Assertion**: decisions enter the graph only from a structured, human-approved
+  section of the spec. No LLM inference on the critical path.
+- **Granularity**: two layers — architecture rules at module/package level,
+  task contracts at symbol level. v1 ships the first layer; the second is the
+  task-certificate phase.
+- **v1 core**: consequence preview in `/sdd-spec`. Task certificates, drift
+  job and retroactive inference are later phases.
+- **Checks in v1**: contradictions with accepted decisions; blast radius of the
+  symbols the spec touches; possible undeclared supersession (advisory, not formal conservativity); evidence
+  gaps (accepted decisions whose evidence is already stale/missing inside the
+  spec's radius).
+- **Verdict**: a `## Consequences` section is written into the spec (auditable
+  in git). Only an *unresolved contradiction* with an accepted decision blocks
+  approval among complete evaluations; malformed inputs and incomplete audits
+  also prevent approval. Other findings remain advisory.
+- **Target resolution**: explicit `sym:<rel>#<qualname>` / `file:<rel>` /
+  `dir:<rel>` ids in the spec's Decisions section. A target that does not
+  resolve is a spec error. No lexical guessing in the verdict.
+- **Seed**: a curated, versioned file of architecture rules transcribed from
+  `CLAUDE.md` / `CONTEXT.md`, approved once, ingested as accepted.
+- **Producer/consumer loop** (added 2026-10-31): a spec *consumes* accepted
+  decisions while it is written and *produces* its own on approval. Every
+  decision carries two axes — an ontological one (`about: <subsystem>`, for
+  retrieval by domain) and a structural one (`targets: <graph ids>`, for
+  verification). The same curation feeds both modes.
+
+Non-negotiable technical constraints:
+
+- Read path is deterministic and offline: zero LLM calls (FEAT-578 AC5 already
+  guarantees this for ordinary decision reads, not explicit generation; the preview must keep it).
+- Reuse `DecisionRecord` / `EvidenceRef` / `DecisionLink`; do not fork a second
+  decision model. New relations are additive (`RelationType` values must stay
+  stable strings — FEAT-239 design note).
+- Must work on the SQLite plane (`wikitoolkit`) and through the MCP tools.
+- Gate scripts follow the `scripts/sdd/check_*.py` pattern (Pydantic report,
+  exit code, JSON output) so CI and `/sdd-spec` share one implementation.
+- No `clients/base.py` changes. No new HTTP stack.
+
+---
+

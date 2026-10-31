@@ -423,7 +423,12 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     telegram_id,
                 )
 
-        register_jira_commands(self.router, oauth_manager, session_clearer=_clear_jira_session)
+        register_jira_commands(
+            self.router,
+            oauth_manager,
+            session_clearer=_clear_jira_session,
+            session_lookup=lambda tid: self._user_sessions.get(int(tid)),
+        )
         self._add_platform_commands(
             [
                 ("connect_jira", "Connect Jira account"),

@@ -1,57 +1,30 @@
-"""Jira OAuth 2.0 (3LO) manager for per-user authentication.
-
-This module implements the complete Atlassian OAuth 2.0 (3LO) lifecycle
-for per-user Jira access:
-
-- Generate authorization URLs with CSRF state nonces.
-- Exchange authorization codes for tokens.
-- Discover ``cloud_id`` via the ``accessible-resources`` endpoint.
-- Resolve user identity via ``/rest/api/3/myself``.
-- Store and retrieve tokens from Redis, keyed by ``channel:user_id``.
-- Handle Atlassian's rotating refresh tokens with a Redis distributed
-  lock to avoid losing tokens when two requests refresh concurrently.
-
-The manager never holds credentials in memory — everything flows through
-Redis so the HTTP callback process and the agent session can share state.
-
-Redis is the **hot cache** and the live tool read path. The **durable owner**
-of a Jira grant is navigator-auth's Identity Vault (``auth.user_identities``),
-which this manager keeps current through an injected
-:class:`CredentialSink` — notified after every successful Redis write, at link
-time and on refresh. The Session Vault's ``jira:*`` keys were retired
-(FEAT-735). See ``docs/auth/jira-credential-ownership.md``.
-"""
+"""Jira OAuth 2.0 provider backed by the standard OAuth engine."""
 
 from __future__ import annotations
 
-import json
-import logging
-import secrets
-import time
-from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 from urllib.parse import urlencode
 
 import aiohttp
-from aiohttp import web
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-# Atlassian OAuth 2.0 (3LO) endpoints.
+from parrot.auth.oauth2.descriptor import (
+    OAuth2ProviderDescriptor,
+    RefreshPolicy,
+    StandardOAuth2Manager,
+    post_exchange_hooks,
+)
+from parrot.auth.oauth2_base import AbstractOAuth2TokenSet, CredentialStore, _legacy_window_open
+from parrot.auth.principal import Principal, resolve_principal
+
 AUTHORIZATION_URL = "https://auth.atlassian.com/authorize"
 TOKEN_URL = "https://auth.atlassian.com/oauth/token"
 ACCESSIBLE_RESOURCES_URL = "https://api.atlassian.com/oauth/token/accessible-resources"
 
-# Redis key prefixes.
-_TOKEN_KEY_PREFIX = "jira:oauth"  # jira:oauth:{channel}:{user_id}
-_NONCE_KEY_PREFIX = "jira:nonce"  # jira:nonce:{nonce}
-_LOCK_KEY_PREFIX = "lock:jira:refresh"  # lock:jira:refresh:{channel}:{user_id}
+_TOKEN_KEY_PREFIX = "jira:oauth"
+# Historical Jira layout (read-only during the migration window): jira:oauth:{channel}:{channel_user_id}
+_LEGACY_JIRA_TOKEN_KEY_TEMPLATE = "{prefix}:{channel}:{channel_user_id}"
 
-# TTLs.
-_TOKEN_TTL_SECONDS = 90 * 24 * 60 * 60  # 90 days
-_NONCE_TTL_SECONDS = 10 * 60  # 10 minutes
-_REFRESH_LOCK_TIMEOUT = 10  # seconds
-_REFRESH_LOCK_BLOCKING_TIMEOUT = 5  # seconds
-
-# Default scopes for Jira 3LO integrations.
 DEFAULT_SCOPES: List[str] = [
     "read:jira-work",
     "write:jira-work",
@@ -60,34 +33,32 @@ DEFAULT_SCOPES: List[str] = [
 ]
 
 
-logger = logging.getLogger(__name__)
+class JiraTokenSet(AbstractOAuth2TokenSet):
+    """OAuth token set enriched with the selected Atlassian cloud site."""
 
-
-class JiraTokenSet(BaseModel):
-    """Per-user Jira OAuth 2.0 token set persisted in Redis."""
-
-    access_token: str
-    refresh_token: str
-    expires_at: float  # epoch timestamp
-    cloud_id: str
-    site_url: str
-    account_id: str
-    display_name: str
-    email: Optional[str] = None
-    scopes: List[str] = Field(default_factory=list)
-    granted_at: float = 0.0
-    last_refreshed_at: float = 0.0
+    cloud_id: str = ""
+    site_url: str = ""
     available_sites: List[Dict[str, Any]] = Field(default_factory=list)
 
     @property
-    def is_expired(self) -> bool:
-        """Return True if the access token has expired (with 60s leeway)."""
-        return time.time() >= (self.expires_at - 60)
-
-    @property
     def api_base_url(self) -> str:
-        """Return the Atlassian REST API base URL for this cloud_id."""
+        """Return the Atlassian REST API base URL for this cloud."""
         return f"https://api.atlassian.com/ex/jira/{self.cloud_id}"
+
+
+JIRA_DESCRIPTOR = OAuth2ProviderDescriptor(
+    provider_id="jira",
+    display_name="Jira",
+    icon="mdi:jira",
+    authorization_url=AUTHORIZATION_URL,
+    token_url=TOKEN_URL,
+    default_scopes=list(DEFAULT_SCOPES),
+    client_type="confidential",
+    pkce="none",
+    refresh_policy=RefreshPolicy(rotating=True, sliding=True, refresh_lifetime_s=90 * 86400),
+    extra_authorize_params={"audience": "api.atlassian.com", "prompt": "consent"},
+    post_exchange="atlassian_accessible_resources",
+)
 
 
 _MAX_ERROR_BODY_CHARS = 200
@@ -193,83 +164,69 @@ async def fetch_accessible_resources(
     access_token: str,
     url: str = ACCESSIBLE_RESOURCES_URL,
 ) -> List[Dict[str, Any]]:
-    """Fetch the list of Atlassian sites the token can access.
-
-    Raises:
-        ValueError: On a non-200 status or a non-list payload.
-    """
+    """Fetch the Atlassian sites available to an access token."""
     async with session.get(
         url,
         headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
     ) as response:
         if response.status != 200:
-            text = await response.text()
-            raise ValueError(f"accessible-resources failed with status {response.status}: {_truncate(text)}")
+            raise ValueError(f"accessible-resources failed with status {response.status}")
         data = await response.json()
-        if not isinstance(data, list):
-            raise ValueError("accessible-resources returned a non-list payload.")
-        return data
+    if not isinstance(data, list):
+        raise ValueError("accessible-resources returned a non-list payload.")
+    return data
 
 
 async def fetch_myself(session: aiohttp.ClientSession, access_token: str, cloud_id: str) -> Dict[str, Any]:
-    """Fetch the authenticated user's profile.
-
-    Raises:
-        ValueError: If ``/myself`` answers with a non-200 status.
-    """
+    """Fetch the authenticated user's profile from an Atlassian cloud."""
     url = f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3/myself"
     async with session.get(
         url,
         headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
     ) as response:
         if response.status != 200:
-            text = await response.text()
-            raise ValueError(f"/myself failed with status {response.status}: {_truncate(text)}")
-        return await response.json()
+            raise ValueError(f"/myself failed with status {response.status}")
+        data = await response.json()
+    if not isinstance(data, dict):
+        raise ValueError("/myself returned a non-object payload.")
+    return data
 
 
-class CredentialSink(Protocol):
-    """Durable store kept in step with the Redis hot cache.
-
-    Redis is the hot cache and the live tool read path; the durable owner of a
-    Jira grant is navigator-auth's Identity Vault (FEAT-735). A sink is how
-    :class:`JiraOAuthManager` keeps that owner current without importing it:
-    ``ai-parrot`` must not depend on ``ai-parrot-server``, so the Protocol is
-    satisfied structurally and the concrete sink is injected by the
-    application.
-    """
-
-    async def persist(self, channel: str, user_id: str, token: "JiraTokenSet") -> None:
-        """Persist a freshly refreshed grant. Raises on failure."""
-        ...
-
-    async def persist_minted(
-        self,
-        channel: str,
-        user_id: str,
-        token: "JiraTokenSet",
-        state_payload: Dict[str, Any],
-    ) -> None:
-        """Persist a freshly minted grant. Raises on failure.
-
-        ``state_payload`` is the decoded OAuth state. The manager only knows
-        the channel's own user id, so the implementation reads
-        ``extra.nav_user_id`` from here when the channel supplied one.
-        """
-        ...
+async def _atlassian_accessible_resources(
+    manager: Any,
+    token_response: Dict[str, Any],
+    token_set: AbstractOAuth2TokenSet,
+) -> JiraTokenSet:
+    """Fill the selected Atlassian site and profile after token exchange."""
+    del token_response
+    session = await manager._get_session()
+    sites = await fetch_accessible_resources(session, token_set.access_token)
+    if not sites:
+        raise ValueError("No accessible Atlassian resources for this user.")
+    primary = sites[0]
+    cloud_id = str(primary.get("id", ""))
+    site_url = str(primary.get("url", ""))
+    if not cloud_id or not site_url:
+        raise ValueError("Accessible Atlassian resource is missing id or url.")
+    myself = await fetch_myself(session, token_set.access_token, cloud_id)
+    return JiraTokenSet(
+        **token_set.model_dump(),
+        cloud_id=cloud_id,
+        site_url=site_url,
+        available_sites=sites,
+        account_id=str(myself.get("accountId", "")),
+        display_name=str(myself.get("displayName", "")),
+        email=myself.get("emailAddress"),
+    )
 
 
-class JiraOAuthManager:
-    """OAuth 2.0 (3LO) lifecycle manager for Jira Cloud.
+post_exchange_hooks.register("atlassian_accessible_resources", _atlassian_accessible_resources)
 
-    The manager exposes primitives for starting an authorization flow,
-    exchanging codes for tokens, reading valid tokens from Redis (with
-    transparent refresh), and revoking a user's tokens.
-    """
 
-    authorization_url = AUTHORIZATION_URL
-    token_url = TOKEN_URL
-    accessible_resources_url = ACCESSIBLE_RESOURCES_URL
+class JiraOAuthManager(StandardOAuth2Manager):
+    """Atlassian 3LO manager on the generic OAuth engine."""
+
+    token_set_cls = JiraTokenSet
 
     def __init__(
         self,
@@ -277,548 +234,105 @@ class JiraOAuthManager:
         client_secret: str,
         redirect_uri: str,
         *,
-        app: Optional[web.Application] = None,
+        app: Any = None,
         redis_url: Optional[str] = None,
         redis_client: Any = None,
         scopes: Optional[List[str]] = None,
         http_session: Optional[aiohttp.ClientSession] = None,
-        credential_sink: Optional[CredentialSink] = None,
+        credential_store: Optional[CredentialStore] = None,
+        event_publisher: Any = None,
+        callback_path: str = "/api/auth/jira/callback",
     ) -> None:
-        if app is None and redis_client is None and not redis_url:
-            raise ValueError("JiraOAuthManager requires one of: app (with app['redis']), " "redis_client, or redis_url")
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.redirect_uri = redirect_uri
-        self._app: Optional[web.Application] = app
-        self._redis_url: Optional[str] = redis_url
-        self.redis = redis_client
-        # ``_redis_owned`` gets finalized in ``_on_startup`` once we know
-        # which source actually provided the client (explicit redis_client
-        # > app['redis'] > redis_url). Initial guess: we own it iff the
-        # caller did not pass one explicitly.
-        self._redis_owned: bool = redis_client is None
-        self.scopes: List[str] = list(scopes) if scopes else list(DEFAULT_SCOPES)
-        self._http: Optional[aiohttp.ClientSession] = http_session
-        self._http_owned: bool = http_session is None  # True if we must close it
-        # Durable owner of the grant, notified after every successful Redis
-        # write. ``None`` keeps the historic Redis-only behaviour verbatim.
-        self._credential_sink: Optional[CredentialSink] = credential_sink
-        self._setup_done: bool = False
-        self.logger = logger
-
-    # ------------------------------------------------------------------ setup
+        super().__init__(
+            JIRA_DESCRIPTOR,
+            client_id=client_id,
+            client_secret=client_secret,
+            redirect_uri=redirect_uri,
+            app=app,
+            redis_url=redis_url,
+            redis_client=redis_client,
+            scopes=scopes,
+            http_session=http_session,
+            credential_store=credential_store,
+            event_publisher=event_publisher,
+            callback_path=callback_path,
+        )
 
     def setup(self) -> None:
-        """Wire this manager into the aiohttp app passed at construction.
-
-        Idempotent — calling :meth:`setup` twice is a safe no-op.
-
-        Stores ``app['jira_oauth_manager'] = self``, appends
-        :meth:`_on_startup` / :meth:`_on_cleanup` to the aiohttp signal
-        lists, and mounts ``GET /api/auth/jira/callback`` via
-        :func:`parrot.auth.routes.setup_jira_oauth_routes`.
-
-        Raises:
-            RuntimeError: If the manager was not constructed with
-                ``app=``, or ``app['jira_oauth_manager']`` is already set
-                to a **different** :class:`JiraOAuthManager` instance.
-        """
+        """Mount the Jira compatibility callback route once."""
         if self._setup_done:
             return
         if self._app is None:
-            raise RuntimeError(
-                "JiraOAuthManager.setup() requires the manager to have "
-                "been constructed with app=<aiohttp.web.Application>. "
-                "Pass `app=` to the constructor or mount the callback "
-                "route manually via setup_jira_oauth_routes(app)."
-            )
+            raise RuntimeError("JiraOAuthManager.setup() requires app= in the constructor.")
         app = self._app
-        existing = app.get("jira_oauth_manager")
-        if existing is not None and existing is not self:
-            raise RuntimeError("app['jira_oauth_manager'] is already set to a different " "JiraOAuthManager instance.")
+        for key in ("jira_oauth_manager", "oauth2_manager_jira"):
+            existing = app.get(key)
+            if existing is not None and existing is not self:
+                raise RuntimeError(f"app[{key!r}] is already set to a different JiraOAuthManager instance.")
         app["jira_oauth_manager"] = self
+        app["oauth2_manager_jira"] = self
         app.on_startup.append(self._on_startup)
         app.on_cleanup.append(self._on_cleanup)
-        from .routes import setup_jira_oauth_routes
+        from parrot.auth.routes import setup_jira_oauth_routes
 
         setup_jira_oauth_routes(app)
         self._setup_done = True
 
-    async def _on_startup(self, app: web.Application) -> None:
-        """aiohttp startup hook: resolve Redis client + smoke-test.
+    async def validate_token(self, channel: str, user_id: str) -> Optional[JiraTokenSet]:
+        """Return a live Jira token, removing it when Atlassian rejects it."""
+        principal = await resolve_principal(channel, user_id)
+        if principal is None:
+            return None
+        token = await self.get_valid_token(channel, principal.user_id, channel_user_id=principal.channel_user_id)
+        if token is None:
+            return None
+        session = await self._get_session()
+        try:
+            async with session.get(
+                f"{token.api_base_url}/rest/api/3/myself",
+                headers={"Authorization": f"Bearer {token.access_token}", "Accept": "application/json"},
+            ) as response:
+                status = response.status
+        except aiohttp.ClientError as exc:
+            self.logger.warning("Jira /myself probe transport error: %s", exc)
+            return token
+        if status in (401, 403):
+            await self.revoke(channel, principal.user_id, channel_user_id=principal.channel_user_id)
+            return None
+        return token  # type: ignore[return-value]
 
-        Resolution order (higher priority wins):
+    async def _read_legacy_token(
+        self,
+        channel: str,
+        channel_user_id: str,
+        user_id: str,
+    ) -> Optional[JiraTokenSet]:
+        """Migrate generic or historical Jira channel-scoped tokens once."""
+        token = await super()._read_legacy_token(channel, channel_user_id, user_id)
+        if token is not None or not _legacy_window_open():
+            return token  # type: ignore[return-value]
 
-        1. ``self.redis`` already set by an explicit ``redis_client``
-           constructor arg — keep it, mark as not owned.
-        2. ``self._app['redis']`` published by BotManager or other
-           bootstrap — use it, mark as not owned.
-        3. ``self._redis_url`` — build a lazy client via
-           ``redis.asyncio.from_url``, mark as owned for cleanup.
-        """
-        if self.redis is None:
-            shared = self._app.get("redis") if self._app is not None else None
-            if shared is not None:
-                self.redis = shared
-                self._redis_owned = False
-            elif self._redis_url:
-                import redis.asyncio as aioredis
-
-                self.redis = aioredis.from_url(
-                    self._redis_url,
-                    decode_responses=True,
-                )
-                self._redis_owned = True
-            else:
-                raise RuntimeError(
-                    "JiraOAuthManager: no Redis source available at "
-                    "startup — construct with app= (and ensure "
-                    "app['redis'] is set), redis_client=, or redis_url=."
-                )
-        if self.redis is not None:
-            await self.redis.ping()
-
-    async def _on_cleanup(self, app: web.Application) -> None:
-        """aiohttp cleanup hook: close owned Redis + aiohttp session."""
-        if self._redis_owned and self.redis is not None:
-            close = getattr(self.redis, "aclose", None) or self.redis.close
-            result = close()
-            if hasattr(result, "__await__"):
-                await result
-            self.redis = None
-        if self._http_owned and self._http is not None and not self._http.closed:
-            await self._http.close()
-            self._http = None
-
-    # ------------------------------------------------------------------ utils
-
-    @staticmethod
-    def _token_key(channel: str, user_id: str) -> str:
-        return f"{_TOKEN_KEY_PREFIX}:{channel}:{user_id}"
-
-    @staticmethod
-    def _nonce_key(nonce: str) -> str:
-        return f"{_NONCE_KEY_PREFIX}:{nonce}"
-
-    @staticmethod
-    def _lock_key(channel: str, user_id: str) -> str:
-        return f"{_LOCK_KEY_PREFIX}:{channel}:{user_id}"
-
-    async def _get_session(self) -> aiohttp.ClientSession:
-        """Return the shared aiohttp session, creating it lazily if needed."""
-        if self._http is None or self._http.closed:
-            self._http = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=30),
-            )
-            self._http_owned = True
-        return self._http
-
-    async def _read_token(self, key: str) -> Optional[JiraTokenSet]:
-        raw = await self.redis.get(key)
-        if not raw:
+        legacy_key = _LEGACY_JIRA_TOKEN_KEY_TEMPLATE.format(
+            prefix=_TOKEN_KEY_PREFIX, channel=channel, channel_user_id=channel_user_id
+        )
+        raw = await self.redis.get(legacy_key)
+        if raw is None:
             return None
         if isinstance(raw, bytes):
             raw = raw.decode("utf-8")
         try:
-            return JiraTokenSet.model_validate_json(raw)
-        except Exception as exc:  # pragma: no cover - corrupted payload
-            self.logger.warning("Corrupted token payload at %s: %s", key, exc)
+            legacy_token = JiraTokenSet.model_validate_json(raw)
+        except Exception as exc:  # pragma: no cover - corrupted legacy payload
+            self.logger.warning("Corrupted Jira legacy token for channel %s: %s", channel, type(exc).__name__)
             return None
-
-    async def _write_token(self, key: str, token: JiraTokenSet) -> None:
-        payload = token.model_dump_json()
-        # redis-py async supports ``ex=`` for TTL on set.
-        await self.redis.set(key, payload, ex=_TOKEN_TTL_SECONDS)
-
-    # ------------------------------------------------------------------ URL
-
-    async def create_authorization_url(
-        self,
-        channel: str,
-        user_id: str,
-        extra_state: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[str, str]:
-        """Generate an Atlassian consent URL with a CSRF state nonce.
-
-        Stores a Redis record under ``jira:nonce:<nonce>`` mapping to the
-        (channel, user_id, extra) triple with a 10-minute TTL. The nonce is
-        single-use — it is deleted the first time the callback retrieves it.
-
-        Args:
-            channel: Originating channel (``"telegram"``, ``"agentalk"``, …).
-            user_id: User identifier scoped to the channel.
-            extra_state: Optional metadata echoed back on the callback.
-
-        Returns:
-            ``(url, nonce)`` — the authorization URL and the state nonce.
-        """
-        nonce = secrets.token_urlsafe(32)
-        state_payload = {
-            "channel": channel,
-            "user_id": user_id,
-            "extra": extra_state or {},
-        }
-        await self.redis.set(
-            self._nonce_key(nonce),
-            json.dumps(state_payload),
-            ex=_NONCE_TTL_SECONDS,
-        )
-
-        params = {
-            "audience": "api.atlassian.com",
-            "client_id": self.client_id,
-            "scope": " ".join(self.scopes),
-            "redirect_uri": self.redirect_uri,
-            "state": nonce,
-            "response_type": "code",
-            "prompt": "consent",
-        }
-        url = f"{self.authorization_url}?{urlencode(params)}"
-        return url, nonce
-
-    # ------------------------------------------------------------------ callback
-
-    async def handle_callback(self, code: str, state: str) -> Tuple[JiraTokenSet, Dict[str, Any]]:
-        """Process the OAuth callback: validate state, exchange code, store.
-
-        Args:
-            code: Authorization code returned by Atlassian.
-            state: CSRF state nonce that was sent in the authorization URL.
-
-        Returns:
-            A tuple of ``(JiraTokenSet, state_payload)`` where ``state_payload``
-            contains ``channel``, ``user_id``, and ``extra`` decoded from the nonce.
-
-        Raises:
-            ValueError: If the state nonce is missing/expired or the token
-                exchange fails.
-        """
-        state_payload = await self.consume_state(state)
-
-        channel = state_payload.get("channel")
-        user_id = state_payload.get("user_id")
-        if not channel or not user_id:
-            raise ValueError("State payload missing channel or user_id.")
-
-        # 1. Exchange code for tokens.
-        token_response = await self._exchange_code(code)
-        access_token = token_response["access_token"]
-        refresh_token = token_response.get("refresh_token", "")
-        expires_in = int(token_response.get("expires_in", 3600))
-        granted_scopes = token_response.get("scope", "").split() if token_response.get("scope") else list(self.scopes)
-
-        # 2. Discover accessible resources (cloud_id + site_url).
-        resources = await self._fetch_accessible_resources(access_token)
-        if not resources:
-            raise ValueError("No accessible Atlassian resources for this user.")
-        primary = resources[0]
-        cloud_id = primary["id"]
-        site_url = primary["url"]
-
-        # 3. Resolve user identity.
-        myself = await self._fetch_myself(access_token, cloud_id)
-        account_id = myself.get("accountId", "")
-        display_name = myself.get("displayName", "")
-        email = myself.get("emailAddress")
-
-        now = time.time()
-        token = JiraTokenSet(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            expires_at=now + expires_in,
-            cloud_id=cloud_id,
-            site_url=site_url,
-            account_id=account_id,
-            display_name=display_name,
-            email=email,
-            scopes=granted_scopes,
-            granted_at=now,
-            last_refreshed_at=now,
-            available_sites=resources,
-        )
-
-        await self._write_token(self._token_key(channel, user_id), token)
-        if self._credential_sink is not None:
-            # Same order and policy as the refresh path: the durable owner is
-            # written strictly after Redis, and a sink failure never fails a
-            # link that worked for the user.
-            try:
-                await self._credential_sink.persist_minted(channel, user_id, token, state_payload)
-            except Exception:  # noqa: BLE001 - the durable copy must not break the link
-                self.logger.error(
-                    "Jira credential sink failed at link time for %s:%s",
-                    channel,
-                    user_id,
-                    exc_info=True,
-                )
-        self.logger.info(
-            "Stored Jira token for %s:%s (%s @ %s)",
-            channel,
-            user_id,
-            display_name,
-            site_url,
-        )
-        return token, state_payload
-
-    async def consume_state(self, state: str) -> Dict[str, Any]:
-        """Resolve and delete a one-time CSRF state nonce.
-
-        Reads the state payload stored under ``jira:nonce:<state>`` and
-        deletes it (single-use semantics) without exchanging an
-        authorization code. This is used by the callback route to handle
-        OAuth *error* redirects — when the user denies consent Atlassian
-        returns ``?error=...&state=...`` with **no** ``code`` — so the route
-        can still dispatch a channel-specific failure notification and avoid
-        leaving the nonce dangling in Redis until its TTL expires.
-
-        :meth:`handle_callback` delegates its nonce resolution here too, so
-        both paths share identical validation semantics.
-
-        Args:
-            state: The CSRF state nonce echoed back by Atlassian.
-
-        Returns:
-            The decoded state payload (``channel``, ``user_id``, ``extra``).
-
-        Raises:
-            ValueError: If the nonce is missing/expired or the payload is
-                corrupt.
-        """
-        nonce_key = self._nonce_key(state)
-        raw_state = await self.redis.get(nonce_key)
-        if not raw_state:
-            raise ValueError("Invalid or expired state nonce.")
-        if isinstance(raw_state, bytes):
-            raw_state = raw_state.decode("utf-8")
-        # One-time use: delete immediately.
-        await self.redis.delete(nonce_key)
+        principal = Principal(user_id=user_id, channel=channel, channel_user_id=channel_user_id)
+        await self._persist_token(principal, legacy_token, minted=True)
         try:
-            return json.loads(raw_state)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"Corrupted state payload: {exc}") from exc
+            await self.redis.delete(legacy_key)
+        except Exception as exc:  # pragma: no cover - delete failures retain an idempotent source
+            self.logger.warning("Jira legacy cache delete failed for principal %s: %s", user_id, type(exc).__name__)
+        return legacy_token
 
-    # ------------------------------------------------------------------ reads
-
-    async def get_valid_token(self, channel: str, user_id: str) -> Optional[JiraTokenSet]:
-        """Return a non-expired token, refreshing it transparently if needed."""
-        key = self._token_key(channel, user_id)
-        token = await self._read_token(key)
-        if token is None:
-            return None
-        if not token.is_expired:
-            return token
-        return await self._refresh_tokens(channel, user_id, token)
-
-    async def is_connected(self, channel: str, user_id: str) -> bool:
-        """Return True when a valid token is available for the user.
-
-        Cheap Redis-only check — does not contact Atlassian. Use
-        :meth:`validate_token` when the caller needs to know that
-        Atlassian still accepts the stored token.
-        """
-        return (await self.get_valid_token(channel, user_id)) is not None
-
-    async def validate_token(self, channel: str, user_id: str) -> Optional[JiraTokenSet]:
-        """Return the stored token only if Atlassian still accepts it.
-
-        Combines :meth:`get_valid_token` with a live ``/myself`` probe so
-        callers can detect tokens that Atlassian invalidated server-side
-        (admin revocation, scope change, refresh-token rotation lost
-        across an outage, etc.) while the local ``expires_at`` is still
-        in the future.
-
-        On HTTP 401/403 the local token is revoked from Redis so the next
-        ``/jira_status`` reports "not connected" and ``/connect_jira``
-        issues a fresh authorization URL instead of replying "already
-        connected". Transport failures leave the token in place — we
-        cannot distinguish a transient outage from a real revocation.
-
-        Returns:
-            The :class:`JiraTokenSet` if the probe succeeds, ``None``
-            when no token exists, the refresh failed, or Atlassian
-            rejected the token.
-        """
-        try:
-            token = await self.get_valid_token(channel, user_id)
-        except PermissionError as exc:
-            # _refresh_tokens already revoked locally on a 401 refresh.
-            self.logger.info(
-                "Jira token unrefreshable for %s:%s — treating as " "disconnected: %s",
-                channel,
-                user_id,
-                exc,
-            )
-            return None
-        if token is None:
-            return None
-        status = await self._probe_token(token)
-        if status in (401, 403):
-            self.logger.info(
-                "Jira token for %s:%s rejected by Atlassian (HTTP %s) " "— revoking",
-                channel,
-                user_id,
-                status,
-            )
-            await self.revoke(channel, user_id)
-            return None
-        return token
-
-    async def _probe_token(self, token: JiraTokenSet) -> int:
-        """Probe ``/myself`` with the token; return the HTTP status.
-
-        Returns 0 on transport failure so callers can distinguish a
-        network outage (don't revoke) from an Atlassian rejection
-        (revoke).
-        """
-        url = f"{token.api_base_url}/rest/api/3/myself"
-        session = await self._get_session()
-        try:
-            async with session.get(
-                url,
-                headers={
-                    "Authorization": f"Bearer {token.access_token}",
-                    "Accept": "application/json",
-                },
-            ) as response:
-                return response.status
-        except aiohttp.ClientError as exc:
-            self.logger.warning(
-                "Jira /myself probe transport error: %s",
-                exc,
-            )
-            return 0
-
-    async def revoke(self, channel: str, user_id: str) -> None:
-        """Delete the user's token from Redis."""
-        await self.redis.delete(self._token_key(channel, user_id))
-
-    # ------------------------------------------------------------------ refresh
-
-    async def _refresh_tokens(self, channel: str, user_id: str, token_set: JiraTokenSet) -> JiraTokenSet:
-        """Refresh a user's tokens using the rotating refresh token.
-
-        Uses a Redis distributed lock so that concurrent refresh requests
-        do not both consume the old refresh token (Atlassian rotates it on
-        each successful refresh; the second request would otherwise be
-        rejected).
-
-        If the lock cannot be acquired within ``_REFRESH_LOCK_BLOCKING_TIMEOUT``
-        seconds, the method re-reads the token (another process may have
-        refreshed already) and returns it if still valid, or raises
-        ``PermissionError`` so the caller can surface the issue rather than
-        silently proceeding without lock protection.
-        """
-        key = self._token_key(channel, user_id)
-        lock_name = self._lock_key(channel, user_id)
-        lock = self.redis.lock(
-            lock_name,
-            timeout=_REFRESH_LOCK_TIMEOUT,
-            blocking_timeout=_REFRESH_LOCK_BLOCKING_TIMEOUT,
-        )
-        acquired = await lock.acquire()
-        if not acquired:
-            # Another process is holding the lock.  Re-read — it may have
-            # just finished refreshing and stored a fresh token.
-            self.logger.warning(
-                "Could not acquire refresh lock for %s:%s within %ss; re-reading",
-                channel,
-                user_id,
-                _REFRESH_LOCK_BLOCKING_TIMEOUT,
-            )
-            fresh = await self._read_token(key)
-            if fresh and not fresh.is_expired:
-                return fresh
-            raise PermissionError(
-                f"Jira token refresh lock unavailable for {channel}:{user_id}. "
-                "Another refresh may be in progress — retry after a moment."
-            )
-
-        try:
-            # Another request may have refreshed already while we waited.
-            fresh = await self._read_token(key)
-            if fresh and not fresh.is_expired:
-                return fresh
-
-            current = fresh or token_set
-            try:
-                session = await self._get_session()
-                async with session.post(
-                    self.token_url,
-                    data={
-                        "grant_type": "refresh_token",
-                        "client_id": self.client_id,
-                        "client_secret": self.client_secret,
-                        "refresh_token": current.refresh_token,
-                    },
-                ) as response:
-                    if response.status == 401:
-                        # Atlassian rejected the refresh token — revoke locally.
-                        await self.revoke(channel, user_id)
-                        raise PermissionError("Jira refresh token rejected (401); user must re-authorize.")
-                    if response.status != 200:
-                        text = await response.text()
-                        raise PermissionError(f"Jira token refresh failed with status {response.status}: {text}")
-                    payload = await response.json()
-
-            except aiohttp.ClientError as exc:
-                raise PermissionError(f"Jira token refresh network error: {exc}") from exc
-
-            now = time.time()
-            refreshed = token_set.model_copy(
-                update={
-                    "access_token": payload["access_token"],
-                    "refresh_token": payload.get("refresh_token", token_set.refresh_token),
-                    "expires_at": now + int(payload.get("expires_in", 3600)),
-                    "last_refreshed_at": now,
-                }
-            )
-            await self._write_token(key, refreshed)
-            if self._credential_sink is not None:
-                # Strictly after the Redis write: a durable-store outage must
-                # never cost the user a working hot credential, and a sink
-                # failure must never roll back a refresh that worked.
-                try:
-                    await self._credential_sink.persist(channel, user_id, refreshed)
-                except Exception:  # noqa: BLE001 - the durable copy must not break the refresh
-                    self.logger.error(
-                        "Jira credential sink failed after refresh for %s:%s",
-                        channel,
-                        user_id,
-                        exc_info=True,
-                    )
-            return refreshed
-        finally:
-            # lock.release() is only reached when acquired is True —
-            # the not-acquired path raises PermissionError before entering
-            # this try block.
-            try:
-                await lock.release()
-            except Exception:  # pragma: no cover - lock already released
-                pass
-
-    # ------------------------------------------------------------------ HTTP
-
-    async def _exchange_code(self, code: str) -> Dict[str, Any]:
-        session = await self._get_session()
-        return await exchange_code(
-            session,
-            client_id=self.client_id,
-            client_secret=self.client_secret,
-            code=code,
-            redirect_uri=self.redirect_uri,
-            token_url=self.token_url,
-        )
-
-    async def _fetch_accessible_resources(self, access_token: str) -> List[Dict[str, Any]]:
-        session = await self._get_session()
-        return await fetch_accessible_resources(session, access_token, url=self.accessible_resources_url)
-
-    async def _fetch_myself(self, access_token: str, cloud_id: str) -> Dict[str, Any]:
-        session = await self._get_session()
-        return await fetch_myself(session, access_token, cloud_id)
-
-    async def aclose(self) -> None:
-        """Close the underlying aiohttp session if this manager owns it."""
-        if self._http_owned and self._http and not self._http.closed:
-            await self._http.close()
-        self._http = None
+    def _public_metadata(self, token_set: Any) -> Dict[str, Any]:
+        """Expose Jira site metadata without exposing token material."""
+        return {"site_url": getattr(token_set, "site_url", ""), "cloud_id": getattr(token_set, "cloud_id", "")}

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pytest
 
+from parrot.auth.credentials import AuthRequiredPayload
 from parrot.auth.exceptions import AuthorizationRequired
 from parrot.tools.abstract import AbstractTool, ToolResult
 from parrot.tools.manager import ToolManager
@@ -62,6 +63,20 @@ class TestAuthorizationRequired:
         assert exc.provider == "jira"
         assert "read:jira-work" in exc.scopes
 
+        payload = exc.to_payload()
+        assert isinstance(payload, AuthRequiredPayload)
+        assert payload.model_dump() == {
+            "provider": "jira",
+            "auth_url": "https://auth.atlassian.com/authorize?foo=bar",
+            "scopes": ["read:jira-work", "write:jira-work"],
+            "tool_name": "jira_create_issue",
+            "message": "Jira authorization required",
+            "auth_kind": "oauth2",
+            "user_code": None,
+            "verification_uri": None,
+            "expires_in": None,
+        }
+
     def test_exception_defaults(self) -> None:
         exc = AuthorizationRequired(
             tool_name="some_tool",
@@ -70,6 +85,7 @@ class TestAuthorizationRequired:
         assert exc.provider == "unknown"
         assert exc.scopes == []
         assert exc.auth_url is None
+        assert exc.to_payload().auth_kind is None
 
     def test_exception_is_catchable(self) -> None:
         with pytest.raises(AuthorizationRequired):

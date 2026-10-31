@@ -76,6 +76,14 @@ def _clean_jira_instances():
     _FakeJIRA.instances.clear()
 
 
+@pytest.fixture(autouse=True)
+def _stub_principal_resolution(monkeypatch):
+    async def resolve(channel: str, user_id: str):
+        return SimpleNamespace(user_id=user_id)
+
+    monkeypatch.setattr("parrot_tools.jiratoolkit.resolve_principal", resolve)
+
+
 # ---------------------------------------------------------------------------
 # __init__ behaviour
 # ---------------------------------------------------------------------------
@@ -91,6 +99,7 @@ class TestJiraToolkitOAuthInit:
         tk = JiraToolkit(auth_type="oauth2_3lo", credential_resolver=resolver)
         assert tk.jira is None
         assert tk.auth_type == "oauth2_3lo"
+        assert tk.credential_provider == "jira"
         assert tk.credential_resolver is resolver
         # Legacy _init_jira_client must NOT have been invoked.
         assert _FakeJIRA.instances == []
@@ -156,6 +165,32 @@ class TestPreExecute:
         assert exc.auth_url == "https://auth.url"
         assert exc.provider == "jira"
         resolver.resolve.assert_awaited_once_with("telegram", "user-1")
+        resolver.get_auth_url.assert_awaited_once_with("telegram", "user-1")
+
+    @pytest.mark.asyncio
+    async def test_raises_link_instruction_when_principal_is_unbound(self, monkeypatch) -> None:
+        resolver = MagicMock()
+        resolver.resolve = AsyncMock()
+        resolver.get_auth_url = AsyncMock(
+            side_effect=AuthorizationRequired(
+                tool_name="",
+                message="Link your account to the platform first (/login).",
+                provider="jira",
+            ),
+        )
+        tk = JiraToolkit(auth_type="oauth2_3lo", credential_resolver=resolver)
+
+        async def no_principal(channel: str, user_id: str):
+            return None
+
+        monkeypatch.setattr("parrot_tools.jiratoolkit.resolve_principal", no_principal)
+
+        with pytest.raises(AuthorizationRequired) as exc_info:
+            await tk._pre_execute("jira_get_issue", _permission_context=_permission_context())
+
+        assert exc_info.value.tool_name == "jira_get_issue"
+        assert exc_info.value.message == "Link your account to the platform first (/login)."
+        resolver.resolve.assert_not_awaited()
         resolver.get_auth_url.assert_awaited_once_with("telegram", "user-1")
 
     @pytest.mark.asyncio
@@ -233,9 +268,46 @@ class TestPreExecute:
 
         assert client_a is not client_b
         assert len(_FakeJIRA.instances) == 2
-        assert set(tk._client_cache.keys()) == {
-            "telegram:alice", "telegram:bob",
-        }
+        assert set(tk._client_cache.keys()) == {"alice", "bob"}
+
+    @pytest.mark.asyncio
+    async def test_jiratoolkit_cache_keyed_by_principal(self, monkeypatch) -> None:
+        resolver = MagicMock()
+        resolver.resolve = AsyncMock(
+            side_effect=[
+                _make_token("at-old"),
+                _make_token("at-old"),
+                _make_token("at-new"),
+            ],
+        )
+        tk = JiraToolkit(auth_type="oauth2_3lo", credential_resolver=resolver)
+
+        async def same_principal(channel: str, user_id: str):
+            return SimpleNamespace(user_id="principal-1")
+
+        monkeypatch.setattr("parrot_tools.jiratoolkit.resolve_principal", same_principal)
+
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            await tk._pre_execute(
+                "tool1",
+                _permission_context=_permission_context(user_id="telegram-user", channel="telegram"),
+            )
+            first_client = tk.jira
+            await tk._pre_execute(
+                "tool2",
+                _permission_context=_permission_context(user_id="slack-user", channel="slack"),
+            )
+            shared_client = tk.jira
+            await tk._pre_execute(
+                "tool3",
+                _permission_context=_permission_context(user_id="slack-user", channel="slack"),
+            )
+            rotated_client = tk.jira
+
+        assert shared_client is first_client
+        assert rotated_client is not first_client
+        assert len(_FakeJIRA.instances) == 2
+        assert set(tk._client_cache.keys()) == {"principal-1"}
 
 
 # ---------------------------------------------------------------------------
@@ -402,3 +474,50 @@ class TestGetProjectsAuthProbe:
         assert result["count"] == 1
         assert result["authenticated"] is True
         tk._probe_auth_sync.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Per-principal isolation on a shared toolkit instance (FEAT-773)
+# ---------------------------------------------------------------------------
+
+
+class TestPrincipalIsolation:
+    @pytest.mark.asyncio
+    async def test_interleaved_principals_never_see_each_others_client(self) -> None:
+        """Two concurrent calls on ONE toolkit each keep their own bearer across awaits."""
+        import asyncio
+
+        async def resolve(channel: str, user_id: str):
+            return _make_token(f"token-for-{user_id}-{'x' * 30}")
+
+        resolver = MagicMock()
+        resolver.resolve = AsyncMock(side_effect=resolve)
+        tk = JiraToolkit(auth_type="oauth2_3lo", credential_resolver=resolver)
+        seen: dict[str, str] = {}
+
+        async def call(user_id: str, pause: float) -> None:
+            await tk._pre_execute("jira_get_issue", _permission_context=_permission_context(user_id=user_id))
+            await asyncio.sleep(pause)  # the other principal runs _pre_execute in between
+            seen[user_id] = tk.jira.kwargs["options"]["headers"]["Authorization"]
+
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            await asyncio.gather(call("alice", 0.05), call("bob", 0.01))
+
+        assert seen["alice"] != seen["bob"]
+        # Alice's client carries Alice's token even though Bob bound his client meanwhile.
+        assert seen["alice"].split("Bearer ")[1][:16] == f"token-for-alice-{'x' * 30}"[:16]
+        assert seen["bob"].split("Bearer ")[1][:14] == f"token-for-bob-{'x' * 30}"[:14]
+
+    @pytest.mark.asyncio
+    async def test_read_interface_is_call_local_in_3lo(self) -> None:
+        """The shared read interface is rebuilt per call so another principal cannot re-point it."""
+        resolver = MagicMock()
+        resolver.resolve = AsyncMock(return_value=_make_token())
+        tk = JiraToolkit(auth_type="oauth2_3lo", credential_resolver=resolver)
+        with patch("parrot_tools.jiratoolkit.JIRA", _FakeJIRA):
+            await tk._pre_execute("jira_get_issue", _permission_context=_permission_context())
+
+        first = tk._read_interface
+        second = tk._read_interface
+        assert first is not second
+        assert first._client is tk.jira and second._client is tk.jira

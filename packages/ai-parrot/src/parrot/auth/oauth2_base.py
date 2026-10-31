@@ -27,21 +27,43 @@ import logging
 import secrets
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Awaitable, Callable, ClassVar, Dict, List, Optional, Tuple, Type
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncIterator,
+    ClassVar,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    Tuple,
+    Type,
+    runtime_checkable,
+)
 from urllib.parse import urlencode
 
 import aiohttp
 from aiohttp import web
 from pydantic import BaseModel, Field
 
+from parrot.auth.principal import Principal, resolve_principal
+from parrot.conf import OAUTH2_LEGACY_KEYS_UNTIL
+from parrot.security.vault_utils import delete_vault_credential, retrieve_vault_credential, store_vault_credential
+
+if TYPE_CHECKING:  # events import parrot.auth.oauth2 whose __init__ imports this module
+    from parrot.auth.oauth2.events import ConnectionEventPublisher
 
 # Token storage key schema (Redis cache layer).
-_TOKEN_KEY_TEMPLATE = "oauth2:{provider}:{channel}:{user_id}"
+_TOKEN_KEY_TEMPLATE = "oauth2:{provider}:{user_id}"
 _NONCE_KEY_TEMPLATE = "oauth2:{provider}:nonce:{nonce}"
-_LOCK_KEY_TEMPLATE = "lock:oauth2:{provider}:refresh:{channel}:{user_id}"
+_LOCK_KEY_TEMPLATE = "lock:oauth2:{provider}:refresh:{user_id}"
 
-# Vault key (navigator-session encrypted store).
-_VAULT_NAME_TEMPLATE = "oauth2_{provider}_{channel}_{user_id}"
+# Legacy channel-scoped layout — read-only during the migration window.
+_LEGACY_TOKEN_KEY_TEMPLATE = "oauth2:{provider}:{channel}:{user_id}"
+_LEGACY_VAULT_NAME_TEMPLATE = "oauth2_{provider}_{channel}_{user_id}"
+_VAULT_NAME_TEMPLATE = "oauth2_{provider}_{user_id}"
 
 # TTLs.
 _TOKEN_TTL_SECONDS = 90 * 24 * 60 * 60   # 90 days hot cache
@@ -51,11 +73,93 @@ _REFRESH_LOCK_BLOCKING_TIMEOUT = 5       # seconds
 
 
 logger = logging.getLogger(__name__)
+_legacy_window_parse_error_logged = False
 
 
-VaultWriter = Callable[[str, str, Dict[str, Any]], Awaitable[None]]
-VaultReader = Callable[[str, str], Awaitable[Dict[str, Any]]]
-VaultDeleter = Callable[[str, str], Awaitable[None]]
+def _legacy_window_open(now: Optional[datetime] = None) -> bool:
+    """Return whether channel-scoped OAuth2 credentials may still be migrated."""
+    cutoff = OAUTH2_LEGACY_KEYS_UNTIL.strip()
+    if not cutoff:
+        return True
+    try:
+        parsed = datetime.fromisoformat(cutoff.replace("Z", "+00:00"))
+    except ValueError:
+        global _legacy_window_parse_error_logged
+        if not _legacy_window_parse_error_logged:
+            logger.error("Invalid OAUTH2_LEGACY_KEYS_UNTIL; legacy OAuth2 reads are disabled")
+            _legacy_window_parse_error_logged = True
+        return False
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    return current <= parsed
+
+
+class CredentialPersistenceError(RuntimeError):
+    """The durable credential write failed; the operation must not report success."""
+
+
+class InvalidGrantError(PermissionError):
+    """Provider rejected the refresh token; the grant is revoked locally."""
+
+
+class RefreshTransientError(RuntimeError):
+    """A transient refresh failure occurred; the grant is kept."""
+
+
+@runtime_checkable
+class CredentialStore(Protocol):
+    """Durable owner of an OAuth2 grant."""
+
+    async def load(self, user_id: str, provider: str) -> Optional[Dict[str, Any]]: ...
+
+    async def save(
+        self,
+        user_id: str,
+        provider: str,
+        payload: Dict[str, Any],
+        *,
+        minted: bool,
+        principal: Optional[Principal],
+        state_payload: Optional[Dict[str, Any]],
+    ) -> None: ...
+
+    async def delete(self, user_id: str, provider: str) -> None: ...
+
+
+class VaultUtilsCredentialStore:
+    """Default store over vault helpers using a principal-scoped name."""
+
+    @staticmethod
+    def _vault_name(provider: str, user_id: str) -> str:
+        return _VAULT_NAME_TEMPLATE.format(provider=provider, user_id=user_id)
+
+    async def load(self, user_id: str, provider: str) -> Optional[Dict[str, Any]]:
+        """Load a credential, returning ``None`` when it is absent."""
+        try:
+            return await retrieve_vault_credential(user_id, self._vault_name(provider, user_id))
+        except KeyError:
+            return None
+
+    async def save(
+        self,
+        user_id: str,
+        provider: str,
+        payload: Dict[str, Any],
+        *,
+        minted: bool,
+        principal: Optional[Principal],
+        state_payload: Optional[Dict[str, Any]],
+    ) -> None:
+        """Save a credential; metadata arguments support richer injected stores."""
+        del minted, principal, state_payload
+        await store_vault_credential(user_id, self._vault_name(provider, user_id), payload)
+
+    async def delete(self, user_id: str, provider: str) -> None:
+        """Delete a credential."""
+        await delete_vault_credential(user_id, self._vault_name(provider, user_id))
 
 
 class AbstractOAuth2TokenSet(BaseModel):
@@ -128,9 +232,8 @@ class AbstractOAuth2Manager(ABC):
         redis_client: Any = None,
         scopes: Optional[List[str]] = None,
         http_session: Optional[aiohttp.ClientSession] = None,
-        vault_writer: Optional[VaultWriter] = None,
-        vault_reader: Optional[VaultReader] = None,
-        vault_deleter: Optional[VaultDeleter] = None,
+        credential_store: Optional[CredentialStore] = None,
+        event_publisher: Optional[ConnectionEventPublisher] = None,
         callback_path: Optional[str] = None,
     ) -> None:
         if not self.provider_id:
@@ -161,21 +264,8 @@ class AbstractOAuth2Manager(ABC):
         self._setup_done: bool = False
         self.logger = logger
 
-        # Vault wiring — defaults use the navigator_session-backed helpers.
-        if vault_writer is None or vault_reader is None or vault_deleter is None:
-            from parrot.security.vault_utils import (  # local import: tests may mock
-                delete_vault_credential,
-                retrieve_vault_credential,
-                store_vault_credential,
-            )
-
-            self._vault_writer: VaultWriter = vault_writer or store_vault_credential
-            self._vault_reader: VaultReader = vault_reader or retrieve_vault_credential
-            self._vault_deleter: VaultDeleter = vault_deleter or delete_vault_credential
-        else:
-            self._vault_writer = vault_writer
-            self._vault_reader = vault_reader
-            self._vault_deleter = vault_deleter
+        self._store: CredentialStore = credential_store or VaultUtilsCredentialStore()
+        self._events = event_publisher
 
         self._callback_path: str = (
             callback_path or f"/api/auth/oauth2/{self.provider_id}/callback"
@@ -248,23 +338,33 @@ class AbstractOAuth2Manager(ABC):
 
     # ------------------------------------------------------------------ keys
 
-    def _token_key(self, channel: str, user_id: str) -> str:
-        return _TOKEN_KEY_TEMPLATE.format(
-            provider=self.provider_id, channel=channel, user_id=user_id,
-        )
+    def _token_key(self, user_id: str) -> str:
+        return _TOKEN_KEY_TEMPLATE.format(provider=self.provider_id, user_id=user_id)
 
     def _nonce_key(self, nonce: str) -> str:
         return _NONCE_KEY_TEMPLATE.format(provider=self.provider_id, nonce=nonce)
 
-    def _lock_key(self, channel: str, user_id: str) -> str:
-        return _LOCK_KEY_TEMPLATE.format(
-            provider=self.provider_id, channel=channel, user_id=user_id,
-        )
+    def _lock_key(self, user_id: str) -> str:
+        return _LOCK_KEY_TEMPLATE.format(provider=self.provider_id, user_id=user_id)
 
-    def _vault_name(self, channel: str, user_id: str) -> str:
-        return _VAULT_NAME_TEMPLATE.format(
-            provider=self.provider_id, channel=channel, user_id=user_id,
+    @asynccontextmanager
+    async def principal_lock(self, user_id: str) -> AsyncIterator[None]:
+        """Serialize operations for one provider and principal; never nest."""
+        lock = self.redis.lock(
+            self._lock_key(user_id),
+            timeout=_REFRESH_LOCK_TIMEOUT,
+            blocking_timeout=_REFRESH_LOCK_BLOCKING_TIMEOUT,
         )
+        acquired = await lock.acquire()
+        if not acquired:
+            raise TimeoutError(f"Could not acquire {self.provider_id} principal lock")
+        try:
+            yield
+        finally:
+            try:
+                await lock.release()
+            except Exception:  # pragma: no cover - lock may already be released
+                pass
 
     # ------------------------------------------------------------------ http
 
@@ -300,6 +400,8 @@ class AbstractOAuth2Manager(ABC):
         channel: str,
         user_id: str,
         extra_state: Optional[Dict[str, Any]] = None,
+        *,
+        principal: Optional[Principal] = None,
     ) -> Tuple[str, str]:
         """Generate a provider consent URL with a CSRF state nonce.
 
@@ -311,11 +413,20 @@ class AbstractOAuth2Manager(ABC):
         Returns:
             ``(url, nonce)`` — the authorization URL and the state nonce.
         """
+        if principal is None:
+            principal = await resolve_principal(channel, user_id)
+        if principal is None:
+            raise ValueError(f"No platform principal bound to this {channel} user; link the account first.")
+
         nonce = secrets.token_urlsafe(32)
         state_payload: Dict[str, Any] = {
             "channel": channel,
             "user_id": user_id,
             "extra": extra_state or {},
+            "nav_user_id": principal.user_id,
+            "channel_user_id": principal.channel_user_id,
+            "canonical_identity": principal.canonical_identity,
+            "tenant_id": principal.tenant_id,
         }
         params: Dict[str, str] = {
             "client_id": self.client_id,
@@ -380,9 +491,19 @@ class AbstractOAuth2Manager(ABC):
             raise ValueError(f"Corrupted state payload: {exc}") from exc
 
         channel = state_payload.get("channel")
-        user_id = state_payload.get("user_id")
-        if not channel or not user_id:
+        channel_user_id = state_payload.get("channel_user_id") or state_payload.get("user_id")
+        nav_user_id = state_payload.get("nav_user_id")
+        if not channel or not channel_user_id:
             raise ValueError("State payload missing channel or user_id.")
+        if nav_user_id is None or not str(nav_user_id).isdigit():
+            raise ValueError("State payload missing a valid nav_user_id.")
+        principal = Principal(
+            user_id=str(nav_user_id),
+            channel=channel,
+            channel_user_id=str(channel_user_id),
+            canonical_identity=state_payload.get("canonical_identity"),
+            tenant_id=state_payload.get("tenant_id"),
+        )
         code_verifier = state_payload.get("code_verifier")
 
         # 1. Exchange code → raw token.
@@ -394,42 +515,104 @@ class AbstractOAuth2Manager(ABC):
 
         # 3. Build provider-specific token set.
         token_set = self._build_token_set(token_response, identity)
+        token_set = await self._post_exchange(token_response, token_set)
 
-        # 4. Persist: vault (source of truth) + Redis cache.
-        await self._persist_token(channel, user_id, token_set)
+        # 4. Persist durable state before the hot cache while serialized.
+        async with self.principal_lock(principal.user_id):
+            await self._persist_token(principal, token_set, minted=True, state_payload=state_payload)
+
+        await self._publish(
+            "connection.completed",
+            principal,
+            token_set,
+            state_payload={**state_payload, "connection_meta": self._public_metadata(token_set)},
+        )
 
         self.logger.info(
-            "Stored %s token for %s:%s (%s)",
-            self.provider_id, channel, user_id, token_set.display_name or token_set.account_id,
+            "Stored %s token for principal %s (%s)",
+            self.provider_id,
+            principal.user_id,
+            token_set.display_name or token_set.account_id,
         )
         return token_set, state_payload
+
+    def _public_metadata(self, token_set: AbstractOAuth2TokenSet) -> Dict[str, Any]:
+        """Return non-secret token attributes made available to notifiers."""
+        return {}
+
+    async def _post_exchange(
+        self,
+        token_response: Dict[str, Any],
+        token_set: AbstractOAuth2TokenSet,
+    ) -> AbstractOAuth2TokenSet:
+        """Run the provider post-exchange hook; the default is identity."""
+        return token_set
+
+    async def _publish(
+        self,
+        kind: str,
+        principal: Principal,
+        token_set: Optional[AbstractOAuth2TokenSet],
+        *,
+        reason: Optional[str] = None,
+        state_payload: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Publish a connection event when a publisher is attached."""
+        if self._events is None:
+            return
+        from parrot.auth.oauth2.events import ConnectionEvent
+
+        event = ConnectionEvent(
+            kind=kind,
+            user_id=principal.user_id,
+            canonical_identity=principal.canonical_identity,
+            tenant_id=principal.tenant_id,
+            provider=self.provider_id,
+            account_id=token_set.account_id if token_set is not None else "",
+            display_name=token_set.display_name if token_set is not None else "",
+            channel=principal.channel,
+            occurred_at=time.time(),
+            reason=reason,
+        )
+        await self._events.publish(event, state_payload or {})
 
     # ------------------------------------------------------------------ persist
 
     async def _persist_token(
-        self, channel: str, user_id: str, token_set: AbstractOAuth2TokenSet,
+        self,
+        principal: Principal,
+        token_set: AbstractOAuth2TokenSet,
+        *,
+        minted: bool,
+        state_payload: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Write token to vault (encrypted) AND Redis cache (TTL bounded)."""
+        """Write the durable credential before the Redis hot cache."""
         payload = token_set.model_dump(mode="json")
-        # Vault is the source of truth — survives Redis flushes.
         try:
-            await self._vault_writer(user_id, self._vault_name(channel, user_id), payload)
-        except Exception:  # pragma: no cover - swallow vault failure but log
-            self.logger.exception(
-                "Vault write failed for %s:%s — token will only live in Redis cache",
-                channel, user_id,
+            await self._store.save(
+                principal.user_id,
+                self.provider_id,
+                payload,
+                minted=minted,
+                principal=principal,
+                state_payload=state_payload,
             )
-        # Redis hot cache.
+        except Exception as exc:  # noqa: BLE001 - every durable failure is fatal
+            self.logger.error(
+                "Durable %s credential write failed for principal %s: %s",
+                self.provider_id,
+                principal.user_id,
+                type(exc).__name__,
+            )
+            raise CredentialPersistenceError(f"{self.provider_id} credential could not be persisted") from None
         await self.redis.set(
-            self._token_key(channel, user_id),
+            self._token_key(principal.user_id),
             json.dumps(payload),
             ex=_TOKEN_TTL_SECONDS,
         )
 
-    async def _read_token_from_cache(
-        self, channel: str, user_id: str,
-    ) -> Optional[AbstractOAuth2TokenSet]:
-        raw = await self.redis.get(self._token_key(channel, user_id))
+    async def _read_token_from_cache(self, user_id: str) -> Optional[AbstractOAuth2TokenSet]:
+        raw = await self.redis.get(self._token_key(user_id))
         if not raw:
             return None
         if isinstance(raw, bytes):
@@ -437,70 +620,199 @@ class AbstractOAuth2Manager(ABC):
         try:
             return self.token_set_cls.model_validate_json(raw)
         except Exception as exc:  # pragma: no cover - corrupted payload
-            self.logger.warning("Corrupted token cache for %s:%s: %s", channel, user_id, exc)
+            self.logger.warning("Corrupted token cache for %s principal %s: %s", self.provider_id, user_id, exc)
             return None
 
-    async def _read_token_from_vault(
-        self, channel: str, user_id: str,
-    ) -> Optional[AbstractOAuth2TokenSet]:
+    async def _read_token_from_store(self, user_id: str) -> Optional[AbstractOAuth2TokenSet]:
         try:
-            payload = await self._vault_reader(user_id, self._vault_name(channel, user_id))
-        except KeyError:
+            payload = await self._store.load(user_id, self.provider_id)
+        except Exception:  # pragma: no cover - durable read failure is treated as unavailable
+            self.logger.exception("Credential store read failed for %s principal %s", self.provider_id, user_id)
             return None
-        except Exception:  # pragma: no cover
-            self.logger.exception("Vault read failed for %s:%s", channel, user_id)
+        if payload is None:
             return None
         try:
             return self.token_set_cls.model_validate(payload)
         except Exception as exc:  # pragma: no cover
-            self.logger.warning("Corrupted vault payload for %s:%s: %s", channel, user_id, exc)
+            self.logger.warning("Corrupted store payload for %s principal %s: %s", self.provider_id, user_id, exc)
             return None
 
     # ------------------------------------------------------------------ read
 
     async def get_valid_token(
-        self, channel: str, user_id: str,
+        self,
+        channel: str,
+        user_id: str,
+        *,
+        channel_user_id: Optional[str] = None,
     ) -> Optional[AbstractOAuth2TokenSet]:
-        """Return a non-expired token, hydrating from vault if cache is cold.
-
-        Resolution order:
-            1. Redis cache.
-            2. Vault (re-hydrates cache on hit).
-
-        Refreshes transparently if expired and a ``refresh_token`` is present.
-        Returns ``None`` if no token exists at any layer (user must re-auth).
-        """
-        token = await self._read_token_from_cache(channel, user_id)
+        """Return a principal's valid token from cache, store, or legacy storage."""
+        token = await self._read_token_from_cache(user_id)
         if token is None:
-            token = await self._read_token_from_vault(channel, user_id)
-            if token is not None:
-                # Re-populate the hot cache.
-                await self.redis.set(
-                    self._token_key(channel, user_id),
-                    token.model_dump_json(),
-                    ex=_TOKEN_TTL_SECONDS,
-                )
+            async with self.principal_lock(user_id):
+                token = await self._read_token_from_cache(user_id)
+                if token is None:
+                    token = await self._read_token_from_store(user_id)
+                    if token is not None:
+                        await self.redis.set(
+                            self._token_key(user_id),
+                            token.model_dump_json(),
+                            ex=_TOKEN_TTL_SECONDS,
+                        )
+                if token is None and _legacy_window_open():
+                    token = await self._read_legacy_token(channel, channel_user_id or user_id, user_id)
         if token is None:
             return None
         if not token.is_expired:
             return token
         if not token.refresh_token:
-            # Expired and unrefreshable — revoke locally.
-            await self.revoke(channel, user_id)
+            await self.revoke(channel, user_id, channel_user_id=channel_user_id)
             return None
         return await self._refresh_tokens(channel, user_id, token)
+
+    async def _read_legacy_token(
+        self,
+        channel: str,
+        channel_user_id: str,
+        user_id: str,
+    ) -> Optional[AbstractOAuth2TokenSet]:
+        """Migrate a channel-scoped credential to principal-scoped storage once."""
+        if not _legacy_window_open():
+            return None
+
+        legacy_key = _LEGACY_TOKEN_KEY_TEMPLATE.format(
+            provider=self.provider_id,
+            channel=channel,
+            user_id=channel_user_id,
+        )
+        legacy_vault_name = _LEGACY_VAULT_NAME_TEMPLATE.format(
+            provider=self.provider_id,
+            channel=channel,
+            user_id=channel_user_id,
+        )
+        raw = await self.redis.get(legacy_key)
+        payload: Any = raw
+        if payload is None:
+            try:
+                payload = await retrieve_vault_credential(channel_user_id, legacy_vault_name)
+            except KeyError:
+                return None
+        try:
+            if isinstance(payload, bytes):
+                payload = payload.decode("utf-8")
+            token = (
+                self.token_set_cls.model_validate_json(payload)
+                if isinstance(payload, str)
+                else self.token_set_cls.model_validate(payload)
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "Corrupted legacy token for %s channel %s: %s",
+                self.provider_id,
+                channel,
+                type(exc).__name__,
+            )
+            return None
+
+        principal = Principal(user_id=user_id, channel=channel, channel_user_id=channel_user_id)
+        await self._persist_token(principal, token, minted=True)
+        try:
+            await self.redis.delete(legacy_key)
+        except Exception as exc:
+            self.logger.warning(
+                "Legacy cache delete failed for %s principal %s: %s",
+                self.provider_id,
+                user_id,
+                type(exc).__name__,
+            )
+        try:
+            await delete_vault_credential(channel_user_id, legacy_vault_name)
+        except Exception as exc:
+            self.logger.warning(
+                "Legacy vault delete failed for %s principal %s: %s",
+                self.provider_id,
+                user_id,
+                type(exc).__name__,
+            )
+        return token
 
     async def is_connected(self, channel: str, user_id: str) -> bool:
         """Cheap connectivity check — does not call the provider."""
         return (await self.get_valid_token(channel, user_id)) is not None
 
-    async def revoke(self, channel: str, user_id: str) -> None:
-        """Delete the user's token from both vault and Redis."""
-        await self.redis.delete(self._token_key(channel, user_id))
+    async def revoke(
+        self,
+        channel: str,
+        user_id: str,
+        *,
+        channel_user_id: Optional[str] = None,
+    ) -> None:
+        """Revoke remotely best effort, delete all local copies, then publish."""
+        raw_channel_user_id = channel_user_id or user_id
+        principal = Principal(user_id=user_id, channel=channel, channel_user_id=raw_channel_user_id)
+        token: Optional[AbstractOAuth2TokenSet] = None
+        async with self.principal_lock(user_id):
+            token = await self._read_token_from_cache(user_id) or await self._read_token_from_store(user_id)
+            if token is not None:
+                try:
+                    await self._revoke_remote(token)
+                except Exception as exc:
+                    self.logger.warning(
+                        "Remote revoke failed for %s principal %s: %s",
+                        self.provider_id,
+                        user_id,
+                        type(exc).__name__,
+                    )
+            try:
+                await self._store.delete(user_id, self.provider_id)
+            except Exception as exc:
+                self.logger.error(
+                    "Credential store delete failed for %s principal %s: %s",
+                    self.provider_id,
+                    user_id,
+                    type(exc).__name__,
+                )
+                raise CredentialPersistenceError(f"{self.provider_id} credential could not be deleted") from None
+
+            legacy_user_ids = {raw_channel_user_id, user_id}
+            legacy_keys = [
+                _LEGACY_TOKEN_KEY_TEMPLATE.format(
+                    provider=self.provider_id,
+                    channel=channel,
+                    user_id=legacy_user_id,
+                )
+                for legacy_user_id in legacy_user_ids
+            ]
+            await self.redis.delete(self._token_key(user_id), *legacy_keys)
+            for legacy_user_id in legacy_user_ids:
+                legacy_vault_name = _LEGACY_VAULT_NAME_TEMPLATE.format(
+                    provider=self.provider_id,
+                    channel=channel,
+                    user_id=legacy_user_id,
+                )
+                try:
+                    await delete_vault_credential(legacy_user_id, legacy_vault_name)
+                except Exception as exc:
+                    self.logger.warning(
+                        "Legacy vault delete failed for %s principal %s: %s",
+                        self.provider_id,
+                        user_id,
+                        type(exc).__name__,
+                    )
+        if token is not None:
+            await self._publish("connection.revoked", principal, token)
+
+    async def _revoke_remote(self, token_set: AbstractOAuth2TokenSet) -> None:
+        """Provider-side revocation hook. Default no-op."""
+        return None
+
+    async def _delete_token(self, user_id: str) -> None:
+        """Delete both layers while the caller owns the principal lock."""
         try:
-            await self._vault_deleter(user_id, self._vault_name(channel, user_id))
+            await self._store.delete(user_id, self.provider_id)
         except Exception:  # pragma: no cover
-            self.logger.exception("Vault delete failed for %s:%s", channel, user_id)
+            self.logger.exception("Credential store delete failed for %s principal %s", self.provider_id, user_id)
+        await self.redis.delete(self._token_key(user_id))
 
     # ------------------------------------------------------------------ refresh
 
@@ -509,68 +821,55 @@ class AbstractOAuth2Manager(ABC):
         channel: str,
         user_id: str,
         token_set: AbstractOAuth2TokenSet,
-    ) -> AbstractOAuth2TokenSet:
-        """Refresh tokens under a Redis distributed lock.
-
-        Pattern mirrored from :class:`parrot.auth.jira_oauth.JiraOAuthManager`
-        — concurrent refreshes coalesce on the lock, and a rotated refresh
-        token never gets consumed twice.
-        """
-        lock = self.redis.lock(
-            self._lock_key(channel, user_id),
-            timeout=_REFRESH_LOCK_TIMEOUT,
-            blocking_timeout=_REFRESH_LOCK_BLOCKING_TIMEOUT,
-        )
-        acquired = await lock.acquire()
-        if not acquired:
-            self.logger.warning(
-                "Could not acquire %s refresh lock for %s:%s — re-reading",
-                self.provider_id, channel, user_id,
-            )
-            fresh = await self._read_token_from_cache(channel, user_id)
-            if fresh and not fresh.is_expired:
-                return fresh
-            raise PermissionError(
-                f"{self.provider_id} token refresh lock unavailable for "
-                f"{channel}:{user_id}. Retry after a moment."
-            )
-
+    ) -> Optional[AbstractOAuth2TokenSet]:
+        """Refresh once per principal while preserving replacements and transient grants."""
+        principal = Principal(user_id=user_id, channel=channel, channel_user_id=user_id)
         try:
-            # Another waiter may have refreshed while we blocked.
-            fresh = await self._read_token_from_cache(channel, user_id)
-            if fresh and not fresh.is_expired:
-                return fresh
+            async with self.principal_lock(user_id):
+                current = await self._read_token_from_cache(user_id) or await self._read_token_from_store(user_id)
+                if current is None:
+                    return None
+                if current.account_id != token_set.account_id:
+                    return current if not current.is_expired else None
+                if not current.is_expired:
+                    return current
+                try:
+                    payload = await self._refresh_request(current.refresh_token)
+                except aiohttp.ClientError as exc:
+                    raise RefreshTransientError(f"{self.provider_id} refresh network error") from exc
+                except InvalidGrantError:
+                    try:
+                        await self._store.delete(user_id, self.provider_id)
+                    except Exception as exc:
+                        self.logger.error(
+                            "Credential store delete failed after invalid grant for %s principal %s: %s",
+                            self.provider_id,
+                            user_id,
+                            type(exc).__name__,
+                        )
+                    await self.redis.delete(self._token_key(user_id))
+                    raise
 
-            current = fresh or token_set
-            try:
-                payload = await self._refresh_request(current.refresh_token)
-            except PermissionError:
-                await self.revoke(channel, user_id)
-                raise
-            except aiohttp.ClientError as exc:
-                raise PermissionError(
-                    f"{self.provider_id} token refresh network error: {exc}"
-                ) from exc
-
-            now = time.time()
-            updates: Dict[str, Any] = {
-                "access_token": payload["access_token"],
-                "refresh_token": payload.get(
-                    "refresh_token", current.refresh_token,
-                ),
-                "expires_at": now + int(payload.get("expires_in", 3600)),
-                "last_refreshed_at": now,
-            }
-            if payload.get("scope"):
-                updates["scopes"] = payload["scope"].split()
-            refreshed = current.model_copy(update=updates)
-            await self._persist_token(channel, user_id, refreshed)
-            return refreshed
-        finally:
-            try:
-                await lock.release()
-            except Exception:  # pragma: no cover - lock already released
-                pass
+                now = time.time()
+                updates: Dict[str, Any] = {
+                    "access_token": payload["access_token"],
+                    "refresh_token": payload.get("refresh_token", current.refresh_token),
+                    "expires_at": now + int(payload.get("expires_in", 3600)),
+                    "last_refreshed_at": now,
+                }
+                if payload.get("scope"):
+                    updates["scopes"] = payload["scope"].split()
+                refreshed = current.model_copy(update=updates)
+                await self._persist_token(principal, refreshed, minted=False)
+                return refreshed
+        except InvalidGrantError:
+            await self._publish(
+                "connection.refresh_failed",
+                principal,
+                token_set,
+                reason="InvalidGrantError",
+            )
+            raise
 
     # ------------------------------------------------------------------ HOOKS
 
