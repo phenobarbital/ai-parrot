@@ -5,7 +5,12 @@ from typing import Any, Optional
 
 import pytest
 
-from parrot.services.identity_principal import IdentityPrincipalResolver
+from parrot.services.identity_principal import (
+    _EMAIL_OWNERS_SQL,
+    _OID_OWNERS_SQL,
+    _SLACK_OWNERS_SQL,
+    IdentityPrincipalResolver,
+)
 
 
 class StubIdentityStore:
@@ -118,11 +123,88 @@ async def test_empty_navigator_user_id_fails_closed(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.asyncio
-async def test_a2a_email_fails_closed_without_email_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Do not treat an a2a e-mail address as a provider account id."""
-    store = StubIdentityStore()
+async def test_resolver_canonical_identity_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Resolve one active e-mail or enabled OID and reject absent or ambiguous owners."""
     resolver = IdentityPrincipalResolver(db_pool=object())
-    monkeypatch.setattr(resolver, "_store", lambda: store)
 
-    assert await resolver.resolve("a2a", "jlara@example.com") is None
-    assert store.find_calls == []
+    calls: list[tuple[str, tuple[Any, ...]]] = []
+
+    async def fetch(sql: str, *args: Any) -> list[dict[str, str]]:
+        calls.append((sql, args))
+        if sql == _EMAIL_OWNERS_SQL:
+            return {
+                "jlara@example.com": [{"user_id": "1042"}],
+                "ambiguous@example.com": [{"user_id": "1042"}, {"user_id": "2042"}],
+            }.get(args[0], [])
+        if sql == _OID_OWNERS_SQL:
+            return [{"user_id": "2042"}] if args[0] == "entra-oid" else []
+        raise AssertionError("unexpected query")
+
+    monkeypatch.setattr(resolver, "_fetch", fetch)
+    monkeypatch.setattr(resolver, "_store", lambda: pytest.fail("canonical lookup used IdentityStore"))
+
+    email = await resolver.resolve("cli", "JLara@Example.com")
+    oid = await resolver.resolve("a2a", "entra-oid")
+
+    assert email is not None
+    assert email.user_id == "1042"
+    assert email.canonical_identity == "jlara@example.com"
+    assert email.channel == "cli"
+    assert email.channel_user_id == "JLara@Example.com"
+    assert oid is not None
+    assert oid.user_id == "2042"
+    assert oid.canonical_identity == "entra-oid"
+    assert await resolver.resolve("cli", "missing@example.com") is None
+    assert await resolver.resolve("a2a", "ambiguous@example.com") is None
+    assert await resolver.resolve("cli", "alt-only@example.com") is None
+    assert calls[0] == (_EMAIL_OWNERS_SQL, ("jlara@example.com",))
+    assert calls[1] == (_OID_OWNERS_SQL, ("entra-oid", ["msteams"]))
+    assert "alt_email" not in _EMAIL_OWNERS_SQL
+
+
+@pytest.mark.asyncio
+async def test_slack_resolution_requires_single_owner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Resolve one enabled Slack owner and reject ambiguity, disabled rows, or no rows."""
+    resolver = IdentityPrincipalResolver(db_pool=object())
+    rows_by_id = {
+        "T01:U01": [{"user_id": "1042", "enabled": False}, {"user_id": "1042", "enabled": True}],
+        "T01:U02": [{"user_id": "1042", "enabled": True}, {"user_id": "2042", "enabled": False}],
+        "T01:U03": [{"user_id": "1042", "enabled": False}],
+    }
+    calls: list[tuple[str, tuple[Any, ...]]] = []
+
+    async def fetch(sql: str, *args: Any) -> list[dict[str, Any]]:
+        calls.append((sql, args))
+        return rows_by_id.get(args[0], [])
+
+    monkeypatch.setattr(resolver, "_fetch", fetch)
+    monkeypatch.setattr(resolver, "_store", lambda: pytest.fail("Slack lookup used IdentityStore"))
+
+    principal = await resolver.resolve("slack", "T01:U01")
+
+    assert principal is not None
+    assert principal.user_id == "1042"
+    assert principal.canonical_identity is None
+    assert principal.channel_user_id == "T01:U01"
+    assert await resolver.resolve("slack", "T01:U02") is None
+    assert await resolver.resolve("slack", "T01:U03") is None
+    assert await resolver.resolve("slack", "T01:U04") is None
+    assert calls == [
+        (_SLACK_OWNERS_SQL, ("T01:U01",)),
+        (_SLACK_OWNERS_SQL, ("T01:U02",)),
+        (_SLACK_OWNERS_SQL, ("T01:U03",)),
+        (_SLACK_OWNERS_SQL, ("T01:U04",)),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_canonical_lookup_db_error_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Return ``None`` when a canonical identity database read fails."""
+    resolver = IdentityPrincipalResolver(db_pool=object())
+
+    async def fail_fetch(sql: str, *args: Any) -> list[Any]:
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(resolver, "_fetch", fail_fetch)
+
+    assert await resolver.resolve("cli", "x@y.z") is None
