@@ -167,7 +167,7 @@ class TestFactory:
             "wiki_related",
             "wiki_remember",
             "wiki_note",
-            "wiki_lint",
+            "wiki_status",
             "usage_report",
             "wiki_lint",
         }
