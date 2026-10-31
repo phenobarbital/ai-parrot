@@ -310,7 +310,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -320,8 +320,9 @@
       "parallelism_notes": "edits wrapper.py after TASK-5071 and uses its self._convref_store; also appends to connections.py and modifies test files created/changed by TASK-5067/5070 (reachable via TASK-5071)",
       "assigned_to": null,
       "started_at": "2026-10-31T23:12:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5072-wrapper-notifier-legacy-removal.md"
+      "completed_at": "2026-10-31T23:56:24+00:00",
+      "file": "sdd/tasks/completed/TASK-5072-wrapper-notifier-legacy-removal.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5073",
