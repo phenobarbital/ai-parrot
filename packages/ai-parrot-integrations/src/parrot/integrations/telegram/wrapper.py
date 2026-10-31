@@ -63,10 +63,40 @@ from parrot.skills.tenancy import set_active_skill
 
 if TYPE_CHECKING:
     from aiohttp import web
+    from parrot.auth.principal import Principal
     from ...bots.abstract import AbstractBot
     from ...memory import ConversationMemory
     from ...voice.transcriber import VoiceTranscriber
     from ...voice.tts.synthesizer import VoiceSynthesizer  # FEAT-213
+
+
+logger = logging.getLogger("parrot.Telegram.Wrapper")
+
+
+async def principal_for_session(
+    session: TelegramUserSession,
+    *,
+    tenant_id: Optional[str] = None,
+) -> Optional["Principal"]:
+    """Return the Navigator principal for a finalized or persisted Telegram session."""
+    from parrot.auth.principal import Principal, resolve_principal
+
+    if session.authenticated and session.nav_user_id:
+        return Principal(
+            user_id=str(session.nav_user_id),
+            tenant_id=tenant_id,
+            channel="telegram",
+            channel_user_id=str(session.telegram_id),
+        )
+    try:
+        return await resolve_principal("telegram", str(session.telegram_id))
+    except Exception:  # noqa: BLE001 - identity resolution must fail closed
+        logger.warning(
+            "Could not resolve persisted principal for telegram user %s",
+            session.telegram_id,
+            exc_info=True,
+        )
+        return None
 
 
 class TelegramAgentWrapper(OperatorCommandsMixin):
@@ -196,6 +226,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         # Populated from config.post_auth_actions; empty if not configured.
         # Missing services degrade gracefully (combined flow is disabled).
         self._post_auth_registry: PostAuthRegistry = PostAuthRegistry()
+        self._identity_service()
         self._init_post_auth_providers()
 
         # Auth strategy (Composite, Azure, OAuth2, or Basic, depending on config)
@@ -630,6 +661,86 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     "post_auth_actions references unknown provider '%s'; " "skipping.",
                     action.provider,
                 )
+
+    def _identity_service(self) -> Optional[Any]:
+        """Return the cached identity service, or ``None`` when unavailable."""
+        if hasattr(self, "_identity_service_cache"):
+            return self._identity_service_cache
+
+        self._identity_service_cache = None
+        db_pool = None
+        if self.app is not None:
+            db_pool = self.app.get("authdb") or self.app.get("database")
+        if db_pool is None:
+            self.logger.warning(
+                "Telegram principal links are unavailable: app['authdb']/app['database'] is not configured."
+            )
+            return None
+
+        try:
+            from parrot.services.identity_mapping import IdentityMappingService
+        except ImportError:
+            self.logger.warning(
+                "Telegram principal links are unavailable: identity mapping service is not installed."
+            )
+            return None
+
+        self._identity_service_cache = IdentityMappingService(db_pool)
+        return self._identity_service_cache
+
+    async def _persist_principal_link(self, session: TelegramUserSession) -> bool:
+        """Write the exclusive Telegram identity row without failing login."""
+        if not session.authenticated or not session.nav_user_id:
+            return False
+        service = self._identity_service()
+        if service is None:
+            return False
+        try:
+            await service.link_channel_identity(
+                nav_user_id=str(session.nav_user_id),
+                auth_provider="telegram",
+                provider_user_id=str(session.telegram_id),
+                auth_data={
+                    "telegram_id": session.telegram_id,
+                    "username": session.telegram_username,
+                },
+                display_name=session.display_name,
+                email=session.nav_email,
+            )
+        except Exception:  # noqa: BLE001 - a link failure must not fail login
+            self.logger.warning(
+                "Could not persist telegram principal link for tg:%s",
+                session.telegram_id,
+                exc_info=True,
+            )
+            return False
+        session.principal_link_persisted = True
+        return True
+
+    async def _ensure_principal_link(self, session: TelegramUserSession) -> bool:
+        """Backfill a finalized session's principal link once per session."""
+        if session.principal_link_persisted or not session.authenticated or not session.nav_user_id:
+            return session.principal_link_persisted
+        return await self._persist_principal_link(session)
+
+    def _connection_permission_context(
+        self,
+        session: TelegramUserSession,
+        principal: "Principal",
+    ) -> Any:
+        """Build a fresh trusted permission context for connection service calls."""
+        from parrot.auth.permission import PermissionContext, UserSession
+
+        user_session = UserSession(
+            user_id=principal.user_id,
+            tenant_id=self.config.tenant or "default",
+            roles=frozenset(),
+        )
+        return PermissionContext(
+            session=user_session,
+            channel="telegram",
+            extra={"telegram_id": session.telegram_id},
+        )
 
     def _is_combined_payload(self, data: Dict[str, Any]) -> bool:
         """Return True if ``data`` contains any configured secondary auth key."""
@@ -1287,14 +1398,11 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
     ) -> Any:
         """Construct a ``PermissionContext`` scoped to this Telegram user.
 
-        The context carries ``channel="telegram"`` and the telegram_id as
-        the session ``user_id`` so ``JiraToolkit._pre_execute`` can look up
-        the per-user OAuth2 3LO token in Redis (key
-        ``jira:oauth:telegram:<telegram_id>``). Without this the toolkit
-        has no way to identify the caller and falls back to guessing from
-        the LLM-provided email, which is the wrong identity when a user
-        runs ``/login`` with a corporate email but ``/connect_jira`` with
-        a personal Atlassian account.
+        This legacy agent/tool context keeps the Telegram id as its session
+        ``user_id`` for backward compatibility. Connection service calls use
+        :meth:`_connection_permission_context` instead, keyed by the resolved
+        Navigator principal. Credential storage no longer derives from this
+        context's raw Telegram id.
 
         When *chat_id* is supplied it is added to ``extra['chat_id']`` so
         downstream tools (e.g. :class:`~parrot.tools.reminder.ReminderToolkit`)
@@ -1496,6 +1604,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             attachments: Optional list of local file paths to forward to
                 ``agent.ask()`` so downstream tools can access the files.
         """
+        await self._ensure_principal_link(session)
         if attachments:
             self.logger.debug(
                 "Chat %s: _invoke_agent received attachments: %s",
@@ -2325,6 +2434,18 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             return
 
         old_name = session.display_name
+        service = self._identity_service()
+        if service is not None:
+            try:
+                await service.unlink_channel_identity(
+                    "telegram",
+                    str(session.telegram_id),
+                )
+            except Exception:  # noqa: BLE001 - logout must still clear the session
+                self.logger.warning(
+                    "Could not unlink telegram identity on logout",
+                    exc_info=True,
+                )
         session.clear_auth()
         await message.answer(
             f"👋 Logged out. Was authenticated as *{old_name}*.\n" "Your Telegram ID will be used for identification.",
@@ -2374,6 +2495,11 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 parse_mode="Markdown",
                 reply_markup=ReplyKeyboardRemove(),
             )
+            if not await self._persist_principal_link(session):
+                await message.answer(
+                    "Connections are unavailable right now.",
+                    parse_mode=None,
+                )
             # Eagerly build per-user agent/tool state so the first
             # question does not pay the post_login cost. A typing
             # indicator covers any noticeable delay.
