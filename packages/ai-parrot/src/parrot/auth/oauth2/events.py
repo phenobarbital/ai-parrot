@@ -122,7 +122,9 @@ class ConnectionEventPublisher:
             try:
                 await sink.deliver(event)
             except Exception:  # noqa: BLE001 — a sink must never fail the callback
-                self.logger.exception("Connection event sink %s failed for provider %s", type(sink).__name__, event.provider)
+                self.logger.exception(
+                    "Connection event sink %s failed for provider %s", type(sink).__name__, event.provider
+                )
 
         if self._audit is not None:
             try:
