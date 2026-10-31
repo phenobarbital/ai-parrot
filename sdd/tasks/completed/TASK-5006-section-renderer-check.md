@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-784 — SDD Decision Audit
 **Spec**: `sdd/specs/sdd-decision-audit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5005
@@ -299,4 +299,7 @@ async def test_skipped_renders_single_line(tmp_path): ... # FILL IN
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 193s · Tokens: n/a
+
+- Delivered files match the task list.
+- Merge-tier validation (chunk 6): 232 passed, 1 failed — pre-existing env-gated test_backend_parity_is_reported. No review fixes.
