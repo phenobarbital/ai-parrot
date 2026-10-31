@@ -15,7 +15,6 @@ from pydantic import BaseModel, Field, model_validator
 
 from parrot.auth.credentials import AuthRequiredPayload
 
-
 #: Lifecycle of a user's integration as shown in the UI.
 IntegrationStatus = Literal["connected", "disconnected", "needs_reconnect"]
 
