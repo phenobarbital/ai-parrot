@@ -190,6 +190,22 @@ class MSTeamsConnectionNotifier:
         raise ValueError(f"Unsupported connection event kind: {event.kind}")
 
 
+CONNECTION_NOTIFIER_KEY = "msteams_connection_notifier"
+
+
+def get_or_create_connection_notifier(
+    app: Any, ref_store: Optional[MSTeamsConversationRefStore]
+) -> MSTeamsConnectionNotifier:
+    """Return the app's single Teams notifier, creating it on first use (one per aiohttp app)."""
+    notifier = app.get(CONNECTION_NOTIFIER_KEY)
+    if notifier is None:
+        notifier = MSTeamsConnectionNotifier(ref_store)
+        app[CONNECTION_NOTIFIER_KEY] = notifier
+    elif notifier._ref_store is None and ref_store is not None:
+        notifier._ref_store = ref_store
+    return notifier
+
+
 _ADAPTIVE_SCHEMA = "http://adaptivecards.io/schemas/adaptive-card.json"
 
 

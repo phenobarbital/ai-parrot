@@ -51,12 +51,12 @@ from .connections import (
     MSTeamsConversationRefStore,
     MSTeamsPrincipalSource,
     build_msteams_permission_context,
+    get_or_create_connection_notifier,
 )
 from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 from parrot.auth.context import UserContext
 from parrot.auth.permission import PermissionContext
 from parrot.auth.token_exchange import TokenExchangeClient
-from .oauth_callback import MSTeamsOAuthNotifier
 from parrot.forms import FormSchema
 from parrot.interfaces.file.session import SessionFileStore
 from parrot.forms import FormCache
@@ -213,21 +213,6 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
             self._knowledge_upload = register_knowledge_upload_commands(self._command_router, self)
 
-        if oauth_manager is not None:
-            # Register the OAuth notifier for proactive messaging after callback.
-            # continue_conversation needs a valid App ID, so skip (with a
-            # warning) when client_id is not configured rather than registering
-            # a notifier that will always fail.
-            if config.client_id:
-                app["msteams_jira_oauth_notifier"] = MSTeamsOAuthNotifier(
-                    adapter=self.adapter,
-                    app_id=config.client_id,
-                )
-            else:
-                self.logger.warning(
-                    "No client_id configured — MS Teams proactive notification " "after Jira OAuth will be skipped"
-                )
-
         # FEAT-729: user authentication lane (opt-in via config.auth_required)
         self._session_store = MSTeamsSessionStore(agent_name=config.name, store=getattr(self, "_state_store", None))
         if config.auth_required and not config.navigator_auth_url:
@@ -261,6 +246,10 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
         redis = self.app.get("redis")
         self._convref_store = MSTeamsConversationRefStore(redis) if redis is not None else None
+        if config.client_id:
+            get_or_create_connection_notifier(app, self._convref_store).attach(config.client_id, self.adapter)
+        else:
+            self.logger.warning("No client_id configured — Teams connection notifications are disabled for this bot")
 
         # FEAT-734: TeamsFormDesignerMixin seams (no-op for agents without the mixin)
         self._wire_formdesigner_agent()
