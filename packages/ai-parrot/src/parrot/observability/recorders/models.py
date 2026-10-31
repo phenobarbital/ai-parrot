@@ -98,6 +98,12 @@ class UsageRecord(BaseModel):
     dispatch_kind: Optional[str] = None
     roster_seat: Optional[str] = None
 
+    # ── FEAT-783: four-counter usage + provider-reported cost (reconciliation only). ──
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    reasoning_output_tokens: int = 0
+    source_cost_usd: Optional[float] = None
+
     # ── FEAT-479: honesty + failure. ──
     usage_reported: bool = True
     status: Literal["completed", "failed"] = "completed"

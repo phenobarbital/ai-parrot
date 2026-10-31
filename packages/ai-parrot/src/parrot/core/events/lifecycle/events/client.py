@@ -75,6 +75,10 @@ class AfterClientCallEvent(LifecycleEvent):
             ``current_session_id`` ContextVar. Spans only.
         tenant: Optional server-resolved tenant identifier.
         cost_usd: Optional call cost in USD. None when pricing is unknown.
+        cache_read_tokens: Optional prompt-cache tokens read from the provider.
+        cache_creation_tokens: Optional prompt-cache tokens created by the provider.
+        reasoning_output_tokens: Optional reasoning tokens reported by the provider.
+        source_cost_usd: Provider-reported cost retained for reconciliation only.
         attribution: Immutable SDD attribution snapshot from construction time.
     """
 
@@ -90,6 +94,14 @@ class AfterClientCallEvent(LifecycleEvent):
     tenant: Optional[str] = None  # FEAT-710
     cost_usd: Optional[float] = None  # FEAT-710: computed once at the origin
     attribution: Optional["UsageAttribution"] = field(default_factory=_snapshot_attribution)  # FEAT-783
+    cache_read_tokens: Optional[int] = None  # FEAT-783
+    cache_creation_tokens: Optional[int] = None  # FEAT-783
+    reasoning_output_tokens: Optional[int] = None  # FEAT-783
+    source_cost_usd: Optional[float] = None
+    """FEAT-783: Provider-reported cost (Claude SDK total_cost_usd, Codex turn cost).
+
+    Reconciliation input ONLY — never the reported value (FEAT-710 G5, AC-5).
+    """
 
 
 @dataclass(frozen=True)
