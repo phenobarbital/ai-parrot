@@ -17,7 +17,7 @@ tags: [sdd, decisions, ontology, audit, wiki, drift]
 **Feature ID**: FEAT-784
 **Date**: 2026-10-31
 **Author**: Jesús Lara (with Claude Fable 5.1)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 Input: `sdd/proposals/sdd-decision-audit.brainstorm.md` (Option A, accepted
