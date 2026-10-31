@@ -325,7 +325,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -335,8 +335,9 @@
       "parallelism_notes": "TASK-4994: calls build_spec_usage_report (flows/dev_loop/usage_report.py); read_spec_usage via TASK-4990 (transitive)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4995-usage-cli-mcp.md"
+      "completed_at": "2026-10-31T11:22:55+00:00",
+      "file": "sdd/tasks/completed/TASK-4995-usage-cli-mcp.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4996",

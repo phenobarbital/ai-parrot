@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-783 — Unified usage & cost metrics per SDD spec
 **Spec**: `sdd/specs/unified-usage.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4994
@@ -50,6 +50,12 @@ subcommand and its MCP tool ship in one task. The MCP surface has golden manifes
 | `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/schema_present.json` | MODIFY | Regenerated golden (only the new tool may appear) |
 | `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/vault.json` | MODIFY | Regenerated golden (only the new tool may appear) |
 | `packages/ai-parrot/tests/knowledge/wiki/test_cli_usage_report.py` | CREATE | CLI + MCP + AC-14 tests |
+| `packages/ai-parrot/tests/knowledge/wiki/_tool_surface.py` | MODIFY | Frozen tool-name list/count gains `usage_report` |
+| `packages/ai-parrot/tests/knowledge/wiki/schema/test_mcp_mount.py` | MODIFY | Frozen tool-name list/count gains `usage_report` |
+| `packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py` | MODIFY | Frozen tool-name list/count gains `usage_report` |
+| `tests/knowledge/wiki/test_mcp_server_ledger.py` | MODIFY | Frozen tool-name list/count gains `usage_report` |
+| `tests/knowledge/wiki/test_mcp_server_structural.py` | MODIFY | Frozen tool-name list/count gains `usage_report` |
+| `tests/knowledge/wiki/test_structural_e2e.py` | MODIFY | Frozen tool-name list/count gains `usage_report` |
 
 ---
 
@@ -251,4 +257,15 @@ See blueprint.
 Six target entries (goldens listed explicitly, one per manifest file). `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-tools/src`.
 
 ## Completion Note
-_(filled at close)_
+
+- Task: TASK-4995
+- Feature: unified-usage
+- Implementation SHA: 6d430ac30417014f5bcd06ef636d351e726ae0d0
+- Closed at (UTC): 2026-10-31T11:22:55+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 2 · Duration: n/a · Tokens: n/a |
