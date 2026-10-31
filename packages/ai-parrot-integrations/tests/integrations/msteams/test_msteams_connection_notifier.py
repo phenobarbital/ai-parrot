@@ -14,7 +14,6 @@ from parrot.integrations.msteams.connections import (
     get_or_create_connection_notifier,
 )
 
-
 class FakeRedis:
     """Minimal async Redis fake that records expiry values."""
 

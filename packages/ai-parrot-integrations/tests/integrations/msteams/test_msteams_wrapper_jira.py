@@ -11,7 +11,6 @@ from parrot.integrations.msteams.connections import CONNECTION_NOTIFIER_KEY
 from parrot.integrations.msteams.models import MSTeamsAgentConfig
 from parrot.integrations.msteams.wrapper import MSTeamsAgentWrapper
 
-
 def test_connection_service_factory_is_constructor_parameter() -> None:
     """The wrapper exposes an injectable factory after the legacy manager argument."""
     import inspect
