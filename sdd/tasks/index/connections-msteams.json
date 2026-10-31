@@ -58,14 +58,14 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no edges; creates parrot/auth/pending.py and edits tools/manager.py only (shared-file gate with FEAT-776 TASK-5016 / FEAT-777 TASK-5050 is cross-feature, not a graph edge)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5060-needs-auth-collector.md"
     },
@@ -76,14 +76,14 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no edges; additive field in auth/permission.py and helper in auth/credentials.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5061-permission-context-channel-identity.md"
     },
@@ -94,7 +94,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -103,7 +103,7 @@
       "parallel": true,
       "parallelism_notes": "imports credential_channel_user_id from TASK-5061 (auth/credentials.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5062-toolkits-channel-identity.md"
     },
@@ -114,7 +114,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -123,7 +123,7 @@
       "parallel": true,
       "parallelism_notes": "reads PermissionContext.channel_user_id from TASK-5061 (auth/permission.py) in the identity guard",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5063-service-permission-context.md"
     },
@@ -134,7 +134,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -143,7 +143,7 @@
       "parallel": true,
       "parallelism_notes": "both TASK-5063 and this task modify auth/oauth2/service.py (start_connect) — serialized",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5064-per-call-scope-propagation.md"
     },
@@ -154,14 +154,14 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no edges; only msteams/commands/__init__.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5065-router-command-args.md"
     },
@@ -172,7 +172,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -181,7 +181,7 @@
       "parallel": true,
       "parallelism_notes": "sets PermissionContext.channel_user_id added by TASK-5061 (auth/permission.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5066-teams-principal-source.md"
     },
@@ -192,7 +192,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -201,7 +201,7 @@
       "parallel": true,
       "parallelism_notes": "appends to msteams/connections.py created by TASK-5066 (same file)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5067-teams-connection-notifier.md"
     },
@@ -212,7 +212,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -221,7 +221,7 @@
       "parallel": true,
       "parallelism_notes": "appends to msteams/connections.py after TASK-5067 (same file)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5068-teams-connection-cards.md"
     },
@@ -232,7 +232,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -244,7 +244,7 @@
       "parallel": true,
       "parallelism_notes": "calls permission_context service API (TASK-5063, service.py), start_connect scopes wiring (TASK-5064), MSTeamsPrincipalSource/build_msteams_permission_context (TASK-5066) and card builders + send_adaptive_card (TASK-5068, connections.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5069-teams-connector.md"
     },
@@ -255,7 +255,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -265,7 +265,7 @@
       "parallel": true,
       "parallelism_notes": "uses command_args from TASK-5065 (commands/__init__.py) and TeamsConnector from TASK-5069 (connect_commands.py, same file)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5070-connection-commands-jira-aliases.md"
     },
@@ -276,7 +276,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -287,7 +287,7 @@
       "parallel": true,
       "parallelism_notes": "uses build_msteams_permission_context (TASK-5066) and MSTeamsConversationRefStore (TASK-5067); edits wrapper.py after TASK-5070 and reads its self._principal_source",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5071-wrapper-permission-context.md"
     },
@@ -298,7 +298,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -307,7 +307,7 @@
       "parallel": true,
       "parallelism_notes": "edits wrapper.py after TASK-5071 and uses its self._convref_store; also appends to connections.py and modifies test files created/changed by TASK-5067/5070 (reachable via TASK-5071)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5072-wrapper-notifier-legacy-removal.md"
     },
@@ -318,7 +318,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -328,7 +328,7 @@
       "parallel": true,
       "parallelism_notes": "imports pdp_permission_evaluator from TASK-5063 (service.py) and get_or_create_connection_notifier from TASK-5072 (connections.py); passes the wrapper's connection_service_factory (TASK-5070, reachable)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5073-manager-wiring.md"
     },
@@ -339,14 +339,14 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no edges; only services/identity_principal.py and its test",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5074-identity-resolver-azure-alias.md"
     },
@@ -357,7 +357,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -368,7 +368,7 @@
       "parallel": true,
       "parallelism_notes": "uses collect_auth_requirements (TASK-5060, auth/pending.py), TeamsGuard/connect_guarded (TASK-5069) and edits wrapper.py after TASK-5072",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5075-needs-auth-connect-cards.md"
     },
@@ -379,7 +379,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -390,7 +390,7 @@
       "parallel": true,
       "parallelism_notes": "documents merged behavior of TASK-5073 (wiring), TASK-5074 (azure alias) and TASK-5075 (automatic cards)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-31T23:12:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5076-msteams-connections-docs.md"
     }
