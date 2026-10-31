@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-774 — Connections for CLI agents and local MCP toolkits
 **Spec**: `sdd/specs/connections-cli-local-mcp.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5084
@@ -57,4 +57,12 @@ PYTHONPATH=packages/ai-parrot/src pytest -q tests/mcp/test_toolkit_server.py
 
 ## Completion Note
 
-*(filled on completion)*
+Implemented in `224d39b68b`. 7 new tests pass (`-k "extra_hint or derived_hint"`); `ruff check` clean.
+
+- Hint source is the installed `ai-parrot-tools` metadata (`importlib.metadata.requires`), so it
+  follows the pyproject extras table with no copy to drift. A dependency listed by several extras
+  (e.g. `docker`) lists each one; `[all]` is never suggested.
+- Import-name/distribution-name mismatches (`talib` vs `ta-lib`) get the generic hint, as scoped.
+- `ruff --fix` rewrote one existing `setattr(mock, "StubToolkit", ...)` line in the test file (B010).
+- The file's 12 existing tests that use `mock_import_module` still fail with RecursionError, on `dev`
+  too (`issue:203c75e0c1ac`). The new tests do not use that mock.
