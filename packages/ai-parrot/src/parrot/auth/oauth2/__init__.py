@@ -31,6 +31,7 @@ from .events import (  # noqa: E402
 )
 from .models import (  # noqa: E402
     AuthRequiredEnvelope,
+    ChannelLinkPreview,
     ConnectInitRequest,
     ConnectInitResponse,
     DisconnectResponse,
@@ -63,6 +64,7 @@ __all__ = [
     "ConnectionEventPublisher",
     # models
     "AuthRequiredEnvelope",
+    "ChannelLinkPreview",
     "ConnectInitRequest",
     "ConnectInitResponse",
     "DisconnectResponse",
