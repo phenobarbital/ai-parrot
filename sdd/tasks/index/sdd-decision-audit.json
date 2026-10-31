@@ -389,7 +389,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -401,8 +401,9 @@
       "parallelism_notes": "records the seed commit of TASK-5012, verifies it with GitCommitApprovalAdapter (TASK-5001), documents check_spec_consequences.py (TASK-5010)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:37:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5013-seed-approval-and-docs.md"
+      "completed_at": "2026-10-31T01:53:21+00:00",
+      "file": "sdd/tasks/completed/TASK-5013-seed-approval-and-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5014",
