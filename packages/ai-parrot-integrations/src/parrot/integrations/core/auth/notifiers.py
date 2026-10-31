@@ -81,61 +81,6 @@ class TelegramJiraNotifierAdapter(_JiraAdapterBase):
             logger.warning("Skipping Telegram Jira notification with invalid chat_id=%r", chat_id)
 
 
-class SlackJiraNotifierAdapter(_JiraAdapterBase):
-    """Deliver Jira connection lifecycle events to Slack."""
-
-    channel = "slack"
-
-    async def notify(self, event: ConnectionEvent, state_payload: Dict[str, Any]) -> None:
-        """Persist the Slack identity when bound and send the Jira status message."""
-        if event.provider != "jira":
-            return
-
-        extra = self._extra(state_payload)
-        team_id = str(extra.get("team_id") or state_payload.get("team_id") or "")
-        slack_user_id = str(extra.get("slack_user_id") or state_payload.get("slack_user_id") or "")
-        if event.kind == "connection.completed":
-            identity_service = self._app.get("identity_mapping_service")
-            nav_user_id = str(extra.get("nav_user_id") or state_payload.get("nav_user_id") or "")
-            if identity_service is not None and slack_user_id and nav_user_id:
-                await identity_service.upsert_identity(
-                    nav_user_id=nav_user_id,
-                    auth_provider="slack",
-                    provider_user_id=slack_user_id,
-                    auth_data={"team_id": team_id, "slack_user_id": slack_user_id},
-                    display_name=event.display_name or None,
-                    email=(state_payload.get("connection_meta") or {}).get("email") or None,
-                )
-            elif identity_service is not None and slack_user_id:
-                logger.warning(
-                    "Skipping auth.user_identities write for Slack user=%s team=%s: "
-                    "OAuth state carries no Navigator nav_user_id",
-                    slack_user_id,
-                    team_id,
-                )
-
-            notifier = self._app.get("slack_jira_oauth_notifier")
-            if notifier is not None and slack_user_id:
-                await notifier.notify_connected(
-                    team_id=team_id,
-                    slack_user_id=slack_user_id,
-                    display_name=event.display_name,
-                    site_url=self._site_url(state_payload),
-                )
-            elif notifier is None:
-                logger.warning("No Slack Jira notifier registered")
-        elif event.kind in {"connection.refresh_failed", "connection.revoked"}:
-            notifier = self._app.get("slack_jira_oauth_notifier")
-            if notifier is not None and slack_user_id:
-                await notifier.notify_failure(
-                    team_id=team_id,
-                    slack_user_id=slack_user_id,
-                    reason=self._reason(event),
-                )
-            elif notifier is None:
-                logger.warning("No Slack Jira notifier registered")
-
-
 class MSTeamsJiraNotifierAdapter(_JiraAdapterBase):
     """Deliver Jira connection lifecycle events to Microsoft Teams.
 
