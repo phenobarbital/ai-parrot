@@ -48,9 +48,11 @@ from ..mcp.registry import get_factory_map as _get_factory_map
 from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
 from .credentials_utils import decrypt_credential as _decrypt_credential
 from .toolkit_persistence import ToolkitConfigService
-from parrot.auth.credentials import CredentialRequired
+from parrot.auth.credentials import AuthRequiredPayload, CredentialRequired
 from ..auth.exceptions import AuthorizationRequired
 from parrot.auth.oauth2.models import AuthRequiredEnvelope
+from parrot.auth.pending import collect_auth_requirements
+from parrot.auth.retry_safety import current_turn_tracker, track_turn
 from parrot.security.vault_utils import retrieve_vault_credential
 from parrot.tools.spec import agent_tooling_ref, hydrate_params
 
@@ -119,6 +121,11 @@ def _suggestions_payload(message: Any) -> Optional[list[dict[str, Any]]]:
     if not chips:
         return None
     return [c.model_dump(mode="json") if hasattr(c, "model_dump") else dict(c) for c in chips]
+
+
+def _auth_required_from(pending: List[AuthRequiredPayload]) -> Optional[AuthRequiredPayload]:
+    """Return the first needs-auth payload collected during the current turn."""
+    return pending[0] if pending else None
 
 
 @is_authenticated()
@@ -1778,6 +1785,10 @@ class AgentTalk(BaseView):
                 )
 
         upload_errors = None
+        turn_scope = contextlib.ExitStack()
+        self._turn_auth_pending = turn_scope.enter_context(collect_auth_requirements())
+        turn_scope.enter_context(track_turn())
+        turn_auth = None
         try:
             async with agent.session(request=self.request, app=app, user_id=user_id, session_id=user_session) as bot:
                 if method_name:
@@ -1854,12 +1865,23 @@ class AgentTalk(BaseView):
                         tenant=tenant,
                         **data,
                     )
+                turn_auth = self._turn_auth_requirement(response)
         except (AuthorizationRequired, CredentialRequired) as exc:
             # Translate the exception into a structured envelope so the web
             # frontend can render a "Connect" pill.  HTTP 200 — the chat call
             # succeeded; the envelope IS the agent's reply.
             payload = exc.to_payload() if isinstance(exc, AuthorizationRequired) else exc.to_payload(tool_name=None)
-            envelope = AuthRequiredEnvelope(**payload.model_dump())
+            pending = getattr(self, "_turn_auth_pending", None) or []
+            if not any(item.provider == payload.provider and item.tool_name == payload.tool_name for item in pending):
+                auth_count = len(pending) + 1
+            else:
+                auth_count = len(pending)
+            tracker = current_turn_tracker()
+            retry_safe = self._retry_safe(
+                auth_requirements=auth_count,
+                reported_tool_calls=tracker.dispatches if tracker is not None else 0,
+            )
+            envelope = AuthRequiredEnvelope(**payload.model_dump(), retry_safe=retry_safe)
             return web.json_response(envelope.model_dump(), status=200)
         except HumanInteractionInterrupt as exc:
             # FEAT-204: SUSPEND path — the agent's SuspendingWebHumanTool raised
@@ -1993,7 +2015,10 @@ class AgentTalk(BaseView):
             for key, original_value in _ws_originals.items():
                 setattr(agent, key, original_value)
             # FEAT-146: Reset the current_web_session ContextVar
-            reset_current_web_session(_hitl_token)
+            try:
+                reset_current_web_session(_hitl_token)
+            finally:
+                turn_scope.close()
         response_time_ms = int((time.perf_counter() - start_time) * 1000)
 
         # Notify WebSocket channel if requested
@@ -2017,6 +2042,11 @@ class AgentTalk(BaseView):
                 meta["upload_errors"] = upload_errors
             elif meta is None and hasattr(response, "metadata"):
                 response.metadata = {"upload_errors": upload_errors}
+
+        if turn_auth is not None:
+            payload, retry_safe = turn_auth
+            envelope = AuthRequiredEnvelope(**payload.model_dump(), retry_safe=retry_safe)
+            return web.json_response(envelope.model_dump(), status=200)
 
         # Return formatted response
         return self._format_response(
@@ -2558,6 +2588,45 @@ class AgentTalk(BaseView):
         if task is not None and not task.done():
             task.cancel()
 
+    def _retry_safe(self, *, auth_requirements: int, reported_tool_calls: int) -> bool:
+        """Return server-authored retry safety from the active turn tracker."""
+        tracker = current_turn_tracker()
+        return tracker is not None and tracker.retry_safe(
+            auth_requirements=auth_requirements,
+            reported_tool_calls=reported_tool_calls,
+        )
+
+    def _turn_auth_requirement(self, ai_message: Optional[AIMessage]) -> Optional[tuple]:
+        """Return the first collected auth payload and this turn's retry safety."""
+        pending = getattr(self, "_turn_auth_pending", None) or []
+        payload = _auth_required_from(pending)
+        if payload is None:
+            return None
+        reported_tool_calls = len(getattr(ai_message, "tool_calls", None) or [])
+        return payload, self._retry_safe(
+            auth_requirements=len(pending),
+            reported_tool_calls=reported_tool_calls,
+        )
+
+    async def _write_auth_required_trailer(self, stream_resp: web.StreamResponse, ai_message: AIMessage) -> None:
+        """Write the collected auth payload after a streaming response envelope."""
+        auth = self._turn_auth_requirement(ai_message)
+        if auth is None:
+            return
+        payload, retry_safe = auth
+        trailer = {
+            "auth_required": payload.model_dump(mode="json"),
+            "turn_id": str(getattr(ai_message, "turn_id", "") or ""),
+            "retry_safe": bool(retry_safe),
+        }
+        try:
+            await stream_resp.write(b"\n\x00" + json_encoder(trailer).encode("utf-8"))
+            await stream_resp.drain()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - auth trailer is best-effort
+            self.logger.warning("Auth-required trailer skipped: %s", exc)
+
     async def _write_suggestions_trailer(
         self, stream_resp: web.StreamResponse, bot: Any, ai_message: AIMessage
     ) -> None:
@@ -2714,6 +2783,7 @@ class AgentTalk(BaseView):
                 separator = b"\n\x00"
                 await stream_resp.write(separator + json_encoder(envelope).encode("utf-8"))
                 await stream_resp.drain()
+                await self._write_auth_required_trailer(stream_resp, ai_message)
                 if suggestions_trailer:
                     await self._write_suggestions_trailer(stream_resp, bot, ai_message)
 
