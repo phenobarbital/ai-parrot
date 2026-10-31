@@ -16,12 +16,15 @@ This was resolved as the correct behaviour for FEAT-144 Q-B.
 
 from __future__ import annotations
 
+import hmac
+import json
 import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from navconfig.logging import logging  # noqa: F811
 
+from parrot.auth.credentials import AuthRequiredPayload
 from parrot.auth.oauth2 import _WEB_CHANNEL
 from parrot.auth.principal import Principal
 
@@ -31,7 +34,10 @@ from parrot.auth.oauth2.models import (
     ConnectInitResponse,
     DisconnectResponse,
     IntegrationDescriptor,
+    NotConnected,
+    PulledToken,
     UsersIntegrationRow,
+    WhoAmI,
 )
 from parrot.auth.oauth2.persistence import (
     delete_users_integration,
@@ -463,6 +469,127 @@ class IntegrationsService:
             row.account_id,
         )
         return row
+
+    async def whoami(self, user_id: str, request: Any = None) -> WhoAmI:
+        """Return the Navigator identity of the authenticated caller (CLI `parrot whoami`, M2 resolver)."""
+        session = None
+        if request is not None:
+            if hasattr(request, "get"):
+                session = request.get("session")
+            if session is None:
+                session = getattr(request, "session", None)
+
+        def session_value(name: str) -> Any:
+            """Read a claim from the session or its common nested claim maps."""
+            if session is None:
+                return None
+            value = getattr(session, name, None)
+            if value is None and hasattr(session, "get"):
+                value = session.get(name)
+            if value is not None:
+                return value
+            if not hasattr(session, "get"):
+                return None
+            for container_name in ("userinfo", "session", "token_claims", "claims", "token_info"):
+                container = session.get(container_name)
+                if isinstance(container, dict) and container.get(name) is not None:
+                    return container[name]
+            return None
+
+        email = session_value("email")
+        roles = session_value("roles") or []
+        scopes = session_value("scopes")
+        if scopes is None:
+            scopes = session_value("scope") or []
+        if isinstance(roles, str):
+            roles = roles.split()
+        if isinstance(scopes, str):
+            scopes = scopes.split()
+        return WhoAmI(
+            user_id=user_id,
+            tenant_id=session_value("tenant_id"),
+            canonical_identity=session_value("canonical_identity") or email,
+            email=email,
+            roles=list(roles),
+            scopes=list(scopes),
+        )
+
+    async def pull_access_token(self, user_id: str, provider_id: str, request: Any = None) -> PulledToken:
+        """Vend the provider access token for ``user_id`` (PBAC integration:use, fail closed, audited)."""
+        provider = OAuth2ProviderRegistry().get(provider_id)
+        if provider is None:
+            raise ValueError(f"Unknown provider: {provider_id!r}")
+        if not await self._check_pbac(request, "integration:use", provider_id, list(provider.default_scopes)):
+            raise PermissionError(f"Not permitted to use provider {provider_id!r}")
+        principal = Principal(user_id=user_id, channel="cli", channel_user_id=user_id)
+        token = await provider.manager.get_valid_token("cli", user_id)
+        if token is None:
+            auth_url = None
+            try:
+                connect = await self.start_connect(
+                    user_id,
+                    provider_id,
+                    channel="cli",
+                    principal=principal,
+                    request=request,
+                )
+                auth_url = connect.auth_url
+            except (PermissionError, ValueError):
+                pass
+            raise NotConnected(
+                AuthRequiredPayload(
+                    provider=provider_id,
+                    auth_url=auth_url,
+                    scopes=list(provider.default_scopes),
+                    auth_kind="oauth2",
+                    message="not_connected",
+                )
+            )
+        await provider.manager._publish("connection.token_pulled", principal, token)
+        return PulledToken(
+            provider=provider_id,
+            access_token=token.access_token,
+            expires_at=float(token.expires_at),
+            scopes=list(token.scopes or []),
+            account_id=token.account_id or "",
+        )
+
+    async def complete_connect(
+        self,
+        user_id: str,
+        provider_id: str,
+        *,
+        code: str,
+        state: str,
+        channel: str,
+        request: Any = None,
+    ) -> IntegrationDescriptor:
+        """Paste fallback (S10): verify the nonce belongs to ``user_id``, then exchange + persist."""
+        provider = OAuth2ProviderRegistry().get(provider_id)
+        if provider is None:
+            raise ValueError(f"Unknown provider: {provider_id!r}")
+        manager = provider.manager
+        raw_state = await manager.redis.get(manager._nonce_key(state))
+        if not raw_state:
+            raise ValueError("Invalid or expired state nonce.")
+        if isinstance(raw_state, bytes):
+            raw_state = raw_state.decode("utf-8")
+        try:
+            state_payload = json.loads(raw_state)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("Invalid or expired state nonce.") from exc
+        nonce_user_id = state_payload.get("nav_user_id") if isinstance(state_payload, dict) else None
+        if nonce_user_id is None or not hmac.compare_digest(str(nonce_user_id), user_id):
+            raise ValueError("Invalid or expired state nonce.")
+        token_set, state_payload = await manager.handle_callback(code, state)
+        await self.persist_credential(
+            user_id,
+            provider_id,
+            token_set,
+            channel=channel,
+            canonical_identity=state_payload.get("canonical_identity"),
+        )
+        return await self.status(user_id, provider_id, request)
 
     # ------------------------------------------------------------------
     # Internal helpers
