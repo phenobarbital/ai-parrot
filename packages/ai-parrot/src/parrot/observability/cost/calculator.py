@@ -20,7 +20,7 @@ import logging
 import threading
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -34,6 +34,9 @@ logger = logging.getLogger("parrot.observability.cost")
 _LOADED: Optional[dict[str, dict[str, dict]]] = None
 # Metadata per provider: {provider: {"last_updated": date, "source": str}}
 _META: dict[str, dict] = {}
+# Revision of the file that actually supplied each model's price: {(provider, model): revision}.
+# Per-model so a bundled model absent from an override keeps the bundled file's hash.
+_MODEL_REVISIONS: dict[tuple[str, str], str] = {}
 _BUNDLED_DIR = Path(__file__).parent / "pricing"
 
 # Guards _LOADED mutations: both the initial load and any _apply_override calls.
@@ -75,9 +78,10 @@ def _select_entry(value: "dict | list[dict]", at: Optional[date]) -> Optional[di
 
 def _reset_pricing_cache_for_tests() -> None:
     """Test-only: reset the module-level cache so a fresh load can be attempted."""
-    global _LOADED, _META
+    global _LOADED, _META, _MODEL_REVISIONS
     _LOADED = None
     _META = {}
+    _MODEL_REVISIONS = {}
 
 
 def _load_bundled_pricing() -> dict[str, dict[str, dict]]:
@@ -95,10 +99,10 @@ def _load_bundled_pricing() -> dict[str, dict[str, dict]]:
             provider = p.stem
             result[provider] = raw.get("models", {})
             meta = raw.get("pricing", {})
-            _META[provider] = {
-                **meta,
-                "revision": f"{provider}@{hashlib.sha256(raw_text.encode('utf-8')).hexdigest()[:12]}",
-            }
+            revision = f"{provider}@{hashlib.sha256(raw_text.encode('utf-8')).hexdigest()[:12]}"
+            _META[provider] = {**meta, "revision": revision}
+            for model_id in result[provider]:
+                _MODEL_REVISIONS[(provider, model_id)] = revision
         except Exception:
             logger.exception("Failed to load bundled pricing file %s", p)
     return result
@@ -137,10 +141,10 @@ def _apply_override(
                 base[provider] = {}
             base[provider].update(models)  # model-level override wins
             metadata = raw.get("pricing", _META.get(provider, {}))
-            _META[provider] = {
-                **metadata,
-                "revision": f"{provider}@{hashlib.sha256(raw_text.encode('utf-8')).hexdigest()[:12]}",
-            }
+            revision = f"{provider}@{hashlib.sha256(raw_text.encode('utf-8')).hexdigest()[:12]}"
+            _META[provider] = {**metadata, "revision": revision}
+            for model_id in models:
+                _MODEL_REVISIONS[(provider, model_id)] = revision
         except Exception:
             logger.exception("Failed to load override pricing file %s", p)
     return base
@@ -267,14 +271,35 @@ class CostCalculator:
             at=at,
         ).usd
 
-    def price_call(self, **kwargs: Any) -> PricedCost:
-        """Compute a cost together with its pricing revision and effective date."""
-        provider = kwargs["provider"]
-        model = kwargs["model"]
+    def price_call(
+        self,
+        *,
+        provider: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        cached_input_tokens: int = 0,
+        cache_creation_tokens: int = 0,
+        at: Optional[date] = None,
+    ) -> PricedCost:
+        """Compute a cost together with its pricing revision and effective date.
+
+        Args:
+            provider: ``gen_ai.system`` value (``"gemini"`` maps to ``google.json``).
+            model: Model identifier matching a key in the pricing JSON.
+            input_tokens: Number of input tokens billed.
+            output_tokens: Number of output tokens billed.
+            cached_input_tokens: Number of cached input tokens (discount tier).
+            cache_creation_tokens: Number of cache-creation tokens (additive tier).
+            at: Date for selecting a dated price entry. Defaults to the latest.
+
+        Returns:
+            The priced cost, or an unpriced ``PricedCost`` for an unknown model.
+        """
         file_key = "google" if provider == "gemini" else provider
         provider_pricing = self._pricing.get(file_key)
         price_value = provider_pricing.get(model) if provider_pricing is not None else None
-        price = _select_entry(price_value, kwargs.get("at")) if price_value is not None else None
+        price = _select_entry(price_value, at) if price_value is not None else None
         if price is None:
             self._warn_unknown(provider, model)
             return PricedCost()
@@ -283,11 +308,6 @@ class CostCalculator:
         output_per_1m: float = price["output_per_1m"]
         cached_per_1m: float = price.get("cached_input_per_1m", input_per_1m)
         cache_creation_per_1m: float = price.get("cache_creation_per_1m", input_per_1m)
-        input_tokens = kwargs["input_tokens"]
-        output_tokens = kwargs["output_tokens"]
-        cached_input_tokens = kwargs.get("cached_input_tokens", 0)
-        cache_creation_tokens = kwargs.get("cache_creation_tokens", 0)
-
         # Standard input cost (non-cached portion)
         non_cached = max(0, input_tokens - cached_input_tokens)
         input_cost = non_cached * input_per_1m / 1_000_000
@@ -296,7 +316,7 @@ class CostCalculator:
 
         cache_creation_cost = cache_creation_tokens * cache_creation_per_1m / 1_000_000
         total = input_cost + output_cost + cached_cost + cache_creation_cost
-        revision, valid_from = self.revision_for(provider, model, kwargs.get("at"))
+        revision, valid_from = self.revision_for(provider, model, at)
         return PricedCost(usd=round(total, 6), price_revision=revision, valid_from=valid_from, priced=True)
 
     def revision_for(self, provider: str, model: str, at: Optional[date] = None) -> tuple[Optional[str], Optional[str]]:
@@ -307,7 +327,8 @@ class CostCalculator:
         price = _select_entry(price_value, at) if price_value is not None else None
         if price is None:
             return None, None
-        return _META.get(file_key, {}).get("revision"), price.get("valid_from")
+        revision = _MODEL_REVISIONS.get((file_key, model)) or _META.get(file_key, {}).get("revision")
+        return revision, price.get("valid_from")
 
     def _warn_unknown(self, provider: str, model: str) -> None:
         """Log a one-time WARN for an unknown (provider, model) pair.

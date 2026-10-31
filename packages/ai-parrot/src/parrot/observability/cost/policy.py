@@ -38,6 +38,11 @@ class PricingPolicy(BaseModel):
     def apply(self, usd: Optional[float]) -> tuple[Optional[float], Optional[float]]:
         """Apply this policy to an already-computed USD value.
 
+        Deliberate deviation from the FEAT-783 spec signature
+        ``apply(priced: PricedCost)``: the policy only needs the USD amount, and
+        the price revision travels separately on the event, so taking the scalar
+        keeps this module free of a calculator import. Behaviour matches AC-13.
+
         Args:
             usd: The list-price cost computed at the usage origin or subscriber.
 

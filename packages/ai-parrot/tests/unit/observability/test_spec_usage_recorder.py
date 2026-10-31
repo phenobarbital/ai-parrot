@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import subprocess
@@ -73,7 +74,8 @@ async def test_rows_readable_by_separate_process(tmp_path: Path) -> None:
     )
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(path for path in sys.path if path)
-    result = subprocess.run(
+    result = await asyncio.to_thread(
+        subprocess.run,
         [sys.executable, "-c", script, str(root), "FEAT-783"],
         capture_output=True,
         text=True,

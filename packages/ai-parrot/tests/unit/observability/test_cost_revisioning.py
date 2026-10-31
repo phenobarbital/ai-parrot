@@ -185,3 +185,37 @@ async def test_priced_event_and_record_carry_revision() -> None:
     assert event.price_valid_from == "2026-06-01"
     assert recorder.records[0].price_revision == event.price_revision
     assert recorder.records[0].price_valid_from == event.price_valid_from
+
+
+def test_bundled_model_keeps_bundled_revision_under_override() -> None:
+    """A bundled model absent from the override file is not labelled with the override's hash."""
+    calculator = CostCalculator(override_path=str(FIXTURES / "rev_a"))
+    overridden = calculator.price_call(
+        provider="anthropic", model="claude-revision-test", input_tokens=1, output_tokens=1
+    ).price_revision
+    bundled_model = next(m for m in _bundled_anthropic_models() if m != "claude-revision-test")
+    bundled = calculator.price_call(
+        provider="anthropic", model=bundled_model, input_tokens=1, output_tokens=1
+    ).price_revision
+
+    assert overridden is not None and bundled is not None
+    assert overridden != bundled
+
+
+def test_price_call_rejects_misspelled_kwargs() -> None:
+    """price_call is keyword-only and strict: a misspelled argument raises instead of being ignored."""
+    calculator = CostCalculator()
+    with pytest.raises(TypeError):
+        calculator.price_call(  # type: ignore[call-arg]
+            provider="anthropic", model="x", input_tokens=1, output_tokens=1, cached_tokens=5
+        )
+
+
+def _bundled_anthropic_models() -> list[str]:
+    import json
+    from pathlib import Path
+
+    import parrot.observability.cost.calculator as calc_module
+
+    path = Path(calc_module.__file__).parent / "pricing" / "anthropic.json"
+    return list(json.loads(path.read_text(encoding="utf-8"))["models"])

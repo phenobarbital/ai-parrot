@@ -113,7 +113,8 @@ async def test_attempt_produces_attributed_durable_row(git_sandbox_feature, noop
             "r = read_spec_usage(Path(sys.argv[1]), 'FEAT-549'); print('ROWS', len(r), r[0].attempt_uid)"
         )
         src = str(Path(__file__).resolve().parents[4] / "src")
-        out = subprocess.run(
+        out = await asyncio.to_thread(
+            subprocess.run,
             [sys.executable, "-c", code, str(root)],
             capture_output=True,
             text=True,
