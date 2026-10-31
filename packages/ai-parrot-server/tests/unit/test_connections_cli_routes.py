@@ -107,7 +107,9 @@ async def test_token_route_pbac_denied_403(monkeypatch: pytest.MonkeyPatch) -> N
 async def test_complete_route_and_cli_start(monkeypatch: pytest.MonkeyPatch) -> None:
     """Complete validates its payload and CLI starts carry a CLI principal."""
     service = MagicMock()
-    service.complete_connect = AsyncMock(return_value=MagicMock(model_dump=MagicMock(return_value={"status": "active"})))
+    service.complete_connect = AsyncMock(
+        return_value=MagicMock(model_dump=MagicMock(return_value={"status": "active"}))
+    )
     service.start_connect = AsyncMock(return_value=MagicMock(model_dump=MagicMock(return_value={"state": "nonce"})))
     monkeypatch.setattr("parrot.handlers.connections.IntegrationsService", lambda: service)
 

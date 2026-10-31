@@ -51,9 +51,7 @@ class ConnectionsHandler(BaseView):
 
     def _is_me_route(self) -> bool:
         """Return whether this request targets ``GET /api/v1/connections/me``."""
-        return not self.request.match_info.get("provider") and self.request.path.rstrip("/").endswith(
-            "/connections/me"
-        )
+        return not self.request.match_info.get("provider") and self.request.path.rstrip("/").endswith("/connections/me")
 
     def _is_start_route(self) -> bool:
         """True for ``/connections/{provider}/start`` (POST-only)."""
