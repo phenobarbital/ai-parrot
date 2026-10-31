@@ -2,7 +2,7 @@
 
 **Feature**: cvetoolkit-osv-cvss-score (BRIEF-c216e0c0eb2b)
 **Spec**: sdd/briefs/cvetoolkit-osv-cvss-score.brief.md
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: none
@@ -89,3 +89,4 @@ UNKNOWN even though there is a full vector. See the brief's Root cause section.
 - `pytest packages/ai-parrot-tools/tests/security/cve/test_cve_toolkit.py -q`
 
 ## Completion Note
+Implemented `cvss3_base_score` in `cve/models.py` (in-house FIRST 3.0/3.1 formula, no new dependency); `CVSS.score` is now `float | None`; `_parse_osv` scores 3.x and leaves 4.0 as `None`; markdown renders `n/a` for `None`. Tests added; 24 passed, ruff clean. Commit c7221affcc. Seat: native (main session).
