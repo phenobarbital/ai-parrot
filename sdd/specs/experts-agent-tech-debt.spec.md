@@ -109,6 +109,14 @@ is otherwise unchanged; the docstring states it.
   `registry.get(name, tenant="acme")` returns the same instance as
   `registry.get(name)` and logs a warning mentioning the tenant.
 
+### Validation Contract
+
+tests:
+- packages/ai-parrot/tests/experts/test_render.py
+- packages/ai-parrot/tests/experts/test_agent_activation.py
+- packages/ai-parrot/tests/experts/test_registry.py
+markers: none
+
 ---
 
 ## 5. Acceptance Criteria
