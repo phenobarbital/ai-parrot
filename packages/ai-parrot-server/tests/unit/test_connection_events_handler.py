@@ -61,6 +61,7 @@ async def test_sse_handler_requires_session_and_ignores_query_user(
     aiohttp_client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A query user cannot authenticate or replace the request-managed principal."""
+
     class _Request(dict):
         def __init__(self, *, user_id: str | None, push: object | None = None) -> None:
             super().__init__()
