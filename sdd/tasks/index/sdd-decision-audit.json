@@ -326,7 +326,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -336,8 +336,9 @@
       "parallelism_notes": "uses is_configured/open_consequence_service from TASK-5008 (decisions/spec_audit.py); mentions sdd/taxonomy/subsystems.yaml only as the unconfigured/configured detection path — tests build tmp repos, not a use of TASK-5012's file",
       "assigned_to": null,
       "started_at": "2026-10-31T00:37:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5010-gate-script.md"
+      "completed_at": "2026-10-31T01:47:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5010-gate-script.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5011",

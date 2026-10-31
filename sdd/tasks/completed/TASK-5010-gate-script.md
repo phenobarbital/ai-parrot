@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-784 — SDD Decision Audit
 **Spec**: `sdd/specs/sdd-decision-audit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5008
@@ -362,4 +362,7 @@ See the blueprint test module; required cases: `test_unconfigured_without_block_
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 185s · Tokens: n/a
+
+- Delivered files match the task list.
+- Merge-tier validation: tests/sdd_scripts/test_check_spec_consequences.py 10 passed; package 217 passed, 1 failed — pre-existing env-gated test_backend_parity_is_reported. No review fixes.
