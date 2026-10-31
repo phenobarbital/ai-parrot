@@ -1872,10 +1872,7 @@ class AgentTalk(BaseView):
             # succeeded; the envelope IS the agent's reply.
             payload = exc.to_payload() if isinstance(exc, AuthorizationRequired) else exc.to_payload(tool_name=None)
             pending = getattr(self, "_turn_auth_pending", None) or []
-            if not any(
-                item.provider == payload.provider and item.tool_name == payload.tool_name
-                for item in pending
-            ):
+            if not any(item.provider == payload.provider and item.tool_name == payload.tool_name for item in pending):
                 auth_count = len(pending) + 1
             else:
                 auth_count = len(pending)
@@ -2611,9 +2608,7 @@ class AgentTalk(BaseView):
             reported_tool_calls=reported_tool_calls,
         )
 
-    async def _write_auth_required_trailer(
-        self, stream_resp: web.StreamResponse, ai_message: AIMessage
-    ) -> None:
+    async def _write_auth_required_trailer(self, stream_resp: web.StreamResponse, ai_message: AIMessage) -> None:
         """Write the collected auth payload after a streaming response envelope."""
         auth = self._turn_auth_requirement(ai_message)
         if auth is None:
