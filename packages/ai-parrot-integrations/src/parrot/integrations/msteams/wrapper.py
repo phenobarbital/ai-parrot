@@ -47,9 +47,14 @@ from .commands import MSTeamsCommandRouter
 from .commands.connect_commands import TeamsConnector, register_connection_commands
 from .commands.auth_commands import register_auth_commands
 from .auth import MSTeamsAuthStrategy, MSTeamsSessionStore
-from .connections import MSTeamsPrincipalSource
+from .connections import (
+    MSTeamsConversationRefStore,
+    MSTeamsPrincipalSource,
+    build_msteams_permission_context,
+)
 from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 from parrot.auth.context import UserContext
+from parrot.auth.permission import PermissionContext
 from parrot.auth.token_exchange import TokenExchangeClient
 from .oauth_callback import MSTeamsOAuthNotifier
 from parrot.forms import FormSchema
@@ -254,6 +259,9 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             )
             register_connection_commands(self._command_router, connector=self._connector)
 
+        redis = self.app.get("redis")
+        self._convref_store = MSTeamsConversationRefStore(redis) if redis is not None else None
+
         # FEAT-734: TeamsFormDesignerMixin seams (no-op for agents without the mixin)
         self._wire_formdesigner_agent()
 
@@ -380,6 +388,54 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         if session.authenticated and session.nav_user_id and not self._session_store.is_expired(session):
             return session.nav_user_id
         return fallback
+
+    async def _permission_context_for_turn(self, turn_context: TurnContext) -> Optional[PermissionContext]:
+        """Return a Teams PBAC context for an authenticated turn, else ``None``."""
+        source = getattr(self, "_principal_source", None)
+        if source is None or self._auth is None:
+            return None
+        try:
+            session = await source.session_for_turn(turn_context)
+        except Exception:  # noqa: BLE001 -- optional principal lookup must not break message handling
+            self.logger.warning("Unable to resolve Teams permission context", exc_info=True)
+            return None
+        return build_msteams_permission_context(session) if session is not None else None
+
+    async def _agent_context(
+        self,
+        turn_context: TurnContext,
+        fallback_user_id: str,
+        session_id: str,
+        **extra: Any,
+    ) -> Dict[str, Any]:
+        """Build orchestrator context, including PBAC data only for authenticated turns."""
+        context: Dict[str, Any] = {
+            "user_id": await self._effective_user_id(turn_context, fallback_user_id),
+            "session_id": session_id,
+            **extra,
+        }
+        permission_context = await self._permission_context_for_turn(turn_context)
+        if permission_context is not None:
+            context["permission_context"] = permission_context
+        return context
+
+    async def _remember_conversation(self, turn_context: TurnContext) -> None:
+        """Refresh a validated user's personal conversation reference without failing the turn."""
+        store = getattr(self, "_convref_store", None)
+        conversation = getattr(turn_context.activity, "conversation", None)
+        if store is None or getattr(conversation, "conversation_type", None) != "personal":
+            return
+        source = getattr(self, "_principal_source", None)
+        if source is None:
+            return
+        try:
+            session = await source.session_for_turn(turn_context)
+            if session is None or not session.nav_user_id:
+                return
+            reference = TurnContext.get_conversation_reference(turn_context.activity).serialize()
+            await store.save(str(session.nav_user_id), reference)
+        except Exception:  # noqa: BLE001 -- reference caching is an optional notifier fallback
+            self.logger.warning("Unable to store Teams conversation reference", exc_info=True)
 
     def _build_user_context(self, turn_context: TurnContext, session: Any) -> UserContext:
         """Build the channel-agnostic identity snapshot for an authenticated session.
@@ -534,10 +590,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                         result = await self.form_orchestrator.process_message(
                             message=query,
                             conversation_id=conversation_id,
-                            context={
-                                "user_id": await self._effective_user_id(turn_context, user_id),
-                                "session_id": session_id,
-                            },
+                            context=await self._agent_context(turn_context, user_id, session_id),
                         )
                         await self._flush_formdesigner_cards_if_ok(turn_context, result)
                     return result
@@ -579,10 +632,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 result = await self.form_orchestrator.process_message(
                     message=query,
                     conversation_id=conversation_id,
-                    context={
-                        "user_id": await self._effective_user_id(turn_context, user_id),
-                        "session_id": conversation_id,
-                    },
+                    context=await self._agent_context(turn_context, user_id, conversation_id),
                 )
                 await self._flush_formdesigner_cards_if_ok(turn_context, result)
             if result and result.raw_response is not None:
@@ -725,6 +775,8 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 if session.authenticated and not session.post_login_ran:
                     await self._run_post_login(turn_context, session)
 
+        await self._remember_conversation(turn_context)
+
         if clean_text:
             dispatched = await self._command_router.try_dispatch(clean_text, turn_context)
             if not dispatched:
@@ -824,10 +876,11 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             result = await self.form_orchestrator.process_message(
                 message=text,
                 conversation_id=conversation_id,
-                context={
-                    "user_id": await self._effective_user_id(turn_context, turn_context.activity.from_property.id),
-                    "session_id": conversation_id,
-                },
+                context=await self._agent_context(
+                    turn_context,
+                    turn_context.activity.from_property.id,
+                    conversation_id,
+                ),
             )
             await self._flush_formdesigner_cards_if_ok(turn_context, result)
 
@@ -1176,11 +1229,12 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             result = await self.form_orchestrator.process_message(
                 message=text,
                 conversation_id=conversation_id,
-                context={
-                    "user_id": await self._effective_user_id(turn_context, turn_context.activity.from_property.id),
-                    "session_id": conversation_id,
-                    "source": "voice_note",  # Mark source for analytics
-                },
+                context=await self._agent_context(
+                    turn_context,
+                    turn_context.activity.from_property.id,
+                    conversation_id,
+                    source="voice_note",
+                ),
             )
             await self._flush_formdesigner_cards_if_ok(turn_context, result)
 
