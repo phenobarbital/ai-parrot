@@ -19,11 +19,6 @@ import pytest
 from parrot.auth.broker import CredentialBroker
 from parrot.auth.credentials import ProviderCredentialConfig
 from parrot.auth.oauth2.workiq_provider import WorkIQOBOCredentialResolver
-from parrot.cli.identity import (
-    O365_PRINCIPAL_ENV_VAR,
-    build_cli_permission_context,
-    resolve_cli_o365_principal,
-)
 from parrot.tools.abstract import AbstractTool, ToolResult, current_credential
 
 
@@ -101,39 +96,12 @@ class O365GatedTool(AbstractTool):
 
 
 # ---------------------------------------------------------------------------
-# CLI identity bootstrap
-# ---------------------------------------------------------------------------
-
-
-def test_missing_principal_fails_closed(monkeypatch):
-    monkeypatch.delenv(O365_PRINCIPAL_ENV_VAR, raising=False)
-    with pytest.raises(RuntimeError):
-        resolve_cli_o365_principal()
-    with pytest.raises(RuntimeError):
-        build_cli_permission_context()
-
-
-def test_principal_normalizes_via_canonical_identity_mapper(monkeypatch):
-    monkeypatch.setenv(O365_PRINCIPAL_ENV_VAR, "  Alice@Corp.COM  ")
-    assert resolve_cli_o365_principal() == "alice@corp.com"
-
-
-def test_build_cli_permission_context_carries_channel_and_user_id(monkeypatch):
-    monkeypatch.setenv(O365_PRINCIPAL_ENV_VAR, "alice@corp.com")
-    ctx = build_cli_permission_context()
-    assert ctx.channel == "cli"
-    assert ctx.user_id == "alice@corp.com"
-
-
-# ---------------------------------------------------------------------------
 # End-to-end: CLI identity → broker → tool → resolver → vault
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_cli_device_code_end_to_end(monkeypatch):
-    monkeypatch.setenv(O365_PRINCIPAL_ENV_VAR, "user@corp.com")
-    permission_context = build_cli_permission_context()
 
     o365_client = FakeO365Client()
     vault = FakeVault()
@@ -147,8 +115,8 @@ async def test_cli_device_code_end_to_end(monkeypatch):
     tool = O365GatedTool()
     result = await tool.execute(
         _broker=broker,
-        _cred_channel=permission_context.channel,
-        _cred_user_id=permission_context.user_id,
+        _cred_channel="cli",
+        _cred_user_id="user@corp.com",
     )
 
     assert result.status == "success"
@@ -163,8 +131,8 @@ async def test_cli_device_code_end_to_end(monkeypatch):
     # Second resolve is a cache hit — no second device-code round trip.
     result2 = await tool.execute(
         _broker=broker,
-        _cred_channel=permission_context.channel,
-        _cred_user_id=permission_context.user_id,
+        _cred_channel="cli",
+        _cred_user_id="user@corp.com",
     )
     assert result2.status == "success"
     assert result2.result == "got-cred:entra-access-tok"
@@ -176,8 +144,6 @@ async def test_devicecode_token_consumable_by_workiq_obo(monkeypatch):
     """Proves the canonical-store homologation (spec §1): one Entra sign-in,
     written by device-code, is readable by the existing WorkIQ OBO resolver.
     """
-    monkeypatch.setenv(O365_PRINCIPAL_ENV_VAR, "user@corp.com")
-    permission_context = build_cli_permission_context()
 
     o365_client = FakeO365Client()
     vault = FakeVault()
@@ -192,8 +158,8 @@ async def test_devicecode_token_consumable_by_workiq_obo(monkeypatch):
     tool = O365GatedTool()
     await tool.execute(
         _broker=broker,
-        _cred_channel=permission_context.channel,
-        _cred_user_id=permission_context.user_id,
+        _cred_channel="cli",
+        _cred_user_id="user@corp.com",
     )
 
     # Step 2: WorkIQOBOCredentialResolver reads the SAME vault instance and
