@@ -1,4 +1,5 @@
 """FEAT-775 M3: TeamsConnector."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -126,7 +127,9 @@ def connector(service: Mock, session: SimpleNamespace, principal: Principal) -> 
 
 
 @pytest.mark.asyncio
-async def test_connect_requires_principal(connector: tuple[TeamsConnector, Mock], service: Mock, turn_context: Mock) -> None:
+async def test_connect_requires_principal(
+    connector: tuple[TeamsConnector, Mock], service: Mock, turn_context: Mock
+) -> None:
     """A missing session replies with login instructions and creates no state."""
     value, source = connector
     source.session_for_turn.return_value = None
@@ -193,7 +196,9 @@ async def test_teams_connect_scope_union_and_upgrade(
 
 
 @pytest.mark.asyncio
-async def test_pbac_denied_renders_message(connector: tuple[TeamsConnector, Mock], service: Mock, turn_context: Mock) -> None:
+async def test_pbac_denied_renders_message(
+    connector: tuple[TeamsConnector, Mock], service: Mock, turn_context: Mock
+) -> None:
     """PBAC denials produce the provider-specific refusal."""
     service.status.side_effect = PermissionError()
 

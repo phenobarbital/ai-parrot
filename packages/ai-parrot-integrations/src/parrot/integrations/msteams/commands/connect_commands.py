@@ -1,4 +1,5 @@
 """Generic Teams connection commands (FEAT-775 M3): one guarded connector for commands and automatic offers."""
+
 from __future__ import annotations
 
 import json
@@ -23,7 +24,7 @@ from parrot.integrations.msteams.connections import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover
-    from parrot.integrations.msteams.commands import MSTeamsCommandRouter
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -90,9 +91,7 @@ class TeamsConnector:
             bot_app_id=self._bot_app_id,
         ).model_dump()
 
-    async def connect(
-        self, turn_context: TurnContext, provider_id: str, *, scopes: Optional[List[str]] = None
-    ) -> None:
+    async def connect(self, turn_context: TurnContext, provider_id: str, *, scopes: Optional[List[str]] = None) -> None:
         """Apply the guard and start or report a provider connection."""
         guard = await self.require_guard(turn_context)
         if guard is not None:
@@ -198,7 +197,9 @@ class TeamsConnector:
             else:
                 provider = OAuth2ProviderRegistry().get(provider_id)
                 if provider is None:
-                    await turn_context.send_activity(f"Unknown provider '{provider_id}'. Try `/connect` to see the list.")
+                    await turn_context.send_activity(
+                        f"Unknown provider '{provider_id}'. Try `/connect` to see the list."
+                    )
                     return
                 rows = [await self._status_with_legacy(service, provider, guard.principal, guard.context)]
             await send_adaptive_card(turn_context, connections_status_card(rows))
