@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-774 — Connections for CLI agents and local MCP toolkits
 **Spec**: `sdd/specs/connections-cli-local-mcp.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4974
@@ -253,6 +253,6 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sonnet (native) (1 attempt), orchestrated by sdd-worker
+**Date**: 2026-10-31
+**Notes**: Added login-file identity lookup with a cheap pre-check (_peer_login_file_exists) to avoid a 1.4s lazy import breaking test_caller_identity timing. Pre-existing failure test_e2e.py::test_no_aiohttp_without_server_pkg is unrelated. Merge-tier reds are pre-existing/environmental only (tests/mcp/test_toolkit_server.py, issue:203c75e0c1ac; sandbox read-only ~/.parrot/cli in test_session).

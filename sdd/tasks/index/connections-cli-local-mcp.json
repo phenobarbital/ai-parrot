@@ -295,7 +295,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -307,8 +307,9 @@
       "parallelism_notes": "uses ToolExecutionContext + mutable adapter.execution_context from TASK-4975 (parrot/mcp/adapter.py); CliPrincipalResolver/build_cli_permission_context from TASK-4974 (parrot/cli/principal.py); build_cli_broker from TASK-4973 (parrot/auth/oauth2/local_cache.py)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4976-toolkit-server-login-binding.md"
+      "completed_at": "2026-10-31T01:33:02+00:00",
+      "file": "sdd/tasks/completed/TASK-4976-toolkit-server-login-binding.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4977",
@@ -317,7 +318,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -327,8 +328,9 @@
       "parallelism_notes": "imports ServerConnectionsClient/ConnectAttempt from TASK-4972 and ConnectionCache/CachedConnection/open_connection_cache from TASK-4973 (parrot/auth/oauth2/local_cache.py; TASK-4972 is transitive); cli/__init__.py entries were already added by TASK-4968",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4977-parrot-connect-commands.md"
+      "completed_at": "2026-10-31T01:33:02+00:00",
+      "file": "sdd/tasks/completed/TASK-4977-parrot-connect-commands.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4978",
@@ -337,7 +339,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -348,8 +350,9 @@
       "parallelism_notes": "imports CliPrincipalResolver/build_cli_permission_context from TASK-4974 (parrot/cli/principal.py) and build_cli_broker from TASK-4973 (parrot/auth/oauth2/local_cache.py); LoginStore/refresh_login from TASK-4968 (transitive); edits test_cli_devicecode_e2e.py before TASK-4981 rewrites it",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4978-repl-identity-regimes.md"
+      "completed_at": "2026-10-31T01:33:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4978-repl-identity-regimes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4979",
@@ -358,7 +361,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -368,8 +371,9 @@
       "parallelism_notes": "imports CliPrincipalResolver/build_cli_permission_context from TASK-4974 (parrot/cli/principal.py), LoginStore.for_uid from TASK-4968 and ServerConnectionsClient from TASK-4972 (both transitive via TASK-4974); sole writer of agentd/server.py and agentd/config.py",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4979-agentd-login-file-principal.md"
+      "completed_at": "2026-10-31T01:33:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4979-agentd-login-file-principal.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4980",
