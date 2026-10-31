@@ -109,7 +109,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -119,8 +119,9 @@
       "parallelism_notes": "TASK-4983: reads AfterClientCallEvent.attribution and current_usage_attribution (events/client.py, observability/context.py)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:24:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4985-usage-record-sdd-attribution.md"
+      "completed_at": "2026-10-31T00:35:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4985-usage-record-sdd-attribution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4986",
