@@ -7,7 +7,9 @@ with optional LLM wiring and tool filtering (include/exclude/llm_dependent).
 import asyncio
 import contextlib
 import importlib
+import importlib.metadata
 import logging
+import re
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -32,6 +34,54 @@ logger = logging.getLogger(__name__)
 #: rather than a literal so tests can shrink it instead of waiting out the
 #: real budget.
 _CLEANUP_TIMEOUT_SECONDS = 10.0
+_TOOLS_DISTRIBUTION = "ai-parrot-tools"
+_AGGREGATE_EXTRAS = frozenset({"all"})
+_REQUIREMENT_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+_EXTRA_MARKER = re.compile(r"""extra\s*==\s*["']([^"']+)["']""")
+
+
+def _normalize_name(name: str) -> str:
+    """Normalize a distribution or module name for comparison (PEP 503 style, ``_`` separator)."""
+    return re.sub(r"[-_.]+", "_", name).lower()
+
+
+def _extra_hint(exc: ImportError, class_path: str) -> str:
+    """Return an install hint for a toolkit whose class failed to import.
+
+    Maps the missing top-level module (``exc.name``) to the ``ai-parrot-tools`` extras that
+    require a distribution of the same normalized name, read from the installed package
+    metadata. Falls back to a generic hint naming the missing module.
+
+    Args:
+        exc: The import failure raised while resolving the toolkit class.
+        class_path: The configured dotted class path.
+
+    Returns:
+        The hint text (with a leading two-space indent), or ``""`` for non-``parrot_tools`` classes.
+    """
+    if "parrot_tools" not in class_path:
+        return ""
+    missing = (exc.name or "").split(".")[0]
+    if not missing or missing == "parrot_tools":
+        return f"  Install the {_TOOLS_DISTRIBUTION} extra this toolkit needs (see its optional dependencies)."
+    try:
+        requirements = importlib.metadata.requires(_TOOLS_DISTRIBUTION) or []
+    except importlib.metadata.PackageNotFoundError:
+        requirements = []
+    wanted = _normalize_name(missing)
+    extras = set()
+    for requirement in requirements:
+        name = _REQUIREMENT_NAME.match(requirement)
+        if name is None or _normalize_name(name.group(1)) != wanted:
+            continue
+        extras.update(extra for extra in _EXTRA_MARKER.findall(requirement) if extra not in _AGGREGATE_EXTRAS)
+    if extras:
+        options = " or ".join(f'uv pip install "{_TOOLS_DISTRIBUTION}[{extra}]"' for extra in sorted(extras))
+        return f"  Try: {options}"
+    return (
+        f"  Missing module '{missing}': install the {_TOOLS_DISTRIBUTION} extra that provides it "
+        f'(uv pip install "{_TOOLS_DISTRIBUTION}[<extra>]").'
+    )
 
 
 class _ToolkitStdioMCPServer(StdioMCPServer):
@@ -238,7 +288,7 @@ def create_toolkit_mcp_server(
             instantiation fails. Error messages name the offending section,
             file path, and dependency.
         ImportError: If the toolkit class cannot be resolved (e.g., missing
-            extra like ai-parrot-tools[scraping]).
+            extra of ai-parrot-tools); the error names the extra to install.
     """
     root = Path(root) if root is not None else Path.cwd()
 
@@ -263,11 +313,7 @@ def create_toolkit_mcp_server(
             module = importlib.import_module(module_name)
             toolkit_cls = getattr(module, class_name)
         except ImportError as e:
-            # Try to suggest the package extra
-            if "parrot_tools" in section.class_path:
-                extra_hint = "  Try: uv pip install ai-parrot-tools[scraping] " "or ai-parrot-tools[browsing]"
-            else:
-                extra_hint = ""
+            extra_hint = _extra_hint(e, section.class_path)
             raise ImportError(
                 f"Cannot import toolkit '{section.class_path}' for '{name}':{extra_hint}\n" f"  Original error: {e}"
             ) from e
