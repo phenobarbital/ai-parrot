@@ -280,7 +280,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -292,8 +292,9 @@
       "parallelism_notes": "TASK-4984: CompletionUsage.cache_read_tokens/reasoning_output_tokens (models/basic.py); TASK-4986: event counter + source_cost_usd fields (events/client.py); TASK-4989: event pricing_policy field (events/client.py)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:24:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4993-codex-usage-codec.md"
+      "completed_at": "2026-10-31T01:01:47+00:00",
+      "file": "sdd/tasks/completed/TASK-4993-codex-usage-codec.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4994",
@@ -302,7 +303,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -313,8 +314,9 @@
       "parallelism_notes": "TASK-4989: sums UsageRecord.equivalent_usd it adds (recorders/models.py); TASK-4990: rows shape from SpecUsageRecorder (recorders/spec_usage.py)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:24:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4994-spec-usage-report.md"
+      "completed_at": "2026-10-31T01:01:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4994-spec-usage-report.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4995",
@@ -343,7 +345,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -354,8 +356,9 @@
       "parallelism_notes": "TASK-4985: its test_metrics_label_whitelist.py must allow parrot.feat_id, and event.attribution reaches metrics via TASK-4983 (transitive); TASK-4989: applies PricingPolicy + event.pricing_policy (cost/policy.py) to the cost counter in subscribers/metrics.py",
       "assigned_to": null,
       "started_at": "2026-10-31T00:24:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4996-grafana-feature-agent-usage-dashboard.md"
+      "completed_at": "2026-10-31T01:02:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4996-grafana-feature-agent-usage-dashboard.md",
+      "verification": "verified"
     }
   ]
 }
