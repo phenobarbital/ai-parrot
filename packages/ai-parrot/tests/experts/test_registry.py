@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -161,3 +162,17 @@ async def test_unknown_toolkit_name_is_skipped(expert_bundle: Path, caplog: pyte
     registry = _registry(expert_bundle, InMemoryWikiStore(expert_bundle / "wiki"))
     assert await registry.load() == 1
     assert "unknown toolkit NoSuchToolkit; skipping" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_get_with_tenant_warns_and_returns_global(
+    expert_bundle: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A tenant is accepted but ignored in phase one, with a warning."""
+    store = InMemoryWikiStore(expert_bundle / "wiki")
+    registry = _registry(expert_bundle, store)
+    assert await registry.load() == 1
+    with caplog.at_level(logging.WARNING, logger="parrot.experts.registry"):
+        tenant_view = registry.get("sample-expert", tenant="acme")
+    assert tenant_view is registry.get("sample-expert")
+    assert "acme" in caplog.text

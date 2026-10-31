@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import html
 
 from parrot.bots.prompts.builder import PromptBuilder
 from parrot.bots.prompts.layers import EXPERT_KNOWLEDGE_LAYER, EXPERT_RULES_LAYER
@@ -25,6 +26,9 @@ def render_rules(ctx: KnowledgeContext) -> str:
 def render_knowledge(ctx: KnowledgeContext) -> str:
     """Render INLINE non-rules layers as ``<expert_knowledge>`` sections, in ctx order.
 
+    Attribute values (layer, source, revision) are XML-escaped: ADR and workspace
+    sources may carry arbitrary names.
+
     Args:
         ctx: Resolved knowledge context.
 
@@ -38,10 +42,10 @@ def render_knowledge(ctx: KnowledgeContext) -> str:
         content = item.content.strip()
         if not content:
             continue
-        sections.append(
-            f'<section layer="{item.layer}" source="{item.source}" revision="{item.revision}">\n'
-            f"{content}\n</section>"
-        )
+        layer = html.escape(str(item.layer), quote=True)
+        source = html.escape(item.source, quote=True)
+        revision = html.escape(item.revision, quote=True)
+        sections.append(f'<section layer="{layer}" source="{source}" revision="{revision}">\n{content}\n</section>')
     if not sections:
         return ""
     return "<expert_knowledge>\n" + "\n".join(sections) + "\n</expert_knowledge>"
