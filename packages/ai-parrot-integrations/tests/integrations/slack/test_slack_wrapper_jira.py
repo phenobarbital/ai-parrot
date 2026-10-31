@@ -65,11 +65,19 @@ def _make_minimal_wrapper(oauth_manager=None):
             wrapper.interactive_route = "/api/slack/test_bot/interactive"
 
             from parrot.integrations.slack.commands import SlackCommandRouter
-            from parrot.integrations.slack.commands.jira_commands import register_jira_commands
+            from parrot.integrations.slack.commands.connection_commands import (
+                AppLinkIssuer,
+                register_connection_commands,
+            )
+            from parrot.auth.oauth2.service import IntegrationsService
 
             wrapper._command_router = SlackCommandRouter()
+            register_connection_commands(
+                wrapper._command_router,
+                link_issuer=AppLinkIssuer(mock_app),
+                service_factory=lambda: IntegrationsService(authorizer=mock_app.get("connection_authorizer")),
+            )
             if oauth_manager is not None:
-                register_jira_commands(wrapper._command_router, oauth_manager)
                 if config.bot_token:
                     from parrot.integrations.slack.oauth_callback import SlackOAuthNotifier
                     with patch.object(SlackOAuthNotifier, "__init__", lambda s, bot_token: None):
@@ -106,12 +114,13 @@ class TestSlackWrapperJiraWiring:
         assert "disconnect_jira" in wrapper._command_router.registered_commands
         assert "jira_status" in wrapper._command_router.registered_commands
 
-    def test_no_jira_commands_without_oauth_manager(self):
-        """Without oauth_manager, the Jira commands are not registered."""
+    def test_connection_commands_registered_without_oauth_manager(self):
+        """Generic commands and Jira aliases do not require a Jira manager."""
         wrapper, _ = _make_minimal_wrapper(oauth_manager=None)
 
-        assert "connect_jira" not in wrapper._command_router.registered_commands
-        assert "disconnect_jira" not in wrapper._command_router.registered_commands
+        assert "connect_jira" in wrapper._command_router.registered_commands
+        assert "disconnect_jira" in wrapper._command_router.registered_commands
+        assert "login" in wrapper._command_router.registered_commands
 
     @pytest.mark.asyncio
     async def test_handle_command_dispatches_connect_jira(self):
