@@ -69,13 +69,14 @@ and `google-compat` -> `gemini` (and `nova` -> `aws.bedrock`), so those rows pri
 |---|---|---|
 | `anthropic.json` | https://platform.claude.com/docs/en/about-claude/pricing | All entries from Claude 4.5 up re-verified against the page. `claude-haiku-5-5` carries the **<= 100k-token prompt** rates; prompts over 100k cost 5x (not modelled, so those calls are under-priced). |
 | `openai.json` | https://developers.openai.com/api/docs/pricing?latest-pricing-expanded=true | Added `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` (Standard tier, short context). The expanded view is embedded as script data (`TextTokenPricingTables`); columns are input, cached input, 30m write, output. All 20 existing text-model rows match the Standard table exactly, plus `gpt-5.3-codex` and `chat-latest`. `gpt-realtime-2`, `gpt-realtime-1.5`, `gpt-audio-1.5` and `gpt-image-2` are no longer listed at those rates and were left unchanged. `gpt-5.6-sol` pricing is flagged promotional on the page ("at least through 2026-11-21"). `gpt-5.3-codex-spark` is not published and stays unpriced. |
-| `google.json` | https://ai.google.dev/gemini-api/docs/pricing | Only `gemini-3.8-flash` was added, as a dated list (price doubles on 2027-01-01). Older rows were not re-verified; `last_updated` was **not** bumped. `gemini-3.5-flash` (existing row) is no longer on the page. |
 | `aws.bedrock.json` | https://aws.amazon.com/es/bedrock/pricing/ | US East (N. Virginia) on-demand Standard. The Qwen3 Coder 480B rate is not in the static HTML; it was read from the page's own pricing endpoint (`b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps`, per-1K x 1000). |
-| `groq.json`, `nvidia.json`, `huggingface.json` | - | Not re-verified (no source supplied); dates unchanged. |
+| `huggingface.json`, `nvidia.json` | - | Operator-confirmed 2026-11-01: only free models are used, so no cost is attributed; dates bumped, NVIDIA list prices retained unverified. |
+| `groq.json` | - | **Not re-verified, date unchanged**: Groq is not used by sdd-flow, so its stale-price warning is accepted. |
+| `google.json` | https://ai.google.dev/gemini-api/docs/pricing | Added `gemini-3.8-flash` as a dated list (price doubles on 2027-01-01; no cache-creation tier is published). Operator guidance: Gemini 3.7 or higher only; `gemini-3.5-flash` is deprecated. Legacy rows (3.5 and older) are unverified and kept only so historical rows still price; date unchanged, stale warning accepted. |
 
 ## Coverage evidence
 
-Measured with `python -m scripts.sdd.price_coverage --rows-dir artifacts/logs/sdd-coder-usage` on 2026-11-01.
+Threshold confirmed by the operator on 2026-11-01: **>= 90% of real-model rows** (test-fixture placeholders excluded). Measured with `python -m scripts.sdd.price_coverage --rows-dir artifacts/logs/sdd-coder-usage` on 2026-11-01.
 
 | Measure | Rows | Priced | Ratio |
 |---|---|---|---|
