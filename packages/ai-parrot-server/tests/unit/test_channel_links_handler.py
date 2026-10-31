@@ -126,7 +126,9 @@ async def test_channel_link_confirm_conflict_and_db_failure(monkeypatch: pytest.
     issuer = MagicMock()
     issuer.consume = AsyncMock(side_effect=[_claim(), _claim()])
     claim_service = MagicMock()
-    claim_service.claim_channel_identity = AsyncMock(side_effect=[SimpleNamespace(status="conflict"), RuntimeError("db")])
+    claim_service.claim_channel_identity = AsyncMock(
+        side_effect=[SimpleNamespace(status="conflict"), RuntimeError("db")]
+    )
     monkeypatch.setattr("parrot.handlers.channel_links.IdentityMappingService", lambda _: claim_service)
 
     conflict = await _unwrap(ChannelLinksHandler.post)(_handler(_Request({"confirm": True}, issuer=issuer)))
@@ -143,8 +145,15 @@ async def test_channel_link_confirm_conflict_and_db_failure(monkeypatch: pytest.
 @pytest.mark.parametrize(
     "claim",
     [
-        ChannelLinkClaim(channel="telegram", channel_user_id="T01:U02", extra={"team_id": "T01", "slack_user_id": "U02"}, issued_at=0),
-        ChannelLinkClaim(channel="slack", channel_user_id="T01:U02:extra", extra={"team_id": "T01", "slack_user_id": "U02"}, issued_at=0),
+        ChannelLinkClaim(
+            channel="telegram", channel_user_id="T01:U02", extra={"team_id": "T01", "slack_user_id": "U02"}, issued_at=0
+        ),
+        ChannelLinkClaim(
+            channel="slack",
+            channel_user_id="T01:U02:extra",
+            extra={"team_id": "T01", "slack_user_id": "U02"},
+            issued_at=0,
+        ),
     ],
 )
 async def test_channel_link_rejects_non_slack_claim(claim: ChannelLinkClaim) -> None:
