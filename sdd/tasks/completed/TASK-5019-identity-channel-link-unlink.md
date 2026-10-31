@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-776 — Connections on Telegram
 **Spec**: `sdd/specs/connections-telegram.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -249,10 +249,8 @@ Blueprint test files; names fixed by spec §4 (M4 rows + `test_db_concurrent_cha
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sonnet (native), commits 533abb4b35/52f294e9c9
+**Date**: 2026-10-31
+**Notes**: 5 unit tests and 16 existing identity-mapping tests passed. The 2 real-DB tests (test_identity_channel_link_db.py) were SKIPPED: IDENTITY_PG_DSN, IDENTITY_TEST_USER_ID and IDENTITY_TEST_USER_ID_2 are unset, so AC-1 (exclusive ownership under concurrent links) is UNVERIFIED. Closed as partial; run those tests against a real DB. Same 12 pre-existing baseline reds in the merge-tier run (coder-review:e4be22dc67cead732a38a674).
 
 **Deviations from spec**: none

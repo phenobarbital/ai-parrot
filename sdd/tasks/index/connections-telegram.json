@@ -68,7 +68,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -76,8 +76,9 @@
       "parallelism_notes": "No dependencies: creates parrot/auth/pending.py and one call in tools/manager.py; no other task touches those files.",
       "assigned_to": null,
       "started_at": "2026-10-31T00:52:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5016-needs-auth-collector.md"
+      "completed_at": "2026-10-31T01:10:05+00:00",
+      "file": "sdd/tasks/completed/TASK-5016-needs-auth-collector.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5017",
@@ -86,7 +87,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -94,8 +95,9 @@
       "parallelism_notes": "No dependencies: single branch in clients/base.py, a file no other task touches.",
       "assigned_to": null,
       "started_at": "2026-10-31T00:52:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5017-execute-tool-needs-auth-message.md"
+      "completed_at": "2026-10-31T01:10:05+00:00",
+      "file": "sdd/tasks/completed/TASK-5017-execute-tool-needs-auth-message.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5018",
@@ -122,7 +124,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -130,8 +132,9 @@
       "parallelism_notes": "No dependencies: only ai-parrot-server identity_mapping.py plus its new tests.",
       "assigned_to": null,
       "started_at": "2026-10-31T00:52:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5019-identity-channel-link-unlink.md"
+      "completed_at": "2026-10-31T01:10:06+00:00",
+      "file": "sdd/tasks/completed/TASK-5019-identity-channel-link-unlink.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5020",

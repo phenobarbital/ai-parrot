@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-776 — Connections on Telegram
 **Spec**: `sdd/specs/connections-telegram.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -173,10 +173,8 @@ Blueprint test file; names fixed by spec §4 (M2 rows).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: gpt-5.6-sol (codex), commit cc092f9802
+**Date**: 2026-10-31
+**Notes**: Same merge-tier run and same 12 pre-existing baseline reds as TASK-5016; this task's tests passed. Manual review: message omits auth_url, error branch unchanged (coder-review:b20cdf4c75173e3b852cd6a1).
 
 **Deviations from spec**: none
