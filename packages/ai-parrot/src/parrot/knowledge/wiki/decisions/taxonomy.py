@@ -112,11 +112,7 @@ class Taxonomy:
     def map_projects(self, projects: list[str], tags: list[str]) -> list[str]:
         """Map project and tag metadata to sorted, unique subsystem ids."""
         project_set = set(projects)
-        mapped = {
-            subsystem.id
-            for subsystem in self._data.subsystems
-            if project_set.intersection(subsystem.projects)
-        }
+        mapped = {subsystem.id for subsystem in self._data.subsystems if project_set.intersection(subsystem.projects)}
         mapped.update(self._data.mapping[tag] for tag in tags if tag in self._data.mapping)
         return sorted(mapped)
 
