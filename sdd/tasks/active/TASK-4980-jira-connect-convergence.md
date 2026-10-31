@@ -40,9 +40,9 @@ Spec §3 Module 10 (G8, AC-12): `JiraToolkit` drops the fixed `local:cli` identi
 |---|---|---|
 | `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py` | MODIFY | remove local single-user mode |
 | `packages/ai-parrot-tools/src/parrot_tools/jira_cli.py` | MODIFY | aliases + re-export + sync-kb via cache |
-| `packages/ai-parrot-tools/src/parrot_tools/jira_local_auth.py` | DELETE | hard cut |
-| `packages/ai-parrot-tools/tests/unit/test_jira_local_auth.py` | DELETE | hard cut |
-| `packages/ai-parrot-tools/tests/unit/test_oauth2_local_wiring.py` | DELETE | hard cut |
+| `packages/ai-parrot-tools/src/parrot_tools/jira_local_auth.py` | MODIFY | DELETE the file (hard cut) |
+| `packages/ai-parrot-tools/tests/unit/test_jira_local_auth.py` | MODIFY | DELETE the file (hard cut) |
+| `packages/ai-parrot-tools/tests/unit/test_oauth2_local_wiring.py` | MODIFY | DELETE the file (hard cut) |
 | `packages/ai-parrot-tools/tests/unit/test_jira_cli.py` | MODIFY | drop local-store tests, alias tests |
 | `packages/ai-parrot-tools/tests/unit/test_jiratoolkit_oauth.py` | MODIFY | oauth2_local rejected |
 | `packages/ai-parrot-tools/tests/unit/test_jira_connect_convergence.py` | CREATE | AC-12 tests |
