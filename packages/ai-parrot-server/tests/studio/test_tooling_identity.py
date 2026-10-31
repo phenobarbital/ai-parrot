@@ -32,7 +32,6 @@ async def test_patch_tool_manager_uses_chat_identity(ref: str) -> None:
     request["NAV_SESSION"] = session
     handler = agent_module.AgentTalk(request)
     handler._apply_user_toolkit_overrides = AsyncMock(side_effect=lambda agent, session, manager: manager)
-    handler._bootstrap_jira_oauth_session = AsyncMock()
     handler._restore_user_mcp_servers = AsyncMock()
     bot = SimpleNamespace(name="sales", _tooling_ref=ref, enable_mcp_restore=True)
 
