@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-01T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-10-31T23:41:31+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "manual",
   "tasks": [
@@ -16,15 +16,18 @@
       "feature_id": "FEAT-786",
       "feature": "fixgroup-0a1d456b8ed9",
       "spec": "sdd/specs/fixgroup-0a1d456b8ed9.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "sole task in this feature, no shared-file collisions",
       "assigned_to": "agent:sdd-fix",
-      "file": "sdd/tasks/active/TASK-5083-roost-callers-authority.md",
-      "discovered_from": "issue:562a840c56ef"
+      "file": "sdd/tasks/completed/TASK-5083-roost-callers-authority.md",
+      "discovered_from": "issue:562a840c56ef",
+      "started_at": "2026-10-31T23:38:06Z",
+      "completed_at": "2026-10-31T23:40:36+00:00",
+      "verification": "verified"
     }
   ]
 }
