@@ -106,7 +106,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -116,8 +116,9 @@
       "parallelism_notes": "imports DeviceAuthorization, DeviceCodeError, request_device_authorization, request_device_token, SLOW_DOWN_INCREMENT_S from TASK-4966 (parrot/auth/oauth2/device_code.py); sole writer of descriptor.py and o365_devicecode_provider.py in this feature",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4967-descriptor-device-grant.md"
+      "completed_at": "2026-10-31T00:43:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4967-descriptor-device-grant.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4968",
@@ -126,7 +127,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -136,8 +137,9 @@
       "parallelism_notes": "imports discover_authorization_server, request_device_authorization, poll_device_token, make_pkce_pair, DeviceCodeError from TASK-4966 (parrot/auth/oauth2/device_code.py); sole writer of parrot/cli/__init__.py in this feature (adds all six lazy entries)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4968-cli-login-store.md"
+      "completed_at": "2026-10-31T00:43:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4968-cli-login-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4969",
@@ -165,7 +167,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -175,8 +177,9 @@
       "parallelism_notes": "calls IntegrationsService.whoami/pull_access_token/complete_connect and catches NotConnected created by TASK-4969 (parrot/auth/oauth2/service.py, models.py); sole writer of manager/manager.py in this feature",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4970-connections-handler-cli-routes.md"
+      "completed_at": "2026-10-31T00:43:40+00:00",
+      "file": "sdd/tasks/completed/TASK-4970-connections-handler-cli-routes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4971",
