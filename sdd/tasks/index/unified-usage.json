@@ -71,7 +71,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -79,8 +79,9 @@
       "parallelism_notes": "none: creates attribution.py; first editor of events/client.py and context.py",
       "assigned_to": null,
       "started_at": "2026-10-31T00:24:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4983-attribution-model-event-carriage.md"
+      "completed_at": "2026-10-31T00:30:02+00:00",
+      "file": "sdd/tasks/completed/TASK-4983-attribution-model-event-carriage.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4984",
@@ -89,7 +90,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -97,8 +98,9 @@
       "parallelism_notes": "none: sole editor of models/basic.py",
       "assigned_to": null,
       "started_at": "2026-10-31T00:24:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4984-completion-usage-four-counters.md"
+      "completed_at": "2026-10-31T00:30:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4984-completion-usage-four-counters.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4985",
