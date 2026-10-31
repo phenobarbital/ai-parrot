@@ -174,7 +174,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -183,7 +183,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4987: cache_creation_per_1m is only read by the calculator it extends (cost/calculator.py); coverage script calls widened cost_usd",
       "assigned_to": null,
-      "started_at": "2026-10-31T00:24:51+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4988-price-table-refresh-coverage.md"
     },
@@ -325,7 +325,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -334,7 +334,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4994: calls build_spec_usage_report (flows/dev_loop/usage_report.py); read_spec_usage via TASK-4990 (transitive)",
       "assigned_to": null,
-      "started_at": "2026-10-31T00:24:51+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4995-usage-cli-mcp.md"
     },
