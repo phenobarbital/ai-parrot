@@ -10,7 +10,7 @@ tags: [usage-metrics, cost-attribution, observability, telemetry, sdd-coder, ote
 **Feature ID**: FEAT-783
 **Date**: 2026-10-31
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 
 ---
