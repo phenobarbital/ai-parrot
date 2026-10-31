@@ -166,7 +166,9 @@ class ServiceIdentityConfig(BaseModel):
     user_id: str = "1001"
     tenant_id: str = "default"
     roles: frozenset[str] = Field(default_factory=frozenset)
-    login_file_lookup: bool = True  # FEAT-774: read the peer's ~/.parrot/login.json (AGENTD_LOGIN_FILE_LOOKUP=0 disables)
+    login_file_lookup: bool = (
+        True  # FEAT-774: read the peer's ~/.parrot/login.json (AGENTD_LOGIN_FILE_LOOKUP=0 disables)
+    )
 
     @property
     def window_seconds(self) -> int:
