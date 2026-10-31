@@ -442,6 +442,28 @@
       "completed_at": "2026-10-31T01:45:20+00:00",
       "file": "sdd/tasks/completed/TASK-4982-cli-connections-docs.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5080",
+      "slug": "spec-ac11-agentd-trusted-server",
+      "title": "Spec AC-11 — agentd trusted-server pin, off by default, read-only peer store",
+      "feature_id": "FEAT-774",
+      "feature": "connections-cli-local-mcp",
+      "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4979"
+      ],
+      "parallel": true,
+      "parallelism_notes": "spec text only",
+      "assigned_to": null,
+      "started_at": "2026-10-31T23:22:27+00:00",
+      "completed_at": "2026-10-31T23:22:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5080-spec-ac11-agentd-trusted-server.md",
+      "verification": "verified",
+      "discovered_from": "issue:08e55d4b23ca"
     }
   ]
 }
