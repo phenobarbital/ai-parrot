@@ -91,8 +91,7 @@ connections model as a first-class channel, and research at spec time found five
   user to ask again; auto-retry is the S-3a design and can be adopted later).
 - The MSAgentSDK lane (`integrations/msagentsdk/`, native OAuthCard + `CredentialRequired` resume) — unchanged.
 - Fixing `AbstractClient._execute_tool`'s loss of `ToolResult.metadata` for the LLM (`clients/base.py` is the
-  foundation and needs a separate discussion; see §8 Q3). This spec routes around it with a request-scoped
-  collector instead.
+  foundation and FEAT-776 M2 owns the approved message-only change; see §8 Q3). Teams owns only its collector consumer.
 - Teams message extensions / Teams SSO for third-party providers (Bot Framework OAuth connection per provider).
 - Group-chat / channel-conversation connect: connect commands answer only in **personal** (1:1) conversations
   (see §7); in a group they reply with a "message me directly" hint.
@@ -147,24 +146,47 @@ For explicit commands, requested scopes are the provider defaults; for automatic
 sorted union of that provider's payload scopes (use defaults only when the union is empty).
 An active connection with insufficient granted scopes must enter consent; it must not return "already
 connected". Never infer granted scopes from requested scopes or a status flag.
+**Wire-level prerequisite:** merged service.py:347 passes no scopes to `create_authorization_url`, and
+`oauth2_base.py:435` uses manager-level `self.scopes`. A response reporting requested scopes is not proof
+of consent requesting them. Before decomposing scope-upgrade tasks, FEAT-775 M3 must specify the per-call
+scope propagation contract and affected manager overrides, without mutating shared manager scopes; record
+those edit sites here. FEAT-776 consumes that shared implementation. Until then, scope-upgrade tasks remain
+gated. Validate the provider URL's scopes, PBAC inputs and response together in concurrent-request tests.
 
-**Service authorization bridge (M3/M7).** Add keyword-only `permission_context: Optional[PermissionContext]`
-to `IntegrationsService.list_for_principal/status/start_connect/disconnect` and an optional injected
-`permission_evaluator` constructor argument. Teams supplies a fresh context built from its authenticated
-session on every call, including status/list. The server injects the same navigator-auth evaluator returned
-by `setup_pbac` into the service factory; it must not instantiate a second policy store or evaluator.
-When a trusted context is supplied, require its `user_id` to equal the service's target `user_id`;
-On connect require `context.user_id == principal.user_id`,
-`context.channel == principal.channel == channel`, and matching tenant and channel-user identities. Evaluate the existing
-integration action through that evaluator using `to_eval_context(permission_context)`, with provider and
-the actual requested scopes in the evaluation context. Use the same integration resource/action mapping
-as FEAT-773's HTTP path, verified after merge; do not evaluate this as a tool action.
-Missing evaluator/identity, a mismatch, evaluator exception or deny result fails closed. Do not fall back
-to HTTP authorization after a context denial. With no permission context, preserve the existing HTTP
-`request` path unchanged, including denial when both request and context are absent.
-Only authenticated session claims may supply roles/groups; absent claims remain empty, never elevated.
-This is an explicit additive extension to FEAT-773 M6, owned by this feature, not an assumption that
-`principal` already supplies PBAC context.
+**Service authorization bridge (M3/M7), shared owner decision (2026-10-31).** FEAT-775 exclusively owns
+`IntegrationsService(..., permission_evaluator=None)` and keyword-only `permission_context` on
+`list_for_principal/status/start_connect/disconnect`. FEAT-776 consumes this API and must not implement
+`permission_app` or `check_integration_access`. Add `principal=None` to list/status/disconnect (only
+start_connect already has it), and `channel="web"` to disconnect. Preserve `_check_pbac(request, action,
+provider_id=None, scopes=None, *, principal=None, permission_context=None)` positional compatibility.
+The full shared signatures are recorded in FEAT-776 M3; this feature owns their implementation.
+
+Every operation validates context.user_id against target user_id and principal.user_id, plus tenant and
+channel-user identity. Connect/disconnect additionally validate the supplied channel. Context roles/groups
+come only from verified session claims; absent claims remain empty. Pass channel and principal through
+`manager.revoke`, so a Teams/Telegram disconnect emits to that channel rather than the hard-coded web
+channel currently at service.py:393. Missing context/evaluator, mismatch, exception or deny fails closed;
+a context denial never falls back to HTTP. With no context preserve HTTP behavior and default web channel.
+List denial returns `[]`; status/connect/disconnect denial raises `PermissionError`.
+
+The injected evaluator is an adapter over the existing application PDP, with one async callable contract:
+`permission_evaluator(context: PermissionContext, attributes: Mapping[str, Any]) -> bool`.
+Attributes preserve FEAT-773's `action`, optional `provider`, and actual `scopes` (including empty lists).
+No second policy store, inferred tool resource, or fake HTTP request is permitted. The adapter must normalize
+an explicit allow decision, never use truthiness of an arbitrary policy response as authorization.
+
+**Production parity gate:** FEAT-773 service.py:471–510 calls `abac.is_allowed(request, ctx)` with those
+attributes; installed navigator-auth `abac/pdp.py:549` instead accepts `(request, session, user, ..., **kwargs)`.
+Do not assume this positional dict reaches the evaluator as policy attributes. Before dependent channel tasks
+start, M3/M7 must identify the deployed PDP adapter and prove HTTP/context allow/deny parity against actual
+policies for action/provider/scopes and trusted roles. If an adapter correction is required, record its exact
+mapping and edit sites in this spec before decomposition; this is a concrete compatibility gate, not a new
+policy-shape decision. Existing agent-handler `ResourceType.TOOL` patterns are not evidence for integration policy.
+
+M7 introduces channel service construction at the integration manager startup seam; there is no existing
+FEAT-773 factory in `parrot/manager/manager.py`. HTTP handlers currently instantiate `IntegrationsService()`
+locally. Reuse the initialized app PDP when building channel services and inject a vault reader where needed.
+
 `jira_commands.py` is reduced to the aliases (`connect_jira` → `/connect jira`, `jira_status` →
 `/connections jira`, menus → `/connections`) and keeps its public `register_jira_commands` name for callers.
 
@@ -206,6 +228,15 @@ than treating a device challenge as an OAuth redirect.
 `{"msteams": ("msteams", "azure")}` tried in order; `canonical_identity` = the AAD oid. `integrations/manager.py
 ::_start_msteams_bot` stops gating Teams connections on `config.jira_client_id`: the wrapper always registers
 connection commands when `app` exposes the FEAT-773 provider registry with at least one provider.
+
+### Shared with FEAT-776
+
+| Piece | Owner | Rule |
+|---|---|---|
+| Permission-context service API, PDP adapter wiring, channel-aware disconnect | FEAT-775 M3/M7 | FEAT-776 consumes it; one implementation owner. Production adapter and scope propagation gates apply. |
+| `parrot/auth/pending.py` and ToolManager recording | FEAT-775 M5 / FEAT-776 M1 | First merged implementation owns creation; the second verifies the identical contract and adds only missing tests. |
+| LLM-facing needs-auth message | FEAT-776 M2 | Teams does not edit clients/base.py. |
+| Reusable channel command core | FEAT-776 M5 | Teams keeps TeamsConnector in this feature; no reverse dependency. |
 
 ### Component Diagram
 
@@ -420,7 +451,7 @@ def credential_channel_user_id(context: PermissionContext) -> Optional[str]:
       """Bind a fresh list; reset the ContextVar token on exit."""
   def record_auth_requirement(payload: AuthRequiredPayload) -> None:
       """Append when bound; otherwise no-op."""
-  # tools/manager.py — inside the FEAT-773 unified needs-auth branch (today: `except AuthorizationRequired as auth_exc:`, manager.py:2273)
+  # tools/manager.py — inside the FEAT-773 unified needs-auth branch (today: `except (AuthorizationRequired, CredentialRequired) as auth_exc:`, manager.py:2273)
   #   record_auth_requirement(payload)   # before returning the ToolResult
   ```
 
@@ -445,12 +476,12 @@ def credential_channel_user_id(context: PermissionContext) -> Optional[str]:
 
 ### Module 7: Server resolver alias and manager wiring
 - **Path**: `packages/ai-parrot-server/src/parrot/services/identity_principal.py` *(FEAT-773, modify)*;
-  `packages/ai-parrot-server/src/parrot/manager/manager.py` (modify: inject the shared evaluator into
-  the FEAT-773 service factory); `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` (modify)
+  `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` (modify: construct channel services
+  with the shared PDP adapter; there is no pre-existing server service factory)
 - **Responsibility**: alias lookup; `_start_msteams_bot` builds the wrapper without requiring `jira_client_id`;
   creates `app["msteams_connection_notifier"]` once and registers it in `ChannelNotifierRegistry`.
   Wire the shared evaluator into every Teams service instance; absence must deny connection operations.
-  Re-anchor factory initialization after FEAT-773 merge; do not invent an app evaluator key.
+  Introduce explicit channel construction in the integration manager using the app PDP; do not invent an app evaluator key.
 - **Depends on**: M3 (service authorization bridge), FEAT-773 M8.
 - **Interface Skeleton**:
   ```python
@@ -603,10 +634,9 @@ These do **not** exist yet; M1/M3 implement them after FEAT-773 merges:
 - `IntegrationsService(..., permission_evaluator=None)` and keyword-only
   `permission_context=None` on `list_for_principal/status/start_connect/disconnect`, threaded into
   `_check_pbac` with target identity, provider and scopes. The HTTP request API remains compatible.
-- The evaluator is the instance returned by `setup_pbac` (`auth/pbac.py`); existing
-  `to_eval_context` and `PolicyEvaluator.check_access` use are verified in `auth/permission.py`
-  and `auth/resolver.py`. FEAT-773's integration-specific resource/action mapping must be verified
-  at task creation; do not copy the resolver's `ResourceType.TOOL` mapping for integration actions.
+- The injected callable adapter reuses the PDP initialized by `setup_pbac`; §2 records the installed
+  `is_allowed` mismatch and mandatory real-policy parity gate. No tool-resource mapping is assumed.
+- Channel-aware disconnect is shared work here: pass channel/principal to revoke; retain web defaults.
 
 ### Existing Class Signatures
 ```python
@@ -656,7 +686,7 @@ class FormOrchestrator: async def process_message(self, message, conversation_id
 async def ask(self, question, session_id=None, user_id=None, ..., permission_context: Optional[Any] = None, ...)  # :1069, kwarg :1083
 
 # parrot/tools/manager.py
-#   except AuthorizationRequired as auth_exc: → ToolResult(status="authorization_required", metadata={auth_url, provider, scopes, tool_name})  # :2273-2290
+#   except (AuthorizationRequired, CredentialRequired) as auth_exc: → ToolResult(status="authorization_required", metadata={auth_url, provider, scopes, tool_name})  # :2273-2290
 
 # parrot/clients/base.py — DO NOT MODIFY
 #   _execute_tool: isinstance(result, ToolResult) and status != "error" → return result.result   # :1661-1668 (metadata lost)
@@ -687,7 +717,9 @@ TokenExchange: store.save_linked_identity(uid, req.provider, ext, userinfo)     
 - ~~command arguments passed to `MSTeamsCommandRouter` handlers~~ — handlers receive only `turn_context`; agent commands re-read `activity.text` (agent_commands.py:65-67), which is empty for card Submits.
 - ~~`ToolResult.metadata` on `AIMessage.tool_calls[*].result`~~ — `_execute_tool` returns `result.result` (clients/base.py:1668).
 - ~~`parrot.auth.pending`~~, ~~`collect_auth_requirements`~~, ~~`MSTeamsConnectionNotifier`~~, ~~`MSTeamsConversationRefStore`~~, ~~`TeamsConnector`~~, ~~`connect_commands.py`~~ — created by this spec.
-- ~~`Principal`, `IntegrationsService(channel=…)`, `ChannelNotifierRegistry`, `AuthRequiredPayload`, `IdentityPrincipalResolver`, `MSTeamsJiraNotifierAdapter`~~ — FEAT-773, not on `dev` at `145a6c603`.
+- `Principal`, `ChannelNotifierRegistry`, `AuthRequiredPayload`, `IdentityPrincipalResolver` and
+  `MSTeamsJiraNotifierAdapter` now exist on dev (FEAT-773, PR #1897); `channel` currently belongs to
+  `start_connect`, not the service constructor or disconnect.
 - ~~a generic `/connect <provider>` command on any channel~~ — none exists (FEAT-773 proposal §3.4).
 
 ### Additional review-fix edit sites
@@ -699,7 +731,7 @@ TokenExchange: store.save_linked_identity(uid, req.provider, ext, userinfo)     
 | `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py` | M1 | `_pre_execute` selects channel identity for both OAuth resolver operations; retain local CLI branch |
 | `packages/ai-parrot-tools/src/parrot_tools/o365/oauth_toolkit.py` | M1 | `_pre_execute` selects channel identity for both OAuth resolver operations |
 | `packages/ai-parrot/src/parrot/auth/oauth2/service.py` | M3 | explicit context authorization API and shared evaluator; preserve HTTP path |
-| `packages/ai-parrot-server/src/parrot/manager/manager.py` | M7 | FEAT-773 service factory evaluator injection, re-anchor after merge |
+| `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` | M7 | introduce channel service construction and shared PDP adapter injection |
 
 ### Edit Sites (Blueprint Anchors)
 
@@ -719,7 +751,7 @@ Verified against: `145a6c603`
 | `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `                context={` — 4 call sites (`:523`, `:568`, `:813`, `:1165`); the chat path is `:813`, preceded by `result = await self.form_orchestrator.process_message(` | `wrapper.py:813` | 4 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py` | MODIFY | `    async def _run_post_login(self, turn_context: TurnContext, session: Any) -> None:` (insert `_offer_connections` before it) | `wrapper.py:394` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/manager.py` | MODIFY | `            oauth_manager=jira_oauth_manager,` — `:390` is the Teams wrapper (under `wrapper = MSTeamsAgentWrapper(`); `:947` is Slack | `manager.py:390` | 2 |
-| `packages/ai-parrot/src/parrot/tools/manager.py` | MODIFY | `        except AuthorizationRequired as auth_exc:` (FEAT-773 M5 reshapes this branch — re-anchor after merge) | `manager.py:2273` | 1 |
+| `packages/ai-parrot/src/parrot/tools/manager.py` | MODIFY | `        except (AuthorizationRequired, CredentialRequired) as auth_exc:` (FEAT-773 M5 reshapes this branch — re-anchor after merge) | `manager.py:2273` | 1 |
 | `packages/ai-parrot-server/src/parrot/services/identity_principal.py` | MODIFY | (unverified — created by FEAT-773 M8; check before use) | — | — |
 | `packages/ai-parrot-integrations/src/parrot/integrations/core/auth/notifiers.py` | MODIFY | (unverified — created by FEAT-773 M8; remove `MSTeamsJiraNotifierAdapter`) | — | — |
 
@@ -751,9 +783,10 @@ Verified against: `145a6c603`
   callbacks never write identity rows in production; FEAT-773 M8's adapter must not assume they did. M7's `azure`
   alias is what makes out-of-turn resolution work for Teams. *(Worth a ledger issue against FEAT-773 M8.)*
 - **LLM sees `None` for needs-auth tools** (clients/base.py:1668). The card fixes the user path only; the LLM may
-  still produce a confusing sentence before the card (§8 Q3).
-- **FEAT-773 drift.** Every *(FEAT-773)* signature here is from its spec, not code; `/sdd-task` must re-verify
-  after the merge, especially `start_connect`'s `extra_state` and the `ToolManager` needs-auth branch.
+  still produce a confusing sentence before the card until FEAT-776 M2 lands (§8 Q3).
+- **FEAT-773 baseline.** Shared service contracts were rechecked at `70b0fb7d2b`; historical Teams-only
+  anchors below still require re-verification during decomposition. The production PDP and scope-wire
+  gates in §2 must be resolved before dependent tasks are generated.
 
 ### External Dependencies
 | Package | Version | Reason |
@@ -771,12 +804,10 @@ No new dependencies.
   AAD oid, while `session.user_id` remains the Navigator id. Jira/O365 use
   `credential_channel_user_id` for OAuth lookup and URL creation. No numeric inference, and no Teams
   fallback when the field or AAD oid is missing. See M1 and AC-13.
-- [ ] **Q2** Should the channel-neutral part of the connect commands (provider listing, status text,
-  fail-closed messages) live in `integrations/core/auth/` so S-2 (Telegram) and S-3a (Slack) reuse it, or stay
-  Teams-local and be extracted later? Default: Teams-local (`TeamsConnector`), extract when S-2 lands — *Owner: Jesus*
-- [ ] **Q3** Should `AbstractClient._execute_tool` return the needs-auth `ToolResult` metadata (or a short
-  "authorization required for <provider>" string) to the LLM instead of `None`? Touches `clients/base.py`, so it
-  needs a separate decision — *Owner: Jesus*
+- [x] **Q2** Teams retains `TeamsConnector`; FEAT-776 M5 owns the reusable core under
+  `integrations/core/auth/`. Migrating Teams to that core is deferred; no dependency cycle between features.
+- [x] **Q3** FEAT-776 M2 owns the approved message-only `_execute_tool` change. Teams consumes the shared
+  collector independently and benefits from that message when it lands; it does not duplicate the base edit.
 - [ ] **Q4** Consent denial (`?error=` on the callback): FEAT-773's `ConnectionEventKind` has no failure kind, so the
   Teams "authorization failed" proactive message (today `notify_failure`, oauth_callback.py:144) is lost unless
   FEAT-773 publishes one. Accept the loss (the browser page still shows the error) or add a
@@ -790,8 +821,7 @@ No new dependencies.
 
 ## Worktree Strategy
 
-- **Isolation**: one feature worktree `feat-FEAT-775-connections-msteams` off `origin/dev` **after FEAT-773 is
-  merged**; the `sdd-coder` engine gives each task its own sub-worktree.
+- **Isolation**: one feature worktree `feat-FEAT-775-connections-msteams` off `origin/dev` after FEAT-773 (already merged); the `sdd-coder` engine gives each task its own sub-worktree.
 - **Module dependency graph**:
   - M3 → M1 (`MSTeamsPrincipalSource`), M2 (`command_args`), M4 (card builders in `connections.py`)
   - M6 → M1 (trusted context), M3 (`TeamsConnector.connect`), M5 (`collect_auth_requirements`)
@@ -801,8 +831,7 @@ No new dependencies.
 - **Shared files**: `msteams/wrapper.py` (M1, M3 registration, M4 attach/save, M6) and `msteams/connections.py`
   (M1, M4, M6) — their tasks are serialized on those files.
 - **Exclusive resources**: none (no migration, no lockfile change, no native rebuild).
-- **Cross-feature dependencies**: **FEAT-773 merged** (hard). Coordinate with S-2 (Telegram) on §8 Q2 if it is
-  in flight at the same time.
+- **Cross-feature dependencies**: **FEAT-773 merged** (hard). FEAT-776 consumes this feature’s M3/M7 service API; Teams-local commands do not depend on FEAT-776 M5.
 
 ---
 
@@ -828,8 +857,8 @@ found them resolved at the specification level. This is not implementation or ru
 | Requested scopes discarded | M3/M6 scope union and active-grant upgrade; AC-15 | `a131d5f79bf9` |
 | Device-code personal guard bypass | M3/M6 common guard before either card branch; AC-16 | `07b1f0f8e315` |
 
-Implementation remains gated on FEAT-773 merge and verification of its integration resource/action
-mapping and service-factory initialization. No claims of passing implementation tests are made.
+FEAT-773 is merged. Shared authorization work remains gated on the concrete production PDP adapter
+parity check in §2; there is no existing server service factory to re-anchor. No claims of passing implementation tests are made.
 
 
 ---
@@ -840,3 +869,4 @@ mapping and service-factory initialization. No claims of passing implementation 
 |---|---|---|---|
 | 0.1 | 2026-10-30 | Jesus Lara (with Claude Opus 5.5) | Initial draft from FEAT-773 proposal §6 S-3b + spec §1 Non-Goals |
 | 0.2 | 2026-10-30 | Codex | Resolve review findings: explicit OAuth channel identity; shared PDP authorization without HTTP request; scope union and upgrade consent; shared personal/principal guard for device-code cards. Expand module ownership, tests and AC-13–16. |
+| 0.3 | 2026-10-31 | Codex | Own shared permission-context API and channel-aware revoke; align FEAT-776 ownership and close shared-core/message decisions. Record merged service signatures and production PDP adapter compatibility gate. |
