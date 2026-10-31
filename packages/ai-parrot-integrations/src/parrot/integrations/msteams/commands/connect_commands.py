@@ -219,3 +219,36 @@ class TeamsConnector:
             if provider is not None:
                 providers.append((provider_id, provider.display_name))
         await send_adaptive_card(turn_context, provider_picker_card(providers))
+
+
+def register_connection_commands(router: "MSTeamsCommandRouter", *, connector: TeamsConnector) -> None:
+    """Register generic Teams connection commands and legacy Jira aliases."""
+    from parrot.integrations.msteams.commands import command_args
+    from parrot.integrations.msteams.commands.jira_commands import register_jira_commands
+
+    def _first_arg(turn_context: TurnContext) -> str:
+        parts = command_args(turn_context).split()
+        return parts[0].lower() if parts else ""
+
+    async def _connect(turn_context: TurnContext) -> None:
+        provider_id = _first_arg(turn_context)
+        if provider_id:
+            await connector.connect(turn_context, provider_id)
+        else:
+            await connector.pick_provider(turn_context)
+
+    async def _disconnect(turn_context: TurnContext) -> None:
+        provider_id = _first_arg(turn_context)
+        if not provider_id:
+            await turn_context.send_activity("Usage: `/disconnect <provider>`")
+            return
+        await connector.disconnect(turn_context, provider_id)
+
+    async def _connections(turn_context: TurnContext) -> None:
+        await connector.status(turn_context, _first_arg(turn_context) or None)
+
+    router.register("connect", _connect)
+    router.register("disconnect", _disconnect)
+    router.register("connections", _connections)
+    register_jira_commands(router, connector)
+    logger.info("Registered Teams connection commands")
