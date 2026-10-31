@@ -44,6 +44,8 @@ class SpecUsageRecorder(AbstractLogger):
             resolved = resolve_durable_root(str(resolved), worktree_base_path=worktree_base_path)
         self._root = resolved
         self._pending: set[asyncio.Task[None]] = set()
+        # asyncio.Lock grants waiters FIFO, so appends land in record() order (one thread write at a time).
+        self._write_lock = asyncio.Lock()
         self._warned = False
 
     @property
@@ -80,7 +82,11 @@ class SpecUsageRecorder(AbstractLogger):
                 finally:
                     os.close(fd)
 
-            task = asyncio.create_task(asyncio.to_thread(_write))
+            async def _ordered_write() -> None:
+                async with self._write_lock:
+                    await asyncio.to_thread(_write)
+
+            task = asyncio.create_task(_ordered_write())
             self._pending.add(task)
             task.add_done_callback(self._write_done)
         except Exception as exc:  # noqa: BLE001 - usage persistence is deliberately fail-open
