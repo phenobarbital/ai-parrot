@@ -680,9 +680,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         try:
             from parrot.services.identity_mapping import IdentityMappingService
         except ImportError:
-            self.logger.warning(
-                "Telegram principal links are unavailable: identity mapping service is not installed."
-            )
+            self.logger.warning("Telegram principal links are unavailable: identity mapping service is not installed.")
             return None
 
         self._identity_service_cache = IdentityMappingService(db_pool)
