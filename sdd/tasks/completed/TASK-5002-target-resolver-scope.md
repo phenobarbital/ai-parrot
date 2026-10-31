@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-784 — SDD Decision Audit
 **Spec**: `sdd/specs/sdd-decision-audit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4997
@@ -292,4 +292,7 @@ See blueprint test block (spec §4 `test_resolver_exact_only`).
 
 ## Completion Note
 
-*(filled in by the implementing agent)*
+Seat: opus(native) · Backend: native · Model: opus · Attempts: 1 · Duration: 57s · Tokens: n/a
+
+- Delivered files match the task list; no review fixes.
+- Merge-tier validation (chunk 1): 230 passed, 1 failed — pre-existing env-gated `test_backend_parity_is_reported` (fails identically on origin/dev without live ArangoDB/Postgres).

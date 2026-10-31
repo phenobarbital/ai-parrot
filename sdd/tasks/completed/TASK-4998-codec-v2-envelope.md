@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-784 — SDD Decision Audit
 **Spec**: `sdd/specs/sdd-decision-audit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4997
@@ -266,4 +266,7 @@ See the `test_codec.py` blueprint block (spec §4 `test_unsupported_schema_fails
 
 ## Completion Note
 
-*(filled in by the implementing agent)*
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 121s · Tokens: n/a
+
+- Delivered files match the task list; no review fixes.
+- Merge-tier validation (chunk 1): 230 passed, 1 failed — pre-existing env-gated `test_backend_parity_is_reported` (fails identically on origin/dev without live ArangoDB/Postgres).
