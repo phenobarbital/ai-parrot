@@ -780,11 +780,35 @@ runners:
   - packages/ai-parrot-tools/tests/unit/test_jiratoolkit_oauth.py
   - packages/ai-parrot-server/tests/unit/test_identity_credential_sink.py
   - packages/ai-parrot-server/tests/mcp/test_principal_resolution.py
+  - tests/unit/integrations/oauth2/test_service.py
+  - tests/unit/integrations/oauth2/test_handler.py
+  - packages/ai-parrot-server/tests/unit/test_connections_handler.py
+  - packages/ai-parrot/tests/unit/auth/test_oauth2_descriptor.py
+  - packages/ai-parrot/tests/unit/auth/test_connection_events.py
+  - packages/ai-parrot/tests/auth/test_device_code_engine.py
+  - packages/ai-parrot/tests/unit/auth/test_oauth2_descriptor_device.py
+  - packages/ai-parrot/tests/auth/test_o365_prompt_stderr.py
+  - packages/ai-parrot/tests/cli/test_login.py
+  - packages/ai-parrot/tests/unit/auth/test_service_cli_endpoints.py
+  - packages/ai-parrot-server/tests/unit/test_connections_cli_routes.py
+  - packages/ai-parrot/tests/unit/auth/test_service_device_endpoints.py
+  - packages/ai-parrot/tests/auth/test_remote_client.py
+  - packages/ai-parrot/tests/auth/test_connection_cache.py
+  - packages/ai-parrot/tests/cli/test_cli_principal.py
+  - packages/ai-parrot/tests/mcp/test_adapter_execution_context.py
+  - tests/mcp/test_toolkit_server_login.py
+  - packages/ai-parrot/tests/cli/test_connect.py
+  - packages/ai-parrot/tests/cli/test_repl_identity_matrix.py
+  - packages/ai-parrot-integrations/tests/agentd/test_login_file_identity.py
+  - packages/ai-parrot-tools/tests/unit/test_jira_connect_convergence.py
+  - packages/ai-parrot/tests/integration/test_cli_connections_e2e.py
+  - tests/mcp/test_stdio_auth_required_e2e.py
+  - packages/ai-parrot/tests/docs/test_cli_connections_docs.py
   markers: none
 
 > `packages/ai-parrot-tools/tests/unit/test_jira_local_auth.py` and `test_oauth2_local_wiring.py` are deleted by M10
-> and intentionally absent from the contract. S-1's contract files (`tests/unit/integrations/oauth2/test_service.py`,
-> `test_handler.py`) are added here by `/sdd-task` once FEAT-773 has merged and they exist on `dev`.
+> and intentionally absent from the contract. S-1's contract files were added by `/sdd-task` on 2026-10-31 after
+> FEAT-773 merged (rev 0.3).
 
 ### Test Data / Fixtures
 ```python
@@ -1273,3 +1297,4 @@ Summary: **12** confirmed (4 with modifications, 2 of which also raise a §8 que
 |---|---|---|---|
 | 0.1 | 2026-10-30 | Jesus Lara (with Claude Fable 5.1) | Initial draft from proposal FEAT-774 (accepted). S-4 scope; U1–U5 carried forward; codex design research folded (12 CONFIRM, 2 with §8 escalations). Codebase Contract verified against `370a62d9b`; S-1 symbols marked planned pending FEAT-773 merge. |
 | 0.2 | 2026-10-30 | Jesus Lara (with Claude Opus 4.6) | Resolved Q1–Q5: pre-task ops rollout; file-only cache key (no keyring); per-user agentd daemon; all RFC 8628 providers + Atlassian poll+paste; auto-refresh once on 401 in --server mode (ServerAgentProxy gains login_store). |
+| 0.3 | 2026-10-31 | Jesus Lara (with Claude Opus 5.5) | `/sdd-task`: FEAT-773 test files and the 19 new per-task test files added to the Validation Contract. Re-anchoring drifts recorded in the tasks (not here): descriptor status is `connected` (not `active`); `AuthorizationRequired.to_payload()` has no `tool_name`; AES-GCM via `cryptography` (no helper in `vault_utils`); no `parrot.auth.oauth2/__init__` exports (import cycle); `WhoAmI`/`PulledToken`/`NotConnected` live in `oauth2/models.py`. |
