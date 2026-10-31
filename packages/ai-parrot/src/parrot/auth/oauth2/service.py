@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Mapping, Optional, Tuple
 
 from navconfig.logging import logging  # noqa: F811
 
@@ -26,7 +26,7 @@ from parrot.auth.oauth2 import _WEB_CHANNEL
 from parrot.auth.principal import Principal
 
 if TYPE_CHECKING:  # pragma: no cover
-    pass
+    from parrot.auth.permission import PermissionContext
 from parrot.auth.oauth2.models import (
     ConnectInitResponse,
     DisconnectResponse,
@@ -42,6 +42,51 @@ from parrot.auth.oauth2.persistence import (
 from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 
 logger = logging.getLogger(__name__)
+
+#: ``async (context, attributes) -> bool`` — request-less PBAC decision for channel callers.
+PermissionEvaluator = Callable[["PermissionContext", Mapping[str, Any]], Awaitable[bool]]
+
+#: URI-parity mapping: operation → (route template, navigator-auth action).
+_CONNECTION_ROUTES: Dict[str, Tuple[str, str]] = {
+    "list": ("/api/v1/connections", "uri:read"),
+    "list_provider": ("/api/v1/connections/{provider}", "uri:read"),
+    "status": ("/api/v1/connections/{provider}", "uri:read"),
+    "connect": ("/api/v1/connections/{provider}/start", "uri:write"),
+    "disconnect": ("/api/v1/connections/{provider}", "uri:delete"),
+}
+
+
+def pdp_permission_evaluator(pdp: Any) -> PermissionEvaluator:
+    """Adapt the app PDP to the request-less evaluator contract.
+
+    Args:
+        pdp: The navigator-auth ``PDP`` initialized by ``setup_pbac``.
+
+    Returns:
+        An async callable allowing only explicit policy-engine approval.
+    """
+
+    async def _evaluate(context: "PermissionContext", attributes: Mapping[str, Any]) -> bool:
+        try:
+            from navigator_auth.abac.policies.resources import ResourceType
+
+            from parrot.auth.permission import to_eval_context
+
+            route = _CONNECTION_ROUTES.get(str(attributes.get("operation", "")))
+            if route is None:
+                return False
+            route_template, action = route
+            if "{provider}" in route_template and not attributes.get("provider"):
+                return False
+            path = route_template.format(provider=attributes.get("provider"))
+            ctx = to_eval_context(context)
+            result = pdp.evaluator.check_access(ctx, ResourceType.URI, path, action)
+            return result.allowed is True
+        except Exception:  # noqa: BLE001 - the authorization adapter must fail closed
+            logger.exception("Request-less connection PBAC evaluation failed — denying")
+            return False
+
+    return _evaluate
 
 
 def _get_allowed_origins() -> List[str]:
@@ -74,14 +119,23 @@ class IntegrationsService:
             already hold one).
     """
 
-    def __init__(self, vault_token_sync: Any = None) -> None:
+    def __init__(
+        self,
+        vault_token_sync: Any = None,
+        *,
+        permission_evaluator: Optional[PermissionEvaluator] = None,
+    ) -> None:
         self._vault_token_sync = vault_token_sync
         self._identity_store_instance: Any = None
+        self._permission_evaluator = permission_evaluator
 
     async def list_for_principal(
         self,
         user_id: str,
         request: Any = None,
+        *,
+        principal: Optional[Principal] = None,
+        permission_context: Optional["PermissionContext"] = None,
     ) -> List[IntegrationDescriptor]:
         """Return one PBAC-filtered descriptor per registered provider.
 
@@ -95,11 +149,20 @@ class IntegrationsService:
             List of :class:`~parrot.integrations.oauth2.models.IntegrationDescriptor`
             instances, one per allowed provider.
         """
+        if permission_context is not None and not self._context_matches(user_id, principal, permission_context):
+            return []
+
         registry = OAuth2ProviderRegistry()
         providers = registry.all()
 
         # PBAC: fail-closed for integrations surface (Q-B resolution)
-        if not await self._check_pbac(request, "integration:list"):
+        if not await self._check_pbac(
+            request,
+            "integration:list",
+            principal=principal,
+            permission_context=permission_context,
+            operation="list",
+        ):
             logger.debug(
                 "PBAC denied integration:list for user_id=%s — returning empty list",
                 user_id,
@@ -110,7 +173,14 @@ class IntegrationsService:
         rows = {row.provider: row for row in await list_users_integrations(user_id)}
 
         for provider in providers:
-            if not await self._check_pbac(request, "integration:list", provider.provider_id):
+            if not await self._check_pbac(
+                request,
+                "integration:list",
+                provider.provider_id,
+                principal=principal,
+                permission_context=permission_context,
+                operation="list_provider",
+            ):
                 continue
             result.append(await self._descriptor(user_id, provider, rows.get(provider.provider_id), request))
 
@@ -296,6 +366,7 @@ class IntegrationsService:
         scopes: Optional[List[str]] = None,
         request: Any = None,
         extra_state: Optional[Dict[str, Any]] = None,
+        permission_context: Optional["PermissionContext"] = None,
     ) -> ConnectInitResponse:
         """Authorize and initialize a channel-neutral OAuth2 connection.
 
@@ -323,7 +394,19 @@ class IntegrationsService:
             raise ValueError(f"Unknown provider: {provider_id!r}")
 
         requested_scopes = list(scopes or provider.default_scopes)
-        if not await self._check_pbac(request, "integration:connect", provider_id, requested_scopes):
+        if permission_context is not None and not self._context_matches(
+            user_id, principal, permission_context, channel
+        ):
+            raise PermissionError(f"Not permitted to connect provider {provider_id!r}")
+        if not await self._check_pbac(
+            request,
+            "integration:connect",
+            provider_id,
+            requested_scopes,
+            principal=principal,
+            permission_context=permission_context,
+            operation="connect",
+        ):
             raise PermissionError(f"Not permitted to connect provider {provider_id!r}")
 
         if channel == _WEB_CHANNEL:
@@ -357,13 +440,30 @@ class IntegrationsService:
             expires_in=600,
         )
 
-    async def status(self, user_id: str, provider_id: str, request: Any = None) -> IntegrationDescriptor:
+    async def status(
+        self,
+        user_id: str,
+        provider_id: str,
+        request: Any = None,
+        *,
+        principal: Optional[Principal] = None,
+        permission_context: Optional["PermissionContext"] = None,
+    ) -> IntegrationDescriptor:
         """Return the PBAC-filtered descriptor for one provider."""
         registry = OAuth2ProviderRegistry()
         provider = registry.get(provider_id)
         if provider is None:
             raise ValueError(f"Unknown provider: {provider_id!r}")
-        if not await self._check_pbac(request, "integration:list", provider_id):
+        if permission_context is not None and not self._context_matches(user_id, principal, permission_context):
+            raise PermissionError(f"Not permitted to list provider {provider_id!r}")
+        if not await self._check_pbac(
+            request,
+            "integration:list",
+            provider_id,
+            principal=principal,
+            permission_context=permission_context,
+            operation="status",
+        ):
             raise PermissionError(f"Not permitted to list provider {provider_id!r}")
         row = await get_users_integration(user_id, provider_id)
         return await self._descriptor(user_id, provider, row, request)
@@ -373,6 +473,10 @@ class IntegrationsService:
         user_id: str,
         provider_id: str,
         request: Any = None,
+        *,
+        channel: str = _WEB_CHANNEL,
+        principal: Optional[Principal] = None,
+        permission_context: Optional["PermissionContext"] = None,
     ) -> DisconnectResponse:
         """Revoke and delete one provider connection for a principal.
 
@@ -388,9 +492,26 @@ class IntegrationsService:
         provider = OAuth2ProviderRegistry().get(provider_id)
         if provider is None:
             raise ValueError(f"Unknown provider: {provider_id!r}")
-        if not await self._check_pbac(request, "integration:disconnect", provider_id, list(provider.default_scopes)):
+        if permission_context is not None and not self._context_matches(
+            user_id, principal, permission_context, channel
+        ):
             raise PermissionError(f"Not permitted to disconnect provider {provider_id!r}")
-        await provider.manager.revoke(channel=_WEB_CHANNEL, user_id=user_id)
+        if not await self._check_pbac(
+            request,
+            "integration:disconnect",
+            provider_id,
+            list(provider.default_scopes),
+            principal=principal,
+            permission_context=permission_context,
+            operation="disconnect",
+        ):
+            raise PermissionError(f"Not permitted to disconnect provider {provider_id!r}")
+        revoke_principal = principal or Principal(user_id=user_id, channel=channel, channel_user_id=user_id)
+        await provider.manager.revoke(
+            channel=channel,
+            user_id=revoke_principal.user_id,
+            channel_user_id=revoke_principal.channel_user_id,
+        )
         await delete_users_integration(user_id, provider_id)
 
         logger.info(
@@ -474,6 +595,10 @@ class IntegrationsService:
         action: str,
         provider_id: Optional[str] = None,
         scopes: Optional[List[str]] = None,
+        *,
+        principal: Optional[Principal] = None,
+        permission_context: Optional["PermissionContext"] = None,
+        operation: Optional[str] = None,
     ) -> bool:
         """Evaluate a PBAC policy for the given action.
 
@@ -489,6 +614,8 @@ class IntegrationsService:
         Returns:
             ``True`` if the action is permitted, ``False`` otherwise.
         """
+        if permission_context is not None:
+            return await self._check_context_pbac(permission_context, action, provider_id, scopes, operation)
         if request is None:
             # No request context — fail-closed
             return False
@@ -515,3 +642,51 @@ class IntegrationsService:
                 provider_id,
             )
             return False
+
+    async def _check_context_pbac(
+        self,
+        context: "PermissionContext",
+        action: str,
+        provider_id: Optional[str],
+        scopes: Optional[List[str]],
+        operation: Optional[str],
+    ) -> bool:
+        """Evaluate the injected evaluator, failing closed on every error."""
+        if self._permission_evaluator is None:
+            return False
+        attributes: Dict[str, Any] = {
+            "action": action,
+            "scopes": list(scopes or []),
+            "operation": operation,
+        }
+        if provider_id:
+            attributes["provider"] = provider_id
+        try:
+            result = await self._permission_evaluator(context, attributes)
+            return result is True
+        except Exception:  # noqa: BLE001 - authorization must fail closed
+            logger.exception(
+                "Request-less PBAC evaluator failed for action=%s provider=%s — denying",
+                action,
+                provider_id,
+            )
+            return False
+
+    @staticmethod
+    def _context_matches(
+        user_id: str,
+        principal: Optional[Principal],
+        context: "PermissionContext",
+        channel: Optional[str] = None,
+    ) -> bool:
+        """Return whether target, principal, and context identify the same user."""
+        if context.user_id != user_id:
+            return False
+        if principal is not None:
+            if principal.user_id != user_id:
+                return False
+            if principal.tenant_id is not None and principal.tenant_id != context.tenant_id:
+                return False
+            if principal.channel_user_id and principal.channel_user_id != context.channel_user_id:
+                return False
+        return channel is None or context.channel == channel
