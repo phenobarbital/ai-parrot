@@ -83,6 +83,12 @@ def ensure_shared_cost_calculator() -> "CostCalculator":
         return _SHARED
 
 
+# Providers whose reported ``input_tokens`` EXCLUDES prompt-cache reads (Anthropic Messages / Bedrock
+# Converse). ``CostCalculator`` follows the OpenAI convention (input INCLUDES cached tokens and the cached
+# part is subtracted from it), so for these providers the cache reads are added back before pricing.
+_INPUT_EXCLUDES_CACHE_READ: frozenset[str] = frozenset({"anthropic", "aws.bedrock"})
+
+
 def resolve_event_cost(event: "AfterClientCallEvent", fallback: "Optional[CostCalculator]") -> Optional[float]:
     """Return the call's USD cost, computing it only when the origin did not.
 
@@ -102,10 +108,14 @@ def resolve_event_cost(event: "AfterClientCallEvent", fallback: "Optional[CostCa
             extra["cached_input_tokens"] = event.cache_read_tokens
         if getattr(event, "cache_creation_tokens", None):
             extra["cache_creation_tokens"] = event.cache_creation_tokens
+        provider = resolve_gen_ai_system(event.client_name)
+        input_tokens = event.input_tokens or 0
+        if provider in _INPUT_EXCLUDES_CACHE_READ:
+            input_tokens += int(extra.get("cached_input_tokens", 0))
         return calc.cost_usd(
-            provider=resolve_gen_ai_system(event.client_name),
+            provider=provider,
             model=event.model,
-            input_tokens=event.input_tokens or 0,
+            input_tokens=input_tokens,
             output_tokens=event.output_tokens or 0,
             **extra,
         )
