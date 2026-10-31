@@ -47,7 +47,9 @@
           "packages/ai-parrot/tests/flows/dev_loop/test_codex_usage_codec.py",
           "packages/ai-parrot/tests/flows/dev_loop/test_spec_usage_report.py",
           "packages/ai-parrot/tests/knowledge/wiki/test_cli_usage_report.py",
-          "packages/ai-parrot/tests/knowledge/wiki/test_mcp_manifest_golden.py"
+          "packages/ai-parrot/tests/knowledge/wiki/test_mcp_manifest_golden.py",
+          "packages/ai-parrot/tests/unit/observability/test_metrics_feat_id_label.py",
+          "packages/ai-parrot/tests/unit/observability/test_dashboard_contract.py"
         ],
         "settings": {
           "markers": ""
@@ -59,7 +61,7 @@
         ]
       }
     ],
-    "digest": "sha256:f59f33fe4131a081f568123a12106deff5f3890c6dc70e3b1ccc7f46a85d33b2"
+    "digest": "sha256:87f0d9e8a518ad3558d5414a405bcb504c2cec8fbac3f1b29acc0f0b0f903386"
   },
   "tasks": [
     {
@@ -324,6 +326,27 @@
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4995-usage-cli-mcp.md"
+    },
+    {
+      "id": "TASK-4996",
+      "slug": "grafana-feature-agent-usage-dashboard",
+      "title": "Sample Grafana dashboard: usage & cost by feature and by agent",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "spec": "sdd/specs/unified-usage.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4985",
+        "TASK-4989"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4985: its test_metrics_label_whitelist.py must allow parrot.feat_id, and event.attribution reaches metrics via TASK-4983 (transitive); TASK-4989: applies PricingPolicy + event.pricing_policy (cost/policy.py) to the cost counter in subscribers/metrics.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4996-grafana-feature-agent-usage-dashboard.md"
     }
   ]
 }

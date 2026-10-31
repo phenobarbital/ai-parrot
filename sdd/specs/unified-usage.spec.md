@@ -481,6 +481,8 @@ tests:
 - packages/ai-parrot/tests/flows/dev_loop/test_spec_usage_report.py
 - packages/ai-parrot/tests/knowledge/wiki/test_cli_usage_report.py
 - packages/ai-parrot/tests/knowledge/wiki/test_mcp_manifest_golden.py
+- packages/ai-parrot/tests/unit/observability/test_metrics_feat_id_label.py
+- packages/ai-parrot/tests/unit/observability/test_dashboard_contract.py
 markers: none
 
 ### Test Data / Fixtures
@@ -506,6 +508,7 @@ two-revision price-table pair for the `valid_from` tests.
 - [ ] AC-12. `wikitoolkit usage report --feat FEAT-NNN` renders tokens and cost grouped by task, model and seat, with a paired MCP tool.
 - [ ] AC-13. A subscription seat reports `usd = 0.0` with list price as `equivalent_usd`.
 - [ ] AC-14. No `usage.*` event kind exists in `LedgerEventKind` and no file under `knowledge/wiki/ledger/` is modified.
+- [ ] AC-15. A sample Grafana dashboard (provisioned + shipped example) shows tokens and cost by feature and by agent. It uses a bounded `parrot.feat_id` metric label (one series per feature); `task_id`/`attempt_uid`/`execution_id` remain forbidden labels (AC-9).
 
 ---
 
@@ -684,3 +687,4 @@ carried only the accepted exploration document and verified code anchors.
 |---|---|---|---|
 | 0.1 | 2026-10-31 | Jesus Lara | Initial spec from the FEAT-783 research proposal; 9 design-research suggestions folded in |
 | 0.2 | 2026-10-31 | Jesus Lara | Approved; §4 Validation Contract extended with the per-task test files from /sdd-task (TASK-4983..4995) |
+| 0.3 | 2026-10-31 | Jesus Lara | AC-15: sample Grafana dashboard by feature & agent via a bounded `parrot.feat_id` metric label (TASK-4996) |
