@@ -38,14 +38,14 @@
       "feature_id": "FEAT-785",
       "feature": "experts-agent-tech-debt",
       "spec": "sdd/specs/experts-agent-tech-debt.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task; no dependencies; touches only parrot/experts render.py, agent.py, registry.py and their tests",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-31T23:30:49+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5082-experts-render-escape-spawn-guard-tenant-warning.md"
     }
