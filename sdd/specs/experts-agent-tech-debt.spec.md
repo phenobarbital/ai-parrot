@@ -117,6 +117,12 @@ tests:
 - packages/ai-parrot/tests/experts/test_registry.py
 markers: none
 
+### Test Data / Fixtures
+
+Existing helpers only: the `expert_bundle` fixture (`tests/experts/conftest.py`),
+`_Toolkit` / `_make` in `test_agent_activation.py`, `_registry` in
+`test_registry.py`, `_ctx` in `test_render.py`.
+
 ---
 
 ## 5. Acceptance Criteria
