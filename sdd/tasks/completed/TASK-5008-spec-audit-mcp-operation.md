@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-784 — SDD Decision Audit
 **Spec**: `sdd/specs/sdd-decision-audit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5006, TASK-5007
@@ -454,4 +454,10 @@ def test_transport_import_is_lazy(): ...                                        
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: opus(native) · Backend: native · Model: opus · Attempts: 1 · Duration: 387s · Tokens: n/a
+
+- Delivered files match the task list.
+- Merge-tier validation: 257 passed, 1 failed — pre-existing env-gated test_backend_parity_is_reported. No review fixes.
+- Stale blueprint: op_spec_consequences(None, params, store=...) raises TypeError (store is the first positional); transport and WikiSpecConsequencesTool pass the store positionally instead.
+- Ten MCP golden manifests regenerated (UPDATE_GOLDEN=1); set-diff vs HEAD shows only wiki_spec_consequences added.
+- PYTHONPATH must be absolute for test_mcp_server (its subprocess runs with cwd=tmp_path).
