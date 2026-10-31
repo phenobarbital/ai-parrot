@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-777 — Connections — Web + Slack
 **Spec**: `sdd/specs/connections-web-slack.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (1-2h)
 **Depends-on**: TASK-5059
@@ -53,10 +53,10 @@ current-record-wins check and the 400-day revoke tombstone both block re-import,
 
 ## Acceptance Criteria
 
-- [ ] SSE handler does not call `prepare()` until the subscription is ready; early subscription failure → 503.
-- [ ] Legacy entry deleted when migration returns `None`; current grant returned without a device flow.
-- [ ] A claim exception restores the nonce; a later confirm can succeed.
-- [ ] Duplicate `connected` does not flag manual retry.
+- [x] SSE handler does not call `prepare()` until the subscription is ready; early subscription failure → 503.
+- [x] Legacy entry deleted when migration returns `None`; current grant returned without a device flow.
+- [x] A claim exception restores the nonce; a later confirm can succeed.
+- [x] Duplicate `connected` does not flag manual retry.
 
 ## Validation Commands
 
@@ -70,4 +70,22 @@ PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src pytest -q \
 
 ## Completion Note
 
-(pending)
+Implemented in 097955f6de (feature branch), filed by `/sdd-fix issue:19c0633ffc61`.
+
+- (a) `RedisConnectionPush.subscribe(..., ready=)` sets the event after SUBSCRIBE; the handler waits up to
+  `SUBSCRIBE_TIMEOUT_SECONDS` (5s) before `prepare()`, returns 503 when the subscription fails first, and cancels
+  the producer if the request is cancelled during the wait. On timeout it streams anyway (logged).
+- (b) `_migrate_legacy` deletes the legacy entry on every non-error outcome and, when the manager returned `None`,
+  re-reads the current grant (`_current_token`) instead of falling through to a device flow. Durable markers were
+  not added: a leftover legacy blob is inert (current-record-wins + 400-day tombstone), documented on `_delete_legacy`.
+- (c) `ChannelLinkIssuer.restore()` re-stores a consumed claim for its remaining TTL only (`SET NX`); the confirm
+  handler calls it when `claim_channel_identity` raises. A failing restore is logged and the response stays 500.
+- (d) No production change needed: `ConnectIntegrationPill.notifyConnected()` already guards against the popup + SSE
+  double fire (landed in TASK-5055) and the `{#each}` is keyed on `msg.id`, so the pill never remounts. A per-pill
+  dedupe in AgentChat was tried and reverted as redundant (mutation check: tests passed with it disabled). Two
+  vitest assertions now pin the behaviour (in-flight duplicate shows no warning; a new pill for an already
+  auto-retried turn still asks for a manual retry).
+- (e) Unchanged — documented v1 limit.
+
+Validation: 31 passed (pytest, the Validation Commands plus `test_channel_link.py` and `test_connection_events.py`,
+with real Redis db 15); vitest `AgentChat.auth-retry.test.ts` + `integrations/` 13 passed; ruff + black clean.

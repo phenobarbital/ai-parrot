@@ -695,7 +695,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -706,8 +706,9 @@
       "assigned_to": "agent:sdd-fix",
       "discovered_from": "issue:19c0633ffc61",
       "started_at": "2026-10-31T23:12:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5078-review-robustness-fixes.md"
+      "completed_at": "2026-10-31T23:19:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5078-review-robustness-fixes.md",
+      "verification": "verified"
     }
   ]
 }
