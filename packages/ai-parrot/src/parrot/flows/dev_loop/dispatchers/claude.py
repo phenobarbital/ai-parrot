@@ -995,7 +995,8 @@ class ClaudeCodeDispatcher:
 
         No-ops when there is nothing to report (no harvest, or no
         registry resolver wired) — never fabricates zeros, and never lets
-        a telemetry failure break the dispatch.
+        a telemetry failure break the dispatch. Cache counters and the
+        provider-reported cost are forwarded for reconciliation (FEAT-783 S5).
 
         Forwards to the global registry explicitly after the awaited
         per-run emit, mirroring ``AbstractClient._emit_after_call``
@@ -1020,6 +1021,9 @@ class ClaudeCodeDispatcher:
                     output_tokens=usage_detail.get("output_tokens"),
                     source_type="dispatcher",
                     source_name="claude-code",
+                    cache_read_tokens=usage_detail.get("cache_read_input_tokens"),
+                    cache_creation_tokens=usage_detail.get("cache_creation_input_tokens"),
+                    source_cost_usd=usage_detail.get("total_cost_usd"),
                 )
                 await registry.emit(event)
                 registry.forward_to_global(event)

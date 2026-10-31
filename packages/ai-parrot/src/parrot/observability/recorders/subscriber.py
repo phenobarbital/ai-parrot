@@ -143,6 +143,10 @@ class UsageRecordingSubscriber:
             seat=seat,
             node_id=_node_id_from_seat(seat),
             usage_reported=usage_reported,
+            cache_read_tokens=event.cache_read_tokens or 0,
+            cache_creation_tokens=event.cache_creation_tokens or 0,
+            reasoning_output_tokens=event.reasoning_output_tokens or 0,
+            source_cost_usd=event.source_cost_usd,
             **_attribution_fields(event),
         )
 
