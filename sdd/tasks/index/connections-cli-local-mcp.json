@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-31T00:17:35+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-31T01:45:20+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -427,7 +427,7 @@
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -439,8 +439,9 @@
       "parallelism_notes": "documents the final behaviour of TASK-4979 (agentd), TASK-4980 (Jira aliases) and TASK-4981 (verified e2e flows); touches only docs/ + one docs smoke test",
       "assigned_to": null,
       "started_at": "2026-10-31T00:30:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4982-cli-connections-docs.md"
+      "completed_at": "2026-10-31T01:45:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4982-cli-connections-docs.md",
+      "verification": "verified"
     }
   ]
 }
