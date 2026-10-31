@@ -36,7 +36,9 @@ class _Client:
 
 
 def _login_store(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(jira_cli, "LoginStore", lambda: SimpleNamespace(load_optional=lambda: SimpleNamespace(user_id="user-1")))
+    monkeypatch.setattr(
+        jira_cli, "LoginStore", lambda: SimpleNamespace(load_optional=lambda: SimpleNamespace(user_id="user-1"))
+    )
 
 
 def test_parse_pasted_redirect_is_core_reexport() -> None:

@@ -106,7 +106,9 @@ def _load_fresh_token(site: Optional[str] = None) -> JiraTokenSet:
     async def _resolve() -> JiraTokenSet:
         async with ServerConnectionsClient(store) as client:
             cache = open_connection_cache(store)
-            access_token = await RemoteConnectionResolver("jira", cache=cache, client=client).resolve("cli", login.user_id)
+            access_token = await RemoteConnectionResolver("jira", cache=cache, client=client).resolve(
+                "cli", login.user_id
+            )
             if access_token is None:
                 raise click.ClickException("Jira is not connected — run `parrot connect jira`")
             async with _session() as session:
@@ -151,8 +153,15 @@ def auth(site, scopes, env_file, client_id, client_secret, redirect_uri, allow_b
     async def _connect() -> dict[str, Any]:
         async with ServerConnectionsClient(store) as client:
             return await run_connect(
-                client, open_connection_cache(store), "jira", scopes=_scope_list(scopes), open_browser=True, paste=True,
-                device=False, prompt=lambda text: click.prompt(text, err=True), echo=lambda text: click.echo(text, err=True),
+                client,
+                open_connection_cache(store),
+                "jira",
+                scopes=_scope_list(scopes),
+                open_browser=True,
+                paste=True,
+                device=False,
+                prompt=lambda text: click.prompt(text, err=True),
+                echo=lambda text: click.echo(text, err=True),
             )
 
     try:
@@ -183,8 +192,17 @@ def status(site: Optional[str]) -> None:
         return
     row = rows[0]
     click.echo("Provider\tStatus\tAccount\tScopes\tExpires")
-    click.echo("\t".join(["jira", str(row.get("status") or "-"), str(row.get("account_id") or "-"),
-                            ", ".join(row.get("scopes_granted") or []) or "-", str(row.get("expires_at") or "-")]))
+    click.echo(
+        "\t".join(
+            [
+                "jira",
+                str(row.get("status") or "-"),
+                str(row.get("account_id") or "-"),
+                ", ".join(row.get("scopes_granted") or []) or "-",
+                str(row.get("expires_at") or "-"),
+            ]
+        )
+    )
 
 
 @cli.command()
@@ -220,9 +238,16 @@ def sync_kb(output: Optional[str], projects: Optional[str]) -> None:
             raise click.ClickException(f"Existing KB {out_path} is unreadable; fix or remove it. ({exc})") from exc
     live = asyncio.run(_fetch_structure(token, project_keys))
     generated = JiraKnowledgeBase(
-        site=token.site_url, cloud_id=token.cloud_id, verified=datetime.now(tz=timezone.utc).date().isoformat(),
-        projects=live["projects"], priorities=PrioritiesEntry(scale=live["priority_scale"]),
-        fields={} if existing is None else {key: value for key, value in existing.fields.items() if value in live["live_field_ids"]},
+        site=token.site_url,
+        cloud_id=token.cloud_id,
+        verified=datetime.now(tz=timezone.utc).date().isoformat(),
+        projects=live["projects"],
+        priorities=PrioritiesEntry(scale=live["priority_scale"]),
+        fields=(
+            {}
+            if existing is None
+            else {key: value for key, value in existing.fields.items() if value in live["live_field_ids"]}
+        ),
         components=live["components"],
     )
     if existing is not None:
