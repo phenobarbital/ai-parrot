@@ -7,8 +7,8 @@ A single ``UsageRecord`` is built per successful LLM call by
 
 Privacy: this record carries NO prompt/completion content and NO
 ``user_id``/``session_id`` — only provider/model identifiers, token counts,
-cost, timing, and a correlation ``trace_id``. This preserves the observability
-PII contract (see ``observability/README.md``).
+cost, timing, a correlation ``trace_id``, and PII-free SDD identifiers. This
+preserves the observability PII contract (see ``observability/README.md``).
 """
 
 from __future__ import annotations
@@ -50,6 +50,16 @@ class UsageRecord(BaseModel):
         cycle: FEAT-479 — 1-based attempt index within ``(run_id, seat)``,
             assigned by the ledger sink at record time; ``None`` here (the
             subscriber never assigns it).
+        feat_id: FEAT-783 — SDD feature identifier from the event attribution
+            snapshot, or ``None`` when the call is not SDD-attributed.
+        task_id: FEAT-783 — SDD task identifier. SDD identifiers are durable
+            store/span data, never metric labels.
+        attempt_uid: FEAT-783 — unique dispatch-attempt identifier, or
+            ``None`` when unavailable.
+        execution_id: FEAT-783 — execution identifier, or ``None`` when
+            unavailable.
+        dispatch_kind: FEAT-783 — dispatch mechanism identifier, or ``None``.
+        roster_seat: FEAT-783 — sdd-coder roster seat label, or ``None``.
         usage_reported: FEAT-479 — ``False`` when the provider reported
             neither token count (the ``0``-coercion on ``input_tokens``/
             ``output_tokens`` still applies for Prometheus/OpenLit; this flag
@@ -78,6 +88,15 @@ class UsageRecord(BaseModel):
     seat: Optional[str] = None
     node_id: Optional[str] = None
     cycle: Optional[int] = None
+
+    # ── FEAT-783: SDD attribution (from the event snapshot; ContextVar fallback). ──
+    # Durable-store / span data ONLY — never metric labels (unbounded cardinality, AC-9).
+    feat_id: Optional[str] = None
+    task_id: Optional[str] = None
+    attempt_uid: Optional[str] = None
+    execution_id: Optional[str] = None
+    dispatch_kind: Optional[str] = None
+    roster_seat: Optional[str] = None
 
     # ── FEAT-479: honesty + failure. ──
     usage_reported: bool = True
