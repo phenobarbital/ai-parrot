@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-785 — Experts agent tech debt
 **Spec**: `sdd/specs/experts-agent-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -267,10 +267,15 @@ See the Tests blueprint block above and spec §4.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: agent:sdd-fix (Claude Opus 5.5, /sdd-fix issue:230ac877bdf5)
+**Date**: 2026-11-01
+**Notes**: Implemented M1–M3 in commit 78821a35b3. `render_knowledge` escapes layer/source/revision
+with `html.escape(..., quote=True)`; plain output unchanged (existing render tests pass).
+`ExpertAgent.configure()` unregisters `spawn_sub_agent` last, with a warning; framework tools
+(`to_json`, `read_omitted_content`) survive. `ExpertRegistry.get(..., tenant=...)` warns and returns
+the global instance. Four new tests; `test_render.py`, `test_agent_activation.py`, `test_registry.py`:
+23 passed (worktree PYTHONPATH). Mutation check: with the guard disabled,
+`test_configure_removes_injected_spawn_tool` fails. `ruff check` clean on the six files.
+Resolves `issue:230ac877bdf5`.
 
 **Deviations from spec**: none
