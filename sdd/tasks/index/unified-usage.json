@@ -257,7 +257,7 @@
       "feature_id": "FEAT-783",
       "feature": "unified-usage",
       "spec": "sdd/specs/unified-usage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -269,8 +269,9 @@
       "parallelism_notes": "TASK-4983: UsageAttribution + usage_attribution(attribution=) (attribution.py, context.py); TASK-4990: SpecUsageRecorder/read_spec_usage (recorders/spec_usage.py); TASK-4991: build_attempt_row spec_rows kwarg (sdd_coder/telemetry.py)",
       "assigned_to": null,
       "started_at": "2026-10-31T00:24:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4992-engine-attribution-binding.md"
+      "completed_at": "2026-10-31T00:49:51+00:00",
+      "file": "sdd/tasks/completed/TASK-4992-engine-attribution-binding.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4993",
