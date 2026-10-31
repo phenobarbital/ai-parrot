@@ -79,6 +79,7 @@ class AfterClientCallEvent(LifecycleEvent):
         cache_creation_tokens: Optional prompt-cache tokens created by the provider.
         reasoning_output_tokens: Optional reasoning tokens reported by the provider.
         source_cost_usd: Provider-reported cost retained for reconciliation only.
+        pricing_policy: Derived seat policy; ``None`` is equivalent to ``"billed"``.
         attribution: Immutable SDD attribution snapshot from construction time.
     """
 
@@ -104,6 +105,7 @@ class AfterClientCallEvent(LifecycleEvent):
     """
     price_revision: Optional[str] = None  # FEAT-783 S9
     price_valid_from: Optional[str] = None  # FEAT-783 S9
+    pricing_policy: Optional[str] = None  # FEAT-783 U4; None means billed
 
 
 @dataclass(frozen=True)

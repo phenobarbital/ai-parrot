@@ -1024,6 +1024,7 @@ class ClaudeCodeDispatcher:
                     cache_read_tokens=usage_detail.get("cache_read_input_tokens"),
                     cache_creation_tokens=usage_detail.get("cache_creation_input_tokens"),
                     source_cost_usd=usage_detail.get("total_cost_usd"),
+                    pricing_policy=self._claude_pricing_policy(profile),
                 )
                 await registry.emit(event)
                 registry.forward_to_global(event)
@@ -1034,6 +1035,25 @@ class ClaudeCodeDispatcher:
                 node_id,
                 exc_info=True,
             )
+
+    def _claude_pricing_policy(self, profile: ClaudeCodeDispatchProfile) -> Optional[str]:
+        """Derive billed vs subscription pricing for the Agent SDK seat.
+
+        Args:
+            profile: Dispatch profile for the seat emitting the usage event.
+
+        Returns:
+            ``"subscription"`` when the child environment blanks the API key,
+            ``"billed"`` when it inherits a non-empty API key, or ``None``
+            when the active credential cannot be determined.
+        """
+        del profile  # Authentication is currently dispatcher-wide, not profile-configured.
+        dispatch_env = self._resolve_dispatch_env()
+        if dispatch_env.get("ANTHROPIC_API_KEY") == "":
+            return "subscription"
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            return "billed"
+        return None
 
     async def _emit_failure_event(
         self,

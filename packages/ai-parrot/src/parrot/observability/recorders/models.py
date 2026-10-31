@@ -60,6 +60,8 @@ class UsageRecord(BaseModel):
             unavailable.
         dispatch_kind: FEAT-783 — dispatch mechanism identifier, or ``None``.
         roster_seat: FEAT-783 — sdd-coder roster seat label, or ``None``.
+        pricing_policy: FEAT-783 — derived billed/subscription/estimate policy.
+        equivalent_usd: FEAT-783 — list-price equivalent for subscription usage.
         usage_reported: FEAT-479 — ``False`` when the provider reported
             neither token count (the ``0``-coercion on ``input_tokens``/
             ``output_tokens`` still applies for Prometheus/OpenLit; this flag
@@ -105,6 +107,8 @@ class UsageRecord(BaseModel):
     source_cost_usd: Optional[float] = None
     price_revision: Optional[str] = None
     price_valid_from: Optional[str] = None
+    pricing_policy: Optional[str] = None
+    equivalent_usd: Optional[float] = None
 
     # ── FEAT-479: honesty + failure. ──
     usage_reported: bool = True
