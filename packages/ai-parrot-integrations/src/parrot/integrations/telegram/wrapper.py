@@ -470,43 +470,32 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         self.logger.info(
             "Registered Jira OAuth commands: /connect_jira, " "/disconnect_jira, /jira_status",
         )
+        self._register_jira_session_hook()
 
-        # Expose a stamper so the OAuth callback route can surface the
-        # connected Jira identity on the user's TelegramUserSession the
-        # moment Atlassian redirects back — without this, the session
-        # only carries the primary /login email and the LLM/tools see
-        # the wrong identity on "my tickets".
-        if self.app is not None and "telegram_jira_session_stamper" not in self.app:
+    def _register_jira_session_hook(self) -> None:
+        """Keep the ``<jira>`` prompt block in sync through the generic notifier (FEAT-776 M7)."""
+        notifier = self.app.get("telegram_connection_notifier") if self.app is not None else None
+        if notifier is None:
+            return
 
-            def _stamp(telegram_user_id: str, token_set: Any) -> None:
-                try:
-                    tg_id = int(telegram_user_id)
-                except (TypeError, ValueError):
-                    self.logger.warning(
-                        "Ignoring Jira session stamp: non-integer telegram_user_id=%r",
-                        telegram_user_id,
-                    )
-                    return
-                session = self._user_sessions.get(tg_id)
-                if session is None:
-                    # First contact via OAuth callback — create the shell;
-                    # it will be enriched by the next Telegram message.
-                    session = TelegramUserSession(telegram_id=tg_id)
-                    self._user_sessions[tg_id] = session
-                session.set_jira_authenticated(
-                    account_id=getattr(token_set, "account_id", "") or "",
-                    email=getattr(token_set, "email", None),
-                    display_name=getattr(token_set, "display_name", None),
-                    cloud_id=getattr(token_set, "cloud_id", None),
-                )
-                self.logger.info(
-                    "Stamped Jira identity on tg:%s (account=%s email=%s)",
-                    tg_id,
-                    getattr(token_set, "account_id", None),
-                    getattr(token_set, "email", None),
-                )
+        def on_completed(telegram_id: int, event: Any) -> None:
+            session = self._user_sessions.get(telegram_id)
+            if session is None:
+                return
+            session.set_jira_authenticated(
+                account_id=event.account_id,
+                email=None,
+                display_name=event.display_name,
+                cloud_id=None,
+            )
 
-            self.app["telegram_jira_session_stamper"] = _stamp
+        def on_revoked(telegram_id: int, event: Any) -> None:
+            del event
+            session = self._user_sessions.get(telegram_id)
+            if session is not None:
+                session.clear_jira_auth()
+
+        notifier.register_session_hook("jira", on_completed=on_completed, on_revoked=on_revoked)
 
     def _register_office365_commands(self) -> None:
         """Wire Office365 delegated auth commands.

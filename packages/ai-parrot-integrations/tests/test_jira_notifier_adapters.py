@@ -8,7 +8,6 @@ from parrot.auth.oauth2.events import ConnectionEvent
 from parrot.integrations.core.auth.notifiers import (
     MSTeamsJiraNotifierAdapter,
     SlackJiraNotifierAdapter,
-    TelegramJiraNotifierAdapter,
 )
 
 
@@ -27,11 +26,7 @@ def _event(kind: str, *, provider: str = "jira") -> ConnectionEvent:
 
 @pytest.mark.asyncio
 async def test_notifier_adapters_delegate() -> None:
-    """Each adapter forwards completion data and preserves identity guards."""
-    telegram_notifier = Mock()
-    telegram_notifier.notify_connected = AsyncMock()
-    telegram_notifier.notify_failure = AsyncMock()
-    stamp = Mock()
+    """Slack and Teams adapters forward completion data and preserve identity guards."""
     slack_notifier = Mock()
     slack_notifier.notify_connected = AsyncMock()
     slack_notifier.notify_failure = AsyncMock()
@@ -41,8 +36,6 @@ async def test_notifier_adapters_delegate() -> None:
     identity = Mock()
     identity.upsert_identity = AsyncMock()
     app = {
-        "telegram_jira_session_stamper": stamp,
-        "jira_oauth_notifier": telegram_notifier,
         "slack_jira_oauth_notifier": slack_notifier,
         "msteams_jira_oauth_notifier": teams_notifier,
         "identity_mapping_service": identity,
@@ -60,14 +53,9 @@ async def test_notifier_adapters_delegate() -> None:
         "connection_meta": {"site_url": "https://example.atlassian.net", "cloud_id": "cloud-1"},
     }
 
-    await TelegramJiraNotifierAdapter(app).notify(_event("connection.completed"), state)
     await SlackJiraNotifierAdapter(app).notify(_event("connection.completed"), state)
     await MSTeamsJiraNotifierAdapter(app).notify(_event("connection.completed"), state)
 
-    stamp.assert_called_once()
-    assert stamp.call_args.args[0] == "123"
-    assert stamp.call_args.args[1].account_id == "jira-account"
-    telegram_notifier.notify_connected.assert_awaited_once_with(456, "Jira User", "https://example.atlassian.net")
     slack_notifier.notify_connected.assert_awaited_once_with(
         team_id="T1", slack_user_id="U1", display_name="Jira User", site_url="https://example.atlassian.net"
     )
@@ -83,11 +71,10 @@ async def test_notifier_adapters_delegate() -> None:
 
 @pytest.mark.asyncio
 async def test_notifier_adapters_failure_and_non_jira_are_safe() -> None:
-    """Failure events notify known users and other providers are ignored."""
+    """Failure events notify known channel users and other providers are ignored."""
     notifier = Mock()
     notifier.notify_failure = AsyncMock()
     app = {
-        "jira_oauth_notifier": notifier,
         "slack_jira_oauth_notifier": notifier,
         "msteams_jira_oauth_notifier": notifier,
     }
@@ -100,13 +87,12 @@ async def test_notifier_adapters_failure_and_non_jira_are_safe() -> None:
         }
     }
 
-    await TelegramJiraNotifierAdapter(app).notify(_event("connection.refresh_failed"), state)
     await SlackJiraNotifierAdapter(app).notify(_event("connection.revoked"), state)
     await MSTeamsJiraNotifierAdapter(app).notify(_event("connection.refresh_failed"), state)
-    assert notifier.notify_failure.await_count == 3
+    assert notifier.notify_failure.await_count == 2
 
-    await TelegramJiraNotifierAdapter(app).notify(_event("connection.completed", provider="o365"), state)
-    assert notifier.notify_failure.await_count == 3
+    await SlackJiraNotifierAdapter(app).notify(_event("connection.completed", provider="o365"), state)
+    assert notifier.notify_failure.await_count == 2
 
 
 @pytest.mark.asyncio

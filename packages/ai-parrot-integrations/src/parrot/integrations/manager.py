@@ -31,7 +31,6 @@ from parrot.human import (
 from parrot.integrations.core.auth.notifiers import (
     MSTeamsJiraNotifierAdapter,
     SlackJiraNotifierAdapter,
-    TelegramJiraNotifierAdapter,
 )
 from .models import (
     IntegrationBotConfig,
@@ -131,12 +130,27 @@ def _build_principal_resolver(app: Any) -> Any:
         return None
 
 
+def _identity_mapping_service(app: Any) -> Any:
+    """Build an identity mapping service when an auth database is available."""
+    db_pool = app.get("authdb") or app.get("database")
+    if db_pool is None:
+        return None
+    try:
+        from parrot.services.identity_mapping import IdentityMappingService  # noqa: PLC0415
+
+        return IdentityMappingService(db_pool)
+    except ImportError:
+        return None
+
+
 def _register_channel_notifiers(app: Any) -> ChannelNotifierRegistry:
-    """Register the three Jira channel adapters in the shared registry."""
+    """Register connection notifiers in the shared registry."""
     registry = ChannelNotifierRegistry()
     if app.get("connection_channel_notifiers_registered"):
         return registry
-    registry.register(TelegramJiraNotifierAdapter(app))
+    from parrot.integrations.telegram.connection_notifier import get_or_create_telegram_notifier
+
+    get_or_create_telegram_notifier(app, identity_service=_identity_mapping_service(app))
     registry.register(SlackJiraNotifierAdapter(app))
     registry.register(MSTeamsJiraNotifierAdapter(app))
     app["connection_channel_notifiers_registered"] = True
@@ -353,6 +367,12 @@ class IntegrationBotManager:
         except RuntimeError:
             app = None
         wrapper = TelegramAgentWrapper(agent, bot, config, app=app)
+        if app is not None:
+            _connection_publisher(app)
+            notifier = app.get("telegram_connection_notifier")
+            if notifier is not None and wrapper._bot_id:
+                notifier.attach(wrapper._bot_id, bot)
+            wrapper._register_jira_session_hook()
 
         # Publish the Telegram command menu (setMyCommands + chat menu button)
         # so platform/agent commands (e.g. /connect_jira from JiraSpecialist)
