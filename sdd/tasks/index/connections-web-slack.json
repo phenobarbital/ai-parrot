@@ -123,7 +123,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -133,8 +133,9 @@
       "parallelism_notes": "implements ConnectionEventSink created by TASK-5032 (parrot/auth/oauth2/events.py); test asserts isinstance against it",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5033-redis-connection-push.md"
+      "completed_at": "2026-10-31T01:51:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5033-redis-connection-push.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5034",
@@ -200,7 +201,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -208,8 +209,9 @@
       "parallelism_notes": "no dependencies (imports existing _raw_connection from services/identity_mapping.py, unchanged by TASK-5036); sole editor of services/identity_principal.py and its test",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5037-principal-resolver-owners-canonical.md"
+      "completed_at": "2026-10-31T01:51:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5037-principal-resolver-owners-canonical.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5038",
@@ -218,7 +220,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -228,8 +230,9 @@
       "parallelism_notes": "needs UsersIntegrationRow.grant_origin / IntegrationDescriptor.grant_origin from TASK-5035 (oauth2/models.py). No dependencies: creates parrot/auth/oauth2/authorization.py and edits existing IntegrationsService (oauth2/service.py, only this task touches it).",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5038-connection-authorizer-core.md"
+      "completed_at": "2026-10-31T01:51:19+00:00",
+      "file": "sdd/tasks/completed/TASK-5038-connection-authorizer-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5039",
@@ -302,7 +305,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -310,8 +313,9 @@
       "parallelism_notes": "No intra-feature dependency: uses existing ChannelNotifierRegistry/ConnectionEvent. First writer of slack/wrapper.py (TASK-5044 edits it after). Cross-feature: integrations/manager.py and core/auth/notifiers.py are also edited by S-2/S-3b tasks.",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5042-slack-connection-notifier.md"
+      "completed_at": "2026-10-31T01:51:19+00:00",
+      "file": "sdd/tasks/completed/TASK-5042-slack-connection-notifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5043",
