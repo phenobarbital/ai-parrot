@@ -151,7 +151,7 @@ class AuthRequiredEnvelope(BaseModel):
     user_code: Optional[str] = None
     verification_uri: Optional[str] = None
     expires_in: Optional[int] = None
-    retry_safe: bool = False
+    retry_safe: bool = Field(default=False, exclude_if=lambda value: value is False)
 
 
 class ChannelLinkPreview(BaseModel):
