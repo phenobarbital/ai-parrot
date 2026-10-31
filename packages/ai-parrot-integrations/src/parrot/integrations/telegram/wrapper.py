@@ -1240,11 +1240,11 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         parts = []
         name = session.display_name
         if name:
-            parts.append(f"<name>{name}</name>")
+            parts.append(f"name: {name}")
         if session.nav_email:
-            parts.append(f"<email>{session.nav_email}</email>")
+            parts.append(f"email: {session.nav_email}")
         elif session.telegram_username:
-            parts.append(f"<telegram>@{session.telegram_username}</telegram>")
+            parts.append(f"telegram: @{session.telegram_username}")
 
         jira_parts = []
         if session.jira_account_id:
@@ -1256,7 +1256,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         if not parts and not jira_parts:
             return question
-        identity = "".join(parts)
+        identity = "\n".join(parts)
+        if identity:
+            identity = f"\n{identity}\n"
         jira_block = f'<jira>{"".join(jira_parts)}</jira>' if jira_parts else ""
         return f"{question}\n\n" f'<user_context source="telegram">{identity}{jira_block}</user_context>'
 
