@@ -494,7 +494,7 @@
       "id": "TASK-5084",
       "slug": "cli-connections-review-suggestions",
       "title": "FEAT-774 review suggestions — insecure http server, discovery origin, ConnectionCache file checks + lock, client sessions, no-store",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -502,27 +502,28 @@
       ],
       "parallelism_notes": "review follow-up for issue:73db45b2286a",
       "started_at": "2026-10-31T23:43:49+00:00",
-      "file": "sdd/tasks/active/TASK-5084-cli-connections-review-suggestions.md",
+      "file": "sdd/tasks/completed/TASK-5084-cli-connections-review-suggestions.md",
       "discovered_from": "issue:73db45b2286a",
       "feature_id": "FEAT-774",
       "feature": "connections-cli-local-mcp",
       "spec": "sdd/specs/connections-cli-local-mcp.spec.md",
       "parallel": false,
       "assigned_to": null,
-      "completed_at": null
+      "completed_at": "2026-10-31T23:50:15+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5085",
       "slug": "mcp-local-extra-hint",
       "title": "mcp-local import-failure hint derived from the missing module, not a hard-coded [scraping]/[browsing]",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
         "TASK-5084"
       ],
       "parallelism_notes": "touches toolkit_server.py like TASK-5084; issue:cd2ac1cb1153",
-      "started_at": null,
+      "started_at": "2026-10-31T23:50:29+00:00",
       "file": "sdd/tasks/active/TASK-5085-mcp-local-extra-hint.md",
       "discovered_from": "issue:cd2ac1cb1153",
       "feature_id": "FEAT-774",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-774 — Connections for CLI agents and local MCP toolkits
 **Spec**: `sdd/specs/connections-cli-local-mcp.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5081
@@ -81,4 +81,17 @@ PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src pytest -q packag
 
 ## Completion Note
 
-*(filled on completion)*
+Implemented in `5f0d8e3ab2`. Validation: 67 passed (the task's Validation Commands); `ruff check` clean.
+
+- (a) `parrot login` **refuses** a non-loopback `http://` server (exit 2) unless `--allow-insecure-http`;
+  `parrot agent --server` only **warns**, so `--token` over http keeps working.
+- (b) Origin check lives in `cli/login.py` (`metadata_endpoint`), not in the generic `device_code.py`
+  engine, because provider device flows may legitimately span origins. Revocation is skipped on mismatch.
+- (c) An unsafe cache file is treated as empty (same as a corrupt one), not raised. `parrot logout` also
+  removes the new `connections.cache.lock`. One existing test assertion moved from `_write_sync` to
+  `_update_sync`, which now wraps the locked read-modify-write.
+- (d) The stdio server closes the client at once when no broker uses it or identity binding fails.
+- (f) Confirmed as designed (TASK-4975): no login → `execute()` with no reserved kwargs. Pinned by
+  `test_no_login_credential_tool_runs_without_broker`.
+- Out of scope, already tracked: `tests/mcp/test_toolkit_server.py` has 12 RecursionError failures on
+  `dev` and on this branch, with or without this change (`issue:203c75e0c1ac`).
