@@ -7,8 +7,12 @@ import pytest
 
 from parrot.auth.oauth2.events import ConnectionEvent
 from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
-from parrot.integrations.msteams.connections import MSTeamsConnectionNotifier, MSTeamsConversationRefStore
-
+from parrot.integrations.msteams.connections import (
+    CONNECTION_NOTIFIER_KEY,
+    MSTeamsConnectionNotifier,
+    MSTeamsConversationRefStore,
+    get_or_create_connection_notifier,
+)
 
 class FakeRedis:
     """Minimal async Redis fake that records expiry values."""
@@ -182,3 +186,16 @@ async def test_ref_store_round_trip_and_ttl(conversation_reference: Dict[str, An
 
     assert await store.get("nav-1") == conversation_reference
     assert redis.expiries["msteams:convref:nav-1"] == 30 * 86400
+
+
+def test_get_or_create_notifier_is_app_scoped_and_adopts_ref_store() -> None:
+    """The first usable conversation-reference store is retained by the one app notifier."""
+    app: Dict[str, Any] = {}
+    store = MSTeamsConversationRefStore(FakeRedis())
+
+    notifier = get_or_create_connection_notifier(app, None)
+    adopted = get_or_create_connection_notifier(app, store)
+
+    assert app[CONNECTION_NOTIFIER_KEY] is notifier
+    assert adopted is notifier
+    assert notifier._ref_store is store
