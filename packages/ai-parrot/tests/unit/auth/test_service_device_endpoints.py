@@ -147,9 +147,7 @@ async def test_device_poll_handler_requires_handle(monkeypatch: pytest.MonkeyPat
     service.device_poll = AsyncMock()
     monkeypatch.setattr("parrot.handlers.connections.IntegrationsService", lambda: service)
 
-    response = await _unwrap(ConnectionsHandler.post)(
-        _handler(_Request({}, "/api/v1/connections/jira/device/poll"))
-    )
+    response = await _unwrap(ConnectionsHandler.post)(_handler(_Request({}, "/api/v1/connections/jira/device/poll")))
 
     assert response.status == 400
     assert json.loads(response.body) == {"error": "handle is required"}

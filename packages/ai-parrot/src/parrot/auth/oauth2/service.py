@@ -604,7 +604,9 @@ class IntegrationsService:
         provider = OAuth2ProviderRegistry().get(provider_id)
         if provider is None:
             raise ValueError(f"Unknown provider: {provider_id!r}")
-        if not await self._check_pbac(request, "integration:connect", provider_id, list(scopes or provider.default_scopes)):
+        if not await self._check_pbac(
+            request, "integration:connect", provider_id, list(scopes or provider.default_scopes)
+        ):
             raise PermissionError(f"Not permitted to connect provider {provider_id!r}")
         handle, authorization = await provider.manager.start_device_authorization(principal, scopes=scopes)
         return {
