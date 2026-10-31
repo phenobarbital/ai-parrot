@@ -71,6 +71,8 @@ PROVIDER_TO_GEN_AI_SYSTEM: dict[str, str] = {
     # but mapped so they are a deliberate value rather than a warning.
     "zai": "zai",
     "moonshot": "moonshot",
+    "jev": "jev",  # custom — no OTel-standard value
+    "meta": "meta",  # custom — no OTel-standard value (Meta Muse)
     "openrouter": "openrouter",
     "vllm": "vllm",
     "transformers": "huggingface",  # local HF transformers runtime

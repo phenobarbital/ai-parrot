@@ -7,7 +7,7 @@ import asyncio
 import logging
 import uuid
 import time
-from typing import Any, AsyncIterator, Dict, List, Optional, Union, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional, Union, Sequence
 from pathlib import Path
 from enum import Enum
 
@@ -23,6 +23,9 @@ from ..base import AbstractClient, MessageResponse
 from ...models import AIMessage, AIMessageFactory, CompletionUsage, StructuredOutputConfig
 from ...models.responses import InvokeResult
 from .models import TransformersModel
+
+if TYPE_CHECKING:
+    import torch
 
 
 class TransformersClient(AbstractClient):
