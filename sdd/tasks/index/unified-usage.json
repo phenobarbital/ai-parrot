@@ -373,6 +373,21 @@
       "discovered_from": "issue:d95710046fd7",
       "completed_at": "2026-10-31T23:07:20+00:00",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5079",
+      "feature_id": "FEAT-783",
+      "feature": "unified-usage",
+      "title": "FEAT-783 leftovers — client cache/reasoning counters, dead hasattr, codex codec spike",
+      "file": "sdd/tasks/completed/TASK-5079-unified-usage-client-counters.md",
+      "status": "done",
+      "priority": "low",
+      "depends_on": [
+        "TASK-5077"
+      ],
+      "discovered_from": "issue:488dc2435ab8",
+      "completed_at": "2026-10-31T23:18:26+00:00",
+      "verification": "verified"
     }
   ]
 }
