@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-784 — SDD Decision Audit
 **Spec**: `sdd/specs/sdd-decision-audit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5005
@@ -347,4 +347,8 @@ async def test_project_links_about_and_normative_edges(adr_store): ...          
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: opus(native) · Backend: native · Model: opus · Attempts: 1 · Duration: 140s · Tokens: n/a
+
+- Delivered files match the task list.
+- Merge-tier validation (chunk 6): 232 passed, 1 failed — pre-existing env-gated test_backend_parity_is_reported. No review fixes.
+- Decision for review: seed approvals parse with SEED_HEADING, spec approvals with DECISIONS_HEADING (mirrors GitCommitApprovalAdapter). Schema-1 predecessors get only source_status=superseded (they cannot carry lifecycle).
