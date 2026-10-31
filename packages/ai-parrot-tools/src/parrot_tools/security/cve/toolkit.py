@@ -26,6 +26,7 @@ from parrot_tools.security.cve.models import (
     CVESearchResult,
     CVEToolkitError,
     DownloadReceipt,
+    cvss3_base_score,
     severity_from_score,
     validate_cve_id,
 )
@@ -284,7 +285,7 @@ class CVEToolkit(AbstractToolkit):
         ]
         for c in record.cvss:
             meta_lines.append(
-                f"cvss: {meta_value(c.version)} {meta_value(c.score)} {meta_value(c.vector)} ({meta_value(c.source)})"
+                f"cvss: {meta_value(c.version)} {'n/a' if c.score is None else meta_value(c.score)} {meta_value(c.vector)} ({meta_value(c.source)})"
             )
         if record.epss is not None:
             meta_lines.append(f"epss: {meta_value(record.epss)}")
@@ -346,7 +347,10 @@ class CVEToolkit(AbstractToolkit):
             vector = sev.get("score", "")
             m = _CVSS_VERSION_RE.match(vector or "")
             if m:
-                cvss.append(CVSS(version=m.group(1), score=0.0, vector=vector, source="osv"))
+                version = m.group(1)
+                # CVSS 4.0 is not scored in-house (needs the macro-vector table): score stays None.
+                score = None if version == "4.0" else cvss3_base_score(vector)
+                cvss.append(CVSS(version=version, score=score, vector=vector, source="osv"))
         aliases = [a for a in (vuln.get("aliases") or []) if a != cve_id]
         if vuln.get("id") and vuln.get("id") != cve_id:
             aliases.insert(0, vuln["id"])
