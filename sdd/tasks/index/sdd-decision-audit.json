@@ -305,7 +305,7 @@
       "feature_id": "FEAT-784",
       "feature": "sdd-decision-audit",
       "spec": "sdd/specs/sdd-decision-audit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -315,8 +315,9 @@
       "parallelism_notes": "exclusive: regenerates shared golden cli_surface.json; uses open_consequence_service from TASK-5008 (spec_audit.py); mentions sdd/decisions/approvals.jsonl only as a default path — tests use tmp repos, not TASK-5013's file",
       "assigned_to": null,
       "started_at": "2026-10-31T00:37:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5009-spec-cli.md"
+      "completed_at": "2026-10-31T01:42:43+00:00",
+      "file": "sdd/tasks/completed/TASK-5009-spec-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5010",

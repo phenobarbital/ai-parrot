@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-784 — SDD Decision Audit
 **Spec**: `sdd/specs/sdd-decision-audit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5008
@@ -353,4 +353,7 @@ def test_publish_exit_codes(runner, tmp_path, monkeypatch): ...      # FILL IN
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 2 · Duration: 291s · Tokens: n/a
+
+- Delivered files match the task list.
+- Merge-tier validation: 226 passed, 1 failed — pre-existing env-gated test_backend_parity_is_reported. No review fixes.
