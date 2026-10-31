@@ -128,7 +128,9 @@ async def test_notifier_revoked_text(conversation_reference: Dict[str, Any]) -> 
     notifier = MSTeamsConnectionNotifier(ref_store=None)
     notifier.attach("app-2", adapter)
 
-    await notifier.notify(make_event("connection.revoked"), {"extra": {"conversation_reference": conversation_reference}})
+    await notifier.notify(
+        make_event("connection.revoked"), {"extra": {"conversation_reference": conversation_reference}}
+    )
 
     assert adapter.turn_context.activities[0].text == "Jira disconnected."
 
@@ -142,7 +144,9 @@ async def test_notifier_multi_bot_routing(conversation_reference: Dict[str, Any]
     notifier.attach("app-1", adapter_1)
     notifier.attach("app-2", adapter_2)
 
-    await notifier.notify(make_event("connection.revoked"), {"extra": {"conversation_reference": conversation_reference}})
+    await notifier.notify(
+        make_event("connection.revoked"), {"extra": {"conversation_reference": conversation_reference}}
+    )
 
     assert adapter_1.calls == []
     assert [call[1] for call in adapter_2.calls] == ["app-2"]
@@ -153,7 +157,9 @@ async def test_notifier_never_raises(conversation_reference: Dict[str, Any], cap
     """Adapter failures, missing references, and unknown app ids are logged and swallowed."""
     failing = MSTeamsConnectionNotifier(ref_store=None)
     failing.attach("app-2", FakeAdapter(raises=True))
-    await failing.notify(make_event("connection.completed"), {"extra": {"conversation_reference": conversation_reference}})
+    await failing.notify(
+        make_event("connection.completed"), {"extra": {"conversation_reference": conversation_reference}}
+    )
 
     await MSTeamsConnectionNotifier(ref_store=None).notify(make_event("connection.revoked"), {})
     await MSTeamsConnectionNotifier(ref_store=None).notify(
