@@ -65,7 +65,10 @@ def _make_minimal_wrapper(oauth_manager=None):
             wrapper.interactive_route = "/api/slack/test_bot/interactive"
 
             from parrot.integrations.slack.commands import SlackCommandRouter
-            from parrot.integrations.slack.commands.connection_commands import AppLinkIssuer, register_connection_commands
+            from parrot.integrations.slack.commands.connection_commands import (
+                AppLinkIssuer,
+                register_connection_commands,
+            )
             from parrot.auth.oauth2.service import IntegrationsService
 
             wrapper._command_router = SlackCommandRouter()
