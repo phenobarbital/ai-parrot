@@ -730,6 +730,46 @@ runners:
   - tests/unit/integrations/oauth2/test_models.py
   - tests/integration/oauth2/test_e2e_web_connect.py
   - tests/integration/oauth2/test_e2e_auth_envelope.py
+  - packages/ai-parrot-integrations/tests/integrations/slack/test_slack_connection_commands.py
+  - packages/ai-parrot-integrations/tests/integrations/slack/test_slack_connection_notifier.py
+  - packages/ai-parrot-integrations/tests/test_jira_notifier_adapters.py
+  - packages/ai-parrot-server/tests/integration/test_a2a_workiq_vertical.py
+  - packages/ai-parrot-server/tests/studio/test_tooling_identity.py
+  - packages/ai-parrot-server/tests/test_ts_codegen.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_account_connections.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_account_navigation.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_chat_auth_retry.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_connections_store.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_integrations_menu.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_suggestion_stream_trailer.py
+  - packages/ai-parrot-server/tests/unit/test_agenttalk_auth_required_stream.py
+  - packages/ai-parrot-server/tests/unit/test_channel_links_handler.py
+  - packages/ai-parrot-server/tests/unit/test_connection_authorization.py
+  - packages/ai-parrot-server/tests/unit/test_connection_events_handler.py
+  - packages/ai-parrot-server/tests/unit/test_connection_push.py
+  - packages/ai-parrot-server/tests/unit/test_connections_handler.py
+  - packages/ai-parrot-server/tests/unit/test_identity_mapping_claim.py
+  - packages/ai-parrot-server/tests/unit/test_jira_connect_tool_removed.py
+  - packages/ai-parrot-server/tests/unit/test_o365_provider_registration.py
+  - packages/ai-parrot-server/tests/unit/test_register_oauth2_providers.py
+  - packages/ai-parrot/tests/auth/test_credentials_devicecode.py
+  - packages/ai-parrot/tests/auth/test_integrations_service_authorizer.py
+  - packages/ai-parrot/tests/auth/test_integrations_status.py
+  - packages/ai-parrot/tests/auth/test_o365_device_grant.py
+  - packages/ai-parrot/tests/auth/test_o365_refresh.py
+  - packages/ai-parrot/tests/auth/test_retry_safety.py
+  - packages/ai-parrot/tests/integration/test_cli_devicecode_e2e.py
+  - packages/ai-parrot/tests/unit/auth/test_channel_link.py
+  - packages/ai-parrot/tests/unit/auth/test_connection_event_sinks.py
+  - packages/ai-parrot/tests/unit/auth/test_connection_events.py
+  - packages/ai-parrot/tests/unit/test_identity_mapping.py
+  - packages/ai-parrot/tests/unit/test_resolver_strategies.py
+  - packages/ai-parrot/tests/unit/test_tool_credential_seam.py
+  - tests/integration/oauth2/test_e2e_chat_partial_execution_auth.py
+  - tests/integration/oauth2/test_e2e_o365_device_and_web_share_record.py
+  - tests/integration/oauth2/test_e2e_slack_link.py
+  - tests/integration/oauth2/test_e2e_web_panel_live_update.py
+  - tests/unit/integrations/oauth2/test_service.py
   markers: none
 - kind: vitest
   cwd: packages/ai-parrot-server/ui
@@ -737,7 +777,7 @@ runners:
   - src/lib/api/stream.test.ts
   - src/lib/components/agents/AgentChat.test.ts
 
-> `/sdd-task` adds the new test files above to the contract once their paths are frozen.
+> New test files bound by `/sdd-task` on 2026-10-31 (TASK-5032–5059); paths frozen in the task files.
 
 ### Test Data / Fixtures
 ```python
