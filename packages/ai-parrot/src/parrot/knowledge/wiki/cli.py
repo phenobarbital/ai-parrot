@@ -3235,7 +3235,9 @@ def usage() -> None:
 @click.option("--feat", "feat_id", required=True, help="Feature id, e.g. FEAT-783.")
 @click.option("--by", type=click.Choice(["task", "model", "seat"]), default="task")
 @click.option("--format", "fmt", type=click.Choice(["markdown", "json"]), default="markdown")
-@click.option("--root", type=click.Path(path_type=Path), default=None, help="Durable usage root (default: main checkout).")
+@click.option(
+    "--root", type=click.Path(path_type=Path), default=None, help="Durable usage root (default: main checkout)."
+)
 def usage_report(feat_id: str, by: str, fmt: str, root: Path | None) -> None:
     """Render tokens and cost for one feature."""
     from parrot.flows.dev_loop.usage_report import UsageReport, render_usage_markdown

@@ -84,7 +84,6 @@ from parrot.knowledge.wiki.usage_operations import (
     op_usage_report,
 )
 
-
 def _to_tool_result(result: OperationResult) -> ToolResult:
     """Map a transport-neutral :class:`OperationResult` onto a framework ``ToolResult``."""
     if result.is_error:
