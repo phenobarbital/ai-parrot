@@ -114,3 +114,17 @@ def test_factory_skips_root_inside_worktree_base(
 
     assert recorders == []
     assert "Spec usage recorder disabled" in caplog.text
+
+
+def test_default_root_is_canonical_spec_usage_subdir(tmp_path: Path) -> None:
+    """The helper, the recorder default and the engine share one root: <durable>/spec-usage."""
+    from parrot.observability.recorders.spec_usage import SPEC_USAGE_SUBDIR, default_spec_usage_root
+
+    worktrees = str(tmp_path / "worktrees")
+    durable = tmp_path / "durable"
+
+    root = default_spec_usage_root(worktrees, str(durable))
+
+    assert root == (durable / SPEC_USAGE_SUBDIR).resolve()
+    assert SpecUsageRecorder(root, worktree_base_path=worktrees).root == root
+    assert default_spec_usage_root(worktrees, str(durable / "x")).parent.name == "x"

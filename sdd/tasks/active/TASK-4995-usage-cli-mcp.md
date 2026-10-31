@@ -22,7 +22,7 @@ subcommand and its MCP tool ship in one task. The MCP surface has golden manifes
 ## Scope
 
 - In `knowledge/wiki/cli.py`, add a `@wiki.group(name="usage")` sibling of `ledger`, with `report --feat FEAT-NNN [--by task|model|seat] [--format markdown|json] [--root PATH]`. It reads rows via `read_spec_usage(root, feat)`, builds `build_spec_usage_report`, and renders with the existing renderer (markdown) or `model_dump_json` (json).
-- Root default: the same durable-root resolution `SpecUsageRecorder` uses (main checkout `artifacts/logs/sdd-spec-usage`). No worktree check is needed for a reader, but reuse the resolver.
+- Root default: the same durable-root resolution `SpecUsageRecorder` uses (`default_spec_usage_root(worktree_base_path)` in `recorders/spec_usage.py` = `<durable coder root>/spec-usage`, i.e. `artifacts/logs/sdd-coder-usage/spec-usage`; the engine, the `spec_usage` backend and this reader must all use it). No worktree check is needed for a reader, but reuse the resolver.
 - MCP tool `usage_report` (input model `UsageReportInput{feat_id, by="task"}`): an `_Spec("core", ...)` entry, an `elif name == "usage_report":` dispatch branch, an op function `op_usage_report`, and a `parrot_tools.wiki` `AbstractTool` wrapper with an identical description.
 - Regenerate the goldens: `UPDATE_GOLDEN=1 pytest packages/ai-parrot/tests/knowledge/wiki/test_mcp_manifest_golden.py -q`, then review the diff (only the new tool may appear).
 - AC-14 guard test: no `usage`-prefixed value in `LedgerEventKind`, and no file under `knowledge/wiki/ledger/` changed by this feature (compare `git diff --name-only origin/dev...HEAD`).
@@ -161,7 +161,7 @@ class UsageReportInput(BaseModel):
 
 async def op_usage_report(params: UsageReportInput, *, root: Any = None) -> "Any":
     """Return OperationResult(data=UsageReport.model_dump(mode="json"))."""
-    # FILL IN: lazy imports; resolve the default root like SpecUsageRecorder; read rows off the loop
+    # FILL IN: lazy imports; resolve the default root with default_spec_usage_root(conf.WORKTREE_BASE_PATH); read rows off the loop
     # (asyncio.to_thread); build_spec_usage_report; return OperationResult — import OperationResult from
     # the same module transport.py imports it from; on error return the module's failure shape
     raise NotImplementedError

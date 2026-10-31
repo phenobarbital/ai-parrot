@@ -135,7 +135,7 @@ from parrot.flows.dev_loop.sdd_coder.telemetry import (
 from parrot.core.events.lifecycle import EventRegistry, get_global_registry
 from parrot.observability.attribution import UsageAttribution
 from parrot.observability.context import usage_attribution
-from parrot.observability.recorders.spec_usage import SpecUsageRecorder, read_spec_usage
+from parrot.observability.recorders.spec_usage import SPEC_USAGE_SUBDIR, SpecUsageRecorder, read_spec_usage
 from parrot.observability.recorders.subscriber import UsageRecordingSubscriber
 from parrot.knowledge.wiki.ledger.coder_suspensions import (
     CoderSuspensionStore,
@@ -582,7 +582,7 @@ class SddCoderEngine:
             if telemetry_dir is not None or conf.DEV_LOOP_CODER_TELEMETRY:
                 self._sink = CoderTelemetrySink(durable_root)
                 # A subdirectory: the attempt sink writes flat `<feature_id>.jsonl` files at the root.
-                self._usage_root = durable_root / "spec-usage"
+                self._usage_root = durable_root / SPEC_USAGE_SUBDIR
 
     def _resolve_durable_root(self, configured: Optional[str], *, strict: bool) -> Optional[Path]:
         """Resolve the out-of-worktree durable root, or `None` with a warning.

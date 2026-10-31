@@ -19,6 +19,29 @@ from parrot.observability.recorders.models import UsageRecord
 
 logger = logging.getLogger(__name__)
 
+# Canonical location of per-feature usage rows, relative to the durable coder root. The engine, the
+# ``spec_usage`` backend and every reader (CLI/MCP) MUST resolve through ``default_spec_usage_root``.
+SPEC_USAGE_SUBDIR = "spec-usage"
+
+
+def default_spec_usage_root(worktree_base_path: str, configured: Optional[str] = None) -> Path:
+    """Return the ONE canonical spec-usage root: ``<durable coder root>/spec-usage``.
+
+    Args:
+        worktree_base_path: Parent directory containing disposable worktrees (the root must stay outside it).
+        configured: Optional explicit durable coder root (same meaning as the coder telemetry directory).
+
+    Returns:
+        The validated absolute usage root.
+
+    Raises:
+        ValueError: The derived root is relative, unresolvable, or inside the worktree base.
+    """
+    from parrot.flows.dev_loop.sdd_coder.telemetry import resolve_durable_root  # noqa: PLC0415
+
+    durable = resolve_durable_root(configured, worktree_base_path=worktree_base_path)
+    return resolve_durable_root(str(durable / SPEC_USAGE_SUBDIR), worktree_base_path=worktree_base_path)
+
 
 class SpecUsageRecorder(AbstractLogger):
     """Append one JSONL row per attributed UsageRecord to ``<root>/<feat_id>.jsonl``."""
@@ -40,8 +63,7 @@ class SpecUsageRecorder(AbstractLogger):
         if root is not None:
             resolved = resolve_durable_root(str(root), worktree_base_path=worktree_base_path)
         else:
-            resolved = resolve_durable_root(None, worktree_base_path=worktree_base_path).parent / "sdd-spec-usage"
-            resolved = resolve_durable_root(str(resolved), worktree_base_path=worktree_base_path)
+            resolved = default_spec_usage_root(worktree_base_path)
         self._root = resolved
         self._pending: set[asyncio.Task[None]] = set()
         # asyncio.Lock grants waiters FIFO, so appends land in record() order (one thread write at a time).
