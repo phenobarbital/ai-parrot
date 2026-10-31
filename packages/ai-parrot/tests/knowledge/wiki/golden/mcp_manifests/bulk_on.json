@@ -869,6 +869,43 @@
     }
   },
   {
+    "description": "Evaluate a spec's declared decisions against the accepted decision plane, or return the governing-decisions dossier for its subsystems. Read-only; blocking only on an explicit unresolved contradiction.",
+    "mount": "decisions",
+    "name": "wiki_spec_consequences",
+    "schema": {
+      "description": "Arguments for ``wiki_spec_consequences``.",
+      "properties": {
+        "budget_tokens": {
+          "default": 3000,
+          "description": "Estimated output budget for the dossier text",
+          "minimum": 256,
+          "title": "Budget Tokens",
+          "type": "integer"
+        },
+        "mode": {
+          "default": "check",
+          "description": "check: evaluate (read-only); governing: the governing-decisions dossier",
+          "enum": [
+            "check",
+            "governing"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "spec_path": {
+          "description": "Repository-relative path of the spec, e.g. sdd/specs/<slug>.spec.md",
+          "title": "Spec Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "spec_path"
+      ],
+      "title": "SpecConsequencesInput",
+      "type": "object"
+    }
+  },
+  {
     "description": "Render a daily, weekly or monthly wiki brief. Read-only unless writes are explicitly enabled.",
     "mount": "core",
     "name": "wiki_standup",

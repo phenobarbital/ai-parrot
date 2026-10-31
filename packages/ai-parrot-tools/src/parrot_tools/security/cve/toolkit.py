@@ -37,6 +37,17 @@ NVD_CVE_URL: Final[str] = "https://services.nvd.nist.gov/rest/json/cves/2.0?cveI
 EPSS_URL: Final[str] = "https://api.first.org/data/v1/epss?cve={cve_id}"
 
 _CVSS_VERSION_RE: Final[re.Pattern[str]] = re.compile(r"^CVSS:(3\.0|3\.1|4\.0)/")
+#: Upper bound on one provider response body; larger bodies are refused, never buffered.
+MAX_RESPONSE_BYTES: Final[int] = 16 * 1024 * 1024
+_READ_CHUNK: Final[int] = 64 * 1024
+
+
+class CVEResponseError(CVEToolkitError, ValueError):
+    """A provider body was oversized, not JSON, or not shaped as expected.
+
+    It is also a ``ValueError`` so the optional NVD/EPSS enrichment paths, which already
+    degrade on ``ValueError``, treat a bad body like any other provider failure.
+    """
 
 
 def _parse_dt(value: Any) -> datetime | None:
@@ -63,6 +74,7 @@ class CVEToolkit(AbstractToolkit):
         enrich_nvd: bool = True,
         enrich_epss: bool = False,
         timeout_seconds: float = 20.0,
+        max_response_bytes: int = MAX_RESPONSE_BYTES,
         **kwargs: Any,
     ) -> None:
         """Initialise the toolkit.
@@ -74,6 +86,7 @@ class CVEToolkit(AbstractToolkit):
             enrich_nvd: Enrich OSV records with NVD 2.0 data.
             enrich_epss: Add the EPSS probability.
             timeout_seconds: Total HTTP timeout per request.
+            max_response_bytes: Largest provider response body accepted.
             **kwargs: Forwarded to ``AbstractToolkit``.
         """
         super().__init__(**kwargs)
@@ -83,6 +96,7 @@ class CVEToolkit(AbstractToolkit):
         self._enrich_nvd = enrich_nvd
         self._enrich_epss = enrich_epss
         self._timeout = timeout_seconds
+        self._max_response_bytes = max_response_bytes
         self._nvd_lock = asyncio.Lock()
         self._session: aiohttp.ClientSession | None = None
 
@@ -104,12 +118,51 @@ class CVEToolkit(AbstractToolkit):
         json: dict | None = None,
         headers: dict | None = None,
     ) -> tuple[int, dict[str, Any]]:
-        """The single network seam: (status, body). Tests monkeypatch this method."""
+        """The single network seam: (status, body). Tests monkeypatch this method.
+
+        Raises:
+            CVEResponseError: The body exceeds ``max_response_bytes``, or a 2xx body is not
+                a JSON object. An unparseable error (4xx/5xx) body yields ``{}``; the
+                caller decides from the status.
+        """
         await self._ensure_open()
         assert self._session is not None
         async with self._session.request(method, url, json=json, headers=headers) as response:
-            body = await response.json(content_type=None) if response.status != 204 else {}
-            return response.status, body or {}
+            if response.status == 204:
+                return response.status, {}
+            raw = await self._read_capped(response, url)
+            return response.status, self._decode_body(raw, response.status, url)
+
+    async def _read_capped(self, response: aiohttp.ClientResponse, url: str) -> bytes:
+        """Read the body, refusing it as soon as it exceeds ``max_response_bytes``."""
+        limit = self._max_response_bytes
+        if response.content_length is not None and response.content_length > limit:
+            raise CVEResponseError(f"response from {url} is {response.content_length} bytes (limit {limit})")
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in response.content.iter_chunked(_READ_CHUNK):
+            total += len(chunk)
+            if total > limit:
+                raise CVEResponseError(f"response from {url} exceeds {limit} bytes")
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    @staticmethod
+    def _decode_body(raw: bytes, status: int, url: str) -> dict[str, Any]:
+        """Parse a JSON object body; see ``_get_json`` for the error contract."""
+        if not raw.strip():
+            return {}
+        try:
+            body = jsonlib.loads(raw)
+        except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError
+            if status >= 400:
+                return {}
+            raise CVEResponseError(f"response from {url} is not valid JSON") from exc
+        if isinstance(body, dict):
+            return body
+        if status >= 400:
+            return {}
+        raise CVEResponseError(f"response from {url} is a JSON {type(body).__name__}, expected an object")
 
     # ------------------------------------------------------------------ tools
 
@@ -139,7 +192,11 @@ class CVEToolkit(AbstractToolkit):
             cve = next((i for i in ids if isinstance(i, str) and CVE_ID_RE.match(i)), None)
             if cve is None:
                 continue
-            records.append(self._parse_osv(vuln, cve))
+            try:
+                records.append(self._parse_osv(vuln, cve))
+            except (AttributeError, TypeError, ValueError) as exc:
+                self.logger.warning("Skipping malformed OSV record %s: %s", cve, type(exc).__name__)
+                continue
             if len(records) >= limit:
                 break
         return CVESearchResult(package=package, ecosystem=ecosystem, version=version, records=records).model_dump(
@@ -251,7 +308,10 @@ class CVEToolkit(AbstractToolkit):
             raise CVENotFoundError(f"{cve_id} not found in OSV")
         if status >= 400:
             raise CVEToolkitError(f"OSV lookup failed with HTTP {status}")
-        record = self._parse_osv(body, cve_id)
+        try:
+            record = self._parse_osv(body, cve_id)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise CVEResponseError(f"malformed OSV record for {cve_id}") from exc
         if self._enrich_nvd:
             await self._merge_nvd(record, cve_id)
         if self._enrich_epss:
@@ -322,9 +382,41 @@ class CVEToolkit(AbstractToolkit):
         if status != 200:
             self.logger.warning("NVD enrichment failed for %s: HTTP %s; using OSV only", cve_id, status)
             return
+        try:
+            parsed = self._parse_nvd(body)
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            self.logger.warning("NVD body for %s is malformed (%s); using OSV only", cve_id, type(exc).__name__)
+            return
+        if parsed is None:
+            return
+        nvd_cvss, cwes, references, published, modified, details = parsed
+        nvd_vectors = {c.vector for c in nvd_cvss}
+        record.cvss = [c for c in record.cvss if c.vector not in nvd_vectors] + nvd_cvss
+        record.cwe_ids.extend(c for c in cwes if c not in record.cwe_ids)
+        record.references.extend(u for u in references if u not in record.references)
+        record.published = record.published or published
+        record.modified = record.modified or modified
+        if not record.details and details:
+            record.details = details
+        record.sources.append("nvd")
+        record.raw["nvd"] = body
+
+    @staticmethod
+    def _parse_nvd(
+        body: dict[str, Any],
+    ) -> tuple[list[CVSS], list[str], list[str], datetime | None, datetime | None, str] | None:
+        """Extract the NVD fields ``_merge_nvd`` uses; ``None`` when NVD has no record.
+
+        Nothing is written to the record here, so a body that raises part-way through
+        leaves the OSV record untouched.
+
+        Raises:
+            AttributeError, KeyError, TypeError, ValueError: The body is malformed (for example a
+                non-dict element or a non-numeric ``baseScore``).
+        """
         vulns = body.get("vulnerabilities") or []
         if not vulns:
-            return
+            return None
         cve = vulns[0].get("cve") or {}
         metrics = cve.get("metrics") or {}
         nvd_cvss: list[CVSS] = []
@@ -332,35 +424,31 @@ class CVEToolkit(AbstractToolkit):
             for metric in metrics.get(key) or []:
                 data = metric.get("cvssData") or {}
                 version = str(data.get("version", ""))
-                if version in ("3.0", "3.1", "4.0") and data.get("vectorString"):
+                vector = data.get("vectorString")
+                if version in ("3.0", "3.1", "4.0") and isinstance(vector, str) and vector:
                     nvd_cvss.append(
-                        CVSS(
-                            version=version,
-                            score=float(data.get("baseScore", 0.0)),
-                            vector=data["vectorString"],
-                            source="nvd",
-                        )
+                        CVSS(version=version, score=float(data.get("baseScore", 0.0)), vector=vector, source="nvd")
                     )
-        nvd_vectors = {c.vector for c in nvd_cvss}
-        record.cvss = [c for c in record.cvss if c.vector not in nvd_vectors] + nvd_cvss
+        cwes: list[str] = []
         for weakness in cve.get("weaknesses") or []:
             for desc in weakness.get("description") or []:
                 value = desc.get("value", "")
-                if value.startswith("CWE-") and value not in record.cwe_ids:
-                    record.cwe_ids.append(value)
+                if isinstance(value, str) and value.startswith("CWE-") and value not in cwes:
+                    cwes.append(value)
+        references: list[str] = []
         for ref in cve.get("references") or []:
             url = ref.get("url")
-            if url and url not in record.references:
-                record.references.append(url)
-        record.published = record.published or _parse_dt(cve.get("published"))
-        record.modified = record.modified or _parse_dt(cve.get("lastModified"))
-        if not record.details:
-            for desc in cve.get("descriptions") or []:
-                if desc.get("lang") == "en":
-                    record.details = desc.get("value", "")
-                    break
-        record.sources.append("nvd")
-        record.raw["nvd"] = body
+            if isinstance(url, str) and url and url not in references:
+                references.append(url)
+        details = ""
+        for desc in cve.get("descriptions") or []:
+            if desc.get("lang") == "en":
+                value = desc.get("value", "")
+                details = value if isinstance(value, str) else ""
+                break
+        published = _parse_dt(cve.get("published"))
+        modified = _parse_dt(cve.get("lastModified"))
+        return nvd_cvss, cwes, references, published, modified, details
 
     async def _merge_epss(self, record: CVERecord, cve_id: str) -> None:
         """Add the EPSS probability; failures are logged and ignored."""
@@ -376,7 +464,7 @@ class CVEToolkit(AbstractToolkit):
         if data:
             try:
                 record.epss = float(data[0].get("epss"))
-            except (TypeError, ValueError):
+            except (AttributeError, KeyError, TypeError, ValueError):
                 return
             record.sources.append("epss")
             record.raw["epss"] = body

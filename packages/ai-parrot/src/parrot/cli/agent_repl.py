@@ -15,12 +15,15 @@ import asyncio
 import logging
 import os
 import sys
-from typing import Optional, Set
+from typing import Optional, Set, Tuple
+from urllib.parse import urlsplit
 
 import click
 
 from parrot.cli.console import get_console  # provided by TASK-3400
-from parrot.cli.identity import bot_declares_o365_device_code, build_cli_permission_context
+from parrot.auth.oauth2.local_cache import build_cli_broker
+from parrot.auth.oauth2.remote_client import ServerConnectionsClient
+from parrot.cli.login import LoginFileError, LoginStore
 from parrot.cli.loaders import AgentLoadError, ServerAgentProxy, StandaloneAgentLoader
 from parrot.cli.modes import (  # provided by TASK-3401
     UIMode,
@@ -33,11 +36,34 @@ from parrot.cli.modes import (  # provided by TASK-3401
 from parrot.cli.renderer import ResponseRenderer
 from parrot.cli.repl import AgentREPL, REPLConfig
 from parrot.cli.session import TurnRunner  # provided by TASK-3404
+from parrot.cli.principal import CliPrincipalResolver, build_cli_permission_context
 
 # NOTE: no `from rich.console import Console` and no `parrot.cli.tui` import at module level (AC12, AC22)
 
 logger = logging.getLogger(__name__)
 console = get_console()
+
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def _origin(url: str) -> Optional[Tuple[str, str, int]]:
+    """Return ``(scheme, host, port)`` for an absolute http(s) URL, else ``None``."""
+    try:
+        parts = urlsplit(url.strip())
+        scheme = parts.scheme.lower()
+        host = (parts.hostname or "").lower()
+        port = parts.port or _DEFAULT_PORTS.get(scheme)
+    except ValueError:
+        return None
+    if scheme not in _DEFAULT_PORTS or not host or port is None:
+        return None
+    return scheme, host, port
+
+
+def _same_origin(left: str, right: str) -> bool:
+    """Return whether two URLs share scheme, host and effective port."""
+    origin = _origin(left)
+    return origin is not None and origin == _origin(right)
 
 
 @click.command("agent")
@@ -157,9 +183,28 @@ async def _run(
     """
     renderer = ResponseRenderer()
     loader: ServerAgentProxy | StandaloneAgentLoader
+    store = LoginStore()
+    try:
+        login = await asyncio.to_thread(store.load_optional)
+    except LoginFileError as exc:
+        console.print(f"[bold red]Error:[/bold red] {exc}")
+        raise SystemExit(2) from exc
+
+    # The login token is only an implicit bearer for the server it was issued by.
+    implicit_login = bool(server and login and not token and _same_origin(server, login.server_url))
+    if server and login and not token and not implicit_login:
+        console.print(
+            "[yellow]Your `parrot login` is for a different server; no bearer is sent to "
+            f"{server}. Pass --token (or PARROT_SERVER_TOKEN) to authenticate.[/yellow]"
+        )
+    server_token = token or (login.access_token if implicit_login and login else None)
 
     if server:
-        loader = ServerAgentProxy(server, token=token)
+        loader = ServerAgentProxy(
+            server,
+            token=server_token,
+            login_store=store if implicit_login else None,
+        )
     else:
         loader = StandaloneAgentLoader()
 
@@ -189,6 +234,11 @@ async def _run(
             "token (--token / PARROT_SERVER_TOKEN)."
         )
         raise SystemExit(2)
+    if not server and login and user_id:
+        console.print(
+            "[bold red]Error:[/bold red] --user is not allowed when logged in; " "identity comes from `parrot login`."
+        )
+        raise SystemExit(2)
 
     # Resolve agent name (prompt if omitted) — only reached when interactive
     if name is None:
@@ -212,16 +262,23 @@ async def _run(
     # Print welcome banner
     _print_banner(bot, name, server)
 
-    # FEAT-266: bootstrap the device-code permission context ONLY when this
-    # agent actually declares the o365 device_code provider — agents that
-    # don't are completely unaffected (no O365_PRINCIPAL requirement).
     permission_context = None
-    if not server and bot_declares_o365_device_code(bot):
-        try:
-            permission_context = build_cli_permission_context()
-        except RuntimeError as exc:
-            console.print(f"[bold red]O365 device-code identity error:[/bold red] {exc}")
-            raise SystemExit(1) from exc
+    principal = None
+    if not server and login is not None:
+        async with ServerConnectionsClient(store) as client:
+            resolved = await CliPrincipalResolver(store, client).resolve_with_roles("cli", login.user_id)
+        if resolved is None:
+            # Fail closed: a login exists, so never fall back to an unauthenticated local identity.
+            console.print(
+                "[bold red]Error:[/bold red] could not resolve your `parrot login` identity. "
+                "Run `parrot login` again, or `parrot logout` to use the local identity."
+            )
+            raise SystemExit(2)
+        principal, roles = resolved
+        permission_context = build_cli_permission_context(principal, roles=roles)
+        providers = _declared_providers(bot)
+        if providers:
+            bot.tool_manager.set_broker(build_cli_broker(store, providers))
 
     resume_id = session
     if session == "last":
@@ -242,9 +299,10 @@ async def _run(
         permission_context=permission_context,
         ui_mode=mode,
         resume_session_id=resume_id,
-        server_token=token,
+        server_token=server_token,
         history_enabled=not no_history,
-        user_id=None if server else (user_id or "cli-user"),
+        user_id=None if server else (principal.user_id if principal else (user_id or "cli-user")),
+        login_user_id=login.user_id if login else None,
     )
     if resume_id:
         config.session_id = resume_id
@@ -294,6 +352,21 @@ async def _run(
 
     if exit_code:
         raise SystemExit(exit_code)
+
+
+def _declared_providers(bot: object) -> set[str]:
+    """Return credential providers declared by the bot's tools.
+
+    Args:
+        bot: Bot which may expose a tool manager.
+
+    Returns:
+        Declared, non-empty provider identifiers.
+    """
+    manager = getattr(bot, "tool_manager", None)
+    if manager is None:
+        return set()
+    return {tool.credential_provider for tool in manager.get_all_tools() if getattr(tool, "credential_provider", None)}
 
 
 async def _handle_list(

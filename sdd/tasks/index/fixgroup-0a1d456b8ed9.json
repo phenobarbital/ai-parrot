@@ -1,0 +1,30 @@
+{
+  "feature": "fixgroup-0a1d456b8ed9",
+  "feature_id": "FEAT-786",
+  "spec": "sdd/specs/fixgroup-0a1d456b8ed9.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-01T00:00:00Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "manual",
+  "tasks": [
+    {
+      "id": "TASK-5083",
+      "slug": "roost-callers-authority",
+      "title": "Roost callers bind the call's PermissionContext and catch GrantDenied",
+      "feature_id": "FEAT-786",
+      "feature": "fixgroup-0a1d456b8ed9",
+      "spec": "sdd/specs/fixgroup-0a1d456b8ed9.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "sole task in this feature, no shared-file collisions",
+      "assigned_to": "agent:sdd-fix",
+      "file": "sdd/tasks/active/TASK-5083-roost-callers-authority.md",
+      "discovered_from": "issue:562a840c56ef"
+    }
+  ]
+}

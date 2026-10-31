@@ -2680,6 +2680,22 @@ wiki.add_command(
         help="Manage typed wiki entities.",
     )
 )
+wiki.add_command(
+    LazyGroup(
+        name="spec",
+        import_path="parrot.knowledge.wiki.decisions.spec_cli",
+        attr="spec",
+        help="Decision audit for SDD specs: governing decisions and consequences.",
+    )
+)
+wiki.add_command(
+    LazyGroup(
+        name="decisions",
+        import_path="parrot.knowledge.wiki.decisions.spec_cli",
+        attr="decisions",
+        help="Publish approved decision batches into the decision plane.",
+    )
+)
 
 
 @wiki.group(name="symbols")

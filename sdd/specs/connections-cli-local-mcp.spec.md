@@ -71,7 +71,8 @@ authorization server with the RFC 8628 device grant, which removes the need to i
   used both by `parrot login` and, through a `device_authorization_url` descriptor field and two server endpoints,
   for providers that support the grant (U4, S8).
 - **G7 — agentd resolves the Navigator principal** from the connecting OS user's own login file, with ownership,
-  mode and symlink checks, falling back to today's behaviour (U5, S11).
+  mode and symlink checks, only against an operator-pinned Navigator server (off until
+  `AGENTD_LOGIN_FILE_SERVER_URL` is set) and read-only, falling back to today's behaviour (U5, S11).
 - **G8 — Jira converges.** `JiraToolkit` drops the fixed `local:cli` identity; `parrot jiratoolkit auth` becomes an
   alias of `parrot connect jira`; the Jira-only local token file is removed.
 
@@ -168,7 +169,10 @@ prompt moves to stderr; the CLI path for O365 becomes `parrot connect o365 --dev
 
 **agentd (M9).** `_resolve_identity` adds a step between peercred and the fallback: read the peer user's
 `~/.parrot/login.json` (owner == uid, mode 0600, `O_NOFOLLOW`, via `asyncio.to_thread`) and resolve the Navigator
-principal with `channel="agentd"`; `identity_source` becomes `"login_file"`. Any failure keeps today's behaviour.
+principal with `channel="agentd"`; `identity_source` becomes `"login_file"`. The file is user-writable, so only its
+bearer is trusted: the step is off until the operator pins a server with `AGENTD_LOGIN_FILE_SERVER_URL`, a record
+naming another server is ignored, the principal is always requested from the pinned URL, and the store is opened
+read-only (no refresh, lock, temp file or rewrite in the peer's directory). Any failure keeps today's behaviour.
 
 **Jira (M10).** `oauth2_local` and `FileTokenCredentialResolver` are removed; `JiraToolkit._pre_execute` requires a
 `PermissionContext` for every 3LO call; `parrot jiratoolkit auth|status|logout` delegate to `parrot connect jira`,
@@ -655,20 +659,26 @@ def auth_required_result(payload: AuthRequiredPayload) -> Dict[str, Any]: ...
 
 ### Module 9: agentd login-file principal
 - **Path**: `packages/ai-parrot-integrations/src/parrot/integrations/agentd/server.py`, `packages/ai-parrot-integrations/src/parrot/integrations/agentd/config.py` (modify)
-- **Responsibility**: U5 with the S11 constraints; `identity_source = "login_file"`; `login_file_lookup` flag.
+- **Responsibility**: U5 with the S11 constraints; `identity_source = "login_file"`; `login_file_lookup` flag;
+  trusted-server pin `login_file_server_url` (the step runs only when both are set — `login_file_enabled`);
+  read-only peer store.
 - **Depends on**: M1 (`LoginStore.for_uid`), M2, M4 (`ServerConnectionsClient`).
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot-integrations/src/parrot/integrations/agentd/server.py  (modifies _resolve_identity, server.py:323-361)
   #   username = await asyncio.to_thread(_uid_to_username, uid)                                   # :354 unchanged
-  #   if self.login_file_lookup:
-  #       login = await asyncio.to_thread(LoginStore.for_uid(uid).load_optional, expected_uid=uid)   # O_NOFOLLOW, owner == uid, 0600 — else None
-  #       if login:
-  #           resolved = await CliPrincipalResolver(LoginStore.for_uid(uid), ServerConnectionsClient(...)).resolve_with_roles("agentd", username)
+  #   if self.service_identity.login_file_enabled:                       # lookup flag AND a pinned trusted server
+  #       store = LoginStore.for_uid(uid, read_only=True)                   # never refreshes, locks, writes temp files
+  #       login = await asyncio.to_thread(store.load_optional, expected_uid=uid)   # O_NOFOLLOW, owner == uid, 0600 — on every load; else None
+  #       if login and normalize(login.server_url) == normalize(login_file_server_url):   # other server → ignored
+  #           async with ServerConnectionsClient(store, server_url=login_file_server_url) as client:   # always the pinned URL
+  #               resolved = await CliPrincipalResolver(store, client).resolve_with_roles("agentd", username)   # 401 → None
   #           if resolved: principal, roles = resolved; return build_cli_permission_context(principal, roles=roles), "login_file"
   #   return build_principal_context(username, channel="agentd"), "peercred"                       # :355 unchanged
   # packages/ai-parrot-integrations/src/parrot/integrations/agentd/config.py  (modifies ServiceIdentityConfig, config.py:131-166)
   #   + login_file_lookup: bool = True      # env AGENTD_LOGIN_FILE_LOOKUP; appended after roles (:166)
+  #   + login_file_server_url: Optional[str] = None   # env AGENTD_LOGIN_FILE_SERVER_URL; step is OFF while unset
+  #   + login_file_enabled -> bool          # property: login_file_lookup and bool(login_file_server_url)
   ```
 
 ### Module 10: Jira convergence
@@ -736,6 +746,9 @@ def auth_required_result(payload: AuthRequiredPayload) -> Dict[str, Any]: ...
 | `test_o365_prompt_goes_to_stderr` | M8 | `capsys.readouterr().out == ""` |
 | `test_agentd_login_file_principal` | M9 | owner/mode/symlink checks; valid → `identity_source == "login_file"` and Navigator id; invalid → `peercred` |
 | `test_agentd_login_lookup_disabled` | M9 | `login_file_lookup=False` → today's behaviour |
+| `test_no_trusted_server_keeps_peercred` | M9 | `AGENTD_LOGIN_FILE_SERVER_URL` unset → step off, `peercred` |
+| `test_login_file_naming_untrusted_server_is_ignored` | M9 | record names another server → ignored, `peercred` |
+| `test_read_only_store_never_refreshes_on_401` | M9 | read-only peer store: no refresh, lock, temp file or rewrite; 401 → `peercred` |
 | `test_jiratoolkit_local_mode_removed` | M10 | `auth_type="oauth2_local"` rejected; `_pre_execute` without `PermissionContext` raises `AuthorizationRequired` |
 | `test_jira_cli_auth_aliases_connect` | M10 | `parrot jiratoolkit auth` invokes `run_connect("jira", paste=True)`; `parse_pasted_redirect` importable from core |
 
@@ -857,7 +870,7 @@ def peer_home(tmp_path):           # home dir + .parrot/login.json with controll
 - [ ] **AC-8 (G4, S2)** When no connection exists, the stdio `tools/call` response is `isError: true` with `structuredContent` equal to `AuthRequiredPayload.model_dump(exclude_none=True)` (every field preserved) and a text item; stdout carries only JSON-RPC frames.
 - [ ] **AC-9 (G5, S10)** `parrot connect <provider>` completes by polling only when `status == "active"` and `connected_at >= started_at`, or by pasting a redirected URL whose `state` matches (`hmac.compare_digest`) and posting it to `/complete`; on success the token is pulled into the cache; `/connect`, `/connections`, `/disconnect` exist in the REPL.
 - [ ] **AC-10 (G6, S8)** `parrot/auth/oauth2/device_code.py` implements the RFC 8628 client state machine with timeout and cancellation; `OAuth2ProviderDescriptor.device_authorization_url` defaults to `None`; `parrot connect <provider> --device` works against a provider descriptor that sets it, through the server's `device/start` and `device/poll`.
-- [ ] **AC-11 (G7, S11)** agentd resolves a Navigator principal only from a login file at `pwd.getpwuid(uid).pw_dir/.parrot/login.json` that is a regular file (no symlink), owned by the peer uid, mode 0600; `identity_source == "login_file"`; any failure keeps peercred / service identity; `AGENTD_LOGIN_FILE_LOOKUP=0` disables the step.
+- [ ] **AC-11 (G7, S11)** agentd resolves a Navigator principal only from a login file at `pwd.getpwuid(uid).pw_dir/.parrot/login.json` that is a regular file (no symlink), owned by the peer uid, mode 0600 (re-checked on every load); `identity_source == "login_file"`. The step is **off** until the operator sets `AGENTD_LOGIN_FILE_SERVER_URL` to a trusted Navigator server: a login record naming any other server is ignored and the principal is always requested from the pinned URL, never from the file's `server_url`. The peer store is read-only — agentd never refreshes an expired login, never rewrites the file and never creates a lock or temporary file in the peer's directory; a 401 falls back. Any failure keeps peercred / service identity; `AGENTD_LOGIN_FILE_LOOKUP=0` disables the step even when a trusted server is set. *(Amended by TASK-5080, `issue:08e55d4b23ca`, to match review fix c252e73ea6.)*
 - [ ] **AC-12 (G8)** `auth_type="oauth2_local"` is rejected by `JiraToolkit`; `jira_local_auth.py` no longer exists; `parrot jiratoolkit auth` delegates to the generic connect flow; `parse_pasted_redirect` lives in `parrot.auth.oauth2.paste`.
 - [ ] **AC-13** The `O365_PRINCIPAL` / `O365_TENANT_ID` bootstrap is removed from `parrot/cli/identity.py`; the O365 device-code default prompt writes to stderr only.
 - [ ] **AC-14** The CLI never persists a provider refresh token and never sends `user_id` in `--server` mode; no test, log line or error message prints token material.

@@ -9,7 +9,7 @@ from parrot.bots.agent import Agent
 from parrot.bots.mixins.identity import IdentityMixin
 from parrot.experts.knowledge.render import install_layers
 from parrot.experts.knowledge.resolver import KnowledgeResolver
-from parrot.experts.models import ExpertBundle, KnowledgeContext
+from parrot.experts.models import SPAWN_TOOL_NAME, ExpertBundle, KnowledgeContext
 from parrot.models.basic import ModelConfig
 from parrot.tools.toolkit import AbstractToolkit
 
@@ -60,7 +60,11 @@ class ExpertAgent(IdentityMixin, Agent):
         self.model_config = model_config
 
     async def configure(self, app: Any = None) -> None:
-        """Base configure, identity layers, then the resolved knowledge as literal layers."""
+        """Base configure, identity layers, then the resolved knowledge as literal layers.
+
+        Runs last so it also covers tools registered by the base ``Agent``: the final
+        tool list never contains ``spawn_sub_agent``.
+        """
         await super().configure(app)
         await self._configure_identity()
         self.knowledge_context = await self.knowledge_resolver.resolve(
@@ -68,3 +72,8 @@ class ExpertAgent(IdentityMixin, Agent):
         )
         if self._prompt_builder is not None:
             self._prompt_builder = install_layers(self._prompt_builder, self.knowledge_context)
+        if self.tool_manager.get_tool(SPAWN_TOOL_NAME) is not None:
+            self.tool_manager.unregister_tool(SPAWN_TOOL_NAME)
+            self.logger.warning(
+                "Removed %s from expert %s: domain experts never spawn sub-agents", SPAWN_TOOL_NAME, self.name
+            )

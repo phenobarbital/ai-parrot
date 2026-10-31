@@ -2486,8 +2486,13 @@ class BotManager:
         )
         # Principal-level OAuth connection routes (FEAT-773).
         router.add_view("/api/v1/connections", ConnectionsHandler)
+        router.add_view("/api/v1/connections/me", ConnectionsHandler)
         router.add_view("/api/v1/connections/{provider}", ConnectionsHandler)
         router.add_view("/api/v1/connections/{provider}/start", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/token", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/complete", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/device/start", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/device/poll", ConnectionsHandler)
         # User-defined bots: PUT/PATCH/GET/DELETE
         router.add_view("/api/v1/user_agents", UserAgentHandler)
         router.add_view("/api/v1/user_agents/{chatbot_id}", UserAgentHandler)

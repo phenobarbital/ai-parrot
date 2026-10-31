@@ -141,3 +141,83 @@ def test_decision_error_carries_code_and_id():
     err = DecisionError("ADR_REVISION_CONFLICT", "stale", decision_id="adr:doc:a")
     assert (err.code, err.decision_id) == ("ADR_REVISION_CONFLICT", "adr:doc:a")
     assert isinstance(err, ValueError)
+
+
+# --- FEAT-784 schema 2 -------------------------------------------------------
+from parrot.knowledge.wiki.decisions.models import DecisionRef, DecisionTarget  # noqa: E402
+
+
+def _v2(**overrides) -> DecisionRecord:
+    """Build a minimal schema-2 decision record."""
+    base = dict(
+        schema_version=2,
+        decision_id="adr:spec:doc#rule",
+        decision="x",
+        origin="documented",
+        source_status="accepted",
+    )
+    return DecisionRecord(**{**base, **overrides})
+
+
+def test_schema1_record_parses_unchanged():
+    """AC2: a schema-1 payload validates with every schema-2 field at its default."""
+    record = DecisionRecord(decision_id="adr:spec:doc#rule", decision="x", origin="documented")
+    assert record.schema_version == 1
+    assert record.lifecycle == "active"
+    assert record.about == []
+    assert record.targets == []
+    assert record.contradicts == []
+    assert record.supersedes_refs == []
+    assert record.normative is None
+    assert record.document_id is None
+    assert record.entry_id is None
+    assert record.batch_id is None
+    assert record.rationale == ""
+    assert record.rejected_alternatives == []
+
+
+def test_schema1_with_schema2_fields_rejected():
+    """Schema-1 records reject any non-default schema-2 field."""
+    with pytest.raises(ValidationError):
+        DecisionRecord(
+            decision_id="adr:spec:doc#rule",
+            decision="x",
+            origin="documented",
+            schema_version=1,
+            about=["memory"],
+        )
+
+
+def test_schema2_round_trips_through_model_dump():
+    """Schema-2 records preserve typed references through JSON-compatible dumps."""
+    record = _v2(
+        about=["memory"],
+        targets=[DecisionTarget(target_id="sym:a.py#f", kind="symbol")],
+        contradicts=[DecisionRef(decision_id="adr:spec:other", revision=2)],
+    )
+    assert DecisionRecord.model_validate(record.model_dump(mode="json")) == record
+
+
+@pytest.mark.parametrize(
+    "target_id,kind,ok",
+    [
+        ("sym:a.py#f", "symbol", True),
+        ("file:a.py", "file", True),
+        ("dir:pkg", "dir", True),
+        ("file:a.py", "dir", False),
+        ("pkg/a.py", "file", False),
+    ],
+)
+def test_decision_target_prefix(target_id, kind, ok):
+    """Target prefixes determine their allowed structural kind."""
+    if ok:
+        assert DecisionTarget(target_id=target_id, kind=kind).kind == kind
+    else:
+        with pytest.raises(ValidationError):
+            DecisionTarget(target_id=target_id, kind=kind)
+
+
+def test_decision_ref_revision_ge_1():
+    """Decision references use positive revisions only."""
+    with pytest.raises(ValidationError):
+        DecisionRef(decision_id="x", revision=0)

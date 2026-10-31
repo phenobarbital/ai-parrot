@@ -10,7 +10,7 @@ import importlib
 import logging
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 # NOTE: `LLMFactory` is intentionally NOT imported at module level. Its
 # import chain (parrot.clients.factory -> ... -> navconfig) triggers
@@ -53,18 +53,73 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
     unchanged by this class's existence.
     """
 
-    def __init__(self, config: LocalServerConfig, toolkit: AbstractToolkit) -> None:
+    def __init__(
+        self, config: LocalServerConfig, toolkit: AbstractToolkit, *, login_file: Optional[Path] = None
+    ) -> None:
         super().__init__(config)
         self._owned_toolkit = toolkit
+        self._login_file = login_file
         self._stop_lock = asyncio.Lock()
         self._released = False
 
     async def start(self) -> None:
         """Serve until stdin EOF or an error, then always release owned resources."""
+        await self._bind_identity()
         try:
             await super().start()
         finally:
             await self.stop()
+
+    async def _bind_identity(self) -> None:
+        """Resolve the login principal + CLI broker once; no login keeps existing behavior.
+
+        A login that exists but cannot be used (unsafe/unreadable file, unresolvable principal)
+        fails closed: credential tools get an ``identity_error`` context and return an
+        authorization-required result instead of running anonymously.
+        """
+        with contextlib.redirect_stdout(sys.stderr):
+            from parrot.auth.oauth2.local_cache import build_cli_broker
+            from parrot.auth.oauth2.remote_client import ServerConnectionsClient
+            from parrot.cli.login import LoginFileError, LoginStore
+            from parrot.cli.principal import CliPrincipalResolver, build_cli_permission_context
+            from parrot.mcp.adapter import ToolExecutionContext
+
+        store = LoginStore(self._login_file)
+        try:
+            record = await asyncio.to_thread(store.load_optional)
+        except LoginFileError as exc:
+            self.logger.error("Could not load the CLI login: %s", type(exc).__name__)
+            self._bind_context(ToolExecutionContext(identity_error="the CLI login file could not be loaded"))
+            return
+        if record is None:
+            return
+
+        client = ServerConnectionsClient(store)
+        try:
+            resolved = await CliPrincipalResolver(store, client).resolve_with_roles("cli", record.user_id)
+        except Exception as exc:  # noqa: BLE001 — any resolver failure must fail closed, never crash startup
+            self.logger.error("Could not resolve the CLI principal: %s", type(exc).__name__)
+            resolved = None
+        if resolved is None:
+            self.logger.warning("Could not resolve the CLI principal")
+            self._bind_context(ToolExecutionContext(identity_error="the CLI login identity could not be resolved"))
+            return
+        principal, roles = resolved
+        providers = {
+            adapter.tool.credential_provider for adapter in self.tools.values() if adapter.tool.credential_provider
+        }
+        broker = build_cli_broker(store, providers, client=client) if providers else None
+        context = ToolExecutionContext(
+            permission_context=build_cli_permission_context(principal, roles=roles),
+            broker=broker,
+        )
+        self._bind_context(context)
+
+    def _bind_context(self, context: Any) -> None:
+        """Attach one execution context to the server and every registered adapter."""
+        self.execution_context = context
+        for adapter in self.tools.values():
+            adapter.execution_context = context
 
     async def stop(self) -> None:
         """Stop the read loop, then release the owned toolkit's resources.
@@ -136,7 +191,9 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
 
 def create_toolkit_mcp_server(
     name: str,
-    root: Path = Path.cwd(),
+    root: Optional[Path] = None,
+    *,
+    login_file: Optional[Path] = None,
     **overrides: Any,
 ) -> StdioMCPServer:
     """Create a stdio MCP server for a toolkit.
@@ -151,6 +208,7 @@ def create_toolkit_mcp_server(
     Args:
         name: Toolkit name (e.g., "memory", "scraping", "custom").
         root: Project root. Defaults to current working directory.
+        login_file: Optional login file used to bind the CLI principal at server start.
         **overrides: CLI passthrough:
             - config_path: Override config file path (else `.parrot/mcp-toolkits.yaml`).
             - include: Whitelist of tool names (overrides section's include).
@@ -166,7 +224,7 @@ def create_toolkit_mcp_server(
         ImportError: If the toolkit class cannot be resolved (e.g., missing
             extra like ai-parrot-tools[scraping]).
     """
-    root = Path(root)
+    root = Path(root) if root is not None else Path.cwd()
 
     # Load config — honoring the documented `config_path` override (the
     # `parrot mcp-local --config` flag). Needed because stdio MCP servers
@@ -259,6 +317,8 @@ def create_toolkit_mcp_server(
 
     # Build and return server — FEAT-580 M4: retain the instantiated
     # toolkit so its resources get released on server shutdown.
-    server = _ToolkitStdioMCPServer(LocalServerConfig(name=f"parrot-{name}", version="1.0.0"), toolkit)
+    server = _ToolkitStdioMCPServer(
+        LocalServerConfig(name=f"parrot-{name}", version="1.0.0"), toolkit, login_file=login_file
+    )
     server.register_tools(filtered_tools)
     return server
