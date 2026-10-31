@@ -89,6 +89,8 @@ class TelegramUserSession:
         default=None, repr=False, compare=False
     )
     post_login_ran: bool = field(default=False, repr=False, compare=False)
+    # FEAT-776: True once this session's telegram identity row was written.
+    principal_link_persisted: bool = field(default=False, repr=False, compare=False)
 
     @property
     def user_id(self) -> str:
@@ -218,6 +220,7 @@ class TelegramUserSession:
         self.tool_manager = None
         self.user_agent = None
         self.post_login_ran = False
+        self.principal_link_persisted = False
 
 
 # ---------------------------------------------------------------------------
