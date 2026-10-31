@@ -341,7 +341,7 @@ def login(server: str, client_id: str, scopes: Optional[str], no_browser: bool) 
         click.echo(f"Error: {exc}", err=True)
         sys.exit(2)
     store.save(record)
-    # roles/tenant are filled from GET /api/v1/connections/me by TASK-4974
+    record = asyncio.run(_fill_from_me(store, record))
     click.echo(f"Logged in as {record.email or record.user_id}", err=True)
 
 
@@ -378,3 +378,39 @@ def logout() -> None:
         store.cache_path.unlink()
     except FileNotFoundError:
         pass
+
+
+async def _fill_from_me(store: LoginStore, record: LoginRecord) -> LoginRecord:
+    """Copy roles and tenant from the connections API into the login file on a best-effort basis."""
+    from parrot.auth.oauth2.remote_client import ServerConnectionsClient
+
+    try:
+        async with ServerConnectionsClient(store) as client:
+            who = await client.me()
+    except Exception as exc:  # noqa: BLE001 -- the login itself already succeeded
+        logger.warning("Could not read /api/v1/connections/me after login: %s", type(exc).__name__)
+        return record
+    updated = record.model_copy(update={"roles": list(who.roles), "tenant_id": who.tenant_id or record.tenant_id})
+    store.save(updated)
+    return updated
+
+
+@click.command("whoami")
+def whoami() -> None:
+    """Print the Navigator identity behind the current login."""
+    from parrot.auth.oauth2.remote_client import NotLoggedIn, ServerConnectionsClient, WhoAmI
+
+    async def read_identity() -> WhoAmI:
+        async with ServerConnectionsClient(LoginStore()) as client:
+            return await client.me()
+
+    try:
+        identity = asyncio.run(read_identity())
+    except (NotLoggedIn, LoginExpired):
+        click.echo("Not logged in — run `parrot login`", err=True)
+        sys.exit(1)
+
+    click.echo(f"User ID: {identity.user_id}")
+    click.echo(f"Email: {identity.email or '-'}")
+    click.echo(f"Tenant: {identity.tenant_id or '-'}")
+    click.echo(f"Roles: {', '.join(identity.roles) or '-'}")
