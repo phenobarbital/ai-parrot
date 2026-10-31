@@ -59,9 +59,7 @@ async def test_check_data_equals_evaluator_report(tmp_path, adr_store):
     config = WikiProjectConfig()
     service = open_consequence_service(tmp_path, store=adr_store, config=config)
     report = await service.evaluate(Path(rel))
-    result = await op_spec_consequences(
-        adr_store, SpecConsequencesInput(spec_path=rel), root=tmp_path, config=config
-    )
+    result = await op_spec_consequences(adr_store, SpecConsequencesInput(spec_path=rel), root=tmp_path, config=config)
     data = dict(result.data)
     data.pop("check")
     assert data == report.model_dump(mode="json")
