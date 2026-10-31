@@ -138,7 +138,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -148,8 +148,9 @@
       "parallelism_notes": "both TASK-5063 and this task modify auth/oauth2/service.py (start_connect) — serialized",
       "assigned_to": null,
       "started_at": "2026-10-31T23:12:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5064-per-call-scope-propagation.md"
+      "completed_at": "2026-10-31T23:29:34+00:00",
+      "file": "sdd/tasks/completed/TASK-5064-per-call-scope-propagation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5065",
@@ -198,7 +199,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -208,8 +209,9 @@
       "parallelism_notes": "appends to msteams/connections.py created by TASK-5066 (same file)",
       "assigned_to": null,
       "started_at": "2026-10-31T23:12:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5067-teams-connection-notifier.md"
+      "completed_at": "2026-10-31T23:29:35+00:00",
+      "file": "sdd/tasks/completed/TASK-5067-teams-connection-notifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5068",
