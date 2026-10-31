@@ -773,6 +773,7 @@ $backstory
             session_id=current_session_id.get(),
             tenant=current_tenant.get(),
             cost_usd=cost_usd,
+            **(self._price_revision_fields(client_name, model, cost_usd) if hasattr(self, "_price_revision_fields") else {}),
         )
         await self.events.emit(event)
         # Forward to global so cost/token recorders and OTel subscribers
@@ -812,6 +813,23 @@ $backstory
         except Exception:  # noqa: BLE001 — telemetry must never break the call path
             self.logger.debug("cost computation failed for %s/%s", client_name, model, exc_info=True)
             return None
+
+    def _price_revision_fields(
+        self, client_name: str, model: "Optional[str]", cost_usd: "Optional[float]"
+    ) -> "dict[str, Optional[str]]":
+        """Return the revision that priced this call without a second computation."""
+        if cost_usd is None:
+            return {}
+        calc = get_shared_cost_calculator()
+        if calc is None or not hasattr(calc, "revision_for"):
+            return {}
+        try:
+            from parrot.observability.attributes import resolve_gen_ai_system  # noqa: PLC0415
+
+            revision, valid_from = calc.revision_for(resolve_gen_ai_system(client_name), model or "")
+            return {"price_revision": revision, "price_valid_from": valid_from}
+        except Exception:  # noqa: BLE001 — telemetry must never break the call path
+            return {}
 
     async def _emit_failed_call(
         self,
