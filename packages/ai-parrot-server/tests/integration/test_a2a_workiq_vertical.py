@@ -23,6 +23,7 @@ Validates:
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock
 
@@ -37,6 +38,7 @@ from parrot.auth.oauth2.workiq_provider import (
     WORKIQ_SCOPE,
     WORKIQ_PROVIDER_ID,
 )
+from parrot.auth.principal import Principal, set_principal_resolver
 from parrot.security.audit_ledger import AuditLedger, LocalHMACSigner
 from parrot.tools.workiq_tool import WorkIQTool
 
@@ -67,10 +69,6 @@ class FakeVaultTokenSync:
     ) -> None:
         self._store.setdefault(user_id, {}).setdefault(provider, {}).update(tokens)
 
-    def grant_entra(self, user_id: str, token: str = FAKE_ENTRA_TOKEN) -> None:
-        """Pre-populate the user's Entra (o365) access token in vault."""
-        self._store.setdefault(user_id, {})["o365"] = {"access_token": token}
-
     def grant_workiq(self, user_id: str, token: str = FAKE_WORKIQ_TOKEN) -> None:
         """Pre-populate a cached Work IQ OBO token in vault."""
         self._store.setdefault(user_id, {})["workiq"] = {"access_token": token}
@@ -81,6 +79,15 @@ class FakeO365OAuthManager:
 
     def __init__(self, auth_url: str = ENTRA_AUTH_URL) -> None:
         self._auth_url = auth_url
+        self._tokens: Dict[str, Any] = {}
+
+    def grant_entra(self, user_id: str, token: str = FAKE_ENTRA_TOKEN) -> None:
+        """Pre-populate the principal's shared O365 record."""
+        self._tokens[user_id] = SimpleNamespace(access_token=token)
+
+    async def get_valid_token(self, channel: str, user_id: str) -> Optional[Any]:
+        """Return the principal's shared O365 record, when present."""
+        return self._tokens.get(user_id)
 
     async def create_authorization_url(
         self, channel: str, user_id: str
@@ -129,6 +136,26 @@ class FakeSuspendedStore:
 
     def has(self, interaction_id: str) -> bool:
         return interaction_id in self._store
+
+
+class FakePrincipalResolver:
+    """Resolve A2A identities to a stable test principal."""
+
+    async def resolve(self, channel: str, channel_user_id: str) -> Principal:
+        return Principal(
+            user_id=channel_user_id,
+            canonical_identity=channel_user_id,
+            channel=channel,
+            channel_user_id=channel_user_id,
+        )
+
+
+@pytest.fixture(autouse=True)
+def registered_principal_resolver():
+    """Install and reset the process-wide principal resolver for each test."""
+    set_principal_resolver(FakePrincipalResolver())
+    yield
+    set_principal_resolver(None)
 
 
 # ---------------------------------------------------------------------------
@@ -243,14 +270,15 @@ class TestWorkIQVertical:
 
     @pytest.mark.asyncio
     async def test_workiq_obo_exchange_success(self):
-        """Entra token in vault → OBO exchange → Work IQ token → COMPLETED."""
+        """Shared O365 token → OBO exchange → Work IQ token → COMPLETED."""
         vault = FakeVaultTokenSync()
-        vault.grant_entra("carol@example.com")  # Entra token available
+        o365_manager = FakeO365OAuthManager()
+        o365_manager.grant_entra("carol@example.com")
 
         o365 = FakeO365Interface(obo_result={"access_token": FAKE_WORKIQ_TOKEN})
         store = FakeSuspendedStore()
         ledger = AuditLedger(signer=LocalHMACSigner(b"workiq-test"))
-        server, _ = _make_workiq_server(vault, o365, store, ledger)
+        server, _ = _make_workiq_server(vault, o365, store, ledger, o365_manager)
 
         task = await server.process_message(
             _workiq_tool_message("carol@example.com", query="Summarise my emails")
@@ -270,13 +298,13 @@ class TestWorkIQVertical:
     async def test_workiq_obo_covers_o365_and_workiq(self):
         """One Entra sign-in covers both o365 and work-iq (OBO reuses Entra token)."""
         vault = FakeVaultTokenSync()
-        # Entra token granted (simulating o365 sign-in completion)
-        vault.grant_entra("dave@example.com")
+        o365_manager = FakeO365OAuthManager()
+        o365_manager.grant_entra("dave@example.com")
 
         o365 = FakeO365Interface(obo_result={"access_token": FAKE_WORKIQ_TOKEN})
         store = FakeSuspendedStore()
         ledger = AuditLedger(signer=LocalHMACSigner(b"workiq-test"))
-        server, resolver = _make_workiq_server(vault, o365, store, ledger)
+        server, resolver = _make_workiq_server(vault, o365, store, ledger, o365_manager)
 
         # Verify: OBO exchange uses the existing Entra token (no new sign-in needed)
         token = await resolver.resolve("a2a:copilot", "dave@example.com")
@@ -292,13 +320,14 @@ class TestWorkIQVertical:
     async def test_workiq_obo_failure_suspends(self):
         """OBO exchange failure → INPUT_REQUIRED (graceful degradation)."""
         vault = FakeVaultTokenSync()
-        vault.grant_entra("eve@example.com")
+        o365_manager = FakeO365OAuthManager()
+        o365_manager.grant_entra("eve@example.com")
 
         # Simulate OBO failure
         o365 = FakeO365Interface(obo_result=None)
         store = FakeSuspendedStore()
         ledger = AuditLedger(signer=LocalHMACSigner(b"workiq-test"))
-        server, _ = _make_workiq_server(vault, o365, store, ledger)
+        server, _ = _make_workiq_server(vault, o365, store, ledger, o365_manager)
 
         task = await server.process_message(
             _workiq_tool_message("eve@example.com")
@@ -329,12 +358,13 @@ class TestWorkIQVertical:
     async def test_workiq_audit_entry_written(self):
         """Resolved OBO token → AuditLedger entry with key_fingerprint; raw token absent."""
         vault = FakeVaultTokenSync()
-        vault.grant_entra("grace@example.com")
+        o365_manager = FakeO365OAuthManager()
+        o365_manager.grant_entra("grace@example.com")
 
         o365 = FakeO365Interface(obo_result={"access_token": FAKE_WORKIQ_TOKEN})
         store = FakeSuspendedStore()
         ledger = AuditLedger(signer=LocalHMACSigner(b"workiq-audit"))
-        server, _ = _make_workiq_server(vault, o365, store, ledger)
+        server, _ = _make_workiq_server(vault, o365, store, ledger, o365_manager)
 
         await server.process_message(_workiq_tool_message("grace@example.com"))
 
