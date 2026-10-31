@@ -58,7 +58,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -66,8 +66,9 @@
       "parallelism_notes": "no edges; creates parrot/auth/pending.py and edits tools/manager.py only (shared-file gate with FEAT-776 TASK-5016 / FEAT-777 TASK-5050 is cross-feature, not a graph edge)",
       "assigned_to": null,
       "started_at": "2026-10-31T23:12:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5060-needs-auth-collector.md"
+      "completed_at": "2026-10-31T23:17:46+00:00",
+      "file": "sdd/tasks/completed/TASK-5060-needs-auth-collector.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5061",
@@ -76,7 +77,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -84,8 +85,9 @@
       "parallelism_notes": "no edges; additive field in auth/permission.py and helper in auth/credentials.py",
       "assigned_to": null,
       "started_at": "2026-10-31T23:12:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5061-permission-context-channel-identity.md"
+      "completed_at": "2026-10-31T23:17:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5061-permission-context-channel-identity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5062",
@@ -154,7 +156,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -162,8 +164,9 @@
       "parallelism_notes": "no edges; only msteams/commands/__init__.py",
       "assigned_to": null,
       "started_at": "2026-10-31T23:12:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5065-router-command-args.md"
+      "completed_at": "2026-10-31T23:17:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5065-router-command-args.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5066",
@@ -339,7 +342,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -347,8 +350,9 @@
       "parallelism_notes": "no edges; only services/identity_principal.py and its test",
       "assigned_to": null,
       "started_at": "2026-10-31T23:12:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5074-identity-resolver-azure-alias.md"
+      "completed_at": "2026-10-31T23:17:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5074-identity-resolver-azure-alias.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5075",
