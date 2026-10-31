@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-784 — SDD Decision Audit
 **Spec**: `sdd/specs/sdd-decision-audit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5009, TASK-5010, TASK-5013
@@ -328,4 +328,9 @@ See blueprint: `test_end_to_end_preview_and_publish`, `test_conflict_resolution_
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 2 · Duration: 257s · Tokens: n/a
+
+- Delivered files match the task list.
+- Review fix 1a3ff503: the delivery set ADR_PARITY_ALLOW_PARTIAL=1 inside test_backend_parity_is_reported, making the AC8 guard unfailable; removed. feedback_id coder-feedback:fbfcf86d21d2f6b9ec73006a (pattern disabled-guard-test-to-pass).
+- Kept: Postgres reachability probe, TestSchema2Parity (schema-2 round-trip + evaluation-digest parity), test_decision_audit_integration.py.
+- Post-fix: 15 new tests pass; test_backend_parity_is_reported fails without live DBs, identical to origin/dev.
