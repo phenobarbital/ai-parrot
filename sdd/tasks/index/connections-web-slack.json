@@ -541,7 +541,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -551,8 +551,9 @@
       "parallelism_notes": "imports IntegrationDescriptor/ConnectInitResponse/DisconnectResponse/ConnectionEvent/ChannelLinkPreview generated types from TASK-5052 (ui/src/lib/types/generated/)",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5053-ui-connections-api-store.md"
+      "completed_at": "2026-10-31T02:33:21+00:00",
+      "file": "sdd/tasks/completed/TASK-5053-ui-connections-api-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5054",
@@ -561,7 +562,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -571,8 +572,9 @@
       "parallelism_notes": "imports AuthRequiredPayload generated type from TASK-5052 (ui/src/lib/types/generated/AuthRequiredPayload.d.ts)",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5054-ui-stream-auth-required-chunk.md"
+      "completed_at": "2026-10-31T02:33:21+00:00",
+      "file": "sdd/tasks/completed/TASK-5054-ui-stream-auth-required-chunk.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5055",
@@ -669,7 +671,7 @@
       "feature_id": "FEAT-777",
       "feature": "connections-web-slack",
       "spec": "sdd/specs/connections-web-slack.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -679,8 +681,9 @@
       "parallelism_notes": "TASK-5058: last code task; docs describe the merged behaviour of every module (routes, frames, config keys) verified after it lands.",
       "assigned_to": null,
       "started_at": "2026-10-31T01:36:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5059-connections-web-slack-docs.md"
+      "completed_at": "2026-10-31T02:33:22+00:00",
+      "file": "sdd/tasks/completed/TASK-5059-connections-web-slack-docs.md",
+      "verification": "verified"
     }
   ]
 }
