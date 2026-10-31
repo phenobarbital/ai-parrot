@@ -29,7 +29,6 @@ from parrot.knowledge.wiki.decisions.models import (
     ReviewEvent,
 )
 
-
 @pytest.fixture
 def documented() -> DecisionRecord:
     """A fully populated documented record — every field must survive."""
