@@ -591,6 +591,62 @@ class IntegrationsService:
         )
         return await self.status(user_id, provider_id, request)
 
+    async def device_start(
+        self,
+        user_id: str,
+        provider_id: str,
+        *,
+        principal: Principal,
+        request: Any = None,
+        scopes: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Start a provider RFC 8628 grant while retaining the device code server-side."""
+        provider = OAuth2ProviderRegistry().get(provider_id)
+        if provider is None:
+            raise ValueError(f"Unknown provider: {provider_id!r}")
+        if not await self._check_pbac(request, "integration:connect", provider_id, list(scopes or provider.default_scopes)):
+            raise PermissionError(f"Not permitted to connect provider {provider_id!r}")
+        handle, authorization = await provider.manager.start_device_authorization(principal, scopes=scopes)
+        return {
+            "handle": handle,
+            "user_code": authorization.user_code,
+            "verification_uri": authorization.verification_uri,
+            "verification_uri_complete": authorization.verification_uri_complete,
+            "expires_in": authorization.expires_in,
+            "interval": authorization.interval,
+        }
+
+    async def device_poll(
+        self,
+        user_id: str,
+        provider_id: str,
+        *,
+        handle: str,
+        request: Any = None,
+    ) -> Dict[str, Any]:
+        """Poll one device grant and persist its completed credential for its owner."""
+        provider = OAuth2ProviderRegistry().get(provider_id)
+        if provider is None:
+            raise ValueError(f"Unknown provider: {provider_id!r}")
+        manager = provider.manager
+        raw_record = await manager.redis.get(manager._device_key(handle))
+        if not raw_record:
+            return {"status": "expired"}
+        if isinstance(raw_record, bytes):
+            raw_record = raw_record.decode("utf-8")
+        record = json.loads(raw_record)
+        record_principal = record.get("principal", {}) if isinstance(record, dict) else {}
+        owner_user_id = record_principal.get("user_id") if isinstance(record_principal, dict) else None
+        if owner_user_id is None or not hmac.compare_digest(str(owner_user_id), user_id):
+            raise PermissionError("Device authorization handle does not belong to this user")
+
+        result = await manager.complete_device_authorization(handle)
+        if result.get("status") == "completed":
+            token_set = result.pop("token_set")
+            await self.persist_credential(user_id, provider_id, token_set, channel="cli")
+        result.pop("token_set", None)
+        return result
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
