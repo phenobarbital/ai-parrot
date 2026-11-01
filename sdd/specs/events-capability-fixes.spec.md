@@ -124,6 +124,25 @@ non-breaking.
 
 ## 4. Validation
 
+### Validation Contract
+
+tests:
+- packages/ai-parrot/tests/unit/observability/test_bootstrap_hook.py
+- packages/ai-parrot/tests/unit/observability/test_capability_call_record.py
+- packages/ai-parrot-squawk/tests/test_telemetry.py
+markers: none
+
+> `test_bootstrap_hook.py` is the FEAT-725 regression gate (red before this
+> change); the other two pin the runtime shape the deferral must not disturb —
+> event construction with a real record, and the squawk emit path.
+
+> All runs need `PYTHONPATH=packages/ai-parrot/src` — the shared `.venv` is
+> editable-installed against the main checkout
+> (`.claude/rules/worktree-management.md`). The squawk suite additionally
+> needs `packages/ai-parrot-squawk/src` on `PYTHONPATH`.
+
+### Commands
+
 ```bash
 PYTHONPATH=packages/ai-parrot/src \
   pytest packages/ai-parrot/tests/unit/observability/test_bootstrap_hook.py \
