@@ -285,11 +285,11 @@
       "feature_id": "FEAT-768",
       "feature": "sdd-claude-native-sandbox",
       "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": "2026-11-01T00:49:24+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-01T01:10:00+00:00",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -297,7 +297,8 @@
         "TASK-5087"
       ],
       "parallelism_notes": "calls launch_worker with the legacy mode and sandbox_platform() those tasks add",
-      "file": "sdd/tasks/active/TASK-5088-devloop-launch-worker.md"
+      "file": "sdd/tasks/completed/TASK-5088-devloop-launch-worker.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5089",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-768 — Native Claude sandbox for SDD execution
 **Spec**: `sdd/specs/sdd-claude-native-sandbox.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5086, TASK-5087
@@ -210,8 +210,19 @@ CLI via `CliRunner().invoke(devloop, ["launch-worker", ...])`. For the argv plac
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
 
-**Deviations from spec**: none
+- Task: TASK-5088
+- Feature: sdd-claude-native-sandbox
+- Implementation SHA: 888566aca56d655411b0cb6d4579046e836fd020
+- Closed at (UTC): 2026-11-01T01:10:00+00:00
+- Fix commits: 888566aca56d655411b0cb6d4579046e836fd020
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| feedback | coder-feedback:e5397cd254e923b15e8b3cbb (leaked-process-environment-in-tests), coder-feedback:681c952546935e6692225669 (acceptance-criteria-untested) |
+| residual_lint | 1 residual (E402 late import in parrot/cli/devloop/__init__.py, required by spec placement) left for /sdd-done |
+| review | first merge-tier run red (4 test_dispatcher failures from PARROT_SDD_SANDBOX_MODE leaked by launcher tests); --tmux --detach ignored on an existing session; 7 AC paths untested. Fixed by orchestrator in 888566aca5 (detach honoured, env restore fixture, 14 new tests). |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 130.8s · Tokens: n/a |
+| validation | merge tier re-run: 288 passed/1 skipped |
