@@ -274,10 +274,8 @@ class TestNativeSandboxDispatch:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-terra (codex), attempt 1
+**Date**: 2026-10-30
+**Notes**: Wired native sandbox settings into ClaudeCodeDispatcher and added sandbox_allowed_domains to the profile. Merge-tier validation first failed (9 tests in test_cli_dispatcher_usage_events.py still dispatched from a non-worktree cwd, which the new policy refuses); fixed by orchestrator in 4db3daf45e73c2e3954197b878c3b318ca435d04, then green (207 passed, 10 skipped). Root cause was an incomplete TASK-4886 fixture migration.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

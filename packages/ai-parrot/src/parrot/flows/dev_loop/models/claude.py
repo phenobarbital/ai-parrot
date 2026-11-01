@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from parrot.flows.dev_loop.native_claude_sandbox import validate_allowed_domains
 
 
 class ClaudeCodeDispatchProfile(BaseModel):
@@ -76,6 +78,21 @@ class ClaudeCodeDispatchProfile(BaseModel):
             "healthy run of that dispatch needs."
         ),
     )
+    sandbox_allowed_domains: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Exact DNS hostnames the FEAT-768 native sandbox lets sandboxed seats "
+            "(sdd-worker/sdd-coder) reach from Bash. Empty by default: no egress. "
+            "URLs, wildcards, ports and IP literals are rejected."
+        ),
+    )
+
+    @field_validator("sandbox_allowed_domains")
+    @classmethod
+    def _validate_sandbox_domains(cls, value: List[str]) -> List[str]:
+        """Normalize and validate exact hostnames (spec policy 6)."""
+        return validate_allowed_domains(value)
+
     model: str = "claude-sonnet-4-6"
     mcp_servers: Optional[Dict[str, Any]] = Field(
         default=None,

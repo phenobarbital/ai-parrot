@@ -220,10 +220,8 @@ the Completion Note.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-terra (codex), attempt 1
+**Date**: 2026-10-29
+**Notes**: Added `linked_worktree` fixture to dev_loop conftest and switched sandboxed dispatcher tests to it. Validation Commands: 144 passed, 9 skipped (artifacts/logs/task-4886-validation.log). The engine merge-tier run reported `failed` only because the selector passed `conftest.py` itself as a pytest target (exit 5, no tests collected); every real target in that run was green (177 + 32 passed). Review: orchestrator read the diff, no corrections.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

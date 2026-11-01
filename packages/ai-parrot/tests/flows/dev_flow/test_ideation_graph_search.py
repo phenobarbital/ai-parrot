@@ -11,6 +11,7 @@ Covers three layers:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -21,6 +22,18 @@ from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile
 
 RUN_ID = "run-graph-search01"
+
+
+def _linked_worktree(tmp_path: Path) -> Path:
+    """Create fake linked Git metadata for an SDD worktree."""
+    main = tmp_path / "main"
+    admin = main / ".git" / "worktrees" / "feat"
+    admin.mkdir(parents=True)
+    (admin / "commondir").write_text("../..\n", encoding="utf-8")
+    worktree = main / ".claude" / "worktrees" / "feat"
+    worktree.mkdir(parents=True)
+    (worktree / ".git").write_text(f"gitdir: {admin}\n", encoding="utf-8")
+    return worktree
 
 
 class ScriptedDispatcher:
@@ -90,7 +103,7 @@ class TestPrimarySeatGraphSearch:
             max_concurrent=2, redis_url="redis://localhost:6379/0", stream_ttl_seconds=300
         )
         profile = ClaudeCodeDispatchProfile(subagent="sdd-worker")
-        opts = dispatcher._resolve_run_options(profile, str(tmp_path))
+        opts = dispatcher._resolve_run_options(profile, str(_linked_worktree(tmp_path)))
         assert opts.mcp_servers is None
 
     def test_mcp_servers_passed_through(self, tmp_path, monkeypatch):
@@ -104,7 +117,7 @@ class TestPrimarySeatGraphSearch:
         )
         servers = {"wikitoolkit": {"command": "/x/wikitoolkit", "args": ["mcp"], "env": {}}}
         profile = ClaudeCodeDispatchProfile(subagent="sdd-worker", mcp_servers=servers)
-        opts = dispatcher._resolve_run_options(profile, str(tmp_path))
+        opts = dispatcher._resolve_run_options(profile, str(_linked_worktree(tmp_path)))
         assert opts.mcp_servers == servers
 
     async def test_strict_mcp_config_remains_true(self, doc):

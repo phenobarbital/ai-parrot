@@ -7,14 +7,17 @@ a Claude hook, even when importing the rest of Parrot is unavailable.
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import math
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from typing import Any, Sequence
 
 POLICY_MESSAGE = (
@@ -141,12 +144,29 @@ WORKTREE_ADMIN_DIR = Path(".claude") / "worktrees"
 # resolves to the primary checkout, so a worktree agent filing a finding with
 # ``wikitoolkit ledger open`` writes there, never into its own checkout.
 SHARED_LEDGER_DIR = Path(".parrot") / "ledger"
+
+
 # Claude Code keeps every session's scratchpad under this root
 # (``/tmp/claude-<uid>/<project-slug>/<session-id>/scratchpad``) and tells the
 # seat to use it for temporary files. The sandbox replaces ``/tmp`` with a
 # private tmpfs, so the root is bound back in — writable — for all sessions of
 # this user at once; every session on the host belongs to the same user.
-CLAUDE_SCRATCH_ROOT = Path("/tmp") / f"claude-{os.getuid()}"
+def _scratch_user_tag() -> str:
+    """Return a filesystem-safe current-user tag when POSIX UIDs are unavailable."""
+    if hasattr(os, "getuid"):
+        return str(os.getuid())
+    try:
+        username = getpass.getuser()
+    except (KeyError, OSError):
+        username = ""
+    return re.sub(r"[^A-Za-z0-9_.-]", "", username) or "user"
+
+
+CLAUDE_SCRATCH_ROOT = (
+    Path("/tmp") / f"claude-{os.getuid()}"
+    if hasattr(os, "getuid")
+    else Path(tempfile.gettempdir()) / f"claude-{_scratch_user_tag()}"
+)
 
 
 def worktree_admin_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
@@ -244,7 +264,11 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
         raise ValueError("A command is required.")
     executable = shutil.which("bwrap")
     if executable is None:
-        raise RuntimeError("Bubblewrap (bwrap) is required for SDD commands; refusing unsandboxed execution.")
+        raise RuntimeError(
+            "Bubblewrap (bwrap) is required for the legacy SDD hook and is not available on "
+            f"{sys.platform}; refusing unsandboxed execution. Launch the worker with "
+            "`parrot devloop launch-worker <FEAT-ID>` (native sandbox) instead."
+        )
     root, git_dir = repository_paths(cwd)
     command = [
         executable,
@@ -499,17 +523,26 @@ def rtk_rewrite(command: str) -> str | None:
     return rewritten if rewritten.strip() else None
 
 
-def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
-    """Wrap native Bash input, through RTK when available, and reject shared-environment file-tool writes."""
+def hook_response(payload: dict[str, Any], *, backend: str = "bubblewrap") -> dict[str, Any]:
+    """Apply guards and file checks; omit bwrap only for explicit claude-native mode; deny invalid modes."""
     cwd = Path(payload["cwd"])
     tool_input = payload["tool_input"]
     output: dict[str, Any] = {"hookEventName": "PreToolUse"}
     try:
+        if backend not in ("bubblewrap", "claude-native"):
+            raise ValueError(f"Unknown SDD sandbox backend {backend!r}; refusing to run")
+        native = None
+        if backend == "claude-native":
+            if __package__:
+                from . import native_claude_sandbox as native
+            else:  # run as a script: this file's directory is sys.path[0]
+                import native_claude_sandbox as native
         if payload["tool_name"] == "Bash":
             command = tool_input["command"]
             if not isinstance(command, str) or not command:
                 raise ValueError("Bash command must be a non-empty string")
-            action, value = _scope_guard(command, cwd)
+            task_cwd = native.native_task_cwd(cwd, command) if native else cwd
+            action, value = _scope_guard(command, task_cwd)
             if action == "block":
                 raise ValueError(value or "over-broad pytest blocked by the test-scope guard")
             if action in ("rewrite", "verdict") and value:
@@ -517,7 +550,14 @@ def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
             # After the guard, which must see the raw runner (`pytest`, not `rtk pytest`).
             if optimized := rtk_rewrite(command):
                 command = optimized
-            wrapped = protected_argv(cwd, bounded_shell_argv(command, tool_input))
+            if native and os.environ.get(native.DEGRADED_ENV) == "1":
+                command = "echo '[sdd] degraded sandbox: no OS write boundary' >&2; " + command
+            shell = bounded_shell_argv(command, tool_input)
+            if native:
+                env = native.native_command_environment(task_cwd)
+                wrapped = ["env", *(f"{key}={value}" for key, value in env.items()), *shell]
+            else:
+                wrapped = protected_argv(cwd, shell)
             # Preserve timeout/background/description without granting approval
             # or overriding decisions from other hooks.
             output["updatedInput"] = {**tool_input, "command": shlex.join(wrapped)}
@@ -525,7 +565,10 @@ def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
             path = tool_input.get("file_path") or tool_input.get("notebook_path")
             if not isinstance(path, str):
                 raise ValueError("File tool requires a path")
-            validate_write_path(cwd, cwd / path)
+            if native:
+                native.validate_native_write_path(cwd, cwd / path)
+            else:
+                validate_write_path(cwd, cwd / path)
     except (OSError, ValueError, RuntimeError, KeyError) as exc:
         output.update(permissionDecision="deny", permissionDecisionReason=str(exc))
     return {"hookSpecificOutput": output}
@@ -537,7 +580,15 @@ def main() -> None:
     parser.add_argument("--hook", action="store_true", required=True)
     parser.parse_args()
     try:
-        result = hook_response(json.load(sys.stdin))
+        backend = os.environ.get("PARROT_SDD_SANDBOX_BACKEND")
+        native_markers = ("PARROT_SDD_CACHE_DIR", "PARROT_SDD_SANDBOX_ROOTS", "PARROT_SDD_SANDBOX_DEGRADED")
+        if not backend and any(os.environ.get(name) for name in native_markers):
+            # A native launch always sets the backend; its absence next to the launcher's other markers
+            # means a broken launch, not a legacy session — never fall back to the Bubblewrap wrapper.
+            raise RuntimeError(
+                "native launch markers present but PARROT_SDD_SANDBOX_BACKEND is unset; refusing the legacy wrapper"
+            )
+        result = hook_response(json.load(sys.stdin), backend=backend or "bubblewrap")
     except Exception as exc:
         # A nonzero hook failure normally fails open. Emit an explicit denial.
         result = {

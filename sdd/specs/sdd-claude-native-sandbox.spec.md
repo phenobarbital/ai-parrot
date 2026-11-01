@@ -124,7 +124,9 @@ file tools ─ retained hook → existing environment check + native write-polic
    allowance. Native temporary storage is not assumed to equal Bubblewrap's per-command tmpfs:
    document residual visibility, prove caches do not write shared host locations, and clean only
    owned cache directories after the session. No cross-session secrecy claim.
-6. **Network.** Default domain list is empty. Add `sandbox_allowed_domains: List[str]` to the dispatch
+6. **Network.** Default domain list is empty and `network.strictAllowlist: true` is always emitted:
+   under `bypassPermissions` a bare `allowedDomains` list only *prompts* for unlisted hosts and the
+   prompt is auto-approved, so without `strictAllowlist` the list does not deny anything. Add `sandbox_allowed_domains: List[str]` to the dispatch
    profile and repeatable `--sandbox-allow-domain HOST` to the interactive launcher. Accept exact
    DNS hostnames, normalize case/deduplicate, reject URLs, wildcards, ports and IP literals. Never
    auto-learn domains from denied commands or grant wildcard egress. An operator may supply
@@ -152,7 +154,8 @@ file tools ─ retained hook → existing environment check + native write-polic
    Bubblewrap, socat and functional Unix-socket filtering. Claude 2.1.312 is the research baseline,
    not proof of a supported strict configuration. Missing dependencies, namespace/seccomp failures
    or unsupported runtime capabilities stop the native session. No automatic root action. macOS,
-   WSL and native Windows are not certified by this feature.
+   WSL and native Windows are not certified by this feature (policy 12 adds a macOS path that stays
+   uncertified until qualified on a Mac, and a clear native-Windows refusal).
    Qualification records the actual executable used on each path: an SDK-bundled CLI must not be
    treated as equivalent to the interactive `claude` found on PATH merely because one passed.
    Decision: the dispatcher keeps the SDK-bundled CLI (no `cli_path` override) and the launcher uses
@@ -161,6 +164,63 @@ file tools ─ retained hook → existing environment check + native write-polic
    is re-run. The initial strict host is the maintainer workstation (elementary OS 8.1, Ubuntu 24.04
    base) after the operator installs an AppArmor profile permitting Claude's seccomp helper; its
    current unprofiled state is the restricted-host failure evidence.
+10. **Sandbox mode (transition policy, added 2026-10-30).** The SDD flow runs in many consumer
+   repositories whose developers cannot all be asked to harden their hosts at once (FEAT-633). The
+   native sandbox therefore has an explicit, auditable mode instead of being unconditionally
+   mandatory:
+   - `required` (**default**): today's behaviour — the native sandbox must start or the session does
+     not run (launcher exit 1 with the reason; dispatcher `DispatchExecutionError`).
+   - `preferred`: use the native sandbox when the host can start it; otherwise launch in **degraded
+     mode** — the settings carry the hook (test-scope guard, RTK, bounded shell, native file-tool
+     checks) but no `sandbox` block, the child gets `PARROT_SDD_SANDBOX_BACKEND=claude-native` plus
+     `PARROT_SDD_SANDBOX_DEGRADED=1`, the launcher prints a one-line warning on stderr and the
+     dispatcher logs a warning and labels the dispatch; Bash runs with **no OS write boundary** and the
+     session is told so.
+   - `off`: never compile the `sandbox` block (ephemeral CI, disposable containers); hooks still apply.
+   Resolution order: `PARROT_SDD_SANDBOX_MODE` environment variable (empty/whitespace = unset), then
+   `[tool.parrot.sdd] sandbox = "required" | "preferred"` in the repository root `pyproject.toml`, then
+   `required`. `off` is accepted from the environment variable only: the worktree's `pyproject.toml` is
+   writable by the sandboxed session, so a repository value of `off` would be a self-disable path and is
+   rejected. Any other value, or an unreadable/malformed `pyproject.toml`, is an error (launcher exit 2,
+   dispatcher `DispatchExecutionError`). Availability is decided before launch
+   by a cheap probe (`bwrap --unshare-user --unshare-pid --ro-bind / / true` plus the `socat`/`claude`
+   prerequisites); the probe's outcome and the resolved mode are recorded in the session record and
+   dispatch telemetry. Degradation is never silent and never automatic under `required`. The default
+   flips only by an announced release once the FEAT-633 installer provisions the host prerequisites.
+11. **Legacy mode (rescue path, added 2026-11-01).** `legacy` is a fourth mode for when the native
+   sandbox misbehaves on a host where Bubblewrap itself works: the launcher/dispatcher compile the
+   hooks but **no** `sandbox` block, and set `PARROT_SDD_SANDBOX_BACKEND=bubblewrap` explicitly, so the
+   retained hook wraps every Bash call in its own Bubblewrap (the pre-FEAT-768 boundary: filesystem
+   write protection, no network isolation). It is not degraded (no `PARROT_SDD_SANDBOX_DEGRADED`, no
+   banner) but it is declared: launcher stderr and dispatcher log name `mode=legacy`. Like `off` it is
+   accepted from the environment variable (or the launcher's `--sandbox legacy`) only, never from
+   `pyproject.toml`, because it drops the network boundary. It needs `bwrap` and a working probe; when
+   Bubblewrap is unavailable, or the host is not Linux, it fails (launcher exit 1,
+   `DispatchExecutionError`); it never falls through to an unprotected launch.
+12. **Platform backends (added 2026-11-01).** Availability is decided per platform:
+   - Linux (WSL2 included): today's `bwrap` + `socat` probe.
+   - macOS: Claude Code's native sandbox uses Seatbelt; the probe requires `sandbox-exec` on PATH and a
+     trivial profile run (`sandbox-exec -p '(version 1)(allow default)' /usr/bin/true`), never `bwrap`/
+     `socat`. The compiled settings are the same object; `failIfUnavailable` remains the backstop. The
+     macOS path is **implemented but not certified** until the live qualification harness is run on a
+     Mac and recorded; until then a strict macOS launch prints one stderr notice saying so.
+   - Native Windows: there is no Claude Code sandbox. `required` fails with a message naming WSL2 and
+     `PARROT_SDD_SANDBOX_MODE=preferred`; `preferred` degrades with that reason; `legacy` fails.
+     The hook modules must import and run on Windows (no module-level `os.getuid`), so a degraded
+     Windows session keeps the guard/RTK/file-tool checks instead of failing every tool call.
+   - The legacy Bubblewrap wrapper keeps failing closed when `bwrap` is missing, but its denial names
+     the platform and the supported launcher instead of a bare "Bubblewrap is required".
+13. **Feature launcher (added 2026-11-01).** `parrot devloop launch-worker <FEAT-ID|slug>` is the
+   supported interactive entry point. On the host, before any session starts, it resolves the feature
+   from the per-spec index headers, creates or reuses its worktree through `ensure_worktree`, sets the
+   branch upstream (a native session cannot write Git config), and then launches `sdd-worker` in that
+   worktree through the same policy as policy 10/11 with `run <FEAT-ID>` as the initial prompt.
+   `--tmux` runs it in a detached-then-attached tmux session `sdd-<FEAT-ID>`; an existing session is
+   re-attached, never duplicated, and a non-tmux launch refuses while that session exists. The tmux
+   child receives the sandbox variables explicitly (`new-session -e`), because a running tmux server
+   does not inherit the client's environment. `scripts/sdd/launch_worker.sh` stays as a deprecated
+   alias that warns and keeps its in-worktree behaviour. The command lives in `parrot devloop`; when
+   FEAT-633's `parrot sdd` group lands it may add an alias to the same function, nothing more.
 
 ### Integration Points
 
@@ -346,6 +406,9 @@ tests:
 - packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py
 - tests/sdd_scripts/test_feat722_doc_contract.py
 - tests/sdd_scripts/test_pr_policy_wording_contract.py
+- packages/ai-parrot/tests/cli/devloop/test_click_wiring.py
+- packages/ai-parrot/tests/cli/devloop/test_launch_worker_cmd.py
+- tests/sdd_scripts/test_sdd_brief_twin_contract.py
 markers: none
 
 ### Live qualification gate (separate from the Validation Contract)
@@ -360,7 +423,7 @@ not a pass. Exceeding budget stops and reports remaining cases.
 
 | Scenario | Required observation |
 |---|---|
-| Competing rewrite | A distinct marker proves the competing rewrite ran; protected canary remains unchanged |
+| Competing rewrite | A side-effect marker written by the competing hook proves it ran (the CLI applies one `updatedInput` per call and the policy hook wins, so an output marker is unobservable); protected canary remains unchanged |
 | Native Agent child | Child Bash runs under inherited policy with its task cwd; no nested bwrap; same denied writes |
 | Filesystem matrix | Task edits and scratchpad continuity work; primary source, home, venv aliases and RTK trust store remain read-only |
 | Git controls | Commits/worktree administration succeed; config, config.worktree, hooks and lock/replacement attempts fail |
@@ -373,14 +436,21 @@ not a pass. Exceeding budget stops and reports remaining cases.
 Run strict settings without `allowAllUnixSockets:true`; include Ubuntu 24.04-family restricted-host
 failure evidence and at least one supported strict host success. Host remediation is performed by
 the operator outside this feature's automated tests. Use command results and independent canary
-inspection: transcript `tool_use.input` may retain the pre-rewrite command. Failure to observe an
-actual competing rewrite or actual child tool call makes that scenario inconclusive.
+inspection: transcript `tool_use.input` may retain the pre-rewrite command. Failure to observe the
+competing hook's side-effect marker or an actual child tool call makes that scenario inconclusive
+(amended 2026-10-30 under FEAT-768 M4: the output-marker form of this check was unobservable on
+claude 2.1.301–2.1.314, and the boundary no longer depends on hook ordering).
 
 ## 5. Acceptance Criteria
 
 - [ ] AC1: Both official launch paths enable strict native sandboxing for SDD workers/coders.
 - [ ] AC2: Competing rewrite and native child probes pass with strict socket filtering; no double wrapping.
-- [ ] AC3: Unavailable isolation and attempted unsandboxed retries stop execution without fallback.
+- [ ] AC3: Under `required` (default) unavailable isolation and attempted unsandboxed retries stop execution without fallback; under `preferred` the only fallback is the declared, logged degraded mode; no silent fallback exists in any mode.
+- [ ] AC13: The sandbox mode resolves from `PARROT_SDD_SANDBOX_MODE`, then `[tool.parrot.sdd] sandbox`, then `required`; invalid values fail the launch; `preferred`/`off` degraded launches carry the hook, the degraded env marker and a visible warning, and the dispatcher records the resolved mode and probe outcome.
+- [ ] AC14: `legacy` (env/`--sandbox` only) launches carry hooks without a `sandbox` block and `PARROT_SDD_SANDBOX_BACKEND=bubblewrap`, the hook wraps Bash in Bubblewrap, `pyproject` `legacy` is rejected, and a missing/failing `bwrap` or non-Linux host fails the launch.
+- [ ] AC15: The availability probe is platform-specific (Linux bwrap+socat, macOS `sandbox-exec`, native Windows unavailable with a WSL2/`preferred` message); the hook modules import on Windows; macOS strict launches state they are uncertified.
+- [ ] AC16: `parrot devloop launch-worker <FEAT>` resolves the feature, ensures the worktree and upstream on the host, refuses a diverged branch, and execs `sdd-worker` in the worktree with `run <FEAT-ID>` as initial prompt under the resolved sandbox mode.
+- [ ] AC17: `--tmux` creates or re-attaches `sdd-<FEAT-ID>` passing the sandbox variables explicitly, a second non-tmux launch for the same feature is refused, and `launch_worker.sh` warns as deprecated while keeping its behaviour.
 - [ ] AC4: Path matrix, Git carve-outs and file-tool guards pass positive/negative tests, including aliases.
 - [ ] AC5: Scope guard, RTK, timeout margins, per-cwd imports, caches and scratchpad behavior are preserved.
 - [ ] AC6: Network policy enforces configured domains and rejects unlisted/direct egress without widening.
@@ -563,3 +633,4 @@ The original probe report and current source were reviewed; no independent revie
 | 0.1 | 2026-10-29 | Jesus Lara / Codex | Initial draft from issue:e57a19d91778 with strict adoption and compatibility gates |
 | 0.2 | 2026-10-29 | Jesus Lara / Claude | Resolve §8 with preflight probes: target host + AppArmor, both CLIs qualified separately, leading-`cd` task cwd, no settings widening observed |
 | 0.3 | 2026-10-29 | Jesus Lara / Claude | /sdd-task: Validation Contract adds the dispatcher tests that policy 2 forces onto linked worktrees and the agent-twin/doc-contract tests M5 must keep green |
+| 0.4 | 2026-11-01 | Jesus Lara / Claude | Follow-ups TASK-5086..5089: `legacy` mode (policy 11), per-platform probe — macOS Seatbelt uncertified, native Windows message (policy 12), `parrot devloop launch-worker <FEAT> [--tmux]` supersedes `launch_worker.sh` (policy 13); AC14–AC17; Validation Contract + devloop CLI tests |
