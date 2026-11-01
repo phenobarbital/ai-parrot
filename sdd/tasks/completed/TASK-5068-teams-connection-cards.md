@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-775 — Connections on MS Teams
 **Spec**: `sdd/specs/connections-msteams.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5067
@@ -206,7 +206,7 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by gpt-5.6-terra (codex), 1 attempt, merged via sdd-worker; fidelity gate passed; merge-tier validation green; own test file 4 passed. 0 review corrections.
 
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD

@@ -98,6 +98,8 @@ class PermissionContext:
             ``None`` by default; populated by TASK-1193 (AbstractBot) and read
             by TASK-1195 (AbstractTool) to mint child spans.
         extra: Additional request-scoped metadata (e.g., source IP, API version).
+        channel_user_id: Trusted raw identity on ``channel`` (e.g. the Teams AAD oid). Set only by channel
+            code from a validated session; never from tool arguments or card data. ``None`` by default.
 
     Example:
         >>> session = UserSession(
@@ -124,6 +126,7 @@ class PermissionContext:
     channel: Optional[str] = None
     trace_context: "Optional[TraceContext]" = None
     extra: dict[str, Any] = field(default_factory=dict)
+    channel_user_id: Optional[str] = None
 
     @property
     def user_id(self) -> str:

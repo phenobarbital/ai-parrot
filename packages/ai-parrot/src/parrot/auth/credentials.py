@@ -34,6 +34,7 @@ from typing import Any, Dict, List, Literal, Optional, TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:  # pragma: no cover - import only for type checkers
+    from .permission import PermissionContext
     from .principal import Principal, PrincipalResolver
 
 
@@ -209,6 +210,29 @@ class CredentialResolver(ABC):
     async def is_connected(self, channel: str, user_id: str) -> bool:
         """Return True when :meth:`resolve` currently yields credentials."""
         return (await self.resolve(channel, user_id)) is not None
+
+
+_EXPLICIT_CHANNEL_IDENTITY = frozenset({"msteams"})
+
+
+def credential_channel_user_id(context: "PermissionContext") -> Optional[str]:
+    """Return the channel identity an OAuth toolkit must use for credential lookup.
+
+    Teams requires the explicit, trusted ``context.channel_user_id`` (the AAD oid); every other channel
+    keeps the existing behaviour of using ``context.user_id``.
+
+    Args:
+        context: The caller's permission context.
+
+    Returns:
+        The lookup identity, or ``None`` when a Teams context carries no channel identity (fail closed).
+    """
+    channel = getattr(context, "channel", None)
+    if channel in _EXPLICIT_CHANNEL_IDENTITY:
+        channel_user_id = getattr(context, "channel_user_id", None)
+        return channel_user_id.strip() if channel_user_id and channel_user_id.strip() else None
+    user_id = getattr(context, "user_id", None)
+    return str(user_id) if user_id else None
 
 
 class OAuthCredentialResolver(CredentialResolver):
