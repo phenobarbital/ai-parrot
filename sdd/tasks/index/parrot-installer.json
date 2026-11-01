@@ -955,17 +955,181 @@
       "priority": "high",
       "effort": "M",
       "depends_on": [
-        "TASK-5092",
         "TASK-4070",
         "TASK-4085",
         "TASK-4090",
-        "TASK-4091",
-        "TASK-4509"
+        "TASK-4509",
+        "TASK-5092",
+        "TASK-5095",
+        "TASK-5097",
+        "TASK-5098"
       ],
-      "parallelism_notes": "external: blocked until PR #1884 (FEAT-768 incl. TASK-5086..5089) is merged into dev",
+      "parallelism_notes": "external: blocked until PR #1884 (FEAT-768 incl. TASK-5086..5089) is merged into dev; needs the noun CLI from TASK-5095 (cli.py) and the `sdd worktree guard --hook` spelling from TASK-5097 (installer.py GUARD_HOOK_LINE, agents) before porting FEAT-768's compiled hook settings; serialized after TASK-5098 (both regenerate _assets/**) so the FEAT-768 merge resolves markdown conflicts once, against the rewritten assets",
       "file": "sdd/tasks/active/TASK-5093-absorb-feat-768-native-sandbox.md"
+    },
+    {
+      "id": "TASK-5095",
+      "slug": "sdd-cli-noun-groups",
+      "title": "parrot sdd <noun> <verb> — noun groups and passthrough verbs replace parrot sdd run",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "parallel": true,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4085",
+        "TASK-4086",
+        "TASK-4091",
+        "TASK-4509",
+        "TASK-5092"
+      ],
+      "parallelism_notes": "after TASK-5092's dev refresh (it may port scripts/sdd changes into parrot/sdd/scripts/*.py, which this task edits: worktree_status.py, worktree_environment.py); rewrites cli.py/test_sdd_cli.py (TASK-4091), worktree_environment.py (TASK-4085), worktree_status.py (TASK-4086); the fast-path test from TASK-4509 must keep passing",
+      "file": "sdd/tasks/active/TASK-5095-sdd-cli-noun-groups.md"
+    },
+    {
+      "id": "TASK-5096",
+      "slug": "sdd-helper-inventory-reconcile",
+      "title": "Helper inventory reconciliation — package check_spec_consequences, un-ship insight",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "parallel": true,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4088",
+        "TASK-4091",
+        "TASK-5095"
+      ],
+      "parallelism_notes": "adds the `spec consequences` row to VERBS and empties _UNMOUNTED in cli.py created by TASK-5095; cli.py/test_sdd_cli.py from TASK-4091; reverses TASK-4088's insight move (scripts/sdd/insight.py)",
+      "file": "sdd/tasks/active/TASK-5096-sdd-helper-inventory-reconcile.md"
+    },
+    {
+      "id": "TASK-5097",
+      "slug": "sdd-hook-argv-worktree-guard",
+      "title": "Hook line becomes parrot sdd worktree guard --hook (launcher fast path, installer, agents)",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4080",
+        "TASK-4091",
+        "TASK-4509",
+        "TASK-5092",
+        "TASK-5095"
+      ],
+      "parallelism_notes": "exclusive: regenerates the shared _assets/ tree + manifest.json (check_asset_sync --write); needs the `worktree guard` verb from TASK-5095 (cli.py) for the integration tests; after TASK-5092 which also regenerates _assets; installer.py/test_installer.py/test_wheel_only_foreign_repo.py (TASK-4091), launcher.py SDD_HOOK_ARGV + its test (TASK-4509), doctor guard check test (TASK-4080)",
+      "file": "sdd/tasks/active/TASK-5097-sdd-hook-argv-worktree-guard.md"
+    },
+    {
+      "id": "TASK-5098",
+      "slug": "sdd-markdown-rewrite-nouns",
+      "title": "Table-driven rewrite of shipped SDD assets to parrot sdd <noun> <verb> + gates",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4070",
+        "TASK-4091",
+        "TASK-5095",
+        "TASK-5096",
+        "TASK-5097"
+      ],
+      "parallelism_notes": "exclusive: regenerates _assets/ + manifest.json; reads parrot.sdd.cli.VERBS from TASK-5095 (incl. `spec consequences` from TASK-5096); the agent hook lines must already carry TASK-5097's spelling so the rewrite does not touch them; audit.py from TASK-4070, test_installer.py/test_wheel_only_foreign_repo.py from TASK-4091",
+      "file": "sdd/tasks/active/TASK-5098-sdd-markdown-rewrite-nouns.md"
+    },
+    {
+      "id": "TASK-5099",
+      "slug": "sdd-ledger-mount",
+      "title": "parrot sdd ledger — lazy re-mount of the wikitoolkit ledger group",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "parallel": true,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4091",
+        "TASK-5095",
+        "TASK-5096"
+      ],
+      "parallelism_notes": "edits cli.py after TASK-5095's VERBS loop (anchor `for _noun, _verbs in VERBS.items()`); serialized after TASK-5096 (both edit cli.py); test_sdd_cli.py from TASK-4091",
+      "file": "sdd/tasks/active/TASK-5099-sdd-ledger-mount.md"
+    },
+    {
+      "id": "TASK-5100",
+      "slug": "sdd-launch-noun",
+      "title": "parrot sdd launch worker | brief | fix — the launch noun",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5093",
+        "TASK-5095",
+        "TASK-5098",
+        "TASK-5099"
+      ],
+      "parallelism_notes": "exclusive: regenerates _assets/; needs feature_launcher.py + cli/devloop/launch_worker.py from TASK-5093 (FEAT-768 absorbed), the `sdd` group from TASK-5095 (cli.py), and TASK-5098's rewrite done so only the five launch_worker.sh refs remain; serialized after TASK-5099 (both edit cli.py: the ledger mount is the insertion anchor)",
+      "file": "sdd/tasks/active/TASK-5100-sdd-launch-noun.md"
+    },
+    {
+      "id": "TASK-5101",
+      "slug": "sdd-cli-docs-and-contract",
+      "title": "Docs for the noun-grouped CLI + Validation Contract refresh",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "parallel": true,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4095",
+        "TASK-5098",
+        "TASK-5099",
+        "TASK-5100"
+      ],
+      "parallelism_notes": "documents the final tree: verbs from TASK-5098's rewrite, `ledger` from TASK-5099, `launch` from TASK-5100; re-caches the index test_contract with the test files those tasks create; docs/getting-started.md and docs/install/global-runtime.md were written by TASK-4095",
+      "file": "sdd/tasks/active/TASK-5101-sdd-cli-docs-and-contract.md"
     }
   ],
-  "amended_at": "2026-10-20T00:00:00+00:00",
-  "spec_revision": "0.5"
+  "amended_at": "2026-11-01T00:00:00+00:00",
+  "spec_revision": "0.8"
 }
