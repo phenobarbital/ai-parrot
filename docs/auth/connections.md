@@ -43,6 +43,10 @@ The callback and notifier registry must remain in the same process for the
 load-bearing in-process delivery path; the publish-only event bus is the
 cross-process fallback.
 
+| Channel | Notifier | Commands | Guide |
+|---|---|---|---|
+| Telegram | generic `TelegramConnectionNotifier` | `/connect [<provider>]`, `/disconnect <provider>`, `/connections` (+ Jira / Office365 aliases) | [Telegram connections](../integrations/telegram-connections.md) |
+
 ## Needs-auth contract
 
 Tools and handlers use `AuthRequiredPayload` for both authorization-required
