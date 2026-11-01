@@ -342,7 +342,7 @@ approved. The agents under `.claude/agents/`:
 ┌─ EXECUTE (in worktree) ───────────────▼───────────────────────────────────┐
 │ cd .claude/worktrees/feat-071-<slug>                                      │
 │ /sdd-start TASK-001  → implement → commit  (repeat per task, deps honored) │
-│        … or: parrot devloop launch-worker FEAT-071 --tmux (all tasks unattended) │
+│        … or: parrot devloop launch-worker FEAT-071 --tmux (unattended)     │
 │        … or: claude --agent sdd-autopilot (worker→review→QA→done→pr-review)│
 └──────────────────────────────────────┬───────────────────────────────────┘
                                         │ all tasks done
