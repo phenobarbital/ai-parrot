@@ -313,9 +313,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 F.web_app_data,
             )
 
-        # Register Jira OAuth 2.0 (3LO) commands when a manager is wired in.
-        self._register_jira_commands()
-        self._register_office365_commands()
+        # Register generic connection commands and their provider aliases.
+        self._register_connection_commands()
 
         # Register /add_mcp, /list_mcp, /remove_mcp so users can attach
         # their own HTTP MCP server (e.g. Fireflies.ai) to their session.
@@ -428,48 +427,109 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             self._platform_commands.append((command, description))
             existing.add(normalized)
 
-    def _register_jira_commands(self) -> None:
-        """Wire ``/connect_jira``, ``/disconnect_jira`` and ``/jira_status``.
+    def _register_connection_commands(self) -> None:
+        """Register generic connection commands plus Jira and Office365 aliases."""
+        from parrot.auth.oauth2.service import IntegrationsService
+        from parrot.integrations.core.auth.connections import ConnectionCommandService
 
-        The Jira OAuth manager is resolved from ``app['jira_oauth_manager']``
-        when OAuth 2.0 (3LO) is enabled for this agent. When the aiohttp app
-        was not passed to the wrapper, or the key is absent, the commands are
-        simply not registered — legacy deployments are unaffected.
-        """
-        oauth_manager = self.app.get("jira_oauth_manager") if self.app is not None else None
-        if oauth_manager is None:
-            return
+        from .connection_commands import register_connection_commands
         from .jira_commands import register_jira_commands
+        from .office365_commands import register_office365_commands
 
-        # Closure over ``self._user_sessions`` so /disconnect_jira clears the
-        # Jira identity from the in-memory session, preventing
-        # ``_enrich_question`` from keeping the stale ``<jira>`` block in
-        # the prompt after revocation.
-        def _clear_jira_session(telegram_id: int) -> None:
+        app = self.app if self.app is not None else {}
+        vault = None
+        db_pool = app.get("authdb") or app.get("database")
+        if db_pool is not None:
+            try:
+                from parrot.services.vault_token_sync import VaultTokenSync
+
+                vault = VaultTokenSync(db_pool=db_pool, redis=app.get("redis"))
+            except ImportError:
+                self.logger.warning("Connection token vault is unavailable on this bot.")
+
+        commands = ConnectionCommandService(
+            service=IntegrationsService(vault, authorizer=app.get("connection_authorizer")),
+            app=app,
+            channel="telegram",
+            allowlist=self.config.connection_providers,
+        )
+        has_connectable_provider = bool(commands.connectable_providers())
+        methods = set(getattr(self.config, "auth_methods", []) or [])
+        if not has_connectable_provider and "oauth2" not in methods:
+            return
+
+        def _session_provider(telegram_id: int) -> TelegramUserSession:
+            session = self._user_sessions.get(telegram_id)
+            if session is None:
+                session = TelegramUserSession(telegram_id=telegram_id)
+                self._user_sessions[telegram_id] = session
+            return session
+
+        async def _principal_source(update: Any) -> Optional["Principal"]:
+            message = update.message if isinstance(update, CallbackQuery) else update
+            session = self._get_user_session(message)
+            await self._ensure_principal_link(session)
+            return await principal_for_session(session, tenant_id=self.config.tenant)
+
+        def _context_source(update: Any, principal: "Principal") -> Any:
+            message = update.message if isinstance(update, CallbackQuery) else update
+            return self._connection_permission_context(self._get_user_session(message), principal)
+
+        def _extra_state_factory(update: Any) -> Dict[str, Any]:
+            message = update.message if isinstance(update, CallbackQuery) else update
+            return {"chat_id": message.chat.id, "bot_id": self._bot_id}
+
+        def _clear_jira_session(telegram_id: int, provider_id: str) -> None:
+            if provider_id != "jira":
+                return
             session = self._user_sessions.get(telegram_id)
             if session is not None:
                 session.clear_jira_auth()
-                self.logger.info(
-                    "Cleared in-memory Jira identity for tg:%s after " "/disconnect_jira",
-                    telegram_id,
+
+        if has_connectable_provider:
+            self._add_platform_commands(
+                register_connection_commands(
+                    self.router,
+                    commands=commands,
+                    principal_source=_principal_source,
+                    context_source=_context_source,
+                    extra_state_factory=_extra_state_factory,
+                    on_disconnected=_clear_jira_session,
+                )
+            )
+            if commands.resolve_provider("jira") is not None:
+                register_jira_commands(
+                    self.router,
+                    commands=commands,
+                    principal_source=_principal_source,
+                    context_source=_context_source,
+                    extra_state_factory=_extra_state_factory,
+                    on_disconnected=_clear_jira_session,
+                )
+                self._add_platform_commands(
+                    [
+                        ("connect_jira", "Connect Jira account"),
+                        ("disconnect_jira", "Disconnect Jira account"),
+                        ("jira_status", "Show Jira connection status"),
+                    ]
                 )
 
-        register_jira_commands(
-            self.router,
-            oauth_manager,
-            session_clearer=_clear_jira_session,
-            session_lookup=lambda tid: self._user_sessions.get(int(tid)),
-        )
-        self._add_platform_commands(
-            [
-                ("connect_jira", "Connect Jira account"),
-                ("disconnect_jira", "Disconnect Jira account"),
-                ("jira_status", "Show Jira connection status"),
-            ]
-        )
-        self.logger.info(
-            "Registered Jira OAuth commands: /connect_jira, " "/disconnect_jira, /jira_status",
-        )
+        if has_connectable_provider or "oauth2" in methods:
+            register_office365_commands(
+                self.router,
+                _session_provider,
+                commands=commands,
+                principal_source=_principal_source,
+                context_source=_context_source,
+                extra_state_factory=_extra_state_factory,
+            )
+            self._add_platform_commands(
+                [
+                    ("connect_office365", "Connect Office365 delegated access"),
+                    ("disconnect_office365", "Disconnect Office365 access"),
+                    ("office365_status", "Show Office365 connection status"),
+                ]
+            )
         self._register_jira_session_hook()
 
     def _register_jira_session_hook(self) -> None:
@@ -496,37 +556,6 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 session.clear_jira_auth()
 
         notifier.register_session_hook("jira", on_completed=on_completed, on_revoked=on_revoked)
-
-    def _register_office365_commands(self) -> None:
-        """Wire Office365 delegated auth commands.
-
-        Commands mirror Jira command ergonomics but source credentials from
-        the existing Telegram OAuth2 login session.
-        """
-        methods = set(getattr(self.config, "auth_methods", []) or [])
-        if "oauth2" not in methods:
-            return
-
-        from .office365_commands import register_office365_commands
-
-        def _session_provider(telegram_id: int) -> TelegramUserSession:
-            session = self._user_sessions.get(telegram_id)
-            if session is None:
-                session = TelegramUserSession(telegram_id=telegram_id)
-                self._user_sessions[telegram_id] = session
-            return session
-
-        register_office365_commands(self.router, _session_provider)
-        self._add_platform_commands(
-            [
-                ("connect_office365", "Connect Office365 delegated access"),
-                ("disconnect_office365", "Disconnect Office365 access"),
-                ("office365_status", "Show Office365 connection status"),
-            ]
-        )
-        self.logger.info(
-            "Registered Office365 commands: /connect_office365, " "/disconnect_office365, /office365_status",
-        )
 
     def _register_mcp_commands(self) -> None:
         """Wire ``/add_mcp``, ``/list_mcp`` and ``/remove_mcp``.

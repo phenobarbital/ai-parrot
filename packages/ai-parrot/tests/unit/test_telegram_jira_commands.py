@@ -1,200 +1,80 @@
-"""Unit tests for Telegram Jira OAuth command handlers (TASK-754)."""
+"""Tests for Telegram Jira generic-connection aliases."""
 from __future__ import annotations
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from aiogram.types import InlineKeyboardMarkup
+from aiogram import Router
 
-from parrot.integrations.telegram.jira_commands import (
-    TelegramOAuthNotifier,
-    connect_jira_handler,
-    disconnect_jira_handler,
-    jira_status_handler,
-    register_jira_commands,
-)
+from parrot.auth.principal import Principal
+from parrot.integrations.telegram.jira_commands import register_jira_commands
 
 
-def _make_message(user_id: int = 555, chat_id: int = 101) -> MagicMock:
+def _message() -> MagicMock:
+    """Build a private-chat message used by registered alias callbacks."""
     message = MagicMock()
-    message.reply = AsyncMock()
-    message.from_user = SimpleNamespace(id=user_id)
-    message.chat = SimpleNamespace(id=chat_id)
+    message.from_user = SimpleNamespace(id=55)
+    message.chat = SimpleNamespace(id=101, type="private")
     return message
 
 
-class TestConnectJiraHandler:
-    @pytest.mark.asyncio
-    async def test_sends_auth_url_when_not_connected(self) -> None:
-        manager = MagicMock()
-        manager.validate_token = AsyncMock(return_value=None)
-        manager.create_authorization_url = AsyncMock(
-            return_value=("https://auth.atlassian.com/authorize?state=x", "x"),
-        )
-        message = _make_message()
+@pytest.mark.asyncio
+async def test_jira_aliases_route_to_generic(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each Jira alias preserves its provider argument and generic handler inputs."""
+    from parrot.integrations.telegram import connection_commands
 
-        await connect_jira_handler(message, manager)
+    connect = AsyncMock()
+    disconnect = AsyncMock()
+    status = AsyncMock()
+    monkeypatch.setattr(connection_commands, "connect_handler", connect)
+    monkeypatch.setattr(connection_commands, "disconnect_handler", disconnect)
+    monkeypatch.setattr(connection_commands, "connections_handler", status)
+    router = Router()
+    commands = MagicMock()
 
-        manager.create_authorization_url.assert_awaited_once()
-        args, kwargs = manager.create_authorization_url.await_args
-        assert args == ("telegram", "555")
-        assert kwargs["extra_state"]["chat_id"] == 101
+    async def principal_source(_message: MagicMock) -> Principal:
+        return Principal(user_id="nav-55", channel="telegram", channel_user_id="55")
 
-        message.reply.assert_awaited_once()
-        call_kwargs = message.reply.await_args.kwargs
-        markup = call_kwargs["reply_markup"]
-        assert isinstance(markup, InlineKeyboardMarkup)
-        button = markup.inline_keyboard[0][0]
-        assert button.url.startswith("https://auth.atlassian.com")  # lgtm[py/incomplete-url-substring-sanitization]
+    def context_source(_message: MagicMock, _principal: Principal) -> MagicMock:
+        return MagicMock()
 
-    @pytest.mark.asyncio
-    async def test_already_connected_message(self) -> None:
-        manager = MagicMock()
-        manager.validate_token = AsyncMock(return_value=SimpleNamespace(
-            display_name="x", site_url="y",
-        ))
-        message = _make_message()
+    def extra_state_factory(_message: MagicMock) -> dict[str, int]:
+        return {"chat_id": 101}
 
-        await connect_jira_handler(message, manager)
+    disconnected = MagicMock()
+    register_jira_commands(
+        router,
+        commands=commands,
+        principal_source=principal_source,
+        context_source=context_source,
+        extra_state_factory=extra_state_factory,
+        on_disconnected=disconnected,
+    )
 
-        message.reply.assert_awaited_once()
-        text = message.reply.await_args.args[0]
-        assert "already connected" in text.lower()
+    handlers = router.message.handlers[-3:]
+    message = _message()
+    await handlers[0].callback(message)
+    await handlers[1].callback(message)
+    await handlers[2].callback(message)
 
-    @pytest.mark.asyncio
-    async def test_stale_token_triggers_fresh_auth_url(self) -> None:
-        # validate_token returns None when Atlassian rejects the stored
-        # token; the handler should send a fresh authorization URL
-        # instead of replying "already connected".
-        manager = MagicMock()
-        manager.validate_token = AsyncMock(return_value=None)
-        manager.create_authorization_url = AsyncMock(
-            return_value=("https://auth.atlassian.com/authorize?state=y", "y"),
-        )
-        message = _make_message()
-
-        await connect_jira_handler(message, manager)
-
-        manager.create_authorization_url.assert_awaited_once()
-        markup = message.reply.await_args.kwargs["reply_markup"]
-        assert isinstance(markup, InlineKeyboardMarkup)
-
-    @pytest.mark.asyncio
-    async def test_missing_from_user(self) -> None:
-        manager = MagicMock()
-        message = MagicMock()
-        message.reply = AsyncMock()
-        message.from_user = None
-
-        await connect_jira_handler(message, manager)
-        message.reply.assert_awaited_once()
+    assert connect.await_args.args == (message, "jira")
+    assert connect.await_args.kwargs["commands"] is commands
+    assert disconnect.await_args.args == (message, "jira")
+    assert disconnect.await_args.kwargs["on_disconnected"] is disconnected
+    assert status.await_args.args == (message,)
+    assert status.await_args.kwargs["only"] == "jira"
 
 
-class TestDisconnectJiraHandler:
-    @pytest.mark.asyncio
-    async def test_revokes_and_confirms(self) -> None:
-        manager = MagicMock()
-        manager.revoke = AsyncMock()
-        message = _make_message(user_id=42)
-
-        await disconnect_jira_handler(message, manager)
-
-        manager.revoke.assert_awaited_once_with("telegram", "42")
-        message.reply.assert_awaited_once()
-        assert "disconnected" in message.reply.await_args.args[0].lower()
-
-
-class TestJiraStatusHandler:
-    @pytest.mark.asyncio
-    async def test_connected_shows_details(self) -> None:
-        manager = MagicMock()
-        manager.validate_token = AsyncMock(return_value=SimpleNamespace(
-            display_name="Jesus Garcia",
-            site_url="https://acme.atlassian.net",
-        ))
-        message = _make_message()
-
-        await jira_status_handler(message, manager)
-
-        text = message.reply.await_args.args[0]
-        assert "Jesus Garcia" in text
-        assert "acme.atlassian.net" in text  # lgtm[py/incomplete-url-substring-sanitization]
-
-    @pytest.mark.asyncio
-    async def test_not_connected_suggests_connect(self) -> None:
-        manager = MagicMock()
-        manager.validate_token = AsyncMock(return_value=None)
-        message = _make_message()
-
-        await jira_status_handler(message, manager)
-
-        text = message.reply.await_args.args[0]
-        assert "/connect_jira" in text
-
-    @pytest.mark.asyncio
-    async def test_stale_token_reports_disconnected(self) -> None:
-        # validate_token returned None because Atlassian rejected the
-        # stored token (and the manager already revoked it). The status
-        # handler must mirror that — not silently keep saying "connected".
-        manager = MagicMock()
-        manager.validate_token = AsyncMock(return_value=None)
-        message = _make_message()
-
-        await jira_status_handler(message, manager)
-
-        text = message.reply.await_args.args[0]
-        assert "Not connected" in text
-
-
-class TestRegisterJiraCommands:
-    def test_registers_three_commands(self) -> None:
-        from aiogram import Router
-
-        router = Router()
-        manager = MagicMock()
-
-        before = len(router.message.handlers)
-        register_jira_commands(router, manager)
-        after = len(router.message.handlers)
-
-        assert after - before == 3
-
-
-class TestTelegramOAuthNotifier:
-    @pytest.mark.asyncio
-    async def test_notify_connected(self) -> None:
-        bot = MagicMock()
-        bot.send_message = AsyncMock()
-        notifier = TelegramOAuthNotifier(bot)
-
-        await notifier.notify_connected(
-            chat_id=101, display_name="Jesus", site_url="https://acme.atlassian.net",
-        )
-
-        bot.send_message.assert_awaited_once()
-        args, _ = bot.send_message.await_args
-        assert args[0] == 101
-        assert "Jesus" in args[1]
-
-    @pytest.mark.asyncio
-    async def test_notify_connected_swallows_exceptions(self) -> None:
-        bot = MagicMock()
-        bot.send_message = AsyncMock(side_effect=RuntimeError("boom"))
-        notifier = TelegramOAuthNotifier(bot)
-        # Must not raise — notifications are best-effort.
-        await notifier.notify_connected(
-            chat_id=1, display_name="x", site_url="y",
-        )
-
-    @pytest.mark.asyncio
-    async def test_notify_failure(self) -> None:
-        bot = MagicMock()
-        bot.send_message = AsyncMock()
-        notifier = TelegramOAuthNotifier(bot)
-
-        await notifier.notify_failure(chat_id=2, reason="expired nonce")
-
-        bot.send_message.assert_awaited_once()
-        args, _ = bot.send_message.await_args
-        assert "expired nonce" in args[1]
+def test_registers_three_jira_aliases() -> None:
+    """The Jira compatibility surface remains exactly three commands."""
+    router = Router()
+    before = len(router.message.handlers)
+    register_jira_commands(
+        router,
+        commands=MagicMock(),
+        principal_source=AsyncMock(),
+        context_source=MagicMock(),
+        extra_state_factory=MagicMock(),
+    )
+    assert len(router.message.handlers) - before == 3
