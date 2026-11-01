@@ -144,6 +144,8 @@ WORKTREE_ADMIN_DIR = Path(".claude") / "worktrees"
 # resolves to the primary checkout, so a worktree agent filing a finding with
 # ``wikitoolkit ledger open`` writes there, never into its own checkout.
 SHARED_LEDGER_DIR = Path(".parrot") / "ledger"
+
+
 # Claude Code keeps every session's scratchpad under this root
 # (``/tmp/claude-<uid>/<project-slug>/<session-id>/scratchpad``) and tells the
 # seat to use it for temporary files. The sandbox replaces ``/tmp`` with a

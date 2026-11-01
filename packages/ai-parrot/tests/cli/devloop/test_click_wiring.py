@@ -1,4 +1,5 @@
 """Click wiring tests for ``parrot devloop``."""
+
 from __future__ import annotations
 
 import sys
@@ -107,9 +108,7 @@ def test_revise_flag_passthrough():
     assert result.exit_code == 0
     mock_instance.start.assert_called_once()
     call_kwargs = mock_instance.start.call_args
-    assert call_kwargs[1].get("revision") is True or (
-        len(call_kwargs[0]) > 1 and call_kwargs[0][1] is True
-    )
+    assert call_kwargs[1].get("revision") is True or (len(call_kwargs[0]) > 1 and call_kwargs[0][1] is True)
 
 
 def test_bare_devloop_invokes_run():
