@@ -7,14 +7,17 @@ a Claude hook, even when importing the rest of Parrot is unavailable.
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import math
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from typing import Any, Sequence
 
 POLICY_MESSAGE = (
@@ -146,7 +149,22 @@ SHARED_LEDGER_DIR = Path(".parrot") / "ledger"
 # seat to use it for temporary files. The sandbox replaces ``/tmp`` with a
 # private tmpfs, so the root is bound back in — writable — for all sessions of
 # this user at once; every session on the host belongs to the same user.
-CLAUDE_SCRATCH_ROOT = Path("/tmp") / f"claude-{os.getuid()}"
+def _scratch_user_tag() -> str:
+    """Return a filesystem-safe current-user tag when POSIX UIDs are unavailable."""
+    if hasattr(os, "getuid"):
+        return str(os.getuid())
+    try:
+        username = getpass.getuser()
+    except (KeyError, OSError):
+        username = ""
+    return re.sub(r"[^A-Za-z0-9_.-]", "", username) or "user"
+
+
+CLAUDE_SCRATCH_ROOT = (
+    Path("/tmp") / f"claude-{os.getuid()}"
+    if hasattr(os, "getuid")
+    else Path(tempfile.gettempdir()) / f"claude-{_scratch_user_tag()}"
+)
 
 
 def worktree_admin_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
@@ -244,7 +262,11 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
         raise ValueError("A command is required.")
     executable = shutil.which("bwrap")
     if executable is None:
-        raise RuntimeError("Bubblewrap (bwrap) is required for SDD commands; refusing unsandboxed execution.")
+        raise RuntimeError(
+            "Bubblewrap (bwrap) is required for the legacy SDD hook and is not available on "
+            f"{sys.platform}; refusing unsandboxed execution. Launch the worker with "
+            "`parrot devloop launch-worker <FEAT-ID>` (native sandbox) instead."
+        )
     root, git_dir = repository_paths(cwd)
     command = [
         executable,

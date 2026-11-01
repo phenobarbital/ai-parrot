@@ -861,6 +861,23 @@ class TestNativeSandboxDispatch:
         assert options.env["PARROT_SDD_SANDBOX_DEGRADED"] == "1"
         assert "native sandbox DEGRADED" in caplog.text
 
+    def test_strict_macos_sandbox_warns_about_uncertified_seatbelt(
+        self, dispatcher, linked_worktree, monkeypatch, caplog
+    ):
+        """Strict macOS dispatches retain the warning that qualification is pending."""
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.claude.native_claude_sandbox.plan_native_launch",
+            lambda *args, **kwargs: ("required", False, "", {"sandbox": {}}),
+        )
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.claude.native_claude_sandbox.sandbox_platform",
+            lambda: "macos",
+        )
+
+        dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
+
+        assert "macOS Seatbelt backend is implemented but not certified" in caplog.text
+
     def test_legacy_sandbox_uses_bubblewrap_hook_and_warns(self, dispatcher, linked_worktree, monkeypatch, caplog):
         """Legacy dispatch retains the hook's filesystem boundary without a native sandbox."""
         from parrot.flows.dev_loop import native_claude_sandbox as native
