@@ -15,6 +15,8 @@ authentication state machine.
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
+import contextlib
+
 import pytest
 
 from parrot.integrations.telegram.auth import (
@@ -147,6 +149,23 @@ def config_with_jira(basic_config):
 # ----------------------------------------------------------------------
 
 
+@contextlib.contextmanager
+def _registered_jira_provider():
+    """Register a connectable ``jira`` provider in the process-global registry for one block."""
+    from types import SimpleNamespace
+
+    from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
+
+    OAuth2ProviderRegistry._reset()
+    OAuth2ProviderRegistry().register(
+        SimpleNamespace(provider_id="jira", display_name="Jira", icon=None, default_scopes=[], manager=MagicMock())
+    )
+    try:
+        yield
+    finally:
+        OAuth2ProviderRegistry._reset()
+
+
 class TestInitPostAuthProviders:
     def test_no_actions_leaves_registry_empty(self, wrapper_cls, basic_config):
         w = _blank_wrapper(wrapper_cls, basic_config)
@@ -156,13 +175,11 @@ class TestInitPostAuthProviders:
     def test_jira_registered_when_services_available(
         self, wrapper_cls, config_with_jira
     ):
-        app = _make_app(
-            jira_oauth_manager=MagicMock(),
-            authdb=MagicMock(),
-            redis=MagicMock(),
-        )
-        w = _blank_wrapper(wrapper_cls, config_with_jira, app=app)
-        w._init_post_auth_providers()
+        # FEAT-776: providers register from OAuth2ProviderRegistry, not from app["jira_oauth_manager"].
+        app = _make_app(authdb=MagicMock(), redis=MagicMock())
+        with _registered_jira_provider():
+            w = _blank_wrapper(wrapper_cls, config_with_jira, app=app)
+            w._init_post_auth_providers()
         assert "jira" in w._post_auth_registry
 
     def test_jira_registered_when_db_key_is_database(
@@ -170,13 +187,10 @@ class TestInitPostAuthProviders:
     ):
         """Some deployments publish the pool as ``app['database']`` — the
         wrapper must accept it as a fallback for ``app['authdb']``."""
-        app = _make_app(
-            jira_oauth_manager=MagicMock(),
-            database=MagicMock(),
-            redis=MagicMock(),
-        )
-        w = _blank_wrapper(wrapper_cls, config_with_jira, app=app)
-        w._init_post_auth_providers()
+        app = _make_app(database=MagicMock(), redis=MagicMock())
+        with _registered_jira_provider():
+            w = _blank_wrapper(wrapper_cls, config_with_jira, app=app)
+            w._init_post_auth_providers()
         assert "jira" in w._post_auth_registry
 
     def test_jira_skipped_when_app_missing(
