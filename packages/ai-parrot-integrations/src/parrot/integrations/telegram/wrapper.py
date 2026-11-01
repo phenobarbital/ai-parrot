@@ -9,7 +9,7 @@ Supports:
 - Channel posts (optional)
 """
 
-from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING, Callable
+from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING, Callable, Awaitable, Sequence
 from pathlib import Path
 import asyncio
 import contextlib
@@ -63,6 +63,7 @@ from parrot.skills.tenancy import set_active_skill
 
 if TYPE_CHECKING:
     from aiohttp import web
+    from parrot.auth.credentials import AuthRequiredPayload
     from parrot.auth.principal import Principal
     from ...bots.abstract import AbstractBot
     from ...memory import ConversationMemory
@@ -453,6 +454,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             channel="telegram",
             allowlist=self.config.connection_providers,
         )
+        self._connection_commands = commands
         has_connectable_provider = bool(commands.connectable_providers())
         methods = set(getattr(self.config, "auth_methods", []) or [])
         if not has_connectable_provider and "oauth2" not in methods:
@@ -1592,6 +1594,68 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await typing_task
 
+    async def _ask_with_auth_requirements(
+        self,
+        ask: Callable[[], Awaitable[Any]],
+    ) -> Tuple[Any, List["AuthRequiredPayload"]]:
+        """Run one ask inside a fresh needs-auth collector."""
+        from parrot.auth.pending import collect_auth_requirements
+
+        with collect_auth_requirements() as pending:
+            response = await ask()
+        return response, list(pending)
+
+    async def _send_auth_prompts(
+        self,
+        message: Message,
+        session: TelegramUserSession,
+        pending: Sequence["AuthRequiredPayload"],
+    ) -> None:
+        """Send one connection prompt per provider after the agent reply."""
+        if not pending or message.chat.type != ChatType.PRIVATE:
+            return
+
+        from parrot.integrations.telegram.connection_commands import LOGIN_FIRST, render_connect_outcome
+
+        await self._ensure_principal_link(session)
+        principal = await principal_for_session(session, tenant_id=self.config.tenant)
+        if principal is None:
+            await message.answer(LOGIN_FIRST, parse_mode=None)
+            return
+
+        grouped: Dict[str, Dict[str, Any]] = {}
+        for requirement in pending:
+            provider = requirement.provider
+            provider_group = grouped.setdefault(provider, {"scopes": set(), "device": None})
+            provider_group["scopes"].update(requirement.scopes)
+            if (
+                provider_group["device"] is None
+                and requirement.auth_kind == "device_code"
+                and requirement.user_code
+                and requirement.verification_uri
+            ):
+                provider_group["device"] = requirement
+
+        for provider in sorted(grouped):
+            provider_group = grouped[provider]
+            device = provider_group["device"]
+            if device is not None:
+                await message.answer(
+                    f"To connect {provider}, visit {device.verification_uri} and enter code {device.user_code}.",
+                    parse_mode=None,
+                )
+                continue
+
+            outcome = await self._connection_commands.connect(
+                principal,
+                provider,
+                extra_state={"chat_id": message.chat.id, "bot_id": self._bot_id},
+                permission_context=self._connection_permission_context(session, principal),
+                scopes=sorted(provider_group["scopes"]),
+            )
+            text, reply_markup = render_connect_outcome(outcome)
+            await message.answer(text, reply_markup=reply_markup, parse_mode=None)
+
     async def _invoke_agent(
         self,
         session: TelegramUserSession,
@@ -1601,7 +1665,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         output_mode: OutputMode = OutputMode.TELEGRAM,
         message: Optional[Message] = None,
         attachments: Optional[List[str]] = None,
-    ) -> Any:
+    ) -> Tuple[Any, List["AuthRequiredPayload"]]:
         """Call ``agent.ask`` with per-user ToolManager/agent isolation.
 
         In ``singleton_agent=True`` the shared agent's ``tool_manager``
@@ -1661,18 +1725,20 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     # wait_for bounds the lock hold time — without this, a
                     # hung tool call (e.g. requests without timeout) would
                     # pin this lock forever and freeze every Telegram user.
-                    return await asyncio.wait_for(
-                        agent.ask(
-                            enriched,
-                            user_id=session.user_id,
-                            session_id=session.session_id,
-                            memory=memory,
-                            output_mode=output_mode,
-                            permission_context=permission_context,
-                            tenant=self.config.tenant,
-                            attachments=attachments,
-                        ),
-                        timeout=timeout,
+                    return await self._ask_with_auth_requirements(
+                        lambda: asyncio.wait_for(
+                            agent.ask(
+                                enriched,
+                                user_id=session.user_id,
+                                session_id=session.session_id,
+                                memory=memory,
+                                output_mode=output_mode,
+                                permission_context=permission_context,
+                                tenant=self.config.tenant,
+                                attachments=attachments,
+                            ),
+                            timeout=timeout,
+                        )
                     )
                 finally:
                     agent.tool_manager = original_tm
@@ -1688,18 +1754,20 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 session.telegram_id,
                 attachments,
             )
-        return await asyncio.wait_for(
-            agent.ask(
-                enriched,
-                user_id=session.user_id,
-                session_id=session.session_id,
-                memory=memory,
-                output_mode=output_mode,
-                permission_context=permission_context,
-                tenant=self.config.tenant,
-                attachments=attachments,
-            ),
-            timeout=timeout,
+        return await self._ask_with_auth_requirements(
+            lambda: asyncio.wait_for(
+                agent.ask(
+                    enriched,
+                    user_id=session.user_id,
+                    session_id=session.session_id,
+                    memory=memory,
+                    output_mode=output_mode,
+                    permission_context=permission_context,
+                    tenant=self.config.tenant,
+                    attachments=attachments,
+                ),
+                timeout=timeout,
+            )
         )
 
     async def _resolve_agent_for_request(
@@ -1787,10 +1855,13 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         try:
             session = self._get_user_session(message)
             memory = self._get_or_create_memory(chat_id)
+            pending: List["AuthRequiredPayload"] = []
 
             async def inject(*, session_id, user_id, agent_id, query):
                 session.session_id = session_id
-                return await self._invoke_agent(session, query, memory=memory, message=message)
+                response, collected = await self._invoke_agent(session, query, memory=memory, message=message)
+                pending.extend(collected)
+                return response
 
             outcome = await resume_helper.resume(token, inject=inject)
             typing_task.cancel()
@@ -1798,6 +1869,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             if outcome["ok"]:
                 parsed = self._parse_response(outcome["result"])
                 await self._send_parsed_response(message, parsed)
+                await self._send_auth_prompts(message, session, pending)
             else:
                 await message.answer(outcome["reply"])
         except Exception as exc:
@@ -2066,6 +2138,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
         try:
+            session = self._get_user_session(message)
             self.logger.info("Chat %s: Calling tool %s(%s)", chat_id, tool_name, args_text)
             # Use agent.ask to let the LLM invoke the tool properly
             question = (
@@ -2074,13 +2147,16 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 else f"Use the tool `{tool_name}`"
             )
             with telegram_chat_scope(chat_id):
-                response = await self.agent.ask(
-                    question,
-                    output_mode=OutputMode.TELEGRAM,
+                response, pending = await self._ask_with_auth_requirements(
+                    lambda: self.agent.ask(
+                        question,
+                        output_mode=OutputMode.TELEGRAM,
+                    )
                 )
             typing_task.cancel()
             parsed = self._parse_response(response)
             await self._send_parsed_response(message, parsed, prefix=f"🔧 *{tool_name}* result:\n\n")
+            await self._send_auth_prompts(message, session, pending)
         except Exception as e:
             typing_task.cancel()
             self.logger.error("Error calling tool %s: %s", tool_name, e, exc_info=True)
@@ -2241,6 +2317,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
         try:
+            session = self._get_user_session(message)
             self.logger.info("Chat %s: Invoking skill %s(%s)", chat_id, skill_name, args_text)
             question = args_text or (f"Apply the '{skill_name}' skill.")
             with telegram_chat_scope(chat_id):
@@ -2248,21 +2325,26 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     # Activate the file skill so its body is injected as a
                     # transient prompt layer for this single ask().
                     set_active_skill(skill_def)
-                    response = await self.agent.ask(
-                        question,
-                        output_mode=OutputMode.TELEGRAM,
-                        tenant=self.config.tenant,
+                    response, pending = await self._ask_with_auth_requirements(
+                        lambda: self.agent.ask(
+                            question,
+                            output_mode=OutputMode.TELEGRAM,
+                            tenant=self.config.tenant,
+                        )
                     )
                 else:
                     # DB-backed skill: prepend the skill body as instruction.
                     framed = f"Follow these skill instructions:\n\n{db_skill_body}\n\n" f"User request: {question}"
-                    response = await self.agent.ask(
-                        framed,
-                        output_mode=OutputMode.TELEGRAM,
+                    response, pending = await self._ask_with_auth_requirements(
+                        lambda: self.agent.ask(
+                            framed,
+                            output_mode=OutputMode.TELEGRAM,
+                        )
                     )
             typing_task.cancel()
             parsed = self._parse_response(response)
             await self._send_parsed_response(message, parsed, prefix=f"🧠 *{skill_name}* skill:\n\n")
+            await self._send_auth_prompts(message, session, pending)
         except Exception as e:
             typing_task.cancel()
             self.logger.error("Error invoking skill %s: %s", skill_name, e, exc_info=True)
@@ -2354,18 +2436,21 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             self.logger.info("Chat %s: /question %s...", chat_id, question[:50])
 
             with telegram_chat_scope(chat_id):
-                response = await self.agent.ask(
-                    self._enrich_question(question, session),
-                    user_id=session.user_id,
-                    session_id=session.session_id,
-                    memory=memory,
-                    output_mode=OutputMode.TELEGRAM,
-                    use_tools=False,
+                response, pending = await self._ask_with_auth_requirements(
+                    lambda: self.agent.ask(
+                        self._enrich_question(question, session),
+                        user_id=session.user_id,
+                        session_id=session.session_id,
+                        memory=memory,
+                        output_mode=OutputMode.TELEGRAM,
+                        use_tools=False,
+                    )
                 )
 
             typing_task.cancel()
             parsed = self._parse_response(response)
             await self._send_parsed_response(message, parsed)
+            await self._send_auth_prompts(message, session, pending)
         except Exception as e:
             typing_task.cancel()
             self.logger.error("Error in /question: %s", e, exc_info=True)
@@ -2776,7 +2861,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 user_text = reply_ctx + user_text
 
             with telegram_chat_scope(chat_id):
-                response = await self._invoke_agent(
+                response, pending = await self._invoke_agent(
                     session,
                     user_text,
                     memory=memory,
@@ -2792,6 +2877,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
             # Send parsed response (handles text, images, documents, tables, code)
             sent = await self._send_parsed_response(message, parsed)
+            await self._send_auth_prompts(message, session, pending)
             await self._send_suggestion_keyboard(message, session, response)
 
             # FEAT-120: cache bot message ID and persist metadata
@@ -2950,7 +3036,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
             # Call the agent
             with telegram_chat_scope(chat_id):
-                response = await self._invoke_agent(
+                response, pending = await self._invoke_agent(
                     session,
                     query,
                     memory=memory,
@@ -2966,6 +3052,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
             # Send response (reply in thread if configured)
             await self._send_group_response(message, parsed)
+            await self._send_auth_prompts(message, session, pending)
 
         except Exception as e:
             from parrot.core.exceptions import HumanInteractionInterrupt
@@ -3297,6 +3384,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 enriched_caption = reply_ctx + enriched_caption
 
             # Call agent with image (if supported)
+            pending: List["AuthRequiredPayload"] = []
             with telegram_chat_scope(chat_id):
                 if hasattr(self.agent, "ask_with_image"):
                     response = await self.agent.ask_with_image(
@@ -3308,7 +3396,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                         attachments=attachment_paths,
                     )
                 else:
-                    response = await self._invoke_agent(
+                    response, pending = await self._invoke_agent(
                         session,
                         enriched_caption,
                         memory=memory,
@@ -3319,6 +3407,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
             parsed = self._parse_response(response)
             sent = await self._send_parsed_response(message, parsed)
+            await self._send_auth_prompts(message, session, pending)
 
             # FEAT-120: cache bot message ID and store metadata
             bot_msg_id = sent.message_id if sent else 0
@@ -3412,7 +3501,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 enriched_caption = reply_ctx + enriched_caption
 
             with telegram_chat_scope(chat_id):
-                response = await self._invoke_agent(
+                response, pending = await self._invoke_agent(
                     session,
                     enriched_caption,
                     memory=memory,
@@ -3424,6 +3513,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             parsed = self._parse_response(response)
             typing_task.cancel()
             sent = await self._send_parsed_response(message, parsed)
+            await self._send_auth_prompts(message, session, pending)
 
             # FEAT-120: cache bot message ID and store metadata
             bot_msg_id = sent.message_id if sent else 0
@@ -3669,7 +3759,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 transcribed_text = reply_ctx + transcribed_text
 
             with telegram_chat_scope(chat_id):
-                response = await self._invoke_agent(
+                response, pending = await self._invoke_agent(
                     session,
                     transcribed_text,
                     memory=memory,
@@ -3679,6 +3769,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
             parsed = self._parse_response(response)
             sent = await self._send_parsed_response(message, parsed)
+            await self._send_auth_prompts(message, session, pending)
 
             # FEAT-213: TTS voice reply — synthesize and send as voice note
             # when the input was a voice message and TTS is enabled.
@@ -4251,7 +4342,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             return CallbackResult(reply_text="⛔ You must sign in with /login to talk to me.")
         memory = self._get_or_create_memory(context.chat_id)
         with telegram_chat_scope(context.chat_id):
-            response = await self._invoke_agent(
+            response, pending = await self._invoke_agent(
                 session,
                 record["prompt"],
                 memory=memory,
@@ -4260,6 +4351,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             )
         parsed = self._parse_response(response)
         await self._send_parsed_response(msg, parsed)
+        await self._send_auth_prompts(msg, session, pending)
         await self._send_suggestion_keyboard(msg, session, response)
         return CallbackResult()
 
