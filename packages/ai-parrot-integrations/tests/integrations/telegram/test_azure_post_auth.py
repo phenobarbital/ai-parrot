@@ -2,10 +2,11 @@
 
 Verifies:
 - build_login_keyboard embeds next_auth_url / next_auth_required in the URL.
-- handle_callback invokes the post_auth chain via injected registry.
+- handle_callback validates only the primary credential; the wrapper stages the chain.
 - supports_post_auth_chain is True after TASK-778.
 - Backward-compat: strategy works without a registry (no chain).
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 import json
@@ -113,9 +114,10 @@ async def test_build_login_keyboard_next_auth_required_false():
 # handle_callback — post_auth chain invocation
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
-async def test_handle_callback_triggers_post_auth_chain():
-    """When a registry is injected, handle_callback invokes the chain."""
+async def test_handle_callback_defers_post_auth_chain():
+    """An injected registry is not run eagerly during primary validation."""
     registry = MagicMock()
     registry.__len__ = MagicMock(return_value=1)
     registry.providers = ["jira"]
@@ -138,7 +140,7 @@ async def test_handle_callback_triggers_post_auth_chain():
 
     assert ok is True
     assert session.authenticated is True
-    jira_provider.handle_result.assert_awaited_once()
+    jira_provider.handle_result.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -160,8 +162,8 @@ async def test_handle_callback_no_registry_still_succeeds():
 
 
 @pytest.mark.asyncio
-async def test_handle_callback_chain_failure_does_not_roll_back():
-    """Post-auth chain failure is logged but does NOT invalidate the session."""
+async def test_handle_callback_does_not_observe_deferred_chain_failure():
+    """A deferred provider result cannot affect primary validation."""
     registry = MagicMock()
     registry.__len__ = MagicMock(return_value=1)
     registry.providers = ["jira"]
@@ -183,11 +185,12 @@ async def test_handle_callback_chain_failure_does_not_roll_back():
     # Primary auth should still succeed even if the chain fails.
     assert ok is True
     assert session.authenticated is True
+    jira_provider.handle_result.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_handle_callback_chain_exception_does_not_roll_back():
-    """Exceptions in a chain provider are swallowed; primary auth persists."""
+async def test_handle_callback_does_not_run_deferred_chain_exception():
+    """A deferred provider exception is never raised by primary validation."""
     registry = MagicMock()
     registry.__len__ = MagicMock(return_value=1)
     registry.providers = ["jira"]
@@ -208,3 +211,4 @@ async def test_handle_callback_chain_exception_does_not_roll_back():
     )
     assert ok is True
     assert session.authenticated is True
+    jira_provider.handle_result.assert_not_awaited()

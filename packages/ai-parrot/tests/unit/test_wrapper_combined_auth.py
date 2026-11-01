@@ -1,161 +1,75 @@
-"""Integration-level unit tests for TelegramAgentWrapper combined auth
-(FEAT-108 / TASK-763).
+"""Unit tests for staged Telegram combined authentication."""
 
-These tests exercise:
-* `_init_post_auth_providers` registration logic
-* `_is_combined_payload` detection
-* `_build_next_auth_url` URL construction
-* `_handle_combined_auth` orchestration (all branches)
-* `BasicAuthStrategy.build_login_keyboard` ``next_auth_url`` wiring
-* Backward compatibility when ``post_auth_actions`` is absent
-
-Heavy aiogram plumbing (Bot, Router) is mocked; we focus on the
-authentication state machine.
-"""
-from unittest.mock import AsyncMock, MagicMock, patch
-from urllib.parse import parse_qs, urlparse
+from __future__ import annotations
 
 import contextlib
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.integrations.telegram.auth import (
-    BasicAuthStrategy,
-    TelegramUserSession,
-)
-from parrot.integrations.telegram.models import (
-    PostAuthAction,
-    TelegramAgentConfig,
-)
+from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 from parrot.integrations.core.auth.post_auth import PostAuthRegistry
-
-
-# ----------------------------------------------------------------------
-# BasicAuthStrategy.build_login_keyboard URL wiring
-# ----------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_login_keyboard_without_post_auth_is_unchanged():
-    """No next_auth_url → URL keeps only the auth_url param (backward compat)."""
-    strat = BasicAuthStrategy(
-        auth_url="https://auth.example.com/api/login",
-        login_page_url="https://auth.example.com/login",
-    )
-    config = TelegramAgentConfig(name="t", chatbot_id="t")
-    kb = await strat.build_login_keyboard(config, state="x")
-    url = kb.keyboard[0][0].web_app.url
-    qs = parse_qs(urlparse(url).query)
-    assert qs.get("auth_url") == ["https://auth.example.com/api/login"]
-    assert "next_auth_url" not in qs
-
-
-@pytest.mark.asyncio
-async def test_login_keyboard_with_next_auth_url():
-    """next_auth_url / next_auth_required flow through to the URL."""
-    strat = BasicAuthStrategy(
-        auth_url="https://auth.example.com/api/login",
-        login_page_url="https://auth.example.com/login",
-    )
-    config = TelegramAgentConfig(name="t", chatbot_id="t")
-    kb = await strat.build_login_keyboard(
-        config,
-        state="x",
-        next_auth_url="https://auth.atlassian.com/authorize?client_id=xxx",
-        next_auth_required=True,
-    )
-    url = kb.keyboard[0][0].web_app.url
-    qs = parse_qs(urlparse(url).query)
-    assert qs["next_auth_url"] == [
-        "https://auth.atlassian.com/authorize?client_id=xxx"
-    ]
-    assert qs["next_auth_required"] == ["true"]
-
-
-@pytest.mark.asyncio
-async def test_login_keyboard_required_false():
-    strat = BasicAuthStrategy(
-        auth_url="https://a/login",
-        login_page_url="https://a/page",
-    )
-    config = TelegramAgentConfig(name="t", chatbot_id="t")
-    kb = await strat.build_login_keyboard(
-        config, state="x",
-        next_auth_url="https://foo/auth",
-        next_auth_required=False,
-    )
-    qs = parse_qs(urlparse(kb.keyboard[0][0].web_app.url).query)
-    assert qs["next_auth_required"] == ["false"]
-
-
-# ----------------------------------------------------------------------
-# Wrapper fixtures
-# ----------------------------------------------------------------------
+from parrot.integrations.telegram.auth import TelegramUserSession
+from parrot.integrations.telegram.models import PostAuthAction, TelegramAgentConfig
+from parrot.integrations.telegram.post_auth_connection import PendingLoginCoordinator
 
 
 @pytest.fixture
 def wrapper_cls():
-    """Return the wrapper class after neutralizing heavy __init__ side effects."""
+    """Return the wrapper class."""
     from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
     return TelegramAgentWrapper
 
 
-def _blank_wrapper(cls, config: TelegramAgentConfig, app=None):
-    """Build a wrapper *without* calling the full __init__ chain.
-
-    We only need the FEAT-108 surface area; the rest of aiogram wiring
-    is irrelevant here. ``app`` mimics the aiohttp application that would
-    normally carry ``jira_oauth_manager`` / ``authdb`` / ``redis``.
-    """
-    w = cls.__new__(cls)
-    w.config = config
-    w.app = app
-    w.agent = MagicMock()
-    w.bot = MagicMock()
-    w.logger = MagicMock()
-    w._user_sessions = {}
-    w._auth_strategy = MagicMock()
-    w._post_auth_registry = PostAuthRegistry()
-    return w
-
-
-def _make_app(**services):
-    """Return a dict-like aiohttp app stand-in populated with the given
-    service keys. Using a plain dict keeps the test free of aiohttp setup
-    while matching the ``app.get(key)`` interface the wrapper uses.
-    """
-    return dict(services)
-
-
 @pytest.fixture
-def basic_config():
+def config_with_jira() -> TelegramAgentConfig:
+    """Return a basic-login configuration with required Jira authorization."""
     return TelegramAgentConfig(
-        name="bot", chatbot_id="bot",
-        auth_url="https://a/api/login",
-        login_page_url="https://a/page",
+        name="bot",
+        chatbot_id="bot",
+        auth_url="https://nav.example/api/login",
+        login_page_url="https://nav.example/login",
+        post_auth_actions=[PostAuthAction(provider="jira", required=True)],
     )
 
 
-@pytest.fixture
-def config_with_jira(basic_config):
-    basic_config.post_auth_actions = [
-        PostAuthAction(provider="jira", required=True)
-    ]
-    return basic_config
+def _blank_wrapper(cls, config: TelegramAgentConfig, app=None):
+    """Construct only the wrapper state used by staged-login methods."""
+    wrapper = cls.__new__(cls)
+    wrapper.config = config
+    wrapper.app = app
+    wrapper.agent = MagicMock()
+    wrapper.bot = MagicMock()
+    wrapper.bot.send_message = AsyncMock()
+    wrapper.logger = MagicMock()
+    wrapper._bot_id = "7001"
+    wrapper._user_sessions = {}
+    wrapper._auth_strategy = MagicMock()
+    wrapper._post_auth_registry = PostAuthRegistry()
+    wrapper._identity_service_cache = MagicMock() if app else None
+    wrapper._login_coordinator = PendingLoginCoordinator(
+        finalize=wrapper._finalize_login_attempt,
+        on_failed=wrapper._fail_login_attempt,
+    )
+    wrapper._initialize_user_context = AsyncMock()
+    wrapper._persist_principal_link = AsyncMock(return_value=True)
+    wrapper._connection_permission_context = MagicMock(return_value=MagicMock())
+    return wrapper
 
 
-# ----------------------------------------------------------------------
-# _init_post_auth_providers
-# ----------------------------------------------------------------------
+def _message(telegram_id: int = 41):
+    """Return a minimal private-message double."""
+    message = MagicMock()
+    message.chat.id = telegram_id
+    message.answer = AsyncMock()
+    return message
 
 
 @contextlib.contextmanager
 def _registered_jira_provider():
-    """Register a connectable ``jira`` provider in the process-global registry for one block."""
-    from types import SimpleNamespace
-
-    from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
-
+    """Temporarily register a connectable Jira OAuth2 provider."""
     OAuth2ProviderRegistry._reset()
     OAuth2ProviderRegistry().register(
         SimpleNamespace(provider_id="jira", display_name="Jira", icon=None, default_scopes=[], manager=MagicMock())
@@ -166,318 +80,119 @@ def _registered_jira_provider():
         OAuth2ProviderRegistry._reset()
 
 
-class TestInitPostAuthProviders:
-    def test_no_actions_leaves_registry_empty(self, wrapper_cls, basic_config):
-        w = _blank_wrapper(wrapper_cls, basic_config)
-        w._init_post_auth_providers()
-        assert len(w._post_auth_registry) == 0
-
-    def test_jira_registered_when_services_available(
-        self, wrapper_cls, config_with_jira
-    ):
-        # FEAT-776: providers register from OAuth2ProviderRegistry, not from app["jira_oauth_manager"].
-        app = _make_app(authdb=MagicMock(), redis=MagicMock())
-        with _registered_jira_provider():
-            w = _blank_wrapper(wrapper_cls, config_with_jira, app=app)
-            w._init_post_auth_providers()
-        assert "jira" in w._post_auth_registry
-
-    def test_jira_registered_when_db_key_is_database(
-        self, wrapper_cls, config_with_jira
-    ):
-        """Some deployments publish the pool as ``app['database']`` — the
-        wrapper must accept it as a fallback for ``app['authdb']``."""
-        app = _make_app(database=MagicMock(), redis=MagicMock())
-        with _registered_jira_provider():
-            w = _blank_wrapper(wrapper_cls, config_with_jira, app=app)
-            w._init_post_auth_providers()
-        assert "jira" in w._post_auth_registry
-
-    def test_jira_skipped_when_app_missing(
-        self, wrapper_cls, config_with_jira
-    ):
-        # No aiohttp app wired — combined flow disabled.
-        w = _blank_wrapper(wrapper_cls, config_with_jira, app=None)
-        w._init_post_auth_providers()
-        assert "jira" not in w._post_auth_registry
-
-    def test_jira_skipped_if_oauth_manager_missing(
-        self, wrapper_cls, config_with_jira
-    ):
-        # App present but no jira_oauth_manager registered on it.
-        app = _make_app(authdb=MagicMock(), redis=MagicMock())
-        w = _blank_wrapper(wrapper_cls, config_with_jira, app=app)
-        w._init_post_auth_providers()
-        assert "jira" not in w._post_auth_registry
-
-    def test_jira_skipped_if_db_pool_missing(
-        self, wrapper_cls, config_with_jira
-    ):
-        app = _make_app(jira_oauth_manager=MagicMock(), redis=MagicMock())
-        w = _blank_wrapper(wrapper_cls, config_with_jira, app=app)
-        w._init_post_auth_providers()
-        assert "jira" not in w._post_auth_registry
-
-    def test_unknown_provider_logged_and_skipped(
-        self, wrapper_cls, basic_config
-    ):
-        basic_config.post_auth_actions = [
-            PostAuthAction(provider="mystery", required=False)
-        ]
-        app = _make_app(
-            jira_oauth_manager=MagicMock(),
-            authdb=MagicMock(),
-            redis=MagicMock(),
-        )
-        w = _blank_wrapper(wrapper_cls, basic_config, app=app)
-        w._init_post_auth_providers()
-        assert len(w._post_auth_registry) == 0
+def test_jira_registered_when_services_available(wrapper_cls, config_with_jira) -> None:
+    """The generic registry supplies Jira when the app services are available."""
+    with _registered_jira_provider():
+        wrapper = _blank_wrapper(wrapper_cls, config_with_jira, app={"authdb": MagicMock()})
+        wrapper._integrations_service = MagicMock(return_value=MagicMock())
+        wrapper._init_post_auth_providers()
+    assert "jira" in wrapper._post_auth_registry
 
 
-# ----------------------------------------------------------------------
-# _is_combined_payload
-# ----------------------------------------------------------------------
+def test_jira_registered_when_db_key_is_database(wrapper_cls, config_with_jira) -> None:
+    """The legacy database app key remains compatible with provider registration."""
+    with _registered_jira_provider():
+        wrapper = _blank_wrapper(wrapper_cls, config_with_jira, app={"database": MagicMock()})
+        wrapper._integrations_service = MagicMock(return_value=MagicMock())
+        wrapper._init_post_auth_providers()
+    assert "jira" in wrapper._post_auth_registry
 
 
-class TestIsCombinedPayload:
-    def test_jira_key_present(self, wrapper_cls, config_with_jira):
-        w = _blank_wrapper(wrapper_cls, config_with_jira)
-        assert w._is_combined_payload({"jira": {"code": "c", "state": "s"}})
+@pytest.mark.asyncio
+async def test_combined_callback_uses_separate_candidate(wrapper_cls, config_with_jira) -> None:
+    """Primary callback state never mutates the active unauthenticated session."""
+    wrapper = _blank_wrapper(wrapper_cls, config_with_jira)
+    active = TelegramUserSession(telegram_id=41, telegram_username="user")
 
-    def test_no_post_auth_actions(self, wrapper_cls, basic_config):
-        w = _blank_wrapper(wrapper_cls, basic_config)
-        # Even if data contains "jira" key, with no post_auth_actions
-        # configured we treat it as standard.
-        assert not w._is_combined_payload({"jira": {"code": "c"}})
+    async def authenticate(data, candidate):
+        assert data == {"user_id": "nav-1", "token": "signed"}
+        assert candidate is not active
+        candidate.set_authenticated("nav-1", "signed", "Alice", "alice@example.com")
+        return True
 
-    def test_provider_value_must_be_dict(self, wrapper_cls, config_with_jira):
-        w = _blank_wrapper(wrapper_cls, config_with_jira)
-        # A non-dict value for the provider is ignored.
-        assert not w._is_combined_payload({"jira": "not-a-dict"})
+    wrapper._auth_strategy.handle_callback = AsyncMock(side_effect=authenticate)
+    wrapper._start_login_attempt = AsyncMock()
 
-    def test_basic_auth_only_payload(self, wrapper_cls, config_with_jira):
-        w = _blank_wrapper(wrapper_cls, config_with_jira)
-        assert not w._is_combined_payload({
-            "user_id": "u", "token": "t",
-        })
+    await wrapper._handle_combined_auth(
+        _message(),
+        {"user_id": "nav-1", "token": "signed"},
+        active,
+    )
 
-
-# ----------------------------------------------------------------------
-# _build_next_auth_url
-# ----------------------------------------------------------------------
-
-
-class TestBuildNextAuthUrl:
-    @pytest.mark.asyncio
-    async def test_returns_provider_url(self, wrapper_cls, config_with_jira):
-        w = _blank_wrapper(wrapper_cls, config_with_jira)
-        fake_provider = MagicMock()
-        fake_provider.provider_name = "jira"
-        fake_provider.build_auth_url = AsyncMock(
-            return_value="https://auth.atlassian.com/authorize?x=1"
-        )
-        w._post_auth_registry.register(fake_provider)
-        session = TelegramUserSession(telegram_id=123)
-        url, required = await w._build_next_auth_url(session)
-        assert url == "https://auth.atlassian.com/authorize?x=1"
-        assert required is True
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_no_provider_registered(
-        self, wrapper_cls, config_with_jira
-    ):
-        w = _blank_wrapper(wrapper_cls, config_with_jira)
-        session = TelegramUserSession(telegram_id=123)
-        url, required = await w._build_next_auth_url(session)
-        assert url is None
-
-    @pytest.mark.asyncio
-    async def test_exception_in_provider_returns_none(
-        self, wrapper_cls, config_with_jira
-    ):
-        w = _blank_wrapper(wrapper_cls, config_with_jira)
-        fake_provider = MagicMock()
-        fake_provider.provider_name = "jira"
-        fake_provider.build_auth_url = AsyncMock(
-            side_effect=RuntimeError("boom")
-        )
-        w._post_auth_registry.register(fake_provider)
-        session = TelegramUserSession(telegram_id=123)
-        url, required = await w._build_next_auth_url(session)
-        assert url is None
-        # required flag still honored
-        assert required is True
+    assert not active.authenticated
+    candidate = wrapper._start_login_attempt.await_args.args[1]
+    assert candidate.authenticated
+    assert candidate.nav_user_id == "nav-1"
 
 
-# ----------------------------------------------------------------------
-# _handle_combined_auth (the main orchestration test)
-# ----------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_invalid_primary_never_starts_provider_state(wrapper_cls, config_with_jira) -> None:
+    """Rejected primary credentials cannot mint secondary provider state."""
+    wrapper = _blank_wrapper(wrapper_cls, config_with_jira)
+    wrapper._auth_strategy.handle_callback = AsyncMock(return_value=False)
+    wrapper._start_login_attempt = AsyncMock()
+    message = _message()
+
+    await wrapper._handle_combined_auth(message, {"user_id": "forged"}, TelegramUserSession(telegram_id=41))
+
+    wrapper._start_login_attempt.assert_not_awaited()
+    assert "Login failed" in message.answer.await_args.args[0]
 
 
-def _make_message():
-    """A minimal aiogram Message stand-in with an async `.answer`."""
-    msg = MagicMock()
-    msg.answer = AsyncMock()
-    return msg
+@pytest.mark.asyncio
+async def test_start_attempt_builds_url_from_pending_candidate(wrapper_cls, config_with_jira) -> None:
+    """Secondary state is built only from the coordinator-owned pending attempt."""
+    wrapper = _blank_wrapper(wrapper_cls, config_with_jira)
+    provider = MagicMock(provider_name="jira")
+    provider.build_auth_url = AsyncMock(return_value="https://jira.example/authorize")
+    wrapper._post_auth_registry.register(provider)
+    candidate = TelegramUserSession(telegram_id=41)
+    candidate.set_authenticated("nav-1", "signed", "Alice")
+    message = _message()
+
+    await wrapper._start_login_attempt(message, candidate)
+
+    attempt = provider.build_auth_url.await_args.args[0]
+    assert attempt.candidate is candidate
+    assert attempt.principal.user_id == "nav-1"
+    assert wrapper._user_sessions == {}
+    assert message.answer.await_args.kwargs["parse_mode"] is None
 
 
-class TestHandleCombinedAuthSuccess:
-    @pytest.mark.asyncio
-    async def test_basic_and_jira_both_succeed(
-        self, wrapper_cls, config_with_jira
-    ):
-        w = _blank_wrapper(wrapper_cls, config_with_jira)
-        w._auth_strategy.handle_callback = AsyncMock(return_value=True)
-        fake_provider = MagicMock()
-        fake_provider.provider_name = "jira"
-        fake_provider.handle_result = AsyncMock(return_value=True)
-        w._post_auth_registry.register(fake_provider)
+@pytest.mark.asyncio
+async def test_required_missing_provider_discards_candidate(wrapper_cls, config_with_jira) -> None:
+    """A required missing provider reports failure without publishing the candidate."""
+    wrapper = _blank_wrapper(wrapper_cls, config_with_jira)
+    candidate = TelegramUserSession(telegram_id=41)
+    candidate.set_authenticated("nav-1", "signed", "Alice")
 
-        msg = _make_message()
-        session = TelegramUserSession(
-            telegram_id=1, nav_user_id="u", nav_display_name="John"
-        )
-        session.set_authenticated("u", "tok", "John", "j@e")
-        data = {
-            "basic_auth": {"user_id": "u", "token": "t"},
-            "jira": {"code": "c", "state": "s"},
-        }
-        await w._handle_combined_auth(msg, data, session)
+    await wrapper._start_login_attempt(_message(), candidate)
 
-        # BasicAuth callback got the basic_auth sub-dict.
-        call = w._auth_strategy.handle_callback.await_args
-        assert call.args[0] == {"user_id": "u", "token": "t"}
-        fake_provider.handle_result.assert_awaited_once()
-        # Final "full success" message mentions the connected provider.
-        msg.answer.assert_called_once()
-        text = msg.answer.call_args.args[0]
-        assert "jira" in text
-        assert session.authenticated  # not rolled back
-
-    @pytest.mark.asyncio
-    async def test_basic_auth_fallback_when_no_basic_auth_key(
-        self, wrapper_cls, config_with_jira
-    ):
-        """If payload has no `basic_auth` sub-dict, top-level keys (excluding
-        provider keys) are used as the BasicAuth payload."""
-        w = _blank_wrapper(wrapper_cls, config_with_jira)
-        w._auth_strategy.handle_callback = AsyncMock(return_value=True)
-        fake_provider = MagicMock()
-        fake_provider.provider_name = "jira"
-        fake_provider.handle_result = AsyncMock(return_value=True)
-        w._post_auth_registry.register(fake_provider)
-
-        msg = _make_message()
-        session = TelegramUserSession(telegram_id=1)
-        session.set_authenticated("u", "tok", "John", "j@e")
-        data = {
-            "user_id": "u", "token": "t", "display_name": "John",
-            "jira": {"code": "c", "state": "s"},
-        }
-        await w._handle_combined_auth(msg, data, session)
-
-        basic_data = w._auth_strategy.handle_callback.await_args.args[0]
-        # 'jira' key stripped, rest kept.
-        assert "jira" not in basic_data
-        assert basic_data["user_id"] == "u"
+    assert wrapper._user_sessions == {}
+    wrapper._persist_principal_link.assert_not_awaited()
+    assert wrapper.bot.send_message.await_args.kwargs["parse_mode"] is None
 
 
-class TestHandleCombinedAuthFailures:
-    @pytest.mark.asyncio
-    async def test_basic_auth_fails(self, wrapper_cls, config_with_jira):
-        w = _blank_wrapper(wrapper_cls, config_with_jira)
-        w._auth_strategy.handle_callback = AsyncMock(return_value=False)
-        fake_provider = MagicMock()
-        fake_provider.provider_name = "jira"
-        fake_provider.handle_result = AsyncMock(return_value=True)
-        w._post_auth_registry.register(fake_provider)
+@pytest.mark.asyncio
+async def test_finalize_publishes_candidate_after_link_attempt(wrapper_cls, config_with_jira) -> None:
+    """Final success links once, promotes once, then initializes user context."""
+    wrapper = _blank_wrapper(wrapper_cls, config_with_jira)
+    candidate = TelegramUserSession(telegram_id=41)
+    candidate.set_authenticated("nav-1", "signed", "Alice")
+    attempt = wrapper._login_coordinator.create(
+        telegram_id=41,
+        chat_id=41,
+        bot_id="7001",
+        principal=MagicMock(user_id="nav-1"),
+        permission_context=MagicMock(),
+        candidate=candidate,
+        actions=config_with_jira.post_auth_actions,
+        expires_at=10**12,
+    )
+    attempt.completed.add("jira")
 
-        msg = _make_message()
-        session = TelegramUserSession(telegram_id=1)
-        data = {
-            "basic_auth": {"user_id": "u", "token": "t"},
-            "jira": {"code": "c", "state": "s"},
-        }
-        await w._handle_combined_auth(msg, data, session)
+    await wrapper._finalize_login_attempt(attempt)
 
-        # jira provider NOT called when BasicAuth fails.
-        fake_provider.handle_result.assert_not_called()
-        text = msg.answer.call_args.args[0]
-        assert "Login failed" in text
-
-    @pytest.mark.asyncio
-    async def test_jira_fails_required_rolls_back(
-        self, wrapper_cls, config_with_jira
-    ):
-        w = _blank_wrapper(wrapper_cls, config_with_jira)
-        w._auth_strategy.handle_callback = AsyncMock(return_value=True)
-        fake_provider = MagicMock()
-        fake_provider.provider_name = "jira"
-        fake_provider.handle_result = AsyncMock(return_value=False)
-        w._post_auth_registry.register(fake_provider)
-
-        msg = _make_message()
-        session = TelegramUserSession(telegram_id=1)
-        session.set_authenticated("u", "tok", "John", "j@e")
-        assert session.authenticated
-        data = {
-            "basic_auth": {"user_id": "u", "token": "t"},
-            "jira": {"code": "c", "state": "s"},
-        }
-        await w._handle_combined_auth(msg, data, session)
-
-        assert not session.authenticated  # rollback
-        text = msg.answer.call_args.args[0]
-        assert "requires authorization" in text.lower()
-
-    @pytest.mark.asyncio
-    async def test_jira_fails_optional_partial_success(
-        self, wrapper_cls, basic_config
-    ):
-        basic_config.post_auth_actions = [
-            PostAuthAction(provider="jira", required=False)
-        ]
-        w = _blank_wrapper(wrapper_cls, basic_config)
-        w._auth_strategy.handle_callback = AsyncMock(return_value=True)
-        fake_provider = MagicMock()
-        fake_provider.provider_name = "jira"
-        fake_provider.handle_result = AsyncMock(return_value=False)
-        w._post_auth_registry.register(fake_provider)
-
-        msg = _make_message()
-        session = TelegramUserSession(telegram_id=1)
-        session.set_authenticated("u", "tok", "John", "j@e")
-        data = {
-            "basic_auth": {"user_id": "u", "token": "t"},
-            "jira": {"code": "c", "state": "s"},
-        }
-        await w._handle_combined_auth(msg, data, session)
-
-        assert session.authenticated  # NOT rolled back
-        text = msg.answer.call_args.args[0]
-        # Partial-success branch mentions which provider failed.
-        assert "Could not connect" in text or "⚠" in text
-
-    @pytest.mark.asyncio
-    async def test_provider_raises_treated_as_failure(
-        self, wrapper_cls, config_with_jira
-    ):
-        w = _blank_wrapper(wrapper_cls, config_with_jira)
-        w._auth_strategy.handle_callback = AsyncMock(return_value=True)
-        fake_provider = MagicMock()
-        fake_provider.provider_name = "jira"
-        fake_provider.handle_result = AsyncMock(
-            side_effect=RuntimeError("kaboom")
-        )
-        w._post_auth_registry.register(fake_provider)
-
-        msg = _make_message()
-        session = TelegramUserSession(telegram_id=1)
-        session.set_authenticated("u", "tok", "John", "j@e")
-        data = {
-            "basic_auth": {"user_id": "u", "token": "t"},
-            "jira": {"code": "c", "state": "s"},
-        }
-        await w._handle_combined_auth(msg, data, session)
-        # required=True + failure → rollback
-        assert not session.authenticated
+    wrapper._persist_principal_link.assert_awaited_once_with(candidate)
+    assert wrapper._user_sessions[41] is candidate
+    wrapper._initialize_user_context.assert_awaited_once_with(candidate)
