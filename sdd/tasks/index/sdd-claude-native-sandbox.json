@@ -243,18 +243,19 @@
       "feature_id": "FEAT-768",
       "feature": "sdd-claude-native-sandbox",
       "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": "2026-11-01T00:49:24+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-01T00:55:14+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-4908"
       ],
       "parallelism_notes": "modifies plan_native_launch/launch_worker/dispatcher sandboxed branch that TASK-4908 delivered",
-      "file": "sdd/tasks/active/TASK-5086-native-sandbox-legacy-mode.md"
+      "file": "sdd/tasks/completed/TASK-5086-native-sandbox-legacy-mode.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5087",

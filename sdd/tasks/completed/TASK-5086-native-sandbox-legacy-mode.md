@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-768 — Native Claude sandbox for SDD execution
 **Spec**: `sdd/specs/sdd-claude-native-sandbox.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4908
@@ -194,8 +194,17 @@ as the pattern.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
 
-**Deviations from spec**: none
+- Task: TASK-5086
+- Feature: sdd-claude-native-sandbox
+- Implementation SHA: 0673ede67811ae39f05322083da24d3728ddc9fe
+- Closed at (UTC): 2026-11-01T00:55:14+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| review | coder-review:fc42f7c62656d815aa752fba — orchestrator review of diff 327fca22f8..03dcc9ca36, no corrections |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 138.9s · Tokens: n/a |
+| validation | merge tier: 257 passed/1 skipped + 63 passed |
