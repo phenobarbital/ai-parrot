@@ -227,7 +227,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -237,8 +237,9 @@
       "parallelism_notes": "Imports ConnectionCommandService/ConnectOutcome from TASK-5021 (integrations/core/auth/connections.py).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5024-telegram-connection-commands.md"
+      "completed_at": "2026-11-01T01:33:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5024-telegram-connection-commands.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5025",

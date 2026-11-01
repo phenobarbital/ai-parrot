@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-776 — Connections on Telegram
 **Spec**: `sdd/specs/connections-telegram.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5021
@@ -261,10 +261,13 @@ Blueprint test file; names fixed by spec §4 (M6 rows).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker; coded by gpt-5.6-terra (codex), attempt 2 (attempt 1 was retried by the engine), reviewed by the worker
+**Date**: 2026-11-01
 **Notes**:
+- `connection_commands.py`: `connect_handler`, `disconnect_handler`, `connections_handler`, `render_connect_outcome`, `register_connection_commands` (menu entries for `/connect`, `/disconnect`, `/connections`, plus the `conn:` picker callback). All replies use `parse_mode=None`; non-private chats get the fixed private-chat message; no principal -> "/login first" with no OAuth state.
+- `models.py`: `TelegramAgentConfig.connection_providers` (None = all connectable providers), read by `from_dict`.
+- Signature note: every handler takes a `context_source(update, principal) -> PermissionContext` argument besides the skeleton's `principal_source`, so the wrapper builds the fresh context (TASK-5025 already lists it). The picker callback reuses `connect_handler` with the clicker's own principal and context.
+- Review correction: the coder also added a `login_multi.html` check to config validation to turn the baseline-red `test_multi_auth_wrong_login_page_url_errors` green. That is outside the task; removed in `88bb67b82f`. Recorded as `coder-feedback:5ebd8a475a7397d37e1a5fe5`. The test stays red exactly as on `dev`.
+- Tests: 4 in `test_connection_commands.py` pass. Review `coder-review:bd1df4d9ac7f4ccd57a8ba66`, 1 correction.
 
-**Deviations from spec**: `context_source` keyword added to handlers (see Implementation Notes)
+**Deviations from spec**: the extra `context_source` argument (see above).
