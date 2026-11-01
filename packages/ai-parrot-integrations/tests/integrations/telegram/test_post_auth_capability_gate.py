@@ -1,7 +1,7 @@
-"""Tests for the capability-flag post-auth gate (TASK-782).
+"""Tests for post-auth capability metadata and staged login gating.
 
-Verifies that the wrapper uses supports_post_auth_chain instead of
-isinstance(BasicAuthStrategy) to decide whether to compute next_auth_url.
+The capability metadata remains compatible, but ``handle_login`` must never
+mint secondary provider state before the primary callback is validated.
 
 Strategy     | supports_post_auth_chain | chain fires?
 -------------|--------------------------|-------------
@@ -60,8 +60,8 @@ def _inject_registry(wrapper, url: str = "https://jira.example.com/oauth") -> Ma
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_capability_gate_fires_for_chain_capable_strategy():
-    """Strategy with supports_post_auth_chain=True → _build_next_auth_url called."""
+async def test_primary_login_does_not_build_secondary_url_for_capable_strategy():
+    """A chain-capable strategy still shows primary login without provider state."""
     cfg = TelegramAgentConfig(
         name="bot",
         chatbot_id="b",
@@ -76,30 +76,27 @@ async def test_capability_gate_fires_for_chain_capable_strategy():
     # The strategy DOES support the chain.
     assert wrapper._auth_strategy.supports_post_auth_chain is True
 
-    build_next = AsyncMock(return_value=("https://jira.example.com/oauth", True))
-    with patch.object(wrapper, "_build_next_auth_url", build_next):
-        keyboard_result = MagicMock()
-        build_kb = AsyncMock(return_value=keyboard_result)
-        with patch.object(wrapper._auth_strategy, "build_login_keyboard", build_kb):
-            # Simulate the decision logic (extracted portion of handle_login).
-            kwargs = {}
-            if (
-                getattr(wrapper._auth_strategy, "supports_post_auth_chain", False)
-                and len(wrapper._post_auth_registry) > 0
-            ):
-                session = TelegramUserSession(telegram_id=1)
-                next_url, required = await wrapper._build_next_auth_url(session)
-                if next_url:
-                    kwargs["next_auth_url"] = next_url
-                    kwargs["next_auth_required"] = required
+    message = MagicMock()
+    message.chat.id = 1
+    message.from_user.id = 1
+    message.from_user.username = None
+    message.from_user.first_name = None
+    message.from_user.last_name = None
+    message.answer = AsyncMock()
+    build_next = AsyncMock()
+    build_kb = AsyncMock(return_value=MagicMock())
+    with patch.object(wrapper, "_build_next_auth_url", build_next), patch.object(
+        wrapper._auth_strategy, "build_login_keyboard", build_kb
+    ):
+        await wrapper.handle_login(message)
 
-    build_next.assert_awaited_once()
-    assert "next_auth_url" in kwargs
+    build_next.assert_not_awaited()
+    assert build_kb.await_args.kwargs == {}
 
 
 @pytest.mark.asyncio
-async def test_capability_gate_skips_for_non_capable_strategy():
-    """Strategy with supports_post_auth_chain=False → _build_next_auth_url NOT called."""
+async def test_primary_login_does_not_build_secondary_url_for_non_capable_strategy():
+    """A non-chain strategy likewise never builds secondary state at /login."""
     cfg = TelegramAgentConfig(
         name="bot",
         chatbot_id="b",
@@ -115,21 +112,8 @@ async def test_capability_gate_skips_for_non_capable_strategy():
     # OAuth2 does NOT support the chain.
     assert wrapper._auth_strategy.supports_post_auth_chain is False
 
-    build_next = AsyncMock(return_value=("https://jira.example.com/oauth", True))
-    with patch.object(wrapper, "_build_next_auth_url", build_next):
-        kwargs = {}
-        if (
-            getattr(wrapper._auth_strategy, "supports_post_auth_chain", False)
-            and len(wrapper._post_auth_registry) > 0
-        ):
-            session = TelegramUserSession(telegram_id=1)
-            next_url, required = await wrapper._build_next_auth_url(session)
-            if next_url:
-                kwargs["next_auth_url"] = next_url
-                kwargs["next_auth_required"] = required
-
-    build_next.assert_not_awaited()
-    assert "next_auth_url" not in kwargs
+    source = __import__("inspect").getsource(wrapper.handle_login)
+    assert "_build_next_auth_url" not in source
 
 
 # ---------------------------------------------------------------------------
@@ -173,11 +157,9 @@ def test_composite_mixed_does_not_support_chain():
 
 
 def test_wrapper_does_not_use_isinstance_for_post_auth_gate():
-    """Regression: wrapper.py must not contain isinstance(..., BasicAuthStrategy) for the gate."""
+    """Regression: handle_login contains no eager post-auth gate at all."""
     import inspect
     from parrot.integrations.telegram import wrapper as wrapper_mod
-    source = inspect.getsource(wrapper_mod)
-    # The old gate was: isinstance(self._auth_strategy, BasicAuthStrategy)
-    # It should no longer appear in the gated block.
-    # We verify that the supports_post_auth_chain attribute is used instead.
-    assert "supports_post_auth_chain" in source
+    source = inspect.getsource(wrapper_mod.TelegramAgentWrapper.handle_login)
+    assert "supports_post_auth_chain" not in source
+    assert "_build_next_auth_url" not in source

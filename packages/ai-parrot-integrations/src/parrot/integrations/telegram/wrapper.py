@@ -17,6 +17,7 @@ import tempfile
 import re
 import json
 import secrets
+import time
 import markdown2
 from aiogram import Bot, Router, F
 from aiogram.enums import ChatAction, ChatType
@@ -54,6 +55,7 @@ from .auth import (
 from .filters import BotMentionedFilter
 from .operator_commands import OperatorCommandsMixin
 from parrot.integrations.core.auth.post_auth import PostAuthRegistry
+from parrot.integrations.telegram.post_auth_connection import PendingLoginAttempt, PendingLoginCoordinator
 from .utils import extract_query_from_mention
 from ..parser import parse_response, ParsedResponse
 from ..media_download import MediaDownloadRefused, allowed_media_hosts, temp_download
@@ -229,6 +231,13 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         self._post_auth_registry: PostAuthRegistry = PostAuthRegistry()
         self._identity_service()
         self._init_post_auth_providers()
+        self._login_coordinator = PendingLoginCoordinator(
+            finalize=self._finalize_login_attempt,
+            on_failed=self._fail_login_attempt,
+        )
+        notifier = self.app.get("telegram_connection_notifier") if self.app is not None else None
+        if notifier is not None:
+            notifier.set_login_coordinator(self._login_coordinator)
 
         # Auth strategy (Composite, Azure, OAuth2, or Basic, depending on config)
         # FEAT-109: extracted to _build_auth_strategy; routes to CompositeAuthStrategy
@@ -2460,6 +2469,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             return
 
         session = self._get_user_session(message)
+        coordinator = getattr(self, "_login_coordinator", None)
+        if coordinator is not None:
+            await coordinator.cancel(telegram_id=session.telegram_id)
         if session.authenticated:
             await message.answer(
                 f"✅ Already authenticated as *{session.display_name}* "
@@ -2476,21 +2488,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         # Generate CSRF state and delegate keyboard to strategy
         state = secrets.token_urlsafe(32)
 
-        # FEAT-108 / FEAT-109: If post_auth_actions are configured AND the
-        # strategy supports the chain, build the secondary auth URL so the
-        # login page can redirect to it after primary auth succeeds.
-        # Previously gated on isinstance(BasicAuthStrategy); now uses the
-        # declarative capability flag introduced by TASK-777.
-        kwargs: Dict[str, Any] = {}
-        if getattr(self._auth_strategy, "supports_post_auth_chain", False) and len(self._post_auth_registry) > 0:
-            session = self._get_user_session(message)
-            next_url, required = await self._build_next_auth_url(session)
-            if next_url:
-                kwargs["next_auth_url"] = next_url
-                kwargs["next_auth_required"] = required
-
         try:
-            keyboard = await self._auth_strategy.build_login_keyboard(self.config, state, **kwargs)
+            keyboard = await self._auth_strategy.build_login_keyboard(self.config, state)
         except ValueError as exc:
             await message.answer(f"❌ Login configuration error: {exc}")
             return
@@ -2526,6 +2525,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             return
 
         session = self._get_user_session(message)
+        coordinator = getattr(self, "_login_coordinator", None)
+        if coordinator is not None:
+            await coordinator.cancel(telegram_id=session.telegram_id)
         if not session.authenticated:
             await message.answer("ℹ️ You are not currently authenticated.")
             return
@@ -2552,11 +2554,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
     async def handle_web_app_data(self, message: Message) -> None:
         """Handle data returned from the login WebApp.
 
-        Delegates to the configured auth strategy to process the callback.
-        When the payload includes keys matching configured
-        ``post_auth_actions`` providers (FEAT-108), BasicAuth is processed
-        first and then each secondary auth provider runs via
-        :pyattr:`_post_auth_registry`.
+        Delegates to the configured auth strategy to process the primary
+        callback. Configured secondary providers are started only after that
+        callback has produced a validated pending candidate.
         """
         if not message.web_app_data or not message.from_user:
             return
@@ -2572,12 +2572,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         session = self._get_user_session(message)
 
-        # FEAT-108: combined auth flow — dispatch to secondary providers.
-        # CompositeAuthStrategy handles method routing internally via
-        # handle_callback; the combined-auth path was designed for single-
-        # method BasicAuth and cannot correctly reconstruct basic_data when
-        # a composite is active (it strips auth_method before delegating).
-        if self._is_combined_payload(data) and not isinstance(self._auth_strategy, CompositeAuthStrategy):
+        if getattr(self.config, "post_auth_actions", None) or self._is_combined_payload(data):
             await self._handle_combined_auth(message, data, session)
             return
 
@@ -2606,97 +2601,104 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         data: Dict[str, Any],
         session: TelegramUserSession,
     ) -> None:
-        """Process a combined BasicAuth + secondary auth payload (FEAT-108).
-
-        The payload is expected to contain one or more provider keys
-        (e.g., ``"jira": {"code", "state"}``) and optionally a
-        ``"basic_auth"`` sub-dict carrying the primary auth result from
-        the login page. When ``basic_auth`` is absent we fall back to
-        treating the top-level keys as BasicAuth (matches the
-        single-step contract for backward safety).
-
-        Rollback semantics:
-          * Primary BasicAuth failure → hard failure, no secondary runs.
-          * Secondary failure + ``required=True`` → ``session.clear_auth``
-            and error message.
-          * Secondary failure + ``required=False`` → partial success
-            message; BasicAuth session persists.
-        """
+        """Validate primary auth into a candidate, then start secondary authorization."""
         basic_data = data.get("basic_auth") or {
             k: v for k, v in data.items() if k not in {action.provider for action in self.config.post_auth_actions}
         }
-        basic_ok = await self._auth_strategy.handle_callback(basic_data, session)
+        candidate = TelegramUserSession(
+            telegram_id=session.telegram_id,
+            telegram_username=session.telegram_username,
+            telegram_first_name=session.telegram_first_name,
+            telegram_last_name=session.telegram_last_name,
+        )
+        basic_ok = await self._auth_strategy.handle_callback(basic_data, candidate)
         if not basic_ok:
             await message.answer("❌ Login failed. Please try again with /login.")
             return
+        if not candidate.authenticated or not candidate.nav_user_id or not candidate.nav_session_token:
+            await message.answer("❌ Login failed. Please try again with /login.")
+            return
+        await self._start_login_attempt(message, candidate)
 
-        failures_required: list[str] = []
-        failures_optional: list[str] = []
+    async def _start_login_attempt(self, message: Message, candidate: TelegramUserSession) -> None:
+        """Create the pending attempt and send secondary Connect buttons."""
+        from parrot.auth.principal import Principal
 
-        for action in self.config.post_auth_actions:
-            payload = data.get(action.provider)
-            if not isinstance(payload, dict):
-                # Provider data absent from this submission — skip silently.
-                continue
+        actions = list(getattr(self.config, "post_auth_actions", None) or [])
+        principal = Principal(
+            user_id=str(candidate.nav_user_id),
+            tenant_id=self.config.tenant,
+            channel="telegram",
+            channel_user_id=str(candidate.telegram_id),
+        )
+        attempt = self._login_coordinator.create(
+            telegram_id=candidate.telegram_id,
+            chat_id=message.chat.id,
+            bot_id=str(self._bot_id or ""),
+            principal=principal,
+            permission_context=self._connection_permission_context(candidate, principal),
+            candidate=candidate,
+            actions=actions,
+            expires_at=time.monotonic() + 600,
+        )
+        for action in actions:
             provider = self._post_auth_registry.get(action.provider)
             if provider is None:
-                self.logger.warning(
-                    "Combined auth: no provider registered for '%s'; " "skipping.",
-                    action.provider,
+                await self._login_coordinator.on_provider_failed(
+                    attempt.attempt_id, action.provider, "provider unavailable"
                 )
-                if action.required:
-                    failures_required.append(action.provider)
+                if attempt.cancelled:
+                    return
                 continue
             try:
-                ok = await provider.handle_result(
-                    data=payload,
-                    session=session,
-                    primary_auth_data=basic_data,
+                url = await provider.build_auth_url(
+                    attempt,
+                    self.config,
+                    getattr(self.config, "public_base_url", ""),
                 )
-            except Exception:  # noqa: BLE001
-                self.logger.exception(
-                    "Combined auth: provider '%s' raised",
-                    action.provider,
+                self._login_coordinator.cap_expiry(attempt.attempt_id, 600)
+            except Exception:  # noqa: BLE001 - required failures are reported through the coordinator
+                self.logger.exception("Failed to start staged login provider '%s'", action.provider)
+                await self._login_coordinator.on_provider_failed(
+                    attempt.attempt_id, action.provider, "authorization could not be started"
                 )
-                ok = False
-            if not ok:
-                if action.required:
-                    failures_required.append(action.provider)
-                else:
-                    failures_optional.append(action.provider)
-
-        # Required failure → rollback the primary session.
-        if failures_required:
-            session.clear_auth()
-            providers_str = ", ".join(failures_required)
-            await message.answer(
-                "❌ Login requires authorization for " f"*{providers_str}*. Please try again with /login.",
-                parse_mode="Markdown",
-                reply_markup=ReplyKeyboardRemove(),
+                if attempt.cancelled:
+                    return
+                continue
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text=f"Connect {action.provider}", url=url)]]
             )
-            return
-
-        # Partial success (optional provider failed).
-        if failures_optional:
-            providers_str = ", ".join(failures_optional)
             await message.answer(
-                f"✅ Authenticated as *{session.display_name}*.\n"
-                f"⚠️ Could not connect: {providers_str}. "
-                "Use `/connect_jira` (or equivalent) to retry.",
-                parse_mode="Markdown",
-                reply_markup=ReplyKeyboardRemove(),
+                f"Authorize {action.provider} to finish login.",
+                reply_markup=keyboard,
+                parse_mode=None,
             )
-            await self._initialize_user_context(session, message=message)
-            return
 
-        # Full success.
-        linked = ", ".join(action.provider for action in self.config.post_auth_actions if action.provider in data)
-        await message.answer(
-            f"✅ Authenticated as *{session.display_name}*.\n" f"🔗 Connected: {linked}.",
-            parse_mode="Markdown",
-            reply_markup=ReplyKeyboardRemove(),
+    async def _finalize_login_attempt(self, attempt: PendingLoginAttempt) -> None:
+        """Persist the link, promote the candidate, and initialize user context once."""
+        candidate = attempt.candidate
+        if attempt.cancelled or candidate is None or not candidate.authenticated or not candidate.nav_user_id:
+            return
+        await self._persist_principal_link(candidate)
+        if attempt.cancelled:
+            return
+        self._user_sessions[attempt.telegram_id] = candidate
+        await self._initialize_user_context(candidate)
+        await self.bot.send_message(
+            chat_id=attempt.chat_id,
+            text=f"Authenticated as {candidate.display_name}. Connected: {', '.join(sorted(attempt.completed))}.",
+            parse_mode=None,
         )
-        await self._initialize_user_context(session, message=message)
+
+    async def _fail_login_attempt(self, attempt: PendingLoginAttempt, reason: str) -> None:
+        """Discard the candidate and report required authorization failure."""
+        del reason
+        providers = ", ".join(sorted(attempt.failed))
+        await self.bot.send_message(
+            chat_id=attempt.chat_id,
+            text=f"Login requires authorization for {providers}. Please try again with /login.",
+            parse_mode=None,
+        )
 
     async def _execute_agent_method(self, message: Message, method_name: str, args_text: str) -> None:
         """Execute an agent method and send the result."""
