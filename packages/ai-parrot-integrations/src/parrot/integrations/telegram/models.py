@@ -10,11 +10,6 @@ from parrot.integrations.knowledge_upload.models import KnowledgeUploadConfig
 
 logger = logging.getLogger(__name__)
 
-# Known providers that can be referenced from YAML ``post_auth_actions``.
-# This is a soft allow-list used only by ``TelegramBotsConfig.validate()`` to
-# emit a warning; the actual registry of providers is populated at runtime.
-_KNOWN_POST_AUTH_PROVIDERS = frozenset({"jira"})
-
 if TYPE_CHECKING:
     from parrot.voice.transcriber import VoiceTranscriberConfig
 
@@ -414,12 +409,13 @@ class TelegramBotsConfig:
 
             # Soft warning for unknown post_auth_actions providers.
             # Providers are registered at runtime, so we can't hard-fail here.
+            from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
+
+            provider_registry = OAuth2ProviderRegistry()
             for action in agent_config.post_auth_actions:
-                if action.provider not in _KNOWN_POST_AUTH_PROVIDERS:
+                if provider_registry.get(action.provider) is None:
                     logger.warning(
-                        "Agent '%s': post_auth_actions references unknown "
-                        "provider '%s'. Ensure a PostAuthProvider is "
-                        "registered for it at runtime.",
+                        "Agent '%s': post_auth_actions provider '%s' is not a " "registered provider at startup.",
                         name,
                         action.provider,
                     )
