@@ -271,7 +271,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -283,8 +283,9 @@
       "parallelism_notes": "Uses collect_auth_requirements from TASK-5016 (auth/pending.py), ConnectionCommandService from TASK-5021, render_connect_outcome + self._connection_commands from TASK-5025; edits wrapper.py after TASK-5025.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5026-telegram-needs-auth-prompts.md"
+      "completed_at": "2026-11-01T02:06:04+00:00",
+      "file": "sdd/tasks/completed/TASK-5026-telegram-needs-auth-prompts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5027",
