@@ -165,7 +165,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -175,8 +175,9 @@
       "parallelism_notes": "Calls IntegrationsService start_connect/status/disconnect/list_for_principal with the permission_context keyword whose FEAT-775 contract TASK-5018 verifies.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5021-connection-command-core.md"
+      "completed_at": "2026-11-01T01:27:29+00:00",
+      "file": "sdd/tasks/completed/TASK-5021-connection-command-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5022",
