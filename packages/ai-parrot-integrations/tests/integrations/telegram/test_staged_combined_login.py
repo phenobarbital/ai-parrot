@@ -179,3 +179,44 @@ async def test_login_persists_link_both_paths() -> None:
     assert not await wrapper._login_coordinator.on_provider_completed(_event(), state)
 
     wrapper._persist_principal_link.assert_awaited_once_with(candidate)
+
+
+@pytest.mark.asyncio
+async def test_staged_login_finalizes_when_notifier_is_created_after_the_wrapper() -> None:
+    """The manager builds the wrapper before the notifier exists; attaching afterwards must still finalize."""
+    from parrot.integrations.telegram.connection_notifier import get_or_create_telegram_notifier
+
+    app: dict = {}
+    wrapper = _wrapper()
+    wrapper.app = app
+    wrapper._attach_login_coordinator()  # no notifier yet: harmless no-op
+    notifier = get_or_create_telegram_notifier(app)
+    wrapper._attach_login_coordinator()
+    wrapper._post_auth_registry.register(_provider())
+
+    await wrapper._start_login_attempt(_message(), _candidate())
+    attempt_id = next(iter(wrapper._login_coordinator._attempts))
+    await notifier.notify(
+        _event(),
+        {"extra": {"attempt_id": attempt_id, "bot_id": "7001", "combined": True, "chat_id": 88123}},
+    )
+
+    assert wrapper._user_sessions[88123].authenticated is True
+    wrapper._persist_principal_link.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_two_bots_sharing_one_notifier_finalize_only_their_own_attempts() -> None:
+    """Completions are routed by the issuing bot's id, so a second bot never swallows the first bot's attempts."""
+    from parrot.integrations.telegram.connection_notifier import TelegramConnectionNotifier
+
+    notifier = TelegramConnectionNotifier()
+    first, second = MagicMock(), MagicMock()
+    first.on_provider_completed = AsyncMock(return_value=True)
+    second.on_provider_completed = AsyncMock(return_value=True)
+    notifier.set_login_coordinator(first, bot_id="7001")
+    notifier.set_login_coordinator(second, bot_id="7002")
+    await notifier.notify(_event(), {"extra": {"attempt_id": "a", "bot_id": "7001", "combined": True}})
+
+    first.on_provider_completed.assert_awaited_once()
+    second.on_provider_completed.assert_not_awaited()

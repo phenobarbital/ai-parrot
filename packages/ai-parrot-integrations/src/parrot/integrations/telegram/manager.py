@@ -191,6 +191,19 @@ class TelegramBotManager:
                 app=app,
             )
 
+            # Connection events (connect/revoke notices, staged /login completion) need the app's shared
+            # publisher and Telegram notifier. A wiring failure must not abort bot startup.
+            if app is not None:
+                try:
+                    from parrot.integrations.manager import attach_telegram_wrapper
+
+                    attach_telegram_wrapper(app, wrapper, bot)
+                except Exception:
+                    self.logger.warning(
+                        "Connection event wiring failed for '%s' — connect notices and staged login unavailable",
+                        name, exc_info=True,
+                    )
+
             # Register bot menu commands via Telegram API.
             # A failure here must never abort bot startup — wrap with its own
             # guard so an unexpected exception from _register_bot_menu does not

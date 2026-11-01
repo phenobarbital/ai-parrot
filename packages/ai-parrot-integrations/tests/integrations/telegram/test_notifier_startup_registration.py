@@ -28,3 +28,27 @@ async def test_telegram_only_startup_registers_notifier() -> None:
         assert notifier._bots == {"bot-1": first_bot, "bot-2": second_bot}
     finally:
         ChannelNotifierRegistry._reset()
+
+
+@pytest.mark.asyncio
+async def test_attach_telegram_wrapper_wires_notifier_hooks_and_coordinator() -> None:
+    """Both startup paths bind a wrapper built before the notifier: bot attached, hook and coordinator registered."""
+    from unittest.mock import MagicMock
+
+    from parrot.integrations.manager import attach_telegram_wrapper
+
+    ChannelNotifierRegistry._reset()
+    app: dict[str, object] = {}
+    wrapper = MagicMock(_bot_id="bot-1")
+    bot = object()
+    try:
+        attach_telegram_wrapper(app, wrapper, bot)
+        attach_telegram_wrapper(app, wrapper, bot)  # repeated startup is harmless
+
+        notifier = app["telegram_connection_notifier"]
+        assert notifier._bots == {"bot-1": bot}
+        assert wrapper._register_jira_session_hook.call_count == 2
+        assert wrapper._attach_login_coordinator.call_count == 2
+        assert "connection_event_publisher" in app
+    finally:
+        ChannelNotifierRegistry._reset()

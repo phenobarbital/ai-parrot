@@ -187,6 +187,21 @@ def _register_channel_notifiers(app: Any) -> ChannelNotifierRegistry:
     return registry
 
 
+def attach_telegram_wrapper(app: Any, wrapper: Any, bot: Any) -> None:
+    """Bind a Telegram wrapper to the app's shared connection publisher and notifier (idempotent).
+
+    Creates the publisher/notifier on first use, attaches the bot for deliveries, and re-registers the wrapper's
+    session hook and staged-login coordinator, which the wrapper could not do while the notifier did not exist yet.
+    Both Telegram startup paths (``IntegrationBotManager`` and ``TelegramBotManager``) call this.
+    """
+    _connection_publisher(app)
+    notifier = app.get("telegram_connection_notifier")
+    if notifier is not None and wrapper._bot_id:
+        notifier.attach(wrapper._bot_id, bot)
+    wrapper._register_jira_session_hook()
+    wrapper._attach_login_coordinator()
+
+
 def _connection_publisher(app: Any) -> ConnectionEventPublisher:
     """Return the app's shared publisher with all channel notifiers registered."""
     registry = _register_channel_notifiers(app)
@@ -398,11 +413,7 @@ class IntegrationBotManager:
             app = None
         wrapper = TelegramAgentWrapper(agent, bot, config, app=app)
         if app is not None:
-            _connection_publisher(app)
-            notifier = app.get("telegram_connection_notifier")
-            if notifier is not None and wrapper._bot_id:
-                notifier.attach(wrapper._bot_id, bot)
-            wrapper._register_jira_session_hook()
+            attach_telegram_wrapper(app, wrapper, bot)
 
         # Publish the Telegram command menu (setMyCommands + chat menu button)
         # so platform/agent commands (e.g. /connect_jira from JiraSpecialist)

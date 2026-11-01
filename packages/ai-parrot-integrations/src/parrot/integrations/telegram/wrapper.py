@@ -235,9 +235,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             finalize=self._finalize_login_attempt,
             on_failed=self._fail_login_attempt,
         )
-        notifier = self.app.get("telegram_connection_notifier") if self.app is not None else None
-        if notifier is not None:
-            notifier.set_login_coordinator(self._login_coordinator)
+        self._attach_login_coordinator()
 
         # Auth strategy (Composite, Azure, OAuth2, or Basic, depending on config)
         # FEAT-109: extracted to _build_auth_strategy; routes to CompositeAuthStrategy
@@ -547,6 +545,17 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 ]
             )
         self._register_jira_session_hook()
+
+    def _attach_login_coordinator(self) -> None:
+        """Route this bot's staged-login completions to its coordinator once the app notifier exists.
+
+        The integrations manager creates the notifier after the wrapper, so it calls this again then; the call is
+        idempotent and a no-op while there is no notifier.
+        """
+        notifier = self.app.get("telegram_connection_notifier") if self.app is not None else None
+        coordinator = getattr(self, "_login_coordinator", None)
+        if notifier is not None and coordinator is not None:
+            notifier.set_login_coordinator(coordinator, bot_id=self._bot_id)
 
     def _register_jira_session_hook(self) -> None:
         """Keep the ``<jira>`` prompt block in sync through the generic notifier (FEAT-776 M7)."""

@@ -29,6 +29,7 @@ class TelegramConnectionNotifier:
         self._last_connect_bot: Dict[str, str] = {}
         self._hooks: Dict[str, Tuple[Optional[SessionHook], Optional[SessionHook]]] = {}
         self._login_coordinator: Optional[Any] = None
+        self._login_coordinators: Dict[str, Any] = {}
         # Bounded LRU of delivered event keys; only successful sends are recorded.
         self._seen: "OrderedDict[Tuple[str, str, str, float], None]" = OrderedDict()
         self.logger = logging.getLogger(__name__)
@@ -51,9 +52,16 @@ class TelegramConnectionNotifier:
         """Register provider-specific session effects."""
         self._hooks[provider_id] = (on_completed, on_revoked)
 
-    def set_login_coordinator(self, coordinator: Any) -> None:
-        """Route staged-login completions to the pending-login coordinator."""
-        self._login_coordinator = coordinator
+    def set_login_coordinator(self, coordinator: Any, bot_id: Optional[str] = None) -> None:
+        """Route staged-login completions to a pending-login coordinator.
+
+        With ``bot_id`` the coordinator serves only that bot (completions carry the issuing bot's id), so several
+        Telegram bots sharing one app each finalize their own attempts; without it the coordinator is the default.
+        """
+        if bot_id:
+            self._login_coordinators[str(bot_id)] = coordinator
+        else:
+            self._login_coordinator = coordinator
 
     async def _resolve_target(
         self,
@@ -159,9 +167,12 @@ class TelegramConnectionNotifier:
         """Resolve target, send plain text, and run the session hook without raising."""
         extra = state_payload.get("extra")
         combined = isinstance(extra, dict) and extra.get("combined") is True
-        if combined and self._login_coordinator is not None:
+        coordinator = None
+        if combined:
+            coordinator = self._login_coordinators.get(str(extra.get("bot_id"))) or self._login_coordinator
+        if coordinator is not None:
             try:
-                await self._login_coordinator.on_provider_completed(event, state_payload)
+                await coordinator.on_provider_completed(event, state_payload)
             except Exception:  # noqa: BLE001 - lifecycle dispatch is independent of notification delivery
                 self.logger.exception(
                     "Pending Telegram login completion dispatch failed (provider=%s)",
