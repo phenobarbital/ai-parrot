@@ -706,9 +706,7 @@ def _allocate_session_cache() -> Path:
     return session_cache
 
 
-def launch_worker(
-    argv: Sequence[str], *, cwd: Path | None = None, initial_prompt: str | None = None
-) -> int:
+def launch_worker(argv: Sequence[str], *, cwd: Path | None = None, initial_prompt: str | None = None) -> int:
     """Launch sdd-worker with strict settings; return policy or host errors.
 
     Args:

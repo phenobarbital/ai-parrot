@@ -75,7 +75,9 @@ def resolve_feature(primary: Path, key: str) -> FeatureRef:
         if not all(isinstance(value, str) and value for value in (feature_id, slug, spec)):
             continue
         if key.casefold() in {feature_id.casefold(), slug.casefold()}:
-            matches.append(FeatureRef(feature_id=feature_id, slug=slug, spec=spec, index=str(index_path.relative_to(primary))))
+            matches.append(
+                FeatureRef(feature_id=feature_id, slug=slug, spec=spec, index=str(index_path.relative_to(primary)))
+            )
     if len(matches) != 1:
         raise LaunchError(2, f"could not uniquely resolve feature {key!r}")
     return matches[0]
@@ -206,7 +208,9 @@ def launch(
     name = tmux_session_name(ref.feature_id)
     if tmux_session_exists(name):
         if not tmux:
-            raise LaunchError(2, f"a worker for {ref.feature_id} already runs in tmux session {name}; use --tmux to attach")
+            raise LaunchError(
+                2, f"a worker for {ref.feature_id} already runs in tmux session {name}; use --tmux to attach"
+            )
         return _attach_session(name)
 
     worktree = ensure_feature_worktree(primary, ref)

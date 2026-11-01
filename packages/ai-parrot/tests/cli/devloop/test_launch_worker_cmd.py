@@ -97,7 +97,18 @@ def test_launch_non_tmux_passes_worktree_and_worker_prompt(tmp_path: Path, monke
         "launch_worker",
         lambda argv, **kwargs: captured.update(argv=argv, **kwargs) or 0,
     )
-    assert launcher.launch("sandbox", tmux=False, detach=False, sandbox="legacy", allowed_domains=("api.example.com",), no_upstream=False, claude_args=("--", "--verbose")) == 0
+    assert (
+        launcher.launch(
+            "sandbox",
+            tmux=False,
+            detach=False,
+            sandbox="legacy",
+            allowed_domains=("api.example.com",),
+            no_upstream=False,
+            claude_args=("--", "--verbose"),
+        )
+        == 0
+    )
     assert captured["cwd"] == worktree
     assert captured["initial_prompt"] == "run FEAT-768"
     assert captured["argv"] == ["--sandbox-allow-domain", "api.example.com", "--", "--verbose"]
@@ -116,7 +127,12 @@ def test_tmux_new_session_carries_environment_and_detaches(tmp_path: Path, monke
     monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/tmux" if name == "tmux" else None)
     monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: "linux")
     monkeypatch.setattr(launcher, "_run", lambda argv, *, cwd: calls.append(argv) or _result(argv))
-    assert launcher.launch("FEAT-768", tmux=True, detach=True, sandbox="legacy", allowed_domains=(), no_upstream=True, claude_args=()) == 0
+    assert (
+        launcher.launch(
+            "FEAT-768", tmux=True, detach=True, sandbox="legacy", allowed_domains=(), no_upstream=True, claude_args=()
+        )
+        == 0
+    )
     command = calls[0]
     assert command[:8] == ["tmux", "new-session", "-d", "-s", "sdd-FEAT-768", "-c", str(worktree), "-e"]
     assert "PARROT_SDD_SANDBOX_MODE=legacy" in command
@@ -125,7 +141,9 @@ def test_tmux_new_session_carries_environment_and_detaches(tmp_path: Path, monke
 
 def test_click_command_maps_launch_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     """The lazy Click surface returns the launcher error code and diagnostic."""
-    monkeypatch.setattr(launcher, "launch", lambda *args, **kwargs: (_ for _ in ()).throw(launcher.LaunchError(2, "bad key")))
+    monkeypatch.setattr(
+        launcher, "launch", lambda *args, **kwargs: (_ for _ in ()).throw(launcher.LaunchError(2, "bad key"))
+    )
     result = CliRunner().invoke(devloop, ["launch-worker", "missing"])
     assert result.exit_code == 2
     assert "launch-worker: bad key" in result.output
