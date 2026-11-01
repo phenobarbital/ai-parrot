@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-775 — Connections on MS Teams
 **Spec**: `sdd/specs/connections-msteams.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5063, TASK-5073, TASK-5076
@@ -87,4 +87,25 @@ PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-integrations/src:packages/a
 
 ## Completion Note
 
-_(filled on close)_
+**Completed**: 2026-11-01 by agent:sdd-fix (`/sdd-fix issue:3a7ee22eb09a`) — code commit `54ff1d3f5f`.
+
+- `IntegrationsService` now has one non-web policy surface: `ConnectionAuthorizer`. `permission_evaluator`,
+  `PermissionEvaluator`, `_CONNECTION_ROUTES`, `pdp_permission_evaluator`, `_check_context_pbac` and the
+  `operation=` plumbing are gone. `permission_context` remains as the `_context_matches` identity check; a context
+  call never falls back to request PBAC.
+- `_channel_service_factory` builds Teams services with `authorizer=app.get("connection_authorizer")`, read per
+  call (late installation covered by test). Teams principals pass `NavigatorConnectionAuthorizer`'s binding check
+  via the `msteams → (msteams, azure)` identity-provider alias (`services/identity_principal.py`).
+- Validation: 406 passed on the task's validation set; wider auth/connection run 661 passed — the 2
+  `test_o365_refresh` failures are pre-existing (`issue:37c2a2186b2c`). Four other integrations failures
+  (`test_a2ui_submit` ×2, `test_slack_integration` markdown blocks, `test_telegram_jira_principal` publisher) fail
+  identically with this commit reverted, so they are unrelated.
+- Independent review (Claude code-review subagent): approved, no fail-open path. Findings: deploy note CONFIRMED
+  (below); command-path test gap REJECTED (service + factory tests already cover every deny path); stale downstream
+  contract ESCALATED → `issue:782f6c990de1` (FEAT-776 TASK-5018 and the connections-telegram spec still consume
+  `permission_evaluator`).
+- **Deploy note:** Teams connection access is now decided by `integration` resource policies (`integration:list`,
+  `integration:connect`, `integration:disconnect`), the same ones Slack and the CLI use. Existing `uri:` policies on
+  `/api/v1/connections*` no longer grant Teams access; without `integration` policies every Teams connection
+  operation denies (fail closed). Roles and groups from the Navigator auth DB now apply to Teams.
+- Resolves `issue:3a7ee22eb09a` and `issue:6a7d92155439` (the duplicate PBAC hook now has a single owner).

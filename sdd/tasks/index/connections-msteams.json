@@ -418,7 +418,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -430,12 +430,13 @@
       "parallelism_notes": "ledger fix (issue:3a7ee22eb09a, issue:6a7d92155439) filed after all FEAT-775 tasks were done",
       "assigned_to": "agent:sdd-fix",
       "started_at": "2026-11-01T01:00:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5091-unify-connection-authorizer.md",
+      "completed_at": "2026-11-01T00:59:15+00:00",
+      "file": "sdd/tasks/completed/TASK-5091-unify-connection-authorizer.md",
       "discovered_from": [
         "issue:3a7ee22eb09a",
         "issue:6a7d92155439"
-      ]
+      ],
+      "verification": "verified"
     }
   ]
 }
