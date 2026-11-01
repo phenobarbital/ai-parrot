@@ -318,7 +318,10 @@ def test_legacy_mode_refuses_failing_bubblewrap_probe(
     result = _run(fake_claude_path, linked_cwd)
 
     assert result.returncode == 1
-    assert "native sandbox unavailable (legacy mode needs a working Bubblewrap: user namespaces denied); mode=legacy refuses to start" in result.stderr
+    assert (
+        "native sandbox unavailable (legacy mode needs a working Bubblewrap: user namespaces denied); mode=legacy refuses to start"
+        in result.stderr
+    )
 
 
 def test_invalid_mode_exits_2(fake_claude_path: str, linked_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:

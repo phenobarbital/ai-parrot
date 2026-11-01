@@ -249,7 +249,9 @@ def resolve_sandbox_mode(repo_root: Path) -> str:
                     # The worktree's pyproject is writable by the sandboxed session itself; letting it
                     # weaken the boundary would be a self-disable path. Only the operator's
                     # environment may select "off" or "legacy"; a repository may go as far as "preferred".
-                    raise ValueError(f"Invalid sandbox mode in {config_path}: '{mode}' may only be set through {MODE_ENV}")
+                    raise ValueError(
+                        f"Invalid sandbox mode in {config_path}: '{mode}' may only be set through {MODE_ENV}"
+                    )
     if mode not in SANDBOX_MODES:
         raise ValueError(f"Invalid sandbox mode from {source}: {mode!r}")
     return mode
