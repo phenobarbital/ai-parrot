@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_decoder, json_encoder, JSONContent  # noqa  pylint: disable=E0611
 from navconfig.logging import logging
 from ..conf import BASE_STATIC_URL, STATIC_DIR, OUTPUT_DIR
+from ..auth.retry_safety import current_turn_tracker
 
 # FEAT-176: Lifecycle Events System
 # FEAT-317: EventEmitterMixin/TraceContext moved to navigator_eventbus.lifecycle;
@@ -1039,6 +1040,9 @@ class AbstractTool(EventEmitterMixin, ABC):
                     )
 
                     if isinstance(resolution, NeedsAuth):
+                        _turn = current_turn_tracker()
+                        if _turn is not None:
+                            _turn.mark_pre_body_auth_failure()
                         raise CredentialRequired(
                             resolution.provider,
                             resolution.auth_url,
@@ -1047,6 +1051,10 @@ class AbstractTool(EventEmitterMixin, ABC):
 
                     # Hit — inject credential onto per-call ContextVar
                     _CREDENTIAL_VAR.set(resolution.secret)
+
+                _turn = current_turn_tracker()
+                if _turn is not None:
+                    _turn.mark_body_started()
 
                 # ── Remote execution dispatch (executor=) ─────────────────────
                 # When an executor is configured we package the call as an

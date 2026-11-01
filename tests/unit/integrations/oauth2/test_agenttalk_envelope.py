@@ -1,4 +1,5 @@
 """Unit tests for AgentTalk AuthorizationRequired → AuthRequiredEnvelope translation."""
+
 from __future__ import annotations
 
 import json
@@ -85,6 +86,14 @@ class TestAgentTalkAuthRequiredEnvelope:
         parsed = json.loads(serialized)
         assert parsed["type"] == "auth_required"
         assert parsed["provider"] == "jira"
+
+    def test_envelope_carries_retry_safe_default_false(self) -> None:
+        """AuthRequiredEnvelope defaults retry_safe to false and round-trips true."""
+        envelope = AuthRequiredEnvelope(provider="jira", message="Authorization required")
+
+        assert envelope.retry_safe is False
+        assert "retry_safe" not in envelope.model_dump()
+        assert AuthRequiredEnvelope(**envelope.model_dump(), retry_safe=True).retry_safe is True
 
     def test_exception_source_importable(self) -> None:
         """AuthorizationRequired imports from parrot.auth.exceptions (correct location)."""

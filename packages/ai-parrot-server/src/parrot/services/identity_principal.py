@@ -7,6 +7,19 @@ from typing import Any, Optional
 
 from parrot.auth.principal import Principal
 
+# FEAT-777 D4: providers whose provider_user_id is an Entra object id.
+_ENTRA_PROVIDERS: tuple[str, ...] = ("msteams",)
+_CANONICAL_CHANNELS = frozenset({"cli", "a2a"})
+_SLACK_OWNERS_SQL = """
+SELECT user_id, enabled FROM auth.user_identities
+WHERE auth_provider = 'slack' AND provider_user_id = $1
+"""
+_EMAIL_OWNERS_SQL = "SELECT DISTINCT user_id FROM auth.users WHERE lower(email) = $1 AND is_active IS TRUE"
+_OID_OWNERS_SQL = """
+SELECT DISTINCT user_id FROM auth.user_identities
+WHERE provider_user_id = $1 AND auth_provider = ANY($2::text[]) AND enabled IS TRUE
+"""
+
 
 class IdentityPrincipalResolver:
     """Resolve web ids directly and other channels through ``auth.user_identities``."""
@@ -26,6 +39,37 @@ class IdentityPrincipalResolver:
 
         return IdentityStore(self._db_pool)
 
+    async def _fetch(self, sql: str, *args: Any) -> list[Any]:
+        """Run one read on the authdb pool (raw asyncpg connection)."""
+        from parrot.services.identity_mapping import _raw_connection
+
+        async with self._db_pool.acquire() as conn:
+            return list(await _raw_connection(conn).fetch(sql, *args))
+
+    async def _slack_owner(self, channel_user_id: str) -> Optional[str]:
+        """Return an enabled Slack owner only when every row has the same owner."""
+        rows = await self._fetch(_SLACK_OWNERS_SQL, channel_user_id)
+        owners = {str(row["user_id"]) for row in rows}
+        if len(owners) == 1 and any(bool(row["enabled"]) for row in rows):
+            return owners.pop()
+
+        self.logger.warning("Could not resolve Slack principal: matched rows=%d", len(rows))
+        return None
+
+    async def _canonical_owner(self, channel_user_id: str) -> Optional[str]:
+        """Return the unique active e-mail or enabled Entra identity owner."""
+        if "@" in channel_user_id:
+            rows = await self._fetch(_EMAIL_OWNERS_SQL, channel_user_id.lower())
+        else:
+            rows = await self._fetch(_OID_OWNERS_SQL, channel_user_id, list(_ENTRA_PROVIDERS))
+
+        owners = {str(row["user_id"]) for row in rows}
+        if len(owners) == 1:
+            return owners.pop()
+
+        self.logger.warning("Could not resolve cli/a2a principal: matched owners=%d", len(owners))
+        return None
+
     async def resolve(self, channel: str, channel_user_id: str) -> Optional[Principal]:
         """Return the bound principal, or ``None`` when resolution fails."""
         if not channel or not channel_user_id:
@@ -35,12 +79,25 @@ class IdentityPrincipalResolver:
         if channel == "web":
             return Principal(user_id=channel_user_id, channel="web", channel_user_id=channel_user_id)
 
-        # IdentityStore has no lookup by e-mail. Do not reinterpret an a2a
-        # e-mail as provider_user_id because that could bind the wrong row.
-        if channel == "a2a" and "@" in channel_user_id:
-            return None
-
         try:
+            if channel == "slack":
+                nav_user_id = await self._slack_owner(channel_user_id)
+                if nav_user_id is None:
+                    return None
+                return Principal(user_id=nav_user_id, channel=channel, channel_user_id=channel_user_id)
+
+            if channel in _CANONICAL_CHANNELS:
+                canonical_identity = channel_user_id.lower() if "@" in channel_user_id else channel_user_id
+                nav_user_id = await self._canonical_owner(channel_user_id)
+                if nav_user_id is None:
+                    return None
+                return Principal(
+                    user_id=nav_user_id,
+                    canonical_identity=canonical_identity,
+                    channel=channel,
+                    channel_user_id=channel_user_id,
+                )
+
             store = self._store()
             nav_user_id = await store.find_user_by_provider_account(channel, channel_user_id)
             if nav_user_id is None or str(nav_user_id) == "":

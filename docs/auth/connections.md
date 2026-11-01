@@ -50,6 +50,119 @@ and credential-required outcomes. The payload carries the provider, channel,
 principal-safe connection details and any device-code fields needed by the
 client; token values are never included.
 
+## Connections panel
+
+The `/account/connections` page lists every registered provider for the logged-in
+principal (status, account, scopes granted, expiry, channels seen) with Connect /
+Reconnect / Disconnect, over S-1's `/api/v1/connections*`. The panel shares the
+same store as the per-agent `IntegrationsMenu` (`/api/v1/agents/integrations/{agent_id}`).
+
+## Live updates (SSE)
+
+`GET /api/v1/connections/events` streams the principal's `connection.*` events
+as Server-Sent Events, delivered across gunicorn workers through a per-principal
+Redis pub/sub channel. No WebSocket is added (FEAT-476's non-goal stands);
+`UserSocketManager` is untouched.
+
+**Frame format:**
+```
+event: connection
+data: <ConnectionEvent JSON>
+
+: keep-alive
+```
+
+The stream is a hint; `GET /api/v1/connections` is authoritative. The client
+refetches the list on every (re)connect and on every event, so duplicates and
+gaps are harmless. Because the admin UI authenticates with a bearer header from
+`localStorage`, the client reads the stream with `fetch` + `ReadableStream`
+(the same pattern as `stream.ts`), not `EventSource`.
+
+**Auth:** session principal only (via `@is_authenticated` + `@user_session`).
+
+**Keep-alive:** every 25 s (`KEEPALIVE_SECONDS`).
+
+**Redis channel:** `parrot:connections:user:{user_id}`.
+
+## Slack linking
+
+Slack `/login` (and `/connect` when unlinked) DMs a one-time link:
+`{CONNECTIONS_LINK_BASE_URL}/account/link?token={nonce}`. The logged-in admin
+UI previews both identities and requires explicit confirmation before
+exclusively claiming the Slack identity for that session's Navigator user.
+
+**Routes:**
+- `GET /api/v1/channel-links/{nonce}` — read-only preview; 410 when the claim
+  is absent.
+- `POST /api/v1/channel-links/{nonce}/confirm` — explicit confirm; 409 conflict
+  if already linked, 410 if expired.
+
+**Behavior:**
+- Loading the preview page never confirms or consumes the claim.
+- Only an explicit Confirm click calls `POST …/confirm` with `{confirm: true}`.
+- Cancel performs no write.
+- The server consumes the nonce and calls
+  `IdentityMappingService.claim_channel_identity` exclusive ownership.
+
+**v1 limits:** single account per provider, no Slack relinking/transfer (admin
+action), one Slack bot token for notifications, `/enable` status per spec §8.
+
+## Slack commands
+
+Generic Slack commands (no provider-specific logic):
+- `/login` — DMs the link URL; unlinked users must run this first.
+- `/connect <provider>` — starts a connection for `<provider>` (e.g. `jira`).
+- `/disconnect <provider>` — revokes a connection for `<provider>`.
+- `/connections` — lists the user's connections.
+
+Provider-specific aliases (`/connect_jira`, `/disconnect_jira`, etc.) stay as
+aliases for backward compatibility.
+
+## Needs-auth retry
+
+AgentTalk detects an `authorization_required` `ToolResult` among the turn's
+tool calls and S-1's re-raised exceptions, and emits S-1's
+`AuthRequiredPayload`:
+
+- **Non-streaming:** the existing `AuthRequiredEnvelope` JSON.
+- **Streaming:** a trailer frame
+  ```
+  \x00{"auth_required": {...payload}, "turn_id": "...", "retry_safe": false}
+  ```
+  after the envelope, the same framing as the FEAT-752 suggestions trailer.
+
+The UI renders the Connect pill in both modes. On success — popup `postMessage`
+**or** an SSE `connection.completed` for the same provider — it calls
+`onConnected`, and `AgentChat` re-sends the user message only when the server
+authorizes it.
+
+**Server-authored `retry_safe`:** set only from complete turn-local execution
+evidence showing no tool body began; missing evidence, any begun tool (even
+failed/cancelled), delegation or an uninstrumented execution path means false.
+A tool's own metadata cannot assert safety. Both response modes carry the flag
+outside `AuthRequiredPayload`; absent means false.
+
+**Auto-resend:** at most once keyed by the originating user message ID, and only
+if no newer user message exists. Otherwise the user explicitly chooses whether
+to retry. A retried response retains the originating message ID so repeated
+auth failures cannot reset the budget. Multiple outstanding auth requirements
+disable auto-retry; v1 exposes the first pill and requires manual retry.
+
+**Manual retry:** shows a Retry button explaining that completed actions may
+repeat.
+
+## PBAC without a request
+
+Slack commands (`/connect`, `/disconnect`, `/connections`) use the injected
+`NavigatorConnectionAuthorizer` (via `IntegrationsService._authorizer`) for
+request-independent authorization. The authorizer evaluates PBAC policies with
+the session principal as the subject and `integration:connect` or
+`integration:disconnect` as the action. The service fails closed when no PDP
+is available.
+
+**Policy effect:** explicit `ALLOW` only; no implicit allow. The resource
+integration is `integration:<provider>` (e.g. `integration:jira`).
+
 ## API
 
 The principal-level API is rooted at `/api/v1/connections`:

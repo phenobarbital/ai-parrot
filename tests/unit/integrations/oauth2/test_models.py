@@ -1,4 +1,5 @@
 """Unit tests for parrot.auth.oauth2.models."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -7,6 +8,7 @@ import pytest
 
 from parrot.auth.oauth2.models import (
     AuthRequiredEnvelope,
+    ChannelLinkPreview,
     ConnectInitRequest,
     ConnectInitResponse,
     DisconnectResponse,
@@ -42,6 +44,15 @@ class TestAuthRequiredEnvelope:
         assert env.auth_url is None
         assert env.scopes == []
 
+    def test_retry_safe_default_false(self) -> None:
+        env = AuthRequiredEnvelope(provider="jira", message="m")
+        assert env.retry_safe is False
+
+    def test_retry_safe_json_round_trip(self) -> None:
+        env = AuthRequiredEnvelope(provider="jira", message="m", retry_safe=True)
+        restored = AuthRequiredEnvelope.model_validate(env.model_dump(mode="json"))
+        assert restored.retry_safe is True
+
     def test_with_all_fields(self) -> None:
         env = AuthRequiredEnvelope(
             provider="jira",
@@ -64,6 +75,7 @@ class TestIntegrationDescriptor:
         assert d.icon is None
         assert d.default_scopes == []
         assert d.account_id is None
+        assert d.grant_origin is None
 
     def test_with_all_fields(self) -> None:
         now = datetime.now()
@@ -77,9 +89,11 @@ class TestIntegrationDescriptor:
             display_account_name="Test User",
             email="test@example.com",
             connected_at=now,
+            grant_origin="authorization_code",
         )
         assert d.connected is True
         assert d.connected_at == now
+        assert d.grant_origin == "authorization_code"
 
 
 class TestConnectInitRequest:
@@ -159,6 +173,7 @@ class TestUsersIntegrationRow:
         )
         assert row.status == "active"
         assert row.channels == []  # FEAT-773: channel -> channels (every channel that used the connection)
+        assert row.grant_origin is None
 
     def test_optional_fields(self) -> None:
         row = UsersIntegrationRow(
@@ -174,6 +189,18 @@ class TestUsersIntegrationRow:
         assert row.site_url is None
         assert row.last_used_at is None
 
+    def test_grant_origin(self) -> None:
+        row = UsersIntegrationRow(
+            user_id="u1",
+            provider="o365",
+            account_id="a1",
+            display_name="Test",
+            scopes=[],
+            connected_at=datetime.now(),
+            grant_origin="device_code",
+        )
+        assert row.grant_origin == "device_code"
+
     def test_revoked_status(self) -> None:
         row = UsersIntegrationRow(
             user_id="u1",
@@ -185,3 +212,21 @@ class TestUsersIntegrationRow:
             status="revoked",
         )
         assert row.status == "revoked"
+
+
+class TestChannelLinkPreview:
+    """Tests for ChannelLinkPreview."""
+
+    def test_fields(self) -> None:
+        preview = ChannelLinkPreview(
+            channel="slack",
+            channel_user_id="T01:U02",
+            team_id="T01",
+            nav_user_id="1042",
+        )
+        assert set(preview.model_dump()) == {
+            "channel",
+            "channel_user_id",
+            "team_id",
+            "nav_user_id",
+        }

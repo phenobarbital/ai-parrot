@@ -13,7 +13,8 @@
  * frame after the envelope (X-Parrot-Stream: chunked-aimessage+suggestions):
  *   <text...>\x00{envelope}\x00{"suggestions": [...], "turn_id": "..."}
  * Every NUL starts a new JSON frame; frame #1 is the envelope, later frames are
- * trailers.
+ * trailers. A trailer may instead carry `{"auth_required": {...}, "turn_id"?, "retry_safe"?}`
+ * (FEAT-777), surfaced as an `auth_required` chunk; `retry_safe` is copied only from the frame.
  */
 
 import { browser } from "$app/environment";
@@ -23,11 +24,13 @@ import { getAuthHeaders as getBaseAuthHeaders } from "$lib/api/auth-headers";
 import type { AgentChatRequest, AgentChatResponse } from "$lib/types/agent";
 import type { BotChatRequest, BotChatResponse } from "$lib/types/bot-chat";
 import type { AgentChatSuggestion } from "$lib/types/generated/AgentChatResponse";
+import type { AuthRequiredPayload } from "$lib/types/generated/AuthRequiredPayload";
 
 export type StreamChunk =
   | { type: "chunk"; text: string }
   | { type: "done"; message: AgentChatResponse | BotChatResponse }
-  | { type: "suggestions"; suggestions: AgentChatSuggestion[]; turn_id?: string };
+  | { type: "suggestions"; suggestions: AgentChatSuggestion[]; turn_id?: string }
+  | { type: "auth_required"; payload: AuthRequiredPayload; turn_id?: string; retry_safe?: boolean }; // absent = false
 
 const SEPARATOR = "\x00";
 
@@ -145,6 +148,18 @@ async function* consumeStream(response: Response): AsyncGenerator<StreamChunk> {
         type: "suggestions",
         suggestions: trailer.suggestions as AgentChatSuggestion[],
         turn_id: typeof trailer.turn_id === "string" ? trailer.turn_id : undefined,
+      };
+    } else if (
+      trailer &&
+      trailer.auth_required !== null &&
+      typeof trailer.auth_required === "object" &&
+      !Array.isArray(trailer.auth_required)
+    ) {
+      yield {
+        type: "auth_required",
+        payload: trailer.auth_required as AuthRequiredPayload,
+        turn_id: typeof trailer.turn_id === "string" ? trailer.turn_id : undefined,
+        retry_safe: trailer.retry_safe === true ? true : trailer.retry_safe === false ? false : undefined,
       };
     }
   }

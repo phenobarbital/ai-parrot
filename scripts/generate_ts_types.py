@@ -82,6 +82,17 @@ def _models() -> dict[str, type[BaseModel]]:
     # FEAT-598 — linked-surface descriptor (createSurface.metadata.extensions.parrot_data_sources)
     from parrot.outputs.a2ui.linked.models import LinkedSources
 
+    # FEAT-777 — user connections (panel, SSE events, needs-auth, Slack link preview)
+    from parrot.auth.credentials import AuthRequiredPayload
+    from parrot.auth.oauth2.events import ConnectionEvent
+    from parrot.auth.oauth2.models import (
+        AuthRequiredEnvelope,
+        ChannelLinkPreview,
+        ConnectInitResponse,
+        DisconnectResponse,
+        IntegrationDescriptor,
+    )
+
     return {
         "AdminStatus": AdminStatus,
         "AgentCounts": AgentCounts,
@@ -111,6 +122,14 @@ def _models() -> dict[str, type[BaseModel]]:
         "UserToolkitOverride": UserToolkitOverride,
         # FEAT-598 — A2UI linked surfaces
         "LinkedSources": LinkedSources,
+        # FEAT-777 — user connections
+        "IntegrationDescriptor": IntegrationDescriptor,
+        "ConnectInitResponse": ConnectInitResponse,
+        "DisconnectResponse": DisconnectResponse,
+        "AuthRequiredPayload": AuthRequiredPayload,
+        "AuthRequiredEnvelope": AuthRequiredEnvelope,
+        "ConnectionEvent": ConnectionEvent,
+        "ChannelLinkPreview": ChannelLinkPreview,
     }
 
 
