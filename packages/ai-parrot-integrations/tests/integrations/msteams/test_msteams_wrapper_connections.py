@@ -98,3 +98,33 @@ async def test_conv_ref_saved_on_personal_authenticated_turn_only(monkeypatch: p
     wrapper._principal_source.session_for_turn = AsyncMock(return_value=None)
     await wrapper._remember_conversation(_turn())
     assert wrapper._convref_store.save.await_count == 0
+
+
+def test_connection_commands_registered_with_empty_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The connector and commands exist even when no OAuth2 provider is registered at init time.
+
+    Providers such as Jira register in a later startup callback, so construction must not be gated on the registry.
+    """
+    from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
+    from parrot.integrations.msteams.models import MSTeamsAgentConfig
+
+    registry = OAuth2ProviderRegistry()
+    monkeypatch.setattr(registry, "all", lambda: [])
+    app = MagicMock()
+    app.get.return_value = None
+    agent = MagicMock()
+    agent.tool_manager.list_tools.return_value = []
+    config = MSTeamsAgentConfig(
+        name="test_bot", chatbot_id="test_bot_id", client_id="fake_id", client_secret="fake_secret"
+    )
+
+    wrapper = MSTeamsAgentWrapper(agent, config, app)
+
+    assert wrapper._connector is not None
+    assert "connect" in wrapper._command_router._handlers
+    assert "connect_jira" in wrapper._command_router._handlers
+    # Providers registered after construction are visible through the lazy ``provider_ids`` callable.
+    sentinel = MagicMock()
+    sentinel.provider_id = "late"
+    monkeypatch.setattr(registry, "all", lambda: [sentinel])
+    assert wrapper._connector._provider_ids() == ["late"]

@@ -237,16 +237,16 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             self.logger.info("MSTeams[%s]: no navigator_auth_url — auth lane disabled", config.name)
 
         self._principal_source = MSTeamsPrincipalSource(self._session_store)
-        self._connector: Optional[TeamsConnector] = None
-        if OAuth2ProviderRegistry().all():
-            self._connector = TeamsConnector(
-                principal_source=self._principal_source,
-                service_factory=connection_service_factory or _default_connection_service,
-                provider_ids=lambda: [provider.provider_id for provider in OAuth2ProviderRegistry().all()],
-                bot_app_id=config.client_id or "",
-                auth_enabled=self._auth is not None,
-            )
-            register_connection_commands(self._command_router, connector=self._connector)
+        # Providers register lazily (some after bot startup), so the connector and its commands are
+        # always wired; ``provider_ids`` reads the registry at call time.
+        self._connector: Optional[TeamsConnector] = TeamsConnector(
+            principal_source=self._principal_source,
+            service_factory=connection_service_factory or _default_connection_service,
+            provider_ids=lambda: [provider.provider_id for provider in OAuth2ProviderRegistry().all()],
+            bot_app_id=config.client_id or "",
+            auth_enabled=self._auth is not None,
+        )
+        register_connection_commands(self._command_router, connector=self._connector)
 
         redis = self.app.get("redis")
         self._convref_store = MSTeamsConversationRefStore(redis) if redis is not None else None
