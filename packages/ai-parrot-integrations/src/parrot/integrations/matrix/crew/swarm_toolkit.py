@@ -147,6 +147,7 @@ class AgentSwarmToolkit(AbstractToolkit):
             FailureCode.HOP_LIMIT: "hop_limit",
             FailureCode.TIMEOUT: "timeout",
             FailureCode.POLICY: "refused",
+            FailureCode.SCHEMA: "schema_error",
         }
         # Bind the call's authority for this query only; with none, keep any ambient request context.
         pctx = _CALL_PCTX.get()
