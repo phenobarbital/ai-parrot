@@ -6,6 +6,7 @@ Verifies:
 - supports_post_auth_chain is True after TASK-778.
 - Backward-compat: strategy works without a registry (no chain).
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 import json
@@ -112,6 +113,7 @@ async def test_build_login_keyboard_next_auth_required_false():
 # ---------------------------------------------------------------------------
 # handle_callback — post_auth chain invocation
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_handle_callback_defers_post_auth_chain():

@@ -11,6 +11,7 @@ OAuth2Auth   | False                    | no
 Composite(all True) | True (AND prop)  | yes
 Composite(mixed)    | False            | no
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -59,6 +60,7 @@ def _inject_registry(wrapper, url: str = "https://jira.example.com/oauth") -> Ma
 # We patch _build_next_auth_url to observe whether it is invoked.
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_primary_login_does_not_build_secondary_url_for_capable_strategy():
     """A chain-capable strategy still shows primary login without provider state."""
@@ -85,8 +87,9 @@ async def test_primary_login_does_not_build_secondary_url_for_capable_strategy()
     message.answer = AsyncMock()
     build_next = AsyncMock()
     build_kb = AsyncMock(return_value=MagicMock())
-    with patch.object(wrapper, "_build_next_auth_url", build_next), patch.object(
-        wrapper._auth_strategy, "build_login_keyboard", build_kb
+    with (
+        patch.object(wrapper, "_build_next_auth_url", build_next),
+        patch.object(wrapper._auth_strategy, "build_login_keyboard", build_kb),
     ):
         await wrapper.handle_login(message)
 
