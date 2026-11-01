@@ -174,13 +174,15 @@ async def test_service_start_connect_passes_requested_scopes() -> None:
     )
     OAuth2ProviderRegistry().register(provider)
 
-    async def allow(_: Any, __: Any) -> bool:
+    class _AllowAuthorizer:
         """Allow the request without involving an HTTP PBAC dependency."""
-        return True
+
+        async def authorize(self, *_: Any) -> bool:
+            return True
 
     requested_scopes = ["scope-a", "scope-b"]
     try:
-        await IntegrationsService(permission_evaluator=allow).start_connect(
+        await IntegrationsService(authorizer=_AllowAuthorizer()).start_connect(
             "nav-user",
             "scope-test",
             channel="msteams",
@@ -214,12 +216,14 @@ async def test_service_empty_scopes_fall_back_to_manager_scopes() -> None:
     )
     OAuth2ProviderRegistry().register(provider)
 
-    async def allow(_: Any, __: Any) -> bool:
+    class _AllowAuthorizer:
         """Allow the request without involving an HTTP PBAC dependency."""
-        return True
+
+        async def authorize(self, *_: Any) -> bool:
+            return True
 
     try:
-        await IntegrationsService(permission_evaluator=allow).start_connect(
+        await IntegrationsService(authorizer=_AllowAuthorizer()).start_connect(
             "nav-user",
             "empty-scope-test",
             channel="msteams",

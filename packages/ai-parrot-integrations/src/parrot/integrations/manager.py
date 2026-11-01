@@ -130,14 +130,13 @@ def _build_principal_resolver(app: Any) -> Any:
 
 
 def _channel_service_factory(app: Any) -> Callable[[], Any]:
-    """Build IntegrationsService instances for channel callers with the shared PDP evaluator.
+    """Build IntegrationsService instances for channel callers with the shared connection authorizer.
 
-    Without ``app["abac"]`` the evaluator is ``None`` and every context-authorized call is denied (fail closed).
+    Teams uses the same ``app["connection_authorizer"]`` (``NavigatorConnectionAuthorizer``) as Slack and the CLI,
+    so one set of ``integration`` resource policies — with trusted roles and groups — covers every channel. It is
+    read per call because the server installs it at startup; without it every call is denied (fail closed).
     """
-    from parrot.auth.oauth2.service import IntegrationsService, pdp_permission_evaluator
-
-    pdp = app.get("abac")
-    evaluator = pdp_permission_evaluator(pdp) if pdp is not None else None
+    from parrot.auth.oauth2.service import IntegrationsService
 
     def _factory() -> Any:
         vault = None
@@ -148,7 +147,7 @@ def _channel_service_factory(app: Any) -> Callable[[], Any]:
                 vault = VaultTokenSync(db_pool=app["authdb"], redis=app.get("redis"))
             except ImportError:  # pragma: no cover - server package is optional
                 pass
-        return IntegrationsService(vault, permission_evaluator=evaluator)
+        return IntegrationsService(vault, authorizer=app.get("connection_authorizer"))
 
     return _factory
 

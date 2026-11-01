@@ -1,14 +1,17 @@
-"""FEAT-775 M3: request-less PBAC on IntegrationsService (AC-14)."""
+"""FEAT-775 M3: request-less authorization on IntegrationsService (AC-14).
 
-from pathlib import Path
+Teams callers pass a ``PermissionContext`` that is only an identity check; the decision itself goes through the
+same ``ConnectionAuthorizer`` Slack and the CLI use (issue:3a7ee22eb09a).
+"""
+
 from types import SimpleNamespace
-from typing import Any, Mapping
+from typing import Any, List, Optional, Tuple
 from unittest.mock import AsyncMock
 
 import pytest
 
 from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
-from parrot.auth.oauth2.service import IntegrationsService, pdp_permission_evaluator
+from parrot.auth.oauth2.service import IntegrationsService
 from parrot.auth.permission import PermissionContext, UserSession
 from parrot.auth.principal import Principal
 
@@ -50,6 +53,28 @@ def _principal(
     )
 
 
+class RecordingAuthorizer:
+    """``ConnectionAuthorizer`` double that records calls and returns a fixed decision."""
+
+    def __init__(self, decision: Any = True, error: Optional[Exception] = None) -> None:
+        self.decision = decision
+        self.error = error
+        self.calls: List[Tuple[Principal, str, Optional[str], List[str]]] = []
+
+    async def authorize(
+        self,
+        principal: Principal,
+        action: str,
+        provider_id: Optional[str],
+        scopes: List[str],
+    ) -> Any:
+        """Record the call, then raise or return the configured decision."""
+        self.calls.append((principal, action, provider_id, list(scopes)))
+        if self.error is not None:
+            raise self.error
+        return self.decision
+
+
 @pytest.fixture
 def provider(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     """Register one provider and isolate its persistence side effects."""
@@ -83,28 +108,30 @@ def provider(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
 
 
 @pytest.mark.asyncio
-async def test_service_requestless_pbac_fails_closed(provider: SimpleNamespace) -> None:
-    """Missing, failing, non-boolean, and request-less authorization all deny."""
+async def test_service_requestless_authorization_fails_closed(provider: SimpleNamespace) -> None:
+    """Missing authorizer, missing principal, errors and non-boolean decisions all deny."""
     context = _context()
-
-    assert await IntegrationsService().list_for_principal("nav-user", permission_context=context) == []
-
-    async def raises(_: PermissionContext, __: Mapping[str, Any]) -> bool:
-        raise RuntimeError("policy unavailable")
+    principal = _principal()
 
     assert (
-        await IntegrationsService(permission_evaluator=raises).list_for_principal(
+        await IntegrationsService().list_for_principal("nav-user", principal=principal, permission_context=context)
+        == []
+    )
+    assert (
+        await IntegrationsService(authorizer=RecordingAuthorizer()).list_for_principal(
             "nav-user", permission_context=context
         )
         == []
     )
-
-    async def truthy(_: PermissionContext, __: Mapping[str, Any]) -> object:
-        return object()
-
     assert (
-        await IntegrationsService(permission_evaluator=truthy).list_for_principal(
-            "nav-user", permission_context=context
+        await IntegrationsService(
+            authorizer=RecordingAuthorizer(error=RuntimeError("policy unavailable"))
+        ).list_for_principal("nav-user", principal=principal, permission_context=context)
+        == []
+    )
+    assert (
+        await IntegrationsService(authorizer=RecordingAuthorizer(decision=object())).list_for_principal(
+            "nav-user", principal=principal, permission_context=context
         )
         == []
     )
@@ -130,14 +157,11 @@ async def test_service_context_target_mismatch_denied(
     principal: Principal,
     channel: str,
 ) -> None:
-    """Every identity mismatch denies before credential or persistence mutation."""
-
-    async def allow(_: PermissionContext, __: Mapping[str, Any]) -> bool:
-        return True
-
+    """Every identity mismatch denies before the authorizer, credentials or persistence are touched."""
+    authorizer = RecordingAuthorizer()
     delete = AsyncMock()
     monkeypatch.setattr("parrot.auth.oauth2.service.delete_users_integration", delete)
-    service = IntegrationsService(permission_evaluator=allow)
+    service = IntegrationsService(authorizer=authorizer)
 
     with pytest.raises(PermissionError):
         await service.start_connect(
@@ -156,6 +180,7 @@ async def test_service_context_target_mismatch_denied(
             permission_context=context,
         )
 
+    assert authorizer.calls == []
     provider.manager.create_authorization_url.assert_not_awaited()
     provider.manager.revoke.assert_not_awaited()
     delete.assert_not_awaited()
@@ -164,12 +189,8 @@ async def test_service_context_target_mismatch_denied(
 @pytest.mark.asyncio
 async def test_disconnect_revokes_on_channel(provider: SimpleNamespace) -> None:
     """Disconnect uses the supplied channel and its trusted raw identity."""
-
-    async def allow(_: PermissionContext, __: Mapping[str, Any]) -> bool:
-        return True
-
     principal = _principal()
-    await IntegrationsService(permission_evaluator=allow).disconnect(
+    await IntegrationsService(authorizer=RecordingAuthorizer()).disconnect(
         "nav-user",
         "o365",
         channel="msteams",
@@ -185,148 +206,61 @@ async def test_disconnect_revokes_on_channel(provider: SimpleNamespace) -> None:
 
 
 @pytest.mark.asyncio
-async def test_evaluator_attributes_shape(provider: SimpleNamespace) -> None:
-    """The evaluator receives the stable FEAT-773 attributes plus operation."""
-    calls: list[Mapping[str, Any]] = []
+async def test_teams_calls_use_connection_authorizer(provider: SimpleNamespace) -> None:
+    """Teams operations reach the shared authorizer with ``integration:*`` actions, like Slack and the CLI."""
+    authorizer = RecordingAuthorizer()
+    service = IntegrationsService(authorizer=authorizer)
+    principal = _principal()
+    context = _context()
 
-    async def record(_: PermissionContext, attributes: Mapping[str, Any]) -> bool:
-        calls.append(dict(attributes))
-        return True
+    assert len(await service.list_for_principal("nav-user", principal=principal, permission_context=context)) == 1
+    await service.status("nav-user", "o365", principal=principal, permission_context=context)
+    await service.start_connect("nav-user", "o365", channel="msteams", principal=principal, permission_context=context)
+    await service.disconnect("nav-user", "o365", channel="msteams", principal=principal, permission_context=context)
 
-    await IntegrationsService(permission_evaluator=record).status(
-        "nav-user",
-        "o365",
-        principal=_principal(),
-        permission_context=_context(),
-    )
-
-    assert calls == [
-        {
-            "action": "integration:list",
-            "provider": "o365",
-            "scopes": [],
-            "operation": "status",
-        }
+    assert [(call[1], call[2], call[3]) for call in authorizer.calls] == [
+        ("integration:list", None, []),
+        ("integration:list", "o365", []),
+        ("integration:list", "o365", []),
+        ("integration:connect", "o365", ["User.Read"]),
+        ("integration:disconnect", "o365", ["User.Read"]),
     ]
-
-
-_POLICY_YAML = """
-version: "1.0"
-defaults:
-  effect: deny
-policies:
-  - name: allow_connections_read_write
-    effect: allow
-    resources:
-      - "uri:/api/v1/connections"
-      - "uri:/api/v1/connections/o365"
-      - "uri:/api/v1/connections/o365/start"
-    actions:
-      - "uri:read"
-      - "uri:write"
-    subjects:
-      groups:
-        - connections-users
-    priority: 10
-  - name: deny_connections_delete
-    effect: deny
-    resources:
-      - "uri:/api/v1/connections"
-      - "uri:/api/v1/connections/o365"
-      - "uri:/api/v1/connections/o365/start"
-    actions:
-      - "uri:delete"
-    subjects:
-      groups:
-        - connections-users
-    priority: 20
-"""
+    assert all(call[0] is principal for call in authorizer.calls)
 
 
 @pytest.mark.asyncio
-async def test_teams_service_pbac_allow_and_deny(provider: SimpleNamespace, tmp_path: Path) -> None:
-    """Real navigator-auth policies enforce the channel URI parity table."""
-    pytest.importorskip("navigator_auth")
-    from navigator_auth.abac.policies.evaluator import PolicyEvaluator
-    from navigator_auth.abac.policies.resources import ResourceType
-
-    from parrot.auth.permission import to_eval_context
-
-    policy_file = tmp_path / "connections.yaml"
-    policy_file.write_text(_POLICY_YAML)
-    evaluator = PolicyEvaluator(cache_size=64, cache_ttl_seconds=30)
-    evaluator.load_from_file(policy_file)
-    service = IntegrationsService(permission_evaluator=pdp_permission_evaluator(SimpleNamespace(evaluator=evaluator)))
-    context = _context()
+async def test_authorizer_deny_blocks_teams_operations(provider: SimpleNamespace) -> None:
+    """An authorizer deny stops every Teams operation before any OAuth side effect."""
+    service = IntegrationsService(authorizer=RecordingAuthorizer(decision=False))
     principal = _principal()
-    direct = evaluator.check_access(
-        to_eval_context(context),
-        ResourceType.URI,
-        "/api/v1/connections",
-        "uri:read",
-    )
-    assert direct.allowed is True, direct
-    provider_direct = evaluator.check_access(
-        to_eval_context(context),
-        ResourceType.URI,
-        "/api/v1/connections/o365",
-        "uri:read",
-    )
-    assert provider_direct.allowed is True, provider_direct
-    connect_direct = evaluator.check_access(
-        to_eval_context(context),
-        ResourceType.URI,
-        "/api/v1/connections/o365/start",
-        "uri:write",
-    )
-    assert connect_direct.allowed is True, connect_direct
+    context = _context()
 
-    assert len(await service.list_for_principal("nav-user", principal=principal, permission_context=context)) == 1
-    assert (
-        await service.status("nav-user", "o365", principal=principal, permission_context=context)
-    ).provider == "o365"
-    assert (
-        await service.start_connect(
-            "nav-user",
-            "o365",
-            channel="msteams",
-            principal=principal,
-            permission_context=context,
-        )
-    ).state == "state-1"
+    assert await service.list_for_principal("nav-user", principal=principal, permission_context=context) == []
     with pytest.raises(PermissionError):
-        await service.disconnect(
-            "nav-user",
-            "o365",
-            channel="msteams",
-            principal=principal,
-            permission_context=context,
+        await service.status("nav-user", "o365", principal=principal, permission_context=context)
+    with pytest.raises(PermissionError):
+        await service.start_connect(
+            "nav-user", "o365", channel="msteams", principal=principal, permission_context=context
         )
+    with pytest.raises(PermissionError):
+        await service.disconnect("nav-user", "o365", channel="msteams", principal=principal, permission_context=context)
+    provider.manager.create_authorization_url.assert_not_awaited()
     provider.manager.revoke.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_http_service_authorization_unchanged() -> None:
-    """The legacy request path remains active and context denial never falls back."""
+async def test_http_service_authorization_unchanged(provider: SimpleNamespace) -> None:
+    """The web request path still uses request PBAC; a context call never falls back to it."""
     abac = SimpleNamespace(is_allowed=AsyncMock(return_value=True))
     request = SimpleNamespace(app={"abac": abac})
+    authorizer = RecordingAuthorizer(decision=False)
+    service = IntegrationsService(authorizer=authorizer)
 
-    async def deny(_: PermissionContext, __: Mapping[str, Any]) -> bool:
-        return False
-
-    service = IntegrationsService(permission_evaluator=deny)
     assert await service._check_pbac(request, "integration:list", "o365") is True
-    assert (
-        await service._check_pbac(
-            request,
-            "integration:list",
-            "o365",
-            permission_context=_context(),
-            operation="status",
-        )
-        is False
-    )
+    with pytest.raises(PermissionError):
+        await service.status("nav-user", "o365", request, principal=_principal(), permission_context=_context())
     abac.is_allowed.assert_awaited_once_with(
         request,
         {"action": "integration:list", "provider": "o365"},
     )
+    assert len(authorizer.calls) == 1

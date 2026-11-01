@@ -111,35 +111,40 @@ references, unknown app ids and adapter failures are logged and do not fail the 
 
 ## Permissions
 
-Teams connection authorization follows the same request-less PBAC URI mapping as the HTTP API. The action,
-provider and scopes are retained for audit and future policy use, but the current decision is based on the URI and
-HTTP-equivalent action:
+Teams uses the same request-less authorizer as Slack and the CLI: `NavigatorConnectionAuthorizer`
+(`app["connection_authorizer"]`, see [Connections — PBAC without a request](../auth/connections.md#pbac-without-a-request)).
+One set of `integration` resource policies therefore covers every non-web channel. Policies are evaluated with the
+Teams principal as the subject, and the resource is the provider id (`*` for the collection gate):
 
-| Service operation | Resource (`ResourceType.URI`) | Action |
+| Service operation | Resource (`integration`) | Action |
 |---|---|---|
-| `list_for_principal` (gate and per-provider filter) | `/api/v1/connections` | `uri:read` |
-| `status` | `/api/v1/connections/{provider}` | `uri:read` |
-| `start_connect` | `/api/v1/connections/{provider}/start` | `uri:write` |
-| `disconnect` | `/api/v1/connections/{provider}` | `uri:delete` |
+| `list_for_principal` (gate) | `*` | `integration:list` |
+| `list_for_principal` (per-provider filter) | `{provider}` | `integration:list` |
+| `status` | `{provider}` | `integration:list` |
+| `start_connect` | `{provider}` | `integration:connect` |
+| `disconnect` | `{provider}` | `integration:disconnect` |
 
-Operators must allow the appropriate URI resources in policy. The corresponding HTTP routes are
-`/api/v1/connections`, `/api/v1/connections/{provider}` and `/api/v1/connections/{provider}/start`. Listing
-denials return an empty result; denied status, connect and disconnect operations are rendered as a plain
-not-allowed response. Missing identity, mismatched identity, missing evaluator or evaluator failure denies closed.
+Only an explicit `ALLOW` grants access. Listing denials return an empty result; denied status, connect and
+disconnect operations are rendered as a plain not-allowed response. A missing authorizer or PDP, an authorizer
+failure, an inactive Navigator user, or an exclusive Teams binding that no longer resolves to the same Navigator
+user all deny closed.
+
+The Teams `PermissionContext` is used only as an identity check, before the authorizer runs: the target user, the
+principal, the tenant and the AAD object id (`channel_user_id`) must all match, otherwise the operation is denied
+without consulting policy.
 
 ### Roles and groups
 
-The Teams permission context carries the Navigator user id, tenant and channel identity only. Roles and groups are
-**empty**, because Teams sign-in does not supply those claims. A policy that grants access through a role or group
-(for example a `connections-users` group) therefore denies every Teams user. Write the policy against the user
-(`user_id` / the Navigator principal) instead, or add the user explicitly, when the resource is reachable from Teams.
+The authorizer loads the user's role, groups and tenant (`org_id`/`client_id`) from the Navigator auth database, not
+from the Teams sign-in. Policies can grant Teams users access by role or group (for example a `connections-users`
+group), exactly as for Slack.
 
 ## Operator checklist
 
 - Register every provider's OAuth redirect URI with that provider before enabling its Teams connection flow.
 - Configure `navigator_auth_url` for every Teams bot that exposes connections.
 - Configure the Microsoft app `client_id` for each bot. It identifies the adapter used for proactive routing.
-- Add PBAC policies for the URI resources and actions in the permissions table, keyed by user (Teams contexts carry no roles or groups).
+- Add PBAC policies for the `integration` resource and the `integration:*` actions in the permissions table (the same policies Slack and the CLI use; roles and groups apply).
 - Ensure Redis is available for the 30-day personal conversation-reference store.
 - Register providers in `OAuth2ProviderRegistry`; Teams exposes every registered provider, not only Jira.
 - Keep provider client credentials and redirect URIs in deployment configuration, never in messages or source.

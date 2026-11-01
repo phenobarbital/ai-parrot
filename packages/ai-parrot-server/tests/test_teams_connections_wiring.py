@@ -44,12 +44,16 @@ class FakeProvider(OAuth2Provider):
         return Mock()
 
 
-class AllowEvaluator:
-    """Return the explicit allow shape expected by ``pdp_permission_evaluator``."""
+class AllowAuthorizer:
+    """``ConnectionAuthorizer`` double that allows every connection action."""
 
-    def check_access(self, context: Any, resource_type: Any, path: str, action: str) -> SimpleNamespace:
-        """Allow every test policy evaluation."""
-        return SimpleNamespace(allowed=True)
+    def __init__(self) -> None:
+        self.calls: list[tuple[Any, ...]] = []
+
+    async def authorize(self, principal: Any, action: str, provider_id: Any, scopes: list[str]) -> bool:
+        """Record and allow."""
+        self.calls.append((principal, action, provider_id, scopes))
+        return True
 
 
 class RecordingTurnContext:
@@ -112,14 +116,17 @@ def test_registration_order_jira_before_and_after_teams() -> None:
 
 
 @pytest.mark.asyncio
-async def test_factory_injects_evaluator_or_denies() -> None:
-    """The app PDP is adapted, while a missing PDP denies context authorization."""
+async def test_factory_injects_connection_authorizer_or_denies() -> None:
+    """Teams services share app["connection_authorizer"]; without it context authorization is denied."""
     db_pool = object()
     redis = object()
-    allowed = _channel_service_factory(
-        {"abac": SimpleNamespace(evaluator=AllowEvaluator()), "authdb": db_pool, "redis": redis}
-    )()
-    assert allowed._permission_evaluator is not None
+    authorizer = AllowAuthorizer()
+    app: dict[str, Any] = {"authdb": db_pool, "redis": redis}
+    factory = _channel_service_factory(app)
+    # Installed after the factory is built (server startup order) — still picked up per call.
+    app["connection_authorizer"] = authorizer
+    allowed = factory()
+    assert allowed._authorizer is authorizer
     assert allowed._vault_token_sync._pool is db_pool
     assert allowed._vault_token_sync._redis is redis
 
@@ -146,7 +153,7 @@ async def test_teams_connect_end_to_end() -> None:
     )
     OAuth2ProviderRegistry().register(FakeProvider(oauth_manager))
 
-    app: dict[str, Any] = {"abac": SimpleNamespace(evaluator=AllowEvaluator())}
+    app: dict[str, Any] = {"connection_authorizer": AllowAuthorizer()}
     _register_teams_notifier(app)
     notifier = app["msteams_connection_notifier"]
     adapter = RecordingAdapter()

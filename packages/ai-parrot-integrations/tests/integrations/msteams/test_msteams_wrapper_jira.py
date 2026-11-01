@@ -11,6 +11,7 @@ from parrot.integrations.msteams.connections import CONNECTION_NOTIFIER_KEY
 from parrot.integrations.msteams.models import MSTeamsAgentConfig
 from parrot.integrations.msteams.wrapper import MSTeamsAgentWrapper
 
+
 def test_connection_service_factory_is_constructor_parameter() -> None:
     """The wrapper exposes an injectable factory after the legacy manager argument."""
     import inspect
@@ -21,13 +22,13 @@ def test_connection_service_factory_is_constructor_parameter() -> None:
     assert parameters.index("connection_service_factory") == parameters.index("oauth_manager") + 1
 
 
-def test_default_connection_service_has_no_evaluator() -> None:
-    """The fallback service preserves the task's fail-closed evaluator default."""
+def test_default_connection_service_has_no_authorizer() -> None:
+    """The fallback service has no connection authorizer, so every Teams operation fails closed."""
     from parrot.integrations.msteams.wrapper import _default_connection_service
 
     service = _default_connection_service()
 
-    assert service._permission_evaluator is None
+    assert service._authorizer is None
 
 
 @pytest.mark.asyncio

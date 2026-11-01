@@ -20,7 +20,7 @@ import hmac
 import json
 import logging
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from navconfig.logging import logging  # noqa: F811
 
@@ -49,52 +49,6 @@ from parrot.auth.oauth2.persistence import (
 from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 
 logger = logging.getLogger(__name__)
-
-#: ``async (context, attributes) -> bool`` — request-less PBAC decision for channel callers.
-PermissionEvaluator = Callable[["PermissionContext", Mapping[str, Any]], Awaitable[bool]]
-
-#: URI-parity mapping: operation → (route template, navigator-auth action).
-_CONNECTION_ROUTES: Dict[str, Tuple[str, str]] = {
-    "list": ("/api/v1/connections", "uri:read"),
-    "list_provider": ("/api/v1/connections/{provider}", "uri:read"),
-    "status": ("/api/v1/connections/{provider}", "uri:read"),
-    "connect": ("/api/v1/connections/{provider}/start", "uri:write"),
-    "disconnect": ("/api/v1/connections/{provider}", "uri:delete"),
-}
-
-
-def pdp_permission_evaluator(pdp: Any) -> PermissionEvaluator:
-    """Adapt the app PDP to the request-less evaluator contract.
-
-    Args:
-        pdp: The navigator-auth ``PDP`` initialized by ``setup_pbac``.
-
-    Returns:
-        An async callable allowing only explicit policy-engine approval.
-    """
-
-    async def _evaluate(context: "PermissionContext", attributes: Mapping[str, Any]) -> bool:
-        try:
-            from navigator_auth.abac.policies.resources import ResourceType
-
-            from parrot.auth.permission import to_eval_context
-
-            route = _CONNECTION_ROUTES.get(str(attributes.get("operation", "")))
-            if route is None:
-                return False
-            route_template, action = route
-            if "{provider}" in route_template and not attributes.get("provider"):
-                return False
-            path = route_template.format(provider=attributes.get("provider"))
-            ctx = to_eval_context(context)
-            result = pdp.evaluator.check_access(ctx, ResourceType.URI, path, action)
-            return result.allowed is True
-        except Exception:  # noqa: BLE001 - the authorization adapter must fail closed
-            logger.exception("Request-less connection PBAC evaluation failed — denying")
-            return False
-
-    return _evaluate
-
 
 def _get_allowed_origins() -> List[str]:
     """Return the configured list of allowed OAuth2 return origins.
@@ -131,14 +85,12 @@ class IntegrationsService:
         vault_token_sync: Any = None,
         *,
         authorizer: Optional[ConnectionAuthorizer] = None,
-        permission_evaluator: Optional[PermissionEvaluator] = None,
     ) -> None:
         self._vault_token_sync = vault_token_sync
         self._identity_store_instance: Any = None
-        # ``authorizer`` serves principal-only channels (Slack/CLI, FEAT-777); ``permission_evaluator`` serves
-        # channels that carry a full PermissionContext (Teams, FEAT-775).
+        # ``authorizer`` is the single request-less policy surface for every non-web channel (Slack, CLI,
+        # Teams): it evaluates ``integration`` resource actions with trusted roles, groups and tenant.
         self._authorizer = authorizer
-        self._permission_evaluator = permission_evaluator
 
     async def list_for_principal(
         self,
@@ -174,7 +126,6 @@ class IntegrationsService:
             user_id,
             "integration:list",
             permission_context=permission_context,
-            operation="list",
         ):
             logger.debug(
                 "PBAC denied integration:list for user_id=%s — returning empty list",
@@ -193,7 +144,6 @@ class IntegrationsService:
                 "integration:list",
                 provider.provider_id,
                 permission_context=permission_context,
-                operation="list_provider",
             ):
                 continue
             result.append(await self._descriptor(user_id, provider, rows.get(provider.provider_id), request))
@@ -421,7 +371,6 @@ class IntegrationsService:
             provider_id,
             requested_scopes,
             permission_context=permission_context,
-            operation="connect",
         ):
             raise PermissionError(f"Not permitted to connect provider {provider_id!r}")
 
@@ -483,7 +432,6 @@ class IntegrationsService:
             "integration:list",
             provider_id,
             permission_context=permission_context,
-            operation="status",
         ):
             raise PermissionError(f"Not permitted to list provider {provider_id!r}")
         row = await get_users_integration(user_id, provider_id)
@@ -526,7 +474,6 @@ class IntegrationsService:
             provider_id,
             list(provider.default_scopes),
             permission_context=permission_context,
-            operation="disconnect",
         ):
             raise PermissionError(f"Not permitted to disconnect provider {provider_id!r}")
         revoke_principal = principal or Principal(user_id=user_id, channel=channel, channel_user_id=user_id)
@@ -809,25 +756,15 @@ class IntegrationsService:
         scopes: Optional[List[str]] = None,
         *,
         permission_context: Optional["PermissionContext"] = None,
-        operation: Optional[str] = None,
     ) -> bool:
         """Authorize one connection action.
 
-        Precedence: a ``PermissionContext`` (channel callers such as Teams) is evaluated by the injected
-        request-less evaluator; otherwise web requests use PBAC; otherwise non-web calls use the injected
-        ``ConnectionAuthorizer`` (Slack/CLI) and require a principal matching ``user_id``.
+        Web requests (no ``permission_context``) use request PBAC. Every other caller — Slack, CLI and Teams —
+        goes through the injected ``ConnectionAuthorizer`` and needs a principal matching ``user_id``. A
+        ``PermissionContext`` is only an identity check (see :meth:`_context_matches`, run by the public
+        methods first); it never selects a separate policy surface.
         """
-        if permission_context is not None:
-            return await self._check_pbac(
-                request,
-                action,
-                provider_id,
-                scopes,
-                principal=principal,
-                permission_context=permission_context,
-                operation=operation,
-            )
-        if request is not None:
+        if permission_context is None and request is not None:
             return await self._check_pbac(request, action, provider_id, scopes)
         if principal is None or self._authorizer is None or str(principal.user_id) != str(user_id):
             logger.debug("Denying %s: missing principal/authorizer or principal mismatch", action)
@@ -845,10 +782,6 @@ class IntegrationsService:
         action: str,
         provider_id: Optional[str] = None,
         scopes: Optional[List[str]] = None,
-        *,
-        principal: Optional[Principal] = None,
-        permission_context: Optional["PermissionContext"] = None,
-        operation: Optional[str] = None,
     ) -> bool:
         """Evaluate a PBAC policy for the given action.
 
@@ -864,8 +797,6 @@ class IntegrationsService:
         Returns:
             ``True`` if the action is permitted, ``False`` otherwise.
         """
-        if permission_context is not None:
-            return await self._check_context_pbac(permission_context, action, provider_id, scopes, operation)
         if request is None:
             # No request context — fail-closed
             return False
@@ -888,35 +819,6 @@ class IntegrationsService:
         except Exception:  # noqa: BLE001
             logger.exception(
                 "PBAC evaluation failed for action=%s provider=%s — denying",
-                action,
-                provider_id,
-            )
-            return False
-
-    async def _check_context_pbac(
-        self,
-        context: "PermissionContext",
-        action: str,
-        provider_id: Optional[str],
-        scopes: Optional[List[str]],
-        operation: Optional[str],
-    ) -> bool:
-        """Evaluate the injected evaluator, failing closed on every error."""
-        if self._permission_evaluator is None:
-            return False
-        attributes: Dict[str, Any] = {
-            "action": action,
-            "scopes": list(scopes or []),
-            "operation": operation,
-        }
-        if provider_id:
-            attributes["provider"] = provider_id
-        try:
-            result = await self._permission_evaluator(context, attributes)
-            return result is True
-        except Exception:  # noqa: BLE001 - authorization must fail closed
-            logger.exception(
-                "Request-less PBAC evaluator failed for action=%s provider=%s — denying",
                 action,
                 provider_id,
             )
