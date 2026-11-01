@@ -41,6 +41,7 @@ class TestMCPServerStructuralRegistration:
             "wiki_blast_radius",
             "wiki_decision_why",
             "wiki_decisions_for_symbol",
+            "wiki_spec_consequences",
         }
 
     @pytest.mark.asyncio
