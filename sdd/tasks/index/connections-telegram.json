@@ -317,7 +317,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -328,8 +328,9 @@
       "parallelism_notes": "Extends post_auth_connection.py created by TASK-5027 (PendingLoginAttempt); edits connection_notifier.py after TASK-5023 wired it (and TASK-5022 created it).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5028-pending-login-coordinator.md"
+      "completed_at": "2026-11-01T02:34:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5028-pending-login-coordinator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5029",

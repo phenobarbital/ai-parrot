@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-776 — Connections on Telegram
 **Spec**: `sdd/specs/connections-telegram.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5027, TASK-5023
@@ -209,10 +209,14 @@ Test names fixed by spec §4: `test_combined_login_callback_correlation`, `test_
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker; coded by gpt-5.6-terra (codex), attempt 1, reviewed and corrected by the worker
+**Date**: 2026-11-01
 **Notes**:
+- `post_auth_connection.py`: `PendingLoginCoordinator(finalize, on_failed, clock)` owns pending attempts. `create` issues an unpredictable id (`secrets.token_urlsafe(32)`) and supersedes any earlier attempt of the same Telegram user; `cap_expiry` lowers `expires_at` to the outstanding OAuth state's lifetime; `get` returns only live, unexpired attempts; `cancel`/`supersede` invalidate and drop the candidate; every transition runs under the attempt's lock.
+- `on_provider_completed` accepts a `connection.completed` event only when the attempt is live and the event's `user_id`, provider and `extra.bot_id` match; a duplicate returns true without re-finalizing. Finalization runs once, after every required action completed and every optional one settled, and a finalizer error cannot re-run it. `on_provider_failed` cancels the attempt for a required action (reporting once via `on_failed`) and only settles an optional one.
+- `connection_notifier.py`: `set_login_coordinator`; a `combined` completion is dispatched to the coordinator and skips the normal session hook, a coordinator error never blocks the notification.
+- The coordinator is not wired into the wrapper yet (TASK-5029 does that).
+- Review corrections (`b338000f6c`): the per-attempt lock was never released (now popped in the single discard path, with `test_finished_and_cancelled_attempts_release_their_locks`); `ConnectionEvent` was missing from the `TYPE_CHECKING` imports (the engine's `F821`). Recorded as `coder-feedback:bcaf52a35208be1ec67b014e`, review `coder-review:4b1d7d6a014bda292633055b`.
+- Validation: 24 tests across the coordinator, notifier and provider files pass; a branch-vs-`dev` run over the Telegram-related test files shows no red that is not already red on `dev` (18 vs 29).
 
-**Deviations from spec**: none
+**Deviations from spec**: none.
