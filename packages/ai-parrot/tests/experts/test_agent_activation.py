@@ -125,3 +125,26 @@ def test_persona_md_never_read(expert_bundle: Path) -> None:
     (root / "persona.md").write_text("PERSONA_SENTINEL_XYZ\n", encoding="utf-8")
     agent = _make(expert_bundle)
     assert "PERSONA_SENTINEL_XYZ" not in repr(agent._prompt_builder.__dict__)
+
+
+@pytest.mark.asyncio
+async def test_configured_expert_excludes_spawn_tool(expert_bundle: Path) -> None:
+    agent = _make(expert_bundle)
+    await agent.configure()
+    names = set(agent.tool_manager.list_tools())
+    assert "spawn_sub_agent" not in names
+    assert "lookup_fact" in names
+
+
+@pytest.mark.asyncio
+async def test_configure_removes_injected_spawn_tool(expert_bundle: Path) -> None:
+    agent = _make(expert_bundle)
+    spawn = next(tool for tool in _Toolkit().get_tools() if tool.name == "spawn_sub_agent")
+    agent.tool_manager.add_tool(spawn)
+    before = set(agent.tool_manager.list_tools())
+    assert "spawn_sub_agent" in before
+    await agent.configure()
+    after = set(agent.tool_manager.list_tools())
+    assert "spawn_sub_agent" not in after
+    assert before - {"spawn_sub_agent"} <= after
+    assert "read_omitted_content" in after

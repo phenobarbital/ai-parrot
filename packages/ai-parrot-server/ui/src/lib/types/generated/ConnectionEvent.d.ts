@@ -4,7 +4,8 @@ export type AccountId = string;
 export type CanonicalIdentity = string | null;
 export type Channel = string;
 export type DisplayName = string;
-export type Kind = "connection.completed" | "connection.revoked" | "connection.refresh_failed";
+export type Kind =
+  "connection.completed" | "connection.revoked" | "connection.refresh_failed" | "connection.token_pulled";
 export type OccurredAt = number;
 export type Provider = string;
 export type Reason = string | null;

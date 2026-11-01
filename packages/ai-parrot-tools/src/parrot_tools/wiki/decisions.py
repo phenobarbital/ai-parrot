@@ -12,9 +12,11 @@ from parrot.knowledge.wiki.decisions.operations import (
     DecisionGenerateInput,
     DecisionWhyInput,
     DecisionsForSymbolInput,
+    SpecConsequencesInput,
     op_decision_generate,
     op_decision_why,
     op_decisions_for_symbol,
+    op_spec_consequences,
 )
 from parrot.knowledge.wiki.decisions.render import DEFAULT_BUDGET_TOKENS
 from parrot.knowledge.wiki.decisions.service import DecisionService
@@ -161,6 +163,37 @@ class WikiDecisionGenerateTool(AbstractTool):
         return ToolResult(result=result.data)
 
 
+class WikiSpecConsequencesTool(AbstractTool):
+    """Evaluate a spec's declared decisions, or return its governing-decisions dossier."""
+
+    name = "wiki_spec_consequences"
+    description = (
+        "Evaluate a spec's declared decisions against the accepted decision plane, or return the governing-decisions "
+        "dossier for its subsystems. Read-only; blocking only on an explicit unresolved contradiction."
+    )
+    args_schema = SpecConsequencesInput
+
+    def __init__(self, store: BaseWikiStore, root: Path, config: WikiProjectConfig):
+        super().__init__(name=self.name, description=self.description)
+        self._store, self._root, self._config = store, root, config
+
+    async def _execute(
+        self,
+        spec_path: str,
+        mode: str = "check",
+        budget_tokens: int = DEFAULT_BUDGET_TOKENS,
+    ) -> ToolResult:
+        result = await op_spec_consequences(
+            self._store,
+            SpecConsequencesInput(spec_path=spec_path, mode=mode, budget_tokens=budget_tokens),
+            root=self._root,
+            config=self._config,
+        )
+        if result.is_error:
+            return ToolResult(success=False, status="error", result=None, error=result.text)
+        return ToolResult(result=result.text, metadata=result.data)
+
+
 def create_decision_tools(
     store: BaseWikiStore,
     root: Path | None,
@@ -180,6 +213,8 @@ def create_decision_tools(
         WikiDecisionsForSymbolTool(service_factory),
         WikiDecisionWhyTool(service_factory),
     ]
+    if root is not None:
+        tools.append(WikiSpecConsequencesTool(store, root, config))
     if decisions_config.generation_enabled and root is not None:
         tools.append(WikiDecisionGenerateTool(service_factory))
     return tools

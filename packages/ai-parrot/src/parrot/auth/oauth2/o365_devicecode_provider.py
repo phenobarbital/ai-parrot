@@ -17,7 +17,7 @@ Resolution steps:
 4. Otherwise run
    ``O365Client.interactive_login(open_browser=False, device_flow_callback=…)``
    inline. The callback surfaces ``verification_uri`` + ``user_code`` via an
-   injected ``prompt_callback`` (default: print to stdout). On success, the
+   injected ``prompt_callback`` (default: print to stderr). On success, the
    token set is persisted through ``O365OAuthManager.store_device_grant`` and
    ``access_token`` is returned. New O365 grants are never written to
    ``VaultTokenSync``; an optional legacy vault is read/deleted only during
@@ -27,6 +27,7 @@ Resolution steps:
 from __future__ import annotations
 
 import logging
+import sys
 from typing import Any, Callable, Dict, List, Optional
 
 from parrot.auth.credentials import CredentialResolver
@@ -44,7 +45,7 @@ _DEVICE_LOGIN_URL: str = "https://microsoft.com/devicelogin"
 
 
 def _default_prompt_callback(flow: Dict[str, Any]) -> None:
-    """Print the device-login prompt to stdout (the default `prompt_callback`).
+    """Print the device-login prompt to stderr (the default `prompt_callback`).
 
     Deliberately bypasses ``self.logger`` — the device-code message is a
     user-facing CLI prompt, not a log line, and must never be confused with
@@ -54,9 +55,9 @@ def _default_prompt_callback(flow: Dict[str, Any]) -> None:
         f"To sign in, visit {flow.get('verification_uri', _DEVICE_LOGIN_URL)} "
         f"and enter the code: {flow.get('user_code', '')}"
     )
-    print("\n" + "=" * 60)
-    print(message)
-    print("=" * 60 + "\n")
+    print("\n" + "=" * 60, file=sys.stderr)
+    print(message, file=sys.stderr)
+    print("=" * 60 + "\n", file=sys.stderr)
 
 
 class O365DeviceCodeCredentialResolver(CredentialResolver):
@@ -78,7 +79,7 @@ class O365DeviceCodeCredentialResolver(CredentialResolver):
         prompt_callback: Callback invoked with the device-flow payload
             (``verification_uri``, ``user_code``, ``expires_in``,
             ``message``). Defaults to :func:`_default_prompt_callback`
-            (prints to stdout).
+            (prints to stderr).
         legacy_vault: Optional legacy ``VaultTokenSync`` reader used only to
             migrate and delete old e-mail/OID-keyed ``o365:*`` grants.
     """

@@ -217,3 +217,27 @@ python -m parrot.auth.oauth2.reencrypt --apply
 Verify every token column with only the active key and require `stale == 0`
 and `failed == 0` across all providers sharing the retiring key before
 retiring it. A provider-filtered run cannot authorize global key retirement.
+
+## CLI consumers
+
+CLI requests authenticate with the bearer from `parrot login`. The relevant
+routes under `/api/v1/connections` are:
+
+- `GET /me` returns the Navigator user id, email, tenant, and roles represented
+  by the bearer.
+- `POST /{provider}/start` with `{"channel": "cli"}` starts browser consent
+  and returns the state and authorization URL used by polling or pasted
+  completion.
+- `POST /{provider}/complete` with `code` and `state` completes a callback
+  pasted into the CLI.
+- `POST /{provider}/device/start` starts a server-mediated provider device
+  grant; `POST /{provider}/device/poll` with its opaque `handle` polls it.
+- `POST /{provider}/token` returns the provider access token, expiry, scopes,
+  and account id. It never returns a refresh token.
+
+Token pulls evaluate the fail-closed PBAC action `integration:use` with the
+provider in context and publish an audit event without token material. If no
+active connection exists, `POST /{provider}/token` returns HTTP 409 with an
+`AuthRequiredPayload` JSON body. CLI clients refresh their login once after an
+HTTP 401, persist a rotated refresh token when supplied, and retry the request
+once.

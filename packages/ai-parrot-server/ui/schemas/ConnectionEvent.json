@@ -31,7 +31,8 @@
       "enum": [
         "connection.completed",
         "connection.revoked",
-        "connection.refresh_failed"
+        "connection.refresh_failed",
+        "connection.token_pulled"
       ],
       "title": "Kind",
       "type": "string"

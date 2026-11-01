@@ -2495,8 +2495,13 @@ class BotManager:
         router.add_view("/api/v1/connections", ConnectionsHandler)
         # FEAT-777 M1: register before /{provider} so "events" is not captured as a provider id.
         router.add_view("/api/v1/connections/events", ConnectionEventsHandler)
+        router.add_view("/api/v1/connections/me", ConnectionsHandler)
         router.add_view("/api/v1/connections/{provider}", ConnectionsHandler)
         router.add_view("/api/v1/connections/{provider}/start", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/token", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/complete", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/device/start", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/device/poll", ConnectionsHandler)
         # FEAT-777 M2: Slack account-link preview + explicit confirm (session principal only).
         router.add_view("/api/v1/channel-links/{nonce}", ChannelLinksHandler)
         router.add_view("/api/v1/channel-links/{nonce}/confirm", ChannelLinksHandler)

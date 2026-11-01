@@ -11,7 +11,12 @@ from parrot.security.audit_ledger import AuditLedger
 
 logger = logging.getLogger(__name__)
 
-ConnectionEventKind = Literal["connection.completed", "connection.revoked", "connection.refresh_failed"]
+ConnectionEventKind = Literal[
+    "connection.completed",
+    "connection.revoked",
+    "connection.refresh_failed",
+    "connection.token_pulled",
+]
 
 
 class ConnectionEvent(BaseModel):

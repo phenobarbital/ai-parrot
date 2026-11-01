@@ -19,6 +19,7 @@ LOCAL_NO_LEDGER: list[str] = sorted(
         "wiki_blast_radius",
         "wiki_decision_why",
         "wiki_decisions_for_symbol",
+        "wiki_spec_consequences",
         "wiki_lint",
         "wiki_standup",
     ]
