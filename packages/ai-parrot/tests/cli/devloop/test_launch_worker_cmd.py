@@ -5,12 +5,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
 from click.testing import CliRunner
 
 from parrot.cli.devloop import devloop
 from parrot.flows.dev_loop import feature_launcher as launcher
+
+_REAL_PREFLIGHT = launcher._preflight_sandbox
 
 
 @pytest.fixture(autouse=True)
@@ -98,6 +101,7 @@ def test_launch_non_tmux_passes_worktree_and_worker_prompt(tmp_path: Path, monke
     worktree.mkdir()
     captured: dict[str, object] = {}
     monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
     monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: worktree)
     monkeypatch.setattr(launcher, "prepare_upstream", lambda path: "launch-worker: ready")
     monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
@@ -130,6 +134,7 @@ def test_tmux_new_session_carries_environment_and_detaches(tmp_path: Path, monke
     worktree.mkdir()
     calls: list[list[str]] = []
     monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
     monkeypatch.setenv("PARROT_SDD_EXTRA", "yes")
     monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: worktree)
     monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
@@ -154,7 +159,15 @@ def test_tmux_new_session_carries_environment_and_detaches(tmp_path: Path, monke
         "parrot.flows.dev_loop.feature_launcher",
         "--in-session",
         "FEAT-768",
+        "--cwd",
+        str(worktree),
     ]
+
+
+@pytest.fixture(autouse=True)
+def _no_real_sandbox_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Host preflight has dedicated tests; elsewhere it must not probe the real host."""
+    monkeypatch.setattr(launcher, "_preflight_sandbox", lambda worktree, domains: None)
 
 
 def _upstream_runner(
@@ -262,7 +275,9 @@ def _no_host_prep(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_existing_session_refuses_non_tmux_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A second console for a feature already running in tmux is refused before host prep."""
-    monkeypatch.chdir(_primary(tmp_path))
+    primary = _primary(tmp_path)
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
     _no_host_prep(monkeypatch)
     monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: name == "sdd-FEAT-768")
     with pytest.raises(launcher.LaunchError) as exc:
@@ -277,7 +292,9 @@ def test_existing_session_attaches_without_host_prep(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inside_tmux: bool
 ) -> None:
     """``--tmux`` on a running session attaches (or switches client inside tmux) with no host prep."""
-    monkeypatch.chdir(_primary(tmp_path))
+    primary = _primary(tmp_path)
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
     _no_host_prep(monkeypatch)
     monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: True)
     if inside_tmux:
@@ -301,7 +318,9 @@ def test_existing_session_with_detach_only_prints_hint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """``--tmux --detach`` on a running session neither preps nor attaches."""
-    monkeypatch.chdir(_primary(tmp_path))
+    primary = _primary(tmp_path)
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
     _no_host_prep(monkeypatch)
     monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: True)
     monkeypatch.setattr(launcher, "_attach_session", lambda name: pytest.fail("must not attach with --detach"))
@@ -322,7 +341,9 @@ def test_tmux_refused_on_windows_or_without_tmux(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str, tmux_path: str | None, match: str
 ) -> None:
     """``--tmux`` needs a POSIX host with tmux on PATH; otherwise it is a host error (exit 1)."""
-    monkeypatch.chdir(_primary(tmp_path))
+    primary = _primary(tmp_path)
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
     monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
     monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: tmp_path)
     monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: platform)
@@ -337,7 +358,9 @@ def test_tmux_refused_on_windows_or_without_tmux(
 
 def test_invalid_sandbox_mode_is_exit_two(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An unknown ``--sandbox`` value is caller input, rejected before anything else."""
-    monkeypatch.chdir(_primary(tmp_path))
+    primary = _primary(tmp_path)
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
     _no_host_prep(monkeypatch)
     with pytest.raises(launcher.LaunchError) as exc:
         launcher.launch(
@@ -349,7 +372,9 @@ def test_invalid_sandbox_mode_is_exit_two(tmp_path: Path, monkeypatch: pytest.Mo
 
 def test_sandbox_flag_reaches_non_tmux_child_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """``--sandbox legacy`` is in ``PARROT_SDD_SANDBOX_MODE`` when ``launch_worker`` resolves the mode."""
-    monkeypatch.chdir(_primary(tmp_path))
+    primary = _primary(tmp_path)
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
     monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
     monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: tmp_path)
     seen: list[str | None] = []
@@ -372,3 +397,59 @@ def test_click_command_maps_launch_errors(monkeypatch: pytest.MonkeyPatch) -> No
     result = CliRunner().invoke(devloop, ["launch-worker", "missing"])
     assert result.exit_code == 2
     assert "launch-worker: bad key" in result.output
+
+
+def test_preflight_refusal_happens_before_push_or_tmux(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unavailable sandbox fails on the host before the branch is pushed or a session is created."""
+    primary = _primary(tmp_path)
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setattr(launcher, "_preflight_sandbox", _REAL_PREFLIGHT)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: tmp_path)
+    monkeypatch.setattr(launcher, "prepare_upstream", lambda path: pytest.fail("must not push before preflight"))
+    monkeypatch.setattr(launcher, "_run", lambda argv, *, cwd: pytest.fail(f"no host command may run: {argv}"))
+
+    def refuse(cwd: Path, *, allowed_domains=()):
+        raise RuntimeError("missing prerequisite(s): bwrap")
+
+    monkeypatch.setattr(launcher.native_claude_sandbox, "plan_native_launch", refuse)
+    with pytest.raises(launcher.LaunchError) as exc:
+        launcher.launch(
+            "FEAT-768", tmux=True, detach=True, sandbox=None, allowed_domains=(), no_upstream=False, claude_args=()
+        )
+    assert exc.value.exit_code == 1 and "bwrap" in str(exc.value)
+
+
+def test_launch_resolves_from_invocation_dir_not_process_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The primary checkout comes from the shell's PWD, which survives navconfig's chdir on import."""
+    primary = _primary(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    monkeypatch.setenv("PWD", str(primary))
+    seen: list[Path] = []
+    monkeypatch.setattr(launcher, "resolve_primary_checkout", lambda cwd: seen.append(cwd) or primary)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: True)
+    with pytest.raises(launcher.LaunchError):
+        launcher.launch(
+            "FEAT-768", tmux=False, detach=False, sandbox=None, allowed_domains=(), no_upstream=True, claude_args=()
+        )
+    assert seen == [primary]
+
+
+def test_in_session_child_runs_in_the_worktree_after_parrot_import(tmp_path: Path) -> None:
+    """Regression: importing parrot chdirs away from tmux's -c directory; --cwd must still win."""
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    code = (
+        "from pathlib import Path; "
+        "from parrot.flows.dev_loop import feature_launcher as fl; "
+        "seen = {}; "
+        "fl.native_claude_sandbox.launch_worker = lambda argv, **kw: seen.update(kw) or 0; "
+        f"rc = fl.main(['--in-session', 'FEAT-768', '--cwd', {str(worktree)!r}]); "
+        f"assert rc == 0 and seen['cwd'] == Path({str(worktree)!r}), seen; "
+        "assert seen['initial_prompt'] == 'run FEAT-768'"
+    )
+    result = subprocess.run([sys.executable, "-c", code], cwd=worktree, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr[-2000:]

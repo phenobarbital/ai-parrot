@@ -48,6 +48,29 @@ def _require(result: subprocess.CompletedProcess[str]) -> subprocess.CompletedPr
     return result
 
 
+def _invocation_dir() -> Path:
+    """Return the directory the operator launched from.
+
+    Importing ``parrot`` lets navconfig ``chdir`` into its project root, so ``Path.cwd()``
+    is no longer where the command was run by the time this module executes. The shell's
+    ``PWD`` survives that ``chdir``; fall back to ``Path.cwd()`` only when it is unusable.
+    """
+    pwd = os.environ.get("PWD")
+    if pwd and Path(pwd).is_dir():
+        return Path(pwd)
+    return Path.cwd()
+
+
+def _preflight_sandbox(worktree: Path, allowed_domains: Sequence[str]) -> None:
+    """Fail on the host, before any push or tmux session, when the sandbox cannot start."""
+    try:
+        native_claude_sandbox.plan_native_launch(worktree, allowed_domains=allowed_domains)
+    except ValueError as exc:
+        raise LaunchError(2, str(exc)) from exc
+    except RuntimeError as exc:
+        raise LaunchError(1, f"native sandbox unavailable ({exc}); refusing to launch") from exc
+
+
 def resolve_primary_checkout(cwd: Path) -> Path:
     """Resolve the primary checkout that owns ``cwd``'s Git directory."""
     try:
@@ -203,7 +226,7 @@ def launch(
         if sandbox not in native_claude_sandbox.SANDBOX_MODES:
             raise LaunchError(2, f"invalid sandbox mode: {sandbox}")
         os.environ[native_claude_sandbox.MODE_ENV] = sandbox
-    primary = resolve_primary_checkout(Path.cwd())
+    primary = resolve_primary_checkout(_invocation_dir())
     ref = resolve_feature(primary, key)
     name = tmux_session_name(ref.feature_id)
     if tmux_session_exists(name):
@@ -217,6 +240,7 @@ def launch(
         return _attach_session(name)
 
     worktree = ensure_feature_worktree(primary, ref)
+    _preflight_sandbox(worktree, allowed_domains)
     if not no_upstream:
         print(prepare_upstream(worktree), file=sys.stderr)
     domain_args = [item for domain in allowed_domains for item in ("--sandbox-allow-domain", domain)]
@@ -239,6 +263,8 @@ def launch(
             "parrot.flows.dev_loop.feature_launcher",
             "--in-session",
             ref.feature_id,
+            "--cwd",
+            str(worktree),
             *domain_args,
         ]
     )
@@ -255,6 +281,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Parse the tmux child mode and launch Claude from its prepared worktree."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--in-session", metavar="FEAT-ID")
+    # The worktree is passed explicitly: importing parrot has already chdir'ed away from tmux's -c directory.
+    parser.add_argument("--cwd", type=Path, default=None)
     parser.add_argument("--sandbox-allow-domain", action="append", default=[])
     parser.add_argument("claude_args", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
@@ -265,7 +293,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         forwarded.pop(0)
     domain_args = [item for domain in args.sandbox_allow_domain for item in ("--sandbox-allow-domain", domain)]
     return native_claude_sandbox.launch_worker(
-        [*domain_args, *forwarded], cwd=Path.cwd(), initial_prompt=f"run {args.in_session}"
+        [*domain_args, *forwarded], cwd=args.cwd or _invocation_dir(), initial_prompt=f"run {args.in_session}"
     )
 
 
