@@ -264,18 +264,19 @@
       "feature_id": "FEAT-768",
       "feature": "sdd-claude-native-sandbox",
       "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": "2026-11-01T00:49:24+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-01T01:02:52+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-5086"
       ],
       "parallelism_notes": "same probe/plan functions as TASK-5086; sequential to avoid conflicting edits",
-      "file": "sdd/tasks/active/TASK-5087-native-sandbox-platform-backends.md"
+      "file": "sdd/tasks/completed/TASK-5087-native-sandbox-platform-backends.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5088",

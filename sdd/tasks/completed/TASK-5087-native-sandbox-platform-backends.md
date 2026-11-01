@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-768 — Native Claude sandbox for SDD execution
 **Spec**: `sdd/specs/sdd-claude-native-sandbox.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5086
@@ -177,8 +177,17 @@ scripts in `tmp_path` on PATH (exit 0 / exit 1 with a stderr line). Windows impo
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
 
-**Deviations from spec**: none
+- Task: TASK-5087
+- Feature: sdd-claude-native-sandbox
+- Implementation SHA: 6832359a450b8ec6ef908fb27b3de31b8fa50c9a
+- Closed at (UTC): 2026-11-01T01:02:52+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| review | orchestrator review of diff bdf058a852..08e99c8170, no corrections (cosmetic only: duplicated user-tag helper, displaced CLAUDE_SCRATCH_ROOT comment) |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 292.9s · Tokens: n/a |
+| validation | merge tier: 267 passed/1 skipped; tests/sdd/test_launch_worker.py 32 passed (manual regression) |
