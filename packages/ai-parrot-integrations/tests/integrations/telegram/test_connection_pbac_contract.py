@@ -80,7 +80,11 @@ async def test_channel_pbac_fails_closed(provider: SimpleNamespace) -> None:
         (IntegrationsService(), principal, _ctx()),
         (IntegrationsService(authorizer=RecordingAuthorizer()), None, _ctx()),
         (IntegrationsService(authorizer=RecordingAuthorizer()), principal, _ctx(user_id="other-user")),
-        (IntegrationsService(authorizer=RecordingAuthorizer(error=RuntimeError("policy unavailable"))), principal, _ctx()),
+        (
+            IntegrationsService(authorizer=RecordingAuthorizer(error=RuntimeError("policy unavailable"))),
+            principal,
+            _ctx(),
+        ),
         (IntegrationsService(authorizer=RecordingAuthorizer(decision=object())), principal, _ctx()),
     ]
 
