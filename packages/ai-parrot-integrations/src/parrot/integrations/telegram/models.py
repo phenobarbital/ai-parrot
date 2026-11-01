@@ -411,12 +411,6 @@ class TelegramBotsConfig:
                         f"login_page_url to a shared chooser page "
                         f"(e.g. login_multi.html)."
                     )
-                elif "login_multi.html" not in agent_config.login_page_url.casefold():
-                    errors.append(
-                        f"Agent '{name}': auth_methods has "
-                        f"{len(agent_config.auth_methods)} entries but "
-                        f"login_page_url must reference login_multi.html."
-                    )
 
             # Soft warning for unknown post_auth_actions providers.
             # Providers are registered at runtime, so we can't hard-fail here.
