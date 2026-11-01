@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-789 execution-plan-test-integration-recovery-fixes
 **Spec**: `sdd/specs/execution-plan-test-integration-recovery-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none
@@ -44,3 +44,20 @@ ruff check packages/ai-parrot/src/parrot/bots/flows/plan/node.py packages/ai-par
 ```
 
 ## Completion Note
+Implemented in b6db87d172.
+
+- M1 (`node.py`): an enabled catalog with no turn session/producer now writes via `aput_generic`
+  and records `artifact_id@version`; the disabled path is byte-identical.
+- M2 (`memory.py`, owner decision 2026-11-02): M1 alone broke 11 in-process resume/repair tests
+  (`test_checkpoint_resume.py`, `test_integration_repair.py`): they resume with a fresh
+  `WorkingMemoryToolkit` whose private runtime cannot read the recorded versions →
+  `missing_or_expired`. A process-private binding now skips + unpins such a version (the pre-fix
+  behaviour); a host runtime stays strict.
+
+Validation: `tests/tools/execution_plan` + `tests/bots/flows/plan` → 330 passed, 3 skipped, 1 failed.
+The one failure, `test_plan.py::test_tool_not_registered_on_import`, fails identically on unmodified
+dev (baseline 2 failed: it + the target test). ruff clean, black clean.
+
+Ledger: `issue:ca325f05ae53` lists only `test_integration_recovery.py`, which this fix does not touch
+(the bug was in production code), so the two-key close cannot pass automatically — close it by hand
+after merge.
