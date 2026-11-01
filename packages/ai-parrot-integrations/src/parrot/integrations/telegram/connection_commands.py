@@ -1,4 +1,5 @@
 """Generic Telegram connection commands: /connect, /disconnect, /connections (FEAT-776 M6)."""
+
 from __future__ import annotations
 
 import logging
@@ -62,7 +63,11 @@ async def connect_handler(
         providers = commands.connectable_providers()
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text=provider.display_name, callback_data=f"{CALLBACK_PREFIX}{provider.provider_id}")]
+                [
+                    InlineKeyboardButton(
+                        text=provider.display_name, callback_data=f"{CALLBACK_PREFIX}{provider.provider_id}"
+                    )
+                ]
                 for provider in providers
             ]
         )
@@ -131,7 +136,9 @@ async def connections_handler(
     statuses = await commands.statuses(principal, permission_context=context_source(message, principal))
     if only is not None:
         provider = commands.resolve_provider(only)
-        statuses = [status for status in statuses if provider is not None and status.provider_id == provider.provider_id]
+        statuses = [
+            status for status in statuses if provider is not None and status.provider_id == provider.provider_id
+        ]
     if not statuses:
         await message.reply("No connections found.", parse_mode=None)
         return

@@ -1,4 +1,5 @@
 """FEAT-776 M6 handler tests."""
+
 from types import SimpleNamespace
 from typing import Any, Optional
 from unittest.mock import AsyncMock, MagicMock
@@ -24,9 +25,7 @@ class FakeCommands:
                 kind="auth_url", provider_id="jira", display_name="Jira", auth_url="https://example.test/connect"
             )
         )
-        self.connectable_providers = MagicMock(
-            return_value=[SimpleNamespace(provider_id="jira", display_name="Jira")]
-        )
+        self.connectable_providers = MagicMock(return_value=[SimpleNamespace(provider_id="jira", display_name="Jira")])
 
 
 def message(*, chat_type: str = "private") -> Any:

@@ -299,9 +299,9 @@ class TelegramAgentConfig:
             google_auth_url=data.get("google_auth_url"),
             voice_config=voice_config,
             post_auth_actions=post_auth_actions,
-            connection_providers=list(data["connection_providers"])
-            if data.get("connection_providers") is not None
-            else None,
+            connection_providers=(
+                list(data["connection_providers"]) if data.get("connection_providers") is not None else None
+            ),
             singleton_agent=bool(data.get("singleton_agent", True)),
             agent_timeout=float(data.get("agent_timeout", 120.0)),
             max_document_size_mb=int(data.get("max_document_size_mb", 20)),
