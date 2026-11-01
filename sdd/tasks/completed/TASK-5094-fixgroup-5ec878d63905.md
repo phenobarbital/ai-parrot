@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-788 fixgroup-5ec878d63905
 **Spec**: `sdd/specs/fixgroup-5ec878d63905.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: none
@@ -43,3 +43,12 @@ ruff check packages/ai-parrot/src/parrot/roost packages/ai-parrot-integrations/s
 ```
 
 ## Completion Note
+Implemented M1–M3 in 633abc0566. Roost suite 133 passed; Matrix roost/swarm tests 17 passed; ruff clean.
+
+Two pre-existing Contract Net bugs found and fixed because AC-4 could not be exercised without them:
+`cfp` compared `proposal.sender.name` to a `Bid` object (no ACCEPT was ever sent), and the bidder's
+`msg.reply(PROPOSE)` raised on a broadcast CFP (no explicit receiver), so no bid ever reached the
+requester. The bid is now addressed explicitly in the endpoint; `messages.py` is untouched.
+
+Known limit: audit role is read from the endpoint's own `ProtocolEngine`; two endpoints sharing one
+engine would both log `received`. No production wiring shares an engine.
