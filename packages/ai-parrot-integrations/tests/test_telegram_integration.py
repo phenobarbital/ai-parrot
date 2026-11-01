@@ -305,7 +305,6 @@ class TestTelegramCommandDecorator:
         @telegram_command("bar")
         async def handler():
             """This is the docstring."""
-            pass
 
         assert handler._telegram_command["description"] == "This is the docstring."
 

@@ -345,7 +345,7 @@ class TelegramBotManager:
         self.logger.info("Shutting down Telegram bots...")
 
         # Stop all dispatchers first (this stops polling gracefully)
-        for name, (bot, dp, wrapper) in self.bots.items():
+        for name, (_bot, dp, _wrapper) in self.bots.items():
             try:
                 await dp.stop_polling()
                 self.logger.debug("Stopped polling for bot: %s", name)
@@ -369,7 +369,7 @@ class TelegramBotManager:
                 self.logger.warning("Error waiting for tasks: %s", e)
 
         # Close bot sessions
-        for name, (bot, dp, wrapper) in self.bots.items():
+        for name, (bot, _dp, _wrapper) in self.bots.items():
             try:
                 await bot.session.close()
                 self.logger.debug("Closed bot session: %s", name)
