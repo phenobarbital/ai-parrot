@@ -229,6 +229,7 @@ class TestMCPServerTools:
             "wiki_blast_radius",
             "wiki_decision_why",
             "wiki_decisions_for_symbol",
+            "wiki_spec_consequences",
         }
 
         adapter = server.tools["wiki_symbol_lookup"]
