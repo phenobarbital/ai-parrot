@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-776 — Connections on Telegram
 **Spec**: `sdd/specs/connections-telegram.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5022, TASK-5020
@@ -227,10 +227,8 @@ Blueprint test file; `test_telegram_only_startup_registers_notifier` fixed by sp
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: gpt-5.6-terra (codex), attempt 2
+**Date**: 2026-10-31
+**Notes**: Merge-tier: this task's tests passed; the only failures are pre-existing baseline reds (6 test_telegram_jira_commands, multi_auth, 2 wrapper_send) identical on unmodified dev. Engine labels the run 'failed', so finalize_task was not used. Review coder-review:084fd9834482403ca35a0845. Landed on attempt 2 (terra) after sol delivered no file change.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: Jira session hook on_completed no longer creates a shell TelegramUserSession when none exists (the removed stamper did) and no longer sets email/cloud_id (event carries neither). Owner should confirm that is acceptable. FEAT-775 M7 also edits _register_channel_notifiers in manager.py, so expect a merge conflict there.

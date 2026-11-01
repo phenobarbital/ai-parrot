@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-776 — Connections on Telegram
 **Spec**: `sdd/specs/connections-telegram.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none *(cross-feature gate: FEAT-775 M3/M7 merged on `origin/dev` — PR #1911, incl. TASK-5091)*
@@ -221,10 +221,21 @@ Blueprint test file; names fixed by spec §4 (M3 rows).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**: (gate result + verified FEAT-775 signatures with line numbers)
+**Completed by**: sdd-worker; coded by gpt-5.6-terra (codex), attempt 1, reviewed by the worker
+**Date**: 2026-11-01
+**Notes**:
+- Gate: cleared. FEAT-775 (PR #1911, incl. TASK-5091) and FEAT-777 are on `dev`, merged into this branch (`38314f4884`).
+  `permission_evaluator` is absent from `packages/`.
+- Verified signatures (this branch, `packages/ai-parrot/src/parrot/auth/oauth2/service.py`): `__init__(..., *, authorizer=None)` :83;
+  `permission_context` on `list_for_principal` :101, `start_connect` :334, `status` :419, `disconnect` :448;
+  `_authorize` :749 (web request without context → request PBAC; everything else → authorizer, denies when principal/authorizer
+  missing or `principal.user_id != user_id`, and on authorizer error); `_check_pbac` :779; `_context_matches` :828.
+  `ConnectionAuthorizer.authorize` at `authorization.py:17`. Server wires `app["connection_authorizer"]` at `manager/manager.py:2884`.
+- Actions seen by the authorizer: `integration:list` (gate with provider None, then per provider/status), `integration:connect`, `integration:disconnect`.
+- Tests: `test_channel_pbac_fails_closed`, `test_channel_pbac_uses_navigator_principal`, `test_service_request_less_pbac_branch`
+  in `test_connection_pbac_contract.py` (3 pass). Cited upstream tests: `packages/ai-parrot/tests/auth/test_connections_permission_context.py`,
+  `packages/ai-parrot-server/tests/unit/test_connection_authorization.py`.
+- Validation: the file's 3 tests run by hand with an absolute `PYTHONPATH`; merge-tier engine validation was not used (12 baseline reds on
+  `dev` make it report `failed`), so no `finalize_task` evidence refs exist for this task. Review recorded as `coder-review:38f5d9b6ef359fb48d49a9a8`, 0 corrections.
 
 **Deviations from spec**: none

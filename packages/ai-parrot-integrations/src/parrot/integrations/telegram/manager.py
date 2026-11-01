@@ -191,6 +191,19 @@ class TelegramBotManager:
                 app=app,
             )
 
+            # Connection events (connect/revoke notices, staged /login completion) need the app's shared
+            # publisher and Telegram notifier. A wiring failure must not abort bot startup.
+            if app is not None:
+                try:
+                    from parrot.integrations.manager import attach_telegram_wrapper
+
+                    attach_telegram_wrapper(app, wrapper, bot)
+                except Exception:
+                    self.logger.warning(
+                        "Connection event wiring failed for '%s' — connect notices and staged login unavailable",
+                        name, exc_info=True,
+                    )
+
             # Register bot menu commands via Telegram API.
             # A failure here must never abort bot startup — wrap with its own
             # guard so an unexpected exception from _register_bot_menu does not
@@ -332,7 +345,7 @@ class TelegramBotManager:
         self.logger.info("Shutting down Telegram bots...")
 
         # Stop all dispatchers first (this stops polling gracefully)
-        for name, (bot, dp, wrapper) in self.bots.items():
+        for name, (_bot, dp, _wrapper) in self.bots.items():
             try:
                 await dp.stop_polling()
                 self.logger.debug("Stopped polling for bot: %s", name)
@@ -356,7 +369,7 @@ class TelegramBotManager:
                 self.logger.warning("Error waiting for tasks: %s", e)
 
         # Close bot sessions
-        for name, (bot, dp, wrapper) in self.bots.items():
+        for name, (bot, _dp, _wrapper) in self.bots.items():
             try:
                 await bot.session.close()
                 self.logger.debug("Closed bot session: %s", name)

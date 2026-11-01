@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-776 — Connections on Telegram
 **Spec**: `sdd/specs/connections-telegram.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5018
@@ -290,10 +290,13 @@ Blueprint test file; names fixed by spec §4 (M5 rows).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker; coded by gpt-5.6-terra (codex), attempt 1, reviewed by the worker
+**Date**: 2026-11-01
 **Notes**:
+- `ConnectionCommandService`, `ConnectableProvider`, `ConnectOutcome`, `ConnectionStatusLine` in `core/auth/connections.py`; exported from `core/auth/__init__.py`.
+- Filter: manager present, not `mcp:*`, allowlist when set. A configured provider whose manager is missing at call time returns `unavailable`. `office365` aliases to `o365`.
+- Scopes: explicit commands use the provider's `default_scopes`; the `scopes` argument is only for trusted needs-auth payloads (TASK-5026). Nothing user-typed reaches it.
+- Denials: `PermissionError` from `status`/`start_connect`/`disconnect` -> `denied`; `list_for_principal` denial -> `[]`.
+- Tests: 3 in `tests/integrations/core/test_connection_command_service.py`, all pass (run by hand with absolute PYTHONPATH; merge-tier engine validation not used because of the 12 baseline reds on `dev`). Review `0 corrections`.
 
 **Deviations from spec**: none

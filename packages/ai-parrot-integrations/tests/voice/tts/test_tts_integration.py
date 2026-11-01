@@ -182,7 +182,7 @@ async def test_voice_in_voice_out_flow(synth_mock):
     fake_parsed.text = "Integration reply text"
 
     with (
-        patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value="Integration reply text")),
+        patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value=("Integration reply text", []))),
         patch.object(wrapper, "_parse_response", return_value=fake_parsed),
         patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=99))),
         patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()),
@@ -229,7 +229,7 @@ async def test_text_input_unaffected(synth_mock):
     fake_parsed.text = "Text response"
 
     with (
-        patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value="Text response")),
+        patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value=("Text response", []))),
         patch.object(wrapper, "_parse_response", return_value=fake_parsed),
         patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=10))),
         patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()),

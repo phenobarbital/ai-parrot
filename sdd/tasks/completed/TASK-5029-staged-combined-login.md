@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-776 — Connections on Telegram
 **Spec**: `sdd/specs/connections-telegram.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5028, TASK-5026, TASK-5020
@@ -230,10 +230,13 @@ Test names fixed by spec §4 (M9 rows, `test_pending_login_never_backfills`, the
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker; coded by gpt-5.6-sol (codex), attempt 1, reviewed and corrected by the worker
+**Date**: 2026-11-01
 **Notes**:
+- Staged login: with `post_auth_actions` configured, `handle_web_app_data` validates the primary callback into a *separate candidate session* (never the active one), requires an authenticated candidate with a Navigator id and token, then `_start_login_attempt` creates a `PendingLoginAttempt` through the coordinator and sends one Connect button per action (plain text, `parse_mode=None`). Completions arrive through the notifier -> `PendingLoginCoordinator.on_provider_completed`; `_finalize_login_attempt` runs exactly once: persist the principal link, promote the candidate into `_user_sessions`, initialize the user context, send the confirmation. A required failure, cancellation or expiry discards the candidate and publishes no link; `/login` and `/logout` cancel any pending attempt. The eager post-auth chain in the Azure and Google strategies is gone.
+- Review correction (`e0f70ce6eb`): as delivered, no staged login could ever finalize. The wrapper attached its coordinator to `app["telegram_connection_notifier"]` inside `__init__`, but `IntegrationBotManager` creates the notifier after constructing the wrapper; the notifier also kept one app-wide coordinator slot, so a second bot would have swallowed the first bot's attempts; and `TelegramBotManager` (the `telegram_bots.yaml` path) never created the notifier at all. Fixed with `_attach_login_coordinator()` (idempotent), per-bot-id routing in `set_login_coordinator(coordinator, bot_id=)`, and one `attach_telegram_wrapper(app, wrapper, bot)` helper in `integrations/manager.py` used by both managers (guarded in `TelegramBotManager`). Files outside the task list were touched for this: `integrations/manager.py`, `telegram/manager.py`, `telegram/connection_notifier.py`. Tests added for wrapper-before-notifier, two bots on one notifier, and the helper. Recorded as `coder-feedback:b6e523f287ae310ef0f9eb0c`, review `coder-review:4d9144ecb47536ad00570bb7`.
+- Known limits: `_finalize_login_attempt` re-checks `cancelled` after persisting the link, so a supersede that lands exactly between the two awaits could leave a persisted link without a promoted session (a `/logout` cannot, it waits on the attempt lock); the OAuth state lifetime passed to `cap_expiry` is a fixed 600 s rather than the provider's `expires_in`.
+- Existing limitation, not fixed here: session hooks are keyed by provider id only (`register_session_hook("jira")`), so with several Telegram bots the last wrapper's hook wins (TASK-5022/5023).
+- Validation: the 6 files' tests plus the notifier/coordinator tests pass; a branch-vs-`dev` run over the 96 Telegram-related test files shows no red that is not already red on `dev` (18 vs 29).
 
-**Deviations from spec**: none
+**Deviations from spec**: three files outside the task list (see above), all for wiring that the task's own flow requires.

@@ -92,7 +92,7 @@ class TestHandleDocument:
         wrapper._check_authentication = AsyncMock(return_value=True)
         wrapper._get_or_create_memory = MagicMock(return_value=memory)
         wrapper._get_user_session = MagicMock(return_value=session)
-        wrapper._invoke_agent = AsyncMock(return_value="response")
+        wrapper._invoke_agent = AsyncMock(return_value=("response", []))
         wrapper._parse_response = MagicMock(return_value=MagicMock())
         wrapper._send_parsed_response = AsyncMock(return_value=sent_msg)
         wrapper._store_telegram_metadata = AsyncMock()
@@ -145,7 +145,7 @@ class TestHandleDocument:
         wrapper._check_authentication = AsyncMock(return_value=True)
         wrapper._get_or_create_memory = MagicMock(return_value=memory)
         wrapper._get_user_session = MagicMock(return_value=session)
-        wrapper._invoke_agent = AsyncMock(return_value="response")
+        wrapper._invoke_agent = AsyncMock(return_value=("response", []))
         wrapper._parse_response = MagicMock(return_value=MagicMock())
         wrapper._send_parsed_response = AsyncMock(return_value=sent_msg)
         wrapper._store_telegram_metadata = AsyncMock()
@@ -173,7 +173,7 @@ class TestHandleDocument:
         wrapper._check_authentication = AsyncMock(return_value=True)
         wrapper._get_or_create_memory = MagicMock(return_value=memory)
         wrapper._get_user_session = MagicMock(return_value=session)
-        wrapper._invoke_agent = AsyncMock(return_value="response")
+        wrapper._invoke_agent = AsyncMock(return_value=("response", []))
         wrapper._parse_response = MagicMock(return_value=MagicMock())
         wrapper._send_parsed_response = AsyncMock(return_value=sent_msg)
         wrapper._store_telegram_metadata = AsyncMock()
@@ -203,7 +203,7 @@ class TestHandleDocument:
         wrapper._check_authentication = AsyncMock(return_value=True)
         wrapper._get_or_create_memory = MagicMock(return_value=memory)
         wrapper._get_user_session = MagicMock(return_value=session)
-        wrapper._invoke_agent = AsyncMock(return_value="response")
+        wrapper._invoke_agent = AsyncMock(return_value=("response", []))
         wrapper._parse_response = MagicMock(return_value=MagicMock())
         wrapper._send_parsed_response = AsyncMock(return_value=sent_msg)
         wrapper._store_telegram_metadata = AsyncMock()
@@ -259,7 +259,7 @@ class TestHandleDocument:
 
         async def mock_invoke(sess, question, *, memory, output_mode, message, **kw):
             invoked_with['question'] = question
-            return "response"
+            return "response", []
 
         wrapper._is_authorized = MagicMock(return_value=True)
         wrapper._check_authentication = AsyncMock(return_value=True)
@@ -293,7 +293,7 @@ class TestHandleDocument:
 
         async def mock_invoke(sess, question, *, memory, output_mode, message, **kw):
             invoked_with['question'] = question
-            return "response"
+            return "response", []
 
         wrapper._is_authorized = MagicMock(return_value=True)
         wrapper._check_authentication = AsyncMock(return_value=True)
@@ -328,7 +328,7 @@ class TestHandleDocument:
         wrapper._check_authentication = AsyncMock(return_value=True)
         wrapper._get_or_create_memory = MagicMock(return_value=memory)
         wrapper._get_user_session = MagicMock(return_value=session)
-        wrapper._invoke_agent = AsyncMock(return_value="response")
+        wrapper._invoke_agent = AsyncMock(return_value=("response", []))
         wrapper._parse_response = MagicMock(return_value=MagicMock())
         wrapper._send_parsed_response = AsyncMock(return_value=sent_msg)
         wrapper._store_telegram_metadata = AsyncMock()
@@ -359,7 +359,7 @@ class TestHandleDocument:
         wrapper._check_authentication = AsyncMock(return_value=True)
         wrapper._get_or_create_memory = MagicMock(return_value=memory)
         wrapper._get_user_session = MagicMock(return_value=session)
-        wrapper._invoke_agent = AsyncMock(return_value="response")
+        wrapper._invoke_agent = AsyncMock(return_value=("response", []))
         wrapper._parse_response = MagicMock(return_value=MagicMock())
         wrapper._send_parsed_response = AsyncMock(return_value=sent_msg)
         wrapper._store_telegram_metadata = AsyncMock()
@@ -413,7 +413,7 @@ class TestHandleDocument:
         wrapper._check_authentication = AsyncMock(return_value=True)
         wrapper._get_or_create_memory = MagicMock(return_value=memory)
         wrapper._get_user_session = MagicMock(return_value=session)
-        wrapper._invoke_agent = AsyncMock(return_value="response")
+        wrapper._invoke_agent = AsyncMock(return_value=("response", []))
         wrapper._parse_response = MagicMock(return_value=MagicMock())
         wrapper._send_parsed_response = AsyncMock(return_value=sent_msg)
         wrapper._store_telegram_metadata = AsyncMock()

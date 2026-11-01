@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-31T00:47:12+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-01T23:31:21+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -68,16 +68,17 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: creates parrot/auth/pending.py and one call in tools/manager.py; no other task touches those files.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5016-needs-auth-collector.md"
+      "started_at": "2026-10-31T00:52:13+00:00",
+      "completed_at": "2026-10-31T01:10:05+00:00",
+      "file": "sdd/tasks/completed/TASK-5016-needs-auth-collector.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5017",
@@ -86,16 +87,17 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: single branch in clients/base.py, a file no other task touches.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5017-execute-tool-needs-auth-message.md"
+      "started_at": "2026-10-31T00:52:13+00:00",
+      "completed_at": "2026-10-31T01:10:05+00:00",
+      "file": "sdd/tasks/completed/TASK-5017-execute-tool-needs-auth-message.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5018",
@@ -104,7 +106,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -112,8 +114,9 @@
       "parallelism_notes": "No in-feature dependencies; cross-feature gate on FEAT-775 M3/M7 (IntegrationsService permission_context) merged on origin/dev. Test-only file.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5018-consume-shared-pbac-contract.md"
+      "completed_at": "2026-11-01T01:23:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5018-consume-shared-pbac-contract.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5019",
@@ -122,16 +125,17 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: only ai-parrot-server identity_mapping.py plus its new tests.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5019-identity-channel-link-unlink.md"
+      "started_at": "2026-10-31T00:52:13+00:00",
+      "completed_at": "2026-10-31T01:10:06+00:00",
+      "file": "sdd/tasks/completed/TASK-5019-identity-channel-link-unlink.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5020",
@@ -140,7 +144,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -150,8 +154,9 @@
       "parallelism_notes": "Calls IdentityMappingService.link_channel_identity/unlink_channel_identity created by TASK-5019 (services/identity_mapping.py).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5020-telegram-principal-link-lifecycle.md"
+      "completed_at": "2026-10-31T01:17:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5020-telegram-principal-link-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5021",
@@ -160,7 +165,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -170,8 +175,9 @@
       "parallelism_notes": "Calls IntegrationsService start_connect/status/disconnect/list_for_principal with the permission_context keyword whose FEAT-775 contract TASK-5018 verifies.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5021-connection-command-core.md"
+      "completed_at": "2026-11-01T01:27:29+00:00",
+      "file": "sdd/tasks/completed/TASK-5021-connection-command-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5022",
@@ -180,7 +186,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -188,8 +194,9 @@
       "parallelism_notes": "No dependencies: new telegram/connection_notifier.py using FEAT-773 events already on dev.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5022-telegram-connection-notifier.md"
+      "completed_at": "2026-10-31T01:12:59+00:00",
+      "file": "sdd/tasks/completed/TASK-5022-telegram-connection-notifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5023",
@@ -198,7 +205,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -209,8 +216,9 @@
       "parallelism_notes": "Imports get_or_create_telegram_notifier from TASK-5022 (telegram/connection_notifier.py); edits telegram/wrapper.py after TASK-5020 (same file).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5023-telegram-notifier-wiring.md"
+      "completed_at": "2026-10-31T01:25:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5023-telegram-notifier-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5024",
@@ -219,7 +227,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -229,8 +237,9 @@
       "parallelism_notes": "Imports ConnectionCommandService/ConnectOutcome from TASK-5021 (integrations/core/auth/connections.py).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5024-telegram-connection-commands.md"
+      "completed_at": "2026-11-01T01:33:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5024-telegram-connection-commands.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5025",
@@ -239,7 +248,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -251,8 +260,9 @@
       "parallelism_notes": "Registers handlers from TASK-5024 (telegram/connection_commands.py); uses principal_for_session/_connection_permission_context from TASK-5020; edits wrapper.py and tests/integration/oauth2/test_e2e_telegram_regression.py after TASK-5023 (same files).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5025-telegram-command-aliases-wiring.md"
+      "completed_at": "2026-11-01T01:41:23+00:00",
+      "file": "sdd/tasks/completed/TASK-5025-telegram-command-aliases-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5026",
@@ -261,7 +271,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -273,8 +283,9 @@
       "parallelism_notes": "Uses collect_auth_requirements from TASK-5016 (auth/pending.py), ConnectionCommandService from TASK-5021, render_connect_outcome + self._connection_commands from TASK-5025; edits wrapper.py after TASK-5025.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5026-telegram-needs-auth-prompts.md"
+      "completed_at": "2026-11-01T02:06:04+00:00",
+      "file": "sdd/tasks/completed/TASK-5026-telegram-needs-auth-prompts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5027",
@@ -283,7 +294,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -295,8 +306,9 @@
       "parallelism_notes": "Calls start_connect(permission_context=...) verified by TASK-5018; imports SessionHook from TASK-5022 (connection_notifier.py); edits wrapper.py after TASK-5026 and models.py after TASK-5024 (same files, reached via TASK-5026).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5027-connection-post-auth-provider.md"
+      "completed_at": "2026-11-01T02:24:04+00:00",
+      "file": "sdd/tasks/completed/TASK-5027-connection-post-auth-provider.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5028",
@@ -305,7 +317,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -316,8 +328,9 @@
       "parallelism_notes": "Extends post_auth_connection.py created by TASK-5027 (PendingLoginAttempt); edits connection_notifier.py after TASK-5023 wired it (and TASK-5022 created it).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5028-pending-login-coordinator.md"
+      "completed_at": "2026-11-01T02:34:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5028-pending-login-coordinator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5029",
@@ -326,7 +339,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -338,8 +351,9 @@
       "parallelism_notes": "Uses PendingLoginCoordinator from TASK-5028 (post_auth_connection.py) and _persist_principal_link from TASK-5020; edits wrapper.py after TASK-5027/5026 and auth.py after TASK-5020 (same files).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5029-staged-combined-login.md"
+      "completed_at": "2026-11-01T02:47:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5029-staged-combined-login.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5030",
@@ -348,7 +362,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -356,8 +370,9 @@
       "parallelism_notes": "No dependencies: only parrot/auth/oauth2/legacy_audit.py and a new test; the wrapper comment cleanup moved to TASK-5020.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5030-telegram-legacy-purge.md"
+      "completed_at": "2026-10-31T01:13:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5030-telegram-legacy-purge.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5031",
@@ -366,7 +381,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -378,8 +393,9 @@
       "parallelism_notes": "Documents behaviour created by TASK-5029 (staged login), TASK-5030 (purge CLI) and TASK-5026 (needs-auth prompts).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5031-telegram-connections-docs.md"
+      "completed_at": "2026-11-01T02:50:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5031-telegram-connections-docs.md",
+      "verification": "verified"
     }
   ]
 }
