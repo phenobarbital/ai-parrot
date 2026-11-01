@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-768 — Native Claude sandbox for SDD execution
 **Spec**: `sdd/specs/sdd-claude-native-sandbox.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5088
@@ -150,8 +150,18 @@ appears exactly once in `result.stderr`. Docs are covered by the existing doc-co
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
 
-**Deviations from spec**: none
+- Task: TASK-5089
+- Feature: sdd-claude-native-sandbox
+- Implementation SHA: 7d450cb544cdd5e3a3c79ba7df93d41f2c659347
+- Closed at (UTC): 2026-11-01T01:16:15+00:00
+- Fix commits: 7d450cb544cdd5e3a3c79ba7df93d41f2c659347
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| feedback | coder-feedback:dc23cce56f1b6e7d288382a3 (ascii-diagram-misaligned) |
+| review | docs match merged code (exact stderr strings); one fix: PLATFORM.md lifecycle box row overflow (7d450cb544) |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 216.9s · Tokens: n/a |
+| validation | merge tier green (test_launch_worker 33 passed); doc contracts 41 passed/1 skipped after fix |
