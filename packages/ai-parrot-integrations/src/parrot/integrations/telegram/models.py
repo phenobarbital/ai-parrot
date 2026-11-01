@@ -109,6 +109,8 @@ class TelegramAgentConfig:
     voice_config: Optional["VoiceTranscriberConfig"] = None
     # Post-authentication actions (secondary auth providers chained after primary)
     post_auth_actions: List[PostAuthAction] = field(default_factory=list)
+    # FEAT-776: optional allowlist of connectable providers for /connect (None = every connectable provider).
+    connection_providers: Optional[List[str]] = None
     # Per-user agent isolation.
     # True  (default): the wrapper keeps one shared agent instance and
     #                  hands each user a private clone of the agent's
@@ -297,6 +299,9 @@ class TelegramAgentConfig:
             google_auth_url=data.get("google_auth_url"),
             voice_config=voice_config,
             post_auth_actions=post_auth_actions,
+            connection_providers=(
+                list(data["connection_providers"]) if data.get("connection_providers") is not None else None
+            ),
             singleton_agent=bool(data.get("singleton_agent", True)),
             agent_timeout=float(data.get("agent_timeout", 120.0)),
             max_document_size_mb=int(data.get("max_document_size_mb", 20)),
@@ -405,6 +410,12 @@ class TelegramBotsConfig:
                         f"login_page_url is unset. Multi-auth bots must set "
                         f"login_page_url to a shared chooser page "
                         f"(e.g. login_multi.html)."
+                    )
+                elif "login_multi.html" not in agent_config.login_page_url.casefold():
+                    errors.append(
+                        f"Agent '{name}': auth_methods has "
+                        f"{len(agent_config.auth_methods)} entries but "
+                        f"login_page_url must reference login_multi.html."
                     )
 
             # Soft warning for unknown post_auth_actions providers.
