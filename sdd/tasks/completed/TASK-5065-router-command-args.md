@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-775 — Connections on MS Teams
 **Spec**: `sdd/specs/connections-msteams.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -212,7 +212,7 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by gpt-5.6-luna (codex), 1 attempt, merged via sdd-worker; engine fidelity gate passed; merge-tier validation green (chunk 0). Review: diffstat in scope, 0 corrections (review recorded via coder_record_review).
 
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD

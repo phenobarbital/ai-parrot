@@ -13,11 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from parrot.auth.principal import Principal, set_principal_resolver
-from parrot.integrations.msteams.commands.jira_commands import (
-    connect_jira_handler as teams_connect,
-    disconnect_jira_handler as teams_disconnect,
-    jira_status_handler as teams_status,
-)
+from parrot.integrations.msteams.commands.connect_commands import TeamsConnector
 from parrot.integrations.slack.commands.jira_commands import (
     _LINK_FIRST as SLACK_LINK_FIRST,
     connect_jira_handler as slack_connect,
@@ -84,6 +80,7 @@ def _teams_turn(aad_object_id: str = TEAMS_AAD_ID):
     ctx = MagicMock()
     ctx.activity.from_property.id = "teams-user-456"
     ctx.activity.from_property.aad_object_id = aad_object_id
+    ctx.activity.conversation.conversation_type = "personal"
     ctx.send_activity = AsyncMock()
     return ctx
 
@@ -92,6 +89,29 @@ def _sent_text(ctx: MagicMock) -> str:
     """Return the text of the single activity sent on a turn double."""
     assert ctx.send_activity.await_count == 1
     return ctx.send_activity.await_args.args[0].text
+
+
+class _TeamsPrincipalSource:
+    """Authenticated Teams source used to exercise the generic connector."""
+
+    async def session_for_turn(self, turn_context):
+        """Return the cached session for the current turn."""
+        return MagicMock(nav_user_id=NAV_USER_ID, aad_object_id=TEAMS_AAD_ID, tenant_id=None)
+
+    async def principal_for_turn(self, turn_context):
+        """Return the principal trusted for the current turn."""
+        return Principal(user_id=NAV_USER_ID, channel="msteams", channel_user_id=TEAMS_AAD_ID)
+
+
+def _teams_connector(service):
+    """Build the generic connector used by the migrated Teams cases."""
+    return TeamsConnector(
+        principal_source=_TeamsPrincipalSource(),
+        service_factory=lambda: service,
+        provider_ids=lambda: ["jira"],
+        bot_app_id="bot",
+        auth_enabled=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -172,71 +192,17 @@ async def test_slack_disconnect_bound_user_revokes_principal_key(bind_slack, oau
 
 
 @pytest.mark.asyncio
-async def test_teams_connect_unbound_user_gets_link_first(oauth_manager):
-    """An unlinked Teams user gets the link-first reply and no authorization URL."""
-    ctx = _teams_turn()
+async def test_teams_connector_uses_navigator_principal(oauth_manager, monkeypatch):
+    """The generic Teams connector passes the trusted principal to its service."""
+    from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 
-    await teams_connect(ctx, oauth_manager)
+    provider = MagicMock(provider_id="jira", display_name="Jira")
+    monkeypatch.setattr(OAuth2ProviderRegistry(), "get", lambda provider_id: provider)
+    oauth_manager.disconnect = AsyncMock()
 
-    assert "Link your Teams account" in _sent_text(ctx)
-    oauth_manager.validate_token.assert_not_awaited()
-    oauth_manager.create_authorization_url.assert_not_awaited()
+    await _teams_connector(oauth_manager).disconnect(_teams_turn(), "jira")
 
-
-@pytest.mark.asyncio
-async def test_teams_connect_bound_user_passes_principal(bind_teams, oauth_manager):
-    """A linked Teams user gets the connect card; the URL is minted with the principal."""
-    ctx = _teams_turn()
-
-    await teams_connect(ctx, oauth_manager)
-
-    oauth_manager.validate_token.assert_awaited_once_with("msteams", TEAMS_AAD_ID)
-    args, kwargs = oauth_manager.create_authorization_url.await_args
-    assert args == ("msteams", TEAMS_AAD_ID)
-    assert kwargs["principal"].user_id == NAV_USER_ID
-    assert kwargs["extra_state"]["channel"] == "msteams"
-
-
-@pytest.mark.asyncio
-async def test_teams_status_uses_principal_key(bind_teams, oauth_manager):
-    """A linked Teams user's status is checked through the bound principal."""
-    oauth_manager.validate_token.return_value = MagicMock(display_name="Ada", site_url="https://ada.atlassian.net")
-    ctx = _teams_turn()
-
-    await teams_status(ctx, oauth_manager)
-
-    oauth_manager.validate_token.assert_awaited_once_with("msteams", TEAMS_AAD_ID)
-    assert "Connected to Jira as **Ada**" in _sent_text(ctx)
-
-
-@pytest.mark.asyncio
-async def test_teams_status_unbound_user_gets_link_first(oauth_manager):
-    """An unlinked Teams user asking for status is told to link first."""
-    ctx = _teams_turn()
-
-    await teams_status(ctx, oauth_manager)
-
-    assert "Link your Teams account" in _sent_text(ctx)
-    oauth_manager.validate_token.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_teams_disconnect_bound_user_revokes_principal_key(bind_teams, oauth_manager):
-    """A linked Teams user is revoked against the Navigator principal, not the AAD id."""
-    ctx = _teams_turn()
-
-    await teams_disconnect(ctx, oauth_manager)
-
-    oauth_manager.revoke.assert_awaited_once_with("msteams", NAV_USER_ID, channel_user_id=TEAMS_AAD_ID)
-    assert _sent_text(ctx) == "Your Jira account has been disconnected."
-
-
-@pytest.mark.asyncio
-async def test_teams_disconnect_unbound_user_gets_link_first(oauth_manager):
-    """An unlinked Teams user cannot disconnect anything."""
-    ctx = _teams_turn()
-
-    await teams_disconnect(ctx, oauth_manager)
-
-    assert "Link your Teams account" in _sent_text(ctx)
-    oauth_manager.revoke.assert_not_awaited()
+    oauth_manager.disconnect.assert_awaited_once()
+    assert oauth_manager.disconnect.await_args.args == (NAV_USER_ID, "jira")
+    assert oauth_manager.disconnect.await_args.kwargs["principal"].user_id == NAV_USER_ID
+    assert oauth_manager.disconnect.await_args.kwargs["principal"].channel_user_id == TEAMS_AAD_ID

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-775 — Connections on MS Teams
 **Spec**: `sdd/specs/connections-msteams.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5066, TASK-5067, TASK-5070
@@ -206,7 +206,7 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by gpt-5.6-terra (codex), 1 attempt; fidelity gate and lint clean; own validation 13 passed, 2 skipped. Pre-existing failures (also red on origin/dev): test_msteams_oauth_callback::TestStatePayloadShapeParity, test_o365_refresh (2). 0 review corrections.
 
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD

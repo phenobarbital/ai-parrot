@@ -208,3 +208,66 @@ async def test_canonical_lookup_db_error_fails_closed(monkeypatch: pytest.Monkey
     monkeypatch.setattr(resolver, "_fetch", fail_fetch)
 
     assert await resolver.resolve("cli", "x@y.z") is None
+
+
+class AliasStore:
+    """Store with only an ``azure`` row for one Teams user."""
+
+    def __init__(self, rows: dict) -> None:
+        """Initialize with ``{(provider, id): nav_user_id}`` rows."""
+        self.rows = rows
+        self.find_calls: list[tuple[str, str]] = []
+        self.get_calls: list[tuple[Any, str]] = []
+
+    async def find_user_by_provider_account(self, provider: str, provider_user_id: str) -> Optional[Any]:
+        """Record and return the row."""
+        self.find_calls.append((provider, provider_user_id))
+        return self.rows.get((provider, provider_user_id))
+
+    async def get_by_provider(self, user_id: Any, provider: str) -> Optional[Any]:
+        """Return a row without provider_user_id."""
+        self.get_calls.append((user_id, provider))
+        return SimpleNamespace(email="x@example.com", provider_user_id=None)
+
+
+@pytest.mark.asyncio
+async def test_resolver_alias_msteams_falls_back_to_azure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A Teams user logged in via ``azure`` resolves, with the oid as canonical identity."""
+    store = AliasStore({("azure", "oid-1"): "42"})
+    resolver = IdentityPrincipalResolver(db_pool=object())
+    monkeypatch.setattr(resolver, "_store", lambda: store)
+
+    principal = await resolver.resolve("msteams", "oid-1")
+
+    assert principal is not None
+    assert principal.user_id == "42"
+    assert principal.channel == "msteams"
+    assert principal.channel_user_id == "oid-1"
+    assert principal.canonical_identity == "oid-1"
+    assert store.find_calls == [("msteams", "oid-1"), ("azure", "oid-1")]
+    assert store.get_calls == [("42", "azure")]
+
+
+@pytest.mark.asyncio
+async def test_resolver_msteams_row_wins_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An ``msteams`` row short-circuits the azure lookup."""
+    store = AliasStore({("msteams", "oid-1"): "7", ("azure", "oid-1"): "42"})
+    resolver = IdentityPrincipalResolver(db_pool=object())
+    monkeypatch.setattr(resolver, "_store", lambda: store)
+
+    principal = await resolver.resolve("msteams", "oid-1")
+
+    assert principal is not None
+    assert principal.user_id == "7"
+    assert store.find_calls == [("msteams", "oid-1")]
+
+
+@pytest.mark.asyncio
+async def test_resolver_other_channels_single_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Non-aliased channels perform exactly one lookup."""
+    store = AliasStore({})
+    resolver = IdentityPrincipalResolver(db_pool=object())
+    monkeypatch.setattr(resolver, "_store", lambda: store)
+
+    assert await resolver.resolve("telegram", "9") is None
+    assert store.find_calls == [("telegram", "9")]
