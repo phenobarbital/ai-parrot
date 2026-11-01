@@ -366,7 +366,9 @@ class RoostEndpoint:
     def _record_award_grant(self, msg: RoostMessage) -> None:
         """Store the attenuated grant an inbound Contract Net ACCEPT confers on this awardee (AC-14)."""
         scopes = msg.content.get("grant_scopes") if isinstance(msg.content, dict) else None
-        requester = InterAgentGrant(scopes=[s for s in scopes if isinstance(s, str)]) if isinstance(scopes, list) else None
+        requester = (
+            InterAgentGrant(scopes=[s for s in scopes if isinstance(s, str)]) if isinstance(scopes, list) else None
+        )
         own = self.config.grant if self.config is not None else None
         self._awarded_grants[msg.conversation_id] = self.grant.attenuate(requester, own)
 
