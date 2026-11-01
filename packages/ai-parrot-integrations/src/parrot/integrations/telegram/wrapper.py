@@ -466,14 +466,14 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             return session
 
         async def _principal_source(update: Any) -> Optional["Principal"]:
-            message = update.message if isinstance(update, CallbackQuery) else update
-            session = self._get_user_session(message)
+            # ``from_user`` is the acting user on both Message and CallbackQuery; a callback's own
+            # ``.message`` was sent by the bot, so it must never be used to pick the session.
+            session = self._get_user_session(update)
             await self._ensure_principal_link(session)
             return await principal_for_session(session, tenant_id=self.config.tenant)
 
         def _context_source(update: Any, principal: "Principal") -> Any:
-            message = update.message if isinstance(update, CallbackQuery) else update
-            return self._connection_permission_context(self._get_user_session(message), principal)
+            return self._connection_permission_context(self._get_user_session(update), principal)
 
         def _extra_state_factory(update: Any) -> Dict[str, Any]:
             message = update.message if isinstance(update, CallbackQuery) else update

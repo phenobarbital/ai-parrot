@@ -184,3 +184,54 @@ async def test_telegram_restart_retains_link(
     assert context.channel == "telegram"
     assert context.roles == frozenset()
     assert context.extra == {"telegram_id": 88123}
+
+
+@pytest.mark.asyncio
+async def test_picker_callback_resolves_the_clicking_user(
+    tg_session: TelegramUserSession,
+    fake_identity_service: MagicMock,
+) -> None:
+    """A provider-picker click resolves the clicker's session, never the bot that sent the keyboard."""
+    from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
+
+    OAuth2ProviderRegistry._reset()
+    OAuth2ProviderRegistry().register(
+        SimpleNamespace(provider_id="o365", display_name="Office 365", icon=None, default_scopes=[], manager=MagicMock())
+    )
+    wrapper = _wrapper(fake_identity_service)
+    wrapper.app = {}
+    wrapper.config = SimpleNamespace(tenant="tenant-a", post_auth_actions=[], connection_providers=None, auth_methods=[])
+    wrapper.router = MagicMock()
+    wrapper._bot_id = 7
+    wrapper._add_platform_commands = MagicMock()
+    wrapper._register_jira_session_hook = MagicMock()
+    wrapper._user_sessions[88123] = tg_session
+    captured = {}
+
+    def _capture(router, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    from aiogram.types import CallbackQuery
+
+    callback = MagicMock()
+    callback.__class__ = CallbackQuery  # satisfy the wrapper's isinstance(update, CallbackQuery)
+    callback.from_user = MagicMock(id=88123)
+    callback.message = MagicMock()
+    callback.message.from_user = MagicMock(id=999)  # the bot's own id on the keyboard message
+    callback.message.chat.id = 88123
+    try:
+        with (
+            patch("parrot.integrations.telegram.connection_commands.register_connection_commands", _capture),
+            patch("parrot.integrations.telegram.office365_commands.register_office365_commands"),
+        ):
+            wrapper._register_connection_commands()
+        principal = await captured["principal_source"](callback)
+        context = captured["context_source"](callback, principal)
+    finally:
+        OAuth2ProviderRegistry._reset()
+
+    assert principal is not None and principal.user_id == "1042"
+    assert context.session.user_id == "1042"
+    assert 999 not in wrapper._user_sessions
+    assert captured["extra_state_factory"](callback) == {"chat_id": 88123, "bot_id": 7}
