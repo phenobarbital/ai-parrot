@@ -109,6 +109,8 @@ class TelegramAgentConfig:
     voice_config: Optional["VoiceTranscriberConfig"] = None
     # Post-authentication actions (secondary auth providers chained after primary)
     post_auth_actions: List[PostAuthAction] = field(default_factory=list)
+    # FEAT-776: optional allowlist of connectable providers for /connect (None = every connectable provider).
+    connection_providers: Optional[List[str]] = None
     # Per-user agent isolation.
     # True  (default): the wrapper keeps one shared agent instance and
     #                  hands each user a private clone of the agent's
@@ -297,6 +299,9 @@ class TelegramAgentConfig:
             google_auth_url=data.get("google_auth_url"),
             voice_config=voice_config,
             post_auth_actions=post_auth_actions,
+            connection_providers=list(data["connection_providers"])
+            if data.get("connection_providers") is not None
+            else None,
             singleton_agent=bool(data.get("singleton_agent", True)),
             agent_timeout=float(data.get("agent_timeout", 120.0)),
             max_document_size_mb=int(data.get("max_document_size_mb", 20)),
