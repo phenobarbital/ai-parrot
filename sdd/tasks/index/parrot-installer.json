@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-04T23:59:51+00:00",
-  "completed_at": "2026-10-26T20:55:55+00:00",
+  "completed_at": null,
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -194,7 +194,10 @@
           "tests/sdd_scripts/test_template_taxonomy.py",
           "tests/sdd_scripts/test_test_report.py",
           "tests/sdd_scripts/test_worktree_plan.py",
-          "tests/sdd_scripts/test_worktree_status.py"
+          "tests/sdd_scripts/test_worktree_status.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_native_claude_sandbox.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_dispatcher.py",
+          "tests/sdd/test_launch_worker.py"
         ],
         "settings": {
           "markers": ""
@@ -206,7 +209,7 @@
         ]
       }
     ],
-    "digest": "sha256:934a031eae2e7a786e469f49efd48d03e109f025831343ef813aebb0a8ed1697"
+    "digest": "sha256:5e6a3ec69e5e1f5ab7322330e70ae5d4667100ebebb448da8517711d2f2561a9"
   },
   "tasks": [
     {
@@ -913,6 +916,54 @@
       "parallelism_notes": "edits parrot/launcher.py after TASK-4072 and imports parrot.sdd.scripts.worktree_environment moved by TASK-4085; also edits dispatchers/claude.py:625 and test_worktree_environment.py; split out of TASK-4072 by the 2026-10-19 readiness review",
       "file": "sdd/tasks/completed/TASK-4509-launcher-sdd-hook-fast-path.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5092",
+      "slug": "installer-dev-refresh-closeout",
+      "title": "Close out the dev refresh — re-sync packaged SDD assets and re-validate",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4070",
+        "TASK-4085",
+        "TASK-4089",
+        "TASK-4090"
+      ],
+      "parallelism_notes": "merges origin/dev and regenerates _assets; must run before any other change on the branch",
+      "file": "sdd/tasks/active/TASK-5092-installer-dev-refresh-closeout.md"
+    },
+    {
+      "id": "TASK-5093",
+      "slug": "absorb-feat-768-native-sandbox",
+      "title": "Absorb FEAT-768 — move the native sandbox next to the packaged hook",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5092",
+        "TASK-4070",
+        "TASK-4085",
+        "TASK-4090",
+        "TASK-4091",
+        "TASK-4509"
+      ],
+      "parallelism_notes": "external: blocked until PR #1884 (FEAT-768 incl. TASK-5086..5089) is merged into dev",
+      "file": "sdd/tasks/active/TASK-5093-absorb-feat-768-native-sandbox.md"
     }
   ],
   "amended_at": "2026-10-20T00:00:00+00:00",

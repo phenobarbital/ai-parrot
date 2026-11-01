@@ -1244,6 +1244,9 @@ tests:
 - tests/sdd_scripts/test_test_report.py  # 4508
 - tests/sdd_scripts/test_worktree_plan.py  # 4085,4298,4299
 - tests/sdd_scripts/test_worktree_status.py  # 4086
+- packages/ai-parrot/tests/flows/dev_loop/test_native_claude_sandbox.py  # 5093 (FEAT-768, arrives with the dev merge)
+- packages/ai-parrot/tests/flows/dev_loop/test_dispatcher.py  # 5093
+- tests/sdd/test_launch_worker.py  # 5093
 markers: none
 
 ### Test Data / Fixtures
@@ -1699,3 +1702,4 @@ Summary: **11** confirmed (1 scoped) · **0** rejected · **0** escalated.
 | 0.5 (merge) | 2026-10-20 | Claude, for Jesus Lara | `dev`'s rev 0.5 amendments (clauses D1–D8, M6 inventory, anchors on `9625844f5`) merged into PR #1746's rev 0.5 (C18–C24): D1 keeps C20 (ai-parrot-tools in the managed runtime; core-only is `issue:2c263fd19a1a`), D2 keeps the curated Validation Contract, D3 keeps C22 (`/sdd-insight` out; rules (a)–(d) ≙ categories A–D), D8 takes `dev`'s schema-only gate, `sdd-contract-probe` ships on Claude and Google → 80 manifest entries, `SourceRegistry` → `SourceCollectionManager._connect` |
 | 0.7 | 2026-10-28 | Jesus Lara (decisions) + Arturo Martinez + Claude | PR #1823 merge-readiness review: C26 re-derives the asset inventory — **84** manifest entries (80 + `code-reviewer`, `qa-runner`, packaged `docs/sdd/CODEX.md`, FEAT-764 `sdd_hooks.example.toml`), counts at §3 M6 / C22 / D3 / §5 updated, `/remove-worktree` and `/pr-review` recorded as referenced-but-not-shipped; C27 amends D7 — a bare `wikitoolkit` entry is ambiguous on every host and the managed `parrot-*` entries break the tie (Claude aligned with Codex, `test_portable_mode_parity.py`) |
 | 0.6 | 2026-10-21 | Jesus Lara + Claude | Amendment C25 folded in (proposal rev 0.7), from navigator-eventbus (project-venv install, no `~/.parrot/bin`, agents hand-patched to `<root>/.venv/lib/python3.11/site-packages/.../worktree_environment.py`): `parrot sdd install` renders the guard-hook line (bare under the managed launcher or `--portable`, else the absolute `parrot` script of the installing venv), C4 compares rendered bytes, `sdd_status()["guard_hook"]`, doctor `sdd: guard hook`; new tests `test_guard_hook_rendering`, `test_doctor_sdd_guard_hook`, `test_installed_hook_project_venv_only` (amends TASK-4091, TASK-4080) |
+| 0.8 | 2026-11-01 | Jesus Lara (decisions) + Claude | Post-#1910 refresh: TASK-5092 (merge current dev, re-sync `_assets`, rewrite the 3 shipped `scripts/check_portable_paths.py` mentions — D3, never allowlisted) and TASK-5093 (absorb FEAT-768 after PR #1884 merges: native sandbox moves next to the packaged hook, `parrot sdd launch-worker` aliases `parrot devloop launch-worker`; resolves issue:3253d3dc39b0). Validation Contract adds the FEAT-768 suites |
