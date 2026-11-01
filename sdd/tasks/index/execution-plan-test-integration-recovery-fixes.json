@@ -1,0 +1,30 @@
+{
+  "feature": "execution-plan-test-integration-recovery-fixes",
+  "feature_id": "FEAT-789",
+  "spec": "sdd/specs/execution-plan-test-integration-recovery-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-01T23:35:29+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-5102",
+      "slug": "execution-plan-test-integration-recovery-fixes",
+      "title": "Version plan-node writes when no turn session is bound",
+      "feature_id": "FEAT-789",
+      "feature": "execution-plan-test-integration-recovery-fixes",
+      "spec": "sdd/specs/execution-plan-test-integration-recovery-fixes.spec.md",
+      "file": "sdd/tasks/active/TASK-5102-execution-plan-test-integration-recovery-fixes.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "single task",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "discovered_from": "issue:ca325f05ae53"
+    }
+  ]
+}
