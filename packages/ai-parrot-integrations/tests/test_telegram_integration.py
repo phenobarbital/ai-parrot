@@ -477,23 +477,36 @@ class TestGetBotCommands:
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
         from parrot.integrations.telegram.models import TelegramAgentConfig
 
+        from types import SimpleNamespace
+
+        from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
+
         agent = MagicMock()
         bot = MagicMock()
         config = TelegramAgentConfig(name="Test", chatbot_id="test")
-        app = {"jira_oauth_manager": MagicMock()}
-
-        with patch("parrot.integrations.telegram.wrapper.CallbackRegistry") as mock_cb:
-            mock_cb.return_value.discover_from_agent.return_value = 0
-            mock_cb.return_value.prefixes = []
-            wrapper = TelegramAgentWrapper(
-                agent=agent,
-                bot=bot,
-                config=config,
-                app=app,
+        # FEAT-776: the Jira aliases register from the provider registry, not from app["jira_oauth_manager"].
+        OAuth2ProviderRegistry._reset()
+        OAuth2ProviderRegistry().register(
+            SimpleNamespace(
+                provider_id="jira", display_name="Jira", icon=None, default_scopes=[], manager=MagicMock()
             )
+        )
+        try:
+            with patch("parrot.integrations.telegram.wrapper.CallbackRegistry") as mock_cb:
+                mock_cb.return_value.discover_from_agent.return_value = 0
+                mock_cb.return_value.prefixes = []
+                wrapper = TelegramAgentWrapper(
+                    agent=agent,
+                    bot=bot,
+                    config=config,
+                    app={},
+                )
+        finally:
+            OAuth2ProviderRegistry._reset()
 
         cmd_names = [c.command for c in wrapper.get_bot_commands()]
 
+        assert "connect" in cmd_names
         assert "connect_jira" in cmd_names
         assert "disconnect_jira" in cmd_names
         assert "jira_status" in cmd_names
