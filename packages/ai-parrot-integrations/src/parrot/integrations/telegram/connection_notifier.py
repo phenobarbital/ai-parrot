@@ -28,6 +28,7 @@ class TelegramConnectionNotifier:
         self._bots: Dict[str, "Bot"] = {}
         self._last_connect_bot: Dict[str, str] = {}
         self._hooks: Dict[str, Tuple[Optional[SessionHook], Optional[SessionHook]]] = {}
+        self._login_coordinator: Optional[Any] = None
         # Bounded LRU of delivered event keys; only successful sends are recorded.
         self._seen: "OrderedDict[Tuple[str, str, str, float], None]" = OrderedDict()
         self.logger = logging.getLogger(__name__)
@@ -49,6 +50,10 @@ class TelegramConnectionNotifier:
     ) -> None:
         """Register provider-specific session effects."""
         self._hooks[provider_id] = (on_completed, on_revoked)
+
+    def set_login_coordinator(self, coordinator: Any) -> None:
+        """Route staged-login completions to the pending-login coordinator."""
+        self._login_coordinator = coordinator
 
     async def _resolve_target(
         self,
@@ -152,6 +157,16 @@ class TelegramConnectionNotifier:
 
     async def notify(self, event: ConnectionEvent, state_payload: Dict[str, Any]) -> None:
         """Resolve target, send plain text, and run the session hook without raising."""
+        extra = state_payload.get("extra")
+        combined = isinstance(extra, dict) and extra.get("combined") is True
+        if combined and self._login_coordinator is not None:
+            try:
+                await self._login_coordinator.on_provider_completed(event, state_payload)
+            except Exception:  # noqa: BLE001 - lifecycle dispatch is independent of notification delivery
+                self.logger.exception(
+                    "Pending Telegram login completion dispatch failed (provider=%s)",
+                    event.provider,
+                )
         try:
             text = self._text(event)
             if text is None:
@@ -169,7 +184,8 @@ class TelegramConnectionNotifier:
             telegram_id, bot = target
             await bot.send_message(chat_id=telegram_id, text=text, parse_mode=None)
             self._mark_seen(dedupe_key)
-            await self._run_hook(telegram_id, event)
+            if not combined:
+                await self._run_hook(telegram_id, event)
         except Exception:  # noqa: BLE001 - notifier contract: log, never raise
             self.logger.exception(
                 "Telegram connection notification failed (provider=%s kind=%s)",

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
+import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Set
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Mapping, Optional, Set
 
 from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 from parrot.auth.permission import PermissionContext
@@ -122,3 +124,175 @@ class ConnectionPostAuthProvider:
             and str(extra.get("bot_id")) == session.bot_id
             and extra.get("combined") is True
         )
+
+
+class PendingLoginCoordinator:
+    """Own pending login attempts; correlate completions; finalize exactly once."""
+
+    def __init__(
+        self,
+        *,
+        finalize: Callable[[PendingLoginAttempt], Awaitable[None]],
+        on_failed: Optional[Callable[[PendingLoginAttempt, str], Awaitable[None]]] = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._attempts: Dict[str, PendingLoginAttempt] = {}
+        self._by_telegram: Dict[int, str] = {}
+        self._locks: Dict[str, asyncio.Lock] = {}
+        self._finalize = finalize
+        self._on_failed = on_failed
+        self._clock = clock
+        self.logger = logging.getLogger(__name__)
+
+    def _discard(self, attempt: PendingLoginAttempt) -> None:
+        """Remove an attempt from lookup indexes without changing persisted state."""
+        self._attempts.pop(attempt.attempt_id, None)
+        if self._by_telegram.get(attempt.telegram_id) == attempt.attempt_id:
+            self._by_telegram.pop(attempt.telegram_id, None)
+
+    def _cancel_attempt(self, attempt: PendingLoginAttempt) -> None:
+        """Discard a candidate that must never become an authenticated session."""
+        attempt.cancelled = True
+        attempt.candidate = None
+        self._discard(attempt)
+
+    def _expired(self, attempt: PendingLoginAttempt) -> bool:
+        """Expire an attempt and report whether it can no longer progress."""
+        if self._clock() < attempt.expires_at:
+            return False
+        self._cancel_attempt(attempt)
+        return True
+
+    def _is_live(self, attempt: PendingLoginAttempt) -> bool:
+        """Return whether an attempt is available for a new lifecycle event."""
+        return not attempt.cancelled and not attempt.finalized and not self._expired(attempt)
+
+    def create(self, **fields: Any) -> PendingLoginAttempt:
+        """New attempt with an unpredictable id; supersedes any attempt for the same Telegram user."""
+        telegram_id = fields["telegram_id"]
+        self.supersede(telegram_id)
+        attempt = PendingLoginAttempt(attempt_id=secrets.token_urlsafe(32), **fields)
+        self._attempts[attempt.attempt_id] = attempt
+        self._by_telegram[attempt.telegram_id] = attempt.attempt_id
+        self._locks[attempt.attempt_id] = asyncio.Lock()
+        return attempt
+
+    def cap_expiry(self, attempt_id: str, state_expires_in: int) -> None:
+        """Lower ``expires_at`` to the outstanding OAuth state's expiry."""
+        attempt = self._attempts.get(attempt_id)
+        if attempt is None or not self._is_live(attempt):
+            return
+        attempt.expires_at = min(attempt.expires_at, self._clock() + state_expires_in)
+
+    def get(self, attempt_id: str) -> Optional[PendingLoginAttempt]:
+        """Return a live, unexpired attempt, or ``None``."""
+        attempt = self._attempts.get(attempt_id)
+        if attempt is None or not self._is_live(attempt):
+            return None
+        return attempt
+
+    def supersede(self, telegram_id: int) -> None:
+        """Invalidate the currently indexed attempt for one Telegram user."""
+        attempt_id = self._by_telegram.get(telegram_id)
+        if attempt_id is None:
+            return
+        attempt = self._attempts.get(attempt_id)
+        if attempt is not None:
+            self._cancel_attempt(attempt)
+
+    async def cancel(self, *, attempt_id: Optional[str] = None, telegram_id: Optional[int] = None) -> None:
+        """Invalidate under the attempt lock (serialized with finalize)."""
+        if attempt_id is None and telegram_id is not None:
+            attempt_id = self._by_telegram.get(telegram_id)
+        if attempt_id is None:
+            return
+        attempt = self._attempts.get(attempt_id)
+        lock = self._locks.get(attempt_id)
+        if attempt is None or lock is None:
+            return
+        async with lock:
+            self._cancel_attempt(attempt)
+
+    @staticmethod
+    def _all_actions_settled(attempt: PendingLoginAttempt) -> bool:
+        """Return whether every required action completed and optionals settled."""
+        for action in attempt.actions:
+            if action.required and action.provider not in attempt.completed:
+                return False
+            if not action.required and action.provider not in attempt.completed | attempt.failed:
+                return False
+        return True
+
+    async def on_provider_completed(self, event: "ConnectionEvent", state_payload: Dict[str, Any]) -> bool:
+        """Correlate a completion and finalize the attempt when its chain is satisfied."""
+        extra = state_payload.get("extra")
+        if not isinstance(extra, dict) or event.kind != "connection.completed":
+            return False
+        attempt_id = extra.get("attempt_id")
+        if not isinstance(attempt_id, str):
+            return False
+        attempt = self.get(attempt_id)
+        lock = self._locks.get(attempt_id)
+        if attempt is None or lock is None:
+            return False
+
+        async with lock:
+            if not self._is_live(attempt):
+                return False
+            providers = {action.provider for action in attempt.actions}
+            if (
+                event.user_id != attempt.principal.user_id
+                or event.provider not in providers
+                or str(extra.get("bot_id")) != attempt.bot_id
+            ):
+                return False
+            if event.provider in attempt.completed:
+                return True
+
+            attempt.completed.add(event.provider)
+            if not self._all_actions_settled(attempt):
+                return True
+
+            if attempt.cancelled or attempt.finalized or self._expired(attempt):
+                return False
+            attempt.finalized = True
+            self._discard(attempt)
+            try:
+                await self._finalize(attempt)
+            except Exception:  # noqa: BLE001 - a finalizer must not duplicate activation on retry
+                self.logger.exception("Pending Telegram login finalization failed (attempt=%s)", attempt.attempt_id)
+            return True
+
+    async def on_provider_failed(self, attempt_id: str, provider_id: str, reason: str) -> None:
+        """Fail required actions or settle optional actions, then finalize if appropriate."""
+        attempt = self.get(attempt_id)
+        lock = self._locks.get(attempt_id)
+        if attempt is None or lock is None:
+            return
+        async with lock:
+            if not self._is_live(attempt):
+                return
+            action = next((item for item in attempt.actions if item.provider == provider_id), None)
+            if action is None or provider_id in attempt.completed | attempt.failed:
+                return
+
+            attempt.failed.add(provider_id)
+            if action.required:
+                self._cancel_attempt(attempt)
+                if self._on_failed is not None:
+                    try:
+                        await self._on_failed(attempt, reason)
+                    except Exception:  # noqa: BLE001 - failure reporting cannot revive the pending login
+                        self.logger.exception("Pending Telegram login failure callback failed (attempt=%s)", attempt_id)
+                return
+
+            if not self._all_actions_settled(attempt):
+                return
+            if attempt.cancelled or attempt.finalized or self._expired(attempt):
+                return
+            attempt.finalized = True
+            self._discard(attempt)
+            try:
+                await self._finalize(attempt)
+            except Exception:  # noqa: BLE001 - a finalizer must not duplicate activation on retry
+                self.logger.exception("Pending Telegram login finalization failed (attempt=%s)", attempt_id)
