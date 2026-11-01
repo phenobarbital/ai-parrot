@@ -1,4 +1,5 @@
 """Tests for Telegram Jira generic-connection aliases."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
