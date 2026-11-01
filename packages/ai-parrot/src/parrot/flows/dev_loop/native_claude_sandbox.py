@@ -31,7 +31,7 @@ CACHE_DIR_ENV = "PARROT_SDD_CACHE_DIR"
 ROOTS_ENV = "PARROT_SDD_SANDBOX_ROOTS"  # root, common git dir, primary checkout — frozen at launch
 MODE_ENV = "PARROT_SDD_SANDBOX_MODE"
 DEGRADED_ENV = "PARROT_SDD_SANDBOX_DEGRADED"
-SANDBOX_MODES = ("required", "preferred", "off")
+SANDBOX_MODES = ("required", "preferred", "off", "legacy")
 _HOSTNAME_LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 _NUMERIC_LABEL = re.compile(r"^(0x[0-9a-f]+|[0-9]+)$")
 _CD_PREFIX = re.compile(r"^\s*cd\s+(?P<target>\S+)\s*&&\s*(?P<rest>.+)$", re.DOTALL)
@@ -245,11 +245,11 @@ def resolve_sandbox_mode(repo_root: Path) -> str:
                     raise ValueError(f"Invalid sandbox mode in {config_path}: {configured!r}")
                 mode = configured.strip().lower()
                 source = str(config_path)
-                if mode == "off":
+                if mode in ("off", "legacy"):
                     # The worktree's pyproject is writable by the sandboxed session itself; letting it
-                    # switch the boundary off would be a self-disable path. Only the operator's
-                    # environment may select "off"; a repository may go as far as "preferred".
-                    raise ValueError(f"Invalid sandbox mode in {config_path}: 'off' may only be set through {MODE_ENV}")
+                    # weaken the boundary would be a self-disable path. Only the operator's
+                    # environment may select "off" or "legacy"; a repository may go as far as "preferred".
+                    raise ValueError(f"Invalid sandbox mode in {config_path}: '{mode}' may only be set through {MODE_ENV}")
     if mode not in SANDBOX_MODES:
         raise ValueError(f"Invalid sandbox mode from {source}: {mode!r}")
     return mode
@@ -257,6 +257,30 @@ def resolve_sandbox_mode(repo_root: Path) -> str:
 
 _PROBE_TTL_SECONDS = 60.0
 _probe_cache: tuple[float, bool, str] | None = None
+
+
+def _bwrap_probe(executable: str) -> tuple[bool, str]:
+    """Probe whether Bubblewrap can create the namespaces needed by a sandbox.
+
+    Args:
+        executable: Resolved path to the Bubblewrap executable.
+
+    Returns:
+        Whether Bubblewrap is usable and a human-readable failure reason.
+    """
+    try:
+        probe = subprocess.run(
+            [executable, "--unshare-user", "--unshare-pid", "--ro-bind", "/", "/", "true"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "bwrap probe timed out"
+    if probe.returncode:
+        return False, next((line for line in probe.stderr.splitlines() if line.strip()), "bwrap probe failed")
+    return True, ""
 
 
 def native_sandbox_available() -> tuple[bool, str]:
@@ -279,22 +303,7 @@ def native_sandbox_available() -> tuple[bool, str]:
     if missing:
         outcome = (False, f"missing prerequisite(s): {', '.join(missing)}")
     else:
-        try:
-            probe = subprocess.run(
-                [executables["bwrap"] or "bwrap", "--unshare-user", "--unshare-pid", "--ro-bind", "/", "/", "true"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
-            outcome = (False, "bwrap probe timed out")
-        else:
-            if probe.returncode:
-                reason = next((line for line in probe.stderr.splitlines() if line.strip()), "bwrap probe failed")
-                outcome = (False, reason)
-            else:
-                outcome = (True, "")
+        outcome = _bwrap_probe(executables["bwrap"] or "bwrap")
     _probe_cache = (now, outcome[0], outcome[1])
     return outcome
 
@@ -367,12 +376,34 @@ def plan_native_launch(cwd: Path, *, allowed_domains: Sequence[str] = ()) -> tup
             "sandbox mode off",
             native_sandbox_settings(cwd, allowed_domains=allowed_domains, include_sandbox=False),
         )
+    if mode == "legacy":
+        if not sys.platform.startswith("linux"):
+            raise RuntimeError(f"legacy mode needs a working Bubblewrap: unsupported platform {sys.platform!r}")
+        executable = shutil.which("bwrap")
+        if executable is None:
+            raise RuntimeError("legacy mode needs a working Bubblewrap: missing prerequisite(s): bwrap")
+        available, reason = _bwrap_probe(executable)
+        if not available:
+            raise RuntimeError(f"legacy mode needs a working Bubblewrap: {reason}")
+        return mode, False, "", native_sandbox_settings(cwd, include_sandbox=False)
     available, reason = native_sandbox_available()
     if not available:
         if mode == "required":
             raise RuntimeError(reason)
         return mode, True, reason, native_sandbox_settings(cwd, allowed_domains=allowed_domains, include_sandbox=False)
     return mode, False, "", native_sandbox_settings(cwd, allowed_domains=allowed_domains)
+
+
+def launch_backend(mode: str) -> str:
+    """Return the retained hook backend selected by a sandbox mode.
+
+    Args:
+        mode: Resolved native sandbox mode.
+
+    Returns:
+        Bubblewrap for legacy mode, otherwise the native backend.
+    """
+    return BACKEND_BUBBLEWRAP if mode == "legacy" else BACKEND_NATIVE
 
 
 def _control_path(root: Path, target: Path) -> bool:
@@ -629,17 +660,26 @@ def launch_worker(argv: Sequence[str]) -> int:
         print("launch_worker: missing host prerequisite(s): claude", file=sys.stderr)
         return 1
     try:
+        mode = resolve_sandbox_mode(_native_roots(Path.cwd())[0])
         mode, degraded, reason, settings = plan_native_launch(Path.cwd(), allowed_domains=domains)
     except ValueError as exc:
         print(f"launch_worker: {exc}", file=sys.stderr)
         return 2
     except RuntimeError as exc:
-        print(f"launch_worker: native sandbox unavailable ({exc}); mode=required refuses to start", file=sys.stderr)
+        print(f"launch_worker: native sandbox unavailable ({exc}); mode={mode} refuses to start", file=sys.stderr)
         return 1
     env = dict(os.environ)
-    env[BACKEND_ENV] = BACKEND_NATIVE
+    env[BACKEND_ENV] = launch_backend(mode)
     env.update(native_root_env(Path.cwd()))
-    if degraded:
+    if mode == "legacy":
+        ignored_domains = "; --sandbox-allow-domain ignored" if domains else ""
+        print(
+            "launch_worker: mode=legacy — native sandbox disabled, Bash runs in the hook's Bubblewrap "
+            f"(filesystem only, no network isolation){ignored_domains}",
+            file=sys.stderr,
+        )
+        env.pop(DEGRADED_ENV, None)
+    elif degraded:
         print(
             f"launch_worker: WARNING native sandbox unavailable ({reason}); mode={mode} launches DEGRADED "
             "(hook only, no OS write boundary)",
