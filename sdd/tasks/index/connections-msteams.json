@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-31T01:49:57+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-01T00:03:26+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -395,7 +395,7 @@
       "feature_id": "FEAT-775",
       "feature": "connections-msteams",
       "spec": "sdd/specs/connections-msteams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -407,8 +407,9 @@
       "parallelism_notes": "documents merged behavior of TASK-5073 (wiring), TASK-5074 (azure alias) and TASK-5075 (automatic cards)",
       "assigned_to": null,
       "started_at": "2026-10-31T23:12:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5076-msteams-connections-docs.md"
+      "completed_at": "2026-11-01T00:03:26+00:00",
+      "file": "sdd/tasks/completed/TASK-5076-msteams-connections-docs.md",
+      "verification": "verified"
     }
   ]
 }
