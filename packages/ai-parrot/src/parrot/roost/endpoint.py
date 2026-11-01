@@ -5,13 +5,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+
+import jsonschema
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Mapping, Optional, Sequence
 
 from . import squawk_bridge
 from .audit import RoostAuditLedger
 from .blackboard import Blackboard
 from .carriers.base import Carrier, Undeliverable
-from .directory import RoostAgentConfig
+from .directory import InterAgentGrant, RoostAgentConfig
 from .gating import Dispatch, DispatchDecision, GatingDispatcher, Handler
 from .grant import GrantDenied, GrantPolicy
 from .messages import AgentAddress, FailureInfo, RoostMessage
@@ -81,6 +83,7 @@ class RoostEndpoint:
         self._sweeper: Optional[asyncio.Task[None]] = None
         self._metrics = {"messages_in": 0, "messages_out": 0, "wakes": 0, "not_understood": 0, "stored": 0}
         self._token_budget_warned: set[str] = set()
+        self._awarded_grants: dict[str, InterAgentGrant] = {}
 
     def address(self) -> AgentAddress:
         """Return this endpoint's configured transport address."""
@@ -168,7 +171,9 @@ class RoostEndpoint:
     async def _on_message(self, msg: RoostMessage) -> None:
         """Audit, dispatch, and execute an inbound Roost message."""
         self._metrics["messages_in"] += 1
-        await self.ledger.record(msg, direction="served", self_name=self.agent_name)
+        await self.ledger.record(msg, direction=self._audit_direction(msg), self_name=self.agent_name)
+        if msg.performative is Performative.ACCEPT and msg.protocol is InteractionProtocol.CONTRACT_NET:
+            self._record_award_grant(msg)
         dispatch = self.dispatcher.dispatch(msg)
         for emitted in dispatch.emit:
             await self._route_emitted(emitted)
@@ -208,7 +213,20 @@ class RoostEndpoint:
         if dispatch.decision is DispatchDecision.BID_FROM_CONTRACT:
             bid = self.config.bid if self.config is not None else None
             if bid is not None:
-                await self._send_reply(msg.reply(Performative.PROPOSE, content=bid))
+                # A CFP is a capability-filtered broadcast, so ``msg.reply`` (which needs an explicit
+                # receiver to become the reply's sender) cannot build the proposal: address it here.
+                await self._send_reply(
+                    RoostMessage(
+                        performative=Performative.PROPOSE,
+                        protocol=msg.protocol,
+                        conversation_id=msg.conversation_id,
+                        in_reply_to=msg.message_id,
+                        sender=self.address(),
+                        receivers=[msg.sender],
+                        content=bid,
+                        envelope=msg.envelope,
+                    )
+                )
             return
         if dispatch.decision is DispatchDecision.REPLAN:
             await self._resolve_pending(msg)
@@ -264,6 +282,12 @@ class RoostEndpoint:
             )
             await self._refuse(msg, "capability not advertised")
             return
+        awarded = self._awarded_grants.get(msg.conversation_id)
+        if awarded is not None:
+            cap_id = msg.capability_filter or tool_name.replace("_", ".")
+            if not self.grant.allows(RoostAgentConfig.model_construct(grant=awarded), cap_id):
+                await self._refuse(msg, "capability outside the awarded (attenuated) grant")
+                return
         try:
             result = await self.tool_manager.execute_tool(tool_name, content, permission_context=authority)
         except Exception as exc:  # noqa: BLE001 — any tool error must become a typed failure, never a silent hang
@@ -329,6 +353,27 @@ class RoostEndpoint:
             future.set_exception(RoostFailure(failure))
         self._token_budget_warned.discard(msg.conversation_id)
 
+    def _audit_direction(self, msg: RoostMessage) -> str:
+        """Audit role for *msg*: ``received`` on the conversation initiator, ``served`` elsewhere.
+
+        An inbound opener has no engine state yet, so it is audited as ``served``.
+        """
+        state = self.engine.state(msg.conversation_id)
+        if state is not None and state.initiator.name == self.agent_name:
+            return "received"
+        return "served"
+
+    def _record_award_grant(self, msg: RoostMessage) -> None:
+        """Store the attenuated grant an inbound Contract Net ACCEPT confers on this awardee (AC-14)."""
+        scopes = msg.content.get("grant_scopes") if isinstance(msg.content, dict) else None
+        requester = InterAgentGrant(scopes=[s for s in scopes if isinstance(s, str)]) if isinstance(scopes, list) else None
+        own = self.config.grant if self.config is not None else None
+        self._awarded_grants[msg.conversation_id] = self.grant.attenuate(requester, own)
+
+    def effective_grant(self, conversation_id: str) -> Optional[InterAgentGrant]:
+        """Return the attenuated grant awarded on *conversation_id*, or ``None`` when none was awarded."""
+        return self._awarded_grants.get(conversation_id)
+
     async def _send_reply(self, msg: RoostMessage) -> RoostMessage:
         """Send a preconstructed reply while retaining its protocol metadata."""
         await self._deliver_outbound(msg)
@@ -336,7 +381,7 @@ class RoostEndpoint:
 
     async def _deliver_outbound(self, msg: RoostMessage) -> None:
         """Audit and route an already-constructed outbound message."""
-        await self.ledger.record(msg, direction="received", self_name=self.agent_name)
+        await self.ledger.record(msg, direction=self._audit_direction(msg), self_name=self.agent_name)
         self._metrics["messages_out"] += 1
         if msg.capability_filter is not None:
             if not self.carriers:
@@ -504,7 +549,7 @@ class RoostEndpoint:
             question: Free-form query content.
             receiver: Target agent; its name is checked against the caller's grant (fail-closed).
             timeout: Seconds to wait; also becomes the envelope budget.
-            expected_schema: Currently unused.
+            expected_schema: Optional JSON Schema the answer must satisfy (``FailureCode.SCHEMA`` otherwise).
             hops: Chain depth of the caller seeding the hop budget.
 
         Raises:
@@ -512,7 +557,6 @@ class RoostEndpoint:
         """
         if not self.grant.allows(self.config, receiver.name):
             raise GrantDenied(receiver.name)
-        del expected_schema
         conversation_id = uuid.uuid4().hex
         envelope = squawk_bridge.new_envelope(
             correlation_id=conversation_id,
@@ -546,13 +590,20 @@ class RoostEndpoint:
                 hops=hops + 1,
             )
             if timeout is None:
-                return await future
-            return await asyncio.wait_for(future, timeout)
+                answer = await future
+            else:
+                answer = await asyncio.wait_for(future, timeout)
         except asyncio.TimeoutError as exc:
             self._close_timed_out(conversation_id)
             raise RoostFailure(FailureInfo(code=FailureCode.TIMEOUT, detail="query timed out")) from exc
         finally:
             self._pending.pop(conversation_id, None)
+        if expected_schema is not None:
+            try:
+                jsonschema.validate(answer, expected_schema)
+            except (jsonschema.ValidationError, jsonschema.SchemaError) as exc:
+                raise RoostFailure(FailureInfo(code=FailureCode.SCHEMA, detail=exc.message)) from exc
+        return answer
 
     def _close_timed_out(self, conversation_id: str) -> None:
         """Mark a locally timed-out conversation terminal so late replies are not-understood."""
@@ -594,9 +645,12 @@ class RoostEndpoint:
         state = self.engine.state(conversation_id)
         if state is not None:
             for proposal in state.proposals:
-                performative = Performative.ACCEPT if proposal.sender.name == award.winner else Performative.REJECT
+                won = award.winner is not None and proposal.sender.name == award.winner.agent_name
+                performative = Performative.ACCEPT if won else Performative.REJECT
+                grant = self.config.grant if self.config is not None else None
                 await self.send(
                     performative,
+                    content={"grant_scopes": list(grant.scopes) if grant is not None else []} if won else None,
                     receivers=[proposal.sender],
                     protocol=InteractionProtocol.CONTRACT_NET,
                     conversation_id=conversation_id,

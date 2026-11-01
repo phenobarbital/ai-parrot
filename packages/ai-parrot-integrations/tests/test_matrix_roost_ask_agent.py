@@ -44,6 +44,7 @@ async def test_routes_through_endpoint():
     "code,status",
     [
         (FailureCode.HOP_LIMIT, "hop_limit"),
+        (FailureCode.SCHEMA, "schema_error"),
         (FailureCode.TIMEOUT, "timeout"),
         (FailureCode.POLICY, "refused"),
         (FailureCode.INTERNAL, "error"),
