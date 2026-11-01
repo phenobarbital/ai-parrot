@@ -253,4 +253,6 @@ Blueprint test files; names fixed by spec §4 (M4 rows + `test_db_concurrent_cha
 **Date**: 2026-10-31
 **Notes**: 5 unit tests and 16 existing identity-mapping tests passed. The 2 real-DB tests (test_identity_channel_link_db.py) were SKIPPED: IDENTITY_PG_DSN, IDENTITY_TEST_USER_ID and IDENTITY_TEST_USER_ID_2 are unset, so AC-1 (exclusive ownership under concurrent links) is UNVERIFIED. Closed as partial; run those tests against a real DB. Same 12 pre-existing baseline reds in the merge-tier run (coder-review:e4be22dc67cead732a38a674).
 
+**Real-DB verification (2026-11-02, /sdd-done)**: both tests in test_identity_channel_link_db.py PASSED against the dev navigator Postgres (users 35 and 87, distinct): test_db_concurrent_channel_identity_links (AC-1 exclusive ownership under concurrent link/unlink, rollback on failed replacement) and test_e2e_telegram_login_link_resolves. Prerequisites found on the way: auth.user_identities needs provider_user_id (navigator-auth >=0.28.8 schema), Identity Vault keys (VAULT_MASTER_KEY_v1/VAULT_ACTIVE_KEY_ID) must be set, and navigator-auth >=0.28.9 is required (0.28.7 UserIdentity rejects NULL token columns). Verification upgraded partial -> verified.
+
 **Deviations from spec**: none
