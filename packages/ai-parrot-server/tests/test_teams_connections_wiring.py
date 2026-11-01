@@ -7,7 +7,10 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from botbuilder.schema import Activity, ChannelAccount, ConversationAccount
+
+pytest.importorskip("botbuilder.schema", reason="needs the msteams extra (botbuilder)")
+
+from botbuilder.schema import Activity, ChannelAccount, ConversationAccount  # noqa: E402
 
 from parrot.auth.oauth2.events import ChannelNotifierRegistry, ConnectionEvent, ConnectionEventPublisher
 from parrot.auth.oauth2.registry import OAuth2Provider, OAuth2ProviderRegistry
