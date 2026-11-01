@@ -2537,11 +2537,13 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         coordinator = getattr(self, "_login_coordinator", None)
         if coordinator is not None:
             await coordinator.cancel(telegram_id=session.telegram_id)
-        if not session.authenticated:
+        # A persisted link outlives the in-memory session (bot restart), so it must stay removable.
+        linked = session.authenticated or await principal_for_session(session, tenant_id=self.config.tenant) is not None
+        if not linked:
             await message.answer("ℹ️ You are not currently authenticated.")
             return
 
-        old_name = session.display_name
+        old_name = session.display_name if session.authenticated else None
         service = self._identity_service()
         if service is not None:
             try:
@@ -2549,15 +2551,18 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     "telegram",
                     str(session.telegram_id),
                 )
-            except Exception:  # noqa: BLE001 - logout must still clear the session
+            except Exception:  # noqa: BLE001 - fail closed: never report a logout the link survived
                 self.logger.warning(
                     "Could not unlink telegram identity on logout",
                     exc_info=True,
                 )
+                await message.answer("Could not log you out right now. Please try /logout again.", parse_mode=None)
+                return
         session.clear_auth()
+        who = f" Was authenticated as {old_name}." if old_name else ""
         await message.answer(
-            f"👋 Logged out. Was authenticated as *{old_name}*.\n" "Your Telegram ID will be used for identification.",
-            parse_mode="Markdown",
+            f"👋 Logged out.{who}\nYour Telegram ID will be used for identification.",
+            parse_mode=None,
         )
 
     async def handle_web_app_data(self, message: Message) -> None:
@@ -2692,6 +2697,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if attempt.cancelled:
             return
         self._user_sessions[attempt.telegram_id] = candidate
+        notifier = self.app.get("telegram_connection_notifier") if self.app is not None else None
+        if notifier is not None:
+            # Completions were not applied while the candidate was pending (e.g. the <jira> prompt block).
+            await notifier.run_completed_hooks(attempt.telegram_id, list(attempt.events.values()))
         await self._initialize_user_context(candidate)
         await self.bot.send_message(
             chat_id=attempt.chat_id,
@@ -3392,13 +3401,15 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             pending: List["AuthRequiredPayload"] = []
             with telegram_chat_scope(chat_id):
                 if hasattr(self.agent, "ask_with_image"):
-                    response = await self.agent.ask_with_image(
-                        self._enrich_question(enriched_caption, session),
-                        image_path=tmp_path,
-                        user_id=session.user_id,
-                        session_id=session.session_id,
-                        memory=memory,
-                        attachments=attachment_paths,
+                    response, pending = await self._ask_with_auth_requirements(
+                        lambda: self.agent.ask_with_image(
+                            self._enrich_question(enriched_caption, session),
+                            image_path=tmp_path,
+                            user_id=session.user_id,
+                            session_id=session.session_id,
+                            memory=memory,
+                            attachments=attachment_paths,
+                        )
                     )
                 else:
                     response, pending = await self._invoke_agent(

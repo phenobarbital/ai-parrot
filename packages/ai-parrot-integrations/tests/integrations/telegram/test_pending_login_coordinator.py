@@ -222,3 +222,34 @@ async def test_finished_and_cancelled_attempts_release_their_locks() -> None:
     assert finalized == [done.attempt_id]
     assert superseded.cancelled is True
     assert len(coordinator._locks) == len(coordinator._attempts) == 1
+
+
+@pytest.mark.asyncio
+async def test_cancel_and_supersede_do_not_race_an_in_flight_finalize() -> None:
+    """cancel() waits for finalize; supersede() leaves a finalizing attempt alone; no state is left behind."""
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    order: list[str] = []
+
+    async def finalize(attempt: Any) -> None:
+        entered.set()
+        await release.wait()
+        order.append(f"finalized:{attempt.cancelled}")
+
+    coordinator = PendingLoginCoordinator(finalize=finalize)
+    attempt = coordinator.create(**_fields())
+    completing = asyncio.create_task(coordinator.on_provider_completed(_event(), _state(attempt.attempt_id)))
+    await entered.wait()
+
+    coordinator.supersede(88123)  # a /login retry while finalizing must not mark it cancelled
+    assert attempt.cancelled is False
+    cancelling = asyncio.create_task(coordinator.cancel(telegram_id=88123))
+    await asyncio.sleep(0)
+    assert not cancelling.done()  # still waiting on the attempt lock
+
+    release.set()
+    await completing
+    await cancelling
+    assert order == ["finalized:False"]
+    assert not coordinator._attempts and not coordinator._locks
+    assert attempt.events["jira"].provider == "jira"

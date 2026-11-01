@@ -235,3 +235,55 @@ async def test_picker_callback_resolves_the_clicking_user(
     assert context.session.user_id == "1042"
     assert 999 not in wrapper._user_sessions
     assert captured["extra_state_factory"](callback) == {"chat_id": 88123, "bot_id": 7}
+
+
+@pytest.mark.asyncio
+async def test_logout_after_restart_still_removes_the_persisted_link(fake_identity_service: MagicMock) -> None:
+    """After a restart the session is unauthenticated but the DB link still resolves: /logout must unlink it."""
+    session = TelegramUserSession(telegram_id=88123)  # fresh in-memory session, authenticated=False
+    wrapper = _wrapper(fake_identity_service)
+    wrapper._is_authorized = MagicMock(return_value=True)
+    wrapper._get_user_session = MagicMock(return_value=session)
+    principal = Principal(user_id="1042", channel="telegram", channel_user_id="88123")
+    message = _message()
+
+    with patch("parrot.integrations.telegram.wrapper.principal_for_session", AsyncMock(return_value=principal)):
+        await wrapper.handle_logout(message)
+
+    fake_identity_service.unlink_channel_identity.assert_awaited_once_with("telegram", "88123")
+    assert "Logged out" in message.answer.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_logout_with_no_session_and_no_link_changes_nothing(fake_identity_service: MagicMock) -> None:
+    """No session and no persisted link: nothing to unlink."""
+    session = TelegramUserSession(telegram_id=88123)
+    wrapper = _wrapper(fake_identity_service)
+    wrapper._is_authorized = MagicMock(return_value=True)
+    wrapper._get_user_session = MagicMock(return_value=session)
+    message = _message()
+
+    with patch("parrot.integrations.telegram.wrapper.principal_for_session", AsyncMock(return_value=None)):
+        await wrapper.handle_logout(message)
+
+    fake_identity_service.unlink_channel_identity.assert_not_awaited()
+    assert "not currently authenticated" in message.answer.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_logout_fails_closed_when_unlink_fails(
+    tg_session: TelegramUserSession,
+    fake_identity_service: MagicMock,
+) -> None:
+    """A failed unlink never reports a logout: the session and the link stay as they were."""
+    fake_identity_service.unlink_channel_identity.side_effect = RuntimeError("db unavailable")
+    wrapper = _wrapper(fake_identity_service)
+    wrapper._is_authorized = MagicMock(return_value=True)
+    wrapper._get_user_session = MagicMock(return_value=tg_session)
+    message = _message()
+
+    await wrapper.handle_logout(message)
+
+    assert tg_session.authenticated is True
+    assert "Logged out" not in message.answer.await_args.args[0]
+    assert "try /logout again" in message.answer.await_args.args[0]

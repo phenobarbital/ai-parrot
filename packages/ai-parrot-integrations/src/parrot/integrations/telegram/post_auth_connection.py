@@ -36,6 +36,7 @@ class PendingLoginAttempt:
     expires_at: float
     completed: Set[str] = field(default_factory=set)
     failed: Set[str] = field(default_factory=set)
+    events: Dict[str, Any] = field(default_factory=dict)
     finalized: bool = False
     cancelled: bool = False
 
@@ -203,7 +204,7 @@ class PendingLoginCoordinator:
         if attempt_id is None:
             return
         attempt = self._attempts.get(attempt_id)
-        if attempt is not None:
+        if attempt is not None and not attempt.finalized:  # an in-flight finalize is never cancelled mid-way
             self._cancel_attempt(attempt)
 
     async def cancel(self, *, attempt_id: Optional[str] = None, telegram_id: Optional[int] = None) -> None:
@@ -256,17 +257,20 @@ class PendingLoginCoordinator:
                 return True
 
             attempt.completed.add(event.provider)
+            attempt.events[event.provider] = event
             if not self._all_actions_settled(attempt):
                 return True
 
             if attempt.cancelled or attempt.finalized or self._expired(attempt):
                 return False
             attempt.finalized = True
-            self._discard(attempt)
             try:
                 await self._finalize(attempt)
             except Exception:  # noqa: BLE001 - a finalizer must not duplicate activation on retry
                 self.logger.exception("Pending Telegram login finalization failed (attempt=%s)", attempt.attempt_id)
+            finally:
+                # Stay registered while finalizing so cancel() waits on the attempt lock instead of racing it.
+                self._discard(attempt)
             return True
 
     async def on_provider_failed(self, attempt_id: str, provider_id: str, reason: str) -> None:
@@ -297,8 +301,9 @@ class PendingLoginCoordinator:
             if attempt.cancelled or attempt.finalized or self._expired(attempt):
                 return
             attempt.finalized = True
-            self._discard(attempt)
             try:
                 await self._finalize(attempt)
             except Exception:  # noqa: BLE001 - a finalizer must not duplicate activation on retry
                 self.logger.exception("Pending Telegram login finalization failed (attempt=%s)", attempt_id)
+            finally:
+                self._discard(attempt)

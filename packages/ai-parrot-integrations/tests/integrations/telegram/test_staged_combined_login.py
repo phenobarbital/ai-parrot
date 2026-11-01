@@ -220,3 +220,26 @@ async def test_two_bots_sharing_one_notifier_finalize_only_their_own_attempts() 
 
     first.on_provider_completed.assert_awaited_once()
     second.on_provider_completed.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_finalize_applies_the_held_back_session_hooks() -> None:
+    """Completions skipped while pending (e.g. the <jira> block) are applied to the promoted session."""
+    from parrot.integrations.telegram.connection_notifier import get_or_create_telegram_notifier
+
+    app: dict = {}
+    wrapper = _wrapper()
+    wrapper.app = app
+    notifier = get_or_create_telegram_notifier(app)
+    wrapper._attach_login_coordinator()
+    stamped: list[tuple[int, str]] = []
+    notifier.register_session_hook("jira", on_completed=lambda telegram_id, event: stamped.append((telegram_id, event.provider)))
+    wrapper._post_auth_registry.register(_provider())
+
+    await wrapper._start_login_attempt(_message(), _candidate())
+    attempt_id = next(iter(wrapper._login_coordinator._attempts))
+    await notifier.notify(
+        _event(), {"extra": {"attempt_id": attempt_id, "bot_id": "7001", "combined": True, "chat_id": 88123}}
+    )
+
+    assert stamped == [(88123, "jira")]

@@ -133,6 +133,11 @@ class TelegramConnectionNotifier:
             return f"{provider_name} access expired — /connect {event.provider} to reconnect."
         return None
 
+    async def run_completed_hooks(self, telegram_id: int, events: Any) -> None:
+        """Apply the registered session hooks for completions that were held back during a staged login."""
+        for event in events:
+            await self._run_hook(telegram_id, event)
+
     async def _run_hook(self, telegram_id: int, event: ConnectionEvent) -> None:
         hooks = self._hooks.get(event.provider)
         if hooks is None:
