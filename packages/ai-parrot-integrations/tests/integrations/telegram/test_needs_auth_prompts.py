@@ -269,3 +269,47 @@ async def test_prompt_failure_never_fails_a_delivered_turn() -> None:
 
     message.answer.assert_not_awaited()
     wrapper.logger.warning.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_photo_turn_collects_and_prompts() -> None:
+    """The vision path (``ask_with_image``) delivers needs-auth prompts like every other ask site."""
+    wrapper = make_wrapper()
+    session = make_session()
+    message = SimpleNamespace(
+        chat=SimpleNamespace(id=99, type="private"),
+        message_id=5,
+        caption="what is this?",
+        photo=[SimpleNamespace(file_id="f1")],
+        answer=AsyncMock(),
+    )
+
+    async def ask_with_image(*_args: Any, **_kwargs: Any) -> str:
+        record_auth_requirement(auth_payload("jira"))
+        return "an image"
+
+    async def download_file(_path: str, destination: Any) -> None:
+        destination.write(b"png")
+
+    wrapper.agent = SimpleNamespace(ask_with_image=ask_with_image)
+    wrapper.bot = SimpleNamespace(
+        send_chat_action=AsyncMock(),
+        get_file=AsyncMock(return_value=SimpleNamespace(file_path="photos/a.png")),
+        download_file=download_file,
+    )
+    wrapper._is_authorized = MagicMock(return_value=True)
+    wrapper._check_authentication = AsyncMock(return_value=True)
+    wrapper._get_or_create_memory = MagicMock(return_value=MagicMock())
+    wrapper._get_user_session = MagicMock(return_value=session)
+    wrapper._cache_message_id = MagicMock()
+    wrapper._extract_reply_context = MagicMock(return_value="")
+    wrapper._parse_response = MagicMock(side_effect=lambda response: response)
+    wrapper._send_parsed_response = AsyncMock(return_value=None)
+    wrapper._send_auth_prompts = AsyncMock()
+    wrapper._store_telegram_metadata = AsyncMock()
+
+    await wrapper.handle_photo(message)
+
+    wrapper._send_auth_prompts.assert_awaited_once()
+    sent_pending = wrapper._send_auth_prompts.await_args.args[2]
+    assert [payload.provider for payload in sent_pending] == ["jira"]

@@ -133,7 +133,11 @@ async def connections_handler(
     if principal is None:
         await message.reply(LOGIN_FIRST, parse_mode=None)
         return
-    statuses = await commands.statuses(principal, permission_context=context_source(message, principal))
+    try:
+        statuses = await commands.statuses(principal, permission_context=context_source(message, principal))
+    except PermissionError:
+        await message.reply("You are not allowed to view connections.", parse_mode=None)
+        return
     if only is not None:
         provider = commands.resolve_provider(only)
         statuses = [

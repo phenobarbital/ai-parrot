@@ -234,6 +234,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         self._login_coordinator = PendingLoginCoordinator(
             finalize=self._finalize_login_attempt,
             on_failed=self._fail_login_attempt,
+            on_expired=self._expire_login_attempt,
         )
         self._attach_login_coordinator()
 
@@ -491,6 +492,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         def _extra_state_factory(update: Any) -> Dict[str, Any]:
             message = update.message if isinstance(update, CallbackQuery) else update
+            self._record_connect_bot(self._get_user_session(update))
             return {"chat_id": message.chat.id, "bot_id": self._bot_id}
 
         def _clear_jira_session(telegram_id: int, provider_id: str) -> None:
@@ -546,6 +548,13 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             )
         self._register_jira_session_hook()
 
+    def _record_connect_bot(self, session: Optional[TelegramUserSession]) -> None:
+        """Tell the notifier which bot this principal uses, so later events without a chat still find it."""
+        notifier = self.app.get("telegram_connection_notifier") if self.app is not None else None
+        if notifier is None or session is None or not session.authenticated or not session.nav_user_id or not self._bot_id:
+            return
+        notifier.record_connect_bot(str(session.nav_user_id), str(self._bot_id))
+
     def _attach_login_coordinator(self) -> None:
         """Route this bot's staged-login completions to its coordinator once the app notifier exists.
 
@@ -580,7 +589,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             if session is not None:
                 session.clear_jira_auth()
 
-        notifier.register_session_hook("jira", on_completed=on_completed, on_revoked=on_revoked)
+        notifier.register_session_hook(
+            "jira", bot_id=self._bot_id, on_completed=on_completed, on_revoked=on_revoked
+        )
 
     def _register_mcp_commands(self) -> None:
         """Wire ``/add_mcp``, ``/list_mcp`` and ``/remove_mcp``.
@@ -730,6 +741,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             )
             return False
         session.principal_link_persisted = True
+        self._record_connect_bot(session)
         return True
 
     async def _ensure_principal_link(self, session: TelegramUserSession) -> bool:
@@ -2538,7 +2550,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if coordinator is not None:
             await coordinator.cancel(telegram_id=session.telegram_id)
         # A persisted link outlives the in-memory session (bot restart), so it must stay removable.
-        linked = session.authenticated or await principal_for_session(session, tenant_id=self.config.tenant) is not None
+        owner = await principal_for_session(session, tenant_id=self.config.tenant)
+        linked = session.authenticated or owner is not None
         if not linked:
             await message.answer("ℹ️ You are not currently authenticated.")
             return
@@ -2547,9 +2560,11 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         service = self._identity_service()
         if service is not None:
             try:
+                expected_user = owner.user_id if owner is not None else str(session.nav_user_id or "") or None
                 await service.unlink_channel_identity(
                     "telegram",
                     str(session.telegram_id),
+                    expected_user_id=expected_user,
                 )
             except Exception:  # noqa: BLE001 - fail closed: never report a logout the link survived
                 self.logger.warning(
@@ -2670,7 +2685,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     self.config,
                     getattr(self.config, "public_base_url", ""),
                 )
-                self._login_coordinator.cap_expiry(attempt.attempt_id, 600)
+                if attempt.state_expires_in is not None:
+                    self._login_coordinator.cap_expiry(attempt.attempt_id, attempt.state_expires_in)
             except Exception:  # noqa: BLE001 - required failures are reported through the coordinator
                 self.logger.exception("Failed to start staged login provider '%s'", action.provider)
                 await self._login_coordinator.on_provider_failed(
@@ -2700,11 +2716,21 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         notifier = self.app.get("telegram_connection_notifier") if self.app is not None else None
         if notifier is not None:
             # Completions were not applied while the candidate was pending (e.g. the <jira> prompt block).
-            await notifier.run_completed_hooks(attempt.telegram_id, list(attempt.events.values()))
+            await notifier.run_completed_hooks(
+                attempt.telegram_id, list(attempt.events.values()), bot_id=str(self._bot_id or "") or None
+            )
         await self._initialize_user_context(candidate)
         await self.bot.send_message(
             chat_id=attempt.chat_id,
             text=f"Authenticated as {candidate.display_name}. Connected: {', '.join(sorted(attempt.completed))}.",
+            parse_mode=None,
+        )
+
+    async def _expire_login_attempt(self, attempt: PendingLoginAttempt) -> None:
+        """Tell the user an abandoned staged login timed out (the candidate was already discarded)."""
+        await self.bot.send_message(
+            chat_id=attempt.chat_id,
+            text="Your login timed out before it was completed. Please try /login again.",
             parse_mode=None,
         )
 

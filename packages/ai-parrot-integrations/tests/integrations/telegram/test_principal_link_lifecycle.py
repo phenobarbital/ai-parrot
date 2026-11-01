@@ -117,9 +117,9 @@ async def test_logout_unlinks_before_clear(
     """Logout awaits unlink before clearing the authenticated session."""
     events: list[str] = []
 
-    async def unlink(auth_provider: str, provider_user_id: str) -> int:
+    async def unlink(auth_provider: str, provider_user_id: str, expected_user_id: str | None = None) -> int:
         assert tg_session.authenticated is True
-        events.append(f"unlink:{auth_provider}:{provider_user_id}")
+        events.append(f"unlink:{auth_provider}:{provider_user_id}:{expected_user_id}")
         return 1
 
     original_clear = tg_session.clear_auth
@@ -137,7 +137,7 @@ async def test_logout_unlinks_before_clear(
 
     await wrapper.handle_logout(message)
 
-    assert events == ["unlink:telegram:88123", "clear"]
+    assert events == ["unlink:telegram:88123:1042", "clear"]
     assert tg_session.authenticated is False
     assert tg_session.principal_link_persisted is False
 
@@ -250,7 +250,7 @@ async def test_logout_after_restart_still_removes_the_persisted_link(fake_identi
     with patch("parrot.integrations.telegram.wrapper.principal_for_session", AsyncMock(return_value=principal)):
         await wrapper.handle_logout(message)
 
-    fake_identity_service.unlink_channel_identity.assert_awaited_once_with("telegram", "88123")
+    fake_identity_service.unlink_channel_identity.assert_awaited_once_with("telegram", "88123", expected_user_id="1042")
     assert "Logged out" in message.answer.await_args.args[0]
 
 

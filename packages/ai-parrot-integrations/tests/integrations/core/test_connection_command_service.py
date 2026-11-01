@@ -134,6 +134,11 @@ async def test_connect_outcomes(
         {"provider_id": "jira", "display_name": "Jira", "status": "connected", "account_display_name": "Ada"}
     ]
 
+    fake_integrations_service.list_for_principal.side_effect = PermissionError()
+    with pytest.raises(PermissionError):  # a denial is surfaced, never presented as "no connections"
+        await commands.statuses(principal, permission_context=context)
+    fake_integrations_service.list_for_principal.side_effect = None
+
     assert (await commands.disconnect(principal, "jira", permission_context=context)).kind == "disconnected"
     fake_integrations_service.disconnect.assert_awaited_once_with(
         "1042", "jira", channel="telegram", principal=principal, permission_context=context

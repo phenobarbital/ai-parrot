@@ -39,6 +39,9 @@ class PendingLoginAttempt:
     events: Dict[str, Any] = field(default_factory=dict)
     finalized: bool = False
     cancelled: bool = False
+    expired: bool = False  # cancelled because its time ran out
+    expiry_reported: bool = False  # the user has been told it timed out
+    state_expires_in: Optional[int] = None  # seconds the issued OAuth state stays valid (shortest across actions)
 
 
 class ConnectionPostAuthProvider:
@@ -82,6 +85,9 @@ class ConnectionPostAuthProvider:
         auth_url = getattr(response, "auth_url", None)
         if not isinstance(auth_url, str) or not auth_url:
             raise ValueError(f"provider {self.provider_name!r} does not support URL authorization")
+        ttl = getattr(response, "expires_in", None)
+        if isinstance(ttl, int) and not isinstance(ttl, bool) and ttl > 0:
+            session.state_expires_in = ttl if session.state_expires_in is None else min(session.state_expires_in, ttl)
         return auth_url
 
     async def handle_result(self, data: Dict[str, Any], session: Any, primary_auth_data: Dict[str, Any]) -> bool:
@@ -136,8 +142,12 @@ class PendingLoginCoordinator:
         *,
         finalize: Callable[[PendingLoginAttempt], Awaitable[None]],
         on_failed: Optional[Callable[[PendingLoginAttempt, str], Awaitable[None]]] = None,
+        on_expired: Optional[Callable[[PendingLoginAttempt], Awaitable[None]]] = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        self._on_expired = on_expired
+        self._timers: Dict[str, "asyncio.Task[None]"] = {}
+        self._reports: Set["asyncio.Task[bool]"] = set()
         self._attempts: Dict[str, PendingLoginAttempt] = {}
         self._by_telegram: Dict[int, str] = {}
         self._locks: Dict[str, asyncio.Lock] = {}
@@ -154,6 +164,9 @@ class PendingLoginCoordinator:
         """
         self._attempts.pop(attempt.attempt_id, None)
         self._locks.pop(attempt.attempt_id, None)
+        timer = self._timers.pop(attempt.attempt_id, None)
+        if timer is not None and timer is not asyncio.current_task():
+            timer.cancel()
         if self._by_telegram.get(attempt.telegram_id) == attempt.attempt_id:
             self._by_telegram.pop(attempt.telegram_id, None)
 
@@ -167,7 +180,14 @@ class PendingLoginCoordinator:
         """Expire an attempt and report whether it can no longer progress."""
         if self._clock() < attempt.expires_at:
             return False
-        self._cancel_attempt(attempt)
+        attempt.expired = True
+        self._cancel_attempt(attempt)  # also stops its timer, so the report below must not depend on it
+        try:
+            task = asyncio.get_running_loop().create_task(self._expire(attempt))
+        except RuntimeError:
+            return True
+        self._reports.add(task)
+        task.add_done_callback(self._reports.discard)
         return True
 
     def _is_live(self, attempt: PendingLoginAttempt) -> bool:
@@ -182,7 +202,66 @@ class PendingLoginCoordinator:
         self._attempts[attempt.attempt_id] = attempt
         self._by_telegram[attempt.telegram_id] = attempt.attempt_id
         self._locks[attempt.attempt_id] = asyncio.Lock()
+        self._arm_timer(attempt)
         return attempt
+
+    def _arm_timer(self, attempt: PendingLoginAttempt) -> None:
+        """(Re)start the task that expires an abandoned attempt; a no-op without a running loop."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        previous = self._timers.pop(attempt.attempt_id, None)
+        if previous is not None and previous is not asyncio.current_task():
+            previous.cancel()
+        self._timers[attempt.attempt_id] = loop.create_task(self._expire_when_due(attempt))
+
+    async def _expire_when_due(self, attempt: PendingLoginAttempt) -> None:
+        """Sleep until the attempt is due, then expire it (it may have been extended or resolved meanwhile)."""
+        try:
+            while True:
+                remaining = attempt.expires_at - self._clock()
+                if remaining <= 0:
+                    break
+                await asyncio.sleep(remaining)
+            await self._expire(attempt)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - the sweep must never take the loop down
+            self.logger.exception("Pending Telegram login expiry failed (attempt=%s)", attempt.attempt_id)
+
+    async def expire(self, attempt_id: str) -> bool:
+        """Expire a registered overdue attempt and tell the user once; ``False`` when it is not overdue."""
+        attempt = self._attempts.get(attempt_id)
+        return attempt is not None and await self._expire(attempt)
+
+    async def _expire(self, attempt: PendingLoginAttempt) -> bool:
+        """Cancel ``attempt`` when its time ran out and report that once (also after a lookup already cancelled it).
+
+        There is no await between the checks and the flag, so this is atomic on the event loop; a finalize in
+        flight has ``finalized`` set and is never touched.
+        """
+        if attempt.finalized or attempt.expiry_reported or self._clock() < attempt.expires_at:
+            return False
+        if attempt.cancelled and not attempt.expired:
+            return False  # cancelled by /logout, a new /login or a failure, not by time
+        attempt.expired = True
+        attempt.expiry_reported = True
+        self._cancel_attempt(attempt)
+        if self._on_expired is not None:
+            try:
+                await self._on_expired(attempt)
+            except Exception:  # noqa: BLE001 - reporting expiry cannot revive the attempt
+                self.logger.exception("Pending Telegram login expiry callback failed (attempt=%s)", attempt.attempt_id)
+        return True
+
+    async def sweep(self) -> int:
+        """Expire every overdue attempt now; returns how many were expired."""
+        expired = 0
+        for attempt_id in list(self._attempts):
+            if await self.expire(attempt_id):
+                expired += 1
+        return expired
 
     def cap_expiry(self, attempt_id: str, state_expires_in: int) -> None:
         """Lower ``expires_at`` to the outstanding OAuth state's expiry."""
@@ -190,6 +269,7 @@ class PendingLoginCoordinator:
         if attempt is None or not self._is_live(attempt):
             return
         attempt.expires_at = min(attempt.expires_at, self._clock() + state_expires_in)
+        self._arm_timer(attempt)
 
     def get(self, attempt_id: str) -> Optional[PendingLoginAttempt]:
         """Return a live, unexpired attempt, or ``None``."""

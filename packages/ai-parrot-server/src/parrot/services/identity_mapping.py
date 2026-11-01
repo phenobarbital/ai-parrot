@@ -104,6 +104,10 @@ _CHANNEL_LOCK_SQL = "SELECT pg_advisory_xact_lock($1::bigint)"
 _DELETE_CHANNEL_OTHERS_SQL = """DELETE FROM auth.user_identities
     WHERE auth_provider = $1 AND provider_user_id = $2 AND user_id <> $3::text::bigint"""
 _DELETE_CHANNEL_SQL = "DELETE FROM auth.user_identities WHERE auth_provider = $1 AND provider_user_id = $2"
+_DELETE_CHANNEL_OWNED_SQL = (
+    "DELETE FROM auth.user_identities "
+    "WHERE auth_provider = $1 AND provider_user_id = $2 AND user_id = $3::text::bigint"
+)
 
 
 def _channel_lock_key(auth_provider: str, provider_user_id: str) -> int:
@@ -469,8 +473,19 @@ class IdentityMappingService:
                     )
         self.logger.info("IdentityMappingService: linked %s account to user=%s", auth_provider, nav_user_id)
 
-    async def unlink_channel_identity(self, auth_provider: str, provider_user_id: str) -> int:
-        """Delete every row for a channel account under the shared lock.
+    async def unlink_channel_identity(
+        self,
+        auth_provider: str,
+        provider_user_id: str,
+        expected_user_id: Optional[str] = None,
+    ) -> int:
+        """Delete the rows of a channel account under the shared lock.
+
+        Args:
+            auth_provider: Channel provider name (e.g. ``telegram``).
+            provider_user_id: The channel account id.
+            expected_user_id: When given, delete only a row owned by this Navigator user, so a stale session of a
+                previous owner cannot remove a link that has since moved to someone else.
 
         Returns:
             The number of deleted rows (0 when absent).
@@ -480,7 +495,12 @@ class IdentityMappingService:
             raw = _raw_connection(conn)
             async with raw.transaction():
                 await raw.execute(_CHANNEL_LOCK_SQL, _channel_lock_key(auth_provider, provider_user_id))
-                status = await raw.execute(_DELETE_CHANNEL_SQL, auth_provider, provider_user_id)
+                if expected_user_id is None:
+                    status = await raw.execute(_DELETE_CHANNEL_SQL, auth_provider, provider_user_id)
+                else:
+                    status = await raw.execute(
+                        _DELETE_CHANNEL_OWNED_SQL, auth_provider, provider_user_id, str(expected_user_id)
+                    )
         try:
             count = int(str(status).rsplit(" ", 1)[-1])
         except (ValueError, IndexError):

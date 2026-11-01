@@ -242,3 +242,61 @@ def test_get_or_create_notifier_is_idempotent(fake_identity_service: FakeIdentit
     assert second is first
     assert app["telegram_connection_notifier"] is first
     assert ChannelNotifierRegistry().get("telegram") is first
+
+
+@pytest.mark.asyncio
+async def test_session_hooks_are_kept_per_bot(fake_bot: FakeBot) -> None:
+    """Two bots registering a hook for one provider both keep it; an event reaches only its own bot's hook."""
+    calls: List[Tuple[str, int]] = []
+    notifier = TelegramConnectionNotifier()
+    notifier.attach("a", fake_bot)
+    notifier.attach("b", FakeBot())
+    notifier.register_session_hook("jira", bot_id="a", on_completed=lambda tid, ev: calls.append(("a", tid)))
+    notifier.register_session_hook("jira", bot_id="b", on_completed=lambda tid, ev: calls.append(("b", tid)))
+
+    await notifier.notify(make_event("connection.completed"), {"extra": {"chat_id": 5, "bot_id": "b"}})
+    assert calls == [("b", 5)]
+
+    # No chat target and no recorded bot: every bot's hook runs (each is a no-op without a session).
+    calls.clear()
+    identity = FakeIdentityService({"provider_user_id": "6"})
+    notifier._identity_service = identity
+    await notifier.notify(make_event("connection.completed", occurred_at=2.0), {})
+    assert sorted(calls) == [("a", 6), ("b", 6)]
+
+
+@pytest.mark.asyncio
+async def test_session_hook_runs_even_when_the_message_cannot_be_sent(fake_bot: FakeBot) -> None:
+    """A revoke whose notification fails (or has no attached bot) must still clear the stale session state."""
+    calls: List[int] = []
+    notifier = TelegramConnectionNotifier()
+    notifier.register_session_hook("jira", bot_id="bot", on_revoked=lambda tid, ev: calls.append(tid))
+    revoked = make_event("connection.revoked")
+    state = {"extra": {"chat_id": 9, "bot_id": "bot"}}
+
+    await notifier.notify(revoked, state)  # bot not attached: nothing to send with
+    notifier.attach("bot", fake_bot)
+    fake_bot.error = OptionalException("telegram down")
+    await notifier.notify(revoked, state)  # send fails
+
+    assert calls == [9, 9]
+    assert fake_bot.messages == []
+
+
+@pytest.mark.asyncio
+async def test_recorded_connect_bot_resolves_the_target_among_several_bots(
+    fake_identity_service: FakeIdentityService,
+) -> None:
+    """With several bots attached, the bot the principal last used receives an event that carries no chat."""
+    first, second = FakeBot(), FakeBot()
+    notifier = TelegramConnectionNotifier(identity_service=fake_identity_service)
+    notifier.attach("one", first)
+    notifier.attach("two", second)
+
+    await notifier.notify(make_event("connection.completed"), {})
+    assert first.messages == second.messages == []  # ambiguous: nothing is guessed
+
+    notifier.record_connect_bot("42", "two")
+    await notifier.notify(make_event("connection.completed", occurred_at=2.0), {})
+    assert first.messages == []
+    assert [m["chat_id"] for m in second.messages] == [456]

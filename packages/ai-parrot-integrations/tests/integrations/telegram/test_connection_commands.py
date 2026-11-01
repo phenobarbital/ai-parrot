@@ -12,6 +12,7 @@ from parrot.integrations.telegram.connection_commands import (
     LOGIN_FIRST,
     PRIVATE_ONLY,
     connect_handler,
+    connections_handler,
     register_connection_commands,
 )
 
@@ -142,3 +143,22 @@ async def test_extra_state_carries_chat_and_bot() -> None:
     )
 
     assert commands.connect.await_args.kwargs["extra_state"] == {"chat_id": 99, "bot_id": "bot-a"}
+
+
+@pytest.mark.asyncio
+async def test_connections_reports_a_denial_instead_of_an_empty_list() -> None:
+    """An authorization denial is not shown as "No connections found."."""
+    commands = FakeCommands()
+    commands.statuses = AsyncMock(side_effect=PermissionError())
+    event = message()
+
+    await connections_handler(
+        event,
+        commands=commands,
+        principal_source=principal_source(principal()),
+        context_source=lambda _message, _principal: SimpleNamespace(),
+    )
+
+    text = event.reply.await_args.args[0]
+    assert "not allowed" in text
+    assert "No connections found" not in text

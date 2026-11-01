@@ -27,7 +27,8 @@ class TelegramConnectionNotifier:
         self._identity_service = identity_service
         self._bots: Dict[str, "Bot"] = {}
         self._last_connect_bot: Dict[str, str] = {}
-        self._hooks: Dict[str, Tuple[Optional[SessionHook], Optional[SessionHook]]] = {}
+        # (bot_id, provider) -> (on_completed, on_revoked); bot_id "" serves every bot.
+        self._hooks: Dict[Tuple[str, str], Tuple[Optional[SessionHook], Optional[SessionHook]]] = {}
         self._login_coordinator: Optional[Any] = None
         self._login_coordinators: Dict[str, Any] = {}
         # Bounded LRU of delivered event keys; only successful sends are recorded.
@@ -39,18 +40,24 @@ class TelegramConnectionNotifier:
         self._bots[str(bot_id)] = bot
 
     def record_connect_bot(self, user_id: str, bot_id: str) -> None:
-        """Remember the bot of the latest /connect for a principal."""
+        """Remember the bot a principal last logged in or connected from (resolves events without a chat target)."""
         self._last_connect_bot[str(user_id)] = str(bot_id)
 
     def register_session_hook(
         self,
         provider_id: str,
         *,
+        bot_id: Optional[str] = None,
         on_completed: Optional[SessionHook] = None,
         on_revoked: Optional[SessionHook] = None,
     ) -> None:
-        """Register provider-specific session effects."""
-        self._hooks[provider_id] = (on_completed, on_revoked)
+        """Register provider-specific session effects.
+
+        Hooks are kept per ``(bot_id, provider)``: with several Telegram bots on one app each bot's wrapper keeps
+        its own hook instead of the last registration replacing the others. Without ``bot_id`` the hook serves
+        every bot.
+        """
+        self._hooks[(str(bot_id or ""), provider_id)] = (on_completed, on_revoked)
 
     def set_login_coordinator(self, coordinator: Any, bot_id: Optional[str] = None) -> None:
         """Route staged-login completions to a pending-login coordinator.
@@ -67,21 +74,22 @@ class TelegramConnectionNotifier:
         self,
         event: ConnectionEvent,
         state_payload: Dict[str, Any],
-    ) -> Optional[Tuple[int, "Bot"]]:
+    ) -> Optional[Tuple[int, Optional[str], Optional["Bot"]]]:
+        """Resolve ``(telegram_id, bot_id, bot)``; ``bot_id``/``bot`` are ``None`` when they cannot be told."""
         extra = state_payload.get("extra")
         if isinstance(extra, dict):
             chat_id = extra.get("chat_id")
             bot_id = extra.get("bot_id")
             if chat_id is not None and bot_id is not None:
-                bot = self._bots.get(str(bot_id))
-                if bot is None:
-                    self.logger.warning("Telegram bot %s is not attached; notification skipped", bot_id)
-                    return None
                 try:
-                    return int(chat_id), bot
+                    telegram_id = int(chat_id)
                 except (TypeError, ValueError):
                     self.logger.warning("Invalid Telegram chat id for connection notification: %r", chat_id)
                     return None
+                bot = self._bots.get(str(bot_id))
+                if bot is None:
+                    self.logger.warning("Telegram bot %s is not attached; notification skipped", bot_id)
+                return telegram_id, str(bot_id), bot
 
         if self._identity_service is None:
             self.logger.warning(
@@ -106,12 +114,10 @@ class TelegramConnectionNotifier:
             )
             return None
 
-        bot = None
         bot_id = self._last_connect_bot.get(str(event.user_id))
-        if bot_id is not None:
-            bot = self._bots.get(bot_id)
+        bot = self._bots.get(bot_id) if bot_id is not None else None
         if bot is None and len(self._bots) == 1:
-            bot = next(iter(self._bots.values()))
+            bot_id, bot = next(iter(self._bots.items()))
         if bot is None:
             self.logger.warning(
                 "Cannot resolve Telegram bot for principal %s (recorded_bot=%s attached=%d)",
@@ -119,8 +125,8 @@ class TelegramConnectionNotifier:
                 bot_id,
                 len(self._bots),
             )
-            return None
-        return telegram_id, bot
+            bot_id = None
+        return telegram_id, bot_id, bot
 
     def _text(self, event: ConnectionEvent) -> Optional[str]:
         provider = OAuth2ProviderRegistry().get(event.provider)
@@ -133,33 +139,37 @@ class TelegramConnectionNotifier:
             return f"{provider_name} access expired — /connect {event.provider} to reconnect."
         return None
 
-    async def run_completed_hooks(self, telegram_id: int, events: Any) -> None:
+    async def run_completed_hooks(self, telegram_id: int, events: Any, bot_id: Optional[str] = None) -> None:
         """Apply the registered session hooks for completions that were held back during a staged login."""
         for event in events:
-            await self._run_hook(telegram_id, event)
+            await self._run_hook(telegram_id, event, bot_id)
 
-    async def _run_hook(self, telegram_id: int, event: ConnectionEvent) -> None:
-        hooks = self._hooks.get(event.provider)
-        if hooks is None:
-            return
-        if event.kind == "connection.completed":
-            hook = hooks[0]
-        elif event.kind in {"connection.revoked", "connection.refresh_failed"}:
-            hook = hooks[1]
-        else:
-            hook = None
-        if hook is None:
-            return
-        try:
-            result = hook(telegram_id, event)
-            if inspect.isawaitable(result):
-                await result
-        except Exception:  # noqa: BLE001 - a session hook must not fail event delivery
-            self.logger.exception(
-                "Telegram connection session hook failed (provider=%s kind=%s)",
-                event.provider,
-                event.kind,
-            )
+    async def _run_hook(self, telegram_id: int, event: ConnectionEvent, bot_id: Optional[str] = None) -> None:
+        """Run the hooks of ``event.provider`` for ``bot_id``; with an unknown bot every bot's hook runs.
+
+        A hook is a no-op for a Telegram id its wrapper holds no session for, so running them all is safe.
+        """
+        for (hook_bot, provider), hooks in list(self._hooks.items()):
+            if provider != event.provider or (bot_id is not None and hook_bot not in ("", str(bot_id))):
+                continue
+            if event.kind == "connection.completed":
+                hook = hooks[0]
+            elif event.kind in {"connection.revoked", "connection.refresh_failed"}:
+                hook = hooks[1]
+            else:
+                hook = None
+            if hook is None:
+                continue
+            try:
+                result = hook(telegram_id, event)
+                if inspect.isawaitable(result):
+                    await result
+            except Exception:  # noqa: BLE001 - a session hook must not fail event delivery
+                self.logger.exception(
+                    "Telegram connection session hook failed (provider=%s kind=%s)",
+                    event.provider,
+                    event.kind,
+                )
 
     def _mark_seen(self, key: Tuple[str, str, str, float]) -> None:
         """Record a delivered event key, evicting the oldest beyond ``_SEEN_MAX``."""
@@ -197,11 +207,15 @@ class TelegramConnectionNotifier:
             target = await self._resolve_target(event, state_payload)
             if target is None:
                 return
-            telegram_id, bot = target
+            telegram_id, bot_id, bot = target
+            if not combined:
+                # The session effect does not depend on the notification: a revoke whose message cannot be sent
+                # must still drop the stale prompt block.
+                await self._run_hook(telegram_id, event, bot_id)
+            if bot is None:
+                return
             await bot.send_message(chat_id=telegram_id, text=text, parse_mode=None)
             self._mark_seen(dedupe_key)
-            if not combined:
-                await self._run_hook(telegram_id, event)
         except Exception:  # noqa: BLE001 - notifier contract: log, never raise
             self.logger.exception(
                 "Telegram connection notification failed (provider=%s kind=%s)",

@@ -40,6 +40,11 @@ class FakeConn:
             gone = {r for r in self.rows if r[1] == provider and r[2] == puid and r[0] != uid}
             self.rows -= gone
             return f"DELETE {len(gone)}"
+        if sql == im._DELETE_CHANNEL_OWNED_SQL:
+            provider, puid, uid = args
+            gone = {r for r in self.rows if r[1] == provider and r[2] == puid and r[0] == uid}
+            self.rows -= gone
+            return f"DELETE {len(gone)}"
         if sql == im._DELETE_CHANNEL_SQL:
             provider, puid = args
             gone = {r for r in self.rows if r[1] == provider and r[2] == puid}
@@ -125,3 +130,13 @@ async def test_unlink_channel_identity_counts() -> None:
     svc, conn = _service({("1", "telegram", "tg1")})
     assert await svc.unlink_channel_identity("telegram", "tg1") == 1
     assert await svc.unlink_channel_identity("telegram", "tg1") == 0
+
+
+@pytest.mark.asyncio
+async def test_unlink_with_expected_user_keeps_a_link_owned_by_someone_else() -> None:
+    """A stale session of the previous owner cannot delete a link that moved to another user."""
+    svc, conn = _service({("2", "telegram", "tg1")})
+    assert await svc.unlink_channel_identity("telegram", "tg1", expected_user_id="1") == 0
+    assert conn.rows == {("2", "telegram", "tg1")}
+    assert await svc.unlink_channel_identity("telegram", "tg1", expected_user_id="2") == 1
+    assert conn.rows == set()

@@ -253,3 +253,84 @@ async def test_cancel_and_supersede_do_not_race_an_in_flight_finalize() -> None:
     assert order == ["finalized:False"]
     assert not coordinator._attempts and not coordinator._locks
     assert attempt.events["jira"].provider == "jira"
+
+
+@pytest.mark.asyncio
+async def test_abandoned_attempt_is_swept_and_the_user_is_told_once() -> None:
+    """An attempt nobody touches again is expired by its timer: candidate dropped, one message, no leak."""
+    told: list[str] = []
+
+    async def finalize(attempt: Any) -> None:
+        raise AssertionError("an expired attempt must never finalize")
+
+    async def on_expired(attempt: Any) -> None:
+        told.append(attempt.attempt_id)
+
+    coordinator = PendingLoginCoordinator(finalize=finalize, on_expired=on_expired)
+    attempt = coordinator.create(**_fields(expires_at=time.monotonic() + 0.05))
+
+    await asyncio.sleep(0.2)
+
+    assert told == [attempt.attempt_id]
+    assert attempt.cancelled and attempt.candidate is None
+    assert coordinator.get(attempt.attempt_id) is None
+    assert not coordinator._attempts and not coordinator._locks and not coordinator._timers
+    assert not await coordinator.on_provider_completed(_event(), _state(attempt.attempt_id))
+    assert await coordinator.sweep() == 0 and told == [attempt.attempt_id]
+
+
+@pytest.mark.asyncio
+async def test_lookup_that_finds_an_expired_attempt_still_reports_it_once() -> None:
+    """When a lookup cancels the overdue attempt before the timer fires, the user is still told, once."""
+    clock = Clock()
+    told: list[str] = []
+
+    async def on_expired(attempt: Any) -> None:
+        told.append(attempt.attempt_id)
+
+    coordinator = PendingLoginCoordinator(finalize=lambda attempt: asyncio.sleep(0), on_expired=on_expired, clock=clock)
+    attempt = coordinator.create(**_fields(expires_at=11.0))
+    clock.now = 12.0
+
+    assert coordinator.get(attempt.attempt_id) is None
+    await asyncio.sleep(0.05)
+    assert await coordinator.sweep() == 0
+
+    assert told == [attempt.attempt_id]
+
+
+@pytest.mark.asyncio
+async def test_logout_cancel_and_supersede_are_not_reported_as_timeouts() -> None:
+    """Only time-outs are announced; an attempt cancelled by the user or replaced stays silent."""
+    clock = Clock()
+    told: list[str] = []
+
+    async def on_expired(attempt: Any) -> None:
+        told.append(attempt.attempt_id)
+
+    coordinator = PendingLoginCoordinator(finalize=lambda attempt: asyncio.sleep(0), on_expired=on_expired, clock=clock)
+    first = coordinator.create(**_fields(expires_at=11.0))
+    await coordinator.cancel(attempt_id=first.attempt_id)
+    second = coordinator.create(**_fields(expires_at=11.0))
+    coordinator.create(**_fields(expires_at=500.0))  # supersedes ``second``
+    clock.now = 20.0
+
+    assert await coordinator.sweep() == 0
+    assert second.cancelled and told == []
+
+
+@pytest.mark.asyncio
+async def test_cap_expiry_rearms_the_timer_to_the_real_state_ttl() -> None:
+    """The oauth state TTL (not a constant) bounds the attempt and re-arms its timer."""
+    told: list[str] = []
+
+    async def on_expired(attempt: Any) -> None:
+        told.append(attempt.attempt_id)
+
+    coordinator = PendingLoginCoordinator(finalize=lambda attempt: asyncio.sleep(0), on_expired=on_expired)
+    attempt = coordinator.create(**_fields(expires_at=time.monotonic() + 600))
+    coordinator.cap_expiry(attempt.attempt_id, 0.05)  # type: ignore[arg-type]
+
+    await asyncio.sleep(0.2)
+
+    assert told == [attempt.attempt_id]

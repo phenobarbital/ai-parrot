@@ -216,15 +216,17 @@ class ConnectionCommandService:
     async def statuses(
         self, principal: Optional[Principal], *, permission_context: PermissionContext
     ) -> List[ConnectionStatusLine]:
-        """Return statuses for connectable providers, failing closed on denial."""
+        """Return statuses for connectable providers.
+
+        Raises:
+            PermissionError: the principal may not list connections (fail closed; callers must say so, not
+                present the denial as an empty list).
+        """
         if principal is None:
             return []
-        try:
-            descriptors = await self._service.list_for_principal(
-                principal.user_id, principal=principal, permission_context=permission_context
-            )
-        except PermissionError:
-            return []
+        descriptors = await self._service.list_for_principal(
+            principal.user_id, principal=principal, permission_context=permission_context
+        )
         connectable_ids = {provider.provider_id for provider in self.connectable_providers()}
         return [
             ConnectionStatusLine(
