@@ -104,6 +104,8 @@ async def _run(monkeypatch, bot, *, trailer):
     cls = agent_module.AgentTalk
     handler._write_suggestions_trailer = types.MethodType(cls._write_suggestions_trailer, handler)
     handler._cancel_suggestions_task = cls._cancel_suggestions_task
+    for name in ("_write_auth_required_trailer", "_turn_auth_requirement", "_retry_safe"):
+        setattr(handler, name, types.MethodType(getattr(cls, name), handler))
     await cls._handle_stream_response(
         handler,
         bot=bot,

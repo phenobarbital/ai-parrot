@@ -99,7 +99,10 @@ async def test_telegram_connect_uses_registered_identity_principal() -> None:
 
 
 def test_connection_publisher_is_shared_and_registers_all_adapters() -> None:
-    """The app keeps one publisher backed by all three channel adapters."""
+    """The app keeps one shared publisher; the manager registers Telegram and Teams.
+
+    Slack registers its own ``SlackConnectionNotifier`` from ``SlackAgentWrapper`` (FEAT-777).
+    """
     app: dict[str, object] = {}
 
     first = _connection_publisher(app)
@@ -109,7 +112,6 @@ def test_connection_publisher_is_shared_and_registers_all_adapters() -> None:
     assert isinstance(first, ConnectionEventPublisher)
     assert {notifier.channel for notifier in ChannelNotifierRegistry().all()} == {
         "telegram",
-        "slack",
         "msteams",
     }
 
