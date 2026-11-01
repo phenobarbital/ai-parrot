@@ -5,7 +5,9 @@ from typing import Any, Dict, Optional
 
 from parrot.auth.credentials import AuthRequiredPayload, CredentialRequired
 from parrot.auth.exceptions import AuthorizationRequired
-from parrot.tools.abstract import AbstractTool, ToolResult
+from pydantic import BaseModel
+
+from parrot.tools.abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 
 
 @dataclass(frozen=True)
@@ -83,6 +85,27 @@ class MCPToolAdapter:
         meta = getattr(self.tool, "routing_meta", None) or {}
         return bool(meta.get("requires_confirmation"))
 
+    def _unexpected_arguments(self, arguments: dict[str, Any]) -> list[str]:
+        """Return the raw-call argument keys the tool does not declare.
+
+        ``AbstractTool.execute`` validates against ``args_schema``, whose default
+        ``extra="ignore"`` silently drops unknown keys, so they must be refused
+        here instead. ``_``-prefixed keys are reserved kwargs (``_permission_context``,
+        ``_broker``, ...) that only the server's execution context may supply.
+
+        Args:
+            arguments: The client-supplied ``tools/call`` arguments.
+
+        Returns:
+            The offending keys; empty when every key is accepted.
+        """
+        rejected = [key for key in arguments if key.startswith("_")]
+        schema = getattr(self.tool, "args_schema", None)
+        if isinstance(schema, type) and issubclass(schema, BaseModel) and schema is not AbstractToolArgsSchema:
+            if schema.model_config.get("extra") != "allow":
+                rejected += [key for key in arguments if not key.startswith("_") and key not in schema.model_fields]
+        return rejected
+
     def to_mcp_tool_definition(self) -> dict[str, Any]:
         """Convert AbstractTool to MCP tool definition."""
         # Extract schema from the tool's args_schema
@@ -130,6 +153,16 @@ class MCPToolAdapter:
                             "operation and was not confirmed. Ask the user "
                             "for approval, then re-invoke with confirm=true."
                         ),
+                    }
+                ],
+                "isError": True,
+            }
+        if rejected := self._unexpected_arguments(arguments):
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"Error: unexpected arguments for '{self.tool.name}': {', '.join(sorted(rejected))}",
                     }
                 ],
                 "isError": True,

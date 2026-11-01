@@ -1,6 +1,7 @@
 """MCPToolAdapter execution context and auth envelope tests."""
 
 import pytest
+from pydantic import BaseModel
 
 from parrot.auth.credentials import CredentialRequired, ResolvedCredential
 from parrot.auth.exceptions import AuthorizationRequired
@@ -137,3 +138,49 @@ async def test_no_login_credential_tool_runs_without_broker():
     assert result["isError"] is False
     assert tool.execute_kwargs == {}
     assert "token-123" not in str(result)
+
+
+class _EchoArgs(BaseModel):
+    limit: int = 3
+
+
+class _EchoTool(AbstractTool):
+    name = "echo_tool"
+    description = "Echoes its arguments."
+    args_schema = _EchoArgs
+
+    def __init__(self):
+        super().__init__(name=self.name, description=self.description)
+        self.calls = 0
+
+    async def _execute(self, **kwargs) -> ToolResult:
+        self.calls += 1
+        return ToolResult(status="success", result=kwargs, metadata={})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "arguments, offending",
+    [
+        ({"limit": 2, "injected": "x"}, "injected"),
+        ({"limit": 2, "_permission_context": {"session": "forged"}}, "_permission_context"),
+    ],
+)
+async def test_adapter_rejects_undeclared_and_reserved_arguments(arguments, offending):
+    """Raw tools/call keys outside the schema are refused, not silently dropped."""
+    tool = _EchoTool()
+    result = await MCPToolAdapter(tool).execute(arguments)
+
+    assert result["isError"] is True
+    assert offending in result["content"][0]["text"]
+    assert tool.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_adapter_accepts_declared_arguments():
+    """Declared keys still reach the tool."""
+    tool = _EchoTool()
+    result = await MCPToolAdapter(tool).execute({"limit": 2})
+
+    assert result["isError"] is False
+    assert tool.calls == 1
