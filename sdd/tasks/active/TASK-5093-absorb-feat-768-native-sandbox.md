@@ -174,6 +174,11 @@ launch-worker` alias.
 
 ## Agent Instructions
 
+0. **Launch with the branch on `PYTHONPATH`.** This branch's agent hooks run `parrot sdd run worktree_environment --hook`;
+   the shared `.venv` is editable-installed against the main checkout (`dev`), which has no `parrot sdd`, so every
+   Bash call is denied. Start the session from this worktree with
+   `PYTHONPATH=$PWD/packages/ai-parrot/src claude --setting-sources project,local` (or prefix `scripts/sdd/launch_worker.sh`
+   the same way). Never `uv sync` inside the worktree.
 1. Check the external dependency first; if PR #1884 is not merged into `dev`, stop and report.
 2. Work only in the FEAT-633 worktree; commit only the files in the table (plus the merge commit).
 3. Re-verify the Codebase Contract after the merge; update it before editing if anything is stale.

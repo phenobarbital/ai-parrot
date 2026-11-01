@@ -138,6 +138,11 @@ No new tests: `test_repo_assets_in_sync` and `test_assets_have_no_publication_fi
 
 ## Agent Instructions
 
+0. **Launch with the branch on `PYTHONPATH`.** This branch's agent hooks run `parrot sdd run worktree_environment --hook`;
+   the shared `.venv` is editable-installed against the main checkout (`dev`), which has no `parrot sdd`, so every
+   Bash call is denied. Start the session from this worktree with
+   `PYTHONPATH=$PWD/packages/ai-parrot/src claude --setting-sources project,local` (or prefix `scripts/sdd/launch_worker.sh`
+   the same way). Never `uv sync` inside the worktree.
 1. Work only in the FEAT-633 worktree; commit only the files in the table (plus the merge commit).
 2. Verify every Codebase Contract entry before editing; stop and report if one is stale.
 3. Run the Validation Commands with `PYTHONPATH=packages/ai-parrot/src`.
