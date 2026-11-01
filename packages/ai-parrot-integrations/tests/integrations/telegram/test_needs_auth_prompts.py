@@ -255,3 +255,17 @@ async def test_telegram_scope_union_upgrade() -> None:
         "read:jira",
         "write:jira",
     ]
+
+
+@pytest.mark.asyncio
+async def test_prompt_failure_never_fails_a_delivered_turn() -> None:
+    """A connection error while building prompts is logged; the already-sent reply is not followed by an error."""
+    wrapper = make_wrapper()
+    wrapper._connection_commands.connect = AsyncMock(side_effect=RuntimeError("db unavailable"))
+    session = make_session()
+    message = make_message()
+
+    await wrapper._send_auth_prompts(message, session, [auth_payload(scopes=["read:jira"])])
+
+    message.answer.assert_not_awaited()
+    wrapper.logger.warning.assert_called_once()

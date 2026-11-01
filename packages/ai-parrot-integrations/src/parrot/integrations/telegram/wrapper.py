@@ -1611,10 +1611,25 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         session: TelegramUserSession,
         pending: Sequence["AuthRequiredPayload"],
     ) -> None:
-        """Send one connection prompt per provider after the agent reply."""
+        """Send one connection prompt per provider after the agent reply.
+
+        The reply is already delivered when this runs, so a prompt failure is logged and never
+        turned into an error message for a turn that succeeded.
+        """
         if not pending or message.chat.type != ChatType.PRIVATE:
             return
+        try:
+            await self._deliver_auth_prompts(message, session, pending)
+        except Exception:  # noqa: BLE001 - best-effort follow-up after a delivered reply
+            self.logger.warning("Could not send connection prompts for tg:%s", session.telegram_id, exc_info=True)
 
+    async def _deliver_auth_prompts(
+        self,
+        message: Message,
+        session: TelegramUserSession,
+        pending: Sequence["AuthRequiredPayload"],
+    ) -> None:
+        """Build and send the per-provider prompts for ``pending`` (see ``_send_auth_prompts``)."""
         from parrot.integrations.telegram.connection_commands import LOGIN_FIRST, render_connect_outcome
 
         await self._ensure_principal_link(session)
