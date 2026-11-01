@@ -1,4 +1,5 @@
 """FEAT-776 M5 unit tests."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -69,7 +70,9 @@ def fake_integrations_service() -> MagicMock:
     )
 
 
-def _commands(service: MagicMock, registry: OAuth2ProviderRegistry, allowlist: list[str] | None = None) -> ConnectionCommandService:
+def _commands(
+    service: MagicMock, registry: OAuth2ProviderRegistry, allowlist: list[str] | None = None
+) -> ConnectionCommandService:
     """Build the channel-neutral service under test."""
     return ConnectionCommandService(service=service, app={}, channel="telegram", allowlist=allowlist, registry=registry)
 
@@ -97,7 +100,9 @@ async def test_connect_outcomes(
     context = MagicMock(spec=PermissionContext)
 
     assert (await commands.connect(None, "jira", extra_state={}, permission_context=context)).kind == "needs_login"
-    assert (await commands.connect(principal, "missing", extra_state={}, permission_context=context)).kind == "unknown_provider"
+    assert (
+        await commands.connect(principal, "missing", extra_state={}, permission_context=context)
+    ).kind == "unknown_provider"
 
     fake_integrations_service.status.return_value = IntegrationDescriptor(
         provider="jira", display_name="Jira", status="connected", scopes_granted=["read"], display_account_name="Ada"
@@ -121,9 +126,7 @@ async def test_connect_outcomes(
     provider_registry.get("jira")._manager = object()
 
     fake_integrations_service.list_for_principal.return_value = [
-        IntegrationDescriptor(
-            provider="jira", display_name="Jira", status="connected", display_account_name="Ada"
-        ),
+        IntegrationDescriptor(provider="jira", display_name="Jira", status="connected", display_account_name="Ada"),
         IntegrationDescriptor(provider="dummy", display_name="Dummy", status="disconnected"),
     ]
     statuses = await commands.statuses(principal, permission_context=context)
