@@ -1,0 +1,30 @@
+{
+  "feature": "fixgroup-5ec878d63905",
+  "feature_id": "FEAT-788",
+  "spec": "sdd/specs/fixgroup-5ec878d63905.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-01T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-5094",
+      "slug": "fixgroup-5ec878d63905",
+      "title": "Roost review fixes \u2014 audit role, expected_schema, award attenuation",
+      "feature_id": "FEAT-788",
+      "feature": "fixgroup-5ec878d63905",
+      "spec": "sdd/specs/fixgroup-5ec878d63905.spec.md",
+      "file": "sdd/tasks/active/TASK-5094-fixgroup-5ec878d63905.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "single task",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "discovered_from": "issue:d09c6c185547"
+    }
+  ]
+}
