@@ -17,12 +17,14 @@ outside a turn session drop the version that the enabled catalog created.
 - `PlanToolNode._store`: split the fallback branch — `catalog is None` → unchanged `store_result`;
   enabled catalog without session/producer → `await catalog.aput_generic(...)` and return
   `_Written(estimate_bytes(payload), str(_evidence_ref(v.artifact_id, v.version)), False)`.
+- M2: `PlanMemoryBinding.restore` skips (and unpins) a `missing_or_expired` version only when the binding owns a process-private runtime; a host runtime stays strict.
 - Regression test for AC-2/AC-3 next to the existing execution-plan tests.
 
 **NOT in scope**: opening turn sessions for background runs; test-file warnings.
 
 ## Files to Modify
 - `packages/ai-parrot/src/parrot/bots/flows/plan/node.py`
+- `packages/ai-parrot/src/parrot/tools/execution_plan/memory.py` (M2, added 2026-11-02 by owner decision)
 - `packages/ai-parrot/tests/tools/execution_plan/test_store_versions_without_session.py` (new)
 
 ## Codebase Contract
