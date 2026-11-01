@@ -17,7 +17,7 @@ import subprocess
 import sys
 import time
 import tomllib
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 import uuid
 
 if __package__:
@@ -706,13 +706,22 @@ def _allocate_session_cache() -> Path:
     return session_cache
 
 
-def launch_worker(argv: Sequence[str], *, cwd: Path | None = None, initial_prompt: str | None = None) -> int:
+def launch_worker(
+    argv: Sequence[str],
+    *,
+    cwd: Path | None = None,
+    initial_prompt: str | None = None,
+    base_env: Mapping[str, str] | None = None,
+) -> int:
     """Launch sdd-worker with strict settings; return policy or host errors.
 
     Args:
         argv: Arguments forwarded to Claude after launcher-owned options.
         cwd: Worktree in which Claude must start. Defaults to the current directory.
         initial_prompt: Optional final Claude argument, normally the worker trigger.
+        base_env: Environment to start Claude from. Defaults to ``os.environ``; callers that imported
+            ``parrot`` must pass a snapshot taken before that import (navconfig loads the settings
+            ``.env`` secrets into ``os.environ``).
     """
     cwd = cwd or Path.cwd()
     try:
@@ -733,7 +742,7 @@ def launch_worker(argv: Sequence[str], *, cwd: Path | None = None, initial_promp
     except RuntimeError as exc:
         print(f"launch_worker: native sandbox unavailable ({exc}); mode={mode} refuses to start", file=sys.stderr)
         return 1
-    env = dict(os.environ)
+    env = dict(os.environ if base_env is None else base_env)
     env[BACKEND_ENV] = launch_backend(mode)
     env.update(native_root_env(cwd))
     if mode == "legacy":

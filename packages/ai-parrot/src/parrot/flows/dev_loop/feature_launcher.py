@@ -1,4 +1,9 @@
-"""Host-side launcher for one prepared SDD feature worktree."""
+"""Host-side launcher for one prepared SDD feature worktree.
+
+Standard library only: the tmux child runs this file as a script with ``python -S`` so that no
+``parrot`` import (and with it navconfig, which loads the project's settings ``.env`` into
+``os.environ``) ever happens in the process that execs Claude.
+"""
 
 from __future__ import annotations
 
@@ -11,9 +16,13 @@ import shutil
 import subprocess
 import sys
 import time
-from typing import Sequence
+from typing import Mapping, Sequence
 
-from . import native_claude_sandbox, worktree_environment
+if __package__:
+    from . import native_claude_sandbox, worktree_environment
+else:  # run as a script (the tmux child): this file's directory is sys.path[0]
+    import native_claude_sandbox
+    import worktree_environment
 
 
 @dataclass(frozen=True)
@@ -34,10 +43,18 @@ class LaunchError(Exception):
         self.exit_code = exit_code
 
 
-def _run(argv: Sequence[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
-    """Run a host preparation command through the launcher test seam."""
+def _run(argv: Sequence[str], *, cwd: Path, env: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Run a host preparation command through the launcher test seam.
+
+    Args:
+        argv: Command and arguments.
+        cwd: Working directory.
+        env: Explicit environment; ``None`` inherits ``os.environ``.
+    """
     try:
-        return subprocess.run(argv, cwd=cwd, check=False, capture_output=True, text=True)
+        return subprocess.run(
+            argv, cwd=cwd, check=False, capture_output=True, text=True, env=None if env is None else dict(env)
+        )
     except OSError as exc:
         raise LaunchError(1, str(exc)) from exc
 
@@ -284,13 +301,13 @@ def _attach_session(name: str) -> int:
     return 1
 
 
-def _tmux_environment() -> list[str]:
-    """Build tmux ``-e`` environment assignments for the child server."""
-    names = sorted(name for name in os.environ if name.startswith("PARROT_SDD_"))
+def _tmux_environment(env: Mapping[str, str]) -> list[str]:
+    """Build tmux ``-e`` environment assignments for the child server from the launch environment."""
+    names = sorted(name for name in env if name.startswith("PARROT_SDD_"))
     for name in ("PATH", "VIRTUAL_ENV"):
-        if name in os.environ and name not in names:
+        if name in env and name not in names:
             names.append(name)
-    return [f"{name}={os.environ[name]}" for name in names]
+    return [f"{name}={env[name]}" for name in names]
 
 
 def launch(
@@ -302,12 +319,21 @@ def launch(
     allowed_domains: Sequence[str],
     no_upstream: bool,
     claude_args: Sequence[str],
+    base_env: Mapping[str, str] | None = None,
 ) -> int:
-    """Prepare and launch or attach to the worker for one feature."""
+    """Prepare and launch or attach to the worker for one feature.
+
+    ``base_env`` is the operator's environment captured BEFORE anything imported ``parrot``:
+    that import lets navconfig load the project's settings ``.env`` (API keys and other secrets)
+    into ``os.environ``. The worker and the tmux client get ``base_env``, never the loaded
+    ``os.environ``. ``None`` falls back to ``os.environ`` for callers that never imported parrot.
+    """
+    env = dict(os.environ if base_env is None else base_env)
     if sandbox is not None:
         if sandbox not in native_claude_sandbox.SANDBOX_MODES:
             raise LaunchError(2, f"invalid sandbox mode: {sandbox}")
-        os.environ[native_claude_sandbox.MODE_ENV] = sandbox
+        env[native_claude_sandbox.MODE_ENV] = sandbox
+        os.environ[native_claude_sandbox.MODE_ENV] = sandbox  # read by the in-process host preflight
     primary = resolve_primary_checkout(_invocation_dir())
     ref = resolve_feature(primary, key)
     name = tmux_session_name(ref.feature_id)
@@ -331,21 +357,21 @@ def launch(
     domain_args = [item for domain in allowed_domains for item in ("--sandbox-allow-domain", domain)]
     if not tmux:
         return native_claude_sandbox.launch_worker(
-            [*domain_args, *claude_args], cwd=worktree, initial_prompt=f"run {ref.feature_id}"
+            [*domain_args, *claude_args], cwd=worktree, initial_prompt=f"run {ref.feature_id}", base_env=env
         )
     if native_claude_sandbox.sandbox_platform() == "windows":
         raise LaunchError(1, "--tmux is not available on native Windows")
     if shutil.which("tmux") is None:
         raise LaunchError(1, "tmux is not available on PATH")
     command = ["tmux", "new-session", "-d", "-s", name, "-c", str(worktree)]
-    for assignment in _tmux_environment():
+    for assignment in _tmux_environment(env):
         command.extend(("-e", assignment))
     command.extend(
         [
             "--",
             sys.executable,
-            "-m",
-            "parrot.flows.dev_loop.feature_launcher",
+            "-S",  # no site-packages: parrot (and navconfig's .env loading) cannot be imported by the child
+            str(Path(__file__).resolve()),
             "--in-session",
             ref.feature_id,
             "--cwd",
@@ -358,7 +384,8 @@ def launch(
     # Same tmux invocation, so the option is set before the child's exit can be processed: a worker
     # that fails keeps its pane (and output) instead of silently taking the session with it.
     command.extend((";", "set-option", "-w", "-t", f"={name}:", "remain-on-exit", "failed"))
-    _require(_run(command, cwd=worktree))
+    # The tmux client's environment seeds a new server's global environment, which the pane inherits.
+    _require(_run(command, cwd=worktree, env=env))
     if detach:
         _await_worker_start(name)
         print(f"launch-worker: attach with: tmux attach -t {name}", file=sys.stderr)
@@ -370,7 +397,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Parse the tmux child mode and launch Claude from its prepared worktree."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--in-session", metavar="FEAT-ID")
-    # The worktree is passed explicitly: importing parrot has already chdir'ed away from tmux's -c directory.
+    # The worktree is passed explicitly rather than trusted from the process cwd.
     parser.add_argument("--cwd", type=Path, default=None)
     parser.add_argument("--sandbox-allow-domain", action="append", default=[])
     parser.add_argument("claude_args", nargs=argparse.REMAINDER)

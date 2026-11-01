@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -156,8 +157,8 @@ def test_tmux_new_session_carries_environment_and_detaches(tmp_path: Path, monke
     assert tail == [
         "--",
         launcher.sys.executable,
-        "-m",
-        "parrot.flows.dev_loop.feature_launcher",
+        "-S",
+        str(Path(launcher.__file__).resolve()),
         "--in-session",
         "FEAT-768",
         "--cwd",
@@ -467,7 +468,7 @@ def _tmux_runner(calls: list[list[str]], *, panes: list[str]) -> object:
     states = iter(panes)
     last = {"value": panes[-1]}
 
-    def fake_run(argv: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+    def fake_run(argv: list[str], *, cwd: Path, env=None) -> subprocess.CompletedProcess[str]:
         calls.append(argv)
         if argv[:2] == ["tmux", "display-message"]:
             last["value"] = next(states, last["value"])
@@ -561,3 +562,161 @@ def test_dead_worker_status_parsing(
     """Only a dead pane reports how it ended; a live pane or a missing session is ``None``."""
     monkeypatch.setattr(launcher, "_run", lambda argv, *, cwd: _result(argv, code, stdout=stdout))
     assert launcher._dead_worker_status("sdd-FEAT-768") == expected
+
+
+# --- issue:82503cfbb76a: navconfig-loaded secrets must never reach the worker -----------------------------
+
+
+def _tmux_new_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, base_env: dict[str, str]) -> dict:
+    """Run a detached tmux launch and return the recorded ``new-session`` argv and env."""
+    _tmux_host(tmp_path, monkeypatch, exists=False)
+    seen: dict = {}
+
+    def fake_run(argv: list[str], *, cwd: Path, env=None) -> subprocess.CompletedProcess[str]:
+        if argv[:2] == ["tmux", "new-session"]:
+            seen.update(argv=argv, env=env)
+        if argv[:2] == ["tmux", "display-message"]:
+            return _result(argv, stdout="0|||claude\n")
+        return _result(argv)
+
+    monkeypatch.setattr(launcher, "_run", fake_run)
+    launcher.launch(
+        "FEAT-768",
+        tmux=True,
+        detach=True,
+        sandbox="preferred",
+        allowed_domains=(),
+        no_upstream=True,
+        claude_args=(),
+        base_env=base_env,
+    )
+    return seen
+
+
+def test_tmux_client_and_e_pairs_use_the_pre_import_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Variables only in the loaded os.environ never reach the tmux client env or its -e pairs."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-from-dotenv")
+    monkeypatch.setenv("PARROT_SDD_FROM_DOTENV", "leak")
+    base_env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "PARROT_SDD_OPERATOR": "kept"}
+    seen = _tmux_new_session(tmp_path, monkeypatch, base_env=base_env)
+    assert "ANTHROPIC_API_KEY" not in seen["env"] and "PARROT_SDD_FROM_DOTENV" not in seen["env"]
+    assert seen["env"]["PARROT_SDD_OPERATOR"] == "kept"
+    assert seen["env"]["PARROT_SDD_SANDBOX_MODE"] == "preferred"
+    assert "PARROT_SDD_OPERATOR=kept" in seen["argv"] and "PARROT_SDD_SANDBOX_MODE=preferred" in seen["argv"]
+    assert not any("FROM_DOTENV" in item or "sk-from-dotenv" in item for item in seen["argv"])
+
+
+def test_non_tmux_launch_hands_the_pre_import_environment_to_launch_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The direct launch passes the snapshot (plus the sandbox mode) as the worker's base environment."""
+    primary = _primary(tmp_path)
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-from-dotenv")
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: tmp_path)
+    captured: dict = {}
+    monkeypatch.setattr(
+        launcher.native_claude_sandbox, "launch_worker", lambda argv, **kwargs: captured.update(kwargs) or 0
+    )
+    launcher.launch(
+        "FEAT-768",
+        tmux=False,
+        detach=False,
+        sandbox="legacy",
+        allowed_domains=(),
+        no_upstream=True,
+        claude_args=(),
+        base_env={"PATH": "/usr/bin"},
+    )
+    assert captured["base_env"] == {"PATH": "/usr/bin", "PARROT_SDD_SANDBOX_MODE": "legacy"}
+
+
+def test_launch_worker_starts_claude_from_base_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """native launch_worker builds the claude env from base_env, not from os.environ."""
+    native = launcher.native_claude_sandbox
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-from-dotenv")
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (tmp_path, tmp_path / ".git", tmp_path))
+    monkeypatch.setattr(native, "resolve_sandbox_mode", lambda root: "required")
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", {}))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "sandbox_platform", lambda: "linux")
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: tmp_path / "cache")
+    monkeypatch.setattr(native.os, "chdir", lambda path: None)
+    execs: list[dict] = []
+    monkeypatch.setattr(native.os, "execvpe", lambda file, args, env: execs.append(env))
+    native.launch_worker([], cwd=tmp_path, base_env={"PATH": "/usr/bin", "HOME": str(tmp_path)})
+    assert execs and "ANTHROPIC_API_KEY" not in execs[0]
+    assert execs[0]["PATH"] == "/usr/bin"
+
+
+def test_tmux_child_script_runs_without_site_packages(tmp_path: Path) -> None:
+    """The tmux child is stdlib-only under ``python -S``: parrot/navconfig cannot even be imported there."""
+    script = str(Path(launcher.__file__).resolve())
+    result = subprocess.run(
+        [sys.executable, "-S", script, "--in-session", "FEAT-768", "--cwd", str(tmp_path), "--", "--agent", "other"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env={"PATH": "/usr/bin:/bin"},
+    )
+    # It got as far as the launcher's own argument policy, i.e. every import succeeded without site-packages.
+    assert result.returncode == 2, result.stderr
+    assert "--agent must be sdd-worker" in result.stderr
+
+
+def test_cli_snapshots_environment_before_importing_parrot_flows(tmp_path: Path) -> None:
+    """Regression: the click command snapshots os.environ BEFORE importing parrot.flows.
+
+    The import is simulated by a meta-path loader for ``feature_launcher`` that injects a secret into
+    os.environ while it executes — as navconfig does with the settings ``.env`` — so the check does
+    not depend on the developer machine having a populated ``.env``.
+    """
+    code = """
+import importlib.abc, importlib.util, os, sys
+from click.testing import CliRunner
+from parrot.cli.devloop import devloop
+
+NAME = "parrot.flows.dev_loop.feature_launcher"
+seen = {}
+
+class LaunchError(Exception):
+    exit_code = 1
+
+def launch(*args, base_env=None, **kwargs):
+    seen["base_env"] = base_env
+    return 0
+
+class Loader(importlib.abc.Loader):
+    def create_module(self, spec):
+        return None
+    def exec_module(self, module):
+        os.environ["ANTHROPIC_API_KEY"] = "sk-injected-by-import"
+        module.LaunchError, module.launch = LaunchError, launch
+
+class Finder(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        return importlib.util.spec_from_loader(fullname, Loader()) if fullname == NAME else None
+
+sys.meta_path.insert(0, Finder())
+sys.modules.pop(NAME, None)
+os.environ.pop("ANTHROPIC_API_KEY", None)
+result = CliRunner().invoke(devloop, ["launch-worker", "FEAT-768"])
+assert result.exit_code == 0, result.output
+assert os.environ.get("ANTHROPIC_API_KEY") == "sk-injected-by-import", "probe import never ran"
+assert "ANTHROPIC_API_KEY" not in seen["base_env"], "base_env was taken after the import"
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"},
+    )
+    assert result.returncode == 0, result.stderr[-3000:]
