@@ -904,9 +904,9 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
   `run` alias, no transition period: `run` is removed, the CLI is grouped by noun, and the
   ledger and the worker launcher join `parrot sdd` because they belong to the SDD cycle.
 - **Change**:
-  1. **One noun per SDD object, verbs under it.** `parrot sdd` keeps `install | uninstall |
-     status` and gains `launch-worker` at the top level; everything else is `parrot sdd
-     <noun> <verb> [args…]`. The complete map (every row is normative; TASK-4089's rewrite
+  1. **One noun per SDD object, verbs under it.** `parrot sdd` keeps `install | uninstall | status`;
+     everything else is `parrot sdd <noun> <verb> [args…]`, `launch` included (`launch worker |
+     brief | fix` — the three ways an SDD cycle is started interactively). The complete map (every row is normative; TASK-4089's rewrite
      and the C22 audit scanner use it verbatim):
 
      | Command | Module (`parrot.sdd.scripts.*`) | Notes |
@@ -939,7 +939,9 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
      | `closeout resolve-issues` | `close_resolved_issues` | |
      | `hooks install` | `install_hooks` | |
      | `ledger <verb>` | `parrot.knowledge.wiki.cli:ledger` (re-mounted) | every `wikitoolkit ledger` verb, `outbox prepare\|status\|integrate` included |
-     | `launch-worker <FEAT-ID> [--tmux] [--detach] [--sandbox …] [--sandbox-allow-domain H]… [--no-upstream] [claude args…]` | FEAT-768 `feature_launcher.launch` | re-mounted from `parrot devloop launch-worker` |
+     | `launch worker <FEAT-ID> [--tmux] [--detach] [--sandbox …] [--sandbox-allow-domain H]… [--no-upstream] [claude args…]` | FEAT-768 `feature_launcher.launch` | re-mounted from `parrot devloop launch-worker`; sandboxed `sdd-worker` agent session in the feature worktree |
+     | `launch brief <source> [/sdd-brief flags] [claude args…]` | new, `feature_launcher.launch_session` | Claude session in the primary checkout, initial prompt `/sdd-brief <source> …`; `/sdd-brief` provisions its own worktree |
+     | `launch fix [<issue-id> \| --top N] [/sdd-fix flags] [claude args…]` | new, `feature_launcher.launch_session` | Claude session in the primary checkout, initial prompt `/sdd-fix …` |
 
      Not mounted: `closeout_builtins`, `closeout_hooks_config` (libraries), `insight`
      (C22 — drop the module from the wheel too, it is 110 KB that nothing shipped reaches;
@@ -960,35 +962,48 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
      accident, fails the gate. The C12 "new helper a shipped file starts invoking" test keeps
      catching the markdown side.
   4. **Ledger.** `parrot sdd ledger` adds the existing click group object from
-     `parrot.knowledge.wiki.cli` (lazy import of that subtree only). Shipped markdown is
-     rewritten `wikitoolkit ledger X` → `parrot sdd ledger X` (87 refs, TASK-4089), and
-     `test_no_repo_script_refs` forbids `wikitoolkit ledger` in shipped assets alongside
-     `python -m scripts.sdd` / `scripts/sdd/` / `parrot sdd run`. The `wikitoolkit` console
-     script, its light entry (TASK-3673), the `parrot-ledger` git hooks and the MCP tools are
-     unchanged — they are not the SDD markdown's concern. Done-when includes a startup
-     budget so the detour through `parrot.cli` does not undo TASK-3673 for the SDD flow.
-  5. **Worker launcher.** FEAT-768 (PR #1884) and FEAT-633 (PR #1823) are both open against
-     `dev`; the `devloop launch-worker` spelling has never shipped in a release, so there is
-     nothing to deprecate. Whichever branch merges second does the mount: if FEAT-768 lands
-     first, the FEAT-633 branch merges `dev`, registers `launch_worker_cmd` under `sdd` as
-     `launch-worker` and deletes the `devloop` registration; if FEAT-633 lands first,
-     FEAT-768 mounts under `sdd` directly. `scripts/sdd/launch_worker.sh` stays as the
-     monorepo alias and its DEPRECATED line names `parrot sdd launch-worker`; the five shipped
-     references (`/sdd-brief`, `/sdd-task`, worktree rule, `CLAUDE.md`, `docs/sdd/GUIDE.md`)
-     switch to the new spelling. The sandbox / tmux / detach flags are FEAT-768's and are not
-     re-specified here.
+     `parrot.knowledge.wiki.cli` (lazy import of that subtree only) as a **second spelling**, so the
+     work ledger is discoverable from the SDD CLI. `wikitoolkit`, `wikitoolkit ledger`, the light
+     entry (TASK-3673), the `parrot-ledger` git hooks and the MCP tools stay exactly as they are,
+     and the 87 shipped `wikitoolkit ledger` references are **not** rewritten — both spellings are
+     valid in shipped markdown, and `test_no_repo_script_refs` does not police them. (Decision,
+     Jesus Lara 2026-11-01: existing commands, `wikitoolkit ledger` included, are kept.)
+  5. **Launchers.** `launch worker` is FEAT-768's `feature_launcher.launch` unchanged (worktree
+     provisioning, upstream, sandbox preflight, tmux/detach, `claude --agent sdd-worker` with
+     `--setting-sources project,local` and the initial prompt `run <FEAT-ID>`). FEAT-768 (PR #1884)
+     and FEAT-633 (PR #1823) are both open against `dev` and the `devloop launch-worker` spelling
+     never shipped in a release, so there is nothing to deprecate: whichever branch merges second
+     mounts the command under `sdd launch worker` and deletes the `devloop` registration.
+     `scripts/sdd/launch_worker.sh` stays as the monorepo alias and its DEPRECATED line names
+     `parrot sdd launch worker`; the five shipped references switch to the new spelling.
+     `launch brief` and `launch fix` reuse the same skeleton through a sibling
+     `feature_launcher.launch_session(initial_prompt, *, cwd, claude_args, base_env)`: resolve the
+     primary checkout (both slash commands provision their own worktree), capture the operator
+     environment before `parrot` is imported (FEAT-768's `base_env` rule), run `claude
+     --setting-sources project,local --model <default> [claude args…] "/sdd-brief <source> …"` (or
+     `"/sdd-fix …"`). No `--agent`, no sandbox settings and no tmux in v1: these are interactive
+     Q&A sessions in the primary checkout, identical to typing the slash command by hand — the
+     native sandbox belongs to the `sdd-worker` agent file and `launch_worker`'s policy (`--agent`
+     must be `sdd-worker`) is untouched. Everything after the subcommand's own flags is forwarded
+     verbatim into the slash-command text, so `/sdd-brief` / `/sdd-fix` keep owning their
+     argument grammar. Claude host only in v1 (Q-C26-3 for the Codex `$sdd-brief` / `$sdd-fix` twins).
   6. **Hook line (C16/C25).** The bare form becomes `parrot sdd worktree guard --hook ||
      exit 2`, the baked form `<script_path> sdd worktree guard --hook || exit 2`; the
      TASK-4509 fast path matches the new argv. The programmatic command
      (`sys.executable -m parrot.sdd.scripts.worktree_environment --hook`, C19) is unchanged.
   7. **Markdown rewrite (TASK-4089) and audit (TASK-4070).** The rewrite is table-driven from
-     item 1 (330 + 87 + 10 + 5 references); the C22 scanner gains the rule "no `parrot sdd
-     run`, no `wikitoolkit ledger`, no `devloop launch-worker` in shipped assets". Docs
+     item 1 (330 + 10 + 5 references; the 87 `wikitoolkit ledger` references stay); the C22 scanner gains the rule "no `parrot sdd run`, no `devloop launch-worker` in shipped assets". Docs
      (TASK-4095) document the noun tree, not the module list.
 - **Unchanged**: the launcher, managed venv, `parrot self`, `--portable`, the store gate, the
   wheel matrix; every helper's argparse options, exit codes and tests; `wikitoolkit` as a
   console script; the Python-level API of `parrot.sdd.scripts.*` (the repo-local shims in
-  `scripts/sdd/` keep aliasing the modules).
+  `scripts/sdd/` keep aliasing the modules). **Every shipped command, agent, skill and workflow keeps its name and its
+  entry point**: verified on the branch at `54868dcb2d` that it deletes or renames nothing under
+  `.claude/commands` (25), `.claude/agents` (16), `.agents/skills` (18), `.agent/workflows` (23);
+  `/sdd-spec`, `/sdd-task`, `/sdd-brief`, `/sdd-fix`, `$sdd-*` and the sub-agents are invoked exactly
+  as today, C26 only rewrites the shell lines inside them. In the monorepo the `scripts/sdd/*.py`
+  shims and `launch_worker.sh` keep the hand-typed legacy spellings working; only the shipped
+  `_assets` must use the new ones. `uninstall` removes only receipt-matched files (C4).
 - **Amends**: TASK-4091 (`cli.py`: noun groups, passthrough verbs, no `run`, mount test),
   TASK-4089 (rewrite table, ledger and launcher spellings), TASK-4509 (`SDD_HOOK_ARGV`),
   TASK-4085 / TASK-4086 (`argv` on `worktree_environment.main` / `worktree_status.main`),
@@ -999,20 +1014,26 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
 - **Open**:
   - *Q-C26-1*: drop `insight.py` from the wheel (C22 already excludes `/sdd-insight`), or keep
     it packaged but unmounted? Default: drop.
-  - *Q-C26-2*: should `parrot sdd ledger` also replace `wikitoolkit ledger` in the
-    `parrot-ledger` git hooks that `hooks install` renders? Default: no — hooks run outside the
-    SDD markdown and the light entry is what makes them cheap.
-- **Done when**: `parrot sdd --help` lists `install uninstall status launch-worker` plus the
-  nouns `worktree task ids spec brief docs tests closeout hooks ledger` and nothing else;
+  - *Q-C26-2*: ~~replace `wikitoolkit ledger` in the rendered git hooks?~~ Resolved 2026-11-01: no;
+    `wikitoolkit ledger` stays everywhere, `parrot sdd ledger` is an additional spelling.
+  - *Q-C26-3*: `launch brief|fix` for the Codex host (`codex` CLI with the `$sdd-brief` / `$sdd-fix`
+    skills)? Default: v1.1, after the Claude path is proven.
+- **Done when**: `parrot sdd --help` lists `install uninstall status` plus the nouns
+  `launch worktree task ids spec brief docs tests closeout hooks ledger` and nothing else;
+  `parrot sdd launch --help` lists `worker brief fix`;
   `parrot sdd run` is an unknown command; `test_sdd_cli_mounts_every_helper` passes with the
   29-module package (27 mounted, 2 libraries excluded) plus `check_spec_consequences`;
-  `test_no_repo_script_refs` finds no `parrot sdd run`, `wikitoolkit ledger`, `python -m
-  scripts.sdd` or `scripts/sdd/` in `_assets`; the installed guard hook (bare and baked, C25
+  `test_no_repo_script_refs` finds no `parrot sdd run`, `devloop launch-worker`, `python -m
+  scripts.sdd` or `scripts/sdd/` in `_assets` (`wikitoolkit ledger` is allowed); the set of shipped
+  command / agent / skill / workflow file names is byte-for-byte the same before and after
+  TASK-4089's rewrite (`test_rewrite_preserves_asset_names`); the installed guard hook (bare and baked, C25
   tests) denies a shared-environment write with the new argv; `parrot sdd ledger --help` and
   `parrot sdd worktree ensure --help` each start within 2× the TASK-3673 `wikitoolkit`
-  light-entry budget; in a foreign repo `parrot sdd launch-worker FEAT-1 --sandbox off`
-  reaches `feature_launcher.launch` (mocked) with the same arguments the `devloop` spelling
-  passed in FEAT-768's tests.
+  light-entry budget; in a foreign repo `parrot sdd launch worker FEAT-1 --sandbox off` reaches
+  `feature_launcher.launch` (mocked) with the same arguments the `devloop` spelling passed in
+  FEAT-768's tests; `parrot sdd launch brief NAV-1 --no-interview` and `parrot sdd launch fix --top 2`
+  exec `claude` (mocked) in the primary checkout with `--setting-sources project,local` and the
+  final argument `/sdd-brief NAV-1 --no-interview` / `/sdd-fix --top 2`, without `--agent`.
 
 ### What's untouched (non-goals)
 - FEAT-633's core design: the launcher, managed venv, `parrot self`, `--portable`, the
@@ -1286,3 +1307,4 @@ with fixture inputs. This corrects the earlier claim that `resolve_flow()` was a
 | 0.5 | 2026-10-18 | Jesus Lara + Claude | C17 added: `/sdd-brief` (FEAT-698, merged after rev 0.3) ships through the installer — `brief_meta` joins TASK-4085's move and gets a CLI in TASK-4299, TASK-4089 creates the missing Google twin `.agent/workflows/sdd-brief.md`, counts updated (15 commands per host, 13 tracked templates, 81 manifest entries), C3 scenarios for `ensure_worktree --brief-key` / `brief_meta write-index` |
 | 0.7 | 2026-10-21 | Jesus Lara + Claude | C25 added after the navigator-eventbus finding: the bare `parrot sdd run worktree_environment --hook` in the installed `sdd-coder`/`sdd-worker` frontmatter fails closed when ai-parrot lives only in the repo's `.venv`; `parrot sdd install` renders the line (bare when the managed launcher is on PATH or `--portable`, else the absolute `parrot` script of the installing venv; no Python version), classification compares rendered bytes, `sdd_status["guard_hook"]` + doctor `sdd: guard hook` (amends TASK-4091, TASK-4080) |
 | 0.8 | 2026-11-01 | Jesus Lara + Claude | C26 added: `parrot sdd run <module>` replaced by a noun-grouped CLI (`worktree task ids spec brief docs tests closeout hooks ledger` + top-level `launch-worker`), no hidden alias; `parrot sdd ledger` re-mounts the wikitoolkit ledger group (87 shipped refs), `parrot sdd launch-worker` takes FEAT-768's launcher (PR #1884, unmerged); `check_spec_consequences` joins the move (10 unpackaged refs found); `closeout_builtins`/`closeout_hooks_config` were runnable no-ops; mount-completeness test; hook line becomes `sdd worktree guard --hook` (amends TASK-4091, 4089, 4509, 4085, 4086, 4508, 4070, 4095 — filed as new tasks on the feature branch) |
+| 0.9 | 2026-11-01 | Jesus Lara + Claude | C26 revised after review: `launch` is a noun (`launch worker | brief | fix`; brief/fix open a Claude session on the slash command via `feature_launcher.launch_session`, no agent/sandbox/tmux in v1); `wikitoolkit ledger` stays and its 87 shipped refs are not rewritten (`parrot sdd ledger` is a second spelling); verified the branch deletes no command/agent/skill/workflow, added `test_rewrite_preserves_asset_names`; Q-C26-2 resolved, Q-C26-3 (Codex launch twins) added |
