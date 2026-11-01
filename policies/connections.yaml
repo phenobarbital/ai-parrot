@@ -1,0 +1,62 @@
+# AI-Parrot PBAC Connection Policies
+# ==================================
+# Controls who may list, connect and disconnect OAuth2 provider connections
+# (Jira, Office 365, ...) from non-web channels: Slack, Microsoft Teams, the
+# CLI and Telegram. All of them are authorized by the same request-less
+# authorizer (NavigatorConnectionAuthorizer, app["connection_authorizer"]),
+# which evaluates the `integration` resource with the user's roles, groups and
+# tenant loaded from the Navigator auth database.
+#
+# Patterns:
+#   integration:*     — every provider (also matches the collection-level
+#                       list check, which is evaluated against resource "*")
+#   integration:jira  — only the provider with id "jira"
+#
+# Actions:
+#   integration:list        — list connections / show one provider's status
+#   integration:connect     — start an OAuth2 connection for a provider
+#   integration:disconnect  — revoke and delete a provider connection
+#
+# The default below mirrors `allow_uri_authenticated` (defaults.yaml), which
+# already lets any authenticated user reach /api/v1/connections over HTTP, so
+# chat channels and the web panel behave the same out of the box. To restrict
+# connections, lower this policy's scope (e.g. replace "*" with specific
+# groups) or add higher-priority deny policies, e.g.:
+#
+#   - name: deny_contractors_connections
+#     effect: deny
+#     resources: ["integration:*"]
+#     actions: ["integration:connect"]
+#     subjects:
+#       groups: [contractors]
+#     priority: 50
+
+version: "1.0"
+
+defaults:
+  effect: deny
+
+policies:
+
+  # -----------------------------------------------------------------------
+  # Default: any authenticated user may manage their own connections.
+  # The service always scopes the operation to the calling principal, so
+  # this never grants access to another user's connections.
+  # -----------------------------------------------------------------------
+  - name: allow_connections
+    effect: allow
+    description: >
+      Allow all authenticated users to list, connect and disconnect their own
+      OAuth2 provider connections from any channel (Slack, Teams, CLI,
+      Telegram).
+    resources:
+      - "integration:*"
+    actions:
+      - "integration:list"
+      - "integration:connect"
+      - "integration:disconnect"
+    subjects:
+      groups:
+        - "*"   # wildcard = any authenticated user
+    priority: 5
+    enforcing: false
