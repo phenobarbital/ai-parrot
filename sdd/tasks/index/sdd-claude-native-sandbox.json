@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-29T01:52:39+00:00",
-  "completed_at": "2026-10-30T12:04:40+00:00",
+  "completed_at": null,
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -25,7 +25,10 @@
           "packages/ai-parrot/tests/flows/dev_flow/test_ideation_graph_search.py",
           "packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py",
           "tests/sdd_scripts/test_feat722_doc_contract.py",
-          "tests/sdd_scripts/test_pr_policy_wording_contract.py"
+          "tests/sdd_scripts/test_pr_policy_wording_contract.py",
+          "packages/ai-parrot/tests/cli/devloop/test_click_wiring.py",
+          "packages/ai-parrot/tests/cli/devloop/test_launch_worker_cmd.py",
+          "tests/sdd_scripts/test_sdd_brief_twin_contract.py"
         ],
         "settings": {
           "markers": ""
@@ -37,7 +40,7 @@
         ]
       }
     ],
-    "digest": "sha256:a983628298179de169735478adcdb3c08b3402ee982d16a29d1af45fc9cb937d"
+    "digest": "sha256:2454e7e0e99008d40002aeb343149d6614c52f9b131cd735e7a2242f36bf9809"
   },
   "tasks": [
     {
@@ -232,6 +235,87 @@
       "completed_at": "2026-10-30T12:04:40+00:00",
       "file": "sdd/tasks/completed/TASK-4908-native-sandbox-mode.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5086",
+      "slug": "native-sandbox-legacy-mode",
+      "title": "Legacy sandbox mode — explicit Bubblewrap-hook rescue path",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4908"
+      ],
+      "parallelism_notes": "modifies plan_native_launch/launch_worker/dispatcher sandboxed branch that TASK-4908 delivered",
+      "file": "sdd/tasks/active/TASK-5086-native-sandbox-legacy-mode.md"
+    },
+    {
+      "id": "TASK-5087",
+      "slug": "native-sandbox-platform-backends",
+      "title": "Per-platform sandbox probe — macOS Seatbelt, native-Windows refusal, Windows-safe hook",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5086"
+      ],
+      "parallelism_notes": "same probe/plan functions as TASK-5086; sequential to avoid conflicting edits",
+      "file": "sdd/tasks/active/TASK-5087-native-sandbox-platform-backends.md"
+    },
+    {
+      "id": "TASK-5088",
+      "slug": "devloop-launch-worker",
+      "title": "parrot devloop launch-worker <FEAT> [--tmux] — host-prepared feature launcher",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5086",
+        "TASK-5087"
+      ],
+      "parallelism_notes": "calls launch_worker with the legacy mode and sandbox_platform() those tasks add",
+      "file": "sdd/tasks/active/TASK-5088-devloop-launch-worker.md"
+    },
+    {
+      "id": "TASK-5089",
+      "slug": "launch-worker-deprecation-docs",
+      "title": "Deprecate launch_worker.sh; document legacy mode, platforms and parrot devloop launch-worker",
+      "feature_id": "FEAT-768",
+      "feature": "sdd-claude-native-sandbox",
+      "spec": "sdd/specs/sdd-claude-native-sandbox.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5088"
+      ],
+      "parallelism_notes": "documents the code TASK-5086..5088 merged",
+      "file": "sdd/tasks/active/TASK-5089-launch-worker-deprecation-docs.md"
     }
   ]
 }
