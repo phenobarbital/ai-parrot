@@ -248,7 +248,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -260,8 +260,9 @@
       "parallelism_notes": "Registers handlers from TASK-5024 (telegram/connection_commands.py); uses principal_for_session/_connection_permission_context from TASK-5020; edits wrapper.py and tests/integration/oauth2/test_e2e_telegram_regression.py after TASK-5023 (same files).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5025-telegram-command-aliases-wiring.md"
+      "completed_at": "2026-11-01T01:41:23+00:00",
+      "file": "sdd/tasks/completed/TASK-5025-telegram-command-aliases-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5026",
