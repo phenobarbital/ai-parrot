@@ -428,14 +428,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             self._platform_commands.append((command, description))
             existing.add(normalized)
 
-    def _register_connection_commands(self) -> None:
-        """Register generic connection commands plus Jira and Office365 aliases."""
+    def _integrations_service(self) -> Any:
+        """Build the shared connection service configuration for Telegram flows."""
         from parrot.auth.oauth2.service import IntegrationsService
-        from parrot.integrations.core.auth.connections import ConnectionCommandService
-
-        from .connection_commands import register_connection_commands
-        from .jira_commands import register_jira_commands
-        from .office365_commands import register_office365_commands
 
         app = self.app if self.app is not None else {}
         vault = None
@@ -447,9 +442,19 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 vault = VaultTokenSync(db_pool=db_pool, redis=app.get("redis"))
             except ImportError:
                 self.logger.warning("Connection token vault is unavailable on this bot.")
+        return IntegrationsService(vault, authorizer=app.get("connection_authorizer"))
 
+    def _register_connection_commands(self) -> None:
+        """Register generic connection commands plus Jira and Office365 aliases."""
+        from parrot.integrations.core.auth.connections import ConnectionCommandService
+
+        from .connection_commands import register_connection_commands
+        from .jira_commands import register_jira_commands
+        from .office365_commands import register_office365_commands
+
+        app = self.app if self.app is not None else {}
         commands = ConnectionCommandService(
-            service=IntegrationsService(vault, authorizer=app.get("connection_authorizer")),
+            service=self._integrations_service(),
             app=app,
             channel="telegram",
             allowlist=self.config.connection_providers,
@@ -611,19 +616,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
     # ──────────────────────────────────────────────────────────────────
 
     def _init_post_auth_providers(self) -> None:
-        """Populate :pyattr:`_post_auth_registry` from the config.
-
-        Reads ``config.post_auth_actions`` and, for each supported provider,
-        instantiates the concrete provider together with its service
-        dependencies resolved from the aiohttp application:
-
-        * ``app['jira_oauth_manager']`` — the Jira OAuth manager
-        * ``app['authdb']`` (preferred) or ``app['database']`` — DB pool
-        * ``app['redis']`` — async Redis client
-
-        Missing dependencies result in the provider being skipped with a
-        warning; the standard BasicAuth flow still works unchanged.
-        """
+        """Register configured post-auth actions backed by OAuth2 providers."""
         actions = getattr(self.config, "post_auth_actions", None) or []
         if not actions:
             return
@@ -635,52 +628,38 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             )
             return
 
-        jira_oauth = self.app.get("jira_oauth_manager")
-        db_pool = self.app.get("authdb") or self.app.get("database")
-        redis_client = self.app.get("redis")
+        from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
+        from parrot.integrations.telegram.post_auth_connection import ConnectionPostAuthProvider
+        from parrot.integrations.telegram.post_auth_jira import JiraPostAuthProvider
+
+        provider_registry = OAuth2ProviderRegistry()
+        service = self._integrations_service()
 
         for action in actions:
-            if action.provider == "jira":
-                if jira_oauth is None:
-                    self.logger.warning(
-                        "post_auth_actions includes 'jira' but " "app['jira_oauth_manager'] is not set; skipping."
-                    )
-                    continue
-                if db_pool is None or redis_client is None:
-                    self.logger.warning(
-                        "post_auth_actions includes 'jira' but "
-                        "app['authdb']/app['database'] or app['redis'] "
-                        "is not set; combined flow will be disabled."
-                    )
-                    continue
-                # Local imports avoid import cycles and keep the heavy
-                # service modules out of the hot path for bots that don't
-                # use the combined flow.
-                from parrot.integrations.telegram.post_auth_jira import (
-                    JiraPostAuthProvider,
-                )
-                from parrot.services.identity_mapping import (
-                    IdentityMappingService,
-                )
-                from parrot.services.vault_token_sync import VaultTokenSync
-
-                identity_service = IdentityMappingService(db_pool)
-                vault_sync = VaultTokenSync(db_pool, redis_client)
-                provider = JiraPostAuthProvider(
-                    oauth_manager=jira_oauth,
-                    identity_service=identity_service,
-                    vault_sync=vault_sync,
-                )
-                self._post_auth_registry.register(provider)
-                self.logger.info(
-                    "Registered PostAuthProvider 'jira' " "(required=%s)",
-                    action.required,
-                )
-            else:
+            registered = provider_registry.get(action.provider)
+            if registered is None or getattr(registered, "manager", None) is None:
                 self.logger.warning(
-                    "post_auth_actions references unknown provider '%s'; " "skipping.",
+                    "post_auth_actions provider '%s' is not a registered provider at startup; skipping.",
                     action.provider,
                 )
+                continue
+            if action.provider == "jira":
+                provider = JiraPostAuthProvider(
+                    service=service,
+                    app=self.app,
+                )
+            else:
+                provider = ConnectionPostAuthProvider(
+                    action.provider,
+                    service=service,
+                    app=self.app,
+                )
+            self._post_auth_registry.register(provider)
+            self.logger.info(
+                "Registered PostAuthProvider '%s' (required=%s)",
+                action.provider,
+                action.required,
+            )
 
     def _identity_service(self) -> Optional[Any]:
         """Return the cached identity service, or ``None`` when unavailable."""
