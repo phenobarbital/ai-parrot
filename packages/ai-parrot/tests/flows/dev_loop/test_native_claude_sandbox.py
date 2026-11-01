@@ -112,6 +112,7 @@ def test_sandbox_mode_resolution_prefers_environment_then_pyproject(
     ("content", "match"),
     [
         ("[tool.parrot.sdd]\nsandbox = 'off'\n", "may only be set through"),
+        ("[tool.parrot.sdd]\nsandbox = 'legacy'\n", "may only be set through"),
         ("[tool.parrot.sdd]\nsandbox = 'unsafe'\n", "pyproject.toml"),
         ("[tool.parrot.sdd]\nsandbox = 3\n", "pyproject.toml"),
         ("[tool.parrot]\nsdd = 'x'\n[tool.parrot.sdd]\n", "malformed"),
@@ -167,6 +168,60 @@ def test_plan_native_launch_strict_when_available_and_off_skips_probe(
     mode, degraded, reason, settings = native.plan_native_launch(feature)
     assert (mode, degraded, reason) == ("off", True, "sandbox mode off")
     assert "sandbox" not in settings
+
+
+def test_plan_native_launch_legacy_uses_bubblewrap_without_native_probe(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Legacy mode keeps the hook's Bubblewrap boundary without native settings."""
+    feature, _main = linked
+    monkeypatch.setenv(native.MODE_ENV, "legacy")
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/bwrap" if name == "bwrap" else None)
+    monkeypatch.setattr(native, "_bwrap_probe", lambda executable: (True, ""))
+    monkeypatch.setattr(
+        native,
+        "native_sandbox_available",
+        lambda: (_ for _ in ()).throw(AssertionError("native probe must not run in legacy mode")),
+    )
+
+    mode, degraded, reason, settings = native.plan_native_launch(feature, allowed_domains=["invalid"])
+
+    assert (mode, degraded, reason) == ("legacy", False, "")
+    assert "sandbox" not in settings
+    assert settings["hooks"]["PreToolUse"]
+
+
+@pytest.mark.parametrize(
+    ("platform", "executable", "probe", "match"),
+    [
+        ("darwin", "/usr/bin/bwrap", (True, ""), "unsupported platform"),
+        ("linux", None, (True, ""), "missing prerequisite"),
+        ("linux", "/usr/bin/bwrap", (False, "namespace denied"), "namespace denied"),
+    ],
+)
+def test_plan_native_launch_legacy_refuses_unusable_bubblewrap(
+    linked: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    executable: str | None,
+    probe: tuple[bool, str],
+    match: str,
+) -> None:
+    """Legacy mode never permits an unprotected launch."""
+    feature, _main = linked
+    monkeypatch.setenv(native.MODE_ENV, "legacy")
+    monkeypatch.setattr(native.sys, "platform", platform)
+    monkeypatch.setattr(native.shutil, "which", lambda name: executable)
+    monkeypatch.setattr(native, "_bwrap_probe", lambda executable: probe)
+
+    with pytest.raises(RuntimeError, match=match):
+        native.plan_native_launch(feature)
+
+
+def test_launch_backend_selects_bubblewrap_only_for_legacy() -> None:
+    """Only the declared legacy posture retains the Bubblewrap hook backend."""
+    assert native.launch_backend("legacy") == native.BACKEND_BUBBLEWRAP
+    assert native.launch_backend("required") == native.BACKEND_NATIVE
 
 
 def test_native_sandbox_available_branches(monkeypatch: pytest.MonkeyPatch) -> None:

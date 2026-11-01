@@ -861,6 +861,40 @@ class TestNativeSandboxDispatch:
         assert options.env["PARROT_SDD_SANDBOX_DEGRADED"] == "1"
         assert "native sandbox DEGRADED" in caplog.text
 
+    def test_legacy_sandbox_uses_bubblewrap_hook_and_warns(self, dispatcher, linked_worktree, monkeypatch, caplog):
+        """Legacy dispatch retains the hook's filesystem boundary without a native sandbox."""
+        from parrot.flows.dev_loop import native_claude_sandbox as native
+
+        monkeypatch.setenv(native.MODE_ENV, "legacy")
+        monkeypatch.setenv(native.DEGRADED_ENV, "1")
+        monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/bwrap" if name == "bwrap" else None)
+        monkeypatch.setattr(native, "_bwrap_probe", lambda executable: (True, ""))
+        monkeypatch.setattr(
+            native,
+            "native_sandbox_available",
+            lambda: (_ for _ in ()).throw(AssertionError("native probe must not run in legacy mode")),
+        )
+
+        options = dispatcher._resolve_run_options(
+            ClaudeCodeDispatchProfile(sandbox_allowed_domains=["api.example.com"]), str(linked_worktree)
+        )
+
+        settings = json.loads(options.extra_args["settings"])
+        assert "sandbox" not in settings and settings["hooks"]["PreToolUse"]
+        assert options.env[native.BACKEND_ENV] == native.BACKEND_BUBBLEWRAP
+        assert native.DEGRADED_ENV not in options.env
+        assert "native sandbox LEGACY" in caplog.text
+
+    def test_legacy_sandbox_unavailability_refuses_dispatch(self, dispatcher, linked_worktree, monkeypatch):
+        """Legacy dispatch fails closed rather than falling through to an unprotected process."""
+        from parrot.flows.dev_loop import native_claude_sandbox as native
+
+        monkeypatch.setenv(native.MODE_ENV, "legacy")
+        monkeypatch.setattr(native.shutil, "which", lambda name: None)
+
+        with pytest.raises(DispatchExecutionError, match="working Bubblewrap"):
+            dispatcher._resolve_run_options(ClaudeCodeDispatchProfile(), str(linked_worktree))
+
     def test_sandboxed_dispatch_freezes_policy_roots(self, dispatcher, linked_worktree, monkeypatch):
         from parrot.flows.dev_loop import native_claude_sandbox as native
 

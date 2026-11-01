@@ -820,6 +820,37 @@ def test_main_reads_backend_from_environment(tmp_path: Path) -> None:
     assert "bwrap" not in command
 
 
+def test_main_uses_bubblewrap_backend_with_launcher_markers(tmp_path: Path) -> None:
+    """An explicit Bubblewrap backend remains valid beside native launcher markers."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    bwrap = bin_dir / "bwrap"
+    bwrap.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    bwrap.chmod(0o755)
+    environment = {
+        **os.environ,
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+        "PARROT_SDD_SANDBOX_BACKEND": "bubblewrap",
+        "PARROT_SDD_CACHE_DIR": str(tmp_path / "cache"),
+        "PARROT_SDD_SANDBOX_ROOTS": os.pathsep.join((str(feature), str(_main / ".git"), str(_main))),
+        policy.RTK_ENV_SWITCH: "0",
+    }
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
+    result = subprocess.run(
+        [sys.executable, "-S", policy.__file__, "--hook"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=environment,
+    )
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert "permissionDecision" not in output
+    assert shlex.split(output["updatedInput"]["command"])[0] == str(bwrap)
+
+
 def test_hook_applies_verdict_command(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(policy.shutil, "which", lambda _: "/usr/bin/bwrap")
     monkeypatch.setattr(policy, "_scope_guard", lambda command, cwd: ("verdict", "cd /w && python v.py"))

@@ -283,6 +283,47 @@ def test_off_mode_skips_probe(fake_claude_path: str, linked_cwd: Path, monkeypat
     assert not marker.exists(), "off mode must not run the bwrap probe"
 
 
+def test_legacy_mode_uses_bubblewrap_hook_and_ignores_domains(
+    fake_claude_path: str, linked_cwd: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Legacy mode probes Bubblewrap, then delegates filesystem isolation to the hook."""
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_MODE", "legacy")
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_DEGRADED", "1")
+    bin_dir = Path(fake_claude_path.split(os.pathsep)[0])
+    marker = bin_dir / "legacy-probe-called"
+    _write_executable(bin_dir / "bwrap", f"#!/bin/sh\ntouch {marker}\nexit 0\n")
+
+    result = _run(fake_claude_path, linked_cwd, "--sandbox-allow-domain", "api.example.com")
+
+    assert result.returncode == 0, result.stderr
+    environment, argv = _output(result)
+    assert marker.is_file(), "legacy mode must verify the Bubblewrap boundary before launching"
+    assert environment["BACKEND"] == "bubblewrap"
+    assert environment["DEGRADED"] == ""
+    assert "sandbox" not in json.loads(argv[argv.index("--settings") + 1])
+    assert (
+        "launch_worker: mode=legacy — native sandbox disabled, Bash runs in the hook's Bubblewrap "
+        "(filesystem only, no network isolation); --sandbox-allow-domain ignored"
+    ) in result.stderr
+
+
+def test_legacy_mode_refuses_failing_bubblewrap_probe(
+    fake_claude_path: str, linked_cwd: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Legacy mode fails closed when the retained Bubblewrap boundary is unavailable."""
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_MODE", "legacy")
+    bin_dir = Path(fake_claude_path.split(os.pathsep)[0])
+    _write_executable(bin_dir / "bwrap", "#!/bin/sh\necho user namespaces denied >&2\nexit 1\n")
+
+    result = _run(fake_claude_path, linked_cwd)
+
+    assert result.returncode == 1
+    assert (
+        "native sandbox unavailable (legacy mode needs a working Bubblewrap: user namespaces denied); mode=legacy refuses to start"
+        in result.stderr
+    )
+
+
 def test_invalid_mode_exits_2(fake_claude_path: str, linked_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PARROT_SDD_SANDBOX_MODE", "unsafe")
 

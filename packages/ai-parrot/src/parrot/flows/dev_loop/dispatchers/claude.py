@@ -659,9 +659,14 @@ class ClaudeCodeDispatcher:
                 raise DispatchExecutionError(f"Native sandbox refused cwd {cwd!r}: {exc}") from exc
             extra_args = {"settings": json.dumps(settings)}
             env = dict(env or {})
-            env[native_claude_sandbox.BACKEND_ENV] = native_claude_sandbox.BACKEND_NATIVE
+            env[native_claude_sandbox.BACKEND_ENV] = native_claude_sandbox.launch_backend(mode)
             env.update(native_claude_sandbox.native_root_env(Path(cwd)))
-            if degraded:
+            if mode == "legacy":
+                self.logger.warning(
+                    "native sandbox LEGACY for %s: Bubblewrap hook boundary, no network isolation", profile.subagent
+                )
+                env.pop(native_claude_sandbox.DEGRADED_ENV, None)
+            elif degraded:
                 self.logger.warning("native sandbox DEGRADED for %s (mode=%s): %s", profile.subagent, mode, reason)
                 env[native_claude_sandbox.DEGRADED_ENV] = "1"
             else:
