@@ -99,6 +99,17 @@ Read the spec file provided by the user (e.g., `sdd/specs/<feature>.spec.md`).
 - If spec is not `status: approved`, warn and ask to confirm.
 - Extract: Feature ID, title, module breakdown, acceptance criteria, dependencies.
 
+### 2b. Advisory Decision-Audit Check
+
+```bash
+python -m scripts.sdd.check_spec_consequences <spec-path> --advisory
+```
+
+Advisory only (FEAT-784): it **never refuses** decomposition and always exits 0. It is silent when the
+repository is not configured or the spec has no generated report; when an existing report is
+`conflict`, `invalid`, `incomplete` or stale it prints a warning — copy that warning into the §6 output
+and continue.
+
 ### 3. Plan Task Decomposition
 Analyze the spec and identify atomic tasks:
 - One task per module, class, or distinct deliverable.

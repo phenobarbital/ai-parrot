@@ -97,7 +97,7 @@ forks (Claude Code). Codex has no forks: research always runs sequentially and
      `sdd/state/<FEAT-ID>/findings/FNNN-<slug>.md` using
      `sdd/templates/finding.md`; `<slug>` is lowercase `[a-z0-9-]` only
      (`:`, `*`, `|`, quotes break Windows checkouts and fail
-     `scripts/check_portable_paths.py` in CI).
+     the repository's portable-path CI check).
 6. Synthesize:
    - Use source, plan, findings, and budget status.
    - Produce `sdd/state/<FEAT-ID>/synthesis.json`.

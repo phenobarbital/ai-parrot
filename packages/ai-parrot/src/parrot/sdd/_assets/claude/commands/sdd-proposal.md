@@ -301,7 +301,10 @@ For each query in the approved plan, in priority order:
    - `tree` → `find <path> -type f -maxdepth N`
 3. **Persist a digest** at `${STATE_DIR}/findings/F<NNN>-<slug>.md` using the
    format in `sdd/templates/finding.md`. Inside a fork, use
-   `${STATE_DIR}/findings/<PREFIX>-<NNN>-<slug>.md` instead. The digest is
+   `${STATE_DIR}/findings/<PREFIX>-<NNN>-<slug>.md` instead. `<slug>` is
+   lowercase `[a-z0-9-]` only (the title with every other character replaced
+   by `-`): `:`, `*`, `|`, quotes and similar break every Windows checkout, and
+   the repository's portable-path CI check fails on them. The digest is
    **compact** — never inline full file content; cite line ranges and excerpts
    only. For wiki findings, cite the wiki page ID and score alongside file paths.
 4. **Decide on recursion.** If a finding surfaces a new file/symbol that
