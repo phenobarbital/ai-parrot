@@ -35,7 +35,7 @@ def mock_import_module(name):
             pass
 
         mock = MockModule()
-        setattr(mock, "StubToolkit", StubToolkit)
+        mock.StubToolkit = StubToolkit
         return mock
     return importlib.import_module(name)
 
@@ -317,3 +317,92 @@ def test_deterministic_toolkit_never_imports_the_client_factory(stub_config, mon
 
     server = create_toolkit_mcp_server("stub", stub_config)
     assert "plain" in set(server.tools.keys())
+
+
+# ── TASK-5085 (issue:cd2ac1cb1153): install hint derived from the missing module ──
+
+
+def _missing(name):
+    """Return an ImportError for a missing module, as `import name` would raise it."""
+    return ModuleNotFoundError(f"No module named '{name}'", name=name)
+
+
+_FAKE_REQUIRES = [
+    'feedparser>=6.0.11; extra == "rss"',
+    'docker>=7.1; extra == "docker"',
+    'docker>=7.1; extra == "sandbox"',
+    'selenium>=4.35; extra == "scraping"',
+    'ai-parrot-tools[rss,scraping]; extra == "all"',
+    "aiohttp>=3.9",
+]
+
+
+@pytest.fixture
+def fake_tools_metadata(monkeypatch):
+    """Pin the ai-parrot-tools Requires-Dist list the hint reads."""
+    from parrot.mcp import toolkit_server
+
+    monkeypatch.setattr(toolkit_server.importlib.metadata, "requires", lambda dist: list(_FAKE_REQUIRES))
+
+
+def test_extra_hint_names_the_providing_extra(fake_tools_metadata):
+    """A missing feedparser points at [rss]; a submodule name resolves by its top-level package."""
+    from parrot.mcp.toolkit_server import _extra_hint
+
+    assert _extra_hint(_missing("feedparser"), "parrot_tools.rss.RSSToolkit") == (
+        '  Try: uv pip install "ai-parrot-tools[rss]"'
+    )
+    assert "[rss]" in _extra_hint(_missing("feedparser.util"), "parrot_tools.rss.RSSToolkit")
+
+
+def test_extra_hint_lists_every_providing_extra_but_not_all(fake_tools_metadata):
+    """A distribution required by several extras lists each; the aggregate [all] is never suggested."""
+    from parrot.mcp.toolkit_server import _extra_hint
+
+    hint = _extra_hint(_missing("docker"), "parrot_tools.docker.DockerToolkit")
+    assert '"ai-parrot-tools[docker]"' in hint and '"ai-parrot-tools[sandbox]"' in hint
+    assert "[all]" not in _extra_hint(_missing("selenium"), "parrot_tools.scraping.WebScrapingToolkit")
+
+
+@pytest.mark.parametrize("missing", ["talib", "unknown_dep", None])
+def test_extra_hint_falls_back_to_generic(fake_tools_metadata, missing):
+    """An unmapped or unnamed module gets the generic hint; nothing ever names [scraping] or [browsing]."""
+    from parrot.mcp.toolkit_server import _extra_hint
+
+    exc = _missing(missing) if missing else ImportError("boom")
+    hint = _extra_hint(exc, "parrot_tools.finance.FinanceToolkit")
+    assert "ai-parrot-tools" in hint
+    assert "[scraping]" not in hint and "[browsing]" not in hint
+    if missing:
+        assert f"'{missing}'" in hint
+
+
+def test_extra_hint_without_metadata_and_for_other_packages(monkeypatch):
+    """No installed metadata falls back to the generic hint; a non-parrot_tools class gets no hint."""
+    from parrot.mcp import toolkit_server
+
+    def no_metadata(dist):
+        raise toolkit_server.importlib.metadata.PackageNotFoundError(dist)
+
+    monkeypatch.setattr(toolkit_server.importlib.metadata, "requires", no_metadata)
+    assert "Missing module 'feedparser'" in toolkit_server._extra_hint(_missing("feedparser"), "parrot_tools.rss.R")
+    assert toolkit_server._extra_hint(_missing("feedparser"), "myproject.toolkits.R") == ""
+
+
+def test_import_failure_error_carries_derived_hint(tmp_path, monkeypatch, fake_tools_metadata):
+    """create_toolkit_mcp_server surfaces the derived hint in its ImportError."""
+    parrot_dir = tmp_path / ".parrot"
+    parrot_dir.mkdir()
+    (parrot_dir / "mcp-toolkits.yaml").write_text(
+        "toolkits:\n  rss:\n    class: parrot_tools.rss.RSSToolkit\n    kwargs: {}\n"
+    )
+
+    def failing_import(name):
+        raise _missing("feedparser")
+
+    monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", failing_import)
+    with pytest.raises(ImportError) as excinfo:
+        create_toolkit_mcp_server("rss", tmp_path)
+    message = str(excinfo.value)
+    assert 'ai-parrot-tools[rss]"' in message
+    assert "[browsing]" not in message and "[scraping]" not in message

@@ -196,7 +196,7 @@ async def test_service_start_connect_passes_requested_scopes() -> None:
 
 @pytest.mark.asyncio
 async def test_service_empty_scopes_fall_back_to_manager_scopes() -> None:
-    """A provider with no default scopes leaves the manager's own scopes in force instead of sending ``scope=""``."""
+    """Without caller-supplied scopes the manager keeps its own defaults instead of receiving ``scope=""``."""
     OAuth2ProviderRegistry._reset()
     calls: List[Dict[str, Any]] = []
 
@@ -229,4 +229,4 @@ async def test_service_empty_scopes_fall_back_to_manager_scopes() -> None:
     finally:
         OAuth2ProviderRegistry._reset()
 
-    assert calls[0]["scopes"] is None
+    assert "scopes" not in calls[0]

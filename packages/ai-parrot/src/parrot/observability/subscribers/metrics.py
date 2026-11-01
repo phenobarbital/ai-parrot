@@ -47,6 +47,12 @@ _TOKEN_BUCKETS: list[int] = [
 ]
 
 
+def _feat_label(event: object) -> str:
+    """FEAT-783: the event's SDD feature id as a stable metric label ("none" when unattributed)."""
+    attribution = getattr(event, "attribution", None)
+    return (attribution.feat_id if attribution is not None else None) or "none"
+
+
 class MetricsSubscriber:
     """OTel counter and histogram subscriber for LLM / tool / invoke events.
 
@@ -219,6 +225,7 @@ class MetricsSubscriber:
             "gen_ai.provider.name": system,  # new SemConv key — current OpenLIT reads this
             "gen_ai.response.model": event.model,
             "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
+            "parrot.feat_id": _feat_label(event),  # FEAT-783: bounded, one series per feature
         }
 
         # Operation duration histogram
@@ -241,8 +248,10 @@ class MetricsSubscriber:
 
         # Cost counter — only when calculator provides a value
         from parrot.observability.cost import resolve_event_cost
+        from parrot.observability.cost.policy import PricingPolicy
 
         cost = resolve_event_cost(event, self._cost)
+        cost, _equivalent = PricingPolicy.from_label(getattr(event, "pricing_policy", None)).apply(cost)
         if cost is not None:
             self._client_cost_total.add(cost, attributes=base)
 
@@ -301,6 +310,7 @@ class MetricsSubscriber:
                 "gen_ai.provider.name": system,  # new SemConv key — current OpenLIT reads this
                 "error.type": event.error_type,
                 "parrot.agent.name": event.agent_name or "unknown",  # FEAT-228
+                "parrot.feat_id": _feat_label(event),  # FEAT-783: bounded, one series per feature
             },
         )
 

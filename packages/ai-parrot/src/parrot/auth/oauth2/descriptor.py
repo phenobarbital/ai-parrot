@@ -7,10 +7,12 @@ Client credentials never live in a descriptor — they come from navconfig ``OAU
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import secrets
 import time
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Union
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Tuple, Union
 
 import aiohttp
 import yaml
@@ -18,6 +20,13 @@ from navconfig import config
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from parrot.auth.oauth2.events import ConnectionEventPublisher
+from parrot.auth.oauth2.device_code import (
+    SLOW_DOWN_INCREMENT_S,
+    DeviceAuthorization,
+    DeviceCodeError,
+    request_device_authorization,
+    request_device_token,
+)
 from parrot.auth.oauth2.registry import OAuth2Provider, register_oauth2_provider
 from parrot.auth.oauth2_base import (
     AbstractOAuth2Manager,
@@ -26,6 +35,7 @@ from parrot.auth.oauth2_base import (
     InvalidGrantError,
     RefreshTransientError,
 )
+from parrot.auth.principal import Principal
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +75,7 @@ class OAuth2ProviderDescriptor(BaseModel):
     extra_authorize_params: Dict[str, str] = Field(default_factory=dict)
     post_exchange: Optional[str] = None
     pbac_action_namespace: str = "integration"
+    device_authorization_url: Optional[str] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -318,6 +329,84 @@ class StandardOAuth2Manager(AbstractOAuth2Manager):
                     )
         except Exception as exc:  # noqa: BLE001 - remote revocation is explicitly best effort
             self.logger.warning("%s remote revoke transport failure: %s", self.provider_id, type(exc).__name__)
+
+    def _device_key(self, handle: str) -> str:
+        """Return the Redis key of a pending provider device grant."""
+        return f"oauth2:{self.provider_id}:device:{handle}"
+
+    async def start_device_authorization(
+        self,
+        principal: Principal,
+        *,
+        scopes: Optional[List[str]] = None,
+    ) -> Tuple[str, DeviceAuthorization]:
+        """Start an RFC 8628 grant for ``principal`` and return its handle and authorization."""
+        url = self.descriptor.device_authorization_url
+        if not url:
+            raise ValueError(f"{self.provider_id} does not support the device authorization grant")
+        verifier, challenge = self._new_pkce_pair() if self.use_pkce else (None, None)
+        session = await self._get_session()
+        authorization = await request_device_authorization(
+            session,
+            url,
+            client_id=self.client_id,
+            scopes=list(scopes or self.scopes),
+            code_challenge=challenge,
+            client_secret=self.client_secret if self.require_client_secret else None,
+        )
+        handle = secrets.token_urlsafe(32)
+        record = {
+            "device_code": authorization.device_code,
+            "code_verifier": verifier,
+            "interval": authorization.interval,
+            "principal": principal.model_dump(mode="json"),
+        }
+        await self.redis.set(self._device_key(handle), json.dumps(record), ex=authorization.expires_in)
+        return handle, authorization
+
+    async def complete_device_authorization(self, handle: str) -> Dict[str, Any]:
+        """Poll one device grant and return its pending, completed, failed, or expired result."""
+        key = self._device_key(handle)
+        raw = await self.redis.get(key)
+        if not raw:
+            return {"status": "expired"}
+        record = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
+        session = await self._get_session()
+        try:
+            outcome, payload = await request_device_token(
+                session,
+                self.token_url,
+                client_id=self.client_id,
+                device_code=record["device_code"],
+                code_verifier=record.get("code_verifier"),
+                client_secret=self.client_secret if self.require_client_secret else None,
+            )
+        except DeviceCodeError as exc:
+            await self.redis.delete(key)
+            status = "expired" if exc.code in {"expired_token", "timeout"} else "failed"
+            return {"status": status, "reason": exc.code}
+        if outcome != "approved":
+            if outcome == "slow_down":
+                record["interval"] += SLOW_DOWN_INCREMENT_S
+                ttl = await self.redis.ttl(key)
+                if ttl <= 0:
+                    await self.redis.delete(key)
+                    return {"status": "expired"}
+                await self.redis.set(key, json.dumps(record), ex=ttl)
+            return {"status": "pending", "interval": record["interval"]}
+        principal = Principal.model_validate(record["principal"])
+        identity = await self._discover_identity(payload["access_token"])
+        token_set = await self._post_exchange(payload, self._build_token_set(payload, identity))
+        async with self.principal_lock(principal.user_id):
+            await self._persist_token(principal, token_set, minted=True, state_payload={"channel": principal.channel})
+        await self.redis.delete(key)
+        await self._publish(
+            "connection.completed",
+            principal,
+            token_set,
+            state_payload={"channel": principal.channel, "connection_meta": self._public_metadata(token_set)},
+        )
+        return {"status": "completed", "token_set": token_set, "account_id": token_set.account_id}
 
 
 def _json_path(document: Any, path: Optional[str]) -> Any:

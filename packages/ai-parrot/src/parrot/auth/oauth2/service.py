@@ -16,13 +16,17 @@ This was resolved as the correct behaviour for FEAT-144 Q-B.
 
 from __future__ import annotations
 
+import hmac
+import json
 import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Mapping, Optional, Tuple
 
 from navconfig.logging import logging  # noqa: F811
 
+from parrot.auth.credentials import AuthRequiredPayload
 from parrot.auth.oauth2 import _WEB_CHANNEL
+from parrot.auth.oauth2.authorization import ConnectionAuthorizer
 from parrot.auth.principal import Principal
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -31,7 +35,10 @@ from parrot.auth.oauth2.models import (
     ConnectInitResponse,
     DisconnectResponse,
     IntegrationDescriptor,
+    NotConnected,
+    PulledToken,
     UsersIntegrationRow,
+    WhoAmI,
 )
 from parrot.auth.oauth2.persistence import (
     delete_users_integration,
@@ -123,10 +130,14 @@ class IntegrationsService:
         self,
         vault_token_sync: Any = None,
         *,
+        authorizer: Optional[ConnectionAuthorizer] = None,
         permission_evaluator: Optional[PermissionEvaluator] = None,
     ) -> None:
         self._vault_token_sync = vault_token_sync
         self._identity_store_instance: Any = None
+        # ``authorizer`` serves principal-only channels (Slack/CLI, FEAT-777); ``permission_evaluator`` serves
+        # channels that carry a full PermissionContext (Teams, FEAT-775).
+        self._authorizer = authorizer
         self._permission_evaluator = permission_evaluator
 
     async def list_for_principal(
@@ -144,6 +155,7 @@ class IntegrationsService:
             request: Optional aiohttp request used for PBAC evaluation. When
                 ``None`` or when ``abac`` is absent, the service fails closed
                 and returns an empty list.
+            principal: Bound platform principal for request-independent authorization.
 
         Returns:
             List of :class:`~parrot.integrations.oauth2.models.IntegrationDescriptor`
@@ -156,10 +168,11 @@ class IntegrationsService:
         providers = registry.all()
 
         # PBAC: fail-closed for integrations surface (Q-B resolution)
-        if not await self._check_pbac(
+        if not await self._authorize(
             request,
+            principal,
+            user_id,
             "integration:list",
-            principal=principal,
             permission_context=permission_context,
             operation="list",
         ):
@@ -173,11 +186,12 @@ class IntegrationsService:
         rows = {row.provider: row for row in await list_users_integrations(user_id)}
 
         for provider in providers:
-            if not await self._check_pbac(
+            if not await self._authorize(
                 request,
+                principal,
+                user_id,
                 "integration:list",
                 provider.provider_id,
-                principal=principal,
                 permission_context=permission_context,
                 operation="list_provider",
             ):
@@ -228,6 +242,7 @@ class IntegrationsService:
             connected_at=integration_row.connected_at if integration_row else None,
             channels=integration_row.channels if integration_row else [],
             scopes_granted=integration_row.scopes_granted if integration_row else [],
+            grant_origin=integration_row.grant_origin if integration_row else None,
             expires_at=integration_row.expires_at if integration_row else None,
             updated_at=integration_row.updated_at if integration_row else None,
         )
@@ -398,12 +413,13 @@ class IntegrationsService:
             user_id, principal, permission_context, channel
         ):
             raise PermissionError(f"Not permitted to connect provider {provider_id!r}")
-        if not await self._check_pbac(
+        if not await self._authorize(
             request,
+            principal,
+            user_id,
             "integration:connect",
             provider_id,
             requested_scopes,
-            principal=principal,
             permission_context=permission_context,
             operation="connect",
         ):
@@ -427,13 +443,15 @@ class IntegrationsService:
             "return_origin": return_origin,
             **(extra_state or {}),
         }
+        # Per-call scopes are forwarded only when the caller asked for specific ones; otherwise the manager
+        # keeps its own defaults (an empty list must never become ``scope=""``).
+        scope_kwargs: Dict[str, Any] = {"scopes": requested_scopes} if scopes else {}
         auth_url, nonce = await provider.manager.create_authorization_url(
             channel=channel,
             user_id=user_id,
             extra_state=state,
             principal=principal,
-            # An empty list means "use the manager's own scopes", not "request no scope".
-            scopes=requested_scopes or None,
+            **scope_kwargs,
         )
         return ConnectInitResponse(
             auth_url=auth_url,
@@ -458,11 +476,12 @@ class IntegrationsService:
             raise ValueError(f"Unknown provider: {provider_id!r}")
         if permission_context is not None and not self._context_matches(user_id, principal, permission_context):
             raise PermissionError(f"Not permitted to list provider {provider_id!r}")
-        if not await self._check_pbac(
+        if not await self._authorize(
             request,
+            principal,
+            user_id,
             "integration:list",
             provider_id,
-            principal=principal,
             permission_context=permission_context,
             operation="status",
         ):
@@ -486,6 +505,7 @@ class IntegrationsService:
             user_id: Navigator user identifier.
             provider_id: Provider identifier, e.g. ``"jira"``.
             request: aiohttp request used for PBAC evaluation.
+            principal: Bound platform principal for request-independent authorization.
 
         Returns:
             :class:`~parrot.integrations.oauth2.models.DisconnectResponse` with
@@ -498,12 +518,13 @@ class IntegrationsService:
             user_id, principal, permission_context, channel
         ):
             raise PermissionError(f"Not permitted to disconnect provider {provider_id!r}")
-        if not await self._check_pbac(
+        if not await self._authorize(
             request,
+            principal,
+            user_id,
             "integration:disconnect",
             provider_id,
             list(provider.default_scopes),
-            principal=principal,
             permission_context=permission_context,
             operation="disconnect",
         ):
@@ -587,9 +608,236 @@ class IntegrationsService:
         )
         return row
 
+    async def whoami(self, user_id: str, request: Any = None) -> WhoAmI:
+        """Return the Navigator identity of the authenticated caller (CLI `parrot whoami`, M2 resolver)."""
+        session = None
+        if request is not None:
+            if hasattr(request, "get"):
+                session = request.get("session")
+            if session is None:
+                session = getattr(request, "session", None)
+
+        def session_value(name: str) -> Any:
+            """Read a claim from the session or its common nested claim maps."""
+            if session is None:
+                return None
+            value = getattr(session, name, None)
+            if value is None and hasattr(session, "get"):
+                value = session.get(name)
+            if value is not None:
+                return value
+            if not hasattr(session, "get"):
+                return None
+            for container_name in ("userinfo", "session", "token_claims", "claims", "token_info"):
+                container = session.get(container_name)
+                if isinstance(container, dict) and container.get(name) is not None:
+                    return container[name]
+            return None
+
+        email = session_value("email")
+        roles = session_value("roles") or []
+        scopes = session_value("scopes")
+        if scopes is None:
+            scopes = session_value("scope") or []
+        if isinstance(roles, str):
+            roles = roles.split()
+        if isinstance(scopes, str):
+            scopes = scopes.split()
+        return WhoAmI(
+            user_id=user_id,
+            tenant_id=session_value("tenant_id"),
+            canonical_identity=session_value("canonical_identity") or email,
+            email=email,
+            roles=list(roles),
+            scopes=list(scopes),
+        )
+
+    async def pull_access_token(self, user_id: str, provider_id: str, request: Any = None) -> PulledToken:
+        """Vend the provider access token for ``user_id`` (PBAC integration:use, fail closed, audited)."""
+        provider = OAuth2ProviderRegistry().get(provider_id)
+        if provider is None:
+            raise ValueError(f"Unknown provider: {provider_id!r}")
+        if not await self._check_pbac(request, "integration:use", provider_id, list(provider.default_scopes)):
+            raise PermissionError(f"Not permitted to use provider {provider_id!r}")
+        principal = Principal(user_id=user_id, channel="cli", channel_user_id=user_id)
+        token = await provider.manager.get_valid_token("cli", user_id)
+        if token is None:
+            auth_url = None
+            try:
+                connect = await self.start_connect(
+                    user_id,
+                    provider_id,
+                    channel="cli",
+                    principal=principal,
+                    request=request,
+                )
+                auth_url = connect.auth_url
+            except (PermissionError, ValueError):
+                pass
+            raise NotConnected(
+                AuthRequiredPayload(
+                    provider=provider_id,
+                    auth_url=auth_url,
+                    scopes=list(provider.default_scopes),
+                    auth_kind="oauth2",
+                    message="not_connected",
+                )
+            )
+        await provider.manager._publish("connection.token_pulled", principal, token)
+        return PulledToken(
+            provider=provider_id,
+            access_token=token.access_token,
+            expires_at=float(token.expires_at),
+            scopes=list(token.scopes or []),
+            account_id=token.account_id or "",
+        )
+
+    async def complete_connect(
+        self,
+        user_id: str,
+        provider_id: str,
+        *,
+        code: str,
+        state: str,
+        channel: str,
+        request: Any = None,
+    ) -> IntegrationDescriptor:
+        """Paste fallback (S10): verify the nonce belongs to ``user_id``, then exchange + persist."""
+        provider = OAuth2ProviderRegistry().get(provider_id)
+        if provider is None:
+            raise ValueError(f"Unknown provider: {provider_id!r}")
+        if not await self._check_pbac(request, "integration:connect", provider_id, list(provider.default_scopes)):
+            raise PermissionError(f"Not permitted to connect provider {provider_id!r}")
+        manager = provider.manager
+        raw_state = await manager.redis.get(manager._nonce_key(state))
+        if not raw_state:
+            raise ValueError("Invalid or expired state nonce.")
+        if isinstance(raw_state, bytes):
+            raw_state = raw_state.decode("utf-8")
+        try:
+            state_payload = json.loads(raw_state)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("Invalid or expired state nonce.") from exc
+        nonce_user_id = state_payload.get("nav_user_id") if isinstance(state_payload, dict) else None
+        if nonce_user_id is None or not hmac.compare_digest(str(nonce_user_id), user_id):
+            raise ValueError("Invalid or expired state nonce.")
+        token_set, state_payload = await manager.handle_callback(code, state)
+        await self.persist_credential(
+            user_id,
+            provider_id,
+            token_set,
+            channel=channel,
+            canonical_identity=state_payload.get("canonical_identity"),
+        )
+        return await self.status(user_id, provider_id, request)
+
+    async def device_start(
+        self,
+        user_id: str,
+        provider_id: str,
+        *,
+        principal: Principal,
+        request: Any = None,
+        scopes: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Start a provider RFC 8628 grant while retaining the device code server-side."""
+        provider = OAuth2ProviderRegistry().get(provider_id)
+        if provider is None:
+            raise ValueError(f"Unknown provider: {provider_id!r}")
+        if not await self._check_pbac(
+            request, "integration:connect", provider_id, list(scopes or provider.default_scopes)
+        ):
+            raise PermissionError(f"Not permitted to connect provider {provider_id!r}")
+        handle, authorization = await provider.manager.start_device_authorization(principal, scopes=scopes)
+        return {
+            "handle": handle,
+            "user_code": authorization.user_code,
+            "verification_uri": authorization.verification_uri,
+            "verification_uri_complete": authorization.verification_uri_complete,
+            "expires_in": authorization.expires_in,
+            "interval": authorization.interval,
+        }
+
+    async def device_poll(
+        self,
+        user_id: str,
+        provider_id: str,
+        *,
+        handle: str,
+        request: Any = None,
+    ) -> Dict[str, Any]:
+        """Poll one device grant and persist its completed credential for its owner."""
+        provider = OAuth2ProviderRegistry().get(provider_id)
+        if provider is None:
+            raise ValueError(f"Unknown provider: {provider_id!r}")
+        if not await self._check_pbac(request, "integration:connect", provider_id, list(provider.default_scopes)):
+            raise PermissionError(f"Not permitted to connect provider {provider_id!r}")
+        manager = provider.manager
+        raw_record = await manager.redis.get(manager._device_key(handle))
+        if not raw_record:
+            return {"status": "expired"}
+        try:
+            if isinstance(raw_record, bytes):
+                raw_record = raw_record.decode("utf-8")
+            record = json.loads(raw_record)
+        except (UnicodeDecodeError, TypeError, json.JSONDecodeError):
+            logger.warning("Undecodable device authorization record for provider=%s", provider_id)
+            return {"status": "failed", "reason": "invalid device authorization record"}
+        record_principal = record.get("principal", {}) if isinstance(record, dict) else {}
+        owner_user_id = record_principal.get("user_id") if isinstance(record_principal, dict) else None
+        if owner_user_id is None or not hmac.compare_digest(str(owner_user_id), user_id):
+            raise PermissionError("Device authorization handle does not belong to this user")
+
+        result = await manager.complete_device_authorization(handle)
+        if result.get("status") == "completed":
+            token_set = result.pop("token_set")
+            await self.persist_credential(user_id, provider_id, token_set, channel="cli")
+        result.pop("token_set", None)
+        return result
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _authorize(
+        self,
+        request: Any,
+        principal: Optional[Principal],
+        user_id: str,
+        action: str,
+        provider_id: Optional[str] = None,
+        scopes: Optional[List[str]] = None,
+        *,
+        permission_context: Optional["PermissionContext"] = None,
+        operation: Optional[str] = None,
+    ) -> bool:
+        """Authorize one connection action.
+
+        Precedence: a ``PermissionContext`` (channel callers such as Teams) is evaluated by the injected
+        request-less evaluator; otherwise web requests use PBAC; otherwise non-web calls use the injected
+        ``ConnectionAuthorizer`` (Slack/CLI) and require a principal matching ``user_id``.
+        """
+        if permission_context is not None:
+            return await self._check_pbac(
+                request,
+                action,
+                provider_id,
+                scopes,
+                principal=principal,
+                permission_context=permission_context,
+                operation=operation,
+            )
+        if request is not None:
+            return await self._check_pbac(request, action, provider_id, scopes)
+        if principal is None or self._authorizer is None or str(principal.user_id) != str(user_id):
+            logger.debug("Denying %s: missing principal/authorizer or principal mismatch", action)
+            return False
+        try:
+            decision = await self._authorizer.authorize(principal, action, provider_id, list(scopes or []))
+        except Exception:  # noqa: BLE001 - evaluator errors fail closed
+            logger.exception("Connection authorizer failed for action=%s provider=%s — denying", action, provider_id)
+            return False
+        return decision is True
 
     async def _check_pbac(
         self,

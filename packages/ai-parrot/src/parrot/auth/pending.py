@@ -1,8 +1,4 @@
-"""Request-scoped collector for tool needs-auth signals (FEAT-775 M5 / FEAT-776 M1).
-
-A channel wrapper binds a collector around one agent turn; ``ToolManager`` appends every
-``AuthRequiredPayload`` it produces. Unbound, recording is a no-op.
-"""
+"""Request-scoped collector of tool needs-auth payloads (FEAT-775 M5 / FEAT-776 M1 / FEAT-777 M4)."""
 
 from __future__ import annotations
 
@@ -17,25 +13,20 @@ _PENDING_AUTH: ContextVar[Optional[List[AuthRequiredPayload]]] = ContextVar("par
 
 @contextmanager
 def collect_auth_requirements() -> Iterator[List[AuthRequiredPayload]]:
-    """Bind a fresh list for the current context and yield it.
-
-    Yields:
-        The list that ``record_auth_requirement`` appends to while bound.
-    """
-    collected: List[AuthRequiredPayload] = []
-    token = _PENDING_AUTH.set(collected)
+    """Bind a fresh list for the current context; reset the ContextVar token on exit."""
+    pending: List[AuthRequiredPayload] = []
+    token = _PENDING_AUTH.set(pending)
     try:
-        yield collected
+        yield pending
     finally:
         _PENDING_AUTH.reset(token)
 
 
 def record_auth_requirement(payload: AuthRequiredPayload) -> None:
-    """Append ``payload`` to the bound collector; do nothing when none is bound.
+    """Append ``payload`` when a collector is bound; otherwise do nothing."""
+    pending = _PENDING_AUTH.get()
+    if pending is not None:
+        pending.append(payload)
 
-    Args:
-        payload: The needs-auth payload built by ``ToolManager``.
-    """
-    collected = _PENDING_AUTH.get()
-    if collected is not None:
-        collected.append(payload)
+
+__all__ = ["collect_auth_requirements", "record_auth_requirement"]

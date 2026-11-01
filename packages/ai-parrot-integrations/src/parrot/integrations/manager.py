@@ -29,7 +29,6 @@ from parrot.human import (
     set_default_human_manager,
 )
 from parrot.integrations.core.auth.notifiers import (
-    SlackJiraNotifierAdapter,
     TelegramJiraNotifierAdapter,
 )
 from .models import (
@@ -167,12 +166,11 @@ def _register_teams_notifier(app: Any) -> None:
 
 
 def _register_channel_notifiers(app: Any) -> ChannelNotifierRegistry:
-    """Register the channel connection notifiers in the shared registry."""
+    """Register the Telegram Jira adapter and the Teams connection notifier; Slack registers SlackConnectionNotifier from SlackAgentWrapper."""
     registry = ChannelNotifierRegistry()
     if app.get("connection_channel_notifiers_registered"):
         return registry
     registry.register(TelegramJiraNotifierAdapter(app))
-    registry.register(SlackJiraNotifierAdapter(app))
     _register_teams_notifier(app)
     app["connection_channel_notifiers_registered"] = True
     return registry

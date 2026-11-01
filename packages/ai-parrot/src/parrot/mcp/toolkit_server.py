@@ -7,10 +7,12 @@ with optional LLM wiring and tool filtering (include/exclude/llm_dependent).
 import asyncio
 import contextlib
 import importlib
+import importlib.metadata
 import logging
+import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 # NOTE: `LLMFactory` is intentionally NOT imported at module level. Its
 # import chain (parrot.clients.factory -> ... -> navconfig) triggers
@@ -32,6 +34,54 @@ logger = logging.getLogger(__name__)
 #: rather than a literal so tests can shrink it instead of waiting out the
 #: real budget.
 _CLEANUP_TIMEOUT_SECONDS = 10.0
+_TOOLS_DISTRIBUTION = "ai-parrot-tools"
+_AGGREGATE_EXTRAS = frozenset({"all"})
+_REQUIREMENT_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+_EXTRA_MARKER = re.compile(r"""extra\s*==\s*["']([^"']+)["']""")
+
+
+def _normalize_name(name: str) -> str:
+    """Normalize a distribution or module name for comparison (PEP 503 style, ``_`` separator)."""
+    return re.sub(r"[-_.]+", "_", name).lower()
+
+
+def _extra_hint(exc: ImportError, class_path: str) -> str:
+    """Return an install hint for a toolkit whose class failed to import.
+
+    Maps the missing top-level module (``exc.name``) to the ``ai-parrot-tools`` extras that
+    require a distribution of the same normalized name, read from the installed package
+    metadata. Falls back to a generic hint naming the missing module.
+
+    Args:
+        exc: The import failure raised while resolving the toolkit class.
+        class_path: The configured dotted class path.
+
+    Returns:
+        The hint text (with a leading two-space indent), or ``""`` for non-``parrot_tools`` classes.
+    """
+    if "parrot_tools" not in class_path:
+        return ""
+    missing = (exc.name or "").split(".")[0]
+    if not missing or missing == "parrot_tools":
+        return f"  Install the {_TOOLS_DISTRIBUTION} extra this toolkit needs (see its optional dependencies)."
+    try:
+        requirements = importlib.metadata.requires(_TOOLS_DISTRIBUTION) or []
+    except importlib.metadata.PackageNotFoundError:
+        requirements = []
+    wanted = _normalize_name(missing)
+    extras = set()
+    for requirement in requirements:
+        name = _REQUIREMENT_NAME.match(requirement)
+        if name is None or _normalize_name(name.group(1)) != wanted:
+            continue
+        extras.update(extra for extra in _EXTRA_MARKER.findall(requirement) if extra not in _AGGREGATE_EXTRAS)
+    if extras:
+        options = " or ".join(f'uv pip install "{_TOOLS_DISTRIBUTION}[{extra}]"' for extra in sorted(extras))
+        return f"  Try: {options}"
+    return (
+        f"  Missing module '{missing}': install the {_TOOLS_DISTRIBUTION} extra that provides it "
+        f'(uv pip install "{_TOOLS_DISTRIBUTION}[<extra>]").'
+    )
 
 
 class _ToolkitStdioMCPServer(StdioMCPServer):
@@ -53,18 +103,88 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
     unchanged by this class's existence.
     """
 
-    def __init__(self, config: LocalServerConfig, toolkit: AbstractToolkit) -> None:
+    def __init__(
+        self, config: LocalServerConfig, toolkit: AbstractToolkit, *, login_file: Optional[Path] = None
+    ) -> None:
         super().__init__(config)
         self._owned_toolkit = toolkit
+        self._login_file = login_file
+        self._connections_client: Any = None  # ServerConnectionsClient owned by _bind_identity
         self._stop_lock = asyncio.Lock()
         self._released = False
 
     async def start(self) -> None:
         """Serve until stdin EOF or an error, then always release owned resources."""
+        await self._bind_identity()
         try:
             await super().start()
         finally:
             await self.stop()
+
+    async def _bind_identity(self) -> None:
+        """Resolve the login principal + CLI broker once; no login keeps existing behavior.
+
+        A login that exists but cannot be used (unsafe/unreadable file, unresolvable principal)
+        fails closed: credential tools get an ``identity_error`` context and return an
+        authorization-required result instead of running anonymously.
+        """
+        with contextlib.redirect_stdout(sys.stderr):
+            from parrot.auth.oauth2.local_cache import build_cli_broker
+            from parrot.auth.oauth2.remote_client import ServerConnectionsClient
+            from parrot.cli.login import LoginFileError, LoginStore
+            from parrot.cli.principal import CliPrincipalResolver, build_cli_permission_context
+            from parrot.mcp.adapter import ToolExecutionContext
+
+        store = LoginStore(self._login_file)
+        try:
+            record = await asyncio.to_thread(store.load_optional)
+        except LoginFileError as exc:
+            self.logger.error("Could not load the CLI login: %s", type(exc).__name__)
+            self._bind_context(ToolExecutionContext(identity_error="the CLI login file could not be loaded"))
+            return
+        if record is None:
+            return
+
+        client = ServerConnectionsClient(store)
+        self._connections_client = client
+        try:
+            resolved = await CliPrincipalResolver(store, client).resolve_with_roles("cli", record.user_id)
+        except Exception as exc:  # noqa: BLE001 — any resolver failure must fail closed, never crash startup
+            self.logger.error("Could not resolve the CLI principal: %s", type(exc).__name__)
+            resolved = None
+        if resolved is None:
+            self.logger.warning("Could not resolve the CLI principal")
+            await self._close_connections_client()
+            self._bind_context(ToolExecutionContext(identity_error="the CLI login identity could not be resolved"))
+            return
+        principal, roles = resolved
+        providers = {
+            adapter.tool.credential_provider for adapter in self.tools.values() if adapter.tool.credential_provider
+        }
+        broker = build_cli_broker(store, providers, client=client) if providers else None
+        if broker is None:
+            await self._close_connections_client()  # no credential tool will ever use it
+        context = ToolExecutionContext(
+            permission_context=build_cli_permission_context(principal, roles=roles),
+            broker=broker,
+        )
+        self._bind_context(context)
+
+    async def _close_connections_client(self) -> None:
+        """Close the owned ``ServerConnectionsClient`` session, if any; never raises."""
+        client, self._connections_client = self._connections_client, None
+        if client is None:
+            return
+        try:
+            await client.close()
+        except Exception as exc:  # noqa: BLE001 -- isolated shutdown logging
+            self.logger.error("Error closing the connections client: %s", type(exc).__name__)
+
+    def _bind_context(self, context: Any) -> None:
+        """Attach one execution context to the server and every registered adapter."""
+        self.execution_context = context
+        for adapter in self.tools.values():
+            adapter.execution_context = context
 
     async def stop(self) -> None:
         """Stop the read loop, then release the owned toolkit's resources.
@@ -84,6 +204,7 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
             if self._released:
                 return
             self._released = True
+            await self._close_connections_client()
 
             try:
                 await asyncio.wait_for(self._release_toolkit(), timeout=_CLEANUP_TIMEOUT_SECONDS)
@@ -136,7 +257,9 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
 
 def create_toolkit_mcp_server(
     name: str,
-    root: Path = Path.cwd(),
+    root: Optional[Path] = None,
+    *,
+    login_file: Optional[Path] = None,
     **overrides: Any,
 ) -> StdioMCPServer:
     """Create a stdio MCP server for a toolkit.
@@ -151,6 +274,7 @@ def create_toolkit_mcp_server(
     Args:
         name: Toolkit name (e.g., "memory", "scraping", "custom").
         root: Project root. Defaults to current working directory.
+        login_file: Optional login file used to bind the CLI principal at server start.
         **overrides: CLI passthrough:
             - config_path: Override config file path (else `.parrot/mcp-toolkits.yaml`).
             - include: Whitelist of tool names (overrides section's include).
@@ -164,9 +288,9 @@ def create_toolkit_mcp_server(
             instantiation fails. Error messages name the offending section,
             file path, and dependency.
         ImportError: If the toolkit class cannot be resolved (e.g., missing
-            extra like ai-parrot-tools[scraping]).
+            extra of ai-parrot-tools); the error names the extra to install.
     """
-    root = Path(root)
+    root = Path(root) if root is not None else Path.cwd()
 
     # Load config — honoring the documented `config_path` override (the
     # `parrot mcp-local --config` flag). Needed because stdio MCP servers
@@ -189,11 +313,7 @@ def create_toolkit_mcp_server(
             module = importlib.import_module(module_name)
             toolkit_cls = getattr(module, class_name)
         except ImportError as e:
-            # Try to suggest the package extra
-            if "parrot_tools" in section.class_path:
-                extra_hint = "  Try: uv pip install ai-parrot-tools[scraping] " "or ai-parrot-tools[browsing]"
-            else:
-                extra_hint = ""
+            extra_hint = _extra_hint(e, section.class_path)
             raise ImportError(
                 f"Cannot import toolkit '{section.class_path}' for '{name}':{extra_hint}\n" f"  Original error: {e}"
             ) from e
@@ -259,6 +379,8 @@ def create_toolkit_mcp_server(
 
     # Build and return server — FEAT-580 M4: retain the instantiated
     # toolkit so its resources get released on server shutdown.
-    server = _ToolkitStdioMCPServer(LocalServerConfig(name=f"parrot-{name}", version="1.0.0"), toolkit)
+    server = _ToolkitStdioMCPServer(
+        LocalServerConfig(name=f"parrot-{name}", version="1.0.0"), toolkit, login_file=login_file
+    )
     server.register_tools(filtered_tools)
     return server

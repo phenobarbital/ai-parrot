@@ -401,3 +401,10 @@ def test_invocation_context_sets_and_restores() -> None:
     assert current_agent_name.get() is None
     assert current_user_id.get() is None
     assert current_session_id.get() is None
+
+
+def test_dev_loop_backend_ids_resolve_to_priced_providers() -> None:
+    """FEAT-783: sdd-coder backend ids resolve to a provider that has a bundled price file."""
+    assert resolve_gen_ai_system("codex") == "openai"
+    assert resolve_gen_ai_system("google-compat") == "gemini"
+    assert resolve_gen_ai_system("nova") == "aws.bedrock"

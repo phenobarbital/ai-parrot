@@ -10,6 +10,7 @@ Channel constant
 ``parrot.integrations.telegram.jira_commands`` and is used to tag OAuth2
 state payloads that originate from the web channel.
 """
+
 from __future__ import annotations
 
 # Channel constant — mirrors jira_commands.py:39
@@ -31,6 +32,7 @@ from .events import (  # noqa: E402
 )
 from .models import (  # noqa: E402
     AuthRequiredEnvelope,
+    ChannelLinkPreview,
     ConnectInitRequest,
     ConnectInitResponse,
     DisconnectResponse,
@@ -63,6 +65,7 @@ __all__ = [
     "ConnectionEventPublisher",
     # models
     "AuthRequiredEnvelope",
+    "ChannelLinkPreview",
     "ConnectInitRequest",
     "ConnectInitResponse",
     "DisconnectResponse",

@@ -38,6 +38,8 @@ from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
 from ..handlers.a2ui import A2UIHandler
+from ..handlers.connection_events import ConnectionEventsHandler
+from ..handlers.channel_links import ChannelLinksHandler
 from ..handlers.connections import ConnectionsHandler
 from ..handlers.integrations import IntegrationsHandler
 from ..handlers.infographic import InfographicTalk
@@ -2397,7 +2399,12 @@ class BotManager:
         # Uses a deferred callback so app["jira_oauth_manager"] is available.
         # Descriptor managers must be wired before aiohttp freezes the router
         # and startup signal; their setup adds both routes and lifecycle hooks.
+        # FEAT-777 M1: shared connection-event publisher + per-principal Redis push sink (SSE).
+        self._setup_connection_push(self.app)
+        # FEAT-777 M2: Slack account-link issuer + request-independent connection authorizer.
+        self._setup_channel_links(self.app)
         self._register_descriptor_oauth2_providers(self.app)
+        self._register_o365_oauth2_provider(self.app)
         self.app.on_startup.append(self._register_oauth2_providers)
         # FEAT-598 (TASK-3805): default data-plane guard wiring, in two phases.
         # 1. Build PBAC + the guard NOW, while the app is still mutable:
@@ -2486,8 +2493,18 @@ class BotManager:
         )
         # Principal-level OAuth connection routes (FEAT-773).
         router.add_view("/api/v1/connections", ConnectionsHandler)
+        # FEAT-777 M1: register before /{provider} so "events" is not captured as a provider id.
+        router.add_view("/api/v1/connections/events", ConnectionEventsHandler)
+        router.add_view("/api/v1/connections/me", ConnectionsHandler)
         router.add_view("/api/v1/connections/{provider}", ConnectionsHandler)
         router.add_view("/api/v1/connections/{provider}/start", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/token", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/complete", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/device/start", ConnectionsHandler)
+        router.add_view("/api/v1/connections/{provider}/device/poll", ConnectionsHandler)
+        # FEAT-777 M2: Slack account-link preview + explicit confirm (session principal only).
+        router.add_view("/api/v1/channel-links/{nonce}", ChannelLinksHandler)
+        router.add_view("/api/v1/channel-links/{nonce}/confirm", ChannelLinksHandler)
         # User-defined bots: PUT/PATCH/GET/DELETE
         router.add_view("/api/v1/user_agents", UserAgentHandler)
         router.add_view("/api/v1/user_agents/{chatbot_id}", UserAgentHandler)
@@ -2803,6 +2820,75 @@ Available documentation UIs:
                 self.logger.error(f"Error in cleanup task: {e}", exc_info=True)
                 # Continue running even if there's an error
 
+    def _setup_connection_push(self, app: web.Application) -> None:
+        """Attach the shared connection publisher to the Redis-backed SSE sink."""
+        if app.get("connection_push") is not None:
+            return
+
+        try:
+            from parrot.auth.oauth2.events import (
+                ChannelNotifierRegistry,
+                ConnectionEventPublisher,
+                setup_connection_fanout,
+            )
+            from parrot.observability.fanout import get_event_fanout_bus
+            from parrot.security.audit_ledger import AuditLedger
+            from parrot.services.connection_push import RedisConnectionPush
+
+            publisher = app.get("connection_event_publisher")
+            if publisher is None:
+                audit_ledger = app.get("connection_audit_ledger")
+                if audit_ledger is None:
+                    audit_ledger = AuditLedger()
+                    app["connection_audit_ledger"] = audit_ledger
+                publisher = ConnectionEventPublisher(
+                    notifiers=ChannelNotifierRegistry(),
+                    audit_ledger=audit_ledger,
+                )
+                try:
+                    bus = get_event_fanout_bus()
+                    if bus is not None:
+                        setup_connection_fanout(bus, publisher)
+                except Exception:  # noqa: BLE001 - observability fan-out is additive
+                    self.logger.warning("Connection event fan-out bus not attached", exc_info=True)
+                app["connection_event_publisher"] = publisher
+
+            push = RedisConnectionPush(REDIS_URL)
+            publisher.add_sink(push)
+            app["connection_push"] = push
+
+            async def _start_push(_app: web.Application) -> None:
+                await push.start()
+
+            async def _close_push(_app: web.Application) -> None:
+                await push.close()
+
+            app.on_startup.append(_start_push)
+            app.on_cleanup.append(_close_push)
+        except Exception:  # noqa: BLE001 - SSE is additive; never block server setup
+            self.logger.exception("Connection event push not configured; /api/v1/connections/events will return 503")
+
+    def _setup_channel_links(self, app: web.Application) -> None:
+        """Wire the channel-link issuer and request-independent connection authorizer."""
+        from parrot.conf import CHANNEL_LINK_TTL_SECONDS, CONNECTIONS_LINK_BASE_URL
+
+        if app.get("channel_link_issuer") is None:
+            if CONNECTIONS_LINK_BASE_URL:
+                from parrot.auth.channel_link import ChannelLinkIssuer
+
+                app["channel_link_issuer"] = ChannelLinkIssuer(
+                    app["redis"], base_url=CONNECTIONS_LINK_BASE_URL, ttl_seconds=CHANNEL_LINK_TTL_SECONDS
+                )
+            else:
+                self.logger.warning("CONNECTIONS_LINK_BASE_URL is not set — Slack account linking is disabled (D5)")
+        if app.get("connection_authorizer") is None:
+            try:
+                from parrot.services.connection_authorization import NavigatorConnectionAuthorizer
+
+                app["connection_authorizer"] = NavigatorConnectionAuthorizer(app)
+            except Exception:  # noqa: BLE001 - Slack operations fail closed without the adapter
+                self.logger.exception("Connection authorizer not configured; Slack operations will fail closed")
+
     def _register_descriptor_oauth2_providers(self, app: web.Application) -> None:
         """Register configured descriptor providers while the app is mutable."""
         from parrot.conf import OAUTH2_PROVIDERS_FILE
@@ -2828,6 +2914,39 @@ Available documentation UIs:
         except Exception:  # noqa: BLE001
             self.logger.exception("Failed to register descriptor OAuth2 providers")
 
+    def _register_o365_oauth2_provider(self, app: web.Application) -> None:
+        """Wire the shared O365 manager and provider while the app is mutable."""
+        from parrot.conf import O365_CLIENT_ID, O365_CLIENT_SECRET, O365_REDIRECT_URI, O365_TENANT_ID
+
+        if not O365_CLIENT_ID or app.get("_o365_oauth2_provider_registered"):
+            return
+
+        try:
+            from parrot.auth.o365_oauth import O365OAuthManager
+            from parrot.auth.oauth2.o365_provider import O365OAuth2Provider
+            from parrot.auth.oauth2.registry import register_oauth2_provider
+            from parrot.services.identity_credential_sink import IdentityVaultCredentialStore
+
+            manager = app.get(f"oauth2_manager_{O365OAuthManager.provider_id}")
+            if manager is None:
+                authdb = app.get("authdb")
+                manager = O365OAuthManager(
+                    O365_CLIENT_ID,
+                    O365_CLIENT_SECRET,
+                    O365_REDIRECT_URI,
+                    tenant_id=O365_TENANT_ID or "common",
+                    app=app,
+                    credential_store=IdentityVaultCredentialStore(authdb) if authdb is not None else None,
+                    event_publisher=app.get("connection_event_publisher"),
+                )
+                manager.setup()
+
+            register_oauth2_provider(O365OAuth2Provider(manager=manager))
+            app["_o365_oauth2_provider_registered"] = True
+            self.logger.info("Registered O365OAuth2Provider with the global OAuth2ProviderRegistry")
+        except Exception:  # noqa: BLE001
+            self.logger.exception("Failed to register the O365 OAuth2 provider")
+
     async def _register_oauth2_providers(self, app: web.Application) -> None:
         """Register OAuth2 providers with the global registry (FEAT-144).
 
@@ -2848,6 +2967,15 @@ Available documentation UIs:
                     "JiraOAuth2Provider not registered.  "
                     "Ensure JiraOAuthManager.setup(app) is called before startup."
                 )
+
+            o365_manager = app.get("oauth2_manager_o365")
+            connection_event_publisher = app.get("connection_event_publisher")
+            if (
+                o365_manager is not None
+                and getattr(o365_manager, "_events", None) is None
+                and connection_event_publisher is not None
+            ):
+                o365_manager._events = connection_event_publisher
 
             authdb = app.get("authdb")
             if authdb is not None:

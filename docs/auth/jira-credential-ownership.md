@@ -78,9 +78,11 @@ Per channel, as of 2026-10-23:
 | MS Teams | **yes** for an authenticated user, since FEAT-729 / TASK-4667, and now through the generic connect flow of FEAT-775 (`msteams/commands/connect_commands.py`; the legacy `jira_commands.py` aliases delegate to it) |
 | Slack | **no** — it sends `team_id` / `slack_user_id` (`slack/commands/jira_commands.py`) |
 
-So the remaining gap is a **first-ever Slack link**, plus a Teams link by a user
-the resolver cannot authenticate. Closing it means carrying a Navigator user id
-into the Slack authorize state, the same way TASK-4667 did for Teams.
+**Slack (FEAT-777):** Slack users link through `/login` + web confirmation, which
+claims the team-qualified identity exclusively; the sink can then resolve the
+owner. The remaining gap is a Teams link by a user the resolver cannot
+authenticate. Closing it means carrying a Navigator user id into the Teams
+authorize state, the same way TASK-4667 did for Teams.
 
 Do **not** close it by inventing an id at the callback. A composite
 `team:user` string (`issue:a671f989e8e7`) and an AAD GUID

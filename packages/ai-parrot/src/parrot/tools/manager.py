@@ -19,6 +19,7 @@ from ..a2a.models import RegisteredAgent, AgentCard
 from ..auth.credentials import CredentialRequired
 from ..auth.exceptions import AuthorizationRequired
 from ..auth.pending import record_auth_requirement
+from ..auth.retry_safety import current_turn_tracker
 from ..core.exceptions import BudgetError
 
 if TYPE_CHECKING:
@@ -1740,6 +1741,7 @@ class ToolManager(MCPToolManagerMixin):
         call: Any,
         *,
         sync: bool = False,
+        gated: bool = False,
     ) -> Any:
         """Run one execution attempt, observed when an observer is installed.
 
@@ -1760,6 +1762,8 @@ class ToolManager(MCPToolManagerMixin):
             sync: When ``True``, ``call`` returns a plain value rather
                 than an awaitable — the legacy inline synchronous path,
                 preserved exactly.
+            gated: True when ``call`` runs AbstractTool.execute, which reports its own
+                body/pre-body marks.
 
         Returns:
             Whatever the attempt returned.
@@ -1769,6 +1773,12 @@ class ToolManager(MCPToolManagerMixin):
                 ``CancelledError`` is recorded and re-raised, never
                 swallowed.
         """
+        tracker = current_turn_tracker()
+        if tracker is not None:
+            tracker.mark_dispatch()
+            if not gated:
+                tracker.mark_body_started()  # a plain function's call IS its body
+
         observer = self._invocation_observer
         if observer is None or observation is None:
             return call() if sync else await call()
@@ -2185,7 +2195,10 @@ class ToolManager(MCPToolManagerMixin):
                         exec_kwargs.setdefault("_cred_user_id", getattr(permission_context, "user_id", None))
 
                 result = await self._observed(
-                    observation, tool_name, lambda: self._call_tool_execute(tool, exec_kwargs, parameters, approved)
+                    observation,
+                    tool_name,
+                    lambda: self._call_tool_execute(tool, exec_kwargs, parameters, approved),
+                    gated=True,
                 )
 
                 if return_tool_result:
@@ -2278,12 +2291,12 @@ class ToolManager(MCPToolManagerMixin):
                 if isinstance(auth_exc, CredentialRequired)
                 else auth_exc.to_payload()
             )
-            record_auth_requirement(payload)
             self.logger.info(
                 "Authorization required for tool %s: provider=%s",
                 tool_name,
                 payload.provider,
             )
+            record_auth_requirement(payload)
             return ToolResult(
                 success=False,
                 status="authorization_required",

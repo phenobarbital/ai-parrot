@@ -124,8 +124,8 @@ async def test_teams_missing_oid_fails_closed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_non_teams_and_local_cli_unchanged() -> None:
-    """Non-Teams lookups keep the Navigator id and local Jira keeps cli/local."""
+async def test_non_teams_channels_unchanged() -> None:
+    """Non-Teams lookups keep the Navigator id (the local single-user path was removed by FEAT-774)."""
 
     async def resolve_principal(channel: str, user_id: str) -> SimpleNamespace:
         """Return the canonical Navigator principal for the non-Teams lookup."""
@@ -133,10 +133,8 @@ async def test_non_teams_and_local_cli_unchanged() -> None:
 
     jira_resolver = _RecordingResolver(token_set=_token())
     o365_resolver = _RecordingResolver(token_set=_token())
-    local_resolver = _RecordingResolver(token_set=_token())
     jira = jiratoolkit.JiraToolkit(auth_type="oauth2_3lo", credential_resolver=jira_resolver)
     o365 = Office365Toolkit(credential_resolver=o365_resolver)
-    local_jira = jiratoolkit.JiraToolkit(auth_type="oauth2_local", credential_resolver=local_resolver)
 
     with (
         patch.object(jiratoolkit, "resolve_principal", resolve_principal),
@@ -144,8 +142,6 @@ async def test_non_teams_and_local_cli_unchanged() -> None:
     ):
         await jira._pre_execute("jira_get_issue", _permission_context=_telegram_ctx())
         await o365._pre_execute("o365_read_inbox", _permission_context=_telegram_ctx())
-        await local_jira._pre_execute("jira_get_issue")
 
     assert jira_resolver.calls == [("resolve", "telegram", "42")]
     assert o365_resolver.calls == [("resolve", "telegram", "42")]
-    assert local_resolver.calls == [("resolve", "cli", "local")]

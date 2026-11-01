@@ -15,7 +15,19 @@ if TYPE_CHECKING:
     from parrot.auth.principal import Principal
 
 
-_METADATA_KEYS = frozenset({"account_id", "display_name", "email", "cloud_id", "site_url", "scopes_granted"})
+_METADATA_KEYS = frozenset(
+    {
+        "account_id",
+        "display_name",
+        "email",
+        "cloud_id",
+        "site_url",
+        "scopes_granted",
+        "grant_origin",
+        "tenant_id",
+        "user_principal_name",  # FEAT-777 M3: O365 fields must round-trip
+    }
+)
 
 
 def _as_datetime(value: Any) -> Optional[datetime]:
