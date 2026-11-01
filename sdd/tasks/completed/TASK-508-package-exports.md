@@ -2,7 +2,7 @@
 
 **Feature**: extending-workingmemorytoolkit
 **Spec**: `sdd/specs/extending-workingmemorytoolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-503, TASK-505, TASK-506

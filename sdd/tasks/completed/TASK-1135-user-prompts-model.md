@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-167 — Prompt Library: agent_id support + new UserPrompts model
 **Spec**: `sdd/specs/promptlibrary-changes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

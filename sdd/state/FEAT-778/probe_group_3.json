@@ -1,0 +1,232 @@
+[
+{
+"id": "c34",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/skills/loader.py",
+"symbol": "SkillsDirectoryLoader"
+},
+{
+"id": "c35",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/skills/loader.py",
+"symbol": "load_into"
+},
+{
+"id": "c123",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/skills/mixin.py",
+"symbol": "SkillRegistryMixin"
+},
+{
+"id": "c36",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/skills/models.py",
+"symbol": "SkillDefinition"
+},
+{
+"id": "c37",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/skills/models.py",
+"symbol": "SkillVersion"
+},
+{
+"id": "c38",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/skills/models.py",
+"symbol": "Skill"
+},
+{
+"id": "c42",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/skills/parsers.py",
+"symbol": "parse_skill_file"
+},
+{
+"id": "c39",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/skills/tenancy.py",
+"symbol": "tenant_skills_dir"
+},
+{
+"id": "c40",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/skills/tenancy.py",
+"symbol": "SkillView"
+},
+{
+"id": "c41",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/skills/tenancy.py",
+"symbol": "bind_skill_tenant"
+},
+{
+"id": "c124",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/skills/tenancy.py",
+"symbol": "views"
+},
+{
+"id": "c15",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/stores/kb/abstract.py",
+"symbol": "AbstractKnowledgeBase"
+},
+{
+"id": "c32",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/tools/execution_plan/toolkit.py",
+"symbol": "_get_agent_registry"
+},
+{
+"id": "c81",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/tools/host_hooks.py",
+"symbol": "allowed_tools"
+},
+{
+"id": "c80",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/tools/manager.py",
+"symbol": "ToolManager"
+},
+{
+"id": "c82",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/tools/mcp_mixin.py",
+"symbol": "allowed_tools"
+},
+{
+"id": "c76",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/tools/spawn.py",
+"symbol": "SpawnSubAgentInput"
+},
+{
+"id": "c77",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/tools/spawn.py",
+"symbol": "__init__"
+},
+{
+"id": "c78",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/tools/spawn.py",
+"symbol": "_compute_effective_tools"
+},
+{
+"id": "c152",
+"kind": "symbol",
+"path": "packages/ai-parrot/src/parrot/tools/spawn.py",
+"symbol": "SpawnSubAgentTool"
+},
+{
+"id": "c142",
+"kind": "symbol",
+"path": "packages/ai-parrot/tests/fixtures/agents/marketing.yaml",
+"symbol": "system_prompt"
+},
+{
+"id": "c141",
+"kind": "symbol",
+"path": "packages/ai-parrot/tests/test_agent_definitions.py",
+"symbol": "test_bot_config_fields"
+},
+{
+"id": "c157",
+"kind": "symbol",
+"path": "sdd/proposals/claude_legal-wiki-design.md",
+"symbol": "skeleton"
+},
+{
+"id": "c134",
+"kind": "file",
+"path": "sdd/proposals/domain-experts.proposal.md",
+"min_lines": 1
+},
+{
+"id": "c43",
+"kind": "symbol",
+"path": "sdd/proposals/per-tenant-skills.brainstorm.md",
+"symbol": "skills"
+},
+{
+"id": "c158",
+"kind": "symbol",
+"path": "sdd/proposals/promptbuilder-identity-capability.brainstorm.md",
+"symbol": "brainstorm"
+},
+{
+"id": "c137",
+"kind": "symbol",
+"path": "sdd/specs/",
+"symbol": "hits"
+},
+{
+"id": "c136",
+"kind": "file",
+"path": "sdd/specs/adr-prefixed-aliases.spec.md"
+},
+{
+"id": "c71",
+"kind": "symbol",
+"path": "sdd/specs/agent-host-protocol-session-state.spec.md",
+"symbol": "SessionHost"
+},
+{
+"id": "c147",
+"kind": "file",
+"path": "sdd/specs/graphindex-retriever.spec.md"
+},
+{
+"id": "c160",
+"kind": "symbol",
+"path": "sdd/specs/hitl-escalation-tier.spec.md",
+"symbol": "tier"
+},
+{
+"id": "c153",
+"kind": "symbol",
+"path": "sdd/specs/long-term-memory.spec.md",
+"symbol": "LongTermMemoryMixin"
+},
+{
+"id": "c135",
+"kind": "file",
+"path": "sdd/specs/per-tenant-skills.spec.md"
+},
+{
+"id": "c10",
+"kind": "symbol",
+"path": "sdd/specs/promptbuilder-identity-capability.spec.md",
+"symbol": "CAPABILITIES_LAYER"
+},
+{
+"id": "c161",
+"kind": "symbol",
+"path": "sdd/specs/sdd-spec-changes.spec.md",
+"symbol": "frontmatter"
+},
+{
+"id": "c159",
+"kind": "symbol",
+"path": "sdd/tasks/completed/TASK-1900-secondopinion-subagent-brief.md",
+"symbol": "brief"
+},
+{
+"id": "c151",
+"kind": "file",
+"path": "sdd/tasks/index/spawn-ephemeral-subagent-tool.json"
+},
+{
+"id": "c112",
+"kind": "symbol",
+"path": "tests/unit/test_skills_directory_loader.py",
+"symbol": "fixture"
+},
+{
+"id": "c113",
+"kind": "symbol",
+"path": "tests/unit/test_skills_directory_loader.py",
+"symbol": "test_discover_nonexistent_path"
+}
+]

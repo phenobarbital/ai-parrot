@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-394 — Pluggable Language Scanners for wikitoolkit build
 **Spec**: `sdd/specs/wikitoolkit-language-plugins.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2010, TASK-2011, TASK-2012, TASK-2013, TASK-2014, TASK-2015

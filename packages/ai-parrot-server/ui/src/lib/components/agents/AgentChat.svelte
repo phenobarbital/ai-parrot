@@ -41,6 +41,7 @@
 
   import Icon from "@iconify/svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
+  import { connectionsStore } from "$lib/stores/connections.svelte";
   import { notificationStore } from "$lib/stores/notifications.svelte";
   import { wsService } from "$lib/services/websocket-service";
   import { onDestroy } from "svelte";
@@ -556,6 +557,7 @@
   let wsUnsubscribe: (() => void) | null = null;
 
   onMount(async () => {
+    connectionsStore.start();
     // Validate the synchronously-hydrated session id (from localStorage)
     // still maps to a real conversation in IndexedDB. If it doesn't (cache
     // cleared, dev DB wiped, …), clear it so the UI shows the empty state
@@ -617,6 +619,7 @@
   });
 
   onDestroy(() => {
+    connectionsStore.stop();
     // Abort all pending requests
     for (const { controller } of pendingQuestions.values()) {
       controller.abort();
@@ -847,6 +850,7 @@
         let streamFailed = false;
         let streamError: unknown = null;
         let finalMessage: AgentMessage | null = null;
+        let authRequiredReceived = false;
 
         try {
           // Build the appropriate payload with stream: true
@@ -1059,6 +1063,31 @@
                   m.id === withChips.id ? withChips : m,
                 );
               }
+            } else if (event.type === "auth_required" && !authRequiredReceived) {
+              authRequiredReceived = true;
+              messages = [
+                ...messages,
+                {
+                  id: uuidv4(),
+                  role: "assistant",
+                  type: "auth_required",
+                  content:
+                    event.payload.message ||
+                    "Authorization required to use this feature.",
+                  provider: event.payload.provider,
+                  scopes: event.payload.scopes ?? [],
+                  retry_safe: event.retry_safe === true,
+                  origin_user_msg_id: userMsgId,
+                  timestamp: new Date(),
+                  metadata: {
+                    session_id: sessionId,
+                    model: "system",
+                    provider: event.payload.provider,
+                    turn_id: event.turn_id ?? "",
+                    response_time: 0,
+                  },
+                },
+              ];
             }
           }
         } catch (err: unknown) {
@@ -1352,6 +1381,8 @@
             provider: rawResult.provider,
             auth_url: rawResult.auth_url,
             scopes: rawResult.scopes,
+            retry_safe: rawResult.retry_safe === true,
+            origin_user_msg_id: userMsgId,
             timestamp: new Date(),
             metadata: {
               session_id: sessionId,
@@ -1943,12 +1974,61 @@
     return pendingQuestions.has(msgId);
   }
 
+  const autoRetried = new Set<string>();
+  let manualRetryMessageIds = $state<string[]>([]);
+
+  function requireManualRetry(msgId: string): void {
+    if (!manualRetryMessageIds.includes(msgId)) {
+      manualRetryMessageIds = [...manualRetryMessageIds, msgId];
+    }
+  }
+
+  async function handleAuthConnected(msg: AgentMessage): Promise<void> {
+    const origin = msg.origin_user_msg_id;
+    if (msg.retry_safe !== true) return;
+    if (!origin || autoRetried.has(origin)) {
+      requireManualRetry(msg.id);
+      return;
+    }
+
+    const originIndex = messages.findIndex((candidate) => candidate.id === origin);
+    if (
+      originIndex === -1 ||
+      messages
+        .slice(originIndex + 1)
+        .some((candidate) => candidate.role === "user")
+    ) {
+      requireManualRetry(msg.id);
+      return;
+    }
+
+    autoRetried.add(origin);
+    await connectionsStore.refresh();
+    const connection = connectionsStore.items.find(
+      (item) => item.provider === msg.provider,
+    );
+    const requiredScopes = msg.scopes ?? [];
+    if (
+      !connection?.connected ||
+      !requiredScopes.every((scope) =>
+        connection.scopes_granted?.includes(scope),
+      )
+    ) {
+      requireManualRetry(msg.id);
+      return;
+    }
+
+    await handleRetry(msg.id);
+  }
+
   async function handleRetry(msgId: string) {
     const msgIndex = messages.findIndex((m) => m.id === msgId);
     if (msgIndex === -1) return;
 
-    // The user message should be immediately before the error message
-    const userMsg = messages[msgIndex - 1];
+    const retryMessage = messages[msgIndex];
+    const userMsg = retryMessage.origin_user_msg_id
+      ? messages.find((message) => message.id === retryMessage.origin_user_msg_id)
+      : messages[msgIndex - 1];
     if (!userMsg || userMsg.role !== "user") {
       console.error(
         "Cannot retry: previous message not found or not from user",
@@ -2468,9 +2548,13 @@
                   {#if msg.type === "auth_required"}
                     <ConnectIntegrationPill
                       provider={msg.provider ?? ""}
-                      authUrl={msg.auth_url ?? ""}
                       message={msg.content}
                       {agentId}
+                      scopes={msg.scopes ?? []}
+                      retrySafe={msg.retry_safe === true &&
+                        !manualRetryMessageIds.includes(msg.id)}
+                      onConnected={() => handleAuthConnected(msg)}
+                      onRetry={() => handleRetry(msg.id)}
                     />
                   {:else}
                     <ChatBubble

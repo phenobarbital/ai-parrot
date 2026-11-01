@@ -33,6 +33,7 @@ import os
 import re
 import logging
 import asyncio
+import contextvars
 import importlib
 import aiohttp
 from datetime import datetime
@@ -59,12 +60,12 @@ from parrot.interfaces.file.session import SessionFileError, SessionFileStore
 from parrot.utils.helpers import current_context
 from parrot.tools.config_schema import ConfigOption
 from parrot.auth.exceptions import AuthorizationRequired
+from parrot.auth.principal import resolve_principal
 from parrot.template import JinjaConfig, TemplateEngine
 from .toolkit import AbstractToolkit
 from .decorators import tool_schema, requires_permission
 from .jira_config import JiraToolkitConfig
 from .jira_kb import JiraKnowledgeBase
-from .jira_local_auth import FileTokenCredentialResolver
 from parrot.auth.jira_oauth import fetch_accessible_resources
 from parrot.interfaces.jira.site import SiteUrlResolver
 
@@ -833,6 +834,7 @@ class JiraToolkit(AbstractToolkit):
     """  # noqa
 
     #: FEAT-593 — Agent Studio configuration surface.
+    credential_provider = "jira"
     config_model = JiraToolkitConfig
     options_params = frozenset({"default_project"})
     default_user_overridable = frozenset({"username", "password", "token"})
@@ -925,12 +927,9 @@ class JiraToolkit(AbstractToolkit):
             self.auth_type = None  # type: ignore[assignment]
 
         if self.auth_type == "oauth2_local":
-            if credential_resolver is None:
-                credential_resolver = FileTokenCredentialResolver.from_env()
-            self.auth_type = "oauth2_3lo"
-            self._local_single_user = True
-        else:
-            self._local_single_user = False
+            raise ValueError(
+                "auth_type 'oauth2_local' was removed (FEAT-774); run `parrot login` then `parrot connect jira`"
+            )
 
         # For oauth2_3lo the server URL is resolved per-user at runtime via the
         # CredentialResolver, so ``server_url`` is optional. Explicit static
@@ -1057,7 +1056,7 @@ class JiraToolkit(AbstractToolkit):
             if self.credential_resolver is None:
                 raise ValueError("oauth2_3lo requires a credential_resolver")
             self.jira = None  # resolved per-call in _pre_execute
-            # Per-user JIRA client cache: {"{channel}:{user_id}": (client, token_hash)}
+            # Per-principal JIRA client cache: {principal.user_id: (client, token_hash)}
             self._client_cache: Dict[str, tuple] = {}
             return
 
@@ -1335,45 +1334,50 @@ class JiraToolkit(AbstractToolkit):
             return None
 
         perm_ctx = kwargs.get("_permission_context")
-        if self._local_single_user:
-            if perm_ctx is not None:
-                channel = getattr(perm_ctx, "channel", None) or "unknown"
-                if channel not in self.credential_resolver.allowed_channels:
-                    raise AuthorizationRequired(
-                        tool_name=tool_name,
-                        message="Local Jira OAuth credentials are not available for this channel.",
-                        provider="jira",
-                        scopes=list(self._OAUTH_SCOPES),
-                    )
-            channel = "cli"
-            user_id = "local"
-            user_key = "local:cli"
-            token_set = await self.credential_resolver.resolve(channel, user_id)
-        else:
-            if perm_ctx is None:
+        if perm_ctx is None:
+            raise AuthorizationRequired(
+                tool_name=tool_name,
+                message=(
+                    "Permission context is required for Jira OAuth 2.0 (3LO) "
+                    "tools. The call must be routed through ToolManager with "
+                    "a populated PermissionContext."
+                ),
+                provider="jira",
+                scopes=list(self._OAUTH_SCOPES),
+            )
+
+        user_id = getattr(perm_ctx, "user_id", None)
+        channel = getattr(perm_ctx, "channel", None) or "unknown"
+        if not user_id:
+            raise AuthorizationRequired(
+                tool_name=tool_name,
+                message="Cannot resolve Jira credentials without a user_id.",
+                provider="jira",
+                scopes=list(self._OAUTH_SCOPES),
+            )
+
+        principal = await resolve_principal(channel, str(user_id))
+        if principal is None:
+            try:
+                auth_url = await self.credential_resolver.get_auth_url(channel, user_id)
+            except AuthorizationRequired as exc:
                 raise AuthorizationRequired(
                     tool_name=tool_name,
-                    message=(
-                        "Permission context is required for Jira OAuth 2.0 (3LO) "
-                        "tools. The call must be routed through ToolManager with "
-                        "a populated PermissionContext."
-                    ),
-                    provider="jira",
-                    scopes=list(self._OAUTH_SCOPES),
-                )
+                    message=exc.message,
+                    auth_url=exc.auth_url,
+                    provider=exc.provider,
+                    scopes=exc.scopes,
+                ) from exc
+            raise AuthorizationRequired(
+                tool_name=tool_name,
+                message="Please authorize your Jira account to use this tool.",
+                auth_url=auth_url,
+                provider="jira",
+                scopes=list(self._OAUTH_SCOPES),
+            )
 
-            user_id = getattr(perm_ctx, "user_id", None)
-            channel = getattr(perm_ctx, "channel", None) or "unknown"
-            if not user_id:
-                raise AuthorizationRequired(
-                    tool_name=tool_name,
-                    message="Cannot resolve Jira credentials without a user_id.",
-                    provider="jira",
-                    scopes=list(self._OAUTH_SCOPES),
-                )
-
-            user_key = f"{channel}:{user_id}"
-            token_set = await self.credential_resolver.resolve(channel, user_id)
+        user_key = principal.user_id
+        token_set = await self.credential_resolver.resolve(channel, user_id)
         if token_set is None:
             try:
                 auth_url = await self.credential_resolver.get_auth_url(channel, user_id)
@@ -1395,7 +1399,7 @@ class JiraToolkit(AbstractToolkit):
         token_hash = (_at[:16] + _at[-8:]) if len(_at) > 24 else _at
         cached = self._client_cache.get(user_key)
         if cached is not None and cached[1] == token_hash:
-            self.jira = cached[0]
+            self._bind_request_client(cached[0])
             return None
 
         client = self._init_jira_client_from_token(token_set)
@@ -1405,8 +1409,38 @@ class JiraToolkit(AbstractToolkit):
             oldest_key = next(iter(self._client_cache))
             self._client_cache.pop(oldest_key, None)
         self._client_cache[user_key] = (client, token_hash)
-        self.jira = client
+        self._bind_request_client(client)
         return None
+
+    # -----------------------------
+    # Request-scoped Jira client (FEAT-773: per-principal isolation)
+    # -----------------------------
+    def _client_var(self) -> contextvars.ContextVar:
+        """Return this toolkit's context variable holding the current call's Jira client."""
+        var = self.__dict__.get("_jira_client_var")
+        if var is None:
+            var = contextvars.ContextVar(f"jira_client_{id(self)}", default=None)
+            self.__dict__["_jira_client_var"] = var
+        return var
+
+    @property
+    def jira(self) -> Any:
+        """The Jira client for the current call.
+
+        In ``oauth2_3lo`` mode ``_pre_execute`` binds the calling principal's client to the
+        current asyncio context, so two principals interleaving on one toolkit instance can
+        never see each other's client. Static modes use the single client set at init.
+        """
+        scoped = self._client_var().get()
+        return scoped if scoped is not None else self.__dict__.get("_static_jira")
+
+    @jira.setter
+    def jira(self, client: Any) -> None:
+        self.__dict__["_static_jira"] = client
+
+    def _bind_request_client(self, client: Any) -> None:
+        """Bind ``client`` to the current asyncio context only (never to shared state)."""
+        self._client_var().set(client)
 
     @staticmethod
     def _read_key_cert(value: Optional[str]) -> Optional[str]:
@@ -1459,6 +1493,10 @@ class JiraToolkit(AbstractToolkit):
             The shared, lazily-constructed ``JiraInterface``, with
             ``self.jira`` attached as its client.
         """
+        if self.auth_type == "oauth2_3lo":
+            # A shared interface would have its client swapped between awaits by another
+            # principal; build a cheap, call-local one bound to this call's client instead.
+            return self._build_read_interface(self.jira)
         if self.__read_interface is None:
             from parrot.interfaces.jira import JiraInterface
 
@@ -1482,6 +1520,19 @@ class JiraToolkit(AbstractToolkit):
             )
         self.__read_interface.attach_client(self.jira)
         return self.__read_interface
+
+    def _build_read_interface(self, client: Any):
+        """Build a call-local ``JiraInterface`` bound to ``client`` (no network, no shared state)."""
+        from parrot.interfaces.jira import JiraInterface
+
+        interface = JiraInterface(
+            server_url=self.server_url,
+            auth_type=self.auth_type,
+            request_timeout=self.request_timeout,
+            verify_credentials=False,
+        )
+        interface.attach_client(client)
+        return interface
 
     # -----------------------------
     # Utility

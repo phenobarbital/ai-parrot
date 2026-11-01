@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-747 — Roost — local inter-agent sub-protocol over Squawk
 **Spec**: `sdd/specs/local-inter-agent.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-4716, TASK-4718, TASK-4719, TASK-4720, TASK-4723, TASK-4724

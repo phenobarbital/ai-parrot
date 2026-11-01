@@ -1,46 +1,23 @@
 /**
  * Typed API client for the OAuth2 integrations endpoints.
  *
- * Wraps the four routes exposed by `parrot.handlers.integrations.IntegrationsHandler`:
+ * Wraps the three routes exposed by `parrot.handlers.integrations.IntegrationsHandler`:
  *   GET    /api/v1/agents/integrations/{agentId}
  *   POST   /api/v1/agents/integrations/{agentId}/{provider}/connect
- *   POST   /api/v1/agents/integrations/{agentId}/{provider}/enable
  *   DELETE /api/v1/agents/integrations/{agentId}/{provider}
  */
 import { createApiClient } from "$lib/api/http";
+import type { ConnectInitResponse } from "$lib/types/generated/ConnectInitResponse";
+import type { DisconnectResponse } from "$lib/types/generated/DisconnectResponse";
+import type { IntegrationDescriptor } from "$lib/types/generated/IntegrationDescriptor";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export interface IntegrationDescriptor {
-  provider: string;
-  display_name: string;
-  icon?: string;
-  default_scopes: string[];
-  connected: boolean;
-  enabled_on_agent: boolean;
-  account_id?: string;
-  display_account_name?: string;
-  email?: string;
-  connected_at?: string;
-}
-
-export interface ConnectInitResponse {
-  auth_url: string;
-  state: string;
-  scopes: string[];
-  expires_in: number;
-}
-
-export interface EnableResponse {
-  integration: IntegrationDescriptor;
-}
-
-export interface DisconnectResponse {
-  provider: string;
-  disconnected: boolean;
-}
+export type { ConnectInitResponse } from "$lib/types/generated/ConnectInitResponse";
+export type { DisconnectResponse } from "$lib/types/generated/DisconnectResponse";
+export type { IntegrationDescriptor } from "$lib/types/generated/IntegrationDescriptor";
 
 // ---------------------------------------------------------------------------
 // API functions
@@ -78,20 +55,6 @@ export async function startIntegrationConnect(
     `${BASE(agentId)}/${encodeURIComponent(provider)}/connect`,
     returnOrigin ? { return_origin: returnOrigin } : {},
     { headers: returnOrigin ? { Origin: returnOrigin } : {} },
-  );
-  return data;
-}
-
-/**
- * Confirm-enable after the OAuth popup completes. Writes a `user_agent_toolkits`
- * row so the Jira toolkit becomes available to the agent.
- */
-export async function confirmIntegrationEnable(
-  agentId: string,
-  provider: string,
-): Promise<EnableResponse> {
-  const { data } = await client.post<EnableResponse>(
-    `${BASE(agentId)}/${encodeURIComponent(provider)}/enable`,
   );
   return data;
 }

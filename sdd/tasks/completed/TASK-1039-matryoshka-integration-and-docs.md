@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-150 — Matryoshka Embedding Truncation
 **Spec**: `sdd/specs/matryoshka-embedding-truncation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1034, TASK-1035, TASK-1036, TASK-1037, TASK-1038

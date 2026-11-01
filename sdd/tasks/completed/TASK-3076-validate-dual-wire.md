@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-544 — A2UI v1.0 Form Renderer for parrot-formdesigner (full interaction cycle)
 **Spec**: `sdd/specs/a2ui-form-output-renderer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3074, TASK-3075

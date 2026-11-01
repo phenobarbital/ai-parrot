@@ -7,8 +7,8 @@ A single ``UsageRecord`` is built per successful LLM call by
 
 Privacy: this record carries NO prompt/completion content and NO
 ``user_id``/``session_id`` — only provider/model identifiers, token counts,
-cost, timing, and a correlation ``trace_id``. This preserves the observability
-PII contract (see ``observability/README.md``).
+cost, timing, a correlation ``trace_id``, and PII-free SDD identifiers. This
+preserves the observability PII contract (see ``observability/README.md``).
 """
 
 from __future__ import annotations
@@ -50,6 +50,18 @@ class UsageRecord(BaseModel):
         cycle: FEAT-479 — 1-based attempt index within ``(run_id, seat)``,
             assigned by the ledger sink at record time; ``None`` here (the
             subscriber never assigns it).
+        feat_id: FEAT-783 — SDD feature identifier from the event attribution
+            snapshot, or ``None`` when the call is not SDD-attributed.
+        task_id: FEAT-783 — SDD task identifier. SDD identifiers are durable
+            store/span data, never metric labels.
+        attempt_uid: FEAT-783 — unique dispatch-attempt identifier, or
+            ``None`` when unavailable.
+        execution_id: FEAT-783 — execution identifier, or ``None`` when
+            unavailable.
+        dispatch_kind: FEAT-783 — dispatch mechanism identifier, or ``None``.
+        roster_seat: FEAT-783 — sdd-coder roster seat label, or ``None``.
+        pricing_policy: FEAT-783 — derived billed/subscription/estimate policy.
+        equivalent_usd: FEAT-783 — list-price equivalent for subscription usage.
         usage_reported: FEAT-479 — ``False`` when the provider reported
             neither token count (the ``0``-coercion on ``input_tokens``/
             ``output_tokens`` still applies for Prometheus/OpenLit; this flag
@@ -79,6 +91,25 @@ class UsageRecord(BaseModel):
     node_id: Optional[str] = None
     cycle: Optional[int] = None
 
+    # ── FEAT-783: SDD attribution (from the event snapshot; ContextVar fallback). ──
+    # Durable-store / span data ONLY — never metric labels (unbounded cardinality, AC-9).
+    feat_id: Optional[str] = None
+    task_id: Optional[str] = None
+    attempt_uid: Optional[str] = None
+    execution_id: Optional[str] = None
+    dispatch_kind: Optional[str] = None
+    roster_seat: Optional[str] = None
+
+    # ── FEAT-783: four-counter usage + provider-reported cost (reconciliation only). ──
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    reasoning_output_tokens: int = 0
+    source_cost_usd: Optional[float] = None
+    price_revision: Optional[str] = None
+    price_valid_from: Optional[str] = None
+    pricing_policy: Optional[str] = None
+    equivalent_usd: Optional[float] = None
+
     # ── FEAT-479: honesty + failure. ──
     usage_reported: bool = True
     status: Literal["completed", "failed"] = "completed"
@@ -89,3 +120,30 @@ class UsageRecord(BaseModel):
     def total_tokens(self) -> int:
         """Sum of input and output tokens."""
         return self.input_tokens + self.output_tokens
+
+
+# FEAT-746 M12 (S11): a sibling of UsageRecord, never fields on it.
+class CapabilityCallRecord(BaseModel):
+    """One Squawk capability call, served or received.
+
+    Carries no provider/model/PII fields (no user_id/session_id); tokens are
+    only meaningful for ``llm_backed`` capabilities.
+    """
+
+    side: Literal["served", "received"]
+    agent: str
+    peer_agent: str
+    cap_id: str
+    category: str
+    backing: Literal["deterministic", "llm_backed"]
+    status: str
+    duration_ms: float = 0.0
+    rows: Optional[int] = None
+    bytes: Optional[int] = None
+    tokens_in: int = 0
+    tokens_out: int = 0
+    cost_usd: Optional[float] = None
+    policy_applied: tuple[str, ...] = ()
+    trace_id: str
+    correlation_id: Optional[str] = None
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

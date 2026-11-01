@@ -8,6 +8,7 @@ Provides two loading strategies:
   AI-Parrot server via HTTP.
 """
 
+import asyncio
 import difflib
 import json
 import logging
@@ -15,9 +16,11 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 from urllib.parse import quote
 
 import aiohttp
+import click
 import questionary
 
 from parrot.bots.abstract import AbstractBot
+from parrot.cli.login import LoginExpired, LoginStore, refresh_login
 from parrot.registry import agent_registry
 from parrot.registry.registry import BotMetadata
 from parrot.utils.tty import restore_stdin_blocking
@@ -138,6 +141,11 @@ class StandaloneAgentLoader:
             def_count = agent_registry.load_agent_definitions(definitions_dir)
             self.logger.debug("Discovery: %d agent(s) from YAML definitions", def_count)
 
+        # Step 4: domain experts (FEAT-778) — fail-open, never blocks the REPL
+        from parrot.experts.bootstrap import load_experts  # noqa: PLC0415
+
+        await load_experts(agent_registry)
+
     async def load(self, name: str) -> AbstractBot:
         """Load a registered agent by name.
 
@@ -224,18 +232,18 @@ class _ServerBotProxy:
         self,
         name: str,
         server_url: str,
-        session: aiohttp.ClientSession,
+        proxy: "ServerAgentProxy",
     ) -> None:
         """Initialise the server bot proxy.
 
         Args:
             name: Agent name.
             server_url: Base URL of the server.
-            session: Shared aiohttp session.
+            proxy: Shared server proxy which owns authentication and retries.
         """
         self.name = name
         self._server_url = server_url.rstrip("/")
-        self._session = session
+        self._proxy = proxy
         self._tools: List[str] = []
         self.logger = logging.getLogger(__name__)
 
@@ -279,7 +287,7 @@ class _ServerBotProxy:
         }
         # Q8: identity comes from the bearer token only -- never send user_id.
         try:
-            async with self._session.post(url, json=payload) as resp:
+            async with await self._proxy._send("POST", url, json=payload) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
                 return _ServerResponse(data)
@@ -325,7 +333,7 @@ class _ServerBotProxy:
         payload: Dict[str, Any] = {"prompt": question, "session_id": session_id or ""}
         final: Optional[_ServerResponse] = None
         try:
-            async with self._session.post(url, json=payload) as resp:
+            async with await self._proxy._send("POST", url, json=payload) as resp:
                 resp.raise_for_status()
                 async for event in _iter_sse(resp):
                     if event.startswith("error:"):
@@ -480,6 +488,7 @@ class ServerAgentProxy:
         timeout: int = 30,
         *,
         token: Optional[str] = None,
+        login_store: Optional[LoginStore] = None,
     ) -> None:
         """Initialise the server proxy.
 
@@ -489,10 +498,13 @@ class ServerAgentProxy:
             timeout: Request timeout in seconds.
             token: Optional bearer token sent as ``Authorization: Bearer <token>``
                 on every request.
+            login_store: Login store used to refresh an implicit login bearer once.
         """
         self.server_url = server_url.rstrip("/")
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self._token = token
+        self._login_store = login_store
+        self._refreshed = False
         self._session: Optional[aiohttp.ClientSession] = None
         self.logger = logging.getLogger(__name__)
 
@@ -506,6 +518,40 @@ class ServerAgentProxy:
             headers = {"Authorization": f"Bearer {self._token}"} if self._token else None
             self._session = aiohttp.ClientSession(timeout=self.timeout, headers=headers)
         return self._session
+
+    async def _send(self, method: str, url: str, **kwargs: Any) -> aiohttp.ClientResponse:
+        """Send one request, refreshing an implicit login bearer after one 401."""
+        response = await self._get_session().request(method, url, **kwargs)
+        if response.status != 401:
+            return response
+        response.release()
+        if self._login_store is None or self._refreshed:
+            self._session_expired()
+        self._refreshed = True
+        try:
+            record = await asyncio.to_thread(self._login_store.load_optional)
+            if record is None:
+                raise LoginExpired("login record is missing")
+            async with aiohttp.ClientSession(timeout=self.timeout) as refresh_session:
+                refreshed = await refresh_login(record, refresh_session)
+            await asyncio.to_thread(self._login_store.save, refreshed)
+        except Exception:
+            self._session_expired()
+        self._token = refreshed.access_token
+        if self._session and not self._session.closed:
+            await self._session.close()
+        self._session = None
+        response = await self._get_session().request(method, url, **kwargs)
+        if response.status == 401:
+            response.release()
+            self._session_expired()
+        return response
+
+    @staticmethod
+    def _session_expired() -> None:
+        """Report an expired login and stop with the CLI usage exit status."""
+        click.echo("Session expired — run 'parrot login' again", err=True)
+        raise SystemExit(2)
 
     async def load(self, name: str) -> _ServerBotProxy:
         """Create a proxy bot for the named agent on the server.
@@ -521,10 +567,9 @@ class ServerAgentProxy:
         Raises:
             AgentLoadError: If the server is unreachable or agent not found.
         """
-        session = self._get_session()
         url = f"{self.server_url}/api/v1/chatbots/{quote(name, safe='')}"
         try:
-            async with session.get(url) as resp:
+            async with await self._send("GET", url) as resp:
                 if resp.status == 404:
                     raise AgentLoadError(name, message=f"Agent '{name}' not found on server.")
                 resp.raise_for_status()
@@ -535,7 +580,7 @@ class ServerAgentProxy:
             ) from exc
         except aiohttp.ClientError as exc:
             raise AgentLoadError(name, message=f"Server error: {exc}") from exc
-        return _ServerBotProxy(name, self.server_url, session)
+        return _ServerBotProxy(name, self.server_url, self)
 
     async def list_agents(self) -> List[Dict[str, Any]]:
         """Fetch the list of agents from the server registry.
@@ -547,10 +592,9 @@ class ServerAgentProxy:
         Raises:
             AgentLoadError: If the server is unreachable.
         """
-        session = self._get_session()
         url = f"{self.server_url}/api/v1/bots"
         try:
-            async with session.get(url) as resp:
+            async with await self._send("GET", url) as resp:
                 resp.raise_for_status()
                 payload = await resp.json()
                 return payload.get("agents", []) if isinstance(payload, dict) else list(payload)

@@ -174,7 +174,7 @@ class TestServerProxyRoutes:
         await server.start_server()
         try:
             proxy = ServerAgentProxy(str(server.make_url("")))
-            bot = _ServerBotProxy("alpha", str(server.make_url("")), proxy._get_session())
+            bot = _ServerBotProxy("alpha", str(server.make_url("")), proxy)
             with pytest.raises(AgentLoadError):
                 async for _ in bot.ask_stream("hi"):
                     pass

@@ -1,0 +1,19 @@
+# Throw-away Postgres + Redis for the passkey demo (ports offset so they never
+# collide with a local dev stack). Start: docker compose -f examples/passkey/docker-compose.yml up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: passkey
+      POSTGRES_PASSWORD: passkey
+      POSTGRES_DB: passkey_demo
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U passkey -d passkey_demo"]
+      interval: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine   # PasskeyAuth needs Redis >= 6.2 (GETDEL)
+    ports:
+      - "56379:6379"

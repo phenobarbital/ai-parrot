@@ -59,10 +59,14 @@ export const config = {
   /** First path segments the SPA owns; anything else is not an in-app path
    * (guards `?next=` redirects against leaving the SPA). MUST match the
    * routes `parrot/server/ui/serving.py` serves `index.html` for. */
-  appSections: ["login", "agents", "admin"],
+  appSections: ["login", "agents", "admin", "account"],
   loginUrl: "/api/v1/login",
   logoutUrl: "/api/v1/logout",
   authMethodsUrl: "/api/v1/auth/methods",
+  /** FEAT-772: navigator-auth PasskeyAuth route prefix (navigator_auth/backends/passkey.py:35 PASSKEY_PREFIX). */
+  passkeyApiPrefix: "/api/v1/auth/passkey",
+  /** FEAT-772: user-level passkey management page (route added by the account section). */
+  accountSecurityPath: `${basePath}/account/security`,
   /** localStorage key for the bearer token — MUST match
    * parrot_formdesigner's templates.py and parrot/autonomous/admin.py's
    * inline admin page (Codebase Contract, TASK-2527). */

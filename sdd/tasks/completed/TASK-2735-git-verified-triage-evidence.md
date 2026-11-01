@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-497 — QA Gate: Verified Triage Evidence & Diff-Scoped Lint
 **Spec**: `sdd/specs/qa-gate-evidence-and-diff-scoped-lint.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

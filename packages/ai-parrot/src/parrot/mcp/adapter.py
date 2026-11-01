@@ -1,8 +1,66 @@
 import json
 import logging
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
+from parrot.auth.credentials import AuthRequiredPayload, CredentialRequired
+from parrot.auth.exceptions import AuthorizationRequired
 from parrot.tools.abstract import AbstractTool, ToolResult
+
+
+@dataclass(frozen=True)
+class ToolExecutionContext:
+    """Process-scoped identity for stdio servers; ``None`` keeps today's behavior.
+
+    ``identity_error`` is set when a login exists but could not be bound (unsafe file,
+    unresolvable principal). Tools that declare a ``credential_provider`` then fail closed
+    with an authorization-required result instead of running anonymously.
+    """
+
+    permission_context: Optional[Any] = None
+    broker: Optional[Any] = None
+    channel: str = "cli"
+    identity_error: Optional[str] = None
+
+    def exec_kwargs(self) -> Dict[str, Any]:
+        """Return reserved kwargs for ``AbstractTool.execute``."""
+        if self.permission_context is None:
+            return {}
+        kwargs: Dict[str, Any] = {
+            "_permission_context": self.permission_context,
+            "_cred_channel": self.channel,
+            "_cred_user_id": self.permission_context.session.user_id,
+        }
+        if self.broker is not None:
+            kwargs["_broker"] = self.broker
+        return kwargs
+
+
+def identity_unavailable_result(provider: str, tool_name: Optional[str], reason: str) -> Dict[str, Any]:
+    """Return the MCP envelope for a credential tool whose login identity could not be bound."""
+    payload = AuthRequiredPayload(provider=provider, tool_name=tool_name, message=reason)
+    return {
+        "isError": True,
+        "content": [
+            {
+                "type": "text",
+                "text": f"{provider} authorization required — {reason}; run parrot login, then restart this server",
+            }
+        ],
+        "structuredContent": payload.model_dump(exclude_none=True),
+    }
+
+
+def auth_required_result(payload: AuthRequiredPayload) -> Dict[str, Any]:
+    """Return the MCP envelope for a tool that requires authorization."""
+    text = f"{payload.provider} authorization required — run parrot connect {payload.provider}"
+    if payload.auth_url:
+        text += f" or open {payload.auth_url}"
+    return {
+        "isError": True,
+        "content": [{"type": "text", "text": text}],
+        "structuredContent": payload.model_dump(exclude_none=True),
+    }
 
 
 class MCPToolAdapter:
@@ -16,8 +74,9 @@ class MCPToolAdapter:
     argument is the confirmation record.
     """
 
-    def __init__(self, tool: AbstractTool):
+    def __init__(self, tool: AbstractTool, *, execution_context: Optional[ToolExecutionContext] = None):
         self.tool = tool
+        self.execution_context = execution_context
         self.logger = logging.getLogger(f"MCPToolAdapter.{tool.name}")
 
     def _requires_confirmation(self) -> bool:
@@ -58,6 +117,7 @@ class MCPToolAdapter:
 
     async def execute(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute the AI-Parrot tool and convert result to MCP format."""
+        arguments = dict(arguments)
         # The guard argument never reaches the tool itself.
         confirm = arguments.pop("confirm", None)
         if self._requires_confirmation() and confirm is not True:
@@ -74,9 +134,13 @@ class MCPToolAdapter:
                 ],
                 "isError": True,
             }
+        provider = getattr(self.tool, "credential_provider", None)
+        if self.execution_context is not None and self.execution_context.identity_error and provider:
+            return identity_unavailable_result(str(provider), self.tool.name, self.execution_context.identity_error)
         try:
             # Execute the tool
-            result = await self.tool._execute(**arguments)
+            ctx_kwargs = self.execution_context.exec_kwargs() if self.execution_context else {}
+            result = await self.tool.execute(**arguments, **ctx_kwargs)
 
             # Convert ToolResult to MCP response format
             if isinstance(result, ToolResult):
@@ -93,6 +157,10 @@ class MCPToolAdapter:
                     "isError": False
                 }
 
+        except AuthorizationRequired as exc:
+            return auth_required_result(exc.to_payload())
+        except CredentialRequired as exc:
+            return auth_required_result(exc.to_payload(tool_name=self.tool.name))
         except Exception as e:  # noqa: BLE001
             self.logger.error("Tool execution failed: %s", e)
             return {

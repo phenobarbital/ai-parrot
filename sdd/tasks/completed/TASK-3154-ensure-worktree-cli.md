@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-552 — Worktree Creation Ownership
 **Spec**: `sdd/specs/worktree-creation-ownership.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3153

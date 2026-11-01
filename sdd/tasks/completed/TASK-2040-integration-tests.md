@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-397 — Per-Round Token Usage Observability
 **Spec**: `sdd/specs/tokens-observability.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M
 **Depends-on**: TASK-2034, TASK-2035, TASK-2036, TASK-2037, TASK-2038, TASK-2039

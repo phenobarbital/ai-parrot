@@ -1,0 +1,149 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-774",
+  "feature_slug": "connections-cli-local-mcp",
+  "started_at": "2026-10-30T15:16:24Z",
+  "updated_at": "2026-10-30T15:46:07Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-774/source.md",
+    "fetched_at": "2026-10-30T15:16:24Z",
+    "summary_oneline": "S-4 of FEAT-773: CLI-based agents and MCP-based tools in a CLI consuming delegated-auth connections"
+  },
+  "mode": "auto",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-10-30T15:16:24Z",
+      "completed_at": "2026-10-30T15:16:24Z",
+      "duration_seconds": 0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-10-30T15:16:24Z",
+      "completed_at": "2026-10-30T15:17:51Z",
+      "duration_seconds": 0,
+      "queries_total": 52,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-774/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-10-30T15:17:51Z",
+      "completed_at": "2026-10-30T15:25:11Z",
+      "duration_seconds": null,
+      "parallel": {
+        "enabled": true,
+        "fallback_reason": null,
+        "lanes": {
+          "codebase": {
+            "status": "completed",
+            "started_at": "2026-10-30T15:17:51Z",
+            "completed_at": "2026-10-30T15:23:53Z",
+            "duration_seconds": null,
+            "findings_count": 35,
+            "queries_executed": 35,
+            "queries_skipped": 1,
+            "error": null
+          },
+          "git": {
+            "status": "completed",
+            "started_at": "2026-10-30T15:17:51Z",
+            "completed_at": "2026-10-30T15:19:53Z",
+            "duration_seconds": null,
+            "findings_count": 5,
+            "queries_executed": 5,
+            "queries_skipped": 0,
+            "error": null
+          },
+          "wiki": {
+            "status": "completed",
+            "started_at": "2026-10-30T15:17:51Z",
+            "completed_at": "2026-10-30T15:24:21Z",
+            "duration_seconds": null,
+            "findings_count": 12,
+            "queries_executed": 13,
+            "queries_skipped": 0,
+            "error": null
+          }
+        },
+        "merge": {
+          "started_at": "2026-10-30T15:24:34Z",
+          "completed_at": "2026-10-30T15:25:11Z",
+          "input_count": 52,
+          "output_count": 46,
+          "merged_count": 6,
+          "audit_dir": "findings/.audit"
+        }
+      },
+      "queries_executed": 57,
+      "queries_skipped": 1,
+      "depth_reached": 2,
+      "files_read": 27,
+      "grep_calls": 22,
+      "git_calls": 10,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-10-30T15:31:46Z",
+      "completed_at": "2026-10-30T15:31:46Z",
+      "duration_seconds": 0,
+      "synthesis_path": "sdd/state/FEAT-774/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 18,
+      "claims_high_conf": 13,
+      "claims_medium_conf": 4,
+      "claims_low_conf": 1,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-10-30T15:38:04Z",
+      "completed_at": "2026-10-30T15:45:27Z",
+      "duration_seconds": 0,
+      "questions_total": 5,
+      "questions_answered": 5,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-10-30T15:45:44Z",
+      "completed_at": "2026-10-30T15:46:07Z",
+      "duration_seconds": 0,
+      "proposal_path": "sdd/proposals/connections-cli-local-mcp.proposal.md",
+      "commit_sha": "799a4d66ea5cd3f171f336e6fcfad2302032f02d",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization/constraints high-confidence; S-1 contracts fix the shape; U1-U5 decided; spec after FEAT-773 merges."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 27,
+    "grep_calls": 22,
+    "git_calls": 10,
+    "wall_seconds": 0
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "/sdd-spec FEAT-774 after FEAT-773 merges"
+  },
+  "detected_mode": "enrichment"
+}

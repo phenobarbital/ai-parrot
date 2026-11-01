@@ -26,14 +26,15 @@ FEAT-264 additions
 """
 from __future__ import annotations
 
+import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Literal, Optional, TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:  # pragma: no cover - import only for type checkers
-    from .jira_oauth import JiraOAuthManager
+    from .principal import Principal, PrincipalResolver
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +111,20 @@ class NeedsAuth(BaseModel):
     )
 
 
+class AuthRequiredPayload(BaseModel):
+    """Unified needs-auth payload serialized by ToolManager and AgentTalk."""
+
+    provider: str
+    auth_url: Optional[str] = None
+    scopes: List[str] = Field(default_factory=list)
+    tool_name: Optional[str] = None
+    message: str = ""
+    auth_kind: Optional[AuthKind] = None
+    user_code: Optional[str] = None
+    verification_uri: Optional[str] = None
+    expires_in: Optional[int] = None
+
+
 class CredentialRequired(Exception):
     """Raised by the tool-loop seam when the broker returns :class:`NeedsAuth`.
 
@@ -153,6 +168,21 @@ class CredentialRequired(Exception):
         self.verification_uri = verification_uri
         self.expires_in = expires_in
 
+    def to_payload(self, *, tool_name: Optional[str] = None) -> AuthRequiredPayload:
+        """Serialize to the unified needs-auth payload."""
+        valid_auth_kinds = ("obo", "oauth2", "static_key", "mcp", "device_code")
+        auth_kind = self.auth_kind if self.auth_kind in valid_auth_kinds else None
+        return AuthRequiredPayload(
+            provider=self.provider,
+            auth_url=self.auth_url,
+            tool_name=tool_name,
+            message=str(self),
+            auth_kind=auth_kind,
+            user_code=self.user_code,
+            verification_uri=self.verification_uri,
+            expires_in=self.expires_in,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Existing resolvers (pre-FEAT-264, kept backward-compatible)
@@ -191,14 +221,51 @@ class OAuthCredentialResolver(CredentialResolver):
     (e.g., a future GitHub or O365 manager) can be plugged in.
     """
 
-    def __init__(self, oauth_manager: "JiraOAuthManager") -> None:
+    def __init__(
+        self,
+        oauth_manager: Any,
+        *,
+        principal_resolver: Optional["PrincipalResolver"] = None,
+    ) -> None:
         self._manager = oauth_manager
+        self._principal_resolver = principal_resolver
+
+    def _manager_accepts(self, method_name: str, parameter: str) -> bool:
+        """Return whether a manager method implements a principal-aware parameter."""
+        method = getattr(self._manager, method_name)
+        return parameter in inspect.signature(method).parameters
+
+    async def _principal(self, channel: str, user_id: str) -> Optional["Principal"]:
+        """Resolve the platform principal, failing closed when unbound."""
+        from parrot.auth.principal import resolve_principal
+
+        if self._principal_resolver is not None:
+            return await self._principal_resolver.resolve(channel, user_id)
+        return await resolve_principal(channel, user_id)
 
     async def resolve(self, channel: str, user_id: str) -> Optional[Any]:
-        return await self._manager.get_valid_token(channel, user_id)
+        principal = await self._principal(channel, user_id)
+        if principal is None:
+            # Fail closed: an unbound channel identity never reaches a manager by its raw id.
+            return None
+        if self._manager_accepts("get_valid_token", "channel_user_id"):
+            return await self._manager.get_valid_token(channel, principal.user_id, channel_user_id=user_id)
+        return await self._manager.get_valid_token(channel, principal.user_id)
 
     async def get_auth_url(self, channel: str, user_id: str) -> str:
-        url, _ = await self._manager.create_authorization_url(channel, user_id)
+        from parrot.auth.exceptions import AuthorizationRequired
+
+        principal = await self._principal(channel, user_id)
+        if principal is None:
+            raise AuthorizationRequired(
+                tool_name="",
+                message="Link your account to the platform first (/login).",
+                provider=getattr(self._manager, "provider_id", "unknown"),
+            )
+        if self._manager_accepts("create_authorization_url", "principal"):
+            url, _ = await self._manager.create_authorization_url(channel, principal.user_id, principal=principal)
+        else:
+            url, _ = await self._manager.create_authorization_url(channel, principal.user_id)
         return url
 
 

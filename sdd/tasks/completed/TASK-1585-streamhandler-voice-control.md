@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-244 — Unified Voice Control on the StreamHandler WebSocket
 **Spec**: `sdd/specs/unified-voice-control-streamhandler.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1584

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-679 — DatabaseAgent rejects unsupported `schema_plane` values
 **Spec**: `sdd/specs/database-agent-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

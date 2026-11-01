@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-226 — SecurityAdvisor (SOC2-Oriented Read-Only Advisory Agent)
 **Spec**: `sdd/specs/security-advisor.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1480, TASK-1481

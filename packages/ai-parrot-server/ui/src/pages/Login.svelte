@@ -14,6 +14,7 @@
 
   import { config } from "$lib/config";
   import ProviderButtons, { type AuthMethodInfo } from "$lib/components/ProviderButtons.svelte";
+  import PasskeySignIn from "$lib/components/auth/PasskeySignIn.svelte";
   import { isInAppPath, router } from "$lib/router.svelte";
   import { authStore } from "$lib/stores/auth.svelte";
   import { Button } from "$lib/ui/internal/shadcn/ui/button/index.js";
@@ -27,6 +28,9 @@
   let loading = $state(false);
   let error = $state("");
   let methods = $state<Record<string, AuthMethodInfo> | null>(null);
+  // Gated: "webauthn" autofill token is only emitted once passkeys are confirmed
+  // available, so the markup is unchanged when PasskeyAuth is disabled (AC01).
+  let passkeyAvailable = $state(false);
 
   function nextTarget(): string {
     const params = new URLSearchParams(window.location.search);
@@ -102,7 +106,7 @@
             bind:value={username}
             disabled={loading}
             required
-            autocomplete="username"
+            autocomplete={passkeyAvailable ? "username webauthn" : "username"}
           />
         </div>
 
@@ -134,6 +138,13 @@
           {loading ? "Signing in…" : "Sign In"}
         </Button>
       </form>
+
+      <PasskeySignIn
+        {username}
+        disabled={loading}
+        onAvailable={() => (passkeyAvailable = true)}
+        onSuccess={() => router.navigate(nextTarget(), { replace: true })}
+      />
 
       <ProviderButtons {methods} />
     </CardContent>

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-455 — Web-Automation Real-Browser Fixture-Site Integration Tests
 **Spec**: `sdd/specs/web-automation-fixture-site-tests.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-2407, TASK-2408

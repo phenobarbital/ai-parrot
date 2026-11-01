@@ -84,6 +84,21 @@ test("visiting a guarded route while unauthenticated preserves ?next= through Lo
   await waitFor(() => expect(window.location.pathname).toBe("/admin/dashboard"));
 }, 15000);
 
+test("unauthenticated visits to account security redirect to login with the account next target", async () => {
+  window.history.pushState({}, "", "/account/security");
+  router.path = "/account/security";
+
+  render(App);
+
+  await waitFor(
+    () => expect(window.location.pathname).toBe("/login"),
+    { timeout: 10000 },
+  );
+  expect(window.location.search).toBe(
+    `?next=${encodeURIComponent("/account/security")}`,
+  );
+}, 15000);
+
 // Regression test: Login.svelte's onMount auth-method discovery call used
 // to go through the shared `apiClient` (with its 401 interceptor).
 // `/api/v1/auth/methods` is NOT in navigator-auth's default exclude list,

@@ -105,7 +105,8 @@ async def test_google_ask_stream():
             else:
                 final_msg = chunk
 
-        assert "".join(chunks) == "Helloworld"
+        # Stream chunks are verbatim (issue:d34e3f558f8e): the leading space survives.
+        assert "".join(chunks) == "Hello world"
         assert final_msg is not None
 
 

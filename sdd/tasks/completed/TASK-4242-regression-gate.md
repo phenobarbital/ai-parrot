@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-652 — Answer-Accuracy Metrics for the Evaluation Harness
 **Spec**: `sdd/specs/eval-answer-accuracy-metrics.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

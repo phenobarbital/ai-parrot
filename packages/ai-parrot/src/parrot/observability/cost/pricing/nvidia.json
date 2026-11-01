@@ -1,9 +1,10 @@
 {
   "pricing": {
-    "last_updated": "2026-05-18",
+    "last_updated": "2026-11-01",
     "source": "https://build.nvidia.com/nim/pricing",
     "currency": "USD",
-    "notes": "NVIDIA NIM pricing varies by model and deployment; values below are best-effort estimates from the NVIDIA Build platform. Verify at https://build.nvidia.com before using in billing. Provider key in CostCalculator: 'nvidia'."
+    "notes": "NVIDIA NIM pricing varies by model and deployment; values below are best-effort estimates from the NVIDIA Build platform. Verify at https://build.nvidia.com before using in billing. Provider key in CostCalculator: 'nvidia'.",
+    "note": "Operator-confirmed 2026-11-01: only free NVIDIA-hosted models are used by sdd-flow, so no cost is attributed. List prices below are retained unverified for other uses."
   },
   "models": {
     "meta/llama-3.1-70b-instruct": {
@@ -12,8 +13,8 @@
       "valid_from": "2024-07-23"
     },
     "meta/llama-3.1-8b-instruct": {
-      "input_per_1m": 0.20,
-      "output_per_1m": 0.20,
+      "input_per_1m": 0.2,
+      "output_per_1m": 0.2,
       "valid_from": "2024-07-23"
     },
     "meta/llama-3.1-405b-instruct": {

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-729 — MS Teams user authentication lane
 **Spec**: `sdd/specs/msteams-user-auth-lane.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4664

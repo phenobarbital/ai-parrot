@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-488 — FormField Content-Type
 **Spec**: `sdd/specs/formfield-content-type.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2677, TASK-2678, TASK-2679, TASK-2680, TASK-2681, TASK-2682, TASK-2683

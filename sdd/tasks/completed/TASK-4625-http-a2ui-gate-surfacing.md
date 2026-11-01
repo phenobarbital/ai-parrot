@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-728 — FormBuilder LLM-validation enforcement policy + LLM quota
 **Spec**: `sdd/specs/formbuilder-llm-validation-enforcement.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4624

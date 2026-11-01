@@ -11,6 +11,7 @@ refactored to shared location for FEAT-039.
 
 import asyncio
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Dict, Optional
@@ -50,7 +51,39 @@ _LANGUAGE_NAMES: Dict[str, str] = {
     "hebrew": "he",
     "czech": "cs",
     "romanian": "ro",
+    "malay": "ms",
+    "welsh": "cy",
+    "indonesian": "id",
+    "vietnamese": "vi",
+    "thai": "th",
+    "hungarian": "hu",
 }
+
+# An ISO 639-1 code, optionally with a region/script suffix ("en", "en-US", "zh_Hant").
+_ISO_CODE_RE = re.compile(r"^[a-z]{2}([-_][a-z0-9]+)*$")
+
+
+def _iso_language(value: Optional[str]) -> Optional[str]:
+    """Return the ISO 639-1 code for a language name or code, or ``None``.
+
+    Known names map through ``_LANGUAGE_NAMES``; an ISO-looking code keeps its first
+    two letters. Anything else returns ``None``: a code made up from the first two
+    letters of a name ("malay" -> "ma") would be wrong.
+
+    Args:
+        value: A language name ("spanish") or code ("es", "en-US").
+
+    Returns:
+        The two-letter code, or ``None`` when it cannot be determined.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    norm = value.strip().lower()
+    if norm in _LANGUAGE_NAMES:
+        return _LANGUAGE_NAMES[norm]
+    if _ISO_CODE_RE.match(norm):
+        return norm[:2]
+    return None
 
 
 class OpenAIWhisperBackend(AbstractTranscriberBackend):
@@ -309,12 +342,7 @@ class OpenAIWhisperBackend(AbstractTranscriberBackend):
             raw_lang = languages[0].get("code")
         if not raw_lang:
             raw_lang = payload.get("language")
-        lang = None
-        if isinstance(raw_lang, str) and raw_lang.strip():
-            norm = raw_lang.strip().lower()
-            lang = _LANGUAGE_NAMES.get(norm) or (norm[:2] if len(norm) <= 5 else None)
-        if not lang and language_hint:
-            lang = language_hint.strip().lower()[:2]
+        lang = _iso_language(raw_lang) or _iso_language(language_hint)
         if not lang:
             lang = "en"
 

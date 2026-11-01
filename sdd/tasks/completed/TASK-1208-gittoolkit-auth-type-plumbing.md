@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-179 — GitHub App Authentication for GitToolkit
 **Spec**: `sdd/specs/github-app-auth-gittoolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1207

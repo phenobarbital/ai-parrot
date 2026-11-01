@@ -23,6 +23,12 @@ All commands require `--repo-root PATH`; `--ledger-dir PATH` explicitly selects 
 | 3 | Invalid content or semantic conflict requiring review. |
 | 4 | Unsupported source/destination or legacy feature-diff contamination. |
 
+`integrate` attempts every pending batch in preparation order. A `conflict` or `unsupported` batch does not stop later batches from being delivered: a batch that depends on one of its events reports its own `missing-predecessor` conflict. A `pending` result (I/O, lock, push) stops the run, since later batches would hit the same failure. With several batches, the exit code is the highest one reported. Text output lists each conflict as `conflict: <event> on <subject> (<reason>)`.
+
+### Redundant closes (FEAT-771)
+
+An `issue.closed` for an issue that is already closed or superseded on `origin/dev` is **set aside**: it is not appended, it is never a conflict, and the rest of its batch is delivered. The close already on `dev` is kept, because closing a closed issue changes no state, and appending a second close would overwrite the recorded resolution. The receipt lists set-aside events under `skipped_event_ids`, and `prepare` / `status` exclude those ids, so a set-aside close is never sealed again. The report shows them as `skipped`. The superseded close stays in the local journal.
+
 ## Recovery and migration
 
 ### Migrate installed hooks

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-730 — FormDesigner public response controls
 **Spec**: `sdd/specs/formdesigner-public-form-controls.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4630, TASK-4631, TASK-4632

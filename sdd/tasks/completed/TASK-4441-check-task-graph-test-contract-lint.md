@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-699 — Tests Optimization in the SDD Flow (spec-declared Validation Contract)
 **Spec**: `sdd/specs/tests-optimization-sdd-flow.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4440

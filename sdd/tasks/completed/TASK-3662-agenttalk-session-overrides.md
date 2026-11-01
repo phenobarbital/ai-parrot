@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-593 — Tool Configuration for Agent Studio
 **Spec**: `sdd/specs/tool-configuration-agentstudio.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3645, TASK-3654, TASK-3661

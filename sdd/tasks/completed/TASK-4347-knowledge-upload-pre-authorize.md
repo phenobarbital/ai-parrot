@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-673 — Authorize knowledge uploads before downloading the file
 **Spec**: `sdd/specs/fixgroup-78be66fdfe17.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

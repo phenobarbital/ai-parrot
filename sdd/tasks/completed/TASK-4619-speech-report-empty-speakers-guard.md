@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-726 — Configure-Override Idempotency & `speech_report` Hardening
 **Spec**: `sdd/specs/bots-agent-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4617

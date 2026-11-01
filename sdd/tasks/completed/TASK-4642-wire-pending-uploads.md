@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-731 — FormDesigner orphan upload cleanup
 **Spec**: `sdd/specs/formdesigner-orphan-upload-cleanup.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4638, TASK-4640

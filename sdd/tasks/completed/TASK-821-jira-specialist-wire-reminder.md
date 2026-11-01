@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-115 — Reminder Toolkit for Agents
 **Spec**: `sdd/specs/FEAT-115-reminder-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-818, TASK-819

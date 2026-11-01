@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-477 — Expose an AI-Parrot Agent as an MCP Server
 **Spec**: `sdd/specs/mcp-as-agent.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

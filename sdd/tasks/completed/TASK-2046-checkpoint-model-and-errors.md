@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-399 — AgentsFlow State Checkpointing (Two-Tier Persistence)
 **Spec**: `sdd/specs/agentsflow-state-checkpointing.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

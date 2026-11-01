@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-245 — Realtime LiveAvatar mouth driven by VoiceBot (Gemini Live)
 **Spec**: `sdd/specs/voicechat-liveavatar-gemini.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

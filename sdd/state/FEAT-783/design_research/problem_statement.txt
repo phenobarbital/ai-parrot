@@ -1,0 +1,39 @@
+The brainstorm asks for a correlation key and a single store, and concludes that neither
+exists. Research refutes both halves: **two usage stores already ship with disjoint keys**,
+and the key the brainstorm proposes is already implemented in one of them.
+`parrot.observability` is a complete normalized usage plane — `UsageRecord` built once per
+LLM call, a ContextVar correlation key, a `UsageRecordingSubscriber` fan-out to pluggable
+sinks, `gen_ai.client.*` OTel metrics, and a shared `CostCalculator` over six versioned
+price files — while `flows/dev_loop/sdd_coder/telemetry.py` already records per-attempt
+tokens keyed by exactly `(feature_id, task_id, attempt_uid, execution_id, seat_label,
+backend, resolved_model)` into a live 1090-attempt dataset. The real gap is therefore
+narrower and sharper than the brainstorm's: the two stores share no key, price coverage is
+**1.2%**, the codex seat reports ~zero tokens because `dispatchers/codex.py` streams
+`codex exec --json` without ever reading usage, cache tokens are destroyed at the
+`CompletionUsage` boundary, and the two CLI seats are outside `AbstractClient` entirely.
+The recommended shape is consequently the opposite of the brainstorm's Option C: **extend
+the attribution dimension of the pipeline that exists** — the merged, completed FEAT-228
+pattern — and **do not build a usage plane in the ledger**, which is contradicted on five
+independent counts.
+
+---
+
+--- original request ---
+
+The original request, preserved verbatim at `sdd/state/FEAT-783/source.md`.
+
+> Token usage and cost for one SDD spec are split across three seats that report to
+> three different places, so nobody can answer "what did FEAT-123 cost?" with correct
+> numbers. […] The gap is not a missing exporter. It is a missing **correlation key**
+> shared by the three seats, and a missing **single store** that owns the per-spec
+> numbers. […] Goal: one usage plane, written by all three seats, keyed by
+> `(feat_id, task_id, attempt_uid, execution_id, seat, model)`, from which both
+> `wikitoolkit usage report --feat FEAT-123` and the Grafana dashboards read.
+
+**Initial signals** (extracted, not interpreted):
+- Verbs: *extend, new, reuse, record, bind, resolve, price* → additive, feature-shaped, not a bug.
+- Named entities: `LedgerEventKind`, `LedgerService`, `coder_feedback.py`, `coder_begin_execution` / `coder_end_execution`, `AbstractClient`, `sdd/state/<FEAT-ID>/state.json`, `prices.yaml`, `wikitoolkit usage`, `OTEL_RESOURCE_ATTRIBUTES`, `claude_code.api_request`, `SubagentStop`, `codex exec --json`, Grafana.
+- Structure provided: a "Does NOT exist" list of 6 absence claims, a 13-row impact table, 4 groups of research directives, 5 spikes, 6 open questions.
+- Acceptance criteria provided: no — but the spikes carry explicit pass criteria, one of which this research falsifies.
+
+---

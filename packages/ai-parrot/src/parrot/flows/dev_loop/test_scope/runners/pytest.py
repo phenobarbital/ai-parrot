@@ -12,6 +12,9 @@ from ..mirror import distribution_of, pytest_file_targets
 from ..policy import TIERS, ScopePolicy
 from ..report import parse_junit_report
 
+# pytest.ExitCode.NO_TESTS_COLLECTED
+PYTEST_NO_TESTS_EXIT: int = 5
+
 
 class PytestAdapter:
     """Build and parse scoped pytest invocations using existing planner helpers."""
@@ -73,18 +76,28 @@ class PytestAdapter:
         timed_out: bool,
         suite: str,
     ) -> RunReport:
-        """Parse a pytest JUnit report or return a missing-report outcome."""
+        """Parse a pytest JUnit report or return a missing-report outcome.
+
+        pytest exits 5 when it collects nothing (typically every target was deselected by the
+        marker expression). That run carries no signal either way, so it is reported as
+        ``status="no_tests"`` instead of ``failed`` (issue:8c423c5612c2); a run that did execute
+        tests keeps its normal status whatever the exit code.
+        """
         if report_path is None:
             status = "timed_out" if timed_out else "no_report"
-            return RunReport(self.kind, suite, 0, 0, 0, 0, 0, duration_s, exit_code, status)
-        return parse_junit_report(
-            report_path,
-            runner=self.kind,
-            suite=suite,
-            exit_code=exit_code,
-            duration_s=duration_s,
-            timed_out=timed_out,
-        )
+            report = RunReport(self.kind, suite, 0, 0, 0, 0, 0, duration_s, exit_code, status)
+        else:
+            report = parse_junit_report(
+                report_path,
+                runner=self.kind,
+                suite=suite,
+                exit_code=exit_code,
+                duration_s=duration_s,
+                timed_out=timed_out,
+            )
+        if not timed_out and exit_code == PYTEST_NO_TESTS_EXIT and report.tests == 0:
+            return replace(report, status="no_tests")
+        return report
 
     def validate_settings(self, settings: Mapping[str, str], *, worktree: Path) -> list[str]:
         """Return diagnostics for settings pytest does not understand."""

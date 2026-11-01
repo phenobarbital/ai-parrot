@@ -73,3 +73,9 @@ Never remove a worktree with uncommitted changes, never `--force` unless the
 user explicitly asks, and look for orphan directories under
 `.claude/worktrees/` that `git worktree list` no longer knows about —
 `/remove-worktree` handles those; `prune` does not.
+
+
+Untracked leftovers (the worker's `artifacts/logs/`, scratch files) are not uncommitted
+changes, but `git worktree remove` refuses them too unless the path is gitignored. Park
+them aside first — `/sdd-done` moves them to `${SDD_HOOKS_ARTIFACT_ROOT:-/tmp/claude-$(id -u)/sdd-hooks}/<FEAT-ID>/worktree-leftovers/` —
+instead of forcing (issue:4a534ef4f3ee).

@@ -1,0 +1,4 @@
+- [ ] **Login token shape** — what navigator-auth issues to `parrot login` (session token, long-lived API key, or a dedicated CLI grant) and how the server-side identity endpoint introspects it. — *Owner*: Jesus (navigator-auth side)
+- [ ] **Cache encryption key derivation** — HKDF from the login token vs an OS keyring; behaviour when the login token rotates. — *Owner*: tbd (spec §2)
+- [ ] **Token-pull endpoint policy** — PBAC action (`integration:use`?), audit event, whether the refresh token is ever included in the pulled set or only access tokens with server-side refresh. — *Owner*: Jesus
+- [ ] **Which providers get `device_authorization_url` first** (Microsoft, Google) and how Atlassian (no device grant) falls back to poll + paste. — *Owner*: implementer of the descriptor work

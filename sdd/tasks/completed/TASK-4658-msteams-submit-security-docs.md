@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-733 — MS Teams submit envelope — fail-closed tenant isolation
 **Spec**: `sdd/specs/msteams-submit-envelope-fail-closed.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4653, TASK-4654, TASK-4655, TASK-4656

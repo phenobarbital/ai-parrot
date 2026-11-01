@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-239 — GraphIndex OKF Frontmatter Projection
 **Spec**: `sdd/specs/graphindex-frontmatter.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

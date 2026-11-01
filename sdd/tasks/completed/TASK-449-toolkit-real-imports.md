@@ -2,7 +2,7 @@
 
 **Feature**: refactor-workingmemorytoolkit
 **Spec**: `sdd/specs/refactor-workingmemorytoolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-448

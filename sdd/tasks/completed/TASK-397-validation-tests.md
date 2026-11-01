@@ -2,7 +2,7 @@
 
 **Feature**: runtime-dependency-reduction
 **Spec**: `sdd/specs/runtime-dependency-reduction.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-386, TASK-387, TASK-388, TASK-389, TASK-390, TASK-391, TASK-392, TASK-393, TASK-394, TASK-395, TASK-396

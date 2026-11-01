@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-571 — Agent Memory Dynamics
 **Spec**: `sdd/specs/memory-dynamics.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

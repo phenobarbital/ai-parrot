@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-681 - Browsing Executor Action Gaps
 **Spec**: `sdd/specs/browsing-executor-action-gaps.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4355, TASK-4356

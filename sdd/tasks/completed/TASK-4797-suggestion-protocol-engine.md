@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-752 — Follow-up Suggestion Chips
 **Spec**: `sdd/specs/followup-suggestion-chips.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4794

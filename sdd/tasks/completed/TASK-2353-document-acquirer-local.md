@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-451 — `wikitoolkit ingest` — Binary Documents, URLs, and Metadata Frontmatter
 **Spec**: `sdd/specs/wikitoolkit-ingest-documents.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2351, TASK-2352

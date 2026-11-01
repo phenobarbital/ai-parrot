@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-658 — lsp-toolkit-tech-debt
 **Spec**: sdd/specs/lsp-toolkit-tech-debt.spec.md
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none

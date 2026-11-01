@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-271 — MSAgent & A2A YAML Integrations
 **Spec**: `sdd/specs/msagent-a2a-integrations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1706, TASK-1707, TASK-1708, TASK-1709, TASK-1710

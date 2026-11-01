@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-738 — Request-scoped RLS injection and non-shared dataset sources
 **Spec**: `sdd/specs/handlers-datasets-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: TASK-4678

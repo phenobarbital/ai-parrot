@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-482 — Complementary (Collaborative) Research for the Dev Flow
 **Spec**: `sdd/specs/devflow-complementary-research.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-326 — DataAgent Infographic — Infographic Authoring for Data Agents
 **Spec**: `sdd/specs/dataagent-infographic.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

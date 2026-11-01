@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-735 — One owner for the Jira credential
 **Spec**: `sdd/specs/services-vault-token-sync-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (1-2h)
 **Depends-on**: TASK-4669, TASK-4670, TASK-4671

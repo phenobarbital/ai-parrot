@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-472 — Fireflies Meeting Registry
 **Spec**: `sdd/specs/fireflies-meeting-registry.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2554, TASK-2555

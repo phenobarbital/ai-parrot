@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-565 — New Planogram Compliance Algorithm
 **Spec**: `sdd/specs/new-planogram-compliance-algo.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3339, TASK-3340, TASK-3341, TASK-3342, TASK-3343, TASK-3344, TASK-3345, TASK-3346, TASK-3347, TASK-3348

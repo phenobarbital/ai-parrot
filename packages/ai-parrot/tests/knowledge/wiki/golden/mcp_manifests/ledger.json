@@ -114,7 +114,92 @@
     "description": "List SDD ledger issues by status (or all), kind, severity or about prefix.",
     "mount": "ledger",
     "name": "ledger_list",
-    "schema": {"description": "Schema mirrors `wikitoolkit ledger list` options one for one.", "properties": {"about_prefix": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "description": "Keep issues with an about entry starting with this prefix", "title": "About Prefix"}, "all_statuses": {"default": false, "description": "Include every status; overrides statuses", "title": "All Statuses", "type": "boolean"}, "kind": {"anyOf": [{"enum": ["bug", "tech_debt", "feature_gap", "vulnerability"], "type": "string"}, {"type": "null"}], "default": null, "description": "Filter by issue kind", "title": "Kind"}, "severity": {"anyOf": [{"enum": ["critical", "major", "minor", "low"], "type": "string"}, {"type": "null"}], "default": null, "description": "Filter by severity", "title": "Severity"}, "statuses": {"anyOf": [{"items": {"enum": ["open", "claimed", "closed", "superseded"], "type": "string"}, "type": "array"}, {"type": "null"}], "default": null, "description": "Statuses to include (default open+claimed)", "title": "Statuses"}}, "title": "LedgerListInput", "type": "object"}
+    "schema": {
+      "description": "Schema mirrors `wikitoolkit ledger list` options one for one.",
+      "properties": {
+        "about_prefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Keep issues with an about entry starting with this prefix",
+          "title": "About Prefix"
+        },
+        "all_statuses": {
+          "default": false,
+          "description": "Include every status; overrides statuses",
+          "title": "All Statuses",
+          "type": "boolean"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "bug",
+                "tech_debt",
+                "feature_gap",
+                "vulnerability"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Filter by issue kind",
+          "title": "Kind"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "enum": [
+                "critical",
+                "major",
+                "minor",
+                "low"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Filter by severity",
+          "title": "Severity"
+        },
+        "statuses": {
+          "anyOf": [
+            {
+              "items": {
+                "enum": [
+                  "open",
+                  "claimed",
+                  "closed",
+                  "superseded"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Statuses to include (default open+claimed)",
+          "title": "Statuses"
+        }
+      },
+      "title": "LedgerListInput",
+      "type": "object"
+    }
   },
   {
     "description": "Open a new issue in the SDD work ledger.",
@@ -222,7 +307,57 @@
     "description": "Show one SDD ledger issue in full: state, body and event history.",
     "mount": "ledger",
     "name": "ledger_show",
-    "schema": {"description": "Schema mirrors `wikitoolkit ledger show` one for one.", "properties": {"include_history": {"default": true, "description": "Include the issue's event history", "title": "Include History", "type": "boolean"}, "issue_id": {"description": "Issue id, with or without the issue: prefix", "title": "Issue Id", "type": "string"}}, "required": ["issue_id"], "title": "LedgerShowInput", "type": "object"}
+    "schema": {
+      "description": "Schema mirrors `wikitoolkit ledger show` one for one.",
+      "properties": {
+        "include_history": {
+          "default": true,
+          "description": "Include the issue's event history",
+          "title": "Include History",
+          "type": "boolean"
+        },
+        "issue_id": {
+          "description": "Issue id, with or without the issue: prefix",
+          "title": "Issue Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issue_id"
+      ],
+      "title": "LedgerShowInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Report tokens and cost for one SDD feature, grouped by task, model or seat.",
+    "mount": "core",
+    "name": "usage_report",
+    "schema": {
+      "description": "Input for usage_report.",
+      "properties": {
+        "by": {
+          "default": "task",
+          "enum": [
+            "task",
+            "model",
+            "seat"
+          ],
+          "title": "By",
+          "type": "string"
+        },
+        "feat_id": {
+          "pattern": "^FEAT-\\d+$",
+          "title": "Feat Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "feat_id"
+      ],
+      "title": "UsageReportInput",
+      "type": "object"
+    }
   },
   {
     "description": "Find every symbol that transitively depends on (calls/extends/implements) a given symbol \u2014 the 'blast radius' of changing it. Use before editing a widely-used function or class.",
@@ -727,6 +862,43 @@
         "fact"
       ],
       "title": "WikiRememberInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Evaluate a spec's declared decisions against the accepted decision plane, or return the governing-decisions dossier for its subsystems. Read-only; blocking only on an explicit unresolved contradiction.",
+    "mount": "decisions",
+    "name": "wiki_spec_consequences",
+    "schema": {
+      "description": "Arguments for ``wiki_spec_consequences``.",
+      "properties": {
+        "budget_tokens": {
+          "default": 3000,
+          "description": "Estimated output budget for the dossier text",
+          "minimum": 256,
+          "title": "Budget Tokens",
+          "type": "integer"
+        },
+        "mode": {
+          "default": "check",
+          "description": "check: evaluate (read-only); governing: the governing-decisions dossier",
+          "enum": [
+            "check",
+            "governing"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "spec_path": {
+          "description": "Repository-relative path of the spec, e.g. sdd/specs/<slug>.spec.md",
+          "title": "Spec Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "spec_path"
+      ],
+      "title": "SpecConsequencesInput",
       "type": "object"
     }
   },

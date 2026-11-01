@@ -14,6 +14,7 @@ import shlex
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from types import ModuleType
 
@@ -121,6 +122,36 @@ def _record_suite(
             tier=args.tier,
             source="select_tests",
         )
+
+
+def _is_collection_noop(invocation: object, returncode: int, argv: Sequence[str] = ()) -> bool:
+    """True when pytest exited 5 ("no tests collected") for a reason that is not a failure.
+
+    Two cases qualify:
+
+    * every operand is an explicit non-test ``.py`` file (a changed ``conftest.py`` or fixtures
+      module is planned as its own operand but contains no tests), or
+    * a ``-m`` marker expression is active: the tier deliberately splits tests by marker, so a
+      group whose operands are all deselected (e.g. integration modules under
+      ``-m 'not integration'``, which the companion group runs) has nothing to run.
+
+    A directory, a test module or a node id collecting nothing without a marker filter is still
+    a failure -- so is any exit code other than 5.
+    """
+    if returncode != 5 or getattr(invocation, "runner", "pytest") != "pytest":
+        return False
+    if "-m" in argv:
+        return True
+    paths = [str(getattr(target, "path", target)) for target in getattr(invocation, "targets", ())]
+    if not paths:
+        return False
+    for path in paths:
+        name = path.rsplit("/", 1)[-1]
+        if "::" in path or not name.endswith(".py"):
+            return False
+        if name.startswith("test_") or name.endswith("_test.py"):
+            return False
+    return True
 
 
 def _write_verdict(verdict: object) -> None:
@@ -478,18 +509,25 @@ def main(argv: list[str] | None = None) -> int:
                 junit = None
         started = time.monotonic()
         result = subprocess.run(argv, cwd=worktree)
+        returncode = result.returncode
+        if _is_collection_noop(invocation, returncode, argv):
+            print(
+                "# note: pytest collected no tests (support files only or deselected by -m: "
+                f"{', '.join(str(getattr(tg, 'path', tg)) for tg in invocation.targets)}) — not a failure"
+            )  # noqa: T201 - CLI output
+            returncode = 0
         suite = None
         if report_mod is not None and junit is not None:
             suite = report_mod.parse_junit(
                 junit,
                 suite=report_mod.suite_name(invocation),
                 argv=tuple(argv),
-                exit_code=result.returncode,
+                exit_code=returncode,
                 duration_s=time.monotonic() - started,
             )
             suites.append(suite)
             _record_suite(report_mod, args, suite, head_sha=head_sha, base_ref=base_ref)
-        if result.returncode != 0:
+        if returncode != 0:
             exit_code = 1
             if suite is None or suite.status in {"no_junit", "report_parse_error"} or suite.unmapped:
                 unclassified_failure = True

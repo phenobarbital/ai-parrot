@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-476 — AgentChat Migration
 **Spec**: `sdd/specs/agentchat-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none *(FEAT-475 must already be merged into `dev` — spec Worktree Strategy)*

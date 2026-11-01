@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-204 — HITL over Stateless Web Request/Response (AgentTalk HTTP)
 **Spec**: `sdd/specs/hitl_web.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1380, TASK-1381

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-577 — `/sdd-spec` Intake Mode — Interview-Driven Spec Creation
 **Spec**: `sdd/specs/sdd-feature-specification.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

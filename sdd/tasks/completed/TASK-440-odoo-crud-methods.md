@@ -1,7 +1,7 @@
 # TASK-440 — Odoo CRUD Convenience Methods
 
 **Feature**: FEAT-054 — odoo-interface
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Effort**: M
 **Depends on**: TASK-374

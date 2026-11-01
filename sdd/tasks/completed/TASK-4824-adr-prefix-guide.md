@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-760 - Prefixed ADR Aliases
 **Spec**: `sdd/specs/adr-prefixed-aliases.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (1–2h)
 **Depends-on**: none

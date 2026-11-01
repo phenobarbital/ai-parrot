@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-261 — Per-User Auth & OBO for MS Agents SDK Integration
 **Spec**: `sdd/specs/auth-obo-msagentsdk.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (1-2h)
 **Depends-on**: none

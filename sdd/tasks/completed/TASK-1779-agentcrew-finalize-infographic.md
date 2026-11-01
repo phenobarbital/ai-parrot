@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-308 — AgentCrew ResultAgent End-of-Flow Multi-Tab Infographic Node
 **Spec**: `sdd/specs/agentcrew-node-infographic.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1776, TASK-1777, TASK-1778

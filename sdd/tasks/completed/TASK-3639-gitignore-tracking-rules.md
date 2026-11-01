@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-592 — Amazon Nova 2 Lite slot identification for planogram images
 **Spec**: `sdd/specs/nova-image-planogram.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

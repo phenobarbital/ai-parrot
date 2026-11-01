@@ -122,6 +122,31 @@ class TestTaskClosedEmission:
         assert not (repo / "sdd" / "tasks" / "active" / "TASK-9001-demo.md").exists()
         assert (repo / "sdd" / "tasks" / "completed" / "TASK-9001-demo.md").exists()
 
+    def test_rerun_on_closed_task_does_not_move_completed_at(self, tmp_path):
+        """issue:732f350600d1 — the idempotent path must not rewrite history."""
+        repo = _init_repo(tmp_path)
+        index_path = repo / "sdd" / "tasks" / "index" / "demo-feature.json"
+        assert _run_close_task(repo, "TASK-9001", "demo-feature", "partial").returncode == 0
+        first = json.loads(index_path.read_text(encoding="utf-8"))
+        task_first = first["tasks"][0]
+        assert task_first["completed_at"] is not None
+        assert task_first["verification"] == "partial"
+        assert first["completed_at"] == task_first["completed_at"]
+
+        # Pin the recorded timestamps to a clearly older instant so a rewrite
+        # would be visible even when both runs land in the same second.
+        task_first["completed_at"] = first["completed_at"] = "2026-01-01T00:00:00+00:00"
+        index_path.write_text(json.dumps(first), encoding="utf-8")
+
+        second = _run_close_task(repo, "TASK-9001", "demo-feature", "verified")
+
+        assert second.returncode == 0, second.stderr
+        after = json.loads(index_path.read_text(encoding="utf-8"))
+        assert after["tasks"][0]["completed_at"] == "2026-01-01T00:00:00+00:00"
+        assert after["completed_at"] == "2026-01-01T00:00:00+00:00"
+        assert after["tasks"][0]["verification"] == "partial"
+        assert after["tasks"][0]["status"] == "done"
+
     def test_verification_status_is_recorded_in_the_event_payload(self, tmp_path):
         repo = _init_repo(tmp_path)
 

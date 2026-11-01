@@ -100,16 +100,34 @@ if [[ -z "$basename_md" && ${#completed_matches[@]} -gt 0 ]]; then
   basename_md="$(basename "${completed_matches[0]}")"
 fi
 
+# Keep the task file's own `**Status**:` header in step with the index. The
+# header is template boilerplate (`pending`) that nothing else ever rewrote, so
+# thousands of completed/ files advertised `pending` while their index said
+# `done` — /sdd-status readers then saw two contradicting sources of truth.
+# Only the first header line is touched; a header that already reads `done`
+# (or `done-with-issues`, set by hand for a flagged task) is left as is.
+if [[ -n "$basename_md" && -f "$COMPLETED_DIR/$basename_md" ]]; then
+  if grep -qE '^\*\*Status\*\*: *(pending|in-progress)\b' "$COMPLETED_DIR/$basename_md"; then
+    sed -i -E '0,/^\*\*Status\*\*: *(pending|in-progress).*$/s//**Status**: done/' "$COMPLETED_DIR/$basename_md"
+    echo "✓ ${TASK_ID}: header **Status** → done"
+  fi
+fi
+
 # Update the per-spec index for this task: status, completed_at, verification, file.
+# Timestamps and verification are write-once: a re-run on an already-closed
+# task (the idempotent path above) must not move completed_at — neither the
+# task's nor the feature's — to NOW, or the recorded history silently drifts.
 if [[ -f "$INDEX" && -n "$basename_md" ]]; then
   tmp="$(mktemp)"
   jq --arg id "$TASK_ID" --arg now "$NOW" --arg ver "$VERIFICATION" \
      --arg file "$COMPLETED_DIR/$basename_md" '
-    (.tasks[] | select(.id == $id) | .status) = "done" |
-    (.tasks[] | select(.id == $id) | .completed_at) = $now |
-    (.tasks[] | select(.id == $id) | .verification) = $ver |
-    (.tasks[] | select(.id == $id) | .file) = $file |
-    (if all(.tasks[]; .status == "done") then .completed_at = $now else . end)
+    (.tasks[] | select(.id == $id)) |= (
+      .status = "done" |
+      .completed_at = (.completed_at // $now) |
+      .verification = (.verification // $ver) |
+      .file = $file
+    ) |
+    (if all(.tasks[]; .status == "done") then .completed_at = (.completed_at // $now) else . end)
   ' "$INDEX" > "$tmp" && mv "$tmp" "$INDEX"
   git add "$INDEX"
 fi

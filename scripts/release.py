@@ -4,9 +4,16 @@
 Every distribution under ``packages/`` carries its own independent version.
 Most read it from a ``version.py`` (``dynamic = ["version"]`` +
 ``[tool.setuptools.dynamic] version = {attr = ...}``); ``navrules`` is a
-maturin/PyO3 package and repeats the same number in three places
-(``__init__.py``, ``pyproject.toml``, ``rust/Cargo.toml``) which must stay
-in lockstep or the wheel metadata disagrees with the Python module.
+maturin/PyO3 package and repeats the same number in four places
+(``__init__.py``, ``pyproject.toml``, ``rust/Cargo.toml`` and the root-crate
+block of ``rust/Cargo.lock``) which must stay in lockstep or the wheel
+metadata disagrees with the Python module.
+
+``Cargo.lock`` is bumped here on purpose: Cargo rewrites the root crate's
+``version`` in the lock on the next build, so a lock left lagging gets
+"fixed" by whoever compiles next and lands in an unrelated commit. Two
+branches cut from different ``dev`` revisions then carry different lines
+and the lock conflicts on merge, although no dependency ever moved.
 
 The ``ai-parrot-client-<provider>`` LLM-client satellites (FEAT-523, PEP 420
 namespace packages under ``parrot.clients.<provider>``) keep a *static*
@@ -48,14 +55,51 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # --- version-file styles ----------------------------------------------------
-# "python": __version__ = "X.Y.Z"      (packages/*/src/**/version.py)
-# "toml":   ^version = "X.Y.Z"         (pyproject.toml / Cargo.toml, 1st match)
+# "python":            __version__ = "X.Y.Z"   (packages/*/src/**/version.py)
+# "toml":              ^version = "X.Y.Z"      (pyproject.toml / Cargo.toml, 1st match)
+# "cargo-lock:<crate>": the `version` line of the `[[package]]` block named
+#                      <crate> in a Cargo.lock. The plain "toml" style must
+#                      never be used on a lockfile: its first quoted `version =`
+#                      line belongs to whichever dependency sorts first (the
+#                      format version `version = 4` is unquoted), so a "toml"
+#                      bump would rewrite a dependency's pin, not the crate's.
 _PATTERNS = {
     "python": (re.compile(r'^__version__\s*=\s*"([^"]+)"', re.MULTILINE),
                '__version__ = "{v}"'),
     "toml": (re.compile(r'^version\s*=\s*"([^"]+)"', re.MULTILINE),
              'version = "{v}"'),
 }
+_CARGO_LOCK_STYLE = "cargo-lock:"
+
+
+def _pattern_for(style: str) -> tuple[re.Pattern[str], str]:
+    """Return the ``(pattern, template)`` pair for a version-file style.
+
+    Args:
+        style: One of the ``_PATTERNS`` keys, or ``"cargo-lock:<crate>"``
+            where ``<crate>`` is the ``[package].name`` of the lockfile's
+            root crate (``parrot_codec``, ``navrules_native`` …).
+
+    Returns:
+        A compiled pattern whose group 1 is the current version, and a
+        ``str.format`` template taking ``v`` that reproduces the matched
+        text with the new version.
+    """
+    if style.startswith(_CARGO_LOCK_STYLE):
+        crate = style[len(_CARGO_LOCK_STYLE):]
+        if not crate:
+            sys.exit(f"error: style {style!r} needs a crate name")
+        pattern = re.compile(
+            r'^\[\[package\]\]\nname = "' + re.escape(crate)
+            + r'"\nversion = "([^"]+)"',
+            re.MULTILINE,
+        )
+        template = '[[package]]\nname = "' + crate + '"\nversion = "{v}"'
+        return pattern, template
+    try:
+        return _PATTERNS[style]
+    except KeyError:
+        sys.exit(f"error: unknown version-file style {style!r}")
 
 
 @dataclass
@@ -81,7 +125,7 @@ class Package:
     def current(self) -> str:
         """Return the version recorded in the source-of-truth file."""
         rel, style = self.files[0]
-        pattern, _ = _PATTERNS[style]
+        pattern, _ = _pattern_for(style)
         text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         match = pattern.search(text)
         if not match:
@@ -97,7 +141,7 @@ class Package:
         touched: list[str] = []
         for rel, style in self.files:
             path = REPO_ROOT / rel
-            pattern, template = _PATTERNS[style]
+            pattern, template = _pattern_for(style)
             text = path.read_text(encoding="utf-8")
             new_text, count = pattern.subn(
                 template.format(v=new_version), text, count=1
@@ -144,19 +188,20 @@ PACKAGES: list[Package] = [
     Package("parrot-formdesigner",
             [("packages/parrot-formdesigner/src/parrot_formdesigner/version.py", "python")],
             "packages/parrot-formdesigner", aliases=["formdesigner"]),
-    # navrules keeps the same number in three files; __init__.py is the truth.
+    # navrules keeps the same number in four files; __init__.py is the truth.
+    # The lock's root-crate block moves with Cargo.toml so a local build
+    # never has anything to rewrite (see the module docstring); the crate
+    # name is `[package].name` in rust/Cargo.toml, not the `[lib]` name.
     Package("navrules",
             [("packages/navrules/src/navrules/__init__.py", "python"),
              ("packages/navrules/pyproject.toml", "toml"),
-             ("packages/navrules/rust/Cargo.toml", "toml")],
+             ("packages/navrules/rust/Cargo.toml", "toml"),
+             ("packages/navrules/rust/Cargo.lock", "cargo-lock:navrules_native")],
             "packages/navrules", aliases=["rules"]),
-    # parrot_codec is a maturin/PyO3 crate: pyproject.toml and Cargo.toml
-    # repeat the same number and must move together. NOTE: its Cargo.lock is
-    # deliberately NOT listed — the "toml" handler rewrites the FIRST
-    # `^version = ` line, which in a lockfile is the lockfile *format*
-    # version (`version = 4`), not the crate's. Cargo refreshes the lock at
-    # build time anyway (maturin does not pass --locked), the same way
-    # navrules' lock harmlessly lags its Cargo.toml.
+    # parrot_codec is a maturin/PyO3 crate: pyproject.toml, Cargo.toml and
+    # the root-crate block of Cargo.lock repeat the same number and must move
+    # together. The lock uses the "cargo-lock:<crate>" style, never "toml",
+    # which would rewrite the first dependency's pin instead (see _PATTERNS).
     #
     # Omitting this package is what stranded parrot_codec at 0.1.0 while
     # every sibling advanced: PyPI refuses new files on a release older than
@@ -164,7 +209,8 @@ PACKAGES: list[Package] = [
     # that could never upload and the 400 failed the whole deploy step.
     Package("parrot-codec",
             [("packages/ai-parrot/src/parrot/codec-rs/pyproject.toml", "toml"),
-             ("packages/ai-parrot/src/parrot/codec-rs/Cargo.toml", "toml")],
+             ("packages/ai-parrot/src/parrot/codec-rs/Cargo.toml", "toml"),
+             ("packages/ai-parrot/src/parrot/codec-rs/Cargo.lock", "cargo-lock:parrot_codec")],
             "packages/ai-parrot/src/parrot/codec-rs", aliases=["codec"]),
     # FEAT-523: the ai-parrot-client-<provider> LLM-client satellites. Each
     # keeps a static `version = "X.Y.Z"` in its pyproject.toml (no version.py;

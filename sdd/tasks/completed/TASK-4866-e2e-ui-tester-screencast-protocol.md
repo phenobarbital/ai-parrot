@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-762 — Operational screencast logs for the E2E browser exploration flow
 **Spec**: `sdd/specs/e2e-browser-screencast-logs.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (1-2h)
 **Depends-on**: TASK-4865

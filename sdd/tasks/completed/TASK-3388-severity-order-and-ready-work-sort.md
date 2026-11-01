@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-572 — `/sdd-fix` Ledger-Driven Fix Lane
 **Spec**: `sdd/specs/sdd-fix-ledger-lane.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3387

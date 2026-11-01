@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-225 — JiraToolkit Integrations OAuth2
 **Spec**: `sdd/specs/jiratoolkit-integrations-oauth2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1470, TASK-1473

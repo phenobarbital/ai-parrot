@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-710 — Parrot telemetry event fan-out
 **Spec**: `sdd/specs/parrot-telemetry-event-fanout.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: TASK-4545, TASK-4546

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-423 — Purge Matplotlib & Heavy Renderer Libraries
 **Spec**: `sdd/specs/purge-matplotlib-renderer-libs.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2221

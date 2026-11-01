@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-740 — Fast lane runs in its own worktree (never the main checkout)
 **Spec**: `sdd/specs/sdd-fix-brief-change.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

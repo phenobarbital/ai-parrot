@@ -208,3 +208,72 @@ def test_non_pytest_declared_command_produces_runner_target(tmp_path: Path):
 
     assert plan.invocations[0].runner == "fake"
     assert plan.invocations[0].targets == (TestTarget("tests/test_fake.py", "root", "declared", runner="fake"),)
+
+
+def _marker(invocation) -> str:
+    return invocation.argv[invocation.argv.index("-m") + 1]
+
+
+def test_declared_target_runs_under_override_marker(tmp_path: Path):
+    """A task's own declared tests (e.g. tests/integration) are not deselected (issue:8c423c5612c2)."""
+    plan = build_plan(
+        [_t("packages/a/tests/integration/test_x.py", "a", "declared")],
+        tier="task",
+        worktree=tmp_path,
+        policy=ScopePolicy(),
+    )
+
+    assert len(plan.invocations) == 1
+    assert _marker(plan.invocations[0]) == OVERRIDE_MARKER_EXPRESSION
+
+
+def test_declared_and_contract_share_one_permissive_invocation(tmp_path: Path):
+    contract = TestContract(schema=1, tests=("packages/a/tests/test_c.py",), markers=(), digest="sha256:test")
+    plan = build_plan(
+        [
+            _t("packages/a/tests/test_d.py", "a", "declared"),
+            _t("packages/a/tests/test_c.py", "a", "contract"),
+        ],
+        tier="task",
+        worktree=tmp_path,
+        policy=ScopePolicy(),
+        contract=contract,
+    )
+
+    assert len(plan.invocations) == 1
+    assert {t.path for t in plan.invocations[0].targets} == {
+        "packages/a/tests/test_d.py",
+        "packages/a/tests/test_c.py",
+    }
+    assert _marker(plan.invocations[0]) == OVERRIDE_MARKER_EXPRESSION
+
+
+def test_mirror_target_keeps_agent_marker(tmp_path: Path):
+    plan = build_plan(
+        [
+            _t("packages/a/tests/test_m.py", "a", "mirror"),
+            _t("packages/a/tests/test_d.py", "a", "declared"),
+        ],
+        tier="task",
+        worktree=tmp_path,
+        policy=ScopePolicy(),
+    )
+
+    markers = {invocation.targets[0].reason: _marker(invocation) for invocation in plan.invocations}
+    assert markers == {"mirror": AGENT_MARKER_EXPRESSION, "declared": OVERRIDE_MARKER_EXPRESSION}
+
+
+def test_declared_only_with_marked_contract_adds_no_sweep(tmp_path: Path):
+    """The contract marker sweep still requires a contract target in the distribution."""
+    contract = TestContract(
+        schema=1, tests=("packages/b/tests/test_c.py",), markers=("integration",), digest="sha256:t"
+    )
+    plan = build_plan(
+        [_t("packages/a/tests/test_d.py", "a", "declared")],
+        tier="task",
+        worktree=tmp_path,
+        policy=ScopePolicy(),
+        contract=contract,
+    )
+
+    assert len(plan.invocations) == 1

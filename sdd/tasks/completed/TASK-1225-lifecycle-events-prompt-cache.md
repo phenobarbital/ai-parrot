@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-181 — Provider-Agnostic Prompt Caching
 **Spec**: `sdd/specs/agnostic-prompt-caching-abstraction.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

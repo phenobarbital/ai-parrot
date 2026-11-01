@@ -55,6 +55,7 @@ class REPLConfig(BaseModel):
         resume_session_id: Optional session id to resume history from at start.
         server_token: Optional bearer token for server-proxy mode.
         history_enabled: Whether composer input persists via ``FileHistory``.
+        login_user_id: Navigator login identity, when a login is active.
     """
 
     agent_name: str
@@ -67,6 +68,7 @@ class REPLConfig(BaseModel):
     resume_session_id: Optional[str] = None
     server_token: Optional[str] = None
     history_enabled: bool = True
+    login_user_id: Optional[str] = None
 
     model_config = {"arbitrary_types_allowed": True}
 

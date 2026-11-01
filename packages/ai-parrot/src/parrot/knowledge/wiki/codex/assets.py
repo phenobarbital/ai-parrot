@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -86,8 +87,12 @@ def toolkit_mcp_block(root: Path, sections: dict[str, ToolkitSection]) -> str:
             f"command = {command}",
             f"args = {json.dumps(['mcp-local', name, '--config', config_path])}",
         ]
-        if section.env:
-            env_toml = ", ".join(f"{key} = {json.dumps(value)}" for key, value in section.env.items())
+        env = dict(section.env)
+        login_file = os.environ.get("PARROT_LOGIN_FILE")
+        if login_file and "PARROT_LOGIN_FILE" not in env:
+            env["PARROT_LOGIN_FILE"] = login_file
+        if env:
+            env_toml = ", ".join(f"{key} = {json.dumps(value)}" for key, value in env.items())
             lines.append(f"env = {{ {env_toml} }}")
         tables.append("\n".join(lines))
     return "\n\n".join(tables)

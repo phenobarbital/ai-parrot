@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-306 — Crew Per-Agent Result Persistence & Deterministic Execution Document
 **Spec**: `sdd/specs/crew-per-agent-result-persistence.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1765, TASK-1766, TASK-1767, TASK-1768, TASK-1769

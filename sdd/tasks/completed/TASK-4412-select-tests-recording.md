@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-695 — sdd-done test-results table
 **Spec**: `sdd/specs/sdd-done-tests.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4411

@@ -2,7 +2,7 @@
 
 **Feature**: vector-store-handler-scraping
 **Spec**: `sdd/specs/vector-store-handler-scraping.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

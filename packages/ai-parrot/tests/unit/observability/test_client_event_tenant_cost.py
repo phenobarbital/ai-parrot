@@ -17,7 +17,8 @@ class _Calc:
         self.boom = boom
         self.calls = 0
 
-    def cost_usd(self, *, provider, model, input_tokens, output_tokens):
+    def cost_usd(self, *, provider, model, input_tokens, output_tokens, **tiers):
+        self.tiers = tiers
         self.calls += 1
         if self.boom:
             raise RuntimeError("pricing exploded")
@@ -38,6 +39,7 @@ class _Client:
     _emit_after_call = AbstractClient._emit_after_call
     _emit_failed_call = AbstractClient._emit_failed_call
     _compute_call_cost = AbstractClient._compute_call_cost
+    _price_revision_fields = AbstractClient._price_revision_fields
 
     def __init__(self):
         import logging
@@ -157,3 +159,46 @@ async def test_execute_llm_call_backfills_estimated_cost() -> None:
     client.ask = _ask
     response = await AbstractBot.execute_llm_call(object(), client, "ask")
     assert response.usage.estimated_cost == 0.03
+
+
+@pytest.mark.asyncio
+async def test_after_call_carries_cache_and_reasoning_counters() -> None:
+    """FEAT-783: a CompletionUsage passed as usage= fills the cache/reasoning fields and cache tiers."""
+    from parrot.models.basic import CompletionUsage
+
+    calc = _Calc(0.02)
+    set_shared_cost_calculator(calc)
+    client = _Client()
+    usage = CompletionUsage.model_validate(
+        {
+            "prompt_tokens": 100,
+            "completion_tokens": 10,
+            "total_tokens": 110,
+            "cache_read_input_tokens": 60,
+            "cache_creation_input_tokens": 7,
+            "reasoning_output_tokens": 4,
+        }
+    )
+    await client._emit_after_call(
+        TraceContext.new_root(), client_name="anthropic", model="m", duration_ms=1.0,
+        input_tokens=100, output_tokens=10, usage=usage,
+    )
+    event = client.events.emitted[0]
+    assert event.cache_read_tokens == 60
+    assert event.cache_creation_tokens == 7
+    assert event.reasoning_output_tokens == 4
+    assert calc.tiers == {"cached_input_tokens": 60, "cache_creation_tokens": 7}
+
+
+@pytest.mark.asyncio
+async def test_after_call_without_usage_leaves_counters_unset() -> None:
+    """Without usage=, the counters stay None (unknown), not zero."""
+    set_shared_cost_calculator(_Calc(0.01))
+    client = _Client()
+    await client._emit_after_call(
+        TraceContext.new_root(), client_name="openai", model="m", duration_ms=1.0,
+        input_tokens=1, output_tokens=1,
+    )
+    event = client.events.emitted[0]
+    assert event.cache_read_tokens is None
+    assert event.cache_creation_tokens is None
