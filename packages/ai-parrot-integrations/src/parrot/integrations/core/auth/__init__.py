@@ -11,6 +11,12 @@ Exports:
     get_provider: Look up a provider by name from the catalog.
 """
 from parrot.integrations.core.auth.post_auth import PostAuthProvider, PostAuthRegistry
+from parrot.integrations.core.auth.connections import (
+    ConnectableProvider,
+    ConnectionCommandService,
+    ConnectionStatusLine,
+    ConnectOutcome,
+)
 from parrot.integrations.core.auth.oauth2_providers import (
     OAuth2ProviderConfig,
     OAUTH2_PROVIDERS,
@@ -23,4 +29,8 @@ __all__ = [
     "OAuth2ProviderConfig",
     "OAUTH2_PROVIDERS",
     "get_provider",
+    "ConnectableProvider",
+    "ConnectionCommandService",
+    "ConnectionStatusLine",
+    "ConnectOutcome",
 ]
