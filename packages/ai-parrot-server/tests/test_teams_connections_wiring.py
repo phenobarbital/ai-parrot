@@ -189,9 +189,7 @@ async def test_teams_connect_end_to_end() -> None:
         assert await router.try_dispatch("/connect jira", turn_context) is True
 
     card_activity = turn_context.send_activity.await_args.args[0]
-    assert card_activity.attachments[0].content["actions"][0]["url"] == (
-        "https://jira.example/authorize?state=state-1"
-    )
+    assert card_activity.attachments[0].content["actions"][0]["url"] == ("https://jira.example/authorize?state=state-1")
     callback_extra = oauth_manager.create_authorization_url.await_args.kwargs["extra_state"]
     assert callback_extra["conversation_reference"]["conversation"]["id"] == "conversation-1"
 
