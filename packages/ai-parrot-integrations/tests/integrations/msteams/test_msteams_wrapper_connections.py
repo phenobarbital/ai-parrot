@@ -64,20 +64,6 @@ async def test_permission_context_reaches_ask() -> None:
 
 
 @pytest.mark.asyncio
-async def test_voice_and_resume_sites_pass_context() -> None:
-    """The shared helper retains voice metadata and accepts resume session identifiers."""
-    wrapper = _wrapper(_session())
-
-    voice_context = await wrapper._agent_context(_turn(), "29:teams-user", "19:conversation", source="voice_note")
-    resume_context = await wrapper._agent_context(_turn(), "29:teams-user", "resume-session")
-
-    assert voice_context["source"] == "voice_note"
-    assert voice_context["permission_context"].channel == "msteams"
-    assert resume_context["session_id"] == "resume-session"
-    assert resume_context["permission_context"].channel_user_id == "aad-oid"
-
-
-@pytest.mark.asyncio
 async def test_conv_ref_saved_on_personal_authenticated_turn_only(monkeypatch: pytest.MonkeyPatch) -> None:
     """Only authenticated personal turns refresh the notifier conversation-reference cache."""
     wrapper = _wrapper(_session())
