@@ -1,4 +1,4 @@
-"""Request-scoped collector of tool needs-auth payloads (FEAT-775 M5 / FEAT-776 M1)."""
+"""Request-scoped collector of tool needs-auth payloads (FEAT-775 M5 / FEAT-776 M1 / FEAT-777 M4)."""
 
 from __future__ import annotations
 
@@ -13,11 +13,7 @@ _PENDING_AUTH: ContextVar[Optional[List[AuthRequiredPayload]]] = ContextVar("par
 
 @contextmanager
 def collect_auth_requirements() -> Iterator[List[AuthRequiredPayload]]:
-    """Bind a fresh list for the current context; reset the ContextVar token on exit.
-
-    Yields:
-        The list that ``record_auth_requirement`` appends to while bound.
-    """
+    """Bind a fresh list for the current context; reset the ContextVar token on exit."""
     pending: List[AuthRequiredPayload] = []
     token = _PENDING_AUTH.set(pending)
     try:

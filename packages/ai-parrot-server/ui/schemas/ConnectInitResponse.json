@@ -1,0 +1,32 @@
+{
+  "description": "Response for the connect-init endpoint.\n\nAttributes:\n    auth_url: Full Atlassian authorization URL to open in a popup.\n    state: Opaque CSRF nonce; the client must not interpret it.\n    scopes: Scopes included in the authorization request.\n    expires_in: Seconds the nonce remains valid (default 600).",
+  "properties": {
+    "auth_url": {
+      "title": "Auth Url",
+      "type": "string"
+    },
+    "expires_in": {
+      "default": 600,
+      "title": "Expires In",
+      "type": "integer"
+    },
+    "scopes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Scopes",
+      "type": "array"
+    },
+    "state": {
+      "title": "State",
+      "type": "string"
+    }
+  },
+  "required": [
+    "auth_url",
+    "state",
+    "scopes"
+  ],
+  "title": "ConnectInitResponse",
+  "type": "object"
+}

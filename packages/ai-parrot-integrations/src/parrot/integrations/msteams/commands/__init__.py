@@ -26,6 +26,31 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+COMMAND_ARGS_KEY = "msteams.command_args"
+
+
+def command_args(turn_context: "TurnContext") -> str:
+    """Return the text after the dispatched command word (``""`` when none).
+
+    Args:
+        turn_context: The turn the router dispatched.
+
+    Returns:
+        The argument string stored by :class:`MSTeamsCommandRouter`.
+    """
+    state = getattr(turn_context, "turn_state", None)
+    if not isinstance(state, dict):
+        return ""
+    value = state.get(COMMAND_ARGS_KEY, "")
+    return value if isinstance(value, str) else ""
+
+
+def _store_args(turn_context: "TurnContext", args: str) -> None:
+    """Store ``args`` on the turn when it exposes a turn-state dictionary."""
+    state = getattr(turn_context, "turn_state", None)
+    if isinstance(state, dict):
+        state[COMMAND_ARGS_KEY] = args
+
 
 class MSTeamsCommandRouter:
     """Detects and routes text commands in ``on_message_activity``.
@@ -94,6 +119,7 @@ class MSTeamsCommandRouter:
             return False
 
         try:
+            _store_args(turn_context, parts[1].strip() if len(parts) > 1 else "")
             await handler(turn_context)
         except Exception:
             logger.exception(
@@ -135,6 +161,7 @@ class MSTeamsCommandRouter:
             return False
 
         try:
+            _store_args(turn_context, "")
             await handler(turn_context)
         except Exception:
             logger.exception(

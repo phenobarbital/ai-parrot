@@ -190,6 +190,27 @@ policies for action/provider/scopes and trusted roles. If an adapter correction 
 mapping and edit sites in this spec before decomposition; this is a concrete compatibility gate, not a new
 policy-shape decision. Existing agent-handler `ResourceType.TOOL` patterns are not evidence for integration policy.
 
+**Parity gate resolved (2026-10-31, owner decision: URI parity).** Source check of navigator-auth 0.28.9:
+`is_allowed(request, ctx)` binds the attribute dict to `session`, finds no `resource`, and delegates to
+`authorize()` (pdp.py:393-444), which evaluates `ResourceType.URI` on `request.path` with
+`PolicyAdapter.METHOD_ACTION_MAP[request.method]` (adapter.py:23-30). The HTTP decision is therefore URI-based;
+action/provider/scopes are discarded. No file under `policies/` mentions connections. The request-less adapter
+mirrors that decision exactly, so existing URI policies apply unchanged to HTTP and channel callers:
+
+| Service operation | Resource (`ResourceType.URI`) | Action |
+|---|---|---|
+| `list_for_principal` (gate and per-provider filter) | `/api/v1/connections` | `uri:read` |
+| `status` | `/api/v1/connections/{provider}` | `uri:read` |
+| `start_connect` | `/api/v1/connections/{provider}/start` | `uri:write` |
+| `disconnect` | `/api/v1/connections/{provider}` | `uri:delete` |
+
+Routes verified at `parrot/manager/manager.py:2488-2490`. The adapter builds a navigator-auth `EvalContext`
+from the trusted `PermissionContext` (Navigator `user_id`, session roles/groups only, tenant), calls the app
+PDP's `evaluator.check_access(ctx, ResourceType.URI, path, action)`, and allows only on
+`EvaluationResult.allowed is True`. FEAT-773 attributes (`action`, `provider`, `scopes`) are still passed to
+the injected callable for audit and future policy use; they do not change the URI decision. The HTTP path
+(`abac.is_allowed(request, ctx)`) is unchanged by this feature.
+
 M7 introduces channel service construction at the integration manager startup seam; there is no existing
 FEAT-773 factory in `parrot/manager/manager.py`. HTTP handlers currently instantiate `IntegrationsService()`
 locally. Reuse the initialized app PDP when building channel services and inject a vault reader where needed.
@@ -571,22 +592,28 @@ tests:
 - packages/ai-parrot/tests/auth/test_connections_permission_context.py
 - packages/ai-parrot-tools/tests/test_teams_oauth_identity.py
 - packages/ai-parrot-server/tests/test_teams_connections_wiring.py
+- packages/ai-parrot/tests/auth/test_oauth2_scope_propagation.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_command_args.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_principal_source.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_connection_cards.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_connection_routing.py
+- packages/ai-parrot-integrations/tests/integrations/msteams/test_msteams_wrapper_connections.py
+- packages/ai-parrot-integrations/tests/test_slack_msteams_jira_principal.py
+- packages/ai-parrot-integrations/tests/test_jira_notifier_adapters.py
+- packages/ai-parrot-server/tests/unit/test_identity_principal_resolver.py
+- packages/ai-parrot/tests/unit/auth/test_oauth2_principal_keys.py
+- packages/ai-parrot/tests/unit/auth/test_connection_events.py
 markers: none
 
 > `test_msteams_oauth_callback.py` is rewritten or deleted together with `MSTeamsOAuthNotifier` (M4); the task
 > must move surviving assertions into `test_msteams_connection_notifier.py`. Also migrate direct legacy-helper
 > imports in `test_msteams_auth_lane.py` and adapter imports/assertions in `test_jira_notifier_adapters.py`.
 > Paths for new functionality above are planned tests, not files claimed to exist at this baseline.
-> Retain the merged regression suites below:
+> The last five `tests:` entries are the retained merged regression suites; in
+> `test_jira_notifier_adapters.py` migrate the Teams assertions and retain Slack/Telegram.
 
-- `packages/ai-parrot-integrations/tests/test_slack_msteams_jira_principal.py`
-- `packages/ai-parrot-integrations/tests/test_jira_notifier_adapters.py` (migrate Teams assertions; retain Slack/Telegram)
-- `packages/ai-parrot-server/tests/unit/test_identity_principal_resolver.py`
-- `packages/ai-parrot/tests/unit/auth/test_oauth2_principal_keys.py`
-- `packages/ai-parrot/tests/unit/auth/test_connection_events.py`
-
-Add regression cases for notifier registration order (Jira setup before/after Teams), legacy migration
-with no connection row, closed legacy window, and provider URL scope isolation across concurrent requests.
+> Add regression cases for notifier registration order (Jira setup before/after Teams), legacy migration
+> with no connection row, closed legacy window, and provider URL scope isolation across concurrent requests.
 
 ### Test Data / Fixtures
 ```python

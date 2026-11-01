@@ -193,3 +193,39 @@ it("yields suggestions without a turn_id when the trailer omits it", async () =>
   const chips = out.find((c) => c.type === "suggestions") as any;
   expect(chips).toEqual({ type: "suggestions", suggestions: [], turn_id: undefined });
 });
+
+// ── FEAT-777: auth_required trailer ─────────────────────────────────────────────────────────────
+
+const AUTH = { provider: "jira", message: "Connect Jira" };
+
+it("yields auth_required after done, copying retry_safe and turn_id from the frame", async () => {
+  const out = await collect([
+    `Hi\x00${ENVELOPE}\x00${JSON.stringify({ auth_required: AUTH, turn_id: "t1", retry_safe: true })}`,
+  ]);
+  expect(out.map((c) => c.type)).toEqual(["chunk", "done", "auth_required"]);
+  expect(out[2]).toEqual({ type: "auth_required", payload: AUTH, turn_id: "t1", retry_safe: true });
+});
+
+it("yields both a suggestions and an auth_required trailer independently", async () => {
+  const out = await collect([
+    `Hi\x00${ENVELOPE}\x00{"suggestions":[]}\x00${JSON.stringify({ auth_required: AUTH })}`,
+  ]);
+  expect(out.map((c) => c.type)).toEqual(["chunk", "done", "suggestions", "auth_required"]);
+});
+
+it("treats retry_safe as true only for boolean true", async () => {
+  const frames = [true, "true", 1, null, false];
+  const out = [];
+  for (const retry_safe of frames) {
+    const chunks = await collect([`\x00${ENVELOPE}\x00${JSON.stringify({ auth_required: AUTH, retry_safe })}`]);
+    out.push((chunks.find((c) => c.type === "auth_required") as any).retry_safe);
+  }
+  expect(out).toEqual([true, undefined, undefined, undefined, false]);
+});
+
+it("ignores a non-object auth_required value", async () => {
+  for (const bad of ['"x"', "[1]", "null", "3"]) {
+    const out = await collect([`Hi\x00${ENVELOPE}\x00{"auth_required":${bad}}`]);
+    expect(out.map((c) => c.type)).toEqual(["chunk", "done"]);
+  }
+});

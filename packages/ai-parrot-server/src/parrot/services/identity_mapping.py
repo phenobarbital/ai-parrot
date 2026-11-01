@@ -29,7 +29,9 @@ import dataclasses
 import hashlib
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from navigator_auth.identity.store import IdentityStore
@@ -140,6 +142,20 @@ def _validate_identity_input(
     return str(provider_user_id), json.dumps(data, default=str)
 
 
+_CLAIM_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended($1 || ':' || $2, 0))"
+_CLAIM_OWNERS_SQL = """
+SELECT identity_id, user_id, enabled
+FROM auth.user_identities
+WHERE auth_provider = $1 AND provider_user_id = $2
+"""
+
+
+class ClaimResult(BaseModel):
+    """Outcome of :meth:`IdentityMappingService.claim_channel_identity` (never carries the other owner)."""
+
+    status: Literal["claimed", "already_owned", "conflict"]
+
+
 def _raw_connection(conn: Any) -> Any:
     """Return the asyncpg connection behind ``conn``.
 
@@ -212,6 +228,70 @@ class IdentityMappingService:
             self._identity_store = IdentityStore(self._pool)
         return self._identity_store
 
+    async def claim_channel_identity(
+        self,
+        *,
+        nav_user_id: str,
+        auth_provider: str,
+        provider_user_id: str,
+        auth_data: Dict[str, Any],
+        display_name: Optional[str] = None,
+        email: Optional[str] = None,
+    ) -> ClaimResult:
+        """Exclusively claim ``(auth_provider, provider_user_id)`` for ``nav_user_id`` (FEAT-777 M2).
+
+        One transaction: advisory lock on the identity key, read every matching row (disabled included),
+        insert only when nobody owns it. Same enabled owner is idempotent. Anything else is a conflict, no write.
+
+        Raises:
+            ValueError: non-numeric ``nav_user_id``, empty ``provider_user_id`` or secrets in ``auth_data``.
+            Exception: database failures propagate.
+        """
+        if not str(nav_user_id or "").isdigit():
+            raise ValueError(
+                "nav_user_id must be the numeric navigator-auth user_id "
+                f"(auth.user_identities.user_id is bigint); got a non-numeric value for provider {auth_provider!r}"
+            )
+        if provider_user_id is None or str(provider_user_id) == "":
+            raise ValueError("provider_user_id is required")
+        provider_user_id = str(provider_user_id)
+        data = dict(auth_data or {})
+        leaked = _SECRET_KEYS.intersection(data)
+        if leaked:
+            raise ValueError(f"auth_data must not carry secrets: {sorted(leaked)}")
+        payload = json.dumps(data, default=str)
+        async with self._pool.acquire() as conn:
+            raw = _raw_connection(conn)
+            async with raw.transaction():
+                await raw.execute(_CLAIM_LOCK_SQL, auth_provider, provider_user_id)
+                rows = await raw.fetch(_CLAIM_OWNERS_SQL, auth_provider, provider_user_id)
+                if rows:
+                    same_owner = (
+                        len(rows) == 1 and bool(rows[0]["enabled"]) and str(rows[0]["user_id"]) == str(nav_user_id)
+                    )
+                    if not same_owner:
+                        self.logger.warning(
+                            "IdentityMappingService: channel identity claim conflict provider=%s rows=%d",
+                            auth_provider,
+                            len(rows),
+                        )
+                        return ClaimResult(status="conflict")
+                    status = "already_owned"
+                else:
+                    status = "claimed"
+                row = await raw.fetchrow(
+                    _UPSERT_SQL,
+                    str(nav_user_id),
+                    auth_provider,
+                    provider_user_id,
+                    payload,
+                    display_name,
+                    email,
+                )
+                if row is None:
+                    raise RuntimeError(f"identity claim returned no row (provider={auth_provider})")
+        return ClaimResult(status=status)
+
     async def upsert_identity(
         self,
         *,
@@ -248,6 +328,19 @@ class IdentityMappingService:
                 decide how to surface it.
         """
         provider_user_id, payload = _validate_identity_input(nav_user_id, auth_provider, provider_user_id, auth_data)
+
+        if token is None and auth_provider == "slack":
+            result = await self.claim_channel_identity(
+                nav_user_id=str(nav_user_id),
+                auth_provider=auth_provider,
+                provider_user_id=provider_user_id,
+                auth_data=auth_data,
+                display_name=display_name,
+                email=email,
+            )
+            if result.status == "conflict":
+                raise PermissionError("channel identity already owned")
+            return
 
         if token is not None:
             if token.provider_user_id is None:

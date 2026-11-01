@@ -40,6 +40,12 @@ export const navEntries: NavEntry[] = [
     section: "user",
   },
   {
+    path: "/account/connections",
+    label: "Connections",
+    icon: "M10 14a4 4 0 005.66 0l3-3a4 4 0 10-5.66-5.66l-1 1M14 10a4 4 0 00-5.66 0l-3 3a4 4 0 105.66 5.66l1-1",
+    section: "user",
+  },
+  {
     path: "/admin/home",
     label: "Home",
     icon: "M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10",

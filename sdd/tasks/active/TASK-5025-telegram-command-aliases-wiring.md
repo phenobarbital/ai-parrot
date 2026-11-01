@@ -37,8 +37,9 @@ provider is connectable — otherwise today's session-copy handlers stay unchang
   (`auth_methods` contains `"oauth2"`). No DB pool ⇒ commands reply "Connections are not available on this bot".
   Move the `_register_jira_session_hook()` call (TASK-5023) here. Menu: `connect`, `disconnect`, `connections` plus
   the aliases shown today.
-- The `IntegrationsService` instance: construct with FEAT-775's `permission_evaluator` wiring (copy from TASK-5018's
-  Completion Note — e.g. resolved from `app`). No evaluator ⇒ service denies ⇒ "not allowed" (AC-7).
+- The `IntegrationsService` instance: `IntegrationsService(vault, authorizer=app.get("connection_authorizer"))`,
+  read per call like Slack/Teams (verified wiring in TASK-5018's Completion Note). No authorizer ⇒ service
+  denies ⇒ "not allowed" (AC-7). Never `permission_evaluator` — removed by FEAT-775 TASK-5091 (issue:782f6c990de1).
 - Update tests: `test_telegram_jira_commands.py`, `test_telegram_office365_commands.py`,
   `test_wrapper_register_command_menu.py`, `test_integration_menu_parity.py`, and
   `tests/integration/oauth2/test_e2e_telegram_regression.py` (alias parity + new e2e cases).
@@ -194,7 +195,7 @@ def register_office365_commands(router: Router, session_provider: SessionProvide
 
 ### FILL IN checklist
 - [ ] Callers (:286-287) switched to `_register_connection_commands`
-- [ ] `IntegrationsService` evaluator wiring copied from TASK-5018
+- [ ] `IntegrationsService` `authorizer=` wiring copied from TASK-5018
 - [ ] Test updates: `test_jira_aliases_route_to_generic`, `test_office365_alias_only_when_registered`, `test_command_menu_entries`;
       e2e: `test_e2e_telegram_connect_any_provider`, `test_e2e_telegram_jira_parity` (alias), `test_e2e_cross_channel_from_telegram`,
       `test_e2e_unlinked_user_forced_reconnect`, `test_telegram_disconnect_routes_revoked`
@@ -203,7 +204,7 @@ def register_office365_commands(router: Router, session_provider: SessionProvide
 
 ## Acceptance Criteria
 
-- [ ] AC-4, AC-5, AC-6, AC-7 (via the shared evaluator), AC-10 (no `TelegramOAuthNotifier` left in `packages/`), AC-17 (disconnect → revoke with telegram channel/principal, Jira session cleared)
+- [ ] AC-4, AC-5, AC-6, AC-7 (via the shared `ConnectionAuthorizer`), AC-10 (no `TelegramOAuthNotifier` left in `packages/`), AC-17 (disconnect → revoke with telegram channel/principal, Jira session cleared)
 - [ ] `ruff check` clean on touched files
 
 ---

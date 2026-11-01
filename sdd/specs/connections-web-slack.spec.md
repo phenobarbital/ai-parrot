@@ -730,6 +730,46 @@ runners:
   - tests/unit/integrations/oauth2/test_models.py
   - tests/integration/oauth2/test_e2e_web_connect.py
   - tests/integration/oauth2/test_e2e_auth_envelope.py
+  - packages/ai-parrot-integrations/tests/integrations/slack/test_slack_connection_commands.py
+  - packages/ai-parrot-integrations/tests/integrations/slack/test_slack_connection_notifier.py
+  - packages/ai-parrot-integrations/tests/test_jira_notifier_adapters.py
+  - packages/ai-parrot-server/tests/integration/test_a2a_workiq_vertical.py
+  - packages/ai-parrot-server/tests/studio/test_tooling_identity.py
+  - packages/ai-parrot-server/tests/test_ts_codegen.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_account_connections.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_account_navigation.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_chat_auth_retry.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_connections_store.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_integrations_menu.py
+  - packages/ai-parrot-server/tests/ui/test_vitest_suggestion_stream_trailer.py
+  - packages/ai-parrot-server/tests/unit/test_agenttalk_auth_required_stream.py
+  - packages/ai-parrot-server/tests/unit/test_channel_links_handler.py
+  - packages/ai-parrot-server/tests/unit/test_connection_authorization.py
+  - packages/ai-parrot-server/tests/unit/test_connection_events_handler.py
+  - packages/ai-parrot-server/tests/unit/test_connection_push.py
+  - packages/ai-parrot-server/tests/unit/test_connections_handler.py
+  - packages/ai-parrot-server/tests/unit/test_identity_mapping_claim.py
+  - packages/ai-parrot-server/tests/unit/test_jira_connect_tool_removed.py
+  - packages/ai-parrot-server/tests/unit/test_o365_provider_registration.py
+  - packages/ai-parrot-server/tests/unit/test_register_oauth2_providers.py
+  - packages/ai-parrot/tests/auth/test_credentials_devicecode.py
+  - packages/ai-parrot/tests/auth/test_integrations_service_authorizer.py
+  - packages/ai-parrot/tests/auth/test_integrations_status.py
+  - packages/ai-parrot/tests/auth/test_o365_device_grant.py
+  - packages/ai-parrot/tests/auth/test_o365_refresh.py
+  - packages/ai-parrot/tests/auth/test_retry_safety.py
+  - packages/ai-parrot/tests/integration/test_cli_devicecode_e2e.py
+  - packages/ai-parrot/tests/unit/auth/test_channel_link.py
+  - packages/ai-parrot/tests/unit/auth/test_connection_event_sinks.py
+  - packages/ai-parrot/tests/unit/auth/test_connection_events.py
+  - packages/ai-parrot/tests/unit/test_identity_mapping.py
+  - packages/ai-parrot/tests/unit/test_resolver_strategies.py
+  - packages/ai-parrot/tests/unit/test_tool_credential_seam.py
+  - tests/integration/oauth2/test_e2e_chat_partial_execution_auth.py
+  - tests/integration/oauth2/test_e2e_o365_device_and_web_share_record.py
+  - tests/integration/oauth2/test_e2e_slack_link.py
+  - tests/integration/oauth2/test_e2e_web_panel_live_update.py
+  - tests/unit/integrations/oauth2/test_service.py
   markers: none
 - kind: vitest
   cwd: packages/ai-parrot-server/ui
@@ -737,7 +777,7 @@ runners:
   - src/lib/api/stream.test.ts
   - src/lib/components/agents/AgentChat.test.ts
 
-> `/sdd-task` adds the new test files above to the contract once their paths are frozen.
+> New test files bound by `/sdd-task` on 2026-10-31 (TASK-5032–5059); paths frozen in the task files.
 
 ### Test Data / Fixtures
 ```python
@@ -1044,7 +1084,7 @@ unless noted; `/sdd-task` re-verifies with `grep -c`.
 - [x] Multi-account, PBAC on connect/disconnect, needs-auth payload, durable-first persistence — *Resolved in S-1* (S3, S4/AC-8, S8/M5, S2/AC-5); not reopened here.
 - [x] PBAC without an HTTP request — *Resolved in review*: M2 adds the core authorizer Protocol and server PDP adapter for all Slack connection operations, using trusted identity/tenant context and explicit ALLOW only. Re-verify installed evaluator signatures after S-1; AC-14 requires real-evaluator contract tests.
 - [x] `CONNECTIONS_LINK_BASE_URL` default — *Resolved 2026-10-31 (D5)*: required config, no default; unset → Slack `/login` replies "not configured" and logs a warning.
-- [ ] External callers of `/api/v1/agents/integrations/{agent}/{provider}/enable` (TROC AgentChat repo) before removal — *Owner: Jesus*.
+- [ ] External callers of `/api/v1/agents/integrations/{agent}/{provider}/enable` (TROC AgentChat repo) before removal — *Owner: Jesus* *Answered 2026-11-01*: `navigator-frontend-next` still calls it (`src/lib/api/integrations.ts` `confirmIntegrationEnable`, used by `ConnectIntegrationPill.svelte` and `IntegrationsMenu.svelte`). The in-repo admin UI no longer does. Removal (TASK-5048, AC-9) is deferred until navigator-frontend-next migrates to `/api/v1/connections*`; tracked as `issue:7ede49d4d598`. FEAT-777 ships with `/enable` kept as a no-op.
 - [x] Ordering with FEAT-772 for the `/account` section — *Resolved*: FEAT-772 landed the section first; S-3a adds routes only.
 - [x] Device-code principal before S-4 — *Resolved 2026-10-31 (D4)*: M3 adds an exactly-one-match e-mail/OID canonical-identity lookup for `cli` and `a2a` to `IdentityPrincipalResolver`; processes without the auth DB pool still fail closed. Coordinate the engine change with FEAT-774.
 

@@ -575,6 +575,7 @@ class JevClient(AbstractClient):
             input_tokens=usage.prompt_tokens,
             output_tokens=usage.completion_tokens,
             finish_reason="completed",
+            usage=usage,
         )
         return self._build_message(
             prompt=prompt,
@@ -762,6 +763,7 @@ class JevClient(AbstractClient):
             input_tokens=usage.prompt_tokens,
             output_tokens=usage.completion_tokens,
             finish_reason="completed",
+            usage=usage,
         )
 
         # Parsing happens after the terminal event: the tokens were consumed and

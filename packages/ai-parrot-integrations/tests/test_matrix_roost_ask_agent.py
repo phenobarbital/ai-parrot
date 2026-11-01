@@ -72,3 +72,85 @@ async def test_no_endpoint_uses_tunnel():
     out = await tk.ask_agent("peer", "q")
     assert out["answer"] == "tunnel"
     tunnel.ask.assert_awaited_once()
+
+
+# --- FEAT-786: fail-closed endpoint callers -----------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_grant_denied_maps_to_refused():
+    from parrot.roost.grant import GrantDenied
+
+    ep = MagicMock()
+    ep.query = AsyncMock(side_effect=GrantDenied("peer"))
+    tk, _ = _toolkit(ep)
+    out = await tk.ask_agent("peer", "q")
+    assert out == {"status": "refused", "detail": "grant denied: peer"}
+
+
+@pytest.mark.asyncio
+async def test_pre_execute_context_is_bound_only_during_the_query():
+    from parrot.auth.context import _pctx_var
+
+    seen = []
+
+    async def _query(*args, **kwargs):
+        seen.append(_pctx_var.get())
+        return "42"
+
+    ep = MagicMock()
+    ep.query = AsyncMock(side_effect=_query)
+    tk, _ = _toolkit(ep)
+    pctx = object()
+    await tk._pre_execute("ask_agent", agent="peer", question="q", _permission_context=pctx)
+    out = await tk.ask_agent("peer", "q")
+    assert out["answer"] == "42"
+    assert seen == [pctx]
+    assert _pctx_var.get() is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_calls_keep_their_own_context():
+    import asyncio
+
+    from parrot.auth.context import _pctx_var
+
+    seen = {}
+
+    async def _query(question, **kwargs):
+        await asyncio.sleep(0.01)
+        seen[question] = _pctx_var.get()
+        return question
+
+    ep = MagicMock()
+    ep.query = AsyncMock(side_effect=_query)
+    tk, _ = _toolkit(ep)
+    a, b = object(), object()
+
+    async def _call(pctx, question):
+        await tk._pre_execute("ask_agent", _permission_context=pctx)
+        return await tk.ask_agent("peer", question)
+
+    await asyncio.gather(asyncio.create_task(_call(a, "qa")), asyncio.create_task(_call(b, "qb")))
+    assert seen == {"qa": a, "qb": b}
+
+
+@pytest.mark.asyncio
+async def test_toolkit_tool_path_binds_the_tool_manager_context():
+    """Through the generated ToolkitTool: the ``_permission_context`` kwarg reaches the endpoint."""
+    from parrot.auth.context import _pctx_var
+
+    seen = []
+
+    async def _query(*args, **kwargs):
+        seen.append(_pctx_var.get())
+        return "42"
+
+    ep = MagicMock()
+    ep.query = AsyncMock(side_effect=_query)
+    tk, _ = _toolkit(ep)
+    tool = next(t for t in tk.get_tools() if t.name.endswith("ask_agent"))
+    pctx = MagicMock()
+    await tool.execute(agent="peer", question="q", _permission_context=pctx)
+    assert seen == [pctx]
+    assert _pctx_var.get() is None

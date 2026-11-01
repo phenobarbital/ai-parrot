@@ -2484,11 +2484,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 parse_mode="Markdown",
                 reply_markup=ReplyKeyboardRemove(),
             )
-            if not await self._persist_principal_link(session):
-                await message.answer(
-                    "Connections are unavailable right now.",
-                    parse_mode=None,
-                )
+            await self._persist_principal_link(session)
             # Eagerly build per-user agent/tool state so the first
             # question does not pay the post_login cost. A typing
             # indicator covers any noticeable delay.

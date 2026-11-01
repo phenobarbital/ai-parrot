@@ -104,9 +104,8 @@ async def test_login_succeeds_when_link_write_fails(
 
     assert tg_session.authenticated is True
     assert tg_session.principal_link_persisted is False
-    assert message.answer.await_count == 2
-    assert message.answer.await_args_list[-1].args == ("Connections are unavailable right now.",)
-    assert message.answer.await_args_list[-1].kwargs == {"parse_mode": None}
+    assert message.answer.await_count == 1
+    assert "Authenticated" in message.answer.await_args_list[0].args[0]
     wrapper.logger.warning.assert_called_once()
 
 

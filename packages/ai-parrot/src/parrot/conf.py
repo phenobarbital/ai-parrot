@@ -756,6 +756,11 @@ JIRA_OAUTH_REDIS_URL = config.get("JIRA_OAUTH_REDIS_URL", fallback="redis://loca
 WEB_OAUTH_ALLOWED_ORIGINS = config.get("WEB_OAUTH_ALLOWED_ORIGINS", fallback=[])
 if isinstance(WEB_OAUTH_ALLOWED_ORIGINS, str):
     WEB_OAUTH_ALLOWED_ORIGINS = [o.strip() for o in WEB_OAUTH_ALLOWED_ORIGINS.split(",") if o.strip()]
+# FEAT-777 (D5): base URL of the admin UI used in Slack /login account-link DMs. Required — no default;
+# when empty, Slack /login replies "account linking is not configured".
+CONNECTIONS_LINK_BASE_URL = config.get("CONNECTIONS_LINK_BASE_URL", fallback="")
+# FEAT-777: lifetime of a single-use channel-link nonce, in seconds.
+CHANNEL_LINK_TTL_SECONDS = config.getint("CHANNEL_LINK_TTL_SECONDS", fallback=600)
 JIRA_ALLOWED_REPORTERS: list[str] = config.getlist(
     "JIRA_ALLOWED_REPORTERS",
     fallback=[],
