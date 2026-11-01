@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-776 — Connections on Telegram
 **Spec**: `sdd/specs/connections-telegram.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5029, TASK-5030, TASK-5026
@@ -132,10 +132,12 @@ Docs task; the validation command re-runs the Telegram regression suite as a smo
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker; written by native opus, attempt 1, reviewed by the worker
+**Date**: 2026-11-01
 **Notes**:
+- `docs/integrations/telegram-connections.md` (new): commands and aliases, private-chat and plain-text rules, `connection_providers` / `post_auth_actions` config, `/login` link and `/logout` unlink, the `ConnectionAuthorizer` deploy precondition (`integration:list|connect|disconnect`, fails closed), needs-auth prompts, the staged combined login (pending candidate, 10-minute expiry, no link on failure/cancel/expiry, grants stay with the principal) and the audit -> announce -> date -> purge runbook (`--purge --channel --confirm --force`, exit 2 on refusal, Redis only). `docs/auth/connections.md` gains the Telegram adapter row.
+- Checked against the code: notifier message texts, `legacy_audit.py` flags, key patterns and date-gate message, `connections.md` sample policy section. The guide correctly says the Office365 aliases register when any provider is connectable or the bot uses the `oauth2` login method (the spec's "only when o365 is registered" does not match the code).
+- Left out on purpose: the "LLM instruction" needs-auth item (not in the wrapper code) and any vault purge command (none ships).
+- Validation: docs only; `test_e2e_telegram_regression.py` was not changed by this task. Review `0 corrections`.
 
-**Deviations from spec**: none
+**Deviations from spec**: Office365 alias wording follows the code.
