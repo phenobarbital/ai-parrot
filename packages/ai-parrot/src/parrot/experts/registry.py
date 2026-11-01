@@ -62,7 +62,24 @@ class ExpertRegistry:
         """Return the global phase-one expert instance by name.
 
         Tenant-specific expert views are intentionally not built during phase one.
+
+        Args:
+            name: Loaded expert name.
+            tenant: Accepted for forward compatibility; ignored with a warning in phase one.
+
+        Returns:
+            The global expert instance.
+
+        Raises:
+            KeyError: No expert with that name is loaded.
         """
+        if tenant is not None:
+            self.logger.warning(
+                "ExpertRegistry.get(%r, tenant=%r): tenant-specific expert views are not built in phase one; "
+                "returning the global instance",
+                name,
+                tenant,
+            )
         return self._experts[name]
 
     def _discover(self) -> list[ExpertBundle]:

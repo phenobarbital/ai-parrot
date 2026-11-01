@@ -24,6 +24,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      # issue:7e03742cc29b — one tracked path with : * ? " < > | \, a reserved device name
+      # (aux, con, nul, com1…) or a trailing dot/space aborts every Windows checkout, including
+      # the Windows legs of release.yml. Stdlib only, so it runs before the workspace sync.
+      - name: Check tracked paths are portable to Windows
+        run: python scripts/check_portable_paths.py
+
       - name: Install uv
         uses: astral-sh/setup-uv@v10.2.0
         with:

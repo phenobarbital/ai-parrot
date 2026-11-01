@@ -254,6 +254,31 @@ class _LoopClientEntry:
     metadata: dict = field(default_factory=dict)
 
 
+_CACHE_READ_NAMES = ("cache_read_tokens", "cache_read_input_tokens", "cached_input_tokens", "cached_tokens")
+_CACHE_CREATION_NAMES = ("cache_creation_tokens", "cache_creation_input_tokens", "cache_write_input_tokens")
+_REASONING_NAMES = ("reasoning_output_tokens", "reasoning_tokens")
+
+
+def _first_count(usage: Any, names: "tuple[str, ...]") -> "Optional[int]":
+    """Return the first non-negative int attribute or key of *usage* among *names*."""
+    for name in names:
+        value = usage.get(name) if isinstance(usage, dict) else getattr(usage, name, None)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
+
+
+def _usage_counters(usage: Any) -> "dict[str, Optional[int]]":
+    """Extract FEAT-783 cache/reasoning counters from a usage object (``None`` when absent)."""
+    if usage is None:
+        return {"cache_read_tokens": None, "cache_creation_tokens": None, "reasoning_output_tokens": None}
+    return {
+        "cache_read_tokens": _first_count(usage, _CACHE_READ_NAMES),
+        "cache_creation_tokens": _first_count(usage, _CACHE_CREATION_NAMES),
+        "reasoning_output_tokens": _first_count(usage, _REASONING_NAMES),
+    }
+
+
 class AbstractClient(EventEmitterMixin, ABC):
     """Abstract base Class for LLM models."""
 
@@ -736,6 +761,7 @@ $backstory
         input_tokens: "Optional[int]" = None,
         output_tokens: "Optional[int]" = None,
         finish_reason: "Optional[str]" = None,
+        usage: "Any" = None,
     ) -> "Optional[float]":
         """Emit ``AfterClientCallEvent`` for a successful call.
 
@@ -749,12 +775,23 @@ $backstory
             input_tokens: Input token count (provider-dependent; may be ``None``).
             output_tokens: Output token count (provider-dependent; may be ``None``).
             finish_reason: Stop reason from the provider.
+            usage: Optional usage object (``CompletionUsage`` or a provider usage
+                object). Its prompt-cache and reasoning counters are copied onto
+                the event and cached tokens are priced at the cache tier (FEAT-783).
 
         Returns:
             The call cost in USD computed once for the event (FEAT-710), or
             ``None`` when pricing is unavailable.
         """
-        cost_usd = self._compute_call_cost(client_name, model, input_tokens, output_tokens)
+        counters = _usage_counters(usage)
+        cost_usd = self._compute_call_cost(
+            client_name,
+            model,
+            input_tokens,
+            output_tokens,
+            cached_input_tokens=counters["cache_read_tokens"],
+            cache_creation_tokens=counters["cache_creation_tokens"],
+        )
         event = AfterClientCallEvent(
             trace_context=tc,
             client_name=client_name,
@@ -773,6 +810,8 @@ $backstory
             session_id=current_session_id.get(),
             tenant=current_tenant.get(),
             cost_usd=cost_usd,
+            **counters,
+            **self._price_revision_fields(client_name, model, cost_usd),
         )
         await self.events.emit(event)
         # Forward to global so cost/token recorders and OTel subscribers
@@ -795,6 +834,9 @@ $backstory
         model: "Optional[str]",
         input_tokens: "Optional[int]",
         output_tokens: "Optional[int]",
+        *,
+        cached_input_tokens: "Optional[int]" = None,
+        cache_creation_tokens: "Optional[int]" = None,
     ) -> "Optional[float]":
         """FEAT-710: one cost computation per call, with the shared calculator. Never raises."""
         calc = get_shared_cost_calculator()
@@ -808,10 +850,29 @@ $backstory
                 model=model or "",
                 input_tokens=input_tokens or 0,
                 output_tokens=output_tokens or 0,
+                cached_input_tokens=cached_input_tokens or 0,
+                cache_creation_tokens=cache_creation_tokens or 0,
             )
         except Exception:  # noqa: BLE001 — telemetry must never break the call path
             self.logger.debug("cost computation failed for %s/%s", client_name, model, exc_info=True)
             return None
+
+    def _price_revision_fields(
+        self, client_name: str, model: "Optional[str]", cost_usd: "Optional[float]"
+    ) -> "dict[str, Optional[str]]":
+        """Return the revision that priced this call without a second computation."""
+        if cost_usd is None:
+            return {}
+        calc = get_shared_cost_calculator()
+        if calc is None or not hasattr(calc, "revision_for"):
+            return {}
+        try:
+            from parrot.observability.attributes import resolve_gen_ai_system  # noqa: PLC0415
+
+            revision, valid_from = calc.revision_for(resolve_gen_ai_system(client_name), model or "")
+            return {"price_revision": revision, "price_valid_from": valid_from}
+        except Exception:  # noqa: BLE001 — telemetry must never break the call path
+            return {}
 
     async def _emit_failed_call(
         self,

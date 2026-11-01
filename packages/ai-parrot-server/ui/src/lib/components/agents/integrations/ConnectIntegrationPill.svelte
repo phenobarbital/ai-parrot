@@ -1,36 +1,63 @@
 <script lang="ts">
-  import { confirmIntegrationEnable } from "$lib/api/integrations";
+  import { onDestroy } from "svelte";
+  import { startConnect } from "$lib/api/connections";
   import { awaitOAuthCallback } from "$lib/oauth/popup";
+  import { connectionsStore } from "$lib/stores/connections.svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
   import Icon from "@iconify/svelte";
 
   let {
     provider,
-    authUrl,
     message,
     agentId,
+    scopes = [],
+    retrySafe = false,
+    onConnected,
+    onRetry,
   }: {
     provider: string;
-    authUrl: string;
     message: string;
     agentId: string;
+    scopes?: string[];
+    retrySafe?: boolean;
+    onConnected?: (provider: string) => void;
+    onRetry?: () => void;
   } = $props();
 
   let connecting = $state(false);
+  let connected = $state(false);
+  let notified = false;
+
+  function notifyConnected(): void {
+    if (notified) return;
+    notified = true;
+    connected = true;
+    onConnected?.(provider);
+  }
+
+  const unsubscribe = connectionsStore.onEvent((event) => {
+    if (event.kind === "connection.completed" && event.provider === provider) {
+      notifyConnected();
+    }
+  });
+  onDestroy(unsubscribe);
 
   async function handleConnect(): Promise<void> {
     connecting = true;
     try {
+      const { auth_url } = await startConnect(
+        provider,
+        window.location.origin,
+        scopes.length ? scopes : undefined,
+      );
       const result = await awaitOAuthCallback({
-        authUrl,
+        authUrl: auth_url,
         allowedOrigin: window.location.origin,
       });
 
       if (result.success) {
-        await confirmIntegrationEnable(agentId, provider);
-        toastStore.success(
-          `Connected to ${provider}! You can now retry your prompt.`,
-        );
+        notifyConnected();
+        toastStore.success(`Connected to ${provider}!`);
       } else if (result.reason === "popup-blocked") {
         toastStore.error(
           "Popup blocked. Please allow popups for this site and try again.",
@@ -85,5 +112,14 @@
         Connect {provider}
       {/if}
     </button>
+
+    {#if connected && !retrySafe}
+      <div class="mt-3 space-y-2">
+        <p class="text-xs text-amber-700 dark:text-amber-300">
+          Retrying may repeat actions that already completed.
+        </p>
+        <button class="btn btn-sm btn-outline" onclick={onRetry}>Retry</button>
+      </div>
+    {/if}
   </div>
 </div>

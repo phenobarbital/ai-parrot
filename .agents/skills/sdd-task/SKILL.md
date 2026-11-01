@@ -63,6 +63,9 @@ them to the spec's base branch. This command creates no worktree (FEAT-552);
    - Acceptance Criteria
    - Codebase Contract
    - Worktree Strategy
+4b. Advisory decision-audit check (FEAT-784):
+   - `python -m scripts.sdd.check_spec_consequences <spec> --advisory`
+   - never refuses, always exits 0; repeat any warning in the final output and continue
 5. Plan task decomposition:
    - one task per module, class, or distinct deliverable
    - target 1-4 hours per task

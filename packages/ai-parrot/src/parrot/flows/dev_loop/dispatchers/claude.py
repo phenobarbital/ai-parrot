@@ -993,7 +993,8 @@ class ClaudeCodeDispatcher:
 
         No-ops when there is nothing to report (no harvest, or no
         registry resolver wired) — never fabricates zeros, and never lets
-        a telemetry failure break the dispatch.
+        a telemetry failure break the dispatch. Cache counters and the
+        provider-reported cost are forwarded for reconciliation (FEAT-783 S5).
 
         Forwards to the global registry explicitly after the awaited
         per-run emit, mirroring ``AbstractClient._emit_after_call``
@@ -1018,6 +1019,10 @@ class ClaudeCodeDispatcher:
                     output_tokens=usage_detail.get("output_tokens"),
                     source_type="dispatcher",
                     source_name="claude-code",
+                    cache_read_tokens=usage_detail.get("cache_read_input_tokens"),
+                    cache_creation_tokens=usage_detail.get("cache_creation_input_tokens"),
+                    source_cost_usd=usage_detail.get("total_cost_usd"),
+                    pricing_policy=self._claude_pricing_policy(profile),
                 )
                 await registry.emit(event)
                 registry.forward_to_global(event)
@@ -1028,6 +1033,25 @@ class ClaudeCodeDispatcher:
                 node_id,
                 exc_info=True,
             )
+
+    def _claude_pricing_policy(self, profile: ClaudeCodeDispatchProfile) -> Optional[str]:
+        """Derive billed vs subscription pricing for the Agent SDK seat.
+
+        Args:
+            profile: Dispatch profile for the seat emitting the usage event.
+
+        Returns:
+            ``"subscription"`` when the child environment blanks the API key,
+            ``"billed"`` when it inherits a non-empty API key, or ``None``
+            when the active credential cannot be determined.
+        """
+        del profile  # Authentication is currently dispatcher-wide, not profile-configured.
+        dispatch_env = self._resolve_dispatch_env()
+        if dispatch_env.get("ANTHROPIC_API_KEY") == "":
+            return "subscription"
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            return "billed"
+        return None
 
     async def _emit_failure_event(
         self,

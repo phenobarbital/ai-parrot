@@ -157,6 +157,11 @@ class StructuralService:
         self._lock_busy = False
         self._read_repair = read_repair
 
+    @property
+    def read_repair(self) -> bool:
+        """Whether this service may repair the structural plane while reading."""
+        return self._read_repair
+
     def _foreign_ns(self, target: str) -> str | None:
         """Namespace ``target`` names, unless it is this store's own local plane."""
         namespace = split_namespaced_id(target)[0]

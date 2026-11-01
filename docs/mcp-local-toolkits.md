@@ -290,3 +290,48 @@ in the `sdd-worker`/`sdd-coder` prompts. See
 for the full install steps, roster semantics, the orchestrator loop, and
 known gotchas (the Gemini 3 `thought_signature` echo requirement,
 `GEMINI_API_KEY` resolution via `navconfig`).
+
+## Credentials and identity
+
+`parrot mcp-local NAME` binds credentials and identity once, when the stdio
+process starts. It reads `~/.parrot/login.json` by default. Use
+`--login-file PATH` or set `PARROT_LOGIN_FILE` to select another owner-only
+login file, and restart the MCP server after changing identities.
+
+When `PARROT_LOGIN_FILE` is set while `parrot toolkits install` writes managed
+Claude Code or Codex entries, the generated host entry passes that path to the
+child process. It passes only the path, never token material. Without a usable
+login, process startup and tools that do not require delegated credentials
+behave as before.
+
+When a tool needs a provider connection, the stdio adapter keeps stdout clean
+for JSON-RPC and returns an auth-required result. A fully populated example is:
+
+```json
+{
+  "isError": true,
+  "content": [
+    {
+      "type": "text",
+      "text": "microsoft authorization required — run parrot connect microsoft or open https://parrot.example.com/connect/microsoft"
+    }
+  ],
+  "structuredContent": {
+    "provider": "microsoft",
+    "auth_url": "https://parrot.example.com/connect/microsoft",
+    "scopes": ["User.Read"],
+    "tool_name": "list_messages",
+    "message": "Authorization is required for microsoft",
+    "auth_kind": "device_code",
+    "user_code": "ABCD-EFGH",
+    "verification_uri": "https://microsoft.com/devicelogin",
+    "expires_in": 600
+  }
+}
+```
+
+`structuredContent` is `AuthRequiredPayload.model_dump(exclude_none=True)`, so
+optional fields that do not apply to a provider are omitted. Follow its URL or
+run `parrot connect PROVIDER`, then retry the tool call. Provider access tokens
+are stored only in the AES-GCM encrypted `connections.cache`; refresh tokens
+never leave the server.

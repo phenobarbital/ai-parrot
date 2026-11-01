@@ -442,6 +442,19 @@ implementing it is mechanical, and record the decided patterns and exact
 contracts (signatures, error codes, file layout). Architecture decisions
 stay with the thinking model — eligibility never delegates a design choice.
 
+### 4b. Retrieve Governing Decisions
+
+Before drafting §2, write the draft spec file with its frontmatter (`projects`, `tags`) and §1, then run:
+
+```bash
+wikitoolkit spec governing sdd/specs/<feature-name>.spec.md
+```
+
+Read every listed decision (rationale, consequences, supersession, freshness) and design §2–§7 within
+them. A spec that changes a governing decision must say so in `## Decisions` with `supersedes:` or
+`contradicts:` — never silently. When the command prints `decision audit not configured in this
+repository`, skip this step.
+
 ### 5. Scaffold the Spec
 1. Read the template at `sdd/templates/spec.md`. The template already contains
    a YAML frontmatter block at the top (FEAT-145).
@@ -576,6 +589,20 @@ absent `e2e` key defaults the later-generated plan's policy to `optional`
   is generated later, during task decomposition, once pytest node IDs are
   frozen — the spec declares policy/scenario intent only, never fabricated
   node IDs.
+
+### 5b. Consequence Gate
+
+Render, then check (read-only):
+
+```bash
+python -m scripts.sdd.check_spec_consequences sdd/specs/<feature-name>.spec.md --render
+python -m scripts.sdd.check_spec_consequences sdd/specs/<feature-name>.spec.md
+```
+
+Exit codes: `0` pass or skipped · `1` conflict · `2` invalid · `3` incomplete, stale or missing
+generated sections. **Refuse `**Status**: approved` on any non-zero exit** and report the findings;
+`skipped` (repository not configured) proceeds normally. Never hand-edit `## Governing Decisions` or
+`## Consequences` — re-run `--render` instead.
 
 ### 6. Commit the Spec
 

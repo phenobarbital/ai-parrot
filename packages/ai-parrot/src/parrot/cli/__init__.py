@@ -203,6 +203,13 @@ cli._lazy_commands = {
     "status": "parrot.integrations.agentd.cli",
     "install-service": "parrot.integrations.agentd.cli",
     "mcp-serve": "parrot.integrations.agentd.cli",
+    # FEAT-774 — CLI login + connections (Navigator principal for CLI surfaces).
+    "login": "parrot.cli.login",
+    "logout": "parrot.cli.login",
+    "whoami": "parrot.cli.login",
+    "connect": "parrot.cli.connect",
+    "connections": "parrot.cli.connect",
+    "disconnect": "parrot.cli.connect",
 }
 
 _AGENTD_INSTALL_HINT = "ai-parrot-integrations[agentd]: pip install ai-parrot-integrations[agentd]"

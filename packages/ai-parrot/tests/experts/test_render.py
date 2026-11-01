@@ -78,3 +78,23 @@ def test_render_is_deterministic():
     assert render_rules(_ctx()) == render_rules(_ctx())
     assert render_knowledge(_ctx()) == render_knowledge(_ctx())
     assert render_rules(_ctx(rules="  ")) == ""
+
+
+def test_render_escapes_section_attributes():
+    ctx = KnowledgeContext(
+        expert="sample-expert",
+        budget_tokens=1000,
+        layers=[
+            KnowledgeLayer(
+                layer="tier1_expert",
+                source='a"b<c>&d',
+                mode=KnowledgeMode.INLINE,
+                revision='r"1',
+                content="Use primary sources.",
+            )
+        ],
+    )
+    rendered = render_knowledge(ctx)
+    assert 'source="a&quot;b&lt;c&gt;&amp;d"' in rendered
+    assert 'revision="r&quot;1"' in rendered
+    assert 'a"b' not in rendered

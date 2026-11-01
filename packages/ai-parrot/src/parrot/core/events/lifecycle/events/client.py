@@ -8,10 +8,20 @@ Note: ClientStreamChunkEvent is high-frequency and NEVER dual-emits to
 EventBus by default. It must be explicitly opted in via forward_to_bus=True
 on the subscription.
 """
-from dataclasses import dataclass
-from typing import Literal, Optional
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Literal, Optional
 
 from navigator_eventbus.lifecycle.base import LifecycleEvent
+
+if TYPE_CHECKING:
+    from parrot.observability.attribution import UsageAttribution
+
+
+def _snapshot_attribution() -> Optional["UsageAttribution"]:
+    """Read the bound SDD attribution at event construction (FEAT-783 S2)."""
+    from parrot.observability.context import current_usage_attribution
+
+    return current_usage_attribution.get()
 
 
 @dataclass(frozen=True)
@@ -65,6 +75,12 @@ class AfterClientCallEvent(LifecycleEvent):
             ``current_session_id`` ContextVar. Spans only.
         tenant: Optional server-resolved tenant identifier.
         cost_usd: Optional call cost in USD. None when pricing is unknown.
+        cache_read_tokens: Optional prompt-cache tokens read from the provider.
+        cache_creation_tokens: Optional prompt-cache tokens created by the provider.
+        reasoning_output_tokens: Optional reasoning tokens reported by the provider.
+        source_cost_usd: Provider-reported cost retained for reconciliation only.
+        pricing_policy: Derived seat policy; ``None`` is equivalent to ``"billed"``.
+        attribution: Immutable SDD attribution snapshot from construction time.
     """
 
     client_name: str = ""
@@ -78,6 +94,18 @@ class AfterClientCallEvent(LifecycleEvent):
     session_id: Optional[str] = None   # per-session correlation (spans only)
     tenant: Optional[str] = None  # FEAT-710
     cost_usd: Optional[float] = None  # FEAT-710: computed once at the origin
+    attribution: Optional["UsageAttribution"] = field(default_factory=_snapshot_attribution)  # FEAT-783
+    cache_read_tokens: Optional[int] = None  # FEAT-783
+    cache_creation_tokens: Optional[int] = None  # FEAT-783
+    reasoning_output_tokens: Optional[int] = None  # FEAT-783
+    source_cost_usd: Optional[float] = None
+    """FEAT-783: Provider-reported cost (Claude SDK total_cost_usd, Codex turn cost).
+
+    Reconciliation input ONLY — never the reported value (FEAT-710 G5, AC-5).
+    """
+    price_revision: Optional[str] = None  # FEAT-783 S9
+    price_valid_from: Optional[str] = None  # FEAT-783 S9
+    pricing_policy: Optional[str] = None  # FEAT-783 U4; None means billed
 
 
 @dataclass(frozen=True)
@@ -99,6 +127,7 @@ class ClientCallFailedEvent(LifecycleEvent):
             Spans only — NEVER in metric labels.
         session_id: Optional session identifier. Spans only.
         tenant: Optional server-resolved tenant identifier.
+        attribution: Immutable SDD attribution snapshot from construction time.
     """
 
     client_name: str = ""
@@ -110,6 +139,7 @@ class ClientCallFailedEvent(LifecycleEvent):
     user_id: Optional[str] = None      # per-user usage attribution (spans only)
     session_id: Optional[str] = None   # per-session correlation (spans only)
     tenant: Optional[str] = None  # FEAT-710
+    attribution: Optional["UsageAttribution"] = field(default_factory=_snapshot_attribution)  # FEAT-783
 
 
 @dataclass(frozen=True)

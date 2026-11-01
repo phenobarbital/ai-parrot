@@ -8,6 +8,7 @@ added without touching user content.
 
 from __future__ import annotations
 
+import os
 import shlex
 import shutil
 from pathlib import Path
@@ -91,6 +92,14 @@ MCP_JSON_ENTRY: dict = {
 #: ``parrot mcp-local`` against ``$PARROT_PROJECT``, else the nearest ancestor of the process cwd
 #: that holds it, up to the nearest project marker (mcp/local_cli.py::_project_root_for).
 PORTABLE_TOOLKIT_CONFIG = ".parrot/mcp-toolkits.yaml"
+
+
+def _with_login_file(env: dict) -> dict:
+    """Pass PARROT_LOGIN_FILE through when set at install time (a path, never a token)."""
+    login_file = os.environ.get("PARROT_LOGIN_FILE")
+    if login_file and "PARROT_LOGIN_FILE" not in env:
+        env["PARROT_LOGIN_FILE"] = login_file
+    return env
 
 
 # --------------------------------------------------------------------------
@@ -208,7 +217,7 @@ def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection, *, po
         # entry resolves no toolkit when the host starts it from a worktree.
         "args": ["mcp-local", name, "--config", str(root / ".parrot" / "mcp-toolkits.yaml")],
         "cwd": str(root),
-        "env": dict(section.env),
+        "env": _with_login_file(dict(section.env)),
     }
 
 

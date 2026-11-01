@@ -4105,6 +4105,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             input_tokens=getattr(_lc_google_usage, "prompt_tokens", None) if _lc_google_usage else None,
             output_tokens=getattr(_lc_google_usage, "completion_tokens", None) if _lc_google_usage else None,
             finish_reason=None,
+            usage=_lc_google_usage,
         )
         return ai_message
 
@@ -4764,6 +4765,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 input_tokens=getattr(_lc_google_s_usage, "prompt_tokens", None) if _lc_google_s_usage else None,
                 output_tokens=getattr(_lc_google_s_usage, "completion_tokens", None) if _lc_google_s_usage else None,
                 finish_reason=None,
+                usage=_lc_google_s_usage,
             )
             yield ai_message
 
