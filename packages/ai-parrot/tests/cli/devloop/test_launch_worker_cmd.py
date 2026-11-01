@@ -26,6 +26,17 @@ def _restore_sandbox_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(launcher.native_claude_sandbox.MODE_ENV)
 
 
+# The package under test, pinned for child interpreters. A subprocess started from a linked worktree
+# would otherwise import ``parrot`` from the editable-installed primary checkout (see memory:
+# worktree tests run main-checkout code), which lacks this feature.
+_SRC = str(Path(__file__).resolve().parents[3] / "src")
+
+
+def _child_env(**extra: str) -> dict[str, str]:
+    """Environment for a child interpreter that must import this worktree's ``parrot``."""
+    return {**os.environ, "PYTHONPATH": _SRC, **extra}
+
+
 def _result(argv: list[str], code: int = 0, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess[str]:
     """Build a scripted subprocess result."""
     return subprocess.CompletedProcess(argv, code, stdout, stderr)
@@ -459,7 +470,9 @@ def test_in_session_child_runs_in_the_worktree_after_parrot_import(tmp_path: Pat
         f"assert rc == 0 and seen['cwd'] == Path({str(worktree)!r}), seen; "
         "assert seen['initial_prompt'] == 'run FEAT-768'"
     )
-    result = subprocess.run([sys.executable, "-c", code], cwd=worktree, capture_output=True, text=True, timeout=60)
+    result = subprocess.run(
+        [sys.executable, "-c", code], cwd=worktree, capture_output=True, text=True, timeout=60, env=_child_env()
+    )
     assert result.returncode == 0, result.stderr[-2000:]
 
 
@@ -717,6 +730,6 @@ assert "ANTHROPIC_API_KEY" not in seen["base_env"], "base_env was taken after th
         capture_output=True,
         text=True,
         timeout=60,
-        env={k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"},
+        env={**{k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}, "PYTHONPATH": _SRC},
     )
     assert result.returncode == 0, result.stderr[-3000:]
