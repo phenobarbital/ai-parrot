@@ -294,7 +294,7 @@
       "feature_id": "FEAT-776",
       "feature": "connections-telegram",
       "spec": "sdd/specs/connections-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -306,8 +306,9 @@
       "parallelism_notes": "Calls start_connect(permission_context=...) verified by TASK-5018; imports SessionHook from TASK-5022 (connection_notifier.py); edits wrapper.py after TASK-5026 and models.py after TASK-5024 (same files, reached via TASK-5026).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5027-connection-post-auth-provider.md"
+      "completed_at": "2026-11-01T02:24:04+00:00",
+      "file": "sdd/tasks/completed/TASK-5027-connection-post-auth-provider.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5028",
