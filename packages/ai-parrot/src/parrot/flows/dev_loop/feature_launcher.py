@@ -10,6 +10,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 from typing import Sequence
 
 from . import native_claude_sandbox, worktree_environment
@@ -193,6 +194,87 @@ def tmux_session_exists(name: str) -> bool:
         return False
 
 
+# A detached launch polls the new pane until the launcher process has exec'ed into claude (the
+# worker started) or the pane died. The child imports parrot first, which takes seconds, so a fixed
+# short sleep would report success before a failure could happen.
+_DETACH_START_TIMEOUT_SECONDS = 30.0
+_DETACH_POLL_SECONDS = 0.25
+
+
+def _dead_worker_status(name: str) -> str | None:
+    """Return how a dead worker pane kept by ``remain-on-exit`` ended, or ``None`` when it is not dead.
+
+    Args:
+        name: tmux session name.
+
+    Returns:
+        ``"status N"`` / ``"signal N"`` for a dead pane, ``None`` for a live pane or a missing session.
+    """
+    state = _pane_state(name)
+    if state is None or not state[0]:
+        return None
+    return state[1]
+
+
+def _pane_state(name: str) -> tuple[bool, str, str] | None:
+    """Return ``(dead, how_it_ended, current_command)`` for the session's pane, ``None`` when unknown."""
+    try:
+        result = _run(
+            [
+                "tmux",
+                "display-message",
+                "-p",
+                "-t",
+                f"={name}:",
+                "#{pane_dead}|#{pane_dead_status}|#{pane_dead_signal}|#{pane_current_command}",
+            ],
+            cwd=Path.cwd(),
+        )
+    except LaunchError:
+        return None
+    if result.returncode:
+        return None
+    fields = result.stdout.strip().split("|")
+    if len(fields) != 4:
+        return None
+    dead, status, signal, command = fields
+    if dead != "1":
+        return False, "", command
+    if status:
+        return True, f"status {status}", command
+    return True, f"signal {signal}" if signal else "unknown status", command
+
+
+def _await_worker_start(name: str) -> None:
+    """Block until a detached worker has exec'ed into claude; raise when it died first."""
+    deadline = time.monotonic() + _DETACH_START_TIMEOUT_SECONDS
+    while True:
+        state = _pane_state(name)
+        if state is not None:
+            dead, ended, command = state
+            if dead:
+                raise _dead_worker_error(name, ended)
+            if command and not command.startswith("python"):
+                return
+        if time.monotonic() >= deadline:
+            print(
+                f"launch-worker: WARNING could not confirm the worker in {name} started within "
+                f"{_DETACH_START_TIMEOUT_SECONDS:.0f}s; check it with: tmux attach -t {name}",
+                file=sys.stderr,
+            )
+            return
+        time.sleep(_DETACH_POLL_SECONDS)
+
+
+def _dead_worker_error(name: str, ended: str) -> LaunchError:
+    """Build the operator-facing error for a worker that exited inside its tmux session."""
+    return LaunchError(
+        1,
+        f"the worker in tmux session {name} exited ({ended}); inspect it with "
+        f"`tmux attach -t {name}`, then remove it with `tmux kill-session -t {name}` before relaunching",
+    )
+
+
 def _attach_session(name: str) -> int:
     """Attach or switch to the requested tmux session."""
     if os.environ.get("TMUX"):
@@ -235,6 +317,9 @@ def launch(
                 2, f"a worker for {ref.feature_id} already runs in tmux session {name}; use --tmux to attach"
             )
         if detach:
+            status = _dead_worker_status(name)
+            if status is not None:
+                raise _dead_worker_error(name, status)
             print(f"launch-worker: attach with: tmux attach -t {name}", file=sys.stderr)
             return 0
         return _attach_session(name)
@@ -270,8 +355,12 @@ def launch(
     )
     if claude_args:
         command.extend(("--", *claude_args))
+    # Same tmux invocation, so the option is set before the child's exit can be processed: a worker
+    # that fails keeps its pane (and output) instead of silently taking the session with it.
+    command.extend((";", "set-option", "-w", "-t", f"={name}:", "remain-on-exit", "failed"))
     _require(_run(command, cwd=worktree))
     if detach:
+        _await_worker_start(name)
         print(f"launch-worker: attach with: tmux attach -t {name}", file=sys.stderr)
         return 0
     return _attach_session(name)

@@ -140,7 +140,7 @@ def test_tmux_new_session_carries_environment_and_detaches(tmp_path: Path, monke
     monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
     monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/tmux" if name == "tmux" else None)
     monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: "linux")
-    monkeypatch.setattr(launcher, "_run", lambda argv, *, cwd: calls.append(argv) or _result(argv))
+    monkeypatch.setattr(launcher, "_run", _tmux_runner(calls, panes=["0|||claude"]))
     assert (
         launcher.launch(
             "FEAT-768", tmux=True, detach=True, sandbox="legacy", allowed_domains=(), no_upstream=True, claude_args=()
@@ -151,7 +151,8 @@ def test_tmux_new_session_carries_environment_and_detaches(tmp_path: Path, monke
     assert command[:8] == ["tmux", "new-session", "-d", "-s", "sdd-FEAT-768", "-c", str(worktree), "-e"]
     assert "PARROT_SDD_SANDBOX_MODE=legacy" in command
     assert "PARROT_SDD_EXTRA=yes" in command
-    tail = command[command.index("--") :]
+    assert command[-7:] == [";", "set-option", "-w", "-t", "=sdd-FEAT-768:", "remain-on-exit", "failed"]
+    tail = command[command.index("--") : command.index(";")]
     assert tail == [
         "--",
         launcher.sys.executable,
@@ -168,6 +169,12 @@ def test_tmux_new_session_carries_environment_and_detaches(tmp_path: Path, monke
 def _no_real_sandbox_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     """Host preflight has dedicated tests; elsewhere it must not probe the real host."""
     monkeypatch.setattr(launcher, "_preflight_sandbox", lambda worktree, domains: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_grace_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The detach start poll sleeps in real time; tests never wait for it."""
+    monkeypatch.setattr(launcher.time, "sleep", lambda seconds: None)
 
 
 def _upstream_runner(
@@ -453,3 +460,104 @@ def test_in_session_child_runs_in_the_worktree_after_parrot_import(tmp_path: Pat
     )
     result = subprocess.run([sys.executable, "-c", code], cwd=worktree, capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr[-2000:]
+
+
+def _tmux_runner(calls: list[list[str]], *, panes: list[str]) -> object:
+    """Script tmux: ``new-session`` succeeds; successive ``display-message`` calls return ``panes``."""
+    states = iter(panes)
+    last = {"value": panes[-1]}
+
+    def fake_run(argv: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv[:2] == ["tmux", "display-message"]:
+            last["value"] = next(states, last["value"])
+            return _result(argv, stdout=f"{last['value']}\n")
+        return _result(argv)
+
+    return fake_run
+
+
+def _tmux_host(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, exists: bool) -> None:
+    """Common tmux-host stubs for detach tests."""
+    primary = _primary(tmp_path)
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: exists)
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: tmp_path)
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/tmux" if name == "tmux" else None)
+    monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: "linux")
+
+
+def _launch_detached() -> int:
+    return launcher.launch(
+        "FEAT-768", tmux=True, detach=True, sandbox=None, allowed_domains=(), no_upstream=True, claude_args=()
+    )
+
+
+def test_detached_launch_reports_a_worker_that_died_while_starting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The launcher keeps polling while the child is still python, and reports it when the pane dies."""
+    _tmux_host(tmp_path, monkeypatch, exists=False)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(launcher, "_run", _tmux_runner(calls, panes=["0|||python", "0|||python", "1|3||python"]))
+    with pytest.raises(launcher.LaunchError) as exc:
+        _launch_detached()
+    assert exc.value.exit_code == 1
+    assert "exited (status 3)" in str(exc.value) and "tmux kill-session -t sdd-FEAT-768" in str(exc.value)
+    assert sum(command[:2] == ["tmux", "display-message"] for command in calls) == 3
+
+
+def test_detached_launch_reports_a_signalled_worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A worker killed by a signal has no exit status; the signal is reported instead."""
+    _tmux_host(tmp_path, monkeypatch, exists=False)
+    monkeypatch.setattr(launcher, "_run", _tmux_runner([], panes=["1||9|claude"]))
+    with pytest.raises(launcher.LaunchError, match=r"exited \(signal 9\)"):
+        _launch_detached()
+
+
+def test_detached_launch_returns_once_the_worker_execs_claude(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Success is the pane leaving the python launcher for claude, then the attach hint and exit 0."""
+    _tmux_host(tmp_path, monkeypatch, exists=False)
+    slept: list[float] = []
+    monkeypatch.setattr(launcher.time, "sleep", slept.append)
+    monkeypatch.setattr(launcher, "_run", _tmux_runner([], panes=["0|||python3.12", "0|||claude"]))
+    assert _launch_detached() == 0
+    assert slept == [launcher._DETACH_POLL_SECONDS]
+    err = capsys.readouterr().err
+    assert "tmux attach -t sdd-FEAT-768" in err and "WARNING" not in err
+
+
+def test_detached_launch_warns_when_start_cannot_be_confirmed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A child still in python at the deadline is not an error, but the operator is told to check it."""
+    _tmux_host(tmp_path, monkeypatch, exists=False)
+    clock = iter([0.0, 10.0, launcher._DETACH_START_TIMEOUT_SECONDS + 1])
+    monkeypatch.setattr(launcher.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(launcher, "_run", _tmux_runner([], panes=["0|||python"]))
+    assert _launch_detached() == 0
+    assert "WARNING could not confirm the worker in sdd-FEAT-768 started" in capsys.readouterr().err
+
+
+def test_detach_on_existing_dead_session_reports_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Re-running ``--tmux --detach`` on a session whose worker died says so instead of a success hint."""
+    _tmux_host(tmp_path, monkeypatch, exists=True)
+    monkeypatch.setattr(launcher, "_run", _tmux_runner([], panes=["1|1||python"]))
+    with pytest.raises(launcher.LaunchError, match=r"exited \(status 1\)") as exc:
+        _launch_detached()
+    assert exc.value.exit_code == 1
+
+
+@pytest.mark.parametrize(
+    ("stdout", "code", "expected"),
+    [("1|3||python", 0, "status 3"), ("1||15|claude", 0, "signal 15"), ("0|||claude", 0, None), ("", 1, None)],
+)
+def test_dead_worker_status_parsing(
+    monkeypatch: pytest.MonkeyPatch, stdout: str, code: int, expected: str | None
+) -> None:
+    """Only a dead pane reports how it ended; a live pane or a missing session is ``None``."""
+    monkeypatch.setattr(launcher, "_run", lambda argv, *, cwd: _result(argv, code, stdout=stdout))
+    assert launcher._dead_worker_status("sdd-FEAT-768") == expected
