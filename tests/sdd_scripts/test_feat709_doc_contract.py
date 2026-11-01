@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-SUBAGENT = "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data"
+SUBAGENT = "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents"
 SELECT_FILES = [
     ".claude/commands/sdd-done.md",
     ".agent/workflows/sdd-done.md",

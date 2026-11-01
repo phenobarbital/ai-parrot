@@ -14,11 +14,11 @@ or existing Jira ticket. Optionally creates subtasks from decomposed SDD tasks.
 ## Usage
 ```
 /sdd-tojira sdd/specs/jira-oauth.spec.md
-/sdd-tojira sdd/specs/jira-oauth.spec.md --ticket NAV-8036   # link to existing ticket
+/sdd-tojira sdd/specs/jira-oauth.spec.md --ticket PROJ-123   # link to existing ticket
 /sdd-tojira sdd/specs/jira-oauth.spec.md --with-subtasks     # also create subtasks from tasks
 /sdd-tojira sdd/specs/jira-oauth.spec.md --project=NAVAI     # override project key
 /sdd-tojira FEAT-071                                         # resolve by Feature ID
-/sdd-tojira FEAT-071 --ticket NAV-8036 --with-subtasks       # full combo
+/sdd-tojira FEAT-071 --ticket PROJ-123 --with-subtasks       # full combo
 ```
 
 ### Arguments
@@ -57,13 +57,13 @@ jira_search(jql="...", ...)
 
 ### curl fallback
 ```bash
-# Requires env vars loaded via navconfig (env/.env):
-#   JIRA_INSTANCE  — e.g. https://trocglobal.atlassian.net/
+# Requires these environment variables to be exported:
+#   JIRA_INSTANCE  — e.g. https://your-org.atlassian.net/
 #   JIRA_USERNAME  — email for Jira Cloud
 #   JIRA_API_TOKEN — API token (Personal Access Token)
 #
 # Load them:
-#   eval "$(python -c "from navconfig import config; import os; [print(f'export {k}={v}') for k,v in os.environ.items() if k.startswith('JIRA_')]")"
+#   # Precondition: JIRA_INSTANCE, JIRA_USERNAME and JIRA_API_TOKEN are exported in the environment (see sdd/CONVENTIONS.md).
 
 JIRA_INSTANCE="${JIRA_INSTANCE%/}"
 curl -s -u "$JIRA_USERNAME:$JIRA_API_TOKEN" \
@@ -92,18 +92,18 @@ Evaluate these sources in priority order — **first match wins**:
 
 ```
 Priority 1: --ticket argument
-   User passed --ticket NAV-8036
-   → MODE = UPDATE, JIRA_KEY = NAV-8036
+   User passed --ticket PROJ-123
+   → MODE = UPDATE, JIRA_KEY = PROJ-123
 
 Priority 2: Spec metadata
-   Spec frontmatter contains `jira: NAV-8036`
-   OR spec body contains `**Jira**: [NAV-8036](...)`
-   → MODE = UPDATE, JIRA_KEY = NAV-8036
+   Spec frontmatter contains `jira: PROJ-123`
+   OR spec body contains `**Jira**: [PROJ-123](...)`
+   → MODE = UPDATE, JIRA_KEY = PROJ-123
 
 Priority 3: Search by Feature ID
    jira_search(jql="project = NAV AND summary ~ \"FEAT-071\"")
    → If found:
-       ⚠️  Existing ticket found: NAV-8036 — "[FEAT-071] jira-oauth"
+       ⚠️  Existing ticket found: PROJ-123 — "[FEAT-071] jira-oauth"
            Status: In Progress | Assignee: jleon
 
            Options:
@@ -124,7 +124,7 @@ Priority 4: No match
 📋 /sdd-tojira: FEAT-071 — jira-oauth
 
    Spec: sdd/specs/jira-oauth.spec.md
-   Mode: UPDATE existing NAV-8036  |  CREATE new ticket
+   Mode: UPDATE existing PROJ-123  |  CREATE new ticket
    Project: NAV
 ```
 
@@ -142,7 +142,7 @@ Priority 4: No match
 
 **Labels**: Compute the labels from the spec's frontmatter using:
 ```bash
-python -c "from pathlib import Path; from scripts.sdd.sdd_meta import parse_taxonomy; t = parse_taxonomy(Path('<spec>')); print(' '.join(sorted(set(t.projects + t.tags))))"
+parrot sdd run sdd_meta taxonomy "<spec>"   # JSON {"projects": [...], "tags": [...]} — labels = the sorted, deduplicated union of both lists
 ```
 
 **Description format:**
@@ -231,7 +231,7 @@ customized it in Jira. Only update description, AC, estimate, and components, an
 **MCP path:**
 ```
 jira_update_issue(
-    issue_key="NAV-8036",
+    issue_key="PROJ-123",
     description="<formatted description>",
     additional_fields='{"timeoriginalestimate": "<TOTAL_SECONDS>"}',
     update_fields='{"labels": [{"add": "ai-parrot"}, {"add": "memory"}]}'
@@ -279,9 +279,9 @@ If tasks exist in the feature's per-spec index `sdd/tasks/index/<feature-slug>.j
 **Pre-check in UPDATE mode**: Check if subtasks already exist on the ticket.
 If they do, only create the missing ones:
 ```
-⚠️  NAV-8036 already has 2 subtasks:
-    NAV-8037 — [TASK-001] OAuth callback handler
-    NAV-8038 — [TASK-002] CredentialResolver abstraction
+⚠️  PROJ-123 already has 2 subtasks:
+    PROJ-124 — [TASK-001] OAuth callback handler
+    PROJ-125 — [TASK-002] CredentialResolver abstraction
 
     Missing from Jira (will create):
     TASK-003 — JiraToolkit OAuth integration
@@ -341,11 +341,11 @@ If not present, add after the title:
 ```markdown
 # FEAT-071 — OAuth 2.0 support for JiraToolkit
 
-**Jira**: [NAV-8036](https://trocglobal.atlassian.net/browse/NAV-8036)
+**Jira**: [PROJ-123](https://your-org.atlassian.net/browse/PROJ-123)
 **Status**: approved
 ```
 
-Or in YAML frontmatter: add `jira: NAV-8036`.
+Or in YAML frontmatter: add `jira: PROJ-123`.
 
 ### 7. Update Task Index (if --with-subtasks)
 
@@ -356,8 +356,8 @@ Add Jira keys to each task entry in the per-spec index
 {
   "id": "TASK-001",
   "feature_id": "FEAT-071",
-  "jira_key": "NAV-8037",
-  "jira_parent": "NAV-8036"
+  "jira_key": "PROJ-124",
+  "jira_parent": "PROJ-123"
 }
 ```
 
@@ -382,18 +382,18 @@ Skip commit if nothing changed (spec already had jira key, no new subtasks).
 
 #### CREATE mode
 ```
-✅ Spec exported to Jira: NAV-8036 (created)
-   https://trocglobal.atlassian.net/browse/NAV-8036
+✅ Spec exported to Jira: PROJ-123 (created)
+   https://your-org.atlassian.net/browse/PROJ-123
 
    Project: NAV | Component: Nav-AI | Type: Story
    Estimate: 3d (24h across 4 tasks)
    AC: 3 criteria exported
 
    Subtasks created:
-     NAV-8037 — [TASK-001] OAuth callback handler [S/4h]
-     NAV-8038 — [TASK-002] CredentialResolver abstraction [M/8h]
-     NAV-8039 — [TASK-003] JiraToolkit OAuth integration [M/8h]
-     NAV-8040 — [TASK-004] Redis token storage [S/4h]
+     PROJ-124 — [TASK-001] OAuth callback handler [S/4h]
+     PROJ-125 — [TASK-002] CredentialResolver abstraction [M/8h]
+     PROJ-126 — [TASK-003] JiraToolkit OAuth integration [M/8h]
+     PROJ-127 — [TASK-004] Redis token storage [S/4h]
 
    Spec updated and committed.
 
@@ -405,8 +405,8 @@ Next steps:
 
 #### UPDATE mode
 ```
-✅ Spec synced to Jira: NAV-8036 (updated)
-   https://trocglobal.atlassian.net/browse/NAV-8036
+✅ Spec synced to Jira: PROJ-123 (updated)
+   https://your-org.atlassian.net/browse/PROJ-123
 
    Updated: description, AC, estimate
    Subtasks: 2 existing + 2 created
@@ -431,7 +431,7 @@ The `jira:` metadata in the spec enables:
 - **Subtask type not available**: Fall back to linked Tasks:
   ```
   jira_create_issue(issue_type="Task", ...)
-  jira_link_issues(inward="NAV-8036", outward="NAV-8037", link_type="is parent of")
+  jira_link_issues(inward="PROJ-123", outward="PROJ-124", link_type="is parent of")
   ```
 - **ADF vs Markdown**: Jira Cloud v3 requires ADF. Use v2 with markdown, or construct ADF JSON.
   mcp-atlassian handles conversion internally.
@@ -444,4 +444,4 @@ The `jira:` metadata in the spec enables:
 - Spec template: `sdd/templates/spec.md`
 - Per-spec task index: `sdd/tasks/index/<feature-slug>.json`
 - SDD methodology: `sdd/WORKFLOW.md`
-- Auto-commit rule: `CLAUDE.md` (section "SDD Auto-Commit Rule")
+- Auto-commit rule: `sdd/WORKFLOW.md` (section "The SDD Lifecycle")

@@ -116,12 +116,15 @@ class TestDoneTwins:
             assert "ledger blockers" in content, path
 
     def test_delivery_uses_outbox_for_every_flow(self):
-        """Every twin delivers through the outbox, to dev, without rotation or a hotfix skip (FEAT-758)."""
+        """Every twin delivers through the outbox, to the configured ledger branch, without rotation or a hotfix skip.
+
+        FEAT-758; FEAT-633 makes the destination ``ledger_branch`` / ``base_branch`` from ``sdd/config.json``.
+        """
         for path in (self.CLAUDE, self.ANTIGRAVITY, self.CODEX):
             content = read_workflow_file(path)
             assert "ledger outbox prepare" in content, path
             assert "ledger outbox integrate" in content, path
-            assert "origin/dev" in content, path
+            assert "`ledger_branch` in `sdd/config.json`" in content, path
             assert "rotate-log" not in content, path
             assert "export-log" not in content, path
             assert "Skip the snapshot entirely for hotfixes" not in content, path
@@ -144,7 +147,7 @@ class TestDoneTwins:
         """The /sdd-fix SDD lane hands issue closure to /sdd-done; every twin must run it."""
         for path in (self.CLAUDE, self.ANTIGRAVITY, self.CODEX):
             content = read_workflow_file(path)
-            assert "scripts.sdd.close_resolved_issues" in content, path
+            assert "parrot sdd run close_resolved_issues" in content, path
             assert "shared ledger is read-only" in content, path
 
 
@@ -260,7 +263,7 @@ class TestFixTwins:
     def test_all_twins_require_a_pr_on_the_fast_lane(self):
         for path in self.ALL:
             content = read_workflow_file(path)
-            assert "gh pr create --base dev" in content, path
+            assert "gh pr create --base <base_branch>" in content, path
             assert "git push origin dev" not in content, path
             assert "--no-pr" not in content, path
 

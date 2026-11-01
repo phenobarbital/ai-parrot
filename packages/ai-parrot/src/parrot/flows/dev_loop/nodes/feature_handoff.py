@@ -31,13 +31,12 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
-import yaml
-
 from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.dispatchers.nova import summarize_pr_changes
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
+from parrot.knowledge.wiki.ledger.sdd_meta import DEFAULT_FEATURE_BASE, read_declared_base_branch
 from parrot.flows.dev_loop.models import (
     ChangeSet,
     DevelopmentOutput,
@@ -64,40 +63,6 @@ def _slugify(text: str) -> str:
     """Lowercase, hyphen-separated fallback slug (no external deps)."""
     slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return slug or "feature"
-
-
-def _parse_flow_frontmatter(spec_path: Path) -> Optional[str]:
-    """Read the ``base_branch`` declared in a spec's YAML frontmatter.
-
-    FEAT-466 TASK-2505: local duplicate of
-    ``nodes.research._parse_flow_frontmatter`` (not a shared import —
-    ``research.py`` is not in this task's file list, and ``scripts.sdd`` is
-    not importable from this package's context; see TASK-2504's Completion
-    Note). Feature-mode always resolves ``type: feature`` (``FeatureBrief.
-    kind`` is a fixed literal), so unlike ``ResearchNode`` there is no
-    ``kind``-derived hotfix path here — the only question is which base a
-    pre-existing spec (``document_kind == "spec"``) already declares (e.g.
-    ``staging`` during a release freeze). Returns ``None`` — never raises —
-    when the file is missing, has no frontmatter, or is malformed; the
-    caller falls back to ``"dev"``.
-    """
-    try:
-        text = spec_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    if not text.startswith("---"):
-        return None
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return None
-    try:
-        block = yaml.safe_load(parts[1]) or {}
-    except yaml.YAMLError:
-        return None
-    if not isinstance(block, dict):
-        return None
-    base = block.get("base_branch")
-    return base if isinstance(base, str) and base else None
 
 
 @register_dev_loop_node("dev_loop.feature_handoff")
@@ -388,7 +353,7 @@ class FeatureHandoffNode(DevLoopNode):
         spec_path = Path(planner.spec_path)
         if not spec_path.is_absolute():
             spec_path = Path(planner.worktree_path) / spec_path
-        return _parse_flow_frontmatter(spec_path) or "dev"
+        return read_declared_base_branch(spec_path) or DEFAULT_FEATURE_BASE
 
     # ------------------------------------------------------------------
     # Internal — git plumbing (mirrors DeploymentHandoffNode's subprocess pattern)

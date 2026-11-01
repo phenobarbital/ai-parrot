@@ -1,0 +1,359 @@
+---
+# SDD flow type and base branch (FEAT-145).
+# - type: feature  (default)  → base_branch: the base_branch in sdd/config.json (or any non-hotfix branch)
+# - type: hotfix              → base_branch MUST be the hotfix_base in sdd/config.json
+type: feature
+base_branch: <base_branch>   # default: the base_branch in sdd/config.json
+# projects: parts of the codebase this doc concerns. Use the project areas of your
+#   repository (`sdd/CONVENTIONS.md` § Project areas, or the `projects` list in
+#   `sdd/config.json`). Unknown values warn, not fail.
+projects: []
+# tags: free-form kebab-case keywords for organizing specs (e.g. memory, mcp).
+tags: []
+# e2e: optional deterministic-E2E-gate policy metadata (FEAT-581). Absent
+#   entirely (the default for every spec written before this feature) means
+#   the generated e2e-plan.md's policy defaults to `optional` when loaded.
+#   `policy` MUST be exactly `required`, `optional` or `none` — an
+#   unrecognized value fails plan loading closed, it is never coerced to a
+#   default. `scenario_ids` are the plan's stable `ScenarioSpec.id` values,
+#   kept in sync with the "### E2E Scenarios" subsection below (§4). Omit
+#   this whole key for a feature with no E2E surface.
+# e2e:
+#   policy: optional
+#   scenario_ids: []
+---
+
+# Feature Specification: <Feature Name>
+
+**Feature ID**: FEAT-<NNN>
+**Date**: YYYY-MM-DD
+**Author**: <name>
+**Status**: draft | review | approved
+**Target version**: x.y.z
+
+---
+
+## 1. Motivation & Business Requirements
+
+> Why does this feature exist? What problem does it solve?
+
+### Problem Statement
+<!-- Describe the pain point or capability gap -->
+
+### Goals
+- Goal 1
+- Goal 2
+
+### Non-Goals (explicitly out of scope)
+- Non-goal 1
+
+---
+
+## 2. Architectural Design
+
+### Overview
+<!-- High-level description of the solution approach -->
+
+### Component Diagram
+```
+ComponentA ──→ ComponentB ──→ ComponentC
+                   │
+                   └──→ ComponentD
+```
+
+### Integration Points
+<!-- How does this feature integrate with existing AI-Parrot components? -->
+
+| Existing Component | Integration Type | Notes |
+|---|---|---|
+| `AbstractClient` | extends | ... |
+| `AgentCrew` | uses | ... |
+
+### Data Models
+```python
+# Key data structures / Pydantic models
+class FeatureModel(BaseModel):
+    field: type
+```
+
+### New Public Interfaces
+```python
+# New classes/functions exposed to users
+class NewComponent:
+    async def method(self, param: Type) -> ReturnType:
+        ...
+```
+
+---
+
+## 3. Module Breakdown
+
+> Define the discrete modules that will be implemented.
+> These directly map to Task Artifacts in Phase 2.
+
+#### Delegation-eligible modules
+
+Mark which modules can be implemented by the targeted writer from an
+already-decided TASK packet. Architecture decisions always stay with the
+thinking model; eligibility only means "the design is complete enough that
+writing the code is mechanical".
+
+| Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
+|---|---|---|---|
+| M1: <name> | yes / no | <signatures, error codes, file layout already fixed> | <open design question> |
+
+
+### Module 1: <Name>
+- **Path**: `parrot/path/to/module.py`
+- **Responsibility**: What this module does
+- **Depends on**: existing module or Module N from this spec
+- **Interface Skeleton** *(signatures + docstrings only — bodies belong to task blueprints, FEAT-545)*:
+  ```python
+  # parrot/path/to/module.py  (new | modifies parrot/path/to/module.py:NN)
+  class NewComponent(ExistingBase):  # ExistingBase verified: parrot/base.py:NN
+      """<purpose>."""
+      async def method(self, param: Type) -> ReturnType:
+          """<contract: returns …; raises … when …>."""
+  ```
+
+### Module 2: <Name>
+- **Path**: `parrot/path/to/module2.py`
+- **Responsibility**: ...
+- **Depends on**: Module 1
+- **Interface Skeleton** *(signatures + docstrings only — bodies belong to task blueprints, FEAT-545)*:
+  ```python
+  # parrot/path/to/module.py  (new | modifies parrot/path/to/module.py:NN)
+  class NewComponent(ExistingBase):  # ExistingBase verified: parrot/base.py:NN
+      """<purpose>."""
+      async def method(self, param: Type) -> ReturnType:
+          """<contract: returns …; raises … when …>."""
+  ```
+
+---
+
+## 4. Test Specification
+
+### Unit Tests
+| Test | Module | Description |
+|---|---|---|
+| `test_component_init` | Module 1 | Validates initialization with valid config |
+| `test_component_error` | Module 1 | Handles invalid input gracefully |
+
+### Integration Tests
+| Test | Description |
+|---|---|
+| `test_end_to_end_flow` | Full pipeline from input to output |
+
+### Validation Contract
+
+> FEAT-699. Explicit pytest operands (repo-relative file or `file::node`) that gate this feature in ALL
+> tiers — task, merge, feature (`/sdd-done`) and QA. When present it REPLACES the heuristic breadth
+> (import impact, suite escalation); a full-suite run covers everything else. Write
+> `none — fallback` to opt out explicitly (bounded fallback: tasks' own tests + direct importers).
+> Repos with `test_command` set in `sdd/config.json`: write `none — fallback`.
+> Never list `real_llm` tests. `integration`/`e2e`-marked operands listed here DO run.
+> `/sdd-task` caches this list into the per-spec index header (`test_contract`).
+
+tests:
+- <tests>/path/test_file.py
+- <tests>/path/test_file.py::test_node
+markers: none
+
+> Multi-runner form (FEAT-709) — use it INSTEAD of the flat form above when the feature has non-pytest tests
+> (replace the flat lines; never write both). Kinds, tiers and settings come from `.parrot/test_runners.toml`;
+> the flat form stays valid and is lifted on read to one pytest runner.
+>
+>     runners:
+>     - kind: pytest
+>       tests:
+>       - <tests>/path/test_file.py
+>       markers: none
+>     - kind: vitest
+>       cwd: <ui-dir>
+>       tests:
+>       - src/lib/path/file.test.ts
+>     - kind: cargo
+>       crate: <crate dir or package>
+>     - kind: parrot-e2e
+>       plan: sdd/state/FEAT-<NNN>/e2e-plan.md   # merge/feature tiers only — never task
+
+### Test Data / Fixtures
+```python
+# Key fixtures needed
+@pytest.fixture
+def sample_config():
+    return {...}
+```
+
+### E2E Scenarios
+
+> Optional (FEAT-581) — only for a feature that exercises the deterministic
+> E2E gate (`parrot e2e run` / `parrot e2e verify`). Omit this whole
+> subsection, and the frontmatter `e2e` key above, for a feature with no E2E
+> surface; an absent policy defaults to `optional` once a plan is loaded.
+
+- **Policy**: `required` | `optional` | `none` — must match frontmatter
+  `e2e.policy` exactly. An invalid value fails plan loading closed; it is
+  never silently coerced to a default.
+- **Required deterministic scenarios**: stable `ScenarioSpec.id` values this
+  feature must cover, each with enumerated pytest node IDs (never a bare
+  directory or wildcard — a node ID belongs to exactly one scenario). A
+  `required` policy demands at least one required, codified
+  (non-exploratory, node-bearing) scenario; an empty or all-exploratory
+  scenario list under `required` is a spec defect, not something the loader
+  defaults around.
+- **Live / exploratory scenarios**: listed separately from the deterministic
+  scenarios above, never described as "deterministic". Live scenarios call
+  a real provider under explicit `PARROT_TEST_REAL_LLM=1` opt-in and a
+  request budget; exploratory scenarios declare no node IDs and can never
+  be `required`.
+- **Generated plan**: the complete `e2e-plan.md` frontmatter
+  (`schema_version`, `feature_id`, `spec_path`, `policy`, `targets`,
+  `scenarios`, `budget`, `run_timeout_s`) is produced during task
+  decomposition once node IDs are frozen — do not fabricate concrete node
+  IDs at spec-authoring time; its evidence is not available yet either.
+
+| Scenario ID | Tier | Required | Target(s) | Notes |
+|---|---|---|---|---|
+| `<scenario-id>` | deterministic | yes | `<target-id>` | enumerated node IDs added once frozen |
+| `<scenario-id>` | live | no | `<target-id>` | explicit opt-in only; never called deterministic |
+| `<scenario-id>` | exploratory | no (never required) | `<target-id>` | candidates only, human-reviewed |
+
+Validation commands (exact node IDs supplied by the generated plan):
+```bash
+pytest <package>/tests/unit/e2e/ -q
+PARROT_TEST_E2E=1 parrot e2e run --plan <path-to-generated>/e2e-plan.md
+parrot e2e verify --plan <path-to-generated>/e2e-plan.md
+```
+
+---
+
+## 5. Acceptance Criteria
+
+> This feature is complete when ALL of the following are true:
+
+- [ ] All unit tests pass (`pytest tests/unit/ -v`)
+- [ ] All integration tests pass (`pytest tests/integration/ -v`)
+- [ ] Documentation updated in `docs/`
+- [ ] No breaking changes to existing public API
+- [ ] Performance benchmark: <metric> within <threshold>
+- [ ] Criterion N
+
+---
+
+## 6. Codebase Contract
+
+> **CRITICAL — Anti-Hallucination Anchor**
+> This section is the single source of truth for what exists in the codebase.
+> Implementation agents MUST NOT reference imports, attributes, or methods
+> not listed here without first verifying they exist via `grep` or `read`.
+
+### Verified Imports
+<!-- Exact import statements confirmed to work. Agents MUST use these verbatim. -->
+```python
+from parrot.module import ClassName  # verified: parrot/module/__init__.py:NN
+```
+
+### Existing Class Signatures
+<!-- Exact signatures of classes/methods that tasks will extend or call.
+     Include attribute types and method signatures with line numbers. -->
+```python
+# parrot/path/to/file.py
+class ExistingClass(BaseClass):
+    attribute: Type  # line NN
+    async def method(self, param: Type) -> ReturnType:  # line NN
+```
+
+### Integration Points
+<!-- How new code connects to existing code. Specify exact method calls. -->
+| New Component | Connects To | Via | Verified At |
+|---|---|---|---|
+| `NewClass` | `ExistingClass.method()` | method call | `path/file.py:NN` |
+
+### Does NOT Exist (Anti-Hallucination)
+<!-- Things that look plausible but DO NOT exist in the codebase.
+     Prevents agents from inventing imports or attributes. -->
+- ~~`parrot.module.NonExistentThing`~~ — does not exist
+- ~~`ClassName.phantom_method()`~~ — not a real method
+
+### Edit Sites (Blueprint Anchors)
+<!-- One row per file the §3 modules will touch. `/sdd-task` turns each row into an
+     Implementation Blueprint block, so the anchor is verified ONCE per feature here
+     instead of once per task. Keep it to files the modules actually change — this
+     table is re-read on every downstream turn, so rows must earn their place.
+
+     Verified against: <short SHA of the base commit at spec time>
+
+     Anchors go stale between spec time and task time. `/sdd-task` MUST re-run the
+     `grep -c` for every row it uses; this table saves the search, not the check. -->
+
+| File | Action | Verbatim anchor line | Verified at | Occurrences |
+|---|---|---|---|---|
+| `<src>/<pkg>/module/file.py` | MODIFY | `def existing_method(self) -> None:` | `file.py:NN` | 1 |
+| `<src>/<pkg>/module/new_file.py` | CREATE | — | — | — |
+
+- A **CREATE** row declares only the path the module adds; it needs no anchor.
+- **Occurrences > 1** means the one-line anchor is ambiguous. Quote 2–3 lines of
+  surrounding context in the anchor cell so the blueprint block can attach uniquely.
+- An anchor that cannot be verified is written `(unverified — check before use)`,
+  never guessed.
+
+---
+
+## 7. Implementation Notes & Constraints
+
+> Architecture decisions stay with the thinking model. A delegated
+> implementation may only express a decision already recorded here and in
+> the TASK's implementation blocks — it must never invent an API, choose a
+> file, or resolve an open design question.
+
+
+### Patterns to Follow
+- Use `AbstractBase` pattern from `parrot/base/`
+- Follow async-first design throughout
+- Pydantic models for all structured data
+- Comprehensive logging with `self.logger`
+
+### Known Risks / Gotchas
+- Risk 1 and mitigation
+- Risk 2 and mitigation
+
+### External Dependencies
+| Package | Version | Reason |
+|---|---|---|
+| `package` | `>=x.y` | why needed |
+
+---
+
+## 8. Open Questions
+
+> Questions that must be resolved before or during implementation.
+
+- [ ] Question 1 — *Owner: name*
+- [ ] Question 2 — *Owner: name*
+
+---
+
+## 9. Design Research Cross-Check
+
+> Independent design opinion from the `codex` seat over the **accepted exploration
+> doc** (never over this spec). Model: `<model>` · Status: completed | skipped (<reason>)
+> · Transcript: `sdd/state/<FEAT-ID>/design_research/`
+> Every row is a suggestion the reviewer made; the disposition is the spec author's
+> call (CONFIRM = folded into the spec, REJECT = reason recorded, ESCALATE = §8 question).
+
+| # | Suggestion (kind) | Disposition | Reason | Landed in |
+|---|---|---|---|---|
+| S1 | <title> (architecture) | CONFIRM | <why adopted> | §2 Overview |
+| S2 | <title> (testing) | REJECT | <why not> | — |
+| S3 | <title> (risk) | ESCALATE | <what the human must decide> | §8 Q<N> |
+
+Summary: **<C>** confirmed · **<R>** rejected · **<E>** escalated.
+
+---
+
+## Revision History
+
+| Version | Date | Author | Change |
+|---|---|---|---|
+| 0.1 | YYYY-MM-DD | name | Initial draft |

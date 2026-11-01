@@ -98,7 +98,7 @@ you were launched inside a linked worktree (the documented launch mode) or in
 the primary checkout:
 
 ```bash
-META=$(python -c "from pathlib import Path; from scripts.sdd.sdd_meta import parse; m = parse(Path('<spec-path>')); print(m.type, m.base_branch)")
+META=$(parrot sdd run sdd_meta parse "<spec-path>")
 TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 
@@ -124,11 +124,11 @@ instead of the local `$BASE_BRANCH`.
 `base_branch` defaults to `dev` for `type: feature` and is fixed to `main`
 for `type: hotfix`. `staging` is also a valid `base_branch` for `type: feature`
 during a release freeze (FEAT-187). Features MUST NOT base on `main` — if the
-spec declares `type: feature, base_branch: main`, abort with:
+spec declares `type: feature` with the `hotfix_base` as `base_branch`, abort with:
 ```
-⚠️  type='feature' cannot base on 'main'. Features land on dev (default)
-   or staging (during a release freeze). For changes that must base on
-   main, set type='hotfix' in the document frontmatter.
+⚠️  type='feature' cannot base on the hotfix base branch. Features land on the
+   configured base_branch (default) or staging_branch (during a release freeze).
+   For changes that must base on the hotfix base, set type='hotfix' in the document frontmatter.
 ```
 If the working tree is dirty or `--ff-only` fails,
 abort with a clear message — do NOT stash.
@@ -177,7 +177,7 @@ ref (FEAT-552). The command is idempotent: it reuses an existing worktree and
 creates one only when absent.
 
 ```bash
-WORKTREE_PATH=$(python -m scripts.sdd.ensure_worktree \
+WORKTREE_PATH=$(parrot sdd run ensure_worktree \
   --slug "<feature-slug>" \
   --feature-id "<FEAT-ID>" \
   --spec "<spec-path>" \
@@ -189,7 +189,7 @@ For a hotfix (`type: hotfix` in the per-spec index header) pass
 `--jira-key <KEY>` instead of `--feature-id`. This is a real behaviour change:
 the previous block always produced `feat-<FEAT-ID>-<slug>` from `HEAD`, so a
 hotfix inherited unreleased `dev` commits (FEAT-466). Naming and base ref now
-come from `scripts.sdd.sdd_meta.plan_worktree`.
+come from `parrot.sdd.scripts.sdd_meta.plan_worktree`.
 
 If the command exits non-zero, STOP and report its message. Do not implement on
 `<BASE_BRANCH>`.
@@ -291,7 +291,7 @@ NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
 # verification/file), stage both, and HARD-VERIFY no active/ copy survives.
 # Never hand-roll this with mv/cp + jq: a copy leaves the active/ file behind
 # and it lands on the base branch as a stalled orphan.
-scripts/sdd/close_task.sh TASK-<NNN> <feature-slug> verified
+parrot sdd run close_task TASK-<NNN> <feature-slug> verified
 
 # Fill in Completion Note in the moved task file (in completed/).
 
@@ -325,7 +325,7 @@ After all tasks are done:
        <output of: git diff --stat $BASE_BRANCH...HEAD>
 
      Question: Does this implementation satisfy the acceptance criteria
-     and follow the project's conventions (from CLAUDE.md)?
+     and follow the project's conventions (from `sdd/CONVENTIONS.md`)?
    ```
 
    **Handle findings:**
@@ -396,7 +396,7 @@ git status --porcelain --untracked-files=all               # not yet committed
 ```
 
 Use repo-relative paths exactly as git prints them (e.g.
-`packages/ai-parrot/tests/flows/dev_loop/test_qa.py`). `DevelopmentNode`
+`<tests>/path/test_module.py`). `DevelopmentNode`
 reconciles your list against git and appends whatever you left out, but it
 logs the omission as a warning — a run whose `files_changed` needed
 reconciling is a run that reported its work incorrectly.

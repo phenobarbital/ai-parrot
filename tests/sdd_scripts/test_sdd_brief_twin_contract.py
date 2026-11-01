@@ -10,8 +10,8 @@ _CODEX = _ROOT / ".agents/skills/sdd-brief/SKILL.md"
 _AGY = _ROOT / ".agent/workflows/sdd-brief.md"
 _SHARED_TOKENS = (
     "--brief-key",
-    "scripts.sdd.ensure_worktree",
-    "Ledger-sourced briefs always base on dev; --base-branch main is refused.",
+    "parrot sdd run ensure_worktree",
+    "Ledger-sourced briefs always base on the configured base_branch; --base-branch <hotfix_base> is refused.",
     "path:line",
 )
 
@@ -40,10 +40,10 @@ def test_agy_preserves_full_procedure_with_native_handoff() -> None:
     """Only metadata and the two Claude launch examples differ for agy."""
     original = _CLAUDE.read_text(encoding="utf-8")
     expected = original.replace(
-        "```bash\ncd <wt> && scripts/sdd/launch_worker.sh --verbose\n```",
+        "```bash\ncd <wt> && claude --agent sdd-worker --setting-sources project,local --model sonnet --verbose\n```",
         "```text\nOpen <wt> in agy and ask: Use the sdd-worker subagent to implement <KEY>.\n```",
     ).replace(
-        "`cd <wt> && scripts/sdd/launch_worker.sh --verbose`,",
+        "`cd <wt> && claude --agent sdd-worker --setting-sources project,local --model sonnet --verbose`,",
         "open `<wt>` in agy and ask the `sdd-worker` subagent to implement `<KEY>`,",
     )
     agy = _AGY.read_text(encoding="utf-8")

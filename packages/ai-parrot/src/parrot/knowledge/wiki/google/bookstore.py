@@ -24,7 +24,10 @@ def _is_managed_bookstore_entry(entry: Any) -> bool:
     if not isinstance(entry, dict):
         return False
     args = entry.get("args")
-    return args == ["-m", "parrot.knowledge.bookstore.cli", "mcp"]
+    if args == ["-m", "parrot.knowledge.bookstore.cli", "mcp"]:
+        return True
+    # Portable (FEAT-633) managed shape — exact bare command, never a basename match.
+    return entry.get("command") == "bookstore" and args == ["mcp"]
 
 
 def _load_mcp_json(path: Path) -> dict[str, Any]:
@@ -46,7 +49,7 @@ def _save_mcp_json(path: Path, data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def install_bookstore(root: Path, mcp_path: Optional[Path] = None) -> list[str]:
+def install_bookstore(root: Path, mcp_path: Optional[Path] = None, *, portable: bool = False) -> list[str]:
     """Install Bookstore PageIndex MCP and skill when an indexed library exists."""
     root = root.resolve()
     target_mcp = mcp_path or assets.default_mcp_config_path()
@@ -65,7 +68,7 @@ def install_bookstore(root: Path, mcp_path: Optional[Path] = None) -> list[str]:
             actions.append(f"{target_mcp} — bookstore MCP removed (no library found)")
         return actions
 
-    desired_entry = assets.bookstore_mcp_entry(root)
+    desired_entry = assets.bookstore_mcp_entry(root, portable=portable)
     existing = servers.get("bookstore")
 
     if existing is not None and not _is_managed_bookstore_entry(existing):

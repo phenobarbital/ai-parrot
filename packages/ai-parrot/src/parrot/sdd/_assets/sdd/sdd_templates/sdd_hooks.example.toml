@@ -1,0 +1,33 @@
+# /sdd-done closeout hooks (FEAT-764) — copy to .parrot/sdd_hooks.toml. Docs: docs/sdd/closeout-hooks.md
+[[hooks.pre_pr]]
+name = "frontend-e2e"
+kind = "agent"
+agent = "e2e-ui-tester"
+prompt = "Run plan e2e/plans/checkout.yaml for {feat_id}; save a screencast to {artifact_dir}"
+blocking = true
+artifacts = "**/*.webm"
+
+[[hooks.pre_pr]]
+name = "playwright"
+kind = "command"
+run = "pnpm exec playwright test --output $SDD_HOOK_ARTIFACT_DIR"
+blocking = true
+timeout_s = 1200
+
+[[hooks.post_pr]]
+name = "jira"
+kind = "builtin"
+builtin = "jira.transition"
+with = { status = "In Review" }
+
+[[hooks.post_pr]]
+name = "telegram"
+kind = "builtin"
+builtin = "telegram.send"
+with = { chat_id_env = "SDD_TELEGRAM_CHAT_ID", template = "{feat_id} PR ready: {pr_url}" }
+
+[[hooks.post_pr]]
+name = "notify-ntfy"
+kind = "builtin"
+builtin = "push.send"
+with = { provider = "ntfy", title = "PR ready", template = "{feat_id} PR ready: {pr_url}" }

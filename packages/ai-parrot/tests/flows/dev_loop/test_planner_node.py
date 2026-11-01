@@ -20,7 +20,7 @@ from parrot.flows.dev_loop.models import (
 from parrot.flows.dev_loop.nodes.planner import PlannerNode
 
 _SDD_PLANNER_PROMPT = (
-    Path(__file__).resolve().parents[3] / "src" / "parrot" / "flows" / "dev_loop" / "_subagent_data" / "sdd-planner.md"
+    Path(__file__).resolve().parents[3] / "src" / "parrot" / "sdd" / "_assets" / "claude" / "agents" / "sdd-planner.md"
 )
 
 

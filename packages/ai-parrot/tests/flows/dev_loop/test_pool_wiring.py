@@ -77,9 +77,10 @@ class TestSubagentDefSync:
             / "ai-parrot"
             / "src"
             / "parrot"
-            / "flows"
-            / "dev_loop"
-            / "_subagent_data"
+            / "sdd"
+            / "_assets"
+            / "claude"
+            / "agents"
             / "sdd-worker.md"
         )
         assert repo_copy.is_file(), repo_copy

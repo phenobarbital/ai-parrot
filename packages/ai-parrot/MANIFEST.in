@@ -1,2 +1,3 @@
 recursive-include src *.pyx *.pxd
 include setup.py
+graft src/parrot/sdd/_assets
