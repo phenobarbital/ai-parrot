@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-783 — Unified usage & cost metrics per SDD spec
 **Spec**: `sdd/specs/unified-usage.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4994
@@ -22,7 +22,7 @@ subcommand and its MCP tool ship in one task. The MCP surface has golden manifes
 ## Scope
 
 - In `knowledge/wiki/cli.py`, add a `@wiki.group(name="usage")` sibling of `ledger`, with `report --feat FEAT-NNN [--by task|model|seat] [--format markdown|json] [--root PATH]`. It reads rows via `read_spec_usage(root, feat)`, builds `build_spec_usage_report`, and renders with the existing renderer (markdown) or `model_dump_json` (json).
-- Root default: the same durable-root resolution `SpecUsageRecorder` uses (main checkout `artifacts/logs/sdd-spec-usage`). No worktree check is needed for a reader, but reuse the resolver.
+- Root default: the same durable-root resolution `SpecUsageRecorder` uses (`default_spec_usage_root(worktree_base_path)` in `recorders/spec_usage.py` = `<durable coder root>/spec-usage`, i.e. `artifacts/logs/sdd-coder-usage/spec-usage`; the engine, the `spec_usage` backend and this reader must all use it). No worktree check is needed for a reader, but reuse the resolver.
 - MCP tool `usage_report` (input model `UsageReportInput{feat_id, by="task"}`): an `_Spec("core", ...)` entry, an `elif name == "usage_report":` dispatch branch, an op function `op_usage_report`, and a `parrot_tools.wiki` `AbstractTool` wrapper with an identical description.
 - Regenerate the goldens: `UPDATE_GOLDEN=1 pytest packages/ai-parrot/tests/knowledge/wiki/test_mcp_manifest_golden.py -q`, then review the diff (only the new tool may appear).
 - AC-14 guard test: no `usage`-prefixed value in `LedgerEventKind`, and no file under `knowledge/wiki/ledger/` changed by this feature (compare `git diff --name-only origin/dev...HEAD`).
@@ -39,8 +39,23 @@ subcommand and its MCP tool ship in one task. The MCP surface has golden manifes
 | `packages/ai-parrot/src/parrot/knowledge/wiki/transport.py` | MODIFY | `_SPECS` entry + dispatch branch |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/usage_operations.py` | CREATE | `UsageReportInput` + `op_usage_report` |
 | `packages/ai-parrot-tools/src/parrot_tools/wiki/tools.py` | MODIFY | `UsageReportTool` wrapper + registration |
-| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/*.json` | MODIFY | Regenerated goldens (core-mounted manifests) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/bulk_off.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/bulk_on.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/decisions.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/federated.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/ledger.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/minimal_local.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/remote_proxy.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/schema_absent.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/schema_present.json` | MODIFY | Regenerated golden (only the new tool may appear) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/vault.json` | MODIFY | Regenerated golden (only the new tool may appear) |
 | `packages/ai-parrot/tests/knowledge/wiki/test_cli_usage_report.py` | CREATE | CLI + MCP + AC-14 tests |
+| `packages/ai-parrot/tests/knowledge/wiki/_tool_surface.py` | MODIFY | Frozen tool-name list/count gains `usage_report` |
+| `packages/ai-parrot/tests/knowledge/wiki/schema/test_mcp_mount.py` | MODIFY | Frozen tool-name list/count gains `usage_report` |
+| `packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py` | MODIFY | Frozen tool-name list/count gains `usage_report` |
+| `tests/knowledge/wiki/test_mcp_server_ledger.py` | MODIFY | Frozen tool-name list/count gains `usage_report` |
+| `tests/knowledge/wiki/test_mcp_server_structural.py` | MODIFY | Frozen tool-name list/count gains `usage_report` |
+| `tests/knowledge/wiki/test_structural_e2e.py` | MODIFY | Frozen tool-name list/count gains `usage_report` |
 
 ---
 
@@ -89,7 +104,16 @@ class WikiLintTool(AbstractTool): name = "wiki_lint"; description = (...); args_
     {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/transport.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/usage_operations.py", "action": "CREATE"},
     {"path": "packages/ai-parrot-tools/src/parrot_tools/wiki/tools.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/*.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/bulk_off.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/bulk_on.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/decisions.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/federated.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/ledger.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/minimal_local.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/remote_proxy.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/schema_absent.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/schema_present.json", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/vault.json", "action": "MODIFY"},
     {"path": "packages/ai-parrot/tests/knowledge/wiki/test_cli_usage_report.py", "action": "CREATE"}
   ],
   "contract_symbols": [
@@ -143,7 +167,7 @@ class UsageReportInput(BaseModel):
 
 async def op_usage_report(params: UsageReportInput, *, root: Any = None) -> "Any":
     """Return OperationResult(data=UsageReport.model_dump(mode="json"))."""
-    # FILL IN: lazy imports; resolve the default root like SpecUsageRecorder; read rows off the loop
+    # FILL IN: lazy imports; resolve the default root with default_spec_usage_root(conf.WORKTREE_BASE_PATH); read rows off the loop
     # (asyncio.to_thread); build_spec_usage_report; return OperationResult — import OperationResult from
     # the same module transport.py imports it from; on error return the module's failure shape
     raise NotImplementedError
@@ -230,7 +254,18 @@ def test_no_usage_ledger_event_kind() -> None:
 See blueprint.
 
 ## Agent Instructions
-Six target entries (goldens are a glob). `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-tools/src`.
+Six target entries (goldens listed explicitly, one per manifest file). `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-tools/src`.
 
 ## Completion Note
-_(filled at close)_
+
+- Task: TASK-4995
+- Feature: unified-usage
+- Implementation SHA: 6d430ac30417014f5bcd06ef636d351e726ae0d0
+- Closed at (UTC): 2026-10-31T11:22:55+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 2 · Duration: n/a · Tokens: n/a |

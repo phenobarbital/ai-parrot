@@ -83,7 +83,7 @@ from parrot.knowledge.wiki.structural.operations import (
     op_code_outline,
     op_symbol_lookup,
 )
-
+from parrot.knowledge.wiki.usage_operations import USAGE_REPORT_DESCRIPTION, UsageReportInput, op_usage_report
 
 class OperationDescriptor(BaseModel):
     """One wiki tool, independent of transport."""
@@ -146,6 +146,7 @@ _SPECS: dict[str, _Spec] = {
         WikiStandupInput,
         "Render a daily, weekly or monthly wiki brief. Read-only unless writes are explicitly enabled.",
     ),
+    "usage_report": _Spec("core", UsageReportInput, USAGE_REPORT_DESCRIPTION),
     "ledger_open": _Spec("ledger", LedgerOpenInput, "Open a new issue in the SDD work ledger."),
     "ledger_ready": _Spec("ledger", LedgerReadyInput, "Get ready (unclaimed) work from the SDD ledger."),
     "ledger_claim": _Spec("ledger", LedgerClaimInput, "Claim an issue from the SDD ledger."),
@@ -346,6 +347,11 @@ def _operation_invoke(name: str, ctx: WikiOperationContext) -> Callable[[BaseMod
 
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_standup(store, params.model_dump(), root=ctx.root, config=ctx.config)
+
+    elif name == "usage_report":
+
+        async def invoke(params: BaseModel) -> OperationResult:
+            return await op_usage_report(params, root=None)
 
     elif name == "wiki_symbol_lookup":
 

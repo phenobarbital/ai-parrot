@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-783 — Unified usage & cost metrics per SDD spec
 **Spec**: `sdd/specs/unified-usage.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4983, TASK-4990, TASK-4991
@@ -212,4 +212,15 @@ See blueprint.
 Two files only. `PYTHONPATH=packages/ai-parrot/src`. Do not touch `begin_execution` beyond what the blueprint says; the spec's "binds at begin_execution" is satisfied by building at the attempt boundary, where `attempt_uid` exists.
 
 ## Completion Note
-_(filled at close)_
+
+- Task: TASK-4992
+- Feature: unified-usage
+- Implementation SHA: 8b973305d47115a56d507767821c0d2581c52281
+- Closed at (UTC): 2026-10-31T00:49:51+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: opus · Backend: native · Model: opus · Attempts: 1 · Duration: 212.9s · Tokens: n/a |

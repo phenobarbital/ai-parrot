@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-783 — Unified usage & cost metrics per SDD spec
 **Spec**: `sdd/specs/unified-usage.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -182,4 +182,15 @@ See blueprint.
 Touch only `basic.py` and the new test. `PYTHONPATH=packages/ai-parrot/src`.
 
 ## Completion Note
-_(filled at close)_
+
+- Task: TASK-4984
+- Feature: unified-usage
+- Implementation SHA: 0ea7fd310aa515f2e5c9bb3400d1b904008dbe57
+- Closed at (UTC): 2026-10-31T00:30:50+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 65.0s · Tokens: n/a |

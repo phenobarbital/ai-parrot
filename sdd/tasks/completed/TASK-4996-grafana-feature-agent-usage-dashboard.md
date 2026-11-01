@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-783 — Unified usage & cost metrics per SDD spec
 **Spec**: `sdd/specs/unified-usage.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4985, TASK-4989
@@ -229,4 +229,15 @@ See blueprint.
 Five files only. `PYTHONPATH=packages/ai-parrot/src`. Optionally smoke-load it in the docker Grafana stack and note the result in the Completion Note.
 
 ## Completion Note
-_(filled at close)_
+
+- Task: TASK-4996
+- Feature: unified-usage
+- Implementation SHA: 4bbbd6d0666db6d0adbe4c43d11c5a43ad0c514a
+- Closed at (UTC): 2026-10-31T01:02:01+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 73.0s · Tokens: n/a |

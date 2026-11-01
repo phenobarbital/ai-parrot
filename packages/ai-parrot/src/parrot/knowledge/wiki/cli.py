@@ -3242,6 +3242,33 @@ def _dedupe_slugs(plan: FixPlan, specs_dir: Path) -> None:
         seen.add(slug)
 
 
+@wiki.group(name="usage")
+def usage() -> None:
+    """Per-spec token and cost reporting."""
+
+
+@usage.command("report")
+@click.option("--feat", "feat_id", required=True, help="Feature id, e.g. FEAT-783.")
+@click.option("--by", type=click.Choice(["task", "model", "seat"]), default="task")
+@click.option("--format", "fmt", type=click.Choice(["markdown", "json"]), default="markdown")
+@click.option(
+    "--root", type=click.Path(path_type=Path), default=None, help="Durable usage root (default: main checkout)."
+)
+def usage_report(feat_id: str, by: str, fmt: str, root: Path | None) -> None:
+    """Render tokens and cost for one feature."""
+    from parrot.flows.dev_loop.usage_report import UsageReport, render_usage_markdown
+    from parrot.knowledge.wiki.usage_operations import UsageReportInput, op_usage_report
+
+    result = _run(op_usage_report(UsageReportInput(feat_id=feat_id, by=by), root=root))
+    if result.is_error:
+        raise click.ClickException(result.text)
+    data = result.data or {}
+    if fmt == "json":
+        click.echo(json.dumps(data, indent=2))
+        return
+    click.echo(render_usage_markdown(UsageReport.model_validate(data)))
+
+
 @wiki.group(name="ledger")
 def ledger() -> None:
     """Manage the SDD work ledger, discovered work, and spec graph."""

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-783 — Unified usage & cost metrics per SDD spec
 **Spec**: `sdd/specs/unified-usage.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4987
@@ -49,6 +49,9 @@ data/judgement call that needs current vendor pricing.
 | `packages/ai-parrot/src/parrot/observability/cost/pricing/README.md` | MODIFY | Coverage evidence + tier docs |
 | `scripts/sdd/price_coverage.py` | CREATE | Coverage reporter |
 | `tests/sdd_scripts/test_price_coverage.py` | CREATE | Script test on a fixture |
+| `packages/ai-parrot/src/parrot/observability/cost/pricing/aws.bedrock.json` | CREATE | New provider file: Bedrock-hosted roster models |
+| `packages/ai-parrot/src/parrot/observability/attributes.py` | MODIFY | Map dev-loop backend ids `codex`->`openai`, `google-compat`->`gemini` |
+| `packages/ai-parrot/tests/unit/observability/test_attributes.py` | MODIFY | Test the new backend-id mappings |
 
 ---
 
@@ -196,4 +199,15 @@ See blueprint.
 Not delegation-eligible: needs current vendor pricing and a user-confirmed threshold. Stop and ask if a model has no published price.
 
 ## Completion Note
-_(filled at close)_
+
+- Task: TASK-4988
+- Feature: unified-usage
+- Implementation SHA: 9ebdf9d8d27c2f935d0002010de9b7ce91d79aaa
+- Closed at (UTC): 2026-10-31T23:42:06+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: orchestrator (sdd-worker) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |

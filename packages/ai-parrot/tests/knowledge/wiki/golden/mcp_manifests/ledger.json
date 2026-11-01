@@ -330,6 +330,36 @@
     }
   },
   {
+    "description": "Report tokens and cost for one SDD feature, grouped by task, model or seat.",
+    "mount": "core",
+    "name": "usage_report",
+    "schema": {
+      "description": "Input for usage_report.",
+      "properties": {
+        "by": {
+          "default": "task",
+          "enum": [
+            "task",
+            "model",
+            "seat"
+          ],
+          "title": "By",
+          "type": "string"
+        },
+        "feat_id": {
+          "pattern": "^FEAT-\\d+$",
+          "title": "Feat Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "feat_id"
+      ],
+      "title": "UsageReportInput",
+      "type": "object"
+    }
+  },
+  {
     "description": "Find every symbol that transitively depends on (calls/extends/implements) a given symbol \u2014 the 'blast radius' of changing it. Use before editing a widely-used function or class.",
     "mount": "structural",
     "name": "wiki_blast_radius",

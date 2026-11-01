@@ -8,6 +8,7 @@ about concrete backend classes.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from parrot.observability.recorders.logging_recorder import LoggingUsageRecorder
@@ -24,10 +25,10 @@ def build_recorders_from_config(
 ) -> "list[AbstractLogger]":
     """Return the recorder backends for ``config.usage_backend``.
 
-    Only the lightweight (non-OTel) backends are built here: ``"logging"`` and
-    ``"prometheus"``. The ``"otel"`` and ``"none"`` backends are handled by the
-    bootstrap (delegate to ``setup_telemetry`` / no-op respectively) and yield no
-    recorders.
+    Only the lightweight (non-OTel) backends are built here: ``"logging"``,
+    ``"prometheus"``, and ``"spec_usage"``. The ``"otel"`` and ``"none"``
+    backends are handled by the bootstrap (delegate to ``setup_telemetry`` / no-op
+    respectively) and yield no recorders.
 
     Args:
         config: The observability configuration.
@@ -56,6 +57,15 @@ def build_recorders_from_config(
                 addr=config.prometheus_addr,
             )
         )
+    elif backend == "spec_usage":
+        from parrot import conf  # noqa: PLC0415
+        from parrot.observability.recorders.spec_usage import SpecUsageRecorder  # noqa: PLC0415
+
+        try:
+            root = Path(config.spec_usage_root) if config.spec_usage_root else None
+            recorders.append(SpecUsageRecorder(root, worktree_base_path=conf.WORKTREE_BASE_PATH))
+        except ValueError as exc:
+            logger.warning("Spec usage recorder disabled: %s", exc)
     else:
         logger.debug("build_recorders_from_config: backend=%r yields no recorders.", backend)
 

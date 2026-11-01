@@ -1026,6 +1026,7 @@ class OpenAIClient(OpenAIBaseClient):
             input_tokens=getattr(_lc_gpt_usage, "prompt_tokens", None) if _lc_gpt_usage else None,
             output_tokens=getattr(_lc_gpt_usage, "completion_tokens", None) if _lc_gpt_usage else None,
             finish_reason=getattr(ai_message, "stop_reason", None),
+            usage=_lc_gpt_usage,
         )
         return ai_message
 
@@ -1292,6 +1293,7 @@ class OpenAIClient(OpenAIBaseClient):
                 input_tokens=getattr(_lc_resp_usage, "prompt_tokens", None) if _lc_resp_usage else None,
                 output_tokens=getattr(_lc_resp_usage, "completion_tokens", None) if _lc_resp_usage else None,
                 finish_reason=None,
+                usage=_lc_resp_usage,
             )
             yield resp_ai_message
         else:
@@ -1454,6 +1456,7 @@ class OpenAIClient(OpenAIBaseClient):
                 input_tokens=getattr(_lc_chat_usage, "prompt_tokens", None) if _lc_chat_usage else None,
                 output_tokens=getattr(_lc_chat_usage, "completion_tokens", None) if _lc_chat_usage else None,
                 finish_reason=_finish_reason,
+                usage=_lc_chat_usage,
             )
             yield chat_ai_message
 

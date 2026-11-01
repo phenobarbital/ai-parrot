@@ -1084,6 +1084,7 @@ class OpenAIBaseClient(AbstractClient):
             input_tokens=getattr(_lc_usage, "prompt_tokens", None) if _lc_usage else None,
             output_tokens=getattr(_lc_usage, "completion_tokens", None) if _lc_usage else None,
             finish_reason=getattr(ai_message, "stop_reason", None),
+            usage=_lc_usage,
         )
         return ai_message
 
@@ -1561,6 +1562,7 @@ class OpenAIBaseClient(AbstractClient):
             input_tokens=getattr(usage, "prompt_tokens", None),
             output_tokens=getattr(usage, "completion_tokens", None),
             finish_reason=_finish_reason,
+            usage=usage,
         )
         yield ai_message
 
@@ -1717,6 +1719,7 @@ class OpenAIBaseClient(AbstractClient):
                 input_tokens=_lc_usage.prompt_tokens,
                 output_tokens=_lc_usage.completion_tokens,
                 finish_reason="budget_exhausted" if _budget_forced else self._extract_finish_reason(response),
+                usage=_lc_usage,
             )
 
             raw_text = response.choices[0].message.content or ""
