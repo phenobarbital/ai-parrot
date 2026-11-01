@@ -32,6 +32,7 @@ def test_devloop_help_no_conf_import():
         result = runner.invoke(devloop, ["--help"])
         assert result.exit_code == 0
         assert "Interactive CLI console" in result.output
+        assert "launch-worker" in result.output
         assert "parrot.conf" not in sys.modules
     finally:
         if original is not None:
