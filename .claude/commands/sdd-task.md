@@ -567,7 +567,7 @@ Worktree: not created. /sdd-task produces versioned artifacts only — the
 
 Next:
   /sdd-start <task-id>        # creates the worktree, then begins the task
-  # or, unattended:  scripts/sdd/launch_worker.sh --verbose
+  # or, unattended:  parrot devloop launch-worker FEAT-<NNN> --tmux
 ```
 
 ## Reference

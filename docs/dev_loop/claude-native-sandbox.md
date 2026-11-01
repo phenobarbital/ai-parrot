@@ -25,7 +25,8 @@ Bubblewrap: nested bwrap is not used, and the policy is compiled by
 
 | Path | How | Policy source |
 |---|---|---|
-| Interactive worker | `scripts/sdd/launch_worker.sh [--sandbox-allow-domain HOST]... [claude args]` from inside the feature worktree | compiled for `$PWD`, passed as `--settings` with `--agent sdd-worker --setting-sources project,local` |
+| Interactive worker | `parrot devloop launch-worker <FEAT-ID\|slug> [--tmux] [--detach] [--sandbox MODE] [--sandbox-allow-domain HOST]... [--no-upstream] [-- claude args]` | Resolves the feature, runs `ensure_worktree`, prepares the upstream (refusing a diverged branch unless `--no-upstream`), then launches `run <FEAT-ID>`. `--tmux` uses session `sdd-<FEAT-ID>`; its `-e` options preserve the prepared `PARROT_SDD_*`, `PATH`, and virtual-environment variables in the tmux server. |
+| Deprecated interactive alias | `scripts/sdd/launch_worker.sh [--sandbox-allow-domain HOST]... [claude args]` from inside the feature worktree | Prints a deprecation warning, then compiles policy for `$PWD` and passes it as `--settings` with `--agent sdd-worker --setting-sources project,local`. It remains for brief worktrees and direct current-worktree launches. |
 | Dev-loop dispatcher (`ClaudeCodeDispatcher`, SDK-bundled CLI) | `ClaudeCodeDispatchProfile(subagent="sdd-worker" \| "sdd-coder", sandbox_allowed_domains=[...])` | compiled for the dispatch cwd; `PARROT_SDD_SANDBOX_BACKEND=claude-native` and a per-dispatch cache dir are set for the child |
 
 A bare `claude --agent sdd-worker` is **not** a qualified native launch: it loads the `user` setting
@@ -41,11 +42,12 @@ The SDD flow runs in many consumer repositories whose developers cannot all hard
 | `required` (**default**) | strict settings | launcher exit 1 with the probe reason; dispatcher `DispatchExecutionError` |
 | `preferred` | strict settings (identical to `required`) | **degraded** launch: hooks only, no `sandbox` block, no OS write boundary — declared, never silent |
 | `off` | never compiles the `sandbox` block (ephemeral CI, disposable containers); hooks still apply | — |
+| `legacy` | Linux Bubblewrap hook boundary; native sandbox disabled, filesystem isolation only and no network isolation | fails closed without working `bwrap` or off Linux |
 
 Resolution order: `PARROT_SDD_SANDBOX_MODE` (empty or whitespace counts as unset) → `[tool.parrot.sdd]
-sandbox = "required" | "preferred"` in the repository root `pyproject.toml` → `required`. **`off` can only be
-set through the environment variable**: the worktree's `pyproject.toml` is writable by the sandboxed session
-itself, so letting it select `off` would be a self-disable path; a repository may go as far as `preferred`,
+sandbox = "required" | "preferred"` in the repository root `pyproject.toml` → `required`. **`off` and `legacy`
+can only be set through `PARROT_SDD_SANDBOX_MODE` or `--sandbox`**: the worktree's `pyproject.toml` is writable by
+the sandboxed session itself, so letting it select either would be a self-disable path; a repository may go as far as `preferred`,
 which on a host where the sandbox starts is the same as `required`. Any other value, a non-string value,
 `[tool.parrot.sdd] sandbox = "off"` or an unreadable/malformed `pyproject.toml` fails the launch (exit 2 /
 `DispatchExecutionError`).
@@ -59,7 +61,7 @@ Availability is decided before launch by a cheap probe — `bwrap` and `socat` o
 `bwrap --unshare-user --unshare-pid --ro-bind / / true` with a 10 s timeout — cached for 60 s per process so a
 long-lived dispatcher does not block on it for every launch. The probe is a weaker proxy than Claude's own
 runtime (no network namespace); a false positive still fails closed because the strict settings carry
-`failIfUnavailable`. `off` never runs the probe.
+`failIfUnavailable`. `off` never runs the probe; `legacy` probes Bubblewrap before launch.
 
 What a degraded launch looks like:
 
@@ -115,6 +117,16 @@ version change requires re-qualification):
 | SDK-bundled CLI | 2.1.301 (claude-agent-sdk 0.2.168), 2.1.310 (0.2.174) |
 | Result | 8/8 live scenarios PASS on both paths, strict settings (`allowAllUnixSockets=false`, `strictAllowlist=true`) |
 
+## Platforms
+
+- **Linux / WSL2:** qualified only with the documented Bubblewrap, socat, and AppArmor prerequisites. `required`
+  fails closed when the native sandbox probe fails; `legacy` requires a working Linux Bubblewrap boundary.
+- **macOS:** the Seatbelt backend is implemented but **not certified**. A strict launch emits
+  `launch_worker: NOTICE macOS Seatbelt backend is implemented but not certified (see docs/dev_loop/claude-native-sandbox.md)`.
+- **Native Windows:** no Claude Code sandbox is available. `required` refuses with `native Windows has no Claude Code sandbox; run the worker inside WSL2, or set PARROT_SDD_SANDBOX_MODE=preferred for a degraded (hook-only) launch`; `preferred` degrades to the declared hook-only mode, and `--tmux` refuses because it is unavailable on native Windows.
+- **Legacy mode without Bubblewrap:** it refuses with `launch_worker: native sandbox unavailable (legacy mode needs a
+  working Bubblewrap: missing prerequisite(s): bwrap); mode=legacy refuses to start`.
+
 ## Network
 
 - Default: no egress. The compiled settings always carry `network.strictAllowlist: true` — under
@@ -150,5 +162,6 @@ version change requires re-qualification):
   policy working; rewrite the command or path, do not widen the policy.
 - Project/local `.claude/settings*.json` cannot loosen the compiled policy (qualified: settings-widening
   scenario); a user-level source is excluded on purpose.
-- Rollback is a code/deployment revert of the feature (the launcher and dispatcher wiring), or setting
-  the mode back to `required`; there is no silent runtime fallback that turns protection off.
+- Roll back deliberately: `required` → `legacy` when the native sandbox misbehaves but Bubblewrap works →
+  `preferred` when no OS boundary is available (the degraded state is declared) → code/deployment revert.
+  There is no silent runtime fallback that turns protection off.

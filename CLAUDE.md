@@ -226,18 +226,17 @@ git checkout dev && git pull origin dev
 /sdd-task sdd/specs/<feature>.spec.md      # tasks, committed to dev
 /sdd-start TASK-<NNN>                      # creates the worktree, implements the task
 cd .claude/worktrees/feat-FEAT-<NNN>-<slug>
-/sdd-start TASK-<NNN+1> …                  # or: scripts/sdd/launch_worker.sh
+/sdd-start TASK-<NNN+1> …                  # or: parrot devloop launch-worker FEAT-<NNN>
 /sdd-done FEAT-<NNN>                       # verify, push, PR → dev (--merge: direct), clean up
 ```
 
 ## Autonomous Agent (`sdd-worker`)
 
 The `sdd-worker` agent (`.claude/agents/sdd-worker.md`) implements all tasks for
-a feature sequentially. Launch it **inside** a manually-created worktree:
+a feature sequentially. Launch it from the host by feature ID:
 
 ```bash
-cd .claude/worktrees/<feature-worktree>
-scripts/sdd/launch_worker.sh --verbose
+parrot devloop launch-worker FEAT-<NNN>
 ```
 
 Key properties: uses Sonnet, implements EXACTLY what tasks
@@ -245,10 +244,8 @@ specify (no redesigns), commits after each task.
 
 For background execution:
 ```bash
-cd .claude/worktrees/feat-014
-tmux new -s feat-014 \
-  "scripts/sdd/launch_worker.sh --verbose"
-# Ctrl+B, D to detach — tmux attach -t feat-014 to reconnect
+parrot devloop launch-worker FEAT-<NNN> --tmux
+# Add --detach to leave it in the background; run the command again to reattach.
 ```
 
 ## Task Index Schema (FEAT-145 — per-spec)

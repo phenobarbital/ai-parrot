@@ -30,5 +30,6 @@ if [[ -z "$python_bin" ]]; then
   echo "launch_worker.sh: python3 is required (activate the repository venv)" >&2
   exit 1
 fi
+echo "launch_worker.sh: DEPRECATED — use 'parrot devloop launch-worker <FEAT-ID> [--tmux]' (this alias keeps launching sdd-worker in the current worktree)" >&2
 exec "$python_bin" "$repo_root/packages/ai-parrot/src/parrot/flows/dev_loop/native_claude_sandbox.py" \
   launch-worker "$@"

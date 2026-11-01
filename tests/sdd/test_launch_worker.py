@@ -89,6 +89,17 @@ def test_defaults_exclude_user_source(fake_claude_path: str, linked_cwd: Path) -
     assert "user" not in argv[argv.index("--setting-sources") + 1].split(",")
 
 
+def test_deprecation_warning_is_emitted_once(fake_claude_path: str, linked_cwd: Path) -> None:
+    """Emit the shell-alias deprecation warning exactly once before launching."""
+    result = _run(fake_claude_path, linked_cwd)
+    assert result.returncode == 0, result.stderr
+    warning = (
+        "launch_worker.sh: DEPRECATED — use 'parrot devloop launch-worker <FEAT-ID> [--tmux]' "
+        "(this alias keeps launching sdd-worker in the current worktree)"
+    )
+    assert result.stderr.count(warning) == 1
+
+
 def test_forwards_extra_args_and_keeps_caller_model(fake_claude_path: str, linked_cwd: Path) -> None:
     result = _run(fake_claude_path, linked_cwd, "--model", "opus", "--verbose", "prompt with spaces")
     assert result.returncode == 0, result.stderr
