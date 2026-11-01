@@ -196,3 +196,8 @@ def revise_cmd(brief_file: str | None = None) -> None:
     console = DevLoopConsole()
     exit_code = asyncio.run(console.start(brief_file=brief_file, revision=True))
     raise SystemExit(exit_code)
+
+
+from parrot.cli.devloop.launch_worker import launch_worker_cmd
+
+devloop.add_command(launch_worker_cmd)

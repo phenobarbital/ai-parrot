@@ -706,8 +706,17 @@ def _allocate_session_cache() -> Path:
     return session_cache
 
 
-def launch_worker(argv: Sequence[str]) -> int:
-    """Launch sdd-worker with strict settings; return policy or host errors."""
+def launch_worker(
+    argv: Sequence[str], *, cwd: Path | None = None, initial_prompt: str | None = None
+) -> int:
+    """Launch sdd-worker with strict settings; return policy or host errors.
+
+    Args:
+        argv: Arguments forwarded to Claude after launcher-owned options.
+        cwd: Worktree in which Claude must start. Defaults to the current directory.
+        initial_prompt: Optional final Claude argument, normally the worker trigger.
+    """
+    cwd = cwd or Path.cwd()
     try:
         domains, forwarded, has_model, has_sources = _parse_launch_arguments(argv)
     except ValueError as exc:
@@ -718,8 +727,8 @@ def launch_worker(argv: Sequence[str]) -> int:
         print("launch_worker: missing host prerequisite(s): claude", file=sys.stderr)
         return 1
     try:
-        mode = resolve_sandbox_mode(_native_roots(Path.cwd())[0])
-        mode, degraded, reason, settings = plan_native_launch(Path.cwd(), allowed_domains=domains)
+        mode = resolve_sandbox_mode(_native_roots(cwd)[0])
+        mode, degraded, reason, settings = plan_native_launch(cwd, allowed_domains=domains)
     except ValueError as exc:
         print(f"launch_worker: {exc}", file=sys.stderr)
         return 2
@@ -728,7 +737,7 @@ def launch_worker(argv: Sequence[str]) -> int:
         return 1
     env = dict(os.environ)
     env[BACKEND_ENV] = launch_backend(mode)
-    env.update(native_root_env(Path.cwd()))
+    env.update(native_root_env(cwd))
     if mode == "legacy":
         ignored_domains = "; --sandbox-allow-domain ignored" if domains else ""
         print(
@@ -759,6 +768,9 @@ def launch_worker(argv: Sequence[str]) -> int:
     if not has_model:
         command += ["--model", _DEFAULT_MODEL]
     command += ["--settings", json.dumps(settings), *forwarded]
+    if initial_prompt is not None:
+        command.append(initial_prompt)
+    os.chdir(cwd)
     os.execvpe(command[0], command, env)
     return 1
 

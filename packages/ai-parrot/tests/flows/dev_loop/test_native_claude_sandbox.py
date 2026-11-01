@@ -325,6 +325,27 @@ def test_launch_worker_prints_macos_seatbelt_notice(
     assert "NOTICE macOS Seatbelt backend is implemented but not certified" in capsys.readouterr().err
 
 
+def test_launch_worker_uses_requested_cwd_and_final_prompt(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host launcher may select the feature worktree and final worker trigger."""
+    feature, _main = linked
+    calls: list[object] = []
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", {}))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: feature / "cache")
+    monkeypatch.setattr(native.os, "chdir", lambda cwd: calls.append(cwd))
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: calls.append(args))
+
+    assert native.launch_worker(["--", "--verbose"], cwd=feature, initial_prompt="run FEAT-768") == 1
+    assert calls[0] == feature
+    command = calls[1][1]
+    assert command[-1] == "run FEAT-768"
+    assert command[-2] == "--verbose"
+
+
 @pytest.mark.parametrize(
     "bad",
     [
