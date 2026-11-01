@@ -111,10 +111,23 @@ def test_explicit_install_requires_local_environment(checkout: tuple[Path, Path]
 
 def test_missing_bubblewrap_fails_closed(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(policy.shutil, "which", lambda _: None)
-    with pytest.raises(RuntimeError, match="refusing unsandboxed"):
+    with pytest.raises(RuntimeError, match="legacy SDD hook.*refusing unsandboxed") as error:
         policy.protected_argv(checkout[0], ["true"])
+    assert "parrot devloop launch-worker <FEAT-ID>" in str(error.value)
     response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}})
     assert response["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_module_imports_without_os_getuid() -> None:
+    """The hook module must be importable by a native Windows Python process."""
+    code = (
+        "import os, runpy; "
+        "del os.getuid; "
+        f"module = runpy.run_path({str(Path(policy.__file__))!r}); "
+        "assert module['claude_scratch_root']().name.startswith('claude-')"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
 
 
 def test_hook_preserves_shell_text_and_other_fields(

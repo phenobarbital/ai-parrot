@@ -5,6 +5,7 @@ Standard library only: the SDD PreToolUse hook imports this module as a script s
 
 from __future__ import annotations
 
+import getpass
 import ipaddress
 import json
 import os
@@ -35,6 +36,28 @@ SANDBOX_MODES = ("required", "preferred", "off", "legacy")
 _HOSTNAME_LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 _NUMERIC_LABEL = re.compile(r"^(0x[0-9a-f]+|[0-9]+)$")
 _CD_PREFIX = re.compile(r"^\s*cd\s+(?P<target>\S+)\s*&&\s*(?P<rest>.+)$", re.DOTALL)
+
+
+def sandbox_platform() -> str:
+    """Return the supported native-sandbox platform for this interpreter."""
+    if sys.platform.startswith("linux"):
+        return "linux"
+    if sys.platform == "darwin":
+        return "macos"
+    if sys.platform in {"win32", "cygwin"}:
+        return "windows"
+    return "unsupported"
+
+
+def _user_tag() -> str:
+    """Return a filesystem-safe identifier for the current user."""
+    if hasattr(os, "getuid"):
+        return str(os.getuid())
+    try:
+        username = getpass.getuser()
+    except (KeyError, OSError):
+        username = ""
+    return re.sub(r"[^A-Za-z0-9_.-]", "", username) or "user"
 
 
 def _canonical(path: Path) -> Path:
@@ -300,12 +323,45 @@ def native_sandbox_available() -> tuple[bool, str]:
     now = time.monotonic()
     if _probe_cache is not None and now - _probe_cache[0] < _PROBE_TTL_SECONDS:
         return _probe_cache[1], _probe_cache[2]
-    executables = {name: shutil.which(name) for name in ("bwrap", "socat")}
-    missing = [name for name, executable in executables.items() if executable is None]
-    if missing:
-        outcome = (False, f"missing prerequisite(s): {', '.join(missing)}")
+    platform = sandbox_platform()
+    if platform == "linux":
+        executables = {name: shutil.which(name) for name in ("bwrap", "socat")}
+        missing = [name for name, executable in executables.items() if executable is None]
+        if missing:
+            outcome = (False, f"missing prerequisite(s): {', '.join(missing)}")
+        else:
+            outcome = _bwrap_probe(executables["bwrap"] or "bwrap")
+    elif platform == "macos":
+        executable = shutil.which("sandbox-exec")
+        if executable is None:
+            outcome = (False, "missing prerequisite(s): sandbox-exec")
+        else:
+            try:
+                probe = subprocess.run(
+                    [executable, "-p", "(version 1)(allow default)", "/usr/bin/true"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                outcome = (False, "sandbox-exec probe timed out")
+            else:
+                if probe.returncode:
+                    outcome = (
+                        False,
+                        next((line for line in probe.stderr.splitlines() if line.strip()), "sandbox-exec probe failed"),
+                    )
+                else:
+                    outcome = (True, "")
+    elif platform == "windows":
+        outcome = (
+            False,
+            "native Windows has no Claude Code sandbox; run the worker inside WSL2, or set "
+            "PARROT_SDD_SANDBOX_MODE=preferred for a degraded (hook-only) launch",
+        )
     else:
-        outcome = _bwrap_probe(executables["bwrap"] or "bwrap")
+        outcome = (False, f"unsupported platform {sys.platform!r} for the native sandbox")
     _probe_cache = (now, outcome[0], outcome[1])
     return outcome
 
@@ -379,8 +435,8 @@ def plan_native_launch(cwd: Path, *, allowed_domains: Sequence[str] = ()) -> tup
             native_sandbox_settings(cwd, allowed_domains=allowed_domains, include_sandbox=False),
         )
     if mode == "legacy":
-        if not sys.platform.startswith("linux"):
-            raise RuntimeError(f"legacy mode needs a working Bubblewrap: unsupported platform {sys.platform!r}")
+        if sandbox_platform() != "linux":
+            raise RuntimeError(f"legacy mode needs Linux Bubblewrap; not available on {sandbox_platform()}")
         executable = shutil.which("bwrap")
         if executable is None:
             raise RuntimeError("legacy mode needs a working Bubblewrap: missing prerequisite(s): bwrap")
@@ -499,10 +555,10 @@ def native_command_environment(cwd: Path) -> dict[str, str]:
     scratch_root = _we.claude_scratch_root()
     configured = os.environ.get(CACHE_DIR_ENV)
     cache_root = (
-        _canonical(Path(configured)) if configured else scratch_root / "parrot-sdd-cache" / f"shared-{os.getuid()}"
+        _canonical(Path(configured)) if configured else scratch_root / "parrot-sdd-cache" / f"shared-{_user_tag()}"
     )
     if not _is_within(cache_root, scratch_root):
-        cache_root = scratch_root / "parrot-sdd-cache" / f"shared-{os.getuid()}"
+        cache_root = scratch_root / "parrot-sdd-cache" / f"shared-{_user_tag()}"
     env["XDG_CACHE_HOME"] = str(cache_root / "xdg")
     env["UV_CACHE_DIR"] = str(cache_root / "uv")
     return env
@@ -690,6 +746,12 @@ def launch_worker(argv: Sequence[str]) -> int:
         env[DEGRADED_ENV] = "1"
     else:
         env.pop(DEGRADED_ENV, None)
+        if sandbox_platform() == "macos":
+            print(
+                "launch_worker: NOTICE macOS Seatbelt backend is implemented but not certified "
+                "(see docs/dev_loop/claude-native-sandbox.md)",
+                file=sys.stderr,
+            )
     env[CACHE_DIR_ENV] = str(_allocate_session_cache())
     command = [claude, "--agent", "sdd-worker"]
     if not has_sources:

@@ -194,7 +194,7 @@ def test_plan_native_launch_legacy_uses_bubblewrap_without_native_probe(
 @pytest.mark.parametrize(
     ("platform", "executable", "probe", "match"),
     [
-        ("darwin", "/usr/bin/bwrap", (True, ""), "unsupported platform"),
+        ("darwin", "/usr/bin/bwrap", (True, ""), "not available on macos"),
         ("linux", None, (True, ""), "missing prerequisite"),
         ("linux", "/usr/bin/bwrap", (False, "namespace denied"), "namespace denied"),
     ],
@@ -231,6 +231,7 @@ def test_native_sandbox_available_branches(monkeypatch: pytest.MonkeyPatch) -> N
         def __init__(self, returncode: int, stderr: str = "") -> None:
             self.returncode, self.stderr = returncode, stderr
 
+    monkeypatch.setattr(native, "sandbox_platform", lambda: "linux")
     monkeypatch.setattr(native.shutil, "which", lambda name: None if name == "socat" else f"/usr/bin/{name}")
     assert native.native_sandbox_available() == (False, "missing prerequisite(s): socat")
 
@@ -254,6 +255,74 @@ def test_native_sandbox_available_branches(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(native, "_probe_cache", None)
     monkeypatch.setattr(native.subprocess, "run", lambda argv, **kw: _Completed(0))
     assert native.native_sandbox_available() == (True, "")
+
+
+@pytest.mark.parametrize(
+    ("platform", "expected"),
+    [("linux", "linux"), ("darwin", "macos"), ("win32", "windows"), ("cygwin", "windows"), ("freebsd", "unsupported")],
+)
+def test_sandbox_platform(monkeypatch: pytest.MonkeyPatch, platform: str, expected: str) -> None:
+    """Supported host platforms have explicit native-sandbox outcomes."""
+    monkeypatch.setattr(native.sys, "platform", platform)
+    assert native.sandbox_platform() == expected
+
+
+def test_native_sandbox_available_macos_windows_and_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Non-Linux probes neither require Bubblewrap nor silently permit a sandbox."""
+    calls: list[list[str]] = []
+
+    class _Completed:
+        def __init__(self, returncode: int, stderr: str = "") -> None:
+            self.returncode, self.stderr = returncode, stderr
+
+    monkeypatch.setattr(native, "sandbox_platform", lambda: "macos")
+    monkeypatch.setattr(native.shutil, "which", lambda name: None)
+    assert native.native_sandbox_available() == (False, "missing prerequisite(s): sandbox-exec")
+
+    monkeypatch.setattr(native, "_probe_cache", None)
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/sandbox-exec")
+    monkeypatch.setattr(
+        native.subprocess, "run", lambda argv, **kwargs: calls.append(argv) or _Completed(1, "Seatbelt denied\n")
+    )
+    assert native.native_sandbox_available() == (False, "Seatbelt denied")
+    assert calls == [["/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)", "/usr/bin/true"]]
+
+    monkeypatch.setattr(native, "_probe_cache", None)
+    monkeypatch.setattr(native.subprocess, "run", lambda argv, **kwargs: _Completed(0))
+    assert native.native_sandbox_available() == (True, "")
+
+    monkeypatch.setattr(native, "_probe_cache", None)
+    monkeypatch.setattr(native, "sandbox_platform", lambda: "windows")
+    available, reason = native.native_sandbox_available()
+    assert available is False and "WSL2" in reason and "PARROT_SDD_SANDBOX_MODE=preferred" in reason
+
+    monkeypatch.setattr(native, "_probe_cache", None)
+    monkeypatch.setattr(native, "sandbox_platform", lambda: "unsupported")
+    monkeypatch.setattr(native.sys, "platform", "plan9")
+    assert native.native_sandbox_available() == (False, "unsupported platform 'plan9' for the native sandbox")
+
+
+def test_user_tag_is_safe_without_getuid(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windows-style users produce stable cache directory names."""
+    monkeypatch.delattr(native.os, "getuid", raising=False)
+    monkeypatch.setattr(native.getpass, "getuser", lambda: "Ada Lovelace!")
+    assert native._user_tag() == "AdaLovelace"
+
+
+def test_launch_worker_prints_macos_seatbelt_notice(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A strict macOS launch makes the unqualified backend visible to the operator."""
+    feature, _main = linked
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", {}))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "sandbox_platform", lambda: "macos")
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: None)
+
+    assert native.launch_worker([]) == 1
+    assert "NOTICE macOS Seatbelt backend is implemented but not certified" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(

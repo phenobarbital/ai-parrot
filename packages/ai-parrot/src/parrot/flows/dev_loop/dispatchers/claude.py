@@ -671,6 +671,11 @@ class ClaudeCodeDispatcher:
                 env[native_claude_sandbox.DEGRADED_ENV] = "1"
             else:
                 env.pop(native_claude_sandbox.DEGRADED_ENV, None)
+                if native_claude_sandbox.sandbox_platform() == "macos":
+                    self.logger.warning(
+                        "launch_worker: NOTICE macOS Seatbelt backend is implemented but not certified "
+                        "(see docs/dev_loop/claude-native-sandbox.md)"
+                    )
                 self.logger.info("native sandbox ready for %s (mode=%s)", profile.subagent, mode)
             cache_dir = worktree_environment.claude_scratch_root() / "parrot-sdd-cache" / uuid4().hex
             env[native_claude_sandbox.CACHE_DIR_ENV] = str(cache_dir)
