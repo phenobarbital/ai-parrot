@@ -415,8 +415,7 @@ class TelegramBotsConfig:
             for action in agent_config.post_auth_actions:
                 if provider_registry.get(action.provider) is None:
                     logger.warning(
-                        "Agent '%s': post_auth_actions provider '%s' is not a "
-                        "registered provider at startup.",
+                        "Agent '%s': post_auth_actions provider '%s' is not a " "registered provider at startup.",
                         name,
                         action.provider,
                     )
