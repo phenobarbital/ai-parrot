@@ -201,3 +201,24 @@ async def test_combined_login_notifier_send_failure() -> None:
     )
 
     assert finalized == [attempt.attempt_id]
+
+
+@pytest.mark.asyncio
+async def test_finished_and_cancelled_attempts_release_their_locks() -> None:
+    """Finalized, cancelled and superseded attempts leave no per-attempt state behind."""
+    finalized: list[str] = []
+
+    async def finalize(attempt: Any) -> None:
+        finalized.append(attempt.attempt_id)
+
+    coordinator = PendingLoginCoordinator(finalize=finalize)
+    done = coordinator.create(**_fields())
+    assert await coordinator.on_provider_completed(_event(), _state(done.attempt_id))
+    cancelled = coordinator.create(**_fields())
+    await coordinator.cancel(attempt_id=cancelled.attempt_id)
+    superseded = coordinator.create(**_fields())
+    coordinator.create(**_fields())  # supersedes the previous attempt for the same Telegram user
+
+    assert finalized == [done.attempt_id]
+    assert superseded.cancelled is True
+    assert len(coordinator._locks) == len(coordinator._attempts) == 1

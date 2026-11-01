@@ -15,6 +15,7 @@ from parrot.auth.permission import PermissionContext
 from parrot.auth.principal import Principal
 
 if TYPE_CHECKING:  # pragma: no cover
+    from parrot.auth.oauth2.events import ConnectionEvent
     from parrot.auth.oauth2.service import IntegrationsService
     from parrot.integrations.telegram.connection_notifier import SessionHook
     from parrot.integrations.telegram.models import PostAuthAction
@@ -145,8 +146,13 @@ class PendingLoginCoordinator:
         self.logger = logging.getLogger(__name__)
 
     def _discard(self, attempt: PendingLoginAttempt) -> None:
-        """Remove an attempt from lookup indexes without changing persisted state."""
+        """Remove an attempt from lookup indexes without changing persisted state.
+
+        The per-attempt lock is dropped too (a holder keeps its own reference), so finished and cancelled
+        attempts do not accumulate locks for the life of the process.
+        """
         self._attempts.pop(attempt.attempt_id, None)
+        self._locks.pop(attempt.attempt_id, None)
         if self._by_telegram.get(attempt.telegram_id) == attempt.attempt_id:
             self._by_telegram.pop(attempt.telegram_id, None)
 
