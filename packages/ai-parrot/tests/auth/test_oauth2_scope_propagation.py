@@ -192,3 +192,41 @@ async def test_service_start_connect_passes_requested_scopes() -> None:
         OAuth2ProviderRegistry._reset()
 
     assert calls[0]["scopes"] == requested_scopes
+
+
+@pytest.mark.asyncio
+async def test_service_empty_scopes_fall_back_to_manager_scopes() -> None:
+    """A provider with no default scopes leaves the manager's own scopes in force instead of sending ``scope=""``."""
+    OAuth2ProviderRegistry._reset()
+    calls: List[Dict[str, Any]] = []
+
+    async def create_authorization_url(**kwargs: Any) -> tuple[str, str]:
+        """Record service arguments and return a deterministic response."""
+        calls.append(kwargs)
+        return "https://idp.example/authorize", "nonce"
+
+    provider = SimpleNamespace(
+        provider_id="empty-scope-test",
+        display_name="Empty Scope Test",
+        icon=None,
+        default_scopes=[],
+        manager=SimpleNamespace(create_authorization_url=create_authorization_url),
+    )
+    OAuth2ProviderRegistry().register(provider)
+
+    async def allow(_: Any, __: Any) -> bool:
+        """Allow the request without involving an HTTP PBAC dependency."""
+        return True
+
+    try:
+        await IntegrationsService(permission_evaluator=allow).start_connect(
+            "nav-user",
+            "empty-scope-test",
+            channel="msteams",
+            principal=_principal(),
+            permission_context=_permission_context(),
+        )
+    finally:
+        OAuth2ProviderRegistry._reset()
+
+    assert calls[0]["scopes"] is None

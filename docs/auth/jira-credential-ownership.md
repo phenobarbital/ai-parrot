@@ -75,7 +75,7 @@ Per channel, as of 2026-10-23:
 | Channel | Carries `nav_user_id` in the OAuth state? |
 |---|---|
 | Telegram | **yes** — the combined login sets it (`post_auth_jira.py`) |
-| MS Teams | **yes** for an authenticated user, since FEAT-729 / TASK-4667 (`msteams/commands/jira_commands.py`) |
+| MS Teams | **yes** for an authenticated user, since FEAT-729 / TASK-4667, and now through the generic connect flow of FEAT-775 (`msteams/commands/connect_commands.py`; the legacy `jira_commands.py` aliases delegate to it) |
 | Slack | **no** — it sends `team_id` / `slack_user_id` (`slack/commands/jira_commands.py`) |
 
 So the remaining gap is a **first-ever Slack link**, plus a Teams link by a user

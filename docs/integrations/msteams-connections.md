@@ -127,12 +127,19 @@ Operators must allow the appropriate URI resources in policy. The corresponding 
 denials return an empty result; denied status, connect and disconnect operations are rendered as a plain
 not-allowed response. Missing identity, mismatched identity, missing evaluator or evaluator failure denies closed.
 
+### Roles and groups
+
+The Teams permission context carries the Navigator user id, tenant and channel identity only. Roles and groups are
+**empty**, because Teams sign-in does not supply those claims. A policy that grants access through a role or group
+(for example a `connections-users` group) therefore denies every Teams user. Write the policy against the user
+(`user_id` / the Navigator principal) instead, or add the user explicitly, when the resource is reachable from Teams.
+
 ## Operator checklist
 
 - Register every provider's OAuth redirect URI with that provider before enabling its Teams connection flow.
 - Configure `navigator_auth_url` for every Teams bot that exposes connections.
 - Configure the Microsoft app `client_id` for each bot. It identifies the adapter used for proactive routing.
-- Add PBAC policies for the URI resources and actions in the permissions table.
+- Add PBAC policies for the URI resources and actions in the permissions table, keyed by user (Teams contexts carry no roles or groups).
 - Ensure Redis is available for the 30-day personal conversation-reference store.
 - Register providers in `OAuth2ProviderRegistry`; Teams exposes every registered provider, not only Jira.
 - Keep provider client credentials and redirect URIs in deployment configuration, never in messages or source.

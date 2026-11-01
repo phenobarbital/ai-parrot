@@ -432,7 +432,8 @@ class IntegrationsService:
             user_id=user_id,
             extra_state=state,
             principal=principal,
-            scopes=requested_scopes,
+            # An empty list means "use the manager's own scopes", not "request no scope".
+            scopes=requested_scopes or None,
         )
         return ConnectInitResponse(
             auth_url=auth_url,

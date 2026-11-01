@@ -95,7 +95,7 @@ def test_connection_commands_registered_with_empty_registry(monkeypatch: pytest.
     from parrot.integrations.msteams.models import MSTeamsAgentConfig
 
     registry = OAuth2ProviderRegistry()
-    monkeypatch.setattr(registry, "all", lambda: [])
+    monkeypatch.setattr(registry, "all", list)
     app = MagicMock()
     app.get.return_value = None
     agent = MagicMock()

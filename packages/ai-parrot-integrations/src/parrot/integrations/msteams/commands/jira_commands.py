@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_MSTEAMS_CHANNEL = "msteams"
+_MSTEAMS_CHANNEL = "msteams"  # compatibility export; pinned by test_msteams_channel_constant
 
 
 def register_jira_commands(router: "MSTeamsCommandRouter", connector: "TeamsConnector") -> None:
