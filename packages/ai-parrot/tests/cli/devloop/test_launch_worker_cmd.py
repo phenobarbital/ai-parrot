@@ -13,6 +13,15 @@ from parrot.cli.devloop import devloop
 from parrot.flows.dev_loop import feature_launcher as launcher
 
 
+@pytest.fixture(autouse=True)
+def _restore_sandbox_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``launch(sandbox=...)`` writes ``os.environ`` directly; restore it after each test."""
+    # setenv first: monkeypatch.delenv records nothing for an absent variable, so teardown
+    # would leave whatever launch() wrote; setenv records the original (possibly unset) state.
+    monkeypatch.setenv(launcher.native_claude_sandbox.MODE_ENV, "required")
+    monkeypatch.delenv(launcher.native_claude_sandbox.MODE_ENV)
+
+
 def _result(argv: list[str], code: int = 0, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess[str]:
     """Build a scripted subprocess result."""
     return subprocess.CompletedProcess(argv, code, stdout, stderr)
@@ -137,6 +146,222 @@ def test_tmux_new_session_carries_environment_and_detaches(tmp_path: Path, monke
     assert command[:8] == ["tmux", "new-session", "-d", "-s", "sdd-FEAT-768", "-c", str(worktree), "-e"]
     assert "PARROT_SDD_SANDBOX_MODE=legacy" in command
     assert "PARROT_SDD_EXTRA=yes" in command
+    tail = command[command.index("--") :]
+    assert tail == [
+        "--",
+        launcher.sys.executable,
+        "-m",
+        "parrot.flows.dev_loop.feature_launcher",
+        "--in-session",
+        "FEAT-768",
+    ]
+
+
+def _upstream_runner(
+    calls: list[list[str]],
+    *,
+    remote: str,
+    local: str = "local",
+    remote_sha: str = "remote",
+    ancestors: set = frozenset(),
+):
+    """Script ``_run`` for ``prepare_upstream``; ``ancestors`` holds the (older, newer) pairs that are ancestry."""
+
+    def fake_run(argv: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        tail = tuple(argv[1:])
+        if tail[:2] == ("merge-base", "--is-ancestor"):
+            return _result(argv, 0 if (tail[2], tail[3]) in ancestors else 1)
+        values = {
+            ("rev-parse", "--abbrev-ref", "HEAD"): "feature\n",
+            ("ls-remote", "--heads", "origin", "feature"): remote,
+            ("rev-parse", "HEAD"): f"{local}\n",
+            ("rev-parse", "origin/feature"): f"{remote_sha}\n",
+        }
+        return _result(argv, stdout=values.get(tail, ""))
+
+    return fake_run
+
+
+def _git_verbs(calls: list[list[str]]) -> list[str]:
+    """Return the git sub-commands that were run, in order."""
+    return [command[1] for command in calls if command[0] == "git"]
+
+
+def test_prepare_upstream_pushes_when_remote_branch_is_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A branch unknown to origin is pushed with tracking and nothing else."""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(launcher, "_run", _upstream_runner(calls, remote=""))
+    assert "pushed" in launcher.prepare_upstream(tmp_path)
+    assert ["git", "push", "-u", "origin", "feature"] in calls
+    assert "fetch" not in _git_verbs(calls) and "merge" not in _git_verbs(calls)
+
+
+def test_prepare_upstream_fast_forwards_when_behind(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A local branch strictly behind origin is fast-forwarded only, then tracks origin."""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        launcher, "_run", _upstream_runner(calls, remote="sha refs/heads/feature\n", ancestors={("local", "remote")})
+    )
+    assert "fast-forwarded" in launcher.prepare_upstream(tmp_path)
+    assert ["git", "merge", "--ff-only", "origin/feature"] in calls
+    assert ["git", "branch", "--set-upstream-to", "origin/feature", "feature"] in calls
+    assert "push" not in _git_verbs(calls)
+
+
+@pytest.mark.parametrize(
+    ("local", "ancestors", "status"),
+    [("remote", set(), "up to date"), ("local", {("remote", "local")}, "local ahead")],
+)
+def test_prepare_upstream_sets_tracking_when_equal_or_ahead(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, local: str, ancestors: set, status: str
+) -> None:
+    """Equal or ahead branches only gain an upstream; the worker pushes its own commits."""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        launcher, "_run", _upstream_runner(calls, remote="sha refs/heads/feature\n", local=local, ancestors=ancestors)
+    )
+    assert status in launcher.prepare_upstream(tmp_path)
+    assert ["git", "branch", "--set-upstream-to", "origin/feature", "feature"] in calls
+    assert not {"merge", "push"} & set(_git_verbs(calls))
+
+
+def test_prepare_upstream_git_failure_is_exit_one(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A network/git failure is a host error, never silently skipped."""
+    monkeypatch.setattr(launcher, "_run", lambda argv, *, cwd: _result(argv, 128, stderr="could not resolve host"))
+    with pytest.raises(launcher.LaunchError) as exc:
+        launcher.prepare_upstream(tmp_path)
+    assert exc.value.exit_code == 1 and "could not resolve host" in str(exc.value)
+
+
+def test_ensure_feature_worktree_uses_json_runner_and_surfaces_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The worktree path comes from ``ensure_worktree --json``; its failure is exit 1 with stderr."""
+    primary = _primary(tmp_path)
+    ref = launcher.resolve_feature(primary, "FEAT-768")
+    calls: list[list[str]] = []
+    payload = json.dumps({"path": str(tmp_path / "wt")})
+    monkeypatch.setattr(launcher, "_run", lambda argv, *, cwd: calls.append(argv) or _result(argv, stdout=payload))
+    assert launcher.ensure_feature_worktree(primary, ref) == tmp_path / "wt"
+    assert calls[0][1:3] == ["-m", "scripts.sdd.ensure_worktree"] and calls[0][-1] == "--json"
+    assert calls[0][calls[0].index("--index") + 1] == "sdd/tasks/index/sandbox.json"
+
+    monkeypatch.setattr(launcher, "_run", lambda argv, *, cwd: _result(argv, 1, stderr="spec missing"))
+    with pytest.raises(launcher.LaunchError) as exc:
+        launcher.ensure_feature_worktree(primary, ref)
+    assert exc.value.exit_code == 1 and "spec missing" in str(exc.value)
+
+
+def _no_host_prep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail the test if any host preparation step runs."""
+    boom = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("host prep must not run"))  # noqa: E731
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", boom)
+    monkeypatch.setattr(launcher, "prepare_upstream", boom)
+
+
+def test_existing_session_refuses_non_tmux_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A second console for a feature already running in tmux is refused before host prep."""
+    monkeypatch.chdir(_primary(tmp_path))
+    _no_host_prep(monkeypatch)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: name == "sdd-FEAT-768")
+    with pytest.raises(launcher.LaunchError) as exc:
+        launcher.launch(
+            "FEAT-768", tmux=False, detach=False, sandbox=None, allowed_domains=(), no_upstream=False, claude_args=()
+        )
+    assert exc.value.exit_code == 2 and "sdd-FEAT-768" in str(exc.value)
+
+
+@pytest.mark.parametrize("inside_tmux", [False, True])
+def test_existing_session_attaches_without_host_prep(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inside_tmux: bool
+) -> None:
+    """``--tmux`` on a running session attaches (or switches client inside tmux) with no host prep."""
+    monkeypatch.chdir(_primary(tmp_path))
+    _no_host_prep(monkeypatch)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: True)
+    if inside_tmux:
+        monkeypatch.setenv("TMUX", "/tmp/tmux-1000/default,1,0")
+    else:
+        monkeypatch.delenv("TMUX", raising=False)
+    calls: list[list[str]] = []
+    execs: list[list[str]] = []
+    monkeypatch.setattr(launcher, "_run", lambda argv, *, cwd: calls.append(argv) or _result(argv))
+    monkeypatch.setattr(launcher.os, "execvp", lambda file, args: execs.append(args))
+    launcher.launch(
+        "FEAT-768", tmux=True, detach=False, sandbox=None, allowed_domains=(), no_upstream=False, claude_args=()
+    )
+    if inside_tmux:
+        assert calls == [["tmux", "switch-client", "-t", "sdd-FEAT-768"]] and not execs
+    else:
+        assert execs == [["tmux", "attach-session", "-t", "sdd-FEAT-768"]] and not calls
+
+
+def test_existing_session_with_detach_only_prints_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--tmux --detach`` on a running session neither preps nor attaches."""
+    monkeypatch.chdir(_primary(tmp_path))
+    _no_host_prep(monkeypatch)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: True)
+    monkeypatch.setattr(launcher, "_attach_session", lambda name: pytest.fail("must not attach with --detach"))
+    assert (
+        launcher.launch(
+            "FEAT-768", tmux=True, detach=True, sandbox=None, allowed_domains=(), no_upstream=True, claude_args=()
+        )
+        == 0
+    )
+    assert "tmux attach -t sdd-FEAT-768" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("platform", "tmux_path", "match"),
+    [("windows", "/usr/bin/tmux", "native Windows"), ("linux", None, "tmux is not available")],
+)
+def test_tmux_refused_on_windows_or_without_tmux(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str, tmux_path: str | None, match: str
+) -> None:
+    """``--tmux`` needs a POSIX host with tmux on PATH; otherwise it is a host error (exit 1)."""
+    monkeypatch.chdir(_primary(tmp_path))
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: tmp_path)
+    monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: platform)
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: tmux_path)
+    monkeypatch.setattr(launcher, "_run", lambda argv, *, cwd: pytest.fail(f"no tmux command may run: {argv}"))
+    with pytest.raises(launcher.LaunchError, match=match) as exc:
+        launcher.launch(
+            "FEAT-768", tmux=True, detach=True, sandbox=None, allowed_domains=(), no_upstream=True, claude_args=()
+        )
+    assert exc.value.exit_code == 1
+
+
+def test_invalid_sandbox_mode_is_exit_two(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unknown ``--sandbox`` value is caller input, rejected before anything else."""
+    monkeypatch.chdir(_primary(tmp_path))
+    _no_host_prep(monkeypatch)
+    with pytest.raises(launcher.LaunchError) as exc:
+        launcher.launch(
+            "FEAT-768", tmux=False, detach=False, sandbox="bogus", allowed_domains=(), no_upstream=True, claude_args=()
+        )
+    assert exc.value.exit_code == 2
+    assert launcher.native_claude_sandbox.MODE_ENV not in launcher.os.environ
+
+
+def test_sandbox_flag_reaches_non_tmux_child_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``--sandbox legacy`` is in ``PARROT_SDD_SANDBOX_MODE`` when ``launch_worker`` resolves the mode."""
+    monkeypatch.chdir(_primary(tmp_path))
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: tmp_path)
+    seen: list[str | None] = []
+    monkeypatch.setattr(
+        launcher.native_claude_sandbox,
+        "launch_worker",
+        lambda argv, **kwargs: seen.append(launcher.os.environ.get(launcher.native_claude_sandbox.MODE_ENV)) or 0,
+    )
+    launcher.launch(
+        "FEAT-768", tmux=False, detach=False, sandbox="legacy", allowed_domains=(), no_upstream=True, claude_args=()
+    )
+    assert seen == ["legacy"]
 
 
 def test_click_command_maps_launch_errors(monkeypatch: pytest.MonkeyPatch) -> None:

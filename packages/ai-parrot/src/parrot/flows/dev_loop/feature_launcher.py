@@ -211,6 +211,9 @@ def launch(
             raise LaunchError(
                 2, f"a worker for {ref.feature_id} already runs in tmux session {name}; use --tmux to attach"
             )
+        if detach:
+            print(f"launch-worker: attach with: tmux attach -t {name}", file=sys.stderr)
+            return 0
         return _attach_session(name)
 
     worktree = ensure_feature_worktree(primary, ref)
