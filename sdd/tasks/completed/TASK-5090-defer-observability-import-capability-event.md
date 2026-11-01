@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-787 — Defer `parrot.observability` in the Capability Lifecycle Event
 **Spec**: `sdd/specs/events-capability-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -328,4 +328,32 @@ changed file.
 
 ## Completion Note
 
-> _(filled in on completion)_
+**Completed**: 2026-11-01 · **Verification**: verified
+
+Applied exactly as blueprinted. Pre-edit sha256 of `capability.py` matched the
+Delegation Contract's `expected_sha256`
+(`932b255cbaec66635d1790eda199015946804755b396373b399c2bf7661b2880`).
+
+Validation (run from the worktree, 13 passed):
+
+```
+pytest packages/ai-parrot/tests/unit/observability/test_bootstrap_hook.py \
+       packages/ai-parrot/tests/unit/observability/test_capability_call_record.py \
+       packages/ai-parrot-squawk/tests/test_telemetry.py -q
+→ 13 passed
+ruff check packages/ai-parrot/src/parrot/core/events/lifecycle/events/capability.py
+→ All checks passed!
+```
+
+AC1–AC5 all met. `test_hook_import_is_deferred` was reproduced red on `dev`
+before the change (1 failed, 3 passed) and is green after.
+
+**Gotcha worth recording for future worktree runs.** `packages/ai-parrot/tests/unit/observability/`
+has a conftest that **chdirs to the main checkout**. This test spawns a fresh
+interpreter via `subprocess.run([sys.executable, ...])`, which inherits that cwd,
+so a *relative* `PYTHONPATH=packages/ai-parrot/src` resolves against the MAIN
+CHECKOUT and the subprocess imports the unfixed `parrot` — the test stays red no
+matter what the worktree contains. Validation of this suite from a worktree must
+use an **absolute** `PYTHONPATH` rooted at the worktree. This is a test-harness
+artifact, not a product defect; no production code depends on it, so it was left
+unchanged (out of scope for this task).

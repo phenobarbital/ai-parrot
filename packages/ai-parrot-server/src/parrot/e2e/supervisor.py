@@ -988,8 +988,14 @@ class E2ESupervisor:
         """
         if live.heartbeat_task is not None:
             live.heartbeat_task.cancel()
-            with contextlib.suppress(Exception):
-                await live.heartbeat_task
+            # A task cancelled before its first step never enters its own
+            # ``suppress(CancelledError)`` block, so awaiting it directly would
+            # raise CancelledError (a BaseException) into the caller.
+            # ``asyncio.wait`` waits without re-raising the task's outcome, yet
+            # still propagates a cancellation of *this* coroutine.
+            await asyncio.wait({live.heartbeat_task})
+            if not live.heartbeat_task.cancelled():
+                live.heartbeat_task.exception()  # mark retrieved; best-effort
         if live.watchdog is not None:
             await self._stop_watchdog(live.watchdog)
         with contextlib.suppress(Exception):

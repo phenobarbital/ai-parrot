@@ -3,11 +3,18 @@
 Emitted on both sides of a Squawk call under the caller's trace_id.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from navigator_eventbus.lifecycle.base import LifecycleEvent
 
-from parrot.observability.recorders.models import CapabilityCallRecord
+if TYPE_CHECKING:  # pragma: no cover - import-time only
+    # Deferred on purpose (FEAT-725 AC7): importing parrot.observability here
+    # would make `import parrot.core.events.lifecycle` drag in the whole
+    # observability package and re-arm the circular-import failure.
+    from parrot.observability.recorders.models import CapabilityCallRecord
 
 
 @dataclass(frozen=True)
