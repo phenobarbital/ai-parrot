@@ -1,0 +1,31 @@
+{
+  "feature": "identity-vault-store-late-binding",
+  "feature_id": "BRIEF-4137bc2e311f",
+  "spec": "sdd/briefs/identity-vault-store-late-binding.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-11-02",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-4137bc2e311f-1",
+      "slug": "bind-identity-vault-store-at-startup",
+      "title": "Bind IdentityVaultCredentialStore onto OAuth2 managers at startup",
+      "feature_id": "BRIEF-4137bc2e311f",
+      "feature": "identity-vault-store-late-binding",
+      "spec": "sdd/briefs/identity-vault-store-late-binding.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/identity-vault-store-late-binding/tasks/HOTFIX-4137bc2e311f-1-bind-identity-vault-store-at-startup.md"
+    }
+  ]
+}
