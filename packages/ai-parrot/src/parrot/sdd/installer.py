@@ -42,7 +42,7 @@ GITIGNORE_BEGIN = "# >>> parrot sdd (managed) >>>"
 GITIGNORE_END = "# <<< parrot sdd (managed) <<<"
 GITIGNORE_BLOCK = (
     f"{GITIGNORE_BEGIN}\n"
-    "# SDD feature worktrees (parrot sdd run ensure_worktree)\n.claude/worktrees/\n"
+    "# SDD feature worktrees (parrot sdd worktree ensure)\n.claude/worktrees/\n"
     "# parrot's local state (ledger index, wiki store), ignored as parrot claude|codex|google install do\n.parrot/\n"
     f"{GITIGNORE_END}"
 )
@@ -55,8 +55,10 @@ GITATTRIBUTES_BLOCK = (
     f"{GITIGNORE_END}"
 )
 #: rev 0.6 C25 — the guard-hook line as packaged in the Claude ``sdd-coder`` / ``sdd-worker`` agents.
-GUARD_HOOK_LINE = "parrot sdd run worktree_environment --hook || exit 2"
-_GUARD_HOOK_SUFFIX = " sdd run worktree_environment --hook || exit 2"
+GUARD_HOOK_LINE = "parrot sdd worktree guard --hook || exit 2"
+_GUARD_HOOK_SUFFIX = " sdd worktree guard --hook || exit 2"
+#: substrings that mark a frontmatter command as the guard hook (C30 spelling, or a legacy/programmatic module path)
+_GUARD_MARKERS = ("worktree guard --hook", "worktree_environment")
 
 FileState = Literal["missing", "current", "outdated", "edited", "foreign"]
 #: Plan vocabulary (C5). install: write | upgrade | overwrite | skip-current | skip-edited | skip-foreign |
@@ -544,7 +546,7 @@ def _seed_id_ledger(root: Path) -> str | None:
     save_ledger(path, bootstrap_ledger(root / "sdd/tasks/index", root / "sdd/specs"))
     return (
         f"{LEDGER_PATH} — seeded; warning: commit and push it to your base branch before "
-        "`parrot sdd run reserve_ids` (it reads the ledger from git)"
+        "`parrot sdd ids reserve` (it reads the ledger from git)"
     )
 
 
@@ -785,7 +787,7 @@ def _classify_hook_command(command: str) -> tuple[Literal["bare", "baked", "othe
 
 
 def _guard_hook_report(root: Path) -> dict[str, Any]:
-    """C25: read the ``command:`` of every ``.claude/agents/*.md`` whose frontmatter names ``worktree_environment``."""
+    """C25: read the ``command:`` of every ``.claude/agents/*.md`` whose frontmatter names the guard hook."""
     targets: list[str] = []
     commands: list[str] = []
     agents = root / ".claude" / "agents"
@@ -794,11 +796,11 @@ def _guard_hook_report(root: Path) -> dict[str, Any]:
             parts = path.read_text(encoding="utf-8").split("---", 2)
         except (OSError, UnicodeDecodeError):
             continue
-        if len(parts) < 3 or "worktree_environment" not in parts[1]:
+        if len(parts) < 3 or not any(m in parts[1] for m in _GUARD_MARKERS):
             continue
         for line in parts[1].splitlines():
             match = _YAML_COMMAND_RE.match(line)
-            if match and "worktree_environment" in match.group("value"):
+            if match and any(m in match.group("value") for m in _GUARD_MARKERS):
                 targets.append(path.relative_to(root).as_posix())
                 commands.append(_yaml_scalar(match.group("value")))
                 break

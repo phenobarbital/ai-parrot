@@ -48,7 +48,7 @@ def test_portable_flag(tmp_path: Path) -> None:
     result = CliRunner().invoke(cli, ["sdd", "install", "--path", str(tmp_path), "--portable"])
     assert result.exit_code == 0, result.output
     assert (
-        "parrot sdd run worktree_environment --hook || exit 2"
+        "parrot sdd worktree guard --hook || exit 2"
         in (tmp_path / ".claude/agents/sdd-worker.md").read_text()
     )
 

@@ -1,4 +1,4 @@
-"""Launcher fast path for ``parrot sdd run worktree_environment --hook`` (FEAT-633 C16)."""
+"""Launcher fast path for ``parrot sdd worktree guard --hook`` (FEAT-633 C16)."""
 from __future__ import annotations
 
 import json
@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 SCRUB = ("PARROT_LAUNCHER_RESOLVED", "PARROT_VENV", "PARROT_PROJECT", "CLAUDE_PROJECT_DIR", "VIRTUAL_ENV", "PARROT_HOME")
-HOOK_ARGV = ["sdd", "run", "worktree_environment", "--hook"]
+HOOK_ARGV = ["sdd", "worktree", "guard", "--hook"]
 PROBE = (
     "import sys, atexit; from parrot.launcher import main_parrot; sys.argv[0] = 'parrot'\n"
     "atexit.register(lambda: sys.stderr.write('MODS=' + ','.join(m for m in ('click', 'parrot.cli') if m in sys.modules) + '\\n'))\n"

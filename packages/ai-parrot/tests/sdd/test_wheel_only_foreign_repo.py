@@ -28,7 +28,7 @@ INVOCATION_RE = re.compile(r"parrot sdd run ([a-z0-9_]+)((?: [^\n`]*)?)")  # dig
 #: A `\`-continued shell line is one command: join before matching, or the flags on the next lines are lost.
 CONTINUATION_RE = re.compile(r"\\\n[ \t]*")
 #: The argv ends at the first shell control operator — e.g. the C16 frontmatter hook
-#: `parrot sdd run worktree_environment --hook || exit 2'` runs as `worktree_environment --hook`.
+#: `parrot sdd worktree guard --hook || exit 2'` runs as `worktree_environment --hook`.
 SHELL_CUT_RE = re.compile(r"\s+(?:\|\||&&|\|)\s+|;")
 #: Shell-only tails that are not helper arguments.
 REDIRECT_RE = re.compile(r"\s+2>(?:/dev/null|&1)")
@@ -44,7 +44,7 @@ SCRUBBED_ENV = (
 )
 #: System tools the fixture PATH may expose; anything else must come from the wheel.
 TOOL_ALLOWLIST = ("git", "bash", "sh", "jq")
-GUARD_LINE = "parrot sdd run worktree_environment --hook || exit 2"
+GUARD_LINE = "parrot sdd worktree guard --hook || exit 2"
 FEAT = "FEAT-001"
 SLUG = "demo-feature"
 
@@ -609,7 +609,7 @@ def test_installed_hook_denies_shared_environment_write(
     subprocess.run(["parrot", "sdd", "install", "--host", "claude"], cwd=repo, env=env, check=True, capture_output=True)
     for agent in ("sdd-coder", "sdd-worker"):
         front = (repo / ".claude/agents" / f"{agent}.md").read_text(encoding="utf-8").split("---", 2)[1]
-        line = next(ln for ln in front.splitlines() if "worktree_environment --hook" in ln)
+        line = next(ln for ln in front.splitlines() if "worktree guard --hook" in ln)
         command = line.split("command:", 1)[1].strip().strip("'")
         assert command == GUARD_LINE, command  # managed launcher on PATH → the bare form
         denied = {"cwd": str(repo), "tool_name": "Write", "tool_input": {"file_path": str(managed_home / "venv" / "x.py")}}
@@ -635,7 +635,7 @@ def test_installed_hook_project_venv_only(
     env = _env(home, tools_dir, with_launcher=False)
     subprocess.run([str(venv / "bin/parrot"), "sdd", "install", "--host", "claude"], cwd=repo, env=env, check=True, capture_output=True)
     front = (repo / ".claude/agents/sdd-worker.md").read_text(encoding="utf-8").split("---", 2)[1]
-    line = next(ln for ln in front.splitlines() if "worktree_environment --hook" in ln)
+    line = next(ln for ln in front.splitlines() if "worktree guard --hook" in ln)
     command = line.split("command:", 1)[1].strip()
     command = command[1:-1].replace("''", "'") if command.startswith("'") else command
     assert command != GUARD_LINE and command.startswith(str(venv / "bin/parrot")), command

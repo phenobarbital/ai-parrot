@@ -266,7 +266,7 @@ def _dispatch(script: str, load_entry: Callable[[], Callable[[], Any]]) -> int:
     return result if isinstance(result, int) else 0
 
 
-SDD_HOOK_ARGV = ["sdd", "run", "worktree_environment", "--hook"]
+SDD_HOOK_ARGV = ["sdd", "worktree", "guard", "--hook"]
 
 
 def main_parrot() -> int:

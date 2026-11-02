@@ -288,7 +288,7 @@ def _hook_of(repo: Path, rel: str = WORKER) -> str:
 
     def walk(node: object) -> None:
         if isinstance(node, dict):
-            if isinstance(node.get("command"), str) and "worktree_environment" in node["command"]:
+            if isinstance(node.get("command"), str) and ("worktree guard" in node["command"] or "worktree_environment" in node["command"]):
                 found.append(node["command"])
             for value in node.values():
                 walk(value)
@@ -361,7 +361,7 @@ def test_guard_hook_quoting_space_and_quote(
     install_sdd_integration(empty_repo)
     command = _hook_of(empty_repo)
     out = subprocess.run(["/bin/sh", "-c", command], capture_output=True, text=True)
-    assert out.returncode == 0 and out.stdout.strip() == "ran:sdd run worktree_environment --hook"
+    assert out.returncode == 0 and out.stdout.strip() == "ran:sdd worktree guard --hook"
     assert sdd_status(empty_repo)["guard_hook"]["resolvable"] is True
 
 
