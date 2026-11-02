@@ -9,6 +9,7 @@ import pytest
 from parrot.auth.credentials import OAuthCredentialResolver
 from parrot.auth.oauth2.events import ChannelNotifierRegistry, ConnectionEventPublisher
 from parrot.auth.principal import Principal
+from parrot.integrations.telegram.connection_notifier import TelegramConnectionNotifier
 
 from .test_connections_isolation_matrix import (
     FakeCredentialStore,
@@ -67,16 +68,16 @@ async def test_telegram_notifier_adapter_isolated_from_callback() -> None:
     """A notifier failure is swallowed after the connection has been persisted."""
     registry = ChannelNotifierRegistry()
 
-    class FailingTelegramNotifier:
-        """Notifier double representing the Telegram adapter."""
+    class FailingBot:
+        """Bot that makes the real notifier's send path fail."""
 
-        channel = "telegram"
-
-        async def notify(self, event: Any, state: dict[str, Any]) -> None:
-            del event, state
+        async def send_message(self, **kwargs: Any) -> None:
+            del kwargs
             raise RuntimeError("telegram unavailable")
 
-    registry.register(FailingTelegramNotifier())
+    notifier = TelegramConnectionNotifier()
+    notifier.attach("bot-1", FailingBot())
+    registry.register(notifier)
     publisher = ConnectionEventPublisher(notifiers=registry)
     manager = FakeManager(
         "client",
@@ -87,7 +88,12 @@ async def test_telegram_notifier_adapter_isolated_from_callback() -> None:
         event_publisher=publisher,
     )
     principal = Principal(user_id="1042", channel="telegram", channel_user_id="88123")
-    _, nonce = await manager.create_authorization_url("telegram", "88123", principal=principal)
+    _, nonce = await manager.create_authorization_url(
+        "telegram",
+        "88123",
+        principal=principal,
+        extra_state={"chat_id": "88123", "bot_id": "bot-1"},
+    )
 
     token_set, _ = await manager.handle_callback("telegram-code", nonce)
 

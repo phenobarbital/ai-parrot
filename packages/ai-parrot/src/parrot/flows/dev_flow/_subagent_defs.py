@@ -15,13 +15,12 @@ Everything downstream of ideation (``sdd-planner``, ``sdd-worker``,
 reused ``dev_loop`` nodes and therefore loaded by ``dev_loop``'s own
 loader — not this one.
 
-:func:`load_subagent_definition` reads **only** the package-shipped copy at
-``dev_flow/_subagent_data/<name>.md``, mirroring the ``dev_loop`` loader's
-contract: that copy is the canonical, always-available source for dispatch
-(it keeps working when ``ai-parrot`` is installed as a wheel outside the
-repo). It does NOT read ``.claude/agents/`` at runtime — the repo-level
-twin at ``.claude/agents/sdd-ideation.md`` exists for interactive Claude
-Code use with ``setting_sources=["project"]``.
+:func:`load_subagent_definition` reads the packaged SDD asset at
+``parrot/sdd/_assets/claude/agents/<name>.md`` (FEAT-633 C2), generated
+from ``.claude/agents/sdd-ideation.md`` by
+``scripts/sdd/check_asset_sync.py --write``. It is the only copy of the
+prompt and keeps working when ``ai-parrot`` is installed as a wheel
+outside the repo.
 """
 
 from __future__ import annotations
@@ -83,8 +82,7 @@ def load_subagent_definition(name: str) -> str:
             f"Unknown subagent name {name!r}. Expected one of "
             f"{sorted(_VALID_NAMES)}."
         )
-    data_dir = files("parrot.flows.dev_flow") / "_subagent_data"
-    target = data_dir / f"{name}.md"
+    target = files("parrot.sdd") / "_assets" / "claude" / "agents" / f"{name}.md"
     text = target.read_text(encoding="utf-8")
     return _strip_frontmatter(text)
 

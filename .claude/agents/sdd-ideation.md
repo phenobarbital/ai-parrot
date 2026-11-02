@@ -176,8 +176,8 @@ Every document you write starts with the FEAT-145 frontmatter, verbatim:
 ```
 ---
 # SDD flow type and base branch (FEAT-145).
-# - type: feature  (default)  → base_branch: dev (or any non-main branch)
-# - type: hotfix              → base_branch MUST be: main
+# - type: feature  (default)  → base_branch: the base_branch in sdd/config.json (or any non-hotfix branch)
+# - type: hotfix              → base_branch MUST be the hotfix_base in sdd/config.json
 type: feature
 base_branch: <the payload's `base_branch` value, verbatim — `dev` when it is `dev`>
 projects: [<parts of the codebase from your Code Context — e.g. ai-parrot, ai-parrot-server>]
@@ -188,10 +188,8 @@ tags: [<2–6 lowercase kebab-case keywords>]
 `type` is always `feature`; `base_branch` comes from the payload — do not
 hard-code `dev`.
 
-`projects` / `tags` (FEAT-576): derive `projects` from the Code Context paths
-(`packages/<dist>/…` → `<dist>`; `scripts/sdd/`, `.claude/` → `sdd-tooling`;
-`flows/dev_loop` → `dev-loop`; other `parrot/…` → `ai-parrot`) using the
-`KNOWN_PROJECTS` vocabulary in `scripts/sdd/sdd_meta.py`; when resuming an
+`projects` / `tags` (FEAT-576): derive `projects` from the Code Context paths using
+the project areas in `sdd/CONVENTIONS.md` (§ Project areas), or the `projects` list in `sdd/config.json` when set; when resuming an
 existing document, keep its values and only add missing ones.
 
 ### mode = "brainstorm"  (intent: new_feature)

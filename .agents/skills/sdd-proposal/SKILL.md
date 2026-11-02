@@ -39,8 +39,7 @@ source -> research plan -> budgeted research -> synthesis -> review gate -> targ
 - Persist state under `sdd/state/<FEAT-ID>/`.
 - Do not write implementation code.
 - Commit only proposal and state files.
-- Fill frontmatter `projects` (parts of the codebase, vocabulary `KNOWN_PROJECTS` in
-  `scripts/sdd/sdd_meta.py`; unknown values warn) and `tags` (2–6 kebab-case keywords) — FEAT-576.
+- Fill frontmatter `projects` (parts of the codebase, vocabulary: the project areas in `sdd/CONVENTIONS.md` (§ Project areas), or the `projects` list in `sdd/config.json` when set; unknown values warn) and `tags` (2–6 kebab-case keywords) — FEAT-576.
 
 ## Inputs
 
@@ -98,7 +97,7 @@ forks (Claude Code). Codex has no forks: research always runs sequentially and
      `sdd/state/<FEAT-ID>/findings/FNNN-<slug>.md` using
      `sdd/templates/finding.md`; `<slug>` is lowercase `[a-z0-9-]` only
      (`:`, `*`, `|`, quotes break Windows checkouts and fail
-     `scripts/check_portable_paths.py` in CI).
+     the repository's portable-path CI check).
 6. Synthesize:
    - Use source, plan, findings, and budget status.
    - Produce `sdd/state/<FEAT-ID>/synthesis.json`.

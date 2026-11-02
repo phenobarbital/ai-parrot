@@ -4,6 +4,9 @@ This guide describes the principal-keyed OAuth2 connection model introduced by
 FEAT-773. A connection belongs to a Navigator principal, not to the channel
 through which it was created.
 
+See also [delegated-auth-web-deployment.md](delegated-auth-web-deployment.md) for the
+web-channel deployment recipe, the live E2E harness and the gaps found on the first live run.
+
 ## Principal and key layout
 
 The live Redis cache uses `oauth2:{provider}:{user_id}`. The refresh lock is
@@ -42,6 +45,10 @@ resolve channel identities to Navigator principals through `PrincipalResolver`.
 The callback and notifier registry must remain in the same process for the
 load-bearing in-process delivery path; the publish-only event bus is the
 cross-process fallback.
+
+| Channel | Notifier | Commands | Guide |
+|---|---|---|---|
+| Telegram | generic `TelegramConnectionNotifier` | `/connect [<provider>]`, `/disconnect <provider>`, `/connections` (+ Jira / Office365 aliases) | [Telegram connections](../integrations/telegram-connections.md) |
 
 ## Needs-auth contract
 

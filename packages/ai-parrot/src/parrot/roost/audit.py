@@ -120,7 +120,8 @@ class RoostAuditLedger:
 
         Args:
             msg: The Roost message being audited.
-            direction: ``served`` on the serving agent, ``received`` on the caller.
+            direction: ``served`` on the serving agent, ``received`` on the caller (the conversation
+                initiator). The counterpart is derived from the message, not from *direction*.
             self_name: Name of the agent owning this ledger.
 
         Returns:
@@ -129,7 +130,7 @@ class RoostAuditLedger:
         Raises:
             Exception: Any storage error is logged and re-raised (fail-closed audit).
         """
-        if direction == "served":
+        if msg.sender.name != self_name:
             receiver = self_name
         elif msg.receivers:
             receiver = msg.receivers[0].name

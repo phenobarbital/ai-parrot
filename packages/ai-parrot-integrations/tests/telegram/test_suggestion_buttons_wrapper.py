@@ -32,7 +32,7 @@ def _wrapper(*, enabled=True, authorized=True):
     wrapper._is_authorized = lambda chat_id: authorized
     wrapper._get_or_create_memory = lambda chat_id: "memory"
     wrapper._get_user_session = lambda query: SimpleNamespace(telegram_id=query.from_user.id, authenticated=True)
-    wrapper._invoke_agent = AsyncMock(return_value=SimpleNamespace(suggestions=[]))
+    wrapper._invoke_agent = AsyncMock(return_value=(SimpleNamespace(suggestions=[]), []))
     wrapper._parse_response = lambda r: r
     wrapper._send_parsed_response = AsyncMock()
     wrapper.send_interactive_message = AsyncMock()
@@ -124,7 +124,7 @@ async def test_press_with_feature_disabled_is_an_expiry_not_a_crash():
 async def test_press_sends_follow_up_keyboard_for_new_chips():
     wrapper = _wrapper()
     wrapper._invoke_agent = AsyncMock(
-        return_value=SimpleNamespace(suggestions=[Suggestion(label="More", prompt="more")])
+        return_value=(SimpleNamespace(suggestions=[Suggestion(label="More", prompt="more")]), [])
     )
     token = await wrapper._suggestion_buttons.put(prompt="Why?", output_mode=None, chat_id=10, user_id=7)
     await wrapper._on_suggestion_press(_context(token))

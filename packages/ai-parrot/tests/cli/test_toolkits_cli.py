@@ -76,3 +76,37 @@ def test_status_with_only_claude_config_reports_claude_present_others_absent(tmp
         assert "present" in _state_for("claude")
         assert "absent" in _state_for("codex")
         assert "absent" in _state_for("google")
+
+
+def test_toolkits_install_offers_self_add(tmp_path, monkeypatch):
+    """Spec §4 — a missing distribution prints the `parrot self add <name>` hint after install."""
+    monkeypatch.setattr("parrot.mcp.toolkit_install.dist_available", lambda _dists: False)
+    with CliRunner().isolated_filesystem(temp_dir=tmp_path):
+        result = CliRunner().invoke(cli, ["toolkits", "install", "scraping", "--yes"])
+        assert result.exit_code == 0, result.output
+        assert "parrot self add scraping" in result.output
+
+
+def test_list_hints_self_add_for_missing_dist(tmp_path, monkeypatch):
+    monkeypatch.setattr("parrot.mcp.toolkit_install.dist_available", lambda _dists: False)
+    with CliRunner().isolated_filesystem(temp_dir=tmp_path):
+        result = CliRunner().invoke(cli, ["toolkits", "list"])
+        assert result.exit_code == 0, result.output
+        assert "querysource: missing distribution" in result.output
+        assert "parrot self add querysource" in result.output
+
+
+def test_no_hint_when_dist_available(tmp_path, monkeypatch):
+    monkeypatch.setattr("parrot.mcp.toolkit_install.dist_available", lambda _dists: True)
+    with CliRunner().isolated_filesystem(temp_dir=tmp_path):
+        result = CliRunner().invoke(cli, ["toolkits", "install", "memory", "--yes"])
+        assert result.exit_code == 0, result.output
+        assert "parrot self add" not in result.output
+
+
+def test_inventory_rows_carry_install_metadata(tmp_path):
+    from parrot.mcp.toolkit_install import inventory
+
+    rows = {row.name: row for row in inventory(tmp_path, hosts=[])}
+    assert rows["scraping"].requires_pip == ("ai-parrot-tools[scraping]",)  # TASK-4077 values
+    assert rows["querysource"].requires_env == ("PG_USER", "PG_PWD")

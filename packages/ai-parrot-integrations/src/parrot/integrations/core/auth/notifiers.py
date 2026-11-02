@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from types import SimpleNamespace
 from typing import Any, Dict, Mapping
 
 from parrot.auth.oauth2.events import ConnectionEvent
@@ -33,49 +32,3 @@ class _JiraAdapterBase:
     def _reason(event: ConnectionEvent) -> str:
         """Return a useful failure message without exposing credential material."""
         return event.reason or "Jira connection failed."
-
-
-class TelegramJiraNotifierAdapter(_JiraAdapterBase):
-    """Deliver Jira connection lifecycle events to Telegram."""
-
-    channel = "telegram"
-
-    async def notify(self, event: ConnectionEvent, state_payload: Dict[str, Any]) -> None:
-        """Stamp the Telegram session and send the Jira status message."""
-        if event.provider != "jira":
-            return
-
-        extra = self._extra(state_payload)
-        chat_id = extra.get("chat_id")
-        if not chat_id:
-            logger.info("Skipping Telegram Jira notification without chat_id")
-            return
-
-        try:
-            telegram_user_id = str(state_payload.get("user_id") or "")
-            if event.kind == "connection.completed":
-                stamper = self._app.get("telegram_jira_session_stamper")
-                if stamper is not None and telegram_user_id:
-                    stamper(
-                        telegram_user_id,
-                        SimpleNamespace(
-                            display_name=event.display_name,
-                            site_url=self._site_url(state_payload),
-                            account_id=event.account_id,
-                            cloud_id=(state_payload.get("connection_meta") or {}).get("cloud_id", ""),
-                        ),
-                    )
-
-                notifier = self._app.get("jira_oauth_notifier")
-                if notifier is not None:
-                    await notifier.notify_connected(int(chat_id), event.display_name, self._site_url(state_payload))
-                else:
-                    logger.warning("No Telegram Jira notifier registered")
-            elif event.kind in {"connection.refresh_failed", "connection.revoked"}:
-                notifier = self._app.get("jira_oauth_notifier")
-                if notifier is not None:
-                    await notifier.notify_failure(int(chat_id), self._reason(event))
-                else:
-                    logger.warning("No Telegram Jira notifier registered")
-        except (TypeError, ValueError):
-            logger.warning("Skipping Telegram Jira notification with invalid chat_id=%r", chat_id)

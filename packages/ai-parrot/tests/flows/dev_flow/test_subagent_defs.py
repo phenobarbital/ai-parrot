@@ -50,8 +50,8 @@ def test_loader_unknown_name_raises():
 
 
 def test_loader_reads_package_data_dir():
-    """The loader reads the package copy, not `.claude/agents/`."""
-    pkg_copy = resources.files("parrot.flows.dev_flow") / "_subagent_data" / "sdd-ideation.md"
+    """The loader reads the packaged `_assets/` copy, not `.claude/agents/`."""
+    pkg_copy = resources.files("parrot.sdd") / "_assets" / "claude" / "agents" / "sdd-ideation.md"
     assert pkg_copy.is_file()
     assert load_subagent_definition("sdd-ideation") == _strip_frontmatter(pkg_copy.read_text(encoding="utf-8"))
 
@@ -143,7 +143,7 @@ def test_prompt_handles_slug_collision_as_open_question(body: str):
 
 def test_prompt_carries_feat145_frontmatter(body: str):
     assert "type: feature" in body
-    assert "base_branch: dev" in body
+    assert "base_branch:" in body
     assert "FEAT-145" in body
 
 
@@ -239,7 +239,7 @@ def test_existing_instructions_unchanged(body: str):
     commit, JSON-only output) still holds verbatim."""
     assert 'mode="brainstorm"' in body or 'mode = "brainstorm"' in body
     assert "RESUME/EXTEND IT IN PLACE" in body
-    assert "type: feature" in body and "base_branch: dev" in body
+    assert "type: feature" in body and "base_branch:" in body
     assert "git add sdd/proposals/" in body
     assert "no markdown fences" in body.lower()
 
@@ -264,11 +264,11 @@ def test_prompt_parity_with_repo_twin():
         pytest.skip("`.claude/agents/` not found — installed package, not a checkout.")
 
     repo_copy = agents_dir / "sdd-ideation.md"
-    pkg_copy = resources.files("parrot.flows.dev_flow") / "_subagent_data" / "sdd-ideation.md"
+    pkg_copy = resources.files("parrot.sdd") / "_assets" / "claude" / "agents" / "sdd-ideation.md"
     assert repo_copy.is_file(), f"Expected a repo-level twin at {repo_copy}."
     assert pkg_copy.read_text(encoding="utf-8") == repo_copy.read_text(
         encoding="utf-8"
-    ), "sdd-ideation.md drifted between _subagent_data/ and .claude/agents/."
+    ), "sdd-ideation.md drifted between _assets/ (package) and .claude/agents/ (repo)."
 
 
 def test_repo_twin_has_agent_frontmatter():

@@ -91,6 +91,21 @@ from parrot.observability.cost import get_shared_cost_calculator, last_call_cost
 # FEAT-550: the four public text methods __init_subclass__ wraps with the budget entry adapter.
 _BUDGETED_METHODS: tuple[str, ...] = ("ask", "ask_stream", "resume", "invoke")
 
+_PROVIDER_LABEL_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+
+
+def _safe_provider_label(value: Any) -> str:
+    """Return a tool-supplied provider id only when it is a short plain identifier, else a generic label."""
+    if isinstance(value, str) and _PROVIDER_LABEL_RE.match(value):
+        return value
+    return "the required service"
+
+
+_NEEDS_AUTH_TOOL_MESSAGE = (
+    "The user must connect their {provider} account before this tool can run. "
+    "Do not retry this tool in this turn; tell the user a connection is required."
+)
+
 LLM_PRESETS = {
     "analytical": {"temperature": 0.1, "max_tokens": 4000},
     "creative": {"temperature": 0.7, "max_tokens": 6000},
@@ -1725,6 +1740,9 @@ $backstory
                     # nothing. A tool that errors without a message still
                     # gets a readable one here.
                     raise ValueError(result.error or f"Tool {tool_name} returned status=error without a message")
+                if result.status == "authorization_required":
+                    provider = _safe_provider_label((result.metadata or {}).get("provider"))
+                    return _NEEDS_AUTH_TOOL_MESSAGE.format(provider=provider)
                 return result.result
             return result
         except Exception as e:

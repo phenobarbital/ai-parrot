@@ -387,7 +387,9 @@ def native_sandbox_settings(
         canonical = str(_canonical(path))
         if canonical not in allow_write:
             allow_write.append(canonical)
-    hook_command = shlex.join([sys.executable, str(Path(_we.__file__).resolve()), "--hook"]) + " || exit 2"
+    # `-m` keeps the command free of monorepo paths (C16): the launching interpreter can import
+    # parrot in every supported context (venv editable install, wheel install in a foreign repo).
+    hook_command = shlex.join([sys.executable, "-m", "parrot.sdd.scripts.worktree_environment", "--hook"]) + " || exit 2"
     settings: dict[str, Any] = {
         "hooks": {
             "PreToolUse": [

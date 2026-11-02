@@ -45,7 +45,7 @@ def _wrapper(*, process_message_result=None) -> MSTeamsAgentWrapper:
     wrapper._command_router = None
     wrapper.form_orchestrator = MagicMock()
     wrapper.form_orchestrator.process_message = AsyncMock(
-        return_value=process_message_result or SimpleNamespace(raw_response=None, response_text="Action handled.")
+        return_value=process_message_result or SimpleNamespace(raw_response=None, response_text="Action handled.", needs_form=False)
     )
     wrapper.send_text = AsyncMock()
     wrapper._send_parsed_response = AsyncMock()

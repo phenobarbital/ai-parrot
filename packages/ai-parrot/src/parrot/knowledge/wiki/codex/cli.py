@@ -83,6 +83,12 @@ def codex() -> None:
     default=None,
     help="Env var holding the bearer token (default: `remote.token_env` or WIKITOOLKIT_TOKEN).",
 )
+@click.option(
+    "--portable/--no-portable",
+    default=None,
+    help="Emit bare launcher commands with no absolute paths (committable .codex/config.toml). "
+    "Default: keep the current form (baked absolute paths on a fresh install).",
+)
 def install(
     path_: Optional[str],
     gitignore: bool,
@@ -92,6 +98,7 @@ def install(
     use_remote: bool,
     remote_url: Optional[str],
     token_env: Optional[str],
+    portable: Optional[bool],
 ) -> None:
     """Install WikiToolkit and Bookstore MCP servers and skills for Codex."""
     root = _resolve_root(path_)
@@ -109,7 +116,9 @@ def install(
                 )
             else:
                 raise click.ClickException("--remote needs --remote-url or a `remote` block in .parrot/wiki.json")
-        actions = install_codex_integration(root, config, gitignore=gitignore, bookstore=bookstore, remote=remote)
+        actions = install_codex_integration(
+            root, config, gitignore=gitignore, bookstore=bookstore, remote=remote, portable=portable
+        )
     except (RuntimeError, WikiConfigError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
 

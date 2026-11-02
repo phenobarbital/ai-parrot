@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+import types
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -102,6 +103,10 @@ async def test_stream_save_turn_receives_resolved_tenant_metadata(monkeypatch) -
         logger=MagicMock(),
         _maybe_start_avatar_speaker=AsyncMock(return_value=None),
     )
+    cls = agent_module.AgentTalk
+    handler._cancel_suggestions_task = cls._cancel_suggestions_task
+    for name in ("_write_auth_required_trailer", "_turn_auth_requirement", "_retry_safe"):
+        setattr(handler, name, types.MethodType(getattr(cls, name), handler))
 
     await agent_module.AgentTalk._handle_stream_response(
         handler,

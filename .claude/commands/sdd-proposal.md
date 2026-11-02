@@ -26,15 +26,15 @@ then asks targeted questions about genuine unknowns.
 ## Usage
 
 ```
-/sdd-proposal NAV-8421                          # Jira key
+/sdd-proposal PROJ-123                          # Jira key
 /sdd-proposal "Nextstop no genera el PDF"       # inline text
 /sdd-proposal path/to/notes.md                  # file path
-/sdd-proposal NAV-8421 --mode=investigation     # force mode
-/sdd-proposal NAV-8421 --mode=enrichment
-/sdd-proposal NAV-8421 --no-gate                # skip user gates (autopilot mode)
+/sdd-proposal PROJ-123 --mode=investigation     # force mode
+/sdd-proposal PROJ-123 --mode=enrichment
+/sdd-proposal PROJ-123 --no-gate                # skip user gates (autopilot mode)
 /sdd-proposal --resume FEAT-156                 # resume interrupted run
-/sdd-proposal NAV-8421 --budget=loose           # tight | default | loose
-/sdd-proposal NAV-8421 --no-parallel
+/sdd-proposal PROJ-123 --budget=loose           # tight | default | loose
+/sdd-proposal PROJ-123 --no-parallel
 ```
 
 ## Guardrails
@@ -65,9 +65,9 @@ You must be on `dev`, `staging`, or the integration branch when starting. The
 
 **Validation:** if `TYPE == "feature"` and `BASE_BRANCH == "main"`, abort:
 ```
-⚠️  type='feature' cannot base on 'main'. Features land on dev (default)
-   or staging (during a release freeze). For changes that must base on
-   main, set type='hotfix' in the document frontmatter.
+⚠️  type='feature' cannot base on the hotfix base branch. Features land on the
+   configured base_branch (default) or staging_branch (during a release freeze).
+   For changes that must base on the hotfix base, set type='hotfix' in the document frontmatter.
 ```
 
 ### 1. Parse Input & Allocate FEAT-ID
@@ -304,7 +304,7 @@ For each query in the approved plan, in priority order:
    `${STATE_DIR}/findings/<PREFIX>-<NNN>-<slug>.md` instead. `<slug>` is
    lowercase `[a-z0-9-]` only (the title with every other character replaced
    by `-`): `:`, `*`, `|`, quotes and similar break every Windows checkout, and
-   `scripts/check_portable_paths.py` fails CI on them. The digest is
+   the repository's portable-path CI check fails on them. The digest is
    **compact** — never inline full file content; cite line ranges and excerpts
    only. For wiki findings, cite the wiki page ID and score alongside file paths.
 4. **Decide on recursion.** If a finding surfaces a new file/symbol that
@@ -509,7 +509,7 @@ If `--no-gate` is set OR there are zero unknowns, set `phases.qa.status: "skippe
 
 Build a kebab-case slug from the source summary. For Jira sources, prepend
 the key: `<jira-key>-<slug>`. Examples:
-- `nav-8421-nextstop-pdf-generation-bug`
+- `proj-123-pdf-generation-bug`
 - `redis-token-cache-invalidation`
 
 #### 8b. Render via template
@@ -529,8 +529,7 @@ Set frontmatter:
 - `status: review` if all unknowns resolved but user hasn't accepted
 - `status: accepted` only if the user explicitly says "accept" at the final summary
 - `projects` / `tags` (FEAT-576): `projects` from §2.1 Localization paths
-  (same mapping as `/sdd-brainstorm` §10; vocabulary `KNOWN_PROJECTS` in
-  `scripts/sdd/sdd_meta.py`, unknown values warn); `tags`: 2–6 kebab-case keywords.
+  (same mapping as `/sdd-brainstorm` §10; vocabulary: the project areas in `sdd/CONVENTIONS.md` (§ Project areas), or the `projects` list in `sdd/config.json` when set; unknown values warn); `tags`: 2–6 kebab-case keywords.
 
 Update `state.json`:
 - `phases.output.proposal_path: "sdd/proposals/<slug>.proposal.md"`
@@ -670,4 +669,4 @@ full state for re-verification of the codebase contract.
 - Research-plan prompt:     `sdd/templates/research_plan.prompt.md`
 - Finding digest template:  `sdd/templates/finding.md`
 - SDD methodology:          `sdd/WORKFLOW.md`
-- Worktree policy:          `CLAUDE.md` (section "Worktree Policy")
+- Worktree policy:          `sdd/WORKFLOW.md` (section "Git Configuration")
