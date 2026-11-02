@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — parrot-installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.10, amendment C30 item 7 — proposal rev 0.9)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4095, TASK-5098, TASK-5099, TASK-5100
@@ -167,4 +167,12 @@ parrot sdd ids reserve --kind task --count 1 --base-branch dev --label demo
 ---
 
 ## Completion Note
-_(filled by the implementer)_
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-11-02
+**Notes**: `docs/getting-started.md` and `docs/install/global-runtime.md` helper lines were already in noun spelling; `docs/sdd/WORKFLOW.md` already clean.
+Added the "The `parrot sdd` command tree" section to `docs/install/global-runtime.md` (nouns/verbs checked against `parrot sdd --help`). `CLAUDE.md`
+(`parrot sdd run ensure_worktree` -> `worktree ensure`, three `devloop launch-worker` -> `sdd launch worker`) and `docs/sdd/GUIDE.md`, `PLATFORM.md`,
+`docs/dev_loop/claude-native-sandbox.md` spellings updated. Validation Contract gained test_sdd_ledger_mount, test_check_spec_consequences (test_sdd_launch
+already added by TASK-5100); contract re-cached; `check_task_graph` has no warnings (TASK-5093's stale validation path fixed too).
+**Deviations from spec**: edited docs/sdd/GUIDE.md, PLATFORM.md, docs/dev_loop/claude-native-sandbox.md (not in table, AC-1 grep). AC-1 residue: the
+sandbox doc still names the monorepo `scripts/sdd/launch_worker.sh` alias (row + `### launch_worker.sh reference` heading) — it documents the alias itself.
