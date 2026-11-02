@@ -275,7 +275,8 @@ anchor unique` instead of a bare one-line anchor.
 
 ## Validation Commands
 
-> File-level pytest only — no directories, no package roots.
+> Commands a registered test runner recognises — `pytest`, `vitest`, `cargo test`, `parrot e2e` or an
+> `[extensions]` entry in `.parrot/test_runners.toml`. pytest: file-level only — no directories, no package roots.
 
 - `pytest packages/ai-parrot/tests/flows/dev_loop/test_scope/test_mirror.py -q`
 - `pytest tests/sdd_scripts/test_check_task_graph.py::test_validation_contract_findings -q`

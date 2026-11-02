@@ -15,6 +15,7 @@ from parrot.bots.basic import BasicBot
 from parrot.handlers.studio import agents as agents_module
 from parrot.registry import registry as registry_module
 from parrot.handlers.studio import conversation
+from parrot.handlers.studio.testing._models import CLIENT_SESSIONS_PER_AGENT
 
 from ._scripted_llm import PROVIDER, ScriptedClient, history_seen
 from .test_testing_db_mode import BASE, KEY, _app, pool  # noqa: F401  (pool is a fixture)
@@ -144,3 +145,122 @@ async def test_stop_on_another_worker_still_clears(aiohttp_client, pool, scripte
     await _second_worker(client)  # no live instance on the worker that handles Stop
     assert (await client.delete(f"{BASE}/agents/alpha/test")).status == 200
     assert not [k async for k in shared_redis.scan_iter(match=f"{conversation.KEY_PREFIX}:*")]
+
+
+# ---- conversations the client names (``session_id``): several per agent, each with its own history ----
+
+S1, S2 = "conv-aaaa-1111", "conv-bbbb-2222"
+
+
+async def _ask_in(client, query, conversation, user="u1", name="alpha"):
+    resp = await client.post(
+        f"{BASE}/agents/{name}/test/ask",
+        json={"query": query, "session_id": conversation},
+        headers={"X-User": user},
+    )
+    body = await resp.json()
+    assert resp.status == 200, body
+    return history_seen(body["response"])
+
+
+async def test_client_conversations_keep_separate_histories(aiohttp_client, pool, scripted):
+    client = await _client(aiohttp_client, pool)
+    assert await _ask_in(client, "one", S1) == 0
+    assert await _ask_in(client, "one", S2) == 0
+    assert await _ask_in(client, "two", S1) == 2  # S1 sees only its own first turn
+    assert await _ask_in(client, "two", S2) == 2
+
+
+async def test_client_conversation_is_per_user(aiohttp_client, pool, scripted):
+    client = await _client(aiohttp_client, pool)
+    assert await _ask_in(client, "one", S1, user="u1") == 0
+    assert await _ask_in(client, "one", S1, user="u2") == 0  # the same id from another caller is another conversation
+    assert await _ask_in(client, "two", S1, user="u1") == 2
+    # one instance per caller for the same id: the runtime never hands u2 the instance u1 talks to
+    runtime = client.app["bot_manager"].studio
+    mine, theirs = (runtime._cache.session(KEY.qualified, f"c.{u}.{S1}") for u in ("u1", "u2"))
+    assert mine is not None and theirs is not None and mine is not theirs
+
+
+async def test_client_sid_is_unambiguous(aiohttp_client, pool, scripted):
+    # with "-" between user and id, user "1" in "2-aaaaaaaa" and user "1-2" in "aaaaaaaa" were the one sid
+    client = await _client(aiohttp_client, pool)
+    assert await _ask_in(client, "one", "2-aaaaaaaa", user="1") == 0
+    assert await _ask_in(client, "one", "aaaaaaaa", user="1-2") == 0
+    assert await _ask_in(client, "two", "2-aaaaaaaa", user="1") == 2
+    # the history is keyed by user too, so only the instances tell a shared sid apart: two callers, two instances
+    runtime = client.app["bot_manager"].studio
+    first, second = (runtime._cache.session(KEY.qualified, sid) for sid in ("c.1.2-aaaaaaaa", "c.1-2.aaaaaaaa"))
+    assert first is not None and second is not None and first is not second
+
+
+async def test_client_conversation_leaves_the_default_session_alone(aiohttp_client, pool, scripted):
+    client = await _client(aiohttp_client, pool)
+    assert await _ask(client, "one") == 0
+    assert await _ask_in(client, "one", S1) == 0
+    assert await _ask(client, "two") == 2  # the caller's one test session kept its history
+
+
+async def test_invalid_session_id_is_refused(aiohttp_client, pool, scripted):
+    client = await _client(aiohttp_client, pool)
+    for bad in ("short", "has space in it", "x" * 65, "semi;colon-id"):
+        resp = await client.post(f"{BASE}/agents/alpha/test/ask", json={"query": "q", "session_id": bad})
+        assert resp.status == 400, bad
+        assert (await resp.json())["code"] == "invalid_request"
+    resp = await client.delete(f"{BASE}/agents/alpha/test", params={"session_id": "bad id"})
+    assert resp.status == 400
+
+
+async def test_ending_one_conversation_keeps_the_others(aiohttp_client, pool, scripted):
+    client = await _client(aiohttp_client, pool)
+    assert await _ask_in(client, "one", S1) == 0
+    assert await _ask_in(client, "one", S2) == 0
+    assert (await client.delete(f"{BASE}/agents/alpha/test", params={"session_id": S1})).status == 200
+    assert await _ask_in(client, "two", S1) == 0  # ended: starts empty
+    assert await _ask_in(client, "two", S2) == 2
+
+
+async def test_conversations_per_caller_are_capped_without_touching_other_callers(aiohttp_client, pool, scripted):
+    client = await _client(aiohttp_client, pool)
+    runtime = client.app["bot_manager"].studio
+    assert await _ask_in(client, "one", S1, user="u2") == 0  # another caller's conversation, idle the longest
+    ids = [f"conversation{n:04d}" for n in range(CLIENT_SESSIONS_PER_AGENT + 1)]
+    for conversation_id in ids:
+        assert await _ask_in(client, "one", conversation_id) == 0
+    live = [cid for cid in ids if runtime._cache.session(KEY.qualified, f"c.u1.{cid}") is not None]
+    assert live == ids[1:]  # u1 keeps CLIENT_SESSIONS_PER_AGENT: their least recently used one went
+    assert runtime._cache.session(KEY.qualified, f"c.u2.{S1}") is not None
+
+
+async def test_ending_a_conversation_of_a_legacy_agent_tears_down_its_test_bot(aiohttp_client, pool, scripted):
+    client = await aiohttp_client(_app(pool))
+    manager = client.app["bot_manager"]
+    manager.registry.register("legacy-one", _LegacyScripted)
+    manager._botdef["legacy-one"] = _LegacyScripted
+    assert await _ask(client, "first", name="legacy-one") == 0
+    assert manager._bots
+    resp = await client.delete(f"{BASE}/agents/legacy-one/test", params={"session_id": S1})
+    assert resp.status == 200
+    assert not manager._bots  # the legacy teardown ran, not a no-op "conversation ended"
+
+
+async def test_redis_backend_resumes_a_client_conversation_on_another_worker(
+    aiohttp_client, pool, scripted, shared_redis
+):
+    client = await _client(aiohttp_client, pool)
+    assert await _ask_in(client, "one", S1) == 0
+    runtime = client.app["bot_manager"].studio
+    sid = f"c.u1.{S1}"
+    assert runtime._cache.session(KEY.qualified, sid) is not None
+    runtime.evict_session(KEY, sid)  # what a turn on another worker, or a swept instance, looks like
+    assert await _ask_in(client, "two", S1) == 2
+
+
+async def test_ending_a_client_conversation_clears_its_shared_history(aiohttp_client, pool, scripted, shared_redis):
+    client = await _client(aiohttp_client, pool)
+    assert await _ask_in(client, "one", S1) == 0
+    assert await _ask_in(client, "one", S2) == 0
+    assert (await client.delete(f"{BASE}/agents/alpha/test", params={"session_id": S1})).status == 200
+    keys = [k async for k in shared_redis.scan_iter(match=f"{conversation.KEY_PREFIX}*")]
+    assert not any(k.endswith(f":u1:c.u1.{S1}") for k in keys), keys
+    assert any(k.endswith(f":u1:c.u1.{S2}") for k in keys), keys

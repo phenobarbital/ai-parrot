@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-153 — botmanager-pbac-permissions
 **Spec**: `sdd/specs/botmanager-pbac-permissions.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1049

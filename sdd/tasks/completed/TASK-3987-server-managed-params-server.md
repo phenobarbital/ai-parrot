@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-622 — Agent Studio — Host Toolkits
 **Spec**: `sdd/specs/agentstudio-host-toolkits.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3983, TASK-3984, TASK-3985

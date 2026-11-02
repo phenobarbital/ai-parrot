@@ -1,0 +1,4 @@
+# Required side-file for the second model in this directory (loader.py:111-115).
+governed: false
+roles:
+  admin: {metrics: "*", dimensions: "*", usage: "*"}

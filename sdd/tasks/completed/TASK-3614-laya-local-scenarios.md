@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-589 — Evaluate Laya for typed classification and agent model routing
 **Spec**: `sdd/specs/laya-adoption.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3605, TASK-3606

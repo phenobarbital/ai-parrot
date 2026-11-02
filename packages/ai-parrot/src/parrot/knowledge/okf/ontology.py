@@ -120,6 +120,11 @@ class RelationType(str, Enum):
     ABOUT = "about"
     SUPPORTED_BY = "supported_by"
 
+    # --- Normative decision relations (FEAT-784) ---
+    CONSTRAINS = "constrains"
+    FORBIDS = "forbids"
+    REQUIRES = "requires"
+
 
 class RelatesTo(BaseModel):
     """A typed edge in the knowledge graph.

@@ -1,0 +1,6 @@
+- [ ] **S1 (gate, now in v1 scope)** — does a sub-agent's `claude_code.api_request` carry the
+- [ ] **S3 remainder** — one captured `codex exec --json` run to confirm the stdout event's
+- [ ] **S4** — the three-seat reconciliation run against provider dashboards. Deliberately
+- [ ] Which of the two existing usage datasets survives — does `AttemptUsageRow` gain cache
+- [ ] Which "seat" vocabulary wins, and what is the declared mapping for the other two?
+- [ ] Does the binding path avoid the ~420 ms `wikitoolkit` warm start by being in-process,

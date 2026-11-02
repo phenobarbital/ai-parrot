@@ -47,6 +47,7 @@ from parrot.core.events.lifecycle.events.flow import (
     NodeFailedEvent,
     NodeSkippedEvent,
 )
+from parrot.core.events.lifecycle.events.capability import CapabilityCallEvent  # FEAT-746
 
 __all__ = [
     # Agent domain
@@ -83,4 +84,6 @@ __all__ = [
     "NodeCompletedEvent",
     "NodeFailedEvent",
     "NodeSkippedEvent",
+    # FEAT-746: capability-call domain
+    "CapabilityCallEvent",
 ]

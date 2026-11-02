@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-585 — Plan-then-Execute Hardening
 **Spec**: `sdd/specs/plan-then-execute-hardening.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3600

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-375 — Codex CLI Adversarial Second-Opinion Agent
 **Spec**: `sdd/specs/codex-cli-agent.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1899, TASK-1900, TASK-1901

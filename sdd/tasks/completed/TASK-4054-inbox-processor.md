@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-626 — wikitoolkit inbox autonomous ingestion
 **Spec**: `sdd/specs/wikitoolkit-new-ingestion.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4046, TASK-4049, TASK-4050, TASK-4051, TASK-4052, TASK-4053

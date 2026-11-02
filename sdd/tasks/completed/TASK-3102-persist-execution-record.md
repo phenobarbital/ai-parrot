@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-546 — Design Research Hardening
 **Spec**: `sdd/specs/design-research-hardening.spec.md` (§3 Module 3, §2 Data Models)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3100, TASK-3104

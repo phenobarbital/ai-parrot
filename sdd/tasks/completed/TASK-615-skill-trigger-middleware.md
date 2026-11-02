@@ -2,7 +2,7 @@
 
 **Feature**: Agent Skill System
 **Spec**: `sdd/specs/agent-skill-system.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-613, TASK-614

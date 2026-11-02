@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-479 — Dev-Flow / Dev-Loop Telemetry Accounting on the Lifecycle Bus
 **Spec**: `sdd/specs/devflow-telemetry-accounting.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

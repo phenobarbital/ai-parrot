@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-661 — sdd-lsp-models-fixes
 **Spec**: sdd/specs/sdd-lsp-models-fixes.spec.md
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: none

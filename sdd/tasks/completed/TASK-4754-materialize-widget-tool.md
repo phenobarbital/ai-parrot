@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-757 — Materialize a chat turn as a linked widget
 **Spec**: `sdd/specs/materialize-turn-linked-widget.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4753

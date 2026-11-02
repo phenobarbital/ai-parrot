@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-448 — field-type-catalog-reconciliation
 **Spec**: `sdd/specs/field-type-catalog-reconciliation.spec.md` §4, §5.1
-**Status**: pending · **Priority**: high · **Effort**: M · **Depends-on**: —
+**Status**: done
 
 ## Context
 

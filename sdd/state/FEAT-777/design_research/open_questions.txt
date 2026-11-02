@@ -1,0 +1,5 @@
+- [ ] **Vault persistent backend for non-Jira providers**: Identity Vault for every OAuth provider (extending FEAT-735's `_IDENTITY_OWNED_PROVIDERS`) vs keep `vault_utils`/`VaultTokenSync` for O365/fireflies/workiq — *Owner*: Jesus. *Blocks*: C20. *Plausible*: a) Identity Vault for all 3LO providers · b) Identity Vault for 3LO, `VaultTokenSync` for static keys/device-code.
+- [ ] **Legacy key cutover window and metric** (count of `jira:oauth:telegram:*` without a `telegram` identity row) — *Owner*: Jesus.
+- [ ] **PBAC shape for provider/scope allowlists** (`pbac_action_namespace="integration"` already exists on `OAuth2Provider`): policy in navigator-auth vs tenant config — *Owner*: Jesus.
+- [ ] **Encryption key management** for new vault columns (navconfig secret vs KMS envelope) — *Owner*: Jesus.
+- [ ] **R6 provider facts** (Atlassian rotating refresh, Microsoft refresh lifetime, NetSuite 7-day rotation) — *Owner*: `/sdd-spec` (C23).

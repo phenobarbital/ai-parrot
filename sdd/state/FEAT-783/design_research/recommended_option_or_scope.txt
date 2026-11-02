@@ -1,0 +1,55 @@
+**Scope statement.** Make per-spec usage and cost answerable by extending the attribution
+dimension of the usage pipeline that already exists, closing the codex usage gap, and fixing
+price coverage — not by building a ledger-owned usage plane.
+
+### What's New
+- **A usage read on the codex event stream.** `dispatchers/codex.py` already streams
+  `codex exec --json`; `_usage_from_event` already knows how to parse it. Highest-leverage
+  single change in the whole proposal: the codex seat is **60% of attempts and 0.0006% of
+  recorded tokens**. Natural home is `dispatchers/_shared.py` — twelve siblings share the gap. (F009, F025)
+- **Per-spec attribution ContextVars** (`current_feat_id` / `current_task_id` /
+  `current_attempt_uid` / `current_execution_id`) beside `current_run_id` / `current_seat`,
+  set by the engine, which already owns all four values. (F007, F011)
+- **One `AbstractLogger` sink** persisting attributed `UsageRecord`s, following the
+  `run_ledger.py` precedent: append-only, never merge, so retries do not overwrite each other. (F007)
+- **A cache-creation/cache-write price tier**, plus entries for the models actually run
+  (`gpt-5.6-terra`, `zai.glm-4.7-flash`, `qwen`, `minimax`, `mistral.devstral`) and the
+  Claude 5 family. (F006)
+- **A reader**: `wikitoolkit usage report --feat FEAT-NNN [--by task|seat|model]` and its
+  paired MCP tool, following the TASK-4020 CLI+MCP-in-one-task pattern. (F028)
+- **An OTLP ingestor for the two CLI seats.** Codex speaks `gen_ai.usage.*` natively and can
+  share parrot's schema; Claude Code's `claude_code.*` names do not, so it is the odd one out. (F010, F031)
+
+### What Changes
+| Path | Change | Evidence |
+|---|---|---|
+| `observability/recorders/models.py` | Widen `UsageRecord` with the SDD attribution fields, honouring the PII contract (`feat_id`/`task_id` bounded; `session_id` stays out) | F007 |
+| `observability/subscribers/metrics.py` | Add the new labels under the cardinality whitelist, exactly as FEAT-228 added `parrot.agent.name` | F007, F024 |
+| `models/basic.py` | Widen `CompletionUsage` with `cache_read` / `cache_creation` (and consider Codex's `reasoning_output_tokens`) | F015, F023, F010 |
+| `flows/dev_loop/sdd_coder/telemetry.py` | Add cache counters and cost — **or retire it** in favour of the observability sink; the repo currently has two parallel usage datasets with no shared key | F004, F005, F007 |
+| `flows/dev_loop/dispatchers/codex.py` (+ `_shared.py`) | Read usage from the stream it already parses | F009 |
+| `observability/cost/pricing/*.json` | Refresh, add the cache-creation tier, add the self-hosted and current-generation models | F006 |
+
+### What's Untouched (Non-Goals)
+- **`knowledge/wiki/ledger/`** — no `usage.*` kind, no usage plane, no new DDL. Contradicted
+  on five counts (constraints 3, 4, 14, 15).
+- **`clients/base.py` cost computation** — FEAT-710's G5 stands: computed once at the origin, read, never recomputed.
+- **`memory/compaction` `report_usage`** — implemented, but never fires for coder attempts, Claude Code or Codex.
+- **The existing session-level Grafana/OTel dashboards**, and FEAT-774's BigQuery sink landing upstream in `navigator-eventbus`.
+- **A new `usage/prices.yaml`** — a second price table is two sources of truth for one number.
+
+### Patterns to Follow
+- **FEAT-228** — widen the attribution dimension of existing metrics. Shipped **complete**, 6/6 tasks, 2026-06-08. (F024)
+- **FEAT-479 `run_ledger.py`** — a SINK, not an `EventProvider`; the existing subscriber owns the subscription. (F007)
+- **FEAT-554 `telemetry.py`** — durable root resolved via git-common-dir to the main checkout and **refused** inside a worktree; fail-open writes that never change a dispatch outcome; per-event size cap; path-traversal guard on the id. (F004)
+- **TASK-4020** — ship the CLI subcommand and its MCP tool in one task. (F028)
+
+### Integration Risks
+- Being a **fourth consumer** of `AfterClientCallEvent` is exactly what closed PR #1747. Ride the existing fan-out as a sink.
+- **Two usage datasets already exist with disjoint keys.** Shipping a third without retiring or joining one makes the original problem worse.
+- Both CLI seats are outside `AbstractClient` and neither exports telemetry today; enabling Claude Code's is an ops + prompt-privacy decision.
+- Attributing cost to **abandoned attempts** (correct, and wanted) interacts with `issue:c4d0e7a028ca` — codex seats can never commit, so codex attempts are routinely abandoned and their cost is real.
+- `cumulative_cost_usd` is **process-cumulative**: an `sdd-worker` outliving several tasks yields a rising number that must never be summed per task.
+- `engine.py` is the hottest file in its package with open defects at the exact boundary.
+
+---

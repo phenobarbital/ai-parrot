@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-267 — O365 Device-Code Follow-ups
 **Spec**: `sdd/specs/o365-devicecode-followups.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (&lt;2h)
 **Depends-on**: none

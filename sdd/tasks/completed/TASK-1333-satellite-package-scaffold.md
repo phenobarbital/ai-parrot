@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-201 — ai-parrot-embeddings
 **Spec**: `sdd/specs/ai-parrot-embeddings.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

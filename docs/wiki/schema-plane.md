@@ -145,8 +145,13 @@ wikitoolkit schema ingest-ddl <paths> [OPTIONS]
 **Options:**
 - `--origin <name>` — Source alias. Required.
 - `--dialect <name>` — SQL dialect. Required.
-- `--changed` — With no `<paths>` given, ingest only the `.sql` files that changed in the most
-  recent commit (used by the post-merge hook). Ignored when explicit paths are passed.
+- `--changed` — With no `<paths>` given, ingest only the `.sql` files changed by the operation
+  that last moved `HEAD` (used by the post-commit and post-merge hooks, which share one block).
+  Right after a merge or pull (reflog subject `merge…`, `pull…` or `commit (merge)…`) that is
+  `ORIG_HEAD..HEAD`; after anything else, such as a plain commit, it is that commit's own files.
+  Ignored when explicit paths are passed.
+- `--range <A..B>` — With `--changed`, scan this git range instead of inferring it
+  (e.g. `--range HEAD~3..HEAD` to catch up after several commits).
 - `--json` — Machine-readable report output.
 - `--quiet` — Suppress the summary line (used by the git hook, which redirects output).
 

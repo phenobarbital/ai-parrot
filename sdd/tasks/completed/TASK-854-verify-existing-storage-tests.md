@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-123 — fileinterface-migration
 **Spec**: `sdd/specs/fileinterface-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-851, TASK-852, TASK-853

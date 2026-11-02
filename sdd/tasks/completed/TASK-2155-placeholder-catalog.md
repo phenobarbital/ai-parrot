@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-417 — CommCenter — Bulk Notification Sender over NotifyWorker
 **Spec**: `sdd/specs/commcenter-notify.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Estimated effort note**: standalone module — the most parallelizable task in the feature

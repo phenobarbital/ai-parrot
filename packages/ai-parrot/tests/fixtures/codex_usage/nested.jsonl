@@ -1,0 +1,2 @@
+{"type":"thread.started","session":{"auth_mode":"api_key"}}
+{"type":"turn.completed","info":{"total_token_usage":{"input_tokens":42,"cached_input_tokens":12,"output_tokens":9,"reasoning_output_tokens":3},"cost_microusd":750}}

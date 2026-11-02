@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-421 — Client-declared tenant in the forms URL
 **Spec**: `sdd/specs/forms-tenant-in-url.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

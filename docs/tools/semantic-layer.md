@@ -155,3 +155,30 @@ parrot mcp-local semantic-layer --config /tmp/semantic-mcp/toolkits.yaml
 Exercise both an explicit allow and an explicit deny policy against the real
 server factory. Parsing or listing configuration alone is not evidence that
 the configured PBAC guard binds the static identity around tool execution.
+
+## Example agents
+
+Runnable examples live in `examples/agents/semantic/`, over one committed model fixture
+and a DuckDB warehouse built at run time. Each has a `--smoke` mode that runs offline:
+no LLM call, no network, nothing written outside a temporary directory. A pin test in
+`packages/ai-parrot-semantic/tests/` keeps each one honest, and CI already runs them.
+
+The `llm_metrics_agent.py` example demonstrates an LLM driving the `sl_*` tools through
+`ask(permission_context=...)`. It proves that omitting either the permission context or
+the identity binding fails closed — the agent cannot access any semantic tool without both.
+
+The `mcp_local_agent.py` example exercises the MCP-local path with a real guard factory,
+showing both an explicit allow and an explicit deny decision through
+`create_toolkit_mcp_server`. It validates that the static subject identity is bound around
+every tool call.
+
+The `masked_policy_agent.py` example shows column-level redaction through the `masks:`
+directive. Roles that are not exempt have the column redacted in query results. It also
+demonstrates `saved_queries:` — running a reviewed query by name, which receives the same
+governance as an explicit query.
+
+The `governed_joins_agent.py` example proves that time grains (second, minute, hour, day,
+week, month, quarter, year) work correctly. It also demonstrates that a governed
+cross-model query is DENIED — the governed path refuses to compile a join across models.
+The same join compiles successfully only under the explicitly ungoverned model in
+`models_ungoverned/`, which serves as the compiler surface for ad-hoc analysis.

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-446 — SaaS Auth Hardening (S0 of Parrot Research Cloud)
 **Spec**: `sdd/specs/saas-auth-hardening.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

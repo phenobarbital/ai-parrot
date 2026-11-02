@@ -89,6 +89,8 @@ class TelegramUserSession:
         default=None, repr=False, compare=False
     )
     post_login_ran: bool = field(default=False, repr=False, compare=False)
+    # FEAT-776: True once this session's telegram identity row was written.
+    principal_link_persisted: bool = field(default=False, repr=False, compare=False)
 
     @property
     def user_id(self) -> str:
@@ -218,6 +220,7 @@ class TelegramUserSession:
         self.tool_manager = None
         self.user_agent = None
         self.post_login_ran = False
+        self.principal_link_persisted = False
 
 
 # ---------------------------------------------------------------------------
@@ -677,12 +680,6 @@ class AzureAuthStrategy(AbstractAuthStrategy):
             display_name,
         )
 
-        # FEAT-109: invoke post-auth chain if a registry was injected.
-        # Each registered provider's handle_result is called with the
-        # provider-specific sub-payload from data (e.g. data["jira"]).
-        if self._post_auth_registry and len(self._post_auth_registry) > 0:
-            await self._run_post_auth_chain(data, session)
-
         return True
 
     async def _run_post_auth_chain(
@@ -956,10 +953,6 @@ class GoogleAuthStrategy(AbstractAuthStrategy):
             user_id,
             display_name,
         )
-
-        # Invoke post-auth chain if a registry was injected.
-        if self._post_auth_registry and len(self._post_auth_registry) > 0:
-            await self._run_post_auth_chain(data, session)
 
         return True
 

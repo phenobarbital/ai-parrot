@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-732 — FormDesigner validation audit trail
 **Spec**: `sdd/specs/formdesigner-validation-audit-trail.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4644, TASK-4646, TASK-4649, TASK-4650, TASK-4651

@@ -1,0 +1,1071 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-778",
+  "mode": "enrichment",
+  "summary_oneline": "Domain Experts as declarative bundles: reuse the skills bundle/tenancy loader, the FEAT-321 identity layer, BotConfig/AgentRegistry discovery, the ADR decision plane and L2 retrieval; new surface is the manifest, the KnowledgeResolver and a stage/gate binding on FlowDefinition + ApprovalGate.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/prompts/builder.py",
+      "symbol": "PromptBuilder",
+      "lines": "35-362",
+      "role": "name-keyed layer stack; `identity` is one replaceable slot (add/replace by name, from_system_prompt precedent); KNOWLEDGE_LAYER is the slot for a rendered KnowledgeContext",
+      "evidence": [
+        "F001",
+        "F041"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/prompts/layers.py",
+      "symbol": "PromptLayer / LayerPriority",
+      "lines": "22-141",
+      "role": "layer primitive with priority (IDENTITY=10, CUSTOM=80), phase, cacheable and the FEAT-707 `literal` flag for untrusted authored text",
+      "evidence": [
+        "F041",
+        "F031"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/mixins/identity.py",
+      "symbol": "IdentityMixin",
+      "lines": "40-260",
+      "role": "approved file-based persona precedent: five per-field Markdown files, pristine builder clone, mtime hot reload; identity_dir derived from the class module",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/prompts/identity.py",
+      "symbol": "IdentityFields / IDENTITY_FILES",
+      "lines": "27-40",
+      "role": "the identity file contract (role, goal, capabilities, backstory, rationale)",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+      "symbol": "BotConfig / PromptConfig / AgentKind",
+      "lines": "55-300",
+      "role": "existing declarative agent manifest (tools, toolkits, model, prompt layers, tags, policies, kind) loaded from YAML — the sibling/base for an expert manifest",
+      "evidence": [
+        "F006",
+        "F032",
+        "F042"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+      "symbol": "AgentRegistry.load_agent_definition_file / register / _apply_prompt_config / get_bots_by_tag",
+      "lines": "570-1565",
+      "role": "directory-discovered YAML manifests under AGENTS_DIR/agents; duplicates warn unless replace=True; YAML can add/remove/customize prompt layers; tag index for visible-but-inert experts",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/conf.py",
+      "symbol": "AGENTS_DIR",
+      "lines": "181-194",
+      "role": "workspace root for per-agent assets (prompts/, queries/, kb/, skills/, templates/, flows/) — the precedent location for a workspace expert bundle",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/skills/loader.py",
+      "symbol": "SkillsDirectoryLoader",
+      "lines": "26-104",
+      "role": "closest bundle precedent: discovers {dir}/{name}.md and {dir}/{name}/SKILL.md, warns and skips malformed entries",
+      "evidence": [
+        "F007",
+        "F029"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/skills/models.py",
+      "symbol": "SkillDefinition",
+      "lines": "68-95",
+      "role": "frontmatter-validated Pydantic definition with token_count, assets_dir, global_only",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/skills/tenancy.py",
+      "symbol": "SkillView / tenant_skills_dir / RESERVED_TENANT_NAMES",
+      "lines": "54-248",
+      "role": "workspace-over-package shadowing with global_only locks and reserved dir names (kb, documents, prompts, flows)",
+      "evidence": [
+        "F008",
+        "F034"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/abstract.py",
+      "symbol": "AbstractBot.register_kb / configure_kb / KB activation block",
+      "lines": "1189-3945",
+      "role": "current KB path: priority-sorted retrieval list activated per question by KBSelector; no ordering layers, budget or revision",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/kb.py",
+      "symbol": "KBSelector",
+      "lines": "12-60",
+      "role": "LLM-based KB chooser only (not a loader); dormant for 180 days",
+      "evidence": [
+        "F004",
+        "F037"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py",
+      "symbol": "DecisionRecord / EvidenceRef / ReviewRequest",
+      "lines": "107-303",
+      "role": "ADR record: source_status {proposed, accepted, superseded, …} separate from review_status; evidence hashed by source_sha1; no tags field",
+      "evidence": [
+        "F009",
+        "F043"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/service.py",
+      "symbol": "DecisionService.why / for_symbol",
+      "lines": "276",
+      "role": "LLM-free, token-budgeted ADR reads (budget_tokens) — the `source: adr` consumer target",
+      "evidence": [
+        "F043",
+        "F033"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/toolkit.py",
+      "symbol": "__getattr__",
+      "lines": "1-36",
+      "role": "lazy shim: agent-facing ADR tools ship from parrot_tools.wiki.decisions",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/retrieval/__init__.py",
+      "symbol": "RetrievalRequest / RetrievalBudget / ContextBundle / RetrievalPolicy / SourceDigest",
+      "lines": "1-151",
+      "role": "GraphIndex L2 budgeted, attributable retrieval and digest-based invalidation — the `source: graphindex, mode: retrieval` target",
+      "evidence": [
+        "F011",
+        "F044",
+        "F035"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/export.py",
+      "symbol": "export_okf_bundle / page_frontmatter",
+      "lines": "85-130",
+      "role": "OKF v0.1 bundle shape (frontmatter type/title/id/tags) — export-only boundary; authored Tier-1 bundles would be the read-back direction",
+      "evidence": [
+        "F045"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/bookstore/models.py",
+      "symbol": "BookCard",
+      "lines": "152-180",
+      "role": "DocumentKB-shaped card: book_id, source_sha256, toc_digest, topics (filter key), scope project|global",
+      "evidence": [
+        "F027",
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/contracts/models.py",
+      "symbol": "ContractCard",
+      "lines": "341-457",
+      "role": "card with source_sha256 as citation identity, revision, stale_fields — the richer digest/invalidation precedent",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/wiki/toolkit.py",
+      "symbol": "LLMWikiToolkit / query",
+      "lines": "48-375",
+      "role": "agent-facing wiki tools (wiki_*), scoped by wiki_name namespace, no tag filter",
+      "evidence": [
+        "F020"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/crew_definition.py",
+      "symbol": "AgentDefinition / CrewDefinition / ExecutionMode",
+      "lines": "22-215",
+      "role": "crew manifest (extra=forbid): agents list + execution_mode sequential|parallel|flow|loop; no lead/support role, no hub-and-spoke/mob",
+      "evidence": [
+        "F013",
+        "F014"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+      "symbol": "AgentCrew.from_definition",
+      "lines": "781-800",
+      "role": "class_resolver / tool_resolver injection seam for an expert resolver",
+      "evidence": [
+        "F014"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_flow/definition.py",
+      "symbol": "build_dev_flow_definition / _dev_loop_node",
+      "lines": "104-160",
+      "role": "declarative topology: NodeDefinition(id, type) + EdgeDefinition with CEL predicates; no stage vocabulary (lead/support/inputs/outputs/gate)",
+      "evidence": [
+        "F015",
+        "F036"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/session_state.py",
+      "symbol": "ApprovalGate / SessionHost.open_gate / wait_gate",
+      "lines": "297-1598",
+      "role": "AHP TTL gates with on_expiry fail|approve and payload_ref; GateKind/NodeId are closed dev-loop Literals",
+      "evidence": [
+        "F016"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/human/models.py",
+      "symbol": "HumanInteraction / EscalationPolicy",
+      "lines": "31-398",
+      "role": "channel-facing HITL half (separate from dev_loop gates), stable for 90 days",
+      "evidence": [
+        "F017",
+        "F039"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/spawn.py",
+      "symbol": "SpawnSubAgentTool / _compute_effective_tools",
+      "lines": "39-190",
+      "role": "the delegation tool to deny per expert; registered name `spawn_sub_agent`; allowlist only, no nesting guard",
+      "evidence": [
+        "F018",
+        "F047"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+      "symbol": "ToolManager",
+      "lines": "1945-2029",
+      "role": "PBAC policy denial path — the existing deny mechanism with audit",
+      "evidence": [
+        "F019"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/observability/context.py",
+      "symbol": "agent_identity / usage_attribution / current_seat / current_tenant",
+      "lines": "67-162",
+      "role": "ContextVar attribution; an inline expert needs an agent_identity() scope; seat is a free string, no tier attribute",
+      "evidence": [
+        "F021",
+        "F046"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/base.py",
+      "symbol": "AbstractClient._lightweight_model / _resolve_invoke_model",
+      "lines": "309-2085",
+      "role": "only two-level model-tier precedent; file is off-limits per CONTEXT.md",
+      "evidence": [
+        "F022"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/memory/compaction/budget.py",
+      "symbol": "resolve_window / build_default_budget",
+      "lines": "43-98",
+      "role": "per-model window → ContextBudget; reusable base for KnowledgeContext.budget_tokens",
+      "evidence": [
+        "F026"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/defaults/domains/legal.ontology.yaml",
+      "symbol": "legal ontology header",
+      "lines": "1-6",
+      "role": "one of four bundled versioned domain ontologies (contracts, legal, procedures, field_services) — existing Tier-1 domain artifact and a naming collision for 'domain'",
+      "evidence": [
+        "F023"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/graph/mermaid.py",
+      "symbol": "mermaid codec",
+      "lines": "1-10",
+      "role": "structured Graph as source of truth, Mermaid as derived view — pattern for ComponentCatalogue",
+      "evidence": [
+        "F024"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/contracts/agent.py",
+      "symbol": "ContractsAgent",
+      "lines": "232-240",
+      "role": "hand-built domain expert with a code-level release gate (UngatedAnswerRefused) — primary migration candidate",
+      "evidence": [
+        "F028",
+        "F049"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/legal/librarian/agent.py",
+      "symbol": "LegalLibrarianAgent",
+      "lines": "47-70",
+      "role": "second migration candidate; passes system_prompt verbatim (opts out of composable layers)",
+      "evidence": [
+        "F028"
+      ]
+    },
+    {
+      "path": ".claude/agents/sdd-secondopinion.md",
+      "symbol": "sdd-secondopinion",
+      "lines": "1-67",
+      "role": "operational precedent for blind, advisory, read-only contributions (CONFIRM/REJECT/ESCALATE triage)",
+      "evidence": [
+        "F025"
+      ]
+    },
+    {
+      "path": ".claude/commands/sdd-spec.md",
+      "symbol": "sdd-spec command",
+      "lines": "1",
+      "role": "no subagent delegation seam today; expert delegation is a new section (plus host twins)",
+      "evidence": [
+        "F030"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "The prompt identity is a single replace-by-name slot and configure() destroys templates; per-activation persona swaps must clone a pristine builder (IdentityMixin pattern).",
+      "evidence": [
+        "F001",
+        "F041",
+        "F002"
+      ],
+      "implication": "two inline experts cannot both occupy `identity`; a second named layer (e.g. expert_identity at a distinct priority) or a composition rule is required."
+    },
+    {
+      "statement": "FEAT-321 (approved) explicitly rejected a sectioned single-file persona in favour of five per-field identity files.",
+      "evidence": [
+        "F002",
+        "F050"
+      ],
+      "implication": "the source's four-section persona.md contradicts an approved spec; adopt the identity/ layout or justify a supersede."
+    },
+    {
+      "statement": "User-authored prompt text is injected as PromptLayer(literal=True) (FEAT-707).",
+      "evidence": [
+        "F031",
+        "F034"
+      ],
+      "implication": "persona, rules and knowledge layers must be literal (never `$`-substituted)."
+    },
+    {
+      "statement": "registry.py is under active change (15 commits in 4 days, FEAT-746/747 review fixes on 2026-10-30) and duplicate names warn rather than fail.",
+      "evidence": [
+        "F032",
+        "F006"
+      ],
+      "implication": "branch expert discovery after FEAT-746/747 settle; 'duplicate experts fail on load' is a stricter rule than the registry's."
+    },
+    {
+      "statement": "Tool gating is allowlist-shaped (allowed_tools on Agent/MCP/spawn) plus PBAC policy denial; no deny-list field exists and the delegation tool is registered as `spawn_sub_agent`.",
+      "evidence": [
+        "F019",
+        "F018",
+        "F047"
+      ],
+      "implication": "`tools_deny` is either a new field or expressed as an allowlist/PBAC rule; the invariant must name `spawn_sub_agent`."
+    },
+    {
+      "statement": "AHP gates (ApprovalGate, TTL fail-closed/fail-open) are typed to the dev-loop (closed GateKind/NodeId Literals); parrot/human HITL models are a separate mechanism.",
+      "evidence": [
+        "F016",
+        "F017",
+        "F039"
+      ],
+      "implication": "a stage gate must widen the Literals, lift the gate into flows/core, or build on parrot/human; two gate stacks must not become three."
+    },
+    {
+      "statement": "CrewDefinition/AgentDefinition are extra=forbid with no lead/support role and no hub-and-spoke or mob execution mode.",
+      "evidence": [
+        "F013",
+        "F014"
+      ],
+      "implication": "subagent/mob dispatch is new orchestration on top of `parallel` + a lead integration step, not a config flag."
+    },
+    {
+      "statement": "ADR records carry source_status and review_status but no tags; reads are LLM-free and token-budgeted (budget_tokens).",
+      "evidence": [
+        "F009",
+        "F043",
+        "F033"
+      ],
+      "implication": "`filter: {status: [accepted]}` is directly supported; a domain/tag filter needs wiki tags or links to component pages."
+    },
+    {
+      "statement": "Agent-facing wiki access scopes by wiki_name namespace (LLMWikiToolkit.query has no tag parameter); the bookstore filter key is `topics`.",
+      "evidence": [
+        "F020",
+        "F027",
+        "F012"
+      ],
+      "implication": "`scope: {tags: [...]}` maps to a per-expert wiki namespace or a new tag filter in parrot_tools, and to `topics` on the bookstore."
+    },
+    {
+      "statement": "parrot/clients/base.py must not be modified (CONTEXT.md) and holds the only model-tier precedent (_lightweight_model).",
+      "evidence": [
+        "F022"
+      ],
+      "implication": "tier → model/effort projection lives at manifest load (BotConfig.model) or in flow seats, never in the client."
+    },
+    {
+      "statement": "Agent-facing toolkits (wiki, decisions, graphindex) ship from ai-parrot-tools; core keeps shims.",
+      "evidence": [
+        "F010",
+        "F020",
+        "F035"
+      ],
+      "implication": "the mandatory wikitoolkit/bookstore/graphindex access is a parrot_tools dependency of the expert runtime."
+    },
+    {
+      "statement": "The current KB path is retrieval-shaped (search per question) and dormant; inline always-present layers have no KB equivalent.",
+      "evidence": [
+        "F003",
+        "F004",
+        "F037"
+      ],
+      "implication": "a KnowledgeResolver owns inline layers via the prompt stack; replacing the KB search path is a separate, riskier change."
+    },
+    {
+      "statement": "RESERVED_TENANT_NAMES already reserves kb, documents, prompts, flows under an agent root; `.parrot/` is only used for crew_wiki.",
+      "evidence": [
+        "F008",
+        "F014",
+        "F005"
+      ],
+      "implication": "new directory names (experts/, knowledge/) must be checked against the reserved set; AGENTS_DIR is the precedent root."
+    },
+    {
+      "statement": "ContractsAgent routes every answer through a code-level release gate that raises UngatedAnswerRefused.",
+      "evidence": [
+        "F049"
+      ],
+      "implication": "a declarative bundle cannot express that gate; migration must keep code hooks (toolkit + answer service) beside persona/knowledge files."
+    },
+    {
+      "statement": "Subagent personas for the dev-flow are shipped as data files in four hand-synced copies (_subagent_data + .claude/.agent/.agents).",
+      "evidence": [
+        "F036",
+        "F030"
+      ],
+      "implication": "delegation from sdd-spec/sdd-proposal must be added to the command and its host twins; a single-source bundle would reduce that drift."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      {
+        "item": "ExpertManifest (Pydantic) + expert bundle loader",
+        "role": "validates expert.yaml (name==dir, mandatory wiki source, mandatory spawn_sub_agent deny, tier) and discovers bundles by presence, modelled on SkillsDirectoryLoader/parse_skill_directory and SkillView shadowing",
+        "evidence": [
+          "F007",
+          "F008",
+          "F006",
+          "F042"
+        ]
+      },
+      {
+        "item": "KnowledgeResolver → KnowledgeContext",
+        "role": "pure, deterministic, ordered and token-budgeted layer resolution (rules → tier-1 shared → tier-1 expert → tier-2 shared → tier-2 expert → accepted ADRs → stage inputs → retrieval handles) rendered into the KNOWLEDGE_LAYER as a literal layer",
+        "evidence": [
+          "F001",
+          "F026",
+          "F043",
+          "F044",
+          "F008"
+        ]
+      },
+      {
+        "item": "Governance rules chain",
+        "role": "additive ALWAYS/NEVER layers org → team → project → expert → stage; no precedent exists in memory or prompts",
+        "evidence": [
+          "F048",
+          "F050"
+        ]
+      },
+      {
+        "item": "Stage node type + stage compiler",
+        "role": "a NODE_REGISTRY node whose config carries lead/support/mode/inputs/outputs(schema)/gate, compiled into a FlowDefinition; validation fails on unknown expert or schema-less artifact",
+        "evidence": [
+          "F015",
+          "F014"
+        ]
+      },
+      {
+        "item": "Blind-contribution protocol (validate / write / review capabilities)",
+        "role": "contributions/<slug>.md identity-marked artifacts, lead integration, gate that requires all contributions; codifies the sdd-secondopinion brief",
+        "evidence": [
+          "F025",
+          "F030"
+        ]
+      },
+      {
+        "item": "Expert activation scope",
+        "role": "agent_identity(expert) + usage_attribution(run, '<stage>.<expert>') around each activation so OTEL attributes the expert, not the conductor",
+        "evidence": [
+          "F021",
+          "F046"
+        ]
+      }
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+        "symbol": "AgentRegistry / BotConfig / AgentKind",
+        "change": "discover expert bundles (new kind or sibling loader feeding the registry), strict duplicate handling for experts, tag index for inert experts",
+        "evidence": [
+          "F006",
+          "F032"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/bots/mixins/identity.py",
+        "symbol": "IdentityMixin",
+        "change": "accept an explicit identity_dir from a bundle (today derived from the class module) and expose the pristine-clone swap for per-activation personas",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/bots/prompts/layers.py",
+        "symbol": "LayerPriority / layer constants",
+        "change": "a named expert-identity/rules layer at a distinct priority if stacking over the conductor identity is chosen",
+        "evidence": [
+          "F041",
+          "F031"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py",
+        "symbol": "AgentCrew.from_definition",
+        "change": "class_resolver/tool_resolver that resolves an expert name to a configured agent",
+        "evidence": [
+          "F014"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/flows/dev_loop/session_state.py",
+        "symbol": "GateKind / NodeId / ApprovalGate",
+        "change": "widen the closed Literals (or lift the gate into a generic host) to add approve_or_request_changes for stages",
+        "evidence": [
+          "F016"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/wiki/toolkit.py",
+        "symbol": "LLMWikiToolkit.query",
+        "change": "tag/topics scoping or per-expert namespace binding for the mandatory wiki source",
+        "evidence": [
+          "F020"
+        ]
+      },
+      {
+        "path": ".claude/commands/sdd-spec.md",
+        "symbol": "sdd-spec command (+ .agent/.agents twins)",
+        "change": "new delegation section for validate/write/review capabilities",
+        "evidence": [
+          "F030",
+          "F036"
+        ]
+      }
+    ],
+    "untouched": [
+      "packages/ai-parrot/src/parrot/clients/base.py — tier projection never lands here [F022]",
+      "AbstractBot KB search path (register_kb / KBSelector) — kept as the retrieval-shaped KB in phase 1; the resolver owns inline layers only [F003, F004]",
+      "parrot/human models and channels — reused, not redesigned [F017, F039]",
+      "GraphIndex L2 internals and bookstore ingestion — consumed through RetrievalRequest/BookCard, not changed [F044, F027]",
+      "Observability plumbing — scopes are added, no new ContextVars except optionally a tier attribute [F021]",
+      "CVE feed ingestion, admin UI, multi-team mode — out of scope per the source"
+    ],
+    "patterns_to_follow": [
+      "Composite bundle discovery + frontmatter validation + token_count + assets_dir (skills) [F007, F008]",
+      "SkillView tenant-over-global shadowing with global_only locks for Tier-2-over-Tier-1 [F008, F034]",
+      "IdentityMixin pristine clone + mtime hot reload for persona swaps [F002]",
+      "PromptLayer(literal=True) for every authored/untrusted layer [F031]",
+      "FlowDefinition nodes by type from NODE_REGISTRY + CEL-conditioned edges for the scope grid [F015]",
+      "ApprovalGate on_expiry fail|approve with payload_ref pointing at contributions [F016]",
+      "DecisionService.why/for_symbol with budget_tokens; produced ADRs follow origin=inferred + review_status gate [F043, F009]",
+      "RetrievalRequest/RetrievalBudget → ContextBundle and SourceDigest invalidation for retrieval-mode sources [F044]",
+      "BookCard source_sha256 + topics + scope project|global as the DocumentKB contract [F027, F012]",
+      "sdd-secondopinion neutral brief for blind review contributions [F025]",
+      "build_default_budget/resolve_window for model-derived budgets [F026]",
+      "Agent-facing tools in parrot_tools, shims in core [F010]"
+    ],
+    "integration_risks": [
+      {
+        "risk": "Registry churn: FEAT-746/747 fixes still landing on registry.py",
+        "impact": "merge conflicts / moving AgentKind semantics",
+        "mitigation": "branch after they settle; keep expert discovery a sibling loader",
+        "evidence": [
+          "F032"
+        ]
+      },
+      {
+        "risk": "Identity contract conflict with approved FEAT-321 (persona.md sections rejected)",
+        "impact": "two persona formats",
+        "mitigation": "adopt identity/ five-file layout, or author a supersede ADR",
+        "evidence": [
+          "F002",
+          "F050"
+        ]
+      },
+      {
+        "risk": "Two gate mechanisms (dev_loop ApprovalGate vs parrot/human) with closed Literals",
+        "impact": "a third gate stack or tight coupling to dev_loop",
+        "mitigation": "decide lift-vs-widen before phase 4",
+        "evidence": [
+          "F016",
+          "F017"
+        ]
+      },
+      {
+        "risk": "No deny-list; `tools_deny` naming does not match the real tool name",
+        "impact": "invariant not enforced",
+        "mitigation": "express as allowlist/PBAC rule naming spawn_sub_agent; add a nesting guard",
+        "evidence": [
+          "F018",
+          "F019"
+        ]
+      },
+      {
+        "risk": "Wiki scoping is by namespace, not tags",
+        "impact": "mandatory `scope: {tags}` cannot be honoured today",
+        "mitigation": "per-expert wiki namespace first; tag filter later in parrot_tools",
+        "evidence": [
+          "F020",
+          "F045"
+        ]
+      },
+      {
+        "risk": "Vocabulary collisions: 'domain' (ontology domains) and 'tier' (HITL escalation tiers)",
+        "impact": "confusing APIs and docs",
+        "mitigation": "name the manifest field e.g. `judgement` or `model_class`; avoid 'domain' in module names",
+        "evidence": [
+          "F023",
+          "F050"
+        ]
+      },
+      {
+        "risk": "Contracts migration cannot be purely declarative",
+        "impact": "a 'migration proves the contract' goal fails",
+        "mitigation": "bundle = persona + knowledge + rules; code hooks remain for toolkit and answer gate",
+        "evidence": [
+          "F049",
+          "F028"
+        ]
+      },
+      {
+        "risk": "Four hand-synced copies of commands/agent briefs",
+        "impact": "delegation protocol drifts between hosts",
+        "mitigation": "generate twins from one source or keep the protocol in a shared data file",
+        "evidence": [
+          "F036",
+          "F030"
+        ]
+      },
+      {
+        "risk": "Scope breadth (5 phases) in one feature",
+        "impact": "long-lived branch, high collision surface",
+        "mitigation": "spec phases 1–2 as FEAT-778; stage/dispatch/scope grid as a follow-up spec",
+        "evidence": [
+          "F015",
+          "F014",
+          "F016"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "PromptBuilder keeps layers by name; `identity` is one replaceable slot and from_system_prompt already swaps it.",
+      "evidence": [
+        "F001",
+        "F041"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of builder.py 35-362; probe confirmed add/replace/build/from_system_prompt."
+    },
+    {
+      "id": "C2",
+      "statement": "An approved file-based identity contract exists (IdentityMixin, five per-field files, hot reload) and it rejected a sectioned single persona.md.",
+      "evidence": [
+        "F002",
+        "F050"
+      ],
+      "confidence": "high",
+      "reasoning": "code read + spec/brainstorm page; probe confirmed IdentityMixin, _resolve_identity_dir, _reload_identity, IdentityFields."
+    },
+    {
+      "id": "C3",
+      "statement": "The skills subsystem (composite bundle loader, SkillDefinition token_count/assets_dir/global_only, SkillView shadowing, reserved names) is the closest architectural twin of the expert bundle.",
+      "evidence": [
+        "F007",
+        "F008",
+        "F029",
+        "F034"
+      ],
+      "confidence": "high",
+      "reasoning": "direct reads of loader/models/tenancy/parsers; all symbols probed found."
+    },
+    {
+      "id": "C4",
+      "statement": "AgentRegistry already loads directory-discovered YAML manifests into BotConfig with a kind discriminator and can mutate prompt layers from YAML; duplicates warn, not fail.",
+      "evidence": [
+        "F006",
+        "F042"
+      ],
+      "confidence": "high",
+      "reasoning": "registry.py read 243-1159 + fixture test; probe confirmed register(replace=False), load_agent_definition_file, _apply_prompt_config."
+    },
+    {
+      "id": "C5",
+      "statement": "AGENTS_DIR/{agent}/… is the workspace asset convention; no experts/ or .parrot/ root exists (crew_wiki aside).",
+      "evidence": [
+        "F005",
+        "F014"
+      ],
+      "confidence": "high",
+      "reasoning": "grep over conf.py and callers; absence confirmed by grep (30 matches, none for experts/)."
+    },
+    {
+      "id": "C6",
+      "statement": "The current KB path is a priority-sorted, per-question retrieval list with no layer order, budget or revision; bots/kb.py is only the KBSelector and has had no commits in 180 days.",
+      "evidence": [
+        "F003",
+        "F004",
+        "F037"
+      ],
+      "confidence": "high",
+      "reasoning": "read + grep + git log; probe confirmed register_kb:1189, configure_kb:1577, KBSelector:27."
+    },
+    {
+      "id": "C7",
+      "statement": "A complete ADR decision plane exists with status/review lifecycle, sha-hashed evidence, LLM-free budgeted reads, and no tag field.",
+      "evidence": [
+        "F009",
+        "F043",
+        "F033",
+        "F010"
+      ],
+      "confidence": "high",
+      "reasoning": "models.py read + wiki page + git log; probe confirmed DecisionRecord:172, why:276 signature with budget_tokens."
+    },
+    {
+      "id": "C8",
+      "statement": "GraphIndex L2 exposes RetrievalRequest/RetrievalBudget → ContextBundle and SourceDigest invalidation, stable since 2026-08-20.",
+      "evidence": [
+        "F011",
+        "F044",
+        "F035"
+      ],
+      "confidence": "high",
+      "reasoning": "package init read + wiki page + git log; derive_digest:71 confirmed."
+    },
+    {
+      "id": "C9",
+      "statement": "Document digests (source_sha256, toc_digest, topics, scope project|global) already exist on BookCard/ContractCard; no generic 'invalidate summary on digest change' rule on BookCard.",
+      "evidence": [
+        "F012",
+        "F027",
+        "F038"
+      ],
+      "confidence": "medium",
+      "reasoning": "models read; the invalidation rule was inferred absent from models.py only — library.py/catalog.py were not read."
+    },
+    {
+      "id": "C10",
+      "statement": "Agent-facing wiki access (LLMWikiToolkit) scopes by wiki_name and has no tag filter.",
+      "evidence": [
+        "F020"
+      ],
+      "confidence": "high",
+      "reasoning": "toolkit.py read; probe shows query(wiki_name, question, file_answer, mode) with no tag parameter."
+    },
+    {
+      "id": "C11",
+      "statement": "CrewDefinition/AgentDefinition have no lead/support role and only sequential|parallel|flow|loop modes; from_definition exposes resolver seams.",
+      "evidence": [
+        "F013",
+        "F014"
+      ],
+      "confidence": "high",
+      "reasoning": "models + crew.py read; symbols probed found."
+    },
+    {
+      "id": "C12",
+      "statement": "Declarative flows are FlowDefinition(NodeDefinition type from NODE_REGISTRY + CEL edges) with no stage vocabulary; a stage is a new node type.",
+      "evidence": [
+        "F015",
+        "F036"
+      ],
+      "confidence": "high",
+      "reasoning": "definition.py read; flow/definition.py NodeDefinition config field not read (cross-lane note), so 'config carries stage fields' is a design inference."
+    },
+    {
+      "id": "C13",
+      "statement": "AHP gates with TTL fail-closed/fail-open exist as dev_loop ApprovalGate with closed GateKind/NodeId Literals; parrot/human is a separate, stable HITL stack.",
+      "evidence": [
+        "F016",
+        "F017",
+        "F039"
+      ],
+      "confidence": "high",
+      "reasoning": "session_state.py grep/read + spec page + git log; open_gate signature confirmed."
+    },
+    {
+      "id": "C14",
+      "statement": "The delegation tool is SpawnSubAgentTool registered as `spawn_sub_agent`, allowlist-only, with no nesting guard; no deny-list field exists anywhere.",
+      "evidence": [
+        "F018",
+        "F019",
+        "F047"
+      ],
+      "confidence": "high",
+      "reasoning": "spawn.py read + repo-wide grep for deny identifiers (none); probe signature shows name='spawn_sub_agent'."
+    },
+    {
+      "id": "C15",
+      "statement": "Per-agent OTEL attribution is ContextVar-based; an inline expert needs an explicit agent_identity() scope and there is no tier attribute.",
+      "evidence": [
+        "F021",
+        "F046"
+      ],
+      "confidence": "high",
+      "reasoning": "context.py read; agent_identity/usage_attribution confirmed."
+    },
+    {
+      "id": "C16",
+      "statement": "Only a two-level model-tier precedent exists (_lightweight_model) and clients/base.py is off-limits; flows use per-run 'seats' for model choice.",
+      "evidence": [
+        "F022",
+        "F036"
+      ],
+      "confidence": "medium",
+      "reasoning": "grep of base.py + dev_flow git log; the seat mechanism was seen in commit messages, not read."
+    },
+    {
+      "id": "C17",
+      "statement": "No org/team/project rules chain exists; the nearest primitives are ContextAssembler weights and ContextBudget.",
+      "evidence": [
+        "F048",
+        "F026"
+      ],
+      "confidence": "medium",
+      "reasoning": "evidence of absence from wiki + spec; a repo-wide grep for such files was not run."
+    },
+    {
+      "id": "C18",
+      "statement": "Hand-built domain agents exist for contracts (code-level release gate) and legal (verbatim system prompt); no trading agent exists.",
+      "evidence": [
+        "F028",
+        "F049",
+        "F023"
+      ],
+      "confidence": "high",
+      "reasoning": "grep across packages + wiki page; ContractsAgent:232 and LegalLibrarianAgent:47 confirmed."
+    },
+    {
+      "id": "C19",
+      "statement": "sdd-spec has no subagent delegation seam today; sdd-proposal and sdd-secondopinion provide the delegation and blind-review precedents.",
+      "evidence": [
+        "F030",
+        "F025"
+      ],
+      "confidence": "high",
+      "reasoning": "grep of the command file (no matches) + agent brief read."
+    },
+    {
+      "id": "C20",
+      "statement": "No other SDD document covers domain experts; the source is already committed on dev (2f8d4c397).",
+      "evidence": [
+        "F040",
+        "F050"
+      ],
+      "confidence": "high",
+      "reasoning": "filtered git log + wiki query; parent verified the commit."
+    },
+    {
+      "id": "C21",
+      "statement": "Authored Tier-1 OKF knowledge files can be served as a file-backed wiki namespace rather than a new loader.",
+      "evidence": [
+        "F045"
+      ],
+      "confidence": "low",
+      "reasoning": "inferred from OKF_TYPE_TO_CATEGORY ('file_store backend reads back'); the file_store backend itself was not located (cross-lane note)."
+    },
+    {
+      "id": "C22",
+      "statement": "The registry is a collision hotspot right now (FEAT-746/747 fixes on 2026-10-30).",
+      "evidence": [
+        "F032"
+      ],
+      "confidence": "high",
+      "reasoning": "git log shows 15 commits in 4 days including same-day review fixes."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Persona contract: adopt the approved FEAT-321 identity/ layout (role/goal/capabilities/backstory/rationale files) for the expert persona, or add a parser for the AI-DLC four-section persona.md that FEAT-321 rejected?",
+      "blocks_claims": [
+        "C2"
+      ],
+      "plausible_answers": [
+        "reuse identity/ five files (no new parser, consistent with FEAT-321)",
+        "persona.md with the four AI-DLC sections, superseding FEAT-321's rejection via an ADR",
+        "both: identity/ for the prompt layer, persona.md kept as human-readable documentation only"
+      ],
+      "ask_user": true,
+      "user_answer": "Both — identity/ five files feed the prompt layer; persona.md is kept as human-readable documentation only",
+      "resolved_at": "2026-10-30T17:18:45Z"
+    },
+    {
+      "id": "U2",
+      "question": "Where do expert bundles live? AGENTS_DIR/experts/<slug> with tenant shadowing (skills precedent), package-bundled experts in ai-parrot-tools with a workspace overlay, or a new .parrot/experts root as in the source?",
+      "blocks_claims": [
+        "C3",
+        "C5"
+      ],
+      "plausible_answers": [
+        "AGENTS_DIR/experts/<slug> (+ tenants/<t>/experts shadowing)",
+        "package-bundled Tier 1 in ai-parrot-tools + AGENTS_DIR overlay for Tier 2",
+        ".parrot/experts (new root, as drafted)"
+      ],
+      "ask_user": true,
+      "user_answer": "AGENTS_DIR/experts/<slug> — workspace bundles beside agents; Tier 2 via tenants/<t>/experts shadowing, same rules as skills (global_only locks)",
+      "resolved_at": "2026-10-30T17:18:45Z"
+    },
+    {
+      "id": "U3",
+      "question": "Registry integration: is an expert a BotConfig with a new AgentKind.EXPERT, a sibling ExpertManifest/ExpertRegistry that feeds AgentRegistry, or a DomainExpert Agent subclass?",
+      "blocks_claims": [
+        "C4",
+        "C22"
+      ],
+      "plausible_answers": [
+        "AgentKind.EXPERT on BotConfig (one registry, one YAML format)",
+        "sibling ExpertRegistry + ExpertManifest feeding AgentRegistry (decoupled from FEAT-746 churn)",
+        "DomainExpert(Agent) subclass configured from the bundle"
+      ],
+      "ask_user": true,
+      "user_answer": "Sibling ExpertManifest + ExpertRegistry — own Pydantic manifest and loader that registers a configured agent into AgentRegistry; decoupled from the FEAT-746/747 churn; strict duplicate rule stays local",
+      "resolved_at": "2026-10-30T17:18:45Z"
+    },
+    {
+      "id": "U4",
+      "question": "Stage gates: widen dev_loop's GateKind/NodeId Literals, lift ApprovalGate into a generic flows/core host, or build stage gates on parrot/human HumanInteraction?",
+      "blocks_claims": [
+        "C13"
+      ],
+      "plausible_answers": [
+        "lift ApprovalGate into flows/core (generic host, dev_loop becomes a consumer)",
+        "widen the dev_loop Literals (fastest, couples experts to dev_loop)",
+        "parrot/human HumanInteraction + EscalationPolicy"
+      ],
+      "ask_user": true,
+      "user_answer": "Lift ApprovalGate into flows/core — generic gate host with open GateKind; dev_loop becomes a consumer",
+      "resolved_at": "2026-10-30T17:18:45Z"
+    },
+    {
+      "id": "U5",
+      "question": "Phase-1 blast radius: does the KnowledgeResolver replace AbstractBot's KB search path (as the source says) or coexist with it, owning only the inline layers?",
+      "blocks_claims": [
+        "C6"
+      ],
+      "plausible_answers": [
+        "coexist: resolver owns inline layers, KB path untouched in phase 1",
+        "replace: KB path becomes a retrieval source of the resolver in phase 1",
+        "replace later: coexist in phase 1, fold KB in a dedicated follow-up"
+      ],
+      "ask_user": true,
+      "user_answer": "Replace in phase 1 — the KB path becomes a `mode: retrieval` source of the resolver now (higher blast radius in abstract.py accepted)",
+      "resolved_at": "2026-10-30T17:18:45Z"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and the five open forks are decisions, not research gaps; after Phase-5 answers, spec FEAT-778 as phases 1–2 (manifest + loader + resolver + persona layer + rules/ADR/wiki) and route the stage/dispatch/scope-grid layer (phases 3–4) to its own brainstorm."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014",
+      "F015",
+      "F016",
+      "F017",
+      "F018",
+      "F019",
+      "F020",
+      "F021",
+      "F022",
+      "F023",
+      "F024",
+      "F025",
+      "F026",
+      "F027",
+      "F028",
+      "F029",
+      "F030",
+      "F031",
+      "F032",
+      "F033",
+      "F034",
+      "F035",
+      "F036",
+      "F037",
+      "F038",
+      "F039",
+      "F040",
+      "F041",
+      "F042",
+      "F043",
+      "F044",
+      "F045",
+      "F046",
+      "F047",
+      "F048",
+      "F049",
+      "F050"
+    ],
+    "findings_unused": [],
+    "notes": "Scope confidence is medium because the source spans five phases and several architectural forks (U1–U5); localization confidence is high. Cross-lane follow-ups not executed: flow/definition.py NodeDefinition config shape, the wiki file_store backend, parrot_tools.wiki.decisions tool list, bookstore library.py invalidation rule. Phase-5 Q&A resolved U1–U5 on 2026-10-30 (see unknowns[].user_answer)."
+  }
+}

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-133 — DB-Persisted Reranker & Parent-Searcher Config for AI Bots
 **Spec**: `sdd/specs/bot-reranker-and-parent-searcher-config.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-905, TASK-906, TASK-907

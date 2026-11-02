@@ -2,7 +2,7 @@
 
 **Feature**: endcap-no-shelves-promotional-fix
 **Spec**: `sdd/specs/endcap-no-shelves-promotional-fix.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

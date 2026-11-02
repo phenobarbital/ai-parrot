@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-604 — Merge-Tier Validation Cost
 **Spec**: `sdd/specs/merge-tier-validation-cost.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h wall clock; ~2h measurement budget by decision)
 **Depends-on**: none

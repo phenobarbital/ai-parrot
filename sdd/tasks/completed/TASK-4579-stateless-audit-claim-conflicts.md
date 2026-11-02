@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-717 — Shared-log claim conflicts (stateless audit count and superseded-claim filter)
 **Spec**: `sdd/specs/fixgroup-c2982b4864f3.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4578

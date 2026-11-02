@@ -1,8 +1,8 @@
 {
   "pricing": {
     "source": "https://huggingface.co/pricing",
-    "last_updated": "2026-06-10",
-    "note": "HuggingFace Inference Endpoints pricing varies by hardware tier and is not bundled. Cost calculation returns null for all HuggingFace models."
+    "last_updated": "2026-11-01",
+    "note": "HuggingFace Inference Endpoints pricing varies by hardware tier and is not bundled. Cost calculation returns null for all HuggingFace models. Operator-confirmed 2026-11-01: only free models are used, so no cost is attributed."
   },
   "models": {}
 }

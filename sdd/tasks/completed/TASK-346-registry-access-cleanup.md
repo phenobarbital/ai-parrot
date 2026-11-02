@@ -3,7 +3,7 @@
 **Feature**: API Bot Creation — Normalization & Provisioning
 **Feature ID**: FEAT-049
 **Spec**: `sdd/specs/new-api-bot-creation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-438 — OpenAI-Compatible Client Base (OpenAIBaseClient)
 **Spec**: `sdd/specs/openai-compatible-clients.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2296

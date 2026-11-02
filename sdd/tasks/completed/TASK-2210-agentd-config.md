@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-422 — Agent CLI Daemon
 **Spec**: `sdd/specs/agent-cli-daemon.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

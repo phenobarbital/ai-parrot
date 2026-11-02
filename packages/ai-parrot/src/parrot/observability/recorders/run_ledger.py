@@ -45,7 +45,8 @@ class SeatUsage(BaseModel):
             usage; ``None`` when every cycle was unreported (never a
             fabricated ``0``).
         output_tokens: Sum of output tokens, same convention.
-        rounds: Number of retained cycles for this seat.
+        rounds: Number of distinct attempts for this seat; records without an
+            ``attempt_uid`` count individually.
         failures: Number of cycles with ``status == "failed"``.
     """
 
@@ -136,7 +137,8 @@ class RunLedgerRecorder(AbstractLogger):
 
         Sums skip records with ``usage_reported=False`` rather than
         coercing; a seat with no reported usage at all yields ``None`` for
-        both token sums, never a fabricated ``0``.
+        both token sums, never a fabricated ``0``. Rounds count distinct
+        attempts, while records without an ``attempt_uid`` count individually.
         """
         by_seat: dict[str, list[UsageRecord]] = {}
         for rec in self._records:
@@ -149,6 +151,8 @@ class RunLedgerRecorder(AbstractLogger):
             input_tokens = sum(r.input_tokens for r in reported) if reported else None
             output_tokens = sum(r.output_tokens for r in reported) if reported else None
             failures = sum(1 for r in cycles if r.status == "failed")
+            # FEAT-783 S3: one attempt that emitted a usage event AND a failure event is ONE round.
+            attempts = {r.attempt_uid or f"_cycle{i}" for i, r in enumerate(cycles)}
             result.append(
                 SeatUsage(
                     seat=seat,
@@ -158,7 +162,7 @@ class RunLedgerRecorder(AbstractLogger):
                     cycles=cycles,
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
-                    rounds=len(cycles),
+                    rounds=len(attempts),
                     failures=failures,
                 )
             )

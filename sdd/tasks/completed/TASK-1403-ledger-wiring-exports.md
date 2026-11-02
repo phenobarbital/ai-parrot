@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-212 — Typed Event Ledger & Crash Resume
 **Spec**: `sdd/specs/FEAT-212-event-ledger-resume.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1399, TASK-1400, TASK-1401, TASK-1402

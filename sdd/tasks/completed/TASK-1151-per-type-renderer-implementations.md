@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-167 — FormDesigner New Field Types
 **Spec**: `sdd/specs/formdesigner-new-fields.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-1140, TASK-1141, TASK-1142, TASK-1143, TASK-1144, TASK-1145, TASK-1146, TASK-1147

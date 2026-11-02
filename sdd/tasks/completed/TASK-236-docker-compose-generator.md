@@ -2,7 +2,7 @@
 
 **Feature**: Docker Toolkit (FEAT-033)
 **Spec**: `sdd/specs/docker-toolkit.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-234

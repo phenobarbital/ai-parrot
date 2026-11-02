@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-209 — Autonomous Agent Heartbeat
 **Spec**: `sdd/specs/FEAT-209-autonomous-agent-heartbeat.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1392

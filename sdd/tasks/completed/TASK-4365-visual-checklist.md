@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-685 — Planogram comparison rule fixes
 **Spec**: `sdd/specs/comparison-rules-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

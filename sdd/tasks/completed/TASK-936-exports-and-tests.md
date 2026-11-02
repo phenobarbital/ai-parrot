@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-136 — database-toolkit-parity
 **Spec**: `sdd/specs/database-toolkit-parity.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-934, TASK-935

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-656 — Audio form client-submit mode (voice collects, the host submits)
 **Spec**: `sdd/specs/audio-form-client-submit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: TASK-4265, TASK-4266

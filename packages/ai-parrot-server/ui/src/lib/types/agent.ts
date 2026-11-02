@@ -41,6 +41,8 @@ export interface AgentMessage {
   provider?: string; // OAuth2 provider slug (e.g., "jira")
   auth_url?: string; // Authorization URL for the popup flow
   scopes?: string[]; // Requested OAuth2 scopes
+  retry_safe?: boolean; // FEAT-777: server-authored; absent = false. Never computed client-side.
+  origin_user_msg_id?: string; // FEAT-777: user message whose turn raised auth_required (retry budget key)
   // Voice answer (AgentTalk Voice): the spoken contestation rendered as a
   // player beneath the assistant text. Kept in-memory only (not persisted to
   // IndexedDB to avoid bloat) — degrades to text-only on reload.

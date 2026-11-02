@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-322 — AHP-style Session State, Host & HITL Approval Gates for dev-loop
 **Spec**: `sdd/specs/agent-host-protocol-session-state.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1851

@@ -2,7 +2,7 @@
 
 Mounts the compiled single-page application (Svelte 5 + Vite) when the
 ``dist/`` build output is present in the installed package: end-user pages
-(``/login``, ``/agents``, ``/agents/<name>/chat``) at the site root and the
+(``/login``, ``/agents``, ``/agents/<name>/chat``, ``/account``) at the site root and the
 administration pages under ``/admin``, with hashed assets at
 ``/ui/assets/``. Gracefully degrades (registers nothing, logs a single
 warning) when the UI was not built — e.g. an install-from-git without
@@ -13,6 +13,7 @@ Library-owned: :func:`setup_admin_ui` is called from
 same ``setup_*_routes(app)`` pattern as
 ``parrot.handlers.credentials.setup_credentials_routes``.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -36,7 +37,7 @@ DEFAULT_PREFIX = "/admin"
 
 #: Top-level SPA sections served at the site root (besides the admin
 #: prefix). MUST match ``config.appSections`` in ``ui/src/lib/config.ts``.
-SPA_SECTIONS: tuple[str, ...] = ("/login", "/agents")
+SPA_SECTIONS: tuple[str, ...] = ("/login", "/agents", "/account")
 
 #: URL prefix of the hashed Vite assets — MUST match ``build.assetsDir``
 #: (``ui/assets``, under ``base: '/'``) in ``ui/vite.config.ts``.
@@ -78,16 +79,14 @@ def _register_auth_exclusion(app: web.Application, pattern: str) -> None:
     """
     if AUTH_EXCLUDE_LIST_KEY is None:
         logger.debug(
-            "navigator_auth not available: skipping exclude-list "
-            "registration for %s",
+            "navigator_auth not available: skipping exclude-list " "registration for %s",
             pattern,
         )
         return
     exclude_list = app.get(AUTH_EXCLUDE_LIST_KEY)
     if exclude_list is None:
         logger.debug(
-            "AuthHandler not installed on this app (no %s key): skipping "
-            "exclude-list registration for %s",
+            "AuthHandler not installed on this app (no %s key): skipping " "exclude-list registration for %s",
             AUTH_EXCLUDE_LIST_KEY,
             pattern,
         )
@@ -96,9 +95,7 @@ def _register_auth_exclusion(app: web.Application, pattern: str) -> None:
         exclude_list.append(pattern)
 
 
-async def _register_auth_exclusions_on_startup(
-    app: web.Application, patterns: list[str]
-) -> None:
+async def _register_auth_exclusions_on_startup(app: web.Application, patterns: list[str]) -> None:
     """``on_startup`` callback: register the SPA exclude-list ``patterns``.
 
     Both real entrypoints (``app.py``/``appauto.py``) call
@@ -246,7 +243,7 @@ def setup_admin_ui(
         header injected via ``on_response_prepare``.
       - ``index.html`` (SPA history-mode router fallback, ``no-cache``) for
         the end-user sections (:data:`SPA_SECTIONS`: ``/login``,
-        ``/agents``), the administration ``prefix`` (``/admin``), each as
+        ``/agents``, ``/account``), the administration ``prefix`` (``/admin``), each as
         the exact path plus its ``/{tail}`` children, and — when
         ``mount_root`` is true and nothing else already serves it — the
         bare site root ``/``. Every mount is anchored on a path *segment*
@@ -333,8 +330,6 @@ def setup_admin_ui(
     patterns = _auth_exclusion_patterns(prefix, mount_root=mount_root)
     # Deferred to on_startup — see _register_auth_exclusions_on_startup's
     # docstring for why eager registration here would race AuthHandler.setup().
-    app.on_startup.append(
-        lambda app: _register_auth_exclusions_on_startup(app, patterns)
-    )
+    app.on_startup.append(lambda app: _register_auth_exclusions_on_startup(app, patterns))
 
     return True

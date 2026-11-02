@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-151 — PBAC-Driven DatasetManager Policy Enforcement
 **Spec**: `sdd/specs/pbac-datasetmanager-policy.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1044

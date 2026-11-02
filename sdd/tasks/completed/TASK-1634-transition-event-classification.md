@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-258 — JiraSpecialist Webhook Transition Detection
 **Spec**: `sdd/specs/jiraspecialist-webhooks.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

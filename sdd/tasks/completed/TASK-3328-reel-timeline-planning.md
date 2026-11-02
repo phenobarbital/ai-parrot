@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-564 - Reliable video reels with Gemini Omni and Veo 3.1
 **Spec**: `sdd/specs/video-reel-omni-veo-reliability.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3323

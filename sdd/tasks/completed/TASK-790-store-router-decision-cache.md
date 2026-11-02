@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-111 — Router-Based Adaptive RAG (Store-Level)
 **Spec**: `sdd/specs/router-based-adaptive-rag.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

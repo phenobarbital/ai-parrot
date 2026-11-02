@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-671 — Reconciling Ledger Snapshot Export
 **Spec**: `sdd/specs/commands-sdd-done-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4295

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-494 — select-model-dev-flow-ideation-model
 **Spec**: `sdd/specs/select-model-dev-flow-ideation-model.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2717, TASK-2718

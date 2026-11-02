@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-474 — ToolManager ToolDefinition Enforcement Parity (G7 remediation)
 **Spec**: `sdd/specs/toolmanager-tooldefinition-enforcement.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

@@ -1,7 +1,7 @@
 # TASK-350 — TableSource Permanent Filter
 
 **Feature**: FEAT-051 — add-filter-datasetmanager
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Effort**: M
 **Depends on**: —

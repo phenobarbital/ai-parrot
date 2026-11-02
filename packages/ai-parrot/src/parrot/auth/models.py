@@ -22,6 +22,7 @@ Or in BotConfig YAML::
 Public API:
     - ``PolicyRuleConfig``: Pydantic model for a single policy rule.
 """
+
 from __future__ import annotations
 
 from typing import Any, Literal, Optional
@@ -49,6 +50,8 @@ class PolicyRuleConfig(BaseModel):
         description: Human-readable description of this rule.
         conditions: Reserved for future extensibility (time windows, IP
             restrictions, etc.). Passed through to the policy dict if present.
+        resource: Explicit non-agent resource identifier for this rule. When
+            ``None``, the policy targets ``agent:<name>`` as before.
 
     Example::
 
@@ -85,6 +88,10 @@ class PolicyRuleConfig(BaseModel):
     conditions: Optional[dict[str, Any]] = Field(
         default=None,
         description="Reserved for future extensibility (time, IP, attributes, etc.)",
+    )
+    resource: Optional[str] = Field(
+        default=None,
+        description="Explicit resource id (e.g. 'tool:spawn_sub_agent'); None keeps 'agent:<name>'",
     )
 
     @field_validator("action")
@@ -148,9 +155,13 @@ class PolicyRuleConfig(BaseModel):
             subjects["roles"] = self.roles
 
         policy: dict[str, Any] = {
-            "name": f"code_rule_{agent_name}_{self.action}",
+            "name": (
+                f"code_rule_{agent_name}_{self.action}"
+                if self.resource is None
+                else f"code_rule_{agent_name}_{self.action}_{self.resource}"
+            ),
             "effect": self.effect,
-            "resources": [f"agent:{agent_name}"],
+            "resources": [self.resource] if self.resource is not None else [f"agent:{agent_name}"],
             "actions": [self.action],
             "subjects": subjects,
             "priority": self.priority,

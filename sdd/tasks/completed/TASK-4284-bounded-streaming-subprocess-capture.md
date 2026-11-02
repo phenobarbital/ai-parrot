@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-663 — Bounded streaming capture in complexity collectors' `_run_subprocess`
 **Spec**: `sdd/specs/sdd-coder-complexity-collectors-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

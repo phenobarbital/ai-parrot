@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-704 — Semantic Layer — governed metric queries for agents
 **Spec**: `sdd/specs/semantic-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-4706, TASK-4472, TASK-4473, TASK-4474, TASK-4475, TASK-4476, TASK-4707, TASK-4709

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-536 - VoiceBot — Nova dual output and LiveAvatar in the Voice UI
 **Spec**: `sdd/specs/voicebot-liveavatar-implementation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h; target 3h)
 **Depends-on**: TASK-2945

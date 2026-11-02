@@ -3,7 +3,7 @@
 **Feature**: FEAT-621 — Agent Studio — Database-Backed Storage
 **Spec**: `sdd/specs/agentstudio-db-storage.spec.md`
 **Spec wave**: W2 — Runtime + cache + lifecycle + builder (M7, part 4: StudioAgentRuntime + lifecycle hooks)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3932, TASK-3939, TASK-3940, TASK-3941

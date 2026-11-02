@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-687 — Planogram text requirements: case-sensitive, regex and exact matching
 **Spec**: `sdd/specs/comparison-rules-fixes-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

@@ -1,12 +1,8 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { toastStore } from "$lib/stores/toast.svelte";
-  import {
-    listIntegrations,
-    startIntegrationConnect,
-    confirmIntegrationEnable,
-    disconnectIntegration,
-    type IntegrationDescriptor,
-  } from "$lib/api/integrations";
+  import { disconnect, startConnect } from "$lib/api/connections";
+  import { connectionsStore } from "$lib/stores/connections.svelte";
   import { awaitOAuthCallback } from "$lib/oauth/popup";
   import Icon from "@iconify/svelte";
   import IntegrationItem from "./IntegrationItem.svelte";
@@ -17,31 +13,16 @@
   // State
   // ---------------------------------------------------------------------------
   let open = $state(false);
-  let integrations = $state<IntegrationDescriptor[]>([]);
   let loadingProvider = $state<string | null>(null);
-  let fetching = $state(false);
-  let fetchError = $state<string | null>(null);
+  const integrations = $derived(connectionsStore.items);
+  const fetching = $derived(connectionsStore.loading);
+  const fetchError = $derived(connectionsStore.error);
 
-  // ---------------------------------------------------------------------------
-  // Data loading
-  // ---------------------------------------------------------------------------
-  async function loadIntegrations(): Promise<void> {
-    fetching = true;
-    fetchError = null;
-    try {
-      integrations = await listIntegrations(agentId);
-    } catch (err: unknown) {
-      fetchError = err instanceof Error ? err.message : "Failed to load integrations";
-    } finally {
-      fetching = false;
-    }
-  }
+  onMount(() => connectionsStore.start());
 
   function toggleMenu(): void {
     open = !open;
-    if (open) {
-      loadIntegrations();
-    }
+    if (open) void connectionsStore.refresh();
   }
 
   // ---------------------------------------------------------------------------
@@ -50,20 +31,15 @@
   async function handleConnect(provider: string): Promise<void> {
     loadingProvider = provider;
     try {
-      const { auth_url } = await startIntegrationConnect(
-        agentId,
-        provider,
-        window.location.origin,
-      );
+      const { auth_url } = await startConnect(provider, window.location.origin);
       const result = await awaitOAuthCallback({
         authUrl: auth_url,
         allowedOrigin: window.location.origin,
       });
 
       if (result.success) {
-        await confirmIntegrationEnable(agentId, provider);
         toastStore.success(`Connected to ${provider}`);
-        await loadIntegrations();
+        await connectionsStore.refresh();
       } else if (result.reason === "popup-blocked") {
         toastStore.error("Popup blocked. Please allow popups for this site and try again.");
       } else if (result.reason === "cancelled") {
@@ -88,9 +64,9 @@
   async function handleDisconnect(provider: string): Promise<void> {
     loadingProvider = provider;
     try {
-      await disconnectIntegration(agentId, provider);
+      await disconnect(provider);
       toastStore.success(`Disconnected from ${provider}`);
-      await loadIntegrations();
+      await connectionsStore.refresh();
     } catch (err: unknown) {
       toastStore.error(
         `Failed to disconnect: ${err instanceof Error ? err.message : "unknown error"}`,

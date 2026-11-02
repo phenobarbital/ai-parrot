@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-269 — Z.ai Code Dispatcher for the Dev Loop (GLM-5.2)
 **Spec**: `sdd/specs/zai-client-code.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1692

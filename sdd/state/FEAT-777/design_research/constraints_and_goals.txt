@@ -1,0 +1,88 @@
+Constraints from the parent proposal §2.2 that bear on S-3a:
+
+- **The Jira credential already has a principal-keyed durable owner.** navigator-auth's Identity Vault (`auth.user_identities`, keyed by Navigator `user_id` + provider + account) owns the grant; Redis `jira:oauth:{channel}:{user_id}` is the live tool path (G4: no per-call Postgres decrypt). Decided 2026-10-23 (FEAT-735), one week before this research.
+  *Implication*: build the principal-keyed vault **on** the Identity Vault; do not add a competing `CredentialVault`. The migration concerns the hot cache key and the generic manager's vault names, not the durable store.
+  *Evidence*: F031, F059, F013, F049, F050
+
+- **Core must not import server; server injects via Protocol.** `CredentialSink` on `JiraOAuthManager` is the sanctioned shape; `parrot/auth/routes.py` lazily importing integrations is existing debt.
+  *Implication*: channel notification goes behind an in-core Protocol/registry; the Jira route's imports are removed, not copied.
+  *Evidence*: F002, F059, F024, F030
+
+- **`auth.user_identities.user_id` is a bigint FK; the Navigator id travels under its own `nav_user_id` state key; `state['user_id']` is the channel id.** The table's partial unique index already allows several accounts per provider per user.
+  *Implication*: the `(principal, provider, account)` key matches the schema; the risk is principal *resolution*, never storage.
+  *Evidence*: F012, F056, F062, F035
+
+- **Two principal notions coexist.** `CanonicalIdentityMapper` (Entra OID → email) for broker/A2A/MSAgentSDK vs Navigator bigint `user_id` for identity/Telegram/Teams/web; FEAT-729 proved `provider_user_id == oid` at Teams login.
+  *Implication*: resolved by U1 — Navigator `user_id` primary, OID/email secondary column.
+  *Evidence*: F042, F072, F060
+
+- **On Telegram the principal exists only after `/login`.** `PermissionContext.user_id` is the raw `telegram_id`; the link is session-held and persisted to `auth.user_identities` only as a side effect of the combined Jira flow.
+  *Implication*: zero-reconnect holds only for linked users; U3 resolved as forced re-connect for the rest.
+  *Evidence*: F048, F043, F035, F056
+
+- **FEAT-144 recorded cross-channel credential sharing as a non-goal and chose per-(user, agent, toolkit) enablement.** `IntegrationsService` hard-codes `channel="web"` and is agent-scoped.
+  *Implication*: this feature reverses a recorded product decision; U2 resolved as full reversal (one connection, all agents, all channels). The spec must state the reversal and retire `user_agent_toolkits`.
+  *Evidence*: F065, F038, F075, F039
+
+- **Every store still embeds the channel.** `AbstractOAuth2Manager` keys `oauth2:{p}:{c}:{u}` / vault `oauth2_{p}_{c}_{u}`; `JiraOAuthManager` keys `jira:oauth:{c}:{u}`; JiraToolkit's client cache is `{channel}:{user_id}`.
+  *Implication*: re-keying is one base-class change plus the Jira migration onto it — not a new manager.
+  *Evidence*: F044, F071, F011, F002, F029
+
+- **Completion is a direct in-process dispatch.** The Jira callback branches on `state.channel` and calls notifiers held on the same `app`; `navigator-eventbus` is a live dependency used publish-only (Streams) and **no** channel wrapper subscribes to any topic.
+  *Implication*: U5 resolved — notifier registry is the delivery path; bus publication is additive.
+  *Evidence*: F024, F073, F064, F022, F023, F066
+
+- **`UserSocketManager` is process-local and keyed by JWT username.** Redis pubsub exists for channels only.
+  *Implication*: WS push of `connection.completed` needs a username↔principal map and a per-user Redis channel; popup `postMessage` remains load-bearing.
+  *Evidence*: F021
+
+- **Two needs-auth signals.** `AuthorizationRequired` → `ToolResult(status="authorization_required", metadata={auth_url, provider, scopes, tool_name})` in `ToolManager` and → `AuthRequiredEnvelope` in AgentTalk; `CredentialRequired` (broker seam) bubbles uncaught.
+  *Implication*: unification is a `ToolManager` catch producing the same `ToolResult`, then retiring one raise site; both classes live in core.
+  *Evidence*: F004, F047, F001, F003
+
+- **JiraToolkit bypasses the broker seam** (no `credential_provider`) and keeps the hot-swap placeholder; `Office365Toolkit` is already on the seam.
+  *Implication*: declaring `credential_provider="jira"` removes the hot-swap and aligns both toolkits.
+  *Evidence*: F029, F004, F025
+
+- **MCP binds the user at add-time** (`MCPClientConfig.user_id`, `add_oauth_mcp_server(user_id=…)`), although per-call injection via `header_provider(ReadonlyContext)` exists; the MCP auth surface has had zero commits in 120 days.
+  *Implication*: small, isolated change with no concurrent-edit risk.
+  *Evidence*: F017, F018, F063, F052
+
+- **The web API already does principal-from-session and origin allowlisting; a generic callback with exclude_list, postMessage and A2A resume exists.**
+  *Implication*: brainstorm items 7 (routes) and the callback are mostly present; the delta is a user-level listing and Jira route retirement.
+  *Evidence*: F040, F005, F070, F064
+
+- **Name collisions.** `OAuth2ProviderRegistry` (core) vs `OAUTH2_PROVIDERS` (integrations login catalog) vs the proposed `OAuthProviderRegistry`; two `setup_oauth2_routes` (core tool-credential callback vs Telegram WebApp login callback).
+  *Implication*: reuse existing names; no third registry.
+  *Evidence*: F055, F009, F048
+
+- **O365 has three store paths and no `/api/o365/oauth/*`.** 3LO browser flow → `vault_utils` `oauth2_o365_web_{user_id}`; device-code CLI → `VaultTokenSync` `o365:*`; Gen-1 REST sessions deleted (FEAT-266).
+  *Implication*: the "microsoft" descriptor already exists; S-3a's O365 work is store consolidation.
+  *Evidence*: F061, F032, F024, F025, F041
+
+- **Teams and Slack are already channels.** FEAT-729 user-auth lane (`MSTeamsAuthStrategy`, `TokenExchangeClient`, `/login`, `aad_object_id ↔ nav_user_id`) and FEAT-225 `/connect_jira` + DM/proactive notifiers; Slack first-link still has no owner.
+  *Implication*: S-3b does not depend on `TeamsHumanChannel`; Slack is a fourth channel in scope.
+  *Evidence*: F060, F035, F067, F031
+
+- **Audit goes to `parrot.security.audit_ledger`**; legacy `parrot/auth/audit.py` still imported once (pre-existing debt).
+  *Evidence*: F034, F076
+
+- **Provider behaviour is code today** (manager subclass + metadata subclass); only MCP has descriptor-as-data; the broker has a YAML manifest loader for per-agent credential configs.
+  *Implication*: "provider behaviour is data" is a genuine new capability layered on the manager hooks.
+  *Evidence*: F037, F020, F058, F008
+
+
+Resolved decisions (U1-U5):
+### Resolved (during proposal phase)
+
+- [x] **U1 — Which key is THE principal for the connections vault?** — *Resolved*: **Both columns, Navigator primary** — the connection row stores the navigator-auth bigint `user_id` (lookup key) and the Entra OID/email as a secondary index for Copilot/A2A/MSAgentSDK surfaces.
+  *Resolves claims*: C10, C19
+- [x] **U2 — Reverse FEAT-144's per-agent, channel-separate decision?** — *Resolved*: **Reverse fully: one connection, all agents** — a connected provider is available to every agent the principal can reach on every channel; per-agent enablement (`user_agent_toolkits`) is dropped.
+  *Resolves claims*: C17, C19
+- [x] **U3 — Telegram users who connected Jira without `/login`?** — *Resolved*: **Force re-connect** — they re-authorize once the principal key is live; no indefinite channel-keyed fallback. Users who linked via `/login` keep their Identity Vault copy and do not reconnect. (This narrows the brainstorm's "zero re-connect" constraint to linked users.)
+  *Resolves claims*: C9, C19
+- [x] **U4 — Where does the unified code live?** — *Resolved*: **Evolve `parrot.auth.oauth2` in place** — no new `parrot.connections` package, no renames; extend `AbstractOAuth2Manager`, `IntegrationsService`, `OAuth2ProviderRegistry` and `oauth2_routes` where they are.
+  *Resolves claims*: C19
+- [x] **U5 — Completion transport?** — *Resolved*: **Notifier registry + publish-only bus** — an in-core `ChannelNotifier` Protocol registry is the delivery path; `connection.*` events are also published on the Streams bus for audit/out-of-process consumers, never load-bearing.
+  *Resolves claims*: C14, C15
+

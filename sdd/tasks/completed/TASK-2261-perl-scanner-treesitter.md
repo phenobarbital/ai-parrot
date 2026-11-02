@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-432 — Wikitoolkit Perl Scanner
 **Spec**: `sdd/specs/wikitoolkit-perl-scanner.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2260

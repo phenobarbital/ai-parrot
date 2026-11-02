@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-147 — Crew Result Storage Backends
 **Spec**: `sdd/specs/crew-result-storage-backends.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

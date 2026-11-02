@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-161 — AWS Inspector Toolkit (Inspector2)
 **Spec**: `sdd/specs/inspector-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1080, TASK-1081, TASK-1082

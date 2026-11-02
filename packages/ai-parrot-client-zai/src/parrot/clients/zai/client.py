@@ -571,6 +571,7 @@ class ZaiClient(OpenAIBaseClient):
             input_tokens=ai_message.usage.prompt_tokens,
             output_tokens=ai_message.usage.completion_tokens,
             finish_reason=ai_message.stop_reason,
+            usage=ai_message.usage,
         )
         # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
         return ai_message
@@ -852,6 +853,7 @@ class ZaiClient(OpenAIBaseClient):
             input_tokens=usage.prompt_tokens,
             output_tokens=usage.completion_tokens,
             finish_reason=finish_reason,
+            usage=usage,
         )
         # FEAT-524: no memory write — AbstractBot.save_conversation_turn is the single writer.
         yield ai_message

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-743 — formdesigner A2UI import/list membership + leak fixes
 **Spec**: `sdd/specs/fixgroup-03981db69a81.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

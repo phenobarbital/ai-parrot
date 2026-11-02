@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-220 — Telegram Command Menu Registration Parity (IntegrationBotManager)
 **Spec**: `sdd/specs/telegram-integration-menu-registration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1442

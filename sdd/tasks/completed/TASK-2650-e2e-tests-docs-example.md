@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-485 — Expose Toolkits as Local MCP
 **Spec**: `sdd/specs/expose-toolkits-as-local-mcp.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2644, TASK-2645, TASK-2646, TASK-2647, TASK-2648, TASK-2649

@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from ..key_source import KeySourceRefusal
 from ..storage.models import StudioAgentKey
-from ._models import TestAskRequest
+from ._models import TestAskRequest, client_session_id
 
 
 class _StudioTestingAskMixin:
@@ -67,6 +67,11 @@ class _StudioTestingAskMixin:
             return TestAskRequest(**(payload or {})), None
         except ValidationError as exc:
             return None, self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
+
+    async def _client_session_id(self, conversation: str) -> str:
+        """The caller's test session id of a conversation the client names (``client_session_id``)."""
+        user = await self._get_user()
+        return client_session_id(user.user_id, conversation)
 
     @staticmethod
     def _studio_session_id(session: Any, key: StudioAgentKey) -> str:

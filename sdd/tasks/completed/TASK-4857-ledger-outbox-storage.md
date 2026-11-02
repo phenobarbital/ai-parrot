@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-758 — Durable Ledger Outbox and Independent Integration into dev
 **Spec**: `sdd/specs/ledger-outbox-integration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

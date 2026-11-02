@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-548 — Observability — OTEL to Prometheus + Grafana usage/cost dashboard
 **Spec**: `sdd/specs/observability-otel-grafana.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3108, TASK-3109

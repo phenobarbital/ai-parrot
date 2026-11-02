@@ -2,7 +2,7 @@
 
 **Feature**: ImageLoader — OCR with Layout-Aware Extraction
 **Spec**: `sdd/specs/image-loader.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

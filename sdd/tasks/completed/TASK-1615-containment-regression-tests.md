@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-252 — REPL Sandbox + Gemini Response Contract + Secret Scrubber
 **Spec**: `sdd/specs/repl-sandbox-response-contract-scrubber.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1611, TASK-1612, TASK-1613, TASK-1614

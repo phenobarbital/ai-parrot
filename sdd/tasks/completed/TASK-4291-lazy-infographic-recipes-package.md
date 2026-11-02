@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-668 — A2UI Lazy Imports
 **Spec**: `sdd/specs/a2ui-lazy-imports.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

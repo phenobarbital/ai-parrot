@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-576 — SDD Document Taxonomy (`projects` and `tags` frontmatter)
 **Spec**: `sdd/specs/sdd-spec-changes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3459, TASK-3460

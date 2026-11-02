@@ -81,6 +81,39 @@ async def _install_force_exit_handler(aiohttp_app) -> None:
 
 
 
+def _flush_observability(timeout: float = 5.0) -> None:
+    """Flush and stop OpenTelemetry before the hard exit bypasses ``atexit``.
+
+    ``parrot.observability`` wires its teardown through
+    ``atexit.register(shutdown_observability)`` only, and the ``os._exit``
+    below skips atexit entirely — so without this call the final
+    ``BatchSpanProcessor`` / ``PeriodicExportingMetricReader`` batch is dropped
+    on every shutdown and OTel's exporter threads are still ticking when we
+    dump the survivors.
+
+    Runs in a daemon thread with a timeout: an unreachable OTLP collector must
+    never be able to block the exit.
+    """
+    import threading
+
+    try:
+        from parrot.observability import shutdown_observability
+    except Exception:  # noqa: BLE001 — observability is optional
+        return
+
+    worker = threading.Thread(
+        target=shutdown_observability, name="otel-shutdown", daemon=True
+    )
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        sys.stderr.write(
+            f"[shutdown] observability teardown did not finish in {timeout}s; "
+            "continuing to exit.\n"
+        )
+        sys.stderr.flush()
+
+
 def _hard_exit_after_graceful_shutdown() -> None:
     """Force process termination once Navigator's graceful shutdown returns.
 
@@ -99,6 +132,8 @@ def _hard_exit_after_graceful_shutdown() -> None:
     import logging
     import threading
     import faulthandler
+
+    _flush_observability()
 
     survivors = [
         t for t in threading.enumerate()

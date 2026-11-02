@@ -1,0 +1,90 @@
+{
+  "offline": {
+    "openai": [
+      {
+        "name": "hr__reports__headcount_by_dept",
+        "problems": []
+      },
+      {
+        "name": "hr__reports__manager_of",
+        "problems": []
+      },
+      {
+        "name": "hr__people__lookup",
+        "problems": []
+      }
+    ],
+    "anthropic": [
+      {
+        "name": "hr__reports__headcount_by_dept",
+        "problems": []
+      },
+      {
+        "name": "hr__reports__manager_of",
+        "problems": []
+      },
+      {
+        "name": "hr__people__lookup",
+        "problems": []
+      }
+    ],
+    "google": [
+      {
+        "name": "hr__reports__headcount_by_dept",
+        "problems": []
+      },
+      {
+        "name": "hr__reports__manager_of",
+        "problems": []
+      },
+      {
+        "name": "hr__people__lookup",
+        "problems": []
+      }
+    ],
+    "groq": [
+      {
+        "name": "hr__reports__headcount_by_dept",
+        "problems": []
+      },
+      {
+        "name": "hr__reports__manager_of",
+        "problems": []
+      },
+      {
+        "name": "hr__people__lookup",
+        "problems": []
+      }
+    ]
+  },
+  "real_calls": [
+    {
+      "provider": "openai",
+      "model": "gpt-4.1-mini",
+      "status": "passed",
+      "tool_calls": 1
+    },
+    {
+      "provider": "anthropic",
+      "model": "None",
+      "status": "passed",
+      "tool_calls": 1
+    },
+    {
+      "provider": "google",
+      "model": "None",
+      "status": "passed",
+      "tool_calls": 1
+    },
+    {
+      "provider": "groq",
+      "model": "openai/gpt-oss-120b",
+      "status": "passed",
+      "tool_calls": 2
+    }
+  ],
+  "_meta": {
+    "date": "2026-10-30",
+    "command": "SQUAWK_G3_MODEL_OPENAI=gpt-4.1-mini SQUAWK_G3_MODEL_GROQ=openai/gpt-oss-120b PARROT_TEST_REAL_LLM=1 python sdd/state/FEAT-746/spikes/G3-contract-tool-defs/spike.py"
+  }
+}

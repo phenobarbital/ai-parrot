@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-562 — CI Test-Failure Root-Cause Remediation
 **Spec**: `sdd/specs/ci-test-failures-root-cause-remediation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-3296

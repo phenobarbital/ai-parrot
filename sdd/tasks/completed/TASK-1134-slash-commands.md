@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-168 — Console CLI Agents
 **Spec**: `sdd/specs/console-cli-agents.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1131, TASK-1132

@@ -670,6 +670,7 @@ class ClaudeAgentClient(AbstractClient):
             input_tokens=getattr(_lc_ca_usage, "input_tokens", None) if _lc_ca_usage else None,
             output_tokens=getattr(_lc_ca_usage, "output_tokens", None) if _lc_ca_usage else None,
             finish_reason=None,
+            usage=_lc_ca_usage,
         )
         return ai_message
 
@@ -867,6 +868,7 @@ class ClaudeAgentClient(AbstractClient):
             input_tokens=getattr(_lc_cas_usage, "input_tokens", None) if _lc_cas_usage else None,
             output_tokens=getattr(_lc_cas_usage, "output_tokens", None) if _lc_cas_usage else None,
             finish_reason=None,
+            usage=_lc_cas_usage,
         )
         yield ai_message
 

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-171 — Prefix-Aware Tool Resolution for DatabaseAgent
 **Spec**: `sdd/specs/databaseagent-prefix-aware-tools.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

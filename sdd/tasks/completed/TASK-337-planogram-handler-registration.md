@@ -2,7 +2,7 @@
 
 **Feature**: Planogram Compliance Handler
 **Spec**: `sdd/specs/planogram-compliance-handler.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 1h)
 **Depends-on**: TASK-336

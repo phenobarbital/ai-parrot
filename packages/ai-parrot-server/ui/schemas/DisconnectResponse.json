@@ -1,0 +1,19 @@
+{
+  "description": "Response for the disconnect endpoint.\n\nAttributes:\n    provider: Provider that was disconnected.\n    disconnected: Always ``True`` on success.",
+  "properties": {
+    "disconnected": {
+      "default": true,
+      "title": "Disconnected",
+      "type": "boolean"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    }
+  },
+  "required": [
+    "provider"
+  ],
+  "title": "DisconnectResponse",
+  "type": "object"
+}

@@ -27,6 +27,13 @@ description: |
 model: sonnet
 color: magenta
 tools: Read, Bash, Glob, Grep, Write
+hooks:
+  PreToolUse:
+    - matcher: "Write|Edit|MultiEdit|NotebookEdit"
+      hooks:
+        - type: command
+          command: 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/e2e-exploration-write-guard.sh"'
+          timeout: 10
 ---
 
 # E2E UI Tester — Plan-Driven Owned-Browser Exploration (FEAT-581 M8)
@@ -158,6 +165,8 @@ evidence").
    explore-e2e-ui-tester`) before writing your report.
 
 ## Report contract — `e2e-exploration.json`
+
+> `Write` is hook-confined to `sdd/state/FEAT-*/e2e/exploration/` (`.claude/hooks/e2e-exploration-write-guard.sh`); writes made through `Bash` remain prompt-discipline only.
 
 Write to
 `sdd/state/<FEAT-ID>/e2e/exploration/<run-id>/e2e-exploration.json` — a

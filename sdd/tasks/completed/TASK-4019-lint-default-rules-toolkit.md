@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-625 — wikitoolkit lint
 **Spec**: `sdd/specs/wikitoolkit-lint.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: TASK-4010, TASK-4012, TASK-4013, TASK-4014, TASK-4015, TASK-4016, TASK-4017, TASK-4018

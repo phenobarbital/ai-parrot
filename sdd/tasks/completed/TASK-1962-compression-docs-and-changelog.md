@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-380 — Tool Result Compression Pipeline
 **Spec**: `sdd/specs/tool-result-compression.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1953, TASK-1954, TASK-1957

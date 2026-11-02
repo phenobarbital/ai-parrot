@@ -2,7 +2,7 @@
 
 **Feature**: policy-rules-abstractbot
 **Spec**: `sdd/specs/policy-rules-abstractbot.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-708, TASK-710, TASK-712, TASK-713, TASK-714

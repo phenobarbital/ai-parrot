@@ -1,0 +1,53 @@
+> Decisions U1–U5 (§5) are folded in.
+
+### What's New
+
+- **`parrot login` / `parrot logout`** (U1) — completes a navigator-auth browser or device login and stores a CLI token in a 0600 file under `~/.parrot/` (atomic write + lock file, as `LocalJiraTokenStore` does); `logout` removes it. The CLI's principal source.
+- **`CliPrincipalResolver`** — implements the S-1 `PrincipalResolver`: presents the login token to a navigator-auth-authenticated server endpoint, receives the Navigator `user_id` and tenant (via `resolve_user_id`), returns `Principal(channel="cli")` and a `PermissionContext` through `build_principal_context` with the tenant passed explicitly.
+- **Encrypted local connection cache** (U2) — `parrot connect` pulls the connected token set from the server into a local encrypted file keyed from the login token; the Identity Vault remains the durable owner; when a token is expired the resolver asks the server to refresh and re-pulls. A new aiohttp-client-only `CredentialResolver` in parrot core reads this cache and feeds the `ToolManager` seam.
+- **Principal binding for stdio toolkit servers** — `create_toolkit_mcp_server` resolves the principal and resolver at process start from the login file (located via env written into the `hosts.py` entries, never the token itself); credentialed tools return `AuthRequiredPayload` as the tool result for the host to show.
+- **Connect from the CLI** (U3) — `parrot connect <provider>` and a `/connect <provider>` slash command (registered through `SlashCommandDispatcher.register`) call `start_connect(channel="cli")` through the server API, print/open the authorize URL, poll `GET /api/v1/connections` until the connection appears; the paste fallback posts the redirected URL's code to the server (FEAT-696 state check).
+- **Generic RFC 8628 device-code engine** (U4) — `device_authorization_url` on the S-1 descriptor and a poller that surfaces `user_code` / `verification_uri` / `expires_in` through `AuthRequiredPayload`; `CommandContext.suspend()` yields the terminal for the prompt.
+- **agentd principal mapping** (U5) — `JsonRpcUnixServer._resolve_identity` reads the peer OS user's `~/.parrot` login file and resolves the Navigator principal through the same `CliPrincipalResolver`; service identity remains the fallback.
+
+### What Changes
+
+- **`packages/ai-parrot/src/parrot/cli/agent_repl.py`::`_run`** — build the permission context from `CliPrincipalResolver` for every agent, not only O365 device-code bots. *Evidence*: F001, F013
+- **`packages/ai-parrot/src/parrot/cli/identity.py`::`build_cli_permission_context`** — generalize or retire the `O365_PRINCIPAL`-only bootstrap; the Entra id becomes `Principal.canonical_identity`, not the key. *Evidence*: F002
+- **`packages/ai-parrot/src/parrot/cli/session.py`::`TurnRunner._identity_kwargs`** — unchanged shape; receives a Navigator-keyed context. *Evidence*: F028
+- **`packages/ai-parrot/src/parrot/mcp/toolkit_server.py`::`create_toolkit_mcp_server`** — inject principal + cache-backed resolver into the toolkit under the stderr redirect. *Evidence*: F016
+- **`packages/ai-parrot/src/parrot/mcp/local_cli.py`::`mcp_local`** — locate the login file; no secrets in argv. *Evidence*: F014
+- **`packages/ai-parrot/src/parrot/mcp/hosts.py`::`HostAdapter`** — host entries carry the env needed to locate the login file. *Evidence*: F018, F008
+- **`packages/ai-parrot/src/parrot/cli/commands.py`::`SlashCommandDispatcher`** — `/connect`, `/connections` built-ins. *Evidence*: F027
+- **`packages/ai-parrot-integrations/src/parrot/integrations/agentd/server.py`::`JsonRpcUnixServer._resolve_identity`** — add the login-file → Navigator step before the service-identity fallback. *Evidence*: F003, F026
+- **`packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py`::`JiraToolkit._pre_execute`** — replace the fixed `local:cli` identity with the principal-keyed path. *Evidence*: F043
+- **`packages/ai-parrot-tools/src/parrot_tools/jira_cli.py`::`auth`** — fold into the generic `parrot connect` flow (paste kept as the fallback). *Evidence*: F043
+- **`packages/ai-parrot/src/parrot/auth/oauth2/o365_devicecode_provider.py`** — becomes one provider of the generic device-code engine; `prompt_callback` output moves off stdout. *Evidence*: F010, F023
+- **`packages/ai-parrot-server/src/parrot/mcp/principal_guard.py`::`resolve_principal`** (reuse) — pattern for the new CLI identity endpoint; no behavior change. *Evidence*: F009, F025
+
+### What's Untouched (Non-Goals)
+
+- MCP client-side OAuth (`parrot.mcp.oauth` TokenStore trio, `VaultMCPTokenStorage`, `MCPOAuth2Config`, `MCPOAuth2Provider`) — parrot-as-client direction.
+- HTTP MCP server PBAC guard, session store and transports (FEAT-477).
+- agentd UDS transport and SO_PEERCRED binding itself (only the login-file step is added).
+- FEAT-485 stdout-purity and lean-import rules; the Claude Code / Codex permission prompt stays the human gate.
+- S-1 internals: `AbstractOAuth2Manager`, `CredentialStore`, `IntegrationsService`, `ConnectionsHandler` (consumed over HTTP, extended only by the identity and token-pull endpoints).
+
+### Patterns to Follow
+
+- agentd connection-time principal binding with fallback and `identity_source` audit. *Evidence*: F003, F026
+- `principal_guard`: bearer → `build_principal_context`, fail-closed tenant, `_pctx_var` publication. *Evidence*: F009, F025
+- FEAT-696 manual-paste 3LO with `hmac.compare_digest` state check; `~/.parrot/<x>/settings.local.json` written atomically with 0600 + lock file. *Evidence*: F043, F048
+- O365 resolver `prompt_callback` injection and cache-hit / refresh / flow ladder. *Evidence*: F023
+- FEAT-485 lazy import under `redirect_stdout(stderr)` for anything that may print. *Evidence*: F016, F031
+- `TurnRunner._identity_kwargs` as the only identity injection point into `bot.ask`. *Evidence*: F028
+
+### Integration Risks
+
+- **Provider tokens on the laptop.** The encrypted cache holds a token set outside the Identity Vault. *Mitigation*: key derived from the login token, 0600 file, refresh only through the server, `parrot logout` wipes the cache, audit event on every pull. *Evidence*: F048, F031
+- **stdout corruption in stdio servers.** *Mitigation*: `AuthRequiredPayload` as tool result; stderr for everything else. *Evidence*: F023, F031, F040
+- **Anchors in flight.** S-1 M7 rewrites `parrot.auth.jira_oauth` helpers that `jira_cli.py` imports; local-MCP files have a hotfix from 2026-10-28; `tools/manager.py` anchors moved. *Mitigation*: write S-4 after FEAT-773 merges; re-verify at spec time. *Evidence*: F043, F037, F047
+- **`build_principal_context` tenant default.** *Mitigation*: the CLI resolver always passes the server-returned tenant. *Evidence*: F034
+- **Two MCP test trees.** *Mitigation*: new tests next to the surface; list both trees in the validation contract. *Evidence*: F045
+
+---

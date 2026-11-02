@@ -7,7 +7,7 @@ import asyncio
 import logging
 import uuid
 import time
-from typing import Any, AsyncIterator, Dict, List, Optional, Union, Sequence
+from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional, Union, Sequence
 from pathlib import Path
 from enum import Enum
 
@@ -23,6 +23,9 @@ from ..base import AbstractClient, MessageResponse
 from ...models import AIMessage, AIMessageFactory, CompletionUsage, StructuredOutputConfig
 from ...models.responses import InvokeResult
 from .models import TransformersModel
+
+if TYPE_CHECKING:
+    import torch
 
 
 class TransformersClient(AbstractClient):
@@ -463,6 +466,7 @@ class TransformersClient(AbstractClient):
             input_tokens=getattr(_lc_hf_usage, "prompt_tokens", None) if _lc_hf_usage else None,
             output_tokens=getattr(_lc_hf_usage, "completion_tokens", None) if _lc_hf_usage else None,
             finish_reason=None,
+            usage=_lc_hf_usage,
         )
         return ai_message
 

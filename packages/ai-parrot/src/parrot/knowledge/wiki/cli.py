@@ -132,7 +132,7 @@ from parrot.knowledge.wiki.ledger.outbox import (
     OutboxLockedError,
     StrictLedgerReadError,
 )
-from parrot.knowledge.wiki.ledger.integration import LedgerIntegrator
+from parrot.knowledge.wiki.ledger.integration import IntegrationError, LedgerIntegrator
 from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
 from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity, IssueStatus
 from parrot.knowledge.wiki.schema.models import SchemaSourceConfig
@@ -2680,6 +2680,22 @@ wiki.add_command(
         help="Manage typed wiki entities.",
     )
 )
+wiki.add_command(
+    LazyGroup(
+        name="spec",
+        import_path="parrot.knowledge.wiki.decisions.spec_cli",
+        attr="spec",
+        help="Decision audit for SDD specs: governing decisions and consequences.",
+    )
+)
+wiki.add_command(
+    LazyGroup(
+        name="decisions",
+        import_path="parrot.knowledge.wiki.decisions.spec_cli",
+        attr="decisions",
+        help="Publish approved decision batches into the decision plane.",
+    )
+)
 
 
 @wiki.group(name="symbols")
@@ -3226,6 +3242,33 @@ def _dedupe_slugs(plan: FixPlan, specs_dir: Path) -> None:
         seen.add(slug)
 
 
+@wiki.group(name="usage")
+def usage() -> None:
+    """Per-spec token and cost reporting."""
+
+
+@usage.command("report")
+@click.option("--feat", "feat_id", required=True, help="Feature id, e.g. FEAT-783.")
+@click.option("--by", type=click.Choice(["task", "model", "seat"]), default="task")
+@click.option("--format", "fmt", type=click.Choice(["markdown", "json"]), default="markdown")
+@click.option(
+    "--root", type=click.Path(path_type=Path), default=None, help="Durable usage root (default: main checkout)."
+)
+def usage_report(feat_id: str, by: str, fmt: str, root: Path | None) -> None:
+    """Render tokens and cost for one feature."""
+    from parrot.flows.dev_loop.usage_report import UsageReport, render_usage_markdown
+    from parrot.knowledge.wiki.usage_operations import UsageReportInput, op_usage_report
+
+    result = _run(op_usage_report(UsageReportInput(feat_id=feat_id, by=by), root=root))
+    if result.is_error:
+        raise click.ClickException(result.text)
+    data = result.data or {}
+    if fmt == "json":
+        click.echo(json.dumps(data, indent=2))
+        return
+    click.echo(render_usage_markdown(UsageReport.model_validate(data)))
+
+
 @wiki.group(name="ledger")
 def ledger() -> None:
     """Manage the SDD work ledger, discovered work, and spec graph."""
@@ -3717,6 +3760,10 @@ def _emit_delivery_reports(reports: list[LedgerDeliveryReport], json_output: boo
         )
         if report.error_code:
             click.echo(f"  error: {report.error_code}")
+        for conflict in report.conflicts:
+            click.echo(f"  conflict: {conflict.event_id} on {conflict.subject} ({conflict.reason})")
+        if report.skipped:
+            click.echo(f"  skipped redundant close(s): {', '.join(report.skipped)}")
         if report.recovery_path:
             click.echo(f"  recovery path: {report.recovery_path}")
         if _OUTBOX_EXIT[report.status] != 0:
@@ -3768,7 +3815,7 @@ def ledger_outbox_prepare(repo_root: str, ledger_dir: str | None, json_output: b
             err=not json_output,
         )
         raise SystemExit(2) from exc
-    except Exception as exc:
+    except IntegrationError as exc:
         click.echo(
             json.dumps({"status": "pending", "error_code": "remote-unavailable"}) if json_output else str(exc),
             err=not json_output,
@@ -3798,7 +3845,7 @@ def ledger_outbox_status(repo_root: str, ledger_dir: str | None, json_output: bo
     remote_fresh = True
     try:
         known = _run(integrator.remote_event_ids())
-    except Exception:
+    except (IntegrationError, OSError):
         known = set()
         remote_fresh = False
     try:
@@ -3808,7 +3855,7 @@ def ledger_outbox_status(repo_root: str, ledger_dir: str | None, json_output: bo
         payload["remote_fresh"] = remote_fresh
         try:
             payload["contaminated_paths"] = _run(integrator.check_feature_diff("HEAD"))
-        except Exception:
+        except (IntegrationError, OSError):
             payload["contaminated_paths"] = []
             payload["remote_fresh"] = False
     except StrictLedgerReadError as exc:
@@ -3859,6 +3906,24 @@ def ledger_outbox_integrate(repo_root: str, ledger_dir: str | None, batch_id: st
     if batch_id:
         batches = [batch for batch in batches if batch.batch_id == batch_id]
         if not batches:
+            try:
+                receipt = _run(outbox.receipt_for(batch_id))
+            except ValueError:  # malformed id (or a symlinked receipt) — report it as unknown
+                receipt = None
+            if receipt is not None:
+                # Already acknowledged: a retry of a delivered batch is a success, not a conflict.
+                report = LedgerDeliveryReport(
+                    status="already_delivered",
+                    batch_id=batch_id,
+                    attempts=0,
+                    remote_head=receipt.remote_head,
+                    commit_sha=None,
+                    added=0,
+                    remaining=0,
+                    skipped=receipt.skipped_event_ids,
+                )
+                _emit_delivery_reports([report], json_output, repo_root)
+                return
             report = LedgerDeliveryReport(
                 status="conflict",
                 batch_id=batch_id,
@@ -3879,10 +3944,13 @@ def ledger_outbox_integrate(repo_root: str, ledger_dir: str | None, batch_id: st
     for batch in batches:
         report = _run(integrator.integrate(batch))
         reports.append(report)
-        if _OUTBOX_EXIT[report.status] != 0:
+        # A conflicting batch needs review but must not hold later batches back; a batch that
+        # depends on one of its events reports its own missing-predecessor conflict. A pending
+        # report (I/O, lock, push) would hit every later batch too, so stop there.
+        if report.status == "pending":
             break
     _emit_delivery_reports(reports, json_output, repo_root)
-    exit_code = _OUTBOX_EXIT[reports[-1].status]
+    exit_code = max(_OUTBOX_EXIT[report.status] for report in reports)
     if exit_code:
         raise SystemExit(exit_code)
 
@@ -4083,25 +4151,58 @@ def _schema_service() -> "SchemaPlaneService":
     return SchemaPlaneService.from_root()
 
 
-def _changed_ddl_paths(root: Path, origin: str) -> list[Path]:
-    """Return configured DDL files touched by the merge leading to ``HEAD``."""
+#: Reflog subjects of operations whose changes span ``ORIG_HEAD..HEAD`` (the post-merge hook's case).
+_MERGE_REFLOG_PREFIXES: tuple[str, ...] = ("merge", "pull", "commit (merge)")
+
+
+def _git_changed_files(root: Path, diff_range: str | None) -> list[str]:
+    """Return the paths changed by the operation that last moved ``HEAD``.
+
+    The post-commit and post-merge hooks share one block, so the range is
+    inferred: after a merge or pull it is ``ORIG_HEAD..HEAD``; after anything
+    else (a plain commit) it is the last commit's own changes. ``ORIG_HEAD``
+    is only set by merge/reset/rebase/pull, so diffing it after a plain
+    commit would scan a stale range, or fail when it does not exist.
+
+    Args:
+        root: Repository root.
+        diff_range: Explicit ``git diff`` range (e.g. ``HEAD~3..HEAD``); ``None`` infers it.
+
+    Raises:
+        click.ClickException: git could not report the changed files.
+    """
+    try:
+        if diff_range:
+            cmd = ["git", "-C", str(root), "diff", "--name-only", diff_range]
+        else:
+            reflog = subprocess.run(
+                ["git", "-C", str(root), "reflog", "-1", "--format=%gs", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            subject = reflog.stdout.strip() if reflog.returncode == 0 else ""
+            if subject.startswith(_MERGE_REFLOG_PREFIXES):
+                cmd = ["git", "-C", str(root), "diff", "--name-only", "ORIG_HEAD", "HEAD"]
+            else:
+                # --root also lists the files of a repository's first commit.
+                cmd = ["git", "-C", str(root), "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", "HEAD"]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=True)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise click.ClickException(f"Could not determine changed DDL files: {exc}") from exc
+    return proc.stdout.splitlines()
+
+
+def _changed_ddl_paths(root: Path, origin: str, diff_range: str | None = None) -> list[Path]:
+    """Return configured DDL files touched by the last ``HEAD`` move (or ``diff_range``)."""
     config = load_effective_config(root).config
     source = config.schema_plane.sources.get(origin)
     if source is None:
         raise click.UsageError(f"Unknown schema source {origin!r}.")
     if not source.ddl_paths:
         return []
-    try:
-        proc = subprocess.run(
-            ["git", "-C", str(root), "diff", "--name-only", "ORIG_HEAD", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=True,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise click.ClickException(f"Could not determine changed DDL files: {exc}") from exc
-    changed = proc.stdout.splitlines()
+    changed = _git_changed_files(root, diff_range)
     return [
         root / path
         for path in changed
@@ -4180,17 +4281,32 @@ def schema_sync(origin: str, tables: str | None, changed: bool, as_json: bool) -
     help="SQL dialect; defaults to the source's configured dialect.",
 )
 @click.option("--changed", is_flag=True)
+@click.option(
+    "--range",
+    "diff_range",
+    default=None,
+    help="git range scanned by --changed (e.g. HEAD~3..HEAD); default: inferred from the last HEAD move.",
+)
 @click.option("--json", "as_json", is_flag=True)
 @click.option("--quiet", is_flag=True)
 def schema_ingest_ddl(
-    paths: tuple[Path, ...], origin: str | None, dialect: str | None, changed: bool, as_json: bool, quiet: bool
+    paths: tuple[Path, ...],
+    origin: str | None,
+    dialect: str | None,
+    changed: bool,
+    diff_range: str | None,
+    as_json: bool,
+    quiet: bool,
 ) -> None:
     """Fold SQL files into the schema plane without requiring a database.
 
-    With ``--changed`` and neither PATHS nor ``--origin`` (the post-merge
-    hook's invocation), every declared ``schema.sources`` entry is scanned
-    for DDL files touched by the merge, each ingested with its own dialect.
+    With ``--changed`` and neither PATHS nor ``--origin`` (the post-commit /
+    post-merge hook's invocation), every declared ``schema.sources`` entry is
+    scanned for DDL files touched by the last ``HEAD`` move, each ingested
+    with its own dialect. ``--range`` names the scanned range explicitly.
     """
+    if diff_range and not changed:
+        raise click.UsageError("--range requires --changed.")
     _refuse_in_linked_worktree(Path.cwd())
     root = find_shared_root(Path.cwd()) or Path.cwd().resolve()
     sources = load_effective_config(root).config.schema_plane.sources
@@ -4208,7 +4324,7 @@ def schema_ingest_ddl(
     for alias in origins:
         alias_files = files
         if not alias_files and changed:
-            alias_files = _changed_ddl_paths(root, alias)
+            alias_files = _changed_ddl_paths(root, alias, diff_range)
             if not alias_files:
                 continue
         alias_dialect = dialect or sources[alias].dialect

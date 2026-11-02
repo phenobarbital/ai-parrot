@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-122 — Nvidia Client
 **Spec**: `sdd/specs/nvidia-client.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-847

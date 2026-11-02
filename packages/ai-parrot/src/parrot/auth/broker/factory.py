@@ -167,8 +167,8 @@ class CredentialResolverFactory:
     def _build_device_code(self, cfg: ProviderCredentialConfig, opts: dict[str, Any]) -> CredentialResolver:
         """Build an O365DeviceCodeCredentialResolver (FEAT-266).
 
-        Expected deps: ``o365_client`` (or ``o365_interface``),
-        ``o365_oauth_manager``, ``vault``.
+        Expected deps: ``o365_client`` (or ``o365_interface``) and
+        ``o365_oauth_manager``; ``legacy_vault``/``vault`` is optional.
         Expected opts: ``scopes`` (defaults to ``DEFAULT_O365_SCOPES`` inside
         the resolver when omitted/``None``).
         """
@@ -183,20 +183,18 @@ class CredentialResolverFactory:
 
         o365 = self._deps.get("o365_client") or self._deps.get("o365_interface")
         manager = self._deps.get("o365_oauth_manager")
-        vault = self._deps.get("vault")
-        if o365 is None or manager is None or vault is None:
+        if o365 is None or manager is None:
             raise KeyError(
-                "CredentialResolverFactory: 'o365_client'/'o365_interface', "
-                "'o365_oauth_manager', and 'vault' deps are required for "
+                "CredentialResolverFactory: 'o365_client'/'o365_interface' and 'o365_oauth_manager' deps are "
+                "required for "
                 f"auth='device_code' (provider={cfg.provider!r})"
             )
-        scopes = opts.get("scopes")
-
+        legacy_vault = self._deps.get("legacy_vault") or self._deps.get("vault")
         return O365DeviceCodeCredentialResolver(
             o365_client=o365,
             o365_oauth_manager=manager,
-            vault_token_sync=vault,
-            scopes=scopes,
+            scopes=opts.get("scopes"),
+            legacy_vault=legacy_vault,
         )
 
     def build_user_llm_key_resolver(self) -> CredentialResolver:

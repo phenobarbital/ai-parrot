@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-398 — Deterministic Groundedness Scoring
 **Spec**: `sdd/specs/deterministic-groundedness-scoring.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2041

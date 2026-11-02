@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-174 — Homologate `ask_stream` Across All LLM Clients
 **Spec**: `sdd/specs/homologate-llm-clients-askstream.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1174, TASK-1175, TASK-1176, TASK-1177, TASK-1178, TASK-1179, TASK-1180

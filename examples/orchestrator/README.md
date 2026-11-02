@@ -108,9 +108,8 @@ deterministic routing on the scripted scenarios above.
   current escalation tools both use email (to different recipients).
 - **Real Jira REST integration** — the example writes to a local CSV so
   the demo is reproducible. In production, swap
-  `_create_jira_ticket` in `escalation.py` for a call to your full
-  Jira toolkit (the framework's `JiraConnectTool` handles the OAuth
-  bridge).
+  `_create_jira_ticket` in `escalation.py` for a call to your full Jira toolkit (`JiraToolkit` with
+  `credential_provider="jira"`; users connect Jira once through the Connections flow).
 - **Production HITL** — `hitl.py` uses stdin for portability. Production
   deployments should use `parrot.human.HumanInteractionManager` with a
   Telegram/CLI/Web channel and Redis persistence.

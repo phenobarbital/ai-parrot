@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-301 — Themed Component Catalog — HTML Renderer v2
 **Spec**: `sdd/specs/infographic-theme-catalog-a2ui.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2263

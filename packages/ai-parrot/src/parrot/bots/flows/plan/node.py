@@ -535,8 +535,10 @@ class PlanToolNode(_BaseNode):
             index: Fan-out position, or ``None`` for a single call.
             producer_call_id: The attempt receipt that produced ``payload``.
                 ``None`` when task memory is disabled, or when no receipt
-                could be established — in which case the legacy path runs
-                and nothing pretends to know the producer.
+                could be established — in which case the write is still
+                versioned when the catalog is enabled (the legacy path
+                runs only when it is not), and nothing pretends to know
+                the producer.
             tool: The tool actually dispatched; defaults to
                 ``plan_node.tool`` (``PlanToolNode``).
 
@@ -555,7 +557,15 @@ class PlanToolNode(_BaseNode):
 
         session = _current_session()
         catalog = self._enabled_catalog()
-        if session is None or catalog is None or producer_call_id is None:
+        if catalog is not None and (session is None or producer_call_id is None):
+            # Enabled catalog but no turn session (e.g. a background plan run):
+            # still keep the exact version, so a checkpoint can restore it in a
+            # fresh process. No producer or attribution is invented.
+            entry = await catalog.aput_generic(key, payload, description=description, metadata=metadata)
+            version = getattr(entry, "version_metadata", None)
+            evidence = None if version is None else str(_evidence_ref(version.artifact_id, version.version))
+            return _Written(estimate_bytes(payload), evidence, False)
+        if catalog is None:
             # Legacy path, byte-identical to the pre-FEAT-538 behaviour.
             await self.working_memory.store_result(
                 key=key,

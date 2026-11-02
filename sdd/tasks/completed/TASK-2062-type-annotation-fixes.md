@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-400 — WikiToolkit ArangoDB Backend
 **Spec**: `sdd/specs/wikitoolkit-arangodb-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

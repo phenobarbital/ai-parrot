@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-215 — GraphIndex Analytics Insights
 **Spec**: `sdd/specs/FEAT-215-graphindex-analytics-insights.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1565, TASK-1566, TASK-1567

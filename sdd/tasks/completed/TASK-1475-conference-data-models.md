@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-223 — Multi-Party Conferencing for OrchestratorAgent
 **Spec**: `sdd/specs/orchestratoragent-multiparty.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

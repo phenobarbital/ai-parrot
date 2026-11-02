@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-417 — CommCenter — Bulk Notification Sender over NotifyWorker
 **Spec**: `sdd/specs/commcenter-notify.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2153, TASK-2154, TASK-2155, TASK-2156, TASK-2157, TASK-2158, TASK-2159, TASK-2160, TASK-2161, TASK-2162

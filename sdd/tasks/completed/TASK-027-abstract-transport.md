@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-011 — FilesystemTransport
 **Spec**: `sdd/specs/filesystem-transport.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

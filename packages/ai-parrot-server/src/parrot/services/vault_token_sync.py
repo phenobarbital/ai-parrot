@@ -9,7 +9,8 @@ directly via its ``load_for_session`` classmethod.
 Example keys stored for a Fireflies auth:
     fireflies:api_key
 
-Providers served here: fireflies, workiq, entra, o365.
+Providers served here: fireflies, workiq, entra. ``o365`` is no longer served: O365 3LO and device-code
+grants share one principal-keyed record (FEAT-777); legacy ``o365:*`` keys are only read once for migration.
 
 **Jira no longer stores credentials in this vault.** Its durable owner is
 navigator-auth's Identity Vault (``auth.user_identities``), written by

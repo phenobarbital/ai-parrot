@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-636 — Linked A2UI surfaces — server-executed Python recipe transformers
 **Spec**: `sdd/specs/linked-a2ui-recipes-transforms.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4110, TASK-4108

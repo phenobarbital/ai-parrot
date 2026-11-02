@@ -19,8 +19,10 @@
  * `parrot/autonomous/admin.py`'s inline admin login page.
  */
 import apiClient from "$lib/api/http";
+import { postPasskeyLogin } from "$lib/api/passkey";
 import { config } from "$lib/config";
 import { isInAppPath, router } from "$lib/router.svelte";
+import type { PublicKeyCredentialJSON } from "$lib/webauthn";
 
 export interface AuthUser {
   [key: string]: unknown;
@@ -57,6 +59,26 @@ class AuthStore {
   user = $state<AuthUser | null>(readStoredUser());
   loading = $state(false);
   isAuthenticated = $derived(this.token !== null);
+  /** `user.auth_method` from the stored login envelope ("passkey" after a passkey login), else null. */
+  authMethod = $derived<string | null>(
+    typeof this.user?.auth_method === "string" ? (this.user.auth_method as string) : null,
+  );
+
+  /** Shared tail of every login: require data.token, persist both keys (best effort), set token + user. */
+  private _storeLoginEnvelope(data: Record<string, unknown>): void {
+    const token = data?.token;
+    if (typeof token !== "string" || !token) {
+      throw new Error("No token received from server");
+    }
+    try {
+      localStorage.setItem(config.tokenStorageKey, token);
+      localStorage.setItem(config.sessionStorageKey, JSON.stringify(data));
+    } catch {
+      // localStorage unavailable — session still works for this tab via in-memory state.
+    }
+    this.token = token;
+    this.user = data;
+  }
 
   /** POST /api/v1/login with X-Auth-Method: BasicAuth; stores token + user payload. */
   async login(username: string, password: string): Promise<{ success: boolean; error?: string }> {
@@ -68,20 +90,7 @@ class AuthStore {
         { headers: { "X-Auth-Method": "BasicAuth" } },
       );
 
-      if (!data?.token) {
-        throw new Error("No token received from server");
-      }
-
-      try {
-        localStorage.setItem(config.tokenStorageKey, data.token);
-        localStorage.setItem(config.sessionStorageKey, JSON.stringify(data));
-      } catch {
-        // localStorage unavailable — session still works for this tab via
-        // in-memory state, but will not survive a reload.
-      }
-
-      this.token = data.token;
-      this.user = data;
+      this._storeLoginEnvelope(data);
       return { success: true };
     } catch (error: unknown) {
       const message =
@@ -90,6 +99,32 @@ class AuthStore {
         (error as Error)?.message ||
         "Login failed";
       return { success: false, error: message };
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  /** Finish a passkey sign-in and persist its envelope exactly like a BasicAuth login. */
+  async loginWithPasskey(
+    challengeId: string,
+    credential: PublicKeyCredentialJSON,
+  ): Promise<{ success: boolean; error?: string }> {
+    this.loading = true;
+    try {
+      const data = await postPasskeyLogin({ challenge_id: challengeId, credential });
+      this._storeLoginEnvelope(data);
+      return { success: true };
+    } catch (error: unknown) {
+      const responseData = (error as { response?: { data?: unknown } })?.response?.data;
+      const reason =
+        responseData && typeof responseData === "object"
+          ? (responseData as { reason?: unknown }).reason
+          : undefined;
+      const message = error instanceof Error ? error.message : undefined;
+      return {
+        success: false,
+        error: typeof reason === "string" && reason ? reason : message || "Passkey sign-in failed",
+      };
     } finally {
       this.loading = false;
     }

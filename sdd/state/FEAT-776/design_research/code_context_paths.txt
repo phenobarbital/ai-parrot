@@ -1,0 +1,14 @@
+packages/ai-parrot-integrations/src/parrot/integrations/telegram/jira_commands.py
+packages/ai-parrot-integrations/src/parrot/integrations/telegram/office365_commands.py
+packages/ai-parrot-integrations/src/parrot/integrations/telegram/post_auth_jira.py
+packages/ai-parrot-integrations/src/parrot/integrations/telegram/auth.py
+packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py
+packages/ai-parrot-integrations/src/parrot/integrations/telegram/combined_callback.py
+packages/ai-parrot-integrations/src/parrot/integrations/telegram/oauth2_callback.py
+packages/ai-parrot-integrations/src/parrot/integrations/manager.py
+packages/ai-parrot-server/src/parrot/services/identity_mapping.py
+packages/ai-parrot/src/parrot/auth/oauth2/registry.py
+packages/ai-parrot/src/parrot/auth/oauth2_base.py
+packages/ai-parrot/src/parrot/auth/jira_oauth.py
+packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py
+sdd/specs/delegated-auth-connections.spec.md

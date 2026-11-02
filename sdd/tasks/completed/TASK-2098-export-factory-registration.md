@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-407 — Bedrock Mantle Client
 **Spec**: `sdd/specs/bedrock-mantle-client.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2097

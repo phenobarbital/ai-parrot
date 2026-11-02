@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-723 — Retractable coder feedback (`insight.superseded` tombstones)
 **Spec**: `sdd/specs/ledger-coder-feedback-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

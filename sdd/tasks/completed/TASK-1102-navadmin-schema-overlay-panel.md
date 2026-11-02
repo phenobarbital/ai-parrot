@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-159 — Topic-Authority Ontology Curation
 **Spec**: `sdd/specs/topic-authority-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1097

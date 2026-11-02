@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-146 — web-hitl-and-demo-agent
 **Spec**: `sdd/specs/web-hitl-and-demo-agent.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: TASK-1004

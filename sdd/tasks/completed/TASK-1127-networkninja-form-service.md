@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-166 — Multi-Origin FormDesigner — Pluggable AbstractFormService
 **Spec**: `sdd/specs/multi-origin-formdesigner.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1125, TASK-1126

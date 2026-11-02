@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-172 — Mandatory `tool_prefix` + Eager Collision Detection
 **Spec**: `sdd/specs/databaseagent-mandatory-prefix-collision.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1210

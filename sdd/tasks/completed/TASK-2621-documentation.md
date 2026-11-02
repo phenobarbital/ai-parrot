@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-479 — Dev-Flow / Dev-Loop Telemetry Accounting on the Lifecycle Bus
 **Spec**: `sdd/specs/devflow-telemetry-accounting.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2611, TASK-2612, TASK-2613, TASK-2614, TASK-2615, TASK-2616, TASK-2617, TASK-2618, TASK-2619, TASK-2620

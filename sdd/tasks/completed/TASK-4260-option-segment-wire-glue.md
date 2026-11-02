@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-654 — Voice Form hands-free barge-in and per-option narration segments
 **Spec**: `sdd/specs/voice-form-barge-in.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4257, TASK-4259

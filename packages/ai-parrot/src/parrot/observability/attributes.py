@@ -59,6 +59,8 @@ PROVIDER_TO_GEN_AI_SYSTEM: dict[str, str] = {
     # provider and its traces land under a non-SemConv system value.
     "claude-code": "anthropic",  # Claude Code CLI → Anthropic
     "openai-codex": "openai",  # Codex CLI → OpenAI
+    "codex": "openai",  # dev-loop codex backend id (dispatchers/codex.py emits client_name="codex")
+    "google-compat": "gemini",  # dev-loop Gemini-via-OpenAI-compat backend → Gemini pricing
     # Bedrock-hosted routes. All three are AWS Bedrock endpoints whatever
     # model family they serve, so they share Bedrock's canonical value —
     # the model itself is already carried by `gen_ai.request.model`.
@@ -69,6 +71,8 @@ PROVIDER_TO_GEN_AI_SYSTEM: dict[str, str] = {
     # but mapped so they are a deliberate value rather than a warning.
     "zai": "zai",
     "moonshot": "moonshot",
+    "jev": "jev",  # custom — no OTel-standard value
+    "meta": "meta",  # custom — no OTel-standard value (Meta Muse)
     "openrouter": "openrouter",
     "vllm": "vllm",
     "transformers": "huggingface",  # local HF transformers runtime

@@ -2,7 +2,7 @@
 
 **Feature**: google-lyria-music-generation
 **Spec**: `sdd/specs/google-lyria-music-generation.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

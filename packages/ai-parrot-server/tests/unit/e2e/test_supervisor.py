@@ -17,6 +17,7 @@ import contextlib
 import os
 import signal
 import sys
+import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -329,6 +330,36 @@ async def test_start_raises_on_early_exit_without_port_collision(make_supervisor
 
     # No retry for a non-collision exit: prepare() called exactly once.
     assert len(adapter.prepare_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_teardown_tolerates_heartbeat_cancelled_before_first_step(make_supervisor) -> None:
+    # Regression: a child that exits instantly makes start() tear down before
+    # the heartbeat task has run once. Cancelling a never-started task skips
+    # its suppress(CancelledError) block, so a bare ``await`` re-raised
+    # CancelledError out of start() (flaky CI failure of
+    # test_start_raises_on_early_exit_without_port_collision).
+    supervisor = make_supervisor()
+
+    class _Closable:
+        async def stop(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    heartbeat_task = asyncio.create_task(asyncio.sleep(60))  # never gets a step before teardown
+    live = types.SimpleNamespace(
+        heartbeat_task=heartbeat_task,
+        watchdog=None,
+        control_server=_Closable(),
+        process=types.SimpleNamespace(stdin=None),
+        log_handle=_Closable(),
+    )
+
+    await supervisor._teardown_live_resources(live)
+
+    assert heartbeat_task.cancelled()
 
 
 @pytest.mark.asyncio

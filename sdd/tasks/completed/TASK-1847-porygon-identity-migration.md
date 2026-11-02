@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-321 — PromptBuilder Identity Capability
 **Spec**: `sdd/specs/promptbuilder-identity-capability.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1846

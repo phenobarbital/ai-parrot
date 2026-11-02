@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-698 — /sdd-brief One-Command Brief Flow for Hotfixes and Single-Issue Fixes
 **Spec**: `sdd/specs/sdd-brief-hotfix-flow.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4425, TASK-4427, TASK-4431

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-221 — Structured Map Output Mode (`STRUCTURED_MAP`)
 **Spec**: `sdd/specs/structured-map-output.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

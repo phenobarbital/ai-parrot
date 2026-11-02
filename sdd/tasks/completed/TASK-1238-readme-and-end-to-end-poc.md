@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-177 — OpenTelemetry + Cost Observability
 **Spec**: `sdd/specs/otel-observability.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1227, TASK-1228, TASK-1229, TASK-1230, TASK-1231, TASK-1232, TASK-1233, TASK-1234, TASK-1235, TASK-1236, TASK-1237

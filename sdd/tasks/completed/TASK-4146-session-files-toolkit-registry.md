@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-643 — Confine and bound SessionFileToolkit's remote import
 **Spec**: `sdd/specs/tools-session-files-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (1h)
 **Depends-on**: none

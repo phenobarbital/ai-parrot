@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-203 — ai-parrot-server
 **Spec**: `sdd/specs/ai-parrot-server.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1369, TASK-1370, TASK-1371, TASK-1372, TASK-1373, TASK-1374, TASK-1375

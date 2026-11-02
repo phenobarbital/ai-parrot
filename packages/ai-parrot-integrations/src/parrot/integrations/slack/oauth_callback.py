@@ -4,8 +4,9 @@ After a Slack user authorizes their Jira account, Atlassian redirects to
 ``/api/auth/jira/callback``.  When ``extra_state["channel"] == "slack"``
 this module handles:
 
-1. Writing an ``auth.user_identities`` row via :class:`IdentityMappingService`,
-   when the OAuth state carries a Navigator ``nav_user_id``.
+1. Claiming a team-qualified ``auth.user_identities`` row through
+   :meth:`IdentityMappingService.claim_channel_identity`, when the OAuth state
+   carries a Navigator ``nav_user_id``.
 2. Returning a plain HTML success/error page shown in the user's browser.
 3. Firing a DM notification via :class:`SlackOAuthNotifier` (fire-and-forget).
 
@@ -13,6 +14,7 @@ The notifier must be registered on the aiohttp app as
 ``app["slack_jira_oauth_notifier"]`` by :class:`SlackAgentWrapper` during
 ``__init__`` (wired in TASK-1470).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -71,6 +73,7 @@ min-height:100vh;margin:0;background:#f5f5f5}}
 # Notifier
 # ---------------------------------------------------------------------------
 
+
 class SlackOAuthNotifier:
     """Push a DM confirmation to a Slack user after a successful Jira OAuth callback.
 
@@ -86,8 +89,7 @@ class SlackOAuthNotifier:
             from slack_sdk.web.async_client import AsyncWebClient
         except ImportError as exc:  # pragma: no cover
             raise ImportError(
-                "slack-sdk is required for SlackOAuthNotifier. "
-                "Install it with: pip install slack-sdk"
+                "slack-sdk is required for SlackOAuthNotifier. " "Install it with: pip install slack-sdk"
             ) from exc
 
         self._bot_token = bot_token
@@ -154,6 +156,7 @@ class SlackOAuthNotifier:
 # Callback handler helper
 # ---------------------------------------------------------------------------
 
+
 async def handle_slack_jira_callback(
     request: "web.Request",
     token_set: Optional["JiraTokenSet"],
@@ -164,9 +167,9 @@ async def handle_slack_jira_callback(
     Responsibilities:
     1. Return an HTML error page when Atlassian reports a consent denial
        (``?error=`` query param is present), and optionally DM the user.
-    2. Write an ``auth.user_identities`` row (if
+    2. Claim a team-qualified ``auth.user_identities`` row (if
        ``identity_mapping_service`` is available on the app AND the state
-       carries a Navigator ``nav_user_id``).
+       carries a team id and numeric Navigator ``nav_user_id``).
     3. Fire a DM notification via ``app["slack_jira_oauth_notifier"]``
        (fire-and-forget).
     4. Return an HTML success page that instructs the user to return to Slack.
@@ -194,9 +197,7 @@ async def handle_slack_jira_callback(
     # Handle Atlassian consent denial or other OAuth errors carried as query params.
     error_code = request.rel_url.query.get("error")
     if error_code:
-        error_description = request.rel_url.query.get(
-            "error_description", error_code
-        )
+        error_description = request.rel_url.query.get("error_description", error_code)
         logger.warning(
             "Slack Jira OAuth callback received error: %s — %s",
             error_code,
@@ -204,9 +205,7 @@ async def handle_slack_jira_callback(
         )
         team_id_err: str = _field("team_id")
         slack_user_id_err: str = _field("slack_user_id")
-        notifier_err: Optional[SlackOAuthNotifier] = request.app.get(
-            "slack_jira_oauth_notifier"
-        )
+        notifier_err: Optional[SlackOAuthNotifier] = request.app.get("slack_jira_oauth_notifier")
         if notifier_err is not None and slack_user_id_err:
             asyncio.create_task(
                 notifier_err.notify_failure(
@@ -245,20 +244,27 @@ async def handle_slack_jira_callback(
         )
     elif identity_service is not None and slack_user_id:
         try:
-            await identity_service.upsert_identity(
-                nav_user_id=nav_user_id,
-                auth_provider="slack",
-                provider_user_id=slack_user_id,
-                auth_data={
-                    "team_id": team_id,
-                    "slack_user_id": slack_user_id,
-                },
-                display_name=token_set.display_name or None,
-                email=token_set.email or None,
-            )
+            if not team_id or not nav_user_id.isdigit():
+                logger.warning("Skipping Slack identity claim: missing team_id or numeric nav_user_id")
+            else:
+                outcome = await identity_service.claim_channel_identity(
+                    nav_user_id=nav_user_id,
+                    auth_provider="slack",
+                    provider_user_id=f"{team_id}:{slack_user_id}",
+                    auth_data={
+                        "team_id": team_id,
+                        "slack_user_id": slack_user_id,
+                    },
+                    display_name=token_set.display_name or None,
+                    email=token_set.email or None,
+                )
+                if outcome.status == "conflict":
+                    logger.warning(
+                        "Slack identity %s:%s is owned by another account; not linked", team_id, slack_user_id
+                    )
         except Exception:  # noqa: BLE001 — identity write must not break browser flow
             logger.exception(
-                "Failed to write auth.user_identities for Slack user=%s team=%s",
+                "Failed to claim auth.user_identities for Slack user=%s team=%s",
                 slack_user_id,
                 team_id,
             )

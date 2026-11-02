@@ -99,9 +99,10 @@ def _declared_targets(
     """Return bounded declared targets classified by their registered runner."""
     registry = registry or load_registry(worktree)
     targets: list[TestTarget] = []
-    for argv in declared:
-        if not argv:
+    for command in declared:
+        if not command:
             continue
+        argv = registry.normalize(command)
         adapter = registry.adapter_for_argv(argv)
         if adapter is None:
             continue

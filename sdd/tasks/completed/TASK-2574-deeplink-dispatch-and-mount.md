@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-469 — A2UI Agent Functions Runtime (v1.0 RPC leg)
 **Spec**: `sdd/specs/a2ui-agent-functions.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2573

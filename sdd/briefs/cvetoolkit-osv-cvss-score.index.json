@@ -1,0 +1,31 @@
+{
+  "feature": "cvetoolkit-osv-cvss-score",
+  "feature_id": "BRIEF-c216e0c0eb2b",
+  "spec": "sdd/briefs/cvetoolkit-osv-cvss-score.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-11-01",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-c216e0c0eb2b-1",
+      "slug": "score-osv-cvss3-vectors",
+      "title": "Compute CVSS 3.x base scores for OSV vectors",
+      "feature_id": "BRIEF-c216e0c0eb2b",
+      "feature": "cvetoolkit-osv-cvss-score",
+      "spec": "sdd/briefs/cvetoolkit-osv-cvss-score.brief.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "",
+      "assigned_to": null,
+      "started_at": "2026-10-31T23:43:41+00:00",
+      "completed_at": "2026-10-31T23:43:41+00:00",
+      "file": "sdd/briefs/cvetoolkit-osv-cvss-score/tasks/HOTFIX-c216e0c0eb2b-1-score-osv-cvss3-vectors.md"
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-620 — Direct-Importer Core Detection for the Merge-Tier Gate
 **Spec**: `sdd/specs/test-scope-impact-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

@@ -1,7 +1,7 @@
 # TASK-442 — Odoo Interface Unit Tests
 
 **Feature**: FEAT-054 — odoo-interface
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Effort**: M
 **Depends on**: TASK-376

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-659 — nodes-qa-tech-debt
 **Spec**: sdd/specs/nodes-qa-tech-debt.spec.md
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: XS
 **Depends-on**: none
@@ -48,4 +48,16 @@ PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/flows/dev_loop
 
 ## Completion Note
 
-(filled by implementing agent)
+Implemented and merged to `dev`. Index status `done`, verification `verified`,
+recorded at 2026-10-13T23:13:29+00:00.
+
+Implementing commit: `629883469`
+
+Files changed:
+- `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/datatypes.py`
+
+(1 file changed, 11 insertions(+), 2 deletions(-))
+
+> Backfilled from the per-spec index and git history during worktree cleanup —
+> `close_task.sh` stamps the index but never rewrites this section, so the
+> implementing agent left it as the template placeholder.

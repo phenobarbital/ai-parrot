@@ -1,7 +1,7 @@
 # TASK-441 — Odoo Interface Export & Registration
 
 **Feature**: FEAT-054 — odoo-interface
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Effort**: S
 **Depends on**: TASK-375

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-634 — Agent Studio — UI Backend Gaps
 **Spec**: `sdd/specs/agentstudio-ui-backend-gaps.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M
 **Depends-on**: TASK-4096, TASK-4097, TASK-4098, TASK-4099, TASK-4100

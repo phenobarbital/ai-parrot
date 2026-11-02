@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-554 — Empirical Token-Budget Sizing for sdd-coder Bedrock Seats
 **Spec**: `sdd/specs/sdd-coder-bedrock-token-telemetry.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3187, TASK-3190, TASK-3193, TASK-3194

@@ -1,0 +1,64 @@
+
+The SDD flow reviews *code* (`/sdd-codereview`, `sdd-secondopinion`, the GitHub
+reviewer) but lacks the unified approval-time decision gate proposed here.
+Existing ADR lint and architectural tests cover narrower checks.
+A code review asks "is this diff good?".
+An audit asks: which decision was taken, under which constraints that were
+already in force, does it contradict a decision accepted earlier, does the
+implementation honor it, and does it still honor it today. That chain —
+provenance, consistency, re-verifiability — lives today only in prose:
+`CLAUDE.md`, `.agent/CONTEXT.md`, Completion Notes, review markdown. Those sources are not yet joined into a single approval-time decision contract;
+existing ADR APIs, lint rules and regression tests cover parts of the problem.
+
+Concrete symptoms:
+
+- Hard architectural rules ("clients are memory-less", "`AbstractBot` is the
+  sole writer of conversation history", "never `httpx`", "concrete tools live
+  in `parrot_tools`") exist as paragraphs. Some are enforced mechanically: `TID251` and the FEAT-524 memory/history
+  ownership regression tests. There is no unified decision-consistency gate.
+- One documented design audit was done **by hand**
+  (`sdd/proposals/plan-then-execute-design-drift.findings.md`, 2026-09-20):
+  a section-by-section comparison of a design document against `dev`. Its conclusions are tied to that snapshot and need revalidation for current code.
+- FEAT-578 built a complete ADR "decision plane"
+  (`parrot.knowledge.wiki.decisions`: `DecisionRecord`, hashed `EvidenceRef`,
+  freshness `current|stale|missing|unverified`, attributed review) and then
+  declared **as a non-goal**: "Automatic architectural compliance/drift
+  verdicts". The infrastructure for an audit exists; the audit was deliberately
+  left out.
+- The plane is **empty** in this repository: `docs/adr/`, `docs/adrs/` and
+  `docs/decisions/` (the three `adr_globs`) do not exist, and a local decision-plane query with history included independently returned
+  no records during the audit. Missing directories alone would not prove emptiness.
+- Even where records exist, **nothing in the SDD authoring lane consumes
+  them**: `/sdd-spec`, `/sdd-task`, `sdd-coder` and `sdd-worker` never call
+  `wiki_decision_why` / `wiki_decisions_for_symbol`. The Codebase Contract
+  tells a spec author *what exists*; nobody tells them *what was decided and
+  why*. FEAT-778 (domain-experts) designed exactly that consumer — a
+  `KnowledgeResolver` with an `adr` source that loads accepted decisions
+  through `DecisionService` under a token budget, as a fixed prompt layer —
+  for runtime expert agents. All 22 tasks are now done, and `KnowledgeResolver`
+  and `ADRSource` exist; their lexical, budgeted output is not a complete gate input.
+- Retrieval is the ceiling: a `DecisionRecord` is found by symbol link or by
+  token overlap. There is no filter by component, subsystem or capability
+  (no `tags`, FEAT-778 finding F043), so "what is decided about conversation
+  memory?" — the question a spec author actually asks — can only use lexical retrieval today; explicit domain filtering and coverage
+  guarantees are absent.
+
+Inspiration: `fabio-rovai/open-ontologies` (MIT, Rust). Its loop is *plan a
+change → see every consequence before applying → certify → watch drift →
+roll back*. The transferable ideas are independent of RDF: (1) consequences
+computed **before** the change lands, (2) a **conservativity** check (do the
+new axioms alter consequences that already held?), (3) a derivation
+**certificate** re-checked by a verifier that is independent of the engine
+that produced it, (4) a digest that binds the certificate to the state it was
+computed over, so drift is detectable.
+
+The decision plane therefore has to serve **two modes over the same
+records**: as *curated input* while a spec is being written (consumer), and
+as *verifier* of what the spec proposes (gate). This brainstorm covers both;
+the gate alone would only detect collisions on shared symbols, the consumer
+alone would never enforce anything.
+
+**Affected**: spec authors (Jesús, Claude/Codex seats running `/sdd-spec`),
+`sdd-worker`/`sdd-coder` seats that inherit decisions as contracts, and the
+maintainer doing post-hoc audits.
+

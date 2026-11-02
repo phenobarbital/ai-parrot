@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-403 — MCP Local Server Core + WikiToolkit MCP
 **Spec**: `sdd/specs/mcp-local-server-wikitoolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2076, TASK-2077, TASK-2078

@@ -3,7 +3,7 @@
 **Feature**: first-time-caching-embedding-model
 **Feature ID**: FEAT-054
 **Spec**: `sdd/specs/first-time-caching-embedding-model.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

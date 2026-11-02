@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-721 — Double-`configure()` Is Not a Crash
 **Spec**: `sdd/specs/double-configure-agents.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4596

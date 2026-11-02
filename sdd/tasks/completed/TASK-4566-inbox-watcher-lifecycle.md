@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-715 — FirefliesInsightsAgent
 **Spec**: `sdd/specs/fireflies-insights-agent.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4565

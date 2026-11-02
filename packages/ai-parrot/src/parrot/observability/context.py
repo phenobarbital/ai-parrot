@@ -49,7 +49,10 @@ Stdlib only — no third-party dependency.
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Iterator, Optional
+from typing import TYPE_CHECKING, Iterator, Optional
+
+if TYPE_CHECKING:
+    from parrot.observability.attribution import UsageAttribution
 
 __all__ = [
     "current_agent_name",
@@ -157,13 +160,18 @@ current_run_id: ContextVar[Optional[str]] = ContextVar("parrot_current_run_id", 
 
 current_seat: ContextVar[Optional[str]] = ContextVar("parrot_current_seat", default=None)
 
+current_usage_attribution: ContextVar[Optional["UsageAttribution"]] = ContextVar(
+    "parrot_current_usage_attribution", default=None
+)
+
 
 @contextmanager
 def usage_attribution(
     run_id: Optional[str],
     seat: Optional[str] = None,
+    attribution: Optional["UsageAttribution"] = None,
 ) -> Iterator[None]:
-    """Bind run/seat attribution for events emitted inside this block.
+    """Bind run/seat and optionally full SDD attribution for events emitted inside this block.
 
     Uses token-based ``set()`` / ``reset()`` so nested blocks restore the
     prior values rather than clearing them.
@@ -173,6 +181,8 @@ def usage_attribution(
         seat: The accounting seat — a node id (``"qa"``) or a pool worker id
             (``"development.w1"``). Deliberately a free string, not a
             ``NodeId``.
+        attribution: Immutable SDD identity to bind. When ``None``, preserves
+            an attribution bound by an outer scope.
 
     Example::
 
@@ -181,8 +191,11 @@ def usage_attribution(
     """
     tok_run = current_run_id.set(run_id)
     tok_seat = current_seat.set(seat)
+    tok_attr = current_usage_attribution.set(attribution) if attribution is not None else None
     try:
         yield
     finally:
+        if tok_attr is not None:
+            current_usage_attribution.reset(tok_attr)
         current_seat.reset(tok_seat)
         current_run_id.reset(tok_run)

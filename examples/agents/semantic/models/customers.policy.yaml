@@ -1,0 +1,14 @@
+# Policy for the `customers` model — REQUIRED by loader.py:111-115, which raises
+# `missing_policy` for every model name in a document.
+#
+# Q3: `customers` resolves its own named connection. The semantic layer reads the
+# connection from the ROOT model's policy only (toolkit.py:315,485), so a query rooted at
+# `customers` reaches PARROT_SEMANTIC_CONN_SEMANTIC_DIM_DATABASE while a query rooted at
+# `orders` reaches PARROT_SEMANTIC_CONN_SEMANTIC_EXAMPLE_DATABASE. This demonstrates
+# per-model connection isolation; it is NOT a cross-connection refusal (no such check exists).
+governed: true
+connection: semantic_dim
+limits: {default: 1000, max: 10000}
+roles:
+  analyst: {metrics: [customer_count], dimensions: [email], usage: [dim.customers.email, dim.customers.id]}
+  admin: {metrics: "*", dimensions: "*", usage: "*"}

@@ -93,9 +93,15 @@ comm-center = [
     "openpyxl>=3.1.2,<=3.1.5",
 ]
 
+# Passkey (WebAuthn) sign-in for the Admin UI (FEAT-772): navigator-auth's
+# PasskeyAuth backend + py_webauthn. 0.28.9 is the first release shipping it.
+passkey = [
+    "navigator-auth[passkey]>=0.28.9",
+]
+
 # Aggregator: all server extras
 all = [
-    "ai-parrot-server[scheduler,mcp,a2a,autonomous,comm-center]",
+    "ai-parrot-server[scheduler,mcp,a2a,autonomous,comm-center,passkey]",
 ]
 
 [project.scripts]

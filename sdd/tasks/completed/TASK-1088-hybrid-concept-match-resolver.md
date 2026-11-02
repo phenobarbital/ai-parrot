@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-159 — Concept-Document Authority Layer
 **Spec**: `sdd/specs/concept-document-authority.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1085, TASK-1087

@@ -1,0 +1,83 @@
+**Option A** is recommended because:
+
+- It is the only option that delivers the full agreed scope (sign-in **plus**
+  enrollment **plus** management) without changing the SPA's Bearer-token auth
+  contract or adding a runtime dependency. Options C and D either replace the
+  login architecture or trade typing/testability for a small code-sharing win,
+  and neither removes the need for the Svelte security page.
+- The hand-written helper is the known cost: ~60 lines of base64url fallback
+  already battle-tested upstream, plus native-API-first paths that most current
+  browsers take. That is cheaper to own than a library whose autofill/abort
+  model fights the agreed "one call = probe + conditional UI, click aborts it"
+  behaviour (Option B).
+- Duplicating the ceremony into `admin.py`'s inline page is accepted: that page
+  is a self-contained HTML string by design (no bundler), it only needs
+  sign-in, and the duplicated block is the same vanilla JS navigator-auth
+  already maintains — the brainstorm records this as a known duplication rather
+  than inventing a shared-asset mechanism (Option D).
+
+What we trade off: a second WebAuthn code path (TypeScript module vs inline
+vanilla JS) that must stay behaviourally aligned, and one more place
+(`/account`) where `config.appSections` and `SPA_SECTIONS` must match.
+
+---
+
+A small typed WebAuthn helper module in the SPA (JSON ⇄ ArrayBuffer
+conversion with native-API-first, hand-written fallback; capability detection;
+`AbortController` handling), a `passkey` API module wrapping the six backend
+endpoints, an `AuthStore.loginWithPasskey()` method that reuses the Basic
+login's token-storage path, a `PasskeySignIn` component dropped into
+`Login.svelte` (button + conditional UI; replaces the disabled
+`ProviderButtons` entry for the passkey backend), and a new
+`pages/account/Security.svelte` page (list / add / rename / delete passkeys)
+registered as route `/account/security`, linked from the Sidebar "Workspace"
+section (and/or a Topbar link). Server side: `ai-parrot-server[passkey]` extra
+(`navigator-auth[passkey]`), `SPA_SECTIONS += "/account"`, operator docs in
+`docs/admin-ui.md`, example `AUTHENTICATION_BACKENDS` /
+`PASSKEY_RELYING_PARTIES` settings, and the same vanilla-JS passkey block
+navigator-auth ships in its OAuth2 login page added to `_ADMIN_LOGIN_HTML`
+(sign-in only).
+
+✅ **Pros:**
+- Zero new runtime dependencies; the fallback is ~60 lines and already proven
+  in navigator-auth's `templates/oauth/login.html`.
+- Fully typed and unit-testable with the existing vitest setup (mock
+  `navigator.credentials`, `PublicKeyCredential`).
+- Reuses every existing seam: `AuthStore` token storage, `apiClient` 401
+  interceptor, `router` + `App.svelte` route table, `nav.ts` registry,
+  `SPA_SECTIONS`.
+- Keeps the SPA's Bearer session model; enrollment needs no CSRF work.
+- Gives users a real home for passkeys (`/account/security`) that later account
+  features (API keys, sessions) can extend.
+
+❌ **Cons:**
+- More hand-written code than a library (`webauthn.ts` helper + its tests).
+- A new top-level section touches both the UI config and the Python serving
+  module — two places to keep in sync (already the documented rule, but a
+  footgun).
+- The inline admin page gets a second copy of the vanilla JS (inline HTML
+  string, no bundler); it can't share the SPA's TypeScript module.
+
+📊 **Effort:** Medium–High (≈ 8–10 tasks: helper, API module, store method,
+sign-in component, security page, routing/nav, serving.py + tests, server
+extra + docs/settings, admin.py inline page, docs).
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `navigator-auth[passkey]` (≥ 0.28.9) | `PasskeyAuth` backend + `webauthn>=2,<3` (py_webauthn) | New optional extra on `ai-parrot-server`; Redis ≥ 6.2 (GETDEL) |
+| Browser WebAuthn Level 3 API | `PublicKeyCredential.parseRequestOptionsFromJSON` / `parseCreationOptionsFromJSON`, `credential.toJSON()`, `isConditionalMediationAvailable()` | Native in Chrome 129+, Safari 18+, Firefox 119+; fallback for older |
+| `vitest` ^4 + `@testing-library/svelte` | Unit tests with mocked `navigator.credentials` | Already in `ui/package.json` |
+| `pytest` + `aiohttp` test client | `serving.py` section/exclusion tests, admin inline page smoke test | Existing `tests/test_admin_ui_serving.py` |
+
+🔗 **Existing Code to Reuse:**
+- `packages/ai-parrot-server/ui/src/pages/Login.svelte` — host for the passkey button + `autocomplete="username webauthn"` on the username input.
+- `packages/ai-parrot-server/ui/src/lib/stores/auth.svelte.ts` — `login()` token/user persistence path to factor into a shared "store login envelope" step used by `loginWithPasskey()`.
+- `packages/ai-parrot-server/ui/src/lib/api/http.ts` — `apiClient` (Bearer + 401 interceptor) for enrollment/management; `extractServerMessage()` for `{reason}` error bodies.
+- `packages/ai-parrot-server/ui/src/lib/components/ProviderButtons.svelte` — exclude the passkey backend the same way `isBasicAuth()` excludes BasicAuth.
+- `packages/ai-parrot-server/ui/src/App.svelte` route table, `lib/nav.ts` registry, `lib/router.svelte.ts` `isInAppPath()`.
+- `packages/ai-parrot-server/src/parrot/server/ui/serving.py` — `SPA_SECTIONS`, `_spa_paths()`, `_auth_exclusion_patterns()`.
+- `packages/ai-parrot-server/src/parrot/autonomous/admin.py` — `_ADMIN_LOGIN_HTML` + `saveSession(data)` helper.
+- navigator-auth `templates/oauth/login.html` (upstream, not vendored) — reference vanilla-JS ceremony to port into `admin.py`.
+
+---

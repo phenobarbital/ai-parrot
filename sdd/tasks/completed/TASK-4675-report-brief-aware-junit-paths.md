@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-736 — The sdd_coder MCP surface accepts every id and tier its engine already accepts
 **Spec**: `sdd/specs/sdd-coder-models-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

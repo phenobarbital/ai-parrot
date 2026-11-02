@@ -7,8 +7,8 @@ registration steps, and the env-var wiring.
 The toolkit uses the generic
 [`AbstractOAuth2Manager`](../../packages/ai-parrot/src/parrot/auth/oauth2_base.py)
 infrastructure with PKCE + client_secret (confidential client). Tokens
-are persisted in the navigator-session encrypted vault and hot-cached in
-Redis with a 90-day TTL.
+are persisted in the Identity Vault via `CredentialStore` (S-1's
+`auth.user_identities` collection) and hot-cached in Redis with a 90-day TTL.
 
 ## Architecture summary
 
@@ -149,10 +149,11 @@ resolves per-user tokens at tool-call time.
 
 | Layer       | Backing store                        | TTL              | Source of truth |
 |-------------|--------------------------------------|------------------|-----------------|
-| Hot cache   | Redis `oauth2:o365:{channel}:{uid}`  | 90 days (sliding)| no              |
-| Persisted   | DocumentDB `user_credentials`        | none (until delete) | **yes**       |
+| Hot cache   | Redis `oauth2:o365:{user_id}`        | 90 days (sliding)| no              |
+| Persisted   | Identity Vault `user_credentials`    | none (until delete) | **yes**       |
 | Refresh lock| Redis `lock:oauth2:o365:refresh:...` | 10 s             | no              |
 | Nonce + PKCE| Redis `oauth2:o365:nonce:<state>`    | 10 minutes       | one-shot        |
+| Device grant| Identity Vault `user_credentials`    | none (until delete) | **yes**       |
 
 On `get_valid_token(channel, user_id)`:
 
@@ -178,6 +179,21 @@ To force a logout from the server side:
 ```python
 await manager.revoke("web", user_id)
 ```
+
+**v1 limits:** single account per provider, no relinking/transfer (admin action),
+one O365 bot token for notifications, `/enable` status per spec §8.
+
+**Grant origin:** the `grant_origin` field (`"authorization_code"` or `"device_code"`)
+is stored in the `users_integrations` row for display and audit.
+
+**Legacy migration:** until `OAUTH2_LEGACY_KEYS_UNTIL` (S-1 config), legacy
+`o365:*` keys in `VaultTokenSync` (keyed by e-mail/OID) and `oauth2_o365_web_*`
+entries are read once per principal, rewritten, and deleted.
+
+**Canonical-identity lookup (D4):** the device-code resolver resolves the
+principal first via `resolve_principal(channel, user_id)` before looking up the
+canonical identity in `IdentityPrincipalResolver`. This lookup is required for
+`cli` and `a2a` channels.
 
 ## Troubleshooting
 

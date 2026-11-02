@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3419, TASK-3444, TASK-3446

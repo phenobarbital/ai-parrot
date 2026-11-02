@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-763 — browsing-playwright-default-and-screencast
 **Spec**: `sdd/specs/browsing-playwright-default-and-screencast.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4840

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-224 — FormDesigner Audio Renderer
 **Spec**: `sdd/specs/formdesigner-audio-renderer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1459, TASK-1460

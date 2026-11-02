@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-660 — e2e-runner-fixes
 **Spec**: sdd/specs/e2e-runner-fixes.spec.md
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: TASK-4278

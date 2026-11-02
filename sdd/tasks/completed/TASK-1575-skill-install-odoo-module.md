@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-240 — Odoo PageIndex Documentation Agent
 **Spec**: `sdd/specs/odoo-pageindex-documentation-agent.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

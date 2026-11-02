@@ -2,7 +2,7 @@
 
 **Feature**: refactor-episodic-agentcorememory
 **Spec**: `sdd/specs/refactor-episodic-agentcorememory.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-510, TASK-511, TASK-512

@@ -758,13 +758,27 @@ if (( FINAL_PREP_RC != 0 || FINAL_INTEG_RC != 0 || ${LEDGER_DELIVERY_PENDING:-0}
     # Retain the worktree and batch; do not run the removal block below.
 else
     echo "Ledger delivery complete; removing the worktree."
-    git worktree remove .claude/worktrees/feat-<FEAT-ID>-<slug>
+    WT=".claude/worktrees/feat-<FEAT-ID>-<slug>"
+    # Untracked leftovers (the worker's artifacts/logs/, scratch files) are not uncommitted work, but
+    # `git worktree remove` refuses them unless the path is gitignored (issue:4a534ef4f3ee). Park them
+    # under the FEAT-764 hook-artifact root instead of reaching for --force.
+    if git -C "$WT" status --porcelain | grep -q '^[^?]'; then
+        echo "⚠️  Worktree has uncommitted changes to tracked files — not removing it."
+    else
+        LEFTOVERS="${SDD_HOOKS_ARTIFACT_ROOT:-/tmp/claude-$(id -u)/sdd-hooks}/FEAT-<FEAT-ID>/worktree-leftovers"
+        git -C "$WT" ls-files --others --exclude-standard -z | while IFS= read -r -d '' f; do
+            mkdir -p "$LEFTOVERS/$(dirname "$f")" && mv "$WT/$f" "$LEFTOVERS/$f"
+        done
+        [ -d "$LEFTOVERS" ] && echo "Untracked leftovers parked in $LEFTOVERS"
+        git worktree remove "$WT"
+    fi
 fi
 ```
 The removal runs ONLY inside the `else` above, i.e. when both delivery passes exited 0 and nothing is pending.
-If there are uncommitted changes in the worktree, warn:
+Untracked leftovers were already parked, so a refusal here means **tracked** files changed after the
+last commit. Warn and ask — never add `--force` on your own:
 ```
-⚠️  Worktree has uncommitted changes. Force remove? (y/N)
+⚠️  Worktree has uncommitted changes to tracked files. Force remove? (y/N)
 ```
 
 If the worktree was already removed, prune stale metadata:

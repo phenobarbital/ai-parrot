@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-639 — Session file store and Jira attachments for binary documents
 **Spec**: `sdd/specs/jiratoolkit-docx-support.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4140

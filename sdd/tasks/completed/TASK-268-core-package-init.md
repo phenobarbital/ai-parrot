@@ -2,7 +2,7 @@
 
 **Feature**: Shared Hooks Infrastructure (FEAT-040)
 **Spec**: `sdd/specs/integrations-hooks.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 1h)
 **Depends-on**: none

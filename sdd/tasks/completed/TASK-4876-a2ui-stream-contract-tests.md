@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-767 — A2UI stream contract tests match the reformatted handler
 **Spec**: `sdd/specs/fixgroup-daf508b68d1c.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

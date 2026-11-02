@@ -252,6 +252,9 @@ do not run task closure again on base_branch and do not clean worktrees with unk
       after step 11); remove the worktree ONLY when both passes exited 0 and `LEDGER_DELIVERY_PENDING` is
       unset, otherwise retain it and report "closeout incomplete: ledger delivery pending"
     - remove the worktree only after successful push/PR or merge path
+    - untracked leftovers (e.g. the worker's `artifacts/logs/`) are parked under
+      `${SDD_HOOKS_ARTIFACT_ROOT:-/tmp/claude-$(id -u)/sdd-hooks}/<FEAT-ID>/worktree-leftovers/` before
+      `git worktree remove`; changes to tracked files stop the cleanup and are reported — never `--force`
     - if running inside it, leave the feature worktree for an allowed directory
       before removing it; if host restrictions prevent this, report cleanup pending
     - if uncommitted changes exist in the worktree, ask before force removal

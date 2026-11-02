@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-490 — Per-run dev-flow model plan
 **Spec**: `sdd/specs/per-run-model-plan.spec.md` (Module 6)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M
 **Depends-on**: TASK-2688, TASK-2689, TASK-2691

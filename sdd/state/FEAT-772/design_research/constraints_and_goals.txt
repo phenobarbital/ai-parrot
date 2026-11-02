@@ -1,0 +1,51 @@
+- **Scope (Round 1/2 decisions)**: sign-in **and** enrollment **and**
+  credential management in the Admin UI; server-side wiring in ai-parrot
+  (optional extra + operator docs + example settings); passkey **sign-in only**
+  in the inline `/autonomous/admin` page. `parrot-formdesigner` has no login
+  form (it redirects to `/admin` when `ai_parrot_token` is missing), so it
+  needs no change.
+- **Sign-in UX**: explicit "Sign in with a passkey" button (username-first when
+  a username is typed, usernameless otherwise) **plus** conditional UI /
+  autofill (`autocomplete="username webauthn"` + `mediation: "conditional"`),
+  mirroring navigator-auth's own OAuth2 login page.
+- **Visibility**: no new build flag. Show passkey UI only when the browser has
+  `window.PublicKeyCredential` and the public `login/options` endpoint answers;
+  the **same** usernameless `login/options` call is reused as the conditional-UI
+  challenge (one request per login-page load).
+- **Session model unchanged**: the SPA keeps authenticating with
+  `Authorization: Bearer <token>` from `ai_parrot_token`; a passkey login must
+  produce the same login envelope (`data.token` + user payload) and store it
+  through the existing `AuthStore` so `handle401()`, `logout()`, the Topbar
+  identity and `parrot-formdesigner`/`admin.py` interop keep working.
+- **Enrollment auth**: Bearer-authenticated requests skip navigator-auth's CSRF
+  double-submit check, so the SPA's enrollment/management calls go through the
+  existing `apiClient` with no CSRF plumbing. (The inline admin page also uses
+  a Bearer token and needs none either.)
+- **Relying-party origin**: the backend resolves the RP **only** from the
+  browser `Origin` header against `PASSKEY_RELYING_PARTIES` (exact match). The
+  SPA is same-origin in production; during `pnpm dev` the Vite origin
+  (`http://localhost:5173`) must be listed as an RP or ceremonies 4xx. Docs
+  must say so.
+- **Browser compatibility**: use the native
+  `PublicKeyCredential.parseRequestOptionsFromJSON` /
+  `parseCreationOptionsFromJSON` / `credential.toJSON()` when available
+  (Chrome 129+, Safari 18+, Firefox 119+) and a hand-written base64url fallback
+  otherwise. **No new npm dependency.**
+- **Routing**: new user-level section `/account/security`. A new first path
+  segment means updating `config.appSections` **and** `SPA_SECTIONS` in
+  `parrot/server/ui/serving.py` (and its tests) in lockstep, or the SPA shell
+  will 404 / be auth-blocked on a hard reload.
+- **Security**: never show a different error for "unknown user" vs "bad
+  assertion" (the backend returns a uniform 401; the UI must not undo that);
+  treat `NotAllowedError` / `AbortError` as a dismissed prompt, not an error;
+  an explicit click must abort a pending conditional-UI request before starting
+  a modal one (two concurrent `credentials.get` calls reject).
+- **Conventions**: Svelte 5 runes only, `$lib` imports, vendored shadcn
+  primitives (`button`, `card`, `input`, `label`, `dialog`, `badge`,
+  `skeleton` exist — there is **no** `dropdown-menu`), vitest +
+  `@testing-library/svelte` next to the code; Python side `aiohttp` only.
+- **Tests**: vitest with a mocked `navigator.credentials` (jsdom has none) and
+  mocked `apiClient`/`axios`; pytest for `serving.py` section changes and the
+  admin inline page.
+
+---

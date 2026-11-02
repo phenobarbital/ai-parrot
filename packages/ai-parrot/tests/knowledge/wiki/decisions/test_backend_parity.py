@@ -14,6 +14,7 @@ import os
 import socket
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 
@@ -25,6 +26,8 @@ from parrot.knowledge.wiki.store import WikiPageRecord, create_wiki_store
 
 #: Backends that must always run.
 MANDATORY_BACKENDS = ("sqlite", "memory")
+
+_EVALUATION_DIGESTS: dict[str, str] = {}
 
 #: Live backends and the env var that enables each (AC8). Reasons mirror
 #: test_arango_store_cas.py / test_postgres_store_cas.py's own SKIP_REASON —
@@ -50,6 +53,20 @@ def _arangodb_reachable() -> bool:
         return False
 
 
+def _postgres_reachable() -> bool:
+    """Return whether the configured Postgres endpoint accepts a bounded TCP probe."""
+    if not POSTGRES_DSN:
+        return False
+    parsed = urlparse(POSTGRES_DSN)
+    if not parsed.hostname:
+        return False
+    try:
+        with socket.create_connection((parsed.hostname, parsed.port or 5432), timeout=_ARANGO_CONNECT_TIMEOUT_S):
+            return True
+    except OSError:
+        return False
+
+
 #: Repo root, anchored to this file rather than ``Path.cwd()`` — importing
 #: ``parrot`` (Navigator/navconfig) chdirs the process to wherever the
 #: shared editable-install package root resolves, which is the MAIN
@@ -65,7 +82,7 @@ PARITY_REPORT = _REPO_ROOT / "artifacts" / "logs" / "feat-578-backend-parity.jso
 def _available_live_backends() -> dict[str, bool]:
     return {
         "arangodb": _arangodb_reachable(),
-        "postgres": bool(POSTGRES_DSN),
+        "postgres": _postgres_reachable(),
     }
 
 
@@ -163,6 +180,81 @@ class TestMandatoryBackends:
         dossier = await service.why("pgvector")
         assert dossier.status == "ok"
         assert dossier.documented[0].decision_id == "adr:doc:pgv"
+
+
+class TestSchema2Parity:
+    """FEAT-784 S11: schema-2 records are backend-independent."""
+
+    async def test_backend_parity_schema2(self, parity_store):
+        """Round-trip every schema-2 field through each mandatory backend."""
+        from parrot.knowledge.wiki.decisions.models import DecisionRef, DecisionTarget
+
+        record = DecisionRecord(
+            schema_version=2,
+            decision_id="adr:spec:demo#rule",
+            decision="Clients never persist history",
+            origin="documented",
+            source_status="accepted",
+            normative="forbids",
+            about=["clients"],
+            targets=[DecisionTarget(target_id="dir:src/pkg", kind="dir")],
+            contradicts=[DecisionRef(decision_id="adr:doc:x", revision=1)],
+            document_id="demo",
+            entry_id="rule",
+            batch_id="b1",
+        )
+        repository = DecisionRepository(parity_store)
+        await repository.save(record, None)
+        loaded, _content_hash = await repository.get(record.decision_id)
+        assert loaded == record
+
+    async def test_evaluation_parity_backends(self, parity_store, tmp_path):
+        """Identical built planes yield the same evaluation digest on both backends."""
+        from parrot.knowledge.wiki.decisions.consequences import ConsequenceService
+        from parrot.knowledge.wiki.project import WikiProjectConfig
+        from parrot.knowledge.wiki.structural.service import StructuralService
+
+        root = tmp_path / "repo"
+        (root / "pkg").mkdir(parents=True)
+        (root / "pkg/a.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+        taxonomy = root / "sdd/taxonomy/subsystems.yaml"
+        taxonomy.parent.mkdir(parents=True)
+        taxonomy.write_text(
+            "schema_version: 1\nsubsystems:\n  - id: core\n    title: Core\n    projects: [ai-parrot]\n",
+            encoding="utf-8",
+        )
+        approvals = root / "sdd/decisions/approvals.jsonl"
+        approvals.parent.mkdir(exist_ok=True)
+        approvals.write_text("", encoding="utf-8")
+        spec = root / "spec.md"
+        spec.write_text(
+            "---\nprojects: [ai-parrot]\n---\n# Spec\n\n## Decisions\n\n```yaml\n"
+            "schema_version: 1\ndocument_id: parity\nentries:\n"
+            "  - id: rule\n    statement: Govern the file.\n    relation: requires\n"
+            '    about: [core]\n    targets: ["file:pkg/a.py"]\n```\n',
+            encoding="utf-8",
+        )
+        await parity_store.upsert_pages([WikiPageRecord(concept_id="file:pkg/a.py", content_hash="fixture-file")])
+        config = WikiProjectConfig()
+        structural = StructuralService(parity_store, root, config, read_repair=False)
+
+        class _Adapter:
+            async def verify(self, entry, *, spec_text):
+                return False, []
+
+        service = ConsequenceService(
+            parity_store,
+            root,
+            DecisionConfig(),
+            structural,
+            taxonomy_path=taxonomy,
+            approvals_path=approvals,
+            adapter=_Adapter(),
+        )
+        digest = (await service.evaluate(Path("spec.md"))).evaluation_digest
+        _EVALUATION_DIGESTS[type(parity_store).__name__] = digest
+        if len(_EVALUATION_DIGESTS) == len(MANDATORY_BACKENDS):
+            assert len(set(_EVALUATION_DIGESTS.values())) == 1
 
 
 class TestLiveBackends:

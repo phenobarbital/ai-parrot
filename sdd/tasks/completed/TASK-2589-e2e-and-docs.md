@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-475 — UI Agent Management — Admin UI Agent CRUD
 **Spec**: `sdd/specs/ui-agent-management.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2583, TASK-2584, TASK-2587, TASK-2588

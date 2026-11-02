@@ -120,6 +120,11 @@ def setup_event_fanout(bus: Any = None) -> None:
     logger.info("Event fan-out enabled (%d events)", len(FORWARDED_EVENTS))
 
 
+def get_event_fanout_bus() -> Any:
+    """Return the process fan-out bus when fan-out is enabled, else ``None``."""
+    return _BUS
+
+
 async def shutdown_event_fanout() -> None:
     """Unsubscribe, detach the bus, and close it while preserving its outbox."""
     global _BUS  # noqa: PLW0603

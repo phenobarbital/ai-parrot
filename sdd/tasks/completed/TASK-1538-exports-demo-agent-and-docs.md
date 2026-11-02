@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-235 — HITL Tool-Call Confirmation
 **Spec**: `sdd/specs/hitl-confirmation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1535, TASK-1536, TASK-1537

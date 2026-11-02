@@ -3,6 +3,8 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import asyncio
+import uuid
+
 import pytest
 
 from parrot.roost.carriers.inprocess import InProcessCarrier
@@ -10,11 +12,13 @@ from parrot.roost.directory import InterAgentGrant, RoostAgentConfig
 from parrot.roost.endpoint import RoostEndpoint, RoostFailure
 from parrot.roost.gating import GatingDispatcher, HandlerRegistry
 from parrot.roost.grant import GrantPolicy
-from parrot.roost.messages import AgentAddress, FailureInfo
+from parrot.roost.messages import AgentAddress, FailureInfo, RoostMessage
 from parrot.roost.performatives import CarrierKind, FailureCode, InteractionProtocol, Performative
+from parrot.roost import squawk_bridge
 from parrot.roost.protocols import ProtocolEngine
 
 GRANTED = RoostAgentConfig(grant=InterAgentGrant(scopes=["*"]))
+CALLER_CTX = object()  # opaque stand-in for a PermissionContext
 
 
 def make_endpoint(
@@ -26,11 +30,13 @@ def make_endpoint(
     working_memory: MagicMock | None = None,
     wake: AsyncMock | None = None,
     registry: MagicMock | None = None,
+    engine: ProtocolEngine | None = None,
+    permission_context: object = CALLER_CTX,
 ) -> RoostEndpoint:
     """Build an endpoint with deterministic mocks for external agent services."""
     tool_manager = MagicMock()
     tool_manager.execute_tool = AsyncMock(return_value=tool_result)
-    engine = ProtocolEngine()
+    engine = engine or ProtocolEngine()
     dispatcher = GatingDispatcher(
         self_name=name,
         config=config,
@@ -48,6 +54,7 @@ def make_endpoint(
         working_memory=working_memory,
         wake=wake,
         registry=registry,
+        permission_context=permission_context,
     )
 
 
@@ -74,7 +81,7 @@ async def test_request_returns_native_object_and_uses_manager_guard() -> None:
         )
         assert output is result
         hr.tool_manager.execute_tool.assert_awaited_once()
-        assert hr.tool_manager.execute_tool.await_args.kwargs["permission_context"] is None
+        assert hr.tool_manager.execute_tool.await_args.kwargs["permission_context"] is CALLER_CTX
         assert len(caller.ledger.entries()) == 3
         assert len(hr.ledger.entries()) == 3
     finally:
@@ -213,6 +220,97 @@ async def test_request_with_receiver_outside_grant_is_denied() -> None:
         await make_endpoint("bare", carrier).request("hr.x", {}, receiver=AgentAddress(name="hr"), timeout=1)
 
 
+HR_CONFIG = RoostAgentConfig(capabilities=["hr.people.salary"], backing="deterministic")
+
+
+@pytest.mark.asyncio
+async def test_request_falls_back_to_pctx_var() -> None:
+    """With no constructor override the bound ContextVar supplies the authority."""
+    from parrot.auth.context import _pctx_var
+
+    carrier = InProcessCarrier()
+    hr = make_endpoint("hr", carrier, config=HR_CONFIG, tool_result=1)
+    caller = make_endpoint("caller", carrier, config=GRANTED, permission_context=None)
+    await hr.start()
+    await caller.start()
+    ctx = object()
+    token = _pctx_var.set(ctx)
+    try:
+        await caller.request("hr.people.salary", {}, receiver=AgentAddress(name="hr"), timeout=1)
+    finally:
+        _pctx_var.reset(token)
+        await caller.stop()
+        await hr.stop()
+    assert hr.tool_manager.execute_tool.await_args.kwargs["permission_context"] is ctx
+
+
+@pytest.mark.asyncio
+async def test_request_without_authority_is_refused_with_policy_failure() -> None:
+    """No authority on the wire: the tool never runs and the caller gets failure(POLICY)."""
+    carrier = InProcessCarrier()
+    hr = make_endpoint("hr", carrier, config=HR_CONFIG)
+    caller = make_endpoint("caller", carrier, config=GRANTED, permission_context=None)
+    await hr.start()
+    await caller.start()
+    try:
+        with pytest.raises(RoostFailure) as exc_info:
+            await caller.request("hr.people.salary", {}, receiver=AgentAddress(name="hr"), timeout=1)
+        assert exc_info.value.failure.code is FailureCode.POLICY
+        hr.tool_manager.execute_tool.assert_not_awaited()
+    finally:
+        await caller.stop()
+        await hr.stop()
+
+
+@pytest.mark.asyncio
+async def test_unadvertised_capability_is_refused() -> None:
+    """A tool the serving agent does not advertise is refused even with authority."""
+    carrier = InProcessCarrier()
+    hr = make_endpoint("hr", carrier, config=HR_CONFIG)
+    caller = make_endpoint("caller", carrier, config=GRANTED)
+    await hr.start()
+    await caller.start()
+    try:
+        with pytest.raises(RoostFailure) as exc_info:
+            await caller.request("hr.people.delete", {}, receiver=AgentAddress(name="hr"), timeout=1)
+        assert exc_info.value.failure.code is FailureCode.POLICY
+        hr.tool_manager.execute_tool.assert_not_awaited()
+    finally:
+        await caller.stop()
+        await hr.stop()
+
+
+@pytest.mark.asyncio
+async def test_args_cannot_override_the_requested_tool() -> None:
+    """args['tool'] never changes the tool the serving side runs."""
+    carrier = InProcessCarrier()
+    hr = make_endpoint("hr", carrier, config=HR_CONFIG, tool_result=1)
+    caller = make_endpoint("caller", carrier, config=GRANTED)
+    await hr.start()
+    await caller.start()
+    try:
+        await caller.request(
+            "hr.people.salary", {"tool": "admin_wipe"}, receiver=AgentAddress(name="hr"), timeout=1
+        )
+        assert hr.tool_manager.execute_tool.await_args.args[0] == "hr_people_salary"
+    finally:
+        await caller.stop()
+        await hr.stop()
+
+
+@pytest.mark.asyncio
+async def test_query_outside_grant_is_denied() -> None:
+    """A query to an agent outside the caller's grant never leaves the endpoint."""
+    from parrot.roost.grant import GrantDenied
+
+    carrier = InProcessCarrier()
+    caller = make_endpoint("caller", carrier, config=RoostAgentConfig(grant=InterAgentGrant(scopes=["hr.*"])))
+    with pytest.raises(GrantDenied):
+        await caller.query({"q": 1}, receiver=AgentAddress(name="payroll"), timeout=1)
+    assert not caller._pending
+    assert not caller.engine._states
+
+
 @pytest.mark.asyncio
 async def test_hop_limit_is_enforced_on_the_wire() -> None:
     """A request seeded beyond the hop limit is answered with failure(HOP_LIMIT)."""
@@ -249,3 +347,189 @@ async def test_expired_conversation_emits_failure_timeout_to_the_requester() -> 
     finally:
         await caller.stop()
         await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_hop_limit_on_the_caller_side_fails_the_query_instead_of_returning_a_result() -> None:
+    """A reply that trips the caller's own hop limit raises HOP_LIMIT, never a result."""
+    carrier = InProcessCarrier()
+
+    async def wake(msg, dispatch):
+        return msg.reply(Performative.INFORM, content={"answer": 42})
+
+    srv = make_endpoint(
+        "srv",
+        carrier,
+        config=RoostAgentConfig(capabilities=["s.x"]),
+        wake=wake,
+        engine=ProtocolEngine(default_hop_limit=99),
+    )
+    caller = make_endpoint("caller", carrier, config=GRANTED, engine=ProtocolEngine(default_hop_limit=4))
+    await srv.start()
+    await caller.start()
+    try:
+        with pytest.raises(RoostFailure) as exc_info:
+            await caller.query("how much?", receiver=AgentAddress(name="srv"), timeout=2, hops=5)
+        assert exc_info.value.failure.code is FailureCode.HOP_LIMIT
+    finally:
+        await caller.stop()
+        await srv.stop()
+
+
+@pytest.mark.asyncio
+async def test_hop_limit_on_the_caller_side_fails_the_request_instead_of_timing_out() -> None:
+    """The REQUEST path surfaces HOP_LIMIT, not the TIMEOUT it used to degrade into."""
+    carrier = InProcessCarrier()
+    hr = make_endpoint(
+        "hr",
+        carrier,
+        config=RoostAgentConfig(capabilities=["hr.x"], backing="deterministic"),
+        tool_result={"salary": 100},
+        engine=ProtocolEngine(default_hop_limit=99),
+    )
+    caller = make_endpoint("caller", carrier, config=GRANTED, engine=ProtocolEngine(default_hop_limit=4))
+    await hr.start()
+    await caller.start()
+    try:
+        with pytest.raises(RoostFailure) as exc_info:
+            await caller.request("hr.x", {}, receiver=AgentAddress(name="hr"), timeout=2, hops=5)
+        assert exc_info.value.failure.code is FailureCode.HOP_LIMIT
+    finally:
+        await caller.stop()
+        await hr.stop()
+
+
+async def _open_budgeted_query(caller: RoostEndpoint, target: str, *, token_budget: int) -> str:
+    """Send a QUERY whose envelope declares ``token_budget`` and return its conversation id."""
+    conversation_id = uuid.uuid4().hex
+    envelope = squawk_bridge.new_envelope(
+        correlation_id=conversation_id,
+        caller=caller.agent_name,
+        token_budget=token_budget,
+    )
+    await caller.send(
+        Performative.QUERY,
+        receivers=[AgentAddress(name=target)],
+        content="how much?",
+        protocol=InteractionProtocol.QUERY,
+        conversation_id=conversation_id,
+        envelope=envelope,
+    )
+    return conversation_id
+
+
+@pytest.mark.asyncio
+async def test_wake_reported_tokens_trip_the_conversation_token_budget() -> None:
+    """A wake response carrying `tokens` beyond the budget closes with TOKEN_BUDGET."""
+    carrier = InProcessCarrier()
+
+    async def wake(msg, dispatch):
+        return msg.reply(Performative.INFORM, content={"answer": 42}, tokens=50)
+
+    srv = make_endpoint("srv", carrier, config=RoostAgentConfig(capabilities=["s.x"]), wake=wake)
+    caller = make_endpoint("caller", carrier, config=GRANTED)
+    await srv.start()
+    await caller.start()
+    try:
+        conversation_id = await _open_budgeted_query(caller, "srv", token_budget=10)
+        await asyncio.sleep(0.1)
+        state = srv.engine.state(conversation_id)
+        assert state is not None
+        assert state.budget.tokens_used == 50
+        assert state.terminal is not None
+    finally:
+        await caller.stop()
+        await srv.stop()
+
+
+@pytest.mark.asyncio
+async def test_budgeted_conversation_warns_once_when_wake_reports_no_tokens(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A budgeted conversation whose wake reports 0 tokens warns once and still serves."""
+    carrier = InProcessCarrier()
+
+    async def wake(msg, dispatch):
+        return msg.reply(Performative.INFORM, content={"answer": 42})
+
+    srv = make_endpoint("srv", carrier, config=RoostAgentConfig(capabilities=["s.x"]), wake=wake)
+    caller = make_endpoint("caller", carrier, config=GRANTED)
+    await srv.start()
+    await caller.start()
+    try:
+        with caplog.at_level("WARNING", logger=srv.logger.name):
+            conversation_id = await _open_budgeted_query(caller, "srv", token_budget=10)
+            await asyncio.sleep(0.1)
+        warnings = [r for r in caplog.records if conversation_id in r.getMessage()]
+        assert len(warnings) == 1, f"expected exactly one warning, got {len(warnings)}"
+        assert srv.engine.state(conversation_id).budget.tokens_used == 0
+
+        # The dedupe set itself: repeated 0-token turns on a conversation that is still
+        # open warn exactly once. The end-to-end turn above cannot show this, because a
+        # QUERY reaches its terminal on the first INFORM.
+        caplog.clear()
+        open_id = uuid.uuid4().hex
+        opener = RoostMessage(
+            performative=Performative.QUERY,
+            protocol=InteractionProtocol.QUERY,
+            conversation_id=open_id,
+            sender=AgentAddress(name="caller"),
+            receivers=[AgentAddress(name="srv")],
+            content="still open",
+            envelope=squawk_bridge.new_envelope(
+                correlation_id=open_id, caller="caller", token_budget=10
+            ),
+        )
+        srv.engine.open(opener)
+        with caplog.at_level("WARNING", logger=srv.logger.name):
+            srv._warn_unfed_token_budget(open_id)
+            srv._warn_unfed_token_budget(open_id)
+        assert len([r for r in caplog.records if open_id in r.getMessage()]) == 1
+    finally:
+        await caller.stop()
+        await srv.stop()
+
+
+@pytest.mark.asyncio
+async def test_unbudgeted_conversation_does_not_warn_about_tokens(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A conversation with no token budget is legitimately unbudgeted and stays silent."""
+    carrier = InProcessCarrier()
+
+    async def wake(msg, dispatch):
+        return msg.reply(Performative.INFORM, content={"answer": 42})
+
+    srv = make_endpoint("srv", carrier, config=RoostAgentConfig(capabilities=["s.x"]), wake=wake)
+    caller = make_endpoint("caller", carrier, config=GRANTED)
+    await srv.start()
+    await caller.start()
+    try:
+        with caplog.at_level("WARNING", logger=srv.logger.name):
+            result = await caller.query("how much?", receiver=AgentAddress(name="srv"), timeout=2)
+        assert result == {"answer": 42}
+        assert not [r for r in caplog.records if "token budget" in r.getMessage()]
+    finally:
+        await caller.stop()
+        await srv.stop()
+
+
+@pytest.mark.asyncio
+async def test_query_carries_the_caller_authority() -> None:
+    """A query opener is stamped with the caller authority exactly like a request."""
+    carrier = InProcessCarrier()
+    served = make_endpoint("hr", carrier, config=HR_CONFIG, tool_result="answer")
+    caller = make_endpoint("caller", carrier, config=GRANTED)
+    await served.start()
+    await caller.start()
+    try:
+        sent = await caller.send(
+            Performative.QUERY,
+            receivers=[AgentAddress(name="hr")],
+            content="how much?",
+            protocol=InteractionProtocol.QUERY,
+        )
+        assert sent.permission_context is CALLER_CTX
+    finally:
+        await caller.stop()
+        await served.stop()

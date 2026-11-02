@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-229 — Multimodal Embedding Provider
 **Spec**: `sdd/specs/multimodal-embedding-provider.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1487, TASK-1488

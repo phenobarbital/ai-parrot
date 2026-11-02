@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-402 — Supervised Wiki Ingestion (charter-driven triage + HITL manifest review)
 **Spec**: `sdd/specs/supervised-wiki-ingestion.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

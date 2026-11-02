@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-739 — Admin UI accepts every upload the backend stores, and reports what it stored
 **Spec**: `sdd/specs/fixgroup-6630fd230436.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4680

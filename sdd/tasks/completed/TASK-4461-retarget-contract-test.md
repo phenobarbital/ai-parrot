@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-703 — Code-enforced E2E closeout gate for `/sdd-done`
 **Spec**: `sdd/specs/fixgroup-603217cacd87.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (1-2h)
 **Depends-on**: TASK-4460

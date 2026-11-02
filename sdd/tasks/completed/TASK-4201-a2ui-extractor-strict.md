@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-650 — A2UI dialect for parrot-formdesigner
 **Spec**: `sdd/specs/a2ui-dialect-formbuilder.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

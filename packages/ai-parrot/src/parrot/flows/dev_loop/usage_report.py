@@ -25,11 +25,12 @@ from __future__ import annotations
 
 import time
 from html import escape
-from typing import Any
+from typing import Any, Iterable
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from parrot.flows.dev_loop.run_bundle import _sum_optional_float, _sum_optional_int
+from parrot.observability.recorders.models import UsageRecord
 from parrot.observability.recorders.run_ledger import RunLedgerRecorder, SeatUsage
 
 
@@ -79,6 +80,10 @@ class AgentUsage(_Frozen):
     duration_seconds: float | None = None
     cycles: list[CycleUsage] = Field(default_factory=list)
     failures: int = 0
+    # FEAT-783: optional cost roll-up (post-policy ``cost_usd`` and list-price
+    # ``equivalent_usd``). ``None`` when unpriced — run reports leave them unset.
+    cost_usd: float | None = None
+    equivalent_usd: float | None = None
 
 
 class UsageReport(_Frozen):
@@ -95,6 +100,9 @@ class UsageReport(_Frozen):
     # presenting a short total as complete.
     partial: bool = False
     partial_reason: str = ""
+    # FEAT-783: optional cost totals; ``None`` when no agent carries a cost.
+    total_cost_usd: float | None = None
+    total_equivalent_usd: float | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -199,6 +207,99 @@ def build_usage_report(ledger: RunLedgerRecorder, run_id: str) -> UsageReport:
     )
 
 
+_SPEC_GROUPINGS = {"task": "task_id", "model": "model", "seat": "roster_seat"}
+_UNATTRIBUTED = "(unattributed)"
+
+
+def _spec_rounds(rows: list[UsageRecord]) -> int:
+    """Distinct ``attempt_uid`` count; rows without one count individually."""
+    uids = {r.attempt_uid for r in rows if r.attempt_uid}
+    return len(uids) + sum(1 for r in rows if not r.attempt_uid)
+
+
+def build_spec_usage_report(rows: Iterable[UsageRecord], feat_id: str, *, by: str = "task") -> UsageReport:
+    """Per-feature sibling of :func:`build_usage_report`, grouping
+    ``SpecUsageRecorder`` rows by task, model or roster seat.
+
+    Reuses :class:`CycleUsage`/:class:`AgentUsage` and the existing renderers so
+    the views cannot disagree. Costs sum ``cost_usd`` (post-policy) and
+    ``equivalent_usd``; ``source_cost_usd`` and the process-cumulative
+    ``cumulative_cost_usd`` are NEVER summed (AC-5). Pure — no filesystem.
+
+    Args:
+        rows: Usage rows (rows of other features are ignored).
+        feat_id: The feature id; also used as ``run_id`` and ``node_id``.
+        by: Grouping — ``"task"``, ``"model"`` or ``"seat"``.
+
+    Returns:
+        The assembled :class:`UsageReport`.
+
+    Raises:
+        ValueError: When *by* is not a supported grouping.
+    """
+    if by not in _SPEC_GROUPINGS:
+        raise ValueError(f"by must be one of {sorted(_SPEC_GROUPINGS)}, got {by!r}")
+    attr = _SPEC_GROUPINGS[by]
+    groups: dict[str, list[UsageRecord]] = {}
+    for row in rows:
+        if row.feat_id != feat_id:
+            continue
+        groups.setdefault(getattr(row, attr) or _UNATTRIBUTED, []).append(row)
+
+    agents: list[AgentUsage] = []
+    for key, group in groups.items():
+        cycles = [
+            CycleUsage(
+                cycle=index,
+                model=row.model,
+                input_tokens=row.input_tokens if row.usage_reported else None,
+                output_tokens=row.output_tokens if row.usage_reported else None,
+                duration_seconds=(row.duration_ms / 1000.0 if row.duration_ms else None),
+                status=row.status,
+                error_type=row.error_type or "",
+            )
+            for index, row in enumerate(group, start=1)
+        ]
+        models = {r.model for r in group if r.model}
+        providers = {r.provider for r in group if r.provider}
+        agents.append(
+            AgentUsage(
+                seat=key,
+                node_id=feat_id,
+                backend=providers.pop() if len(providers) == 1 else "",
+                model=models.pop() if len(models) == 1 else "",
+                rounds=_spec_rounds(group),
+                input_tokens=_sum_optional_int([c.input_tokens for c in cycles]),
+                output_tokens=_sum_optional_int([c.output_tokens for c in cycles]),
+                duration_seconds=_sum_optional_float([c.duration_seconds for c in cycles]),
+                cycles=cycles,
+                failures=sum(1 for c in cycles if c.status == "failed"),
+                cost_usd=_sum_optional_float([r.cost_usd for r in group]),
+                equivalent_usd=_sum_optional_float([r.equivalent_usd for r in group]),
+            )
+        )
+
+    return UsageReport(
+        run_id=feat_id,
+        agents=agents,
+        total_input_tokens=_sum_optional_int([a.input_tokens for a in agents]),
+        total_output_tokens=_sum_optional_int([a.output_tokens for a in agents]),
+        total_rounds=_sum_optional_int([a.rounds for a in agents]),
+        total_cost_usd=_sum_optional_float([a.cost_usd for a in agents]),
+        total_equivalent_usd=_sum_optional_float([a.equivalent_usd for a in agents]),
+    )
+
+
+def _has_cost(report: UsageReport) -> bool:
+    """True when any agent carries a cost figure (renderers add cost columns)."""
+    return any(a.cost_usd is not None or a.equivalent_usd is not None for a in report.agents)
+
+
+def _fmt_usd(value: float | None) -> str:
+    """Render a USD amount, or ``—`` when unpriced."""
+    return "—" if value is None else f"${value:.4f}"
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Renderer — markdown
 # ─────────────────────────────────────────────────────────────────────
@@ -227,16 +328,17 @@ def _fmt_tokens(input_tokens: int | None, output_tokens: int | None) -> str:
     )
 
 
-def _cycle_markdown_row(agent: AgentUsage, cycle: CycleUsage) -> str:
+def _cycle_markdown_row(agent: AgentUsage, cycle: CycleUsage, with_cost: bool = False) -> str:
     """One indented ``| └ cycle N | ... |`` row — suppressed by the caller
     when a seat has exactly one cycle (the parent row already says
     everything)."""
     duration = f"{cycle.duration_seconds:.1f}s" if cycle.duration_seconds is not None else "—"
-    return (
+    row = (
         f"| └ cycle {cycle.cycle} | {agent.node_id} | — "
         f"| {cycle.model or '—'} | — "
         f"| {_fmt_tokens(cycle.input_tokens, cycle.output_tokens)} | {duration} |"
     )
+    return row + " — | — |" if with_cost else row
 
 
 def _failed_cycles(report: UsageReport) -> list[tuple[AgentUsage, CycleUsage]]:
@@ -278,25 +380,38 @@ def render_usage_markdown(report: UsageReport) -> str:
         lines.append("")
         return "\n".join(lines)
 
-    lines.append("| Seat | Node | Backend | Model | Rounds | Tokens | Duration |")
-    lines.append("|---|---|---|---|---|---|---|")
+    with_cost = _has_cost(report)
+    if with_cost:
+        lines.append("| Seat | Node | Backend | Model | Rounds | Tokens | Duration | Cost | Equivalent |")
+        lines.append("|---|---|---|---|---|---|---|---|---|")
+    else:
+        lines.append("| Seat | Node | Backend | Model | Rounds | Tokens | Duration |")
+        lines.append("|---|---|---|---|---|---|---|")
     for agent in report.agents:
         duration = f"{agent.duration_seconds:.1f}s" if agent.duration_seconds is not None else "—"
-        lines.append(
+        row = (
             f"| {agent.seat} | {agent.node_id} | {agent.backend or '—'} "
             f"| {agent.model or '—'} | {_fmt_value(agent.rounds)} "
             f"| {_fmt_agent_tokens(agent)} | {duration} |"
         )
+        if with_cost:
+            row += f" {_fmt_usd(agent.cost_usd)} | {_fmt_usd(agent.equivalent_usd)} |"
+        lines.append(row)
         if len(agent.cycles) > 1:
             for cycle in agent.cycles:
-                lines.append(_cycle_markdown_row(agent, cycle))
+                lines.append(_cycle_markdown_row(agent, cycle, with_cost))
     lines.append("")
     totals_label = "**Totals (partial)**" if report.partial else "**Totals**"
-    lines.append(
+    totals_line = (
         f"{totals_label} — rounds: {_fmt_value(report.total_rounds)}, "
         f"input tokens: {_fmt_value(report.total_input_tokens)}, "
         f"output tokens: {_fmt_value(report.total_output_tokens)}"
     )
+    if with_cost:
+        totals_line += (
+            f", cost: {_fmt_usd(report.total_cost_usd)}, " f"equivalent: {_fmt_usd(report.total_equivalent_usd)}"
+        )
+    lines.append(totals_line)
     lines.append("")
 
     failed = _failed_cycles(report)
@@ -344,7 +459,7 @@ def _fmt_tokens_html(input_tokens: int | None, output_tokens: int | None) -> str
     return f"{input_part} in / {output_part} out"
 
 
-def _html_row(agent: AgentUsage) -> str:
+def _html_row(agent: AgentUsage, with_cost: bool = False) -> str:
     """One ``<tr>`` for *agent* — same column set as ``render_usage_markdown``
     (Seat, Node, Backend, Model, Rounds, Tokens, Duration). Every
     interpolated value is HTML-escaped — model ids and seat names reach
@@ -360,11 +475,16 @@ def _html_row(agent: AgentUsage) -> str:
         f"<td>{_fmt_value_html(agent.rounds)}</td>"
         f"<td>{_fmt_agent_tokens_html(agent)}</td>"
         f"<td>{escape(duration)}</td>"
-        "</tr>"
+        + (
+            f"<td>{escape(_fmt_usd(agent.cost_usd))}</td><td>{escape(_fmt_usd(agent.equivalent_usd))}</td>"
+            if with_cost
+            else ""
+        )
+        + "</tr>"
     )
 
 
-def _cycle_html_row(agent: AgentUsage, cycle: CycleUsage) -> str:
+def _cycle_html_row(agent: AgentUsage, cycle: CycleUsage, with_cost: bool = False) -> str:
     """One indented ``<tr class="cycle">`` for a retained cycle — suppressed
     by the caller when a seat has exactly one cycle."""
     duration = f"{cycle.duration_seconds:.1f}s" if cycle.duration_seconds is not None else "—"
@@ -376,8 +496,7 @@ def _cycle_html_row(agent: AgentUsage, cycle: CycleUsage) -> str:
         f"<td>{escape(cycle.model) if cycle.model else '—'}</td>"
         "<td>—</td>"
         f"<td>{_fmt_tokens_html(cycle.input_tokens, cycle.output_tokens)}</td>"
-        f"<td>{escape(duration)}</td>"
-        "</tr>"
+        f"<td>{escape(duration)}</td>" + ("<td>—</td><td>—</td>" if with_cost else "") + "</tr>"
     )
 
 
@@ -431,11 +550,12 @@ def render_usage_html(report: UsageReport) -> str:
     Returns:
         A complete ``<!doctype html>`` … ``</html>`` document.
     """
+    with_cost = _has_cost(report)
     row_parts: list[str] = []
     for agent in report.agents:
-        row_parts.append(_html_row(agent))
+        row_parts.append(_html_row(agent, with_cost))
         if len(agent.cycles) > 1:
-            row_parts.extend(_cycle_html_row(agent, cycle) for cycle in agent.cycles)
+            row_parts.extend(_cycle_html_row(agent, cycle, with_cost) for cycle in agent.cycles)
     rows = "\n".join(row_parts)
     body_table: str
     if not report.agents:
@@ -446,7 +566,8 @@ def render_usage_html(report: UsageReport) -> str:
             "<thead><tr>"
             "<th>Seat</th><th>Node</th><th>Backend</th><th>Model</th>"
             "<th>Rounds</th><th>Tokens</th><th>Duration</th>"
-            "</tr></thead>"
+            + ("<th>Cost</th><th>Equivalent</th>" if with_cost else "")
+            + "</tr></thead>"
             f"<tbody>{rows}</tbody>"
             "</table>"
         )
@@ -456,7 +577,14 @@ def render_usage_html(report: UsageReport) -> str:
         f"<p><strong>{totals_label}</strong> — "
         f"rounds: {_fmt_value_html(report.total_rounds)}, "
         f"input tokens: {_fmt_value_html(report.total_input_tokens)}, "
-        f"output tokens: {_fmt_value_html(report.total_output_tokens)}</p>"
+        f"output tokens: {_fmt_value_html(report.total_output_tokens)}"
+        + (
+            f", cost: {escape(_fmt_usd(report.total_cost_usd))}, "
+            f"equivalent: {escape(_fmt_usd(report.total_equivalent_usd))}"
+            if with_cost
+            else ""
+        )
+        + "</p>"
     )
     partial_banner = ""
     if report.partial:
@@ -495,6 +623,7 @@ __all__ = [
     "AgentUsage",
     "CycleUsage",
     "UsageReport",
+    "build_spec_usage_report",
     "build_usage_report",
     "render_usage_html",
     "render_usage_markdown",

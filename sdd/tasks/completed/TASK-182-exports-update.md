@@ -2,7 +2,7 @@
 
 **Feature**: Multi-Executor Integration (FEAT-026)
 **Spec**: `sdd/specs/finance-multi-executor-integration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (1-2h)
 **Depends-on**: TASK-177, TASK-179

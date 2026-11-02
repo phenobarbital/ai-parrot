@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-216 — OKF Knowledge Lint & Bundle Interchange
 **Spec**: `sdd/specs/FEAT-216-okf-knowledge-lint-and-bundle.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1565, TASK-1567

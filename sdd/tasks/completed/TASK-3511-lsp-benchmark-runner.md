@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-580 - SDD LSP Research Pilot
 **Spec**: `sdd/specs/sdd-research-lsp.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3507, TASK-3509, TASK-3510

@@ -1,0 +1,20 @@
+- **Lean stdio servers.** Never import ai-parrot-server, aiohttp-server or navconfig; stdout is the JSON-RPC channel.
+  *Implication*: the CLI-side credential resolver is an aiohttp-client-only module in parrot core, imported under the existing stderr redirect; connect prompts are returned as an `AuthRequiredPayload` tool result or written to stderr, never printed like the O365 `prompt_callback`. *Evidence*: F031, F007, F016, F023
+- **No principal on `tools/call`.** Claude Code / Codex send only tool name and arguments.
+  *Implication*: a stdio server's principal is bound at process start from the login file (located via env written by `hosts.py` entries), mirroring agentd's connection-time binding. *Evidence*: F040, F015, F008, F017
+- **S-1 fixes the contracts.** `Principal(user_id=Navigator id, channel ∈ {web, telegram, slack, msteams, a2a, cli})`, `AuthRequiredPayload` with `user_code` / `verification_uri` / `expires_in`, `OAuth2ProviderDescriptor` without a device-authorization endpoint.
+  *Implication*: S-4 adds a CLI `PrincipalResolver` and a `device_authorization_url` descriptor field — never a parallel principal model. *Evidence*: F033
+- **Every broker resolver kind needs in-process deps.** CLI, `parrot.mcp` and agentd never build a `CredentialBroker`; stdio servers never run `AbstractBot.configure()`.
+  *Implication*: out-of-process consumers need a new resolver backed by the local encrypted cache + server API; the `ToolManager` seam (`set_broker` :517, injection :2178-2183) is reused, not re-implemented. *Evidence*: F024, F005, F016, F044, F047, F002
+- **The Navigator `user_id` is produced server-side.** Session userdata / `resolve_user_id` behind navigator-auth; the IdP `sub` behind external introspection; the CLI's only server-authenticated identity is the hand-supplied bearer and no `parrot login` exists.
+  *Implication*: the CLI identity endpoint sits behind navigator-auth session or bearer auth, not behind the `OAUTH2_EXTERNAL` MCP mount; local Entra/OS mapping cannot yield the Navigator id. *Evidence*: F009, F025, F049, F029, F035, F006
+- **FEAT-696 precedent.** `parrot jiratoolkit auth`: manual paste with `hmac.compare_digest` state check, `~/.parrot/jira/settings.local.json` 0600 + lock file, consumed under `local:cli`; it imports `parrot.auth.jira_oauth` helpers that S-1 M7 rewrites.
+  *Implication*: S-4 generalizes this flow to any descriptor provider, keys it by principal, and must re-verify the Jira helpers after FEAT-773 merges. *Evidence*: F043, F048
+- **agentd principal model.** OS username per UDS connection (SO_PEERCRED), service-identity fallback, forwarded on every RPC; `build_principal_context` defaults `tenant_id` to the principal.
+  *Implication*: agentd reads the peer OS user's login file (U5); every CLI resolver passes the real tenant explicitly. *Evidence*: F003, F026, F034
+- **Device code is O365-only.** No RFC 8628 engine; `MCPOAuth2GrantType` has two grants.
+  *Implication*: the generic engine (U4) is new work surfaced through the existing `AuthRequiredPayload` device fields. *Evidence*: F010, F023, F021
+- **Surface in flight.** Local-MCP files had a hotfix on 2026-10-28; `tools/manager.py` anchors cited by TASK-1685 were stale.
+  *Implication*: S-4 edit sites are re-anchored at spec time. *Evidence*: F037, F044, F047
+- **Third key family.** MCP client-side token stores (`mcp:oauth:*`, `mcp_oauth_*`) and `MCPOAuth2Provider` are the parrot-as-client direction.
+  *Implication*: explicit non-goal; "MCP" in S-4 means parrot tools consumed by an external host. *Evidence*: F041, F019, F022, F042

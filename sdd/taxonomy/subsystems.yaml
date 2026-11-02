@@ -1,0 +1,90 @@
+# Curated subsystem taxonomy for the decision audit (FEAT-784). Curated by the repo owner via PRs to dev.
+# Format fixed by TASK-5000 (schema_version + subsystems + optional mapping: tag -> subsystem id).
+schema_version: 1
+subsystems:
+  - id: memory
+    title: Conversation memory
+    description: Conversation history storage, rendering and compaction (parrot/memory).
+    parent: null
+    projects: [ai-parrot]
+  - id: clients
+    title: LLM clients
+    description: AbstractClient and provider wrappers (parrot/clients).
+    parent: null
+    projects: [ai-parrot]
+  - id: bots
+    title: Bots and agents
+    description: Bot, chatbot and agent abstractions and implementations (parrot/bots).
+    parent: null
+    projects: [ai-parrot]
+  - id: tools
+    title: Agent tools
+    description: Tool base machinery and concrete tool implementations.
+    parent: null
+    projects: [ai-parrot, ai-parrot-tools]
+  - id: flows
+    title: Agent flows
+    description: Agent orchestration and application flow machinery.
+    parent: null
+    projects: [ai-parrot]
+  - id: skills
+    title: Agent skills
+    description: File-based and registry-backed agent skills (parrot/skills).
+    parent: null
+    projects: [ai-parrot]
+  - id: knowledge-wiki
+    title: Knowledge wiki
+    description: Repository wiki, authored knowledge and decision records.
+    parent: null
+    projects: [ai-parrot]
+  - id: knowledge-graphindex
+    title: Knowledge GraphIndex
+    description: Structural repository graph extraction, publication and query services.
+    parent: null
+    projects: [ai-parrot]
+  - id: server
+    title: Server
+    description: HTTP, MCP, A2A and application server surfaces.
+    parent: null
+    projects: [ai-parrot-server]
+  - id: integrations
+    title: Integrations
+    description: External platform, human, voice and messaging integrations.
+    parent: null
+    projects: [ai-parrot-integrations]
+  - id: config
+    title: Configuration
+    description: Shared application configuration and environment resolution.
+    parent: null
+    projects: [ai-parrot]
+  - id: auth
+    title: Authentication and authorization
+    description: Navigator identity, authentication and policy integration.
+    parent: null
+    projects: [ai-parrot-server]
+  - id: sdd-tooling
+    title: SDD tooling
+    description: Specification-driven development commands, workflows and artifacts.
+    parent: null
+    projects: [sdd-tooling]
+  - id: dev-loop
+    title: Development loop
+    description: Automated development orchestration, task dispatch and verification.
+    parent: null
+    projects: [dev-loop]
+mapping:
+  memory: memory
+  clients: clients
+  bots: bots
+  tools: tools
+  flows: flows
+  skills: skills
+  wiki: knowledge-wiki
+  graphindex: knowledge-graphindex
+  mcp: server
+  server: server
+  integrations: integrations
+  config: config
+  auth: auth
+  sdd: sdd-tooling
+  dev-loop: dev-loop

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-206 — Align `financial_variance` template with the positional block validator
 **Spec**: `sdd/specs/FEAT-206-financial-variance-contract.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1385

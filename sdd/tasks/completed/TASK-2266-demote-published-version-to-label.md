@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-433 — Form Version History — repair the read path
 **Spec**: `sdd/specs/form-version-history-repair.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2265

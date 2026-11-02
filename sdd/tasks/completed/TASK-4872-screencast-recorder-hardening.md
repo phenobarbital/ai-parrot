@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-765 — Screencast recorder hardening (FEAT-762 review follow-up)
 **Spec**: `sdd/specs/fixgroup-6c8fa649cccb.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

@@ -10,7 +10,8 @@ import pytest
 from click.testing import CliRunner
 
 from parrot.knowledge.wiki.cli import ledger
-from parrot.knowledge.wiki.ledger.outbox import LedgerBatch, LedgerDeliveryReport, OutboxLockedError
+from parrot.knowledge.wiki.ledger.integration import IntegrationError
+from parrot.knowledge.wiki.ledger.outbox import LedgerBatch, LedgerDeliveryReport, LedgerReceipt, OutboxLockedError
 
 
 @pytest.fixture(autouse=True)
@@ -158,3 +159,131 @@ def test_status_reports_contamination_exit_4(tmp_path: Path) -> None:
         )
     assert result.exit_code == 4, result.output
     assert "sdd/ledger/events.jsonl" in result.output
+
+
+# FEAT-771 / TASK-4895 — a conflicting batch does not hold later batches back.
+
+
+def _report(status: str, batch_id: str) -> LedgerDeliveryReport:
+    """Build a minimal typed report for one batch."""
+    return LedgerDeliveryReport(
+        status=status, batch_id=batch_id, attempts=1, remote_head=None, commit_sha=None, added=0, remaining=0
+    )
+
+
+def _invoke_integrate(tmp_path: Path, batches: list[LedgerBatch], reports: list[LedgerDeliveryReport]):
+    """Run ``outbox integrate --json`` against mocked batches and integrator reports."""
+    outbox = MagicMock()
+    outbox.pending = AsyncMock(return_value=batches)
+    integrator = MagicMock()
+    integrator.integrate = AsyncMock(side_effect=reports)
+    with (
+        patch("parrot.knowledge.wiki.cli.LedgerOutbox", return_value=outbox),
+        patch("parrot.knowledge.wiki.cli.LedgerIntegrator", return_value=integrator),
+    ):
+        result = CliRunner().invoke(
+            ledger, ["outbox", "integrate", "--repo-root", str(tmp_path), "--ledger-dir", str(tmp_path), "--json"]
+        )
+    return result, integrator
+
+
+def test_integrate_continues_past_conflict(tmp_path: Path) -> None:
+    """A later batch is still delivered after a conflicting one; the exit code is the highest."""
+    first = _batch()
+    second = first.model_copy(update={"batch_id": "123e4567-e89b-42d3-a456-426614174001"})
+
+    result, integrator = _invoke_integrate(
+        tmp_path, [first, second], [_report("conflict", first.batch_id), _report("delivered", second.batch_id)]
+    )
+
+    assert result.exit_code == 3, result.output
+    assert integrator.integrate.await_count == 2
+    assert [item["status"] for item in json.loads(result.output)] == ["conflict", "delivered"]
+
+
+def test_integrate_stops_on_pending(tmp_path: Path) -> None:
+    """A pending (I/O, lock, push) batch stops the run before later batches."""
+    first = _batch()
+    second = first.model_copy(update={"batch_id": "123e4567-e89b-42d3-a456-426614174001"})
+
+    result, integrator = _invoke_integrate(
+        tmp_path, [first, second], [_report("pending", first.batch_id), _report("delivered", second.batch_id)]
+    )
+
+    assert result.exit_code == 2, result.output
+    assert integrator.integrate.await_count == 1
+
+
+# FEAT-771 / TASK-4896 — CLI error mapping.
+
+
+def _invoke_batch_id(tmp_path: Path, receipt: LedgerReceipt | None):
+    """Run ``integrate --batch-id`` for a batch that is not pending."""
+    outbox = MagicMock()
+    outbox.pending = AsyncMock(return_value=[])
+    outbox.receipt_for = AsyncMock(return_value=receipt)
+    with patch("parrot.knowledge.wiki.cli.LedgerOutbox", return_value=outbox):
+        return CliRunner().invoke(
+            ledger,
+            [
+                "outbox", "integrate", "--repo-root", str(tmp_path), "--ledger-dir", str(tmp_path),
+                "--batch-id", _batch().batch_id, "--json",
+            ],
+        )
+
+
+def test_integrate_receipted_batch_id_is_already_delivered(tmp_path: Path) -> None:
+    """Retrying a batch that already has a receipt succeeds instead of reporting an unknown batch."""
+    receipt = LedgerReceipt(
+        batch_id=_batch().batch_id,
+        manifest_sha256="a" * 64,
+        remote="origin",
+        branch="dev",
+        remote_head="c" * 40,
+        verified_digest="d" * 64,
+        skipped_event_ids=["abc123def456"],
+    )
+
+    result = _invoke_batch_id(tmp_path, receipt)
+
+    assert result.exit_code == 0, result.output
+    [report] = json.loads(result.output)
+    assert report["status"] == "already_delivered"
+    assert report["skipped"] == ["abc123def456"]
+
+
+def test_integrate_unknown_batch_id_is_conflict(tmp_path: Path) -> None:
+    """A batch id with neither a pending batch nor a receipt keeps the unknown-batch conflict."""
+    result = _invoke_batch_id(tmp_path, None)
+
+    assert result.exit_code == 3, result.output
+    assert json.loads(result.output)[0]["error_code"] == "unknown-batch"
+
+
+def _invoke_prepare(tmp_path: Path, error: Exception):
+    """Run ``outbox prepare`` with ``remote_event_ids`` raising ``error``."""
+    integrator = MagicMock()
+    integrator.remote_event_ids = AsyncMock(side_effect=error)
+    with (
+        patch("parrot.knowledge.wiki.cli.LedgerOutbox", return_value=MagicMock()),
+        patch("parrot.knowledge.wiki.cli.LedgerIntegrator", return_value=integrator),
+        patch("parrot.knowledge.wiki.cli.subprocess.run", return_value=MagicMock(stdout="HEAD\n")),
+    ):
+        return CliRunner().invoke(
+            ledger, ["outbox", "prepare", "--repo-root", str(tmp_path), "--ledger-dir", str(tmp_path)]
+        )
+
+
+def test_prepare_remote_failure_exits_2(tmp_path: Path) -> None:
+    """An unreachable remote is still the retryable exit code."""
+    result = _invoke_prepare(tmp_path, IntegrationError("fetch-failed"))
+
+    assert result.exit_code == 2, result.output
+
+
+def test_prepare_programmer_error_propagates(tmp_path: Path) -> None:
+    """A programming error is no longer disguised as an unavailable remote."""
+    result = _invoke_prepare(tmp_path, RuntimeError("bug"))
+
+    assert result.exit_code != 2
+    assert isinstance(result.exception, RuntimeError)

@@ -744,6 +744,11 @@ JIRA_API_TOKEN = config.get("JIRA_API_TOKEN", fallback="")
 JIRA_CLIENT_ID = config.get("JIRA_CLIENT_ID")
 JIRA_CLIENT_SECRET = config.get("JIRA_CLIENT_SECRET")
 JIRA_REDIRECT_URI = config.get("JIRA_REDIRECT_URI")
+# FEAT-773: legacy channel-scoped OAuth2 keys are read (and migrated) only until this ISO date/datetime.
+# Ops sets it to the S-1 prod deploy + 30 days; empty = window open.
+OAUTH2_LEGACY_KEYS_UNTIL = config.get("OAUTH2_LEGACY_KEYS_UNTIL", fallback="")
+# FEAT-773: YAML file of OAuth2ProviderDescriptor entries (client secrets come from OAUTH2_<PROVIDER>_*).
+OAUTH2_PROVIDERS_FILE = config.get("OAUTH2_PROVIDERS_FILE", fallback="")
 JIRA_OAUTH_REDIS_URL = config.get("JIRA_OAUTH_REDIS_URL", fallback="redis://localhost:6379/4")
 # OAuth2 web-channel origin allowlist — comma-separated string or list.
 # Used by IntegrationsHandler and jira_oauth_callback to validate that the
@@ -751,6 +756,11 @@ JIRA_OAUTH_REDIS_URL = config.get("JIRA_OAUTH_REDIS_URL", fallback="redis://loca
 WEB_OAUTH_ALLOWED_ORIGINS = config.get("WEB_OAUTH_ALLOWED_ORIGINS", fallback=[])
 if isinstance(WEB_OAUTH_ALLOWED_ORIGINS, str):
     WEB_OAUTH_ALLOWED_ORIGINS = [o.strip() for o in WEB_OAUTH_ALLOWED_ORIGINS.split(",") if o.strip()]
+# FEAT-777 (D5): base URL of the admin UI used in Slack /login account-link DMs. Required — no default;
+# when empty, Slack /login replies "account linking is not configured".
+CONNECTIONS_LINK_BASE_URL = config.get("CONNECTIONS_LINK_BASE_URL", fallback="")
+# FEAT-777: lifetime of a single-use channel-link nonce, in seconds.
+CHANNEL_LINK_TTL_SECONDS = config.getint("CHANNEL_LINK_TTL_SECONDS", fallback=600)
 JIRA_ALLOWED_REPORTERS: list[str] = config.getlist(
     "JIRA_ALLOWED_REPORTERS",
     fallback=[],

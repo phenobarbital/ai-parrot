@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-689 — wikitoolkit ledger list / show
 **Spec**: `sdd/specs/wiki-ledger-show.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4398

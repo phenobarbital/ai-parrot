@@ -13,7 +13,6 @@ import pytest
 
 from parrot.auth.oauth2.models import (
     IntegrationDescriptor,
-    UserAgentToolkitRow,
     UsersIntegrationRow,
 )
 
@@ -117,18 +116,6 @@ def sample_integration_row(web_user_id: str) -> UsersIntegrationRow:
         cloud_id="cloud-1",
         site_url="https://example.atlassian.net",
         connected_at=datetime.now(tz=timezone.utc),
-    )
-
-
-@pytest.fixture
-def sample_toolkit_row(web_user_id: str) -> UserAgentToolkitRow:
-    """A valid user_agent_toolkits row for the test user."""
-    return UserAgentToolkitRow(
-        user_id=web_user_id,
-        agent_id="test-agent",
-        toolkit_id="jira",
-        provider="jira",
-        enabled_at=datetime.now(tz=timezone.utc),
     )
 
 

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-262 — MCP Server OAuth2 Support
 **Spec**: `sdd/specs/mcp-server-oauth2-support.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1663, TASK-1664, TASK-1665

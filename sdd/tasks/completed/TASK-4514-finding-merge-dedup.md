@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-708 — sdd-proposal-parallel-research
 **Spec**: `sdd/specs/sdd-proposal-parallel-research.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4513

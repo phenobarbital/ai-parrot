@@ -2,7 +2,7 @@
 
 **Feature**: hotfix `chromemanager-async-migration` (no Jira ticket — user decision 2026-09-05) — ChromeManager async migration (requests → aiohttp) *(hotfix — no `FEAT-<NNN>` reserved, FEAT-466)*
 **Spec**: `sdd/specs/chromemanager-async-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: HOTFIX-chromemanager-async-migration-1

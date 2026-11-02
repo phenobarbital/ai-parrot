@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-545 — Collaborative Adversarial Spec Design
 **Spec**: `sdd/specs/collaborative-adversarial-spec-design.spec.md` (§3 Module 6, §4 Test Specification)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3093, TASK-3094, TASK-3095, TASK-3096, TASK-3097

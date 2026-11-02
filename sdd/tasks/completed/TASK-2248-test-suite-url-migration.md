@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-429 — Remove `/t/` marker from tenant-qualified URLs
 **Spec**: `sdd/specs/fieldsync-tenant-url.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2246, TASK-2247

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-435 — GraphIndex Retrieval Layer
 **Spec**: `sdd/specs/graphindex-retriever.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL
 **Depends-on**: TASK-2270, TASK-2273

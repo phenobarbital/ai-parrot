@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-113 — Vault-Backed Credentials for Telegram /add_mcp
 **Spec**: `sdd/specs/mcp-command-credentials.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-803, TASK-804, TASK-805, TASK-806

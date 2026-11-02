@@ -1,0 +1,2 @@
+- Legacy key cutover window and metric (count of jira:oauth:telegram:* without a telegram identity row).
+- Legacy key cutover date (OAUTH2_LEGACY_KEYS_UNTIL) and acceptable unbound count.

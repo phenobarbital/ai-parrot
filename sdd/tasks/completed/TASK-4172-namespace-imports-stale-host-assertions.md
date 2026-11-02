@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-644 — SchedulerManager base — target-agnostic scheduler (db | redis | code backends) with AgentSchedulerManager as a subclass
 **Spec**: `sdd/specs/scheduler-manager-base.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4163

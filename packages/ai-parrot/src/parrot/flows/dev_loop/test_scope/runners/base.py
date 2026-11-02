@@ -22,10 +22,15 @@ LAUNCHER_PREFIXES: tuple[tuple[str, ...], ...] = (
 )
 
 
+#: Node package managers whose `test` / `run test` scripts may stand for `vitest run`.
+_NODE_PACKAGE_MANAGERS: frozenset[str] = frozenset({"pnpm", "npm", "yarn"})
+
+
 def normalize_launcher_argv(argv: Sequence[str], *, pnpm_test_is_vitest: bool = True) -> list[str]:
     """Strip env assignments and known launcher chains; return the runner-headed argv.
 
-    `pnpm test` / `pnpm run test` map to `vitest run` only when ``pnpm_test_is_vitest``.
+    `pnpm test` / `pnpm run test` — and the `npm` / `yarn` equivalents — map to `vitest run` only when
+    ``pnpm_test_is_vitest`` (the vitest runner's ``test_script`` setting).
     An unknown or ambiguous chain is returned unchanged (callers then match nothing).
     """
     normalized = strip_env_prefix(argv)
@@ -35,15 +40,15 @@ def normalize_launcher_argv(argv: Sequence[str], *, pnpm_test_is_vitest: bool = 
             normalized = _strip_uv_run_prefix(normalized)
         elif head in {"python", "python3"} and len(normalized) >= 2 and normalized[1] == "-m":
             normalized = normalized[2:]
-        elif head == "pnpm" and len(normalized) >= 2 and normalized[1] == "test":
+        elif head in _NODE_PACKAGE_MANAGERS and len(normalized) >= 2 and normalized[1] == "test":
             if not pnpm_test_is_vitest:
                 return normalized
             normalized = ["vitest", "run", *normalized[2:]]
-        elif head == "pnpm" and len(normalized) >= 3 and normalized[1:3] == ["run", "test"]:
+        elif head in _NODE_PACKAGE_MANAGERS and len(normalized) >= 3 and normalized[1:3] == ["run", "test"]:
             if not pnpm_test_is_vitest:
                 return normalized
             normalized = ["vitest", "run", *normalized[3:]]
-        elif head == "pnpm" and len(normalized) >= 3 and normalized[1] in {"exec", "run"}:
+        elif head in _NODE_PACKAGE_MANAGERS and len(normalized) >= 3 and normalized[1] in {"exec", "run"}:
             normalized = normalized[2:]
         elif head == "npx" and len(normalized) >= 2:
             normalized = normalized[1:]

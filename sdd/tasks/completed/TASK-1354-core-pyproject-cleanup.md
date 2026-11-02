@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-202 — ai-parrot-integrations
 **Spec**: `sdd/specs/ai-parrot-integrations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1346, TASK-1347, TASK-1348, TASK-1349, TASK-1350, TASK-1351, TASK-1352, TASK-1353

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-708 — sdd-proposal-parallel-research
 **Spec**: `sdd/specs/sdd-proposal-parallel-research.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none (cross-feature: **PR #1742 must be merged into `dev` first** — still OPEN on 2026-10-20)

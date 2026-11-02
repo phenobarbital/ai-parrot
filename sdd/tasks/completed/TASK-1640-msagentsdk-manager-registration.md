@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-259 — Microsoft Copilot Agent SDK Integration
 **Spec**: `sdd/specs/microsoft-copilot-agent-sdk.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1637, TASK-1639

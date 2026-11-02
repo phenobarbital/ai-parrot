@@ -1,0 +1,98 @@
+{
+  "feature": "wiki-cli-fixes",
+  "feature_id": "FEAT-771",
+  "spec": "sdd/specs/wiki-cli-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-30T01:10:00+00:00",
+  "completed_at": "2026-10-30T01:00:17+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/knowledge/wiki/test_ledger_outbox.py",
+          "packages/ai-parrot/tests/knowledge/wiki/test_ledger_outbox_integration.py",
+          "packages/ai-parrot/tests/knowledge/wiki/test_cli_ledger_outbox.py",
+          "packages/ai-parrot/tests/knowledge/wiki/schema/test_cli_schema.py",
+          "packages/ai-parrot/tests/knowledge/wiki/test_schema_hook_assets.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:6316a48ea052d804e549792878928e23a16dfe8a9e0bee4a72ab06e9855cf760"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4895",
+      "slug": "redundant-ledger-closes",
+      "title": "Redundant ledger closes never block outbox delivery",
+      "feature_id": "FEAT-771",
+      "feature": "wiki-cli-fixes",
+      "spec": "sdd/specs/wiki-cli-fixes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "first wave; introduces the MergePlan/receipt fields TASK-4896 edits around",
+      "assigned_to": null,
+      "started_at": "2026-10-30T00:52:43+00:00",
+      "completed_at": "2026-10-30T00:56:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4895-redundant-ledger-closes.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4896",
+      "slug": "outbox-integrator-cleanup",
+      "title": "Outbox integrator cleanup and CLI error mapping",
+      "feature_id": "FEAT-771",
+      "feature": "wiki-cli-fixes",
+      "spec": "sdd/specs/wiki-cli-fixes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4895"
+      ],
+      "parallel": false,
+      "parallelism_notes": "edits the same _attempt/integrate/CLI blocks TASK-4895 changes; must follow it",
+      "assigned_to": null,
+      "started_at": "2026-10-30T00:56:25+00:00",
+      "completed_at": "2026-10-30T00:58:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4896-outbox-integrator-cleanup.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4897",
+      "slug": "ddl-changed-range",
+      "title": "ingest-ddl --changed diffs the right range",
+      "feature_id": "FEAT-771",
+      "feature": "wiki-cli-fixes",
+      "spec": "sdd/specs/wiki-cli-fixes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4896"
+      ],
+      "parallel": false,
+      "parallelism_notes": "touches cli.py like TASK-4896; serial to avoid same-file conflicts in one worktree",
+      "assigned_to": null,
+      "started_at": "2026-10-30T00:58:51+00:00",
+      "completed_at": "2026-10-30T01:00:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4897-ddl-changed-range.md",
+      "verification": "verified"
+    }
+  ]
+}

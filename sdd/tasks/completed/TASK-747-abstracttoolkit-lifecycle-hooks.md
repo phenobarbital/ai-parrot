@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-107 — Jira OAuth 2.0 (3LO) Per-User Authentication
 **Spec**: `sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

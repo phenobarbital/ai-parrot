@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-555 — Dev-Loop Slack Kick-off
 **Spec**: `sdd/specs/dev-loop-slack.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Assigned-to**: unassigned

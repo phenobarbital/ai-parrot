@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-217 — Graph-Expanded Retrieval Pipeline
 **Spec**: `sdd/specs/FEAT-217-graph-expanded-retrieval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1566

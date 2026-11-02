@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 from pydantic import ValidationError
 
 from parrot.knowledge.wiki.decisions.models import (
     ADR_CATEGORY,
+    ADR_INVALID_ID,
     ADR_RECORD_TOO_LARGE,
     ADR_SCHEMA_UNSUPPORTED,
     MAX_RECORD_BYTES,
@@ -32,6 +34,12 @@ from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
 
 #: First line of every managed ADR body. Version bumps change this literal.
 ENVELOPE_MARKER = "<!-- parrot-adr:v1 -->"
+
+#: Marker for schema-2 records (FEAT-784). v1 is still written for schema-1 records and read forever.
+ENVELOPE_MARKER_V2 = "<!-- parrot-adr:v2 -->"
+#: Marker -> the only schema_version allowed behind it.
+_MARKER_SCHEMA: dict[str, int] = {ENVELOPE_MARKER: 1, ENVELOPE_MARKER_V2: 2}
+_ID_PART = re.compile(r"^[a-z0-9_-]+$")
 
 #: Separator joined between identity components before hashing. Chosen
 #: because it cannot occur inside a scope id, fingerprint, or decision text
@@ -106,6 +114,18 @@ def documented_decision_id(rel_path: str) -> str:
     return f"adr:doc:{_sha1(normalize_rel_path(rel_path))}"
 
 
+def spec_decision_id(document_id: str, entry_id: str) -> str:
+    """Return the stable id of a spec decision entry.
+
+    Raises:
+        DecisionError: If either identifier is outside the allowed charset.
+    """
+    for label, part in (("document_id", document_id), ("entry_id", entry_id)):
+        if not _ID_PART.match(part or ""):
+            raise DecisionError(ADR_INVALID_ID, f"{label} {part!r} must match [a-z0-9_-]+")
+    return f"adr:spec:{document_id}#{entry_id}"
+
+
 def candidate_decision_id(scope_id: str, evidence_fingerprint: str, prompt_version: int, decision_text: str) -> str:
     """Stable id of a generated candidate: ``adr:candidate:<sha1(...)>``.
 
@@ -166,7 +186,8 @@ def decision_to_page(record: DecisionRecord) -> WikiPageRecord:
     """
     envelope = canonical_json(record)
     labels = status_labels(record)
-    body = f"{ENVELOPE_MARKER}\n{envelope}\n\n{render_markdown(record)}"
+    marker = ENVELOPE_MARKER_V2 if record.schema_version == 2 else ENVELOPE_MARKER
+    body = f"{marker}\n{envelope}\n\n{render_markdown(record)}"
     if len(body.encode("utf-8")) > MAX_RECORD_BYTES:
         raise DecisionError(
             ADR_RECORD_TOO_LARGE,
@@ -209,7 +230,8 @@ def decision_from_page(page: dict[str, Any]) -> DecisionRecord:
         )
     body = page.get("body") or ""
     parts = body.split("\n", 2)
-    if len(parts) < 2 or parts[0] != ENVELOPE_MARKER:
+    expected_schema = _MARKER_SCHEMA.get(parts[0]) if len(parts) >= 2 else None
+    if expected_schema is None:
         raise DecisionError(
             ADR_SCHEMA_UNSUPPORTED,
             "missing or unsupported ADR envelope marker",
@@ -217,6 +239,12 @@ def decision_from_page(page: dict[str, Any]) -> DecisionRecord:
         )
     try:
         payload = json.loads(parts[1])
+        if not isinstance(payload, dict) or payload.get("schema_version", 1) != expected_schema:
+            raise DecisionError(
+                ADR_SCHEMA_UNSUPPORTED,
+                "ADR envelope marker does not match payload schema_version",
+                decision_id=concept_id,
+            )
         return DecisionRecord.model_validate(payload)
     except (json.JSONDecodeError, ValidationError) as exc:
         raise DecisionError(

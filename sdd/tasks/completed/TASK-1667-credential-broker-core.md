@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-264 — Unified Credential Broker
 **Spec**: `sdd/specs/unified-credential-broker.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-154 — WebScrapingToolkit `extract_jsonld` Browser Action
 **Spec**: `sdd/specs/webscrapingtoolkit-jsonld.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

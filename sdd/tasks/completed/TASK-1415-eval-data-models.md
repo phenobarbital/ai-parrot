@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-217 — Generic Agent Evaluation Harness
 **Spec**: `sdd/specs/generic-evaluation-harness.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

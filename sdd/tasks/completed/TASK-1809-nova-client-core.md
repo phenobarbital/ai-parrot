@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-315 — Unified NovaClient for all Amazon Nova models
 **Spec**: `sdd/specs/novaclient-amazon-aws.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1806, TASK-1807, TASK-1808

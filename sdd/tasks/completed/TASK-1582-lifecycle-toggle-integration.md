@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-241 — FormDesigner Public Forms
 **Spec**: `sdd/specs/formdesigner-public-forms.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1577, TASK-1580, TASK-1581

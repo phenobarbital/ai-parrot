@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-218 — Zammad Interface & Toolkit
 **Spec**: `sdd/specs/zammad-interface-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1702, TASK-1703, TASK-1704

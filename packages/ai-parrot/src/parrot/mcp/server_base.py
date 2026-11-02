@@ -8,9 +8,9 @@ or resources — those remain server-only concerns handled by
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
-from parrot.mcp.adapter import MCPToolAdapter
+from parrot.mcp.adapter import MCPToolAdapter, ToolExecutionContext
 from parrot.tools.abstract import AbstractTool
 
 #: MCP protocol revisions this server can speak, oldest first.
@@ -57,7 +57,8 @@ class LocalServerConfig:
 class MCPServerBase(ABC):
     """Base class for MCP servers (core, transport-agnostic)."""
 
-    def __init__(self, config: LocalServerConfig):
+    def __init__(self, config: LocalServerConfig, *, execution_context: Optional[ToolExecutionContext] = None):
+        self.execution_context = execution_context
         self.config = config
         self.tools: dict[str, MCPToolAdapter] = {}
 
@@ -68,7 +69,7 @@ class MCPServerBase(ABC):
     def register_tool(self, tool: AbstractTool):
         """Register an AI-Parrot tool with the MCP server."""
         tool_name = tool.name
-        adapter = MCPToolAdapter(tool)
+        adapter = MCPToolAdapter(tool, execution_context=self.execution_context)
         self.tools[tool_name] = adapter
         self.logger.info("Registered tool: %s", tool_name)
 

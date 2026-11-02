@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-609 — Honest structural tier, Svelte component symbols, module-local JS functions, and federated symbol queries in wikitoolkit
 **Spec**: `sdd/specs/wikitoolkit-structural-coverage.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3822, TASK-3826, TASK-3828

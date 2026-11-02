@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-413 — devloop-handoff-blocked-outcome
 **Spec**: `sdd/specs/devloop-handoff-blocked-outcome.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

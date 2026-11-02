@@ -2,7 +2,7 @@
 
 **Feature**: form-abstraction-layer
 **Spec**: `sdd/specs/form-abstraction-layer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-518

@@ -187,6 +187,10 @@ class SddCoderToolkit(AbstractToolkit):
         Nothing in `parrot/mcp/` calls this today (S12 — no server shutdown
         hook exists); it only runs if a future host wires it up (spec §8 Q4).
         """
+        try:
+            await self._engine.aclose()  # FEAT-783: release the usage sink subscription
+        except Exception:  # noqa: BLE001 — shutdown is best-effort
+            self.logger.warning("engine aclose failed", exc_info=True)
         jobs = getattr(self._engine, "_jobs", None)
         if jobs is None:
             return

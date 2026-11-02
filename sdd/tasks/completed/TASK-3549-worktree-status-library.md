@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-582 — SDD Status — Worktree-Aware Task State
 **Spec**: `sdd/specs/sdd-status-worktrees.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

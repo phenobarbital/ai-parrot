@@ -14,11 +14,14 @@ import os
 import re
 import subprocess
 from pathlib import Path
-from typing import List, Literal, Optional, Tuple
+from typing import TYPE_CHECKING, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
 from parrot.flows.dev_loop.sdd_coder.models import AttemptRecord
+
+if TYPE_CHECKING:
+    from parrot.observability.recorders.models import UsageRecord
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +161,13 @@ def resolve_durable_root(configured: Optional[str], *, worktree_base_path: str) 
 
 
 def build_attempt_row(
-    record: AttemptRecord, *, feature_id: str, job_id: str, task_id: str, declared_files: Optional[int]
+    record: AttemptRecord,
+    *,
+    feature_id: str,
+    job_id: str,
+    task_id: str,
+    declared_files: Optional[int],
+    spec_rows: "Optional[List[UsageRecord]]" = None,
 ) -> AttemptUsageRow:
     """Project an AttemptRecord onto a row by EXPLICIT ALLOWLIST.
 
@@ -211,6 +220,7 @@ def build_attempt_row(
 
     # Compute calibration_eligible
     calibration_eligible = bool(ledger_accounting_complete and turns_with_unknown_usage == 0)
+    provider_input_tokens, provider_output_tokens = _provider_counters(record, attempt_uid, spec_rows)
 
     # Build the row
     return AttemptUsageRow(
@@ -230,8 +240,8 @@ def build_attempt_row(
         error_class=getattr(record, "error_class", ""),
         declared_files=declared_files,
         declared_files_known=getattr(record, "declared_files_known", False),
-        provider_input_tokens=record.usage.get("input_tokens") if isinstance(record.usage, dict) else None,
-        provider_output_tokens=record.usage.get("output_tokens") if isinstance(record.usage, dict) else None,
+        provider_input_tokens=provider_input_tokens,
+        provider_output_tokens=provider_output_tokens,
         ledger_input_tokens=ledger_input_tokens,
         ledger_output_tokens=ledger_output_tokens,
         ledger_settled_estimate_input_tokens=ledger_settled_estimate_input_tokens,
@@ -246,6 +256,21 @@ def build_attempt_row(
         turn_series=getattr(record, "turn_series", []),
         execution_id=getattr(record, "execution_id", ""),
     )
+
+
+def _provider_counters(
+    record: AttemptRecord,
+    attempt_uid: str,
+    spec_rows: "Optional[List[UsageRecord]]",
+) -> Tuple[Optional[int], Optional[int]]:
+    """Derive provider counters from reported spec rows, falling back to legacy usage."""
+    rows = [row for row in spec_rows or [] if row.attempt_uid == attempt_uid and row.usage_reported]
+    if rows:
+        return sum(row.input_tokens for row in rows), sum(row.output_tokens for row in rows)
+
+    if isinstance(record.usage, dict):
+        return record.usage.get("input_tokens"), record.usage.get("output_tokens")
+    return None, None
 
 
 class CoderTelemetrySink:

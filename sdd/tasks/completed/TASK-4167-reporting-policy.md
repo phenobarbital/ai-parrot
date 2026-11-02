@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-645 — Planogram Ink Wall — model-based labels and slot presence
 **Spec**: `sdd/specs/planogram-ink-wall-slot-presence.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4166

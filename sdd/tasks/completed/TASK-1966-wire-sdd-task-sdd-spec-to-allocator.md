@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-387 — SDD Task-ID Allocation Race Fix
 **Spec**: `sdd/specs/sdd-task-id-allocation-race.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1964

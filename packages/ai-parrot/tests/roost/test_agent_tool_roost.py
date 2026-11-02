@@ -99,3 +99,88 @@ async def test_missing_target_preserves_the_legacy_path() -> None:
     assert result == "legacy answer"
     agent.conversation.assert_awaited_once()
     caller.query.assert_not_awaited()
+
+
+# --- FEAT-786: fail-closed endpoint callers -----------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_grant_denied_returns_an_error_string() -> None:
+    from parrot.roost.grant import GrantDenied
+
+    caller = _endpoint("caller")
+    caller.query.side_effect = GrantDenied("worker")
+    tool = AgentTool(agent=_agent(roost_endpoint=_endpoint("worker")))
+
+    result = await tool._execute(question="What is the salary?", _roost_caller=caller)
+
+    assert result == "Error: grant denied: worker"
+    caller.working_memory.store_result.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_call_permission_context_is_bound_only_during_the_query() -> None:
+    from parrot.auth.context import _pctx_var
+
+    seen: list[object] = []
+    caller = _endpoint("caller")
+
+    async def _query(*args, **kwargs):
+        seen.append(_pctx_var.get())
+        return {"salary": 100}
+
+    caller.query.side_effect = _query
+    pctx = object()
+    tool = AgentTool(agent=_agent(roost_endpoint=_endpoint("worker")))
+    tool._current_pctx = pctx
+
+    await tool._execute(question="q", _roost_caller=caller)
+
+    assert seen == [pctx]
+    assert _pctx_var.get() is None
+
+
+@pytest.mark.asyncio
+async def test_no_call_context_keeps_the_ambient_request_context() -> None:
+    from parrot.auth.context import _pctx_var
+
+    seen: list[object] = []
+    caller = _endpoint("caller")
+
+    async def _query(*args, **kwargs):
+        seen.append(_pctx_var.get())
+        return {"salary": 100}
+
+    caller.query.side_effect = _query
+    ambient = object()
+    token = _pctx_var.set(ambient)
+    try:
+        tool = AgentTool(agent=_agent(roost_endpoint=_endpoint("worker")))
+        await tool._execute(question="q", _roost_caller=caller)
+        assert seen == [ambient]
+        assert _pctx_var.get() is ambient
+    finally:
+        _pctx_var.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_execute_entrypoint_binds_the_tool_manager_context() -> None:
+    """End to end through AbstractTool.execute: the ``_permission_context`` kwarg reaches the endpoint."""
+    from parrot.auth.context import _pctx_var
+
+    seen: list[object] = []
+    caller = _endpoint("caller")
+
+    async def _query(*args, **kwargs):
+        seen.append(_pctx_var.get())
+        return {"salary": 100}
+
+    caller.query.side_effect = _query
+    tool = AgentTool(agent=_agent(roost_endpoint=_endpoint("worker")))
+    tool.roost_caller = caller
+    pctx = MagicMock()
+
+    await tool.execute(question="q", _permission_context=pctx)
+
+    assert seen == [pctx]
+    assert _pctx_var.get() is None

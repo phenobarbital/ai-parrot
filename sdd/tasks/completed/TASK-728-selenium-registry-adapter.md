@@ -2,7 +2,7 @@
 
 **Feature**: fix-webscrapingtoolkit-executor
 **Spec**: `sdd/specs/fix-webscrapingtoolkit-executor.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

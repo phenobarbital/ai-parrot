@@ -98,6 +98,16 @@ class OpenAIBaseClient(AbstractClient):
     # the shared hooks inert (OpenAI-compatible siblings stay uncovered — spec §1 non-goals).
     budget_adapter_factory: Callable[[], Any] | None = None
 
+    # FEAT-770: wire-parameter quirks, applied by ``_adapt_completion_params``
+    # inside the ``_chat_completion`` funnel. Both are inert by default, so
+    # endpoints whose acceptance of the newer key is unverified keep sending
+    # exactly what they send today; ``OpenAIClient`` opts in.
+    #: Send ``max_completion_tokens`` instead of ``max_tokens``.
+    _uses_max_completion_tokens: bool = False
+    #: Lower-cased model-id prefixes whose provider rejects a non-default
+    #: ``temperature``; for these, ``temperature`` is dropped from the request.
+    _fixed_temperature_prefixes: tuple[str, ...] = ()
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -225,6 +235,39 @@ class OpenAIBaseClient(AbstractClient):
             merged["extra_body"] = existing
         return merged
 
+    def _adapt_completion_params(self, model: str, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Return a copy of ``kwargs`` rewritten for the quirks of ``model``.
+
+        OpenAI reasoning models (the GPT-5 family, o-series) reject ``max_tokens``
+        and any non-default ``temperature`` with a 400. Driven by the class
+        attributes ``_uses_max_completion_tokens`` and
+        ``_fixed_temperature_prefixes``, both inert by default (FEAT-770).
+        The input dict is never mutated: callers reuse it for fallback
+        retries and tool rounds.
+
+        Args:
+            model: The resolved model id being called.
+            kwargs: The chat-completions request kwargs assembled by the caller.
+
+        Returns:
+            A new kwargs dict, adapted for ``model``.
+        """
+        adapted = dict(kwargs)
+        if self._uses_max_completion_tokens and "max_tokens" in adapted:
+            cap = adapted.pop("max_tokens")
+            if cap is not None:
+                adapted.setdefault("max_completion_tokens", cap)
+        if self._fixed_temperature_prefixes and "temperature" in adapted:
+            model_id = (model or "").lower()
+            if model_id.startswith(self._fixed_temperature_prefixes):
+                dropped = adapted.pop("temperature")
+                self.logger.debug(
+                    "Model %s only supports its default temperature; dropping temperature=%s",
+                    model,
+                    dropped,
+                )
+        return adapted
+
     async def _chat_completion(
         self, model: str, messages: Any, use_tools: bool = False, stream: bool = False, **kwargs
     ) -> Any:
@@ -259,6 +302,7 @@ class OpenAIBaseClient(AbstractClient):
             The raw SDK response object (or, when ``stream=True``, the SDK's
             async stream object).
         """
+        kwargs = self._adapt_completion_params(model, kwargs)
         _scope = current_budget_scope()
         if _scope is not None and self.budget_adapter_factory is not None:
             return await self._chat_completion_budgeted(
@@ -1040,6 +1084,7 @@ class OpenAIBaseClient(AbstractClient):
             input_tokens=getattr(_lc_usage, "prompt_tokens", None) if _lc_usage else None,
             output_tokens=getattr(_lc_usage, "completion_tokens", None) if _lc_usage else None,
             finish_reason=getattr(ai_message, "stop_reason", None),
+            usage=_lc_usage,
         )
         return ai_message
 
@@ -1517,6 +1562,7 @@ class OpenAIBaseClient(AbstractClient):
             input_tokens=getattr(usage, "prompt_tokens", None),
             output_tokens=getattr(usage, "completion_tokens", None),
             finish_reason=_finish_reason,
+            usage=usage,
         )
         yield ai_message
 
@@ -1673,6 +1719,7 @@ class OpenAIBaseClient(AbstractClient):
                 input_tokens=_lc_usage.prompt_tokens,
                 output_tokens=_lc_usage.completion_tokens,
                 finish_reason="budget_exhausted" if _budget_forced else self._extract_finish_reason(response),
+                usage=_lc_usage,
             )
 
             raw_text = response.choices[0].message.content or ""

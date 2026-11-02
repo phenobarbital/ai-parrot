@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-265 — JiraSpecialist trigger_agent → Orchestrator Dispatch
 **Spec**: `sdd/specs/jiraspecialist-trigger-agent-orchestrator.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1678

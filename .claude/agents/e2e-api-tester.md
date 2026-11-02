@@ -24,6 +24,13 @@ description: |
 model: sonnet
 color: cyan
 tools: Read, Bash, Glob, Grep, Write
+hooks:
+  PreToolUse:
+    - matcher: "Write|Edit|MultiEdit|NotebookEdit"
+      hooks:
+        - type: command
+          command: 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/e2e-exploration-write-guard.sh"'
+          timeout: 10
 ---
 
 # E2E API Tester — Plan-Driven Fixture Exploration (FEAT-581 M8)
@@ -107,6 +114,8 @@ and your report must never claim gate evidence of its own.
    explore-e2e-api-tester`) before writing your report.
 
 ## Report contract — `e2e-exploration.json`
+
+> `Write` is hook-confined to `sdd/state/FEAT-*/e2e/exploration/` (`.claude/hooks/e2e-exploration-write-guard.sh`); writes made through `Bash` remain prompt-discipline only.
 
 Write to
 `sdd/state/<FEAT-ID>/e2e/exploration/<run-id>/e2e-exploration.json` — a

@@ -20,6 +20,7 @@ dependencies = [
     "ai-parrot-integrations",
     "ai-parrot-server",
     "ai-parrot-advisors",
+    "ai-parrot-squawk",
     "navrules",
 ]
 
@@ -194,7 +195,7 @@ constraint-dependencies = [
     # build on Python 3.13+, older navconfig/asyncdb have a stalled-asyncio bug.
     "navconfig>=2.5.2",
     "asyncdb>=2.16.2",
-    "navigator-auth>=0.28.3",
+    "navigator-auth>=0.28.8",
     "navigator-session>=1.0.1",
     # Keep the shared runtime on the Protobuf 6.31 line. This is required by
     # the pinned ortools/flowtask path and is supported by the Google SDKs.
@@ -240,6 +241,7 @@ ai-parrot-visualizations = { workspace = true }
 ai-parrot-pipelines = { workspace = true }
 ai-parrot-integrations = { workspace = true }
 ai-parrot-advisors = { workspace = true }
+ai-parrot-squawk = { workspace = true }
 ai-parrot-server = { workspace = true }
 ai-parrot-openlit-bridge = { workspace = true }
 ai-parrot-semantic = { workspace = true }

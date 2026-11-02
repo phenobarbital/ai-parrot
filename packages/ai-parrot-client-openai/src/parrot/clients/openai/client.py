@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from openai import AsyncOpenAI
     from PIL import Image
 from ...models import AIMessage, AIMessageFactory, ToolCall, CompletionUsage, StructuredOutputConfig, OutputFormat
-from ...models.responses import InvokeResult
 from ...exceptions import InvokeError
 from .models import (
     OpenAIModel,
@@ -105,6 +104,11 @@ class OpenAIClient(OpenAIBaseClient):
     _lightweight_model: str = "gpt-4.1"
     # FEAT-181: OpenAI caches prefixes ≥1024 tokens automatically
     _min_cache_tokens: int = 1024
+    # FEAT-770: OpenAI accepts ``max_completion_tokens`` on every chat model and
+    # reasoning models (gpt-5*, o-series) reject ``max_tokens``; the same models
+    # only accept their default temperature.
+    _uses_max_completion_tokens: bool = True
+    _fixed_temperature_prefixes: tuple[str, ...] = ("gpt-5", "o1", "o3", "o4")
 
     def __init__(self, api_key: str = None, base_url: str = "https://api.openai.com/v1", **kwargs):
         # FEAT-438: resolve the OpenAI-specific API-key env default here,
@@ -528,7 +532,7 @@ class OpenAIClient(OpenAIBaseClient):
             except BadRequestError as exc:
                 # 2.6.0 returns 400 unknown_parameter for fields like "response", "modalities", etc.
                 msg = getattr(exc, "message", "") or ""
-                body = getattr(getattr(exc, "response", None), "json", lambda: {})()
+                body = getattr(getattr(exc, "response", None), "json", dict)()
                 code = (body.get("error") or {}).get("code", "")
                 param = (body.get("error") or {}).get("param", "")
                 if (
@@ -558,7 +562,7 @@ class OpenAIClient(OpenAIBaseClient):
                 last_exc = exc
             except BadRequestError as exc:
                 msg = getattr(exc, "message", "") or ""
-                body = getattr(getattr(exc, "response", None), "json", lambda: {})()
+                body = getattr(getattr(exc, "response", None), "json", dict)()
                 code = (body.get("error") or {}).get("code", "")
                 param = (body.get("error") or {}).get("param", "")
                 if (
@@ -1022,6 +1026,7 @@ class OpenAIClient(OpenAIBaseClient):
             input_tokens=getattr(_lc_gpt_usage, "prompt_tokens", None) if _lc_gpt_usage else None,
             output_tokens=getattr(_lc_gpt_usage, "completion_tokens", None) if _lc_gpt_usage else None,
             finish_reason=getattr(ai_message, "stop_reason", None),
+            usage=_lc_gpt_usage,
         )
         return ai_message
 
@@ -1288,6 +1293,7 @@ class OpenAIClient(OpenAIBaseClient):
                 input_tokens=getattr(_lc_resp_usage, "prompt_tokens", None) if _lc_resp_usage else None,
                 output_tokens=getattr(_lc_resp_usage, "completion_tokens", None) if _lc_resp_usage else None,
                 finish_reason=None,
+                usage=_lc_resp_usage,
             )
             yield resp_ai_message
         else:
@@ -1450,6 +1456,7 @@ class OpenAIClient(OpenAIBaseClient):
                 input_tokens=getattr(_lc_chat_usage, "prompt_tokens", None) if _lc_chat_usage else None,
                 output_tokens=getattr(_lc_chat_usage, "completion_tokens", None) if _lc_chat_usage else None,
                 finish_reason=_finish_reason,
+                usage=_lc_chat_usage,
             )
             yield chat_ai_message
 
@@ -1528,9 +1535,11 @@ class OpenAIClient(OpenAIBaseClient):
         else:
             response_format = {"type": "json_object"}
 
-        response = await self.client.chat.completions.create(
+        # FEAT-770: through the funnel so reasoning-model params are adapted.
+        response = await self._chat_completion(
             model=model,
             messages=messages,
+            use_tools=True,
             max_tokens=self._resolve_max_tokens(max_tokens),
             temperature=temperature or self.temperature,
             response_format=response_format,
@@ -2045,9 +2054,11 @@ class OpenAIClient(OpenAIBaseClient):
 
         # --- call OpenAI ---
         messages = [{"role": "user", "content": content_blocks}]
-        response = await self.client.chat.completions.create(
+        # FEAT-770: through the funnel so reasoning-model params are adapted.
+        response = await self._chat_completion(
             model=model.value if isinstance(model, Enum) else model,
             messages=messages,
+            use_tools=True,
             max_tokens=self._resolve_max_tokens(max_tokens),
             temperature=temperature or self.temperature,
             response_format=resp_format,

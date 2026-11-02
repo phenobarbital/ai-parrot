@@ -20,6 +20,7 @@ BASE_TOOLS = {
     "wiki_code_outline",
     "wiki_blast_radius",
     "wiki_standup",
+    "usage_report",
     "wiki_decisions_for_symbol",
     "wiki_decision_why",
 }

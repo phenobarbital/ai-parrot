@@ -46,6 +46,7 @@ class FailureCode(str, Enum):
     NO_BIDS = "NO_BIDS"
     CANCELLED = "CANCELLED"
     STALE_CONTRACT = "STALE_CONTRACT"
+    SCHEMA = "SCHEMA"
     INTERNAL = "INTERNAL"
 
 

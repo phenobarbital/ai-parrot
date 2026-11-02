@@ -139,6 +139,18 @@
       "--path"
     ]
   },
+  "wiki decisions": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki decisions publish": {
+    "arguments": [],
+    "options": [
+      "--batch",
+      "--json",
+      "--path"
+    ]
+  },
   "wiki entity": {
     "arguments": [],
     "options": []
@@ -236,7 +248,8 @@
       "--limit",
       "--model",
       "--no-archive",
-      "--path"
+      "--path",
+      "--watch"
     ]
   },
   "wiki ingest": {
@@ -344,9 +357,35 @@
       "--no-reconcile"
     ]
   },
+  "wiki ledger export-log": {
+    "arguments": [],
+    "options": [
+      "--quiet",
+      "--repo-root",
+      "--stage"
+    ]
+  },
+  "wiki ledger import-log": {
+    "arguments": [],
+    "options": [
+      "--force",
+      "--quiet",
+      "--repo-root"
+    ]
+  },
   "wiki ledger ingest-sdd": {
     "arguments": [],
     "options": []
+  },
+  "wiki ledger list": {
+    "arguments": [],
+    "options": [
+      "--about",
+      "--json",
+      "--kind",
+      "--severity",
+      "--status"
+    ]
   },
   "wiki ledger open": {
     "arguments": [],
@@ -357,6 +396,35 @@
       "--kind",
       "--severity",
       "--title"
+    ]
+  },
+  "wiki ledger outbox": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki ledger outbox integrate": {
+    "arguments": [],
+    "options": [
+      "--batch-id",
+      "--json",
+      "--ledger-dir",
+      "--repo-root"
+    ]
+  },
+  "wiki ledger outbox prepare": {
+    "arguments": [],
+    "options": [
+      "--json",
+      "--ledger-dir",
+      "--repo-root"
+    ]
+  },
+  "wiki ledger outbox status": {
+    "arguments": [],
+    "options": [
+      "--json",
+      "--ledger-dir",
+      "--repo-root"
     ]
   },
   "wiki ledger plan-fix": {
@@ -377,6 +445,34 @@
   "wiki ledger rebuild": {
     "arguments": [],
     "options": []
+  },
+  "wiki ledger retract-feedback": {
+    "arguments": [
+      "feedback_ids"
+    ],
+    "options": [
+      "--actor",
+      "--reason"
+    ]
+  },
+  "wiki ledger rotate-log": {
+    "arguments": [],
+    "options": [
+      "--now",
+      "--older-than-days",
+      "--quiet",
+      "--repo-root",
+      "--stage"
+    ]
+  },
+  "wiki ledger show": {
+    "arguments": [
+      "issue_id"
+    ],
+    "options": [
+      "--json",
+      "--no-history"
+    ]
   },
   "wiki ledger sync": {
     "arguments": [],
@@ -597,7 +693,8 @@
       "--dialect",
       "--json",
       "--origin",
-      "--quiet"
+      "--quiet",
+      "--range"
     ]
   },
   "wiki schema lookup": {
@@ -630,6 +727,43 @@
       "--port",
       "--ssl-cert",
       "--ssl-key"
+    ]
+  },
+  "wiki spec": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki spec consequences": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki spec consequences check": {
+    "arguments": [
+      "spec_path"
+    ],
+    "options": [
+      "--json",
+      "--path"
+    ]
+  },
+  "wiki spec consequences render": {
+    "arguments": [
+      "spec_path"
+    ],
+    "options": [
+      "--budget",
+      "--json",
+      "--path"
+    ]
+  },
+  "wiki spec governing": {
+    "arguments": [
+      "spec_path"
+    ],
+    "options": [
+      "--budget",
+      "--json",
+      "--path"
     ]
   },
   "wiki standup": {

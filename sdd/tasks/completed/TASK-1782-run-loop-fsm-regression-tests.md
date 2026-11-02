@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-309 — Fix `AgentCrew.run_loop()` Frozen-FSM Reassignment Bug
 **Spec**: `sdd/specs/agentcrew-run-loop-frozen-fsm-fix.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1781

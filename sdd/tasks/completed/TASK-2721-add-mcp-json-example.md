@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-495 — Portable wikitoolkit config paths
 **Spec**: `sdd/specs/portable-wikitoolkit-config-paths.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

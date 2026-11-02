@@ -58,6 +58,14 @@ vi.mock("$lib/stores/notifications.svelte", () => ({
   notificationStore: { add: vi.fn(), remove: vi.fn() },
 }));
 
+vi.mock("$lib/stores/connections.svelte", () => ({
+  connectionsStore: {
+    items: [], loading: false, live: false, error: null,
+    start: vi.fn(), stop: vi.fn(), refresh: vi.fn(async () => {}),
+    onEvent: vi.fn(() => () => {}),
+  },
+}));
+
 // Bypass the real MediaRecorder-backed VoiceRecorder — ChatInput
 // instantiates `new VoiceRecorder()` directly, so the whole module is
 // replaced with a fake that "records" instantly.

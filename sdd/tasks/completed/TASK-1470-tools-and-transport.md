@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-225 — DatasetManager Common-Field Filtering
 **Spec**: `sdd/specs/datasetmanager-filtering.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1467, TASK-1468, TASK-1469

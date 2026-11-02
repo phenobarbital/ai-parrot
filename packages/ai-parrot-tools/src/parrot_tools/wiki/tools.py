@@ -78,7 +78,11 @@ from parrot.knowledge.wiki.operations import (  # noqa: F401 -- re-exported for 
     op_standup,
     op_status,
 )
-
+from parrot.knowledge.wiki.usage_operations import (
+    USAGE_REPORT_DESCRIPTION,
+    UsageReportInput,
+    op_usage_report,
+)
 
 def _to_tool_result(result: OperationResult) -> ToolResult:
     """Map a transport-neutral :class:`OperationResult` onto a framework ``ToolResult``."""
@@ -274,6 +278,22 @@ class WikiStandupTool(AbstractTool):
     async def _execute(self, **kwargs: Any) -> ToolResult:
         """Run the shared pipeline and return Markdown with write receipts."""
         return _to_tool_result(await op_standup(self._store, kwargs, root=self._root, config=self._config))
+
+
+class UsageReportTool(AbstractTool):
+    """Report per-feature token and cost usage."""
+
+    name = "usage_report"
+    description = USAGE_REPORT_DESCRIPTION
+    args_schema = UsageReportInput
+
+    def __init__(self) -> None:
+        super().__init__(name=self.name, description=self.description)
+
+    async def _execute(self, feat_id: str, by: str = "task") -> ToolResult:
+        """Return a structured usage report for one SDD feature."""
+        params = UsageReportInput(feat_id=feat_id, by=by)
+        return _to_tool_result(await op_usage_report(params))
 
 
 class VaultIngestTool(AbstractTool):
@@ -616,6 +636,7 @@ def create_wiki_tools(
         WikiNoteTool(store, storage_dir=storage_dir),
         WikiStatusTool(store),
         WikiLintTool(store, storage_dir=storage_dir),
+        UsageReportTool(),
     ]
 
     # wiki_standup needs the project root + config to resolve the true local plane for opt-in writes;

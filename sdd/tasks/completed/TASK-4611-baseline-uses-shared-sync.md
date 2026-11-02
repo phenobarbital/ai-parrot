@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-722 — Worktree Native Artifact Sync
 **Spec**: `sdd/specs/worktree-native-artifact-sync.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4608

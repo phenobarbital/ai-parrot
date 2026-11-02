@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-014 — WebScrapingToolkit
 **Spec**: `sdd/specs/scraping-toolkit.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-053

@@ -2,7 +2,7 @@
 
 **Feature**: REST API — Lyria Music Generation
 **Spec**: `docs/sdd/specs/rest-api-for-lyria-music.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

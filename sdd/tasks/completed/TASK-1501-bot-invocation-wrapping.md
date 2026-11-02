@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-228 — Per-Agent Cost & Usage Metrics
 **Spec**: `sdd/specs/per-agent-cost-usage-metrics.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1499

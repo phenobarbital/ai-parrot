@@ -1,7 +1,7 @@
 # TASK-351 — DatasetManager Permanent Filter Integration
 
 **Feature**: FEAT-051 — add-filter-datasetmanager
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Effort**: M
 **Depends on**: TASK-349, TASK-350

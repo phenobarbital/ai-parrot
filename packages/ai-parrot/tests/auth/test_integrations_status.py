@@ -1,109 +1,123 @@
-"""FEAT-099 (TASK-082): integration status reflects whether vault tokens are usable."""
+"""Integration descriptors expose durable-owner status and principal metadata."""
+
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from parrot.auth.oauth2.models import IntegrationDescriptor
+from parrot.auth.oauth2.models import IntegrationDescriptor, UsersIntegrationRow
 from parrot.auth.oauth2.service import IntegrationsService
 
 PROVIDER = SimpleNamespace(
-    provider_id="jira",
-    display_name="Jira",
+    provider_id="o365",
+    display_name="Office 365",
     icon=None,
     default_scopes=["read"],
 )
-ROW = SimpleNamespace(
-    account_id="acc-1", display_name="Jira Account", email="a@b.c", connected_at=None
-)
 
 
-class FakeRead:
-    def __init__(self, status):
-        self.status = status
-        self.tokens = {"access_token": "tok"} if status == "ok" else None
+def request() -> SimpleNamespace:
+    """Return a request with an allow-all PBAC evaluator."""
+    return SimpleNamespace(app={"abac": SimpleNamespace(is_allowed=AsyncMock(return_value=True))})
 
 
-class FakeSync:
-    def __init__(self, status="ok", error=None):
-        self._status = status
-        self._error = error
-        self.calls = 0
-
-    async def read_tokens_result(self, user_id, provider):
-        self.calls += 1
-        if self._error:
-            raise self._error
-        return FakeRead(self._status)
-
-
-@pytest.fixture
-def patched_registry():
-    with patch("parrot.auth.oauth2.service.OAuth2ProviderRegistry") as registry:
-        registry.return_value.all.return_value = [PROVIDER]
-        with patch(
-            "parrot.auth.oauth2.service.list_user_agent_toolkits",
-            new=AsyncMock(return_value=[]),
-        ):
-            yield
-
-
-async def list_one(sync, row=ROW):
-    service = IntegrationsService(vault_token_sync=sync)
-    with patch(
-        "parrot.auth.oauth2.service.get_users_integration", new=AsyncMock(return_value=row)
-    ), patch.object(IntegrationsService, "_check_pbac", new=AsyncMock(return_value=True)):
-        items = await service.list_for_user("user-1", "agent-1", request=SimpleNamespace(app={}))
-    return items[0]
+def row() -> UsersIntegrationRow:
+    """Return one channel-neutral persisted connection."""
+    now = datetime.now(tz=timezone.utc)
+    return UsersIntegrationRow(
+        user_id="user-1",
+        provider="o365",
+        channels=["msteams", "web"],
+        account_id="account-1",
+        display_name="Account",
+        email="a@example.com",
+        scopes=["read"],
+        scopes_granted=["read"],
+        expires_at=1_800_000_000.0,
+        connected_at=now,
+        updated_at=now,
+    )
 
 
 @pytest.mark.asyncio
-class TestListForUserStatus:
-    async def test_readable_tokens_are_connected(self, patched_registry):
-        item = await list_one(FakeSync("ok"))
-        assert item.status == "connected" and item.connected is True
-        assert item.account_id == "acc-1"
+async def test_connected_descriptor_contains_channel_neutral_fields() -> None:
+    """Listing maps the durable row's cross-channel metadata into the descriptor."""
+    persisted = row()
+    with (
+        patch("parrot.auth.oauth2.service.OAuth2ProviderRegistry") as registry,
+        patch("parrot.auth.oauth2.service.list_users_integrations", AsyncMock(return_value=[persisted])),
+        patch.object(IntegrationsService, "_token_status", AsyncMock(return_value="connected")),
+    ):
+        registry.return_value.all.return_value = [PROVIDER]
+        items = await IntegrationsService().list_for_principal("user-1", request=request())
 
-    @pytest.mark.parametrize("status", ["unreadable", "missing"])
-    async def test_unusable_tokens_need_reconnect(self, patched_registry, status):
-        item = await list_one(FakeSync(status))
-        assert item.status == "needs_reconnect" and item.connected is False
-        # metadata is still shown so the UI can render the account row
-        assert item.account_id == "acc-1"
+    assert items == [
+        IntegrationDescriptor(
+            provider="o365",
+            display_name="Office 365",
+            icon=None,
+            default_scopes=["read"],
+            status="connected",
+            account_id="account-1",
+            display_account_name="Account",
+            email="a@example.com",
+            connected_at=persisted.connected_at,
+            channels=["msteams", "web"],
+            scopes_granted=["read"],
+            expires_at=1_800_000_000.0,
+            updated_at=persisted.updated_at,
+        )
+    ]
 
-    async def test_no_row_is_disconnected(self, patched_registry):
-        sync = FakeSync("ok")
-        item = await list_one(sync, row=None)
-        assert item.status == "disconnected" and item.connected is False
-        assert sync.calls == 0  # no vault probe without a credential row
 
-    async def test_vault_outage_does_not_hide_integrations(self, patched_registry):
-        item = await list_one(FakeSync(status="unavailable"))
-        assert item.status == "connected"
+@pytest.mark.asyncio
+async def test_disconnected_descriptor_does_not_probe_owner() -> None:
+    """A provider without a metadata row is disconnected without a credential read."""
+    with (
+        patch("parrot.auth.oauth2.service.OAuth2ProviderRegistry") as registry,
+        patch("parrot.auth.oauth2.service.list_users_integrations", AsyncMock(return_value=[])),
+        patch.object(IntegrationsService, "_token_status", AsyncMock()) as token_status,
+    ):
+        registry.return_value.all.return_value = [PROVIDER]
+        items = await IntegrationsService().list_for_principal("user-1", request=request())
 
-    async def test_probe_failure_is_swallowed(self, patched_registry, caplog):
-        item = await list_one(FakeSync(error=RuntimeError("redis down")))
-        assert item.status == "connected"
+    assert items[0].status == "disconnected"
+    assert items[0].connected is False
+    token_status.assert_not_awaited()
 
-    async def test_probe_skipped_without_app(self, patched_registry):
-        service = IntegrationsService()
-        with patch(
-            "parrot.auth.oauth2.service.get_users_integration", new=AsyncMock(return_value=ROW)
-        ), patch.object(IntegrationsService, "_check_pbac", new=AsyncMock(return_value=True)):
-            items = await service.list_for_user("user-1", "agent-1", request=None)
-        assert items[0].status == "connected"
+
+@pytest.mark.asyncio
+async def test_needs_reconnect_preserves_account_metadata() -> None:
+    """An unusable credential still identifies the account to reconnect."""
+    persisted = row()
+    with (
+        patch("parrot.auth.oauth2.service.OAuth2ProviderRegistry") as registry,
+        patch("parrot.auth.oauth2.service.list_users_integrations", AsyncMock(return_value=[persisted])),
+        patch.object(IntegrationsService, "_token_status", AsyncMock(return_value="needs_reconnect")),
+    ):
+        registry.return_value.all.return_value = [PROVIDER]
+        item = (await IntegrationsService().list_for_principal("user-1", request=request()))[0]
+
+    assert item.status == "needs_reconnect"
+    assert item.connected is False
+    assert item.account_id == "account-1"
 
 
 class TestDescriptorContract:
-    def test_status_and_connected_stay_in_sync(self):
+    """Keep the legacy connected flag synchronized with the status field."""
+
+    def test_status_and_connected_stay_in_sync(self) -> None:
+        """Explicit status wins and legacy connected remains derivable."""
         assert IntegrationDescriptor(provider="p", display_name="P", connected=True).status == "connected"
         assert IntegrationDescriptor(provider="p", display_name="P").status == "disconnected"
         needs = IntegrationDescriptor(provider="p", display_name="P", status="needs_reconnect")
         assert needs.connected is False
         assert needs.model_dump(mode="json")["status"] == "needs_reconnect"
 
-    def test_invalid_status_rejected(self):
+    def test_invalid_status_rejected(self) -> None:
+        """Unknown status values fail model validation."""
         with pytest.raises(Exception):
             IntegrationDescriptor(provider="p", display_name="P", status="broken")

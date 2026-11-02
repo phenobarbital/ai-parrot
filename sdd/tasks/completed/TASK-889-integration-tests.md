@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-129 — Dev-Loop Orchestration with Claude Code Subagent Mirror
 **Spec**: `sdd/specs/dev-loop-orchestration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-888

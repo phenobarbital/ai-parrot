@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-109 — Telegram Multi-Auth Negotiation
 **Spec**: `sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (3-4h)
 **Depends-on**: TASK-777, TASK-778

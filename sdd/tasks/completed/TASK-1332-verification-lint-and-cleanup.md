@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-198 — move-pageindex-kb
 **Spec**: `sdd/specs/move-pageindex-kb.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1328, TASK-1329, TASK-1330, TASK-1331

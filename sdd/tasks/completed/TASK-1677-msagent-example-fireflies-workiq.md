@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-264 — Unified Credential Broker
 **Spec**: `sdd/specs/unified-credential-broker.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1667, TASK-1668, TASK-1669, TASK-1670, TASK-1671, TASK-1672, TASK-1673, TASK-1674, TASK-1675, TASK-1676

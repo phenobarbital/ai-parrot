@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-272 — A2A Protocol v1.0.0 Compatibility
 **Spec**: `sdd/specs/a2a-protocol-compatibility.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1712, TASK-1713

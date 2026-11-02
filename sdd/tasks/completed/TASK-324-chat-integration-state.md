@@ -2,7 +2,7 @@
 
 **Feature**: Handoff Tool for Integrations Agents
 **Spec**: `sdd/specs/handoff-tool-for-integrations-agents.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-052

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-236 — Audio Renderer Form
 **Spec**: `sdd/specs/audio-renderer-form.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1539, TASK-1540

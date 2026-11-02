@@ -9,6 +9,63 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.2.6] — 2026-10-29 — Follow-up suggestion chips, metric registry, A2UI diagrams, agent security guardrails
+
+Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.6`, `ai-parrot-server` to `1.3.5`,
+`parrot-formdesigner` to `1.3.2`, `ai-parrot-semantic` to `1.3.2`, the other core-line packages to `1.2.6`,
+satellites to `0.4.6`). Satellites are re-pinned to `ai-parrot>=1.2.6`.
+
+### Security
+
+- **Agent security guardrails (FEAT-761)** — jailbreak classifier on an engine chassis (bake-off-pinned
+  winner, DAN false-positive fixes, off-loop matcher), `PromptLeakageGuardrail` with canary redaction,
+  retrieved vector chunks scanned through the `TOOL_OUTPUT` pipeline, rendered-prompt capture, and
+  content-free security events.
+- **Metric registry tenant isolation** (FEAT-756 review) — per-call tenant isolation, no LLM-supplied
+  tenant argument, private metrics hidden from non-owners.
+- **Browsing recordings** — recording path overrides are confined and symlink escapes rejected.
+
+### Added
+
+- **Follow-up suggestion chips (FEAT-752)** — `SuggestionProvider` protocol + `SuggestionEngine` (skill,
+  presentation, explain and LLM providers, bounded total deadline), deferred suggestions in `ask_stream`
+  with a stream trailer, `AIMessage.suggestions`, a Svelte `SuggestionChips` row in AgentChat, Telegram
+  suggestion keyboards, and Studio configuration fields.
+- **Metric definition registry (FEAT-756)** — Postgres `MetricDefinition` store with compare-and-set
+  versioning, period presets / comparison windows / series buckets, source executors,
+  `MetricDefinitionsHandler` REST lane, Flex `kpi-table.md` importer, and a `MetricSuggestionProvider`.
+- **Inline A2UI component routing (FEAT-755)** — catalog JSON Schema → Pydantic structured output, inline
+  prompt builder and feasibility rules, `a2ui_component` kwarg on `ask()`.
+- **A2UI `MermaidDiagram` (FEAT-753)** — catalog component, builder and `MermaidDiagramTool`, fail-closed
+  source validator, Svelte renderer (mermaid ^11.17.2), degradation for SSR-HTML/PDF, Adaptive Cards and
+  interactive HTML.
+- **A2UI C4 diagrams (FEAT-754)** — `build_graph(level=)` + `build_c4_diagram`, C4 types/symbols and
+  projected boundary frames in `A2UIGraph`.
+- **Browsing session recording** — opt-in recording on both driver paths, finalized recording exposed on
+  close; Playwright is now the default driver.
+- **E2E browser screencast logs (FEAT-762)** — active-page screencast capture for the e2e-ui-tester
+  (`ai-parrot-server[screencast]` extra: `av`, `pillow`).
+- **SDD tooling** — `/sdd-done` closeout hooks (FEAT-764: `jira.transition`, `telegram.send`,
+  `push.send`, `webhook.post`; `--resolve-jira` removed), ledger outbox integration (FEAT-758), ADR-prefixed
+  aliases with exact/local resolution (FEAT-760), per-seat `effort` for sdd-coder seats.
+
+### Fixed
+
+- **Jira** — issue links built from the site URL instead of the API gateway.
+- **GitHub reviewer** — ticket / feature id resolved from branch and title, never the PR body.
+- **Telegram** — suggestion-keyboard guard no longer raises when the store was never set.
+- **Dev-loop sandbox** — sandboxed seats and `sdd-worker` never load the `user` setting source; RTK rewrite
+  applied inside the sandbox hook with its data dir kept read-only.
+- **sdd-coder** — stdin isolated at every MCP-served spawn site; silent exit paths logged.
+- **Semantic layer packaging** — version unpinned in the packaging test; conflicting `--package` flag dropped
+  from the CI sync.
+
+### Dependencies
+
+- `ruff` >=0.17.2 (dev), `mkdocs-material` >=9.8.0.
+
+---
+
 ## [1.2.5] — 2026-10-27 — Semantic layer, Roost inter-agent protocol, MS Teams auth/forms hardening, ledger event sync
 
 Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.5`, `ai-parrot-server` to `1.3.4`,

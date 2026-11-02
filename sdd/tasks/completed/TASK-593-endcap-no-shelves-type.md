@@ -2,7 +2,7 @@
 
 **Feature**: planogram-new-types
 **Spec**: `sdd/specs/planogram-new-types.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

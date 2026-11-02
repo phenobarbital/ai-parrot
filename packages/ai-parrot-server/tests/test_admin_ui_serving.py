@@ -7,6 +7,7 @@ mount (direct route or middleware when ``GET /`` is already taken), no
 shadowing of ``/api/*`` routes, and navigator-auth exclude-list
 registration (with and without an installed ``AuthHandler``).
 """
+
 from __future__ import annotations
 
 import logging
@@ -28,9 +29,7 @@ def fake_dist(tmp_path, monkeypatch):
 
 
 class TestAbsentDist:
-    async def test_absent_dist_returns_false_and_registers_no_spa_routes(
-        self, tmp_path, monkeypatch, caplog
-    ):
+    async def test_absent_dist_returns_false_and_registers_no_spa_routes(self, tmp_path, monkeypatch, caplog):
         """No dist -> no SPA mount, but the status and catalog JSON
         endpoints are UI-agnostic and still register (TASK-2524, TASK-2584)."""
         missing = tmp_path / "no-dist-here"
@@ -65,7 +64,7 @@ class TestMountedDist:
         assert "admin" in (await resp.text())
 
     @pytest.mark.parametrize(
-        "path", ["/", "/login", "/agents", "/agents/helpdesk/chat", "/admin/home"]
+        "path", ["/", "/login", "/agents", "/agents/helpdesk/chat", "/admin/home", "/account/security"]
     )
     async def test_user_sections_served_at_root(self, fake_dist, aiohttp_client, path):
         app = web.Application()
@@ -83,13 +82,11 @@ class TestMountedDist:
         assert setup_admin_ui(app, mount_root=True) is True
 
         client = await aiohttp_client(app)
-        for path in ("/not-a-ui-page", "/agentsfoo", "/api/v1/missing"):
+        for path in ("/not-a-ui-page", "/agentsfoo", "/accounts", "/api/v1/missing"):
             resp = await client.get(path)
             assert resp.status == 404, path
 
-    async def test_root_served_by_middleware_when_already_taken(
-        self, fake_dist, aiohttp_client
-    ):
+    async def test_root_served_by_middleware_when_already_taken(self, fake_dist, aiohttp_client):
         """navigator's AppHandler always registers its own ``GET /``: the SPA
         must still answer ``/`` (via a middleware scoped to exactly ``/``)
         without breaking any other route."""
@@ -163,9 +160,7 @@ class TestMountedDist:
         assert resp.status == 200
         assert (await resp.json()) == {"ok": True}
 
-    async def test_exclude_list_registered_when_auth_present(
-        self, fake_dist, aiohttp_client
-    ):
+    async def test_exclude_list_registered_when_auth_present(self, fake_dist, aiohttp_client):
         """Registration happens on ``on_startup``, not eagerly in
         ``setup_admin_ui()`` — see ``_register_auth_exclusions_on_startup``'s
         docstring. In production both real entrypoints call
@@ -189,13 +184,22 @@ class TestMountedDist:
         await aiohttp_client(app)  # starts the app -> fires on_startup
 
         excluded = app[AUTH_EXCLUDE_LIST_KEY]
-        for pattern in ("/admin", "/admin/*", "/login", "/agents", "/agents/*", "/ui/assets/*"):
+        for pattern in (
+            "/admin",
+            "/admin/*",
+            "/login",
+            "/agents",
+            "/agents/*",
+            "/account",
+            "/account/*",
+            "/ui/assets/*",
+        ):
             assert pattern in excluded
         # Segment-boundary patterns must not accidentally match lookalikes,
         # and the root pattern must never exclude the JSON API.
         import fnmatch
 
-        for path in ("/administer", "/agentsfoo", "/api/v1/bots", "/api/v1/login"):
+        for path in ("/administer", "/agentsfoo", "/accounts", "/api/v1/bots", "/api/v1/login"):
             assert not any(fnmatch.fnmatch(path, p) for p in excluded), path
 
     async def test_no_crash_without_auth_handler(self, fake_dist, aiohttp_client):

@@ -24,13 +24,6 @@ def _bot():
     bot.get_tools_count.return_value = 0
     bot.has_tools.return_value = False
     bot.cleanup = AsyncMock()
-    # A plain MagicMock() would auto-vivify `_credentials` as a non-iterable
-    # MagicMock, so `bot_declares_o365_device_code` (identity.py:123) blows up
-    # iterating it. Pin it to an empty list — this bot declares no o365
-    # device-code credential (feedback: unisolated-real-home-in-tests — none
-    # of these tests reach `cli_state_dir()`/PARROT_HOME, so no isolation is
-    # needed here; verified by tracing each test's guard order below).
-    bot._credentials = []
     return bot
 
 

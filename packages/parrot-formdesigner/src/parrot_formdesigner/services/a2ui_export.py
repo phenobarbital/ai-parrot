@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -98,6 +98,7 @@ class A2UIExportService:
         *,
         form_uids: Sequence[uuid.UUID] | None = None,
         published_only: bool = False,
+        is_visible: Callable[[FormSchema], bool] | None = None,
     ) -> AsyncIterator[ExportedSurface]:
         """Yield exports for one tenant after hydrating its storage cache.
 
@@ -105,6 +106,11 @@ class A2UIExportService:
             tenant: Tenant whose forms are exported.
             form_uids: Optional allowlist of form identities.
             published_only: Whether to include only published forms.
+            is_visible: Optional per-form visibility predicate. A form for which
+                it returns ``False`` is skipped entirely — no row is yielded for
+                it, not even an error row. ``None`` (the default) yields every
+                form, which is what the CLI exporter relies on: it has no
+                request to authorize against.
 
         Yields:
             One export row per selected form.
@@ -113,6 +119,8 @@ class A2UIExportService:
             await self.registry.load_from_storage(tenant=tenant)
         wanted = {str(form_uid) for form_uid in form_uids} if form_uids is not None else None
         for form in await self.registry.list_forms(tenant=tenant):
+            if is_visible is not None and not is_visible(form):
+                continue
             if wanted is not None and str(form.form_uid) not in wanted:
                 continue
             if published_only and form.published_version is None:

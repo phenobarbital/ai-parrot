@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-471 — Add rustworkx (and the wikitoolkit import-path deps) as real core dependencies
 **Spec**: `sdd/specs/add-rustworkx-dependency.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2549

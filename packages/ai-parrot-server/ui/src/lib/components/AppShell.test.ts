@@ -29,6 +29,20 @@ describe("AppShell", () => {
     }
   });
 
+  it("links the identity to /account/security and shows the Passkey badge for passkey sessions", async () => {
+    authStore.user = { username: "alice", auth_method: "passkey" };
+    const { getByTestId } = render(AppShellHarness);
+
+    expect(getByTestId("topbar-identity").getAttribute("href")).toBe("/account/security");
+    expect(getByTestId("topbar-auth-badge").textContent).toContain("Passkey");
+  });
+
+  it("does not show the Passkey badge for BasicAuth sessions", () => {
+    const { queryByTestId } = render(AppShellHarness);
+
+    expect(queryByTestId("topbar-auth-badge")).toBeNull();
+  });
+
   it("logout clears auth state and routes to login", async () => {
     vi.spyOn(apiClient, "get").mockResolvedValue({ data: {} });
 

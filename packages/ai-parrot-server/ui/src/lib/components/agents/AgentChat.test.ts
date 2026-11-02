@@ -73,6 +73,14 @@ vi.mock("$lib/stores/notifications.svelte", () => ({
   notificationStore: { add: vi.fn(), remove: vi.fn() },
 }));
 
+vi.mock("$lib/stores/connections.svelte", () => ({
+  connectionsStore: {
+    items: [], loading: false, live: false, error: null,
+    start: vi.fn(), stop: vi.fn(), refresh: vi.fn(async () => {}),
+    onEvent: vi.fn(() => () => {}),
+  },
+}));
+
 import AgentChat from "./AgentChat.svelte";
 import * as chatLayout from "$lib/stores/agentchat-layout.svelte";
 

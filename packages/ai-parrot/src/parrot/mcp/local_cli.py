@@ -164,12 +164,21 @@ def _print_toolkit_list(root: Path, config_path: Path | None = None) -> None:
     default=False,
     help="List resolvable toolkit names (sections declared in .parrot/mcp-toolkits.yaml) and exit.",
 )
+@click.option(
+    "--login-file",
+    "login_file",
+    default=None,
+    type=click.Path(path_type=Path),
+    envvar="PARROT_LOGIN_FILE",
+    help="parrot login file to bind the Navigator principal (default ~/.parrot/login.json).",
+)
 def mcp_local(
     name: str | None,
     config_path: Path | None,
     include: tuple[str, ...],
     exclude: tuple[str, ...],
     list_toolkits: bool,
+    login_file: Path | None,
 ) -> None:
     """Serve NAME as a local stdio MCP server.
 
@@ -215,7 +224,7 @@ def mcp_local(
         overrides["exclude"] = list(exclude)
 
     try:
-        server = create_toolkit_mcp_server(name, root, **overrides)
+        server = create_toolkit_mcp_server(name, root, login_file=login_file, **overrides)
     except (ValueError, ImportError) as exc:
         click.echo(f"Error: {exc}", err=True)
         # An unknown name (not a configured section) is the hard cut's only

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-208 — Spawn Ephemeral Sub-Agent Tool
 **Spec**: `sdd/specs/FEAT-208-spawn-ephemeral-subagent-tool.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

@@ -1,0 +1,16 @@
+packages/ai-parrot-server/src/parrot/handlers/user.py
+packages/ai-parrot-server/ui/src/lib/components/agents/integrations/IntegrationsMenu.svelte
+packages/ai-parrot-server/ui/src/lib/components/agents/integrations/ConnectIntegrationPill.svelte
+packages/ai-parrot-server/ui/src/lib/oauth/popup.ts
+packages/ai-parrot-server/ui/src/lib/api/integrations.ts
+packages/ai-parrot-server/src/parrot/services/vault_token_sync.py
+packages/ai-parrot/src/parrot/auth/o365_oauth.py
+packages/ai-parrot/src/parrot/security/vault_utils.py
+packages/ai-parrot-tools/src/parrot_tools/o365/oauth_toolkit.py
+packages/ai-parrot/src/parrot/tools/jira_connect_tool.py
+packages/ai-parrot-integrations/src/parrot/integrations/slack/oauth_callback.py
+packages/ai-parrot-integrations/src/parrot/integrations/slack/commands/jira_commands.py
+packages/ai-parrot-server/src/parrot/handlers/integrations.py
+packages/ai-parrot/src/parrot/auth/oauth2/service.py
+packages/ai-parrot/src/parrot/auth/oauth2_routes.py
+packages/ai-parrot/src/parrot/observability/fanout.py

@@ -1,0 +1,891 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-774",
+  "mode": "enrichment",
+  "summary_oneline": "S-4: give CLI-run agents and stdio MCP toolkit servers a Navigator-keyed principal and server-brokered access to FEAT-773 connections, generalizing the FEAT-696 CLI 3LO flow.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/agent_repl.py",
+      "symbol": "_run",
+      "lines": "161-164, 218-221, 238-252",
+      "role": "parrot agent entry: chooses loader (standalone vs ServerAgentProxy) and the identity inputs (--user / 'cli-user', --token, O365-only permission_context)",
+      "evidence": [
+        "F001",
+        "F013",
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/identity.py",
+      "symbol": "build_cli_permission_context",
+      "lines": "72-105",
+      "role": "today's only CLI identity bootstrap: Entra OID/email from O365_PRINCIPAL, channel='cli', device-code bots only \u2014 to be generalized or replaced by a CLI PrincipalResolver",
+      "evidence": [
+        "F002",
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/session.py",
+      "symbol": "TurnRunner._identity_kwargs",
+      "lines": "105-114",
+      "role": "single point where CLI identity (permission_context, user_id) enters bot.ask / ask_stream",
+      "evidence": [
+        "F028",
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/loaders.py",
+      "symbol": "ServerAgentProxy.__init__ / headers",
+      "lines": "466-506",
+      "role": "the CLI's only server-authenticated identity: hand-supplied bearer token sent as Authorization header; user_id never sent",
+      "evidence": [
+        "F035"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/cli/commands.py",
+      "symbol": "CommandContext.suspend / register / _register_builtins",
+      "lines": "41-65, 131-138, 187-211",
+      "role": "slash-command registry (home for a CLI /connect <provider>) and suspend() for foreign prompts (device code)",
+      "evidence": [
+        "F027"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/mcp/toolkit_server.py",
+      "symbol": "create_toolkit_mcp_server",
+      "lines": "137-141",
+      "role": "stdio toolkit server factory \u2014 the injection point for a principal and a credential resolver; today builds the toolkit from YAML kwargs only",
+      "evidence": [
+        "F016",
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/mcp/local_cli.py",
+      "symbol": "mcp_local",
+      "lines": "139-186, 217-234",
+      "role": "parrot mcp-local command; no identity/token option, cwd = project root",
+      "evidence": [
+        "F014",
+        "F040"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/mcp/local_server.py",
+      "symbol": "StdioMCPServer._admit / _handle_request",
+      "lines": "129-141, 208-232",
+      "role": "JSON-RPC stdio dispatch; tools/call carries no principal",
+      "evidence": [
+        "F015",
+        "F040"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/mcp/server_base.py",
+      "symbol": "MCPServerBase.handle_tools_call",
+      "lines": "111-124",
+      "role": "tool name + arguments \u2192 adapter.execute(arguments); nothing identity-related is threaded",
+      "evidence": [
+        "F040"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/mcp/toolkit_config.py",
+      "symbol": "ToolkitSection / load_toolkits_config",
+      "lines": "20-59, 90-123",
+      "role": ".parrot/mcp-toolkits.yaml model; `env` is the only secret channel into a stdio server process",
+      "evidence": [
+        "F017",
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/mcp/hosts.py",
+      "symbol": "HostAdapter / reconcile / get_adapter / detect_hosts",
+      "lines": "37-56, 95-98, 167-170, 228-245",
+      "role": "writes Claude Code .mcp.json / Codex .codex/config.toml entries (command + env) \u2014 the channel for binding identity into the server process at start",
+      "evidence": [
+        "F018",
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/agentd/server.py",
+      "symbol": "JsonRpcUnixServer._resolve_identity",
+      "lines": "323-363",
+      "role": "agentd connection-time identity: SO_PEERCRED \u2192 OS username \u2192 build_principal_context(channel='agentd'), service-identity fallback \u2014 template for CLI binding",
+      "evidence": [
+        "F003",
+        "F026"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/agentd/config.py",
+      "symbol": "ServiceIdentityConfig",
+      "lines": "131-166",
+      "role": "agentd fallback identity (user_id '1001', tenant 'default') from AGENTD_SERVICE_IDENTITY_* env",
+      "evidence": [
+        "F026",
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/mcp/principal_guard.py",
+      "symbol": "resolve_principal",
+      "lines": "128-175",
+      "role": "server-side bearer/API-key \u2192 Navigator principal (channel 'mcp', fail-closed tenant) \u2014 the reusable path to turn a CLI login token into a Navigator user_id",
+      "evidence": [
+        "F009",
+        "F025"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/permission.py",
+      "symbol": "build_principal_context",
+      "lines": "166-188",
+      "role": "shared helper for non-web principals; tenant_id defaults to the principal when omitted",
+      "evidence": [
+        "F034"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/broker/factory.py",
+      "symbol": "CredentialResolverFactory.build",
+      "lines": "46-76",
+      "role": "resolver kinds obo/oauth2/static_key/mcp/device_code \u2014 every kind needs an in-process oauth_manager or vault dep; no remote/API-backed kind exists",
+      "evidence": [
+        "F024"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/oauth2/o365_devicecode_provider.py",
+      "symbol": "O365DeviceCodeCredentialResolver._run_device_flow",
+      "lines": "1-7, 73-79, 206-222",
+      "role": "the only device-code engine (MSAL/O365-bound); prompt_callback prints to stdout",
+      "evidence": [
+        "F010",
+        "F023"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/jira_cli.py",
+      "symbol": "auth",
+      "lines": "283-351",
+      "role": "FEAT-696 working CLI 3LO login: manual-paste redirect, CSRF state, local file token store \u2014 the flow S-4 generalizes",
+      "evidence": [
+        "F043"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py",
+      "symbol": "JiraToolkit._pre_execute",
+      "lines": "1316-1409",
+      "role": "local single-user mode resolves under the fixed identity local:cli; requires a PermissionContext otherwise",
+      "evidence": [
+        "F043"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/session_identity.py",
+      "symbol": "resolve_user_id",
+      "lines": "90-133",
+      "role": "backend-independent Navigator user_id from a server request/session (Identity.id) \u2014 what any CLI identity endpoint would use",
+      "evidence": [
+        "F029"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/mcp/oauth.py",
+      "symbol": "TokenStore / RedisTokenStore._key / VaultTokenStore",
+      "lines": "22-26, 42-49, 63-70",
+      "role": "MCP client-side token caches keyed (user_id, server_name): a third key family S-1 does not touch; no loopback OAuth",
+      "evidence": [
+        "F004",
+        "F019",
+        "F041"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/oauth2/mcp_provider.py",
+      "symbol": "MCPOAuth2Provider / register_mcp_oauth2_provider",
+      "lines": "36-83, 89-99, 125-152",
+      "role": "remote MCP servers registered as providers 'mcp:<server>' in the unified registry (parrot-as-client direction)",
+      "evidence": [
+        "F022",
+        "F042"
+      ]
+    },
+    {
+      "path": "sdd/specs/delegated-auth-connections.spec.md",
+      "symbol": "Principal (M1)",
+      "lines": "229-236",
+      "role": "S-1 contract S-4 implements: Principal.channel includes 'cli'; AuthRequiredPayload carries device-code fields; descriptor has no device_authorization_url",
+      "evidence": [
+        "F033"
+      ]
+    },
+    {
+      "path": "sdd/specs/expose-toolkits-as-local-mcp.spec.md",
+      "symbol": "Goals / Non-Goals / Data Models / assets",
+      "lines": "41-55, 57-70, 160-179, 219-220",
+      "role": "FEAT-485 constraints inherited by S-4: stdio servers never import ai-parrot-server/aiohttp/navconfig; stdout is pure JSON-RPC; host prompt is the human gate",
+      "evidence": [
+        "F031"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+      "symbol": "ToolManager.set_broker",
+      "lines": "389, 515-523, 2178-2183",
+      "role": "the credential propagation seam (set_broker; exec_kwargs _broker/_cred_channel/_cred_user_id) S-4 feeds rather than re-implements \u2014 re-verified, TASK-1685 anchors were ~870 lines stale",
+      "evidence": [
+        "F047",
+        "F044"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/jira_local_auth.py",
+      "symbol": "DEFAULT_SETTINGS_PATH / LocalSettings / LocalJiraTokenStore",
+      "lines": "24-41, 52, 100-106, 155-172",
+      "role": "FEAT-696 local token file (~/.parrot/jira/settings.local.json, 0600, lock file) and FileTokenCredentialResolver(allowed_channels={cli,local}) \u2014 the local-file precedent for a CLI login/token store",
+      "evidence": [
+        "F048",
+        "F043"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/mcp/transports/base.py",
+      "symbol": "_authenticate_request",
+      "lines": "174-182, 218, 233-267",
+      "role": "fills request['mcp_user']: external introspection (user_id = token sub or client_id), navigator-auth session userdata, or API-key record \u2014 decides which identity family a CLI token yields",
+      "evidence": [
+        "F049",
+        "F025"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Stdio toolkit servers must stay lean: never import ai-parrot-server, aiohttp-server or navconfig; stdout is the JSON-RPC channel, so every prompt or log goes to stderr",
+      "evidence": [
+        "F031",
+        "F007",
+        "F016",
+        "F023"
+      ],
+      "implication": "a remote CredentialStore for stdio servers must be an aiohttp-client-only module in parrot core, imported under the existing stderr redirect; connect prompts must be returned as an AuthRequiredPayload tool result or written to stderr, never printed like the O365 prompt_callback"
+    },
+    {
+      "statement": "No principal arrives on an MCP tools/call from Claude Code or Codex; the only inputs are tool name and arguments",
+      "evidence": [
+        "F040",
+        "F015",
+        "F008",
+        "F017"
+      ],
+      "implication": "a stdio server's principal must be bound at process start \u2014 from env written by hosts.py entries or from a local login file the process reads \u2014 mirroring agentd's connection-time binding"
+    },
+    {
+      "statement": "S-1 fixes the contracts: Principal(user_id=Navigator id, channel in {web,telegram,slack,msteams,a2a,cli}), AuthRequiredPayload with user_code/verification_uri/expires_in, OAuth2ProviderDescriptor without a device-authorization endpoint",
+      "evidence": [
+        "F033"
+      ],
+      "implication": "S-4 adds a CLI PrincipalResolver and, if generic device code is wanted, a descriptor field \u2014 never a parallel principal model"
+    },
+    {
+      "statement": "Every CredentialResolverFactory kind requires an in-process oauth_manager or VaultTokenSync; CLI, parrot.mcp and agentd never build a CredentialBroker, and stdio servers never run AbstractBot.configure()",
+      "evidence": [
+        "F024",
+        "F005",
+        "F016",
+        "F044",
+        "F002"
+      ],
+      "implication": "out-of-process consumers need a new resolver/store that reaches the server API instead of Redis/Identity Vault; the ToolManager _broker/_cred_user_id seam itself is reused, not re-implemented"
+    },
+    {
+      "statement": "The Navigator user_id is produced server-side from a bearer (principal_guard.resolve_principal) or a session (resolve_user_id); the CLI's only server-authenticated identity is the hand-supplied --token / PARROT_SERVER_TOKEN bearer, and no parrot login command exists",
+      "evidence": [
+        "F009",
+        "F025",
+        "F029",
+        "F035",
+        "F006"
+      ],
+      "implication": "the CLI principal must come from a server round-trip over a login token; mapping an Entra OID or OS user locally cannot yield the Navigator id"
+    },
+    {
+      "statement": "A CLI 3LO precedent exists (FEAT-696 parrot jiratoolkit auth): manual paste of the redirected URL with CSRF state, local file token store, consumed by JiraToolkit under the fixed identity local:cli; it imports parrot.auth.jira_oauth helpers that S-1 M7 rewrites",
+      "evidence": [
+        "F043"
+      ],
+      "implication": "S-4 generalizes this flow to any descriptor provider and keys it by principal; the Jira helpers it imports must be re-verified after FEAT-773 merges"
+    },
+    {
+      "statement": "agentd binds an OS-username principal per UDS connection (SO_PEERCRED, service-identity fallback) and forwards it on every RPC; build_principal_context defaults tenant_id to the principal",
+      "evidence": [
+        "F003",
+        "F026",
+        "F034"
+      ],
+      "implication": "agentd callers need an OS-user \u2192 Navigator mapping or a login token in the envelope; a CLI resolver must pass the real tenant explicitly"
+    },
+    {
+      "statement": "Device code is O365-only (wraps O365Client.interactive_login); there is no RFC 8628 engine and MCPOAuth2Config has no device grant",
+      "evidence": [
+        "F010",
+        "F023",
+        "F021"
+      ],
+      "implication": "generic device code is new work; the browser/paste flow is the baseline for every provider"
+    },
+    {
+      "statement": "The local-MCP surface is in flight (hotfix b80ea3a98 on 2026-10-28) and the tools/manager.py seam lines cited by TASK-1685 date from 2026-05",
+      "evidence": [
+        "F037",
+        "F044"
+      ],
+      "implication": "S-4 edit sites on local_cli.py / local_server.py / tools/manager.py must be re-anchored at spec time"
+    },
+    {
+      "statement": "MCP client-side token stores (mcp:oauth:{server}:{user}, mcp_oauth_*) and MCPOAuth2Provider are the parrot-as-client direction and a third key family S-1 leaves alone",
+      "evidence": [
+        "F041",
+        "F019",
+        "F022",
+        "F042"
+      ],
+      "implication": "S-4 scopes them out explicitly (non-goal) so 'MCP' in S-4 means parrot tools consumed by an external host"
+    },
+    {
+      "statement": "A navigator-auth-authenticated server endpoint yields the Navigator user_id (session userdata / resolve_user_id); an external-introspection mount yields the IdP sub",
+      "evidence": [
+        "F049",
+        "F029",
+        "F025"
+      ],
+      "implication": "the CLI identity/token endpoint must sit behind navigator-auth session or bearer auth, not behind the OAUTH2_EXTERNAL MCP mount"
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      "CLI login state: `parrot login` / `parrot logout` (or reuse of --token / PARROT_SERVER_TOKEN) storing a navigator-auth bearer in a 0600 local file \u2014 the CLI's principal source (U1)",
+      "`CliPrincipalResolver` implementing S-1 `PrincipalResolver`: resolves the Navigator user_id and tenant by presenting the login token to the server (same path as principal_guard.resolve_principal) and builds Principal(channel='cli') \u2192 build_principal_context \u2192 REPLConfig.permission_context",
+      "Remote credential access for out-of-process consumers: an aiohttp-client-only `CredentialResolver` / `CredentialStore` in parrot core that reads a provider access token from a new server endpoint under /api/v1/connections (PBAC-guarded, short-lived access token only; refresh stays server-side) (U2)",
+      "Principal binding for stdio toolkit servers: create_toolkit_mcp_server accepts a principal + credential resolver resolved at process start from the login file / env; credentialed tools return AuthRequiredPayload as the tool result for the host to show",
+      "Connect from the CLI: `parrot connect <provider>` command and `/connect <provider>` slash command \u2192 start_connect(channel='cli') via the server API, print/open the authorize URL, complete by polling GET /api/v1/connections or by pasting the redirected URL (FEAT-696 style) (U3)",
+      "Optional: generic RFC 8628 device-code engine with a `device_authorization_url` descriptor field, surfaced through the existing AuthRequiredPayload device fields (U4)",
+      "Optional: agentd OS-user \u2192 Navigator principal mapping (per-user login file or token in the JSON-RPC envelope) (U5)"
+    ],
+    "modified": [
+      {
+        "target": "packages/ai-parrot/src/parrot/cli/agent_repl.py::_run",
+        "change": "build the permission context from the CLI PrincipalResolver for every agent (not only O365 device-code bots); keep --token as the login source when present",
+        "evidence": [
+          "F001",
+          "F013"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot/src/parrot/cli/identity.py::build_cli_permission_context",
+        "change": "generalize or retire the O365_PRINCIPAL-only bootstrap; the Entra canonical id becomes Principal.canonical_identity, not the key",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot/src/parrot/cli/session.py::TurnRunner._identity_kwargs",
+        "change": "unchanged shape; receives a Navigator-keyed PermissionContext",
+        "evidence": [
+          "F028"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot/src/parrot/mcp/toolkit_server.py::create_toolkit_mcp_server",
+        "change": "inject principal + remote credential resolver into the toolkit (credential_provider seam) under the stderr redirect",
+        "evidence": [
+          "F016"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot/src/parrot/mcp/local_cli.py::mcp_local",
+        "change": "read the login file / env for the principal; no new secrets in argv",
+        "evidence": [
+          "F014"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot/src/parrot/mcp/hosts.py::HostAdapter",
+        "change": "host entries carry the env needed to locate the login file (never the token itself)",
+        "evidence": [
+          "F018",
+          "F008"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot/src/parrot/cli/commands.py::SlashCommandDispatcher",
+        "change": "register /connect <provider> (and /connections) built-ins; use CommandContext.suspend() for device-code prompts",
+        "evidence": [
+          "F027"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py::JiraToolkit._pre_execute",
+        "change": "replace the fixed local:cli identity with the principal-keyed path; oauth2_local becomes the CLI consumer of the generic connection",
+        "evidence": [
+          "F043"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot-tools/src/parrot_tools/jira_cli.py::auth",
+        "change": "fold into the generic parrot connect flow (keep manual paste as a completion option)",
+        "evidence": [
+          "F043"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot-server/src/parrot/mcp/principal_guard.py::resolve_principal (reuse)",
+        "change": "reused by a new server identity/token endpoint for CLI logins; no behavior change",
+        "evidence": [
+          "F009",
+          "F025"
+        ]
+      }
+    ],
+    "untouched": [
+      "MCP client-side OAuth (parrot.mcp.oauth TokenStore trio, VaultMCPTokenStorage, MCPOAuth2Config, MCPOAuth2Provider) \u2014 parrot-as-client direction",
+      "HTTP MCP server PBAC guard, session store and transports (FEAT-477)",
+      "agentd UDS transport and SO_PEERCRED binding itself (only the mapping is new, if U5 says so)",
+      "FEAT-485 stdout-purity and lean-import rules; Claude Code / Codex permission prompt stays the human gate",
+      "S-1 internals: AbstractOAuth2Manager, CredentialStore Protocol, IntegrationsService, ConnectionsHandler (consumed via HTTP, not modified)"
+    ],
+    "patterns_to_follow": [
+      {
+        "pattern": "agentd connection-time principal binding with fallback and identity_source audit",
+        "evidence": [
+          "F003",
+          "F026"
+        ]
+      },
+      {
+        "pattern": "principal_guard: bearer \u2192 build_principal_context, fail-closed tenant, _pctx_var publication",
+        "evidence": [
+          "F009",
+          "F025"
+        ]
+      },
+      {
+        "pattern": "FEAT-696 manual-paste 3LO with hmac.compare_digest state check (browser-agnostic, works over SSH)",
+        "evidence": [
+          "F043"
+        ]
+      },
+      {
+        "pattern": "O365 resolver prompt_callback injection and VaultTokenSync cache-hit/refresh/flow ladder",
+        "evidence": [
+          "F023"
+        ]
+      },
+      {
+        "pattern": "FEAT-485 lazy import under redirect_stdout(stderr) for anything that may print",
+        "evidence": [
+          "F016",
+          "F031"
+        ]
+      },
+      {
+        "pattern": "TurnRunner._identity_kwargs as the only identity injection point into bot.ask",
+        "evidence": [
+          "F028"
+        ]
+      },
+      {
+        "pattern": "FEAT-696 local token file: ~/.parrot/<x>/settings.local.json written atomically with 0600 + lock file",
+        "evidence": [
+          "F048"
+        ]
+      }
+    ],
+    "integration_risks": [
+      {
+        "risk": "A token-vending endpoint hands provider access tokens to local processes",
+        "mitigation": "short TTL, access token only, PBAC action per provider, audit event, login file 0600; never ship the refresh token",
+        "evidence": [
+          "F009",
+          "F031"
+        ]
+      },
+      {
+        "risk": "Any stdout write inside a stdio server corrupts the JSON-RPC stream",
+        "mitigation": "AuthRequiredPayload as tool result; stderr for everything else; reuse the stderr-redirect import pattern",
+        "evidence": [
+          "F023",
+          "F031",
+          "F040"
+        ]
+      },
+      {
+        "risk": "S-1 M7 rewrites parrot.auth.jira_oauth helpers that jira_cli.py imports; local-MCP files have a hotfix in flight",
+        "mitigation": "write S-4 only after FEAT-773 merges; re-verify anchors at spec time",
+        "evidence": [
+          "F043",
+          "F037"
+        ]
+      },
+      {
+        "risk": "build_principal_context defaults tenant_id to the principal",
+        "mitigation": "CLI resolver always passes the server-returned tenant",
+        "evidence": [
+          "F034"
+        ]
+      },
+      {
+        "risk": "Two MCP test trees (root tests/mcp and packages/ai-parrot/tests/mcp)",
+        "mitigation": "place new tests next to the surface they cover and list both in the validation contract",
+        "evidence": [
+          "F045"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "The only CLI identity today is --user / 'cli-user' (standalone), a hand-supplied bearer (--server), or an Entra id from O365_PRINCIPAL for device-code bots; none is a Navigator user_id",
+      "evidence": [
+        "F001",
+        "F013",
+        "F006",
+        "F002",
+        "F035"
+      ],
+      "confidence": "high",
+      "reasoning": "direct reads of agent_repl.py, identity.py, loaders.py plus grep for login/token handling"
+    },
+    {
+      "id": "C2",
+      "statement": "No parrot login / auth command exists",
+      "evidence": [
+        "F006",
+        "F027"
+      ],
+      "confidence": "high",
+      "reasoning": "grep over cli/__init__.py, commands.py, session.py and read of the slash built-ins"
+    },
+    {
+      "id": "C3",
+      "statement": "Stdio toolkit servers (parrot mcp-local, StdioMCPServer, create_toolkit_mcp_server) carry no principal, broker or vault; secrets reach them only through ToolkitSection.env",
+      "evidence": [
+        "F040",
+        "F015",
+        "F016",
+        "F007",
+        "F017",
+        "F005"
+      ],
+      "confidence": "high",
+      "reasoning": "full reads of local_cli.py, local_server.py, toolkit_server.py, toolkit_config.py and grep absence"
+    },
+    {
+      "id": "C4",
+      "statement": "agentd binds an OS-username principal per connection from SO_PEERCRED with a service-identity fallback",
+      "evidence": [
+        "F003",
+        "F026",
+        "F038"
+      ],
+      "confidence": "high",
+      "reasoning": "read of server.py/config.py and the TASK-2286 commit"
+    },
+    {
+      "id": "C5",
+      "statement": "parrot.mcp has no loopback-redirect or webbrowser OAuth flow; its token stores are parrot-as-client caches needing Redis or the DocumentDB vault",
+      "evidence": [
+        "F004",
+        "F019",
+        "F020",
+        "F041"
+      ],
+      "confidence": "high",
+      "reasoning": "grep for localhost/webbrowser/redirect and reads of oauth.py, oauth2_storage.py, oauth2_config.py"
+    },
+    {
+      "id": "C6",
+      "statement": "Device code is O365-only; no RFC 8628 engine exists",
+      "evidence": [
+        "F010",
+        "F023",
+        "F021"
+      ],
+      "confidence": "high",
+      "reasoning": "read of the resolver and grep over o365_oauth.py; MCPOAuth2GrantType has two grants"
+    },
+    {
+      "id": "C7",
+      "statement": "principal_guard.resolve_principal is the existing bearer \u2192 Navigator principal path (channel 'mcp', fail-closed tenant)",
+      "evidence": [
+        "F009",
+        "F025",
+        "F039"
+      ],
+      "confidence": "high",
+      "reasoning": "read of principal_guard.py header and resolve function"
+    },
+    {
+      "id": "C8",
+      "statement": "Every broker resolver kind requires in-process oauth_manager or vault deps",
+      "evidence": [
+        "F024"
+      ],
+      "confidence": "high",
+      "reasoning": "read of CredentialResolverFactory.build and its _build_* helpers"
+    },
+    {
+      "id": "C9",
+      "statement": "FEAT-696 parrot jiratoolkit auth is a working CLI 3LO flow (manual paste, local file store) consumed under the fixed identity local:cli",
+      "evidence": [
+        "F043"
+      ],
+      "confidence": "high",
+      "reasoning": "wiki page + confirming read of jira_cli.py auth and jiratoolkit._pre_execute"
+    },
+    {
+      "id": "C10",
+      "statement": "S-1 contracts already admit channel='cli' and device-code fields on AuthRequiredPayload; the descriptor lacks a device-authorization endpoint",
+      "evidence": [
+        "F033"
+      ],
+      "confidence": "high",
+      "reasoning": "read of the S-1 spec skeletons"
+    },
+    {
+      "id": "C11",
+      "statement": "The CLI identity story is frozen at FEAT-266 (identity.py untouched in 180 days) while the local-MCP surface has a hotfix from 2026-10-28",
+      "evidence": [
+        "F036",
+        "F037"
+      ],
+      "confidence": "high",
+      "reasoning": "git log on both paths"
+    },
+    {
+      "id": "C12",
+      "statement": "Host entries written by hosts.py (command + env) are the only process-start channel for binding identity into a stdio server",
+      "evidence": [
+        "F008",
+        "F018",
+        "F031"
+      ],
+      "confidence": "medium",
+      "reasoning": "hosts.py delegates entry writing to the wiki installers, which were not read; the env block is documented in the FEAT-485 spec and ToolkitSection"
+    },
+    {
+      "id": "C13",
+      "statement": "The ToolManager _broker / _cred_channel / _cred_user_id seam is the reusable propagation path (set_broker :517, injection :2178-2183); injection happens only when a broker is set",
+      "evidence": [
+        "F047",
+        "F044",
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "re-grepped in this run; TASK-1685's :320/:1305 anchors are stale"
+    },
+    {
+      "id": "C14",
+      "statement": "Which identity a CLI token yields depends on the MCP mount's auth method: navigator-auth session userdata (Navigator family) vs external introspection sub (IdP subject, Entra OID case)",
+      "evidence": [
+        "F049",
+        "F025",
+        "F029"
+      ],
+      "confidence": "high",
+      "reasoning": "read of transports/base.py _authenticate_oauth_external / _authenticate_bearer"
+    },
+    {
+      "id": "C15",
+      "statement": "Generalizing FEAT-696's flow to any descriptor provider, keyed by principal and stored through S-1's CredentialStore, covers the connect-from-CLI leg without a loopback listener",
+      "evidence": [
+        "F043",
+        "F033",
+        "F027"
+      ],
+      "confidence": "medium",
+      "reasoning": "design inference from the precedent plus S-1 contracts"
+    },
+    {
+      "id": "C16",
+      "statement": "A server-vended short-lived access token endpoint is the only way a FEAT-485-compliant stdio server can use a 3LO connection",
+      "evidence": [
+        "F031",
+        "F024",
+        "F020",
+        "F040"
+      ],
+      "confidence": "medium",
+      "reasoning": "follows from the lean-import rule plus every resolver kind needing vault/Redis; a local encrypted token file is the alternative the user must weigh"
+    },
+    {
+      "id": "C17",
+      "statement": "agentd callers can be mapped to a Navigator user only by a new OS-user \u2192 login mapping or a token in the RPC envelope",
+      "evidence": [
+        "F003",
+        "F026",
+        "F032"
+      ],
+      "confidence": "medium",
+      "reasoning": "inferred from the peercred model and the spec's filesystem-permission authentication"
+    },
+    {
+      "id": "C18",
+      "statement": "No existing test covers a per-user credential inside a stdio toolkit server",
+      "evidence": [
+        "F012",
+        "F045"
+      ],
+      "confidence": "low",
+      "reasoning": "absence inferred from the test map; test bodies were not read"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "How does a CLI user obtain the login token that yields the Navigator user_id?",
+      "blocks_claims": [
+        "C1",
+        "C2",
+        "C14"
+      ],
+      "plausible_answers": [
+        "a) new `parrot login` that completes a navigator-auth browser/device login and stores a CLI token in a 0600 file",
+        "b) reuse an existing bearer / API key: `--token` / PARROT_SERVER_TOKEN persisted by `parrot login --token`",
+        "c) no login: admin-managed OS-user \u2192 Navigator mapping (agentd style)"
+      ],
+      "ask_user": true,
+      "user_answer": "parrot login (browser/device): a new `parrot login` completes a navigator-auth browser or device login and stores a CLI token in a 0600 file under ~/.parrot/; `parrot logout` removes it."
+    },
+    {
+      "id": "U2",
+      "question": "How do stdio MCP toolkit servers running inside Claude Code / Codex get provider tokens?",
+      "blocks_claims": [
+        "C3",
+        "C16"
+      ],
+      "plausible_answers": [
+        "a) server-vended short-lived access token via a new PBAC-guarded endpoint under /api/v1/connections (refresh stays on the server)",
+        "b) local encrypted token file written by `parrot connect` (FEAT-696 style, offline, no server dependency at call time)",
+        "c) stdio servers get no 3LO; credentialed toolkits go through the HTTP MCP server with principal_guard"
+      ],
+      "ask_user": true,
+      "user_answer": "Local encrypted token file \u2014 as an encrypted cache synced from the server: the server completes the 3LO and the Identity Vault stays the durable owner; `parrot connect` pulls the token set into a local encrypted file (key derived from the login token); refresh goes through the server when expired."
+    },
+    {
+      "id": "U3",
+      "question": "How does a CLI connect complete?",
+      "blocks_claims": [
+        "C15"
+      ],
+      "plausible_answers": [
+        "a) print/open the authorize URL and poll GET /api/v1/connections until the connection appears",
+        "b) manual paste of the redirected URL posted to the server (works over SSH, no redirect-URI issue)",
+        "c) both, paste as fallback"
+      ],
+      "ask_user": true,
+      "user_answer": "Poll + paste fallback: print/open the authorize URL and poll GET /api/v1/connections until the connection appears; when the browser cannot reach back (SSH), paste the redirected URL and the CLI posts the code to the server."
+    },
+    {
+      "id": "U4",
+      "question": "Should S-4 add a generic RFC 8628 device-code engine (descriptor `device_authorization_url`) or keep device code O365-only?",
+      "blocks_claims": [
+        "C6",
+        "C10"
+      ],
+      "plausible_answers": [
+        "a) generic engine in S-4 for providers that support it (Microsoft, Google)",
+        "b) keep O365-only; browser/paste flow is the baseline",
+        "c) defer to a later spec"
+      ],
+      "ask_user": true,
+      "user_answer": "Generic engine in S-4: add `device_authorization_url` to the S-1 descriptor and an RFC 8628 poller surfaced through the AuthRequiredPayload device fields (Microsoft, Google)."
+    },
+    {
+      "id": "U5",
+      "question": "Is agentd (OS-user \u2192 Navigator principal) in S-4 scope?",
+      "blocks_claims": [
+        "C4",
+        "C17"
+      ],
+      "plausible_answers": [
+        "a) yes: per-OS-user login file read by the daemon",
+        "b) yes: login token carried in the JSON-RPC envelope",
+        "c) no: agentd keeps the OS/service identity; defer"
+      ],
+      "ask_user": true,
+      "user_answer": "Yes \u2014 per-OS-user login file: the daemon resolves the peer's OS user (SO_PEERCRED) and reads that user's ~/.parrot login file to obtain the Navigator principal."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization and constraints are high-confidence, the S-1 contracts fix the shape, and U1\u2013U5 are now decided; write the spec once FEAT-773 merges and re-verify the anchors in the in-flight local-MCP files."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F012",
+      "F013",
+      "F014",
+      "F015",
+      "F016",
+      "F017",
+      "F018",
+      "F019",
+      "F020",
+      "F021",
+      "F022",
+      "F023",
+      "F024",
+      "F025",
+      "F026",
+      "F027",
+      "F028",
+      "F029",
+      "F031",
+      "F032",
+      "F033",
+      "F034",
+      "F035",
+      "F036",
+      "F037",
+      "F038",
+      "F039",
+      "F040",
+      "F041",
+      "F042",
+      "F043",
+      "F044",
+      "F045",
+      "F047",
+      "F048",
+      "F049"
+    ],
+    "findings_unused": [
+      "F011",
+      "F030",
+      "F046"
+    ],
+    "notes": "Scope confidence is medium because U1/U2 are forks with different module sets; localization is high. Citation probe: 141 verified / 1 stale (ambiguous __init__ in agentd server.py, F003) / 1 missing (label `test_identity`, F001) \u2014 neither affects a claim. Depth-2 follow-ups F047-F049 run inline by the parent."
+  }
+}

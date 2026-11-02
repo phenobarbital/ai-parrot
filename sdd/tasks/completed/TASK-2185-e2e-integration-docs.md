@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-419 — ExecutionPlanToolkit — deterministic tool-call DAGs for a BasicAgent
 **Spec**: `sdd/specs/execution-plan-tool.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2179, TASK-2180, TASK-2181, TASK-2182, TASK-2183, TASK-2184

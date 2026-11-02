@@ -1,0 +1,32 @@
+navigator-auth ≥ 0.28.x ships a complete passkey (WebAuthn / FIDO2) backend —
+`PasskeyAuth`, merged in
+[phenobarbital/navigator-auth#607](https://github.com/phenobarbital/navigator-auth/pull/607)
+(FEAT-101, merged 2026-10-02). It exposes a public sign-in ceremony
+(`POST /api/v1/auth/passkey/login/options` + `POST /api/v1/login` with
+`X-Auth-Method: PasskeyAuth`), session-bound enrollment
+(`register/options`, `register/verify`) and credential management
+(`GET/PATCH/DELETE /api/v1/auth/passkey/credentials`). The installed
+`navigator-auth 0.28.9` already contains all of it.
+
+ai-parrot cannot use any of it today:
+
+- The Admin UI login page (`packages/ai-parrot-server/ui/src/pages/Login.svelte`)
+  only knows the `BasicAuth` username/password form. Non-external backends
+  discovered through `/api/v1/auth/methods` render as a **disabled** button
+  ("Not yet supported in this Admin UI"), so even with `PasskeyAuth` enabled a
+  user sees a dead button.
+- There is no user-level account/security page anywhere in the SPA, so nobody
+  can **enroll** a first passkey or manage existing ones.
+- `ai-parrot-server` declares no `navigator-auth[passkey]` extra: the shared
+  venv has `fido2` but **not** `webauthn` (py_webauthn), so `PasskeyAuth`
+  refuses to start (`ConfigError`) on a stock install.
+- The inline admin login page (`parrot/autonomous/admin.py`, served at
+  `/autonomous/admin`) is BasicAuth-only as well.
+
+**Who is affected**: every operator who wants phishing-resistant, passwordless
+login for the agent workspace and admin pages (end users and admins alike);
+ops teams who want ABAC policies keyed on `auth_method == "passkey"` /
+`mfa == true` (the backend already emits those session keys).
+
+**Why now**: the backend work is done and released; the only missing piece is
+the client side that drives the browser ceremonies.

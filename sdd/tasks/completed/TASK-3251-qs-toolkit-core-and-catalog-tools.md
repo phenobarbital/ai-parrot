@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-558 — QuerysourceToolkit — tenant-scoped query-slug and MultiQuery tools
 **Spec**: `sdd/specs/querysource-toolkit-refactor.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3245, TASK-3246, TASK-3247, TASK-3248, TASK-3250

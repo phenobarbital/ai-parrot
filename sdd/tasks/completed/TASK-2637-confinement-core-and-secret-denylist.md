@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-484 — ReadOnlyRepoToolkit — Safe Repo Grounding for Any Client
 **Spec**: `sdd/specs/readonly-repo-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

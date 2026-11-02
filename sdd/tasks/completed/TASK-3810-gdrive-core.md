@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-608 — Google Drive FileManager
 **Spec**: `sdd/specs/google-drive-interface.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3806, TASK-3807, TASK-3808

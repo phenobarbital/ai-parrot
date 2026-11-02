@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-175 — Migrate RequestBot to ContextVar-based RequestContext
 **Spec**: `sdd/specs/migrate-requestbot-contextvars.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

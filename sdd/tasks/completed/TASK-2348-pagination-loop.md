@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-441 — Fireflies MCP Meeting Filters & Native Summary Retrieval
 **Spec**: `sdd/specs/fireflies-mcp-improvements.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2346, TASK-2347

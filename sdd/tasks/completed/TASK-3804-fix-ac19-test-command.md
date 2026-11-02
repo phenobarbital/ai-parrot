@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-607 — Correct FEAT-601 AC19's declared multi-distribution pytest command
 **Spec**: `sdd/specs/fixgroup-73ca3aa6613f.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

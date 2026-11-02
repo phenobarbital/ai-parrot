@@ -1,0 +1,54 @@
+{
+  "feature": "experts-agent-tech-debt",
+  "feature_id": "FEAT-785",
+  "spec": "sdd/specs/experts-agent-tech-debt.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-31T23:30:12+00:00",
+  "completed_at": "2026-10-31T23:42:25+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/experts/test_render.py",
+          "packages/ai-parrot/tests/experts/test_agent_activation.py",
+          "packages/ai-parrot/tests/experts/test_registry.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:ea532f66b364472e59133407de6e751e62762da3d432075d1598f25c2786dcd3"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5082",
+      "slug": "experts-render-escape-spawn-guard-tenant-warning",
+      "title": "Escape render_knowledge attributes, post-configure spawn guard, visible tenant on ExpertRegistry.get",
+      "feature_id": "FEAT-785",
+      "feature": "experts-agent-tech-debt",
+      "spec": "sdd/specs/experts-agent-tech-debt.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task; no dependencies; touches only parrot/experts render.py, agent.py, registry.py and their tests",
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-31T23:30:49+00:00",
+      "completed_at": "2026-10-31T23:33:37+00:00",
+      "file": "sdd/tasks/completed/TASK-5082-experts-render-escape-spawn-guard-tenant-warning.md",
+      "verification": "verified"
+    }
+  ]
+}

@@ -31,7 +31,7 @@ class TestMcpServerLedgerMount:
         tools = create_wiki_tools(mock_store, root=mock_root, ledger_service=None)
 
         # Should have the standard 7 wiki tools
-        assert len(tools) == 7
+        assert len(tools) == 8
 
         # Should not have any ledger tools
         tool_names = [tool.name for tool in tools]
@@ -51,7 +51,7 @@ class TestMcpServerLedgerMount:
         tools = create_wiki_tools(mock_store, root=mock_root, ledger_service=mock_ledger_service)
 
         # Should have the standard 7 wiki tools + 7 ledger tools
-        assert len(tools) == 14
+        assert len(tools) == 15
 
         # Should have ledger tools
         tool_names = [tool.name for tool in tools]

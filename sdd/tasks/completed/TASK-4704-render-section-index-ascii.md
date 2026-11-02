@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-745 — MS Teams FormDesigner mixin — wizard fall-through fix + hardening
 **Spec**: `sdd/specs/msteams-formdesigner-mixin-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

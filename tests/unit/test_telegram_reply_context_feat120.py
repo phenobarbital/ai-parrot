@@ -220,7 +220,7 @@ class TestHandlerReplyIntegration:
 
         async def mock_invoke(sess, question, *, memory, output_mode, message, **kw):
             invoked_with['question'] = question
-            return "response"
+            return "response", []
 
         wrapper._is_authorized = MagicMock(return_value=True)
         wrapper._check_authentication = AsyncMock(return_value=True)
@@ -268,7 +268,7 @@ class TestHandlerReplyIntegration:
 
         async def mock_invoke(sess, question, *, memory, output_mode, message, **kw):
             invoked_with['question'] = question
-            return "response"
+            return "response", []
 
         wrapper._is_authorized = MagicMock(return_value=True)
         wrapper._check_authentication = AsyncMock(return_value=True)

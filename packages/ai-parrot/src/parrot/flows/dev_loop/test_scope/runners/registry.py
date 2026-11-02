@@ -43,9 +43,17 @@ class RunnerRegistry:
         self._adapters[kind] = adapter
         return adapter
 
+    def normalize(self, argv: Sequence[str]) -> list[str]:
+        """Strip env assignments and launcher chains (``uv run``, ``python -m``, ``pnpm``/``npm``/``yarn``/``npx``).
+
+        Adapters match and parse the *normalized* argv, so callers that go on to ask an adapter for
+        ``operands``/``is_broad`` must pass this result, not the raw declared command. Idempotent.
+        """
+        return normalize_launcher_argv(argv, pnpm_test_is_vitest=self._pnpm_test_is_vitest())
+
     def adapter_for_argv(self, argv: Sequence[str]) -> RunnerAdapter | None:
         """Normalise the launcher chain, then return its first matching adapter."""
-        normalized = normalize_launcher_argv(argv, pnpm_test_is_vitest=self._pnpm_test_is_vitest())
+        normalized = self.normalize(argv)
         for kind in (*BUILTIN_MODULES, *(key for key in self._adapters if key not in BUILTIN_MODULES)):
             try:
                 adapter = self.adapter_for_kind(kind)

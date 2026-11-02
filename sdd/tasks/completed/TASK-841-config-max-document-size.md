@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-120 — Telegram Wrapper Rich Message Integration
 **Spec**: `sdd/specs/telegram-wrapper-audio-files-integration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

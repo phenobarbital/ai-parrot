@@ -6,6 +6,10 @@ resolve to their documented defaults when no environment overrides are set.
 
 from __future__ import annotations
 
+import os
+
+import pytest
+
 from parrot import conf
 
 
@@ -15,10 +19,16 @@ class TestDevLoopSettingsDefaults:
         assert conf.FLOW_MAX_CONCURRENT_RUNS == 5
 
     def test_jira_account_default_empty(self):
+        if conf.config.get("FLOW_BOT_JIRA_ACCOUNT_ID", fallback=None) is not None:
+            pytest.skip("FLOW_BOT_JIRA_ACCOUNT_ID is overridden by the environment")
         assert conf.FLOW_BOT_JIRA_ACCOUNT_ID == ""
 
     def test_worktree_base_path_default(self):
-        assert conf.WORKTREE_BASE_PATH == ".claude/worktrees"
+        if conf.config.get("WORKTREE_BASE_PATH", fallback=None) is not None:
+            pytest.skip("WORKTREE_BASE_PATH is overridden by the environment")
+        # The default is resolved against BASE_DIR, so it is always absolute.
+        assert os.path.isabs(conf.WORKTREE_BASE_PATH)
+        assert conf.WORKTREE_BASE_PATH.endswith(os.path.join(".claude", "worktrees"))
 
     def test_stream_ttl_default_seven_days(self):
         assert conf.FLOW_STREAM_TTL_SECONDS == 604800

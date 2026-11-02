@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-534 — Lyria Toolkit for Natural Language Music Generation
 **Spec**: `sdd/specs/lyria-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2921, TASK-2922

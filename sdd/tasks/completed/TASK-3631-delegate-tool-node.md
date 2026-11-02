@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-590 — Tool-Call Delegate
 **Spec**: `sdd/specs/tool-call-delegate.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3626, TASK-3627, TASK-3630

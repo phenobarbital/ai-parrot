@@ -99,6 +99,27 @@ class LazyGroup(click.Group):
         attr_name = cmd_name.replace("-", "_")
         return getattr(mod, attr_name, None) or getattr(mod, cmd_name, None)
 
+    def format_commands(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        """Render registered commands even when a future lazy module has not landed yet.
+
+        Args:
+            ctx: Click context.
+            formatter: Click help formatter.
+        """
+        rows: list[tuple[str, str]] = []
+        for command_name in self.list_commands(ctx):
+            try:
+                command = self.get_command(ctx, command_name)
+            except click.ClickException:
+                command = None
+            if command is not None and command.hidden:
+                continue
+            help_text = command.get_short_help_str(limit=formatter.width) if command is not None else ""
+            rows.append((command_name, help_text))
+        if rows:
+            with formatter.section("Commands"):
+                formatter.write_dl(rows)
+
 
 @click.group(cls=LazyGroup)
 def cli():
@@ -138,6 +159,13 @@ cli._lazy_commands = {
     "status": "parrot.integrations.agentd.cli",
     "install-service": "parrot.integrations.agentd.cli",
     "mcp-serve": "parrot.integrations.agentd.cli",
+    # FEAT-774 — CLI login + connections (Navigator principal for CLI surfaces).
+    "login": "parrot.cli.login",
+    "logout": "parrot.cli.login",
+    "whoami": "parrot.cli.login",
+    "connect": "parrot.cli.connect",
+    "connections": "parrot.cli.connect",
+    "disconnect": "parrot.cli.connect",
 }
 
 _AGENTD_INSTALL_HINT = "ai-parrot-integrations[agentd]: pip install ai-parrot-integrations[agentd]"

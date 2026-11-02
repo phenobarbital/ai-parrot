@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-744 — Repair the stale Veo fixtures in the reel unit tests and bound each reel test's runtime
 **Spec**: `sdd/specs/unit-reel-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

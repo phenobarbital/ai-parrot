@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-196 — AgentsFlow Migration
 **Spec**: `sdd/specs/agentsflow-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1308, TASK-1309, TASK-1310, TASK-1311

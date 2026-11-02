@@ -1501,6 +1501,7 @@ class BedrockConverseBase(AbstractClient):
             input_tokens=getattr(_lc_usage, "input_tokens", None) if _lc_usage else None,
             output_tokens=getattr(_lc_usage, "output_tokens", None) if _lc_usage else None,
             finish_reason=ai_message.stop_reason,
+            usage=_lc_usage,
         )
         return ai_message
 
@@ -1853,6 +1854,7 @@ class BedrockConverseBase(AbstractClient):
             input_tokens=getattr(_lc_s_usage, "input_tokens", None) if _lc_s_usage else None,
             output_tokens=getattr(_lc_s_usage, "output_tokens", None) if _lc_s_usage else None,
             finish_reason=stop_reason,
+            usage=_lc_s_usage,
         )
         yield _lc_stream_msg
 
@@ -2152,6 +2154,7 @@ class BedrockConverseBase(AbstractClient):
             input_tokens=getattr(_lc_usage, "input_tokens", None) if _lc_usage else None,
             output_tokens=getattr(_lc_usage, "output_tokens", None) if _lc_usage else None,
             finish_reason=ai_message.stop_reason,
+            usage=_lc_usage,
         )
         return ai_message
 

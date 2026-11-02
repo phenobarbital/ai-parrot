@@ -10,6 +10,14 @@ vi.mock("$lib/components/agents/AgentChat.svelte", async () => ({
   default: (await import("./__mocks__/AgentChatStub.svelte")).default,
 }));
 
+vi.mock("$lib/stores/connections.svelte", () => ({
+  connectionsStore: {
+    items: [], loading: false, live: false, error: null,
+    start: vi.fn(), stop: vi.fn(), refresh: vi.fn(async () => {}),
+    onEvent: vi.fn(() => () => {}),
+  },
+}));
+
 import AgentChatPage from "./AgentChatPage.svelte";
 
 const dbAgentResponse = {

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-183 — FormDesigner Clone Form
 **Spec**: `sdd/specs/formdesigner-clone-form.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1227

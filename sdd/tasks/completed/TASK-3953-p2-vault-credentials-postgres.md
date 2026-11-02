@@ -3,7 +3,7 @@
 **Feature**: FEAT-621 — Agent Studio — Database-Backed Storage
 **Spec**: `sdd/specs/agentstudio-db-storage.spec.md`
 **Spec wave**: P2 (phase 2) — Vault credentials + overrides in Postgres (M12, part 1: vault credentials)
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3952

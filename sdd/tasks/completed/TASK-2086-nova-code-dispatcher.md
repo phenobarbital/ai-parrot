@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-405 — Nova (AWS Bedrock) Dispatcher & Per-Agent Usage Report
 **Spec**: `sdd/specs/novaclient-dev-loop.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2084, TASK-2085

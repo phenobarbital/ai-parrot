@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-712 — Ledger snapshot removal guard
 **Spec**: `sdd/specs/ledger-service-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

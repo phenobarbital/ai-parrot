@@ -187,11 +187,19 @@ async def test_broker_fail_closed_no_identity():
 
 
 @pytest.mark.asyncio
-async def test_broker_from_config_no_new_code_for_existing_kind():
+async def test_broker_from_config_no_new_code_for_existing_kind(monkeypatch):
     """Adding a provider on an existing auth kind needs only a ProviderCredentialConfig.
 
     Proves G1: no new code required for each new provider.
     """
+    # OAuthCredentialResolver fails closed for unbound identities (FEAT-773); bind this one.
+    from parrot.auth.principal import Principal
+
+    async def _bound(channel, channel_user_id):
+        return Principal(user_id=channel_user_id, channel=channel, channel_user_id=channel_user_id)
+
+    monkeypatch.setattr("parrot.auth.principal.resolve_principal", _bound)
+
     # We add two providers both using 'oauth2' — no new methods/classes
     class FakeOAuthManager:
         async def get_valid_token(self, ch, uid):
