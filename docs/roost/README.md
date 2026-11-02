@@ -44,3 +44,30 @@ msg = RoostMessage(
 ```
 
 Send it through the agent's `RoostEndpoint` (`send`, `inform`, `request`, `query`, `cfp`, `subscribe`, `cancel`).
+
+## Query trace identifiers
+
+Once the caller endpoint is configured with a grant that permits the target agent, it can attach an application
+trace identifier to a query:
+
+```python
+answer = await caller.query(
+    "Summarize the latest revenue",
+    receiver=AgentAddress(name="analyst"),
+    trace_id="run-123",
+)
+```
+
+For Roost's built-in `LocalEnvelope`, the exact identifier is retained on the query, its reply, and generated
+timeout or cancellation failures. Both endpoints therefore expose the conversation through
+`endpoint.ledger.entries(trace_id="run-123")`, including signed terminal audit entries. These identifiers are
+application audit identifiers; they need not satisfy W3C `traceparent` formatting. Each query receives a fresh
+16-hex-character span identifier.
+
+`trace_id` must be a non-empty string without Unicode whitespace, control (`Cc`), or format (`Cf`) characters.
+`None` is the default and does not inherit an ambient trace. Successful untraced exchanges remain unchanged and
+their audit entries have no trace identifier. Untraced local timeout and cancellation failures now gain the same
+terminal audit coverage, also with no trace identifier.
+
+This contract is qualified to `LocalEnvelope`. The optional Squawk satellite currently carries trace data in a
+different shape, so trace lookup and terminal parity for satellite envelopes are not claimed here.

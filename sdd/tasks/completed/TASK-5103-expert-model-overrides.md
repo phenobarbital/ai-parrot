@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-790 — Expert model overrides and trace-carrying Roost queries
 **Spec**: `sdd/specs/expert-model-override-and-roost-trace.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -276,4 +276,4 @@ The spec-wide cached contract supplies registry/policy/agent/resolver regression
 
 ## Completion Note
 
-Pending implementation; populated by the finalization workflow with actual evidence.
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 233s. Files: experts/registry.py, test_model_overrides.py, docs/experts/domain-experts.md. Merge-tier tests (experts + roost, 175 passed) run manually: the engine validation was killed at ~60s despite a larger timeout (slow ~50s import).

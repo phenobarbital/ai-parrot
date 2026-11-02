@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-790 — Expert model overrides and trace-carrying Roost queries
 **Spec**: `sdd/specs/expert-model-override-and-roost-trace.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -345,4 +345,4 @@ The feature's cached contract adds existing endpoint/protocol/audit/bridge regre
 
 ## Completion Note
 
-Pending implementation; populated by the finalization workflow with actual evidence.
+Seat: gpt-5.6-sol · Backend: codex · Attempts: 1 · Duration: 255s. Files: roost/protocols.py, roost/endpoint.py, test_query_trace.py, docs/roost/README.md. Merge-tier tests (experts + roost, 175 passed) run manually; same engine validation timeout caveat.
