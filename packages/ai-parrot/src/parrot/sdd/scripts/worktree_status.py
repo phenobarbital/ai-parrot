@@ -13,7 +13,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Sequence
 
 from pydantic import BaseModel, Field
 
@@ -610,7 +610,7 @@ def reconcile_reports(
 # ---------------------------------------------------------------------------
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point.
 
     ``--json`` prints ``list[WorktreeReport]``; plain prints a table.
@@ -633,7 +633,7 @@ def main() -> int:
             "and report list[ReconciledFeature] instead of the raw worktree reports"
         ),
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # Resolve repo root
     repo_root_proc = _git("rev-parse", "--show-toplevel", cwd=Path.cwd())

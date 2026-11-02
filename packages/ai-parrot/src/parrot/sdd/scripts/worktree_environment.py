@@ -535,11 +535,11 @@ def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
     return {"hookSpecificOutput": output}
 
 
-def main() -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     """Serve a native PreToolUse hook without importing application dependencies."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hook", action="store_true", required=True)
-    parser.parse_args()
+    parser.parse_args(argv)
     try:
         result = hook_response(json.load(sys.stdin))
     except Exception as exc:

@@ -1,12 +1,10 @@
 """``parrot sdd`` — install the SDD flow (commands, agents, rules, templates) into a repository,
-and run its packaged helpers (``parrot sdd run <name>``, Q1) inside the venv the launcher resolved."""
+and expose its packaged helpers as ``parrot sdd <noun> <verb>`` (C30) inside the venv the launcher resolved."""
 
 from __future__ import annotations
 
+import importlib
 import json
-import pkgutil
-import runpy
-import sys
 from pathlib import Path
 
 import click
@@ -50,17 +48,9 @@ def _echo_actions(actions: list[str]) -> None:
             click.echo(f"  ✓ {action}")
 
 
-def available_helpers() -> list[str]:
-    """Names accepted by ``parrot sdd run``: every module of parrot.sdd.scripts (``sdd_meta`` included —
-    TASK-4299 gives it a ``main()``; ``pkgutil`` never lists ``__init__``)."""
-    import parrot.sdd.scripts as pkg  # TASK-4085 package; lazy so `parrot --help` stays cheap
-
-    return sorted(m.name for m in pkgutil.iter_modules(pkg.__path__) if not m.ispkg)
-
-
 @click.group(name="sdd")
 def sdd() -> None:
-    """Spec-Driven Development flow: install / uninstall / status / run."""
+    """Spec-Driven Development flow: install / uninstall / status, <noun> <verb>."""
 
 
 @sdd.command()
@@ -129,20 +119,85 @@ def status(path_: Path | None, as_json: bool) -> None:
     click.echo(f"receipt version: {report['receipt_version'] or 'none'}")
 
 
-@sdd.command(context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False})
-@click.argument("name")
-@click.argument("args", nargs=-1, type=click.UNPROCESSED)
-def run(name: str, args: tuple[str, ...]) -> None:
-    """Run a packaged SDD helper (e.g. `parrot sdd run reserve_ids --help`) in the venv the launcher resolved.
+#: C30 item 1 — normative command ↔ module map: noun → verb → (module, argv prefix, one-line help).
+VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
+    "worktree": {
+        "ensure": ("ensure_worktree", (), "Create or reuse the feature/hotfix worktree (idempotent)."),
+        "status": ("worktree_status", (), "Discover SDD worktrees and report task state and health."),
+        "guard": ("worktree_environment", (), "Serve the PreToolUse shared-environment guard (--hook)."),
+    },
+    "task": {
+        "close": ("close_task", (), "Close a task: move it to completed/ and stamp the per-spec index."),
+        "finalize": ("finalize_task", (), "Finalize a task from its evidence file."),
+        "heal": ("heal_orphans", (), "Re-attach orphaned task files to their per-spec index."),
+        "graph": ("check_task_graph", (), "Validate a per-spec index task graph."),
+        "state": ("check_task_state", (), "Read-only backstop for stalled task files."),
+        "review": ("review_checkpoint", (), "Review checkpoint: prepare | validate."),
+    },
+    "ids": {
+        "reserve": ("reserve_ids", (), "Reserve TASK/FEAT ids on the git-native ledger."),
+        "check": ("check_id_collisions", (), "Scan for TASK/FEAT id collisions."),
+        "ledger": ("id_ledger", (), "Inspect or bootstrap the TASK/FEAT id counter."),
+    },
+    "spec": {
+        **{
+            v: ("spec_tools", (v,), f"spec_tools {v}")
+            for v in (
+                "init-run",
+                "render-brief",
+                "stamp-run",
+                "validate-suggestions",
+                "check-path",
+                "commit-intake",
+                "existing-feature-id",
+            )
+        },
+        "prune-intake": ("prune_intake", (), "Prune stale /sdd-spec intake staging."),
+    },
+    "brief": {v: ("brief_meta", (v,), f"brief_meta {v}") for v in ("plan", "write-index")},
+    "docs": {
+        **{v: ("sdd_meta", (v,), f"Document flow metadata: {v}") for v in ("parse", "taxonomy", "resolve-flow")},
+        "list": ("doc_taxonomy", (), "List SDD docs by projects/tags frontmatter."),
+        "backfill": ("backfill_taxonomy", (), "Infer projects frontmatter for existing SDD docs."),
+        "migrate-index": ("migrate_index", (), "One-shot monolith → per-spec index migration."),
+    },
+    "tests": {
+        "select": ("select_tests", (), "Select the tests a task/feature must run."),
+        "report": ("test_report", (), "Test report: render | decide-rerun."),
+        "contract": ("cache_test_contract", (), "Cache a spec's Validation Contract into its index."),
+        "e2e-closeout": ("check_e2e_closeout", (), "E2E evidence gate for the closeout surfaces."),
+    },
+    "closeout": {
+        "run": ("run_closeout_hooks", (), "Dispatch /sdd-done closeout hooks."),
+        "resolve-issues": ("close_resolved_issues", (), "Close the ledger issues a finished feature fixed."),
+    },
+    "hooks": {"install": ("install_hooks", (), "Install the SDD git hooks.")},
+}
+#: Packaged modules with a main() that are deliberately NOT mounted (C22: /sdd-insight does not ship).
+_UNMOUNTED: frozenset[str] = frozenset({"insight"})
+_PASSTHROUGH = {"ignore_unknown_options": True, "allow_interspersed_args": False}
 
-    This is the only form shipped markdown uses (Q1): `python -m parrot.sdd.scripts.<name>` would
-    run whatever `python` is first on PATH, which in a non-Python repo has no ai-parrot.
-    """
-    helpers = available_helpers()
-    if name not in helpers:
-        raise click.ClickException(f"unknown helper {name!r}; available: {', '.join(helpers)}")
-    sys.argv = [f"{_HELPER_PACKAGE}.{name}", *args]
-    try:
-        runpy.run_module(f"{_HELPER_PACKAGE}.{name}", run_name="__main__", alter_sys=True)
-    except SystemExit as exc:  # the helper's own exit code (argparse --help exits 0)
-        raise click.exceptions.Exit(exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)) from exc
+
+def mounted_modules() -> set[str]:
+    """Return every ``parrot.sdd.scripts`` module reachable through a verb."""
+    return {module for verbs in VERBS.values() for module, _, _ in verbs.values()}
+
+
+def _mount(noun: click.Group, verb: str, module: str, prefix: tuple[str, ...], help_: str) -> None:
+    """Mount ``noun verb [args…]`` → ``parrot.sdd.scripts.<module>.main([*prefix, *args])`` (C30 item 2)."""
+
+    @noun.command(name=verb, help=help_, add_help_option=False, context_settings=_PASSTHROUGH)
+    @click.argument("args", nargs=-1, type=click.UNPROCESSED)
+    def _verb(args: tuple[str, ...]) -> None:
+        main = importlib.import_module(f"{_HELPER_PACKAGE}.{module}").main
+        try:
+            code = main([*prefix, *args])
+        except SystemExit as exc:  # the helper's own exit (argparse --help exits 0)
+            code = exc.code
+        raise click.exceptions.Exit(code if isinstance(code, int) else (0 if code is None else 1))
+
+
+for _noun, _verbs in VERBS.items():
+    _group = sdd.group(name=_noun, help=f"SDD {_noun} helpers.")(lambda: None)
+    for _verb, (_module, _prefix, _help) in _verbs.items():
+        _mount(_group, _verb, _module, _prefix, _help)
