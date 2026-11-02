@@ -60,7 +60,7 @@
       "feature_id": "FEAT-791",
       "feature": "manager-manager-fixes",
       "spec": "sdd/specs/manager-manager-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -68,8 +68,9 @@
       "parallelism_notes": "Lane B part 1. Sole task touching packages/ai-parrot/tests/bots/prompts/test_yaml_prompt_config.py; reads only already-shipped symbols (AgentRegistry._apply_prompt_config, get_preset), creates nothing TASK-5105 or TASK-5107 consume.",
       "assigned_to": null,
       "started_at": "2026-11-02T23:09:14.179080+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5106-repoint-yaml-prompt-config-tests.md"
+      "completed_at": "2026-11-02T23:10:36+00:00",
+      "file": "sdd/tasks/completed/TASK-5106-repoint-yaml-prompt-config-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5107",
