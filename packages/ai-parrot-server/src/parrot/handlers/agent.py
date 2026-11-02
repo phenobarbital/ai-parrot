@@ -708,7 +708,12 @@ class AgentTalk(BaseView):
                 self.logger.error("Failed to add MCP server to ToolManager: %s", e)
 
     async def _configure_tool_manager(
-        self, data: Dict[str, Any], request_session: Any, agent_name: str = None
+        self,
+        data: Dict[str, Any],
+        request_session: Any,
+        agent_name: str = None,
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> tuple[Union[ToolManager, None], List[Dict[str, Any]]]:
         """
         Configure a ToolManager from request payload or session.
@@ -723,7 +728,27 @@ class AgentTalk(BaseView):
         Returns:
             Tuple of (ToolManager or None, remaining mcp_servers list)
         """
-        return await self.user_objects_handler.configure_tool_manager(data, request_session, agent_name)
+        return await self.user_objects_handler.configure_tool_manager(
+            data, request_session, agent_name, user_id=user_id, agent_id=agent_id
+        )
+
+    async def _hydrate_cold_session(
+        self, agent: AbstractBot, request_session: Any, user_id: Optional[str]
+    ) -> Optional[ToolManager]:
+        """Hydrate OAuth toolkits for a cold session (no ToolManager stored yet).
+
+        Returns the hydrated ToolManager, or ``None`` when nothing was hydrated.
+        Never overwrites an existing session ToolManager.
+        """
+        if request_session is None or not user_id:
+            return None
+        ref = agent_tooling_ref(agent)
+        session_key = f"{ref}_tool_manager"
+        if request_session.get(session_key) is not None:
+            return None
+        return await self.user_objects_handler._hydrate_oauth_toolkits(
+            str(user_id), ref, session_key, request_session
+        )
 
     def _check_methods(self, bot: AbstractBot, method_name: str):
         """Check if the method exists in the bot and is callable."""
@@ -1002,8 +1027,13 @@ class AgentTalk(BaseView):
         The resulting ToolManager is saved under '{tooling_ref}_tool_manager'.
         """
         ref = agent_tooling_ref(agent)
+        user_id, _ = await self._get_user_session(data)
         try:
-            tool_manager, mcp_servers = await self._configure_tool_manager(data, request_session, agent_name=ref)
+            # Hydrate OAuth toolkits first so tool config extends them (cold session).
+            await self._hydrate_cold_session(agent, request_session, user_id)
+            tool_manager, mcp_servers = await self._configure_tool_manager(
+                data, request_session, agent_name=ref, user_id=user_id, agent_id=ref
+            )
         except ValueError as exc:
             return self.error(str(exc), status=400)
 
@@ -1589,6 +1619,8 @@ class AgentTalk(BaseView):
         if request_session and not is_user_bot:
             session_key = f"{agent_tooling_ref(agent)}_tool_manager"
             user_tool_manager = request_session.get(session_key)
+            if user_tool_manager is None:
+                user_tool_manager = await self._hydrate_cold_session(agent, request_session, user_id)
             user_tool_manager = await self._apply_user_toolkit_overrides(agent, request_session, user_tool_manager)
 
         # PBAC tool filtering — filter session-scoped ToolManager by policy
