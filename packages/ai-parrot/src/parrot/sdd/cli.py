@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from typing import Any
 from pathlib import Path
 
 import click
@@ -197,6 +198,41 @@ def _mount(noun: click.Group, verb: str, module: str, prefix: tuple[str, ...], h
             code = exc.code
         raise click.exceptions.Exit(code if isinstance(code, int) else (0 if code is None else 1))
 
+
+class _LazyProxyGroup(click.Group):
+    """A click group that resolves `module:attr` on first use and delegates listing/lookup to it (C30 item 4).
+
+    The ledger commands read only `ctx.obj["remote"]`, which `remote_aware` fills itself, so no `wiki` group
+    callback has to run first and no `invoke()` override is needed.
+    """
+
+    def __init__(self, name: str, target: str, **kwargs: Any) -> None:
+        super().__init__(name, **kwargs)
+        self._target = target
+        self._real: click.Group | None = None
+
+    def _resolve(self) -> click.Group:
+        if self._real is None:
+            module, _, attr = self._target.partition(":")
+            self._real = getattr(importlib.import_module(module), attr)
+        return self._real
+
+    def list_commands(self, ctx: click.Context) -> list[str]:
+        """Forward to the real group."""
+        return self._resolve().list_commands(ctx)
+
+    def get_command(self, ctx: click.Context, name: str) -> click.Command | None:
+        """Forward to the real group."""
+        return self._resolve().get_command(ctx, name)
+
+
+sdd.add_command(
+    _LazyProxyGroup(
+        "ledger",
+        "parrot.knowledge.wiki.cli:ledger",
+        help="Work ledger (same commands as `wikitoolkit ledger`; both spellings are valid).",
+    ),
+)
 
 for _noun, _verbs in VERBS.items():
     _group = sdd.group(name=_noun, help=f"SDD {_noun} helpers.")(lambda: None)
