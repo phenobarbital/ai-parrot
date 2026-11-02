@@ -1,4 +1,4 @@
-"""Tests for the host-prepared ``parrot devloop launch-worker`` command."""
+"""Tests for the host-prepared ``parrot sdd launch worker`` command."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import sys
 import pytest
 from click.testing import CliRunner
 
-from parrot.cli.devloop import devloop
+from parrot.cli import cli as devloop
 from parrot.flows.dev_loop import feature_launcher as launcher
 
 _REAL_PREFLIGHT = launcher._preflight_sandbox
@@ -29,7 +29,7 @@ def _restore_sandbox_mode(monkeypatch: pytest.MonkeyPatch) -> None:
 # The package under test, pinned for child interpreters. A subprocess started from a linked worktree
 # would otherwise import ``parrot`` from the editable-installed primary checkout (see memory:
 # worktree tests run main-checkout code), which lacks this feature.
-_SRC = str(Path(__file__).resolve().parents[3] / "src")
+_SRC = str(Path(__file__).resolve().parents[2] / "src")
 
 
 def _child_env(**extra: str) -> dict[str, str]:
@@ -413,7 +413,7 @@ def test_click_command_maps_launch_errors(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(
         launcher, "launch", lambda *args, **kwargs: (_ for _ in ()).throw(launcher.LaunchError(2, "bad key"))
     )
-    result = CliRunner().invoke(devloop, ["launch-worker", "missing"])
+    result = CliRunner().invoke(devloop, ["sdd", "launch", "worker", "missing"])
     assert result.exit_code == 2
     assert "launch-worker: bad key" in result.output
 
@@ -693,7 +693,7 @@ def test_cli_snapshots_environment_before_importing_parrot_flows(tmp_path: Path)
     code = """
 import importlib.abc, importlib.util, os, sys
 from click.testing import CliRunner
-from parrot.cli.devloop import devloop
+from parrot.cli import cli as devloop
 
 NAME = "parrot.flows.dev_loop.feature_launcher"
 seen = {}
@@ -719,7 +719,7 @@ class Finder(importlib.abc.MetaPathFinder):
 sys.meta_path.insert(0, Finder())
 sys.modules.pop(NAME, None)
 os.environ.pop("ANTHROPIC_API_KEY", None)
-result = CliRunner().invoke(devloop, ["launch-worker", "FEAT-768"])
+result = CliRunner().invoke(devloop, ["sdd", "launch", "worker", "FEAT-768"])
 assert result.exit_code == 0, result.output
 assert os.environ.get("ANTHROPIC_API_KEY") == "sk-injected-by-import", "probe import never ran"
 assert "ANTHROPIC_API_KEY" not in seen["base_env"], "base_env was taken after the import"
@@ -733,3 +733,52 @@ assert "ANTHROPIC_API_KEY" not in seen["base_env"], "base_env was taken after th
         env={**{k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}, "PYTHONPATH": _SRC},
     )
     assert result.returncode == 0, result.stderr[-3000:]
+
+
+def _capture_exec(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, object]:
+    """Mock ``claude`` discovery and exec; point the invocation dir at a primary checkout."""
+    primary = _primary(tmp_path)
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/claude")
+    monkeypatch.setattr(launcher, "_invocation_dir", lambda: primary)
+    monkeypatch.setattr(launcher.os, "chdir", lambda path: seen.__setitem__("cwd", Path(path)))
+
+    def _exec(file: str, argv: list[str], env: dict[str, str]) -> None:
+        seen.update(argv=list(argv), env=env)
+        raise SystemExit(0)  # the real exec never returns
+
+    monkeypatch.setattr(launcher.os, "execvpe", _exec)
+    seen["primary"] = primary
+    return seen
+
+
+@pytest.mark.parametrize(
+    ("argv", "prompt"),
+    [
+        (["sdd", "launch", "brief", "NAV-1", "--no-interview"], "/sdd-brief NAV-1 --no-interview"),
+        (["sdd", "launch", "fix", "--top", "2"], "/sdd-fix --top 2"),
+    ],
+)
+def test_launch_brief_and_fix_exec_slash_command(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, argv: list[str], prompt: str
+) -> None:
+    """brief/fix run a plain Claude session in the primary checkout with the slash command as the last argument."""
+    seen = _capture_exec(monkeypatch, tmp_path)
+    result = CliRunner().invoke(devloop, argv)
+    assert result.exit_code == 0, result.output
+    command = seen["argv"]
+    assert isinstance(command, list)
+    assert seen["cwd"] == seen["primary"]
+    assert command[-1] == prompt
+    assert command[1:3] == ["--setting-sources", "project,local"]
+    assert "--model" in command
+    assert "--agent" not in command and "--settings" not in command
+
+
+def test_launch_help_lists_three_verbs() -> None:
+    """The launch noun carries worker, brief and fix; the devloop spelling is gone."""
+    result = CliRunner().invoke(devloop, ["sdd", "launch", "--help"])
+    assert result.exit_code == 0
+    for verb in ("worker", "brief", "fix"):
+        assert verb in result.output
+    assert "Usage" in CliRunner().invoke(devloop, ["devloop", "launch-worker"]).output

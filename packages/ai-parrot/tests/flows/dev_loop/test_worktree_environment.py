@@ -113,7 +113,7 @@ def test_missing_bubblewrap_fails_closed(checkout: tuple[Path, Path], monkeypatc
     monkeypatch.setattr(policy.shutil, "which", lambda _: None)
     with pytest.raises(RuntimeError, match="legacy SDD hook.*refusing unsandboxed") as error:
         policy.protected_argv(checkout[0], ["true"])
-    assert "parrot devloop launch-worker <FEAT-ID>" in str(error.value)
+    assert "parrot sdd launch worker <FEAT-ID>" in str(error.value)
     response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}})
     assert response["hookSpecificOutput"]["permissionDecision"] == "deny"
 

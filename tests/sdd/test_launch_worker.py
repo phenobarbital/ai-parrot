@@ -94,7 +94,7 @@ def test_deprecation_warning_is_emitted_once(fake_claude_path: str, linked_cwd: 
     result = _run(fake_claude_path, linked_cwd)
     assert result.returncode == 0, result.stderr
     warning = (
-        "launch_worker.sh: DEPRECATED — use 'parrot devloop launch-worker <FEAT-ID> [--tmux]' "
+        "launch_worker.sh: DEPRECATED — use 'parrot sdd launch worker <FEAT-ID> [--tmux]' "
         "(this alias keeps launching sdd-worker in the current worktree)"
     )
     assert result.stderr.count(warning) == 1

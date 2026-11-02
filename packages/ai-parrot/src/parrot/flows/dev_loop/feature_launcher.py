@@ -393,6 +393,38 @@ def launch(
     return _attach_session(name)
 
 
+def launch_session(
+    initial_prompt: str,
+    *,
+    cwd: Path,
+    claude_args: Sequence[str] = (),
+    base_env: Mapping[str, str] | None = None,
+) -> int:
+    """Open an interactive Claude session in ``cwd`` with ``initial_prompt`` as its first message (C30 item 5).
+
+    Used by ``parrot sdd launch brief|fix``: no agent, no sandbox settings, no tmux — identical to typing the
+    slash command by hand, except that the operator environment (``base_env``, captured before ``parrot`` was
+    imported) is what Claude starts from. Returns 1 when ``claude`` is not on PATH; otherwise never returns.
+    """
+    claude = shutil.which("claude")
+    if claude is None:
+        print("launch: missing host prerequisite(s): claude", file=sys.stderr)
+        return 1
+    command = [
+        claude,
+        "--setting-sources",
+        "project,local",
+        "--model",
+        native_claude_sandbox._DEFAULT_MODEL,
+        *claude_args,
+        initial_prompt,
+    ]
+    env = dict(os.environ if base_env is None else base_env)
+    os.chdir(cwd)
+    os.execvpe(command[0], command, env)
+    return 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Parse the tmux child mode and launch Claude from its prepared worktree."""
     parser = argparse.ArgumentParser()

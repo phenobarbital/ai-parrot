@@ -176,7 +176,8 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
     "hooks": {"install": ("install_hooks", (), "Install the SDD git hooks.")},
 }
 #: Packaged modules with a main() that are deliberately NOT mounted (C22: /sdd-insight does not ship).
-_UNMOUNTED: frozenset[str] = frozenset()
+# `native_claude_sandbox.main()` serves the `launch-worker` script entry; its CLI is `parrot sdd launch worker`.
+_UNMOUNTED: frozenset[str] = frozenset({"native_claude_sandbox"})
 _PASSTHROUGH = {"ignore_unknown_options": True, "allow_interspersed_args": False}
 
 
@@ -233,6 +234,10 @@ sdd.add_command(
         help="Work ledger (same commands as `wikitoolkit ledger`; both spellings are valid).",
     ),
 )
+
+from parrot.sdd.launch_cli import launch as _launch  # noqa: E402  light: click only; parrot.flows loads inside
+
+sdd.add_command(_launch)
 
 for _noun, _verbs in VERBS.items():
     _group = sdd.group(name=_noun, help=f"SDD {_noun} helpers.")(lambda: None)

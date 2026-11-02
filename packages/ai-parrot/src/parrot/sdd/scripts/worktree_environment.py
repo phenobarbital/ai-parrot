@@ -248,7 +248,7 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
         raise RuntimeError(
             "Bubblewrap (bwrap) is required for the legacy SDD hook and is not available on "
             f"{sys.platform}; refusing unsandboxed execution. Launch the worker with "
-            "`parrot devloop launch-worker <FEAT-ID>` (native sandbox) instead."
+            "`parrot sdd launch worker <FEAT-ID>` (native sandbox) instead."
         )
     root, git_dir = repository_paths(cwd)
     command = [

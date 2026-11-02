@@ -1277,7 +1277,7 @@ tests:
 - packages/ai-parrot/tests/flows/dev_loop/test_native_claude_sandbox.py  # 5093 (FEAT-768, arrives with the dev merge)
 - packages/ai-parrot/tests/flows/dev_loop/test_dispatcher.py  # 5093
 - tests/sdd/test_launch_worker.py  # 5093
-- packages/ai-parrot/tests/cli/devloop/test_launch_worker_cmd.py  # 5093 (FEAT-768)
+- packages/ai-parrot/tests/sdd/test_sdd_launch.py  # 5100 (FEAT-768 worker tests, moved)
 markers: none
 
 ### Test Data / Fixtures
