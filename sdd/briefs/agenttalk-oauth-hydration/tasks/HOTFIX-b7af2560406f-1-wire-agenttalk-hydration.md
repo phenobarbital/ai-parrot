@@ -2,7 +2,7 @@
 
 **Feature**: brief agenttalk-oauth-hydration (issue:b7af2560406f)
 **Spec**: sdd/briefs/agenttalk-oauth-hydration.brief.md
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none
@@ -62,4 +62,4 @@ Mock `list_users_integrations` to return one active row and a provider whose
 tool-manager block with a dict-backed session; assert the toolkit is registered.
 
 ## Completion Note
-<!-- filled on close -->
+Done. `_configure_tool_manager` forwards user_id/agent_id; new `_hydrate_cold_session` used by PATCH (`_setup_agent_tools`, before tool config so it extends hydrated toolkits) and cold-session POST (skips user bots, never overwrites existing ToolManager). WARNING logs for missing ids and factories returning None. 12 tests pass (hydration, new AgentTalk tests, toolkit overrides).

@@ -16,15 +16,15 @@
       "feature_id": "BRIEF-b7af2560406f",
       "feature": "agenttalk-oauth-hydration",
       "spec": "sdd/briefs/agenttalk-oauth-hydration.brief.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-11-02T22:55:52+00:00",
+      "completed_at": "2026-11-02T22:55:52+00:00",
       "file": "sdd/briefs/agenttalk-oauth-hydration/tasks/HOTFIX-b7af2560406f-1-wire-agenttalk-hydration.md"
     }
   ]
