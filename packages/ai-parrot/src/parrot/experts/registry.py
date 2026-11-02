@@ -23,6 +23,7 @@ from parrot.experts.policy import effective_allowlist, effective_toolkits, exper
 from parrot.experts.view import ExpertView
 from parrot.models.basic import ModelConfig
 
+
 class ExpertRegistry:
     """Own expert bundles and the ExpertAgents built from them."""
 
