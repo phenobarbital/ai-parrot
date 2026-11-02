@@ -264,12 +264,38 @@ class AbstractOAuth2Manager(ABC):
         self._setup_done: bool = False
         self.logger = logger
 
+        self._store_is_default: bool = credential_store is None
         self._store: CredentialStore = credential_store or VaultUtilsCredentialStore()
         self._events = event_publisher
 
         self._callback_path: str = (
             callback_path or f"/api/auth/oauth2/{self.provider_id}/callback"
         )
+
+    def bind_credential_store(self, store: CredentialStore, *, force: bool = False) -> bool:
+        """Late-bind a durable credential store after application startup.
+
+        Managers are constructed before navigator-auth publishes ``app["authdb"]``,
+        so the store chosen at construction is the generic default. The server's
+        startup hook calls this once the durable store can be built.
+
+        Args:
+            store: The credential store to use from now on.
+            force: Replace the store even when the caller supplied one explicitly.
+
+        Returns:
+            ``True`` if the store was replaced, ``False`` if it was kept.
+        """
+        if not (force or self._store_is_default):
+            return False
+        self._store = store
+        self._store_is_default = False
+        self.logger.info(
+            "OAuth2 manager %s bound credential store %s",
+            self.provider_id,
+            type(store).__name__,
+        )
+        return True
 
     # ------------------------------------------------------------------ setup
 
