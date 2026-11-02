@@ -20,7 +20,6 @@ from parrot.roost.messages import AgentAddress, FailureInfo, LocalEnvelope, Roos
 from parrot.roost.performatives import CarrierKind, FailureCode, InteractionProtocol, Performative
 from parrot.roost.protocols import ConversationBudget, ProtocolEngine, TerminalState
 
-
 GRANTED = RoostAgentConfig(grant=InterAgentGrant(scopes=["*"]))
 CALLER_CONTEXT = object()
 
