@@ -1,8 +1,10 @@
 """Integration tests for YAML prompt config flow.
 
 Tests the end-to-end path: YAML dict → PromptConfig → PromptBuilder
-via both BotManager._build_prompt_builder and AgentRegistry._apply_prompt_config.
+via get_preset() and AgentRegistry._apply_prompt_config.
 """
+from types import SimpleNamespace
+
 import pytest
 from parrot.bots.prompts.builder import PromptBuilder
 from parrot.bots.prompts.layers import PromptLayer, LayerPriority, RenderPhase
@@ -11,6 +13,7 @@ from parrot.bots.prompts.domain_layers import (
     STRICT_GROUNDING_LAYER,
     get_domain_layer,
 )
+from parrot.bots.prompts.presets import get_preset
 from parrot.registry.registry import PromptConfig, AgentRegistry
 
 
@@ -35,40 +38,52 @@ REQUEST_CTX = {
 }
 
 
+def _build(cfg: dict) -> PromptBuilder:
+    """Build a PromptBuilder from a YAML prompt-config dict.
+
+    Replaces the removed ``BotManager._build_prompt_builder``.  The preset is
+    materialised here rather than left to ``_apply_prompt_config``, because that
+    helper only builds one when the config carries remove/add/customize
+    mutations -- a preset-only config would otherwise leave the builder None.
+    """
+    config = PromptConfig(**cfg)
+    bot = SimpleNamespace(_prompt_builder=get_preset(config.preset))
+    AgentRegistry._apply_prompt_config(bot, config)
+    return bot._prompt_builder
+
+
 class TestYAMLPresetSelection:
     """YAML prompt.preset selects the right base builder."""
 
     def test_default_preset_has_all_layers(self):
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({"preset": "default"})
+        builder = _build({"preset": "default"})
         for name in ["identity", "security", "knowledge", "user_session",
                       "tools", "output", "behavior"]:
             assert builder.get(name) is not None, f"Missing layer: {name}"
 
     def test_minimal_preset_omits_tools(self):
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({"preset": "minimal"})
+        builder = _build({"preset": "minimal"})
         assert builder.get("tools") is None
         assert builder.get("output") is None
 
     def test_voice_preset_has_voice_behavior(self):
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({"preset": "voice"})
+        builder = _build({"preset": "voice"})
         behavior = builder.get("behavior")
         assert "concise" in behavior.template.lower()
 
     def test_agent_preset_has_grounding(self):
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({"preset": "agent"})
-        assert builder.get("strict_grounding") is not None
+        builder = _build({"preset": "agent"})
+        # PromptBuilder.agent() supplies grounding through AGENT_BEHAVIOR_LAYER
+        # (name "agent_behavior"), which occupies the same LayerPriority.BEHAVIOR - 5
+        # slot STRICT_GROUNDING_LAYER used to hold for this preset.
+        assert builder.get("agent_behavior") is not None
 
 
 class TestYAMLRemoveOperation:
     """YAML prompt.remove removes layers from the preset."""
 
     def test_remove_single_layer(self):
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({
+        builder = _build({
             "preset": "default",
             "remove": ["tools"],
         })
@@ -76,8 +91,7 @@ class TestYAMLRemoveOperation:
         assert builder.get("identity") is not None
 
     def test_remove_multiple_layers(self):
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({
+        builder = _build({
             "preset": "default",
             "remove": ["tools", "output", "behavior"],
         })
@@ -86,8 +100,7 @@ class TestYAMLRemoveOperation:
         assert builder.get("behavior") is None
 
     def test_remove_nonexistent_is_noop(self):
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({
+        builder = _build({
             "preset": "default",
             "remove": ["nonexistent_layer"],
         })
@@ -98,16 +111,14 @@ class TestYAMLAddOperation:
     """YAML prompt.add adds domain or inline layers."""
 
     def test_add_domain_layer_by_name(self):
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({
+        builder = _build({
             "preset": "default",
             "add": ["dataframe_context"],
         })
         assert builder.get("dataframe_context") is not None
 
     def test_add_multiple_domain_layers(self):
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({
+        builder = _build({
             "preset": "default",
             "add": ["dataframe_context", "strict_grounding"],
         })
@@ -115,8 +126,7 @@ class TestYAMLAddOperation:
         assert builder.get("strict_grounding") is not None
 
     def test_add_inline_layer_dict(self):
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({
+        builder = _build({
             "preset": "default",
             "add": [{
                 "name": "custom_greeting",
@@ -130,8 +140,7 @@ class TestYAMLAddOperation:
         assert "<greeting>" in layer.template
 
     def test_add_mixed_domain_and_inline(self):
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({
+        builder = _build({
             "preset": "default",
             "add": [
                 "strict_grounding",
@@ -146,8 +155,7 @@ class TestYAMLCustomizeOperation:
     """YAML prompt.customize modifies existing layer templates."""
 
     def test_customize_behavior_template(self):
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({
+        builder = _build({
             "preset": "default",
             "customize": {
                 "behavior": {
@@ -159,11 +167,10 @@ class TestYAMLCustomizeOperation:
         assert "extremely formal" in behavior.template
 
     def test_customize_preserves_priority(self):
-        from parrot.manager.manager import BotManager
-        original = BotManager._build_prompt_builder({"preset": "default"})
+        original = _build({"preset": "default"})
         original_priority = original.get("security").priority
 
-        customized = BotManager._build_prompt_builder({
+        customized = _build({
             "preset": "default",
             "customize": {
                 "security": {"template": "<security_policy>Custom rules</security_policy>"}
@@ -172,8 +179,7 @@ class TestYAMLCustomizeOperation:
         assert customized.get("security").priority == original_priority
 
     def test_customize_nonexistent_layer_is_noop(self):
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({
+        builder = _build({
             "preset": "default",
             "customize": {"nonexistent": {"template": "whatever"}},
         })
@@ -184,8 +190,7 @@ class TestYAMLCombinedOperations:
     """Test remove + add + customize in a single config."""
 
     def test_full_yaml_config_flow(self):
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({
+        builder = _build({
             "preset": "default",
             "remove": ["tools"],
             "add": ["strict_grounding"],
@@ -207,8 +212,7 @@ class TestYAMLCombinedOperations:
 
     def test_yaml_config_renders_correctly(self):
         """End-to-end: config → builder → configure → build."""
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({
+        builder = _build({
             "preset": "default",
             "remove": ["tools", "output"],
             "add": ["strict_grounding"],
