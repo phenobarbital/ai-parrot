@@ -43,6 +43,10 @@ The callback and notifier registry must remain in the same process for the
 load-bearing in-process delivery path; the publish-only event bus is the
 cross-process fallback.
 
+| Channel | Notifier | Commands | Guide |
+|---|---|---|---|
+| Telegram | generic `TelegramConnectionNotifier` | `/connect [<provider>]`, `/disconnect <provider>`, `/connections` (+ Jira / Office365 aliases) | [Telegram connections](../integrations/telegram-connections.md) |
+
 ## Needs-auth contract
 
 Tools and handlers use `AuthRequiredPayload` for both authorization-required
@@ -153,11 +157,14 @@ repeat.
 
 ## PBAC without a request
 
-Slack commands (`/connect`, `/disconnect`, `/connections`) use the injected
-`NavigatorConnectionAuthorizer` (via `IntegrationsService._authorizer`) for
-request-independent authorization. The authorizer evaluates PBAC policies with
-the session principal as the subject and `integration:connect` or
-`integration:disconnect` as the action. The service fails closed when no PDP
+Slack, Microsoft Teams and CLI connection commands (`/connect`, `/disconnect`,
+`/connections`) all use the injected `NavigatorConnectionAuthorizer` (via
+`IntegrationsService._authorizer`) for request-independent authorization — it
+is the single non-web policy surface. The authorizer evaluates PBAC policies
+with the session principal as the subject and `integration:list`,
+`integration:connect` or `integration:disconnect` as the action; roles, groups
+and tenant come from the Navigator auth database. Teams additionally checks its
+`PermissionContext` identity before the authorizer runs. The service fails closed when no PDP
 is available.
 
 **Policy effect:** explicit `ALLOW` only; no implicit allow. The resource

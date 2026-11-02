@@ -17,8 +17,10 @@ tags: [oauth2, connections, telegram, principal, credentials, pbac]
 **Target version**: 1.3.0
 
 **Implementation gate**: FEAT-773 is merged (PR #1897). FEAT-775 M3/M7 owns the shared
-`permission_context` service API, evaluator wiring and channel-aware disconnect. FEAT-776 M3 verifies that
-contract; dependent modules wait for it. The production PDP adapter parity gate in §8 Q1 remains explicit.
+`permission_context` service API (identity check) and channel-aware disconnect; the request-less decision is
+FEAT-777's injected `ConnectionAuthorizer` (`app["connection_authorizer"]`), the single non-web policy surface
+since 2026-11-01 (FEAT-775 TASK-5091, issue:3a7ee22eb09a). FEAT-776 M3 verifies that contract once FEAT-775
+(PR #1911) is on `origin/dev`; dependent modules wait for it.
 
 > **Source**: proposal `sdd/proposals/delegated-auth-connections.proposal.md` (FEAT-773, `accepted`) §6 row
 > "S-2 Telegram migration", and `sdd/specs/delegated-auth-connections.spec.md` (FEAT-773, S-1) §1 Non-Goals
@@ -134,14 +136,19 @@ roles or an authenticated login session. Pending/failed candidates cannot overri
 user resolves to `None`; logout removes the stored fallback before clearing the session.
 The Telegram identity write in the combined flow moves from `JiraPostAuthProvider` to this path.
 
-**Request-less PBAC (M3).** Consume FEAT-775 M3/M7's `permission_context: PermissionContext` and
-injected `permission_evaluator`. FEAT-775 is the sole owner of the four `IntegrationsService` methods and
-factory wiring; Telegram adds no `permission_app` or `check_integration_access` API. Context identity is the
-Navigator principal; roles/groups come only from validated session claims (empty when unavailable, including
-persisted-link-only resolution). Require matching target user, principal, tenant and channel identity.
-Preserve FEAT-773's action/provider/scopes policy inputs and fail-closed behavior. The merged HTTP call is
-`abac.is_allowed(request, ctx)` at service.py:509; the agent-handler resource mapping is not its contract.
-Production adapter parity must be proved by the shared allow/deny fixtures described in FEAT-775 M3.
+**Request-less PBAC (M3).** Consume the shared request-less contract: FEAT-775 M3/M7's
+`permission_context: PermissionContext` (an **identity check only** — `IntegrationsService._context_matches`
+requires matching target user, principal, tenant and channel identity) plus FEAT-777's injected
+`ConnectionAuthorizer`, which makes the decision. Telegram builds its service exactly like Slack and Teams:
+`IntegrationsService(vault, authorizer=app.get("connection_authorizer"))`. The server's
+`NavigatorConnectionAuthorizer` evaluates `integration` resource actions (`integration:list`,
+`integration:connect`, `integration:disconnect`; resource = provider id, `*` for the collection gate) with the
+Navigator principal as subject, loads roles, groups and tenant from the Navigator auth DB (not from Telegram
+session claims), and requires the principal's channel binding to still resolve (`resolve_principal("telegram",
+telegram_id)` → same Navigator user, which M4's link lifecycle maintains). FEAT-775 and FEAT-777 own the
+service, authorizer and factory wiring; Telegram adds no `permission_app`, `check_integration_access`, evaluator
+or second policy store. Every missing piece (authorizer, principal, PDP, binding) or authorizer error denies
+closed, and a context call never falls back to HTTP PBAC.
 Disconnect passes `channel="telegram"` and `principal` through to `manager.revoke`; default web behavior remains.
 
 **Command core (M5).** `integrations/core/auth/connections.py::ConnectionCommandService` is channel-neutral:
@@ -219,7 +226,7 @@ Runbook: audit → announce to the unbound users (U3: forced re-connect) → dat
 | Piece | Owner | Rule |
 |---|---|---|
 | `parrot/auth/pending.py` (`collect_auth_requirements`, `record_auth_requirement`) + one call in `ToolManager` | FEAT-775 M5 **and** FEAT-776 M1, identical contract | Whichever feature merges first creates it; the other's task re-verifies the contract and only adds tests. Never two modules. |
-| Request-less PBAC, evaluator wiring and channel-aware disconnect | FEAT-775 M3/M7 only | FEAT-776 M3 verifies and consumes `permission_context`; dependent tasks wait for the shared contract. |
+| Request-less PBAC (`permission_context` identity check + `ConnectionAuthorizer` decision) and channel-aware disconnect | FEAT-775 M3/M7 (service) + FEAT-777 (authorizer) | FEAT-776 M3 verifies and consumes them; dependent tasks wait for FEAT-775 on `origin/dev`. No evaluator (removed by FEAT-775 TASK-5091). |
 | `clients/base.py::_execute_tool` needs-auth message | FEAT-776 M2 | Answers FEAT-775 §8 Q3 (decided here 2026-10-30). |
 | Channel-neutral command core (`integrations/core/auth/connections.py`) | FEAT-776 M5 | Offered for FEAT-775 §8 Q2; S-2 does not migrate Teams. |
 
@@ -234,7 +241,7 @@ Runbook: audit → announce to the unbound users (U3: forced re-connect) → dat
         ├─ principal_for_session / _ensure_principal_link ── None ─► "/login first" (no OAuth state)                      [M4]
         └─► ConnectionCommandService.connect(principal, p, extra_state={chat_id, bot_id})                                  [M5]
               └─► IntegrationsService.start_connect(channel="telegram", principal, permission_context=context)   (FEAT-775 API)
-                    └─► _check_pbac → injected permission_evaluator(context, {action, provider, scopes})          [M3]
+                    └─► _context_matches(context) → injected ConnectionAuthorizer.authorize(principal, action, p, scopes) [M3]
               ◄── ConnectOutcome(auth_url | denied | already_connected | …) ─► inline button / text
 
 agent turn: _invoke_agent ─► with collect_auth_requirements() as pending: agent.ask(...)                                    [M8, M1]
@@ -260,7 +267,7 @@ ops: python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram --conf
 | `integrations/core/auth/post_auth.py::PostAuthProvider` | uses | Protocol unchanged |
 | `integrations/core/auth/notifiers.py` *(created by FEAT-773 M8)* | modifies | drop `TelegramJiraNotifierAdapter` |
 | `integrations/manager.py` *(FEAT-773 `_register_channel_notifiers`)* | modifies | create + register `TelegramConnectionNotifier` once per app |
-| `parrot/auth/oauth2/service.py::IntegrationsService` *(FEAT-773 signatures)* | uses | consumes FEAT-775-owned context API; no Telegram service edits |
+| `parrot/auth/oauth2/service.py::IntegrationsService` *(FEAT-773 signatures)* | uses | consumes FEAT-775's context API + FEAT-777's `authorizer=`; no Telegram service edits |
 | `parrot/tools/manager.py::ToolManager.execute_tool` | modifies | `record_auth_requirement(payload)` in the FEAT-773 unified needs-auth branch |
 | `parrot/clients/base.py::AbstractClient._execute_tool` | modifies | needs-auth message instead of `None` (user-approved change to the foundation file, 2026-10-30) |
 | `ai-parrot-server services/identity_mapping.py::IdentityMappingService` | extends | `link_channel_identity`, `unlink_channel_identity` |
@@ -325,7 +332,7 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
 |---|---|---|---|
 | M1: Core needs-auth collector | yes | FEAT-775 M5 skeleton verbatim; ContextVar holding a shared list; no-op when unbound | — |
 | M2: `_execute_tool` needs-auth message | yes | one branch before `return result.result`; message text fixed in §2; never the URL | — |
-| M3: Request-less PBAC | no | — | consumer gated on FEAT-775 M3/M7 and shared production policy parity evidence |
+| M3: Request-less PBAC | no | — | consumer gated on FEAT-775 (PR #1911) on `origin/dev`; authorization is a security boundary |
 | M4: Principal link lifecycle | no | — | transaction semantics across users, backfill and logout ordering are security decisions |
 | M5: Channel-neutral command core | yes | models in §2; filter rules fixed (manager present, not `mcp:*`, allowlist); explicit commands use defaults; needs-auth offers union trusted payload scopes | — |
 | M6: Telegram generic commands + aliases | no | — | private-chat rule, alias/O365 fallback and rendering of every outcome across providers |
@@ -376,13 +383,21 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
 
 ### Module 3: Consume the shared request-less PBAC API
 - **Path**: Telegram consumer tests; no ownership of `service.py`, a new PBAC module or server factory.
-- **Responsibility**: verify FEAT-775 M3/M7's shared interface below, then use it in M5/M9. FEAT-775 owns
-  implementation and shared policy parity tests. No duplicate implementation if Telegram is scheduled first.
-- **Depends on**: FEAT-775 M3/M7, including production evaluator compatibility evidence; FEAT-773 is merged.
-- **Interface Skeleton** (additions owned by FEAT-775; existing positional arguments preserved):
+- **Responsibility**: verify the shared interface below (FEAT-775 M3/M7 service API + FEAT-777
+  `ConnectionAuthorizer`), then use it in M5/M9. FEAT-775/FEAT-777 own implementation and tests
+  (`packages/ai-parrot/tests/auth/test_connections_permission_context.py`,
+  `packages/ai-parrot-server/tests/unit/test_connection_authorization.py`). No duplicate implementation if
+  Telegram is scheduled first.
+- **Depends on**: FEAT-775 M3/M7 on `origin/dev` (PR #1911, incl. TASK-5091); FEAT-773 and FEAT-777 are merged.
+- **Interface Skeleton** (as on the FEAT-775 branch @ 3851b713a5; existing positional arguments preserved):
   ```python
+  class ConnectionAuthorizer(Protocol):                       # parrot/auth/oauth2/authorization.py (FEAT-777)
+      async def authorize(self, principal: Principal, action: str, provider_id: Optional[str],
+                          scopes: List[str]) -> bool: ...
+
   class IntegrationsService:
-      def __init__(self, vault_token_sync: Any = None, *, permission_evaluator: Any = None) -> None: ...
+      def __init__(self, vault_token_sync: Any = None, *,
+                   authorizer: Optional[ConnectionAuthorizer] = None) -> None: ...
       async def start_connect(self, user_id: str, provider_id: str, return_origin: Optional[str] = None, *,
                               channel: str = "web", principal: Optional[Principal] = None,
                               scopes: Optional[List[str]] = None, request: Any = None,
@@ -397,16 +412,18 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
       async def list_for_principal(self, user_id: str, request: Any = None, *,
                                    principal: Optional[Principal] = None,
                                    permission_context: Optional[PermissionContext] = None) -> List[IntegrationDescriptor]: ...
+      async def _authorize(self, request: Any, principal: Optional[Principal], user_id: str, action: str,
+                           provider_id: Optional[str] = None, scopes: Optional[List[str]] = None, *,
+                           permission_context: Optional[PermissionContext] = None) -> bool: ...
       async def _check_pbac(self, request: Any, action: str, provider_id: Optional[str] = None,
-                            scopes: Optional[List[str]] = None, *,
-                            principal: Optional[Principal] = None,
-                            permission_context: Optional[PermissionContext] = None) -> bool: ...
+                            scopes: Optional[List[str]] = None) -> bool: ...   # web request path only
   ```
-  `scopes` stays positional-compatible: existing connect/disconnect calls already pass it positionally.
-  Only `start_connect` currently takes a principal; the other three principal parameters above are additions.
-  Validate target `user_id` before `_check_pbac`; denial returns `[]` for list, and raises `PermissionError`
-  for status/connect/disconnect. Unknown providers raise `ValueError`. No context denial falls back to HTTP.
-  Inject the existing PDP through the FEAT-775 adapter; no fake HTTP request or second policy store.
+  The public methods run `_context_matches` first (identity mismatch → deny without consulting policy), then
+  `_authorize`, which sends any context call (or request-less call) to the authorizer with a principal whose
+  `user_id` equals the target. Denial returns `[]` for list, and raises `PermissionError` for
+  status/connect/disconnect. Unknown providers raise `ValueError`. No context denial falls back to HTTP.
+  Wire `authorizer=app.get("connection_authorizer")` (installed by `BotManager._setup_channel_links`); no fake
+  HTTP request, evaluator adapter or second policy store.
 
 ### Module 4: Telegram principal link lifecycle
 - **Path**: `packages/ai-parrot-server/src/parrot/services/identity_mapping.py` (modify); `packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py` (modify); `packages/ai-parrot-integrations/src/parrot/integrations/telegram/auth.py` (modify)
@@ -681,7 +698,8 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
 ### Module 11: Docs
 - **Path**: `docs/integrations/telegram-connections.md` (new); `docs/auth/connections.md` *(created by FEAT-773 M10)* (modify)
 - **Responsibility**: user commands and aliases; `connection_providers`; the `/login` link and `/logout` unlink;
-  PBAC deploy precondition (policy for action/provider/scopes plus the §8 Q1 adapter parity prerequisite);
+  PBAC deploy precondition (`integration` resource policies for `integration:list|connect|disconnect` — the
+  same policies Slack and Teams use; roles and groups apply);
   needs-auth behaviour; cutover runbook (audit → announce → date → purge); `post_auth_actions` for any provider;
   staged primary-then-secondary login, required-step failure/expiry and the distinction between discarding a
   login attempt and revoking principal-owned connections. `connections.md` gains the Telegram adapter row.
@@ -698,9 +716,9 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
 | `test_toolmanager_records_needs_auth` | M1 | both needs-auth exceptions append one payload while bound |
 | `test_execute_tool_needs_auth_message` | M2 | `ToolResult(status="authorization_required", metadata={"provider": "jira"})` → message names jira, contains no URL |
 | `test_execute_tool_other_statuses_unchanged` | M2 | success → `result.result`; error → `ValueError` as today |
-| `test_channel_pbac_fails_closed` | M3 | missing injected evaluator, missing context, identity mismatch, evaluator raises → `False` |
-| `test_channel_pbac_uses_navigator_principal` | M3 | `EvalContext` username/user_id = `principal.user_id`, never the Telegram id |
-| `test_service_request_less_pbac_branch` | M3 | `request=None` + `permission_context` + `principal` → evaluator consulted; without them → denied |
+| `test_channel_pbac_fails_closed` | M3 | missing authorizer, missing principal, identity mismatch, authorizer raises or returns non-`True` → denied (`[]` / `PermissionError`), no OAuth state |
+| `test_channel_pbac_uses_navigator_principal` | M3 | the authorizer receives the principal with `user_id` = Navigator id, never the Telegram id |
+| `test_service_request_less_pbac_branch` | M3 | `request=None` + `permission_context` + `principal` → authorizer consulted with `integration:*`; a context call with a request present still uses the authorizer, never HTTP PBAC |
 | `test_link_channel_identity_moves_ownership` | M4 | telegram id linked to user A, then linked to B → only B's row remains |
 | `test_channel_identity_lock_shared_by_mutations` | M4 | link/unlink acquire the same deterministic channel-account lock before SQL mutations, on the transaction connection |
 | `test_link_channel_identity_rejects_bad_input` | M4 | non-numeric nav id, empty provider id, secret in auth_data → `ValueError` |
@@ -748,9 +766,9 @@ python -m parrot.auth.oauth2.legacy_audit --purge --channel telegram [--confirm]
 | `test_e2e_cross_channel_from_telegram` | connect on Telegram, listed by `list_for_principal` and resolved on web for the same principal |
 | `test_e2e_unlinked_user_forced_reconnect` | legacy `jira:oauth:telegram:<id>` with no identity row → no resolution; "/login first" on `/connect` |
 
-| `test_telegram_restart_retains_link` | clear in-memory sessions, retain DB identity: connection commands resolve the same Navigator principal without /login; roles remain empty unless validated claims exist |
+| `test_telegram_restart_retains_link` | clear in-memory sessions, retain DB identity: connection commands resolve the same Navigator principal without /login; the authorizer still loads roles/groups from the auth DB |
 | `test_telegram_only_startup_registers_notifier` | start only Telegram; registry has one Telegram notifier, repeated starts attach without duplicate registration |
-| `test_telegram_disconnect_routes_revoked` | real service with shared evaluator → manager.revoke(channel="telegram", principal=...) → Telegram notifier and Jira session clear; web default still works |
+| `test_telegram_disconnect_routes_revoked` | real service with an allowing `ConnectionAuthorizer` → manager.revoke(channel="telegram", principal=...) → Telegram notifier and Jira session clear; web default still works |
 | `test_all_telegram_ask_paths_collect` | both _invoke_agent branches, handle_tool, both handle_skill branches and handle_question surface one prompt after reply; concurrent turns and cancellation do not leak payloads |
 | `test_telegram_scope_union_upgrade` | automatic payloads union scopes; insufficient active grant requires consent; explicit commands use defaults |
 
@@ -825,7 +843,7 @@ def fake_bot():                             # aiogram Bot double recording send_
     ...
 
 @pytest.fixture
-def fake_permission_evaluator():            # async callable(context, attributes); allow/deny/raise modes; not production parity evidence
+def fake_connection_authorizer():          # ConnectionAuthorizer double: authorize(principal, action, provider_id, scopes); allow/deny/raise modes; records calls
     ...
 ```
 
@@ -841,7 +859,7 @@ def fake_permission_evaluator():            # async callable(context, attributes
 - [ ] **AC-4 (G2)** `/connect [<provider>]`, `/disconnect <provider>`, `/connections` work for every connectable provider; MCP providers, providers without a manager, and providers outside `connection_providers` are never offered or accepted; user input never sets scopes.
 - [ ] **AC-5 (G2)** `/connect_jira`, `/disconnect_jira`, `/jira_status` behave as aliases; `/connect_office365` family aliases the generic commands only when `o365` is registered, otherwise behaves exactly as today.
 - [ ] **AC-6 (G2)** No connection command creates OAuth state for a user without a resolvable principal, or in a non-private chat.
-- [ ] **AC-7 (G3)** Telegram connect/disconnect are evaluated by the FEAT-775 shared context API against the Navigator principal; with no PDP, no evaluator, or an evaluator error the command is refused with the "not allowed" message and no OAuth state is created.
+- [ ] **AC-7 (G3)** Telegram connect/disconnect are identity-checked by FEAT-775's `permission_context` and authorized by the shared `ConnectionAuthorizer` against the Navigator principal (`integration:*` actions); with no PDP, no authorizer, a stale channel binding, or an authorizer error the command is refused with the "not allowed" message and no OAuth state is created.
 - [ ] **AC-8 (G4)** `AbstractClient._execute_tool` returns the needs-auth message (provider named, no URL) for `status="authorization_required"`; all other statuses behave as before.
 - [ ] **AC-9 (G4)** When a tool needs auth during a Telegram turn, the agent's reply is sent first, then one Connect button per distinct provider (fresh OAuth state carrying this `chat_id`/`bot_id`); device-code payloads show code and URI; unlinked users get one "/login first" line.
 - [ ] **AC-10 (G5)** `connection.completed`, `connection.revoked`, `connection.refresh_failed` for any provider produce one plain-text Telegram message through the issuing bot; a notifier failure never fails the callback; `TelegramOAuthNotifier`, `TelegramJiraNotifierAdapter` and the app keys `telegram_jira_session_stamper` / `jira_oauth_notifier` no longer exist in `packages/`.
@@ -874,7 +892,8 @@ from parrot.tools.manager import ToolManager                                    
 from parrot.auth.exceptions import AuthorizationRequired                         # verified: auth/exceptions.py:12
 from parrot.auth.permission import PermissionContext, UserSession, to_eval_context  # verified: permission.py:81, :21, :209
 from parrot.auth.oauth2.registry import OAuth2Provider, OAuth2ProviderRegistry   # verified: registry.py:20, :69 (all() :117)
-from parrot.auth.oauth2.service import IntegrationsService                       # verified: service.py:74 (_check_pbac :490)
+from parrot.auth.oauth2.service import IntegrationsService                       # verified on FEAT-775 branch @ 3851b713a5: service.py:71 (_authorize :749, _check_pbac :779, _context_matches :828)
+from parrot.auth.oauth2.authorization import ConnectionAuthorizer                # verified: authorization.py:14 (authorize :17) — FEAT-777, on dev
 from parrot.services.identity_mapping import IdentityMappingService              # verified: identity_mapping.py:136 (ai-parrot-server)
 from parrot.integrations.core.auth.post_auth import PostAuthProvider, PostAuthRegistry  # verified: post_auth.py:34, :92
 from parrot.integrations.telegram.auth import TelegramUserSession                # verified: telegram/auth.py:44
@@ -978,7 +997,8 @@ class TelegramAgentWrapper:
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`parrot.auth.pending`, `collect_auth_requirements`, `record_auth_requirement`~~ — created by FEAT-775 M5 or this spec's M1, whichever merges first.
-- `permission_context` / injected evaluator do not exist yet: FEAT-775 owns them; FEAT-776 consumes them. No `channel_pbac.py` is created.
+- `permission_context` is not on `origin/dev` until FEAT-775 (PR #1911) merges; FEAT-776 consumes it. No `channel_pbac.py` is created.
+- ~~`IntegrationsService(permission_evaluator=...)`, `pdp_permission_evaluator`, a URI-parity route table~~ — removed by FEAT-775 TASK-5091 (2026-11-01); never consume them. Use `authorizer=`.
 - ~~`IdentityMappingService.link_channel_identity` / `unlink_channel_identity` / a delete-by-`provider_user_id` query~~ — only `delete_identity(nav_user_id, auth_provider)` exists (identity_mapping.py:307).
 - ~~`ResourceType.INTEGRATION`~~ — not in navigator-auth 0.28.7 (§8 Q1).
 - ~~A Telegram identity write in any auth strategy's `handle_callback`~~ — none (auth.py:456-506 et al.); only `JiraPostAuthProvider._write_identity_records`.
@@ -1080,7 +1100,13 @@ changes are FEAT-775-owned prerequisites, not Telegram edit sites.
 
 ## 8. Open Questions
 
-- [x] **Q1 — Shared permission API and policy inputs.** FEAT-775 M3/M7 owns `permission_context` plus
+- [x] **Q1 — Shared permission API and policy inputs.** *Superseded 2026-11-01 (owner decision, FEAT-775
+  TASK-5091, issue:3a7ee22eb09a / issue:782f6c990de1):* every non-web channel — Slack, CLI, Teams and Telegram —
+  is authorized by FEAT-777's `ConnectionAuthorizer` (`NavigatorConnectionAuthorizer`, `integration` resource
+  actions with trusted roles/groups/tenant from the auth DB). FEAT-775's `permission_context` stays as the
+  identity check. The injected evaluator and its URI-parity mapping were removed, so the validation gate below
+  is historical.
+  *Original text:* FEAT-775 M3/M7 owns `permission_context` plus
   injected evaluator, preserving FEAT-773 action/provider/scopes semantics; FEAT-776 consumes it. No new
   integration resource type or agent-handler policy mapping is selected here.
   **Validation gate:** installed navigator-auth `abac/pdp.py:549` accepts `(request, session, ...)`, whereas
@@ -1146,7 +1172,7 @@ Summary: **6** confirmed (one partly) · **5** rejected · **1** escalated.
   - M9 → M4 (identity row moves to the link path), M5.
     M9 also depends on M7 for correlated completion dispatch; final identity publication belongs to M4/M9 together.
   - M11 → all.
-  - M1, M2, M3, M4 and M10 have no module edges between them; M3 remains gated on Q1. M7 follows M4 as
+  - M1, M2, M3, M4 and M10 have no module edges between them; M3 remains gated on FEAT-775 reaching `origin/dev`. M7 follows M4 as
     declared in its module contract. M9 must not land early link publication while awaiting completion wiring.
 - **Shared files** (tasks serialized): `telegram/wrapper.py` (M4, M6, M7, M8, M9); `telegram/models.py` (M6, M9);
   `telegram/auth.py` (M4, M9); `telegram/connection_notifier.py` (M7, M9);
@@ -1164,3 +1190,4 @@ Summary: **6** confirmed (one partly) · **5** rejected · **1** escalated.
 | 0.1 | 2026-10-30 | Jesus Lara (with Claude Opus 5.5) | Initial draft — S-2 of FEAT-773 |
 | 0.2 | 2026-10-30 | Codex | Review corrections: serialized channel ownership, staged combined login, deferred link publication/rollback isolation, mandatory regression evidence and explicit Q1 gate. Addresses design issues `b5a13e2c4c23`, `aff9e16ebca9`, `b8c17b33af2a`; runtime implementation remains future work. |
 | 0.3 | 2026-10-31 | Codex | Reconcile merged FEAT-773 contracts; choose FEAT-775-owned permission context API; fix Telegram revoke routing, persisted identity fallback, scope union, device-code boundary, all ask paths, startup registration and Redis-only cutover. |
+| 0.4 | 2026-11-01 | Claude Opus 5.5 (`/sdd-fix` issue:782f6c990de1) | M3 consumes `ConnectionAuthorizer` (`authorizer=app.get("connection_authorizer")`) instead of the removed `permission_evaluator`; `permission_context` is identity-only; Q1 superseded; M3 tests, fixture, AC-7, docs precondition and contract updated. TASK-5018/5025 contracts amended to match. |

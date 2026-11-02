@@ -402,6 +402,7 @@ class AbstractOAuth2Manager(ABC):
         extra_state: Optional[Dict[str, Any]] = None,
         *,
         principal: Optional[Principal] = None,
+        scopes: Optional[List[str]] = None,
     ) -> Tuple[str, str]:
         """Generate a provider consent URL with a CSRF state nonce.
 
@@ -409,6 +410,13 @@ class AbstractOAuth2Manager(ABC):
         a 10-minute TTL. The record carries ``channel``, ``user_id``, the
         caller-supplied ``extra_state`` payload, and (if PKCE is enabled)
         the ``code_verifier`` so the callback can complete the exchange.
+
+        Args:
+            channel: Originating channel for the connection.
+            user_id: Channel-local user identifier.
+            extra_state: Additional state preserved for the callback.
+            principal: Bound platform principal for the connection.
+            scopes: Per-call consent scopes. When omitted, use manager defaults.
 
         Returns:
             ``(url, nonce)`` — the authorization URL and the state nonce.
@@ -428,11 +436,13 @@ class AbstractOAuth2Manager(ABC):
             "canonical_identity": principal.canonical_identity,
             "tenant_id": principal.tenant_id,
         }
+        scope_list: List[str] = list(scopes) if scopes is not None else list(self.scopes)
+        state_payload["requested_scopes"] = list(scope_list)
         params: Dict[str, str] = {
             "client_id": self.client_id,
             "response_type": "code",
             "redirect_uri": self.redirect_uri,
-            "scope": " ".join(self.scopes),
+            "scope": " ".join(scope_list),
             "state": nonce,
         }
         if self.use_pkce:
@@ -444,6 +454,9 @@ class AbstractOAuth2Manager(ABC):
         extra_params = self.authorization_url_extra_params()
         if extra_params:
             params.update(extra_params)
+        if scopes is not None:
+            # Per-call scopes win over any provider extra param.
+            params["scope"] = " ".join(scope_list)
 
         await self.redis.set(
             self._nonce_key(nonce),

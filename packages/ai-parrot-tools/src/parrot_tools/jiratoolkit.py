@@ -60,6 +60,7 @@ from parrot.interfaces.file.session import SessionFileError, SessionFileStore
 from parrot.utils.helpers import current_context
 from parrot.tools.config_schema import ConfigOption
 from parrot.auth.exceptions import AuthorizationRequired
+from parrot.auth.credentials import credential_channel_user_id
 from parrot.auth.principal import resolve_principal
 from parrot.template import JinjaConfig, TemplateEngine
 from .toolkit import AbstractToolkit
@@ -1346,7 +1347,7 @@ class JiraToolkit(AbstractToolkit):
                 scopes=list(self._OAUTH_SCOPES),
             )
 
-        user_id = getattr(perm_ctx, "user_id", None)
+        user_id = credential_channel_user_id(perm_ctx)
         channel = getattr(perm_ctx, "channel", None) or "unknown"
         if not user_id:
             raise AuthorizationRequired(

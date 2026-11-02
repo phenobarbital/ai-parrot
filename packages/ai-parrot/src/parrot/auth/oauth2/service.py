@@ -30,7 +30,7 @@ from parrot.auth.oauth2.authorization import ConnectionAuthorizer
 from parrot.auth.principal import Principal
 
 if TYPE_CHECKING:  # pragma: no cover
-    pass
+    from parrot.auth.permission import PermissionContext
 from parrot.auth.oauth2.models import (
     ConnectInitResponse,
     DisconnectResponse,
@@ -49,7 +49,6 @@ from parrot.auth.oauth2.persistence import (
 from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 
 logger = logging.getLogger(__name__)
-
 
 def _get_allowed_origins() -> List[str]:
     """Return the configured list of allowed OAuth2 return origins.
@@ -89,6 +88,8 @@ class IntegrationsService:
     ) -> None:
         self._vault_token_sync = vault_token_sync
         self._identity_store_instance: Any = None
+        # ``authorizer`` is the single request-less policy surface for every non-web channel (Slack, CLI,
+        # Teams): it evaluates ``integration`` resource actions with trusted roles, groups and tenant.
         self._authorizer = authorizer
 
     async def list_for_principal(
@@ -97,6 +98,7 @@ class IntegrationsService:
         request: Any = None,
         *,
         principal: Optional[Principal] = None,
+        permission_context: Optional["PermissionContext"] = None,
     ) -> List[IntegrationDescriptor]:
         """Return one PBAC-filtered descriptor per registered provider.
 
@@ -111,11 +113,20 @@ class IntegrationsService:
             List of :class:`~parrot.integrations.oauth2.models.IntegrationDescriptor`
             instances, one per allowed provider.
         """
+        if permission_context is not None and not self._context_matches(user_id, principal, permission_context):
+            return []
+
         registry = OAuth2ProviderRegistry()
         providers = registry.all()
 
         # PBAC: fail-closed for integrations surface (Q-B resolution)
-        if not await self._authorize(request, principal, user_id, "integration:list"):
+        if not await self._authorize(
+            request,
+            principal,
+            user_id,
+            "integration:list",
+            permission_context=permission_context,
+        ):
             logger.debug(
                 "PBAC denied integration:list for user_id=%s — returning empty list",
                 user_id,
@@ -126,7 +137,14 @@ class IntegrationsService:
         rows = {row.provider: row for row in await list_users_integrations(user_id)}
 
         for provider in providers:
-            if not await self._authorize(request, principal, user_id, "integration:list", provider.provider_id):
+            if not await self._authorize(
+                request,
+                principal,
+                user_id,
+                "integration:list",
+                provider.provider_id,
+                permission_context=permission_context,
+            ):
                 continue
             result.append(await self._descriptor(user_id, provider, rows.get(provider.provider_id), request))
 
@@ -313,6 +331,7 @@ class IntegrationsService:
         scopes: Optional[List[str]] = None,
         request: Any = None,
         extra_state: Optional[Dict[str, Any]] = None,
+        permission_context: Optional["PermissionContext"] = None,
     ) -> ConnectInitResponse:
         """Authorize and initialize a channel-neutral OAuth2 connection.
 
@@ -340,7 +359,19 @@ class IntegrationsService:
             raise ValueError(f"Unknown provider: {provider_id!r}")
 
         requested_scopes = list(scopes or provider.default_scopes)
-        if not await self._authorize(request, principal, user_id, "integration:connect", provider_id, requested_scopes):
+        if permission_context is not None and not self._context_matches(
+            user_id, principal, permission_context, channel
+        ):
+            raise PermissionError(f"Not permitted to connect provider {provider_id!r}")
+        if not await self._authorize(
+            request,
+            principal,
+            user_id,
+            "integration:connect",
+            provider_id,
+            requested_scopes,
+            permission_context=permission_context,
+        ):
             raise PermissionError(f"Not permitted to connect provider {provider_id!r}")
 
         if channel == _WEB_CHANNEL:
@@ -361,11 +392,15 @@ class IntegrationsService:
             "return_origin": return_origin,
             **(extra_state or {}),
         }
+        # Per-call scopes are forwarded only when the caller asked for specific ones; otherwise the manager
+        # keeps its own defaults (an empty list must never become ``scope=""``).
+        scope_kwargs: Dict[str, Any] = {"scopes": requested_scopes} if scopes else {}
         auth_url, nonce = await provider.manager.create_authorization_url(
             channel=channel,
             user_id=user_id,
             extra_state=state,
             principal=principal,
+            **scope_kwargs,
         )
         return ConnectInitResponse(
             auth_url=auth_url,
@@ -381,13 +416,23 @@ class IntegrationsService:
         request: Any = None,
         *,
         principal: Optional[Principal] = None,
+        permission_context: Optional["PermissionContext"] = None,
     ) -> IntegrationDescriptor:
         """Return the PBAC-filtered descriptor for one provider."""
         registry = OAuth2ProviderRegistry()
         provider = registry.get(provider_id)
         if provider is None:
             raise ValueError(f"Unknown provider: {provider_id!r}")
-        if not await self._authorize(request, principal, user_id, "integration:list", provider_id):
+        if permission_context is not None and not self._context_matches(user_id, principal, permission_context):
+            raise PermissionError(f"Not permitted to list provider {provider_id!r}")
+        if not await self._authorize(
+            request,
+            principal,
+            user_id,
+            "integration:list",
+            provider_id,
+            permission_context=permission_context,
+        ):
             raise PermissionError(f"Not permitted to list provider {provider_id!r}")
         row = await get_users_integration(user_id, provider_id)
         return await self._descriptor(user_id, provider, row, request)
@@ -398,7 +443,9 @@ class IntegrationsService:
         provider_id: str,
         request: Any = None,
         *,
+        channel: str = _WEB_CHANNEL,
         principal: Optional[Principal] = None,
+        permission_context: Optional["PermissionContext"] = None,
     ) -> DisconnectResponse:
         """Revoke and delete one provider connection for a principal.
 
@@ -415,6 +462,10 @@ class IntegrationsService:
         provider = OAuth2ProviderRegistry().get(provider_id)
         if provider is None:
             raise ValueError(f"Unknown provider: {provider_id!r}")
+        if permission_context is not None and not self._context_matches(
+            user_id, principal, permission_context, channel
+        ):
+            raise PermissionError(f"Not permitted to disconnect provider {provider_id!r}")
         if not await self._authorize(
             request,
             principal,
@@ -422,9 +473,15 @@ class IntegrationsService:
             "integration:disconnect",
             provider_id,
             list(provider.default_scopes),
+            permission_context=permission_context,
         ):
             raise PermissionError(f"Not permitted to disconnect provider {provider_id!r}")
-        await provider.manager.revoke(channel=_WEB_CHANNEL, user_id=user_id)
+        revoke_principal = principal or Principal(user_id=user_id, channel=channel, channel_user_id=user_id)
+        await provider.manager.revoke(
+            channel=channel,
+            user_id=revoke_principal.user_id,
+            channel_user_id=revoke_principal.channel_user_id,
+        )
         await delete_users_integration(user_id, provider_id)
 
         logger.info(
@@ -697,9 +754,17 @@ class IntegrationsService:
         action: str,
         provider_id: Optional[str] = None,
         scopes: Optional[List[str]] = None,
+        *,
+        permission_context: Optional["PermissionContext"] = None,
     ) -> bool:
-        """Authorize web requests with PBAC and non-web calls with the adapter."""
-        if request is not None:
+        """Authorize one connection action.
+
+        Web requests (no ``permission_context``) use request PBAC. Every other caller — Slack, CLI and Teams —
+        goes through the injected ``ConnectionAuthorizer`` and needs a principal matching ``user_id``. A
+        ``PermissionContext`` is only an identity check (see :meth:`_context_matches`, run by the public
+        methods first); it never selects a separate policy surface.
+        """
+        if permission_context is None and request is not None:
             return await self._check_pbac(request, action, provider_id, scopes)
         if principal is None or self._authorizer is None or str(principal.user_id) != str(user_id):
             logger.debug("Denying %s: missing principal/authorizer or principal mismatch", action)
@@ -758,3 +823,22 @@ class IntegrationsService:
                 provider_id,
             )
             return False
+
+    @staticmethod
+    def _context_matches(
+        user_id: str,
+        principal: Optional[Principal],
+        context: "PermissionContext",
+        channel: Optional[str] = None,
+    ) -> bool:
+        """Return whether target, principal, and context identify the same user."""
+        if context.user_id != user_id:
+            return False
+        if principal is not None:
+            if principal.user_id != user_id:
+                return False
+            if principal.tenant_id is not None and principal.tenant_id != context.tenant_id:
+                return False
+            if principal.channel_user_id and principal.channel_user_id != context.channel_user_id:
+                return False
+        return channel is None or context.channel == channel

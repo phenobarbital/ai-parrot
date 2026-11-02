@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 import yaml
 from aiohttp import web
 
@@ -27,10 +27,6 @@ from parrot.conf import AGENTS_DIR, REDIS_URL
 from parrot.human import (
     HumanInteractionManager,
     set_default_human_manager,
-)
-from parrot.integrations.core.auth.notifiers import (
-    MSTeamsJiraNotifierAdapter,
-    TelegramJiraNotifierAdapter,
 )
 from .models import (
     IntegrationBotConfig,
@@ -130,19 +126,84 @@ def _build_principal_resolver(app: Any) -> Any:
         return None
 
 
+def _identity_mapping_service(app: Any) -> Any:
+    """Build an identity mapping service when an auth database is available."""
+    db_pool = app.get("authdb") or app.get("database")
+    if db_pool is None:
+        return None
+    try:
+        from parrot.services.identity_mapping import IdentityMappingService  # noqa: PLC0415
+
+        return IdentityMappingService(db_pool)
+    except ImportError:
+        return None
+
+
+def _channel_service_factory(app: Any) -> Callable[[], Any]:
+    """Build IntegrationsService instances for channel callers with the shared connection authorizer.
+
+    Teams uses the same ``app["connection_authorizer"]`` (``NavigatorConnectionAuthorizer``) as Slack and the CLI,
+    so one set of ``integration`` resource policies — with trusted roles and groups — covers every channel. It is
+    read per call because the server installs it at startup; without it every call is denied (fail closed).
+    """
+    from parrot.auth.oauth2.service import IntegrationsService
+
+    def _factory() -> Any:
+        vault = None
+        if app.get("authdb"):
+            try:
+                from parrot.services.vault_token_sync import VaultTokenSync
+
+                vault = VaultTokenSync(db_pool=app["authdb"], redis=app.get("redis"))
+            except ImportError:  # pragma: no cover - server package is optional
+                pass
+        return IntegrationsService(vault, authorizer=app.get("connection_authorizer"))
+
+    return _factory
+
+
+def _register_teams_notifier(app: Any) -> None:
+    """Register the app's single Teams connection notifier for channel "msteams" (idempotent)."""
+    from parrot.integrations.msteams.connections import (
+        MSTeamsConversationRefStore,
+        get_or_create_connection_notifier,
+    )
+
+    redis = app.get("redis")
+    ref_store = MSTeamsConversationRefStore(redis) if redis is not None else None
+    ChannelNotifierRegistry().register(get_or_create_connection_notifier(app, ref_store))
+
+
 def _register_channel_notifiers(app: Any) -> ChannelNotifierRegistry:
-    """Register the Telegram and MS Teams Jira adapters; Slack registers SlackConnectionNotifier from SlackAgentWrapper."""
+    """Register the Telegram and Teams connection notifiers; Slack registers SlackConnectionNotifier from SlackAgentWrapper."""
     registry = ChannelNotifierRegistry()
     if app.get("connection_channel_notifiers_registered"):
         return registry
-    registry.register(TelegramJiraNotifierAdapter(app))
-    registry.register(MSTeamsJiraNotifierAdapter(app))
+    from parrot.integrations.telegram.connection_notifier import get_or_create_telegram_notifier
+
+    get_or_create_telegram_notifier(app, identity_service=_identity_mapping_service(app))
+    _register_teams_notifier(app)
     app["connection_channel_notifiers_registered"] = True
     return registry
 
 
+def attach_telegram_wrapper(app: Any, wrapper: Any, bot: Any) -> None:
+    """Bind a Telegram wrapper to the app's shared connection publisher and notifier (idempotent).
+
+    Creates the publisher/notifier on first use, attaches the bot for deliveries, and re-registers the wrapper's
+    session hook and staged-login coordinator, which the wrapper could not do while the notifier did not exist yet.
+    Both Telegram startup paths (``IntegrationBotManager`` and ``TelegramBotManager``) call this.
+    """
+    _connection_publisher(app)
+    notifier = app.get("telegram_connection_notifier")
+    if notifier is not None and wrapper._bot_id:
+        notifier.attach(wrapper._bot_id, bot)
+    wrapper._register_jira_session_hook()
+    wrapper._attach_login_coordinator()
+
+
 def _connection_publisher(app: Any) -> ConnectionEventPublisher:
-    """Return the app's shared publisher with all Jira adapters registered."""
+    """Return the app's shared publisher with all channel notifiers registered."""
     registry = _register_channel_notifiers(app)
     publisher = app.get("connection_event_publisher")
     if publisher is None:
@@ -351,6 +412,8 @@ class IntegrationBotManager:
         except RuntimeError:
             app = None
         wrapper = TelegramAgentWrapper(agent, bot, config, app=app)
+        if app is not None:
+            attach_telegram_wrapper(app, wrapper, bot)
 
         # Publish the Telegram command menu (setMyCommands + chat menu button)
         # so platform/agent commands (e.g. /connect_jira from JiraSpecialist)
@@ -414,6 +477,7 @@ class IntegrationBotManager:
         # Wire JiraOAuthManager if Jira OAuth is configured (FEAT-225).
         app = self.bot_manager.get_app()
         _build_principal_resolver(app)
+        _register_teams_notifier(app)
         jira_oauth_manager = None
         if getattr(config, "jira_client_id", None):
             existing = app.get("jira_oauth_manager")
@@ -452,6 +516,7 @@ class IntegrationBotManager:
             app=app,
             forms_directory=config.forms_directory or AGENTS_DIR / "forms",
             oauth_manager=jira_oauth_manager,
+            connection_service_factory=_channel_service_factory(app),
         )
         self.msteams_bots[name] = wrapper
         self.logger.info("Started MS Teams bot '%s'", name)

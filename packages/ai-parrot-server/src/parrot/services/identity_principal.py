@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from parrot.auth.principal import Principal
+
+# FEAT-775: Teams identity rows may be stored under either provider name; first match wins.
+_CHANNEL_IDENTITY_PROVIDERS: Dict[str, Tuple[str, ...]] = {"msteams": ("msteams", "azure")}
 
 # FEAT-777 D4: providers whose provider_user_id is an Entra object id.
 _ENTRA_PROVIDERS: tuple[str, ...] = ("msteams",)
@@ -99,16 +102,22 @@ class IdentityPrincipalResolver:
                 )
 
             store = self._store()
-            nav_user_id = await store.find_user_by_provider_account(channel, channel_user_id)
+            nav_user_id = None
+            matched_provider = channel
+            for provider in _CHANNEL_IDENTITY_PROVIDERS.get(channel, (channel,)):
+                candidate = await store.find_user_by_provider_account(provider, channel_user_id)
+                if candidate is not None and str(candidate) != "":
+                    nav_user_id, matched_provider = candidate, provider
+                    break
             if nav_user_id is None or str(nav_user_id) == "":
                 return None
 
             canonical_identity: Optional[str] = None
             try:
-                identity = await store.get_by_provider(nav_user_id, channel)
+                identity = await store.get_by_provider(nav_user_id, matched_provider)
                 if identity is not None:
                     if channel == "msteams":
-                        canonical_identity = getattr(identity, "provider_user_id", None)
+                        canonical_identity = getattr(identity, "provider_user_id", None) or channel_user_id
                     else:
                         email = getattr(identity, "email", None)
                         canonical_identity = email.lower() if email else None
