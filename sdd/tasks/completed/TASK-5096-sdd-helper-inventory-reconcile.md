@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — parrot-installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.10, amendment C30 — proposal rev 0.9)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4088, TASK-4091, TASK-5095
@@ -200,4 +200,4 @@ _UNMOUNTED: frozenset[str] = frozenset()
 ---
 
 ## Completion Note
-_(filled by the implementer)_
+Done as specified. Extra: test_scripts_taxonomy_misc.py dropped `insight` (MOVED + bare-interpreter test) since the module is no longer packaged. Expected reds until TASK-5098: test_no_repo_script_refs reports the shipped `python -m scripts.sdd.check_spec_consequences` references (.agent/workflows/sdd-spec.md, sdd-task.md, .agents skills, .claude/commands/sdd-spec.md ...); test_portable_flag/installer guard tests await TASK-5097.
