@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-04T23:59:51+00:00",
-  "completed_at": "2026-11-02T12:59:17+00:00",
+  "completed_at": null,
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -200,7 +200,10 @@
           "tests/sdd/test_launch_worker.py",
           "packages/ai-parrot/tests/sdd/test_sdd_launch.py",
           "packages/ai-parrot/tests/sdd/test_sdd_ledger_mount.py",
-          "tests/sdd_scripts/test_check_spec_consequences.py"
+          "tests/sdd_scripts/test_check_spec_consequences.py",
+          "packages/ai-parrot/tests/sdd/test_installer_base_branch.py",
+          "packages/ai-parrot/tests/sdd/test_dangerous_actions.py",
+          "packages/ai-parrot/tests/sdd/test_installer_dangerous_guard.py"
         ],
         "settings": {
           "markers": ""
@@ -212,7 +215,7 @@
         ]
       }
     ],
-    "digest": "sha256:1a2bd8da8bcf81a874e82edb84f3fbce629413fbf90ade70a9bc6ca0f524789f"
+    "digest": "sha256:3306cb846a6e2d5b6504ba0cc52d70ebf19c9b4a1fcd1877929bd14a24724c94"
   },
   "tasks": [
     {
@@ -1140,8 +1143,54 @@
       "parallelism_notes": "documents the final tree: verbs from TASK-5098's rewrite, `ledger` from TASK-5099, `launch` from TASK-5100; re-caches the index test_contract with the test files those tasks create; docs/getting-started.md and docs/install/global-runtime.md were written by TASK-4095",
       "file": "sdd/tasks/completed/TASK-5101-sdd-cli-docs-and-contract.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5109",
+      "slug": "installer-base-branch-preflight",
+      "title": "`parrot sdd install` prepares the SDD base branch",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4080",
+        "TASK-4091",
+        "TASK-4299",
+        "TASK-5101"
+      ],
+      "parallelism_notes": "rev 0.11 C31; edits installer.py/cli.py, which TASK-5110 also edits — runs first",
+      "file": "sdd/tasks/active/TASK-5109-installer-base-branch-preflight.md"
+    },
+    {
+      "id": "TASK-5110",
+      "slug": "portable-dangerous-actions-guard",
+      "title": "Portable dangerous-actions guard, installed by `parrot sdd install`",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4085",
+        "TASK-4089",
+        "TASK-4509",
+        "TASK-5109"
+      ],
+      "parallelism_notes": "rev 0.11 C32; same installer.py/cli.py as TASK-5109, so it waits for it",
+      "file": "sdd/tasks/active/TASK-5110-portable-dangerous-actions-guard.md"
     }
   ],
-  "amended_at": "2026-11-01T00:00:00+00:00",
-  "spec_revision": "0.8"
+  "amended_at": "2026-11-03T00:00:00+00:00",
+  "spec_revision": "0.11"
 }
