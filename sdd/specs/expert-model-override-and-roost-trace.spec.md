@@ -41,7 +41,7 @@ block the downstream roster readiness check and native trace propagation.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:1b6601733aedbde0ce033858a7f35e1ff6cef399136927483eaa96c9c6c16ea6 evaluation_digest=sha256:f7e2959aeef1b255439a1eaf3508c78d446a5bf63e1780a6078aa9873385faf6 rules_version=0 status=incomplete -->
+<!-- decision-audit: input_digest=sha256:ea13f8c05aeab768d616f422bc790ce56d14bce2ed167648a6deebc47e64b6e2 evaluation_digest=sha256:b8e5fa1e1f36380b1ac09a48bc285031a5ceb54d090b203e82511394a7e75328 rules_version=0 status=incomplete -->
 
 ## 2. Architectural Design
 
@@ -296,6 +296,8 @@ tests:
 - packages/ai-parrot/tests/roost/test_squawk_bridge.py
 markers: none
 
+### Regression Scope
+
 Also run the existing `packages/ai-parrot/tests/experts/` and `packages/ai-parrot/tests/roost/`
 suites before feature completion. New files above are planned operands, not claims of present tests.
 No live LLM/provider tests; save logs in artifacts/logs/.
@@ -449,7 +451,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:1b6601733aedbde0ce033858a7f35e1ff6cef399136927483eaa96c9c6c16ea6 evaluation_digest=sha256:f7e2959aeef1b255439a1eaf3508c78d446a5bf63e1780a6078aa9873385faf6 rules_version=0 status=incomplete -->
+<!-- decision-audit: input_digest=sha256:ea13f8c05aeab768d616f422bc790ce56d14bce2ed167648a6deebc47e64b6e2 evaluation_digest=sha256:b8e5fa1e1f36380b1ac09a48bc285031a5ceb54d090b203e82511394a7e75328 rules_version=0 status=incomplete -->
 
 Audit status: `incomplete` (exit 3)
 
@@ -503,10 +505,10 @@ Coverage:
       "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/expert-model-override-and-roost-trace.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:f7e2959aeef1b255439a1eaf3508c78d446a5bf63e1780a6078aa9873385faf6",
+  "evaluation_digest": "sha256:b8e5fa1e1f36380b1ac09a48bc285031a5ceb54d090b203e82511394a7e75328",
   "exit_code": 3,
   "findings": [],
-  "input_digest": "sha256:1b6601733aedbde0ce033858a7f35e1ff6cef399136927483eaa96c9c6c16ea6",
+  "input_digest": "sha256:ea13f8c05aeab768d616f422bc790ce56d14bce2ed167648a6deebc47e64b6e2",
   "snapshot": null,
   "status": "incomplete"
 }
