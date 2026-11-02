@@ -4,6 +4,9 @@ This guide describes the principal-keyed OAuth2 connection model introduced by
 FEAT-773. A connection belongs to a Navigator principal, not to the channel
 through which it was created.
 
+See also [delegated-auth-web-deployment.md](delegated-auth-web-deployment.md) for the
+web-channel deployment recipe, the live E2E harness and the gaps found on the first live run.
+
 ## Principal and key layout
 
 The live Redis cache uses `oauth2:{provider}:{user_id}`. The refresh lock is
