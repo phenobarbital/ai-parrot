@@ -37,7 +37,7 @@ breaks and every native-mode hook call is denied. Tracked as ledger `issue:3253d
    `packages/ai-parrot/src/parrot/flows/dev_loop/{native_claude_sandbox,worktree_environment}.py`. Protect the
    relocated real files **and** keep the shims protected; in a consumer repository (no `packages/` tree) protect
    the files the hook actually runs from (resolve them from `Path(__file__)`, not from the repo layout).
-4. Hook command: FEAT-633's agent frontmatter runs `parrot sdd worktree guard --hook || exit 2` (C26 / TASK-5097);
+4. Hook command: FEAT-633's agent frontmatter runs `parrot sdd worktree guard --hook || exit 2` (C30 / TASK-5097);
    FEAT-768's compiled settings run `<sys.executable> <module file> --hook || exit 2`. Make the compiled
    settings use the same entry point FEAT-633 ships (or document in the Completion Note why the interpreter form
    must stay — e.g. the launcher's interpreter is the one whose policy is compiled), and keep both hook paths
@@ -46,7 +46,7 @@ breaks and every native-mode hook call is denied. Tracked as ledger `issue:3253d
    `cwd=<primary>`: repoint it to the packaged runner (`parrot.sdd.scripts.ensure_worktree`) so it works in
    consumer repositories.
 6. ~~Add `parrot sdd launch-worker` as an alias of `parrot devloop launch-worker`~~ — **superseded by
-   TASK-5100 (C26)**: the launcher is mounted as `parrot sdd launch worker` and the `devloop` registration is
+   TASK-5100 (C30)**: the launcher is mounted as `parrot sdd launch worker` and the `devloop` registration is
    deleted there. This task leaves `parrot devloop launch-worker` as merged and touches no CLI file.
 7. `scripts/sdd/launch_worker.sh` calls `$repo_root/packages/ai-parrot/src/parrot/flows/dev_loop/native_claude_sandbox.py`;
    keep it working through the shim (monorepo-only script; it is not shipped in `_assets`).

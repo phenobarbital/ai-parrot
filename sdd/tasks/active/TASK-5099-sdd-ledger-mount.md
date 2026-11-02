@@ -1,7 +1,7 @@
 # TASK-5099: `parrot sdd ledger` — lazy re-mount of the `wikitoolkit ledger` group
 
 **Feature**: FEAT-633 — parrot-installer
-**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.8, amendment C26 item 4 — proposal rev 0.9)
+**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.10, amendment C30 item 4 — proposal rev 0.9)
 **Status**: pending
 **Priority**: medium
 **Estimated effort**: S (< 2h)
@@ -14,7 +14,7 @@
 
 The work ledger (`wikitoolkit ledger open|ready|list|show|claim|acknowledge|close|plan-fix|unclaim|
 retract-feedback|context|blockers|export|export-log|import-log|rotate-log|sync|rebuild|ingest-sdd|compact|
-audit|outbox prepare|status|integrate`) is part of the SDD cycle but unreachable from `parrot sdd`. C26 item 4
+audit|outbox prepare|status|integrate`) is part of the SDD cycle but unreachable from `parrot sdd`. C30 item 4
 mounts the **same click group object** under `parrot sdd ledger` as a second spelling. Decision (Jesus Lara,
 2026-11-01): `wikitoolkit`, `wikitoolkit ledger`, the light entry (TASK-3673), the `parrot-ledger` git hooks
 and the MCP tools stay exactly as they are, and the 87 shipped `wikitoolkit ledger` references are **not**
@@ -32,7 +32,7 @@ rewritten.
   (`parrot sdd ledger list --json` == `wikitoolkit ledger list --json` on the same temp ledger).
 
 **NOT in scope**: rewriting any `wikitoolkit ledger` reference; changing the ledger commands; the git hooks
-`hooks install` renders (Q-C26-2 resolved: they keep `wikitoolkit`).
+`hooks install` renders (Q-C30-2 resolved: they keep `wikitoolkit`).
 
 ---
 
@@ -109,7 +109,7 @@ def ledger() -> None: """Manage the SDD work ledger, discovered work, and spec g
 ## Implementation Blueprint
 
 ### Steps (in order)
-1. Add `_LazyProxyGroup` and mount it — *why*: C26 item 4 without importing the wiki CLI on every `parrot sdd`.
+1. Add `_LazyProxyGroup` and mount it — *why*: C30 item 4 without importing the wiki CLI on every `parrot sdd`.
 2. Write the three tests — *why*: parity, laziness and the context-object question are the three ways this can silently break.
 
 ### `packages/ai-parrot/src/parrot/sdd/cli.py` (MODIFY)
@@ -117,7 +117,7 @@ def ledger() -> None: """Manage the SDD work ledger, discovered work, and spec g
 # occurrences: 1 (verified after TASK-5095: grep -c '^for _noun, _verbs in VERBS.items():' packages/ai-parrot/src/parrot/sdd/cli.py)
 # BEFORE — insert above the `for _noun, _verbs in VERBS.items():` loop
 class _LazyProxyGroup(click.Group):
-    """A click group that resolves `module:attr` on first use and delegates listing/lookup to it (C26 item 4)."""
+    """A click group that resolves `module:attr` on first use and delegates listing/lookup to it (C30 item 4)."""
 
     def __init__(self, name: str, target: str, **kwargs: object) -> None:
         super().__init__(name, **kwargs)
@@ -150,7 +150,7 @@ plain `add_command(ledger)` here would import `parrot.knowledge.wiki.cli` (4,000
 
 ### `packages/ai-parrot/tests/sdd/test_sdd_ledger_mount.py` (CREATE)
 ```python
-"""C26 item 4: `parrot sdd ledger` is a second spelling of `wikitoolkit ledger` — same commands, lazily loaded."""
+"""C30 item 4: `parrot sdd ledger` is a second spelling of `wikitoolkit ledger` — same commands, lazily loaded."""
 from __future__ import annotations
 
 import sys

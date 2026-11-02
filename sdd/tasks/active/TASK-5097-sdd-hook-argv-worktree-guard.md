@@ -1,7 +1,7 @@
 # TASK-5097: Hook line becomes `parrot sdd worktree guard --hook` (launcher fast path, installer, agents)
 
 **Feature**: FEAT-633 — parrot-installer
-**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.8, amendment C26 item 6 — proposal rev 0.9)
+**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.10, amendment C30 item 6 — proposal rev 0.9)
 **Status**: pending
 **Priority**: high
 **Estimated effort**: S (< 2h)
@@ -15,7 +15,7 @@
 C16/C25 make the shipped `sdd-coder` / `sdd-worker` agents run
 `parrot sdd run worktree_environment --hook || exit 2` as their PreToolUse guard, with a launcher fast path
 (TASK-4509, `SDD_HOOK_ARGV`) that answers it without importing click, and an installer that renders the bare
-or baked form (C25). C26 item 6 changes the spelling to `parrot sdd worktree guard --hook`; the fast path, the
+or baked form (C25). C30 item 6 changes the spelling to `parrot sdd worktree guard --hook`; the fast path, the
 installer constants, the two agent files, their `_assets` copies and the tests that pin the string follow.
 
 ---

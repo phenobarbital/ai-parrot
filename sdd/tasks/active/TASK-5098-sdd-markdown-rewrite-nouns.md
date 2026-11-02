@@ -1,7 +1,7 @@
 # TASK-5098: Table-driven rewrite of shipped SDD assets to `parrot sdd <noun> <verb>` + gates
 
 **Feature**: FEAT-633 — parrot-installer
-**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.8, amendment C26 items 1, 3, 7 — proposal rev 0.9)
+**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.10, amendment C30 items 1, 3, 7 — proposal rev 0.9)
 **Status**: pending
 **Priority**: high
 **Estimated effort**: L (4-8h)
@@ -13,7 +13,7 @@
 ## Context
 
 TASK-4089 rewrote the shipped SDD markdown from `python -m scripts.sdd.<name>` to `parrot sdd run <name>`.
-C26 replaces that spelling with the noun/verb table in `parrot.sdd.cli.VERBS` (TASK-5095). The references to
+C30 replaces that spelling with the noun/verb table in `parrot.sdd.cli.VERBS` (TASK-5095). The references to
 rewrite, counted on the branch at `54868dcb2d` in the **source** assets (their `_assets` copies are regenerated,
 not edited): `.claude/commands` 55, `.agent/workflows` 45, `.agents/skills` 36, `.claude/agents` 15 (minus the
 two hook lines TASK-5097 already changed), `sdd/WORKFLOW.md` 7, `.agents/agents` 4, `.claude/rules` 3,
@@ -30,7 +30,7 @@ scanner) move to the table, and a new gate proves the rewrite changed no asset *
 - Rewrite every `parrot sdd run <module> [sub]` occurrence in the source assets to its `VERBS` row, and every
   `python -m scripts.sdd.check_spec_consequences` to `parrot sdd spec consequences`. Regenerate `_assets`.
 - `test_no_repo_script_refs.py`: derive the expected set from `parrot.sdd.cli.VERBS` instead of `_MOVED`; add
-  the forbidden spellings `parrot sdd run` and `devloop launch-worker` (not `wikitoolkit ledger` — C26 item 4).
+  the forbidden spellings `parrot sdd run` and `devloop launch-worker` (not `wikitoolkit ledger` — C30 item 4).
 - `test_installer.py::test_sdd_flow_in_foreign_repo` and `test_wheel_only_foreign_repo.py` (`INVOCATION_RE`,
   `_collect_invocations`, the two `subprocess.run([... "sdd", "run", ...])` call sites): collect and run
   `(noun, verb, argv)` triples validated against `VERBS`.
@@ -41,7 +41,7 @@ scanner) move to the table, and a new gate proves the rewrite changed no asset *
   the rewrite.
 
 **NOT in scope**: the `launch_worker.sh` references and `scripts/sdd/launch_worker.sh` itself (TASK-5100);
-`wikitoolkit ledger` references (kept, C26 item 4); repo-only docs (`docs/**`, `CLAUDE.md`, `AGENTS.md`,
+`wikitoolkit ledger` references (kept, C30 item 4); repo-only docs (`docs/**`, `CLAUDE.md`, `AGENTS.md`,
 `docs/sdd/WORKFLOW.md` — TASK-5101); `/sdd-insight` (C22, not shipped, not rewritten).
 
 ---
@@ -87,7 +87,7 @@ from parrot.sdd.installer import GUARD_HOOK_LINE, guard_hook_command, install_sd
 # packages/ai-parrot/tests/sdd/test_no_repo_script_refs.py
 _MOVED: tuple[str, ...] = (...)                               # :26-36 — replace its role with VERBS-derived names
 _ASSET_GLOBS / _SHIPPED_GLOBS                                 # :37-51 — the files this gate scans (keep)
-_MONOREPO_PATH / _MONOREPO_TEXT                               # :54-56 — C16/C22 patterns (keep; add the C26 forbidden spellings beside them)
+_MONOREPO_PATH / _MONOREPO_TEXT                               # :54-56 — C16/C22 patterns (keep; add the C30 forbidden spellings beside them)
 def _glob_files(globs) -> list[Path]                          # :66 — `.claude/worktrees/` and sdd-insight excluded
 # packages/ai-parrot/tests/sdd/test_installer.py
 def test_sdd_flow_in_foreign_repo(empty_repo: Path, hosts) -> None   # :258-270 — regex r"parrot sdd run ([a-z0-9_]+)" at :265; find_spec check :267-268
@@ -164,7 +164,7 @@ def render_report(findings, *, scanned) -> str                # :165 — hint li
 - The three Google twins (`.agent/workflows`) and Codex twins (`.agents/skills`) must end byte-equivalent in
   their invocations to the Claude command — `tests/sdd/test_codex_sdd_sync.py` and
   `tests/sdd_scripts/test_sdd_brief_twin_contract.py` check twin consistency; run them.
-- `wikitoolkit ledger …` lines are **not** touched and the gate must not flag them (C26 item 4).
+- `wikitoolkit ledger …` lines are **not** touched and the gate must not flag them (C30 item 4).
 
 ---
 
@@ -174,7 +174,7 @@ def render_report(findings, *, scanned) -> str                # :165 — hint li
 1. Write the fixture snapshot — *why*: it must capture the pre-rewrite manifest.
 2. Run the scratch rewrite script; review `git diff --stat` and spot-read each host's `sdd-start`, `sdd-done`, `sdd-task` — *why*: these carry the densest invocations.
 3. `python scripts/sdd/check_asset_sync.py --write && python scripts/sdd/check_asset_sync.py --check` — *why*: `_assets` is derived.
-4. Move the three gates to the table; add the audit kind and the asset-name gate — *why*: C26 items 3 and 7.
+4. Move the three gates to the table; add the audit kind and the asset-name gate — *why*: C30 items 3 and 7.
 
 ### scratch `rewrite_sdd_verbs.py` (NOT committed — run from the worktree root with `PYTHONPATH=packages/ai-parrot/src`)
 ```python
@@ -210,8 +210,8 @@ sdd_meta parse` from being half-rewritten to `parrot sdd docs … parse`.
 ```python
 # occurrences: 1 (verified: grep -c '^_MONOREPO_TEXT = ' packages/ai-parrot/tests/sdd/test_no_repo_script_refs.py)
 # AFTER — insert below the `_MONOREPO_TEXT = re.compile(...)` line (:56)
-# C26: the retired spellings — `parrot sdd run <module>` (TASK-5095) and `parrot devloop launch-worker` (TASK-5100).
-# `wikitoolkit ledger …` is NOT policed: it stays a valid spelling beside `parrot sdd ledger` (C26 item 4).
+# C30: the retired spellings — `parrot sdd run <module>` (TASK-5095) and `parrot devloop launch-worker` (TASK-5100).
+# `wikitoolkit ledger …` is NOT policed: it stays a valid spelling beside `parrot sdd ledger` (C30 item 4).
 _RETIRED_SPELLING = re.compile(r"\bparrot sdd run\b|\bdevloop launch-worker\b")
 # FILL IN: replace every use of `_MOVED` with `sorted(mounted_modules())` and add one test:
 def test_no_retired_spelling_in_shipped_assets() -> None:
@@ -234,7 +234,7 @@ def test_no_retired_spelling_in_shipped_assets() -> None:
 
 
 def test_rewrite_preserves_asset_names() -> None:
-    """C26: the noun/verb rewrite changed shell lines only — every shipped target keeps its name."""
+    """C30: the noun/verb rewrite changed shell lines only — every shipped target keeps its name."""
     expected = set(json.loads((Path(__file__).parent / "fixtures" / "asset_targets.json").read_text()))
     assert {e["target"] for e in load_manifest()} == expected
 ```

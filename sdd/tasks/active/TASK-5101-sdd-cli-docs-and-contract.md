@@ -1,7 +1,7 @@
 # TASK-5101: Docs for the noun-grouped CLI + Validation Contract refresh
 
 **Feature**: FEAT-633 — parrot-installer
-**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.8, amendment C26 item 7 — proposal rev 0.9)
+**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.10, amendment C30 item 7 — proposal rev 0.9)
 **Status**: pending
 **Priority**: medium
 **Estimated effort**: S (< 2h)
@@ -14,7 +14,7 @@
 
 TASK-4095 documented `parrot sdd run <name>` in the canonical install guide and the global-runtime reference;
 `docs/sdd/WORKFLOW.md` and `CLAUDE.md` (repo-only, exempt from the shipped-asset gates) still show the old
-spellings and `scripts/sdd/launch_worker.sh`. C26 item 7: docs describe the noun tree, not the module list.
+spellings and `scripts/sdd/launch_worker.sh`. C30 item 7: docs describe the noun tree, not the module list.
 The spec's §4 Validation Contract must also name the new test files so the merge tier runs them.
 
 ---
@@ -31,7 +31,7 @@ The spec's §4 Validation Contract must also name the new test files so the merg
   the per-spec index (clears the `test-contract-task-tests-uncovered` warnings of TASK-5096/5099/5100).
 
 **NOT in scope**: any shipped asset (TASK-5098/5100); `sdd/WORKFLOW.md` (shipped — TASK-5098); the spec's
-prose beyond the Validation Contract rows (C26 is already folded in at rev 0.8).
+prose beyond the Validation Contract rows (C30 is already folded in at rev 0.10).
 
 ---
 
@@ -113,7 +113,7 @@ VERBS table — packages/ai-parrot/src/parrot/sdd/cli.py (TASK-5095): the spelli
 
 ### Steps (in order)
 1. Replace the eight documented lines — *why*: they are the ones `grep -rn "parrot sdd run" docs CLAUDE.md` finds.
-2. Add the command-tree section to `docs/install/global-runtime.md` — *why*: C26 item 7, "the noun tree, not the module list".
+2. Add the command-tree section to `docs/install/global-runtime.md` — *why*: C30 item 7, "the noun tree, not the module list".
 3. Add the two test files to the spec's Validation Contract; re-cache — *why*: the merge tier must run them.
 
 ### `docs/install/global-runtime.md` (MODIFY)

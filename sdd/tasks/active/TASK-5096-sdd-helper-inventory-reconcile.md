@@ -1,7 +1,7 @@
 # TASK-5096: Helper inventory reconciliation — package `check_spec_consequences`, un-ship `insight`
 
 **Feature**: FEAT-633 — parrot-installer
-**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.8, amendment C26 — proposal rev 0.9)
+**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.10, amendment C30 — proposal rev 0.9)
 **Status**: pending
 **Priority**: high
 **Estimated effort**: S (< 2h)
@@ -12,11 +12,11 @@
 
 ## Context
 
-C26's review of the branch found two inventory defects. (1) `check_spec_consequences` (FEAT-784 M9, dev
+C30's review of the branch found two inventory defects. (1) `check_spec_consequences` (FEAT-784 M9, dev
 `scripts/sdd/check_spec_consequences.py`) is invoked by shipped markdown 10× as
 `python -m scripts.sdd.check_spec_consequences` and is not packaged, so an installed `/sdd-spec` / `/sdd-task`
 breaks outside the monorepo. (2) `insight.py` (110 KB) is packaged by TASK-4088 although C22 excludes
-`/sdd-insight` from shipping and nothing shipped reaches it (Q-C26-1, default **drop**). This task makes the
+`/sdd-insight` from shipping and nothing shipped reaches it (Q-C30-1, default **drop**). This task makes the
 packaged set equal to the mounted set so TASK-5095's gate stays exact.
 
 ---
@@ -30,7 +30,7 @@ packaged set equal to the mounted set so TASK-5095's gate stays exact.
 - Update `_MOVED` in `test_no_repo_script_refs.py` (add `check_spec_consequences`, remove `insight`).
 
 **NOT in scope**: rewriting the 10 markdown references (TASK-5098 does it from the table); any other helper
-move; `check_ledger_snapshot` / `price_coverage` (they stay in `scripts/sdd/`, C26).
+move; `check_ledger_snapshot` / `price_coverage` (they stay in `scripts/sdd/`, C30).
 
 ---
 
@@ -127,13 +127,13 @@ sys.modules[__name__] = _impl
 ### Steps (in order)
 1. `git mv scripts/sdd/check_spec_consequences.py packages/ai-parrot/src/parrot/sdd/scripts/check_spec_consequences.py` — *why*: history follows the move.
 2. Write the shim at `scripts/sdd/check_spec_consequences.py` — *why*: `tests/sdd_scripts/test_check_spec_consequences.py` and monorepo hand use keep working.
-3. Mount `spec consequences`; empty `_UNMOUNTED` — *why*: C26 table row; Q-C26-1.
+3. Mount `spec consequences`; empty `_UNMOUNTED` — *why*: C30 table row; Q-C30-1.
 4. `git rm` the packaged `insight.py`; restore `scripts/sdd/insight.py` from `origin/dev` — *why*: C22, nothing shipped reaches it.
 5. Adjust `_MOVED` — *why*: it is the list the no-repo-refs gate checks.
 
 ### `scripts/sdd/check_spec_consequences.py` (MODIFY — whole file)
 ```python
-"""Compatibility shim — moved to ``parrot.sdd.scripts.check_spec_consequences`` (FEAT-633, C26)."""
+"""Compatibility shim — moved to ``parrot.sdd.scripts.check_spec_consequences`` (FEAT-633, C30)."""
 import sys
 
 from parrot.sdd.scripts import check_spec_consequences as _impl
@@ -160,7 +160,7 @@ _UNMOUNTED: frozenset[str] = frozenset()
 # REPLACE that line (:29) with
     "doc_taxonomy", "backfill_taxonomy", "migrate_index", "select_tests", "install_hooks",
 # and append to the tuple, before the closing paren (:36):
-    "check_spec_consequences",  # C26 / TASK-5096 — FEAT-784 gate, 10 shipped refs
+    "check_spec_consequences",  # C30 / TASK-5096 — FEAT-784 gate, 10 shipped refs
 ```
 **Why**: `_MOVED` is what the gate rewrites expectations from; `insight` is monorepo-only again.
 

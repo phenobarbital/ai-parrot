@@ -12,7 +12,17 @@ tags: [installer, bootstrap, uv, launcher, mcp, windows, sdd-packaging]
 **Author**: Jesus Lara (brainstorm + decisions); spec drafted with Claude
 **Status**: approved
 **Target version**: Next release (assigned by release tooling)
-**Revision**: 0.8 (2026-10-30) — Arturo Martinez's decisions after the end-to-end install test in a clean
+**Revision**: 0.10 (2026-11-01) — C30 revised (proposal rev 0.9): `launch` is a noun — `launch worker`
+(FEAT-768), `launch brief <source>` / `launch fix …` open a Claude session on the slash command in the
+primary checkout; `wikitoolkit ledger` stays and is not rewritten; every shipped command/agent/skill/workflow
+keeps its name.
+**Revision 0.9** (2026-11-01) — folds in C30 of
+`sdd/proposals/parrot-installer-amendments.proposal.md` (rev 0.8): `parrot sdd run <module>` is replaced by
+a noun-grouped `parrot sdd <noun> <verb>` CLI (no alias), `parrot sdd ledger` and `parrot sdd launch` join
+the flow, the hook line becomes `parrot sdd worktree guard --hook` (new tasks TASK-5095–5101; it was numbered
+C26 / spec rev 0.7–0.8 on `dev`, renumbered on the branch because rev 0.7 C26–C27 and rev 0.8 C28–C29
+already existed here).
+**Revision 0.8** (2026-10-30) — Arturo Martinez's decisions after the end-to-end install test in a clean
 `ubuntu:24.04` container: C28 drops `sdd` from every `--with` example (it was never a component: the SDD flow
 ships in the base runtime and is enabled per repo by `parrot sdd install`); both installers check `--with`
 names against the packaged toolkit templates before the plan (also under `--dry-run`) and refuse
@@ -52,7 +62,7 @@ ships through the installer (amends TASK-4070, 4085, 4089, 4090, 4091, 4299).
 `worktree_environment` enters scope (amends TASK-4085, 4072, 4089, 4090, 4091).
 **Revision 0.2** (2026-10-14) — folds in the approved amendments of the same proposal
 (rev 0.3): C2–C6, C8–C15, Q1, C7.
-Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`, `[rev 0.4 C17]`, `[rev 0.5 C<n>]`, `[rev 0.5 D<n>]`, `[rev 0.6 C25]`, `[rev 0.7 C26]`, `[rev 0.7 C27]`, `[rev 0.8 C28]`, `[rev 0.8 C29]`) mark every changed clause.
+Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`, `[rev 0.4 C17]`, `[rev 0.5 C<n>]`, `[rev 0.5 D<n>]`, `[rev 0.6 C25]`, `[rev 0.7 C26]`, `[rev 0.7 C27]`, `[rev 0.8 C28]`, `[rev 0.8 C29]`, `[rev 0.9 C30]`, `[rev 0.10]`) mark every changed clause.
 
 > Source brainstorm: `sdd/proposals/parrot-installer.brainstorm.md` (accepted, Option B′,
 > all 16 open questions resolved). Supersedes `sdd/specs/portable-sdd-flow.spec.md`
@@ -277,7 +287,7 @@ class ToolkitTemplate(BaseModel):
   `parrot sdd status` (per-file `missing|current|outdated|edited|foreign`, seeds
   `seed-present|missing`), `parrot sdd <noun> <verb> [args…]` for the packaged helpers
   (nouns `launch worktree task ids spec brief docs tests closeout hooks ledger`; no `run`) and
-  `parrot sdd launch worker|brief|fix …` (click group, lazy) *[rev 0.2 C4/C5/Q1; rev 0.7 C26; rev 0.8]*.
+  `parrot sdd launch worker|brief|fix …` (click group, lazy) *[rev 0.2 C4/C5/Q1; rev 0.9 C30; rev 0.10]*.
 - `parrot.sdd.config.SddConfig` + `load_sdd_config(root) -> SddConfig` over the committed
   `sdd/config.json` (`base_branch`, `staging_branch`, `hotfix_base`, `issue_tracker`,
   `jira_host`, `reviewer`, `test_command`) *[rev 0.2 C6]*; `knowledge/wiki/ledger/sdd_meta`
@@ -285,14 +295,14 @@ class ToolkitTemplate(BaseModel):
 - `sdd/.sdd-installed.json` (install receipt: writing version + SHA-256 per target) and
   the `sdd/CONVENTIONS.md` seed *[rev 0.2 C4/C10]*.
 - `parrot self doctor [--sdd | --runtime-only]` *[rev 0.2 C14/C15]*.
-- ~~`parrot sdd run <name>` for the 26 flow helpers~~ *[rev 0.5 C18]* → **superseded by rev 0.7 C26**: one
+- ~~`parrot sdd run <name>` for the 26 flow helpers~~ *[rev 0.5 C18]* → **superseded by rev 0.9 C30**: one
   noun per SDD object (`worktree task ids spec brief docs tests closeout hooks ledger`), verbs are
   passthrough commands calling the module's `main([*prefix, *args])`; `parrot sdd ledger` re-mounts the
   `wikitoolkit ledger` group as a second spelling (`wikitoolkit ledger` stays, nothing is rewritten) and
   `parrot sdd launch worker` takes FEAT-768's launcher, `launch brief|fix` open a Claude session on the slash
   command in the primary checkout. The command ↔ module
-  map is the table in amendment C26 (proposal rev 0.8) and is normative for TASK-4089's rewrite. Every
-  `parrot sdd run <name>` spelling elsewhere in this spec reads as its C26 row; the hook line is
+  map is the table in amendment C30 (proposal rev 0.8) and is normative for TASK-4089's rewrite. Every
+  `parrot sdd run <name>` spelling elsewhere in this spec reads as its C30 row; the hook line is
   `parrot sdd worktree guard --hook`.
 - `--portable` flag on `parrot claude|codex|google install`.
 - `--global` / `-Global` mode on `scripts/install/install-parrot.{sh,ps1}`.
@@ -669,14 +679,14 @@ class ToolkitTemplate(BaseModel):
     (TASK-4080).
   - **Hand-copied agents** stay `foreign` (never overwritten). Doctor names them; the fix is
     to delete them and re-install. No adopt path in v1. (TASK-4091, TASK-4080)
-- **Rev 0.7 amendment C26 (M6 part)** *[rev 0.7 C26]* (full text and the command ↔ module table in the
+- **Rev 0.9 amendment C30 (M6 part)** *[rev 0.9 C30]* (full text and the command ↔ module table in the
   amendments proposal §3, rev 0.8). `parrot sdd run <module>` is removed, not aliased. `cli.py` mounts one
   lazy click group per noun and one passthrough verb per helper (`main([*prefix, *args])`, no `runpy`);
   `worktree_environment.main` / `worktree_status.main` gain `argv`; `check_spec_consequences` (FEAT-784,
   10 shipped `python -m` refs, unpackaged) joins move D; `check_ledger_snapshot` and `price_coverage` join
-  the "stay" list; `insight` is not mounted (Q-C26-1: drop from the wheel). `parrot sdd ledger` adds the
+  the "stay" list; `insight` is not mounted (Q-C30-1: drop from the wheel). `parrot sdd ledger` adds the
   `parrot.knowledge.wiki.cli` ledger group as a second spelling (the 87 shipped `wikitoolkit ledger` refs stay,
-  rev 0.8); `parrot sdd launch worker` is mounted by whichever of FEAT-633 / FEAT-768 (PR #1884) merges second, and
+  rev 0.10); `parrot sdd launch worker` is mounted by whichever of FEAT-633 / FEAT-768 (PR #1884) merges second, and
   the `devloop launch-worker` registration is deleted. `SDD_HOOK_ARGV` (TASK-4509) and C25's bare/baked
   forms become `sdd worktree guard --hook`. The amended tasks are `done` on the feature branch, so the work
   is filed as new tasks there.
@@ -1032,7 +1042,7 @@ binds the tasks it names. Implementers build the part a clause covers exactly as
 | `test_default_emission_unchanged` | M5 | without `--portable`, output identical to today's (plus Windows fix) |
 | `test_reconcile_respects_portable` | M5 | re-install does not revert a portable wikitoolkit entry |
 | `test_sdd_install_into_empty_repo` | M6 | deploy + uninstall round-trip, marker-block safe |
-| `test_sdd_cli_mounts_every_helper` (was `test_sdd_scripts_module_entrypoints`) | M6 | every leaf of the `parrot sdd` click tree exits 0 on `--help`; the set of mounted modules equals the `parrot.sdd.scripts` modules that define `main` (27 of 29 — `closeout_builtins`/`closeout_hooks_config` are libraries); `parrot sdd run` is unknown [rev 0.2 Q1; rev 0.7 C26] |
+| `test_sdd_cli_mounts_every_helper` (was `test_sdd_scripts_module_entrypoints`) | M6 | every leaf of the `parrot sdd` click tree exits 0 on `--help`; the set of mounted modules equals the `parrot.sdd.scripts` modules that define `main` (27 of 29 — `closeout_builtins`/`closeout_hooks_config` are libraries); `parrot sdd run` is unknown [rev 0.2 Q1; rev 0.9 C30] |
 | `test_asset_sync_check` | M6 | divergence between `.claude/` and `_assets/` fails; `--wheel` also fails on a planted deny-listed file or any scanner finding [rev 0.2 C11] |
 | `test_installed_receipt_upgrade_paths` | M6 | untouched older file upgrades, edited file kept (unless `--force`), foreign file never touched, uninstall removes only recorded files [rev 0.2 C4] |
 | `test_dry_run_changes_nothing` | M6 | tree hashes identical before/after `--dry-run` install and uninstall [rev 0.2 C5] |
@@ -1656,7 +1666,7 @@ Rev 0.2 amendment decisions (Jesus Lara, 2026-10-14; full text in
 - [x] C6 repo config — approved, reduced: one `sdd/config.json`, no `CONFIG.md`, `test_command` added, `sync_down` dropped.
 - [x] C10 conventions seed — approved; `codebase-conventions.md` stays an ai-parrot repo file.
 - [x] C12 monorepo-only helpers — approved; `review_checkpoint` is the only one a shipped file references. *[rev 0.5 C18: superseded — four more found, moved by TASK-4508; see §3 "M6 helper inventory"]*
-- [x] Q1 helper invocation — `parrot sdd run <name>`; `parrot-python` shim rejected. *[rev 0.7 C26: the
+- [x] Q1 helper invocation — `parrot sdd run <name>`; `parrot-python` shim rejected. *[rev 0.9 C30: the
   `run` form is replaced by noun-grouped verbs before FEAT-633 lands; no alias.]*
 - [x] C7 test-selection policy — option C for v1 (`test_command`); option A revisited in v1.1 with evidence.
 - [x] *[rev 0.5]* Readiness decisions D1–D18 (2026-10-19):
@@ -1724,5 +1734,5 @@ Summary: **11** confirmed (1 scoped) · **0** rejected · **0** escalated.
 | 0.7 | 2026-10-28 | Jesus Lara (decisions) + Arturo Martinez + Claude | PR #1823 merge-readiness review: C26 re-derives the asset inventory — **84** manifest entries (80 + `code-reviewer`, `qa-runner`, packaged `docs/sdd/CODEX.md`, FEAT-764 `sdd_hooks.example.toml`), counts at §3 M6 / C22 / D3 / §5 updated, `/remove-worktree` and `/pr-review` recorded as referenced-but-not-shipped; C27 amends D7 — a bare `wikitoolkit` entry is ambiguous on every host and the managed `parrot-*` entries break the tie (Claude aligned with Codex, `test_portable_mode_parity.py`) |
 | 0.6 | 2026-10-21 | Jesus Lara + Claude | Amendment C25 folded in (proposal rev 0.7), from navigator-eventbus (project-venv install, no `~/.parrot/bin`, agents hand-patched to `<root>/.venv/lib/python3.11/site-packages/.../worktree_environment.py`): `parrot sdd install` renders the guard-hook line (bare under the managed launcher or `--portable`, else the absolute `parrot` script of the installing venv), C4 compares rendered bytes, `sdd_status()["guard_hook"]`, doctor `sdd: guard hook`; new tests `test_guard_hook_rendering`, `test_doctor_sdd_guard_hook`, `test_installed_hook_project_venv_only` (amends TASK-4091, TASK-4080) |
 | 0.8 | 2026-11-01 | Jesus Lara (decisions) + Claude | Post-#1910 refresh: TASK-5092 (merge current dev, re-sync `_assets`, rewrite the 3 shipped `scripts/check_portable_paths.py` mentions — D3, never allowlisted) and TASK-5093 (absorb FEAT-768 after PR #1884 merges: native sandbox moves next to the packaged hook, `parrot sdd launch-worker` aliases `parrot devloop launch-worker`; resolves issue:3253d3dc39b0). Validation Contract adds the FEAT-768 suites |
-| 0.7 | 2026-11-01 | Jesus Lara + Claude | Amendment C26 folded in (proposal rev 0.8): `parrot sdd run <module>` replaced by a noun-grouped CLI (`worktree task ids spec brief docs tests closeout hooks ledger` + `launch-worker`), no alias; `parrot sdd ledger` (wikitoolkit ledger group, 87 shipped refs) and `parrot sdd launch-worker` (FEAT-768) join the flow; `check_spec_consequences` joins move D; mount-completeness test replaces `test_sdd_scripts_module_entrypoints`; hook line `sdd worktree guard --hook`. Counts re-verified on the branch at `54868dcb2d`: 29 packaged modules (27 with `main`), 330 `parrot sdd run` refs in shipped files. Decided while PR #1823 is open, so no deprecation cycle |
-| 0.8 | 2026-11-01 | Jesus Lara + Claude | C26 revised (proposal rev 0.9): `launch` is a noun — `launch worker` (FEAT-768), `launch brief <source>` / `launch fix …` open a Claude session on the slash command in the primary checkout (no agent, sandbox or tmux in v1); `wikitoolkit ledger` stays and is not rewritten; every shipped command/agent/skill/workflow keeps its name (verified on the branch, `test_rewrite_preserves_asset_names`) |
+| 0.9 | 2026-11-01 | Jesus Lara + Claude | Amendment C30 folded in (proposal rev 0.8; numbered C26 / spec rev 0.7 on `dev`, renumbered on the branch where rev 0.7–0.8 and C26–C29 already existed): `parrot sdd run <module>` replaced by a noun-grouped CLI (`worktree task ids spec brief docs tests closeout hooks ledger` + `launch-worker`), no alias; `parrot sdd ledger` (wikitoolkit ledger group, 87 shipped refs) and `parrot sdd launch-worker` (FEAT-768) join the flow; `check_spec_consequences` joins move D; mount-completeness test replaces `test_sdd_scripts_module_entrypoints`; hook line `sdd worktree guard --hook`. Counts re-verified on the branch at `54868dcb2d`: 29 packaged modules (27 with `main`), 330 `parrot sdd run` refs in shipped files. Decided while PR #1823 is open, so no deprecation cycle |
+| 0.10 | 2026-11-01 | Jesus Lara + Claude | C30 revised (proposal rev 0.9; was spec rev 0.8 on `dev`): `launch` is a noun — `launch worker` (FEAT-768), `launch brief <source>` / `launch fix …` open a Claude session on the slash command in the primary checkout (no agent, sandbox or tmux in v1); `wikitoolkit ledger` stays and is not rewritten; every shipped command/agent/skill/workflow keeps its name (verified on the branch, `test_rewrite_preserves_asset_names`) |

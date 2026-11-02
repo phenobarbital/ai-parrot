@@ -1,7 +1,7 @@
 # TASK-5100: `parrot sdd launch worker | brief | fix` — the launch noun
 
 **Feature**: FEAT-633 — parrot-installer
-**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.8, amendment C26 items 1 and 5 — proposal rev 0.9)
+**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.10, amendment C30 items 1 and 5 — proposal rev 0.9)
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
@@ -14,7 +14,7 @@ PR #1884 (FEAT-768) merged into `dev` and absorbed by TASK-5093. Do not start be
 ## Context
 
 FEAT-768 (PR #1884, unmerged) ships the interactive worker launcher as `parrot devloop launch-worker` only
-because `parrot sdd` did not exist on `dev`. C26 item 5: the three ways an SDD cycle is started interactively
+because `parrot sdd` did not exist on `dev`. C30 item 5: the three ways an SDD cycle is started interactively
 become one noun — `launch worker <FEAT-ID>` (FEAT-768's `feature_launcher.launch`, unchanged), `launch brief
 <source> …` and `launch fix …` (a Claude session in the primary checkout with the slash command as the initial
 prompt). The `devloop launch-worker` spelling never shipped in a release, so it is deleted, not deprecated.
@@ -35,7 +35,7 @@ TASK-5093 item 6 ("alias `parrot sdd launch-worker`") is superseded by this task
   `packages/ai-parrot/tests/sdd/test_sdd_launch.py` (argv `["sdd", "launch", "worker", …]`) and add the
   `brief` / `fix` tests.
 
-**NOT in scope**: sandbox semantics, tmux/detach for brief/fix, the Codex twins (Q-C26-3, v1.1); any change to
+**NOT in scope**: sandbox semantics, tmux/detach for brief/fix, the Codex twins (Q-C30-3, v1.1); any change to
 `feature_launcher.launch` beyond what TASK-5093 already did.
 
 ---
@@ -104,7 +104,7 @@ def _parse_launch_arguments(argv) -> tuple[list[str], list[str], bool, bool]   #
 - ~~`feature_launcher.launch_session`~~ — created by this task.
 - ~~`parrot.sdd.launch_cli`~~ — created by this task.
 - ~~`parrot sdd launch-worker` (hyphenated, top level)~~ — never; TASK-5093 item 6 is superseded.
-- ~~a sandbox or `--agent` for brief/fix~~ — C26 item 5: plain session, `--setting-sources project,local`, no agent, no settings JSON.
+- ~~a sandbox or `--agent` for brief/fix~~ — C30 item 5: plain session, `--setting-sources project,local`, no agent, no settings JSON.
 - ~~`feature_launcher.py` on this branch before TASK-5093~~ — it arrives with the FEAT-768 merge.
 
 ---
@@ -160,7 +160,7 @@ def _parse_launch_arguments(argv) -> tuple[list[str], list[str], bool, bool]   #
 ### Steps (in order)
 1. `git mv parrot/cli/devloop/launch_worker.py parrot/sdd/launch_cli.py`; remove the `devloop` registration — *why*: nothing to deprecate, one owner.
 2. Add `launch_session` to `feature_launcher.py` — *why*: brief/fix share the env-capture and exec rules.
-3. Turn the file into the `launch` group with `worker`/`brief`/`fix`; mount in `cli.py` — *why*: C26 item 1.
+3. Turn the file into the `launch` group with `worker`/`brief`/`fix`; mount in `cli.py` — *why*: C30 item 1.
 4. Rewrite the five `launch_worker.sh` references; regenerate `_assets` — *why*: TASK-5098 deliberately left them.
 5. Move and extend the tests — *why*: FEAT-768's tests are the regression contract for `worker`.
 
@@ -175,7 +175,7 @@ def launch_session(
     claude_args: Sequence[str] = (),
     base_env: Mapping[str, str] | None = None,
 ) -> int:
-    """Open an interactive Claude session in ``cwd`` with ``initial_prompt`` as its first message (C26 item 5).
+    """Open an interactive Claude session in ``cwd`` with ``initial_prompt`` as its first message (C30 item 5).
 
     Used by ``parrot sdd launch brief|fix``: no agent, no sandbox settings, no tmux — identical to typing the
     slash command by hand, except that the operator environment (``base_env``, captured before ``parrot`` was
@@ -196,7 +196,7 @@ def launch_session(
 
 ### `packages/ai-parrot/src/parrot/sdd/launch_cli.py` (CREATE — from the moved `launch_worker.py`)
 ```python
-"""`parrot sdd launch worker|brief|fix` — the three interactive entry points of an SDD cycle (FEAT-633, C26 item 5)."""
+"""`parrot sdd launch worker|brief|fix` — the three interactive entry points of an SDD cycle (FEAT-633, C30 item 5)."""
 from __future__ import annotations
 
 import os
@@ -243,7 +243,7 @@ def fix(ctx: click.Context, rest: tuple[str, ...]) -> None:
     _session(ctx, ["/sdd-fix", *rest], ())
 ```
 **Why this shape**: `brief`/`fix` forward everything after their own argument into the slash-command text
-(C26 item 5), so `/sdd-brief` / `/sdd-fix` keep their grammar; Claude args for brief/fix are intentionally not
+(C30 item 5), so `/sdd-brief` / `/sdd-fix` keep their grammar; Claude args for brief/fix are intentionally not
 separable in v1 (`FILL IN` if a `--` separator is wanted: split `rest` at the first `--`, bounded by AC-3).
 
 ### `packages/ai-parrot/src/parrot/sdd/cli.py` (MODIFY)

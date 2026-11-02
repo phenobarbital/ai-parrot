@@ -1,7 +1,7 @@
 # TASK-5095: `parrot sdd <noun> <verb>` — noun groups and passthrough verbs replace `parrot sdd run`
 
 **Feature**: FEAT-633 — parrot-installer
-**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.8, amendment C26 — proposal rev 0.9)
+**Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.10, amendment C30 — proposal rev 0.9)
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
@@ -12,12 +12,12 @@
 
 ## Context
 
-Amendment C26 (decided 2026-11-01 while PR #1823 is open) removes the generic `parrot sdd run <module>`
+Amendment C30 (decided 2026-11-01 while PR #1823 is open) removes the generic `parrot sdd run <module>`
 dispatcher that TASK-4091 shipped: `run` carries no meaning and `<module>` is a Python file name. The CLI
 becomes one click group per SDD object with the helpers mounted as verbs; parsing stays with each helper's
-argparse. This task is the kernel every other C26 task builds on: TASK-5096 adds `spec consequences`,
+argparse. This task is the kernel every other C30 task builds on: TASK-5096 adds `spec consequences`,
 TASK-5097 moves the hook line, TASK-5098 rewrites the shipped markdown, TASK-5099 mounts `ledger`, TASK-5100
-mounts `launch`, TASK-5101 documents. **No alias and no deprecation window** (C26 decision): `parrot sdd run`
+mounts `launch`, TASK-5101 documents. **No alias and no deprecation window** (C30 decision): `parrot sdd run`
 becomes an unknown command.
 
 ---
@@ -124,7 +124,7 @@ def main() -> None:                                             # :538
 
 ## Implementation Notes
 
-- **Routing is click's, parsing stays argparse's** (C26 item 2). A verb is a click command with
+- **Routing is click's, parsing stays argparse's** (C30 item 2). A verb is a click command with
   `add_help_option=False`, `ignore_unknown_options=True`, `allow_interspersed_args=False` and one
   `nargs=-1` `UNPROCESSED` argument, so `--help` and every option reach the helper's own parser untouched.
   Never re-declare a helper option in click.
@@ -135,7 +135,7 @@ def main() -> None:                                             # :538
   the old `run` did: int → that code; `None` → 0; anything else → 1.
 - `--help` on a noun is click's verb list; the `help=` of each verb (one line, from the table) is what it shows.
 - The table is **normative**: TASK-5098's rewrite and the C22 scanner read it from `parrot.sdd.cli.VERBS`, so
-  its spelling is the spelling that ships. Do not rename a verb without amending C26.
+  its spelling is the spelling that ships. Do not rename a verb without amending C30.
 
 ---
 
@@ -143,9 +143,9 @@ def main() -> None:                                             # :538
 
 ### Steps (in order)
 1. Add `argv` to the two `main()`s — *why*: the passthrough calls `main(list)`; the hook fast path still calls `hook_main()` with no argument.
-2. Replace `available_helpers` + `run` in `cli.py` with the table, the factory and the nouns — *why*: C26 item 1/2.
+2. Replace `available_helpers` + `run` in `cli.py` with the table, the factory and the nouns — *why*: C30 item 1/2.
 3. Rewrite the module docstring and the `sdd` group docstring (`install / uninstall / status / run` → `install / uninstall / status, <noun> <verb>`) — *why*: `parrot sdd --help` is the documentation.
-4. Replace the four `test_run_*` tests — *why*: the mount-completeness gate is C26 item 3.
+4. Replace the four `test_run_*` tests — *why*: the mount-completeness gate is C30 item 3.
 
 ### `packages/ai-parrot/src/parrot/sdd/scripts/worktree_environment.py` (MODIFY)
 ```python
@@ -174,7 +174,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 ```python
 import importlib  # replaces `import pkgutil` / `import runpy`; keep `import pkgutil` for mounted_modules()
 
-#: C26 item 1 — normative command ↔ module map: noun → verb → (module, argv prefix, one-line help).
+#: C30 item 1 — normative command ↔ module map: noun → verb → (module, argv prefix, one-line help).
 VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
     "worktree": {
         "ensure": ("ensure_worktree", (), "Create or reuse the feature/hotfix worktree (idempotent)."),
@@ -230,7 +230,7 @@ def mounted_modules() -> set[str]:
 
 
 def _mount(noun: click.Group, verb: str, module: str, prefix: tuple[str, ...], help_: str) -> None:
-    """Mount `noun verb [args…]` → `parrot.sdd.scripts.<module>.main([*prefix, *args])` (C26 item 2)."""
+    """Mount `noun verb [args…]` → `parrot.sdd.scripts.<module>.main([*prefix, *args])` (C30 item 2)."""
 
     @noun.command(name=verb, help=help_, add_help_option=False, context_settings=_PASSTHROUGH)
     @click.argument("args", nargs=-1, type=click.UNPROCESSED)
@@ -249,7 +249,7 @@ for _noun, _verbs in VERBS.items():
         _mount(_group, _verb, _module, _prefix, _help)
 ```
 **Why this shape**: the table is data, so TASK-5098's rewrite and the mount test consume the same source of
-truth; `add_help_option=False` is what lets `--help` reach argparse (C26: a verb's help is the helper's help);
+truth; `add_help_option=False` is what lets `--help` reach argparse (C30: a verb's help is the helper's help);
 `importlib` replaces `runpy` so no `sys.argv` is rewritten and the helper's exit code is forwarded unchanged.
 Place the block after `status` (the `run` command's position) so the group is defined before the loop runs.
 
@@ -261,7 +261,7 @@ from parrot.sdd.cli import VERBS, _UNMOUNTED, mounted_modules
 
 
 def test_sdd_cli_mounts_every_helper() -> None:
-    """C26 item 3: mounted modules == packaged modules with main() minus _UNMOUNTED; every leaf --help exits 0."""
+    """C30 item 3: mounted modules == packaged modules with main() minus _UNMOUNTED; every leaf --help exits 0."""
     import parrot.sdd.scripts as pkg
 
     with_main = {
@@ -273,14 +273,14 @@ def test_sdd_cli_mounts_every_helper() -> None:
         for verb in verbs:
             result = CliRunner().invoke(cli, ["sdd", noun, verb, "--help"])
             assert result.exit_code == 0, (noun, verb, result.output)
-    assert CliRunner().invoke(cli, ["sdd", "run", "reserve_ids", "--help"]).exit_code == 2  # no alias (C26)
+    assert CliRunner().invoke(cli, ["sdd", "run", "reserve_ids", "--help"]).exit_code == 2  # no alias (C30)
 
 
 def test_verb_propagates_helper_exit_code() -> None:
     result = CliRunner().invoke(cli, ["sdd", "ids", "reserve", "--kind", "bogus"])
     assert result.exit_code == 2  # argparse usage error, forwarded unchanged
 ```
-**Why**: the first test is the gate C26 names; the second keeps the exit-code contract the deleted
+**Why**: the first test is the gate C30 names; the second keeps the exit-code contract the deleted
 `test_run_propagates_helper_exit_code` covered.
 
 ### FILL IN checklist
@@ -316,7 +316,7 @@ def test_verb_propagates_helper_exit_code() -> None:
 ## Agent Instructions
 - Work inside `.claude/worktrees/feat-FEAT-633-parrot-installer`; run tests with `PYTHONPATH=packages/ai-parrot/src`.
 - Touch only the four files listed. Do not edit any markdown, `_assets`, `launcher.py` or `installer.py` —
-  other C26 tasks own them and `check_asset_sync --check` must stay green after this task.
+  other C30 tasks own them and `check_asset_sync --check` must stay green after this task.
 - Commit: `feat(parrot-installer): TASK-5095 — parrot sdd noun groups replace run`.
 
 ---
