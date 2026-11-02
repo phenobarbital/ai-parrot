@@ -80,14 +80,14 @@
       "feature_id": "FEAT-791",
       "feature": "manager-manager-fixes",
       "spec": "sdd/specs/manager-manager-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Lane B part 2. Sole task touching packages/ai-parrot-server/tests/studio/test_tooling_integration.py; diagnosis-first, reads manager.py but never modifies it, so it does not collide with TASK-5105's edit of that file.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-02T23:13:06.548188+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5107-repair-studio-tooling-integration-tests.md"
     }
