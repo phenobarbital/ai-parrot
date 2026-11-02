@@ -10,7 +10,7 @@ tags: [oauth2, jira, botmanager, test-drift, ledger-fix]
 **Feature ID**: FEAT-791
 **Date**: 2026-11-03
 **Author**: /sdd-fix (agent:sdd-fix)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.29.x
 
 ---
