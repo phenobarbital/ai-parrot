@@ -70,12 +70,30 @@ def sdd() -> None:
         "installing venv's `parrot` when the launcher is not on PATH."
     ),
 )
+@click.option("--base-branch", "base_branch", default=None, help="SDD base branch to seed and prepare (default: dev).")
+@click.option("--push-base", is_flag=True, help="Also `git push -u origin <base-branch>` when origin lacks it.")
 @_dry_run_option
-def install(path_: Path | None, hosts: tuple[str, ...], force: bool, portable: bool, dry_run: bool) -> None:
+def install(
+    path_: Path | None,
+    hosts: tuple[str, ...],
+    force: bool,
+    portable: bool,
+    base_branch: str | None,
+    push_base: bool,
+    dry_run: bool,
+) -> None:
     """Deploy the packaged SDD assets into the repository (upgrades untouched files, keeps your edits)."""
     try:
         _echo_actions(
-            install_sdd_integration(_root(path_), hosts or ("claude",), force=force, dry_run=dry_run, portable=portable)
+            install_sdd_integration(
+                _root(path_),
+                hosts or ("claude",),
+                force=force,
+                dry_run=dry_run,
+                portable=portable,
+                base_branch=base_branch,
+                push_base=push_base,
+            )
         )
     except (ValueError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc

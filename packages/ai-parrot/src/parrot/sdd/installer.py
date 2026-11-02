@@ -68,7 +68,7 @@ _GUARD_MARKERS = ("worktree guard --hook", "worktree_environment")
 
 FileState = Literal["missing", "current", "outdated", "edited", "foreign"]
 #: Plan vocabulary (C5). install: write | upgrade | overwrite | skip-current | skip-edited | skip-foreign |
-#: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed. uninstall: remove |
+#: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed | base-branch. uninstall: remove |
 #: keep-edited | keep-foreign | skip-missing | keep-shared | gitignore-remove | gitattributes-remove |
 #: keep-gitattributes | ledger-hooks-remove | keep-ledger-hooks | receipt-remove.   [rev 0.5 C23 / D5]
 PlanAction = Literal[
@@ -85,6 +85,7 @@ PlanAction = Literal[
     "ledger-hooks",
     "ledger-seed",
     "config-seed",
+    "base-branch",
     "remove",
     "keep-edited",
     "keep-foreign",
@@ -218,13 +219,16 @@ def load_receipt(root: Path) -> dict[str, Any]:
     files = data.get("files")
     blocks = data.get("blocks")
     hooks = data.get("ledger_hooks")
-    return {
+    receipt: dict[str, Any] = {
         "schema_version": RECEIPT_SCHEMA_VERSION,
         "version": data.get("version"),
         "files": dict(files) if isinstance(files, dict) else {},
         "blocks": dict(blocks) if isinstance(blocks, dict) else {},
         "ledger_hooks": list(hooks) if isinstance(hooks, list) else [],
     }
+    if isinstance(data.get("base_branch_created"), str):
+        receipt["base_branch_created"] = data["base_branch_created"]  # C31, status only
+    return receipt
 
 
 def _package_version() -> str:
@@ -308,7 +312,12 @@ def classify_entry(
 
 
 def plan_install(
-    root: Path, hosts: Sequence[str], *, force: bool = False, hook: str = GUARD_HOOK_LINE
+    root: Path,
+    hosts: Sequence[str],
+    *,
+    force: bool = False,
+    hook: str = GUARD_HOOK_LINE,
+    base_branch: str | None = None,
 ) -> list[PlannedAction]:
     """Pure: the ordered plan for ``install`` (assets, seeds, gitignore, ledger, config). No I/O writes."""
     receipt = load_receipt(root)
@@ -343,7 +352,109 @@ def plan_install(
         plan.append(PlannedAction(action="ledger-seed", target="sdd/tasks/.id_ledger.json"))
     if not (root / "sdd/config.json").exists():
         plan.append(PlannedAction(action="config-seed", target="sdd/config.json"))
+    from parrot.sdd.config import load_sdd_config  # TASK-4299
+
+    base = base_branch or load_sdd_config(root).base_branch
+    plan.append(PlannedAction(action="base-branch", target=base, note=_base_branch_state(root, base)))  # C31
     return plan
+
+
+# --------------------------------------------------------------------------
+# base branch preflight (C31)
+# --------------------------------------------------------------------------
+
+
+def _git_run(root: Path, *args: str) -> subprocess.CompletedProcess[str] | None:
+    """Bounded, prompt-free ``git -C root ...``; ``None`` when git is missing or the call times out."""
+    try:
+        return subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _git_ok(root: Path, *args: str) -> bool:
+    proc = _git_run(root, *args)
+    return proc is not None and proc.returncode == 0
+
+
+def _git_out(root: Path, *args: str) -> str:
+    proc = _git_run(root, *args)
+    return proc.stdout.strip() if proc is not None and proc.returncode == 0 else ""
+
+
+def _base_branch_state(root: Path, base: str) -> str:
+    """Read-only probe: ``exists`` | ``create from HEAD`` | ``track origin/<base>`` | ``skip: <reason>``."""
+    if not _git_ok(root, "rev-parse", "--is-inside-work-tree"):
+        return "skip: not a git work tree"
+    if not _git_ok(root, "rev-parse", "--verify", "-q", "HEAD"):
+        return "skip: no commit yet"
+    if _git_ok(root, "show-ref", "--verify", "-q", f"refs/heads/{base}"):
+        return "exists"
+    if _git_ok(root, "show-ref", "--verify", "-q", f"refs/remotes/origin/{base}"):
+        return f"track origin/{base}"
+    return "create from HEAD"
+
+
+def _base_branch_step(root: Path, config: Any, *, push: bool, receipt: dict[str, Any] | None = None) -> list[str]:
+    """C31: make ``config.base_branch`` exist locally when safe; warn/note about everything else (never raises)."""
+    base = config.base_branch
+    state = _base_branch_state(root, base)
+    out: list[str] = []
+    if state == "skip: not a git work tree":
+        return [f"warning: {base} — base branch not prepared: {root} is not a git work tree (or git is missing)"]
+    if state == "skip: no commit yet":
+        return [
+            f"warning: {base} — base branch not prepared: HEAD has no commit yet; commit once, then re-run "
+            f"`parrot sdd install` (or `git branch {base}`)"
+        ]
+    if state == "exists":
+        out.append(f"{base} — base branch present")
+    else:
+        if state.startswith("track"):
+            proc = _git_run(root, "branch", "--track", base, f"origin/{base}")
+            label = f"created, tracking origin/{base}"
+        else:
+            proc = _git_run(root, "branch", base, "HEAD")
+            current = _git_out(root, "symbolic-ref", "-q", "--short", "HEAD") or _git_out(
+                root, "rev-parse", "--short", "HEAD"
+            )
+            label = f"created from {current}"
+        if proc is None or proc.returncode != 0:
+            detail = (proc.stderr.strip() if proc is not None else "git unavailable") or "git branch failed"
+            out.append(f"warning: {base} — could not create base branch ({detail})")
+        else:
+            out.append(f"{base} — {label}")
+            if receipt is not None:
+                receipt["base_branch_created"] = base
+    if not _git_ok(root, "remote", "get-url", "origin"):
+        out.append(
+            f"note: no `origin` remote; SDD worktrees branch from origin/{base}: "
+            f"`git remote add origin <url> && git push -u origin {base}`"
+        )
+    elif not _git_ok(root, "show-ref", "--verify", "-q", f"refs/remotes/origin/{base}"):
+        if push:
+            proc = _git_run(root, "push", "-u", "origin", base)
+            if proc is not None and proc.returncode == 0:
+                out.append(f"{base} — pushed to origin and tracking it")
+            else:
+                detail = (proc.stderr.strip() if proc is not None else "git unavailable") or "push failed"
+                out.append(f"warning: {base} — push to origin failed ({detail})")
+        else:
+            out.append(
+                f"warning: origin/{base} not found locally; SDD worktrees branch from it: "
+                f"`git push -u origin {base}` (or re-run with --push-base)"
+            )
+    for other in (config.staging_branch, config.hotfix_base):
+        if other and other != base and not _git_ok(root, "show-ref", "--verify", "-q", f"refs/heads/{other}"):
+            out.append(f"note: branch {other} is configured but missing locally; create it when you need it")
+    return out
 
 
 def _host_installed(root: Path, host: str, entries: list[dict[str, Any]], receipt: dict[str, Any]) -> bool:
@@ -468,7 +579,7 @@ def _apply_asset(
     return f"{entry['target']} — {verb[action.action]}"
 
 
-def _seed_config(root: Path) -> str:
+def _seed_config(root: Path, base_branch: str | None = None) -> str:
     """C6: write ``sdd/config.json`` from ``default_sdd_config()`` iff absent (TASK-4299; lazy import)."""
     from parrot.sdd.config import CONFIG_PATH, default_sdd_config  # TASK-4299
 
@@ -476,7 +587,10 @@ def _seed_config(root: Path) -> str:
     if path.exists():
         return ""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(default_sdd_config().model_dump_json(indent=2) + "\n", encoding="utf-8")
+    seed = default_sdd_config()
+    if base_branch:
+        seed = seed.model_copy(update={"base_branch": base_branch})
+    path.write_text(seed.model_dump_json(indent=2) + "\n", encoding="utf-8")
     return (
         f"{CONFIG_PATH} — seeded; edit base_branch/hotfix_base/issue_tracker/test_command for this repo and commit it"
     )
@@ -631,6 +745,8 @@ def install_sdd_integration(
     force: bool = False,
     dry_run: bool = False,
     portable: bool = False,
+    base_branch: str | None = None,
+    push_base: bool = False,
 ) -> list[str]:
     """Deploy packaged SDD assets for ``hosts`` into ``root``; never overwrites foreign content.
 
@@ -643,6 +759,9 @@ def install_sdd_integration(
             seed, gitignore, ledger, config, receipt, or directory.
         portable: Write the bare guard-hook command (needs the global launcher on PATH) instead of
             baking the installing venv's ``parrot`` when the launcher is not on PATH (C25).
+        base_branch: C31 — seed ``sdd/config.json`` with this base branch (when absent) and prepare it.
+            Conflicts with an existing config that sets a different one.
+        push_base: C31 — also ``git push -u origin <base_branch>`` when origin lacks it.
 
     Returns:
         Human-readable action log; skipped conflicts and audit findings start with ``warning:``;
@@ -659,8 +778,16 @@ def install_sdd_integration(
     from parrot.sdd.config import load_sdd_config  # TASK-4299
 
     config = load_sdd_config(root)
+    if base_branch:
+        if not _git_ok(root, "check-ref-format", "--branch", base_branch):
+            raise ValueError(f"invalid base branch name: {base_branch!r}")
+        if (root / "sdd/config.json").exists():
+            if config.base_branch != base_branch:
+                raise ValueError(f"sdd/config.json already sets base_branch={config.base_branch}; edit it there")
+        else:
+            config = config.model_copy(update={"base_branch": base_branch})
     hook, form = guard_hook_command(portable=portable)
-    plan = plan_install(root, hosts, force=force, hook=hook)
+    plan = plan_install(root, hosts, force=force, hook=hook, base_branch=config.base_branch)
     if dry_run:
         return [str(step) for step in plan]
     receipt = load_receipt(root)
@@ -678,7 +805,9 @@ def install_sdd_integration(
         elif step.action == "ledger-seed":
             actions.append(_seed_id_ledger(root) or "")
         elif step.action == "config-seed":
-            actions.append(_seed_config(root))
+            actions.append(_seed_config(root, base_branch))
+        elif step.action == "base-branch":
+            actions.extend(_base_branch_step(root, config, push=push_base, receipt=receipt))
     _save_receipt(root, receipt)
     actions.append(f"{RECEIPT_PATH} — written; commit it with the installed files (it drives upgrades and uninstall)")
     actions.append(_test_command_warning(config) or "")
@@ -757,6 +886,8 @@ def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *,
             actions.append(f"git ledger hooks — kept (keep-ledger-hooks: {step.note})")
         elif step.action == "receipt-remove":
             drop_receipt = True
+    if receipt.get("base_branch_created"):
+        actions.append(f"note: base branch {receipt['base_branch_created']} was created by install; it is kept")
     if drop_receipt:
         (root / RECEIPT_PATH).unlink(missing_ok=True)
         _prune_empty_parents(root, root / RECEIPT_PATH)

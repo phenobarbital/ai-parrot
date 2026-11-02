@@ -444,6 +444,12 @@ parrot sdd status                            # missing | current | outdated | ed
   never overwritten.
 - Then open your assistant and run your first `/sdd-spec` ... command. Helpers run as
   `parrot sdd <noun> <verb>` (for example `parrot sdd ids reserve --help`).
+- The install also prepares the SDD base branch (`base_branch` from `sdd/config.json`, default `dev`): when the
+  repository has a commit and the branch is missing it creates the local branch (tracking `origin/<base>` if that
+  exists, otherwise from `HEAD`); it never moves or deletes an existing branch and uninstall keeps it. A repo with no
+  commit yet, or no `origin`, gets a `warning:` / `note:` with the exact command. `--base-branch NAME` seeds
+  `sdd/config.json` with that branch (refused if the config already sets another); `--push-base` also runs
+  `git push -u origin <base>` when origin lacks it. `--dry-run` shows `plan: base-branch ...` and creates nothing.
 - Re-running `parrot sdd install` upgrades files you have not touched and keeps the ones you edited
   (`--force` overwrites edited files; foreign files are never touched).
 
