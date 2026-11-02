@@ -417,7 +417,7 @@ wikitoolkit query "where is the ingest pipeline implemented?"
 <!-- verify: flag=sdd install:--dry-run -->
 <!-- verify: flag=sdd install:--force -->
 <!-- verify: cli-verb=sdd status -->
-<!-- verify: cli-verb=sdd run -->
+<!-- verify: cli-verb=sdd ids reserve -->
 <!-- verify: cli-verb=self doctor -->
 <!-- verify: flag=self doctor:--sdd -->
 With the global runtime installed, any git repository (Python or not) can adopt the Spec-Driven Development
@@ -443,7 +443,7 @@ parrot sdd status                            # missing | current | outdated | ed
 - Fill in the `sdd/CONVENTIONS.md` seed (`## Repository layout`, `## Project areas`); it is created once and
   never overwritten.
 - Then open your assistant and run your first `/sdd-spec` ... command. Helpers run as
-  `parrot sdd run <name>` (for example `parrot sdd run reserve_ids --help`).
+  `parrot sdd <noun> <verb>` (for example `parrot sdd ids reserve --help`).
 - Re-running `parrot sdd install` upgrades files you have not touched and keeps the ones you edited
   (`--force` overwrites edited files; foreign files are never touched).
 

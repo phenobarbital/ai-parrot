@@ -213,14 +213,14 @@ form for monorepo developers: the portable form only works once the global insta
 <!-- verify: cli-verb=sdd status -->
 <!-- verify: cli-verb=sdd uninstall -->
 <!-- verify: flag=sdd uninstall:--dry-run -->
-<!-- verify: cli-verb=sdd run -->
+<!-- verify: cli-verb=sdd ids reserve -->
 ```bash
 parrot sdd install --host claude --dry-run
 parrot sdd install --host claude
 parrot sdd status
 git add sdd .claude .gitignore .gitattributes   # what --host claude wrote
 git commit -m "sdd: install the SDD flow" && git push   # reserve_ids reads the ledger from git
-parrot sdd run reserve_ids --kind task --count 1 --base-branch dev --label demo
+parrot sdd ids reserve --kind task --count 1 --base-branch dev --label demo
 parrot sdd uninstall --dry-run
 ```
 
@@ -228,7 +228,7 @@ parrot sdd uninstall --dry-run
 `sdd/tasks/.id_ledger.json` committed and pushed to it. `parrot self doctor --sdd` checks that the branch exists on
 `origin` and that the ledger is tracked by git.
 
-- Helpers run as `parrot sdd run <name>`, never `python -m ...`: in a global-only install the repo's `python`
+- Helpers run as `parrot sdd <noun> <verb>`, never `python -m ...`: in a global-only install the repo's `python`
   cannot import parrot.
 - `sdd/.sdd-installed.json` records every file parrot wrote with its hash. `parrot sdd status` reports each
   asset as `missing | current | outdated | edited | foreign`, and seeds as `seed-present | missing`.
