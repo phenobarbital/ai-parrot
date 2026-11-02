@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +21,7 @@ from parrot.experts.loader import BUNDLED_EXPERTS_DIR, EXPERTS_DIRNAME, discover
 from parrot.experts.models import DuplicateExpertError, ExpertBundle, ExpertKnowledgeError
 from parrot.experts.policy import effective_allowlist, effective_toolkits, expert_policy_rules, model_config_for
 from parrot.experts.view import ExpertView
+from parrot.models.basic import ModelConfig
 
 
 class ExpertRegistry:
@@ -35,8 +38,26 @@ class ExpertRegistry:
         bookstore: Any = None,
         decisions: Any = None,
         seed_knowledge: bool = True,
+        model_overrides: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> None:
-        """Initialize the registry and its optional host-owned dependencies."""
+        """Initialize the registry and its optional host-owned dependencies.
+
+        Args:
+            agent_registry: Registry that owns the constructed expert agents.
+            agents_dir: Workspace root containing local expert bundles.
+            workspace: Governance workspace used during knowledge resolution.
+            bundled_dir: Optional root containing bundled expert bundles.
+            wiki_toolkit: Optional host wiki toolkit.
+            bookstore: Optional host bookstore service.
+            decisions: Optional host decision service.
+            seed_knowledge: Whether empty expert wiki namespaces may be seeded.
+            model_overrides: Per-manifest-name model settings applied over tier defaults.
+
+        Raises:
+            ValueError: The outer overrides value is not a mapping.
+        """
+        if model_overrides is not None and not isinstance(model_overrides, Mapping):
+            raise ValueError("model_overrides must be a mapping")
         self.agent_registry = agent_registry
         self.agents_dir = Path(agents_dir or AGENTS_DIR)
         self.workspace = Path(workspace) if workspace is not None else self.agents_dir
@@ -45,10 +66,70 @@ class ExpertRegistry:
         self.bookstore = bookstore
         self.decisions = decisions
         self.seed_knowledge = seed_knowledge
+        self._model_overrides: dict[str, Any] = deepcopy(dict(model_overrides or {}))
         self._experts: dict[str, ExpertAgent] = {}
         self._contexts: dict[str, Any] = {}
         self._report: dict[str, Any] = {"loaded": [], "skipped": [], "shadowing": {}, "seeded": {}}
         self.logger = logging.getLogger(__name__)
+
+    def _model_config_for(self, bundle: ExpertBundle) -> ModelConfig:
+        """Return the validated selected model configuration for an expert bundle.
+
+        Args:
+            bundle: Resolved expert bundle whose manifest name selects an override.
+
+        Returns:
+            The tier-derived configuration with any named override applied.
+
+        Raises:
+            ValueError: The named override is malformed.
+        """
+        override = self._model_overrides.get(bundle.manifest.name)
+        if override is None:
+            return model_config_for(bundle.manifest.tier)
+        if not isinstance(override, Mapping):
+            raise ValueError("override must be a mapping")
+
+        allowed = {"provider", "model", "temperature", "max_tokens"}
+        unknown = sorted(str(key) for key in set(override) - allowed)
+        if unknown:
+            raise ValueError(f"unknown keys: {', '.join(unknown)}")
+        for key in ("provider", "model"):
+            value = override.get(key)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{key} must be a non-blank string")
+        try:
+            return model_config_for(bundle.manifest.tier, overrides=override)
+        except Exception as exc:  # noqa: BLE001 - ModelConfig owns numeric validation.
+            raise ValueError(str(exc)) from exc
+
+    def _override_path(self, name: str, bundles: Mapping[str, ExpertBundle]) -> str:
+        """Return the known bundle root or the expected workspace bundle path.
+
+        Args:
+            name: Manifest name selected by an override.
+            bundles: Winning bundles keyed by manifest name.
+
+        Returns:
+            A reportable bundle path.
+        """
+        bundle = bundles.get(name)
+        if bundle is not None:
+            return str(bundle.root)
+        return str(self.agents_dir / EXPERTS_DIRNAME / name)
+
+    def _report_model_override(self, name: str, path: str, category: str, detail: str) -> None:
+        """Append one standardized model-override skip diagnostic.
+
+        Args:
+            name: Manifest name targeted by the override.
+            path: Bundle root or expected workspace bundle path.
+            category: Failure category prefix.
+            detail: Human-readable validation or admission detail.
+        """
+        self._report["skipped"].append(
+            {"name": name, "path": path, "reason": f"{category}-model-override: {detail}"}
+        )
 
     def report(self) -> dict[str, Any]:
         """Return a shallow copy of the loading report."""
@@ -170,7 +251,7 @@ class ExpertRegistry:
         if self.decisions is not None:
             sources.append(ADRSource(self.decisions))
         resolver = KnowledgeResolver(sources)
-        model_config = model_config_for(bundle.manifest.tier)
+        model_config = self._model_config_for(bundle)
         self._contexts[bundle.manifest.name] = await resolver.resolve(
             bundle, None, self.workspace, model=model_config.model
         )
@@ -188,10 +269,29 @@ class ExpertRegistry:
 
     async def load(self) -> int:
         """Discover, admit, build, register, and apply PBAC policies for experts."""
-        for bundle in self._discover():
-            if not await self._admit(bundle):
-                continue
+        bundles = self._discover()
+        bundles_by_name = {bundle.manifest.name: bundle for bundle in bundles}
+        for name in self._model_overrides:
+            if name not in bundles_by_name:
+                self._report_model_override(
+                    name,
+                    self._override_path(name, bundles_by_name),
+                    "unknown",
+                    "no resolved expert bundle",
+                )
+
+        for bundle in bundles:
             name = bundle.manifest.name
+            if name in self._model_overrides:
+                try:
+                    self._model_config_for(bundle)
+                except ValueError as exc:
+                    self._report_model_override(name, str(bundle.root), "invalid", str(exc))
+                    continue
+            if not await self._admit(bundle):
+                if name in self._model_overrides:
+                    self._report_model_override(name, str(bundle.root), "unadmitted", "knowledge admission failed")
+                continue
             try:
                 agent = await self._build(bundle)
             except Exception as exc:  # noqa: BLE001 - one broken bundle must not disable its siblings
@@ -209,3 +309,17 @@ class ExpertRegistry:
             self._experts[name] = agent
             self._report["loaded"].append({"name": name, "origin": bundle.origin})
         return len(self._experts)
+
+    def effective_model(self, name: str) -> ModelConfig:
+        """Return an isolated copy of a loaded expert's selected model configuration.
+
+        Args:
+            name: Loaded expert manifest name.
+
+        Returns:
+            A deep copy of the runtime agent model configuration.
+
+        Raises:
+            KeyError: The expert has not loaded successfully.
+        """
+        return self._experts[name].model_config.model_copy(deep=True)
