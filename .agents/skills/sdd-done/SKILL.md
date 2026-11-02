@@ -98,7 +98,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
      or `F82` errors block normal closeout and enter the issues/confirmation path
 4.6. Verify E2E evidence (FEAT-581/FEAT-703), before any stamp/push/
    merge-blocker/PR/merge/cleanup step below — the gate is code, not prose:
-   - run `parrot sdd run check_e2e_closeout --spec <spec-path>
+   - run `parrot sdd tests e2e-closeout --spec <spec-path>
      --feat-id <FEAT-ID> --worktree <worktree>`; it reads the spec's
      `e2e.policy`, resolves the worktree-scoped plan at
      `sdd/state/<FEAT-ID>/e2e-plan.md`, and runs the same read-only validator
@@ -115,7 +115,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
      - before exiting, run the `on_failure` hooks (FEAT-764): write the hook context
        (step 4.8 fields, `abort_reason` = "E2E gate <status>") to
        `${SDD_HOOKS_ARTIFACT_ROOT:-/tmp/claude-$(id -u)/sdd-hooks}/<FEAT-ID>/context.json`, then
-       `parrot sdd run run_closeout_hooks --event on_failure --context <ctx> --root <worktree> || true`;
+       `parrot sdd closeout run --event on_failure --context <ctx> --root <worktree> || true`;
        non-blocking, its exit code is ignored and it never changes the abort
    - the decision table itself (policy resolution, where a missing `e2e` key
      defaults to `optional` and a malformed value is never coerced; missing
@@ -126,14 +126,14 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - write the hook context JSON (`feat_id`, `spec_path`, `branch`, `base_branch`, `worktree`,
      `test_report_md` as the rendered report text, `e2e_gate` as the step 4.6 JSON object,
      `abort_reason` null, `dry_run`) to `${SDD_HOOKS_ARTIFACT_ROOT:-/tmp/claude-$(id -u)/sdd-hooks}/<FEAT-ID>/context.json`
-   - run `parrot sdd run run_closeout_hooks --event pre_pr --context <ctx> --root <worktree>`
+   - run `parrot sdd closeout run --event pre_pr --context <ctx> --root <worktree>`
      (add `--dry-run` when `$sdd-done --dry-run`; pre_pr runs under dry-run). Its stdout JSON carries
      `results[]`, `pending_agents[]`, `blocking_failed` and `evidence_md`
    - exit 0: continue; keep `evidence_md` for the PR body (`## Evidence`) and the step 12 `Hooks:` line
    - exit 3 (agent hooks pending): for each `pending_agents[]` entry, native subagent dispatch is
-     unavailable on Codex, so record it as unsupported: `parrot sdd run run_closeout_hooks --event pre_pr --feat-id <FEAT-ID> --root <worktree> --record <name> --status fail --summary "agent hooks unsupported on this host"`
+     unavailable on Codex, so record it as unsupported: `parrot sdd closeout run --event pre_pr --feat-id <FEAT-ID> --root <worktree> --record <name> --status fail --summary "agent hooks unsupported on this host"`
      (run inline instead only if the host can actually run it); then
-     `parrot sdd run run_closeout_hooks --event pre_pr --feat-id <FEAT-ID> --root <worktree> --finalize`
+     `parrot sdd closeout run --event pre_pr --feat-id <FEAT-ID> --root <worktree> --finalize`
      and continue on exit 0; exit 1 from `--finalize` means an unrecorded
      blocking agent hook was resolved as a failure — treat it the same as
      a direct exit 1 (abort before step 8, run `on_failure` hooks)
@@ -153,10 +153,10 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - task-by-task evidence
    - E2E policy/status/gate_satisfied recorded in step 4.6
    - Test report (FEAT-695): the FEAT-699 report below never blocks; a configured `test_command` does. When `test_command` in `sdd/config.json` is set (non-blank), skip `select_tests` and `test_report` and run that command once from the repository root instead: record the command, its exit code and the tail of its output, and treat a non-zero exit as a merge blocker. When it is null, the FEAT-699 steps below run unchanged. If the run executed zero tests (no `pytest` invocation, or 0 collected), report "⚠️ not run — no tests selected", never ✅ — even when `test_report render` prints its ✅ gate line. Otherwise run
-     `parrot sdd run test_report decide-rerun --index sdd/tasks/index/<feature-slug>.json`;
+     `parrot sdd tests report decide-rerun --index sdd/tasks/index/<feature-slug>.json`;
      when it says `rerun`, run in the background
-     `timeout -k 10 1800 parrot sdd run select_tests --tier feature --base origin/<base_branch> --worktree <wt> --index <idx> $(printf -- '--task-file %s ' <every task file of the index>) --feature FEAT-<ID> --report-task _rerun --no-ledger --timeout 300 --run`;
-     then `parrot sdd run test_report render --index <idx> --worktree <wt> --out "$TEST_REPORT_MD"`
+     `timeout -k 10 1800 parrot sdd tests select --tier feature --base origin/<base_branch> --worktree <wt> --index <idx> $(printf -- '--task-file %s ' <every task file of the index>) --feature FEAT-<ID> --report-task _rerun --no-ledger --timeout 300 --run`;
+     then `parrot sdd tests report render --index <idx> --worktree <wt> --out "$TEST_REPORT_MD"`
      (always writes the file and exits 0; an unusable index renders a visible `## Tests — no data`
      section rather than failing — issue:326c8c0da36c) (a path under the report root). Report `Tests: <passed>/<tests> (<failed> failed) - re-run: done`. The feature tier always re-runs fresh at the final HEAD, driven by the index's `test_contract`; the table has New red / Baseline red / Unknown columns and a `cached` line, and the PR is blocked only by new reds or unknowns; baseline reds are reported, not blocking; rows are labeled `<runner>:<distribution>` with `n/a` for cache/baseline for non-pytest runners
    - lint residuals and any missing review evidence
@@ -170,7 +170,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - verified is not closed: for each task being closed whose file is still in
      `sdd/tasks/active/` or whose index status is not `done`/`done-with-issues`
      (lanes such as `/sdd-fix` commit code without closing), run
-     `parrot sdd run close_task <TASK-ID> <feature-slug> <verification>` inside
+     `parrot sdd task close <TASK-ID> <feature-slug> <verification>` inside
      the worktree — never on `base_branch` (FEAT-414), then set its status to
      `done-with-issues` when verification is `partial`/`forced`; leave tasks
      the lane already closed untouched, and skip (with a warning) any id not in
@@ -178,14 +178,14 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - set each task `verification` to `verified`, `partial`, or `forced` in
      `sdd/tasks/index/<feature>.json` inside the worktree
    - set feature `completed_at` only when all tasks are done
-   - run `parrot sdd run heal_orphans <feature-slug>` inside the worktree
+   - run `parrot sdd task heal <feature-slug>` inside the worktree
      (PR flow and `--merge` alike)
    - stage only the index and this feature's task files, verify cached names
    - commit `sdd: close tasks for FEAT-NNN - <feature-slug>`
 8.1. Close resolved ledger issues (feature flows only, after step 8, before step 11's snapshot):
    - the `$sdd-fix` SDD lane hands issue closure to this step; without it fixed
      issues stay `claimed`/`open` after merge
-   - run `parrot sdd run close_resolved_issues --worktree <worktree>
+   - run `parrot sdd closeout resolve-issues --worktree <worktree>
      --index sdd/tasks/index/<feature>.json --base origin/<BASE_BRANCH>
      --feature-id FEAT-NNN` inside the worktree (`--dry-run` to preview);
      strip any banner before the JSON report
@@ -232,11 +232,11 @@ do not run task closure again on base_branch and do not clean worktrees with unk
       Guard any `--body-file "$TEST_REPORT_MD"` fallback with `[ -s "$TEST_REPORT_MD" ]`.
     - If `gh` is missing, not authenticated or fails, keep the worktree/branch, print the manual command and exit non-zero.
     - If feature and `--merge`, merge into `base_branch`, run
-      `parrot sdd run heal_orphans <feature-slug>`, commit any staged orphan
+      `parrot sdd task heal <feature-slug>`, commit any staged orphan
       cleanup, and push `base_branch`.
 12.1. Closeout hooks — post_pr (FEAT-764), after step 12 and skipped under `--dry-run`:
     - set `pr_url` (PR flow) or `merge_sha` (`--merge`, the HEAD of the main repo after the merge)
-      in the hook context, then run `parrot sdd run run_closeout_hooks --event post_pr --context <ctx> --root <worktree>`
+      in the hook context, then run `parrot sdd closeout run --event post_pr --context <ctx> --root <worktree>`
     - agent hooks follow the same loop as 4.8 (`--event post_pr`, record unsupported as `fail`, then `--finalize`)
     - post_pr never aborts closeout; report its outcome in the step 12 output only
     - the Jira transition is now the opt-in `jira.transition` builtin in `.parrot/sdd_hooks.toml`
@@ -283,7 +283,7 @@ Worktree removed: .claude/worktrees/<name>
 - `sdd/tasks/active/`
 - `sdd/tasks/completed/`
 - `parrot.sdd.scripts.sdd_meta`
-- `parrot sdd run heal_orphans`
+- `parrot sdd task heal`
 - `sdd/WORKFLOW.md`
 - `sdd/state/<FEAT-ID>/e2e-plan.md` (E2E plan, FEAT-581); validator:
   `parrot e2e verify --plan <path>` (`ai-parrot-server`, optional install)

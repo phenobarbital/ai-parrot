@@ -1,0 +1,1269 @@
+Metadata-Version: 2.4
+Name: ai-parrot
+Version: 1.2.6
+Summary: Framework for building AI agents for Navigator
+Author-email: Jesus Lara <jesuslara@phenobarbital.info>
+License-Expression: MIT
+Project-URL: Homepage, https://github.com/phenobarbital/ai-parrot
+Project-URL: Source, https://github.com/phenobarbital/ai-parrot
+Project-URL: Tracker, https://github.com/phenobarbital/ai-parrot/issues
+Project-URL: Documentation, https://github.com/phenobarbital/ai-parrot/
+Project-URL: Funding, https://paypal.me/phenobarbital
+Project-URL: Say Thanks!, https://saythanks.io/to/phenobarbital
+Keywords: asyncio,asyncpg,aioredis,aiomcache,artificial intelligence,ai,chatbot,agents
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Environment :: Web Environment
+Classifier: Topic :: Software Development :: Build Tools
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Framework :: AsyncIO
+Classifier: Typing :: Typed
+Requires-Python: <3.14,>=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: Cython>=3.1.4
+Requires-Dist: tabulate==0.9.0
+Requires-Dist: markdown2==2.5.4
+Requires-Dist: beautifulsoup4>=4.12
+Requires-Dist: nh3>=0.2.14
+Requires-Dist: python-datamodel>=0.10.17
+Requires-Dist: backoff==2.2.1
+Requires-Dist: tenacity>=8.2
+Requires-Dist: typing-extensions<5,>=4.14.1
+Requires-Dist: pydantic<3,>=2.12.5
+Requires-Dist: email-validator>=2.0
+Requires-Dist: PyYAML>=6.0.2
+Requires-Dist: python-frontmatter>=1.1.0
+Requires-Dist: marko>=2.0
+Requires-Dist: xmltodict>=0.14.2
+Requires-Dist: tiktoken>=0.9.0
+Requires-Dist: rapidfuzz>=3.0
+Requires-Dist: openai==3.31.0
+Requires-Dist: psutil>=5.9
+Requires-Dist: tqdm>=4.66.5
+Requires-Dist: semantic-text-splitter<1.0,>=0.30
+Requires-Dist: jsonschema>=4.20
+Requires-Dist: regex>=2023.0
+Requires-Dist: navconfig[default]>=2.5.2
+Requires-Dist: navigator-auth>=0.28.8
+Requires-Dist: navigator-session>=1.0.1
+Requires-Dist: pyopenssl>=24.3.0
+Requires-Dist: navigator-api[google,locale,uvloop]>=3.2.2
+Requires-Dist: asyncdb>=2.16.2
+Requires-Dist: ormsgpack>=1.5
+Requires-Dist: rich>=13.0
+Requires-Dist: textual<9,>=8.2
+Requires-Dist: requests<2.34,>=2.33
+Requires-Dist: click>=8.1.7
+Requires-Dist: prompt_toolkit>=3.0
+Requires-Dist: aiohttp-swagger3==0.10.0
+Requires-Dist: aiohttp-sse-client==0.2.1
+Requires-Dist: aiohttp-cors>=0.8.1
+Requires-Dist: brotli==1.2.1
+Requires-Dist: urllib3==2.8.0
+Requires-Dist: proxylists>=0.12.0
+Requires-Dist: prance>=25.4.8.0
+Requires-Dist: openapi-schema-validator==0.6.3
+Requires-Dist: openapi-spec-validator>=0.7.1
+Requires-Dist: async-notify>=1.6.0
+Requires-Dist: ddgs>=9.5.2
+Requires-Dist: python-statemachine==2.5.0
+Requires-Dist: cel-python>=0.4
+Requires-Dist: questionary>=2.1.1
+Requires-Dist: pandas>=2.0.0
+Requires-Dist: pyarrow>=25.0
+Requires-Dist: sqlglot>=20.0
+Requires-Dist: numexpr==2.10.2
+Requires-Dist: faiss-cpu>=1.9.0
+Requires-Dist: navigator-eventbus>=0.4.0
+Requires-Dist: rustworkx>=0.15
+Requires-Dist: networkx>=3.0
+Requires-Dist: pathspec>=0.12
+Requires-Dist: aiosqlite>=0.17
+Requires-Dist: orjson>=3.9
+Provides-Extra: notify-all
+Requires-Dist: async-notify[all]>=1.6.0; extra == "notify-all"
+Provides-Extra: db
+Requires-Dist: querysource>=5.1.2; extra == "db"
+Requires-Dist: psycopg-binary>=3.2.12; extra == "db"
+Requires-Dist: jq==1.7.0; extra == "db"
+Requires-Dist: asyncdb[arangodb,bigquery,boto3,influxdb,mongodb,sqlalchemy]>=2.16.2; extra == "db"
+Provides-Extra: bigquery
+Requires-Dist: google-cloud-bigquery>=3.30.0; extra == "bigquery"
+Provides-Extra: pdf
+Requires-Dist: weasyprint==70.0; extra == "pdf"
+Requires-Dist: fpdf==1.7.2; extra == "pdf"
+Requires-Dist: markdownify>=1.2.2; extra == "pdf"
+Requires-Dist: python-docx>=1.2.0; extra == "pdf"
+Provides-Extra: ocr
+Requires-Dist: pytesseract>=0.3.13; extra == "ocr"
+Provides-Extra: audio
+Requires-Dist: pydub==0.25.1; extra == "audio"
+Provides-Extra: finance
+Requires-Dist: ta-lib==0.6.8; extra == "finance"
+Requires-Dist: pandas-datareader>=0.10.0; extra == "finance"
+Provides-Extra: flowtask
+Requires-Dist: flowtask>=5.12.14; extra == "flowtask"
+Provides-Extra: graphindex
+Requires-Dist: tree-sitter>=0.23; extra == "graphindex"
+Provides-Extra: graphindex-postgres
+Requires-Dist: asyncpg>=0.29; extra == "graphindex-postgres"
+Requires-Dist: pgvector>=0.2; extra == "graphindex-postgres"
+Provides-Extra: wiki-languages
+Requires-Dist: tree-sitter>=0.23; extra == "wiki-languages"
+Requires-Dist: tree-sitter-php>=0.23; extra == "wiki-languages"
+Requires-Dist: tree-sitter-typescript>=0.23; extra == "wiki-languages"
+Requires-Dist: tree-sitter-javascript>=0.23; extra == "wiki-languages"
+Requires-Dist: tree-sitter-rust>=0.23; extra == "wiki-languages"
+Requires-Dist: tree-sitter-perl>=0.23; extra == "wiki-languages"
+Requires-Dist: tree-sitter-luau>=1.2; extra == "wiki-languages"
+Requires-Dist: ast-grep-py>=0.45; extra == "wiki-languages"
+Provides-Extra: wiki-structural
+Requires-Dist: ast-grep-py>=0.45; extra == "wiki-structural"
+Provides-Extra: leiden
+Requires-Dist: leidenalg>=0.10; extra == "leiden"
+Requires-Dist: python-igraph>=0.10; extra == "leiden"
+Provides-Extra: wiki
+Requires-Dist: ai-parrot[graphindex,leiden,wiki-languages,wiki-structural]; extra == "wiki"
+Requires-Dist: ai-parrot-loaders[documents]>=0.4.1; extra == "wiki"
+Provides-Extra: bookstore
+Requires-Dist: bm25s>=0.2; extra == "bookstore"
+Requires-Dist: pymupdf>=1.27; extra == "bookstore"
+Requires-Dist: pymupdf4llm>=0.0.27; extra == "bookstore"
+Provides-Extra: manuals
+Requires-Dist: ai-parrot[bookstore,graphindex]; extra == "manuals"
+Provides-Extra: scheduler
+Requires-Dist: apscheduler==3.11.2; extra == "scheduler"
+Provides-Extra: wikitoolkit-server
+Requires-Dist: ai-parrot-server; extra == "wikitoolkit-server"
+Provides-Extra: server
+Requires-Dist: ai-parrot-server[all]; extra == "server"
+Provides-Extra: reddit
+Requires-Dist: praw>=7.8.1; extra == "reddit"
+Provides-Extra: jira
+Requires-Dist: jira==3.10.5; extra == "jira"
+Requires-Dist: html2text==2025.4.15; extra == "jira"
+Provides-Extra: retrieval
+Requires-Dist: rank_bm25==0.2.2; extra == "retrieval"
+Provides-Extra: tokenizer
+Requires-Dist: sentencepiece==0.2.1; extra == "tokenizer"
+Provides-Extra: msgraph
+Requires-Dist: azure-identity>=1.18.0; extra == "msgraph"
+Requires-Dist: msgraph-sdk>=1.8.0; extra == "msgraph"
+Requires-Dist: microsoft-kiota-authentication-azure>=1.2.0; extra == "msgraph"
+Provides-Extra: gdrive
+Requires-Dist: aiogoogle<6,>=5.17; extra == "gdrive"
+Requires-Dist: aiofiles>=23.0; extra == "gdrive"
+Provides-Extra: agents
+Requires-Dist: sentence_transformers>=5.3.0; extra == "agents"
+Requires-Dist: yfinance==0.2.54; extra == "agents"
+Requires-Dist: youtube_search==2.1.2; extra == "agents"
+Requires-Dist: wikipedia==1.4.0; extra == "agents"
+Requires-Dist: mediawikiapi==1.2; extra == "agents"
+Requires-Dist: pyowm==3.3.0; extra == "agents"
+Requires-Dist: stackapi==0.3.1; extra == "agents"
+Requires-Dist: duckduckgo-search==8.1.1; extra == "agents"
+Requires-Dist: google-search-results==2.4.2; extra == "agents"
+Requires-Dist: google-api-python-client>=2.151.0; extra == "agents"
+Requires-Dist: networkx>=3.0; extra == "agents"
+Requires-Dist: decorator>=5; extra == "agents"
+Requires-Dist: autoviz==0.1.905; extra == "agents"
+Requires-Dist: spacy==3.8.11; extra == "agents"
+Requires-Dist: html2text==2025.4.15; extra == "agents"
+Requires-Dist: httpx-sse==0.4.1; extra == "agents"
+Requires-Dist: mcp<2,>=1.28.1; extra == "agents"
+Requires-Dist: sse-starlette==3.0.2; extra == "agents"
+Requires-Dist: requests-oauthlib==2.0.0; extra == "agents"
+Requires-Dist: undetected-chromedriver==3.5.5; extra == "agents"
+Requires-Dist: selenium==4.35.0; extra == "agents"
+Requires-Dist: playwright==1.52.0; extra == "agents"
+Requires-Dist: jira==3.10.5; extra == "agents"
+Requires-Dist: arxiv>=3.0.0; extra == "agents"
+Requires-Dist: docker==7.1.0; extra == "agents"
+Requires-Dist: aiogoogle==5.17.0; extra == "agents"
+Requires-Dist: rq==2.6.0; extra == "agents"
+Requires-Dist: zeep[async]==4.3.3; extra == "agents"
+Requires-Dist: branca==0.8.2; extra == "agents"
+Requires-Dist: webdriver-manager==4.0.2; extra == "agents"
+Requires-Dist: prophet==1.2.1; extra == "agents"
+Requires-Dist: opensearch-py==3.1.0; extra == "agents"
+Requires-Dist: python-pptx==1.0.2; extra == "agents"
+Requires-Dist: markdownify>=1.2.2; extra == "agents"
+Requires-Dist: python-docx>=1.2.0; extra == "agents"
+Requires-Dist: pymupdf==1.27.1; extra == "agents"
+Requires-Dist: pymupdf4llm==0.0.27; extra == "agents"
+Requires-Dist: pdf4llm==0.0.27; extra == "agents"
+Requires-Dist: alpaca-py>=0.43.2; extra == "agents"
+Requires-Dist: defillama-sdk>=0.1.0; extra == "agents"
+Requires-Dist: pandas-ta-classic>=0.3.59; extra == "agents"
+Requires-Dist: TA-Lib>=0.4.32; extra == "agents"
+Requires-Dist: aioimaplib>=1.1.0; extra == "agents"
+Requires-Dist: gmqtt>=0.6.15; extra == "agents"
+Requires-Dist: azure-identity>=1.18.0; extra == "agents"
+Requires-Dist: msgraph-sdk>=1.8.0; extra == "agents"
+Requires-Dist: microsoft-kiota-authentication-azure>=1.2.0; extra == "agents"
+Requires-Dist: jinja2>=3.1; extra == "agents"
+Requires-Dist: xhtml2pdf>=0.2.17; extra == "agents"
+Provides-Extra: charts
+Requires-Dist: ai-parrot-visualizations[charts,infographic]; extra == "charts"
+Provides-Extra: agents-lite
+Requires-Dist: yfinance==0.2.54; extra == "agents-lite"
+Requires-Dist: youtube_search==2.1.2; extra == "agents-lite"
+Requires-Dist: wikipedia==1.4.0; extra == "agents-lite"
+Requires-Dist: mediawikiapi==1.2; extra == "agents-lite"
+Requires-Dist: pyowm==3.3.0; extra == "agents-lite"
+Requires-Dist: stackapi==0.3.1; extra == "agents-lite"
+Requires-Dist: duckduckgo-search==8.1.1; extra == "agents-lite"
+Requires-Dist: google-search-results==2.4.2; extra == "agents-lite"
+Requires-Dist: google-api-python-client>=2.151.0; extra == "agents-lite"
+Requires-Dist: networkx>=3.0; extra == "agents-lite"
+Requires-Dist: decorator>=5; extra == "agents-lite"
+Requires-Dist: html2text==2025.4.15; extra == "agents-lite"
+Requires-Dist: httpx-sse==0.4.1; extra == "agents-lite"
+Requires-Dist: mcp<2,>=1.28.1; extra == "agents-lite"
+Requires-Dist: sse-starlette==3.0.2; extra == "agents-lite"
+Requires-Dist: requests-oauthlib==2.0.0; extra == "agents-lite"
+Requires-Dist: jira==3.10.5; extra == "agents-lite"
+Requires-Dist: arxiv>=3.0.0; extra == "agents-lite"
+Requires-Dist: docker==7.1.0; extra == "agents-lite"
+Requires-Dist: aiogoogle==5.17.0; extra == "agents-lite"
+Requires-Dist: rq==2.6.0; extra == "agents-lite"
+Requires-Dist: zeep[async]==4.3.3; extra == "agents-lite"
+Requires-Dist: branca==0.8.2; extra == "agents-lite"
+Requires-Dist: opensearch-py==3.1.0; extra == "agents-lite"
+Provides-Extra: mcp
+Requires-Dist: openai==3.31.0; extra == "mcp"
+Requires-Dist: yfinance==0.2.54; extra == "mcp"
+Requires-Dist: youtube_search==2.1.2; extra == "mcp"
+Requires-Dist: wikipedia==1.4.0; extra == "mcp"
+Requires-Dist: mediawikiapi==1.2; extra == "mcp"
+Requires-Dist: pyowm==3.3.0; extra == "mcp"
+Requires-Dist: stackapi==0.3.1; extra == "mcp"
+Requires-Dist: duckduckgo-search==8.1.1; extra == "mcp"
+Requires-Dist: google-search-results==2.4.2; extra == "mcp"
+Requires-Dist: google-api-python-client>=2.151.0; extra == "mcp"
+Requires-Dist: networkx>=3.0; extra == "mcp"
+Requires-Dist: decorator>=5; extra == "mcp"
+Requires-Dist: html2text==2025.4.15; extra == "mcp"
+Requires-Dist: httpx-sse==0.4.1; extra == "mcp"
+Requires-Dist: mcp<2,>=1.28.1; extra == "mcp"
+Requires-Dist: sse-starlette==3.0.2; extra == "mcp"
+Requires-Dist: requests-oauthlib==2.0.0; extra == "mcp"
+Requires-Dist: jira==3.10.5; extra == "mcp"
+Requires-Dist: arxiv>=3.0.0; extra == "mcp"
+Requires-Dist: docker==7.1.0; extra == "mcp"
+Requires-Dist: aiogoogle==5.17.0; extra == "mcp"
+Requires-Dist: rq==2.6.0; extra == "mcp"
+Requires-Dist: zeep[async]==4.3.3; extra == "mcp"
+Requires-Dist: branca==0.8.2; extra == "mcp"
+Requires-Dist: opensearch-py==3.1.0; extra == "mcp"
+Provides-Extra: images
+Requires-Dist: torchvision<0.24,>=0.23.0; extra == "images"
+Requires-Dist: timm==1.0.15; extra == "images"
+Requires-Dist: ultralytics==8.4.14; extra == "images"
+Requires-Dist: albumentations==2.0.6; extra == "images"
+Requires-Dist: filetype==1.2.0; extra == "images"
+Requires-Dist: imagehash==4.3.1; extra == "images"
+Requires-Dist: pyheif==0.8.0; extra == "images"
+Requires-Dist: exif==1.6.1; extra == "images"
+Requires-Dist: pillow-avif-plugin==1.5.2; extra == "images"
+Requires-Dist: pillow-heif>=0.22.0; extra == "images"
+Requires-Dist: python-xmp-toolkit==2.1.0; extra == "images"
+Requires-Dist: exifread==3.5.1; extra == "images"
+Requires-Dist: transformers>=5.3.0; extra == "images"
+Requires-Dist: ffmpeg==1.4; extra == "images"
+Requires-Dist: ipywidgets==8.1.0; extra == "images"
+Provides-Extra: anthropic
+Requires-Dist: ai-parrot-client-anthropic; extra == "anthropic"
+Provides-Extra: bedrock
+Requires-Dist: ai-parrot-client-anthropic; extra == "bedrock"
+Provides-Extra: bedrock-native
+Requires-Dist: ai-parrot-client-amazon; extra == "bedrock-native"
+Provides-Extra: claude-agent
+Requires-Dist: ai-parrot-client-anthropic; extra == "claude-agent"
+Provides-Extra: codex-agent
+Requires-Dist: ai-parrot-client-openai[bridge]; extra == "codex-agent"
+Provides-Extra: openai
+Requires-Dist: ai-parrot-client-openai; extra == "openai"
+Provides-Extra: google
+Requires-Dist: ai-parrot-client-google; extra == "google"
+Requires-Dist: google-api-python-client<=2.177.0,>=2.166.0; extra == "google"
+Requires-Dist: google-cloud-texttospeech==2.27.0; extra == "google"
+Requires-Dist: google-cloud-aiplatform>=1.153.0; extra == "google"
+Provides-Extra: groq
+Requires-Dist: ai-parrot-client-groq; extra == "groq"
+Provides-Extra: zai
+Requires-Dist: ai-parrot-client-zai; extra == "zai"
+Provides-Extra: grok
+Requires-Dist: ai-parrot-client-grok; extra == "grok"
+Provides-Extra: gemma4
+Requires-Dist: ai-parrot-client-gemma4; extra == "gemma4"
+Provides-Extra: hf
+Requires-Dist: ai-parrot-client-hf; extra == "hf"
+Provides-Extra: nvidia
+Requires-Dist: ai-parrot-client-nvidia; extra == "nvidia"
+Provides-Extra: moonshot
+Requires-Dist: ai-parrot-client-moonshot; extra == "moonshot"
+Provides-Extra: openrouter
+Requires-Dist: ai-parrot-client-openrouter; extra == "openrouter"
+Provides-Extra: local
+Requires-Dist: ai-parrot-client-local; extra == "local"
+Provides-Extra: vllm
+Requires-Dist: ai-parrot-client-vllm; extra == "vllm"
+Provides-Extra: meta
+Requires-Dist: ai-parrot-client-meta; extra == "meta"
+Provides-Extra: jev
+Requires-Dist: ai-parrot-client-jev; extra == "jev"
+Provides-Extra: llms
+Requires-Dist: ai-parrot-client-openai; extra == "llms"
+Requires-Dist: ai-parrot-client-meta; extra == "llms"
+Requires-Dist: ai-parrot-client-anthropic; extra == "llms"
+Requires-Dist: ai-parrot-client-amazon; extra == "llms"
+Requires-Dist: ai-parrot-client-google; extra == "llms"
+Requires-Dist: ai-parrot-client-gemma4; extra == "llms"
+Requires-Dist: ai-parrot-client-hf; extra == "llms"
+Requires-Dist: ai-parrot-client-groq; extra == "llms"
+Requires-Dist: ai-parrot-client-grok; extra == "llms"
+Requires-Dist: ai-parrot-client-zai; extra == "llms"
+Requires-Dist: ai-parrot-client-nvidia; extra == "llms"
+Requires-Dist: ai-parrot-client-moonshot; extra == "llms"
+Requires-Dist: ai-parrot-client-openrouter; extra == "llms"
+Requires-Dist: ai-parrot-client-local; extra == "llms"
+Requires-Dist: ai-parrot-client-vllm; extra == "llms"
+Requires-Dist: ai-parrot-client-jev; extra == "llms"
+Provides-Extra: integrations
+Requires-Dist: querysource>=5.1.2; extra == "integrations"
+Requires-Dist: async-notify[all]>=1.6.0; extra == "integrations"
+Provides-Extra: grpc
+Requires-Dist: navigator-eventbus[grpc]; extra == "grpc"
+Provides-Extra: eda
+Requires-Dist: sweetviz==2.1.4; extra == "eda"
+Provides-Extra: security
+Requires-Dist: pytector==0.2.0; extra == "security"
+Requires-Dist: onnxruntime>=1.16; extra == "security"
+Requires-Dist: huggingface_hub>=1.3.0; extra == "security"
+Provides-Extra: needle
+Requires-Dist: cactus-needle==3.0.4; extra == "needle"
+Provides-Extra: xai
+Requires-Dist: ai-parrot-client-grok; extra == "xai"
+Provides-Extra: deploy
+Requires-Dist: gunicorn>=23.0.0; extra == "deploy"
+Provides-Extra: docling
+Requires-Dist: docling[tesserocr]>=2.74.0; extra == "docling"
+Provides-Extra: filesystem-transport
+Requires-Dist: aiofiles>=23.0; extra == "filesystem-transport"
+Provides-Extra: filesystem-transport-full
+Requires-Dist: aiofiles>=23.0; extra == "filesystem-transport-full"
+Requires-Dist: watchdog>=4.0; extra == "filesystem-transport-full"
+Requires-Dist: rich>=13.0; extra == "filesystem-transport-full"
+Requires-Dist: click>=8.0; extra == "filesystem-transport-full"
+Provides-Extra: messaging
+Requires-Dist: ai-parrot-integrations[messaging]; extra == "messaging"
+Provides-Extra: otel
+Requires-Dist: opentelemetry-api<2.0,>=1.25; extra == "otel"
+Requires-Dist: opentelemetry-sdk<2.0,>=1.25; extra == "otel"
+Provides-Extra: observability
+Requires-Dist: opentelemetry-api<2.0,>=1.25; extra == "observability"
+Requires-Dist: opentelemetry-sdk<2.0,>=1.25; extra == "observability"
+Requires-Dist: opentelemetry-exporter-otlp-proto-http<2.0,>=1.25; extra == "observability"
+Requires-Dist: opentelemetry-exporter-otlp-proto-grpc<2.0,>=1.25; extra == "observability"
+Provides-Extra: observability-openlit
+Requires-Dist: ai-parrot-openlit-bridge; extra == "observability-openlit"
+Provides-Extra: observability-traceloop
+Provides-Extra: observability-prometheus
+Requires-Dist: prometheus-client<1.0,>=0.20; extra == "observability-prometheus"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.24; extra == "dev"
+Requires-Dist: pytest-benchmark>=4.0; extra == "dev"
+Requires-Dist: ruff>=0.4; extra == "dev"
+Requires-Dist: flake8>=7.0; extra == "dev"
+Requires-Dist: black>=24.0; extra == "dev"
+Requires-Dist: py-spy>=0.4; extra == "dev"
+Requires-Dist: hypothesis>=6.100; extra == "dev"
+Requires-Dist: onnx>=1.22; extra == "dev"
+Provides-Extra: remote-tools
+Requires-Dist: kubernetes_asyncio>=29.0.0; extra == "remote-tools"
+Requires-Dist: aiodocker>=0.24.0; extra == "remote-tools"
+Provides-Extra: visualizations
+Requires-Dist: ai-parrot-visualizations[all]; extra == "visualizations"
+Provides-Extra: rust
+Requires-Dist: parrot_codec>=0.1.0; extra == "rust"
+Provides-Extra: all
+Requires-Dist: ai-parrot[agents,audio,bigquery,charts,db,docling,finance,flowtask,gdrive,images,integrations,llms,mcp,msgraph,ocr,pdf,reddit,rust,visualizations]; extra == "all"
+Requires-Dist: ai-parrot-embeddings[all]; extra == "all"
+Requires-Dist: ai-parrot-integrations[all]; extra == "all"
+Requires-Dist: ai-parrot-server[all]; extra == "all"
+Provides-Extra: all-fast
+Requires-Dist: ai-parrot[agents-lite,integrations,llms]; extra == "all-fast"
+Requires-Dist: ai-parrot-embeddings[faiss,huggingface,pgvector]; extra == "all-fast"
+
+# AI-Parrot
+
+**AI-Parrot** is an async-first Python framework for building, extending, and orchestrating AI Agents and Chatbots. Built on top of `navigator-api`, it provides a unified interface for interacting with various LLM providers, managing tools, conducting agent-to-agent (A2A) communication, and serving agents via the Model Context Protocol (MCP).
+
+Whether you need a simple chatbot, a complex multi-agent orchestration workflow, or a robust production-ready AI service, AI-Parrot exposes the primitives to build it efficiently.
+
+## Monorepo Structure
+
+AI-Parrot is organized as a **monorepo** with four packages:
+
+| Package | PyPI Name | Description |
+|---------|-----------|-------------|
+| `packages/ai-parrot` | `ai-parrot` | Core framework: agents, clients, memory, orchestration |
+| `packages/ai-parrot-tools` | `ai-parrot-tools` | Tool and toolkit implementations (Jira, AWS, Slack, etc.) |
+| `packages/ai-parrot-loaders` | `ai-parrot-loaders` | Document loaders for RAG pipelines (PDF, YouTube, audio, etc.) |
+| `packages/ai-parrot-pipelines` | `ai-parrot-pipelines` | Specialized pipelines such as planogram compliance workflows |
+
+The core package (`ai-parrot`) provides the base abstractions (`AbstractTool`, `AbstractToolkit`, `@tool`) and lightweight built-in tools. Heavy tool implementations, document loaders, and specialized pipelines are split into their own packages so you only install what you need.
+
+---
+
+## Installation
+
+### Core framework
+
+```bash
+uv pip install ai-parrot
+```
+
+### Quick Setup (CLI)
+
+After installing, use the `parrot` CLI to configure your environment interactively:
+
+```bash
+# Interactive setup wizard — select LLM provider, enter API keys, generate .env
+parrot setup
+
+# Initialize configuration directory structure (env/ and etc/)
+parrot conf init
+```
+
+The `parrot setup` wizard will guide you through:
+1. Selecting an LLM provider (OpenAI, Anthropic, Google, etc.)
+2. Entering your API credentials
+3. Writing them to the correct `.env` file
+4. Optionally creating a starter Agent and bootstrap files (`app.py`, `run.py`)
+
+Additional CLI commands:
+
+```bash
+# Start an MCP server from a YAML config
+parrot mcp --config server.yaml
+
+# Deploy an autonomous agent as a systemd service
+parrot autonomous create --agent my_agent.py
+parrot autonomous install --agent my_agent.py --name my-agent
+```
+
+### LLM Providers
+
+Install only the providers you need:
+
+```bash
+# Google Gemini
+uv pip install "ai-parrot[google]"
+
+# OpenAI / GPT
+uv pip install "ai-parrot[openai]"
+
+# Anthropic / Claude (HTTP API client)
+uv pip install "ai-parrot[anthropic]"
+
+# Claude Code agent dispatch (bundled `claude` CLI subprocess)
+uv pip install "ai-parrot[claude-agent]"
+
+# Groq
+uv pip install "ai-parrot[groq]"
+
+# X.AI / Grok
+uv pip install "ai-parrot[xai]"
+
+# All LLM providers at once
+uv pip install "ai-parrot[llms]"
+```
+
+Additional providers supported out of the box (no extra install needed):
+- **HuggingFace** (`hf`) — uses the HuggingFace Inference API
+- **vLLM** (`vllm`) — connects to a local vLLM server
+- **OpenRouter** (`openrouter`) — routes to any model via OpenRouter API
+- **Ollama / Local** — via OpenAI-compatible endpoints
+
+#### Anthropic: API client vs. Claude Code agent dispatch
+
+Anthropic ships in two independent extras — pick the one(s) you need:
+
+| Extra | Installs | Use case |
+|---|---|---|
+| `ai-parrot[anthropic]` | `anthropic[aiohttp]>=0.97.0` | API client (`AnthropicClient`) — completion, vision, streaming, the Messages Batches API. Talks HTTP to `api.anthropic.com`. |
+| `ai-parrot[claude-agent]` | `claude-agent-sdk>=0.1.68` (which bundles the `claude` CLI) | Agent dispatch (`ClaudeAgentClient`) — delegates a *task* to a Claude Code sub-agent that can read files, run bash, call tools. Talks to a subprocess CLI. |
+
+The two extras are independent. Install only what you use:
+
+```bash
+# I just want to call the Anthropic API:
+uv pip install "ai-parrot[anthropic]"
+
+# I want to dispatch tasks to a Claude Code agent:
+uv pip install "ai-parrot[claude-agent]"
+
+# I want both:
+uv pip install "ai-parrot[anthropic,claude-agent]"
+```
+
+After installing `[claude-agent]`, register/authenticate the bundled CLI
+**once** — either run ``claude auth`` interactively, or export
+``ANTHROPIC_API_KEY`` in the environment. The CLI honours either path.
+
+A runnable demo lives in
+[`examples/clients/claude_agent_example.py`](../../examples/clients/claude_agent_example.py).
+
+### Embeddings & Vector Stores
+
+```bash
+# Sentence transformers, FAISS, ChromaDB, etc.
+uv pip install "ai-parrot[embeddings]"
+```
+
+### Tools
+
+```bash
+# Install the tools package
+uv pip install ai-parrot-tools
+
+# Or with specific tool extras
+uv pip install "ai-parrot-tools[jira]"
+uv pip install "ai-parrot-tools[aws]"
+uv pip install "ai-parrot-tools[slack]"
+uv pip install "ai-parrot-tools[finance]"
+uv pip install "ai-parrot-tools[all]"       # All tool dependencies
+```
+
+Available tool extras: `jira`, `slack`, `aws`, `docker`, `git`, `analysis`, `excel`, `sandbox`, `codeinterpreter`, `pulumi`, `sitesearch`, `office365`, `scraping`, `finance`, `db`, `flowtask`, `google`, `arxiv`, `wikipedia`, `weather`, `messaging`.
+
+### Document Loaders
+
+```bash
+# Install the loaders package
+uv pip install ai-parrot-loaders
+
+# Or with specific loader extras
+uv pip install "ai-parrot-loaders[youtube]"
+uv pip install "ai-parrot-loaders[pdf]"
+uv pip install "ai-parrot-loaders[audio]"
+uv pip install "ai-parrot-loaders[all]"     # All loader dependencies
+```
+
+Available loader extras: `youtube`, `audio`, `pdf`, `web`, `ebook`, `video`.
+
+### Pipelines
+
+```bash
+# Install the pipelines package
+uv pip install ai-parrot-pipelines
+```
+
+Backward-compatible imports from `parrot.pipelines` continue to work when the package is installed.
+
+### Platform & Security Tools
+
+AI-Parrot includes tools for **cloud security auditing** and **infrastructure management**. These tools rely on external Docker images that must be installed before use:
+
+```bash
+# Security tools
+parrot install cloudsploit    # AWS security scanner (CloudSploit)
+parrot install prowler        # Cloud security posture management
+
+# Platform tools
+parrot install pulumi         # Infrastructure as Code CLI
+```
+
+The `parrot install` command pulls and configures the required Docker containers automatically, so the tools are ready to be used by your agents.
+
+---
+
+## Quick Start
+
+Create a simple weather chatbot in just a few lines of code:
+
+```python
+import asyncio
+from parrot.bots import Chatbot
+from parrot.tools import tool
+
+# 1. Define a tool
+@tool
+def get_weather(location: str) -> str:
+    """Get the current weather for a location."""
+    return f"The weather in {location} is Sunny, 25C"
+
+async def main():
+    # 2. Create the Agent
+    bot = Chatbot(
+        name="WeatherBot",
+        llm="openai:gpt-4o",  # Provider:Model
+        tools=[get_weather],
+        system_prompt="You are a helpful weather assistant."
+    )
+
+    # 3. Configure (loads tools, connects to memory)
+    await bot.configure()
+
+    # 4. Chat!
+    response = await bot.ask("What's the weather like in Madrid?")
+    print(response)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### Using LLM Clients Directly
+
+Beyond the `Chatbot` abstraction, you can access any LLM provider client directly for lower-level operations like image generation, embeddings, or custom completion calls:
+
+```python
+import asyncio
+from parrot.clients.google.client import GoogleGenAIClient
+from parrot.models.outputs import ImageGenerationPrompt
+from parrot.models.google import GoogleModel
+
+async def main():
+    prompt = ImageGenerationPrompt(
+        prompt="A realistic passport-style photo with white background",
+        styles=["photorealistic", "high resolution"],
+        model=GoogleModel.IMAGEN_3.value,
+        aspect_ratio="16:9",
+    )
+
+    client = GoogleGenAIClient()
+    async with client:
+        response = await client.image_generation(prompt_data=prompt)
+        for img_path in response.images:
+            print(f"Image saved to: {img_path}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+Each provider client (`GoogleGenAIClient`, `OpenAIClient`, `AnthropicClient`, etc.) implements `AbstractClient` and can be used as an async context manager. This gives you full access to provider-specific features — image generation, audio transcription, structured outputs — while still benefiting from AI-Parrot's unified configuration and credential management.
+
+---
+
+## Running as a Server
+
+AI-Parrot is not only a library — it is also a full **aiohttp-based application server** that exposes your agents as REST APIs, WebSocket endpoints, and more. This is powered by [Navigator](https://github.com/phenobarbital/navigator-api), an async web framework built on aiohttp.
+
+### How it works
+
+When you run `parrot setup`, it generates two files:
+
+- **`app.py`** — Defines your application handler, registers agents with `BotManager`, and configures routes.
+- **`run.py`** — The entry point that starts the aiohttp server.
+
+**app.py** (generated by `parrot setup`):
+
+```python
+from parrot.manager import BotManager
+from parrot.conf import STATIC_DIR
+from parrot.handlers import AppHandler
+from agents.my_agent import MyAgent
+
+
+class Main(AppHandler):
+    app_name: str = "Parrot"
+    enable_static: bool = True
+    staticdir: str = STATIC_DIR
+
+    def configure(self) -> None:
+        self.bot_manager = BotManager()
+        self.bot_manager.register(MyAgent())
+        self.bot_manager.setup(self.app)
+```
+
+**run.py** (generated by `parrot setup`):
+
+```python
+from navigator import Application
+from app import Main
+
+app = Application(Main, enable_jinja2=True)
+
+if __name__ == "__main__":
+    app.run()
+```
+
+### Built-in endpoints
+
+Once the server starts, `BotManager.setup()` automatically registers these routes:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/agents/chat/{agent_id}` | POST | Chat with an agent (JSON, HTML, or Markdown response) |
+| `/api/v1/agents/chat/{agent_id}` | PATCH | Configure tools/MCP servers for a session |
+| `/api/v1/bot_management` | GET | List registered bots |
+| `/api/v1/bot_management/{bot}` | GET/POST/PATCH/DELETE | CRUD operations on bots |
+| `/api/v1/agent_tools` | GET | List available tools |
+| `/api/v1/ai/client` | GET | LLM provider configuration |
+| `/ws/userinfo` | WebSocket | Real-time user notifications |
+
+### Starting the server
+
+**Development** (single process, auto-reload):
+
+```bash
+python run.py
+```
+
+The server starts on `http://0.0.0.0:5000` by default (configurable via `APP_HOST` / `APP_PORT` environment variables).
+
+**Production** (Gunicorn with async workers):
+
+```bash
+# Install gunicorn
+uv pip install "ai-parrot[deploy]"
+
+# Run with aiohttp-compatible workers
+gunicorn run:app \
+    --worker-class aiohttp.worker.GunicornUVLoopWebWorker \
+    --workers 4 \
+    --bind 0.0.0.0:5000 \
+    --timeout 360
+```
+
+The long timeout (360s) accommodates agent queries that involve multi-step tool execution or LLM calls.
+
+### Talking to your agents via REST
+
+Once the server is running, any registered agent is accessible via HTTP:
+
+```bash
+# Chat with an agent
+curl -X POST http://localhost:5000/api/v1/agents/chat/my-agent \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is the weather in Madrid?"}'
+
+# Request markdown output
+curl -X POST "http://localhost:5000/api/v1/agents/chat/my-agent?output_format=markdown" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Summarize the latest news"}'
+```
+
+---
+
+## Architecture
+
+AI-Parrot is designed with a modular architecture enabling agents to be both consumers and providers of tools and services.
+
+```mermaid
+graph TD
+    User["User / Client"] --> API["AgentTalk Handlers"]
+    API --> Bot["Chatbot / BaseBot"]
+
+    subgraph "Agent Core"
+        Bot --> Memory["Memory / Vector Store"]
+        Bot --> LLM["LLM Client (OpenAI/Anthropic/Etc)"]
+        Bot --> TM["Tool Manager"]
+    end
+
+    subgraph "Tools & Capabilities"
+        TM --> LocalTools["Local Tools (@tool)"]
+        TM --> Toolkits["Toolkits (OpenAPI/Custom)"]
+        TM --> MCPServer["External MCP Servers"]
+    end
+
+    subgraph "Connectivity"
+        Bot -.-> A2A["A2A Protocol (Client/Server)"]
+        Bot -.-> MCP["MCP Protocol (Server)"]
+        Bot -.-> Integrations["Telegram / MS Teams"]
+    end
+
+    subgraph "Orchestration"
+        Crew["AgentCrew"] --> Bot
+        Crew --> OtherBots["Other Agents"]
+    end
+```
+
+---
+
+## Core Concepts
+
+### Agents (`Chatbot`)
+
+The `Chatbot` class is your main entry point. It handles conversation history, RAG (Retrieval-Augmented Generation), and the tool execution loop.
+
+```python
+bot = Chatbot(
+    name="MyAgent",
+    model="anthropic:claude-3-5-sonnet-20240620",
+    enable_memory=True
+)
+```
+
+### Tools
+
+#### Functional Tools (`@tool`)
+
+The simplest way to create a tool. The docstring and type hints are automatically used to generate the schema for the LLM.
+
+```python
+from parrot.tools import tool
+
+@tool
+def calculate_vat(amount: float, rate: float = 0.20) -> float:
+    """Calculate VAT for a given amount."""
+    return amount * rate
+```
+
+#### Class-Based Toolkits (`AbstractToolkit`)
+
+Group related tools into a reusable class. All public async methods become tools.
+
+```python
+from parrot.tools import AbstractToolkit
+
+class MathToolkit(AbstractToolkit):
+    async def add(self, a: int, b: int) -> int:
+        """Add two numbers."""
+        return a + b
+
+    async def multiply(self, a: int, b: int) -> int:
+        """Multiply two numbers."""
+        return a * b
+```
+
+#### OpenAPI Toolkit (`OpenAPIToolkit`)
+
+Dynamically generate tools from any OpenAPI/Swagger specification.
+
+```python
+from parrot.tools import OpenAPIToolkit
+
+petstore = OpenAPIToolkit(
+    spec="https://petstore.swagger.io/v2/swagger.json",
+    service="petstore"
+)
+
+# Now your agent can call petstore_get_pet_by_id, etc.
+bot = Chatbot(name="PetBot", tools=petstore.get_tools())
+```
+
+### Orchestration (`AgentCrew`)
+
+Orchestrate multiple agents to solve complex tasks using `AgentCrew`.
+
+**Supported Modes:**
+- **Sequential**: Agents run one after another, passing context.
+- **Parallel**: Independent tasks run concurrently.
+- **Flow**: DAG-based execution defined by dependencies.
+- **Loop**: Iterative execution until a condition is met.
+
+```python
+from parrot.bots.orchestration import AgentCrew
+
+crew = AgentCrew(
+    name="ResearchTeam",
+    agents=[researcher_agent, writer_agent]
+)
+
+# Define a Flow — Writer waits for Researcher to finish
+crew.task_flow(researcher_agent, writer_agent)
+
+await crew.run_flow("Research the latest advancements in Quantum Computing")
+```
+
+### Scheduling (`@schedule`)
+
+Give your agents agency to run tasks in the background.
+
+```python
+from parrot.scheduler import schedule, ScheduleType
+
+class DailyBot(Chatbot):
+    @schedule(schedule_type=ScheduleType.DAILY, hour=9, minute=0)
+    async def morning_briefing(self):
+        news = await self.ask("Summarize today's top tech news")
+        await self.send_notification(news)
+```
+
+---
+
+## Connectivity & Exposure
+
+### Agent-to-Agent (A2A) Protocol
+
+Agents can discover and talk to each other using the A2A protocol.
+
+**Expose an Agent:**
+```python
+from parrot.a2a import A2AServer
+
+a2a = A2AServer(my_agent)
+a2a.setup(app, url="https://my-agent.com")
+```
+
+**Consume an Agent:**
+```python
+from parrot.a2a import A2AClient
+
+async with A2AClient("https://remote-agent.com") as client:
+    response = await client.send_message("Hello from another agent!")
+```
+
+### Model Context Protocol (MCP)
+
+AI-Parrot has first-class support for MCP.
+
+**Consume MCP Servers:**
+```python
+mcp_servers = [
+    MCPServerConfig(
+        name="filesystem",
+        command="npx",
+        args=["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
+    )
+]
+await bot.setup_mcp_servers(mcp_servers)
+```
+
+**Expose Agent as MCP Server:**
+Allow Claude Desktop or other MCP clients to use your agent as a tool.
+
+### Platform Integrations
+
+Expose your bots natively to chat platforms:
+- **Telegram**
+- **Microsoft Teams**
+- **Slack**
+- **WhatsApp**
+
+---
+
+## Optional capabilities
+
+### Dev-Loop Orchestration
+
+> _Optional. Requires the `[claude-agent]` extra:_
+> `pip install ai-parrot[claude-agent]`
+
+A 5-node `AgentsFlow` that fixes "small operational bugs" automatically:
+
+```
+BugIntake → Research → Development → QA → DeploymentHandoff
+                                       │
+                                       └─(qa failed / hard error)→ FailureHandler
+```
+
+The flow takes a Pydantic `BugBrief` (Jira ticket + log sources +
+acceptance criteria) and produces a PR plus a Jira ticket transitioned
+to "Ready to Deploy". Failures escalate back to the original reporter.
+
+**Prerequisites**
+
+- Python 3.11+ with `ai-parrot[claude-agent]` installed.
+- `claude-agent-sdk >= 0.1.68` and either `ANTHROPIC_API_KEY` or a
+  configured `claude` CLI on `PATH`.
+- Redis 6+ for two-stream observability (one stream per flow run plus
+  one per dispatch).
+- Jira service-account credentials wrapped in a
+  `parrot.auth.credentials.StaticCredentialResolver`.
+- (Optional) `gh` CLI for PR creation. Falls back to a direct GitHub
+  REST call (using `GITHUB_TOKEN` + `GITHUB_REPOSITORY`) when the CLI
+  is missing.
+
+**Configuration (navconfig)**
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES` | `3` | Cap on concurrent Claude Code dispatches (dispatcher-side semaphore). |
+| `FLOW_MAX_CONCURRENT_RUNS` | `5` | Cap on concurrent flow runs (orchestrator-side). |
+| `FLOW_BOT_JIRA_ACCOUNT_ID` | `""` | Jira `accountId` of the service-account bot. Must be set per environment. |
+| `WORKTREE_BASE_PATH` | `.claude/worktrees` | Base directory for per-feature worktrees. The dispatcher refuses any `cwd` outside this path. |
+| `FLOW_STREAM_TTL_SECONDS` | `604800` | Retention for both flow and dispatch Redis streams (7 days). |
+| `ACCEPTANCE_CRITERION_ALLOWLIST` | `["flowtask","pytest","ruff","mypy","pylint"]` | Allowed `ShellCriterion` command heads. Validated at intake. |
+
+**Quickstart**
+
+```python
+from parrot.flows.dev_loop import (
+    ClaudeCodeDispatcher,
+    build_dev_loop_flow,
+    register_pull_request_webhook,
+)
+
+dispatcher = ClaudeCodeDispatcher(
+    max_concurrent=3,
+    redis_url="redis://localhost:6379/0",
+    stream_ttl_seconds=604800,
+)
+flow = build_dev_loop_flow(
+    dispatcher=dispatcher,
+    jira_toolkit=jira,                 # already wrapping flow-bot creds
+    log_toolkits={"cloudwatch": cw, "elasticsearch": es},
+    redis_url="redis://localhost:6379/0",
+)
+register_pull_request_webhook(orchestrator, secret=GITHUB_WEBHOOK_SECRET)
+# Then run via your AutonomousOrchestrator with a BugBrief in ctx.
+```
+
+**Live observability**
+
+The dispatcher publishes per-event `DispatchEvent` envelopes (`queued`,
+`started`, `message`, `tool_use`, `tool_result`, `output_invalid`,
+`failed`, `completed`) to Redis Streams. The
+`parrot.flows.dev_loop.flow_stream_ws` aiohttp handler exposes a
+WebSocket endpoint that fans-in the flow stream and every dispatch
+stream into a single envelope per event for the UI to consume — the UI
+never speaks Redis directly.
+
+---
+
+## Supported LLM Providers
+
+| Provider | Extra | Identifier | Example |
+|----------|-------|------------|---------|
+| OpenAI | `openai` | `openai` | `openai:gpt-4o` |
+| Anthropic | `anthropic` | `anthropic`, `claude` | `anthropic:claude-sonnet-4-20250514` |
+| Google Gemini | `google` | `google` | `google:gemini-3.1-flash-lite-preview` |
+| Groq | `groq` | `groq` | `groq:llama-3.3-70b-versatile` |
+| X.AI / Grok | `xai` | `grok` | `grok:grok-3` |
+| HuggingFace | *(included)* | `hf` | `hf:meta-llama/Llama-3-8B` |
+| vLLM | *(included)* | `vllm` | `vllm:model-name` |
+| OpenRouter | *(included)* | `openrouter` | `openrouter:anthropic/claude-sonnet-4` |
+| Ollama | *(included)* | via OpenAI endpoint | — |
+
+---
+
+## Contributing
+
+### Development setup (from source)
+
+AI-Parrot uses **`uv`** as its package manager and provides a **Makefile** to simplify common tasks.
+
+```bash
+git clone https://github.com/phenobarbital/ai-parrot.git
+cd ai-parrot
+
+# Create the virtual environment (Python 3.11)
+make venv
+source .venv/bin/activate
+
+# Full dev install — all packages, all extras, dev tools
+make develop
+
+# Run tests
+make test
+```
+
+#### Makefile targets
+
+The Makefile covers the entire development lifecycle. Run `make help` for the full list.
+
+**Development install variants:**
+
+| Target | What it installs |
+|--------|-----------------|
+| `make develop` | All packages + all extras + dev tools (full environment) |
+| `make develop-fast` | All packages, base deps only (no torch/tensorflow/whisperx) |
+| `make develop-ml` | Embeddings + audio loaders (heavy ML stack) |
+
+**Production install variants:**
+
+| Target | What it installs |
+|--------|-----------------|
+| `make install` | All packages, base deps only (no extras) |
+| `make install-core` | Core with LLM clients + vector stores |
+| `make install-tools` | Core + tools with common extras (jira, slack, aws, etc.) |
+| `make install-tools-all` | Core + tools with ALL extras |
+| `make install-loaders` | Core + loaders with common extras (youtube, web, pdf) |
+| `make install-loaders-all` | Core + loaders with ALL extras (includes whisperx, pyannote) |
+| `make install-all` | Everything with ALL extras |
+
+**Other useful targets:**
+
+```bash
+make format          # Format code with black
+make lint            # Lint with pylint + black --check
+make test            # Run pytest + mypy
+make build           # Build all packages (sdist + wheel)
+make release         # Build + publish to PyPI
+make lock            # Regenerate uv.lock
+make clean           # Remove build artifacts
+make generate-registry  # Regenerate TOOL_REGISTRY from source
+make bump-patch      # Bump patch version (syncs across all packages)
+```
+
+#### Manual install (without Make)
+
+If you prefer not to use Make:
+
+```bash
+uv venv --python 3.11 .venv
+source .venv/bin/activate
+
+# Full install
+uv sync --all-packages --all-extras
+
+# Or selective extras
+uv sync --extra google --extra openai
+```
+
+### Project layout
+
+```
+ai-parrot/
+├── packages/
+│   ├── ai-parrot/           # Core framework
+│   │   └── src/parrot/
+│   ├── ai-parrot-tools/     # Tool implementations
+│   │   └── src/parrot_tools/
+│   └── ai-parrot-loaders/   # Document loaders
+│       └── src/parrot_loaders/
+├── tests/
+├── examples/
+├── Makefile                  # Build, install, test, release shortcuts
+└── pyproject.toml            # Workspace root
+```
+
+### Releasing to PyPI
+
+AI-Parrot publishes three packages on every GitHub release:
+
+| Package | PyPI Project | Build Method |
+|---------|-------------|-------------|
+| `ai-parrot` | [ai-parrot](https://pypi.org/p/ai-parrot) | cibuildwheel (Cython + Rust/Maturin) |
+| `ai-parrot-tools` | [ai-parrot-tools](https://pypi.org/p/ai-parrot-tools) | uv build (pure Python) |
+| `ai-parrot-loaders` | [ai-parrot-loaders](https://pypi.org/p/ai-parrot-loaders) | uv build (pure Python) |
+
+The release workflow (`.github/workflows/release.yml`) runs 3 parallel build jobs and a single deploy job:
+
+```
+release event
+    ├── build-core   — cibuildwheel for ai-parrot (Cython + Rust)
+    ├── build-tools  — uv build for ai-parrot-tools
+    ├── build-loaders — uv build for ai-parrot-loaders
+    └── deploy       — twine upload all artifacts to PyPI
+```
+
+**To create a release:**
+
+1. Bump the version in each package's `pyproject.toml` (or use `make bump-patch` to sync all three).
+2. Create a GitHub release — the workflow triggers automatically on the `release: created` event.
+
+**First-time PyPI setup (required once):**
+
+- Create `ai-parrot-tools` and `ai-parrot-loaders` projects on [PyPI](https://pypi.org) under the same account as `ai-parrot`.
+- Ensure the `NAV_AIPARROT_API_SECRET` GitHub secret holds a PyPI API token with **upload scope for all 3 projects**. A scoped token per project or a single account-level token both work.
+
+**Independent versioning:**
+
+Each package has its own version number in its `pyproject.toml`. All three are built and published on the same release event — there is no requirement to keep versions in sync.
+
+---
+
+### Guidelines
+
+- All code must be **async-first** — no blocking I/O in async contexts
+- Use **type hints** and **Google-style docstrings** on all public APIs
+- Use **Pydantic** models for structured data
+- Run `pytest` after any logic change
+- Tools with heavy dependencies must use **lazy imports** to avoid bloating the core
+
+### Issues & Support
+
+- **Issues**: [GitHub Tracker](https://github.com/phenobarbital/ai-parrot/issues)
+- **Discussion**: [GitHub Discussions](https://github.com/phenobarbital/ai-parrot/discussions)
+
+---
+
+## DB-Persisted Bot Configuration (FEAT-133)
+
+> Added in FEAT-133. Spec: `sdd/specs/bot-reranker-and-parent-searcher-config.spec.md`.
+
+`BotManager._load_database_bots` reads two new JSONB columns on
+`navigator.ai_bots` and wires the resulting objects into every DB-loaded bot
+at startup.  Both columns default to `'{}'::JSONB`, so existing rows are
+unaffected.
+
+### Reranker config (`reranker_config`)
+
+Controls cross-encoder or LLM-based reranking of vector-store candidates
+(FEAT-126).  Empty `{}` means no reranking.
+
+**Local cross-encoder** (no live LLM call; requires `sentence-transformers`):
+
+```jsonc
+{
+  "type": "local_cross_encoder",
+  "model_name": "cross-encoder/ms-marco-MiniLM-L-12-v2",
+  "device": "cpu",
+  "rerank_oversample_factor": 4
+}
+```
+
+**LLM reranker** (uses the bot's own LLM client):
+
+```jsonc
+{
+  "type": "llm",
+  "client_ref": "bot",
+  "rerank_oversample_factor": 4
+}
+```
+
+Factory: `parrot.rerankers.factory.create_reranker(config, *, bot_llm_client=None)`
+
+### Parent-searcher config (`parent_searcher_config`)
+
+Controls parent-document expansion after vector search (FEAT-128).
+Empty `{}` means no expansion.
+
+**In-table parent search** (chunk row has a `parent_id` FK in the same table):
+
+```jsonc
+{
+  "type": "in_table",
+  "expand_to_parent": true
+}
+```
+
+`expand_to_parent` is also forwarded as a constructor kwarg so the bot's
+retrieval logic can branch on it before calling the searcher.
+
+Factory: `parrot.stores.parents.factory.create_parent_searcher(config, *, store)`
+
+> `store` (`bot.store`) becomes available only **after** `await bot.configure(app)`.
+> The factory is therefore called after `configure()`, not before.
+
+### Error handling
+
+An unknown `type` value raises `parrot.exceptions.ConfigError` at bot startup.
+The bot is **not** silently registered without its configured features.
+
+```python
+# A row with {"type": "magic"} in reranker_config will raise:
+# ConfigError: unknown reranker type 'magic'; supported: local_cross_encoder, llm
+```
+
+### Order of operations
+
+```
+create_reranker(reranker_config)           # before bot construction
+bot = BotClass(..., reranker=reranker, expand_to_parent=...)
+await bot.configure(app)                   # store becomes available
+create_parent_searcher(config, store=bot.store)
+bot.parent_searcher = parent_searcher
+```
+
+---
+
+## License
+
+MIT
+
+---
+*Built with care by the AI-Parrot Team*

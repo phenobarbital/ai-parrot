@@ -70,7 +70,7 @@ also edits can mask the very defects it should surface.
    # --task-file enumerates the feature's own tasks from its per-spec index, so the
    # "∪ declared Validation Commands" half of the feature tier is actually exercised.
    TASK_FILES=$(jq -r '.tasks[].file' "sdd/tasks/index/<feature-slug>.json")
-   parrot sdd run select_tests --tier feature --base origin/<base_branch> \
+   parrot sdd tests select --tier feature --base origin/<base_branch> \
      --index "sdd/tasks/index/<feature-slug>.json" \
      $(printf -- '--task-file %s ' $TASK_FILES) --run
    ```

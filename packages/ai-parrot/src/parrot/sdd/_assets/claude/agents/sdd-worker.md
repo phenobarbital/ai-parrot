@@ -155,7 +155,7 @@ you were launched inside a linked worktree (the documented launch mode) or in
 the primary checkout:
 
 ```bash
-META=$(parrot sdd run sdd_meta parse "<spec-path>")
+META=$(parrot sdd docs parse "<spec-path>")
 TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 
@@ -226,7 +226,7 @@ it exists only inside its worktree.
 - `IN_WORKTREE=0` ⇒ STOP: `⚠️  Briefs exist only inside their worktree: cd <worktree> and re-run sdd-worker.`
 - §3 provisions with `--brief-key "${FEATURE_ID#BRIEF-}" --base-branch "<base_branch>"` instead of `--feature-id`/`--jira-key`.
 - `INDEX` (§4.5, closure) is the matched `sdd/briefs/<slug>.index.json`; task files come from `tasks[].file`.
-- Closure: NO `parrot sdd run close_task`. Set one entry in place, fill its Completion Note in place, then stage the index and task file:
+- Closure: NO `parrot sdd task close`. Set one entry in place, fill its Completion Note in place, then stage the index and task file:
 
   ```bash
   jq --arg id "HOTFIX-<KEY>-<N>" --arg now "$NOW" \
@@ -254,7 +254,7 @@ ref (FEAT-552). The command is idempotent: it reuses an existing worktree and
 creates one only when absent.
 
 ```bash
-WORKTREE_PATH=$(parrot sdd run ensure_worktree \
+WORKTREE_PATH=$(parrot sdd worktree ensure \
   --slug "<feature-slug>" \
   --feature-id "<FEAT-ID>" \
   --spec "<spec-path>" \
@@ -408,7 +408,7 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
      review evidence ref>`, `fix_commits`, and a `completion_facts["seat_summary"]` entry formatted
      `Seat: <seat_label> · Backend: <backend> · Model: <model> · Attempts: <n> · Duration: <sum duration_s> ·
      Tokens: <usage>` taken from `attempts[*]`) and run
-     `parrot sdd run finalize_task --evidence <path> --worktree <this worktree> --expected-head <post-merge HEAD>`.
+     `parrot sdd task finalize --evidence <path> --worktree <this worktree> --expected-head <post-merge HEAD>`.
      It renders the Completion Note deterministically and returns `staged_paths`, `removed_paths` and a suggested
      `message` — `git add` exactly the `staged_paths` and commit with that message WITHOUT a pathspec: the deletion of
      the old `active/` copy (`removed_paths`) is already staged, and `git commit -- <paths>` would leave it out and
@@ -574,7 +574,7 @@ If ANY check fails, fix or STOP.
   findings to `/sdd-done`. A repository without a ruff config gets no ruff run.
 - When `test_command` in `sdd/config.json` is set, run it once from the repo root INSTEAD of the `select_tests` merge-tier sweep below: record the command, exit code and output tail; a non-zero exit blocks the merge; zero tests run → report "⚠️ not run — no tests selected", never ✅. When it is null, the sweep below is unchanged.
 - Run the task's `## Validation Commands`, then `LOGS="${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/FEAT-<NNN>";
-  mkdir -p "$LOGS"; parrot sdd run select_tests --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
+  mkdir -p "$LOGS"; parrot sdd tests select --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
   --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --feature FEAT-<NNN> --report-task TASK-<NNN> --run > "$LOGS/merge-tests-TASK-<NNN>.log" 2>&1`
   as a background Bash call (`run_in_background: true`, no `timeout`), then read that log — a foreground call is
   bounded at 120 s and this sweep is routinely longer
@@ -603,7 +603,7 @@ NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
 # verification/file), stage both, and HARD-VERIFY no active/ copy survives.
 # Never hand-roll this with mv/cp + jq: a copy leaves the active/ file behind
 # and it lands on the base branch as a stalled orphan.
-parrot sdd run close_task TASK-<NNN> <feature-slug> verified
+parrot sdd task close TASK-<NNN> <feature-slug> verified
 
 # Fill in Completion Note in the moved task file (in completed/).
 
@@ -625,7 +625,7 @@ After all tasks are done, at the development-to-review boundary:
    - **Settle children, close execution (engine path).** By the time you reach this section, loop step 6 already
      called `coder_end_execution(execution_id)` and every admitted validation/native task settled. Persist the
      durable review checkpoint from that settlement:
-     `parrot sdd run review_checkpoint prepare --feature <FEAT-ID> --worktree <path> --execution-id <uuid>`.
+     `parrot sdd task review prepare --feature <FEAT-ID> --worktree <path> --execution-id <uuid>`.
      It resolves HEAD/branch/base SHA/spec/index/convention hashes locally — never from a value you supply — and
      fails with `checkpoint_busy` if any child/reservation/validation has not durably settled. Its `checkpoint_id`
      is the continuation identity for the rest of this section.
@@ -644,7 +644,7 @@ After all tasks are done, at the development-to-review boundary:
      `unsupported_host`. Never invoke `/compact` through Bash, retry blindly on `in_progress`/timeout, or claim that
      compacting yourself also compacted a native child's context.
    - **Reload/validate the checkpoint** before starting review:
-     `parrot sdd run review_checkpoint validate --feature <FEAT-ID> --worktree <path> --execution-id <uuid>
+     `parrot sdd task review validate --feature <FEAT-ID> --worktree <path> --execution-id <uuid>
      --checkpoint-id <id>`. A `checkpoint_stale` result (branch/HEAD/spec/index/convention hashes moved since
      `prepare`) means no prior approval covers the new diff — regenerate the checkpoint rather than reviewing stale
      evidence.

@@ -22,7 +22,7 @@ brief — research first, a short Q&A, no FEAT/TASK id reservation.
 ## Guardrails
 
 - Write committed artifacts only inside the provisioned worktree. The git-ignored draft staging directory in step 8 is the sole exception under the main checkout's `sdd/`.
-- Provision the worktree only through `parrot sdd run ensure_worktree`.
+- Provision the worktree only through `parrot sdd worktree ensure`.
 - Brief task IDs are local `HOTFIX-<KEY>-<N>` IDs; never allocate global IDs.
 - Never push to or merge into the `hotfix_base` branch (`main` by default); never check out a base branch in the main checkout.
 
@@ -36,7 +36,7 @@ brief — research first, a short Q&A, no FEAT/TASK id reservation.
 6. **Research floor.** Before any worktree exists, STOP unless the draft has the fetched source, a root-cause statement, and at least one verified `path:line` anchor (`test -e <path> && sed -n '<line>p' <path>`). Release any ledger claim and report what is missing.
 7. **Bounded Q&A**: at most five questions in one batch, only for decisions research could not settle; under `--no-interview` record them in `## Assumptions`.
 8. **Stage the draft** under `sdd/state/.brief/<slug>-<RUN_ID>/` (git-ignored).
-9. **Provision**: `parrot sdd run ensure_worktree --json --slug <slug> --brief-key <KEY> --base-branch <base>`; capture `<wt>`.
-10. **Write artifacts inside `<wt>`**: `sdd/briefs/<slug>.brief.md` from `sdd/templates/brief.md` (with `ledger_issue` for ledger sources), task files `sdd/briefs/<slug>/tasks/HOTFIX-<KEY>-<N>-<task-slug>.md`, the per-brief index via `parrot sdd run brief_meta write-index <brief.md> --tasks <tasks.json> --worktree-root <wt>`, then `parrot sdd run check_task_graph <wt>/sdd/briefs/<slug>.index.json`.
+9. **Provision**: `parrot sdd worktree ensure --json --slug <slug> --brief-key <KEY> --base-branch <base>`; capture `<wt>`.
+10. **Write artifacts inside `<wt>`**: `sdd/briefs/<slug>.brief.md` from `sdd/templates/brief.md` (with `ledger_issue` for ledger sources), task files `sdd/briefs/<slug>/tasks/HOTFIX-<KEY>-<N>-<task-slug>.md`, the per-brief index via `parrot sdd brief write-index <brief.md> --tasks <tasks.json> --worktree-root <wt>`, then `parrot sdd task graph <wt>/sdd/briefs/<slug>.index.json`.
 11. **Commit and push from `<wt>`**: stage only the brief, tasks and index; commit `sdd: add brief for <KEY> — <slug>`; `git -C <wt> push -u origin <branch>`.
 12. **Hand off**: report worktree, brief path, task IDs; offer manual implementation or open `<wt>` in Codex and ask: "Use the sdd-worker agent to implement <KEY>." Finish with `$sdd-done <KEY>`. Do not launch the Claude CLI from the source procedure.

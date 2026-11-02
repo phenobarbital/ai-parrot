@@ -572,7 +572,7 @@ You validate feature implementations. You do NOT fix code — you report issues.
 2. Identify all new/modified files from git diff.
 3. Run the test suite:
    a. If `test_command` in `sdd/config.json` is set, run it once from the repo root instead of `select_tests` (record command, exit code and output tail; non-zero blocks the merge; zero tests run → "⚠️ not run — no tests selected", never ✅). When null, use:
-      `TASK_FILES=$(jq -r '.tasks[].file' sdd/tasks/index/<feature-slug>.json); parrot sdd run select_tests --tier feature
+      `TASK_FILES=$(jq -r '.tasks[].file' sdd/tasks/index/<feature-slug>.json); parrot sdd tests select --tier feature
       --base origin/<base_branch> $(printf -- '--task-file %s ' $TASK_FILES) --run` — the feature
       tier (mirror of directories ∪ declared Validation Commands ∪ core escalation); never a full-suite run
    b. `ruff check` on modified files

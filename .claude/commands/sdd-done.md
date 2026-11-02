@@ -66,7 +66,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
 Read the spec's frontmatter to discover `BASE_BRANCH`:
 
 ```bash
-META=$(parrot sdd run sdd_meta parse "<spec-path>")
+META=$(parrot sdd docs parse "<spec-path>")
 TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 # Branch names come from sdd/config.json: hotfix_base, staging_branch, base_branch
@@ -125,7 +125,7 @@ gets its own lane instead of conditionals threaded through the feature lane.
    frontmatter. Set `BASE_BRANCH` accordingly and `BRANCH` to the worktree's branch.
 3. Verify every task in the per-brief index is `done`, then run the brief's
    `## Validation Commands` from the worktree root. Any failure aborts.
-4. Skip `parrot sdd run close_task`, the ledger snapshot (Step 9.1) and E2E (as `TYPE == hotfix`
+4. Skip `parrot sdd task close`, the ledger snapshot (Step 9.1) and E2E (as `TYPE == hotfix`
    does). Briefs close in place — there is no `active/` → `completed/` move.
 5. Continue at Step 8 / 9.2 using `$BRANCH` for every push and PR head.
 
@@ -190,7 +190,7 @@ Then fix what `ruff check` still reports, in those files only (pre-existing
 violations in a touched file included — that is deliberate code improvement):
 - Keep each fix behavior-neutral; when one is not (e.g. narrowing a blind
   `except Exception`), run `TASK_FILES=$(jq -r '.tasks[].file' "sdd/tasks/index/<feature-slug>.json");
-  parrot sdd run select_tests --tier feature --base origin/<base_branch> --worktree "$WT" \
+  parrot sdd tests select --tier feature --base origin/<base_branch> --worktree "$WT" \
   --index "sdd/tasks/index/<feature-slug>.json"
   $(printf -- '--task-file %s ' $TASK_FILES) --run` before committing (when `test_command` is set, run it from the repo root instead — see Step 4.7).
 - Commit as `style(<slug>): FEAT-<ID> — lint fixes`.
@@ -246,7 +246,7 @@ scenarios can never satisfy or count toward this gate (spec §2/M8: exploration
 cannot supply gate `passed`).
 
 ```bash
-GATE_JSON=$(parrot sdd run check_e2e_closeout \
+GATE_JSON=$(parrot sdd tests e2e-closeout \
     --spec "<spec-path>" --feat-id "$FEAT_ID" --worktree "$WORKTREE_PATH")
 GATE_EXIT=$?
 ```
@@ -275,7 +275,7 @@ JSON object: `policy`, `status`, `gate_satisfied`, `reason_codes`, `allowed`.
   Exit nonzero. `--dry-run` still shows this refusal and stops the same way
   it stops after Step 5 — it never proceeds to a mutating step.
   Before exiting, run the `on_failure` hooks (FEAT-764; non-blocking, never changes this abort, exit code ignored):
-  `write_hook_context "E2E gate <status>"; parrot sdd run run_closeout_hooks --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true`
+  `write_hook_context "E2E gate <status>"; parrot sdd closeout run --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true`
 
 The decision table itself — policy resolution (a missing `e2e` key defaults to
 `optional`; a present but malformed value is never coerced to a safe default),
@@ -300,14 +300,14 @@ mkdir -p "$(dirname "$TEST_REPORT_MD")"
 
 # FEAT-699: the feature tier always re-runs FRESH at the final HEAD (contract-driven, cheap); decide-rerun
 # prints `rerun` for any non-empty index. Gate = new reds (+ unknowns) vs origin/<base_branch>.
-DECISION=$(parrot sdd run test_report decide-rerun --index "$IDX")
+DECISION=$(parrot sdd tests report decide-rerun --index "$IDX")
 ```
 
 If `DECISION` is `rerun`, run the feature-tier suite once at the final HEAD in the background
 (`run_in_background: true`), with every task file of the index and without writing to the ledger:
 
 ```bash
-timeout -k 10 1800 parrot sdd run select_tests --tier feature --base origin/<base_branch> \
+timeout -k 10 1800 parrot sdd tests select --tier feature --base origin/<base_branch> \
   --worktree "$WT" --index "$IDX" $(printf -- '--task-file %s ' <every task file of the index>) \
   --feature FEAT-<ID> --report-task _rerun --no-ledger --timeout 300 --run
 ```
@@ -320,7 +320,7 @@ reported, not blocking. Rows are labeled `<runner>:<distribution>` with `n/a` fo
 Then render the section (always, even when the re-run was skipped or failed):
 
 ```bash
-parrot sdd run test_report render --index "$IDX" --worktree "$WT" --out "$TEST_REPORT_MD"
+parrot sdd tests report render --index "$IDX" --worktree "$WT" --out "$TEST_REPORT_MD"
 ```
 
 `render` always writes `$TEST_REPORT_MD` and exits 0 — an unusable index yields a visible
@@ -340,7 +340,7 @@ Hook-context helper section above §4.6). Fields not yet known at early call sit
 
 ```bash
 write_hook_context ""
-HOOKS_OUT=$(parrot sdd run run_closeout_hooks --event pre_pr \
+HOOKS_OUT=$(parrot sdd closeout run --event pre_pr \
     --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" ${DRY_RUN:+--dry-run})
 HOOKS_EXIT=$?
 ```
@@ -358,19 +358,19 @@ HOOKS_EXIT=$?
 1. Launch it: `Agent(subagent_type=<agent>, prompt=<prompt>)`.
 2. Record its outcome:
    ```bash
-   parrot sdd run run_closeout_hooks --event pre_pr --feat-id "$FEAT_ID" --root "$WORKTREE_PATH" \
+   parrot sdd closeout run --event pre_pr --feat-id "$FEAT_ID" --root "$WORKTREE_PATH" \
        --record "<name>" --status pass|fail --summary "<one line>"
    ```
 After all entries are recorded, finalize (unrecorded pending hooks become failures):
 ```bash
-HOOKS_OUT=$(parrot sdd run run_closeout_hooks --event pre_pr --feat-id "$FEAT_ID" --root "$WORKTREE_PATH" --finalize)
+HOOKS_OUT=$(parrot sdd closeout run --event pre_pr --feat-id "$FEAT_ID" --root "$WORKTREE_PATH" --finalize)
 HOOKS_EXIT=$?
 ```
 `--finalize` returns `0` (continue as above) or `1` (abort as below).
 
 **Abort (exit 1 or 2 after finalize):** `write_hook_context "pre_pr blocking hook failed"` (or the
 config-error reason), then
-`parrot sdd run run_closeout_hooks --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true`,
+`parrot sdd closeout run --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true`,
 and stop. `on_failure` never changes the abort; its exit code is ignored.
 
 The `EVIDENCE_MD` value is appended to the PR body in §9.2 as `## Evidence` when non-empty.
@@ -438,7 +438,7 @@ the feature-level `completed_at`.
 > still in `active/` and its index entry is still `pending`/`in-progress`;
 > stamping only `verification` would merge it into `base_branch` stalled in
 > `active/` forever. So a task that is not closed yet is closed here with
-> `parrot sdd run close_task` — **inside the worktree, on the feature branch**.
+> `parrot sdd task close` — **inside the worktree, on the feature branch**.
 > Never run it on `base_branch`: that creates duplicate state that conflicts on
 > merge (FEAT-414). A task the lane already closed is left untouched, so its
 > original `completed_at` is preserved.
@@ -459,8 +459,8 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   if compgen -G "$WORKTREE_PATH/sdd/tasks/active/${TASK_ID}-*.md" >/dev/null \
      || [[ "$STATUS" != "done" && "$STATUS" != "done-with-issues" ]]; then
     # git mv active → completed, index status/completed_at/file, hard-verified.
-    (cd "$WORKTREE_PATH" && parrot sdd run close_task "$TASK_ID" "$FEATURE_SLUG" "$VERIFICATION")
-    # parrot sdd run close_task always writes status "done"; keep Step 6's distinction.
+    (cd "$WORKTREE_PATH" && parrot sdd task close "$TASK_ID" "$FEATURE_SLUG" "$VERIFICATION")
+    # parrot sdd task close always writes status "done"; keep Step 6's distinction.
     if [[ "$VERIFICATION" != "verified" ]]; then
       jq --arg id "$TASK_ID" '(.tasks[] | select(.id == $id) | .status) = "done-with-issues"' \
         "$WORKTREE_PATH/$INDEX" > tmp && mv tmp "$WORKTREE_PATH/$INDEX"
@@ -474,7 +474,7 @@ done
 # Reap any active/ copy of a task that is already done with a completed/ twin
 # (e.g. brought back by a base-branch merge). Runs for BOTH the PR flow and
 # --merge: the PR flow previously had no sweep at all.
-(cd "$WORKTREE_PATH" && parrot sdd run heal_orphans "$FEATURE_SLUG")
+(cd "$WORKTREE_PATH" && parrot sdd task heal "$FEATURE_SLUG")
 
 # Stamp feature-level completed_at if all tasks are done.
 jq --arg now "$NOW" '
@@ -509,7 +509,7 @@ Step 9.1, so the snapshot exports the closures. Skip for hotfixes and
 ```bash
 if [[ "$TYPE" != "hotfix" ]]; then
     git -C "$WORKTREE_PATH" fetch -q origin "$BASE_BRANCH"
-    (cd "$WORKTREE_PATH" && parrot sdd run close_resolved_issues \
+    (cd "$WORKTREE_PATH" && parrot sdd closeout resolve-issues \
         --worktree "$WORKTREE_PATH" --index "$INDEX" --base "origin/$BASE_BRANCH" \
         --feature-id "$FEAT_ID") | sed -n '/^{/,$p'
 fi
@@ -528,7 +528,7 @@ if [[ "$BASE_BRANCH" == "$HOTFIX_BASE" && "$MERGE_FLAG" == "--merge" ]]; then
     echo "⚠️  --merge into '$HOTFIX_BASE' is refused. /sdd-done opens the PR; merging a $HOTFIX_BASE PR is the human act." >&2
     # FEAT-764: on_failure hooks run before the abort; non-blocking, exit code ignored.
     write_hook_context "--merge into $HOTFIX_BASE refused"
-    parrot sdd run run_closeout_hooks --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true
+    parrot sdd closeout run --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true
     exit 1
 fi
 ```
@@ -569,7 +569,7 @@ if [[ "$MERGE_FLAG" == "--merge" ]]; then
             echo "Use --force to bypass blocker checks (not recommended)."
             # FEAT-764: on_failure hooks run before the abort; non-blocking, exit code ignored.
             write_hook_context "merge blocked by critical ledger issues"
-            parrot sdd run run_closeout_hooks --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true
+            parrot sdd closeout run --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true
             exit 1
         else
             echo ""
@@ -692,7 +692,7 @@ if [[ "$IN_WORKTREE" == "1" && "$MERGE_FLAG" == "--merge" ]]; then
 EOF
     # FEAT-764: on_failure hooks run before the abort; non-blocking, exit code ignored.
     write_hook_context "--merge from inside worktree refused"
-    parrot sdd run run_closeout_hooks --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true
+    parrot sdd closeout run --event on_failure --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH" || true
     exit 1
 fi
 ```
@@ -717,7 +717,7 @@ If the user aborts, STOP and do NOT proceed to cleanup.
 > fails the PR if a twin or a closed-but-active task file still reaches it.
 
 ```bash
-parrot sdd run heal_orphans <feature-slug>
+parrot sdd task heal <feature-slug>
 # If it reaped anything, commit the cleanup before pushing:
 if ! git diff --cached --quiet -- sdd/tasks/active sdd/tasks/completed; then
   git commit -m "sdd: reap stalled active task orphans for FEAT-<ID> — <title>"
@@ -741,7 +741,7 @@ if [[ -z "$DRY_RUN" ]]; then
     PR_URL="<PR URL printed by §9.2>"                     # PR flow
     # MERGE_SHA="$(git -C "$MAIN_ROOT" rev-parse HEAD)"   # --merge flow, after the merge
     write_hook_context ""
-    HOOKS_POST_OUT=$(parrot sdd run run_closeout_hooks --event post_pr --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH")
+    HOOKS_POST_OUT=$(parrot sdd closeout run --event post_pr --context "$HOOKS_DIR/context.json" --root "$WORKTREE_PATH")
     POST_EXIT=$?   # reported only; never fails closeout
 fi
 ```

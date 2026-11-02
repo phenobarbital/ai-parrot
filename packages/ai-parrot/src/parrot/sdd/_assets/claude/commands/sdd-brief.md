@@ -15,7 +15,7 @@ Replaces `/sdd-spec --type hotfix`.
 - Never write or commit under the main checkout's `sdd/`; brief artifacts are
   written only after provisioning the target worktree.
 - Never manually create a worktree; provision it only through
-  `parrot sdd run ensure_worktree`.
+  `parrot sdd worktree ensure`.
 - Never call `reserve_ids.py`; brief task IDs are local `HOTFIX-<KEY>-<N>` IDs.
 - Never push to or merge into the `hotfix_base` branch (`main` by default).
 - Never run `git checkout <base>` in the main checkout; it remains on its
@@ -131,7 +131,7 @@ brief or task files into the main checkout.
 Provision exactly one target worktree through the shared CLI:
 
 ```bash
-parrot sdd run ensure_worktree --json --slug <slug> --brief-key <KEY> --base-branch <base>
+parrot sdd worktree ensure --json --slug <slug> --brief-key <KEY> --base-branch <base>
 ```
 
 Capture the returned worktree path as `<wt>`. The new worktree has no
@@ -150,10 +150,10 @@ sdd/briefs/<slug>/tasks/HOTFIX-<KEY>-<N>-<task-slug>.md
 
 Create several task files when `--split` was requested or research found more
 than one independent chunk. Build the per-brief index with
-`parrot sdd run brief_meta write-index <brief.md> --tasks <tasks.json> --worktree-root <wt>`, then validate its graph:
+`parrot sdd brief write-index <brief.md> --tasks <tasks.json> --worktree-root <wt>`, then validate its graph:
 
 ```bash
-parrot sdd run check_task_graph <wt>/sdd/briefs/<slug>.index.json
+parrot sdd task graph <wt>/sdd/briefs/<slug>.index.json
 ```
 
 ### 11. Commit and Push from the Worktree

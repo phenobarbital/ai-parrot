@@ -1,7 +1,7 @@
 """Text contract for the FEAT-764 closeout hooks in both `/sdd-done` twins (TASK-4870).
 
 Both the Claude command and the Codex skill must call the same dispatcher
-(`parrot sdd run run_closeout_hooks`, FEAT-633) for `pre_pr`, `post_pr` and `on_failure`,
+(`parrot sdd closeout run`, FEAT-633) for `pre_pr`, `post_pr` and `on_failure`,
 must no longer offer `--resolve-jira`, and must never let `--force` bypass a
 blocking hook. Every dispatcher flag the twins reference is checked against the
 dispatcher's own argparse definitions.
@@ -33,7 +33,7 @@ def test_all_three_events_invoked_in_both_twins() -> None:
         text = _text(path)
         for event in ("pre_pr", "post_pr", "on_failure"):
             assert f"--event {event}" in text, (path.name, event)
-        assert "parrot sdd run run_closeout_hooks" in text, path.name
+        assert "parrot sdd closeout run" in text, path.name
 
 
 def test_pre_pr_between_test_report_and_report() -> None:
@@ -104,7 +104,7 @@ def test_dispatcher_flags_referenced_exist() -> None:
         lines = _text(path).splitlines()
         used: set[str] = set()
         for index, line in enumerate(lines):
-            if "run_closeout_hooks" not in line:
+            if "sdd closeout run" not in line:
                 continue
             # Continuation lines of a multi-line shell command are part of the same invocation.
             window = lines[index : index + 4]

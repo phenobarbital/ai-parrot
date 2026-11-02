@@ -41,7 +41,7 @@ Keep wiki-first and read the complete task contract through bounded references.
 Prefer task-context inspection when the engine is present; fallback keeps explicit checks.
 Use the existing declared test selector, environment protection and semantic delivery review.
 Finalize only with structured green evidence and the exact implementation HEAD; call
-parrot sdd run finalize_task, inspect returned staged paths and commit explicitly.
+parrot sdd task finalize, inspect returned staged paths and commit explicitly.
 Reject stale evidence and divergent active/completed twins; never reset unrelated staging.
 Do not compact for every task. Feature handoff uses a durable checkpoint and fresh reviewer;
 Codex/Antigravity without a verified adapter report unsupported_host, never call Claude /compact.
@@ -55,7 +55,7 @@ Codex/Antigravity without a verified adapter report unsupported_host, never call
    - every dependency in `depends_on` must be `done`
 3. Ensure the worktree before changing task state (FEAT-552):
    - resolve `feature`, `feature_id`, `spec`, `type`, and `base_branch` from the index header
-   - run `parrot sdd run ensure_worktree --slug <feature-slug> --feature-id <FEAT-ID> --spec <spec-path> --index sdd/tasks/index/<feature-slug>.json`
+   - run `parrot sdd worktree ensure --slug <feature-slug> --feature-id <FEAT-ID> --spec <spec-path> --index sdd/tasks/index/<feature-slug>.json`
    - for hotfixes pass `--jira-key <KEY>` instead of `--feature-id`
    - on a non-zero exit, STOP and report the error; never fall back to implementing on `base_branch`
    - on success, enter the returned worktree path and re-read its task/index before proceeding
@@ -68,7 +68,7 @@ Codex/Antigravity without a verified adapter report unsupported_host, never call
    - commit `sdd: start TASK-NNN - <title>`
    - (FEAT-566, best-effort) append `task.started` to the shared ledger's
      `events.jsonl` — log-only, never blocks on failure (missing ledger
-     package, unwritable shared root); same pattern as `parrot sdd run close_task`'s
+     package, unwritable shared root); same pattern as `parrot sdd task close`'s
      `task.closed` emission (`LedgerEvent`/`LedgerLog`, no SQLite writer
      involved, so no contention to handle)
 5. Read context:
@@ -134,8 +134,8 @@ implement the task yourself — the normal route is the default.
       `completion_facts`) with the task ID, feature slug, exact implementation
       HEAD, durable green validation references, semantic review evidence and
       any correction commits; never fabricate evidence or passing outcomes
-    - run `parrot sdd run finalize_task --evidence <path> --worktree <path> --expected-head <full HEAD SHA>`
-    - on failure, report the evidence/state problem; do not use `parrot sdd run close_task`
+    - run `parrot sdd task finalize --evidence <path> --worktree <path> --expected-head <full HEAD SHA>`
+    - on failure, report the evidence/state problem; do not use `parrot sdd task close`
       as a fallback or hand-edit the Completion Note
     - inspect returned `staged_paths` and `removed_paths`; verify cached names
       include only this task's per-spec index and moved task file

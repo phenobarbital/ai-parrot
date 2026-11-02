@@ -438,7 +438,7 @@ async def test_none_policy_never_reads_a_plan_or_evidence(git_worktree: Path) ->
 def test_each_surface_invokes_the_gate_script(path: Path) -> None:
     """FEAT-703: enforcement is an invocation, not an instruction."""
     text = path.read_text(encoding="utf-8")
-    assert "parrot sdd run check_e2e_closeout" in text
+    assert "parrot sdd tests e2e-closeout" in text
     for keyword in ("stamp", "push", "merge", "cleanup"):
         assert keyword in text.lower()
 

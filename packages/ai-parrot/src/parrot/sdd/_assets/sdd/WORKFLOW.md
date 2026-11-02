@@ -49,9 +49,9 @@ Tasks are designed to be:
 
 ### Phase 3 — Task Execution (Executors)
 `/sdd-start TASK-<NNN>` (one task) or the `sdd-worker` agent (a whole feature)
-creates/reuses the feature worktree via `parrot sdd run ensure_worktree`,
+creates/reuses the feature worktree via `parrot sdd worktree ensure`,
 marks the task `in-progress` in the per-spec index, implements it, and closes it
-with `parrot sdd run close_task`, which moves the file to
+with `parrot sdd task close`, which moves the file to
 `sdd/tasks/completed/` and stamps the index. Code and SDD state are committed
 together on the feature branch. The manual (no-command) procedure is in
 `docs/sdd/WORKFLOW.md`.
@@ -142,7 +142,7 @@ tags: [memory, compaction]                # free-form kebab-case keywords
 List documents by taxonomy:
 
 ```bash
-parrot sdd run doc_taxonomy [--root .] [--kind spec|brainstorm|proposal|all] \
+parrot sdd docs list [--root .] [--kind spec|brainstorm|proposal|all] \
   [--project P ...] [--tag T ...] [--paths-only | --json | --summary]
 ```
 
@@ -164,7 +164,7 @@ parrot sdd run doc_taxonomy [--root .] [--kind spec|brainstorm|proposal|all] \
 Infer missing `projects` frontmatter for existing docs (dry-run by default):
 
 ```bash
-parrot sdd run backfill_taxonomy [--root .] [--kind spec|brainstorm|proposal|all] \
+parrot sdd docs backfill [--root .] [--kind spec|brainstorm|proposal|all] \
   [--limit N] [--apply]
 ```
 
@@ -298,7 +298,7 @@ undetected until `/sdd-done`'s closeout tooling stumbled on them.
 - **`parrot.sdd.scripts.reserve_ids`** — the allocator `/sdd-task` and
   `/sdd-spec` call instead of hand-computing a number:
   ```bash
-  parrot sdd run reserve_ids --kind task --count 8 \
+  parrot sdd ids reserve --kind task --count 8 \
     --base-branch <base_branch> --label <feature-slug>
   ```
   Reads the ledger **as of `origin/<base_branch>`**, builds a *ledger-only*
@@ -367,7 +367,7 @@ or `/sdd-proposal` to explore options first.
 Intake runs are staged under `sdd/state/.intake/` (which is git-ignored). Staged runs are pruned
 after 10 days by a daily git hook. Install this hook once with:
 ```bash
-parrot sdd run install_hooks
+parrot sdd hooks install
 ```
 To uninstall, run with `--uninstall`. The hook refuses to install if `core.hooksPath` is set to a custom path.
 Note that `/sdd-status` remains read-only during this process.
@@ -422,7 +422,7 @@ The SDD workflow is unified across all three developer platforms:
 1. **Never modify files outside the task scope** — respect boundaries
 2. **Follow existing patterns** — reference code mentioned in the task
 3. **Write tests first** — TDD approach per task
-4. **Update the index** — close tasks with `parrot sdd run close_task` (per-spec index), never the legacy monolith
+4. **Update the index** — close tasks with `parrot sdd task close` (per-spec index), never the legacy monolith
 5. **Small commits** — one task = one logical commit
 6. **Ask via the spec** — if unclear, note the ambiguity in the completion note
    and let the Planner agent refine the spec for the next iteration

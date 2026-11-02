@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from parrot.launcher import script_path
+from parrot.sdd.cli import VERBS
 from parrot.sdd.installer import (
     GITIGNORE_BEGIN,
     GUARD_HOOK_LINE,
@@ -256,19 +257,28 @@ def test_status_shape(empty_repo: Path) -> None:
 
 @pytest.mark.parametrize("hosts", [("claude",), ("codex",), ("google",)])
 def test_sdd_flow_in_foreign_repo(empty_repo: Path, hosts: tuple[str, ...]) -> None:
-    """Integration (spec §4, rev 0.2): installed markdown invokes helpers ONLY as `parrot sdd run <name>`,
-    every such name is a real parrot.sdd.scripts module, and no `python -m` / repo-script form remains."""
+    """Integration (spec §4, rev 0.2): installed markdown invokes helpers ONLY as `parrot sdd <noun> <verb>`,
+    every such pair is a row of parrot.sdd.cli.VERBS, and no `python -m` / repo-script form remains."""
     install_sdd_integration(empty_repo, hosts=hosts)
     installed = [empty_repo / e["target"] for e in load_manifest() if set(hosts) & set(e["hosts"])]
     texts = [p.read_text(encoding="utf-8") for p in installed if p.suffix in {".md", ".toml"}]
     joined = "\n".join(texts)
-    names = set(re.findall(r"parrot sdd run ([a-z0-9_]+)", joined))
-    assert names, "installed markdown invokes no helper through `parrot sdd run`"
-    for name in names:
-        assert importlib.util.find_spec(f"parrot.sdd.scripts.{name}") is not None, name
+    pairs = set(re.findall(r"parrot sdd ([a-z]+) ([a-z0-9-]+)", joined))
+    assert pairs, "installed markdown invokes no helper through `parrot sdd <noun> <verb>`"
+    for noun, verb in pairs:
+        if noun in {"install", "uninstall", "status", "ledger", "launch"}:
+            continue  # installer verbs, the re-mounted ledger group (TASK-5099) and launch (TASK-5100)
+        assert verb in VERBS.get(noun, {}), (noun, verb)
+    assert "parrot sdd run" not in joined
     assert "python -m parrot.sdd.scripts." not in joined
     assert "python -m scripts.sdd." not in joined
     assert not re.search(r"scripts/sdd/[a-z_0-9]+\.(py|sh)", joined)
+
+
+def test_rewrite_preserves_asset_names() -> None:
+    """C30: the noun/verb rewrite changed shell lines only - every shipped target keeps its name."""
+    expected = set(json.loads((Path(__file__).parent / "fixtures" / "asset_targets.json").read_text()))
+    assert {e["target"] for e in load_manifest()} == expected
 
 
 # --------------------------------------------------------------------------

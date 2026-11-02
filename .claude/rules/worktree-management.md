@@ -22,9 +22,9 @@ how-to.
 
 ```bash
 if [ -f .venv/bin/activate ]; then source .venv/bin/activate; fi   # only a repo with a project venv
-parrot sdd run ensure_worktree --slug <slug> --feature-id FEAT-<NNN>   # feature → origin/<base_branch>
-parrot sdd run ensure_worktree --slug <slug> --jira-key <JIRA-KEY>     # hotfix  → origin/<hotfix_base>
-parrot sdd run ensure_worktree --slug <slug> --brief-key <KEY> --base-branch <branch>   # /sdd-brief → hotfix-<KEY>-<slug> / fix-<KEY>-<slug>
+parrot sdd worktree ensure --slug <slug> --feature-id FEAT-<NNN>   # feature → origin/<base_branch>
+parrot sdd worktree ensure --slug <slug> --jira-key <JIRA-KEY>     # hotfix  → origin/<hotfix_base>
+parrot sdd worktree ensure --slug <slug> --brief-key <KEY> --base-branch <branch>   # /sdd-brief → hotfix-<KEY>-<slug> / fix-<KEY>-<slug>
 ```
 
 `ensure()` clears the auto-set upstream of a fresh worktree branch (FEAT-698), so the first push is an explicit `git push -u origin <branch>`.

@@ -23,8 +23,8 @@ how-to.
 
 ```bash
 if [ -f .venv/bin/activate ]; then source .venv/bin/activate; fi   # only a repo with a project venv
-parrot sdd run ensure_worktree --slug <slug> --feature-id FEAT-<NNN>   # feature → origin/<base_branch>
-parrot sdd run ensure_worktree --slug <slug> --jira-key <JIRA-KEY>     # hotfix  → origin/<hotfix_base>
+parrot sdd worktree ensure --slug <slug> --feature-id FEAT-<NNN>   # feature → origin/<base_branch>
+parrot sdd worktree ensure --slug <slug> --jira-key <JIRA-KEY>     # hotfix  → origin/<hotfix_base>
 ```
 
 - Created by whoever implements: `/sdd-start`, `sdd-worker`, `/sdd-fix` (Fast lane, via `--brief-key <ledger-short-id> --base-branch dev`), and the dev-loop orchestrators (`sdd-planner`, `sdd-research`, `sdd-autopilot`). `/sdd-task` creates none (FEAT-552).

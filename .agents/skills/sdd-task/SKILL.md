@@ -64,7 +64,7 @@ them to the spec's base branch. This command creates no worktree (FEAT-552);
    - Codebase Contract
    - Worktree Strategy
 4b. Advisory decision-audit check (FEAT-784):
-   - `python -m scripts.sdd.check_spec_consequences <spec> --advisory`
+   - `parrot sdd spec consequences <spec> --advisory`
    - never refuses, always exits 0; repeat any warning in the final output and continue
 5. Plan task decomposition:
    - one task per module, class, or distinct deliverable
@@ -117,7 +117,7 @@ recognises is an error, unless `sdd/config.json` sets `test_command`: then `chec
 When `sdd/config.json` sets `test_command`, skip caching (and continue past a missing Validation Contract section); `cache_test_contract` itself stays strict and, when the `test_scope` kernel cannot be loaded, exits non-zero with a one-line stderr message.
 
 Each task lists its OWN test files only; the spec-wide contract is cached once with
-`parrot sdd run cache_test_contract --spec <spec> --index <index>` (never hand-write `test_contract`). It accepts the flat
+`parrot sdd tests contract --spec <spec> --index <index>` (never hand-write `test_contract`). It accepts the flat
 and the FEAT-709 `runners:` forms and always writes schema 2 (schema 1 is lifted on read to one pytest runner);
 runner kinds, tiers and settings are checked against `.parrot/test_runners.toml`, and `check_task_graph.py` flags
 unknown runners, forbidden tiers, invalid settings/extensions and unrecognised validation commands.
@@ -174,7 +174,7 @@ Example:
 
 7. Reserve task IDs:
    - For `type: feature`, run:
-     `parrot sdd run reserve_ids --kind task --count <N> --base-branch <base_branch> --label <feature-slug>`.
+     `parrot sdd ids reserve --kind task --count <N> --base-branch <base_branch> --label <feature-slug>`.
    - Use returned IDs verbatim.
    - Stop if reservation fails.
    - For `type: hotfix`, do not reserve `TASK-NNN`; use local IDs
@@ -206,7 +206,7 @@ Example:
      priority, effort, dependencies, parallel fields, assignment timestamps,
      and file path
 10. Validate the task graph before committing:
-    - run `parrot sdd run check_task_graph sdd/tasks/index/<feature-slug>.json`
+    - run `parrot sdd task graph sdd/tasks/index/<feature-slug>.json`
     - errors block the commit: fix file overlaps without dependency paths,
       unknown dependencies, cycles, and validation-contract errors, then rerun
     - resolve every warning: justify/remove edges, check possible missing

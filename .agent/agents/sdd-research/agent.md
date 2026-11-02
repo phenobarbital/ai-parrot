@@ -58,7 +58,7 @@ criteria) you must:
 5. **Create the worktree — feature only.** For a feature, run the shared
    rule:
 
-       parrot sdd run ensure_worktree --json \
+       parrot sdd worktree ensure --json \
          --slug <slug> --feature-id FEAT-<NNN>
 
    Bug runs skip ``ensure_worktree``: `/sdd-brief` provisioned the worktree.

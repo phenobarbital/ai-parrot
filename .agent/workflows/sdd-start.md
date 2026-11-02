@@ -62,7 +62,7 @@ Everything the step needs is in the per-spec index header resolved in §1
 (`feature_id`, `feature`, `spec`, `type`, `base_branch`):
 
 ```bash
-WT=$(parrot sdd run ensure_worktree \
+WT=$(parrot sdd worktree ensure \
        --slug "<feature-slug>" \
        --feature-id "<FEAT-ID>" \
        --spec "<spec-path>" \
@@ -141,7 +141,7 @@ except Exception as exc:  # noqa: BLE001 — ledger emission never blocks /sdd-s
 PYEOF
 ```
 
-Log-only append (same durability guarantee as `parrot sdd run close_task`'s
+Log-only append (same durability guarantee as `parrot sdd task close`'s
 `task.closed` — spec §2: "never takes a database lock") — there is no
 SQLite writer contention to handle here.
 
@@ -240,7 +240,7 @@ Keep wiki-first and read the complete task contract through bounded references.
 Prefer task-context inspection when the engine is present; fallback keeps explicit checks.
 Use the existing declared test selector, environment protection and semantic delivery review.
 Finalize only with structured green evidence and the exact implementation HEAD; call
-parrot sdd run finalize_task, inspect returned staged paths and commit explicitly.
+parrot sdd task finalize, inspect returned staged paths and commit explicitly.
 Reject stale evidence and divergent active/completed twins; never reset unrelated staging.
 Do not compact for every task. Feature handoff uses a durable checkpoint and fresh reviewer;
 Codex/Antigravity without a verified adapter report unsupported_host, never call Claude /compact.
@@ -252,13 +252,13 @@ After the code is committed, update the per-spec index in the same branch
 > means *moving* its file from `active/` to `completed/`. Agents that paraphrase
 > this as a `Write`/copy leave the `active/` file behind; when the feature
 > branch merges, both copies land on the base branch as a "stalled" orphan.
-> `parrot sdd run close_task` does the move with `git mv` and HARD-VERIFIES that
+> `parrot sdd task close` does the move with `git mv` and HARD-VERIFIES that
 > no `active/` copy survives (exit 3 if it does). Always call it verbatim.
 
 ```bash
 # Move active → completed, stamp the index (status/completed_at/verification/file),
 # stage the change, and assert active/ is clean. Idempotent.
-parrot sdd run close_task TASK-<NNN> <feature-slug> verified
+parrot sdd task close TASK-<NNN> <feature-slug> verified
 
 # Fill in the Completion Note section of the moved file (now in completed/).
 # Then commit ONLY the staged SDD state — never "git add ." / "git add -A".

@@ -70,7 +70,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
 Read the spec's frontmatter to discover `BASE_BRANCH`:
 
 ```bash
-META=$(parrot sdd run sdd_meta parse "<spec-path>")
+META=$(parrot sdd docs parse "<spec-path>")
 TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 # Branch names come from sdd/config.json: hotfix_base, staging_branch, base_branch
@@ -162,7 +162,7 @@ Then fix what `ruff check` still reports, in those files only (pre-existing
 violations in a touched file included — that is deliberate code improvement):
 - Keep each fix behavior-neutral; when one is not (e.g. narrowing a blind
   `except Exception`), run `TASK_FILES=$(jq -r '.tasks[].file' "sdd/tasks/index/<feature-slug>.json");
-  parrot sdd run select_tests --tier feature --base origin/<base_branch> --worktree "$WT" \
+  parrot sdd tests select --tier feature --base origin/<base_branch> --worktree "$WT" \
   --index "sdd/tasks/index/<feature-slug>.json"
   $(printf -- '--task-file %s ' $TASK_FILES) --run` before committing (when `test_command` is set, run it from the repo root instead — see Step 4.7).
 - Commit as `style(<slug>): FEAT-<ID> — lint fixes`.
@@ -183,7 +183,7 @@ scenarios can never satisfy or count toward this gate (spec §2/M8: exploration
 cannot supply gate `passed`).
 
 ```bash
-GATE_JSON=$(parrot sdd run check_e2e_closeout \
+GATE_JSON=$(parrot sdd tests e2e-closeout \
     --spec "<spec-path>" --feat-id "$FEAT_ID" --worktree "$WORKTREE_PATH")
 GATE_EXIT=$?
 ```
@@ -235,14 +235,14 @@ mkdir -p "$(dirname "$TEST_REPORT_MD")"
 
 # FEAT-699: the feature tier always re-runs FRESH at the final HEAD (contract-driven, cheap); decide-rerun
 # prints `rerun` for any non-empty index. Gate = new reds (+ unknowns) vs origin/<base_branch>.
-DECISION=$(parrot sdd run test_report decide-rerun --index "$IDX")
+DECISION=$(parrot sdd tests report decide-rerun --index "$IDX")
 ```
 
 If `DECISION` is `rerun`, run the feature-tier suite once at the final HEAD in the background
 (`run_in_background: true`), with every task file of the index and without writing to the ledger:
 
 ```bash
-timeout -k 10 1800 parrot sdd run select_tests --tier feature --base origin/<base_branch> \
+timeout -k 10 1800 parrot sdd tests select --tier feature --base origin/<base_branch> \
   --worktree "$WT" --index "$IDX" $(printf -- '--task-file %s ' <every task file of the index>) \
   --feature FEAT-<ID> --report-task _rerun --no-ledger --timeout 300 --run
 ```
@@ -255,7 +255,7 @@ reported, not blocking. Rows are labeled `<runner>:<distribution>` with `n/a` fo
 Then render the section (always, even when the re-run was skipped or failed):
 
 ```bash
-parrot sdd run test_report render --index "$IDX" --worktree "$WT" --out "$TEST_REPORT_MD"
+parrot sdd tests report render --index "$IDX" --worktree "$WT" --out "$TEST_REPORT_MD"
 ```
 
 `render` always writes `$TEST_REPORT_MD` and exits 0 — an unusable index yields a visible
@@ -325,7 +325,7 @@ the feature-level `completed_at`.
 > still in `active/` and its index entry is still `pending`/`in-progress`;
 > stamping only `verification` would merge it into `base_branch` stalled in
 > `active/` forever. So a task that is not closed yet is closed here with
-> `parrot sdd run close_task` — **inside the worktree, on the feature branch**.
+> `parrot sdd task close` — **inside the worktree, on the feature branch**.
 > Never run it on `base_branch`: that creates duplicate state that conflicts on
 > merge (FEAT-414). A task the lane already closed is left untouched, so its
 > original `completed_at` is preserved.
@@ -346,8 +346,8 @@ for TASK_ID in "${TASK_IDS[@]}"; do
   if compgen -G "$WORKTREE_PATH/sdd/tasks/active/${TASK_ID}-*.md" >/dev/null \
      || [[ "$STATUS" != "done" && "$STATUS" != "done-with-issues" ]]; then
     # git mv active → completed, index status/completed_at/file, hard-verified.
-    (cd "$WORKTREE_PATH" && parrot sdd run close_task "$TASK_ID" "$FEATURE_SLUG" "$VERIFICATION")
-    # parrot sdd run close_task always writes status "done"; keep Step 6's distinction.
+    (cd "$WORKTREE_PATH" && parrot sdd task close "$TASK_ID" "$FEATURE_SLUG" "$VERIFICATION")
+    # parrot sdd task close always writes status "done"; keep Step 6's distinction.
     if [[ "$VERIFICATION" != "verified" ]]; then
       jq --arg id "$TASK_ID" '(.tasks[] | select(.id == $id) | .status) = "done-with-issues"' \
         "$WORKTREE_PATH/$INDEX" > tmp && mv tmp "$WORKTREE_PATH/$INDEX"
@@ -361,7 +361,7 @@ done
 # Reap any active/ copy of a task that is already done with a completed/ twin
 # (e.g. brought back by a base-branch merge). Runs for BOTH the PR flow and
 # --merge: the PR flow previously had no sweep at all.
-(cd "$WORKTREE_PATH" && parrot sdd run heal_orphans "$FEATURE_SLUG")
+(cd "$WORKTREE_PATH" && parrot sdd task heal "$FEATURE_SLUG")
 
 # Stamp feature-level completed_at if all tasks are done.
 jq --arg now "$NOW" '
@@ -396,7 +396,7 @@ Step 9.1, so the snapshot exports the closures. Skip for hotfixes and
 ```bash
 if [[ "$TYPE" != "hotfix" ]]; then
     git -C "$WORKTREE_PATH" fetch -q origin "$BASE_BRANCH"
-    (cd "$WORKTREE_PATH" && parrot sdd run close_resolved_issues \
+    (cd "$WORKTREE_PATH" && parrot sdd closeout resolve-issues \
         --worktree "$WORKTREE_PATH" --index "$INDEX" --base "origin/$BASE_BRANCH" \
         --feature-id "$FEAT_ID") | sed -n '/^{/,$p'
 fi
@@ -582,7 +582,7 @@ If the user aborts, STOP and do NOT proceed to cleanup.
 > fails the PR if a twin or a closed-but-active task file still reaches it.
 
 ```bash
-parrot sdd run heal_orphans <feature-slug>
+parrot sdd task heal <feature-slug>
 # If it reaped anything, commit the cleanup before pushing:
 if ! git diff --cached --quiet -- sdd/tasks/active sdd/tasks/completed; then
   git commit -m "sdd: reap stalled active task orphans for FEAT-<ID> — <title>"

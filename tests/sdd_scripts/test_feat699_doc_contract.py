@@ -36,7 +36,7 @@ def test_index_flag_on_every_select_tests_tier_call(rel):
     text = _text(rel)
     # Join continuation lines so a call split across lines is judged as one command.
     flat = re.sub(r"\\\n\s*", " ", text)
-    calls = [m.group(0) for m in re.finditer(r"select_tests --tier (?:feature|merge)[^\n`]*(?:\n\s+--[^\n`]*)?", flat)]
+    calls = [m.group(0) for m in re.finditer(r"tests select --tier (?:feature|merge)[^\n`]*(?:\n\s+--[^\n`]*)?", flat)]
     assert calls, rel
     for call in calls:
         assert "--index" in call, (rel, call)

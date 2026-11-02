@@ -43,10 +43,10 @@ $sdd-fix ... --kind K --severity S --lane fast|sdd   # --lane fast is REFUSED (e
 4. **Prime** — `wikitoolkit ledger context <group.files…> --max-tokens 3000` (full repo-relative paths from the plan, never basenames).
 5. **Route** by `group.lane`:
    - NEVER switch the main checkout's branch and never require it to be clean; every lane
-     works inside a worktree provisioned by `parrot sdd run ensure_worktree`.
+     works inside a worktree provisioned by `parrot sdd worktree ensure`.
      If execution cannot proceed, release successful claims in step 7.
    - **Fast lane** (`lane == "fast"`): one worktree and one PR per group.
-     `parrot sdd run ensure_worktree --json --slug <suggested_slug> --brief-key <issue-short-id> --base-branch <base_branch>`
+     `parrot sdd worktree ensure --json --slug <suggested_slug> --brief-key <issue-short-id> --base-branch <base_branch>`
      plans `fix-<issue-short-id>-<suggested_slug>` off `origin/<base_branch>` and returns `<wt>`;
      `--base-branch <base_branch>` is what selects the `fix-` prefix. Edit inside `<wt>`, then test from `<wt>`:
      when `sdd/config.json` sets `test_command`, run it once; otherwise run the affected package's tests, with
@@ -60,9 +60,9 @@ $sdd-fix ... --kind K --severity S --lane fast|sdd   # --lane fast is REFUSED (e
      — never `--force`, never `--delete-branch` (the PR needs the remote branch). A refusal
      means something is uncommitted or unpushed: keep the tree and report it.
    - **SDD lane** (`lane == "sdd"`): if any `group.parents[].open` is true, reuse that parent spec (`$sdd-task <spec> --from-issue …` per issue);
-     otherwise `parrot sdd run reserve_ids --kind feature --count 1 --base-branch <base_branch> --label <suggested_slug>`, author
+     otherwise `parrot sdd ids reserve --kind feature --count 1 --base-branch <base_branch> --label <suggested_slug>`, author
      `sdd/specs/<suggested_slug>.spec.md` from the group, `$sdd-task`, then
-     `parrot sdd run ensure_worktree --slug <suggested_slug> --feature-id FEAT-<NNN>`. `$sdd-done <FEAT-ID>` closes it out, including the issues its verified tasks resolve.
+     `parrot sdd worktree ensure --slug <suggested_slug> --feature-id FEAT-<NNN>`. `$sdd-done <FEAT-ID>` closes it out, including the issues its verified tasks resolve.
      For a new spec, the slug comes from `suggested_slug`; never re-derive it. For a reused parent,
      use that parent index's existing slug, feature_id, spec and base_branch when provisioning the worktree.
      Task creation alone is not resolution: implement and validate the task in that worktree before step 6.

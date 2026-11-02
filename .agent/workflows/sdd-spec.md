@@ -176,7 +176,7 @@ proposal), and it is why this step no longer calls `parse()` directly:
 ```bash
 # Include each flag only when it applies: --doc when an exploration doc exists,
 # --type / --base only when the user passed --type / --base-branch.
-META=$(parrot sdd run sdd_meta resolve-flow \
+META=$(parrot sdd docs resolve-flow \
     --doc "<brainstorm-or-proposal-path>" \
     --type "<--type value>" \
     --base "<--base-branch value>")
@@ -280,7 +280,7 @@ if [ -z "$SKIP_REASON" ]; then
 fi
 if command -v codex >/dev/null 2>&1; then
   CODEX_VERSION="$(codex --version 2>/dev/null | awk '{print $2}')"
-  parrot sdd run spec_tools init-run "$DR" --model "$MODEL" --codex-version "$CODEX_VERSION" --probe-file "$DR/probe.txt"
+  parrot sdd spec init-run "$DR" --model "$MODEL" --codex-version "$CODEX_VERSION" --probe-file "$DR/probe.txt"
 fi
 ```
 
@@ -306,7 +306,7 @@ In intake mode, sources come from `synthesis.json` (FEAT-577):
 
 ```bash
 if [ -z "$SKIP_REASON" ]; then
-  parrot sdd run spec_tools render-brief "$DR" || SKIP_REASON="brief rendering failed"
+  parrot sdd spec render-brief "$DR" || SKIP_REASON="brief rendering failed"
 fi
 ```
 FORBIDDEN in the brief: anything you have written for this spec, your
@@ -328,7 +328,7 @@ if [ -z "$SKIP_REASON" ]; then
   [ "$rc" -ne 0 ] && [ -z "$SKIP_REASON" ] && SKIP_REASON="codex exited $rc (see $DR/codex.log)"
   ENDED_AT="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
   if [ -f "$DR/run.json" ]; then
-    parrot sdd run spec_tools stamp-run "$DR" --started-at "$STARTED_AT" --ended-at "$ENDED_AT" --exit-code "$rc"
+    parrot sdd spec stamp-run "$DR" --started-at "$STARTED_AT" --ended-at "$ENDED_AT" --exit-code "$rc"
   fi
 fi
 ```
@@ -340,14 +340,14 @@ concurrency is provided for you.
 #### 3b.4 Validate and triage
 ```bash
 if [ -z "$SKIP_REASON" ]; then
-  parrot sdd run spec_tools validate-suggestions "$DR" || SKIP_REASON="suggestions.json failed schema validation"
+  parrot sdd spec validate-suggestions "$DR" || SKIP_REASON="suggestions.json failed schema validation"
 fi
 ```
 For each suggestion (when not skipped), for every `affected_paths` entry:
 1. **Containment check first**: resolve the path against `$REPO_ROOT` and confirm it
    stays inside it —
    ```bash
-   parrot sdd run spec_tools check-path "<path>" --root "$REPO_ROOT" \
+   parrot sdd spec check-path "<path>" --root "$REPO_ROOT" \
      || REASON="REJECT — path outside repository: <path>"
    ```
    A path that fails containment is `REJECT — path outside repository: <path>` and is
@@ -489,7 +489,7 @@ repository`, skip this step.
      `formfield-content-type` (FEAT-488 → FEAT-489), and cost a full run.
 
      ```bash
-     EXISTING=$(parrot sdd run spec_tools existing-feature-id "<feature-name>")
+     EXISTING=$(parrot sdd spec existing-feature-id "<feature-name>")
      ```
 
      If `$EXISTING` is non-empty, **use it verbatim as this spec's Feature
@@ -497,7 +497,7 @@ repository`, skip this step.
      ("reusing FEAT-<NNN>, already owned by this slug"). Only when it is
      empty do you reserve:
      ```bash
-     FEAT_ID=$(parrot sdd run reserve_ids --kind feature --count 1 \
+     FEAT_ID=$(parrot sdd ids reserve --kind feature --count 1 \
        --base-branch "$BASE_BRANCH" --label <feature-name>)
      ```
      `reserve_ids.py` enforces the same rule itself and exits non-zero
@@ -533,7 +533,7 @@ repository`, skip this step.
    one, you have failed to carry the decision forward — fix the spec
    before committing.
 5. Confirm the spec frontmatter carries the exploration doc's `projects` and
-   `tags` (FEAT-576) — `parrot sdd run sdd_meta taxonomy "<spec>"` (JSON `{"projects": [...], "tags": [...]}`)
+   `tags` (FEAT-576) — `parrot sdd docs taxonomy "<spec>"` (JSON `{"projects": [...], "tags": [...]}`)
    must list at least the carried values.
 
 **Worktree hint (new section in spec):**
@@ -595,8 +595,8 @@ absent `e2e` key defaults the later-generated plan's policy to `optional`
 Render, then check (read-only):
 
 ```bash
-python -m scripts.sdd.check_spec_consequences sdd/specs/<feature-name>.spec.md --render
-python -m scripts.sdd.check_spec_consequences sdd/specs/<feature-name>.spec.md
+parrot sdd spec consequences sdd/specs/<feature-name>.spec.md --render
+parrot sdd spec consequences sdd/specs/<feature-name>.spec.md
 ```
 
 Exit codes: `0` pass or skipped · `1` conflict · `2` invalid · `3` incomplete, stale or missing
@@ -637,7 +637,7 @@ fi
 # Intake mode promotion (FEAT-577)
 if [ -d "$STAGE" ]; then
   # Set feat_id and phase: committed in intake.json BEFORE staging
-  parrot sdd run spec_tools commit-intake "$STAGE/intake.json" --feat-id "$FEAT_ID"
+  parrot sdd spec commit-intake "$STAGE/intake.json" --feat-id "$FEAT_ID"
   
   INTAKE_PROMOTED="sdd/state/$FEAT_ID/intake"
   if [ -e "$INTAKE_PROMOTED" ]; then

@@ -58,7 +58,7 @@ copy Claude command frontmatter into Codex skill frontmatter.
   explicit path staging and cached-diff inspection. If unrelated changes are
   already staged, stop before a workflow commit and report the conflict; never
   include or unstage them silently. Do not use `git add .` or `git add -A`.
-- Use `parrot sdd run finalize_task` with real `TaskCompletionEvidence` and the
+- Use `parrot sdd task finalize` with real `TaskCompletionEvidence` and the
   exact implementation HEAD for normal task completion. It owns the Completion
   Note and active-to-completed move; do not manually edit either or fall back to
   `close_task.sh` after failed finalization. The closeout repair path in
@@ -118,7 +118,7 @@ $sdd-brief issue:<hex> --split
 ```
 
 The flow fetches the source, verifies a root cause and a `path:line` anchor,
-then provisions a worktree through `parrot sdd run ensure_worktree`. Non-ledger
+then provisions a worktree through `parrot sdd worktree ensure`. Non-ledger
 sources default to `main`; ledger sources always use `dev` and refuse an
 explicit `--base-branch <hotfix_base>`. It commits and pushes only the new brief branch,
 never `main`. Tasks use local `HOTFIX-<KEY>-<N>` IDs without FEAT/TASK reservation.
@@ -243,7 +243,7 @@ Rules:
 For feature specs, `$sdd-spec` reserves the formal `FEAT-NNN` through:
 
 ```bash
-parrot sdd run reserve_ids --kind feature --count 1 --base-branch <base_branch> --label <feature-slug>
+parrot sdd ids reserve --kind feature --count 1 --base-branch <base_branch> --label <feature-slug>
 ```
 
 Do not hand-compute feature IDs.
@@ -275,7 +275,7 @@ This skill:
 Task IDs are reserved with:
 
 ```bash
-parrot sdd run reserve_ids --kind task --count <N> --base-branch <base_branch> --label <feature-slug>
+parrot sdd ids reserve --kind task --count <N> --base-branch <base_branch> --label <feature-slug>
 ```
 
 Do not hand-compute task IDs.
@@ -304,7 +304,7 @@ The worker must:
 - modify only files listed by the task
 - run the task's acceptance checks
 - commit the implementation files
-- close the task with `parrot sdd run finalize_task` and durable completion evidence
+- close the task with `parrot sdd task finalize` and durable completion evidence
 - inspect its generated Completion Note, staged paths and removed active copy
 - commit the SDD state update
 

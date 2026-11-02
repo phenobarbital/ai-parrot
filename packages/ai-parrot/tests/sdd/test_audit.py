@@ -39,6 +39,13 @@ def test_scan_text_kinds(line: str, kind: str) -> None:
     assert kind in {f.kind for f in scan_text(line, "x.md")}
 
 
+def test_legacy_sdd_run_kind() -> None:
+    """C30: `parrot sdd run <module>` is flagged; `parrot sdd <noun> <verb>` and `wikitoolkit ledger` are not."""
+    assert "legacy-sdd-run" in {f.kind for f in scan_text("parrot sdd run reserve_ids --kind task", "x.md")}
+    assert "legacy-sdd-run" not in {f.kind for f in scan_text("parrot sdd ids reserve --kind task", "x.md")}
+    assert scan_text("wikitoolkit ledger open --kind bug", "x.md") == []
+
+
 def test_scan_text_prose_is_clean() -> None:
     assert scan_text("Ask codex for a second opinion about the design.", "x.md") == []
 

@@ -110,7 +110,7 @@ stay with the thinking model — eligibility never delegates a design choice.
    - If frontmatter has `reuse_feature_id`, use it only for an intentional
      multi-spec split, document the reuse, and skip reservation.
    - Only for a new feature without an existing or explicitly reused ID, call:
-     `parrot sdd run reserve_ids --kind feature --count 1 --base-branch <base_branch> --label <feature-slug>`.
+     `parrot sdd ids reserve --kind feature --count 1 --base-branch <base_branch> --label <feature-slug>`.
    - Use the returned `FEAT-NNN` verbatim.
    - Do not fall back to hand-computed IDs.
 9b. Retrieve governing decisions (FEAT-784), before drafting §2:
@@ -152,7 +152,7 @@ stay with the thinking model — eligibility never delegates a design choice.
      once pytest node IDs are frozen
    - Open Questions with resolved/unresolved state preserved
 10b. Consequence gate (FEAT-784):
-   - `python -m scripts.sdd.check_spec_consequences <spec> --render`, then the same without `--render`
+   - `parrot sdd spec consequences <spec> --render`, then the same without `--render`
    - exit 0 pass/skipped · 1 conflict · 2 invalid · 3 incomplete/stale/missing
    - refuse `**Status**: approved` on any non-zero exit; `skipped` proceeds
 11. Commit:

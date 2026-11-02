@@ -21,20 +21,11 @@ from pathlib import Path
 import pytest
 
 from parrot.sdd.audit import scan_paths
+from parrot.sdd.cli import mounted_modules
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]  # packages/ai-parrot/tests/sdd/ -> repo root
-_MOVED: tuple[str, ...] = (
-    "sdd_meta", "id_ledger", "reserve_ids", "check_id_collisions", "ensure_worktree", "finalize_task",
-    "check_task_state", "check_task_graph", "worktree_status", "close_task", "heal_orphans",
-    "doc_taxonomy", "backfill_taxonomy", "migrate_index", "select_tests", "install_hooks",
-    "prune_intake",  # added to TASK-4088 by the coordinator
-    "review_checkpoint",  # C12 — moved by TASK-4086
-    "spec_tools",  # TASK-4334
-    "brief_meta",  # rev 0.4 C17
-    "cache_test_contract", "test_report", "check_e2e_closeout", "close_resolved_issues",  # TASK-4508
-    "worktree_environment",  # rev 0.3 C16
-    "check_spec_consequences",  # C30 / TASK-5096 — FEAT-784 gate, 10 shipped refs
-)
+# C30: the expected set is derived from the normative noun/verb table, never listed by hand.
+_MOVED: tuple[str, ...] = tuple(sorted(mounted_modules()))
 _ASSET_GLOBS: tuple[str, ...] = (
     ".claude/commands/*.md", ".claude/agents/*.md", ".claude/rules/*.md", ".claude/skills/**/*.md",
     ".agent/**/*.md", ".agents/**/*.md", ".codex/agents/*.toml",
@@ -55,6 +46,9 @@ _C11_KINDS: tuple[str, ...] = ("org-data", "claude-md-ref", "branch-literal")
 _MONOREPO_PATH = re.compile(r"(?<![\w./-])(?:packages|scripts)/|\$\{?CLAUDE_PROJECT_DIR\b[^/\s]*/")
 # C22: the second pattern both C16 gates add (this test and TASK-4090's --check / --wheel).
 _MONOREPO_TEXT = re.compile(r"tests/sdd_scripts/|\bfrom navconfig\b|PYTHONPATH=|reference/sdd-insight/")
+# C30: the retired spellings - `parrot sdd run <module>` (TASK-5095) and `parrot devloop launch-worker` (TASK-5100).
+# `wikitoolkit ledger ...` is NOT policed: it stays a valid spelling beside `parrot sdd ledger` (C30 item 4).
+_RETIRED_SPELLING = re.compile(r"\bparrot sdd run\b|\bdevloop launch-worker\b")
 # (posix path, stripped line) pairs exempted from both patterns — C22 category D: the ONLY entry.
 # `${CLAUDE_PROJECT_DIR:-}/.venv/bin` is the target repo's own venv (the PATH-first fallback).
 _C16_ALLOWLIST: frozenset[tuple[str, str]] = frozenset({
@@ -185,3 +179,9 @@ def test_sdd_brief_documents_the_real_default_branches() -> None:
         text = " ".join((root / rel).read_text(encoding="utf-8").split())
         assert "`main` and `dev` by default" in text, rel
         assert "accepts any branch name" not in text and "Accept only `main`, `dev`, or `staging`" not in text, rel
+
+
+def test_no_retired_spelling_in_shipped_assets() -> None:
+    for path in _glob_files(_SHIPPED_GLOBS):
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            assert not _RETIRED_SPELLING.search(line), f"{path.relative_to(_REPO_ROOT)}:{n}: {line.strip()}"

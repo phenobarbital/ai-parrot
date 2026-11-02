@@ -21,14 +21,18 @@ from typing import Callable
 
 import pytest
 
+from parrot.sdd.cli import VERBS
+
 pytestmark = pytest.mark.integration  # FEAT-563 auto-mark covers only integration/ dirs — mark explicitly
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-INVOCATION_RE = re.compile(r"parrot sdd run ([a-z0-9_]+)((?: [^\n`]*)?)")  # digits: check_e2e_closeout
+INVOCATION_RE = re.compile(r"parrot sdd ([a-z]+) ([a-z0-9-]+)((?: [^\n`]*)?)")  # C30: `parrot sdd <noun> <verb> [argv]`
+#: Installer verbs and the re-mounted groups that are not helper passthroughs (no VERBS row / no C3 scenario).
+NON_HELPER_NOUNS = frozenset({"install", "uninstall", "status", "ledger", "launch"})
 #: A `\`-continued shell line is one command: join before matching, or the flags on the next lines are lost.
 CONTINUATION_RE = re.compile(r"\\\n[ \t]*")
 #: The argv ends at the first shell control operator — e.g. the C16 frontmatter hook
-#: `parrot sdd worktree guard --hook || exit 2'` runs as `worktree_environment --hook`.
+#: `parrot sdd worktree guard --hook || exit 2'` runs as `worktree guard --hook`.
 SHELL_CUT_RE = re.compile(r"\s+(?:\|\||&&|\|)\s+|;")
 #: Shell-only tails that are not helper arguments.
 REDIRECT_RE = re.compile(r"\s+2>(?:/dev/null|&1)")
@@ -360,6 +364,12 @@ SCENARIOS: dict[str, Scenario] = {
         expect_exit=_ANY_CLEAN,
         prose=("--spec <spec-path>",),
     ),
+    # FEAT-784 decision-audit gate: an unconfigured decision plane is a controlled skip/refusal (exit 0-3), never a traceback
+    "check_spec_consequences": Scenario(
+        prepare=_seed_feature,
+        expect_exit=(0, 1, 2, 3),
+        placeholders={"<feature-name>": SLUG, "<spec-path>": f"sdd/specs/{SLUG}.spec.md"},
+    ),
     "check_task_graph": Scenario(
         prepare=lambda c: (_seed_feature(c), _seed_brief_index(c)),
         placeholders={"<wt>": "<repo>/wt", "<slug>": "demo"},  # the brief index is `<wt>/sdd/briefs/demo.index.json`
@@ -509,8 +519,17 @@ def test_parrot_resolves_to_managed_install(managed_home: Path, tools_dir: Path,
 # --------------------------------------------------------------------------
 
 
-def _collect_invocations(repo: Path) -> set[tuple[str, str]]:
-    """``(helper, argv text)`` for every ``parrot sdd run`` form found in every host's installed markdown/toml."""
+def _sdd_argv(module: str, *argv: str) -> list[str]:
+    """``parrot sdd <noun> <verb> *argv`` for the (prefix-free) VERBS row of ``module``."""
+    for noun, verbs in VERBS.items():
+        for verb, (mod, prefix, _) in verbs.items():
+            if mod == module and not prefix:
+                return ["parrot", "sdd", noun, verb, *argv]
+    raise KeyError(module)
+
+
+def _collect_invocations(repo: Path) -> set[tuple[str, str, str]]:
+    """``(noun, verb, argv text)`` for every ``parrot sdd <noun> <verb>`` helper form in every host's installed text."""
     texts = "\n".join(
         p.read_text(encoding="utf-8")
         for d in INSTALLED_DIRS
@@ -519,10 +538,11 @@ def _collect_invocations(repo: Path) -> set[tuple[str, str]]:
         if p.is_file() and p.suffix in {".md", ".toml"}
     )
     texts = CONTINUATION_RE.sub(" ", texts)
-    assert "python -m parrot.sdd.scripts" not in texts, "Q1: shipped markdown must use `parrot sdd run`"
+    assert "python -m parrot.sdd.scripts" not in texts, "Q1: shipped markdown must use `parrot sdd <noun> <verb>`"
     return {
-        (m.group(1), SHELL_CUT_RE.split(m.group(2), maxsplit=1)[0].rstrip(")").strip())
+        (m.group(1), m.group(2), SHELL_CUT_RE.split(m.group(3), maxsplit=1)[0].rstrip(")").strip())
         for m in INVOCATION_RE.finditer(texts)
+        if m.group(1) not in NON_HELPER_NOUNS
     }
 
 
@@ -559,11 +579,16 @@ def test_install_then_every_documented_helper_invocation(
     env = _env(managed_home, tools_dir)
     _install_all_hosts(repo, env)
     invocations = _collect_invocations(repo)
-    assert invocations, "no `parrot sdd run` invocations found — TASK-4089 rewrite missing?"
-    missing = sorted({name for name, _ in invocations} - set(SCENARIOS))
+    assert invocations, "no `parrot sdd <noun> <verb>` invocations found - rewrite missing?"
+    unknown = sorted({(n, v) for n, v, _ in invocations if v not in VERBS.get(n, {})})
+    assert not unknown, f"documented (noun, verb) pairs that are not in parrot.sdd.cli.VERBS: {unknown}"
+    helpers = {VERBS[n][v][0] for n, v, _ in invocations}
+    missing = sorted(helpers - set(SCENARIOS))
     assert not missing, f"helpers documented but without a C3 scenario: {missing}"
     failures: list[str] = []
-    for i, (name, documented) in enumerate(sorted(invocations)):
+    for i, (noun, verb, rest) in enumerate(sorted(invocations)):
+        name, prefix, _help = VERBS[noun][verb]
+        documented = " ".join([*prefix, rest]).strip()  # scenarios are keyed on the helper's own argv (prefix included)
         scenario = SCENARIOS[name]
         clone = tmp_path / f"scenario-{i}-{name}"
         # isolated state: a private bare copy of the origin per invocation (reserve_ids pushes to it)
@@ -580,8 +605,9 @@ def test_install_then_every_documented_helper_invocation(
             failures.append(str(exc))
             continue
         stdin = scenario.stdin(clone) if scenario.stdin else None
+        verb_argv = argv if argv == ["--help"] else argv[len(prefix):]  # the verb injects its own prefix
         result = subprocess.run(
-            ["parrot", "sdd", "run", name, *argv], cwd=clone, env=env, input=stdin, capture_output=True, text=True
+            ["parrot", "sdd", noun, verb, *verb_argv], cwd=clone, env=env, input=stdin, capture_output=True, text=True
         )
         expected = scenario.expect_exit if argv != ["--help"] else (0, 1, 2)  # prose forms: dispatch + load only (some helpers hand-parse argv and print usage with 1)
         problems = []
@@ -654,7 +680,7 @@ def test_c21_test_step_outcomes(managed_home: Path, tools_dir: Path, foreign_rep
     index = f"sdd/tasks/index/{SLUG}.json"
 
     def run(*argv: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(["parrot", "sdd", "run", *argv], cwd=repo, env=env, capture_output=True, text=True)
+        return subprocess.run(_sdd_argv(*argv), cwd=repo, env=env, capture_output=True, text=True)
 
     fallback = run("cache_test_contract", "--spec", f"sdd/specs/{SLUG}.spec.md", "--index", index)
     assert (fallback.returncode, fallback.stdout.strip()) == (0, "fallback"), fallback.stderr

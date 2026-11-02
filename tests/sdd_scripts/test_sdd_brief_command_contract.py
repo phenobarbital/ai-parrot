@@ -15,7 +15,7 @@ def _text() -> str:
 def test_provisions_through_ensure_worktree_brief_key() -> None:
     """The brief lane provisions through the shared brief-key CLI."""
     text = _text()
-    assert "parrot sdd run ensure_worktree" in text
+    assert "parrot sdd worktree ensure" in text
     assert "--brief-key <KEY>" in text
 
 

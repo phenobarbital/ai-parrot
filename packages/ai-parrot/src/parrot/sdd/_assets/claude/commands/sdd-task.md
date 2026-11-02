@@ -52,7 +52,7 @@ Promotion is always explicit — no ledger issue is ever auto-promoted.
 Read the spec's frontmatter to determine the base branch, switch to it, and pull from origin:
 
 ```bash
-META=$(parrot sdd run sdd_meta parse "<spec-path>")
+META=$(parrot sdd docs parse "<spec-path>")
 TYPE=$(echo "$META" | awk '{print $1}')
 BASE=$(echo "$META" | awk '{print $2}')
 
@@ -106,7 +106,7 @@ Read the spec file provided by the user (e.g., `sdd/specs/<feature>.spec.md`).
 ### 2b. Advisory Decision-Audit Check
 
 ```bash
-python -m scripts.sdd.check_spec_consequences <spec-path> --advisory
+parrot sdd spec consequences <spec-path> --advisory
 ```
 
 Advisory only (FEAT-784): it **never refuses** decomposition and always exits 0. It is silent when the
@@ -265,7 +265,7 @@ blueprint code stay with you.
    compare-and-swap ledger (FEAT-387), never scan existing files and
    increment by hand:
    ```bash
-   TASK_IDS=$(parrot sdd run reserve_ids --kind task --count <N> \
+   TASK_IDS=$(parrot sdd ids reserve --kind task --count <N> \
      --base-branch "$BASE" --label <feature-slug>)
    ```
    Where `<N>` is the total number of tasks about to be generated for this
@@ -424,7 +424,7 @@ When `sdd/config.json` sets `test_command`, skip this step: no `test_contract` i
 
 Otherwise run:
 ```bash
-parrot sdd run cache_test_contract --spec <spec-path> --index sdd/tasks/index/<feature-slug>.json
+parrot sdd tests contract --spec <spec-path> --index sdd/tasks/index/<feature-slug>.json
 ```
 It writes the spec §4 `### Validation Contract` into the header as `test_contract` (or removes it for
 `none — fallback`). Never hand-write `test_contract`. Exit 2 means the spec subsection is malformed or
@@ -502,7 +502,7 @@ Example:
 Run the deterministic graph check on the index you just wrote:
 
 ```bash
-parrot sdd run check_task_graph sdd/tasks/index/<feature-slug>.json
+parrot sdd task graph sdd/tasks/index/<feature-slug>.json
 ```
 
 - **Errors** (exit 1) block the commit: `file-overlap` (two tasks declare the

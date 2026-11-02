@@ -20,6 +20,7 @@ KINDS: tuple[str, ...] = (
     "org-data", "claude-md-ref", "branch-literal",            # C11a — publication safety
     # rev 0.8 C29 — foreign-repo breakage found by the 2026-10-30 end-to-end review
     "bare-python", "worktree-artifact", "jira-org-default", "unshipped-command", "nonexistent-cli",
+    "legacy-sdd-run",  # C30 — `parrot sdd run <module>` was replaced by `parrot sdd <noun> <verb>`
 )
 #: python3 (rev 0.8 C29): the shipped commands run inline python3 snippets, and neither a minimal host (e.g. the
 #: ubuntu:24.04 image) nor the global runtime (parrot/wikitoolkit/bookstore/uv on PATH) guarantees one.
@@ -94,6 +95,7 @@ NONEXISTENT_CLI_RE = re.compile(
     r"(?<![\w/.])(?<!parrot )(?:" + "|".join(map(re.escape, NONEXISTENT_CLIS)) + r")(?![\w.])"
 )
 # The three C11a kinds are FIXED above; `org-data` is the union of ORG_HOST_RE and TICKET_KEY_RE (one finding per line).
+LEGACY_SDD_RUN_RE = re.compile(r"\bparrot sdd run\b")
 _ORG_DATA_RE = re.compile("|".join((ORG_HOST_RE.pattern, TICKET_KEY_RE.pattern)))
 _KIND_PATTERNS: dict[str, re.Pattern[str]] = {
     "repo-script": REPO_SCRIPT_RE,
@@ -110,6 +112,7 @@ _KIND_PATTERNS: dict[str, re.Pattern[str]] = {
     "jira-org-default": JIRA_ORG_DEFAULT_RE,
     "unshipped-command": UNSHIPPED_COMMAND_RE,
     "nonexistent-cli": NONEXISTENT_CLI_RE,
+    "legacy-sdd-run": LEGACY_SDD_RUN_RE,
 }
 
 
@@ -182,7 +185,7 @@ def render_report(findings: Sequence[AssumptionFinding], *, scanned: Sequence[st
         lines.append(f"| `{path}`{suffix} | {', '.join(names)} |")
     helpers = sorted({name for names in mapping.values() for name in names})
     lines += ["", "## Rewrite list (drives TASK-4089)", ""]
-    lines += [f"- `scripts/sdd/{name}` / `scripts.sdd.{name}` → `parrot sdd run {name}`" for name in helpers]
+    lines += [f"- `scripts/sdd/{name}` / `scripts.sdd.{name}` → `parrot sdd <noun> <verb>` (see `parrot.sdd.cli.VERBS`; was `{name}`)" for name in helpers]
     lines += ["", "## Findings by file", ""]
     per_file: dict[str, list[AssumptionFinding]] = {}
     for finding in findings:

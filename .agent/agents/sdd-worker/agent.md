@@ -98,7 +98,7 @@ you were launched inside a linked worktree (the documented launch mode) or in
 the primary checkout:
 
 ```bash
-META=$(parrot sdd run sdd_meta parse "<spec-path>")
+META=$(parrot sdd docs parse "<spec-path>")
 TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 
@@ -169,7 +169,7 @@ it exists only inside its worktree.
 - `IN_WORKTREE=0` ⇒ STOP: `⚠️  Briefs exist only inside their worktree: cd <worktree> and re-run sdd-worker.`
 - §3 provisions with `--brief-key "${FEATURE_ID#BRIEF-}" --base-branch "<base_branch>"` instead of `--feature-id`/`--jira-key`.
 - `INDEX` (§4.5, closure) is the matched `sdd/briefs/<slug>.index.json`; task files come from `tasks[].file`.
-- Closure: NO `parrot sdd run close_task`. Set one entry in place, fill its Completion Note in place, then stage the index and task file:
+- Closure: NO `parrot sdd task close`. Set one entry in place, fill its Completion Note in place, then stage the index and task file:
 
   ```bash
   jq --arg id "HOTFIX-<KEY>-<N>" --arg now "$NOW" \
@@ -197,7 +197,7 @@ ref (FEAT-552). The command is idempotent: it reuses an existing worktree and
 creates one only when absent.
 
 ```bash
-WORKTREE_PATH=$(parrot sdd run ensure_worktree \
+WORKTREE_PATH=$(parrot sdd worktree ensure \
   --slug "<feature-slug>" \
   --feature-id "<FEAT-ID>" \
   --spec "<spec-path>" \
@@ -296,7 +296,7 @@ If ANY check fails, fix or STOP.
 ### e) Validate (in worktree)
 - Run linting and fix issues.
 - When `test_command` in `sdd/config.json` is set, run it once from the repo root INSTEAD of the `select_tests` merge-tier sweep below: record the command, exit code and output tail; a non-zero exit blocks the merge; zero tests run → report "⚠️ not run — no tests selected", never ✅. When it is null, the sweep below is unchanged.
-- Run the task's `## Validation Commands`, then `parrot sdd run select_tests --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
+- Run the task's `## Validation Commands`, then `parrot sdd tests select --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
   --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --run`
   (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).
 - If stuck after 3 attempts, mark as `"done-with-issues"`.
@@ -315,7 +315,7 @@ Keep wiki-first and read the complete task contract through bounded references.
 Prefer task-context inspection when the engine is present; fallback keeps explicit checks.
 Use the existing declared test selector, environment protection and semantic delivery review.
 Finalize only with structured green evidence and the exact implementation HEAD; call
-parrot sdd run finalize_task, inspect returned staged paths and commit explicitly.
+parrot sdd task finalize, inspect returned staged paths and commit explicitly.
 Reject stale evidence and divergent active/completed twins; never reset unrelated staging.
 Do not compact for every task. Feature handoff uses a durable checkpoint and fresh reviewer;
 Codex/Antigravity without a verified adapter report unsupported_host, never call Claude /compact.
@@ -333,7 +333,7 @@ NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
 # verification/file), stage both, and HARD-VERIFY no active/ copy survives.
 # Never hand-roll this with mv/cp + jq: a copy leaves the active/ file behind
 # and it lands on the base branch as a stalled orphan.
-parrot sdd run close_task TASK-<NNN> <feature-slug> verified
+parrot sdd task close TASK-<NNN> <feature-slug> verified
 
 # Fill in Completion Note in the moved task file (in completed/).
 

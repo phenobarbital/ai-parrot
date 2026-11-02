@@ -54,7 +54,7 @@ Given the input brief (``document_path``, ``document_kind``, optional
 4. **Create the worktree** through the shared rule — never hand-build the
    name or the base ref (FEAT-552)::
 
-       parrot sdd run ensure_worktree --json \
+       parrot sdd worktree ensure --json \
          --slug <slug> --feature-id FEAT-<NNN> \
          --spec sdd/specs/<slug>.spec.md \
          --index sdd/tasks/index/<slug>.json

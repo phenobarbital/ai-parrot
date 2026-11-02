@@ -98,7 +98,7 @@ you were launched inside a linked worktree (the documented launch mode) or in
 the primary checkout:
 
 ```bash
-META=$(parrot sdd run sdd_meta parse "<spec-path>")
+META=$(parrot sdd docs parse "<spec-path>")
 TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 
@@ -177,7 +177,7 @@ ref (FEAT-552). The command is idempotent: it reuses an existing worktree and
 creates one only when absent.
 
 ```bash
-WORKTREE_PATH=$(parrot sdd run ensure_worktree \
+WORKTREE_PATH=$(parrot sdd worktree ensure \
   --slug "<feature-slug>" \
   --feature-id "<FEAT-ID>" \
   --spec "<spec-path>" \
@@ -291,7 +291,7 @@ NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
 # verification/file), stage both, and HARD-VERIFY no active/ copy survives.
 # Never hand-roll this with mv/cp + jq: a copy leaves the active/ file behind
 # and it lands on the base branch as a stalled orphan.
-parrot sdd run close_task TASK-<NNN> <feature-slug> verified
+parrot sdd task close TASK-<NNN> <feature-slug> verified
 
 # Fill in Completion Note in the moved task file (in completed/).
 

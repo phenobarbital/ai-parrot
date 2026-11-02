@@ -142,7 +142,7 @@ Priority 4: No match
 
 **Labels**: Compute the labels from the spec's frontmatter using:
 ```bash
-parrot sdd run sdd_meta taxonomy "<spec>"   # JSON {"projects": [...], "tags": [...]} — labels = the sorted, deduplicated union of both lists
+parrot sdd docs taxonomy "<spec>"   # JSON {"projects": [...], "tags": [...]} — labels = the sorted, deduplicated union of both lists
 ```
 
 **Description format:**

@@ -147,7 +147,7 @@ class TestDoneTwins:
         """The /sdd-fix SDD lane hands issue closure to /sdd-done; every twin must run it."""
         for path in (self.CLAUDE, self.ANTIGRAVITY, self.CODEX):
             content = read_workflow_file(path)
-            assert "parrot sdd run close_resolved_issues" in content, path
+            assert "parrot sdd closeout resolve-issues" in content, path
             assert "shared ledger is read-only" in content, path
 
 
@@ -197,7 +197,7 @@ class TestStartNextTwins:
         for platform, path in self.TASK.items():
             content = read_workflow_file(path)
             assert "--from-issue" in content, (platform, path)
-            assert "reserve_ids" in content, (platform, path)
+            assert "sdd ids reserve" in content, (platform, path)
             assert "**Discovered-from**: `issue:<id>`" in content, (platform, path)
 
 
@@ -275,8 +275,8 @@ class TestFixTwins:
         for path in self.ALL:
             content = read_workflow_file(path)
             assert "parents" in content, path
-            assert "reserve_ids" in content, path
-            assert "ensure_worktree" in content, path
+            assert "sdd ids reserve" in content, path
+            assert "sdd worktree ensure" in content, path
 
     def test_read_only_ledger_exits_without_claiming(self):
         for path in self.ALL:
