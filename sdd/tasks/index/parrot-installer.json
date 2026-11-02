@@ -1151,11 +1151,11 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": "2026-11-02T23:42:46+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-02T23:45:06+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -1165,7 +1165,8 @@
         "TASK-5101"
       ],
       "parallelism_notes": "rev 0.11 C31; edits installer.py/cli.py, which TASK-5110 also edits — runs first",
-      "file": "sdd/tasks/active/TASK-5109-installer-base-branch-preflight.md"
+      "file": "sdd/tasks/completed/TASK-5109-installer-base-branch-preflight.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5110",

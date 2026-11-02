@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.11, amendment C31)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4080, TASK-4091, TASK-4299, TASK-5101 (all done)
@@ -242,6 +242,6 @@ When you pick up this task:
 ## Completion Note
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 5.5 (sdd-start)
+**Date**: 2026-11-03
+**Notes**: Added `base-branch` plan step, `_base_branch_step` (+ bounded `_git_run`), `--base-branch` / `--push-base`, receipt key `base_branch_created` (preserved by `load_receipt`), uninstall note, docs. 15 new tests + existing installer/CLI tests pass (78). Staging/hotfix-missing notes are emitted for any configured extra branch when HEAD exists; never created.
