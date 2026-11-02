@@ -29,7 +29,7 @@ hooks:
     - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
       hooks:
         - type: command
-          command: 'parrot sdd run worktree_environment --hook || exit 2'
+          command: 'parrot sdd worktree guard --hook || exit 2'
           timeout: 10
 ---
 
