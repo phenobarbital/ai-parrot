@@ -23,7 +23,6 @@ from parrot.experts.policy import effective_allowlist, effective_toolkits, exper
 from parrot.experts.view import ExpertView
 from parrot.models.basic import ModelConfig
 
-
 class ExpertRegistry:
     """Own expert bundles and the ExpertAgents built from them."""
 
@@ -127,9 +126,7 @@ class ExpertRegistry:
             category: Failure category prefix.
             detail: Human-readable validation or admission detail.
         """
-        self._report["skipped"].append(
-            {"name": name, "path": path, "reason": f"{category}-model-override: {detail}"}
-        )
+        self._report["skipped"].append({"name": name, "path": path, "reason": f"{category}-model-override: {detail}"})
 
     def report(self) -> dict[str, Any]:
         """Return a shallow copy of the loading report."""
