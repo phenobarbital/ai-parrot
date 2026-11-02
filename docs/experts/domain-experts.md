@@ -96,6 +96,38 @@ Each tier maps to a `ModelConfig` at load time:
 | `balanced` | General-purpose expert tasks | Mid-capability model |
 | `templated` | Recipe-based remediation, form-filling | Efficient model |
 
+### Per-expert model overrides
+
+Hosts can override a selected expert's tier projection when constructing the registry. Keys are
+the winning bundle's `manifest.name`, not discovery tags or display names. Both `provider` and
+`model` are required non-blank strings; `temperature` and `max_tokens` are optional and are
+validated by `ModelConfig`.
+
+```python
+registry = ExpertRegistry(
+    agent_registry=agent_registry,
+    model_overrides={
+        "security-review": {
+            "provider": "google",
+            "model": "gemini-2.5-pro",
+            "temperature": 0.15,
+            "max_tokens": 12000,
+        }
+    },
+)
+await registry.load()
+
+skipped = registry.report()["skipped"]
+model = registry.effective_model("security-review")
+```
+
+`model_overrides` is defensively copied and `effective_model()` returns an isolated copy, so
+caller mutations cannot alter a loaded agent. A missing, invalid, unknown, or unadmitted override
+does not fall back to the tier default for that target. Inspect `report()["skipped"]`: reasons
+start with `invalid-model-override`, `unknown-model-override`, or `unadmitted-model-override`.
+Other experts continue loading normally, and absent or empty overrides retain every existing tier
+default. Bootstrap helpers do not accept this parameter.
+
 ## Knowledge resolution
 
 `KnowledgeResolver.resolve(expert, stage, workspace, model, counter)` returns a `KnowledgeContext` with a fixed layer order:
