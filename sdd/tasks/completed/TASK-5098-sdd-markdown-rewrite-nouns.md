@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — parrot-installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.10, amendment C30 items 1, 3, 7 — proposal rev 0.9)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4070, TASK-4091, TASK-5095, TASK-5096, TASK-5097
@@ -290,4 +290,4 @@ slash name). `FILL IN`: `pairs` filtering — bounded by AC-2 (no false positive
 ---
 
 ## Completion Note
-_(filled by the implementer)_
+Table-driven rewrite (scratch script, not committed) over .claude/{commands,agents,rules,skills}, .agent, .agents, .codex/agents, sdd/templates, sdd/WORKFLOW.md (+docs/sdd/WORKFLOW.md, same text) and the two asset-native sources (_assets/claude/agents/qa-runner.md, _assets/sdd/CODEX.md); _assets regenerated, check_asset_sync --check exit 0. Fixture asset_targets.json (84 targets) + test_rewrite_preserves_asset_names; audit kind legacy-sdd-run; test_no_repo_script_refs table-driven + retired-spelling gate; wheel test now runs (noun,verb,argv) triples and gained a check_spec_consequences scenario. `wikitoolkit ledger` occurrences untouched (172 before == 172 after with my grep scope). Extra edits needed because of hidden pins of the old spelling: tests/sdd/{test_codex_sdd_sync,test_ledger_workflow_twins}.py and tests/sdd_scripts/{test_command_contracts,test_e2e_closeout_contract,test_sdd_brief_command_contract,test_sdd_brief_twin_contract,test_sdd_done_hooks_contract,test_feat699_doc_contract,test_feat709_doc_contract,test_decision_audit_entry_points}.py. Known failures not mine: packages/ai-parrot/tests/launcher test_launcher_core/test_launcher_reexec (6, fail identically at f5388aa; VIRTUAL_ENV/venv resolution).

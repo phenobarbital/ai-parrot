@@ -1048,11 +1048,11 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "pending",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-11-02T11:31:47+00:00",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -1063,7 +1063,8 @@
         "TASK-5097"
       ],
       "parallelism_notes": "exclusive: regenerates _assets/ + manifest.json; reads parrot.sdd.cli.VERBS from TASK-5095 (incl. `spec consequences` from TASK-5096); the agent hook lines must already carry TASK-5097's spelling so the rewrite does not touch them; audit.py from TASK-4070, test_installer.py/test_wheel_only_foreign_repo.py from TASK-4091",
-      "file": "sdd/tasks/active/TASK-5098-sdd-markdown-rewrite-nouns.md"
+      "file": "sdd/tasks/completed/TASK-5098-sdd-markdown-rewrite-nouns.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5099",
