@@ -47,6 +47,11 @@ def pytest_target_for(path: str, worktree_path: str) -> str | None:
         nothing that exists on disk.
     """
     parts = PurePosixPath(path).parts
+    if parts and parts[-1] in ("conftest.py", "__init__.py"):
+        # A conftest/package marker is not a test target: pytest collects nothing from it (exit 5,
+        # which the merge gate reads as red). The tests it configures are its directory.
+        parent = "/".join(parts[:-1])
+        return parent if parent and os.path.isdir(os.path.join(worktree_path, parent)) else None
     if parts and parts[0] == "tests":
         # The repo-root ``tests/`` tree (pytest's configured ``testpaths``,
         # ~400 modules) lives outside ``packages/`` and mirrors nothing, so
@@ -101,7 +106,7 @@ def pytest_file_target_for(path: str, worktree_path: str) -> str | None:
         An existing repo-relative test file, or ``None`` when no file maps.
     """
     parts = PurePosixPath(path).parts
-    if not parts or PurePosixPath(path).suffix != ".py" or parts[-1] == "__init__.py":
+    if not parts or PurePosixPath(path).suffix != ".py" or parts[-1] in ("__init__.py", "conftest.py"):
         return None
 
     changed_path = os.path.join(worktree_path, *parts)

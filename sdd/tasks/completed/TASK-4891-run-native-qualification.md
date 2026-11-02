@@ -170,10 +170,8 @@ No new tests; the TASK-4890 harness is the test.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat operator (live runs) + sdd-worker orchestrator (harness fixes, report), attempt 1
+**Date**: 2026-10-30
+**Notes**: Strict live qualification QUALIFIED on both paths: path (claude 2.1.314) 8/8 PASS; bundled (SDK CLI 2.1.301/2.1.310) 8/8 PASS; canaries unchanged in every scenario; strictAllowlist active; budget USD 0.05 total. Report: sdd/state/FEAT-768/native-sandbox-qualification.md. Along the way: harness defects fixed (cwd-relative launcher path after navconfig chdir, per-path records, bundled auth under temp HOME), policy gap fixed (network.strictAllowlist), spec §4 competing-rewrite criterion amended by operator decision. Model feedback for the TASK-4890 attempt NOT recorded (tool rejected attempt identity) — preserved in the report.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

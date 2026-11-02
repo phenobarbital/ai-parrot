@@ -1,4 +1,5 @@
 """Click wiring tests for ``parrot devloop``."""
+
 from __future__ import annotations
 
 import sys
@@ -32,6 +33,7 @@ def test_devloop_help_no_conf_import():
         result = runner.invoke(devloop, ["--help"])
         assert result.exit_code == 0
         assert "Interactive CLI console" in result.output
+        assert "launch-worker" in result.output
         assert "parrot.conf" not in sys.modules
     finally:
         if original is not None:
@@ -106,9 +108,7 @@ def test_revise_flag_passthrough():
     assert result.exit_code == 0
     mock_instance.start.assert_called_once()
     call_kwargs = mock_instance.start.call_args
-    assert call_kwargs[1].get("revision") is True or (
-        len(call_kwargs[0]) > 1 and call_kwargs[0][1] is True
-    )
+    assert call_kwargs[1].get("revision") is True or (len(call_kwargs[0]) > 1 and call_kwargs[0][1] is True)
 
 
 def test_bare_devloop_invokes_run():

@@ -264,10 +264,8 @@ def test_backend_env_set_for_child(fake_claude_path: str, linked_cwd: Path) -> N
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-sol (codex), attempt 1
+**Date**: 2026-10-30
+**Notes**: Added launcher argument parsing and session cache allocation to native_claude_sandbox.py and reworked scripts/sdd/launch_worker.sh. Merge-tier validation green (207 passed, 10 skipped, launch_worker tests 19 passed). Orchestrator read the diff; no corrections.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
