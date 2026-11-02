@@ -153,6 +153,7 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
             )
         },
         "prune-intake": ("prune_intake", (), "Prune stale /sdd-spec intake staging."),
+        "consequences": ("check_spec_consequences", (), "Decision-audit gate for a spec (FEAT-784)."),
     },
     "brief": {v: ("brief_meta", (v,), f"brief_meta {v}") for v in ("plan", "write-index")},
     "docs": {
@@ -174,7 +175,7 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
     "hooks": {"install": ("install_hooks", (), "Install the SDD git hooks.")},
 }
 #: Packaged modules with a main() that are deliberately NOT mounted (C22: /sdd-insight does not ship).
-_UNMOUNTED: frozenset[str] = frozenset({"insight"})
+_UNMOUNTED: frozenset[str] = frozenset()
 _PASSTHROUGH = {"ignore_unknown_options": True, "allow_interspersed_args": False}
 
 

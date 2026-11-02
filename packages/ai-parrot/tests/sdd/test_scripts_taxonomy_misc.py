@@ -1,5 +1,5 @@
 # packages/ai-parrot/tests/sdd/test_scripts_taxonomy_misc.py
-"""FEAT-633 move C: taxonomy/select_tests/insight/install_hooks live in parrot.sdd.scripts; shims alias them."""
+"""FEAT-633 move C: taxonomy/select_tests/install_hooks live in parrot.sdd.scripts; shims alias them."""
 from __future__ import annotations
 
 import importlib
@@ -13,7 +13,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SRC = REPO_ROOT / "packages" / "ai-parrot" / "src"
 MOVED = (
-    "doc_taxonomy", "backfill_taxonomy", "migrate_index", "select_tests", "insight", "install_hooks",
+    "doc_taxonomy", "backfill_taxonomy", "migrate_index", "select_tests", "install_hooks",
     "prune_intake", "spec_tools",
 )
 
@@ -47,13 +47,3 @@ def test_select_tests_kernel_is_package_relative() -> None:
 
     assert select_tests._KERNEL_PARENT == Path(parrot.__file__).resolve().parent / "flows" / "dev_loop"
     assert hasattr(select_tests._load_kernel(), "plan_tests")
-
-
-def test_insight_runs_by_path_with_bare_interpreter() -> None:
-    # -I -S: isolated + no site-packages (no venv, no editable .pth) — a truly bare interpreter; only the shim's
-    # own-checkout fallback can find parrot.sdd.scripts.insight (stdlib-only), so this exercises the fallback.
-    proc = subprocess.run(
-        [sys.executable, "-I", "-S", str(REPO_ROOT / "scripts" / "sdd" / "insight.py"), "--help"],
-        cwd=REPO_ROOT, capture_output=True, text=True,
-    )
-    assert proc.returncode == 0, proc.stderr

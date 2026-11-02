@@ -26,13 +26,14 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]  # packages/ai-parrot/tests/sdd
 _MOVED: tuple[str, ...] = (
     "sdd_meta", "id_ledger", "reserve_ids", "check_id_collisions", "ensure_worktree", "finalize_task",
     "check_task_state", "check_task_graph", "worktree_status", "close_task", "heal_orphans",
-    "doc_taxonomy", "backfill_taxonomy", "migrate_index", "select_tests", "insight", "install_hooks",
+    "doc_taxonomy", "backfill_taxonomy", "migrate_index", "select_tests", "install_hooks",
     "prune_intake",  # added to TASK-4088 by the coordinator
     "review_checkpoint",  # C12 — moved by TASK-4086
     "spec_tools",  # TASK-4334
     "brief_meta",  # rev 0.4 C17
     "cache_test_contract", "test_report", "check_e2e_closeout", "close_resolved_issues",  # TASK-4508
     "worktree_environment",  # rev 0.3 C16
+    "check_spec_consequences",  # C30 / TASK-5096 — FEAT-784 gate, 10 shipped refs
 )
 _ASSET_GLOBS: tuple[str, ...] = (
     ".claude/commands/*.md", ".claude/agents/*.md", ".claude/rules/*.md", ".claude/skills/**/*.md",
