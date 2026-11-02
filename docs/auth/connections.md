@@ -36,7 +36,9 @@ Python paths.
 The Identity Vault (`auth.user_identities`) owns every 3LO provider grant,
 through the `CredentialStore` protocol. Redis is the hot cache used by live
 tool calls. Writes are durable-first, then cached; a successful callback is not
-reported until the durable write succeeds.
+reported until the durable write succeeds. The store is bound at app startup,
+once navigator-auth's `authdb` exists; grants already written to the generic
+vault before that are not migrated.
 
 ## Channel adapters
 

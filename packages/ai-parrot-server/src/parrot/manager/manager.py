@@ -2982,7 +2982,29 @@ Available documentation UIs:
                 from parrot.auth.principal import set_principal_resolver
                 from parrot.services.identity_principal import IdentityPrincipalResolver
 
+                from parrot.services.identity_credential_sink import IdentityVaultCredentialStore
+
                 set_principal_resolver(IdentityPrincipalResolver(authdb))
+
+                identity_store = IdentityVaultCredentialStore(authdb)
+                seen: set = set()
+                candidates = [app.get("jira_oauth_manager")]
+                candidates.extend(
+                    value for key, value in list(app.items())
+                    if isinstance(key, str) and key.startswith("oauth2_manager_")
+                )
+                for candidate in candidates:
+                    if candidate is None or id(candidate) in seen:
+                        continue
+                    seen.add(id(candidate))
+                    bind = getattr(candidate, "bind_credential_store", None)
+                    if bind is not None:
+                        bind(identity_store)
+            else:
+                self.logger.info(
+                    "app['authdb'] unavailable — Identity Vault not bound; "
+                    "OAuth2 managers keep their default credential store"
+                )
 
             self._register_descriptor_oauth2_providers(app)
         except Exception:  # noqa: BLE001
