@@ -949,11 +949,11 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "pending",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-11-02T12:54:35+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -967,7 +967,8 @@
         "TASK-5098"
       ],
       "parallelism_notes": "external: blocked until PR #1884 (FEAT-768 incl. TASK-5086..5089) is merged into dev; needs the noun CLI from TASK-5095 (cli.py) and the `sdd worktree guard --hook` spelling from TASK-5097 (installer.py GUARD_HOOK_LINE, agents) before porting FEAT-768's compiled hook settings; serialized after TASK-5098 (both regenerate _assets/**) so the FEAT-768 merge resolves markdown conflicts once, against the rewritten assets",
-      "file": "sdd/tasks/active/TASK-5093-absorb-feat-768-native-sandbox.md"
+      "file": "sdd/tasks/completed/TASK-5093-absorb-feat-768-native-sandbox.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5095",
