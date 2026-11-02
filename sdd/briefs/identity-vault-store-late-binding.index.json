@@ -16,15 +16,15 @@
       "feature_id": "BRIEF-4137bc2e311f",
       "feature": "identity-vault-store-late-binding",
       "spec": "sdd/briefs/identity-vault-store-late-binding.brief.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-11-02T22:54:49+00:00",
+      "completed_at": "2026-11-02T22:54:49+00:00",
       "file": "sdd/briefs/identity-vault-store-late-binding/tasks/HOTFIX-4137bc2e311f-1-bind-identity-vault-store-at-startup.md"
     }
   ]

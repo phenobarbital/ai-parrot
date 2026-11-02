@@ -2,7 +2,7 @@
 
 **Feature**: issue:4137bc2e311f — Identity Vault credential store is never bound
 **Spec**: `sdd/briefs/identity-vault-store-late-binding.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -82,4 +82,4 @@ ruff check packages/ai-parrot/src/parrot/auth/oauth2_base.py packages/ai-parrot-
 ```
 
 ## Completion Note
-<!-- filled on close -->
+Implemented `bind_credential_store()` + `_store_is_default` in oauth2_base.py; `_register_oauth2_providers` binds one `IdentityVaultCredentialStore(authdb)` onto jira/oauth2_manager_* default-store managers (INFO log when authdb absent). 5 new tests pass; ruff clean. Implemented directly (no coder seats).
