@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — parrot-installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.10, amendment C30 item 6 — proposal rev 0.9)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4080, TASK-4091, TASK-4509, TASK-5092, TASK-5095
@@ -215,4 +215,4 @@ assert out.returncode == 0 and out.stdout.strip() == "ran:sdd worktree guard --h
 ---
 
 ## Completion Note
-_(filled by the implementer)_
+Agents/_assets hook line done in 7ce9dfa; this commit: SDD_HOOK_ARGV, GUARD_HOOK_LINE/_GUARD_HOOK_SUFFIX, installer guard detection now matches both `worktree guard --hook` and legacy `worktree_environment` (_GUARD_MARKERS), gitignore comment/ledger message spelling, pinned test strings, TASK-5093 text. check_asset_sync --check exit 0. Old-line repos classify `other` -> doctor says re-run install (C25). Still red until TASK-5098 (markdown rewrite): test_installer::test_sdd_flow_in_foreign_repo (shipped `python -m scripts.sdd.` refs), test_wheel_only_foreign_repo::documented_helper_invocation + c21 (stale `parrot sdd run`).

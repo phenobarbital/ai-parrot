@@ -1023,11 +1023,11 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "pending",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-11-02T11:18:47+00:00",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -1038,7 +1038,8 @@
         "TASK-5095"
       ],
       "parallelism_notes": "exclusive: regenerates the shared _assets/ tree + manifest.json (check_asset_sync --write); needs the `worktree guard` verb from TASK-5095 (cli.py) for the integration tests; after TASK-5092 which also regenerates _assets; installer.py/test_installer.py/test_wheel_only_foreign_repo.py (TASK-4091), launcher.py SDD_HOOK_ARGV + its test (TASK-4509), doctor guard check test (TASK-4080)",
-      "file": "sdd/tasks/active/TASK-5097-sdd-hook-argv-worktree-guard.md"
+      "file": "sdd/tasks/completed/TASK-5097-sdd-hook-argv-worktree-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5098",
