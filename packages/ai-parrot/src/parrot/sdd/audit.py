@@ -185,7 +185,11 @@ def render_report(findings: Sequence[AssumptionFinding], *, scanned: Sequence[st
         lines.append(f"| `{path}`{suffix} | {', '.join(names)} |")
     helpers = sorted({name for names in mapping.values() for name in names})
     lines += ["", "## Rewrite list (drives TASK-4089)", ""]
-    lines += [f"- `scripts/sdd/{name}` / `scripts.sdd.{name}` → `parrot sdd <noun> <verb>` (see `parrot.sdd.cli.VERBS`; was `{name}`)" for name in helpers]
+    lines += [
+        f"- `scripts/sdd/{name}` / `scripts.sdd.{name}` → `parrot sdd <noun> <verb>` "
+        f"(see `parrot.sdd.cli.VERBS`; was `{name}`)"
+        for name in helpers
+    ]
     lines += ["", "## Findings by file", ""]
     per_file: dict[str, list[AssumptionFinding]] = {}
     for finding in findings:

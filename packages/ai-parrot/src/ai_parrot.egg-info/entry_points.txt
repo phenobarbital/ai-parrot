@@ -1,9 +1,0 @@
-[console_scripts]
-bookstore = parrot.launcher:main_bookstore
-parrot = parrot.launcher:main_parrot
-parrot-graphindex = parrot.knowledge.graphindex.cli:main
-wikitoolkit = parrot.launcher:main_wikitoolkit
-
-[navigator_session.vault_targets]
-parrot_user_credentials = parrot.vault_targets:user_credentials_factory
-parrot_user_llm_keys = parrot.vault_targets:user_llm_keys_factory

@@ -106,8 +106,8 @@ def test_no_c29_findings_in_shipped_files() -> None:
     assert not offenders, "\n".join(f"{f.path}:{f.line}: [{f.kind}] {f.snippet}" for f in offenders)
 
 
-def test_every_invocation_uses_parrot_sdd_run() -> None:
-    """Every helper invocation in an asset is ``parrot sdd run <moved name>`` (Q1)."""
+def test_no_python_dash_m_helper_invocations() -> None:
+    """Helpers are invoked only as ``parrot sdd <noun> <verb>`` (Q1/C30); no ``python -m`` form remains."""
     bad = re.compile(r"python3?[ \t]+-m[ \t]+parrot\.sdd\.scripts\.")
     offenders = [p for p in _asset_files() if bad.search(p.read_text(encoding="utf-8"))]
     assert not offenders, f"assets still invoke helpers with python -m: {offenders}"
@@ -131,7 +131,7 @@ def test_no_inline_python_imports_parrot() -> None:
     """Rule 6: no ``python -c`` in an asset imports ``parrot.sdd.scripts`` (a global-only install's python cannot)."""
     bad = re.compile(r"python3?\s+-c\s+\"[^\"]*parrot\.sdd\.scripts")  # [^"] spans the multi-line block
     offenders = [p for p in _asset_files() if bad.search(p.read_text(encoding="utf-8"))]
-    assert not offenders, f"inline python still imports a helper (use `parrot sdd run sdd_meta …`): {offenders}"
+    assert not offenders, f"inline python still imports a helper (use `parrot sdd <noun> <verb>`): {offenders}"
 
 
 def test_no_monorepo_source_paths_in_shipped_files() -> None:
@@ -182,6 +182,9 @@ def test_sdd_brief_documents_the_real_default_branches() -> None:
 
 
 def test_no_retired_spelling_in_shipped_assets() -> None:
-    for path in _glob_files(_SHIPPED_GLOBS):
+    """C30: no shipped file spells ``parrot sdd run …`` or ``devloop launch-worker`` (retired forms)."""
+    files = _glob_files(_SHIPPED_GLOBS)
+    assert files, "shipped-asset glob matched nothing — the gate would be a no-op"
+    for path in files:
         for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             assert not _RETIRED_SPELLING.search(line), f"{path.relative_to(_REPO_ROOT)}:{n}: {line.strip()}"
