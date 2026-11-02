@@ -8,13 +8,12 @@ from pathlib import Path
 
 import pytest
 
+from parrot.sdd.config import load_sdd_config
 from parrot.sdd.installer import install_sdd_integration, uninstall_sdd_integration
 
 
 def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
-    ).stdout.strip()
+    return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
 
 
 def _commit(repo: Path) -> None:
@@ -103,10 +102,74 @@ def test_push_base_failure_is_a_warning(repo: Path, tmp_path: Path) -> None:
     assert any(a.startswith("warning:") and "push to origin failed" in a for a in out)
 
 
+def _tree(repo: Path) -> list[str]:
+    return sorted(p.relative_to(repo).as_posix() for p in repo.rglob("*") if ".git/" not in p.as_posix())
+
+
 def test_base_branch_flag_seeds_config(repo: Path) -> None:
-    install_sdd_integration(repo, base_branch="main")
-    assert json.loads((repo / "sdd/config.json").read_text())["base_branch"] == "main"
-    assert not _has(repo, "refs/heads/dev")
+    install_sdd_integration(repo, base_branch="trunk")
+    assert load_sdd_config(repo).base_branch == "trunk"  # the seed must load back, not just be written
+    assert _has(repo, "refs/heads/trunk") and not _has(repo, "refs/heads/dev")
+    install_sdd_integration(repo)  # a second install reads the seeded config without error
+
+
+def test_base_branch_main_with_hotfix_base_seeds_a_valid_config(repo: Path) -> None:
+    """A repo that integrates on `main` names a separate hotfix branch; both land in a loadable config."""
+    install_sdd_integration(repo, base_branch="main", hotfix_base="hotfix")
+    config = load_sdd_config(repo)
+    assert (config.base_branch, config.hotfix_base) == ("main", "hotfix")
+    assert not _has(repo, "refs/heads/dev") and not _has(repo, "refs/heads/hotfix")  # hotfix branch: note only
+    install_sdd_integration(repo)
+
+
+def test_base_branch_main_alone_refuses_with_hotfix_hint(repo: Path) -> None:
+    """`main` is also the default hotfix branch; SddConfig requires distinct lanes, so nothing is written."""
+    with pytest.raises(ValueError, match="--hotfix-base"):
+        install_sdd_integration(repo, base_branch="main")
+    assert not (repo / "sdd").exists()
+
+
+@pytest.mark.parametrize("kwargs", [{"base_branch": "origin/x"}, {"hotfix_base": "origin/x"}])
+def test_names_sddconfig_rejects_are_refused_before_writing(repo: Path, kwargs: dict[str, str]) -> None:
+    """`git check-ref-format` accepts `origin/x`; SddConfig does not — no config, no `origin/x` branch."""
+    with pytest.raises(ValueError, match="invalid SDD branch settings"):
+        install_sdd_integration(repo, **kwargs)
+    assert not (repo / "sdd").exists()
+    assert not _has(repo, "refs/heads/origin/x")
+
+
+def test_hotfix_base_conflicting_config_refuses_before_writing(repo: Path) -> None:
+    (repo / "sdd").mkdir()
+    (repo / "sdd/config.json").write_text(json.dumps({"base_branch": "dev", "hotfix_base": "main"}))
+    before = _tree(repo)
+    with pytest.raises(ValueError, match="already sets hotfix_base=main"):
+        install_sdd_integration(repo, hotfix_base="release")
+    assert _tree(repo) == before
+
+
+def test_matching_overrides_on_existing_config_are_accepted(repo: Path) -> None:
+    (repo / "sdd").mkdir()
+    (repo / "sdd/config.json").write_text(json.dumps({"base_branch": "dev", "hotfix_base": "main"}))
+    install_sdd_integration(repo, base_branch="dev", hotfix_base="main")
+    assert _has(repo, "refs/heads/dev")
+
+
+def test_cli_hotfix_base_option(repo: Path) -> None:
+    from click.testing import CliRunner
+
+    from parrot.sdd.cli import sdd
+
+    result = CliRunner().invoke(
+        sdd, ["install", "--path", str(repo), "--base-branch", "main", "--hotfix-base", "hotfix"]
+    )
+    assert result.exit_code == 0, result.output
+    assert load_sdd_config(repo).hotfix_base == "hotfix"
+    other = repo.parent / "other"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(other)], check=True)
+    _commit(other)
+    refused = CliRunner().invoke(sdd, ["install", "--path", str(other), "--base-branch", "main"])
+    assert refused.exit_code != 0 and "--hotfix-base" in refused.output
+    assert not (other / "sdd").exists()
 
 
 def test_base_branch_flag_invalid_name_refuses(repo: Path) -> None:

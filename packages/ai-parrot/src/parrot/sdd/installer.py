@@ -579,18 +579,57 @@ def _apply_asset(
     return f"{entry['target']} — {verb[action.action]}"
 
 
-def _seed_config(root: Path, base_branch: str | None = None) -> str:
-    """C6: write ``sdd/config.json`` from ``default_sdd_config()`` iff absent (TASK-4299; lazy import)."""
+def _apply_branch_overrides(
+    root: Path, config: "SddConfig", *, base_branch: str | None, hotfix_base: str | None
+) -> "SddConfig":
+    """C31: validate ``--base-branch`` / ``--hotfix-base`` before anything is written.
+
+    Each name must pass ``git check-ref-format --branch`` (skipped when git is unavailable) and the merged
+    config must pass ``SddConfig`` validation (distinct lanes, no ``origin/`` prefix). With an existing
+    ``sdd/config.json`` the overrides must match it — the file is the source of truth and is never rewritten.
+
+    Raises:
+        ValueError: invalid name, a conflicting existing config, or a combination ``SddConfig`` rejects.
+    """
+    from pydantic import ValidationError
+
+    from parrot.sdd.config import SddConfig  # TASK-4299
+
+    overrides = {field: value for field, value in (("base_branch", base_branch), ("hotfix_base", hotfix_base)) if value}
+    for field, name in overrides.items():
+        proc = _git_run(root, "check-ref-format", "--branch", name)
+        if proc is not None and proc.returncode != 0:
+            raise ValueError(f"invalid {field} name: {name!r}")
+    if (root / "sdd/config.json").exists():
+        clash = {field: getattr(config, field) for field, value in overrides.items() if getattr(config, field) != value}
+        if clash:
+            current = ", ".join(f"{field}={value}" for field, value in clash.items())
+            raise ValueError(f"sdd/config.json already sets {current}; edit it there")
+        return config
+    merged = {**config.model_dump(), **overrides}
+    try:
+        return SddConfig.model_validate(merged)
+    except ValidationError as exc:
+        reason = "; ".join(err["msg"] for err in exc.errors())
+        hint = ""
+        if merged["base_branch"] == merged["hotfix_base"]:
+            hint = " — pass --hotfix-base <branch> (the base and hotfix branches must differ)"
+        raise ValueError(f"invalid SDD branch settings: {reason}{hint}") from None
+
+
+def _seed_config(root: Path, seed: "SddConfig | None" = None) -> str:
+    """C6: write ``sdd/config.json`` iff absent (TASK-4299; lazy import).
+
+    ``seed`` is the already-validated config carrying the ``--base-branch`` / ``--hotfix-base`` overrides
+    (C31); ``None`` writes ``default_sdd_config()``.
+    """
     from parrot.sdd.config import CONFIG_PATH, default_sdd_config  # TASK-4299
 
     path = root / CONFIG_PATH
     if path.exists():
         return ""
     path.parent.mkdir(parents=True, exist_ok=True)
-    seed = default_sdd_config()
-    if base_branch:
-        seed = seed.model_copy(update={"base_branch": base_branch})
-    path.write_text(seed.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    path.write_text((seed or default_sdd_config()).model_dump_json(indent=2) + "\n", encoding="utf-8")
     return (
         f"{CONFIG_PATH} — seeded; edit base_branch/hotfix_base/issue_tracker/test_command for this repo and commit it"
     )
@@ -747,6 +786,7 @@ def install_sdd_integration(
     portable: bool = False,
     base_branch: str | None = None,
     push_base: bool = False,
+    hotfix_base: str | None = None,
 ) -> list[str]:
     """Deploy packaged SDD assets for ``hosts`` into ``root``; never overwrites foreign content.
 
@@ -762,6 +802,8 @@ def install_sdd_integration(
         base_branch: C31 — seed ``sdd/config.json`` with this base branch (when absent) and prepare it.
             Conflicts with an existing config that sets a different one.
         push_base: C31 — also ``git push -u origin <base_branch>`` when origin lacks it.
+        hotfix_base: C31 — seed ``sdd/config.json`` with this hotfix branch (when absent). Needed when
+            ``base_branch`` is ``main`` (the default hotfix branch): the two must differ.
 
     Returns:
         Human-readable action log; skipped conflicts and audit findings start with ``warning:``;
@@ -778,14 +820,11 @@ def install_sdd_integration(
     from parrot.sdd.config import load_sdd_config  # TASK-4299
 
     config = load_sdd_config(root)
-    if base_branch:
-        if not _git_ok(root, "check-ref-format", "--branch", base_branch):
-            raise ValueError(f"invalid base branch name: {base_branch!r}")
-        if (root / "sdd/config.json").exists():
-            if config.base_branch != base_branch:
-                raise ValueError(f"sdd/config.json already sets base_branch={config.base_branch}; edit it there")
-        else:
-            config = config.model_copy(update={"base_branch": base_branch})
+    seed: SddConfig | None = None
+    if base_branch or hotfix_base:
+        config = _apply_branch_overrides(root, config, base_branch=base_branch, hotfix_base=hotfix_base)
+        if not (root / "sdd/config.json").exists():
+            seed = config
     hook, form = guard_hook_command(portable=portable)
     plan = plan_install(root, hosts, force=force, hook=hook, base_branch=config.base_branch)
     if dry_run:
@@ -805,7 +844,7 @@ def install_sdd_integration(
         elif step.action == "ledger-seed":
             actions.append(_seed_id_ledger(root) or "")
         elif step.action == "config-seed":
-            actions.append(_seed_config(root, base_branch))
+            actions.append(_seed_config(root, seed))
         elif step.action == "base-branch":
             actions.extend(_base_branch_step(root, config, push=push_base, receipt=receipt))
     _save_receipt(root, receipt)

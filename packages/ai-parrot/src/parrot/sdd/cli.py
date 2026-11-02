@@ -72,6 +72,12 @@ def sdd() -> None:
 )
 @click.option("--base-branch", "base_branch", default=None, help="SDD base branch to seed and prepare (default: dev).")
 @click.option("--push-base", is_flag=True, help="Also `git push -u origin <base-branch>` when origin lacks it.")
+@click.option(
+    "--hotfix-base",
+    "hotfix_base",
+    default=None,
+    help="Hotfix branch to seed (default: main); required with --base-branch main.",
+)
 @_dry_run_option
 def install(
     path_: Path | None,
@@ -80,6 +86,7 @@ def install(
     portable: bool,
     base_branch: str | None,
     push_base: bool,
+    hotfix_base: str | None,
     dry_run: bool,
 ) -> None:
     """Deploy the packaged SDD assets into the repository (upgrades untouched files, keeps your edits)."""
@@ -93,6 +100,7 @@ def install(
                 portable=portable,
                 base_branch=base_branch,
                 push_base=push_base,
+                hotfix_base=hotfix_base,
             )
         )
     except (ValueError, RuntimeError) as exc:
