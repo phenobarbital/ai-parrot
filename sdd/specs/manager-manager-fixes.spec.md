@@ -225,6 +225,13 @@ tests:
 - packages/ai-parrot-server/tests/studio/test_tooling_integration.py
 markers: none
 
+### Test Data / Fixtures
+
+No new fixtures. TASK-5105's tests reuse the `reset_oauth2_provider_registry`
+autouse fixture and the `object.__new__(BotManager)` + `Mock()` logger harness from
+`packages/ai-parrot-server/tests/unit/test_o365_provider_registration.py`.
+TASK-5106 and TASK-5107 add no fixtures — their existing tests are the specification.
+
 ---
 
 ## 5. Acceptance Criteria
