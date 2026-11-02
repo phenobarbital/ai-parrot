@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — parrot-installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.10, amendment C30 item 4 — proposal rev 0.9)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4091, TASK-5095, TASK-5096 (serialized: both edit `cli.py`)
@@ -214,4 +214,4 @@ def test_ledger_list_round_trip(tmp_path) -> None:
 ---
 
 ## Completion Note
-_(filled by the implementer)_
+_LazyProxyGroup delegates list_commands/get_command to parrot.knowledge.wiki.cli:ledger. ctx.obj finding: ledger commands read only ctx.obj['remote'], which the remote_aware decorator sets itself (ctx.ensure_object(dict)); the `wiki` group callback only adjusts log levels, so no invoke() override. Tests: laziness checked in a fresh interpreter (sys.modules pop is unreliable in-process), command parity, `list --json` round trip in a temp git repo (cwd-resolved ledger, shared ledger untouched).

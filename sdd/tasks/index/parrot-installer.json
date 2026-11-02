@@ -1073,11 +1073,11 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "pending",
+      "status": "done",
       "parallel": true,
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-11-02T11:33:29+00:00",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -1086,7 +1086,8 @@
         "TASK-5096"
       ],
       "parallelism_notes": "edits cli.py after TASK-5095's VERBS loop (anchor `for _noun, _verbs in VERBS.items()`); serialized after TASK-5096 (both edit cli.py); test_sdd_cli.py from TASK-4091",
-      "file": "sdd/tasks/active/TASK-5099-sdd-ledger-mount.md"
+      "file": "sdd/tasks/completed/TASK-5099-sdd-ledger-mount.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5100",
