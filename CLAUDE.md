@@ -170,7 +170,7 @@ declaratively in this repo — set via GitHub repo settings.
 ## Worktrees
 
 Everything about worktrees — location (`.claude/worktrees/`), naming,
-creation via `parrot sdd run ensure_worktree` (always from
+creation via `parrot sdd worktree ensure` (always from
 `origin/<base_branch>`, never `HEAD`, never `claude --worktree`), working
 inside one, finishing and cleanup — lives in **one** rule:
 `.claude/rules/worktree-management.md` (twin: `.agent/skills/worktree-management/`).
@@ -226,7 +226,7 @@ git checkout dev && git pull origin dev
 /sdd-task sdd/specs/<feature>.spec.md      # tasks, committed to dev
 /sdd-start TASK-<NNN>                      # creates the worktree, implements the task
 cd .claude/worktrees/feat-FEAT-<NNN>-<slug>
-/sdd-start TASK-<NNN+1> …                  # or: parrot devloop launch-worker FEAT-<NNN>
+/sdd-start TASK-<NNN+1> …                  # or: parrot sdd launch worker FEAT-<NNN>
 /sdd-done FEAT-<NNN>                       # verify, push, PR → dev (--merge: direct), clean up
 ```
 
@@ -236,7 +236,7 @@ The `sdd-worker` agent (`.claude/agents/sdd-worker.md`) implements all tasks for
 a feature sequentially. Launch it from the host by feature ID:
 
 ```bash
-parrot devloop launch-worker FEAT-<NNN>
+parrot sdd launch worker FEAT-<NNN>
 ```
 
 Key properties: uses Sonnet, implements EXACTLY what tasks
@@ -244,7 +244,7 @@ specify (no redesigns), commits after each task.
 
 For background execution:
 ```bash
-parrot devloop launch-worker FEAT-<NNN> --tmux
+parrot sdd launch worker FEAT-<NNN> --tmux
 # Add --detach to leave it in the background; run the command again to reattach.
 ```
 

@@ -198,7 +198,9 @@
           "packages/ai-parrot/tests/flows/dev_loop/test_native_claude_sandbox.py",
           "packages/ai-parrot/tests/flows/dev_loop/test_dispatcher.py",
           "tests/sdd/test_launch_worker.py",
-          "packages/ai-parrot/tests/sdd/test_sdd_launch.py"
+          "packages/ai-parrot/tests/sdd/test_sdd_launch.py",
+          "packages/ai-parrot/tests/sdd/test_sdd_ledger_mount.py",
+          "tests/sdd_scripts/test_check_spec_consequences.py"
         ],
         "settings": {
           "markers": ""
@@ -210,7 +212,7 @@
         ]
       }
     ],
-    "digest": "sha256:0dc537180862894a3f3e3af46e051b33d854ccf015783e1fceb4b49ffff9303c"
+    "digest": "sha256:1a2bd8da8bcf81a874e82edb84f3fbce629413fbf90ade70a9bc6ca0f524789f"
   },
   "tasks": [
     {

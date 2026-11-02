@@ -156,7 +156,7 @@ FEAT-768 TASK-5088 (to be written): feature_launcher.ensure_feature_worktree run
 - `pytest packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py -q`
 - `pytest packages/ai-parrot/tests/flows/dev_loop/test_dispatcher.py -q`
 - `pytest tests/sdd/test_launch_worker.py -q`
-- `pytest packages/ai-parrot/tests/cli/devloop/test_launch_worker_cmd.py -q`
+- `pytest packages/ai-parrot/tests/sdd/test_sdd_launch.py -q`
 - `pytest tests/sdd_scripts/test_check_asset_sync.py -q`
 
 ---

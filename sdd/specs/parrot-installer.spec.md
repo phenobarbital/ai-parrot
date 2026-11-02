@@ -1278,6 +1278,8 @@ tests:
 - packages/ai-parrot/tests/flows/dev_loop/test_dispatcher.py  # 5093
 - tests/sdd/test_launch_worker.py  # 5093
 - packages/ai-parrot/tests/sdd/test_sdd_launch.py  # 5100 (FEAT-768 worker tests, moved)
+- packages/ai-parrot/tests/sdd/test_sdd_ledger_mount.py  # 5099
+- tests/sdd_scripts/test_check_spec_consequences.py  # 5096
 markers: none
 
 ### Test Data / Fixtures
