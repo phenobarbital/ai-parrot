@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-791 — BotManager fixes — Jira web-channel OAuth2 registration + BotManager test-API drift
 **Spec**: `sdd/specs/manager-manager-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5105
@@ -285,8 +285,36 @@ since the shared venv is editable-installed against the main checkout.
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: ai-parrot-8c (/sdd-fix, agent:sdd-fix)
+**Date**: 2026-11-03
+**Notes**: `_register_descriptor_oauth2_providers` now takes a keyword-only
+`credential_store` and builds one only when it is not supplied;
+`_register_oauth2_providers` passes the `identity_store` it already built, with
+`identity_store = None` hoisted above the `if authdb is not None:` branch.
+The `setup()` call site at `manager.py:2406` is untouched (AC-5).
 
-**Deviations from spec**: none | describe if any
+AC-6 was verified directly, not just by the suite: with an app carrying no
+`authdb` key at all, `_register_oauth2_providers` still calls the descriptor
+registrar exactly once, passes `credential_store=None`, and
+`logger.exception` is never called — so the hoist does prevent a `NameError`
+being swallowed by the surrounding `except Exception` and silently skipping
+descriptor registration.
+
+Validation: 14 passed across the four commands (`test_register_oauth2_providers.py`,
+`test_oauth2_identity_store_binding.py`, `test_jira_provider_registration.py`,
+`test_o365_provider_registration.py`). The previously red
+`test_register_oauth2_providers_from_descriptors` passes with its
+`assert_called_once_with` assertion unchanged. `ruff check` clean.
+
+The trap the contract flagged was real: `test_oauth2_identity_store_binding.py:19`
+stubbed the method as `lambda app: None`, which cannot accept the new keyword.
+Widened to `lambda app, **kwargs: None`.
+
+**Deviations from spec**: none in the implementation. One process note for the
+ledger: `issue:9405771f42ef` records its `files` as
+`packages/ai-parrot-server/tests/unit/test_register_oauth2_providers.py`, but
+the fix landed in `manager.py` and `test_oauth2_identity_store_binding.py` —
+the red test was correct and was deliberately left untouched. So the
+`/sdd-fix` / `/sdd-done` two-key check (one of the issue's `files` must appear
+in the branch diff) does NOT match, and the automatic close will skip this
+issue. It needs a close with explicit evidence rather than the automatic one.
