@@ -75,6 +75,8 @@ def test_settings_are_strict_and_explicit(linked: tuple[Path, Path]) -> None:
     for control in (
         controls / "native_claude_sandbox.py",
         controls / "worktree_environment.py",
+        worktree / "packages" / "ai-parrot" / "src" / "parrot" / "sdd" / "scripts" / "native_claude_sandbox.py",
+        worktree / "packages" / "ai-parrot" / "src" / "parrot" / "sdd" / "scripts" / "worktree_environment.py",
         worktree / ".claude" / "settings.json",
         worktree / ".claude" / "settings.local.json",
         worktree / ".claude" / "agents",
@@ -386,6 +388,9 @@ def test_write_matrix_positive_and_negative(linked: tuple[Path, Path], monkeypat
         main / "data" / "rtk" / "trust.json",
         feature / ".claude" / "settings.local.json",
         feature / "packages" / "ai-parrot" / "src" / "parrot" / "flows" / "dev_loop" / "native_claude_sandbox.py",
+        feature / "packages" / "ai-parrot" / "src" / "parrot" / "sdd" / "scripts" / "native_claude_sandbox.py",
+        feature / "packages" / "ai-parrot" / "src" / "parrot" / "sdd" / "scripts" / "worktree_environment.py",
+        Path(native.__file__).resolve().parent / "worktree_environment.py",
     ]
     for target in denied:
         with pytest.raises(ValueError):
@@ -461,3 +466,22 @@ def test_frozen_roots_win_over_a_forged_git_marker(linked: tuple[Path, Path], mo
     assert native._native_roots(feature / "sub") == tuple(Path(p) for p in frozen)
     with pytest.raises(ValueError):  # a cwd outside the frozen root still derives (and here fails) on its own
         native._native_roots(main / "elsewhere")
+
+
+def test_script_mode_sibling_import_resolves_inside_sdd_scripts(tmp_path: Path) -> None:
+    """Under ``python -S`` (no parrot) the shims + moved files stay co-importable as script siblings."""
+    import subprocess
+    import sys
+
+    dev_loop = Path(native.__file__).resolve().parents[2] / "flows" / "dev_loop"
+    code = (
+        "import sys; sys.path.insert(0, sys.argv[1]); "
+        "import native_claude_sandbox as n, worktree_environment as w; "
+        "assert 'parrot' not in sys.modules, 'parrot'; "
+        "assert n.__file__.endswith('sdd/scripts/native_claude_sandbox.py'), n.__file__; "
+        "assert n._we is w or n._we.__file__.endswith('worktree_environment.py'); print('ok')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-S", "-c", code, str(dev_loop)], capture_output=True, text=True, env={}, cwd=tmp_path, check=False
+    )
+    assert result.stdout.strip() == "ok", result.stderr

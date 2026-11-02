@@ -126,12 +126,12 @@ def resolve_feature(primary: Path, key: str) -> FeatureRef:
 
 def ensure_feature_worktree(primary: Path, ref: FeatureRef) -> Path:
     """Provision or reuse the feature worktree using the existing host runner."""
-    # FEAT-633 will repoint this invocation to its packaged runner.
+    # Packaged runner (FEAT-633): works in consumer repositories that have no `scripts/` tree.
     result = _run(
         [
             sys.executable,
             "-m",
-            "scripts.sdd.ensure_worktree",
+            "parrot.sdd.scripts.ensure_worktree",
             "--slug",
             ref.slug,
             "--feature-id",

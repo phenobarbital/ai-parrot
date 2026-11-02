@@ -1064,3 +1064,26 @@ def test_hook_refuses_legacy_fallback_when_native_markers_are_present(tmp_path: 
     output = _json.loads(result.stdout)["hookSpecificOutput"]
     assert output["permissionDecision"] == "deny"
     assert "PARROT_SDD_SANDBOX_BACKEND is unset" in output["permissionDecisionReason"]
+
+
+def test_packaged_hook_entry_point_denies_in_native_mode_without_import_error(tmp_path: Path) -> None:
+    """``python -m parrot.sdd.scripts.worktree_environment --hook`` loads the sibling native module (TASK-5093)."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    payload = {
+        "cwd": str(feature),
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(feature / ".claude" / "settings.local.json")},
+    }
+    env = {**os.environ, "PARROT_SDD_SANDBOX_BACKEND": "claude-native"}
+    result = subprocess.run(
+        [sys.executable, "-m", "parrot.sdd.scripts.worktree_environment", "--hook"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    assert "Shared-environment guard failed" not in output["permissionDecisionReason"]
+    assert "No module named" not in output["permissionDecisionReason"]

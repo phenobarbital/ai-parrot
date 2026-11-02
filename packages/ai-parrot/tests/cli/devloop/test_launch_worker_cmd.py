@@ -276,7 +276,7 @@ def test_ensure_feature_worktree_uses_json_runner_and_surfaces_failure(
     payload = json.dumps({"path": str(tmp_path / "wt")})
     monkeypatch.setattr(launcher, "_run", lambda argv, *, cwd: calls.append(argv) or _result(argv, stdout=payload))
     assert launcher.ensure_feature_worktree(primary, ref) == tmp_path / "wt"
-    assert calls[0][1:3] == ["-m", "scripts.sdd.ensure_worktree"] and calls[0][-1] == "--json"
+    assert calls[0][1:3] == ["-m", "parrot.sdd.scripts.ensure_worktree"] and calls[0][-1] == "--json"
     assert calls[0][calls[0].index("--index") + 1] == "sdd/tasks/index/sandbox.json"
 
     monkeypatch.setattr(launcher, "_run", lambda argv, *, cwd: _result(argv, 1, stderr="spec missing"))

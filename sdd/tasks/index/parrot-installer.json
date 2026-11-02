@@ -197,7 +197,8 @@
           "tests/sdd_scripts/test_worktree_status.py",
           "packages/ai-parrot/tests/flows/dev_loop/test_native_claude_sandbox.py",
           "packages/ai-parrot/tests/flows/dev_loop/test_dispatcher.py",
-          "tests/sdd/test_launch_worker.py"
+          "tests/sdd/test_launch_worker.py",
+          "packages/ai-parrot/tests/cli/devloop/test_launch_worker_cmd.py"
         ],
         "settings": {
           "markers": ""
@@ -209,7 +210,7 @@
         ]
       }
     ],
-    "digest": "sha256:5e6a3ec69e5e1f5ab7322330e70ae5d4667100ebebb448da8517711d2f2561a9"
+    "digest": "sha256:a6dd8cf1424e06ef188d2a2f257b5246a6c256940ee2200efe37c110bd2faada"
   },
   "tasks": [
     {
