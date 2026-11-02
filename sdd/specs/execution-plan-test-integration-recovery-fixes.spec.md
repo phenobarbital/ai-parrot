@@ -32,6 +32,12 @@ plan-node writes are versioned whenever task memory is enabled. The code does no
   the resulting `artifact_id@version` evidence string (built with the existing `_evidence_ref`).
   Provenance is not invented: no `producer_call_id`/`attribution` is passed, and `degraded` keeps its
   current value (`False`) for this branch.
+- **M2 (owner decision 2026-11-02).** Recording versions makes in-process resumes that use a *new*
+  `WorkingMemoryToolkit` (its own process-private runtime) refuse with `missing_or_expired`, because the
+  checkpoint now names versions only the original binding can read (11 tests in
+  `test_checkpoint_resume.py` / `test_integration_repair.py`). `PlanMemoryBinding.restore` therefore skips
+  — and unpins — a `missing_or_expired` version when the binding owns its runtime (pre-fix behaviour).
+  A host-supplied runtime stays strict and refuses, as FEAT-585 §2 requires.
 - The disabled-catalog branch (`catalog is None`) stays byte-identical: `working_memory.store_result`.
 - The session+producer branch (`_store_versioned`) is unchanged.
 
@@ -39,6 +45,7 @@ plan-node writes are versioned whenever task memory is enabled. The code does no
 - [ ] AC-1 `test_fresh_process_recovery_chain` passes: the resumed run is `completed` and only `c` is dispatched.
 - [ ] AC-2 With an enabled catalog and no turn session, a plan node's `ArtifactRef.versions` holds one `artifact_id@version` per stored key.
 - [ ] AC-3 With task memory disabled, the write path and `ArtifactRef.versions == []` are unchanged.
+- [ ] AC-5 A process-private binding skips an unreadable version without leaving a pin; a host-runtime binding raises `RestoreError(missing_or_expired)`.
 - [ ] AC-4 `packages/ai-parrot/tests/tools/execution_plan/` and `packages/ai-parrot/tests/bots/flows/plan/` (if present) stay green.
 
 ## Out of scope

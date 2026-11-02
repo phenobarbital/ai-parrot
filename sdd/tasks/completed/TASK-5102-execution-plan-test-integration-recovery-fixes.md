@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-789 execution-plan-test-integration-recovery-fixes
 **Spec**: `sdd/specs/execution-plan-test-integration-recovery-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none
@@ -17,12 +17,14 @@ outside a turn session drop the version that the enabled catalog created.
 - `PlanToolNode._store`: split the fallback branch — `catalog is None` → unchanged `store_result`;
   enabled catalog without session/producer → `await catalog.aput_generic(...)` and return
   `_Written(estimate_bytes(payload), str(_evidence_ref(v.artifact_id, v.version)), False)`.
+- M2: `PlanMemoryBinding.restore` skips (and unpins) a `missing_or_expired` version only when the binding owns a process-private runtime; a host runtime stays strict.
 - Regression test for AC-2/AC-3 next to the existing execution-plan tests.
 
 **NOT in scope**: opening turn sessions for background runs; test-file warnings.
 
 ## Files to Modify
 - `packages/ai-parrot/src/parrot/bots/flows/plan/node.py`
+- `packages/ai-parrot/src/parrot/tools/execution_plan/memory.py` (M2, added 2026-11-02 by owner decision)
 - `packages/ai-parrot/tests/tools/execution_plan/test_store_versions_without_session.py` (new)
 
 ## Codebase Contract
@@ -42,3 +44,20 @@ ruff check packages/ai-parrot/src/parrot/bots/flows/plan/node.py packages/ai-par
 ```
 
 ## Completion Note
+Implemented in b6db87d172.
+
+- M1 (`node.py`): an enabled catalog with no turn session/producer now writes via `aput_generic`
+  and records `artifact_id@version`; the disabled path is byte-identical.
+- M2 (`memory.py`, owner decision 2026-11-02): M1 alone broke 11 in-process resume/repair tests
+  (`test_checkpoint_resume.py`, `test_integration_repair.py`): they resume with a fresh
+  `WorkingMemoryToolkit` whose private runtime cannot read the recorded versions →
+  `missing_or_expired`. A process-private binding now skips + unpins such a version (the pre-fix
+  behaviour); a host runtime stays strict.
+
+Validation: `tests/tools/execution_plan` + `tests/bots/flows/plan` → 330 passed, 3 skipped, 1 failed.
+The one failure, `test_plan.py::test_tool_not_registered_on_import`, fails identically on unmodified
+dev (baseline 2 failed: it + the target test). ruff clean, black clean.
+
+Ledger: `issue:ca325f05ae53` lists only `test_integration_recovery.py`, which this fix does not touch
+(the bug was in production code), so the two-key close cannot pass automatically — close it by hand
+after merge.

@@ -281,7 +281,19 @@ class PlanMemoryBinding:
                     raise RestoreError(
                         "restore_budget_exceeded", f"max_restore_bytes={self._max_restore_bytes} exhausted"
                     )
-                await self._catalog.restore_version(key, EvidenceRef.parse(version), max_bytes=remaining)
+                evidence = EvidenceRef.parse(version)
+                try:
+                    await self._catalog.restore_version(key, evidence, max_bytes=remaining)
+                except RestoreError as exc:
+                    # A process-private store (no host runtime) cannot read another
+                    # binding's versions; keep the pre-versioning behaviour and let
+                    # the continuation run without them. A host runtime stays strict.
+                    if not self._owns_runtime or exc.code != "missing_or_expired":
+                        raise
+                    if self._catalog._pinned.get(key) == evidence:
+                        del self._catalog._pinned[key]
+                    self.logger.debug("skipping unreadable %s for %r in a process-private store", evidence, key)
+                    continue
                 restored = await self._catalog.aget(key)
                 self._restored_bytes += restored.version_metadata.byte_size or 0
 
