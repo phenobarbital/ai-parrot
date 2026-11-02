@@ -469,6 +469,54 @@ def test_gitignore_block_ignores_worktrees_and_parrot_state(empty_repo: Path) ->
     assert not _ignored(empty_repo, "sdd/config.json")
 
 
+@pytest.mark.parametrize(
+    "rel",
+    [
+        ".env",
+        "env/.env",
+        "env/dev/.env",
+        "env/prod/.env",
+        "logs/parrot.log",
+        "outputs/chart.html",
+        ".claude/settings.local.json",
+    ],
+)
+def test_gitignore_block_ignores_runtime_and_credential_files(empty_repo: Path, rel: str) -> None:
+    """navconfig writes credentials to env/[<ENV>/].env and logs to logs/; parrot writes OUTPUT_DIR; parrot claude
+    install writes personal permissions to .claude/settings.local.json — none of them may reach a commit."""
+    install_sdd_integration(empty_repo)
+    assert _ignored(empty_repo, rel)
+
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "env/.env.example",
+        "env/dev/.env.example",
+        "etc/config.ini",
+        "agents/agents.yaml",
+        "plugins/tools/__init__.py",
+        ".claude/settings.json",
+        "artifacts/logs/FEAT-1-evidence.md",
+        "docs/outputs/example.md",
+    ],
+)
+def test_gitignore_block_keeps_project_files_tracked(empty_repo: Path, rel: str) -> None:
+    """Templates, configuration and the user's own agents/plugins stay versioned."""
+    install_sdd_integration(empty_repo)
+    assert not _ignored(empty_repo, rel)
+
+
+def test_gitignore_is_created_when_missing(empty_repo: Path) -> None:
+    gitignore = empty_repo / ".gitignore"
+    if gitignore.exists():
+        gitignore.unlink()
+    install_sdd_integration(empty_repo)
+    text = gitignore.read_text()
+    assert text.count(GITIGNORE_BEGIN) == 1
+    assert "\nenv/**/.env\n" in text and "\n/logs/\n" in text and "\n.parrot/\n" in text
+
+
 def test_reinstall_upgrades_an_old_gitignore_block(empty_repo: Path) -> None:
     """A block written before rev 0.8 (worktrees only) gains .parrot/ on re-install, keeping user lines around it."""
     (empty_repo / ".gitignore").write_text(
