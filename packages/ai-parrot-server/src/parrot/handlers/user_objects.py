@@ -191,6 +191,12 @@ class UserObjectsHandler:
                 user_id, agent_id, session_key, request_session
             )
 
+        if tool_manager is None and not (user_id and agent_id):
+            self.logger.warning(
+                "Skipping OAuth toolkit hydration: missing %s",
+                "user_id" if not user_id else "agent_id",
+            )
+
         return tool_manager, mcp_servers
 
     async def _hydrate_oauth_toolkits(
@@ -245,6 +251,14 @@ class UserObjectsHandler:
                     continue
                 resolver = OAuthCredentialResolver(provider.manager)
                 toolkit = toolkit_factory(resolver)
+                if toolkit is None:
+                    self.logger.warning(
+                        "OAuth provider %r toolkit factory returned None (user=%s agent=%s) — skipping",
+                        row.provider,
+                        user_id,
+                        agent_id,
+                    )
+                    continue
                 tool_manager.register_toolkit(toolkit)
                 self.logger.debug(
                     "Hydrated toolkit %r for user=%s agent=%s",
