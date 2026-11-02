@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sdd/templates/intake.schema.json",
+  "title": "SDD /sdd-spec intake record",
+  "description": "One file per intake run: sdd/state/.intake/<slug>-<RUN_ID>/intake.json, promoted to sdd/state/<FEAT-ID>/intake/intake.json by /sdd-spec §6 (FEAT-577).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "started_at", "updated_at", "phase", "flow", "research", "answers", "rounds"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "feature_slug": {"type": ["string", "null"], "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"},
+    "feat_id": {"type": ["string", "null"], "pattern": "^FEAT-[0-9]{3,}$"},
+    "started_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "phase": {"enum": ["started", "intake_confirmed", "research_running", "research_complete", "research_degraded", "rounds_complete", "spec_drafted", "committed", "handed_off", "failed"]},
+    "flow": {
+      "type": "object", "additionalProperties": false, "required": ["type", "base_branch"],
+      "properties": {"type": {"enum": ["feature", "hotfix"]}, "base_branch": {"type": "string", "minLength": 1}}
+    },
+    "research": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["depth", "gate", "budget", "degraded_from", "failure_reason", "synthesis_path", "handoff_declined"],
+      "properties": {
+        "depth": {"enum": ["full", "light", "none"]},
+        "gate": {"type": "boolean"},
+        "budget": {"enum": ["tight", "default", "loose"]},
+        "degraded_from": {"enum": [null, "full"]},
+        "failure_reason": {"type": ["string", "null"]},
+        "synthesis_path": {"type": ["string", "null"]},
+        "handoff_declined": {"type": "boolean"}
+      }
+    },
+    "answers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["feature_name", "projects", "tags", "overview", "problem", "why_important", "jira"],
+      "properties": {
+        "feature_name": {"type": "string"},
+        "projects": {"type": "array", "items": {"type": "string"}},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "overview": {"type": "string"},
+        "problem": {"type": "string"},
+        "why_important": {"type": "string"},
+        "jira": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "key"],
+          "properties": {
+            "mode": {"enum": ["existing", "create", "none"]},
+            "key": {"type": ["string", "null"], "pattern": "^[A-Z][A-Z0-9]+-[0-9]+$"}
+          }
+        }
+      }
+    },
+    "rounds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["round", "questions"],
+        "properties": {
+          "round": {"type": "integer", "minimum": 1},
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "question", "source", "answer"],
+              "properties": {
+                "id": {"type": "string", "minLength": 1},
+                "question": {"type": "string"},
+                "source": {"enum": ["gap", "synthesis"]},
+                "answer": {"type": ["string", "null"]}
+              }
+            }
+          }
+        }
+      }
+    },
+    "spec_path": {"type": ["string", "null"]},
+    "errors": {"type": "array", "items": {"type": "string"}}
+  }
+}

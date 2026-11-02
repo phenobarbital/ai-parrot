@@ -17,7 +17,7 @@ def _doc() -> str:
 def test_old_never_open_pr_rule_gone() -> None:
     doc = _doc()
     assert "NEVER opens a PR against `main`" not in doc
-    assert "NEVER merges into `main`" in doc
+    assert "NEVER merges into it" in doc
 
 
 def test_pr_created_with_base_branch_variable() -> None:
@@ -29,7 +29,7 @@ def test_pr_created_with_base_branch_variable() -> None:
 
 def test_merge_into_main_refused_before_push() -> None:
     doc = _doc()
-    refusal = doc.index('"$BASE_BRANCH" == "main" && "$MERGE_FLAG" == "--merge"')
+    refusal = doc.index('"$BASE_BRANCH" == "$HOTFIX_BASE" && "$MERGE_FLAG" == "--merge"')
     assert doc.index("### 8.") < refusal < doc.index('git -C <worktree-path> push origin "$BRANCH"')
     assert refusal < doc.index("### 9.")
 
@@ -53,5 +53,5 @@ def test_twin_no_longer_prints_manual_main_pr() -> None:
     twin = _TWIN.read_text(encoding="utf-8")
     assert "print a manual `gh pr create --base main`" not in twin
     assert "refuse automatic merge or PR creation" not in twin
-    assert "never merge into `main`" in twin
+    assert "never merge into it" in twin
     assert "brief" in twin

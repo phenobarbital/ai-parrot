@@ -1,6 +1,7 @@
 # parrot:summary: Optional Python semantic evidence (LSP) for SDD research/coding/review seats — FEAT-580 pilot.
 # parrot:requires_llm: false
 # parrot:requires_dist: parrot_tools
+# parrot:requires_pip: ai-parrot-tools
   lsp:
     class: parrot_tools.lsp.toolkit.LSPToolkit
     # FEAT-580 SDD LSP research pilot — read docs/sdd/lsp-pilot.md before

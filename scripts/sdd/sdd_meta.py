@@ -8,6 +8,8 @@ SDD commands, agents and tests.
 """
 
 from parrot.knowledge.wiki.ledger.sdd_meta import (  # noqa: F401
+    DEFAULT_FEATURE_BASE,
+    DEFAULT_HOTFIX_BASE,
     KNOWN_BRANCHES,
     KNOWN_PROJECTS,
     PROJECT_ALIASES,
@@ -22,5 +24,6 @@ from parrot.knowledge.wiki.ledger.sdd_meta import (  # noqa: F401
     parse,
     parse_taxonomy,
     plan_worktree,
+    read_declared_base_branch,
     resolve_flow,
 )

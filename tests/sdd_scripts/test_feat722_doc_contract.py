@@ -6,13 +6,17 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SUBAGENT = "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data"
-WORKER_FILES = [
+# FEAT-633: `.claude/agents/sdd-worker.md` and `.claude/rules/worktree-management.md` ship in the wheel, so they
+# stay repo-neutral (asset-sync rejects `packages/…` paths there) and only name the declaration table. The
+# `_subagent_data/sdd-worker.md` copy no longer exists (single-copy prompts). The repo-local twins keep the full text.
+SHIPPED_FILES = [
     ".claude/agents/sdd-worker.md",
+    ".claude/rules/worktree-management.md",
+]
+WORKER_FILES = [
     ".agent/agents/sdd-worker/agent.md",
-    f"{SUBAGENT}/sdd-worker.md",
 ]
 RULE_FILES = [
-    ".claude/rules/worktree-management.md",
     ".agent/skills/worktree-management/SKILL.md",
 ]
 REQUIRED_STRINGS = (
@@ -34,6 +38,11 @@ def _text(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
+@pytest.mark.parametrize("rel", SHIPPED_FILES)
+def test_shipped_files_name_the_declaration(rel: str) -> None:
+    assert "[tool.parrot.worktree]" in _text(rel), rel
+
+
 @pytest.mark.parametrize("rel", WORKER_FILES + RULE_FILES)
 def test_mentions_the_declaration(rel: str) -> None:
     text = _text(rel)
@@ -41,7 +50,7 @@ def test_mentions_the_declaration(rel: str) -> None:
         assert required in text, (rel, required)
 
 
-@pytest.mark.parametrize("rel", WORKER_FILES + RULE_FILES)
+@pytest.mark.parametrize("rel", SHIPPED_FILES + WORKER_FILES + RULE_FILES)
 def test_never_recommends_maturin_develop(rel: str) -> None:
     text = _text(rel).lower()
     offset = 0
@@ -56,4 +65,4 @@ def test_never_recommends_maturin_develop(rel: str) -> None:
 
 def test_worker_twins_carry_the_same_sentence() -> None:
     notices = [_text(rel).count(WORKER_NOTICE) for rel in WORKER_FILES]
-    assert notices == [1, 1, 1]
+    assert notices == [1]

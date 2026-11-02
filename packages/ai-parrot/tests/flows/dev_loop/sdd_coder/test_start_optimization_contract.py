@@ -40,7 +40,7 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:
             "wiki-first",
             "Prefer task-context inspection when the engine is present; fallback keeps explicit checks.",
             "declared test selector",
-            "python -m scripts.sdd.finalize_task",
+            "parrot sdd run finalize_task",
             "inspect returned staged paths and commit explicitly",
             "Reject stale evidence and divergent active/completed twins",
             "never reset unrelated staging",
@@ -48,7 +48,7 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:
             assert marker in section, f"{rel_path} closure block is missing {marker!r}"
 
     # AC8/AC17: the deterministic closure block augments the existing closing section --
-    # it must not remove the pre-existing per-spec index / close_task.sh references that
+    # it must not remove the pre-existing per-spec index / close_task references that
     # gate a mechanical done state on the current SHA and a clean active/ directory.
     for rel_path in (
         ".claude/commands/sdd-start.md",
@@ -56,7 +56,7 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:
         ".agents/skills/sdd-start/SKILL.md",
     ):
         body = (repo_root / rel_path).read_text(encoding="utf-8")
-        assert "close_task.sh" in body, f"{rel_path} lost its close_task.sh reference"
+        assert "parrot sdd run close_task" in body, f"{rel_path} lost its close_task reference"
         assert "sdd/tasks/index" in body, f"{rel_path} lost its per-spec index reference"
 
     agent_md = (repo_root / ".agent/agents/sdd-worker/agent.md").read_text(encoding="utf-8")
