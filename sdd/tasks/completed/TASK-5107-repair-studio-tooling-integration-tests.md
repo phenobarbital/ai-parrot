@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-791 — BotManager fixes — Jira web-channel OAuth2 registration + BotManager test-API drift
 **Spec**: `sdd/specs/manager-manager-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -295,8 +295,67 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: ai-parrot-8c (/sdd-fix, agent:sdd-fix)
+**Date**: 2026-11-03
+**Notes**: All three failures were test-side; no `src/` file was modified, no
+assertion weakened, no test skipped or deleted. `test_tooling_integration.py`
+is now `4 passed`. AC-6's root causes:
 
-**Deviations from spec**: none | describe if any
+1. **`test_yaml_agent_toolkit_persist_roundtrip`** — genuine API drift.
+   `BotManager._build_from_registry` was replaced by
+   `AgentRegistry.create_agent_factory(config) -> AgentFactory`
+   (`registry.py:903`), which is the code that calls `normalize_tooling(...)`
+   and sets `merged_args["tools"] = tooling.tools + tooling.toolkits` /
+   `merged_args["agent_mcp_servers"]` (`registry.py:968-974`) — exactly the AC8
+   behaviour this test asserts. The factory resolves the agent class through a
+   real `importlib.import_module(config.module)` + `getattr(module,
+   config.class_name)`, so the old `_resolve_database_bot_class` mock no longer
+   has anything to intercept: `_CapturedBot` is now published into
+   `sys.modules` under a fake module name and `BotConfig.module`/`class_name`
+   point at it. The `mgr` scaffolding and the two `create_reranker` /
+   `create_parent_searcher` monkeypatches went away with it; the registry is
+   built with `AgentRegistry.__new__` since `create_agent_factory` only touches
+   `self._apply_prompt_config`, and only when `config.prompt` is set (it is not).
+   Assertions unchanged.
+
+2. **`test_dataset_manager_datasources_in_memory`** — not an assertion problem.
+   `replay_datasources` delegates to `add_dataset()`, which *materializes* each
+   descriptor by awaiting the backing source's `fetch()` (`tool.py:1032-1058`).
+   `query_slug` therefore goes out to QuerySource and raises
+   `TenantError: Query not found: 'test-slug'`, and `sql` actually executes
+   `SELECT * FROM test` against `sqlite:///:memory:`, which asyncdb's sqlite
+   driver cannot open (`DriverError: Unable to Open Database`, surfaced as
+   `RuntimeError: SQLQuerySource execution failed`). `replay_datasources`
+   swallows both as `replay_datasources: skipped ... (TenantError|RuntimeError)`
+   and returns `[]` — hence `assert 0 == 2`. The module's own docstring says
+   "offline, fakes only", so `QuerySlugSource.fetch` and `SQLQuerySource.fetch`
+   are now stubbed to return an empty frame. The behaviour under test — replay
+   registration bookkeeping — runs for real; only the network/driver round-trip
+   is faked. `assert len(registered) == 2` is untouched.
+
+3. **`test_user_override_session_isolation`** — two defects, neither needing a
+   live service. The test built a `_Service` fake and then never injected it:
+   `_apply_user_toolkit_overrides` constructs `ToolkitConfigService()` itself
+   (`agent.py:50` import, instantiated inside the method), which reached
+   DocumentDB on `localhost:27017`, failed with `ConnectionError`, and returned
+   the `tool_manager` argument — `None`. The fake is now patched over
+   `parrot.handlers.agent.ToolkitConfigService`, and its methods were updated to
+   the API the handler actually calls: `load(user_id, ref) -> list` and
+   `revision(user_id, ref)` (the fake still had the stale
+   `load(user_id, agent_id, slug) -> override | None` shape). Separately, the
+   final assertion passed a `ToolManager` to `get_toolkit_owner()`, which takes
+   a *tool* and returns `None` for anything else — it had simply never been
+   reached before. It now mirrors the line above it and reads the owner off
+   `agent.tool_manager.get_tool("echo")`. **No live MongoDB/DocumentDB is
+   required**, so AC-3 is satisfied by a fix and AC-4 does not apply.
+
+**Deviations from spec**: one, and it is a pre-existing red, not a regression.
+
+`packages/ai-parrot-server/tests/unit/test_register_oauth2_providers.py::test_register_oauth2_providers_from_descriptors`
+fails with `AssertionError: Expected 'mock' to be called once. Called 2 times.`
+It is in FEAT-791's validation contract (added for TASK-5105's sake) and it
+fails identically on a clean `dev` checkout at the base commit, verified by
+running that node id in the main checkout before this branch existed. It
+exercises the descriptor-provider path, is unrelated to both lanes of this
+feature, and is out of scope here; a ledger issue was opened for it. The rest of
+the contract is `60 passed`.
