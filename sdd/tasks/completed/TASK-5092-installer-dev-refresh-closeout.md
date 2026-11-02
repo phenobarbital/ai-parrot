@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — parrot-installer
 **Spec**: `sdd/specs/parrot-installer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -151,8 +151,8 @@ No new tests: `test_repo_assets_in_sync` and `test_assets_have_no_publication_fi
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (orchestrator, directly — routing blocked by glob path in Files table)
+**Date**: 2026-11-02
+**Notes**: Branch already contained origin/dev (0 behind) via merge 31e7084e24; no monorepo-path mentions remain; `check_asset_sync.py --check` exits 0; Validation Commands: 34 passed. No file changes were needed. Merge-tier sweep not run separately (no code delta).
 
 **Deviations from spec**: none

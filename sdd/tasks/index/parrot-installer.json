@@ -924,11 +924,11 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": "2026-11-01T01:05:13+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-02T01:07:16+00:00",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -938,7 +938,8 @@
         "TASK-4090"
       ],
       "parallelism_notes": "merges origin/dev and regenerates _assets; must run before any other change on the branch",
-      "file": "sdd/tasks/active/TASK-5092-installer-dev-refresh-closeout.md"
+      "file": "sdd/tasks/completed/TASK-5092-installer-dev-refresh-closeout.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5093",
