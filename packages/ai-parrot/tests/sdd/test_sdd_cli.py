@@ -80,26 +80,28 @@ def test_dry_run_flag_prints_plan_and_writes_nothing(tmp_path: Path) -> None:
     assert not any(tmp_path.iterdir())
 
 
-def test_run_dispatches_helper_help() -> None:
-    """Q1: `parrot sdd run reserve_ids --help` reaches the helper's argparse and exits 0."""
-    result = CliRunner().invoke(cli, ["sdd", "run", "reserve_ids", "--help"])
-    assert result.exit_code == 0, result.output
-    assert "--kind" in result.output and "--base-branch" in result.output  # reserve_ids' own argparse help
+def test_sdd_cli_mounts_every_helper() -> None:
+    """C30 item 3: mounted modules == packaged modules with main() minus _UNMOUNTED; every leaf --help exits 0."""
+    import importlib
+    import pkgutil
+
+    import parrot.sdd.scripts as pkg
+    from parrot.sdd.cli import _UNMOUNTED, VERBS, mounted_modules
+
+    with_main = {
+        m.name
+        for m in pkgutil.iter_modules(pkg.__path__)
+        if not m.ispkg and hasattr(importlib.import_module(f"parrot.sdd.scripts.{m.name}"), "main")
+    }
+    assert mounted_modules() == with_main - _UNMOUNTED
+    for noun, verbs in VERBS.items():
+        for verb in verbs:
+            result = CliRunner().invoke(cli, ["sdd", noun, verb, "--help"])
+            assert result.exit_code == 0, (noun, verb, result.output)
+    assert CliRunner().invoke(cli, ["sdd", "run", "reserve_ids", "--help"]).exit_code == 2  # no alias (C30)
 
 
-def test_run_unknown_helper_lists_available() -> None:
-    result = CliRunner().invoke(cli, ["sdd", "run", "nope"])
-    assert result.exit_code == 1
-    assert "unknown helper" in result.output and "reserve_ids" in result.output and "sdd_meta" in result.output
-
-
-def test_run_sdd_meta_is_dispatchable() -> None:
-    """`sdd_meta` is a real helper after TASK-4299 (shipped markdown uses `parrot sdd run sdd_meta parse <spec>`)."""
-    result = CliRunner().invoke(cli, ["sdd", "run", "sdd_meta", "--help"])
-    assert result.exit_code == 0, result.output
-
-
-def test_run_propagates_helper_exit_code() -> None:
-    """A helper that argparse-rejects exits 2 — the code must pass through, not be flattened to 1."""
-    result = CliRunner().invoke(cli, ["sdd", "run", "reserve_ids", "--kind", "bogus"])
+def test_verb_propagates_helper_exit_code() -> None:
+    """A helper that argparse-rejects exits 2 - the code must pass through, not be flattened to 1."""
+    result = CliRunner().invoke(cli, ["sdd", "ids", "reserve", "--kind", "bogus"])
     assert result.exit_code == 2

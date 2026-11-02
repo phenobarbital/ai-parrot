@@ -44,6 +44,9 @@ def done_task_ids(indices: Iterable[Path]) -> list[str]:
 def main(argv: Sequence[str] | None = None) -> int:
     """Port of heal_orphans.sh H1–H8."""
     args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] in ("-h", "--help"):
+        sys.stdout.write((__doc__ or "") + "\n")
+        return 0
     dry_run = bool(args) and args[0] == "--dry-run"
     if dry_run:
         args = args[1:]

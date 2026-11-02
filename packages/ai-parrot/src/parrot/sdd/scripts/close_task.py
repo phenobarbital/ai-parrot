@@ -147,6 +147,9 @@ def _emit_task_closed_inprocess(start_dir: Path, task_id: str, feature_slug: str
 def main(argv: Sequence[str] | None = None) -> int:
     """Port of close_task.sh C1–C14 (positional args only; extra args ignored, verification not validated)."""
     args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] in ("-h", "--help"):
+        sys.stdout.write(USAGE.format(prog="parrot sdd task close"))
+        return 0
     task_id = args[0] if len(args) > 0 else ""
     feature_slug = args[1] if len(args) > 1 else ""
     verification = args[2] if len(args) > 2 and args[2] else "verified"

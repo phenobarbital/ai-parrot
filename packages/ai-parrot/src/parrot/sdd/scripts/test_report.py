@@ -101,8 +101,8 @@ def main(argv: list[str] | None = None) -> int:
     """Return 0 for every report, no-data ones included, and 2 only for argument usage errors."""
     try:
         args = _build_parser().parse_args(argv)
-    except SystemExit:
-        return 2
+    except SystemExit as exc:  # --help exits 0, a usage error exits 2
+        return exc.code if isinstance(exc.code, int) else 2
 
     index = _read_index(args.index)
     if index is None:

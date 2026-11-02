@@ -44,9 +44,9 @@ def test_check_task_graph_kernel_is_package_relative() -> None:
     assert check_task_graph._load_contract() is not None
 
 
-def test_worktree_status_main_takes_no_argv() -> None:
+def test_worktree_status_main_takes_argv() -> None:
     import inspect
 
     from parrot.sdd.scripts import worktree_status
 
-    assert list(inspect.signature(worktree_status.main).parameters) == []
+    assert list(inspect.signature(worktree_status.main).parameters) == ["argv"]  # C30: mounted verbs call main(list)

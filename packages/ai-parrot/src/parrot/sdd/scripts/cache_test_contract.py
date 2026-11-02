@@ -68,8 +68,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true")
     try:
         args = parser.parse_args(argv)
-    except SystemExit:
-        return 2
+    except SystemExit as exc:  # --help exits 0, a usage error exits 2
+        return exc.code if isinstance(exc.code, int) else 2
     try:
         contract_mod = _load_contract()
     except ImportError as exc:

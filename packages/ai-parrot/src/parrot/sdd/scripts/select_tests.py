@@ -356,8 +356,8 @@ def main(argv: list[str] | None = None) -> int:
     """CLI entry point: 0 ok, 1 an invocation failed, 2 usage error / empty task-tier plan."""
     try:
         args = _build_parser().parse_args(argv)
-    except SystemExit:
-        return 2
+    except SystemExit as exc:  # argparse: --help exits 0, a usage error exits 2
+        return exc.code if isinstance(exc.code, int) else 2
     try:
         kernel = _load_kernel()
     except ImportError as exc:
