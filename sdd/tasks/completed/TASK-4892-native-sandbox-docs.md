@@ -216,10 +216,8 @@ No new tests; the parity and doc-contract tests above are the specification.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat glm (nova / zai.glm-4.7-flash), attempt 1
+**Date**: 2026-10-30
+**Notes**: Agent files (sdd-worker/sdd-coder, both copies), worktree rule (both copies) updated correctly; merge-tier validation green (216 passed incl. subagent parity and doc contracts). The new guide docs/dev_loop/claude-native-sandbox.md was delivered as an outline only and was rewritten by the orchestrator in eaa66aba7cf640b772a18e795d9b6be6a75f0024 from the launcher source and the qualification report. Feedback recorded: coder-feedback:827f9595ba4c3fbfda9a52b5. Pre-existing divergence between .claude/rules/worktree-management.md and its .agent/skills twin (frontmatter, FEAT-698 lines) is out of scope and left as found.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

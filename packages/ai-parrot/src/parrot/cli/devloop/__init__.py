@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 
 import click
 
+from parrot.cli.devloop.launch_worker import launch_worker_cmd
+
 if TYPE_CHECKING:  # pragma: no cover - typing only, avoids a heavy runtime import
     from parrot.flows.dev_loop.models import DevAgentSpec
 
@@ -196,3 +198,6 @@ def revise_cmd(brief_file: str | None = None) -> None:
     console = DevLoopConsole()
     exit_code = asyncio.run(console.start(brief_file=brief_file, revision=True))
     raise SystemExit(exit_code)
+
+
+devloop.add_command(launch_worker_cmd)

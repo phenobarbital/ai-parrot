@@ -59,9 +59,7 @@ directory switching, no shared mutable state across features.
 - Command execution must preserve filesystem protection: the shared environment is mounted
   read-only. Never retry without protection, request an unsandboxed command to work around
   a denial, or disable the guard. If isolation is unavailable, stop and report the blocker.
-- Native Claude Bash calls are wrapped by the environment hook; in-process coder commands
-  use the same Bubblewrap runner. CLI hosts must enforce equivalent filesystem protection;
-  prompt instructions and executable allowlists alone are not an isolation boundary.
+- Under the supported launchers the Claude native sandbox enforces the filesystem/network boundary and the hook keeps the test-scope guard, RTK rewrite and file-tool checks; nested bwrap is not used; never request dangerouslyDisableSandbox.
 - The primary checkout's `.claude/worktrees/` and `.parrot/ledger/` are the only writable
   exceptions outside your worktree: the first exists so `/sdd-done` can run from here
   (ledger-snapshot worktree, removal of this worktree), the second so you can file deferred

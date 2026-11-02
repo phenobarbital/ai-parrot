@@ -459,13 +459,11 @@ Si quieres dejar a Claude implementando una feature **completa** sin
 intervención, lanza `sdd-worker` dentro del worktree:
 
 ```bash
-cd .claude/worktrees/feat-150-agent-tracing
-scripts/sdd/launch_worker.sh --verbose
+parrot devloop launch-worker FEAT-150
 
 # En background:
-tmux new -s feat-150 \
-  "scripts/sdd/launch_worker.sh --verbose"
-# Ctrl+B, D para detach; tmux attach -t feat-150 para volver
+parrot devloop launch-worker FEAT-150 --tmux --detach
+# Ejecuta el mismo comando con --tmux para volver a adjuntarte.
 ```
 
 El agente ejecuta todas las tareas del feature en orden de dependencias,

@@ -245,7 +245,11 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
         raise ValueError("A command is required.")
     executable = shutil.which("bwrap")
     if executable is None:
-        raise RuntimeError("Bubblewrap (bwrap) is required for SDD commands; refusing unsandboxed execution.")
+        raise RuntimeError(
+            "Bubblewrap (bwrap) is required for the legacy SDD hook and is not available on "
+            f"{sys.platform}; refusing unsandboxed execution. Launch the worker with "
+            "`parrot devloop launch-worker <FEAT-ID>` (native sandbox) instead."
+        )
     root, git_dir = repository_paths(cwd)
     command = [
         executable,
@@ -503,17 +507,45 @@ def rtk_rewrite(command: str) -> str | None:
     return rewritten if rewritten.strip() else None
 
 
-def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
-    """Wrap native Bash input, through RTK when available, and reject shared-environment file-tool writes."""
+def _load_native_sandbox() -> Any:
+    """Load ``native_claude_sandbox`` with the stdlib only (FEAT-768; TASK-5093 moves it next door).
+
+    The module still lives in ``parrot/flows/dev_loop/``. Importing it through the package would
+    execute ``parrot.flows.dev_loop.__init__`` (dispatchers, flow, Pydantic models) inside a hook
+    that fires on every PreToolUse, so it is loaded by path instead. Its own
+    ``import worktree_environment`` script-sibling fallback is pre-seeded with this module.
+    """
+    import importlib.util
+
+    cached = sys.modules.get("native_claude_sandbox")
+    if cached is not None:
+        return cached
+    sys.modules.setdefault("worktree_environment", sys.modules[__name__])
+    path = Path(__file__).resolve().parents[2] / "flows" / "dev_loop" / "native_claude_sandbox.py"
+    spec = importlib.util.spec_from_file_location("native_claude_sandbox", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load the native sandbox module from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["native_claude_sandbox"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def hook_response(payload: dict[str, Any], *, backend: str = "bubblewrap") -> dict[str, Any]:
+    """Apply guards and file checks; omit bwrap only for explicit claude-native mode; deny invalid modes."""
     cwd = Path(payload["cwd"])
     tool_input = payload["tool_input"]
     output: dict[str, Any] = {"hookEventName": "PreToolUse"}
     try:
+        if backend not in ("bubblewrap", "claude-native"):
+            raise ValueError(f"Unknown SDD sandbox backend {backend!r}; refusing to run")
+        native = _load_native_sandbox() if backend == "claude-native" else None
         if payload["tool_name"] == "Bash":
             command = tool_input["command"]
             if not isinstance(command, str) or not command:
                 raise ValueError("Bash command must be a non-empty string")
-            action, value = _scope_guard(command, cwd)
+            task_cwd = native.native_task_cwd(cwd, command) if native else cwd
+            action, value = _scope_guard(command, task_cwd)
             if action == "block":
                 raise ValueError(value or "over-broad pytest blocked by the test-scope guard")
             if action in ("rewrite", "verdict") and value:
@@ -521,7 +553,14 @@ def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
             # After the guard, which must see the raw runner (`pytest`, not `rtk pytest`).
             if optimized := rtk_rewrite(command):
                 command = optimized
-            wrapped = protected_argv(cwd, bounded_shell_argv(command, tool_input))
+            if native and os.environ.get(native.DEGRADED_ENV) == "1":
+                command = "echo '[sdd] degraded sandbox: no OS write boundary' >&2; " + command
+            shell = bounded_shell_argv(command, tool_input)
+            if native:
+                env = native.native_command_environment(task_cwd)
+                wrapped = ["env", *(f"{key}={value}" for key, value in env.items()), *shell]
+            else:
+                wrapped = protected_argv(cwd, shell)
             # Preserve timeout/background/description without granting approval
             # or overriding decisions from other hooks.
             output["updatedInput"] = {**tool_input, "command": shlex.join(wrapped)}
@@ -529,7 +568,10 @@ def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
             path = tool_input.get("file_path") or tool_input.get("notebook_path")
             if not isinstance(path, str):
                 raise ValueError("File tool requires a path")
-            validate_write_path(cwd, cwd / path)
+            if native:
+                native.validate_native_write_path(cwd, cwd / path)
+            else:
+                validate_write_path(cwd, cwd / path)
     except (OSError, ValueError, RuntimeError, KeyError) as exc:
         output.update(permissionDecision="deny", permissionDecisionReason=str(exc))
     return {"hookSpecificOutput": output}
@@ -541,7 +583,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--hook", action="store_true", required=True)
     parser.parse_args(argv)
     try:
-        result = hook_response(json.load(sys.stdin))
+        backend = os.environ.get("PARROT_SDD_SANDBOX_BACKEND")
+        native_markers = ("PARROT_SDD_CACHE_DIR", "PARROT_SDD_SANDBOX_ROOTS", "PARROT_SDD_SANDBOX_DEGRADED")
+        if not backend and any(os.environ.get(name) for name in native_markers):
+            # A native launch always sets the backend; its absence next to the launcher's other markers
+            # means a broken launch, not a legacy session — never fall back to the Bubblewrap wrapper.
+            raise RuntimeError(
+                "native launch markers present but PARROT_SDD_SANDBOX_BACKEND is unset; refusing the legacy wrapper"
+            )
+        result = hook_response(json.load(sys.stdin), backend=backend or "bubblewrap")
     except Exception as exc:
         # A nonzero hook failure normally fails open. Emit an explicit denial.
         result = {
