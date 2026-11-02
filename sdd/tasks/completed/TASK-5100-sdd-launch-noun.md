@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — parrot-installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.10, amendment C30 items 1 and 5 — proposal rev 0.9)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5095, TASK-5098, TASK-5099, TASK-5093 — and, **external** (cannot be expressed in `depends_on`):
@@ -295,4 +295,13 @@ sdd.add_command(_launch)
 ---
 
 ## Completion Note
-_(filled by the implementer)_
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-11-02
+**Notes**: `parrot/cli/devloop/launch_worker.py` git-mv'd to `parrot/sdd/launch_cli.py` (group `launch`: worker/brief/fix); `devloop launch-worker`
+registration deleted; `feature_launcher.launch_session` added; mounted in `sdd/cli.py` (and `native_claude_sandbox` added to `_UNMOUNTED`, since its
+`main()` is the `launch-worker` script entry and its CLI is `launch worker`, otherwise `test_sdd_cli_mounts_every_helper` fails). Shipped-asset
+references to `launch_worker.sh` were already absent on this branch (grep of `.claude`, `.agent`, `_assets`), so no asset regeneration was needed;
+`check_asset_sync --check` is clean. Messages in `worktree_environment.py`, `scripts/sdd/launch_worker.sh` and their tests now say `parrot sdd launch worker`.
+Tests moved to `tests/sdd/test_sdd_launch.py` (`_SRC` parents index adjusted) plus brief/fix/help tests; `test_click_wiring` now asserts launch-worker is gone.
+Spec Validation Contract path updated and test contract re-cached. 422 tests green across tests/sdd, tests/cli/devloop, tests/sdd/test_launch_worker.py.
+**Deviations from spec**: edited `parrot/sdd/scripts/worktree_environment.py`, `test_worktree_environment.py`, `test_click_wiring.py`, `tests/sdd/test_launch_worker.py` and the spec (spelling / contract path) — not in the file table. Claude args are not separable for brief/fix (optional `--`, not implemented).

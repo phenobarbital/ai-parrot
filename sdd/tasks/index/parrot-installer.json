@@ -1098,11 +1098,11 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "pending",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-11-02T12:58:19+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -1112,7 +1112,8 @@
         "TASK-5099"
       ],
       "parallelism_notes": "exclusive: regenerates _assets/; needs feature_launcher.py + cli/devloop/launch_worker.py from TASK-5093 (FEAT-768 absorbed), the `sdd` group from TASK-5095 (cli.py), and TASK-5098's rewrite done so only the five launch_worker.sh refs remain; serialized after TASK-5099 (both edit cli.py: the ledger mount is the insertion anchor)",
-      "file": "sdd/tasks/active/TASK-5100-sdd-launch-noun.md"
+      "file": "sdd/tasks/completed/TASK-5100-sdd-launch-noun.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5101",
