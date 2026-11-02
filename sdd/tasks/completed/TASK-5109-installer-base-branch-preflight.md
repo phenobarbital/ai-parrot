@@ -245,3 +245,12 @@ When you pick up this task:
 **Completed by**: Claude Sonnet 5.5 (sdd-start)
 **Date**: 2026-11-03
 **Notes**: Added `base-branch` plan step, `_base_branch_step` (+ bounded `_git_run`), `--base-branch` / `--push-base`, receipt key `base_branch_created` (preserved by `load_receipt`), uninstall note, docs. 15 new tests + existing installer/CLI tests pass (78). Staging/hotfix-missing notes are emitted for any configured extra branch when HEAD exists; never created.
+
+**Follow-up fix (2026-11-03, verification)**: the overrides were applied with `model_copy`, which skips
+`SddConfig` validation, so `--base-branch main` (the default `hotfix_base` is `main`) and
+`--base-branch origin/x` seeded a `sdd/config.json` that every later SDD command refused to load
+(`SddConfigError`), and `origin/x` also created a local branch of that name. The task's own acceptance
+criterion asked for the `main` case, and its test only read the JSON back. Fixed by `_apply_branch_overrides`
+(merged config goes through `SddConfig.model_validate` before any write; a `main`/`main` clash hints at
+`--hotfix-base`) and a new `--hotfix-base NAME` option (spec C31 updated). Tests now reload the config and
+cover `main` + `--hotfix-base`, `main` alone, `origin/x` for both fields, and conflicting/matching existing configs.

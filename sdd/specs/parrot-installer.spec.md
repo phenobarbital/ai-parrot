@@ -696,9 +696,12 @@ class ToolkitTemplate(BaseModel):
     leaves it); warns, with the exact command, when there is no `origin` remote or no local
     `refs/remotes/origin/<base_branch>`, and pushes only with the new `--push-base` flag. No network call —
     `doctor --sdd`'s `ls-remote` check stays the remote truth. `staging_branch` / `hotfix_base` that do not
-    exist locally get a `note:` and are never created. `--base-branch NAME` seeds `sdd/config.json` with
-    `NAME` (validated with `git check-ref-format --branch`); it is refused, before any write, when an existing
-    config sets a different `base_branch`. `--dry-run` prints `plan: base-branch <name> (<what>)`.
+    exist locally get a `note:` and are never created. `--base-branch NAME` / `--hotfix-base NAME` seed
+    `sdd/config.json` (each validated with `git check-ref-format --branch`, then the merged config with
+    `SddConfig` — distinct lanes, no `origin/` prefix); they are refused, before any write, when an existing
+    config sets a different value. A repo that integrates on `main` passes both
+    (`--base-branch main --hotfix-base <branch>`): `main` alone is refused with that hint, since `main` is the
+    default `hotfix_base`. `--dry-run` prints `plan: base-branch <name> (<what>)`.
   - **C32 — portable dangerous-actions guard (TASK-5110).** Supersedes the 2026-10-14 amendments-proposal
     classification "`dangerous-actions-blocker.sh` stays in the repo" for foreign repos (the repo's own bash
     hook stays for ai-parrot). The bash hook needs `bash`, `jq`, `python3`, GNU `grep -E` and `pgrep`, fails open
