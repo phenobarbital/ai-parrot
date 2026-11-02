@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-791 — BotManager fixes — Jira web-channel OAuth2 registration + BotManager test-API drift
 **Spec**: `sdd/specs/manager-manager-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -409,8 +409,44 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: ai-parrot-8c (/sdd-fix, agent:sdd-fix)
+**Date**: 2026-11-03
+**Notes**: Added `BotManager._register_jira_oauth2_provider` (manager.py:2918)
+and its call site at manager.py:2408, directly after the O365 call and before
+the `on_startup` append, so the app is still mutable when
+`JiraOAuthManager.setup()` mounts its callback route and lifecycle hooks.
 
-**Deviations from spec**: none | describe if any
+The reuse branch reads `app["jira_oauth_manager"] or app["oauth2_manager_jira"]`
+BEFORE constructing, because `setup()` sets both keys and raises `RuntimeError`
+when either already holds a different instance — reading only one key would
+have made the Slack/MS Teams path raise at startup.
+
+Tests: 7 in `packages/ai-parrot-server/tests/unit/test_jira_provider_registration.py`,
+all passing — configured, unconfigured, reuse via each of the two app keys,
+idempotence, no-double-registration through `_register_oauth2_providers`, and
+the never-raises path (a `setup()` that throws is logged and leaves the guard
+key unset). Three more than the four the blueprint listed: the alternate-key
+reuse and the never-raises branches are the two that would actually break a
+live deployment, and the startup interaction is what AC-4 turns on.
+
+Docs: `docs/auth/connections.md` gained a "Built-in providers (no descriptor
+needed)" subsection under § "Adding a provider", tabling both O365 and Jira env
+keys and recording why a `provider_id: jira` descriptor is NOT equivalent
+(generic manager, `toolkit_factory()` returns None, no JiraToolkit hydration).
+
+`ruff check` clean. `test_o365_provider_registration.py` and
+`test_oauth2_identity_store_binding.py` stay green.
+
+**Deviations from spec**: one, and one pre-existing failure noted.
+
+1. AC-6 asked that `test_register_oauth2_providers.py` stay green.
+   `test_register_oauth2_providers_from_descriptors` in that module FAILS, but it
+   fails identically on a clean `dev` checkout at the base commit
+   (`AssertionError: Expected 'mock' to be called once. Called 2 times.`), so it
+   is a pre-existing red, not a regression from this task. It was verified by
+   running that single node id in the main checkout before and independently of
+   this change. It is unrelated to Jira registration (it exercises the
+   descriptor path) and is out of this task's scope; a ledger issue was opened
+   for it separately.
+2. The four blueprint test names were kept and three were added, as described
+   above.

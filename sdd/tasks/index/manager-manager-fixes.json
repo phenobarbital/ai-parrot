@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-03T00:20:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-02T23:24:19+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -42,16 +42,17 @@
       "feature_id": "FEAT-791",
       "feature": "manager-manager-fixes",
       "spec": "sdd/specs/manager-manager-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Lane A. Sole task touching packages/ai-parrot-server/src/parrot/manager/manager.py, docs/auth/connections.md and the new tests/unit/test_jira_provider_registration.py; no file overlap with TASK-5106 or TASK-5107.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5105-jira-oauth2-web-registration.md"
+      "started_at": "2026-11-02T23:11:05.074707+00:00",
+      "completed_at": "2026-11-02T23:12:56+00:00",
+      "file": "sdd/tasks/completed/TASK-5105-jira-oauth2-web-registration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5106",
@@ -60,16 +61,17 @@
       "feature_id": "FEAT-791",
       "feature": "manager-manager-fixes",
       "spec": "sdd/specs/manager-manager-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Lane B part 1. Sole task touching packages/ai-parrot/tests/bots/prompts/test_yaml_prompt_config.py; reads only already-shipped symbols (AgentRegistry._apply_prompt_config, get_preset), creates nothing TASK-5105 or TASK-5107 consume.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5106-repoint-yaml-prompt-config-tests.md"
+      "started_at": "2026-11-02T23:09:14.179080+00:00",
+      "completed_at": "2026-11-02T23:10:36+00:00",
+      "file": "sdd/tasks/completed/TASK-5106-repoint-yaml-prompt-config-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5107",
@@ -78,16 +80,17 @@
       "feature_id": "FEAT-791",
       "feature": "manager-manager-fixes",
       "spec": "sdd/specs/manager-manager-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Lane B part 2. Sole task touching packages/ai-parrot-server/tests/studio/test_tooling_integration.py; diagnosis-first, reads manager.py but never modifies it, so it does not collide with TASK-5105's edit of that file.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5107-repair-studio-tooling-integration-tests.md"
+      "started_at": "2026-11-02T23:13:06.548188+00:00",
+      "completed_at": "2026-11-02T23:17:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5107-repair-studio-tooling-integration-tests.md",
+      "verification": "verified"
     }
   ]
 }

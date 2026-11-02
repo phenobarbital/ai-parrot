@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-791 — BotManager fixes — Jira web-channel OAuth2 registration + BotManager test-API drift
 **Spec**: `sdd/specs/manager-manager-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -268,8 +268,35 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: ai-parrot-8c (/sdd-fix, agent:sdd-fix)
+**Date**: 2026-11-03
+**Notes**: Added a module-local `_build(cfg)` helper over
+`get_preset(config.preset)` + `AgentRegistry._apply_prompt_config`, and
+repointed all 17 construction sites (16 tests; `test_customize_preserves_priority`
+has two). Removed the 16 per-test `from parrot.manager.manager import BotManager`
+lines, which is what made this module a direct importer of `manager.py` and
+therefore part of the merge-tier false "new red". Updated the module docstring.
 
-**Deviations from spec**: none | describe if any
+Result: `43 passed` across `test_yaml_prompt_config.py` (16 previously red) and
+the sibling `test_botmanager_prompt_config.py`. `ruff check` clean.
+
+**Deviations from spec**: two, both recorded deliberately.
+
+1. `test_agent_preset_has_grounding` needed more than a mechanical repoint. Its
+   assertion `builder.get("strict_grounding") is not None` is false under the
+   current code: `PromptBuilder.agent()` (builder.py) builds `cls.default()` and
+   adds `AGENT_BEHAVIOR_LAYER`, whose `name` is `"agent_behavior"` and whose
+   priority is `LayerPriority.BEHAVIOR - 5` — the exact slot
+   `STRICT_GROUNDING_LAYER` occupies, with "3. **Grounding**: Use only data
+   explicitly provided..." in its template. So grounding was not dropped from the
+   agent preset; the layer supplying it was renamed/replaced. The assertion now
+   reads `builder.get("agent_behavior") is not None`, with a comment recording
+   why. This preserves the test's intent (and `PromptBuilder.agent`'s own
+   docstring, "Agent stack with general-purpose grounding behavior") rather than
+   weakening it. The other tests that reference `strict_grounding` do so via
+   `add: ["strict_grounding"]`, which still resolves through `get_domain_layer`
+   and passes unchanged.
+2. AC-3 ("no reference to `BotManager` remains") is met for code: there is no
+   import and no call. One prose mention survives in the `_build` helper's
+   docstring, recording which removed method it replaces. Kept on purpose for
+   traceability — it does not make the module an importer of `manager.py`.

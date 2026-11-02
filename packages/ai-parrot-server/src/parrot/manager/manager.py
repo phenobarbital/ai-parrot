@@ -2405,6 +2405,7 @@ class BotManager:
         self._setup_channel_links(self.app)
         self._register_descriptor_oauth2_providers(self.app)
         self._register_o365_oauth2_provider(self.app)
+        self._register_jira_oauth2_provider(self.app)
         self.app.on_startup.append(self._register_oauth2_providers)
         # FEAT-598 (TASK-3805): default data-plane guard wiring, in two phases.
         # 1. Build PBAC + the guard NOW, while the app is still mutable:
@@ -2913,6 +2914,54 @@ Available documentation UIs:
             self.logger.info("Registered %d descriptor OAuth2 providers", len(providers))
         except Exception:  # noqa: BLE001
             self.logger.exception("Failed to register descriptor OAuth2 providers")
+
+    def _register_jira_oauth2_provider(self, app: web.Application) -> None:
+        """Wire the shared Jira manager and provider while the app is mutable.
+
+        Mirrors :meth:`_register_o365_oauth2_provider`.  Without this, a plain
+        web deployment never gets a ``JiraOAuthManager``: only the Slack/MS
+        Teams path (per-bot ``{BOTNAME}_JIRA_*`` keys) builds one, so
+        :meth:`_register_oauth2_providers` finds ``app['jira_oauth_manager']``
+        unset and the Connections panel lists no Jira provider.
+
+        No-op when ``JIRA_CLIENT_ID`` is unset or the provider was already
+        registered.  Never raises: a misconfigured Jira must not block startup.
+
+        Args:
+            app: The aiohttp application, still mutable at ``setup()`` time.
+        """
+        from parrot.conf import JIRA_CLIENT_ID, JIRA_CLIENT_SECRET, JIRA_REDIRECT_URI
+
+        if not JIRA_CLIENT_ID or app.get("_jira_oauth2_provider_registered"):
+            return
+
+        try:
+            from parrot.auth.jira_oauth import JiraOAuthManager
+            from parrot.auth.oauth2.jira_provider import JiraOAuth2Provider
+            from parrot.auth.oauth2.registry import register_oauth2_provider
+            from parrot.services.identity_credential_sink import IdentityVaultCredentialStore
+
+            # Inspect BOTH keys before constructing: JiraOAuthManager.setup()
+            # sets each of them and raises RuntimeError when either already
+            # holds a different instance.
+            manager = app.get("jira_oauth_manager") or app.get("oauth2_manager_jira")
+            if manager is None:
+                authdb = app.get("authdb")
+                manager = JiraOAuthManager(
+                    JIRA_CLIENT_ID,
+                    JIRA_CLIENT_SECRET,
+                    JIRA_REDIRECT_URI,
+                    app=app,
+                    credential_store=IdentityVaultCredentialStore(authdb) if authdb is not None else None,
+                    event_publisher=app.get("connection_event_publisher"),
+                )
+                manager.setup()
+
+            register_oauth2_provider(JiraOAuth2Provider(manager=manager))
+            app["_jira_oauth2_provider_registered"] = True
+            self.logger.info("Registered JiraOAuth2Provider with the global OAuth2ProviderRegistry")
+        except Exception:  # noqa: BLE001
+            self.logger.exception("Failed to register the Jira OAuth2 provider")
 
     def _register_o365_oauth2_provider(self, app: web.Application) -> None:
         """Wire the shared O365 manager and provider while the app is mutable."""
