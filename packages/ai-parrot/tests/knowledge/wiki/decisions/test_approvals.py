@@ -160,6 +160,33 @@ def test_manifest_digest_changes_on_append(tmp_path: Path) -> None:
     assert after == hashlib.sha256(manifest_path.read_bytes()).hexdigest()
 
 
+@pytest.mark.parametrize("case", ["valid", "same_document", "same_path", "mixed", "commit", "actor", "specs"])
+def test_shared_seed_batch_validation(tmp_path: Path, case: str) -> None:
+    """Only distinct seed documents with consistent approval provenance may share a batch."""
+    first = _entry_for_manifest().model_copy(update={"kind": "seed"})
+    second = first.model_copy(update={"document_id": "other", "spec_path": "docs/decisions/other.md"})
+    if case == "same_document":
+        second = second.model_copy(update={"document_id": first.document_id})
+    elif case == "same_path":
+        second = second.model_copy(update={"spec_path": first.spec_path})
+    elif case == "mixed":
+        second = second.model_copy(update={"kind": "spec"})
+    elif case == "commit":
+        second = second.model_copy(update={"commit": "b" * 40})
+    elif case == "actor":
+        second = second.model_copy(update={"actor": "Other <other@example.com>"})
+    elif case == "specs":
+        first = first.model_copy(update={"kind": "spec"})
+        second = second.model_copy(update={"kind": "spec"})
+    manifest_path = tmp_path / "approvals.jsonl"
+    manifest_path.write_text(first.model_dump_json() + "\n" + second.model_dump_json() + "\n", encoding="utf-8")
+    if case == "valid":
+        assert ApprovalManifest.load(manifest_path).entries == [first, second]
+    else:
+        with pytest.raises(DecisionError, match=APPROVAL_MANIFEST_INVALID):
+            ApprovalManifest.load(manifest_path)
+
+
 def _entry_for_manifest() -> ApprovalEntry:
     """Return a valid stable approval event suitable for manifest parsing tests."""
     return ApprovalEntry(

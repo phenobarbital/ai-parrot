@@ -51,7 +51,7 @@ class ApprovalManifest:
 
     @classmethod
     def load(cls, path: Path) -> "ApprovalManifest":
-        """Load JSONL and reject malformed or duplicate approval batches."""
+        """Load JSONL, allowing distinct seed documents in one coherent approval batch."""
         if not path.exists():
             return cls([], b"")
         raw = path.read_bytes()
@@ -64,15 +64,24 @@ class ApprovalManifest:
             except (json.JSONDecodeError, ValidationError) as exc:
                 raise DecisionError(APPROVAL_MANIFEST_INVALID, f"{path}:{lineno}: {exc}") from exc
 
-        approval_batch_ids = [entry.batch_id for entry in entries if entry.kind in {"spec", "seed"}]
-        duplicate_batch_ids = sorted(
-            {batch_id for batch_id in approval_batch_ids if approval_batch_ids.count(batch_id) > 1}
-        )
-        if duplicate_batch_ids:
-            raise DecisionError(
-                APPROVAL_MANIFEST_INVALID,
-                f"{path}: duplicate spec/seed approval batch_id(s): {', '.join(duplicate_batch_ids)}",
-            )
+        batches: dict[str, list[ApprovalEntry]] = {}
+        for entry in entries:
+            if entry.kind in {"spec", "seed"}:
+                batches.setdefault(entry.batch_id, []).append(entry)
+        for batch_id, batch in batches.items():
+            if len(batch) == 1:
+                continue
+            if (
+                any(entry.kind != "seed" for entry in batch)
+                or len({entry.document_id for entry in batch}) != len(batch)
+                or len({Path(entry.spec_path).as_posix() for entry in batch}) != len(batch)
+                or len({(entry.commit, entry.actor) for entry in batch}) != 1
+            ):
+                raise DecisionError(
+                    APPROVAL_MANIFEST_INVALID,
+                    f"{path}: duplicate or conflicting approval batch {batch_id!r}; "
+                    "shared batches require distinct seed documents from one commit and actor",
+                )
         return cls(entries, raw)
 
     def for_document(self, document_id: str) -> list[ApprovalEntry]:

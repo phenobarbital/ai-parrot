@@ -10,7 +10,7 @@ tags: [domain-experts, roost, experts-registry, model-config, tracing, audit]
 **Feature ID**: FEAT-790
 **Date**: 2026-11-02
 **Author**: Jesus Lara (with Codex)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0 (planned, inherited from FEAT-778)
 
 Source: `sdd/proposals/expert-model-override-and-roost-trace.proposal.md`; extends FEAT-778.
@@ -41,7 +41,7 @@ block the downstream roster readiness check and native trace propagation.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:2c59d5ffe1cc2a74f6ec74c0676eb5fc3b485378a4a25d4f342d4bb206c346b3 evaluation_digest=sha256:f8147966ce10b70e0d4677dc19f6f30bf4b706eca3f8f31861839544d48f3b79 rules_version=0 status=invalid -->
+<!-- decision-audit: input_digest=sha256:1b6601733aedbde0ce033858a7f35e1ff6cef399136927483eaa96c9c6c16ea6 evaluation_digest=sha256:f7e2959aeef1b255439a1eaf3508c78d446a5bf63e1780a6078aa9873385faf6 rules_version=0 status=incomplete -->
 
 ## 2. Architectural Design
 
@@ -321,7 +321,7 @@ their FailureInfo, and use ledger.entries()/verify() for audit evidence. No wall
 - [ ] Validation contract and existing experts/Roost suites pass; documentation covers both new APIs and limits.
 - [ ] After merge, finance confirms c8_supported=True and native dispatch in its qualified LocalEnvelope setup,
       and records the merged ai-parrot revision. This is a downstream release handoff, not evidence produced here.
-- [ ] Governing-decision audit is rerun successfully after the repository approval manifest is repaired, before approval.
+- [ ] Governing-decision audit completes successfully; seed batch loading is repaired, but inventory snapshot validation remains blocked.
 
 ## 6. Codebase Contract
 
@@ -406,8 +406,9 @@ CREATE rows name future files only. Exact existing signatures are in the module 
   only; neither a mocked CallMessage nor signature introspection proves satellite trace parity.
 - Retaining envelopes in state retains their contents for the engine's existing state lifetime. Do not retain
   whole query payloads or introduce a second unbounded per-conversation map.
-- The governing lookup is blocked by duplicate approval batch `seed-architecture-rules-v1` in
-  sdd/decisions/approvals.jsonl. Do not infer absence of governing decisions or mark this spec approved.
+- Seed approval batch loading is repaired: its nine distinct documents intentionally share one
+  batch. The governing lookup now reports SNAPSHOT_UNSTABLE (decision inventory changed while
+  reading). Do not infer absence of governing decisions from this incomplete audit.
 
 ### External Dependencies
 
@@ -448,49 +449,66 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:2c59d5ffe1cc2a74f6ec74c0676eb5fc3b485378a4a25d4f342d4bb206c346b3 evaluation_digest=sha256:f8147966ce10b70e0d4677dc19f6f30bf4b706eca3f8f31861839544d48f3b79 rules_version=0 status=invalid -->
+<!-- decision-audit: input_digest=sha256:1b6601733aedbde0ce033858a7f35e1ff6cef399136927483eaa96c9c6c16ea6 evaluation_digest=sha256:f7e2959aeef1b255439a1eaf3508c78d446a5bf63e1780a6078aa9873385faf6 rules_version=0 status=incomplete -->
 
-Audit status: `invalid` (exit 2)
+Audit status: `incomplete` (exit 3)
 
 Findings:
 - none
 
 Diagnostics:
-- `APPROVAL_MANIFEST_INVALID`; path: /home/jesuslara/proyectos/ai-parrot/sdd/specs/expert-model-override-and-roost-trace.spec.md; message: /home/jesuslara/proyectos/ai-parrot/sdd/decisions/approvals.jsonl: duplicate spec/seed approval batch_id(s): seed-architecture-rules-v1
+- `SNAPSHOT_UNSTABLE`; path: /home/jesuslara/proyectos/ai-parrot/sdd/specs/expert-model-override-and-roost-trace.spec.md; message: decision inventory changed while reading
 
 Coverage:
-- Subsystems: not recorded
-- Unmapped tags: not recorded
-- Targets resolved: 0/0
+- Subsystems: bots, clients, config, flows, knowledge-graphindex, knowledge-wiki, memory, skills, tools
+- Unmapped tags: audit, domain-experts, experts-registry, model-config, roost, tracing
+- Targets resolved: 3/3
 - Impact complete: true
-- Inventory complete: true
+- Inventory complete: false
 - Omitted ids: not recorded
 
 ```json
 {
   "coverage": {
     "impact_complete": true,
-    "inventory_complete": true,
+    "inventory_complete": false,
     "omitted_ids": [],
-    "subsystems": [],
-    "targets_resolved": 0,
-    "targets_total": 0,
-    "unmapped_tags": []
+    "subsystems": [
+      "bots",
+      "clients",
+      "config",
+      "flows",
+      "knowledge-graphindex",
+      "knowledge-wiki",
+      "memory",
+      "skills",
+      "tools"
+    ],
+    "targets_resolved": 3,
+    "targets_total": 3,
+    "unmapped_tags": [
+      "audit",
+      "domain-experts",
+      "experts-registry",
+      "model-config",
+      "roost",
+      "tracing"
+    ]
   },
   "diagnostics": [
     {
-      "code": "APPROVAL_MANIFEST_INVALID",
+      "code": "SNAPSHOT_UNSTABLE",
       "decision_id": null,
-      "message": "/home/jesuslara/proyectos/ai-parrot/sdd/decisions/approvals.jsonl: duplicate spec/seed approval batch_id(s): seed-architecture-rules-v1",
+      "message": "decision inventory changed while reading",
       "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/expert-model-override-and-roost-trace.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:f8147966ce10b70e0d4677dc19f6f30bf4b706eca3f8f31861839544d48f3b79",
-  "exit_code": 2,
+  "evaluation_digest": "sha256:f7e2959aeef1b255439a1eaf3508c78d446a5bf63e1780a6078aa9873385faf6",
+  "exit_code": 3,
   "findings": [],
-  "input_digest": "sha256:2c59d5ffe1cc2a74f6ec74c0676eb5fc3b485378a4a25d4f342d4bb206c346b3",
+  "input_digest": "sha256:1b6601733aedbde0ce033858a7f35e1ff6cef399136927483eaa96c9c6c16ea6",
   "snapshot": null,
-  "status": "invalid"
+  "status": "incomplete"
 }
 ```
 
@@ -506,8 +524,11 @@ The proposal supplied four unchecked questions and no previously resolved questi
   LocalEnvelope only and document the flat/nested mismatch. Satellite qualification remains deferred.
 - [ ] Release/tag and finance runtime-source-manifest revision — Owner: release maintainer; record
   the merged revision and downstream readiness results after implementation. Target 1.3.0 is provisional.
-- [ ] Repair duplicate decision approval batch and rerun governing/consequence audits — Owner:
-  SDD maintainer; prerequisite for spec approval, outside this feature's modification scope.
+- [x] Repair duplicate decision approval batch loading — The loader now accepts the nine distinct
+  seed documents without rewriting approval history; whole-batch publication and authority checks
+  cover every member. Verified by 69 decision-audit regression tests.
+- [ ] Resolve SNAPSHOT_UNSTABLE and complete governing/consequence audits — Owner: SDD maintainer;
+  surfaced after the seed batch repair, outside this feature's modification scope.
 
 ## 9. Design Research Cross-Check
 
