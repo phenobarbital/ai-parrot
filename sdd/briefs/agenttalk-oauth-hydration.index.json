@@ -1,0 +1,31 @@
+{
+  "feature": "agenttalk-oauth-hydration",
+  "feature_id": "BRIEF-b7af2560406f",
+  "spec": "sdd/briefs/agenttalk-oauth-hydration.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-11-02",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-b7af2560406f-1",
+      "slug": "wire-agenttalk-hydration",
+      "title": "Wire AgentTalk into OAuth toolkit hydration",
+      "feature_id": "BRIEF-b7af2560406f",
+      "feature": "agenttalk-oauth-hydration",
+      "spec": "sdd/briefs/agenttalk-oauth-hydration.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/agenttalk-oauth-hydration/tasks/HOTFIX-b7af2560406f-1-wire-agenttalk-hydration.md"
+    }
+  ]
+}
