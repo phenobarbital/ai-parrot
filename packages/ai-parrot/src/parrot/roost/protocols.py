@@ -6,7 +6,7 @@ import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Callable, ClassVar, Literal, Optional
+from typing import Any, Callable, ClassVar, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -58,6 +58,7 @@ class ConversationState(BaseModel):
     protocol: InteractionProtocol
     initiator: AgentAddress
     state: str
+    envelope: Any = None
     terminal: Optional[TerminalState] = None
     budget: ConversationBudget = Field(default_factory=ConversationBudget)
     last_message_id: Optional[str] = None
@@ -256,6 +257,7 @@ class ProtocolEngine:
             protocol=opener.protocol,
             initiator=opener.sender,
             state=machine.initial_state(opener),
+            envelope=opener.envelope,
             terminal=terminal,
             budget=budget,
             last_message_id=opener.message_id,
@@ -356,6 +358,7 @@ class ProtocolEngine:
                     sender=AgentAddress(name="protocol-engine"),
                     receivers=[state.initiator],
                     failure=FailureInfo(code=FailureCode.CANCELLED, detail=reason),
+                    envelope=state.envelope,
                 )
             )
         return Transition(kind="closed", state=state, emit=emit)
@@ -392,5 +395,6 @@ class ProtocolEngine:
             sender=sender,
             receivers=[state.initiator],
             failure=FailureInfo(code=code, detail=detail),
+            envelope=state.envelope,
         )
         return Transition(kind="closed", state=state, emit=[failure])

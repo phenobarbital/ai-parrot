@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
+import unicodedata
 import uuid
 
 import jsonschema
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Mapping, Optional, Sequence
+
+from parrot.core.events.lifecycle import TraceContext
 
 from . import squawk_bridge
 from .audit import RoostAuditLedger
@@ -164,6 +168,7 @@ class RoostEndpoint:
         arriving back on an already-terminal conversation.
         """
         if emitted.is_addressed_to(self.agent_name):
+            await self.ledger.record(emitted, direction=self._audit_direction(emitted), self_name=self.agent_name)
             await self._resolve_pending(emitted)
         else:
             await self._send_reply(emitted)
@@ -544,6 +549,7 @@ class RoostEndpoint:
         timeout: Optional[float] = None,
         expected_schema: Optional[dict] = None,
         hops: int = 0,
+        trace_id: str | None = None,
     ) -> Any:
         """Execute a Query conversation without an agreement phase.
 
@@ -553,16 +559,26 @@ class RoostEndpoint:
             timeout: Seconds to wait; also becomes the envelope budget.
             expected_schema: Optional JSON Schema the answer must satisfy (``FailureCode.SCHEMA`` otherwise).
             hops: Chain depth of the caller seeding the hop budget.
+            trace_id: Exact application trace identifier to retain in LocalEnvelope audit entries.
 
         Raises:
             GrantDenied: *receiver* is outside the caller's grant.
+            ValueError: *trace_id* is empty, non-string, whitespace, or contains control/format characters.
         """
+        if trace_id is not None and (
+            not isinstance(trace_id, str)
+            or not trace_id
+            or any(character.isspace() or unicodedata.category(character) in {"Cc", "Cf"} for character in trace_id)
+        ):
+            raise ValueError("trace_id must be a non-empty string without whitespace or control characters")
         if not self.grant.allows(self.config, receiver.name):
             raise GrantDenied(receiver.name)
         conversation_id = uuid.uuid4().hex
+        trace = TraceContext(trace_id=trace_id, span_id=secrets.token_hex(8)) if trace_id is not None else None
         envelope = squawk_bridge.new_envelope(
             correlation_id=conversation_id,
             caller=self.agent_name,
+            trace=trace,
             budget_ms=int(timeout * 1000) if timeout is not None else None,
         )
         pctx, token = self._caller_authority()
@@ -596,8 +612,19 @@ class RoostEndpoint:
             else:
                 answer = await asyncio.wait_for(future, timeout)
         except asyncio.TimeoutError as exc:
-            self._close_timed_out(conversation_id)
+            await self._finish_query_failure(
+                conversation_id,
+                code=FailureCode.TIMEOUT,
+                detail="query timed out",
+            )
             raise RoostFailure(FailureInfo(code=FailureCode.TIMEOUT, detail="query timed out")) from exc
+        except asyncio.CancelledError:
+            await self._finish_query_failure(
+                conversation_id,
+                code=FailureCode.CANCELLED,
+                detail="query cancelled",
+            )
+            raise
         finally:
             self._pending.pop(conversation_id, None)
         if expected_schema is not None:
@@ -606,6 +633,25 @@ class RoostEndpoint:
             except (jsonschema.ValidationError, jsonschema.SchemaError) as exc:
                 raise RoostFailure(FailureInfo(code=FailureCode.SCHEMA, detail=exc.message)) from exc
         return answer
+
+    async def _finish_query_failure(self, conversation_id: str, *, code: FailureCode, detail: str) -> None:
+        """Close an open query and audit one synthetic local terminal failure."""
+        state = self.engine.state(conversation_id)
+        if state is None or state.terminal is not None:
+            return
+        terminal = TerminalState.TIMED_OUT if code is FailureCode.TIMEOUT else TerminalState.CANCELLED
+        self.engine.close(conversation_id, terminal, reason=detail)
+        failure = RoostMessage(
+            performative=Performative.FAILURE,
+            protocol=state.protocol,
+            conversation_id=state.conversation_id,
+            in_reply_to=state.last_message_id,
+            sender=AgentAddress(name="protocol-engine"),
+            receivers=[state.initiator],
+            failure=FailureInfo(code=code, detail=detail),
+            envelope=state.envelope,
+        )
+        await self.ledger.record(failure, direction=self._audit_direction(failure), self_name=self.agent_name)
 
     def _close_timed_out(self, conversation_id: str) -> None:
         """Mark a locally timed-out conversation terminal so late replies are not-understood."""
@@ -698,12 +744,17 @@ class RoostEndpoint:
 
     async def cancel(self, conversation_id: str, *, reason: str = "") -> None:
         """Close a local conversation and fail its pending waiter."""
+        state = self.engine.state(conversation_id)
+        if state is not None and state.terminal is not None:
+            return
         transition = self.engine.close(conversation_id, TerminalState.CANCELLED, reason=reason)
-        for emitted in transition.emit:
-            await self._send_reply(emitted)
-        future = self._pending.get(conversation_id)
-        if future is not None and not future.done():
-            future.set_exception(RoostFailure(FailureInfo(code=FailureCode.CANCELLED, detail=reason)))
+        try:
+            for emitted in transition.emit:
+                await self._route_emitted(emitted)
+        finally:
+            future = self._pending.get(conversation_id)
+            if future is not None and not future.done():
+                future.set_exception(RoostFailure(FailureInfo(code=FailureCode.CANCELLED, detail=reason)))
 
     def register_handler(self, content_type: str, handler: Handler, *, needs_decision: bool = False) -> None:
         """Register an inbound content handler with the deterministic dispatcher."""
