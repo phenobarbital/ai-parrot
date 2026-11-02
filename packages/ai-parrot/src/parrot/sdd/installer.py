@@ -44,6 +44,12 @@ GITIGNORE_BLOCK = (
     f"{GITIGNORE_BEGIN}\n"
     "# SDD feature worktrees (parrot sdd worktree ensure)\n.claude/worktrees/\n"
     "# parrot's local state (ledger index, wiki store), ignored as parrot claude|codex|google install do\n.parrot/\n"
+    "# Claude Code per-user settings (personal permissions written by parrot claude install)\n"
+    ".claude/settings.local.json\n"
+    "# navconfig environment files hold credentials (env/.env, env/<ENV>/.env); env/.env.example stays tracked\n"
+    "/.env\nenv/**/.env\n"
+    "# navconfig runtime log directory (LOG_DIR at the project root only)\n/logs/\n"
+    "# parrot runtime output (OUTPUT_DIR at the project root: generated charts, files)\n/outputs/\n"
     f"{GITIGNORE_END}"
 )
 #: rev 0.5 C23 — the shared ledger's union merge (FEAT-694), same marker pair as the .gitignore block.
@@ -477,14 +483,18 @@ def _seed_config(root: Path) -> str:
 
 
 def _install_gitignore(root: Path) -> str:
-    """Upsert the managed ``.claude/worktrees/`` + ``.parrot/`` block into ``<root>/.gitignore``."""
+    """Upsert the managed ``GITIGNORE_BLOCK`` into ``<root>/.gitignore``, creating the file when it is missing.
+
+    The block covers SDD worktrees, parrot's local state, Claude Code's per-user settings, navconfig's
+    credential files and log directory, and parrot's runtime output. User lines around the block are kept.
+    """
     path = root / ".gitignore"
     text = path.read_text(encoding="utf-8") if path.exists() else ""
     updated = _upsert_marker_block(text, GITIGNORE_BLOCK, GITIGNORE_BEGIN, GITIGNORE_END)
     if updated == text:
-        return ".gitignore — managed .claude/worktrees/ + .parrot/ block up to date"
+        return ".gitignore — managed block up to date"
     path.write_text(updated, encoding="utf-8")
-    return ".gitignore — managed .claude/worktrees/ + .parrot/ block written"
+    return ".gitignore — managed block written"
 
 
 def _install_gitattributes(root: Path, receipt: dict[str, Any]) -> str:
