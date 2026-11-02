@@ -975,11 +975,11 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "pending",
+      "status": "done",
       "parallel": true,
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-11-02T11:13:36+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -990,7 +990,8 @@
         "TASK-5092"
       ],
       "parallelism_notes": "after TASK-5092's dev refresh (it may port scripts/sdd changes into parrot/sdd/scripts/*.py, which this task edits: worktree_status.py, worktree_environment.py); rewrites cli.py/test_sdd_cli.py (TASK-4091), worktree_environment.py (TASK-4085), worktree_status.py (TASK-4086); the fast-path test from TASK-4509 must keep passing",
-      "file": "sdd/tasks/active/TASK-5095-sdd-cli-noun-groups.md"
+      "file": "sdd/tasks/completed/TASK-5095-sdd-cli-noun-groups.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5096",

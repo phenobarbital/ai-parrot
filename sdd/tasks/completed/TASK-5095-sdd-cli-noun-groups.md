@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — parrot-installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.10, amendment C30 — proposal rev 0.9)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4085, TASK-4086, TASK-4091, TASK-4509, TASK-5092 (all `done` except 5092 — the dev refresh must land first; the others own the files this task rewrites)
@@ -322,4 +322,4 @@ def test_verb_propagates_helper_exit_code() -> None:
 ---
 
 ## Completion Note
-_(filled by the implementer)_
+Implemented across 0a39122 (VERBS/_mount, main(argv)) and the follow-up commit (tests). Extra, in-scope-by-necessity edits: --help branch in close_task/heal_orphans; select_tests/test_report/cache_test_contract now forward argparse's SystemExit code (--help exited 2) so every leaf --help exits 0; obsolete test_worktree_status_main_takes_no_argv flipped to expect `argv`. test_portable_flag, test_installer guard-hook tests and the C29/audit scanners remain red until TASK-5097/5096/5098 (expected).
