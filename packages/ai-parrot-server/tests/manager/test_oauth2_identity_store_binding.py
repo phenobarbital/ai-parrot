@@ -16,7 +16,7 @@ def _mgr(**kw):
 def _bm():
     bm = BotManager.__new__(BotManager)
     bm.logger = logging.getLogger("test")
-    bm._register_descriptor_oauth2_providers = lambda app: None
+    bm._register_descriptor_oauth2_providers = lambda app, **kwargs: None
     return bm
 
 

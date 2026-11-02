@@ -2890,8 +2890,17 @@ Available documentation UIs:
             except Exception:  # noqa: BLE001 - Slack operations fail closed without the adapter
                 self.logger.exception("Connection authorizer not configured; Slack operations will fail closed")
 
-    def _register_descriptor_oauth2_providers(self, app: web.Application) -> None:
-        """Register configured descriptor providers while the app is mutable."""
+    def _register_descriptor_oauth2_providers(
+        self, app: web.Application, *, credential_store: Any = None
+    ) -> None:
+        """Register configured descriptor providers while the app is mutable.
+
+        Args:
+            app: The aiohttp application.
+            credential_store: An Identity Vault store the caller already built.
+                When omitted, one is constructed here — the ``setup()`` call
+                site has none to share.
+        """
         from parrot.conf import OAUTH2_PROVIDERS_FILE
 
         if not OAUTH2_PROVIDERS_FILE or app.get("_descriptor_oauth2_providers_registered"):
@@ -2903,7 +2912,8 @@ Available documentation UIs:
 
             descriptors = load_provider_descriptors(OAUTH2_PROVIDERS_FILE)
             authdb = app.get("authdb")
-            credential_store = IdentityVaultCredentialStore(authdb) if authdb is not None else None
+            if credential_store is None:
+                credential_store = IdentityVaultCredentialStore(authdb) if authdb is not None else None
             providers = register_descriptor_providers(
                 descriptors,
                 app=app,
@@ -3026,6 +3036,7 @@ Available documentation UIs:
             ):
                 o365_manager._events = connection_event_publisher
 
+            identity_store = None
             authdb = app.get("authdb")
             if authdb is not None:
                 from parrot.auth.principal import set_principal_resolver
@@ -3055,7 +3066,7 @@ Available documentation UIs:
                     "OAuth2 managers keep their default credential store"
                 )
 
-            self._register_descriptor_oauth2_providers(app)
+            self._register_descriptor_oauth2_providers(app, credential_store=identity_store)
         except Exception:  # noqa: BLE001
             self.logger.exception(
                 "Failed to register OAuth2 providers — integrations endpoints " "will return empty provider lists."
