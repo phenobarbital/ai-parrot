@@ -42,7 +42,7 @@
       "feature_id": "FEAT-791",
       "feature": "manager-manager-fixes",
       "spec": "sdd/specs/manager-manager-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -50,8 +50,9 @@
       "parallelism_notes": "Lane A. Sole task touching packages/ai-parrot-server/src/parrot/manager/manager.py, docs/auth/connections.md and the new tests/unit/test_jira_provider_registration.py; no file overlap with TASK-5106 or TASK-5107.",
       "assigned_to": null,
       "started_at": "2026-11-02T23:11:05.074707+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5105-jira-oauth2-web-registration.md"
+      "completed_at": "2026-11-02T23:12:56+00:00",
+      "file": "sdd/tasks/completed/TASK-5105-jira-oauth2-web-registration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5106",
