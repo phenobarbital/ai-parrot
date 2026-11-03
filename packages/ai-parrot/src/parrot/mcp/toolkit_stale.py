@@ -172,7 +172,5 @@ def find_stale_mcp_entries(
             if stale_reason is None:
                 continue
             reason, detail = stale_reason
-            found.append(
-                StaleMcpEntry(host=item.host, file=item.display, key=key, reason=reason, detail=detail)
-            )
+            found.append(StaleMcpEntry(host=item.host, file=item.display, key=key, reason=reason, detail=detail))
     return sorted(found, key=lambda entry: (entry.file, entry.key))

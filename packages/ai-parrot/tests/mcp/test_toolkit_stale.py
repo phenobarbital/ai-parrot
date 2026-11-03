@@ -42,16 +42,17 @@ def gemini(tmp_path: Path) -> Path:
 def test_shape_test() -> None:
     assert not is_parrot_toolkit_entry("wikitoolkit", {"command": "wikitoolkit", "args": ["mcp"]})
     assert not is_parrot_toolkit_entry("bookstore", {"command": "bookstore", "args": ["mcp"]})
-    assert not is_parrot_toolkit_entry(
-        "parrot-x", {"command": "python", "args": ["mcp-local", "x"]}
-    )
+    assert not is_parrot_toolkit_entry("parrot-x", {"command": "python", "args": ["mcp-local", "x"]})
     assert not is_parrot_toolkit_entry("parrot-x", {"command": "parrot", "args": ["mcp-local", "y"]})
     assert is_parrot_toolkit_entry("parrot-x", {"command": r"C:\venv\parrot.exe", "args": ["mcp-local", "x"]})
 
 
 def test_undeclared_entry_in_mcp_json(repo: Path, gemini: Path) -> None:
     config = str(repo / ".parrot" / "mcp-toolkits.yaml")
-    _write_servers(repo / ".mcp.json", {"parrot-scraping": _entry("scraping", config), "parrot-browsing": _entry("browsing", config)})
+    _write_servers(
+        repo / ".mcp.json",
+        {"parrot-scraping": _entry("scraping", config), "parrot-browsing": _entry("browsing", config)},
+    )
 
     found = find_stale_mcp_entries(repo, ("claude",), gemini_config=gemini)
 
