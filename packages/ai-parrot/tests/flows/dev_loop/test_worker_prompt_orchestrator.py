@@ -185,6 +185,7 @@ def test_worker_prompt_fallback_does_not_assume_engine():
     assert "coder_run_validation" not in fallback
     assert "coder_end_execution" not in fallback
     assert "review_checkpoint prepare" not in fallback
+    assert "task review prepare" not in fallback
 
 
 def test_worker_prompt_completion_has_explicit_no_engine_variant():
@@ -194,7 +195,7 @@ def test_worker_prompt_completion_has_explicit_no_engine_variant():
     completion = _completion_section(load_subagent_definition("sdd-worker"))
     assert "No-engine variant" in completion
     assert "unsupported_host" in completion
-    assert "review_checkpoint validate" in completion
+    assert "parrot sdd task review validate" in completion
 
 
 def test_worker_prompt_never_invokes_compact_via_bash():
@@ -207,11 +208,11 @@ def test_worker_prompt_never_invokes_compact_via_bash():
 
 def test_worker_prompt_uses_finalize_task_not_manual_jq_close_in_orchestrator_loop():
     """R4: the Orchestrator Loop's own merged-task close must route through the deterministic
-    `parrot sdd run finalize_task` CLI instead of delegating to the Fallback loop's manual
+    `parrot sdd task finalize` CLI instead of delegating to the Fallback loop's manual
     Edit/Write/jq/mv dance -- the two used to describe different, contradictory closing
     mechanics for the same `merged` outcome."""
     loop = _orchestrator_loop(load_subagent_definition("sdd-worker"))
-    assert "parrot sdd run finalize_task" in loop
+    assert "parrot sdd task finalize" in loop
     assert "manual Edit/Write/jq/mv dance" in loop
     assert "step (g) of the Fallback loop for this task" not in loop
 
