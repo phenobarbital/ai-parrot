@@ -1275,7 +1275,10 @@ def _stale_note(root: Path, hosts: Sequence[str]) -> str:
     from parrot.mcp.toolkit_stale import find_stale_mcp_entries
     from parrot.sdd.stale import find_stale, is_source_checkout
 
-    files = 0 if is_source_checkout(root) else len(find_stale(root, SUPPORTED_HOSTS))
+    try:
+        files = 0 if is_source_checkout(root) else len(find_stale(root, hosts))
+    except (ValueError, OSError):
+        files = 0
     try:
         entries = len(find_stale_mcp_entries(root, hosts))
     except (ValueError, OSError, RuntimeError):
@@ -1283,9 +1286,10 @@ def _stale_note(root: Path, hosts: Sequence[str]) -> str:
     if files == entries == 0:
         return ""
     entry_label = "entry" if entries == 1 else "entries"
+    host_flags = "" if tuple(hosts) == ("claude",) else "".join(f" --host {host}" for host in hosts)
     return (
         f"note: {files} stale SDD file(s), {entries} stale MCP {entry_label} — review with "
-        "`parrot sdd uninstall --stalled --dry-run`"
+        f"`parrot sdd uninstall --stalled{host_flags} --dry-run`"
     )
 
 
@@ -1314,7 +1318,7 @@ def remove_stale_sdd_files(
     root: Path, hosts: Sequence[str] = SUPPORTED_HOSTS, *, keep: Sequence[str] = (), dry_run: bool = False
 ) -> list[str]:
     """Remove stale SDD files while preserving current assets, seeds, state, and the receipt."""
-    from parrot.sdd.stale import is_source_checkout
+    from parrot.sdd.stale import has_symlinked_ancestor, is_source_checkout
 
     source = is_source_checkout(root)
     plan = plan_stale(root, hosts, keep=keep)
@@ -1337,6 +1341,13 @@ def remove_stale_sdd_files(
     for step in plan:
         if step.action == "stale-remove":
             path = root / step.target
+            parts = Path(step.target).parts
+            if Path(step.target).is_absolute() or ".." in parts:
+                actions.append(f"warning: {step.target} — not a plain repository path; kept")
+                continue
+            if path.is_symlink() or has_symlinked_ancestor(root, step.target):
+                actions.append(f"warning: {step.target} — symlink; kept")
+                continue
             real_parent = Path(os.path.realpath(path.parent))
             if not _under(real_parent, real_root):
                 actions.append(f"warning: {step.target} — resolves outside the repository; kept")
@@ -1521,7 +1532,10 @@ def _stale_report(root: Path) -> list[dict[str, Any]]:
 
     if is_source_checkout(root):
         return []
-    return [entry.model_dump() for entry in find_stale(root)]
+    try:
+        return [entry.model_dump() for entry in find_stale(root)]
+    except (ValueError, OSError):
+        return []
 
 
 def _stale_mcp_report(root: Path) -> list[dict[str, Any]]:

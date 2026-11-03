@@ -264,3 +264,75 @@ def test_plain_uninstall_unchanged(stale_repo: Path) -> None:
 
     assert orphan.read_text(encoding="utf-8") == "stale\n"
     assert dropped.read_text(encoding="utf-8") == "stale\n"
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "src/app.py",
+        ".claude/../src/app.py",
+        "/etc/hosts",
+        ".claude/./commands/x.md",
+        ".claude/settings.json",
+        ".codex/config.toml",
+    ],
+)
+def test_receipt_entry_outside_install_folders_never_removed(stale_repo: Path, target: str) -> None:
+    """A tampered receipt cannot turn an arbitrary repository file into a removal candidate."""
+    victim = stale_repo / "src/app.py"
+    victim.parent.mkdir(parents=True, exist_ok=True)
+    victim.write_text("keep\n", encoding="utf-8")
+    settings = stale_repo / ".claude/settings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text("{}\n", encoding="utf-8")
+    receipt_path = stale_repo / RECEIPT_PATH
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["files"][target] = "tampered"
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    assert target not in _paths(find_stale(stale_repo))
+    remove_stale_sdd_files(stale_repo)
+
+    assert victim.read_text(encoding="utf-8") == "keep\n"
+    assert settings.read_text(encoding="utf-8") == "{}\n"
+
+
+def test_symlinked_ancestor_not_followed(tmp_path: Path, gemini: Path) -> None:
+    """A symlinked parent folder (`.claude -> real`) is never walked or deleted through."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    real = root / "real"
+    (real / "commands").mkdir(parents=True)
+    (real / "rules").mkdir()
+    custom = real / "commands" / "sdd-custom.md"
+    custom.write_text("mine\n", encoding="utf-8")
+    retired = real / "rules" / "worktree-status.md"
+    retired.write_text("mine\n", encoding="utf-8")
+    os.symlink(real, root / ".claude", target_is_directory=True)
+    receipt_path = root / RECEIPT_PATH
+    receipt_path.parent.mkdir(parents=True)
+    receipt_path.write_text(json.dumps({"files": {".claude/commands/sdd-custom.md": "x"}}), encoding="utf-8")
+
+    entries = find_stale(root)
+    paths = _paths(entries)
+
+    assert all(entry.symlink for entry in entries if entry.path.startswith(".claude/"))
+    assert ".claude/rules/worktree-status.md" in paths
+    remove_stale_sdd_files(root)
+    assert custom.read_text(encoding="utf-8") == "mine\n"
+    assert retired.read_text(encoding="utf-8") == "mine\n"
+
+
+def test_unreadable_folder_does_not_break_install_or_status(
+    stale_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stale-scan OSError degrades the install note and status report instead of crashing them."""
+
+    def _boom(*_args: object, **_kwargs: object) -> list:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("parrot.sdd.stale.find_stale", _boom)
+
+    install_sdd_integration(stale_repo, ("claude",), sdd_coder=False)
+    assert sdd_status(stale_repo)["stale"] == []

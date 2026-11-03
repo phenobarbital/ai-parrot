@@ -8,7 +8,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal, Sequence
 
 from pydantic import BaseModel
@@ -56,6 +56,14 @@ _PROTECTED: tuple[str, ...] = (
     "sdd/ledger/*",
     "sdd/state/*",
 )
+#: Folders an install writes into; a receipt entry outside them is never a removal candidate.
+RECEIPT_ROOTS: tuple[str, ...] = (".claude/", ".agent/", ".agents/", ".codex/", "sdd/", "docs/sdd/", "scripts/sdd/")
+#: Host configuration that lives inside those folders but is never an installed asset.
+_NEVER_STALE: tuple[str, ...] = (
+    ".claude/settings.json",
+    ".claude/settings.local.json",
+    ".codex/config.toml",
+)
 #: Present only in the ai-parrot monorepo (asset sources live there).
 SOURCE_CHECKOUT_MARKER = Path("packages/ai-parrot/src/parrot/sdd/_assets/manifest.json")
 
@@ -74,9 +82,40 @@ def is_source_checkout(root: Path) -> bool:
     return (root / SOURCE_CHECKOUT_MARKER).is_file()
 
 
+def has_symlinked_ancestor(root: Path, rel_path: str) -> bool:
+    """Return whether a folder between ``root`` and ``rel_path`` (exclusive) is a symlink."""
+    current = root
+    for part in PurePosixPath(rel_path).parts[:-1]:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def is_safe_receipt_target(target: str) -> bool:
+    """Return whether a receipt entry is a clean relative path inside a folder the installer writes to.
+
+    The receipt is committed to the repository, so it is untrusted input: absolute paths, ``..``/``.``
+    segments, backslashes and paths outside :data:`RECEIPT_ROOTS` are rejected.
+    """
+    if not target or "\\" in target or target.startswith("/"):
+        return False
+    parts = target.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        return False
+    if target in _NEVER_STALE:
+        return False
+    return target.startswith(RECEIPT_ROOTS)
+
+
 def _walk_files(root: Path, rel_base: str) -> list[tuple[str, bool]]:
-    """Return files below ``root/rel_base`` as ``(posix relpath, is_symlink)`` without following symlinks."""
+    """Return files below ``root/rel_base`` as ``(posix relpath, is_symlink)`` without following symlinks.
+
+    A symlinked folder above ``rel_base`` counts as a symlink too: ``rel_base`` is reported once and never walked.
+    """
     base = root / rel_base
+    if has_symlinked_ancestor(root, rel_base):
+        return [(rel_base, True)] if os.path.lexists(base) else []
     if base.is_symlink():
         return [(rel_base, True)]
     if base.is_file():
@@ -131,7 +170,14 @@ def find_stale(root: Path, hosts: Sequence[str] = SUPPORTED_HOSTS) -> list[Stale
 
     receipt_detail = "recorded by an earlier `parrot sdd install`; no longer shipped"
     for target in load_receipt(root)["files"]:
+        if not is_safe_receipt_target(target):
+            logger.warning("ignoring receipt entry %r: not a relative path inside an SDD install folder", target)
+            continue
         path = root / target
+        if has_symlinked_ancestor(root, target):
+            if os.path.lexists(path):
+                _add(target, "receipt-orphan", receipt_detail, True)
+            continue
         if path.is_symlink() or path.is_file():
             _add(target, "receipt-orphan", receipt_detail, path.is_symlink())
 
@@ -148,7 +194,7 @@ def find_stale(root: Path, hosts: Sequence[str] = SUPPORTED_HOSTS) -> list[Stale
         if not selected_hosts.intersection(dir_hosts):
             continue
         directory = root / folder
-        if not directory.is_dir() or directory.is_symlink():
+        if has_symlinked_ancestor(root, folder) or not directory.is_dir() or directory.is_symlink():
             continue
         for child in sorted(directory.iterdir()):
             if not child.name.startswith("sdd-"):
