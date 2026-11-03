@@ -170,23 +170,65 @@ async def test_migrations_detect_altered_and_missing(studio_pool) -> None:
     assert await _run(pool, "DELETE FROM navigator.ai_studio_migrations WHERE version = 99") is None
 
 
-async def test_cli_verifies_and_dry_runs_all_eight_versions(studio_pool, capsys) -> None:
-    """D3: the required schema is 1-8 (phase 2 included); a v5-only database fails ``--verify`` naming 6, 7 and 8."""
+async def test_cli_verifies_and_dry_runs_all_nine_versions(studio_pool, capsys) -> None:
+    """D3 + FEAT-794: the required schema is 1-9; a v5-only database fails ``--verify`` naming 6, 7, 8 and 9."""
     pool = studio_pool
-    assert STUDIO_SCHEMA_REQUIRED == 8 == max(ALL_VERSIONS)
+    assert STUDIO_SCHEMA_REQUIRED == 9 == max(ALL_VERSIONS)
     await _empty(pool)
     assert await asyncio.to_thread(_cli, "--dry-run") == 0
-    assert f"pending: {list(range(1, 9))}" in capsys.readouterr().out
+    assert f"pending: {list(range(1, 10))}" in capsys.readouterr().out
     await apply_studio_migrations(pool)
     assert await asyncio.to_thread(_cli, "--verify") == 0
     assert await _run(pool, "DELETE FROM navigator.ai_studio_migrations WHERE version >= 6") is None
     capsys.readouterr()
     assert await asyncio.to_thread(_cli, "--verify") == 1
     out = capsys.readouterr().out
-    assert all(f"problem: missing {v}" in out for v in (6, 7, 8)) and "missing 5" not in out
+    assert all(f"problem: missing {v}" in out for v in (6, 7, 8, 9)) and "missing 5" not in out
     assert await asyncio.to_thread(_cli, "--dry-run") == 0
-    assert "pending: [6, 7, 8]" in capsys.readouterr().out
-    assert await apply_studio_migrations(pool) == [6, 7, 8]
+    assert "pending: [6, 7, 8, 9]" in capsys.readouterr().out
+    assert await apply_studio_migrations(pool) == [6, 7, 8, 9]
+
+
+_PROD_PROMPT_LIBRARY = (
+    "CREATE TABLE IF NOT EXISTS navigator.prompt_library ("
+    "prompt_id uuid PRIMARY KEY, chatbot_id uuid, title varchar, query varchar, description text, "
+    "prompt_category varchar, prompt_tags varchar[], created_at timestamptz NOT NULL DEFAULT now(), "
+    "created_by integer, updated_at timestamptz NOT NULL DEFAULT now())"
+)
+
+_PROMPT_LIBRARY_NEW_COLUMNS = (
+    "SELECT column_name, data_type, is_nullable FROM information_schema.columns "
+    "WHERE table_schema = 'navigator' AND table_name = 'prompt_library' "
+    "AND column_name IN ('agent_id', 'sort_order') ORDER BY column_name"
+)
+
+
+async def test_0009_adds_prompt_library_columns_idempotently(studio_pool) -> None:
+    """FEAT-794: 0009 skips a missing prompt_library, then adds nullable agent_id/sort_order to the production shape."""
+    pool = studio_pool
+    await _empty(pool)
+    assert await _run(pool, "DROP TABLE IF EXISTS navigator.prompt_library") is None
+    try:
+        # No prompt_library (a fresh Studio database, the FieldSync runner): the chain still applies, 9 included.
+        assert await apply_studio_migrations(pool) == ALL_VERSIONS
+        assert 9 in await _ledger(pool)
+
+        # The production shape (only the PK; no agent_id, no sort_order), with 0009 still pending.
+        assert await _run(pool, _PROD_PROMPT_LIBRARY) is None
+        assert await _run(pool, "DELETE FROM navigator.ai_studio_migrations WHERE version = 9") is None
+        assert await _all(pool, _PROMPT_LIBRARY_NEW_COLUMNS) == []
+        assert await apply_studio_migrations(pool) == [9]
+        columns = [tuple(dict(r).values()) for r in await _all(pool, _PROMPT_LIBRARY_NEW_COLUMNS)]
+        assert columns == [("agent_id", "character varying", "YES"), ("sort_order", "integer", "YES")]
+
+        # Re-running the body on a table that already has the columns is a no-op, not an error.
+        (mig,) = [m for m in list_migrations() if m.version == 9]
+        async with studio_transaction(pool) as conn:
+            await _exec(conn, mig.body.decode("utf-8"))
+        assert await apply_studio_migrations(pool) == []
+        assert await _ledger(pool) == _manifest()
+    finally:
+        assert await _run(pool, "DROP TABLE IF EXISTS navigator.prompt_library") is None
 
 
 async def _raw_per_file_runner(pool) -> None:
