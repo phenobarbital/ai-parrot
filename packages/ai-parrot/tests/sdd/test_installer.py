@@ -528,3 +528,19 @@ def test_reinstall_upgrades_an_old_gitignore_block(empty_repo: Path) -> None:
     assert text.count(GITIGNORE_BEGIN) == 1 and "\n.parrot/\n" in text
     uninstall_sdd_integration(empty_repo)
     assert ".parrot/" not in (empty_repo / ".gitignore").read_text()
+
+
+def test_sdd_uninstall_strips_only_receipt_ledger_events(empty_repo: Path) -> None:
+    """TASK-5116 (issue:4c5b3404e8fb): a ledger block this install did not create survives uninstall."""
+    from parrot.knowledge.wiki.claude_code.installer import _install_ledger_hooks, _uninstall_ledger_hooks
+
+    _install_ledger_hooks(empty_repo)
+    _uninstall_ledger_hooks(empty_repo, ["pre-commit", "post-checkout", "post-rewrite"])  # post-merge stays foreign
+    install_sdd_integration(empty_repo, hosts=("codex",))
+    recorded = json.loads((empty_repo / "sdd/.sdd-installed.json").read_text())["ledger_hooks"]
+    assert "post-merge" not in recorded and recorded
+    uninstall_sdd_integration(empty_repo, hosts=("codex",))
+    assert "# >>> parrot-ledger >>>" in (empty_repo / ".git/hooks/post-merge").read_text()
+    for event in recorded:
+        hook = empty_repo / ".git/hooks" / event
+        assert not hook.exists() or "# >>> parrot-ledger >>>" not in hook.read_text()

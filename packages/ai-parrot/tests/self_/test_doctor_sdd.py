@@ -245,3 +245,14 @@ def test_all_missing_hosts_mean_not_installed() -> None:
                                    "missing": [".claude/commands/sdd-start.md"]}}}
     check = _assets_checks(status)["sdd: files current"]
     assert check.ok and check.informational and check.detail == "SDD flow not installed"
+
+
+def test_ledger_hooks_check_follows_core_hookspath(ready_repo: Path) -> None:
+    """TASK-5116 (issue:4c5b3404e8fb): hooks in .git/hooks do not count once core.hooksPath points elsewhere."""
+    _git(ready_repo, "config", "core.hooksPath", ".husky")
+    bad = {c.name: c for c in doctor.failed(doctor._check_sdd(ready_repo))}
+    assert "sdd: ledger hooks" in bad and ".husky" in bad["sdd: ledger hooks"].detail
+    from parrot.knowledge.wiki.claude_code.installer import _install_ledger_hooks
+
+    _install_ledger_hooks(ready_repo)
+    assert "sdd: ledger hooks" not in {c.name for c in doctor.failed(doctor._check_sdd(ready_repo))}

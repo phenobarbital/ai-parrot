@@ -348,18 +348,22 @@ def _check_ledger_hooks(root: Path) -> DoctorCheck:
 
     fix = "parrot sdd install (installs the four ledger hooks)"
     missing: list[str] = []
+    hooks_dir: Path | None = None
     for event in claude_assets.LEDGER_HOOK_EVENTS:
-        hook = _git_hook_path(root, event)
+        hook = _git_hook_path(root, event)  # honours core.hooksPath (TASK-5116)
         if hook is None:
             return DoctorCheck(name="sdd: ledger hooks", ok=False, detail="not a git repository", fix=fix)
+        hooks_dir = hook.parent
         try:
             text = hook.read_text(encoding="utf-8")
         except OSError:
             text = ""
         if claude_assets.LEDGER_HOOK_BEGIN not in text:
             missing.append(event)
+    where = f" in {hooks_dir}" if hooks_dir is not None else ""
     return DoctorCheck(name="sdd: ledger hooks", ok=not missing,
-                       detail="all four ledger hooks installed" if not missing else f"missing hooks: {', '.join(missing)}",
+                       detail=(f"all four ledger hooks installed{where}" if not missing
+                               else f"missing hooks{where}: {', '.join(missing)}"),
                        fix="" if not missing else fix)
 
 

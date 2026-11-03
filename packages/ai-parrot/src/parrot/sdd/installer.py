@@ -1181,7 +1181,8 @@ def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *,
         elif step.action == "ledger-hooks-remove":
             from parrot.knowledge.wiki.claude_code.installer import _uninstall_ledger_hooks
 
-            actions.extend(_uninstall_ledger_hooks(root))
+            # Only the events this integration created (the receipt); other blocks belong to someone else.
+            actions.extend(_uninstall_ledger_hooks(root, receipt.get("ledger_hooks") or []))
             receipt["ledger_hooks"] = []
         elif step.action == "keep-ledger-hooks":
             actions.append(f"git ledger hooks — kept (keep-ledger-hooks: {step.note})")
