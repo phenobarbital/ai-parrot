@@ -305,3 +305,35 @@ def test_nothing_stale(repo: Path, gemini: Path) -> None:
     assert remove_stale_mcp_entries(repo, ("claude", "codex", "google"), gemini_config=gemini) == [
         "no stale MCP entries"
     ]
+
+
+def test_codex_quoted_table_removed(repo: Path, gemini: Path) -> None:
+    """A quoted `[mcp_servers."parrot-x"]` table and its sub-tables are removed, not just reported."""
+    config = repo / ".codex" / "config.toml"
+    config.parent.mkdir()
+    wikitoolkit = '[mcp_servers.wikitoolkit]\ncommand = "wikitoolkit"\n'
+    config.write_text(
+        '[mcp_servers."parrot-scraping"]\ncommand = "parrot"\nargs = ["mcp-local", "scraping"]\n\n'
+        '[mcp_servers."parrot-scraping".env]\nX = "1"\n\n' + wikitoolkit,
+        encoding="utf-8",
+    )
+
+    lines = remove_stale_mcp_entries(repo, ("codex",), gemini_config=gemini)
+
+    assert tomllib.loads(config.read_text(encoding="utf-8"))["mcp_servers"] == {
+        "wikitoolkit": {"command": "wikitoolkit"}
+    }
+    assert any("parrot-scraping" in line for line in lines)
+
+
+def test_codex_unremovable_layout_reported_not_claimed(repo: Path, gemini: Path) -> None:
+    """An entry in a layout the remover cannot cut (inline in `[mcp_servers]`) is warned about, file untouched."""
+    config = repo / ".codex" / "config.toml"
+    config.parent.mkdir()
+    original = '[mcp_servers]\nparrot-scraping = { command = "parrot", args = ["mcp-local", "scraping"] }\n'
+    config.write_text(original, encoding="utf-8")
+
+    lines = remove_stale_mcp_entries(repo, ("codex",), gemini_config=gemini)
+
+    assert config.read_text(encoding="utf-8") == original
+    assert any(line.startswith("warning:") and "not changed" in line for line in lines)

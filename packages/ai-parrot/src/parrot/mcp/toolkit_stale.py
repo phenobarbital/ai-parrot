@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import tomllib
 from dataclasses import dataclass
 from fnmatch import fnmatch
@@ -13,7 +14,7 @@ from pydantic import BaseModel
 
 from parrot.knowledge.wiki.claude_code.installer import uninstall_toolkit_approvals
 from parrot.knowledge.wiki.codex import assets as codex_assets
-from parrot.knowledge.wiki.codex.installer import _remove_marker_block, _remove_toml_table, _validate_toml
+from parrot.knowledge.wiki.codex.installer import _remove_marker_block, _validate_toml
 from parrot.knowledge.wiki.google.installer import _load_mcp_config, _save_mcp_config, toolkit_config_paths
 from parrot.mcp.toolkit_config import load_toolkits_config
 from parrot.mcp.toolkit_seed import available_templates
@@ -209,17 +210,53 @@ def _remove_from_file(item: _McpFile, keys: Sequence[str]) -> tuple[list[str], s
         if not removed:
             return [], None
         for key in removed:
-            text = _remove_toml_table(text, f"mcp_servers.{key}")
+            text = _remove_server_table(text, key)
         if codex_assets.MCP_BEGIN in text:
             _, _, rest = text.partition(codex_assets.MCP_BEGIN)
             block = rest.partition(codex_assets.MCP_END)[0] if codex_assets.MCP_END in rest else rest
             if not any(line.lstrip().startswith("[") for line in block.splitlines()):
                 text = _remove_marker_block(text, codex_assets.MCP_BEGIN, codex_assets.MCP_END)
         _validate_toml(item.path, text)
+        left = tomllib.loads(text).get("mcp_servers", {})
+        still = [key for key in removed if isinstance(left, dict) and key in left]
+        if still:
+            raise RuntimeError(f"could not remove {', '.join(still)} (unsupported TOML layout)")
         item.path.write_text(text, encoding="utf-8")
         return removed, None
     except (OSError, RuntimeError, tomllib.TOMLDecodeError) as exc:
         return [], f"warning: {item.display} — not changed ({exc})"
+
+
+_TABLE_LINE = re.compile(r"^\s*\[(?!\[)(.+?)\]\s*(?:#.*)?$")
+
+
+def _table_key_path(header: str) -> list[str] | None:
+    """Return the dotted key path of a ``[table]`` header, decoding quoted keys; ``None`` if it is not one."""
+    try:
+        node: Any = tomllib.loads(f"[{header}]\n")
+    except tomllib.TOMLDecodeError:
+        return None
+    path: list[str] = []
+    while isinstance(node, dict) and len(node) == 1:
+        key, node = next(iter(node.items()))
+        path.append(key)
+    return path or None
+
+
+def _remove_server_table(text: str, key: str) -> str:
+    """Remove ``[mcp_servers.<key>]`` and its sub-tables, matching bare and quoted spellings of the key."""
+    target = ["mcp_servers", key]
+    lines = text.splitlines(keepends=True)
+    kept: list[str] = []
+    inside = False
+    for line in lines:
+        match = _TABLE_LINE.match(line.rstrip("\n"))
+        if match is not None:
+            path = _table_key_path(match.group(1).strip())
+            inside = path is not None and path[:2] == target
+        if not inside:
+            kept.append(line)
+    return "".join(kept).rstrip("\n") + "\n"
 
 
 def remove_stale_mcp_entries(
