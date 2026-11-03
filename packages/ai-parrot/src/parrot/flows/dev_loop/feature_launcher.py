@@ -373,8 +373,11 @@ def launch(
     no_upstream: bool,
     claude_args: Sequence[str],
     base_env: Mapping[str, str] | None = None,
+    gh_token: bool = True,
 ) -> int:
     """Prepare and launch or attach to the worker for one feature.
+
+    ``gh_token=False`` forwards ``--no-gh-token`` so the launcher skips host-side ``GH_TOKEN`` resolution.
 
     ``base_env`` is the operator's environment captured BEFORE anything imported ``parrot``:
     that import lets navconfig load the project's settings ``.env`` (API keys and other secrets)
@@ -404,13 +407,25 @@ def launch(
         return _attach_session(name)
 
     worktree = ensure_feature_worktree(primary, ref)
-    _preflight_sandbox(worktree, allowed_domains)
+    try:
+        # Primary checkout only: the sandboxed session can rewrite its own worktree pyproject.
+        config_domains, _config_gh_token = native_claude_sandbox.load_launch_config(primary)
+        effective_domains = native_claude_sandbox.merge_domains(
+            config_domains, native_claude_sandbox.validate_allowed_domains(allowed_domains)
+        )
+    except ValueError as exc:
+        raise LaunchError(2, str(exc)) from exc
+    _preflight_sandbox(worktree, effective_domains)
     if not no_upstream:
         print(prepare_upstream(worktree), file=sys.stderr)
     domain_args = [item for domain in allowed_domains for item in ("--sandbox-allow-domain", domain)]
+    token_args = [] if gh_token else ["--no-gh-token"]
     if not tmux:
         return native_claude_sandbox.launch_worker(
-            [*domain_args, *claude_args], cwd=worktree, initial_prompt=f"run {ref.feature_id}", base_env=env
+            [*token_args, *domain_args, *claude_args],
+            cwd=worktree,
+            initial_prompt=f"run {ref.feature_id}",
+            base_env=env,
         )
     if native_claude_sandbox.sandbox_platform() == "windows":
         raise LaunchError(1, "--tmux is not available on native Windows")
@@ -430,6 +445,7 @@ def launch(
             "--cwd",
             str(worktree),
             *domain_args,
+            *token_args,
         ]
     )
     if claude_args:
@@ -485,6 +501,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # The worktree is passed explicitly rather than trusted from the process cwd.
     parser.add_argument("--cwd", type=Path, default=None)
     parser.add_argument("--sandbox-allow-domain", action="append", default=[])
+    parser.add_argument("--no-gh-token", action="store_true", default=False)
     parser.add_argument("claude_args", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if args.in_session is None:
@@ -493,8 +510,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if forwarded[:1] == ["--"]:
         forwarded.pop(0)
     domain_args = [item for domain in args.sandbox_allow_domain for item in ("--sandbox-allow-domain", domain)]
+    token_args = ["--no-gh-token"] if args.no_gh_token else []
     return native_claude_sandbox.launch_worker(
-        [*domain_args, *forwarded], cwd=args.cwd or _invocation_dir(), initial_prompt=f"run {args.in_session}"
+        [*token_args, *domain_args, *forwarded],
+        cwd=args.cwd or _invocation_dir(),
+        initial_prompt=f"run {args.in_session}",
     )
 
 

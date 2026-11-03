@@ -405,7 +405,9 @@ def native_sandbox_settings(
             allow_write.append(canonical)
     # `-m` keeps the command free of monorepo paths (C16): the launching interpreter can import
     # parrot in every supported context (venv editable install, wheel install in a foreign repo).
-    hook_command = shlex.join([sys.executable, "-m", "parrot.sdd.scripts.worktree_environment", "--hook"]) + " || exit 2"
+    hook_command = (
+        shlex.join([sys.executable, "-m", "parrot.sdd.scripts.worktree_environment", "--hook"]) + " || exit 2"
+    )
     settings: dict[str, Any] = {
         "hooks": {
             "PreToolUse": [
@@ -611,14 +613,88 @@ def _option_value(argv: Sequence[str], index: int, option: str) -> tuple[str, in
     return argv[index + 1], index + 2
 
 
-def _parse_launch_arguments(argv: Sequence[str]) -> tuple[list[str], list[str], bool, bool]:
+def load_launch_config(primary: Path) -> tuple[list[str], bool]:
+    """Read the launcher's network/token policy from ``[tool.parrot.sdd]``.
+
+    Call it with the PRIMARY checkout, never the worktree: the sandboxed session can write its own
+    worktree ``pyproject.toml``, so only the primary checkout's file is trusted.
+
+    Args:
+        primary: Primary checkout root.
+
+    Returns:
+        Validated ``sandbox_allowed_domains`` (default ``[]``) and ``gh_token`` (default ``False``).
+
+    Raises:
+        ValueError: If the file is malformed or a value has the wrong type or is not an exact hostname.
+    """
+    config_path = primary / "pyproject.toml"
+    if not config_path.is_file():
+        return [], False
+    prefix = f"Invalid sandbox launch config in {config_path}"
+    try:
+        with config_path.open("rb") as handle:
+            configuration = tomllib.load(handle)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"{prefix}: unreadable or malformed TOML ({exc})") from exc
+    table: Any = configuration
+    for name in ("tool", "parrot", "sdd"):
+        table = table.get(name) if isinstance(table, dict) else None
+        if table is None:
+            return [], False
+    if not isinstance(table, dict):
+        raise ValueError(f"{prefix}: [tool.parrot.sdd] must be a table")
+    raw_domains = table.get("sandbox_allowed_domains", [])
+    if not isinstance(raw_domains, list) or not all(isinstance(item, str) for item in raw_domains):
+        raise ValueError(f"{prefix}: sandbox_allowed_domains must be a list of strings")
+    gh_token = table.get("gh_token", False)
+    if not isinstance(gh_token, bool):
+        raise ValueError(f"{prefix}: gh_token must be a boolean")
+    try:
+        domains = validate_allowed_domains(raw_domains)
+    except ValueError as exc:
+        raise ValueError(f"{prefix}: {exc}") from exc
+    return domains, gh_token
+
+
+def merge_domains(*groups: Sequence[str]) -> list[str]:
+    """Return the order-stable, de-duplicated union of domain lists."""
+    merged: list[str] = []
+    for group in groups:
+        for domain in group:
+            if domain not in merged:
+                merged.append(domain)
+    return merged
+
+
+def _resolve_gh_token() -> tuple[str | None, str]:
+    """Run ``gh auth token`` on the host; return the token (or ``None``) and a failure reason."""
+    gh = shutil.which("gh")
+    if gh is None:
+        return None, "gh not on PATH"
+    try:
+        result = subprocess.run([gh, "auth", "token"], capture_output=True, text=True, timeout=10, check=False)
+    except subprocess.TimeoutExpired:
+        return None, "timeout"
+    except OSError as exc:
+        return None, f"gh failed to run: {type(exc).__name__}"
+    if result.returncode != 0:
+        return None, f"gh exited {result.returncode}"
+    token = result.stdout.strip()
+    if not token:
+        return None, "gh returned an empty token"
+    return token, ""
+
+
+def _parse_launch_arguments(argv: Sequence[str]) -> tuple[list[str], list[str], bool, bool, bool]:
     """Validate launcher arguments and separate policy-only domain grants.
 
     Args:
         argv: Arguments intended for Claude Code.
 
     Returns:
-        Allowed domains, forwarded arguments, model presence and setting-source presence.
+        Allowed domains, forwarded arguments, model presence, setting-source presence and whether
+        ``--no-gh-token`` was given.
 
     Raises:
         ValueError: If an argument attempts to override launcher policy.
@@ -627,12 +703,17 @@ def _parse_launch_arguments(argv: Sequence[str]) -> tuple[list[str], list[str], 
     forwarded: list[str] = []
     has_model = False
     has_sources = False
+    no_gh_token = False
     index = 0
     while index < len(argv):
         argument = argv[index]
         if argument == "--":
             forwarded.extend(argv[index:])
             break
+        if argument == "--no-gh-token":
+            no_gh_token = True
+            index += 1
+            continue
         if argument == "--sandbox-allow-domain":
             domain, index = _option_value(argv, index, argument)
             domains.append(domain)
@@ -683,7 +764,7 @@ def _parse_launch_arguments(argv: Sequence[str]) -> tuple[list[str], list[str], 
             has_model = True
         forwarded.append(argument)
         index += 1
-    return domains, forwarded, has_model, has_sources
+    return domains, forwarded, has_model, has_sources, no_gh_token
 
 
 def _process_is_alive(pid: int) -> bool:
@@ -742,7 +823,7 @@ def launch_worker(
     """
     cwd = cwd or Path.cwd()
     try:
-        domains, forwarded, has_model, has_sources = _parse_launch_arguments(argv)
+        argv_domains, forwarded, has_model, has_sources, no_gh_token = _parse_launch_arguments(argv)
     except ValueError as exc:
         print(f"launch_worker: {exc}", file=sys.stderr)
         return 2
@@ -752,6 +833,8 @@ def launch_worker(
         return 1
     try:
         mode = resolve_sandbox_mode(_native_roots(cwd)[0])
+        config_domains, gh_token = load_launch_config(_native_roots(cwd)[2])
+        domains = merge_domains(config_domains, validate_allowed_domains(argv_domains))
         mode, degraded, reason, settings = plan_native_launch(cwd, allowed_domains=domains)
     except ValueError as exc:
         print(f"launch_worker: {exc}", file=sys.stderr)
@@ -783,6 +866,17 @@ def launch_worker(
             print(
                 "launch_worker: NOTICE macOS Seatbelt backend is implemented but not certified "
                 "(see docs/dev_loop/claude-native-sandbox.md)",
+                file=sys.stderr,
+            )
+    if gh_token and not no_gh_token and not env.get("GH_TOKEN"):
+        # gh's keyring is a D-Bus socket the sandbox blocks, so the host resolves the token. Never printed.
+        token, failure = _resolve_gh_token()
+        if token is not None:
+            env["GH_TOKEN"] = token
+        else:
+            print(
+                f"launch_worker: WARNING gh_token is enabled but no token could be obtained ({failure}); "
+                "launching without GH_TOKEN",
                 file=sys.stderr,
             )
     env[CACHE_DIR_ENV] = str(_allocate_session_cache())

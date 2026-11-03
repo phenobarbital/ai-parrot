@@ -21,6 +21,7 @@ def launch() -> None:
 @click.option("--sandbox", type=click.Choice(["required", "preferred", "off", "legacy"]), default=None)
 @click.option("--sandbox-allow-domain", "allowed_domains", multiple=True, metavar="HOST")
 @click.option("--no-upstream", is_flag=True, default=False)
+@click.option("--no-gh-token", is_flag=True, default=False, help="Do not resolve GH_TOKEN from the host's gh.")
 @click.argument("claude_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def worker(
@@ -31,6 +32,7 @@ def worker(
     sandbox: str | None,
     allowed_domains: tuple[str, ...],
     no_upstream: bool,
+    no_gh_token: bool,
     claude_args: tuple[str, ...],
 ) -> None:
     """Prepare FEATURE and launch its sdd-worker console."""
@@ -51,6 +53,7 @@ def worker(
             no_upstream=no_upstream,
             claude_args=claude_args,
             base_env=base_env,
+            gh_token=not no_gh_token,
         )
     except feature_launcher.LaunchError as exc:
         click.echo(f"launch-worker: {exc}", err=True)

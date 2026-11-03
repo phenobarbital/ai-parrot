@@ -294,6 +294,12 @@ python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 
+[tool.parrot.sdd]
+# sdd-worker native sandbox: GitHub only through `gh` (api.github.com), never git/SSH to github.com.
+# Read from the PRIMARY checkout only. See docs/dev_loop/claude-native-sandbox.md.
+sandbox_allowed_domains = ["api.github.com"]
+gh_token = true
+
 [tool.parrot.worktree]
 # Native build artifacts a fresh `git worktree add` cannot carry, because every
 # one of them is gitignored. `ensure_worktree` and the sdd-coder pool copy these
