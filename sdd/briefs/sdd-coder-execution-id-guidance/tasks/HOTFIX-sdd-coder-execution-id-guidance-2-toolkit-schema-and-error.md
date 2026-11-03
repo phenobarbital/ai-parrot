@@ -2,7 +2,7 @@
 
 **Feature**: sdd-coder-execution-id-guidance (brief)
 **Spec**: sdd/briefs/sdd-coder-execution-id-guidance.brief.md
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none
@@ -54,3 +54,5 @@ The MCP schema shows `"description": "Parameter: execution_id"` (generic, from
 - `ruff check packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/models.py packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/toolkit.py`
 
 ## Completion Note
+
+Verified in 67da154d37: `coder_begin_execution` test suite passes (38 passed, test_toolkit.py); both .claude/agents/sdd-worker.md twins identical; diff covers the change described in this task.

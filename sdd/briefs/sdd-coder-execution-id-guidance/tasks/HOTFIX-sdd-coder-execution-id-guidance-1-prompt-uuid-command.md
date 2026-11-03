@@ -2,7 +2,7 @@
 
 **Feature**: sdd-coder-execution-id-guidance (brief)
 **Spec**: sdd/briefs/sdd-coder-execution-id-guidance.brief.md
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XS
 **Depends-on**: none
@@ -41,3 +41,5 @@ Agents hand-write `execution_id` and produce non-hex UUIDs (`...-184pbac00001`),
 - `diff .claude/agents/sdd-worker.md packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-worker.md`
 
 ## Completion Note
+
+Verified in 67da154d37: `coder_begin_execution` test suite passes (38 passed, test_toolkit.py); both .claude/agents/sdd-worker.md twins identical; diff covers the change described in this task.
