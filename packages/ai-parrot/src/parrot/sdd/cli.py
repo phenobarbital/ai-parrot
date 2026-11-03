@@ -83,6 +83,11 @@ def sdd() -> None:
     is_flag=True,
     help="Do not register the PreToolUse dangerous-actions guard in .claude/settings.json.",
 )
+@click.option(
+    "--no-sdd-coder",
+    is_flag=True,
+    help="Do not register the sdd-coder and bounded-source MCP toolkits.",
+)
 @_dry_run_option
 def install(
     path_: Path | None,
@@ -93,6 +98,7 @@ def install(
     push_base: bool,
     hotfix_base: str | None,
     no_dangerous_guard: bool,
+    no_sdd_coder: bool,
     dry_run: bool,
 ) -> None:
     """Deploy the packaged SDD assets into the repository (upgrades untouched files, keeps your edits)."""
@@ -108,6 +114,7 @@ def install(
                 push_base=push_base,
                 hotfix_base=hotfix_base,
                 dangerous_guard=not no_dangerous_guard,
+                sdd_coder=not no_sdd_coder,
             )
         )
     except (ValueError, RuntimeError) as exc:

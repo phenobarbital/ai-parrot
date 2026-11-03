@@ -35,6 +35,8 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 SUPPORTED_HOSTS: tuple[str, ...] = ("claude", "codex", "google")
+#: C34 — MCP toolkits the SDD flow needs (``sdd-worker`` frontmatter references both servers).
+SDD_TOOLKITS: tuple[str, ...] = ("sdd-coder", "bounded-source")
 MANIFEST_SCHEMA_VERSION = 1
 SETTINGS_PATH = Path(".claude/settings.json")
 RECEIPT_PATH = Path("sdd/.sdd-installed.json")  # C4: committed with sdd/; .parrot/ is gitignored (.gitignore:411)
@@ -69,9 +71,9 @@ _GUARD_MARKERS = ("worktree guard --hook", "worktree_environment")
 
 FileState = Literal["missing", "current", "outdated", "edited", "foreign"]
 #: Plan vocabulary (C5). install: write | upgrade | overwrite | skip-current | skip-edited | skip-foreign |
-#: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed | base-branch | dangerous-guard. uninstall: remove |
+#: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed | base-branch | dangerous-guard | toolkits. uninstall: remove |
 #: keep-edited | keep-foreign | skip-missing | keep-shared | gitignore-remove | gitattributes-remove |
-#: keep-gitattributes | ledger-hooks-remove | keep-ledger-hooks | receipt-remove.   [rev 0.5 C23 / D5]
+#: keep-gitattributes | ledger-hooks-remove | keep-ledger-hooks | toolkits-remove | receipt-remove.   [rev 0.5 C23 / D5]
 PlanAction = Literal[
     "write",
     "upgrade",
@@ -89,6 +91,8 @@ PlanAction = Literal[
     "base-branch",
     "dangerous-guard",
     "dangerous-guard-remove",
+    "toolkits",
+    "toolkits-remove",
     "remove",
     "keep-edited",
     "keep-foreign",
@@ -234,6 +238,9 @@ def load_receipt(root: Path) -> dict[str, Any]:
         receipt["settings_hooks"] = [h for h in settings_hooks if isinstance(h, str)]  # C32
     if isinstance(data.get("base_branch_created"), str):
         receipt["base_branch_created"] = data["base_branch_created"]  # C31, status only
+    toolkits = data.get("toolkits")
+    if isinstance(toolkits, list):
+        receipt["toolkits"] = [t for t in toolkits if isinstance(t, str)]  # C34
     return receipt
 
 
@@ -333,7 +340,9 @@ def _install_dangerous_guard(root: Path, receipt: dict[str, Any], *, portable: b
         for hook in entry.get("hooks", []) if isinstance(entry, dict) else []:
             command = hook.get("command") if isinstance(hook, dict) else None
             if isinstance(command, str) and "dangerous-actions-blocker" in command:
-                return [f"note: {SETTINGS_PATH} — a dangerous-actions-blocker hook is already registered; guard skipped"]
+                return [
+                    f"note: {SETTINGS_PATH} — a dangerous-actions-blocker hook is already registered; guard skipped"
+                ]
     command, form = dangerous_hook_command(portable=portable)
     ours = [
         hook
@@ -376,7 +385,9 @@ def _remove_dangerous_guard(root: Path, receipt: dict[str, Any]) -> list[str]:
     kept: list[Any] = []
     for entry in pre:
         if isinstance(entry, dict) and isinstance(entry.get("hooks"), list):
-            remaining = [h for h in entry["hooks"] if not (isinstance(h, dict) and _is_dangerous_command(h.get("command")))]
+            remaining = [
+                h for h in entry["hooks"] if not (isinstance(h, dict) and _is_dangerous_command(h.get("command")))
+            ]
             if len(remaining) != len(entry["hooks"]):
                 changed = True
                 if not remaining:
@@ -452,6 +463,7 @@ def plan_install(
     hook: str = GUARD_HOOK_LINE,
     base_branch: str | None = None,
     dangerous_guard: bool = True,
+    sdd_coder: bool = True,
 ) -> list[PlannedAction]:
     """Pure: the ordered plan for ``install`` (assets, seeds, gitignore, ledger, config). No I/O writes."""
     receipt = load_receipt(root)
@@ -492,6 +504,8 @@ def plan_install(
     plan.append(PlannedAction(action="base-branch", target=base, note=_base_branch_state(root, base)))  # C31
     if dangerous_guard and "claude" in _validate_hosts(hosts):
         plan.append(PlannedAction(action="dangerous-guard", target=SETTINGS_PATH.as_posix()))  # C32
+    if sdd_coder:
+        plan.append(PlannedAction(action="toolkits", target=", ".join(SDD_TOOLKITS)))  # C34
     return plan
 
 
@@ -652,6 +666,8 @@ def plan_uninstall(root: Path, hosts: Sequence[str]) -> list[PlannedAction]:
             removed.add(target)
     if "claude" in selected_hosts and "dangerous-actions" in receipt.get("settings_hooks", []):
         plan.append(PlannedAction(action="dangerous-guard-remove", target=SETTINGS_PATH.as_posix()))  # C32
+    if receipt.get("toolkits"):
+        plan.append(PlannedAction(action="toolkits-remove", target=", ".join(receipt["toolkits"])))  # C34
     if set(receipt["files"]) - removed:
         return plan  # recorded files remain: the shared blocks, hooks and receipt stay
     gitignore = root / ".gitignore"
@@ -926,6 +942,7 @@ def install_sdd_integration(
     push_base: bool = False,
     hotfix_base: str | None = None,
     dangerous_guard: bool = True,
+    sdd_coder: bool = True,
 ) -> list[str]:
     """Deploy packaged SDD assets for ``hosts`` into ``root``; never overwrites foreign content.
 
@@ -942,6 +959,8 @@ def install_sdd_integration(
             Conflicts with an existing config that sets a different one.
         dangerous_guard: C32 — register the PreToolUse dangerous-actions guard in ``.claude/settings.json``
             (claude host); ``False`` skips it.
+        sdd_coder: C34 — register the ``sdd-coder`` and ``bounded-source`` MCP toolkits (``.parrot/mcp-toolkits.yaml``
+            plus the host MCP config) and report the usable roster; ``False`` skips all of it.
         push_base: C31 — also ``git push -u origin <base_branch>`` when origin lacks it.
         hotfix_base: C31 — seed ``sdd/config.json`` with this hotfix branch (when absent). Needed when
             ``base_branch`` is ``main`` (the default hotfix branch): the two must differ.
@@ -968,7 +987,13 @@ def install_sdd_integration(
             seed = config
     hook, form = guard_hook_command(portable=portable)
     plan = plan_install(
-        root, hosts, force=force, hook=hook, base_branch=config.base_branch, dangerous_guard=dangerous_guard
+        root,
+        hosts,
+        force=force,
+        hook=hook,
+        base_branch=config.base_branch,
+        dangerous_guard=dangerous_guard,
+        sdd_coder=sdd_coder,
     )
     if dry_run:
         return [str(step) for step in plan]
@@ -992,6 +1017,8 @@ def install_sdd_integration(
             actions.extend(_base_branch_step(root, config, push=push_base, receipt=receipt))
         elif step.action == "dangerous-guard":
             actions.extend(_install_dangerous_guard(root, receipt, portable=portable))
+        elif step.action == "toolkits":
+            actions.extend(_install_toolkits_step(root, hosts, receipt))
     _save_receipt(root, receipt)
     actions.append(f"{RECEIPT_PATH} — written; commit it with the installed files (it drives upgrades and uninstall)")
     actions.append(_test_command_warning(config) or "")
@@ -1006,6 +1033,96 @@ def install_sdd_integration(
     installed = [root / t for t in receipt["files"] if (root / t).is_file()]
     actions.extend(_audit(root, installed))
     return [a for a in actions if a]
+
+
+def _toolkit_hosts(hosts: Sequence[str]) -> list[Any]:
+    """Map install host names to :class:`parrot.mcp.hosts.HostKind` (lazy import)."""
+    from parrot.mcp.hosts import HostKind
+
+    return [HostKind(h) for h in hosts if h in {k.value for k in HostKind}]
+
+
+def _roster_report(root: Path) -> list[str]:
+    """C34 — static availability of the shipped ``sdd-coder`` seats (no model call, no network).
+
+    Returns ``note:``/``warning:`` lines; any failure becomes a single ``warning:`` line, never an exception.
+    """
+    try:
+        import asyncio
+
+        from parrot.flows.dev_loop.sdd_coder.models import RosterConfig
+        from parrot.flows.dev_loop.sdd_coder.roster import RosterProbe
+        from parrot.mcp.toolkit_config import load_toolkits_config
+
+        section = load_toolkits_config(root).toolkits.get("sdd-coder")
+        if section is None or not section.enabled:
+            return []
+        kwargs = section.kwargs or {}
+        roster = RosterConfig(seats=kwargs["roster"])
+        if kwargs.get("complexity") is not None:
+            roster = roster.model_copy(update={"complexity": roster.complexity.model_validate(kwargs["complexity"])})
+        results = asyncio.run(RosterProbe(smoke=None).probe(roster))
+        strong = {(m.backend, m.model) for m in roster.complexity.strong_models}
+        kinds = {seat.label: seat for seat in roster.seats}
+        available = [r for r in results if r.available]
+        unavailable = [r for r in results if not r.available]
+        lines = [
+            "note: sdd-coder seats available: "
+            + (", ".join(r.label for r in available) or "none")
+            + (
+                "; unavailable: " + ", ".join(f"{r.label} ({r.reason or 'unavailable'})" for r in unavailable)
+                if unavailable
+                else ""
+            )
+        ]
+        strong_mcp = [
+            r
+            for r in available
+            if kinds[r.label].kind == "mcp" and (kinds[r.label].backend, kinds[r.label].model) in strong
+        ]
+        if len(strong_mcp) < 2:
+            lines.append(
+                "warning: fewer than two strong MCP seats are available — complex tasks will have no retry seat; "
+                "configure codex/gemini/nova credentials (see issue:569e81756247)"
+            )
+        return lines
+    except Exception as exc:  # noqa: BLE001 — a roster report must never fail the install
+        return [f"warning: sdd-coder roster could not be checked ({exc})"]
+
+
+def _install_toolkits_step(root: Path, hosts: Sequence[str], receipt: dict[str, Any]) -> list[str]:
+    """C34 — register the SDD MCP toolkits; record in the receipt only those this run added."""
+    try:
+        from parrot.mcp.toolkit_install import install_toolkits
+
+        report = install_toolkits(root, list(SDD_TOOLKITS), _toolkit_hosts(hosts))
+    except (ValueError, OSError, ImportError) as exc:
+        return [f"warning: MCP toolkits not registered ({exc})"]
+    lines: list[str] = list(report.actions)
+    for text in report.warnings:
+        lines.append(f"{text}" if text.endswith("already installed") else f"warning: {text}")
+    lines.extend(
+        f"warning: toolkit host {host.value} not reconciled ({why})" for host, why in report.failed_hosts.items()
+    )
+    added = [a.split(" — ")[0] for a in report.actions if a.endswith(" — seeded")]
+    receipt["toolkits"] = sorted(set(receipt.get("toolkits", [])) | set(added))
+    lines.extend(_roster_report(root))
+    return lines
+
+
+def _remove_toolkits(root: Path, hosts: Sequence[str], receipt: dict[str, Any]) -> list[str]:
+    """C34 — remove only the toolkits this install recorded; a user-installed one is left alone."""
+    names = list(receipt.get("toolkits", []))
+    if not names:
+        return []
+    try:
+        from parrot.mcp.toolkit_install import uninstall_toolkits
+
+        report = uninstall_toolkits(root, names, _toolkit_hosts(hosts))
+    except (ValueError, OSError, ImportError) as exc:
+        return [f"warning: MCP toolkits not removed ({exc})"]
+    receipt["toolkits"] = []
+    return [*report.actions, *(f"warning: {w}" for w in report.warnings)]
 
 
 def _prune_empty_parents(root: Path, path: Path) -> None:
@@ -1070,6 +1187,8 @@ def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *,
             actions.append(f"git ledger hooks — kept (keep-ledger-hooks: {step.note})")
         elif step.action == "dangerous-guard-remove":
             actions.extend(_remove_dangerous_guard(root, receipt))
+        elif step.action == "toolkits-remove":
+            actions.extend(_remove_toolkits(root, hosts, receipt))
         elif step.action == "receipt-remove":
             drop_receipt = True
     if receipt.get("base_branch_created"):
@@ -1157,6 +1276,17 @@ def _ledger_hooks_present(root: Path) -> bool:
     return True
 
 
+def _toolkits_report(root: Path) -> dict[str, str]:
+    """C34 — declared state (``enabled``/``disabled``/``not_installed``) of the SDD MCP toolkits."""
+    try:
+        from parrot.mcp.toolkit_install import inventory
+
+        rows = {row.name: row.state.value for row in inventory(root)}
+    except Exception:  # noqa: BLE001 — status is informational
+        rows = {}
+    return {name: rows.get(name, "not_installed") for name in SDD_TOOLKITS}
+
+
 def sdd_status(root: Path) -> dict[str, Any]:
     """Per-host install state (C4/C15/C25):
 
@@ -1198,5 +1328,6 @@ def sdd_status(root: Path) -> dict[str, Any]:
         "ledger_hooks": _ledger_hooks_present(root),
         "guard_hook": guard,
         "dangerous_guard": _dangerous_guard_report(root),
+        "toolkits": _toolkits_report(root),
         "receipt_version": receipt.get("version"),
     }

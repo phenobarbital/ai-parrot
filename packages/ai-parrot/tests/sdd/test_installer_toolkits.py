@@ -1,0 +1,142 @@
+"""C34 — ``parrot sdd install`` registers the sdd-coder and bounded-source MCP toolkits."""
+
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+from click.testing import CliRunner
+
+from parrot.flows.dev_loop.sdd_coder import roster as roster_mod
+from parrot.sdd.cli import sdd as sdd_cli
+from parrot.sdd.installer import (
+    install_sdd_integration,
+    load_receipt,
+    sdd_status,
+    uninstall_sdd_integration,
+)
+
+CONFIG = Path(".parrot/mcp-toolkits.yaml")
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "init",
+        ],
+        check=True,
+    )
+    return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def no_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Probe with no credentials and no CLIs unless a test injects them."""
+    real = roster_mod.RosterProbe
+
+    def factory(**kw):
+        kw.setdefault("config_getter", lambda *a, **k: None)
+        kw.setdefault("which", lambda *_: None)
+        return real(**kw)
+
+    monkeypatch.setattr(roster_mod, "RosterProbe", factory)
+
+
+def _servers(root: Path) -> set[str]:
+    return set(json.loads((root / ".mcp.json").read_text())["mcpServers"])
+
+
+def test_install_registers_both_toolkits(repo: Path) -> None:
+    actions = install_sdd_integration(repo)
+    assert {"parrot-sdd-coder", "parrot-bounded-source"} <= _servers(repo)
+    text = (repo / CONFIG).read_text()
+    assert "sdd-coder:" in text and "bounded-source:" in text
+    assert load_receipt(repo)["toolkits"] == ["bounded-source", "sdd-coder"]
+    assert not [a for a in actions if a.startswith("warning:") and "toolkit" in a]
+
+
+def test_reinstall_is_byte_identical(repo: Path) -> None:
+    install_sdd_integration(repo)
+    before = {p: (repo / p).read_bytes() for p in (CONFIG, Path(".mcp.json"))}
+    actions = install_sdd_integration(repo)
+    assert {p: (repo / p).read_bytes() for p in before} == before
+    assert any("already installed" in a and not a.startswith("warning:") for a in actions)
+    assert load_receipt(repo)["toolkits"] == ["bounded-source", "sdd-coder"]
+
+
+def test_preexisting_toolkit_is_not_recorded_or_removed(repo: Path) -> None:
+    from parrot.mcp.hosts import HostKind
+    from parrot.mcp.toolkit_install import install_toolkits
+
+    install_toolkits(repo, ["bounded-source"], [HostKind.CLAUDE])
+    install_sdd_integration(repo)
+    assert load_receipt(repo)["toolkits"] == ["sdd-coder"]
+    uninstall_sdd_integration(repo)
+    assert "bounded-source:" in (repo / CONFIG).read_text()
+    assert "sdd-coder:" not in (repo / CONFIG).read_text()
+    assert "parrot-bounded-source" in _servers(repo)
+    assert "parrot-sdd-coder" not in _servers(repo)
+
+
+def test_roster_note_and_strong_seat_warning(repo: Path) -> None:
+    actions = install_sdd_integration(repo)
+    note = next(a for a in actions if a.startswith("note: sdd-coder seats available:"))
+    assert "haiku" in note and "opus" in note and "unavailable:" in note
+    assert any(a.startswith("warning:") and "no retry seat" in a for a in actions)
+
+
+def test_strong_seats_with_credentials_do_not_warn(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    real = roster_mod.RosterProbe
+
+    def factory(**kw):
+        kw["config_getter"] = lambda *a, **k: "x"
+        kw["which"] = lambda name: f"/bin/{name}"
+        return real(**kw)
+
+    monkeypatch.setattr(roster_mod, "RosterProbe", factory)
+    actions = install_sdd_integration(repo)
+    assert not any("no retry seat" in a for a in actions)
+
+
+def test_no_sdd_coder_opt_out(repo: Path) -> None:
+    install_sdd_integration(repo, sdd_coder=False)
+    assert not (repo / CONFIG).exists()
+    assert not (repo / ".mcp.json").exists()
+    assert "toolkits" not in load_receipt(repo)
+
+
+def test_cli_flag_and_dry_run(repo: Path) -> None:
+    runner = CliRunner()
+    out = runner.invoke(sdd_cli, ["install", "--path", str(repo), "--dry-run"])
+    assert out.exit_code == 0, out.output
+    assert "plan: toolkits sdd-coder, bounded-source" in out.output
+    assert not (repo / CONFIG).exists()
+    off = runner.invoke(sdd_cli, ["install", "--path", str(repo), "--dry-run", "--no-sdd-coder"])
+    assert "plan: toolkits" not in off.output
+
+
+def test_malformed_toolkit_config_is_a_warning(repo: Path) -> None:
+    (repo / CONFIG).parent.mkdir(parents=True)
+    (repo / CONFIG).write_text("toolkits: [unclosed\n")
+    actions = install_sdd_integration(repo)
+    assert any(a.startswith("warning: MCP toolkits not registered") for a in actions)
+    assert (repo / "sdd/.sdd-installed.json").is_file()
+
+
+def test_status_reports_toolkits(repo: Path) -> None:
+    assert sdd_status(repo)["toolkits"] == {"sdd-coder": "not_installed", "bounded-source": "not_installed"}
+    install_sdd_integration(repo)
+    assert sdd_status(repo)["toolkits"] == {"sdd-coder": "enabled", "bounded-source": "enabled"}

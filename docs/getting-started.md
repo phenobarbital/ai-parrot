@@ -462,6 +462,12 @@ parrot sdd status                            # missing | current | outdated | ed
   set `PARROT_ALLOW_DANGEROUS=1`; `parrot sdd install --no-dangerous-guard` skips the registration. Foreign hook
   entries are never touched, a repository that already runs `dangerous-actions-blocker` is left alone, and
   `parrot sdd uninstall` removes only the entry the install recorded.
+- The install also registers the two MCP toolkits the `sdd-worker` agent relies on — `sdd-coder` and
+  `bounded-source` — in `.parrot/mcp-toolkits.yaml` and the host MCP config (`.mcp.json` for Claude). It keeps the
+  shipped `sdd-coder` roster and prints a static `note: sdd-coder seats available: …; unavailable: … (<reason>)`
+  line (credentials and CLIs only, no model call). A `warning:` that complex tasks have "no retry seat" means fewer
+  than two strong MCP seats (codex/gemini/nova) are usable — add credentials and re-run. Toolkits you installed
+  yourself are never recorded or removed by `parrot sdd uninstall`; `parrot sdd install --no-sdd-coder` skips all of this.
 - Re-running `parrot sdd install` upgrades files you have not touched and keeps the ones you edited
   (`--force` overwrites edited files; foreign files are never touched).
 
