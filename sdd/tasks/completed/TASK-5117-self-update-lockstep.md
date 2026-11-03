@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.12 — ledger fixes; C20 lockstep)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5116
@@ -92,4 +92,6 @@ above; close with `parrot sdd task close TASK-5117 parrot-installer verified`.
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 (/sdd-fix, sequential)
+**Date**: 2026-11-03
+**Notes**: Unpinned update = one `uv pip install --upgrade ai-parrot ai-parrot-tools`; on differing versions both re-pinned to `min(core, tools, key=version_sort_key)`; CalledProcessError there → `warning:` log line, no raise. `version_sort_key` (public, reused by doctor) uses packaging.Version when importable, numeric parts otherwise. Doctor `_check_runtime_lockstep` probes both versions in one subprocess; missing interpreter or tools dist is informational. Updated the runtime-only names set in test_doctor_sdd.py; 9 new/updated tests; self_ suite 76 passed; ruff clean. Docs (getting-started, global-runtime) already say "together", unchanged.

@@ -1335,18 +1335,19 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": "2026-11-03T02:16:27+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-03T02:18:02+00:00",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
         "TASK-5116"
       ],
       "parallelism_notes": "issue:66700eac9b2f; shares doctor.py with TASK-5116",
-      "file": "sdd/tasks/active/TASK-5117-self-update-lockstep.md"
+      "file": "sdd/tasks/completed/TASK-5117-self-update-lockstep.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5118",
