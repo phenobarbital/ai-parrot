@@ -86,13 +86,44 @@ def test_update_runtime_pins_version(fake_managed_home: Path) -> None:
 
 
 def test_update_runtime_unpinned_keeps_lockstep(fake_managed_home: Path) -> None:
-    """Unpinned update: upgrade ai-parrot, then pin ai-parrot-tools to the resolved version."""
+    """TASK-5117: unpinned update upgrades both dists in ONE uv call; equal versions need nothing else."""
     with mock.patch.object(components.subprocess, "run") as run, \
          mock.patch.object(components, "_installed_version", return_value="9.9.9"):
         components.update_runtime()
     calls = [c.args[0] for c in run.call_args_list]
-    assert calls[0][-2:] == ["--upgrade", "ai-parrot"]
-    assert calls[-1][-1] == "ai-parrot-tools==9.9.9"
+    assert len(calls) == 1 and calls[0][-3:] == ["--upgrade", "ai-parrot", "ai-parrot-tools"]
+
+
+def test_update_runtime_realigns_skew_to_lower_version(fake_managed_home: Path) -> None:
+    """TASK-5117 (issue:66700eac9b2f): tools not yet published at the new core version → both pinned to the lower."""
+    versions = {"ai-parrot": "1.10.0", "ai-parrot-tools": "1.9.2"}
+    with mock.patch.object(components.subprocess, "run") as run, \
+         mock.patch.object(components, "_installed_version", side_effect=lambda _py, dist: versions[dist]):
+        log = components.update_runtime()
+    calls = [c.args[0] for c in run.call_args_list]
+    assert len(calls) == 2 and calls[1][-2:] == ["ai-parrot==1.9.2", "ai-parrot-tools==1.9.2"]
+    assert not any(line.startswith("warning:") for line in log)
+
+
+def test_update_runtime_alignment_failure_warns_instead_of_raising(fake_managed_home: Path) -> None:
+    versions = {"ai-parrot": "2.0.0", "ai-parrot-tools": "1.9.0"}
+
+    def run(argv, *a, **k):
+        if "ai-parrot==1.9.0" in argv:
+            raise components.subprocess.CalledProcessError(1, argv)
+        return components.subprocess.CompletedProcess(argv, 0)
+
+    with mock.patch.object(components.subprocess, "run", side_effect=run), \
+         mock.patch.object(components, "_installed_version", side_effect=lambda _py, dist: versions[dist]):
+        log = components.update_runtime()
+    warning = [line for line in log if line.startswith("warning:")]
+    assert warning and "2.0.0" in warning[0] and "1.9.0" in warning[0] and "--version" in warning[0]
+
+
+@pytest.mark.parametrize("a, b, lower", [("1.10.0", "1.9.2", "1.9.2"), ("2.0.0", "2.0.0rc1", "2.0.0rc1"),
+                                         ("0.24.3", "0.24.10", "0.24.3")])
+def test_version_sort_key_orders_numerically(a: str, b: str, lower: str) -> None:
+    assert min(a, b, key=components.version_sort_key) == lower
 
 
 def test_uninstall_keeps_user_data(fake_managed_home: Path) -> None:

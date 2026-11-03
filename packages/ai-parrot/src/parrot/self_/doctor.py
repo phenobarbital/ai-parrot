@@ -151,6 +151,40 @@ def _check_tools_wiki() -> DoctorCheck:
     return DoctorCheck(name="parrot_tools.wiki", ok=True, detail="importable in the managed venv")
 
 
+_LOCKSTEP_PROBE = (
+    "import importlib.metadata as m\n"
+    "for d in ('ai-parrot', 'ai-parrot-tools'):\n"
+    "    try:\n"
+    "        print(m.version(d))\n"
+    "    except m.PackageNotFoundError:\n"
+    "        print('')\n"
+)
+
+
+def _check_runtime_lockstep() -> DoctorCheck:
+    """C20 / TASK-5117: ai-parrot and ai-parrot-tools are at the same version in the managed venv."""
+    name = "runtime lockstep"
+    python = script_path(managed_venv(), "python")
+    if not python.exists():
+        return DoctorCheck(name=name, ok=True, informational=True, detail=f"no interpreter at {python}")
+    try:
+        result = subprocess.run([str(python), "-c", _LOCKSTEP_PROBE], capture_output=True, text=True, check=False)
+    except OSError as exc:
+        return DoctorCheck(name=name, ok=True, informational=True, detail=f"cannot run {python}: {exc}")
+    lines = result.stdout.splitlines()
+    if result.returncode != 0 or len(lines) != 2 or not all(v.strip() for v in lines):
+        return DoctorCheck(name=name, ok=True, informational=True,
+                           detail="ai-parrot / ai-parrot-tools version not readable (see parrot_tools.wiki)")
+    core, tools = (v.strip() for v in lines)
+    if core == tools:
+        return DoctorCheck(name=name, ok=True, detail=f"ai-parrot and ai-parrot-tools both {core}")
+    from parrot.self_.components import version_sort_key
+
+    lower = min(core, tools, key=version_sort_key)
+    return DoctorCheck(name=name, ok=False, detail=f"ai-parrot {core} but ai-parrot-tools {tools}",
+                       fix=f"parrot self update --version {lower}")
+
+
 # --- C15: SDD readiness (lazy, absence-tolerant; run only in "full" with <root>/sdd present, or "sdd") ---
 
 #: Upper bound for any single ``git`` call the doctor makes (``ls-remote`` over a dead network would hang it).
@@ -533,10 +567,11 @@ def run_doctor(root: Path, *, scope: DoctorScope = "full") -> list[DoctorCheck]:
     """Run the checks of ``scope`` in spec order; never raises for a broken environment.
 
     "runtime-only" (C14 bootstrap) touches neither ``root`` nor the network and includes parrot_tools.wiki
-    (rev 0.5 C20); "full" adds host configs, toolkits and — iff ``root/sdd`` exists — the C15 SDD readiness checks;
+    and the ai-parrot / ai-parrot-tools version lockstep (rev 0.5 C20, TASK-5117); "full" adds host configs, toolkits and — iff ``root/sdd`` exists — the C15 SDD readiness checks;
     "sdd" forces the latter.
     """
-    checks = [_check_uv(), _check_python(), _check_entrypoints(), _check_path(), _check_tools_wiki()]
+    checks = [_check_uv(), _check_python(), _check_entrypoints(), _check_path(), _check_tools_wiki(),
+              _check_runtime_lockstep()]
     if scope == "runtime-only":
         return checks
     checks.extend(_check_host_configs(root))

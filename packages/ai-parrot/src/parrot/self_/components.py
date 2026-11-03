@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 from parrot.launcher import find_project_root, parrot_home, script_path  # TASK-4071
 from parrot.mcp.toolkit_seed import load_template  # verified: mcp/toolkit_seed.py:63
@@ -238,21 +239,52 @@ def install_component(name: str, *, venv: Path, here: bool = False) -> list[str]
 def update_runtime(version: str | None = None) -> list[str]:
     """Upgrade the base runtime (ai-parrot + ai-parrot-tools, spec rev 0.5 C20) in the managed venv.
 
-    Both distributions always end at the same version (lockstep, C20). With ``version`` both get
-    ``==version``. Without it, ``ai-parrot`` is upgraded first and ``ai-parrot-tools`` is then pinned
-    to the ``ai-parrot`` version that uv resolved (resolved in the PR #1746 review, 2026-10-20).
+    Both distributions end at the same version (lockstep, C20). With ``version`` both get ``==version``.
+    Without it (TASK-5117), both are upgraded in ONE uv call, so a resolution failure installs nothing;
+    the two are released separately, so when they then differ both are re-pinned to the lower version.
+    If that alignment fails the upgraded pair is kept and a ``warning:`` line names the skew
+    (``parrot self doctor`` reports it as ``runtime lockstep``).
     """
     python = _venv_python(managed_venv())
     uv = str(bundled_uv())
     log: list[str] = []
+    install = [uv, "pip", "install", "--python", str(python)]
     # No state file exists and uv keeps already-installed extras, so a plain `--upgrade` suffices (spec §1, §7).
     if version:
-        _run([uv, "pip", "install", "--python", str(python), "--upgrade", *(f"{d}=={version}" for d in BASE_DISTS)], log)
+        _run([*install, "--upgrade", *(f"{d}=={version}" for d in BASE_DISTS)], log)
         return log
-    _run([uv, "pip", "install", "--python", str(python), "--upgrade", CORE_DIST], log)
-    resolved = _installed_version(python, CORE_DIST)
-    _run([uv, "pip", "install", "--python", str(python), f"{TOOLS_DIST}=={resolved}"], log)
+    _run([*install, "--upgrade", *BASE_DISTS], log)
+    core, tools = _installed_version(python, CORE_DIST), _installed_version(python, TOOLS_DIST)
+    if core == tools:
+        return log
+    target = min(core, tools, key=version_sort_key)
+    try:
+        _run([*install, *(f"{d}=={target}" for d in BASE_DISTS)], log)
+    except subprocess.CalledProcessError as exc:
+        logger.warning("could not align %s %s / %s %s at %s: %s", CORE_DIST, core, TOOLS_DIST, tools, target, exc)
+        log.append(
+            f"warning: {CORE_DIST} {core} and {TOOLS_DIST} {tools} could not be aligned at {target}; "
+            "run `parrot self update --version <V>` with a version both publish"
+        )
     return log
+
+
+def version_sort_key(value: str) -> Any:
+    """Sort key for a distribution version: ``packaging.version.Version`` when importable, else numeric parts."""
+    try:
+        from packaging.version import InvalidVersion, Version  # optional: not a declared ai-parrot dependency
+    except ImportError:
+        pass
+    else:
+        try:
+            return (0, Version(value))
+        except InvalidVersion:
+            pass
+    parts: list[int] = []
+    for piece in value.split("."):
+        digits = "".join(ch for ch in piece if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return (1, tuple(parts))
 
 
 def _installed_version(python: Path, dist: str) -> str:

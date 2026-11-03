@@ -153,7 +153,7 @@ def test_scope_runtime_only_excludes_repo_host_and_component_checks(tmp_path: Pa
     (repo / "sdd").mkdir(parents=True)  # no git at all → every SDD check would fail in "full"
     (repo / ".mcp.json").write_text(json.dumps({"mcpServers": {"wikitoolkit": {"command": "/nope/wikitoolkit"}}}))
     names = {c.name for c in doctor.run_doctor(repo, scope="runtime-only")}
-    assert names == {"uv", "python", "runtime entry points", "PATH", "parrot_tools.wiki"} or all(
+    assert names == {"uv", "python", "runtime entry points", "PATH", "parrot_tools.wiki", "runtime lockstep"} or all(
         not n.startswith("sdd:") and "mcp" not in n.lower() and "toolkit" not in n.lower() for n in names
     )
     assert any(c.name.startswith("sdd:") for c in doctor.run_doctor(repo, scope="full"))

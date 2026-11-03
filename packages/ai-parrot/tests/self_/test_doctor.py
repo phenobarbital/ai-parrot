@@ -160,3 +160,26 @@ def test_gemini_foreign_non_parrot_entry_is_not_a_collision(isolated_home: Path,
     entry = {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem"], "cwd": str(tmp_path / "x")}
     cfg.write_text(json.dumps({"mcpServers": {"filesystem": entry}}), encoding="utf-8")
     assert not [c for c in doctor._check_host_configs(repo) if "collision" in c.name]
+
+
+@pytest.mark.parametrize(
+    "stdout, ok, informational, fix",
+    [
+        ("1.4.0\n1.4.0\n", True, False, ""),
+        ("1.5.0\n1.4.0\n", False, False, "parrot self update --version 1.4.0"),
+        ("1.5.0\n\n", True, True, ""),  # ai-parrot-tools absent: parrot_tools.wiki already reports it
+    ],
+)
+def test_runtime_lockstep_check(
+    isolated_home: Path, monkeypatch: pytest.MonkeyPatch, stdout: str, ok: bool, informational: bool, fix: str
+) -> None:
+    """TASK-5117 (issue:66700eac9b2f): doctor compares ai-parrot and ai-parrot-tools in the managed venv."""
+    assert doctor._check_runtime_lockstep().informational  # no interpreter yet
+    python = doctor.script_path(doctor.managed_venv(), "python")
+    python.parent.mkdir(parents=True)
+    python.write_text("")
+    real = subprocess.CompletedProcess
+    monkeypatch.setattr(doctor.subprocess, "run", lambda *a, **k: real(a[0], 0, stdout, ""))
+    check = doctor._check_runtime_lockstep()
+    assert (check.ok, check.informational, check.fix) == (ok, informational, fix)
+    assert (check in doctor.failed([check])) is (not ok and not informational)
