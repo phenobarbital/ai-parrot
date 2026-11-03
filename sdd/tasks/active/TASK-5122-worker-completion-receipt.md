@@ -34,8 +34,8 @@ Implement spec §2 launch/delivery contract and §3 M1. Completion is explicitly
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/sdd/scripts/worker_notification.py` | CREATE | Stdlib receipt and Stop delivery helper |
-| `packages/ai-parrot/tests/sdd/test_worker_notification.py` | CREATE | Runtime, failure and concurrency tests |
+| `packages/ai-parrot/src/parrot/sdd/scripts/worker_notification.py` | MODIFY | Stdlib receipt and Stop delivery helper |
+| `packages/ai-parrot/tests/sdd/test_worker_notification.py` | MODIFY | Runtime, failure and concurrency tests |
 
 ## Codebase Contract (Anti-Hallucination)
 
