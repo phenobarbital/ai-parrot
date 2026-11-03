@@ -2,7 +2,7 @@
 type: feature
 base_branch: dev
 projects: [ai-parrot, ai-parrot-server]
-tags: [llm-config, credentials, agentcrew, experts, configuration]
+tags: [llm-config, credentials, agentcrew, experts, configuration, observability]
 ---
 
 # Feature Specification: Per-Component LLM Defaults
@@ -49,6 +49,9 @@ FEAT-575), and its name does not say which provider it is for.
   client), `EXPERT_JUDGMENT` / `EXPERT_BALANCED` / `EXPERT_TEMPLATED` (expert tiers).
 - G4. Delete the dead `DEFAULT_LLM_MODEL_NAME` / `LLM_MODEL_NAME` knob.
 - G5. Zero behavior change when none of the new variables is set.
+- G6. Every `UsageRecord` carries a `component` tag (`AGENT`, `CREW`, `EXPERT_JUDGMENT`,
+  `EXPERT_BALANCED`, `EXPERT_TEMPLATED`, or `None` when unattributed) so usage and cost can be
+  reported per component.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -57,15 +60,15 @@ FEAT-575), and its name does not say which provider it is for.
   there is nothing to replace.
 - Changing or replacing `DEFAULT_LLM_MODEL` / `LLM_MODEL` (live, model-only, used by
   chatbot/loaders/planogram). `DEFAULT_LLM` is a separate, opt-in, provider-qualified knob.
-- Per-component usage/cost attribution (`UsageRecord` has no component field). Separate keys
-  already give per-key billing; tagging records is a follow-up.
+- `component` as a Prometheus/OpenLit metric label — it is store/span data only, like the
+  FEAT-783 SDD ids (keeps metric label sets unchanged).
 - The UI model selector (a list of choices, not a default).
 
 ---
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:7092b6fd51b88520297acd2c15f87d485d72ba6b6982df4e5168d786965f0273 evaluation_digest=sha256:f156f3111dd0a33e88d53f88ed53db9639b21b6f6c59e78ed744527e91a7d010 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:bc905ce231016d892ee5240419488e0d1daded3f81b91602deb2079e18fc4a71 evaluation_digest=sha256:bd2123c372de18020d8b1e0243d1e640fed8f0b086585bdf0468aa902570e3d8 rules_version=1 status=pass -->
 
 No eligible decisions govern subsystems: auth, bots, clients, config, flows, knowledge-graphindex, knowledge-wiki, memory, server, skills, tools
 
@@ -108,6 +111,9 @@ env / navconfig ──→ parrot/llm_defaults.py ──┬──→ handlers/age
                                               ├──→ bots/flows/crew/crew.py       (CREW)
                                               │      └─ crew/credentials.py (CREW_AI_KEY legacy)
                                               └──→ experts/policy.py + agent.py (EXPERT_*)
+
+entry points ──usage_component("CREW")──→ ContextVar current_component
+client call ──→ AfterClientCallEvent ──→ UsageSubscriber ──→ UsageRecord(component=...)
 ```
 
 ### Integration Points
@@ -120,6 +126,8 @@ env / navconfig ──→ parrot/llm_defaults.py ──┬──→ handlers/age
 | `crew/credentials.get_crew_google_api_key` | modifies | cascade `CREW_GOOGLE_API_KEY` → `CREW_AI_KEY` |
 | `experts.policy.DEFAULT_TIER_POLICY` | modifies | built from `EXPERT_<TIER>_LLM` at call time |
 | `ExpertAgent.__init__` | modifies | inject `EXPERT_<TIER>_<P>_API_KEY` → `EXPERT_<P>_API_KEY` |
+| `observability.context` | modifies | new `current_component` ContextVar + `usage_component()` CM |
+| `UsageRecord` / `UsageSubscriber` | modifies | new `component` field, filled from the ContextVar |
 
 ### Data Models
 
@@ -148,6 +156,7 @@ See §3 Module 1 skeleton.
 | M4: Expert tiers wiring | yes | builtins = today's dict; temperature unchanged | — |
 | M5: Agent handler wiring | yes | builtin `google:gemini-2.5-pro`; class attrs stay overridable | — |
 | M6: docs | yes | env table in `docs/configuration/llm-defaults.md` | — |
+| M7: usage component tagging | yes | ContextVar + CM in `observability/context.py`; field on `UsageRecord`; set at entry points | — |
 
 ### Module 1: Resolver
 
@@ -238,6 +247,33 @@ See §3 Module 1 skeleton.
   Subclasses that set `_use_llm`/`_use_model` keep winning.
 - **Depends on**: M1
 
+### Module 7: Usage component tagging (observability)
+
+- **Paths**: `observability/context.py`, `observability/recorders/models.py`,
+  `observability/recorders/subscriber.py`, plus one `with usage_component(...)` at each M3/M4/M5
+  entry point.
+- **Responsibility**: a `current_component` ContextVar (default `None`) and a
+  `usage_component(name)` context manager (set/reset token, same shape as `usage_attribution`
+  at `context.py:168`). `UsageRecord.component: Optional[str] = None`; `UsageSubscriber` fills it
+  from `current_component.get()` in both `_on_client_after` (`:140`) and `_on_client_failed`
+  (`:182`). Innermost scope wins (an expert run inside a crew is tagged `EXPERT_*`).
+- **Entry points**: AgentCrew `run_sequential`/`run_parallel`/`run_flow`/`run_loop` + lazy
+  synthesis call → `CREW`; `ExpertAgent` ask/invoke → `EXPERT_<TIER>`; agent handler request
+  dispatch → `AGENT`. M3/M4/M5 tasks add their own `with` block; M7 owns the observability files.
+- **Depends on**: none (M3/M4/M5 import `usage_component` from M7).
+- **Interface Skeleton**:
+  ```python
+  # modifies parrot/observability/context.py:163 (after current_usage_attribution)
+  current_component: ContextVar[Optional[str]] = ContextVar("parrot_current_component", default=None)
+
+  @contextmanager
+  def usage_component(name: Optional[str]) -> Iterator[None]:
+      """Tag every client call in this scope with ``name`` in UsageRecord.component."""
+
+  # modifies parrot/observability/recorders/models.py:101 (after roster_seat)
+  component: Optional[str] = None
+  ```
+
 ### Module 6: Docs
 
 - **Path**: `docs/configuration/llm-defaults.md` (new) + note in `docs/crew_handler.md`.
@@ -266,6 +302,10 @@ See §3 Module 1 skeleton.
 | `test_handler_agent_llm_env` | M5 | `AGENT_LLM` used when subclass sets nothing |
 | `test_handler_subclass_override_wins` | M5 | subclass `_use_model` beats env |
 | `test_default_llm_model_name_removed` | M2 | `parrot.conf` has no `DEFAULT_LLM_MODEL_NAME` |
+| `test_usage_component_cm_sets_and_resets` | M7 | ContextVar restored after exit, nested innermost wins |
+| `test_subscriber_tags_component` | M7 | after/failed events produce `UsageRecord.component` |
+| `test_usage_record_component_default_none` | M7 | unattributed calls → `None` |
+| `test_crew_calls_tagged_crew` | M3+M7 | crew synthesis call record has `component="CREW"` |
 
 ### Integration Tests
 
@@ -283,6 +323,7 @@ tests:
 - packages/ai-parrot-server/tests/handlers/test_crew_handler_google_key.py
 - packages/ai-parrot-server/tests/manager/test_crew_google_key.py
 - packages/ai-parrot/tests/test_conf.py
+- packages/ai-parrot/tests/observability/test_usage_component.py
 markers: none
 
 ### Test Data / Fixtures
@@ -311,6 +352,8 @@ def llm_env(monkeypatch):
 - [ ] AC7: `DEFAULT_LLM_MODEL_NAME` is removed; no API key is ever logged.
 - [ ] AC8: `crew.py` no longer contains the literal `"gemini-2.5-pro"` outside the M3 builtin
       constant; same for the handler and `experts/policy.py` builtins.
+- [ ] AC10: Every `UsageRecord` from the handler, AgentCrew and expert tiers carries the
+      matching `component`; unattributed calls carry `None`; metric label sets are unchanged.
 - [ ] AC9: Validation Contract tests pass; `ruff check` clean; docs page added.
 
 ---
@@ -385,7 +428,7 @@ def _parse_model_config(...)  # line 961 — "gemini-2.5-pro" at 968 is docstrin
 - ~~`parrot.llm_defaults`~~ — created by M1
 - ~~`conf.DEFAULT_LLM`~~, ~~`CREW_GOOGLE_API_KEY`~~, ~~`AGENT_LLM`~~, ~~`EXPERT_*_LLM`~~ — new
 - ~~`ModelConfig.api_key`~~ — no such field; do not add one (key goes via client kwargs)
-- ~~`UsageRecord.component`~~ — no such field (out of scope)
+- ~~`UsageRecord.component`~~, ~~`current_component`~~, ~~`usage_component`~~ — created by M7
 - ~~any real usage of `DEFAULT_LLM_MODEL_NAME`~~ — zero readers in `packages/*/src`
 
 ### Edit Sites (Blueprint Anchors)
@@ -402,6 +445,10 @@ Verified against: `0b38ff68bd`
 | `packages/ai-parrot/src/parrot/experts/policy.py` | MODIFY | `DEFAULT_TIER_POLICY: Final[dict[ExpertTier, dict[str, Any]]] = {` | `policy.py:10` | 1 |
 | `packages/ai-parrot/src/parrot/experts/agent.py` | MODIFY | `            llm=f"{model_config.provider}:{model_config.model}",` | `agent.py:54` | 1 |
 | `packages/ai-parrot-server/src/parrot/handlers/agents/abstract.py` | MODIFY | `    _use_model: str = 'gemini-2.5-pro'` | `abstract.py:180` | 1 |
+| `packages/ai-parrot/src/parrot/observability/context.py` | MODIFY | `current_usage_attribution: ContextVar[Optional["UsageAttribution"]] = ContextVar(` | `context.py:163` | 1 |
+| `packages/ai-parrot/src/parrot/observability/recorders/models.py` | MODIFY | `    roster_seat: Optional[str] = None` | `models.py:101` | 1 |
+| `packages/ai-parrot/src/parrot/observability/recorders/subscriber.py` | MODIFY | `        seat = current_seat.get()` | `subscriber.py:141,183` | 2 (both handlers; edit both) |
+| `packages/ai-parrot/tests/observability/test_usage_component.py` | CREATE | — | — | — |
 | `packages/ai-parrot/tests/unit/test_llm_defaults.py` | CREATE | — | — | — |
 | `docs/configuration/llm-defaults.md` | CREATE | — | — | — |
 
@@ -437,7 +484,7 @@ None.
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:7092b6fd51b88520297acd2c15f87d485d72ba6b6982df4e5168d786965f0273 evaluation_digest=sha256:f156f3111dd0a33e88d53f88ed53db9639b21b6f6c59e78ed744527e91a7d010 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:bc905ce231016d892ee5240419488e0d1daded3f81b91602deb2079e18fc4a71 evaluation_digest=sha256:bd2123c372de18020d8b1e0243d1e640fed8f0b086585bdf0468aa902570e3d8 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -449,7 +496,7 @@ Diagnostics:
 
 Coverage:
 - Subsystems: auth, bots, clients, config, flows, knowledge-graphindex, knowledge-wiki, memory, server, skills, tools
-- Unmapped tags: agentcrew, configuration, credentials, experts, llm-config
+- Unmapped tags: agentcrew, configuration, credentials, experts, llm-config, observability
 - Targets resolved: 0/0
 - Impact complete: true
 - Inventory complete: true
@@ -481,7 +528,8 @@ Coverage:
       "configuration",
       "credentials",
       "experts",
-      "llm-config"
+      "llm-config",
+      "observability"
     ]
   },
   "diagnostics": [
@@ -492,10 +540,10 @@ Coverage:
       "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/per-component-llm-defaults.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:f156f3111dd0a33e88d53f88ed53db9639b21b6f6c59e78ed744527e91a7d010",
+  "evaluation_digest": "sha256:bd2123c372de18020d8b1e0243d1e640fed8f0b086585bdf0468aa902570e3d8",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:7092b6fd51b88520297acd2c15f87d485d72ba6b6982df4e5168d786965f0273",
+  "input_digest": "sha256:bc905ce231016d892ee5240419488e0d1daded3f81b91602deb2079e18fc4a71",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -530,7 +578,8 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 ## Worktree Strategy
 
 - Isolation: one feature worktree `feat-FEAT-796-per-component-llm-defaults`; tasks get sub-worktrees.
-- Module graph: M3, M4, M5 → M1 (import `resolve_component_llm` / `resolve_component_api_key`);
+- Module graph: M3, M4, M5 → M1 (import `resolve_component_llm` / `resolve_component_api_key`)
+  and → M7 (import `usage_component`); M1 and M7 run concurrently;
   M2 independent; M6 after M3–M5 (documents final names). M3, M4, M5 run concurrently.
 - Shared files: none across modules (crew.py + credentials.py both in M3).
 - Exclusive resources: none.
@@ -543,3 +592,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-03 | Jesus Lara | Initial draft |
+| 0.2 | 2026-11-03 | Jesus Lara | Add M7: per-component tagging of UsageRecord (observability) |
