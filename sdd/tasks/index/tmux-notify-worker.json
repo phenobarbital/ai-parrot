@@ -35,7 +35,7 @@
       "feature_id": "FEAT-793",
       "feature": "tmux-notify-worker",
       "spec": "sdd/specs/tmux-notify-worker.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "Consumes configure_notification from TASK-5122 (packages/ai-parrot/src/parrot/sdd/scripts/worker_notification.py); owns launcher/native settings and their two existing test files, with no overlapping writers or external shared-state mutations.",
       "assigned_to": null,
       "started_at": "2026-11-03T20:05:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5123-tmux-notification-launch-wiring.md"
+      "completed_at": "2026-11-03T20:07:42+00:00",
+      "file": "sdd/tasks/completed/TASK-5123-tmux-notification-launch-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5124",
@@ -55,7 +56,7 @@
       "feature_id": "FEAT-793",
       "feature": "tmux-notify-worker",
       "spec": "sdd/specs/tmux-notify-worker.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
