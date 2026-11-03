@@ -1191,6 +1191,27 @@
       "parallelism_notes": "rev 0.11 C32; same installer.py/cli.py as TASK-5109, so it waits for it",
       "file": "sdd/tasks/completed/TASK-5110-portable-dangerous-actions-guard.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5111",
+      "slug": "noun-grouped-cli-test-assertions",
+      "title": "Worker/start-twin tests assert the noun-grouped `parrot sdd` CLI spellings",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-11-03T00:40:00+00:00",
+      "completed_at": "2026-11-03T00:37:50+00:00",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5098"
+      ],
+      "discovered_from": "issue:209fdbe18647",
+      "file": "sdd/tasks/completed/TASK-5111-noun-grouped-cli-test-assertions.md",
+      "verification": "verified"
     }
   ],
   "amended_at": "2026-11-03T00:00:00+00:00",
