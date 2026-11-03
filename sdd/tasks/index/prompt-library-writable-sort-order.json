@@ -15,6 +15,7 @@
         "kind": "pytest",
         "targets": [
           "packages/ai-parrot/tests/handlers/test_prompt_library.py",
+          "packages/ai-parrot-server/tests/handlers/test_prompt_library_handler.py",
           "packages/ai-parrot-server/tests/studio/storage/test_migration_files.py",
           "packages/ai-parrot-server/tests/studio/storage/test_migrations_db.py",
           "packages/ai-parrot-server/tests/studio/storage/test_backend.py",
@@ -30,7 +31,7 @@
         ]
       }
     ],
-    "digest": "sha256:c395dc4eced448b1653ed82687104cead8ff42a330fb857ed4c16629c5134635"
+    "digest": "sha256:f3b293a6492cefa5a2ae195357a57da5d7df3c17ed34ca1ab7170422a7373a51"
   },
   "tasks": [
     {
