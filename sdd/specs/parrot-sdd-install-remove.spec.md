@@ -10,7 +10,7 @@ tags: [sdd-tooling, installer, cli, cleanup]
 **Feature ID**: FEAT-795
 **Date**: 2026-11-03
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 2.0.x
 
 ---
@@ -503,6 +503,7 @@ tests:
 - packages/ai-parrot/tests/sdd/test_sdd_cli.py
 - packages/ai-parrot/tests/sdd/test_installer.py
 - packages/ai-parrot/tests/sdd/test_installer_toolkits.py
+- packages/ai-parrot/tests/docs/test_getting_started_claims.py
 markers: none
 
 ### Test Data / Fixtures
