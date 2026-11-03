@@ -107,6 +107,16 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
     # Force-push to a long-lived branch. Feature branches are fine.
     # ERE has no negative lookahead, so --force-with-lease is excluded by a
     # separate test rather than inline in the pattern.
+    # A leading "+" on a refspec forces the update just like --force
+    # (git push origin +dev, +HEAD:main, +refs/heads/main) — issue:047c5435b564.
+    if echo "$SCAN" | grep -qE 'git\s+([^;&|]*\s)?push\b' \
+       && echo "$SCAN" | grep -qE '(\s)\+([^[:space:];&|]*:)?(refs/heads/)?(main|dev|staging|master)(\s|$|[;&|])'; then
+        block "Force-push to a protected branch (main/dev/staging) rewrites history other worktrees and CI depend on." \
+            "git push origin <feature-branch>        # push your own branch" \
+            "gh pr create --base dev                 # land it through a PR" \
+            "# Genuinely need to overwrite your OWN feature branch?" \
+            "git push --force-with-lease origin <feature-branch>"
+    fi
     if echo "$SCAN" | grep -qE 'git\s+push\b' \
        && echo "$SCAN" | grep -qE '(\s|^)(-f|--force)(\s|$|=)' \
        && ! echo "$SCAN" | grep -q -- '--force-with-lease'; then

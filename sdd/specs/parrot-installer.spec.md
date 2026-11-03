@@ -738,8 +738,9 @@ class ToolkitTemplate(BaseModel):
     stdlib-only `parrot.sdd.scripts.dangerous_actions` served as `parrot sdd hooks dangerous-actions --hook`
     (launcher fast path, like `SDD_HOOK_ARGV`), answering with the `permissionDecision: "deny"` JSON the
     worktree guard already uses — one executable, no shell operators, so the same command line runs under
-    cmd, PowerShell and bash. Protected branches come from `sdd/config.json` (`base_branch`,
-    `staging_branch`, `hotfix_base`) plus `main`/`master`; rules add Windows (`Remove-Item -Recurse`,
+    cmd, PowerShell and bash. Protected branches are `dev`, `main`, `master` and `staging` always, plus
+    `base_branch`, `staging_branch` and `hotfix_base` from `sdd/config.json` (FEAT-792 D2: the config adds lanes,
+    it never removes the defaults); a force-push is `--force`/`-f` or a `+refspec` (FEAT-792); rules add Windows (`Remove-Item -Recurse`,
     `rd|rmdir /s`, `del /s`, `format X:`) and macOS (`diskutil erase*|partitionDisk`) destroyers; the bare-`pip`
     rule applies only when the repo has `uv.lock`; `PARROT_ALLOW_DANGEROUS=1` stays the escape hatch.
     `install` (claude host) merges one `PreToolUse` entry (matcher `Bash|Edit|Write|MultiEdit`) into
