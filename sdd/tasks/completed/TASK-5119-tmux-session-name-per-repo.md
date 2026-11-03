@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.12 — ledger fixes)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5118, TASK-5101
@@ -86,5 +86,6 @@ above; close with `parrot sdd task close TASK-5119 parrot-installer verified`.
 ---
 
 ## Completion Note
-
-_(filled on close)_
+**Completed by**: Claude Opus 5.5 (/sdd-fix, sequential)
+**Date**: 2026-11-03
+**Notes**: `tmux_session_name(feature_id, slug)` → `sdd-<feat-id>-<slug>`, lower-cased, runs outside `[a-z0-9_-]` → `-`, slug truncated to keep ≤ 64 chars. `_existing_session()` falls back to a live legacy `sdd-<FEAT-ID>` only when its `#{session_path}` is inside the primary checkout (feature worktrees live under it), so another repo's session is never attached; no `display-message` call when no legacy session exists. 6 new tests (name rules, truncation, legacy refuse/reattach in this repo, other repo ignored); mutation-checked (dropping the path guard or the fallback fails them). test_sdd_launch.py 47 passed; ruff clean. The FEAT-768 spec text (`sdd-<FEAT-ID>`) is historical and left as is; docs table updated.

@@ -1377,11 +1377,11 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": "2026-11-03T02:26:40+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-03T02:28:26+00:00",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -1389,7 +1389,8 @@
         "TASK-5101"
       ],
       "parallelism_notes": "issue:a94869a0df2b; feature_launcher.py last owned by TASK-5100/5101",
-      "file": "sdd/tasks/active/TASK-5119-tmux-session-name-per-repo.md"
+      "file": "sdd/tasks/completed/TASK-5119-tmux-session-name-per-repo.md",
+      "verification": "verified"
     }
   ],
   "amended_at": "2026-11-03T00:00:00+00:00",
