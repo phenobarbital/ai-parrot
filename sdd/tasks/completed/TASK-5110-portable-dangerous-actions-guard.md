@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.11, amendment C32)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5109 (TASK-4085, TASK-4089, TASK-4509 already done)
@@ -306,6 +306,6 @@ When you pick up this task:
 ## Completion Note
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 5.5 (sdd-start)
+**Date**: 2026-11-03
+**Notes**: Stdlib port in `parrot/sdd/scripts/dangerous_actions.py` (`evaluate`, `main`, `Verdict`), mounted as `parrot sdd hooks dangerous-actions`, launcher fast path `DANGEROUS_HOOK_ARGV` (verified: via `main_parrot()` the hook never imports `parrot.cli`). Installer: `dangerous_hook_command`, `dangerous-guard` / `dangerous-guard-remove` plan steps, receipt `settings_hooks`, `--no-dangerous-guard`, `sdd_status()["dangerous_guard"]`. 97 new tests incl. bash parity; 198 passed with the existing sdd/launcher suites. Start-up timings (`python -m`, `ls` payload): dangerous-actions 0.19 s vs worktree guard 0.14 s. Deviation: `ssh <host> "<cmd>"` is treated as shell-exec (quotes neutralized) even without `-c` — the bash hook only did so with `-c`, so this is slightly stricter. `parrot.sdd.config` is loaded only when the repo has `sdd/config.json`.
