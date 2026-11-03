@@ -36,7 +36,9 @@ def _regular(path: Path, mode: int | None = None) -> bool:
         value = path.lstat()
     except OSError:
         return False
-    return stat.S_ISREG(value.st_mode) and not path.is_symlink() and (mode is None or stat.S_IMODE(value.st_mode) == mode)
+    return (
+        stat.S_ISREG(value.st_mode) and not path.is_symlink() and (mode is None or stat.S_IMODE(value.st_mode) == mode)
+    )
 
 
 def _cache(path: Path) -> Path | None:
@@ -96,7 +98,9 @@ def _root(worktree: Path) -> Path | None:
         git = shutil.which("git", path=os.defpath)
         if git is None:
             return None
-        result = subprocess.run([git, "rev-parse", "--show-toplevel"], cwd=root, capture_output=True, text=True, timeout=2)
+        result = subprocess.run(
+            [git, "rev-parse", "--show-toplevel"], cwd=root, capture_output=True, text=True, timeout=2
+        )
         candidate = Path(result.stdout.strip()).resolve(strict=True)
     except (OSError, subprocess.SubprocessError):
         return None
@@ -134,7 +138,10 @@ def _context(cache: Path) -> dict[str, object] | None:
     required = {"schema_version", "launch_id", "feature_id", "slug", "worktree", "index", "desktop_env"}
     if not isinstance(document, dict) or set(document) != required or type(document.get("schema_version")) is not int:
         return None
-    if document["schema_version"] != 1 or any(not isinstance(document.get(key), str) or not document[key] for key in required - {"schema_version", "desktop_env"}):
+    if document["schema_version"] != 1 or any(
+        not isinstance(document.get(key), str) or not document[key]
+        for key in required - {"schema_version", "desktop_env"}
+    ):
         return None
     desktop = document["desktop_env"]
     if document["launch_id"] != cache.name or not isinstance(desktop, dict):
@@ -143,7 +150,12 @@ def _context(cache: Path) -> dict[str, object] | None:
         return None
     worktree = _root(Path(document["worktree"]))
     expected = _index(worktree, document["slug"]) if worktree else None
-    if worktree is None or str(worktree) != document["worktree"] or expected is None or document["index"] != expected[1]:
+    if (
+        worktree is None
+        or str(worktree) != document["worktree"]
+        or expected is None
+        or document["index"] != expected[1]
+    ):
         return None
     data = _read(expected[0], None)
     return document if isinstance(data, dict) and data.get("feature_id") == document["feature_id"] else None
@@ -152,7 +164,11 @@ def _context(cache: Path) -> dict[str, object] | None:
 def configure_notification(cache: Path, *, worktree: Path, env: Mapping[str, str]) -> str | None:
     """Write validated launch context and return a quoted Stop command."""
     cache = _cache(cache)
-    feature_id, slug, desktop_raw = (env.get("PARROT_SDD_NOTIFY_FEATURE"), env.get("PARROT_SDD_NOTIFY_SLUG"), env.get("PARROT_SDD_NOTIFY_DESKTOP"))
+    feature_id, slug, desktop_raw = (
+        env.get("PARROT_SDD_NOTIFY_FEATURE"),
+        env.get("PARROT_SDD_NOTIFY_SLUG"),
+        env.get("PARROT_SDD_NOTIFY_DESKTOP"),
+    )
     if cache is None or not isinstance(feature_id, str) or not feature_id or not isinstance(slug, str) or not slug:
         _warn("invalid launch state")
         return None
@@ -163,14 +179,30 @@ def configure_notification(cache: Path, *, worktree: Path, env: Mapping[str, str
     root = _root(worktree)
     index = _index(root, slug) if root else None
     data = _read(index[0], None) if index else None
-    if not isinstance(desktop, dict) or any(key not in DESKTOP_KEYS or not isinstance(value, str) for key, value in desktop.items()) or index is None or not isinstance(data, dict) or data.get("feature_id") != feature_id:
+    if (
+        not isinstance(desktop, dict)
+        or any(key not in DESKTOP_KEYS or not isinstance(value, str) for key, value in desktop.items())
+        or index is None
+        or not isinstance(data, dict)
+        or data.get("feature_id") != feature_id
+    ):
         _warn("invalid notification metadata")
         return None
-    context: dict[str, object] = {"schema_version": 1, "launch_id": cache.name, "feature_id": feature_id, "slug": slug, "worktree": str(root), "index": index[1], "desktop_env": desktop}
+    context: dict[str, object] = {
+        "schema_version": 1,
+        "launch_id": cache.name,
+        "feature_id": feature_id,
+        "slug": slug,
+        "worktree": str(root),
+        "index": index[1],
+        "desktop_env": desktop,
+    }
     if not _write(cache / "notify-context.json", context):
         _warn("could not save launch context")
         return None
-    return shlex.join([str(Path(sys.executable).resolve()), "-S", str(Path(__file__).resolve()), "--hook", "--cache", str(cache)])
+    return shlex.join(
+        [str(Path(sys.executable).resolve()), "-S", str(Path(__file__).resolve()), "--hook", "--cache", str(cache)]
+    )
 
 
 def record_completion(env: Mapping[str, str]) -> bool:
@@ -185,14 +217,24 @@ def record_completion(env: Mapping[str, str]) -> bool:
     index = _index(worktree, str(context["slug"]))
     data = _read(index[0], None) if index else None
     tasks = data.get("tasks") if isinstance(data, dict) else None
-    if not isinstance(tasks, list) or not tasks or any(not isinstance(task, dict) or task.get("status") != "done" for task in tasks):
+    if (
+        not isinstance(tasks, list)
+        or not tasks
+        or any(not isinstance(task, dict) or task.get("status") != "done" for task in tasks)
+    ):
         _warn("feature tasks are incomplete")
         return False
     head = _head(worktree)
     if head is None:
         _warn("could not read Git head")
         return False
-    receipt: dict[str, object] = {"schema_version": 1, "launch_id": context["launch_id"], "feature_id": context["feature_id"], "worktree": context["worktree"], "head": head}
+    receipt: dict[str, object] = {
+        "schema_version": 1,
+        "launch_id": context["launch_id"],
+        "feature_id": context["feature_id"],
+        "worktree": context["worktree"],
+        "head": head,
+    }
     if not _write(cache / "notify-complete.json", receipt):
         _warn("could not save completion receipt")
         return False
@@ -203,7 +245,12 @@ def _receipt(cache: Path, context: Mapping[str, object]) -> bool:
     """Return whether a strict receipt matches context and the current Git HEAD."""
     document = _read(cache / "notify-complete.json")
     required = {"schema_version", "launch_id", "feature_id", "worktree", "head"}
-    if not isinstance(document, dict) or set(document) != required or type(document.get("schema_version")) is not int or document["schema_version"] != 1:
+    if (
+        not isinstance(document, dict)
+        or set(document) != required
+        or type(document.get("schema_version")) is not int
+        or document["schema_version"] != 1
+    ):
         return False
     if any(not isinstance(document.get(key), str) or not document[key] for key in required - {"schema_version"}):
         return False
@@ -238,8 +285,17 @@ def handle_stop(payload: Mapping[str, object], *, cache: Path) -> None:
         if not notify_send:
             return
         title = f"SDD work completed: {context['feature_id']}"
-        body = f"{html.escape(str(context['slug']))}\n{html.escape(str(context['worktree']))}\nClaude Code remains open."
-        subprocess.run([notify_send, "--urgency=normal", "--app-name=AI-Parrot SDD", title, body], env=desktop, shell=False, timeout=3, check=False, capture_output=True)
+        body = (
+            f"{html.escape(str(context['slug']))}\n{html.escape(str(context['worktree']))}\nClaude Code remains open."
+        )
+        subprocess.run(
+            [notify_send, "--urgency=normal", "--app-name=AI-Parrot SDD", title, body],
+            env=desktop,
+            shell=False,
+            timeout=3,
+            check=False,
+            capture_output=True,
+        )
     except (OSError, subprocess.SubprocessError):
         _warn("delivery failed")
 

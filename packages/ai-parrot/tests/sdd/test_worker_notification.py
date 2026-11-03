@@ -1,4 +1,5 @@
 """Deterministic receipt and desktop-hook tests without a desktop or Claude."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -68,21 +69,28 @@ def _notifier(tmp_path: Path) -> Path:
     return result
 
 
-def test_completion_and_stop_keep_cli_alive(state: tuple[Path, Path, dict[str, str]], notification_module: ModuleType, tmp_path: Path) -> None:
+def test_completion_and_stop_keep_cli_alive(
+    state: tuple[Path, Path, dict[str, str]], notification_module: ModuleType, tmp_path: Path
+) -> None:
     """A current explicit receipt sends once under python -S without ending another CLI."""
     worktree, cache, environment = state
     environment["PARROT_SDD_NOTIFY_DESKTOP"] = json.dumps({"PATH": str(tmp_path), "DISPLAY": ":99"})
     command = notification_module.configure_notification(cache, worktree=worktree, env=environment)
     assert command is not None and " -S " in command and str(cache) in command
     assert (cache / "notify-context.json").stat().st_mode & 0o777 == 0o600
-    complete = subprocess.run([sys.executable, "-S", str(HELPER), "--complete"], env=environment, text=True, capture_output=True)
+    complete = subprocess.run(
+        [sys.executable, "-S", str(HELPER), "--complete"], env=environment, text=True, capture_output=True
+    )
     assert complete.returncode == 0 and complete.stdout == ""
     record = _notifier(tmp_path)
     cli = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(10)"])
     try:
         hook = subprocess.run(
             [sys.executable, "-S", str(HELPER), "--hook", "--cache", str(cache)],
-            input=json.dumps({"hook_event_name": "Stop"}), env={"PATH": "/poisoned", "HOME": "/secret"}, text=True, capture_output=True,
+            input=json.dumps({"hook_event_name": "Stop"}),
+            env={"PATH": "/poisoned", "HOME": "/secret"},
+            text=True,
+            capture_output=True,
         )
         assert hook.returncode == 0 and hook.stdout == "" and cli.poll() is None, hook.stderr
     finally:
@@ -90,14 +98,21 @@ def test_completion_and_stop_keep_cli_alive(state: tuple[Path, Path, dict[str, s
         cli.wait(timeout=2)
     argv, received_environment = json.loads(record.read_text(encoding="utf-8"))
     escaped_worktree = str(worktree).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    assert argv == ["--urgency=normal", "--app-name=AI-Parrot SDD", "SDD work completed: FEAT-793", f"test &amp; &lt;slug&gt;\n{escaped_worktree}\nClaude Code remains open."]
+    assert argv == [
+        "--urgency=normal",
+        "--app-name=AI-Parrot SDD",
+        "SDD work completed: FEAT-793",
+        f"test &amp; &lt;slug&gt;\n{escaped_worktree}\nClaude Code remains open.",
+    ]
     assert received_environment["DISPLAY"] == ":99"
     assert received_environment["PATH"] == str(tmp_path)
     assert "HOME" not in received_environment
     assert (cache / "notify-complete.json").stat().st_mode & 0o777 == 0o600
 
 
-def test_overlapping_stop_claims_once(state: tuple[Path, Path, dict[str, str]], notification_module: ModuleType, tmp_path: Path) -> None:
+def test_overlapping_stop_claims_once(
+    state: tuple[Path, Path, dict[str, str]], notification_module: ModuleType, tmp_path: Path
+) -> None:
     """Real concurrent hook processes claim delivery once and repeated complete preserves it."""
     worktree, cache, environment = state
     environment["PARROT_SDD_NOTIFY_DESKTOP"] = json.dumps({"PATH": str(tmp_path)})
@@ -116,7 +131,9 @@ def test_overlapping_stop_claims_once(state: tuple[Path, Path, dict[str, str]], 
 
 
 @pytest.mark.parametrize("case", ["symlink", "escape", "stale", "oversize", "bad-mode"])
-def test_invalid_state_is_nonblocking(state: tuple[Path, Path, dict[str, str]], notification_module: ModuleType, case: str) -> None:
+def test_invalid_state_is_nonblocking(
+    state: tuple[Path, Path, dict[str, str]], notification_module: ModuleType, case: str
+) -> None:
     """Symlinked, escaping, stale, oversized, and invalid-mode state never claims delivery."""
     worktree, cache, environment = state
     assert notification_module.configure_notification(cache, worktree=worktree, env=environment)
@@ -135,7 +152,12 @@ def test_invalid_state_is_nonblocking(state: tuple[Path, Path, dict[str, str]], 
     elif case == "bad-mode":
         cache.chmod(0o755)
     if case == "oversize":
-        result = subprocess.run([sys.executable, "-S", str(HELPER), "--hook", "--cache", str(cache)], input="x" * (64 * 1024 + 1), text=True, capture_output=True)
+        result = subprocess.run(
+            [sys.executable, "-S", str(HELPER), "--hook", "--cache", str(cache)],
+            input="x" * (64 * 1024 + 1),
+            text=True,
+            capture_output=True,
+        )
         assert result.returncode == 0 and result.stdout == ""
     else:
         notification_module.handle_stop({"hook_event_name": "Stop"}, cache=cache)
