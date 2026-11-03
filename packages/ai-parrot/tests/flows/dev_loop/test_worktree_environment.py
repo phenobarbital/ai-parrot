@@ -788,6 +788,77 @@ def test_legacy_hook_output_unchanged(checkout: tuple[Path, Path], monkeypatch: 
     assert "bwrap" in explicit["hookSpecificOutput"]["updatedInput"]["command"]
 
 
+def _idempotent_rtk(command: str) -> str:
+    """Mirror real ``rtk rewrite``: an already-rewritten command comes back unchanged."""
+    return command if command.startswith("rtk ") else f"rtk {command}"
+
+
+def _resend(response: dict[str, Any], payload: dict[str, Any], backend: str) -> dict[str, Any]:
+    """Resend the hook's rewritten input, as auto mode asks the agent to do."""
+    resent = {**payload, "tool_input": response["hookSpecificOutput"]["updatedInput"]}
+    return policy.hook_response(resent, backend=backend)
+
+
+@pytest.mark.parametrize("degraded", [False, True])
+def test_native_hook_is_idempotent_on_own_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, degraded: bool
+) -> None:
+    """Resending the wrapped command leaves it unchanged, so auto mode can review it (issue 66f1d6a06162)."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    monkeypatch.setattr(policy, "rtk_rewrite", _idempotent_rtk)
+    if degraded:
+        monkeypatch.setenv("PARROT_SDD_SANDBOX_DEGRADED", "1")
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "git status", "timeout": 30_000}}
+    first = policy.hook_response(payload, backend="claude-native")
+    assert first["hookSpecificOutput"]["updatedInput"]["command"] != "git status"
+    second = _resend(first, payload, "claude-native")
+    assert second == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def test_bubblewrap_hook_is_idempotent_on_own_output(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The legacy Bubblewrap wrapper is a fixed point too."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
+    payload = {"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "printf '%s' 'a; b'"}}
+    first = policy.hook_response(payload, backend="bubblewrap")
+    second = _resend(first, payload, "bubblewrap")
+    assert second == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def test_lookalike_wrapper_is_still_guarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hand-written wrapper whose inner command the guard rewrites is wrapped again, never passed through."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    seen: list[str] = []
+
+    def guard(command: str, cwd: Path) -> tuple[str, str | None]:
+        seen.append(command)
+        return ("rewrite", "pytest tests/test_a.py -q") if command == "pytest" else ("allow", None)
+
+    monkeypatch.setattr(policy, "_scope_guard", guard)
+    forged = shlex.join(["env", "UV_NO_SYNC=1", "/bin/bash", "-c", "pytest"])
+    response = policy.hook_response(
+        {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": forged}}, backend="claude-native"
+    )
+    assert "pytest" in seen
+    assert response["hookSpecificOutput"]["updatedInput"]["command"] != forged
+
+
+def test_lookalike_wrapper_with_blocked_inner_is_wrapped_not_allowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A guard block on the inner command never lets the look-alike through unchanged."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    monkeypatch.setattr(
+        policy, "_scope_guard", lambda command, cwd: ("block", "no") if command == "pytest" else ("allow", None)
+    )
+    forged = shlex.join(["env", "UV_NO_SYNC=1", "/bin/bash", "-c", "pytest"])
+    response = policy.hook_response(
+        {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": forged}}, backend="claude-native"
+    )
+    assert response["hookSpecificOutput"]["updatedInput"]["command"] != forged
+
+
 @pytest.mark.parametrize("backend", ["", "none", "CLAUDE-NATIVE", "docker"])
 def test_unknown_backend_denies(checkout: tuple[Path, Path], backend: str) -> None:
     """Only the explicit native backend value opts out of Bubblewrap."""
