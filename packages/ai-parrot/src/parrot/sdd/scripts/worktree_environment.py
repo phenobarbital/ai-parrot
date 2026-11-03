@@ -522,8 +522,84 @@ def _load_native_sandbox() -> Any:
     return native_claude_sandbox
 
 
+DEGRADED_BANNER = "echo '[sdd] degraded sandbox: no OS write boundary' >&2; "
+
+
+def _wrap_bash(command: str, cwd: Path, tool_input: dict[str, Any], native: Any) -> str:
+    """Run one Bash command through the scope guard, RTK and the sandbox wrapper.
+
+    Args:
+        command: The shell text to wrap.
+        cwd: The hook's working directory.
+        tool_input: The native ``Bash`` tool input, for the timeout fields.
+        native: The ``native_claude_sandbox`` module, or ``None`` for Bubblewrap.
+
+    Returns:
+        The wrapped command line.
+
+    Raises:
+        ValueError: The test-scope guard blocked the command.
+    """
+    task_cwd = native.native_task_cwd(cwd, command) if native else cwd
+    action, value = _scope_guard(command, task_cwd)
+    if action == "block":
+        raise ValueError(value or "over-broad pytest blocked by the test-scope guard")
+    if action in ("rewrite", "verdict") and value:
+        command = value
+    # After the guard, which must see the raw runner (`pytest`, not `rtk pytest`).
+    if optimized := rtk_rewrite(command):
+        command = optimized
+    if native and os.environ.get(native.DEGRADED_ENV) == "1":
+        command = DEGRADED_BANNER + command
+    shell = bounded_shell_argv(command, tool_input)
+    if native:
+        env = native.native_command_environment(task_cwd)
+        wrapped = ["env", *(f"{key}={value}" for key, value in env.items()), *shell]
+    else:
+        wrapped = protected_argv(cwd, shell)
+    return shlex.join(wrapped)
+
+
+def _is_own_wrapper(command: str, cwd: Path, tool_input: dict[str, Any], native: Any) -> bool:
+    """True when ``command`` is exactly what this hook would emit for the command it wraps.
+
+    Auto mode reviews a Bash call before hooks run; when a hook changes it, the
+    agent must resend the rewritten text verbatim. Re-wrapping that text would
+    change it again on every attempt, so auto mode could never approve it. The
+    inner command is run through the full pipeline again — guard, RTK, wrapper —
+    and only a byte-identical result counts, so a hand-written look-alike wrapper
+    never skips the guard.
+
+    Args:
+        command: The Bash command the seat issued.
+        cwd: The hook's working directory.
+        tool_input: The native ``Bash`` tool input.
+        native: The ``native_claude_sandbox`` module, or ``None`` for Bubblewrap.
+
+    Returns:
+        Whether the command is already this hook's own, unchanged output.
+    """
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return False
+    if len(argv) < 4 or argv[-3:-1] != ["/bin/bash", "-c"]:
+        return False
+    inner = argv[-1]
+    if native and os.environ.get(native.DEGRADED_ENV) == "1":
+        inner = inner.removeprefix(DEGRADED_BANNER)
+    try:
+        return _wrap_bash(inner, cwd, tool_input, native) == command
+    except (OSError, ValueError, RuntimeError, KeyError):
+        return False
+
+
 def hook_response(payload: dict[str, Any], *, backend: str = "bubblewrap") -> dict[str, Any]:
-    """Apply guards and file checks; omit bwrap only for explicit claude-native mode; deny invalid modes."""
+    """Apply guards and file checks; omit bwrap only for explicit claude-native mode; deny invalid modes.
+
+    The Bash rewrite is idempotent: a command that already is this hook's output
+    passes through without ``updatedInput``, so auto mode can review the resent call.
+    """
     cwd = Path(payload["cwd"])
     tool_input = payload["tool_input"]
     output: dict[str, Any] = {"hookEventName": "PreToolUse"}
@@ -535,26 +611,10 @@ def hook_response(payload: dict[str, Any], *, backend: str = "bubblewrap") -> di
             command = tool_input["command"]
             if not isinstance(command, str) or not command:
                 raise ValueError("Bash command must be a non-empty string")
-            task_cwd = native.native_task_cwd(cwd, command) if native else cwd
-            action, value = _scope_guard(command, task_cwd)
-            if action == "block":
-                raise ValueError(value or "over-broad pytest blocked by the test-scope guard")
-            if action in ("rewrite", "verdict") and value:
-                command = value
-            # After the guard, which must see the raw runner (`pytest`, not `rtk pytest`).
-            if optimized := rtk_rewrite(command):
-                command = optimized
-            if native and os.environ.get(native.DEGRADED_ENV) == "1":
-                command = "echo '[sdd] degraded sandbox: no OS write boundary' >&2; " + command
-            shell = bounded_shell_argv(command, tool_input)
-            if native:
-                env = native.native_command_environment(task_cwd)
-                wrapped = ["env", *(f"{key}={value}" for key, value in env.items()), *shell]
-            else:
-                wrapped = protected_argv(cwd, shell)
-            # Preserve timeout/background/description without granting approval
-            # or overriding decisions from other hooks.
-            output["updatedInput"] = {**tool_input, "command": shlex.join(wrapped)}
+            if not _is_own_wrapper(command, cwd, tool_input, native):
+                # Preserve timeout/background/description without granting approval
+                # or overriding decisions from other hooks.
+                output["updatedInput"] = {**tool_input, "command": _wrap_bash(command, cwd, tool_input, native)}
         else:
             path = tool_input.get("file_path") or tool_input.get("notebook_path")
             if not isinstance(path, str):
