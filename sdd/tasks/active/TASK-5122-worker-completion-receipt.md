@@ -8,6 +8,15 @@
 **Depends-on**: none
 **Assigned-to**: unassigned
 
+## Rework Notice (attempt 2, after review)
+
+Both files already exist from a rejected first delivery (qwen) and are now MODIFY targets. The existing code is a happy-path draft and MUST be reworked to satisfy every AC below. Confirmed gaps to fix:
+- `main()` returns 1 on invalid input/operational failure; AC-4/AC-5 require exit 0, empty stdout, at most one concise warning.
+- Missing validation: symlinked state files/cache, UUID-v4 cache name, 0700 cache mode, `schema_version == 1` and field types on context AND receipt, index path containment under the worktree, exact context fields from spec §2, oversize/malformed JSON.
+- `handle_stop` must not require `slug` outside the validated context, must use captured desktop env only (`env=` exact title/body from spec), and must claim `notify-attempted` with `os.open(O_CREAT|O_EXCL, 0o600)`.
+- Tests are happy-path only. Replace with the full spec §4 matrix: real competing `--hook` subprocesses for the claim race, `python -S` runs with a fake `notify-send` capturing argv/env, a living fake CLI process, poisoned ambient env, metacharacter/space paths, stale HEAD, fresh UUID, symlink and escaping-index rejection, mode checks. Remove the assertion that invalid input returns nonzero.
+Read the spec (`sdd/specs/tmux-notify-worker.spec.md`) §2–§4 in full before editing.
+
 ## Context
 
 Implement spec §2 launch/delivery contract and §3 M1. Completion is explicitly recorded after review and push; a Stop event alone is never proof of completion.
@@ -90,11 +99,11 @@ Verified data references: `sdd/tasks/index/composite-datasets.json:17` uses task
   "targets": [
     {
       "path": "packages/ai-parrot/src/parrot/sdd/scripts/worker_notification.py",
-      "action": "CREATE"
+      "action": "MODIFY"
     },
     {
       "path": "packages/ai-parrot/tests/sdd/test_worker_notification.py",
-      "action": "CREATE"
+      "action": "MODIFY"
     }
   ],
   "contract_symbols": []
