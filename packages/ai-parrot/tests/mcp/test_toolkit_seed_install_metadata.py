@@ -99,12 +99,19 @@ def test_lsp_and_querysource_metadata() -> None:
     assert qs.requires_dist == ("parrot_tools", "querysource")
 
 
-@pytest.mark.parametrize("name", ["bounded-source", "targeted-writer"])
-def test_tool_optimization_templates_declare_ai_parrot_tools(name: str) -> None:
-    """Spec rev 0.5 C24 — both declare requires_dist parrot_tools + requires_pip ai-parrot-tools."""
-    tpl = load_template(name)
+def test_targeted_writer_template_declares_ai_parrot_tools() -> None:
+    """Spec rev 0.5 C24 — targeted-writer declares requires_dist parrot_tools + requires_pip ai-parrot-tools."""
+    tpl = load_template("targeted-writer")
     assert tpl.requires_dist == ("parrot_tools",)
     assert tpl.requires_pip == ("ai-parrot-tools",)
+    assert tpl.post_install == ()
+
+
+def test_bounded_source_template_is_core() -> None:
+    """Spec rev 0.12 C35 — bounded-source moved to core: no optional distribution is required."""
+    tpl = load_template("bounded-source")
+    assert tpl.requires_dist == ()
+    assert tpl.requires_pip == ()
     assert tpl.post_install == ()
 
 
