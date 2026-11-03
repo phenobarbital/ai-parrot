@@ -18,8 +18,8 @@ def _target(path: str, reason: str = "declared") -> TestTarget:
 
 
 def _argv(worktree: Path, marker: str, *paths: str) -> tuple[str, ...]:
-    """Return the historical pytest argv shape used by FEAT-699."""
-    return ("pytest", *AGENT_FLAGS, "-m", marker, "--confcutdir", str(worktree), *paths)
+    """Return pytest argv with a stable repository root for baseline node IDs."""
+    return ("pytest", *AGENT_FLAGS, "-m", marker, "--confcutdir", str(worktree), "--rootdir", str(worktree), *paths)
 
 
 def test_pytest_only_plans_preserve_historical_argv_tuples(tmp_path: Path) -> None:

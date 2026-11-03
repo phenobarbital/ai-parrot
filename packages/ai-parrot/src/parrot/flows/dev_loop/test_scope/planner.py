@@ -11,7 +11,9 @@ from .policy import AGENT_FLAGS, TIERS, ScopePolicy
 from .runners.registry import RunnerRegistry, load_registry
 
 # Decision from spike S2 (artifacts/logs/feat-563-s2-conftest-rootdir.md). Placeholders: {worktree}, {dist_root}.
-PER_DIST_EXTRA_ARGS: tuple[str, ...] = ("--confcutdir", "{worktree}")
+# Match the baseline runner's repository-relative JUnit node IDs while retaining
+# automatic discovery of the distribution's pytest configuration.
+PER_DIST_EXTRA_ARGS: tuple[str, ...] = ("--confcutdir", "{worktree}", "--rootdir", "{worktree}")
 
 # Preference order when the same path is selected under two different reasons
 # (lower index wins). Bounded by AC11.
