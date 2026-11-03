@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-794 — Prompt Library — writable again, with manual order
 **Spec**: `sdd/specs/prompt-library-writable-sort-order.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5125, TASK-5126
@@ -214,8 +214,27 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: claude-opus-5-5 (interactive session, Emmanuel Arroyo)
+**Date**: 2026-11-03
+**Notes**: `PromptLibraryManagement` gains `_set_updated_at` (returns `datetime.now()` on every write) and a
+`_set_update` override that drops `created_by` before delegating to `ModelView._set_update` — the update path only,
+so inserts still stamp the author. `UserPromptsManagement` untouched. The FILL IN about `updated_at` resolved itself:
+`_post_data` runs `_set_updated_at` for both PUT and POST, so the update dict already carries it.
+Tests through the real handler (aiohttp app + `PromptLibraryManagement.configure`, `app["database"]` = AsyncPool on
+`TEST_STUDIO_PG_DSN`, a middleware putting a real `SessionData` in `request["NAV_SESSION"]`): create without category
+→ 201, author stamped, category "other"; partial POST as another user → 202, only `sort_order`/`updated_at` change,
+author kept; GET → 200 for a pre-0009-style row and a handler-created one. Red first: `assert 22 == 11` (editor
+overwrote author) before the fix; create and GET already passed thanks to TASK-5125 + TASK-5126 (the staging failure
+is gone). Mutation check: without `_set_updated_at` the update test fails on `updated_at`.
+Validation: `test_prompt_library_handler.py` → 3 passed; plus the rest of the contract and the tests importing the
+handler: 124 passed in the server tree, 74 passed in `packages/ai-parrot/tests`. Pre-existing reds, identical on `dev`:
+`test_admin_ui_agent_crud.py` (3, needs a configured database: `password authentication failed for user "None"`) and
+`test_changelog_lists_the_plain_host_behaviour_changes` (see TASK-5128).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the handler tests are in a NEW file,
+`packages/ai-parrot-server/tests/handlers/test_prompt_library_handler.py`, not in
+`packages/ai-parrot/tests/handlers/test_prompt_library.py`. From `packages/ai-parrot/tests` a worktree run resolves
+`parrot.handlers` (and `parrot.handlers.studio`) to the main checkout's editable install (probed: `migrate.py` with
+`STUDIO_SCHEMA_REQUIRED == 8`), so those tests would exercise the unchanged handler and fail on the missing `agent_id`
+column for the wrong reason. The spec's Validation Contract (rev 0.3) lists the new file and the index contract was
+re-cached.
