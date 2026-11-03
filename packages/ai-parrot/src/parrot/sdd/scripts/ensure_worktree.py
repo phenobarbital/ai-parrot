@@ -92,7 +92,9 @@ def ensure(
          nowhere — the operator decides (reuse it, or pick another slug).
       4. Create — ``git worktree add -b <name> <path> <base_ref>``.
       5. Verify — every ``require_paths`` entry must exist inside the worktree.
-         A miss means the base does not carry the task artifacts yet.
+         A miss means the base does not carry the task artifacts yet: the new
+         worktree and branch are discarded, and when the paths are only on an
+         unpushed local ``<base_branch>`` the error says to push it.
       6. Return ``(absolute_path, created)``.
 
     Args:
@@ -133,21 +135,23 @@ def ensure(
         raise EnsureWorktreeError(f"Branch {plan.name!r} already exists but is not checked out in any worktree.")
 
     # Step 4: Create
-    _create_worktree(plan, target_path, repo_root=repo_root)
+    start_sha = _create_worktree(plan, target_path, repo_root=repo_root)
     try:
         _clear_upstream(plan, target_path)
     except EnsureWorktreeError:
-        _discard_new_worktree(plan, target_path, repo_root=repo_root)
+        _discard_new_worktree(plan, target_path, start_sha, repo_root=repo_root)
         raise
 
     # Step 5: Verify
     missing = _missing_paths(target_path, require_paths)
     if missing:
-        _discard_new_worktree(plan, target_path, repo_root=repo_root)
-        raise EnsureWorktreeError(
+        _discard_new_worktree(plan, target_path, start_sha, repo_root=repo_root)
+        message = (
             f"Verification failed: the following required paths were missing from the new worktree: "
             f"{', '.join(missing)}"
         )
+        hint = _unpushed_base_hint(plan, missing, repo_root=repo_root)
+        raise EnsureWorktreeError(f"{message}\n{hint}" if hint else message)
 
     return target_path, True
 
@@ -217,8 +221,13 @@ def _branch_exists(name: str, *, repo_root: Path) -> bool:
     return any(line.strip().replace("*", "").strip() == name for line in out.splitlines())
 
 
-def _create_worktree(plan: WorktreePlan, target_path: Path, *, repo_root: Path) -> None:
-    """``git worktree add -b <name> <path> <base_ref>``, pruning on failure."""
+def _create_worktree(plan: WorktreePlan, target_path: Path, *, repo_root: Path) -> str:
+    """``git worktree add -b <name> <path> <base_ref>``, pruning on failure.
+
+    Returns:
+        The commit SHA the new branch was created at, so a later cleanup can
+        delete the branch only while it still points there.
+    """
     target_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         _git("worktree", "add", "-b", plan.name, str(target_path), plan.base_ref, cwd=repo_root)
@@ -230,6 +239,45 @@ def _create_worktree(plan: WorktreePlan, target_path: Path, *, repo_root: Path) 
             except Exception:  # noqa: BLE001 — best effort, the original error is what matters
                 pass
         raise
+    return _git("rev-parse", "--verify", f"refs/heads/{plan.name}^{{commit}}", cwd=repo_root).strip()
+
+
+def _unpushed_base_hint(plan: WorktreePlan, missing: Sequence[str], *, repo_root: Path) -> str:
+    """Explain a verification miss caused by a local base branch ahead of origin.
+
+    The worktree is created from ``origin/<base>``, while ``/sdd-spec`` and
+    ``/sdd-task`` commit on the local ``<base>``. When the missing paths exist
+    on local ``<base>`` and it is ahead of ``origin/<base>``, the fix is a push.
+
+    Returns:
+        A one-line hint, or ``""`` when the local base does not explain the miss.
+    """
+    base = plan.base_ref.split("/", 1)[1]
+    local_ref = f"refs/heads/{base}"
+    try:
+        ahead = int(_git("rev-list", "--count", f"{plan.base_ref}..{local_ref}", cwd=repo_root).strip())
+    except (EnsureWorktreeError, ValueError):
+        return ""
+    if ahead == 0:
+        return ""
+    on_local = [
+        path
+        for path in missing
+        if subprocess.run(
+            ["git", "cat-file", "-e", f"{local_ref}:{path}"],
+            cwd=repo_root,
+            capture_output=True,
+            check=False,
+        ).returncode
+        == 0
+    ]
+    if not on_local:
+        return ""
+    noun = "commit" if ahead == 1 else "commits"
+    return (
+        f"Local {base!r} has {', '.join(on_local)} but is {ahead} {noun} ahead of {plan.base_ref}, "
+        f"and worktrees are created from {plan.base_ref}. Push it, then retry: git push origin {base}"
+    )
 
 
 _UPSTREAM_PROBE = ("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
@@ -266,13 +314,17 @@ def _clear_upstream(plan: WorktreePlan, target_path: Path) -> None:
         raise EnsureWorktreeError(f"Failed to clear upstream for newly created worktree {plan.name!r}.")
 
 
-def _discard_new_worktree(plan: WorktreePlan, target_path: Path, *, repo_root: Path) -> None:
+def _discard_new_worktree(plan: WorktreePlan, target_path: Path, start_sha: str, *, repo_root: Path) -> None:
     """Undo a worktree ``_create_worktree`` just made, after verification failed.
 
     Delete the directory and let ``git worktree prune`` drop the now-stale
-    registration, then remove the branch we created — a plain, non-forced
-    delete of an unpushed branch that carries no commits of its own, never a
-    forced delete of a branch that might hold real work. ``prune`` is
+    registration, then remove the branch we created with a compare-and-swap
+    on ``start_sha``: ``git update-ref -d refs/heads/<name> <start_sha>``
+    deletes it only while it still points at the commit it was created at,
+    so a branch that gained work of its own is kept. ``git branch -d`` is not
+    used: it checks "merged into HEAD" of the primary checkout, which fails
+    when the local base has diverged from ``origin/<base>`` and leaves the
+    branch behind, so every retry is refused at Step 3. ``prune`` is
     repo-wide by git's own design but harmless here: it only forgets
     registrations whose directory is already gone from disk, so a concurrent
     process's still-live worktree is never touched (verified empirically — an
@@ -282,7 +334,7 @@ def _discard_new_worktree(plan: WorktreePlan, target_path: Path, *, repo_root: P
         if target_path.is_dir():
             shutil.rmtree(target_path)
         _git("worktree", "prune", cwd=repo_root)
-        _git("branch", "-d", plan.name, cwd=repo_root)
+        _git("update-ref", "-d", f"refs/heads/{plan.name}", start_sha, cwd=repo_root)
     except Exception as cleanup_err:  # noqa: BLE001 — never mask the verification error
         logger.warning("Failed to clean up worktree/branch after verification failure: %s", cleanup_err)
 

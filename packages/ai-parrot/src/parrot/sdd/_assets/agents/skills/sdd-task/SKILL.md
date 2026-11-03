@@ -219,6 +219,9 @@ Example:
      files
    - verify cached names
    - commit `sdd: add <N> tasks for FEAT-NNN - <feature-slug>`
+   - publish the base branch: `git pull --no-rebase --no-edit origin <base_branch> && git push origin <base_branch>`
+     — worktrees are created from `origin/<base_branch>`, so an unpushed task set is invisible to the
+     next implementation run; on failure never force, stop and print that exact command
 
 ## Output
 
