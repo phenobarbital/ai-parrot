@@ -555,10 +555,18 @@ def render_markdown(
     rows.append(row + " |")
     cached = sum(len(record.cached) for record in records.values())
     rows.extend(["", f"cached (skipped, unchanged since green): {cached} target(s)"])
-    if unclassified_failures:
+    gate_results = (
+        rerun.suites if rerun is not None else tuple(result for record in records.values() for result in record.suites)
+    )
+    gate_new_red, _, gate_unknown = _baseline_counts(gate_results)
+    if rerun is not None and rerun.head_sha != final_head:
+        rows.append("Gate: ⚠️ final HEAD re-run is stale")
+    elif any(_is_failure(result) and ":" in result.suite for result in gate_results):
+        rows.append("Gate: ❌ non-pytest runner failed")
+    elif gate_new_red is None:
         rows.append("Gate: ⚠️ failures not classified")
-    elif baseline_totals[0] or baseline_totals[2]:
-        rows.append(f"Gate: ❌ {baseline_totals[0]} new red, {baseline_totals[2]} unknown")
+    elif gate_new_red or gate_unknown:
+        rows.append(f"Gate: ❌ {gate_new_red} new red, {gate_unknown} unknown")
     else:
         rows.append("Gate: ✅ no new reds")
     if rerun_skip_reason:

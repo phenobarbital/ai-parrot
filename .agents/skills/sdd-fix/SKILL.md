@@ -37,30 +37,38 @@ $sdd-fix ... --kind K --severity S --lane fast|sdd   # --lane fast is REFUSED (e
    key attributes for selection.
 2. **Select** — picker, or deterministic resolution from the arguments (issue-id → its whole group; --top N → first N groups).
    Require a positive N. An empty plan or an issue absent from it is a no-op with an explanation, never a guessed selection.
-3. **Claim** — one `wikitoolkit ledger claim <issue-id> --actor agent:sdd-fix` per issue in the group, immediately before
+3. **Claim** — first mint this session's actor ONCE: `ACTOR=agent:sdd-fix:<8 hex>` from
+   `python3 -c "import secrets; print(secrets.token_hex(4))"`, and reuse that literal string for every claim, close and unclaim
+   below (a constant `agent:sdd-fix` cannot tell this session's claims from a parallel session's). Then one
+   `wikitoolkit ledger claim <issue-id> --actor <ACTOR>` per issue in the group, immediately before
    executing. The plan is a snapshot; the claim is authoritative: a non-zero exit DROPS that issue and continues. Never close an
    issue merely because an earlier plan listed it. Skip groups with no successful claims; preserve the planned lane for remaining issues.
+   **Scope is fixed at claim time**: the issues this session claimed are its whole scope. Never widen it afterwards (a group
+   sibling, a QA follow-up, "fix the whole group?") — and never offer to — without first claiming each added issue with the
+   same actor; one whose claim fails belongs to another session and is dropped, never fixed or closed here.
 4. **Prime** — `wikitoolkit ledger context <group.files…> --max-tokens 3000` (full repo-relative paths from the plan, never basenames).
 5. **Route** by `group.lane`:
    - NEVER switch the main checkout's branch and never require it to be clean; every lane
-     works inside a worktree provisioned by `python -m scripts.sdd.ensure_worktree`.
+     works inside a worktree provisioned by `parrot sdd worktree ensure`.
      If execution cannot proceed, release successful claims in step 7.
    - **Fast lane** (`lane == "fast"`): one worktree and one PR per group.
-     `python -m scripts.sdd.ensure_worktree --json --slug <suggested_slug> --brief-key <issue-short-id> --base-branch dev`
-     plans `fix-<issue-short-id>-<suggested_slug>` off `origin/dev` and returns `<wt>`;
-     `--base-branch dev` is what selects the `fix-` prefix. Edit inside `<wt>`, run the affected
-     package's tests from `<wt>` with `PYTHONPATH=packages/<dist>/src` (a bare `pytest` there
-     imports the main checkout), `ruff check --fix` the changed files, `git -C <wt> commit`,
+     `parrot sdd worktree ensure --json --slug <suggested_slug> --brief-key <issue-short-id> --base-branch <base_branch>`
+     plans `fix-<issue-short-id>-<suggested_slug>` off `origin/<base_branch>` and returns `<wt>`;
+     `--base-branch <base_branch>` is what selects the `fix-` prefix. Edit inside `<wt>`, then test from `<wt>`:
+     when `sdd/config.json` sets `test_command`, run it once; otherwise run the affected package's tests, with
+     `PYTHONPATH` set to the worktree's package source when the repository's shared venv is editable-installed
+     against the main checkout (a bare `pytest` there imports the main checkout). Lint the changed files with
+     the linters the repository configures (`ruff check --fix` only when it configures ruff), `git -C <wt> commit`,
      `git -C <wt> push -u origin fix-<issue-short-id>-<suggested_slug>` (the tree has no
-     upstream by design), then `gh pr create --base dev --title … --body …`.
+     upstream by design), then `gh pr create --base <base_branch> --title … --body …`.
      ALWAYS a PR — there is no direct-push path. Once step 6 has closed the group's issues, reap
-     the tree: `python scripts/remove_worktree.py remove fix-<issue-short-id>-<suggested_slug>`
+     the tree: `/remove-worktree` for `fix-<issue-short-id>-<suggested_slug>`
      — never `--force`, never `--delete-branch` (the PR needs the remote branch). A refusal
      means something is uncommitted or unpushed: keep the tree and report it.
    - **SDD lane** (`lane == "sdd"`): if any `group.parents[].open` is true, reuse that parent spec (`$sdd-task <spec> --from-issue …` per issue);
-     otherwise `python -m scripts.sdd.reserve_ids --kind feature --count 1 --base-branch dev --label <suggested_slug>`, author
+     otherwise `parrot sdd ids reserve --kind feature --count 1 --base-branch <base_branch> --label <suggested_slug>`, author
      `sdd/specs/<suggested_slug>.spec.md` from the group, `$sdd-task`, then
-     `python -m scripts.sdd.ensure_worktree --slug <suggested_slug> --feature-id FEAT-<NNN>`. `$sdd-done <FEAT-ID>` closes it out, including the issues its verified tasks resolve.
+     `parrot sdd worktree ensure --slug <suggested_slug> --feature-id FEAT-<NNN>`. `$sdd-done <FEAT-ID>` closes it out, including the issues its verified tasks resolve.
      For a new spec, the slug comes from `suggested_slug`; never re-derive it. For a reused parent,
      use that parent index's existing slug, feature_id, spec and base_branch when provisioning the worktree.
      Task creation alone is not resolution: implement and validate the task in that worktree before step 6.
@@ -68,11 +76,13 @@ $sdd-fix ... --kind K --severity S --lane fast|sdd   # --lane fast is REFUSED (e
      `$sdd-done` finds the issue to close. If implementation does not finish in this session, hand the claim off (step 7).
 6. **Close** — two keys, fail-closed: an issue closes only if the implementing agent asserts its id as resolved AND at least one of
    its `files` appears in `git diff --name-only <base>...HEAD`. Then `wikitoolkit ledger close <issue-id> --reason "<what changed>"
-   --actor agent:sdd-fix --resolved-by commit:<sha>` (fast, the implementing commit on the pushed PR branch)
+   --actor <ACTOR> --resolved-by commit:<sha>` (fast, the implementing commit on the pushed PR branch)
    or `--resolved-by task:TASK-<NNN>` (SDD, a completed and validated task).
    Capture `<base>` before implementation and check the diff from the implementing checkout.
    Do not infer a merge or fabricate a merge SHA merely because a PR was opened.
-7. **Release** — every claimed issue that failed either key: `wikitoolkit ledger unclaim <issue-id> --reason "<why>" --actor agent:sdd-fix`.
+7. **Release** — every claimed issue that failed either key: `wikitoolkit ledger unclaim <issue-id> --reason "<why>" --actor <ACTOR>`.
+   `ledger close`/`unclaim` refuse an issue claimed by another actor (exit 1, naming the claimant): that issue is not
+   this session's — report it and leave it; never pass `--force` to get past it.
    Run release on every exit path, including test/push/PR failures or interrupted execution.
    If unclaim itself fails, report the issue ID and reason for recovery; do not claim success.
    Never leave an issue claimed silently; acknowledgement stays human-only and out of scope here.

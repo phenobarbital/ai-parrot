@@ -21,21 +21,14 @@ The dev-loop flow binds one of several subagents per dispatch:
 * ``sdd-coder`` — task-scoped, code-only coder used by every FEAT-549
   seat; dual-sourced (repo twin at ``.claude/agents/sdd-coder.md``).
 
-``load_subagent_definition`` reads **only** the package-shipped copy at
-``_subagent_data/<name>.md`` — this is the canonical, always-available
-source for dispatch (it keeps working when ``ai-parrot`` is installed as
-a wheel outside the repo). It does NOT read ``.claude/agents/`` at
-runtime.
-
-Four of the five prompts (``sdd-research``, ``sdd-worker``, ``sdd-qa``,
-``sdd-secondopinion``) additionally have a repo-level twin at
-``.claude/agents/<name>.md``, used by Claude Code interactively when
-``setting_sources=["project"]``. ``sdd-codereview`` is dev-loop-internal
-only and has no repo-level counterpart. Byte-parity between the two
-copies of each dual-sourced prompt (repo is the newer, edited-by-humans
-copy; package is what dispatch actually uses) is enforced by
-``tests/flows/dev_loop/test_subagent_parity.py`` — keeping them in sync
-is a review/test discipline, not a runtime behavior.
+``load_subagent_definition`` reads the packaged SDD asset at
+``parrot/sdd/_assets/claude/agents/<name>.md`` (FEAT-633 C2) — the ONLY
+copy of every prompt that Claude Code also loads from ``.claude/agents/``.
+That asset is generated from ``.claude/agents/`` by
+``scripts/sdd/check_asset_sync.py --write`` and gated in CI, so it keeps
+working when ``ai-parrot`` is installed as a wheel outside the repo.
+``sdd-codereview`` is dev-loop-internal only (no ``.claude/agents/`` twin)
+and is still read from ``_subagent_data/sdd-codereview.md``.
 
 This module exposes a single helper, :func:`load_subagent_definition`,
 that returns the **body** of a definition (with the YAML frontmatter
@@ -65,6 +58,9 @@ _VALID_NAMES: frozenset[str] = frozenset(
         "sdd-coder",
     }
 )
+
+#: No ``.claude/agents/`` twin — stays in ``_subagent_data/`` (FEAT-633 C2).
+_CORE_ONLY: frozenset[str] = frozenset({"sdd-codereview"})
 
 
 def _strip_frontmatter(text: str) -> str:
@@ -111,8 +107,11 @@ def load_subagent_definition(name: str) -> str:
     """
     if name not in _VALID_NAMES:
         raise ValueError(f"Unknown subagent name {name!r}. Expected one of " f"{sorted(_VALID_NAMES)}.")
-    data_dir = files("parrot.flows.dev_loop") / "_subagent_data"
-    target = data_dir / f"{name}.md"
+    if name in _CORE_ONLY:
+        target = files("parrot.flows.dev_loop") / "_subagent_data" / f"{name}.md"
+    else:
+        # FEAT-633 C2: the packaged SDD asset is the ONLY copy of a prompt that Claude Code also loads.
+        target = files("parrot.sdd") / "_assets" / "claude" / "agents" / f"{name}.md"
     text = target.read_text(encoding="utf-8")
     return _strip_frontmatter(text)
 

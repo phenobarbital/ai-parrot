@@ -4,6 +4,9 @@ This guide describes the principal-keyed OAuth2 connection model introduced by
 FEAT-773. A connection belongs to a Navigator principal, not to the channel
 through which it was created.
 
+See also [delegated-auth-web-deployment.md](delegated-auth-web-deployment.md) for the
+web-channel deployment recipe, the live E2E harness and the gaps found on the first live run.
+
 ## Principal and key layout
 
 The live Redis cache uses `oauth2:{provider}:{user_id}`. The refresh lock is
@@ -28,12 +31,36 @@ Provider-specific post-exchange behavior is registered by hook name in the
 typed hook registry. Descriptors name the hook; they do not import arbitrary
 Python paths.
 
+### Built-in providers (no descriptor needed)
+
+Two providers are wired by `BotManager.setup()` directly from the environment,
+without a descriptor entry. Each is registered only when its client id is set,
+and each is skipped when a manager for it already exists on the app (the
+Slack / MS Teams bot configs build their own). A misconfigured provider is
+logged and skipped — it never prevents server startup.
+
+| Provider | Environment keys | Registered by |
+|---|---|---|
+| Office 365 | `O365_CLIENT_ID` `O365_CLIENT_SECRET` `O365_TENANT_ID` `O365_REDIRECT_URI` (default `http://localhost:5000/api/auth/oauth2/o365/callback`) | `BotManager._register_o365_oauth2_provider` |
+| Jira | `JIRA_CLIENT_ID` `JIRA_CLIENT_SECRET` `JIRA_REDIRECT_URI` (callback path `/api/auth/jira/callback`) | `BotManager._register_jira_oauth2_provider` |
+
+Setting `JIRA_CLIENT_ID` is what makes Jira appear in the web channel's
+Connections panel: the panel lists `OAuth2ProviderRegistry` entries, and before
+FEAT-791 only the Slack/MS Teams bot configs or an explicit
+`JiraOAuthManager(...).setup(app)` in the host application ever created one.
+
+Prefer these built-ins over a `provider_id: jira` descriptor entry: a descriptor
+produces a generic `StandardOAuth2Manager` whose `toolkit_factory()` returns
+`None`, so `JiraToolkit` hydration has no factory to use.
+
 ## Durable owner
 
 The Identity Vault (`auth.user_identities`) owns every 3LO provider grant,
 through the `CredentialStore` protocol. Redis is the hot cache used by live
 tool calls. Writes are durable-first, then cached; a successful callback is not
-reported until the durable write succeeds.
+reported until the durable write succeeds. The store is bound at app startup,
+once navigator-auth's `authdb` exists; grants already written to the generic
+vault before that are not migrated.
 
 ## Channel adapters
 

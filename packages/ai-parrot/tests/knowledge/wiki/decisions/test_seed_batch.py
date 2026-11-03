@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import subprocess
 from pathlib import Path
 
-from parrot.knowledge.wiki.decisions.approvals import ApprovalEntry, GitCommitApprovalAdapter
+from parrot.knowledge.wiki.decisions.approvals import ApprovalEntry, ApprovalManifest, GitCommitApprovalAdapter
 from parrot.knowledge.wiki.decisions.spec_entries import SEED_HEADING, canonical_block_bytes, parse_spec_decisions
 
 _REPO_ROOT = Path(__file__).resolve().parents[6]
@@ -15,17 +14,9 @@ _MANIFEST = _REPO_ROOT / "sdd/decisions/approvals.jsonl"
 BATCH = "seed-architecture-rules-v1"
 
 
-def _seed_entries():
-    """Load seed entries directly, bypassing the duplicate batch_id check bug."""
-    entries = []
-    if _MANIFEST.exists():
-        for line in _MANIFEST.read_text().splitlines():
-            if line.strip():
-                entry_data = json.loads(line)
-                entry = ApprovalEntry(**entry_data)
-                if entry.batch_id == BATCH:
-                    entries.append(entry)
-    return entries
+def _seed_entries() -> list[ApprovalEntry]:
+    """Exercise the production loader against the committed multi-document seed batch."""
+    return [entry for entry in ApprovalManifest.load(_MANIFEST).entries if entry.batch_id == BATCH]
 
 
 def test_nine_seed_entries_share_one_batch() -> None:

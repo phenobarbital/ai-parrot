@@ -1,12 +1,12 @@
 ---
 # SDD flow type and base branch (FEAT-145).
-# - type: feature  (default)  → base_branch: dev (or any non-main branch)
-# - type: hotfix              → base_branch MUST be: main
+# - type: feature  (default)  → base_branch: the base_branch in sdd/config.json (or any non-hotfix branch)
+# - type: hotfix              → base_branch MUST be the hotfix_base in sdd/config.json
 type: feature
-base_branch: dev
-# projects: parts of the codebase this doc concerns. Use `packages/*` dir names
-#   (ai-parrot, ai-parrot-server, parrot-formdesigner, …) or an area
-#   (sdd-tooling, dev-loop, admin-ui, docs, ci). Unknown values warn, not fail.
+base_branch: <base_branch>   # default: the base_branch in sdd/config.json
+# projects: parts of the codebase this doc concerns. Use the project areas of your
+#   repository (`sdd/CONVENTIONS.md` § Project areas, or the `projects` list in
+#   `sdd/config.json`). Unknown values warn, not fail.
 projects: []
 # tags: free-form kebab-case keywords for organizing specs (e.g. memory, mcp).
 tags: []

@@ -184,11 +184,21 @@ class BatchPublisher:
         return PublishResult(batch_id=batch_id, status="refused", diagnostics=[*diagnostics, *(extra or [])])
 
     async def _verify(self, batch_id: str) -> PublishResult | tuple[ApprovalEntry, list[DecisionRecord]]:
-        """Phase 0: approval trust, approved-digest match and ``replay == pass``."""
+        """Verify every batch member before allowing any marker or record write."""
         entries = [e for e in self.approvals.entries if e.batch_id == batch_id and e.kind in ("spec", "seed")]
         if not entries:
             return self._refused(batch_id, APPROVAL_UNVERIFIED, f"no spec/seed approval for batch {batch_id!r}")
-        entry = entries[0]
+        records: list[DecisionRecord] = []
+        for entry in entries:
+            verified = await self._verify_entry(entry)
+            if isinstance(verified, PublishResult):
+                return verified
+            records.extend(verified)
+        return entries[0], records
+
+    async def _verify_entry(self, entry: ApprovalEntry) -> PublishResult | list[DecisionRecord]:
+        """Check one member's approval trust, digest and replay without writing."""
+        batch_id = entry.batch_id
         resolved_root = self.root.resolve()
         spec_file = (self.root / entry.spec_path).resolve()
         if not spec_file.is_relative_to(resolved_root):
@@ -231,7 +241,7 @@ class BatchPublisher:
                 entry.spec_path,
                 extra=list(report.diagnostics),
             )
-        return entry, entries_to_records(block, source_path=entry.spec_path, batch_id=batch_id)
+        return entries_to_records(block, source_path=entry.spec_path, batch_id=batch_id)
 
     async def _ensure_pending(self, batch_id: str, decision_ids: list[str]) -> str | PublishResult:
         """Phase 1: insert or confirm the ``pending`` marker; return its content hash."""
@@ -244,6 +254,8 @@ class BatchPublisher:
         body = _parse_marker(page)
         state = body.get("state") if body else None
         if state == "published":
+            if sorted(body.get("decision_ids") or []) != sorted(decision_ids):
+                return self._refused(batch_id, BATCH_PARTIAL, "published batch membership differs from approvals")
             return PublishResult(batch_id=batch_id, status="already-published")
         if state == "pending" and sorted(body.get("decision_ids") or []) == sorted(decision_ids):
             return page.get("content_hash") or _marker_page(batch_id, "pending", decision_ids).content_hash

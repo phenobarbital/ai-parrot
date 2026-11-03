@@ -267,6 +267,41 @@ def test_invalid_runner_toml_keeps_builtin_recognition(tmp_path):
     assert "non-pytest-validation-command" not in _codes(report)
 
 
+def _set_test_command(root: Path, command: str | None) -> None:
+    (root / "sdd").mkdir(exist_ok=True)
+    (root / "sdd" / "config.json").write_text(json.dumps({"test_command": command}), encoding="utf-8")
+
+
+def test_unrecognised_command_is_warning_when_test_command_is_set(tmp_path):
+    """FEAT-633 rev 0.8 C29: a repo that sets test_command (a Go repo here) runs that command instead
+    of select_tests, so a validation command no registered runner knows is never a blocking error."""
+    index = _with_validation(tmp_path, ["go test ./pkg/cart"], required=True)
+    _set_test_command(tmp_path, "go test ./...")
+    report = check_graph(index, tmp_path)
+    finding = next(f for f in report.findings if f.code == "non-pytest-validation-command")
+    assert finding.level == "warning" and "test_command" in finding.message
+    assert main([str(index), "--root", str(tmp_path)]) == 0
+
+
+def test_unrecognised_command_still_errors_without_test_command(tmp_path):
+    index = _with_validation(tmp_path, ["make test"], required=True)
+    _set_test_command(tmp_path, None)
+    report = check_graph(index, tmp_path)
+    finding = next(f for f in report.findings if f.code == "non-pytest-validation-command")
+    assert finding.level == "error" and "test_command in sdd/config.json" in finding.message
+    assert main([str(index), "--root", str(tmp_path)]) == 1
+
+
+def test_unreadable_sdd_config_keeps_the_strict_gate(tmp_path):
+    index = _with_validation(tmp_path, ["go test ./pkg/cart"], required=True)
+    (tmp_path / "sdd").mkdir(exist_ok=True)
+    (tmp_path / "sdd" / "config.json").write_text("{not json", encoding="utf-8")
+    report = check_graph(index, tmp_path)
+    codes = _codes(report)
+    assert "sdd-config-unreadable" in codes and "non-pytest-validation-command" in codes
+    assert main([str(index), "--root", str(tmp_path)]) == 1
+
+
 def test_non_pytest_validation_command_does_not_also_fire_broad_or_directory_findings(tmp_path):
     index = _with_validation(tmp_path, ["ruff check ."], required=True)
     report = check_graph(index, tmp_path)

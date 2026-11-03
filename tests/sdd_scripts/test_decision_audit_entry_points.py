@@ -53,15 +53,15 @@ def test_template_sections_in_order() -> None:
 def test_sdd_spec_has_retrieve_and_gate(rel: str) -> None:
     """Every /sdd-spec entry point retrieves governing decisions, then gates approval (AC15)."""
     text = _read(rel)
-    for needle in ("wikitoolkit spec governing", "check_spec_consequences", "--render", "approved"):
+    for needle in ("wikitoolkit spec governing", "spec consequences", "--render", "approved"):
         assert needle in text, f"{rel} lacks {needle!r}"
-    assert text.index("wikitoolkit spec governing") < text.index("check_spec_consequences")
+    assert text.index("wikitoolkit spec governing") < text.index("spec consequences")
 
 
 @pytest.mark.parametrize("rel", _TASK_ENTRY_POINTS)
 def test_sdd_task_check_is_advisory(rel: str) -> None:
     """Every /sdd-task entry point runs the audit as advisory only (AC19)."""
     text = _read(rel)
-    for needle in ("check_spec_consequences", "--advisory"):
+    for needle in ("spec consequences", "--advisory"):
         assert needle in text, f"{rel} lacks {needle!r}"
     assert "never refuses" in text.replace("**", "")

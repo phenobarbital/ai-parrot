@@ -1,6 +1,9 @@
 """Planner/policy unit tests (FEAT-563 M1)."""
 
 from pathlib import Path
+import os
+import subprocess
+import sys
 
 import pytest
 
@@ -10,6 +13,35 @@ from parrot.flows.dev_loop.test_scope.planner import OVERRIDE_MARKER_EXPRESSION,
 from parrot.flows.dev_loop.test_scope.policy import AGENT_FLAGS, AGENT_MARKER_EXPRESSION, ScopePolicy
 from parrot.flows.dev_loop.test_scope.runners.registry import RunnerRegistry
 from parrot.flows.dev_loop.test_scope.select import plan_tests
+from parrot.flows.dev_loop.test_scope.report import parse_junit, with_report
+
+
+def test_nested_config_preserves_repository_relative_junit_nodes(tmp_path: Path) -> None:
+    """Package configuration must not shorten paths consumed by the baseline checker."""
+    package = tmp_path / "packages" / "a"
+    tests = package / "tests"
+    tests.mkdir(parents=True)
+    (package / "pytest.ini").write_text("[pytest]\naddopts = --strict-markers\n", encoding="utf-8")
+    (tests / "test_example.py").write_text(
+        "def test_example(pytestconfig):\n" "    assert pytestconfig.getini('addopts') == ['--strict-markers']\n",
+        encoding="utf-8",
+    )
+    node = "packages/a/tests/test_example.py"
+    plan = build_plan([_t(node, "a")], tier="feature", worktree=tmp_path, policy=ScopePolicy())
+    junit = tmp_path / "result.xml"
+    argv = with_report(plan.invocations[0], junit)
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", *argv[1:]],
+        cwd=tmp_path,
+        env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    parsed = parse_junit(junit, suite="a", argv=argv, exit_code=result.returncode, duration_s=0)
+    assert parsed.nodes == ((f"{node}::test_example", "passed"),)
 
 
 def _t(path, dist, reason="mirror"):

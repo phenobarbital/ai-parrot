@@ -99,26 +99,66 @@ class LazyGroup(click.Group):
         attr_name = cmd_name.replace("-", "_")
         return getattr(mod, attr_name, None) or getattr(mod, cmd_name, None)
 
-    def format_commands(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
-        """Render registered commands even when a future lazy module has not landed yet.
+    def shell_complete(self, ctx, incomplete):
+        """Complete subcommand names without failing on an uninstalled one.
+
+        Click's default resolves every matching command through :meth:`get_command`, so one absent
+        optional distribution would abort ``parrot <TAB>``. Such a command is still offered, marked
+        unavailable.
 
         Args:
             ctx: Click context.
-            formatter: Click help formatter.
+            incomplete: The partial word being completed.
+
+        Returns:
+            Completion items for subcommands, then for the group's own options.
         """
-        rows: list[tuple[str, str]] = []
-        for command_name in self.list_commands(ctx):
-            try:
-                command = self.get_command(ctx, command_name)
-            except click.ClickException:
-                command = None
-            if command is not None and command.hidden:
+        from click.shell_completion import CompletionItem
+
+        results = []
+        for name in self.list_commands(ctx):
+            if not name.startswith(incomplete):
                 continue
-            help_text = command.get_short_help_str(limit=formatter.width) if command is not None else ""
-            rows.append((command_name, help_text))
-        if rows:
-            with formatter.section("Commands"):
-                formatter.write_dl(rows)
+            try:
+                cmd = self.get_command(ctx, name)
+            except click.ClickException:
+                results.append(CompletionItem(name, help="(unavailable)"))
+                continue
+            if cmd is not None and not cmd.hidden:
+                results.append(CompletionItem(name, help=cmd.get_short_help_str()))
+        results.extend(click.Command.shell_complete(self, ctx, incomplete))
+        return results
+
+    def format_commands(self, ctx, formatter):
+        """List subcommands in ``--help`` without failing on an uninstalled one.
+
+        Click resolves every listed command to render its short help. A lazy
+        command whose optional distribution is absent (``e2e``, ``serve``, …
+        in the managed runtime) makes :meth:`get_command` raise, which used to
+        turn a plain ``parrot --help`` into exit 1. Here such a command is
+        listed with its availability message instead; invoking it directly
+        still fails with that same message.
+
+        Args:
+            ctx: Click context.
+            formatter: Click help formatter to write the commands section to.
+        """
+        rows: list[tuple[str, click.Command | None, str]] = []
+        for name in self.list_commands(ctx):
+            try:
+                cmd = self.get_command(ctx, name)
+            except click.ClickException as exc:
+                rows.append((name, None, f"(unavailable) {exc.format_message()}"))
+                continue
+            if cmd is None or cmd.hidden:
+                continue
+            rows.append((name, cmd, ""))
+        if not rows:
+            return
+        limit = formatter.width - 6 - max(len(name) for name, _cmd, _note in rows)
+        entries = [(name, cmd.get_short_help_str(limit) if cmd is not None else note) for name, cmd, note in rows]
+        with formatter.section("Commands"):
+            formatter.write_dl(entries)
 
 
 @click.group(cls=LazyGroup)
@@ -136,6 +176,8 @@ cli._lazy_commands = {
     "mcp": "parrot.mcp.cli",
     "mcp-local": "parrot.mcp.local_cli",
     "toolkits": "parrot.cli.toolkits",
+    # FEAT-633 — managed-runtime lifecycle (`parrot status` is agentd's; diagnostics live here).
+    "self": "parrot.self_.cli",
     # FEAT-650 — FormDesigner dialect tools, ships in parrot-formdesigner.
     "formdesigner": "parrot_formdesigner.cli",
     "autonomous": "parrot.autonomous.cli",
@@ -146,6 +188,8 @@ cli._lazy_commands = {
     "gemini": "parrot.knowledge.wiki.google.cli",
     "generate-keys": "parrot.cli.generate_keys",
     "devloop": "parrot.cli.devloop",
+    # FEAT-633 — SDD flow installer (parrot sdd install|uninstall|status|run).
+    "sdd": "parrot.sdd.cli",
     # FEAT-601 — Procedure Graph manuals CLI, ships in ai-parrot-tools.
     "manuals": "parrot_tools.procedures.cli",
     # FEAT-696 — Jira toolkit CLI (local 3LO auth, KB sync), ships in ai-parrot-tools.

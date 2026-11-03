@@ -302,6 +302,36 @@ def test_render_rerun_column_and_skip_reason():
     assert "re-run skipped (no tasks)" in output
 
 
+@pytest.mark.parametrize(
+    ("verdict", "expected"),
+    [
+        ("new_red", "❌ 1 new red, 0 unknown"),
+        ("unknown", "❌ 0 new red, 1 unknown"),
+        ("baseline_red", "✅ no new reds"),
+    ],
+)
+def test_gate_uses_final_rerun_verdicts(verdict: str, expected: str) -> None:
+    """Rerun-only closeouts must not report a green gate for new failures."""
+    result = _result(failed=1, passed=3, status="failed", baseline=(("tests/test_x.py::test_x", verdict),))
+    output = report.render_markdown(
+        {}, [], final_head="final", rerun=_record(report.RERUN_RECORD, result), rerun_skip_reason=None
+    )
+    assert f"Gate: {expected}" in output
+
+
+def test_gate_fresh_rerun_supersedes_task_failures() -> None:
+    """Historical task failures must not override fresh passing validation."""
+    records = {"TASK-1": _record("TASK-1", _result(failed=1, status="failed"), head="old")}
+    output = report.render_markdown(
+        records,
+        ["TASK-1"],
+        final_head="final",
+        rerun=_record(report.RERUN_RECORD, _result()),
+        rerun_skip_reason=None,
+    )
+    assert "Gate: ✅ no new reds" in output
+
+
 def test_render_flags_zero_count_non_ok_status():
     """A suite that never produced counts must not read as green (issue:5b33290f55c9)."""
     records = {"TASK-1": _record("TASK-1", _result("a", tests=0, passed=0, status="timed_out"))}
@@ -316,6 +346,7 @@ def test_render_flags_non_ok_rerun_suite():
     rerun = _record(report.RERUN_RECORD, _result("a", tests=0, passed=0, status="no_junit"))
     output = report.render_markdown({}, [], final_head="final", rerun=rerun, rerun_skip_reason=None)
     assert "| 0/0 ❌ |" in output
+    assert "Gate: ⚠️ failures not classified" in output
 
 
 def test_render_marks_stale_rerun_column():
@@ -323,6 +354,7 @@ def test_render_marks_stale_rerun_column():
     rerun = _record(report.RERUN_RECORD, _result("a"), head="old")
     output = report.render_markdown({}, [], final_head="final", rerun=rerun, rerun_skip_reason=None)
     assert "Final HEAD re-run (stale)" in output
+    assert "Gate: ⚠️ final HEAD re-run is stale" in output
     fresh = report.render_markdown(
         {}, [], final_head="final", rerun=_record(report.RERUN_RECORD, _result("a")), rerun_skip_reason=None
     )

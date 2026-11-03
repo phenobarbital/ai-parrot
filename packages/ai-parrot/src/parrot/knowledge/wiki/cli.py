@@ -124,6 +124,7 @@ from parrot.knowledge.wiki.runtime import (
     build_triage_adapters,
     persistence_for_project,
 )
+from parrot.knowledge.wiki.ledger.index import ClaimHeldByOther
 from parrot.knowledge.wiki.ledger.service import LedgerService, normalize_issue_id
 from parrot.knowledge.wiki.ledger.shared_log import SHARED_LOG_REL_PATH, shared_log_files
 from parrot.knowledge.wiki.ledger.outbox import (
@@ -3516,22 +3517,33 @@ def ledger_acknowledge(issue_id: str, reason: str, actor: str) -> None:
 @click.option("--reason", required=True, help="Reason for closing.")
 @click.option("--actor", default="agent:cli", help="Actor closing the issue.")
 @click.option("--resolved-by", default=None, help="Evidence ref: commit:<sha> or task:TASK-<NNN>.")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Close even when another actor holds the claim (deliberate hand-off, e.g. /sdd-done).",
+)
 @remote_cli.remote_aware(proxied=True, tool="ledger_close")
-def ledger_close(issue_id: str, reason: str, actor: str, resolved_by: str | None) -> None:
-    """Close an issue."""
+def ledger_close(issue_id: str, reason: str, actor: str, resolved_by: str | None, force: bool) -> None:
+    """Close an issue. A claimed issue closes only for its claimant unless --force."""
     remote = click.get_current_context().obj.get("remote")
     if remote is not None:
+        if force:
+            click.echo("--force is not supported with a remote ledger; close it locally", err=True)
+            raise SystemExit(1)
         arguments = {"issue_id": issue_id, "reason": reason, "resolved_by": resolved_by, "actor": actor}
         click.echo(remote_cli.call_remote_text(remote, "ledger_close", arguments, by=actor))
         return
     service = LedgerService.from_root()
     try:
-        success = _run(service.close_issue(issue_id, reason, actor, resolved_by=resolved_by))
+        success = _run(service.close_issue(issue_id, reason, actor, resolved_by=resolved_by, force=force))
         if success:
             click.echo(f"Closed {issue_id}")
         else:
             click.echo(f"Could not close {issue_id}")
             raise SystemExit(1)
+    except ClaimHeldByOther as exc:
+        click.echo(f"Could not close {issue_id}: claimed by {exc.claimed_by} (pass --force to override)", err=True)
+        raise SystemExit(1) from exc
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); issue queued (index_pending)")
 
@@ -3586,15 +3598,19 @@ def ledger_plan_fix(kind: str | None, severity: str | None, lane: str | None, as
 @click.argument("issue_id")
 @click.option("--reason", required=True, help="Why the claim is being released.")
 @click.option("--actor", default="agent:cli", help="Actor releasing the claim.")
-def ledger_unclaim(issue_id: str, reason: str, actor: str) -> None:
-    """Release a claim so the issue returns to `ledger ready`."""
+@click.option("--force", is_flag=True, help="Release a claim held by another actor (e.g. a stale claim).")
+def ledger_unclaim(issue_id: str, reason: str, actor: str, force: bool) -> None:
+    """Release a claim so the issue returns to `ledger ready`. Only the claimant may release it unless --force."""
     service = LedgerService.from_root()
     try:
-        if _run(service.unclaim(issue_id, reason, actor)):
+        if _run(service.unclaim(issue_id, reason, actor, force=force)):
             click.echo(f"Unclaimed {issue_id}")
         else:
             click.echo(f"Could not unclaim {issue_id} (not claimed or unknown)")
             raise SystemExit(1)
+    except ClaimHeldByOther as exc:
+        click.echo(f"Could not unclaim {issue_id}: claimed by {exc.claimed_by} (pass --force to override)", err=True)
+        raise SystemExit(1) from exc
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); cannot unclaim")
         raise SystemExit(2) from exc
@@ -3738,6 +3754,16 @@ def _outbox_source(repo_root: str, ledger_dir: str | None) -> Path | None:
     return Path(LedgerService.from_root(Path(repo_root)).log.path).parent
 
 
+def _outbox_branch(repo_root: str) -> str:
+    """Resolve the ledger delivery branch from ``sdd/config.json`` (``ledger_branch``, else ``base_branch``)."""
+    from parrot.sdd.config import SddConfigError, ledger_destination, load_sdd_config
+
+    try:
+        return ledger_destination(load_sdd_config(Path(repo_root)))
+    except SddConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 def _unsupported(json_output: bool, reason: str) -> None:
     """Emit an unsupported-source result and exit with the documented code."""
     payload = {"status": "unsupported", "error_code": reason}
@@ -3782,7 +3808,7 @@ def ledger_outbox_prepare(repo_root: str, ledger_dir: str | None, json_output: b
     source = _outbox_source(repo_root, ledger_dir)
     if source is None:
         _unsupported(json_output, "remote-only-ledger")
-    outbox = LedgerOutbox(source)
+    outbox = LedgerOutbox(source, branch=_outbox_branch(repo_root))
     integrator = LedgerIntegrator(Path(repo_root), outbox)
     try:
         source_ref = subprocess.run(
@@ -3840,7 +3866,7 @@ def ledger_outbox_status(repo_root: str, ledger_dir: str | None, json_output: bo
     source = _outbox_source(repo_root, ledger_dir)
     if source is None:
         _unsupported(json_output, "remote-only-ledger")
-    outbox = LedgerOutbox(source)
+    outbox = LedgerOutbox(source, branch=_outbox_branch(repo_root))
     integrator = LedgerIntegrator(Path(repo_root), outbox)
     remote_fresh = True
     try:
@@ -3894,7 +3920,7 @@ def ledger_outbox_integrate(repo_root: str, ledger_dir: str | None, batch_id: st
     source = _outbox_source(repo_root, ledger_dir)
     if source is None:
         _unsupported(json_output, "remote-only-ledger")
-    outbox = LedgerOutbox(source)
+    outbox = LedgerOutbox(source, branch=_outbox_branch(repo_root))
     try:
         batches = _run(outbox.pending())
     except StrictLedgerReadError as exc:

@@ -5,6 +5,8 @@ params (DB and YAML), datasources live only in memory, and one user's override n
 leaks into another user's session.
 """
 
+import sys
+import types
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -18,6 +20,8 @@ from parrot.manager.manager import BotManager
 from parrot.registry.registry import AgentRegistry, BotConfig
 from parrot.tools.spec import ToolkitSpec, normalize_tooling, tooling_revision
 from parrot.tools.toolkit import AbstractToolkit
+
+_FAKE_AGENT_MODULE = "parrot_test_fake_agent_module"
 
 # ============================================================================
 # FILL IN: fakes — vault dict (store/retrieve/delete patched in tooling_store + tools.spec modules)
@@ -264,28 +268,27 @@ toolkits:
 mcp_servers: []
 """)
 
-    # 2. Create a fake registry that returns the YAML metadata
-    class _FakeMeta:
-        bot_config = BotConfig(
-            name="test-agent",
-            description="Test agent",
-            class_name="test-agent",
-            module="test",
-            toolkits=[
-                {
-                    "slug": "echo",
-                    "params": {"prefix": "yaml-", "token": "yaml-token"},
-                    "user_overridable": ["prefix"],
-                    "secret_refs": {"token": "toolkit_echo_test-agent"},
-                    "vault_owner": "42",
-                }
-            ],
-            mcp_servers=[],
-        )
-        file_path = agent_yaml
-
-    registry = MagicMock()
-    registry.get_metadata = MagicMock(return_value=_FakeMeta())
+    # 2. Build the BotConfig the YAML definition parses into.  The agent class
+    #    is resolved by AgentRegistry.create_agent_factory through a real
+    #    importlib lookup, so point module/class_name at a module injected into
+    #    sys.modules below rather than at the unimportable "test"/"test-agent".
+    bot_config = BotConfig(
+        name="test-agent",
+        description="Test agent",
+        class_name="CapturedBot",
+        module=_FAKE_AGENT_MODULE,
+        toolkits=[
+            {
+                "slug": "echo",
+                "params": {"prefix": "yaml-", "token": "yaml-token"},
+                "user_overridable": ["prefix"],
+                "secret_refs": {"token": "toolkit_echo_test-agent"},
+                "vault_owner": "42",
+            }
+        ],
+        mcp_servers=[],
+    )
+    assert agent_yaml.exists()
 
     # 3. Build the bot via factory
     class _CapturedBot:
@@ -311,20 +314,18 @@ mcp_servers: []
 
             await tool_interface.apply_tooling_specs()
 
-    # 4. Build the bot
-    monkeypatch.setattr("parrot.manager.manager.create_reranker", MagicMock(return_value=None))
-    monkeypatch.setattr("parrot.manager.manager.create_parent_searcher", MagicMock(return_value=None))
+    # 4. Expose _CapturedBot where create_agent_factory's importlib lookup finds it
+    fake_module = types.ModuleType(_FAKE_AGENT_MODULE)
+    fake_module.CapturedBot = _CapturedBot
+    monkeypatch.setitem(sys.modules, _FAKE_AGENT_MODULE, fake_module)
 
-    mgr = BotManager.__new__(BotManager)
-    mgr.logger = MagicMock()
-    mgr._resolve_database_bot_class = MagicMock(return_value=_CapturedBot)
-    mgr._normalize_database_bot_permissions = MagicMock(return_value={})
-    mgr._apply_prompt_config = MagicMock()
-    mgr.registry = registry
-    mgr.registry.register_db_bot_policies = MagicMock(return_value=0)
-
-    # 5. Call the factory to build the bot
-    bot = mgr._build_from_registry("test-agent", app=MagicMock())
+    # 5. Call the factory to build the bot.  AgentRegistry.create_agent_factory
+    #    replaced the removed BotManager._build_from_registry; it is the code
+    #    that normalizes the YAML top-level toolkits/mcp_servers into the
+    #    bot's tools/agent_mcp_servers kwargs, which is what AC8 is about.
+    registry = AgentRegistry.__new__(AgentRegistry)
+    factory = registry.create_agent_factory(bot_config)
+    bot = await factory(app=MagicMock())
 
     # 6. Verify the bot received normalized toolkits + agent_mcp_servers
     assert "available_tools" not in _CapturedBot.kwargs
@@ -344,17 +345,35 @@ mcp_servers: []
 
 
 @pytest.mark.asyncio
-async def test_dataset_manager_datasources_in_memory():
+async def test_dataset_manager_datasources_in_memory(monkeypatch):
     """Datasources are replayed into the dataset manager; nothing written to disk.
 
     AC9: Persisting datasets beyond the spec: agent-level datasets are in-memory
     only, replayed on build/reload.
+
+    ``add_dataset()`` materializes each descriptor by calling the backing
+    source's ``fetch()``: ``query_slug`` goes out to QuerySource (which raises
+    ``TenantError: Query not found`` without a live tenant) and ``sql``
+    actually executes the statement against ``dsn``. This module is offline,
+    fakes only, so both ``fetch()`` calls are stubbed to return an empty frame
+    — the behavior under test is the replay/registration bookkeeping, not the
+    backends' ability to reach a server.
     """
+    import pandas as pd
+
     from parrot.tools.dataset_manager.tool import DatasetManager
     from parrot.tools.dataset_manager.config import (
         QuerySlugDatasource,
         SqlDatasource,
     )
+    from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource
+    from parrot.tools.dataset_manager.sources.sql import SQLQuerySource
+
+    async def _empty_frame(self, **params):
+        return pd.DataFrame({"col": []})
+
+    monkeypatch.setattr(QuerySlugSource, "fetch", _empty_frame)
+    monkeypatch.setattr(SQLQuerySource, "fetch", _empty_frame)
 
     # 1. Create a dataset manager with fake datasources
     manager = DatasetManager(
@@ -402,7 +421,7 @@ async def test_dataset_manager_datasources_in_memory():
 
 
 @pytest.mark.asyncio
-async def test_user_override_session_isolation():
+async def test_user_override_session_isolation(monkeypatch):
     """Two sessions, one override — override does not leak between users.
 
     AC9: One user's override never leaks into another user's session.
@@ -446,23 +465,29 @@ async def test_user_override_session_isolation():
     handler = AgentTalk.__new__(AgentTalk)
     handler.logger = logging.getLogger("test.agenttalk.toolkit_overrides")
 
-    # 3. Simulate a user override for user 7
+    # 3. Simulate a user override for user 7.
+    #    _apply_user_toolkit_overrides constructs its own ToolkitConfigService(),
+    #    which talks to DocumentDB; the service is not an injectable parameter.
+    #    Patch the name the handler module resolves, and match the service API it
+    #    actually calls: load(user_id, ref) -> list[UserToolkitOverride] and
+    #    revision(user_id, ref) -> str.
     from parrot.handlers.toolkit_persistence import UserToolkitOverride
 
     class _Service:
-        def __init__(self, overrides):
-            self._overrides = overrides
+        def __init__(self, overrides=()):
+            self._overrides = list(overrides)
 
-        async def load(self, user_id, agent_id, slug):
-            for override in self._overrides:
-                if override.user_id == user_id and override.agent_id == agent_id and override.slug == slug:
-                    return override
-            return None
+        async def load(self, user_id, ref):
+            return [o for o in self._overrides if o.user_id == user_id and o.agent_id == ref]
 
-        async def revision(self, user_id, agent_id):
+        async def revision(self, user_id, ref):
             return "t1"
 
-    service = _Service([UserToolkitOverride(user_id="7", agent_id="a1", slug="kit", params={"prefix": "user"})])
+    overrides = [UserToolkitOverride(user_id="7", agent_id="a1", slug="kit", params={"prefix": "user"})]
+    monkeypatch.setattr(
+        "parrot.handlers.agent.ToolkitConfigService",
+        lambda *args, **kwargs: _Service(overrides),
+    )
 
     # 4. Apply the override
     tool_manager = await handler._apply_user_toolkit_overrides(agent, _Session(), None)
@@ -471,7 +496,9 @@ async def test_user_override_session_isolation():
     assert tool_manager is not agent.tool_manager
     assert tool_manager.list_tools() == ["echo"]
     assert get_toolkit_owner(tool_manager.get_tool("echo")).prefix == "user"
-    assert get_toolkit_owner(agent.tool_manager).prefix == "agent"
+    # get_toolkit_owner() takes a TOOL, not a ToolManager — mirror the line above
+    # and read the owner off the agent manager's own "echo" tool.
+    assert get_toolkit_owner(agent.tool_manager.get_tool("echo")).prefix == "agent"
 
     # 6. Verify the override did not leak to another user's session
     #    (We can't easily test this without mocking the service, but the spec

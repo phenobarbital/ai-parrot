@@ -3,23 +3,26 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
-from parrot.knowledge.wiki.decisions.approvals import ApprovalManifest
+from parrot.knowledge.wiki.decisions.approvals import ApprovalEntry, ApprovalManifest
 from parrot.knowledge.wiki.decisions.inventory import InventorySnapshot, batch_marker_id, is_eligible
 from parrot.knowledge.wiki.decisions.models import (
     ADR_INVENTORY_LIMIT,
     SNAPSHOT_UNSTABLE,
     SUPERSESSION_INVALID,
     DecisionError,
+    DecisionDiagnostic,
     DecisionRef,
     DecisionRecord,
     DecisionTarget,
 )
 from parrot.knowledge.wiki.decisions.repository import DecisionRepository
 from parrot.knowledge.wiki.decisions.taxonomy import Taxonomy
-from parrot.knowledge.wiki.store import WikiPageRecord
+from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord
 
 
 class _OkAdapter:
@@ -185,3 +188,43 @@ async def test_unpublished_batch_is_invisible(adr_store, tmp_path) -> None:
         config_digest="config-1",
     )
     assert [record.decision_id for record in after.eligible] == ["adr:spec:feat#one"]
+
+
+@pytest.mark.parametrize(
+    "failure", ["none", "missing_first", "missing_second", "unverified_first", "unverified_second"]
+)
+async def test_seed_batch_requires_every_member(adr_store: BaseWikiStore, tmp_path: Path, failure: str) -> None:
+    """A published seed batch is authoritative only while every member verifies, in either order."""
+    entries: list[ApprovalEntry] = []
+    for name in ("first", "second"):
+        path = f"{name}.md"
+        if failure != f"missing_{name}":
+            (tmp_path / path).write_text("seed", encoding="utf-8")
+        entries.append(
+            ApprovalEntry(
+                kind="seed",
+                batch_id="seeds",
+                spec_path=path,
+                document_id=name,
+                entries=[],
+                block_sha256="a" * 64,
+                commit="a" * 40,
+                actor="Ada <ada@example.com>",
+                recorded_at="2026-10-31T00:00:00Z",
+            )
+        )
+    manifest_path = tmp_path / "approvals.jsonl"
+    manifest_path.write_text("\n".join(entry.model_dump_json() for entry in entries), encoding="utf-8")
+    approvals = ApprovalManifest.load(manifest_path)
+    await adr_store.upsert_pages(
+        [WikiPageRecord(concept_id=batch_marker_id("seeds"), category="adr_batch", body='{"state":"published"}')]
+    )
+    adapter = _OkAdapter()
+    if failure.startswith("unverified"):
+        adapter.verify = AsyncMock(
+            side_effect=[(failure != "unverified_first", []), (failure != "unverified_second", [])]
+        )
+    diagnostics: list[DecisionDiagnostic] = []
+    approved, markers = await InventorySnapshot._approved_batches(approvals, adapter, adr_store, tmp_path, diagnostics)
+    assert approved == (frozenset({"seeds"}) if failure == "none" else frozenset())
+    assert markers == {"seeds": "published"}

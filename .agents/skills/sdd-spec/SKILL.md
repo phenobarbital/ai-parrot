@@ -67,10 +67,10 @@ stay with the thinking model — eligibility never delegates a design choice.
    - Libraries -> External Dependencies
    - Parallelism Assessment -> Worktree Strategy
    - Open Questions -> preserve `[x]` and `[ ]`
-4. Resolve flow metadata with `scripts.sdd.sdd_meta.resolve_flow()`:
+4. Resolve flow metadata with `parrot.sdd.scripts.sdd_meta.resolve_flow()`:
    - explicit flags win
    - exploration frontmatter is next
-   - default is `type: feature`, `base_branch: dev`
+   - default is `type: feature` with the `base_branch` from `sdd/config.json`
 5. Validate:
    - `--type hotfix` or `type: hotfix` exploration frontmatter: abort with
      `⚠️  /sdd-spec no longer scaffolds hotfixes — use /sdd-brief <source> (FEAT-698).`
@@ -110,7 +110,7 @@ stay with the thinking model — eligibility never delegates a design choice.
    - If frontmatter has `reuse_feature_id`, use it only for an intentional
      multi-spec split, document the reuse, and skip reservation.
    - Only for a new feature without an existing or explicitly reused ID, call:
-     `python -m scripts.sdd.reserve_ids --kind feature --count 1 --base-branch <base_branch> --label <feature-slug>`.
+     `parrot sdd ids reserve --kind feature --count 1 --base-branch <base_branch> --label <feature-slug>`.
    - Use the returned `FEAT-NNN` verbatim.
    - Do not fall back to hand-computed IDs.
 9b. Retrieve governing decisions (FEAT-784), before drafting §2:
@@ -135,7 +135,7 @@ stay with the thinking model — eligibility never delegates a design choice.
    - tests and acceptance criteria
    - mandatory Codebase Contract
    - Worktree Strategy
-   - `### Validation Contract` in §4 (FEAT-699): explicit pytest operands or `none — fallback`
+   - `### Validation Contract` in §4 (FEAT-699): explicit pytest operands or `none — fallback` (repos with `test_command` set in `sdd/config.json`: write `none — fallback`)
      — or the FEAT-709 `runners:` form (pytest/vitest/cargo/parrot-e2e blocks; kinds, tiers and settings from
      `.parrot/test_runners.toml`; `parrot-e2e` never at task tier). The flat form is lifted on read to one pytest runner.
    - optional `e2e` frontmatter and `### E2E Scenarios` subsection (FEAT-581)
@@ -152,7 +152,7 @@ stay with the thinking model — eligibility never delegates a design choice.
      once pytest node IDs are frozen
    - Open Questions with resolved/unresolved state preserved
 10b. Consequence gate (FEAT-784):
-   - `python -m scripts.sdd.check_spec_consequences <spec> --render`, then the same without `--render`
+   - `parrot sdd spec consequences <spec> --render`, then the same without `--render`
    - exit 0 pass/skipped · 1 conflict · 2 invalid · 3 incomplete/stale/missing
    - refuse `**Status**: approved` on any non-zero exit; `skipped` proceeds
 11. Commit:
@@ -165,6 +165,9 @@ stay with the thinking model — eligibility never delegates a design choice.
      the collision for inspection; preserve source artifacts until copying succeeds
    - verify cached names
    - commit `sdd: add spec for FEAT-NNN - <feature-slug>`
+   - publish the base branch: `git pull --no-rebase --no-edit origin <base_branch> && git push origin <base_branch>`
+     — worktrees are created from `origin/<base_branch>`, so an unpushed spec is invisible to the
+     next implementation run; on failure never force, stop and print that exact command
 
 ## Output
 
@@ -179,5 +182,5 @@ Next: review, mark approved, run $sdd-task sdd/specs/<feature-slug>.spec.md
 
 - `sdd/templates/spec.md`
 - `sdd/WORKFLOW.md`
-- `scripts/sdd/sdd_meta.py`
-- `scripts/sdd/reserve_ids.py`
+- `parrot.sdd.scripts.sdd_meta`
+- `parrot.sdd.scripts.reserve_ids`

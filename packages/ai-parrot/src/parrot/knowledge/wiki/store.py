@@ -29,9 +29,12 @@ from __future__ import annotations
 import asyncio
 import errno
 import logging
+import os
 import re
 import sqlite3
 import struct
+import time
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager
@@ -49,6 +52,19 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = "3"
+
+#: FEAT-633: the ai-parrot release that last created or migrated a plane; a ``meta`` row
+#: stamped by ``SQLiteWikiStore._ensure_schema`` and ``_migrate``. Informational only:
+#: quoted in :class:`WikiStoreVersionError`, never compared (the gate is the schema number).
+MIN_RUNTIME_KEY = "min_runtime_version"
+
+
+def _running_version() -> str:
+    """The running ai-parrot version, read at call time (tests patch ``parrot.version.__version__``)."""
+    from parrot import version as _parrot_version  # stdlib-only module; parrot/__init__ already loaded it
+
+    return _parrot_version.__version__
+
 
 #: Entity-attribute plane (FEAT-627). Additive: created on writable planes
 #: that lack it (see ``SQLiteWikiStore._migrate``) without a schema bump.
@@ -308,6 +324,126 @@ class WikiStoreBusy(sqlite3.OperationalError):
 
 _FTS_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
+#: FEAT-633: a migration lockfile older than this is presumed abandoned (crashed holder).
+STALE_MIGRATION_LOCK_S: float = 600.0
+
+
+def _migration_lock_path(db_path: Path) -> Path:
+    """Sidecar lockfile guarding cross-process migration of ``db_path``."""
+    return db_path.with_name(db_path.name + ".migrate.lock")
+
+
+class WikiStoreMigrationError(RuntimeError):
+    """A stale plane cannot be migrated safely: the migration lock or the pre-migration backup could not be
+    created (spec rev 0.5 C24; PR #1746 review). Never a ``sqlite3.OperationalError`` — ``_read`` must not
+    degrade it into a read-only open."""
+
+    def __init__(self, directory: Path, step: str, cause: BaseException) -> None:
+        self.directory = directory
+        self.step = step
+        super().__init__(
+            f"cannot migrate the wiki store: could not {step} in {directory} "
+            f"({type(cause).__name__}: {cause}). Make {directory} writable, or open the store read-only."
+        )
+
+
+#: Lock files this process holds: path -> ownership token (written into the lockfile). Release only deletes a
+#: lockfile that still carries OUR token, so a reclaimed/replaced lock is never removed by its former owner.
+_HELD_MIGRATION_LOCKS: dict[str, str] = {}
+
+
+def _lock_identity(path: Path) -> tuple[int, int, str]:
+    """(inode, mtime_ns, content) of ``path`` — what a stale-reclaimer observed.
+
+    The content carries the owner's token: a freed inode is reused immediately and mtime has tick resolution, so
+    (inode, mtime) alone can match a fresh lock that replaced the stale one within the same tick.
+    """
+    st = path.stat()
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        content = ""
+    return st.st_ino, st.st_mtime_ns, content
+
+
+def _reclaim_stale_lock(lock_path: Path, observed: tuple[int, int, str]) -> None:
+    """Remove the stale lock whose identity is ``observed`` without ever deleting a FRESH lock.
+
+    ``unlink(pathname)`` after an age check races: another contender can replace the stale file with its own live
+    lock in between, and the unlink would delete THAT. The lockfile is instead renamed (atomic) to a private
+    name and the renamed file's identity is compared with what was observed stale: a mismatch means a live lock
+    was grabbed, so it is linked back.
+    """
+    trash = lock_path.with_name(f"{lock_path.name}.reclaim.{os.getpid()}.{uuid.uuid4().hex}")
+    try:
+        os.rename(lock_path, trash)
+    except FileNotFoundError:
+        return  # someone else reclaimed / the holder released
+    try:
+        if _lock_identity(trash) == observed:
+            return
+        logger.warning("wiki migration lock %s was replaced while being reclaimed; restoring it", lock_path)
+        try:
+            os.link(trash, lock_path)
+        except FileExistsError:
+            pass
+    finally:
+        trash.unlink(missing_ok=True)
+
+
+def _try_acquire_migration_lock(lock_path: Path, *, stale_after_s: float = STALE_MIGRATION_LOCK_S) -> bool:
+    """Create ``lock_path`` atomically (O_CREAT|O_EXCL); True when this caller now holds it.
+
+    Works identically on POSIX and Windows — deliberately NOT the fcntl pattern of
+    ``project.py:39-42``, which degrades to a no-op without fcntl. A lock older than
+    ``stale_after_s`` is reclaimed race-free (see :func:`_reclaim_stale_lock`) and acquisition retried once.
+    A live holder keeps its lock fresh with a heartbeat (``SQLiteWikiStore._migration_lock``).
+    """
+    for _attempt in range(2):
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            try:
+                observed = _lock_identity(lock_path)
+            except FileNotFoundError:
+                continue  # holder just released
+            except OSError as exc:
+                raise WikiStoreMigrationError(lock_path.parent, "inspect the migration lock", exc) from exc
+            age = time.time() - observed[1] / 1e9
+            if age <= stale_after_s:
+                return False
+            logger.warning("removing stale wiki migration lock %s (age %.0fs)", lock_path, age)
+            try:
+                _reclaim_stale_lock(lock_path, observed)
+            except OSError as exc:
+                raise WikiStoreMigrationError(lock_path.parent, "remove the stale migration lock", exc) from exc
+            continue
+        except OSError as exc:
+            # rev 0.5 C24 / PR #1746 review: never return False/True here — "never silently skipped"
+            raise WikiStoreMigrationError(lock_path.parent, "create the migration lock", exc) from exc
+        token = uuid.uuid4().hex
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(f"{os.getpid()} {time.time()} {token}")
+        _HELD_MIGRATION_LOCKS[str(lock_path)] = token
+        return True
+    return False
+
+
+def _release_migration_lock(lock_path: Path) -> None:
+    """Remove the lockfile (idempotent) — only if it is still OURS (token match)."""
+    token = _HELD_MIGRATION_LOCKS.pop(str(lock_path), None)
+    if token is not None:
+        try:
+            owner = lock_path.read_text(encoding="utf-8").split()[-1]
+        except (FileNotFoundError, IndexError):
+            return
+        except OSError:
+            owner = token
+        if owner != token:
+            logger.warning("wiki migration lock %s now belongs to another process; not removing it", lock_path)
+            return
+    lock_path.unlink(missing_ok=True)
+
 
 def _now_iso() -> str:
     """Return the current UTC time as an ISO-8601 string."""
@@ -428,6 +564,38 @@ def _row_to_symbol_record(row: aiosqlite.Row) -> SymbolRecord:
 
 class AttrsUnsupportedError(RuntimeError):
     """Raised when a backend or plane cannot persist page attributes."""
+
+
+class WikiStoreVersionError(RuntimeError):
+    """The plane's ``schema_version`` is newer than the running ``SCHEMA_VERSION`` (FEAT-633).
+
+    Decided by schema number only. ``store_minimum`` (the plane's ``min_runtime_version``
+    stamp) is quoted in the message, never compared. Deliberately NOT a
+    :class:`sqlite3.OperationalError`: the read ladder in
+    :meth:`SQLiteWikiStore._read` degrades on ``OperationalError``, and this must never
+    degrade — an older runtime has to fail fast rather than open a newer plane.
+    """
+
+    def __init__(self, db_path: Path, store_schema: str, store_minimum: Optional[str], running: str) -> None:
+        self.db_path = db_path
+        self.store_schema = store_schema
+        self.store_minimum = store_minimum
+        self.running = running
+        written_by = store_minimum or "unknown"
+        upgrade_to = f"ai-parrot >= {store_minimum}" if store_minimum else "a newer ai-parrot"
+        super().__init__(
+            f"wiki store {db_path} has schema version {store_schema}, newer than this runtime's "
+            f"{SCHEMA_VERSION} (ai-parrot {running}). This store was written by ai-parrot {written_by}; "
+            f"upgrade to {upgrade_to}: `parrot self update` (managed runtime) or"
+            " `parrot self add --here` (project venv)."
+        )
+
+    @classmethod
+    def newer_schema(
+        cls, db_path: Path, stored: str, store_minimum: Optional[str], running: str
+    ) -> "WikiStoreVersionError":
+        """The plane's ``schema_version`` is newer than ``SCHEMA_VERSION`` (the only refusal)."""
+        return cls(db_path, stored, store_minimum, running)
 
 
 class WikiPageRecord(BaseModel):
@@ -1211,6 +1379,62 @@ class SQLiteWikiStore(BaseWikiStore):
         if self._read_only:
             raise PermissionError(f"read-only wiki store: {self._db_path}")
 
+    async def _check_runtime_gate(self, conn: aiosqlite.Connection) -> None:
+        """Refuse the plane when its ``schema_version`` is newer than the running one.
+
+        FEAT-633: a managed runtime (``~/.parrot/venv``) and project venvs can open the
+        same plane, so a newer ai-parrot may have migrated it already. The schema
+        comparison is the whole gate; ``min_runtime_version`` is read only for the error
+        message. One indexed read per connection (a second one only on refusal) — never
+        latched per instance, because a newer runtime may migrate the plane while this
+        instance is alive.
+
+        Opens normally (fails open) when there is nothing to compare: a plane without a
+        ``meta`` table (brand new, before :meth:`_ensure_schema`), without a
+        ``schema_version`` row, or with a non-integer value — the last logs a warning and
+        lets :meth:`_migration_needed` treat it as stale, as it does today. Failing closed
+        on garbage would brick a plane with no fix path.
+
+        Only runtimes that carry this gate honour it: a pre-FEAT-633 ai-parrot has no gate
+        and still migrates a newer plane downward.
+
+        Args:
+            conn: A freshly opened connection, before anything is written.
+
+        Raises:
+            WikiStoreVersionError: The store has a newer schema than this runtime.
+        """
+        try:
+            async with conn.execute("SELECT value FROM meta WHERE key = 'schema_version'") as cur:
+                row = await cur.fetchone()
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return
+            raise
+        if row is None:
+            return
+        stored = row[0]
+        try:
+            stored_schema = int(stored)
+        except (TypeError, ValueError):
+            self.logger.warning(
+                "wiki store %s has a non-integer schema_version %r — opening anyway;"
+                " it will be treated as stale and migrated",
+                self._db_path,
+                stored,
+            )
+            return
+        if stored_schema <= int(SCHEMA_VERSION):
+            return
+        async with conn.execute("SELECT value FROM meta WHERE key = ?", (MIN_RUNTIME_KEY,)) as cur:
+            min_row = await cur.fetchone()
+        raise WikiStoreVersionError.newer_schema(
+            self._db_path,
+            str(stored),
+            None if min_row is None else min_row[0],
+            _running_version(),
+        )
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -1270,6 +1494,7 @@ class SQLiteWikiStore(BaseWikiStore):
         ) as conn:
             conn.row_factory = aiosqlite.Row
             await self._apply_pragmas(conn, writable=writable)
+            await self._check_runtime_gate(conn)
             if writable:
                 await self._ensure_schema(conn)
             yield conn
@@ -1291,22 +1516,52 @@ class SQLiteWikiStore(BaseWikiStore):
             "SELECT count(*) FROM sqlite_master" f" WHERE type = 'table' AND name IN ({placeholders})",
             sorted(_SCHEMA_TABLES),
         )
-        if (await cur.fetchone())[0] < len(_SCHEMA_TABLES):
+        present = (await cur.fetchone())[0]
+        if present < len(_SCHEMA_TABLES):
             # Serialize first-time init across concurrent tasks of this
             # instance; the DDL is idempotent, so the lock only avoids
             # spurious cross-task lock errors.
             async with self._init_lock:
-                await conn.executescript(WIKI_SCHEMA_SQL)
-                await conn.execute(
-                    "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
-                    ("schema_version", SCHEMA_VERSION),
-                )
-                if self._wiki_name:
-                    await conn.execute(
-                        "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
-                        ("wiki_name", self._wiki_name),
-                    )
-                await conn.commit()
+                if 0 < present:
+                    # A LEGACY plane missing some tables: the replay below modifies it, so it needs the same
+                    # lock + restorable backup as _migrate_safely — before the first DDL statement.
+                    await self._replay_schema_safely(conn)
+                    return
+                await self._replay_schema(conn)
+
+    async def _replay_schema(self, conn: aiosqlite.Connection) -> None:
+        """Run the idempotent schema DDL and seed the meta rows."""
+        await conn.executescript(WIKI_SCHEMA_SQL)
+        await conn.execute(
+            "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
+            ("schema_version", SCHEMA_VERSION),
+        )
+        await conn.execute(
+            "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
+            (MIN_RUNTIME_KEY, _running_version()),
+        )
+        if self._wiki_name:
+            await conn.execute(
+                "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
+                ("wiki_name", self._wiki_name),
+            )
+        await conn.commit()
+
+    async def _replay_schema_safely(self, conn: aiosqlite.Connection) -> None:
+        """Schema replay on a legacy plane: cross-process lock + backup first, restore on failure."""
+        async with self._migration_lock():
+            backup = await asyncio.to_thread(self._backup_store)
+            version_before = await self._data_version(conn)
+            try:
+                await self._replay_schema(conn)
+            except BaseException:
+                try:
+                    await conn.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
+                if await self._data_version(conn) == version_before:
+                    await asyncio.to_thread(self._restore_store, backup)
+                raise
 
     async def _maybe_migrate(self, conn: aiosqlite.Connection) -> None:
         """Run the read-first migration probe/apply at most once per store.
@@ -1327,8 +1582,166 @@ class SQLiteWikiStore(BaseWikiStore):
             return
         async with self._init_lock:
             if not self._migrated.is_set():
-                await self._migrate(conn)
+                await self._migrate_safely(conn)
                 self._migrated.set()
+
+    async def _has_migration_work(self, conn: aiosqlite.Connection) -> bool:
+        """Pure-read probe: columns/version (``_migration_needed``) or a legacy FTS shape."""
+        missing, version_stale = await self._migration_needed(conn)
+        if missing or version_stale:
+            return True
+        return any([await self._uses_legacy_fts(conn, table) for table in _FTS_TABLES])
+
+    async def _is_unstamped_current_plane(self, conn: aiosqlite.Connection) -> bool:
+        """Pure-read probe: the plane already has the current shape and only lacks its version stamp.
+
+        A plane whose schema was created outside the store — ``SourceCollectionManager`` runs
+        ``WIKI_SCHEMA_SQL`` with plain ``sqlite3`` during ``wikitoolkit build`` and writes no
+        ``meta`` rows — has every current column and no legacy FTS table, but no
+        ``schema_version`` row. Its only pending work is stamping ``schema_version`` /
+        ``min_runtime_version``: there is no structural change to undo, so a pre-migration
+        backup would only leave a useless ``.bak-*`` sidecar next to every freshly built plane.
+        A row that is PRESENT but different is a real version change and is not covered here.
+
+        Args:
+            conn: An open connection; not mutated.
+
+        Returns:
+            ``True`` when no ``schema_version`` row exists, no column is missing and no FTS
+            table is still ``concept_id``-keyed.
+        """
+        missing, _ = await self._migration_needed(conn)
+        if missing:
+            return False
+        async with conn.execute("SELECT 1 FROM meta WHERE key = 'schema_version'") as cur:
+            if await cur.fetchone() is not None:
+                return False
+        return not any([await self._uses_legacy_fts(conn, table) for table in _FTS_TABLES])
+
+    async def _migrate_safely(self, conn: aiosqlite.Connection) -> None:
+        """Run ``_migrate`` under the cross-process lock with a restorable backup.
+
+        A current plane takes the unchanged read-first path (no lock, no backup, no write).
+        A structurally current plane that only lacks its version stamp is stamped under the
+        lock and the runtime gate, without a backup (see :meth:`_is_unstamped_current_plane`).
+        """
+        if not await self._has_migration_work(conn):
+            await self._migrate(conn)  # still read-first: attrs/FTS-trigger self-heal probes only
+            return
+        async with self._migration_lock():
+            await self._check_runtime_gate(conn)  # a newer runtime may have migrated while we waited
+            if not await self._has_migration_work(conn):
+                await self._migrate(conn)
+                return
+            if await self._is_unstamped_current_plane(conn):
+                await self._migrate(conn)  # writes only the schema_version / min_runtime_version stamp
+                return
+            # a failing backup raises WikiStoreMigrationError and removes its own partial .bak-*
+            backup = await asyncio.to_thread(self._backup_store)
+            self.logger.info("migrating wiki plane %s (backup: %s)", self._db_path, backup)
+            version_before = await self._data_version(conn)
+            try:
+                await self._migrate(conn)
+            except BaseException:
+                try:
+                    await conn.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
+                # Normal writers take no migration lock: restoring the full snapshot would silently discard
+                # anything another connection committed since the backup. data_version changes only for OTHER
+                # connections' commits, so a change means "do not restore" — the backup is kept for manual recovery.
+                if await self._data_version(conn) != version_before:
+                    self.logger.error(
+                        "wiki migration of %s failed and other writers committed meanwhile; NOT restoring "
+                        "(that would lose their writes) — backup kept at %s",
+                        self._db_path, backup,
+                    )
+                    raise
+                await asyncio.to_thread(self._restore_store, backup)
+                self.logger.error("wiki migration of %s failed; restored from backup %s", self._db_path, backup)
+                raise
+
+    @staticmethod
+    async def _data_version(conn: aiosqlite.Connection) -> int:
+        """``PRAGMA data_version``: changes when ANOTHER connection commits to the plane."""
+        async with conn.execute("PRAGMA data_version") as cur:
+            return (await cur.fetchone())[0]
+
+    @asynccontextmanager
+    async def _migration_lock(self) -> AsyncIterator[None]:
+        """Hold the cross-process migration lockfile; raise WikiStoreBusy after busy_timeout_s."""
+        lock_path = _migration_lock_path(self._db_path)
+        deadline = time.monotonic() + self._policy.busy_timeout_s
+        # rev 0.5 C24 / D8 (3): _try_acquire_migration_lock raises WikiStoreMigrationError on any OSError other
+        # than FileExistsError — let it propagate; nothing to release yet
+        while not _try_acquire_migration_lock(lock_path):
+            if time.monotonic() >= deadline:
+                raise WikiStoreBusy(self._db_path, "migrate", self._policy.busy_timeout_s)
+            await asyncio.sleep(0.1)
+        # A live migration may outlast STALE_MIGRATION_LOCK_S: keep the lock fresh so it is never reclaimed.
+        async def _heartbeat() -> None:
+            while True:
+                await asyncio.sleep(STALE_MIGRATION_LOCK_S / 4)
+                try:
+                    os.utime(lock_path)
+                except OSError:
+                    return
+
+        beat = asyncio.create_task(_heartbeat())
+        try:
+            yield
+        finally:
+            beat.cancel()
+            try:
+                await beat
+            except asyncio.CancelledError:
+                pass
+            _release_migration_lock(lock_path)
+
+    def _backup_store(self) -> Path:
+        """Online-backup the plane to ``<db>.bak-<UTC timestamp>``; run via ``asyncio.to_thread``.
+
+        Uses the SQLite backup API (WAL-consistent), never a raw file copy.
+        """
+        # microsecond stamp + a collision loop: two migrations in the same second must never share a backup
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        backup = self._db_path.with_name(f"{self._db_path.name}.bak-{stamp}")
+        n = 0
+        while backup.exists():
+            n += 1
+            backup = self._db_path.with_name(f"{self._db_path.name}.bak-{stamp}-{n}")
+        src = dst = None
+        try:
+            src = sqlite3.connect(self._db_path)
+            dst = sqlite3.connect(backup)
+            src.backup(dst)
+        except (OSError, sqlite3.OperationalError) as exc:
+            if dst is not None:
+                dst.close()
+                dst = None
+            try:
+                backup.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise WikiStoreMigrationError(backup.parent, "create the pre-migration backup", exc) from exc
+        finally:
+            if dst is not None:
+                dst.close()
+            if src is not None:
+                src.close()
+        return backup
+
+    def _restore_store(self, backup: Path) -> None:
+        """Copy ``backup`` back over the plane with the backup API (reverse direction)."""
+        src = sqlite3.connect(backup)
+        try:
+            dst = sqlite3.connect(self._db_path)
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+        finally:
+            src.close()
 
     @asynccontextmanager
     async def _read(self) -> AsyncIterator[aiosqlite.Connection]:
@@ -1459,6 +1872,7 @@ class SQLiteWikiStore(BaseWikiStore):
             # The file open is lazy — force it before yielding.
             await conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
             self._log_read_only_once()
+            await self._check_runtime_gate(conn)
             yield conn
 
     @asynccontextmanager
@@ -1494,6 +1908,7 @@ class SQLiteWikiStore(BaseWikiStore):
                 # The file open is lazy — force it before yielding.
                 await conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
                 self._log_read_only_once()
+                await self._check_runtime_gate(conn)
                 yielded = True
                 yield conn
             return
@@ -1530,6 +1945,7 @@ class SQLiteWikiStore(BaseWikiStore):
                 conn.row_factory = aiosqlite.Row
                 await conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
                 self._log_read_only_once()
+                await self._check_runtime_gate(conn)
                 yielded = True
                 yield conn
         except sqlite3.OperationalError as imm_exc:
@@ -1637,6 +2053,13 @@ class SQLiteWikiStore(BaseWikiStore):
                 "INSERT INTO meta (key, value) VALUES ('schema_version', ?)"
                 " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (SCHEMA_VERSION,),
+            )
+            # FEAT-633: record the release that brought the plane to this schema. A newer
+            # schema was already refused by `_check_runtime_gate`, so this only ever
+            # stamps an upgrade. Informational — never compared.
+            await conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?)" " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (MIN_RUNTIME_KEY, _running_version()),
             )
         await conn.commit()
 

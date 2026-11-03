@@ -5,6 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from unittest.mock import AsyncMock
+
+import pytest
 
 from parrot.knowledge.wiki.decisions.approvals import ApprovalEntry, ApprovalManifest
 from parrot.knowledge.wiki.decisions.consequences import ConsequenceReport
@@ -22,6 +25,7 @@ from parrot.knowledge.wiki.decisions.models import (
 from parrot.knowledge.wiki.decisions.publish import BatchPublisher, PublishResult, _marker_page
 from parrot.knowledge.wiki.decisions.repository import DecisionRepository
 from parrot.knowledge.wiki.decisions.spec_entries import canonical_block_bytes, parse_spec_decisions
+from parrot.knowledge.wiki.store import BaseWikiStore
 
 FENCE = "`" * 3
 SPEC_PATH = "sdd/specs/demo.spec.md"
@@ -247,3 +251,101 @@ async def test_project_links_about_and_normative_edges():
         ("adr:spec:d#a", "concept:memory", "about", "asserted"),
         ("adr:spec:d#a", "dir:src", "forbids", "asserted"),
     }
+
+
+def _seed_manifest(tmp_path: Path) -> ApprovalManifest:
+    """Build two distinct seed documents and load their common batch through production validation."""
+    template = _setup(tmp_path, _spec()).entries[0]
+    entries: list[ApprovalEntry] = []
+    for name in ("first", "second"):
+        relative = f"docs/decisions/{name}.md"
+        text = _spec().replace("document_id: demo", f"document_id: {name}")
+        block, _, diagnostics = parse_spec_decisions(text, source_path=relative)
+        assert block is not None, diagnostics
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text.replace("## Decisions", "## Decision Metadata"), encoding="utf-8")
+        entries.append(
+            template.model_copy(
+                update={
+                    "kind": "seed",
+                    "document_id": name,
+                    "spec_path": relative,
+                    "block_sha256": hashlib.sha256(canonical_block_bytes(block)).hexdigest(),
+                    "entries": [DecisionRef(decision_id=f"adr:spec:{name}#{e.id}", revision=1) for e in block.entries],
+                }
+            )
+        )
+    path = tmp_path / "approvals.jsonl"
+    path.write_text("\n".join(entry.model_dump_json() for entry in entries) + "\n", encoding="utf-8")
+    return ApprovalManifest.load(path)
+
+
+async def test_publish_all_seed_documents(adr_store: BaseWikiStore, tmp_path: Path) -> None:
+    """Publication and replay cover every seed document and retry does not write again."""
+    manifest = _seed_manifest(tmp_path)
+    publisher = _publisher(adr_store, tmp_path, manifest)
+    result = await publisher.publish(BATCH)
+    assert result.status == "published" and result.written == 4
+    expected = {ref.decision_id for entry in manifest.entries for ref in entry.entries}
+    assert {record.decision_id for record in await publisher.repo.inventory()} == expected
+    marker = await adr_store.get_page(batch_marker_id(BATCH))
+    assert set(json.loads(marker["body"])["decision_ids"]) == expected
+    assert publisher.service.calls == [(Path(entry.spec_path), "replay") for entry in manifest.entries]
+    again = await publisher.publish(BATCH)
+    assert again.status == "already-published" and again.written == 0 and again.skipped == 4
+
+
+@pytest.mark.parametrize("failure", ["trust", "digest", "replay"])
+async def test_bad_second_seed_prevents_all_writes(adr_store: BaseWikiStore, tmp_path: Path, failure: str) -> None:
+    """A valid first document cannot hide an invalid later batch member."""
+    manifest = _seed_manifest(tmp_path)
+    publisher = _publisher(adr_store, tmp_path, manifest)
+    if failure == "trust":
+        publisher.adapter.verify = AsyncMock(side_effect=[(True, []), (False, [])])
+    elif failure == "digest":
+        path = tmp_path / manifest.entries[1].spec_path
+        path.write_text(path.read_text().replace("never persist", "may persist"), encoding="utf-8")
+    else:
+        publisher.service.evaluate = AsyncMock(
+            side_effect=[
+                ConsequenceReport(status="pass", exit_code=0),
+                ConsequenceReport(status="conflict", exit_code=1),
+            ]
+        )
+    result = await publisher.publish(BATCH)
+    assert result.status == "refused"
+    assert result.diagnostics[0].path == manifest.entries[1].spec_path
+    assert await adr_store.get_page(batch_marker_id(BATCH)) is None
+    assert await publisher.repo.inventory() == []
+
+
+async def test_seed_write_failure_keeps_whole_batch_pending(
+    adr_store: BaseWikiStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Failure in the second document hides the entire batch until a successful retry."""
+    manifest = _seed_manifest(tmp_path)
+    publisher = _publisher(adr_store, tmp_path, manifest)
+    original = DecisionRepository.save
+
+    async def fail_second(self: DecisionRepository, record: DecisionRecord, expected: str | None) -> str:
+        if record.decision_id.startswith("adr:spec:second#"):
+            raise DecisionError(ADR_REVISION_CONFLICT, "injected second-document failure")
+        return await original(self, record, expected)
+
+    monkeypatch.setattr(DecisionRepository, "save", fail_second)
+    result = await publisher.publish(BATCH)
+    assert result.status == "refused"
+    assert await _marker_state(adr_store) == "pending"
+    monkeypatch.setattr(DecisionRepository, "save", original)
+    retry = await publisher.publish(BATCH)
+    assert retry.status == "published" and retry.written == 2 and retry.skipped == 2
+
+
+async def test_published_subset_is_not_complete_seed_batch(adr_store: BaseWikiStore, tmp_path: Path) -> None:
+    """A marker left by first-document-only publication cannot certify a larger batch."""
+    manifest = _seed_manifest(tmp_path)
+    subset = [ref.decision_id for ref in manifest.entries[0].entries]
+    await adr_store.compare_and_swap_page(_marker_page(BATCH, "published", subset), None)
+    result = await _publisher(adr_store, tmp_path, manifest).publish(BATCH)
+    assert result.status == "refused" and result.diagnostics[0].code == BATCH_PARTIAL

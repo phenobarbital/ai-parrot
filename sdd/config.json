@@ -1,0 +1,9 @@
+{
+  "base_branch": "dev",
+  "staging_branch": "staging",
+  "hotfix_base": "main",
+  "issue_tracker": "jira",
+  "jira_host": "trocglobal.atlassian.net",
+  "reviewer": "codex",
+  "test_command": null
+}

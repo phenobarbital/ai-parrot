@@ -419,13 +419,15 @@ class LedgerService:
                 row = await cur.fetchone()
         return _decode_issue_body(row[0]) if row else None
 
-    async def close_issue(self, issue_id: str, reason: str, actor: str, resolved_by: str | None = None) -> bool:
-        """Delegate to :meth:`LedgerIndex.close_issue` (atomic transaction)."""
-        return await self.index.close_issue(issue_id, actor, reason, resolved_by)
+    async def close_issue(
+        self, issue_id: str, reason: str, actor: str, resolved_by: str | None = None, force: bool = False
+    ) -> bool:
+        """Delegate to :meth:`LedgerIndex.close_issue` (atomic transaction; claimant-only unless ``force``)."""
+        return await self.index.close_issue(issue_id, actor, reason, resolved_by, force=force)
 
-    async def unclaim(self, issue_id: str, reason: str, actor: str) -> bool:
-        """Delegate to :meth:`LedgerIndex.unclaim_issue` (atomic transaction)."""
-        return await self.index.unclaim_issue(issue_id, actor, reason)
+    async def unclaim(self, issue_id: str, reason: str, actor: str, force: bool = False) -> bool:
+        """Delegate to :meth:`LedgerIndex.unclaim_issue` (atomic transaction; claimant-only unless ``force``)."""
+        return await self.index.unclaim_issue(issue_id, actor, reason, force=force)
 
     async def get_context(self, file_paths: list[str], max_tokens: int = 3000) -> str:
         """Return a token-budgeted rendering of open issues touching ``file_paths``.

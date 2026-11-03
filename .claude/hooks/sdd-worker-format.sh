@@ -49,10 +49,15 @@ esac
 
 # --- Collect the Python files this worker actually touched -----------------
 # Branch diff against the base plus anything still uncommitted. `dev` is the
-# base for feature flows; fall back to the merge-base with origin/dev, and to
-# HEAD~1 for a branch with no shared ancestor recorded.
-BASE=$(git merge-base HEAD origin/dev 2>/dev/null \
-       || git merge-base HEAD dev 2>/dev/null || echo "")
+# base for feature flows (the base_branch in sdd/config.json); fall back to the
+# merge-base with the remote's default branch, and to HEAD~1 for a branch with
+# no shared ancestor recorded.
+CFG_BASE=$(sed -n 's/.*"base_branch": *"\([^"]*\)".*/\1/p' "$CWD/sdd/config.json" 2>/dev/null | head -n 1)
+BASE=""
+for ref in ${CFG_BASE:+"origin/$CFG_BASE" "$CFG_BASE"} origin/HEAD; do
+    BASE=$(git merge-base HEAD "$ref" 2>/dev/null) && [[ -n "$BASE" ]] && break
+    BASE=""
+done
 if [[ -n "$BASE" ]]; then
     CHANGED=$(git diff --name-only --diff-filter=ACMR "$BASE"...HEAD 2>/dev/null)
 else
@@ -72,14 +77,17 @@ if (( ${#FILES[@]} == 0 )); then
 fi
 
 # --- Resolve the venv tools (the worktree has no .venv of its own) ---------
+# PATH first: a black/pylint on PATH wins; the .venv/bin candidates are the fallback.
 VENV_BIN=""
-for candidate in "$CWD/.venv/bin" "${CLAUDE_PROJECT_DIR:-}/.venv/bin" \
-                 "$(git rev-parse --git-common-dir 2>/dev/null)/../.venv/bin"; do
-    if [[ -n "$candidate" && -x "$candidate/black" ]]; then
-        VENV_BIN=$(cd "$candidate" && pwd)
-        break
-    fi
-done
+if ! command -v black >/dev/null 2>&1; then
+    for candidate in "$CWD/.venv/bin" "${CLAUDE_PROJECT_DIR:-}/.venv/bin" \
+                     "$(git rev-parse --git-common-dir 2>/dev/null)/../.venv/bin"; do
+        if [[ -n "$candidate" && -x "$candidate/black" ]]; then
+            VENV_BIN=$(cd "$candidate" && pwd)
+            break
+        fi
+    done
+fi
 BLACK="${VENV_BIN:+$VENV_BIN/}black"
 PYLINT="${VENV_BIN:+$VENV_BIN/}pylint"
 command -v "$BLACK" >/dev/null 2>&1 || { note "black not found — skipping."; exit 0; }

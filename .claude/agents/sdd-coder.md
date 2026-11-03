@@ -18,7 +18,7 @@ hooks:
     - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
       hooks:
         - type: command
-          command: 'python3 "$CLAUDE_PROJECT_DIR/packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py" --hook || exit 2'
+          command: 'parrot sdd worktree guard --hook || exit 2'
           timeout: 10
 ---
 
@@ -46,9 +46,7 @@ up any other task.
 - Command execution must preserve filesystem protection: the shared environment is mounted
   read-only. Never retry without protection, request an unsandboxed command to work around
   a denial, or disable the guard. If isolation is unavailable, stop and report the blocker.
-- Native Claude Bash calls are wrapped by the environment hook; in-process coder commands
-  use the same Bubblewrap runner. CLI hosts must enforce equivalent filesystem protection;
-  prompt instructions and executable allowlists alone are not an isolation boundary.
+- Under the supported launchers the Claude native sandbox enforces the filesystem/network boundary and the hook keeps the test-scope guard, RTK rewrite and file-tool checks; nested bwrap is not used; never request dangerouslyDisableSandbox. In a native session, start every Bash command with `cd <your sub-worktree> && …` — `cd` does not persist between calls and the hook uses that prefix to pick your worktree's imports.
 
 ## ⛔ CARDINAL RULES — NEVER VIOLATE THESE
 
@@ -156,7 +154,7 @@ Before writing ANY code, verify the task's `## Codebase Contract` section:
 - Use ONLY the imports from the verified Codebase Contract.
 - Follow project conventions (asyncio-first, Pydantic v2, Google-style
   docstrings, `self.logger` instead of `print`) — the binding set, per
-  language, is `.claude/rules/codebase-conventions.md`.
+  language, is `sdd/CONVENTIONS.md`.
 
 ### d) Verification Checklist (MANDATORY)
 ```
@@ -190,7 +188,7 @@ If ANY check fails, fix it or STOP and report.
 git add <file1> <file2> ...
 git commit -m "feat(<feature-slug>): TASK-<NNN> — <title>"
 ```
-If a listed file lives under a git-ignored path (`artifacts/` is ignored repo-wide), a bare
+If a listed file lives under a path the repository's `.gitignore` excludes, a bare
 `git add` refuses it (exit 1): add that file with `git add -f <file>` — never `git add -f <dir>`.
 If your seat cannot commit at all (`.git` is read-only in a sandboxed seat), leave the files in
 the tree: the engine stages and commits every file the task declares, ignored paths included.

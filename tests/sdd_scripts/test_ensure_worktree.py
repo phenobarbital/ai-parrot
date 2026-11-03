@@ -145,6 +145,87 @@ def test_ensure_requires_paths_visible(tmp_git_repo: Path) -> None:
     assert not target_path.exists()
 
 
+def _git_out(repo: Path, *args: str) -> str:
+    return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def _commit_file(repo: Path, rel: str, text: str, message: str) -> None:
+    path = repo / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    subprocess.run(["git", "add", rel], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", message], cwd=repo, check=True)
+
+
+def _diverge_local_dev(work: Path, tmp_path: Path) -> None:
+    """Push a commit to origin/dev from another clone and add a local-only one on dev.
+
+    Local ``dev`` then no longer contains ``origin/dev``, which is the state an
+    unpushed ``/sdd-task`` commit next to a pushed ID reservation leaves behind.
+    """
+    origin = _git_out(work, "remote", "get-url", "origin")
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", "-q", "-b", "dev", origin, str(other)], check=True)
+    subprocess.run(["git", "config", "user.email", "o@example.com"], cwd=other, check=True)
+    subprocess.run(["git", "config", "user.name", "Other"], cwd=other, check=True)
+    _commit_file(other, "sdd/tasks/.id_ledger.json", "{}", "sdd: reserve ids")
+    subprocess.run(["git", "push", "-q", "origin", "dev"], cwd=other, check=True)
+    _commit_file(work, "sdd/tasks/index/local-only.json", "{}", "sdd: add tasks (unpushed)")
+
+
+def test_failed_verification_with_diverged_base_is_retryable(tmp_git_repo: Path, tmp_path: Path) -> None:
+    """issue:e493230f1b6a — the discarded branch must not survive and block every retry.
+
+    ``git branch -d`` refused it ("not fully merged") because local ``dev`` had
+    diverged from ``origin/dev``, so Step 3 rejected each later attempt.
+    """
+    _diverge_local_dev(tmp_git_repo, tmp_path)
+    plan = _plan()
+
+    for _attempt in range(2):
+        with pytest.raises(EnsureWorktreeError) as exc_info:
+            ensure(plan, repo_root=tmp_git_repo, require_paths=["sdd/tasks/index/absent.json"])
+        assert "Verification failed" in str(exc_info.value)
+        assert "already exists" not in str(exc_info.value)
+        assert _git_out(tmp_git_repo, "branch", "--list", plan.name) == ""
+
+
+def test_discard_keeps_branch_that_gained_commits(tmp_git_repo: Path) -> None:
+    """The cleanup is a compare-and-swap: a branch with work of its own is kept."""
+    from scripts.sdd.ensure_worktree import _discard_new_worktree
+
+    plan = _plan()
+    target = (tmp_git_repo / plan.path).resolve()
+    start_sha = _git_out(tmp_git_repo, "rev-parse", "origin/dev")
+    subprocess.run(["git", "worktree", "add", "-q", "-b", plan.name, str(target), "origin/dev"], cwd=tmp_git_repo, check=True)
+    _commit_file(target, "work.txt", "real work", "own commit")
+    own_sha = _git_out(target, "rev-parse", "HEAD")
+
+    _discard_new_worktree(plan, target, start_sha, repo_root=tmp_git_repo)
+
+    assert not target.exists()
+    assert _git_out(tmp_git_repo, "rev-parse", f"refs/heads/{plan.name}") == own_sha
+
+
+def test_verification_error_names_unpushed_base(tmp_git_repo: Path) -> None:
+    """issue:c34721a5b110 — a path committed only on local dev gets a push hint."""
+    _commit_file(tmp_git_repo, "sdd/tasks/index/new-feature.json", "{}", "sdd: add tasks (unpushed)")
+    with pytest.raises(EnsureWorktreeError) as exc_info:
+        ensure(_plan(), repo_root=tmp_git_repo, require_paths=["sdd/tasks/index/new-feature.json"])
+    message = str(exc_info.value)
+    assert "Verification failed" in message
+    assert "1 commit ahead of origin/dev" in message
+    assert "git push origin dev" in message
+
+
+def test_verification_error_has_no_hint_when_local_base_lacks_path(tmp_git_repo: Path) -> None:
+    """No push hint when local dev is ahead but does not carry the missing path."""
+    _commit_file(tmp_git_repo, "unrelated.txt", "x", "unrelated local commit")
+    with pytest.raises(EnsureWorktreeError) as exc_info:
+        ensure(_plan(), repo_root=tmp_git_repo, require_paths=["sdd/tasks/index/absent.json"])
+    assert "git push" not in str(exc_info.value)
+
+
 def test_ensure_dry_run_mutates_nothing(tmp_git_repo: Path) -> None:
     """--dry-run resolves and reports; `git worktree list` is unchanged."""
     res_before = subprocess.run(
