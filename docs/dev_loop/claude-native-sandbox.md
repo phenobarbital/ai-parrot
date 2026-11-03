@@ -134,16 +134,31 @@ version change requires re-qualification):
 - Grants: `sandbox_allowed_domains` on the dispatch profile or `--sandbox-allow-domain` on the launcher.
   Exact hostnames, lower-cased and de-duplicated; URLs, wildcards, ports and IP literals are rejected.
   Redirect targets need their own entry.
-- HTTPS Git and `gh` need `github.com` and `api.github.com`. Raw SSH is not supported in v1.
+- Launcher defaults live in `[tool.parrot.sdd]` of the **primary checkout's** `pyproject.toml`:
+  `sandbox_allowed_domains = ["api.github.com"]` and `gh_token = true`. They are read from the primary
+  checkout only, never the worktree, because the sandboxed session can write its own worktree
+  `pyproject.toml`. Config domains are unioned (order-stable, de-duplicated) with `--sandbox-allow-domain`.
+  Malformed config (non-list, invalid host, non-bool `gh_token`) refuses to launch with exit 2.
+- Policy: GitHub is reachable **only through `gh`** via `api.github.com`. `github.com`, git-over-HTTPS and
+  SSH stay blocked, so the session cannot `git push`. Raw SSH is not supported in v1.
+- `GH_TOKEN`: `gh`'s keyring is a D-Bus Unix socket, which the sandbox blocks (`allowAllUnixSockets: false`),
+  so with `gh_token = true` the launcher runs `gh auth token` **on the host** and puts the result in the
+  worker's environment (never in argv, never printed). A token already in `GH_TOKEN` wins. If it cannot be
+  obtained the launcher prints `launch_worker: WARNING gh_token is enabled but no token could be obtained
+  (<reason>); launching without GH_TOKEN` and continues. `--no-gh-token` skips resolution.
+- **Token scope warning:** the agent can read `GH_TOKEN` and it carries `gh`'s full scopes — every repository
+  the logged-in account can reach. To grant less, log `gh` in with a narrower token or pass `--no-gh-token`.
 - Unknown destinations never trigger an unattended authorization prompt and are never auto-learned.
 
 ## Git inside a native session
 
 1. The **host** sets the upstream before launch (`git push -u origin <branch>` from a normal shell,
    or the dispatcher's own setup): Git `config` is read-only inside the session, so `-u` fails there.
-2. The session commits normally and pushes with `git push origin <branch>` — never `-u`.
+2. The session commits normally but **never pushes** (no route to `github.com`). Push, PR and cleanup
+   happen through `/sdd-done`, which must be **run on the host** — a normal shell or Claude session, not
+   the sandboxed sdd-worker. Running `/sdd-done` from inside the worker (pre-FEAT-633 practice) no longer works.
 3. `config`, `config.worktree`, hooks and lock files stay read-only by design; worktree administration
-   under the primary checkout's `.claude/worktrees/` remains possible (needed by `/sdd-done`).
+   under the primary checkout's `.claude/worktrees/` remains possible.
 4. A native `sdd-coder` seat prefixes every Bash command with `cd <its sub-worktree> && …`: `cd` does
    not persist between tool calls, and the hook uses that exact prefix to pick the task cwd for the
    scope guard and `PYTHONPATH`. Known limitation: only that exact form is recognised — `cd X; …`,
@@ -162,6 +177,9 @@ version change requires re-qualification):
   policy working; rewrite the command or path, do not widen the policy.
 - Project/local `.claude/settings*.json` cannot loosen the compiled policy (qualified: settings-widening
   scenario); a user-level source is excluded on purpose.
+- Probe gotcha: reproducing a denial by hand needs the launcher's environment
+  (`PARROT_SDD_SANDBOX_BACKEND=claude-native`). Without it the hook wraps the command in its own nested
+  Bubblewrap, which fails with `No permissions to create new namespace` — a harness artefact, not a policy bug.
 - Roll back deliberately: `required` → `legacy` when the native sandbox misbehaves but Bubblewrap works →
   `preferred` when no OS boundary is available (the degraded state is declared) → code/deployment revert.
   There is no silent runtime fallback that turns protection off.

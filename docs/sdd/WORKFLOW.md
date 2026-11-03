@@ -92,6 +92,7 @@ briefs base on `dev`; the rest default to `main`.
 10. **Finish the feature** with `/sdd-done FEAT-<NNN>`: it verifies every task,
     snapshots the ledger, pushes, and opens a PR against `base_branch`
     (`--merge` merges directly). It never pushes to or merges into `main`; it opens the `main` PR for a hotfix brief and merging it is the human act.
+    A sandboxed `sdd-worker` commits but never pushes (no route to `github.com`): run `/sdd-done` from the host.
 
 If a task cannot be completed, set it `done-with-issues` and explain why in
 the Completion Note. If the spec is ambiguous, stop and write it down there.

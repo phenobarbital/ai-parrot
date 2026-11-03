@@ -348,6 +348,157 @@ def test_launch_worker_uses_requested_cwd_and_final_prompt(
     assert command[-2] == "--verbose"
 
 
+_SECRET = "ghp_SECRET_TOKEN_VALUE"
+
+
+def _launch_harness(
+    linked: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    primary_toml: str | None,
+    worktree_toml: str | None = None,
+) -> tuple[Path, dict[str, object]]:
+    """Wire launch_worker to a fake claude and record the plan domains, exec command and env."""
+    feature, main = linked
+    if primary_toml is not None:
+        (main / "pyproject.toml").write_text(primary_toml)
+    if worktree_toml is not None:
+        (feature / "pyproject.toml").write_text(worktree_toml)
+    seen: dict[str, object] = {"gh_calls": 0, "exec": None}
+
+    def fake_plan(cwd: Path, *, allowed_domains=()):  # noqa: ANN001, ANN202
+        seen["domains"] = list(allowed_domains)
+        return "required", False, "", {}
+
+    monkeypatch.setattr(native.shutil, "which", lambda name: f"/usr/bin/{name}" if name in ("claude", "gh") else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", main))
+    monkeypatch.setattr(native, "plan_native_launch", fake_plan)
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: feature / "cache")
+    monkeypatch.setattr(native.os, "chdir", lambda cwd: None)
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: seen.__setitem__("exec", args))
+    monkeypatch.delenv(native.MODE_ENV, raising=False)
+    return feature, seen
+
+
+def _fake_gh(
+    monkeypatch: pytest.MonkeyPatch, seen: dict[str, object], *, code: int = 0, out: str = _SECRET + "\n"
+) -> None:
+    def run(cmd, **kwargs):  # noqa: ANN001, ANN003, ANN202
+        seen["gh_calls"] = int(seen["gh_calls"]) + 1  # type: ignore[call-overload]
+        return subprocess.CompletedProcess(cmd, code, stdout=out, stderr="")
+
+    monkeypatch.setattr(native.subprocess, "run", run)
+
+
+_CONFIG = 'tool = {parrot = {sdd = {sandbox_allowed_domains = ["api.github.com"], gh_token = true}}}\n'
+
+
+def test_launch_config_domains_union_with_flags(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Primary-checkout config domains reach the plan, unioned order-stably with flags."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=_CONFIG)
+    _fake_gh(monkeypatch, seen)
+    args = ["--sandbox-allow-domain", "pypi.org", "--sandbox-allow-domain", "API.github.com"]
+    assert native.launch_worker(args, cwd=feature) == 1
+    assert seen["domains"] == ["api.github.com", "pypi.org"]
+
+
+def test_worktree_config_is_ignored(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """A worktree pyproject (session-writable) never widens egress."""
+    feature, seen = _launch_harness(
+        linked,
+        monkeypatch,
+        primary_toml=None,
+        worktree_toml='tool = {parrot = {sdd = {sandbox_allowed_domains = ["evil.example.com"], gh_token = true}}}\n',
+    )
+    _fake_gh(monkeypatch, seen)
+    native.launch_worker([], cwd=feature)
+    assert seen["domains"] == []
+    assert seen["gh_calls"] == 0
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'sandbox_allowed_domains = "api.github.com"',
+        'sandbox_allowed_domains = ["https://github.com"]',
+        "gh_token = 1",
+        "sandbox_allowed_domains = [",
+    ],
+)
+def test_malformed_launch_config_exits_2(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], body: str
+) -> None:
+    """Bad config refuses to launch claude and names the file."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=f"[tool.parrot.sdd]\n{body}\n")
+    assert native.launch_worker([], cwd=feature) == 2
+    assert seen["exec"] is None
+    assert "Invalid sandbox launch config" in capsys.readouterr().err
+
+
+def test_gh_token_injected_never_leaked(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The host-resolved token reaches only the exec env, never argv or output."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=_CONFIG)
+    _fake_gh(monkeypatch, seen)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    native.launch_worker([], cwd=feature)
+    _path, command, env = seen["exec"]  # type: ignore[misc]
+    assert env["GH_TOKEN"] == _SECRET
+    assert all(_SECRET not in part for part in command)
+    captured = capsys.readouterr()
+    assert _SECRET not in captured.out + captured.err
+
+
+def test_existing_gh_token_kept_and_gh_not_called(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """A GH_TOKEN already in the environment wins."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=_CONFIG)
+    _fake_gh(monkeypatch, seen)
+    monkeypatch.setenv("GH_TOKEN", "preset")
+    native.launch_worker([], cwd=feature)
+    assert seen["gh_calls"] == 0
+    assert seen["exec"][2]["GH_TOKEN"] == "preset"  # type: ignore[index]
+
+
+def test_no_gh_token_flag_skips_resolution(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """--no-gh-token is launcher-owned: no token, no gh call, not forwarded to claude."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=_CONFIG)
+    _fake_gh(monkeypatch, seen)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    native.launch_worker(["--no-gh-token"], cwd=feature)
+    assert seen["gh_calls"] == 0
+    assert "GH_TOKEN" not in seen["exec"][2]  # type: ignore[index]
+    assert "--no-gh-token" not in seen["exec"][1]  # type: ignore[index]
+
+
+@pytest.mark.parametrize("failure", ["missing", "nonzero", "timeout", "empty"])
+def test_gh_token_failure_warns_and_launches(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str
+) -> None:
+    """Any gh failure warns on stderr and proceeds without GH_TOKEN."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=_CONFIG)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    if failure == "missing":
+        monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    elif failure == "nonzero":
+        _fake_gh(monkeypatch, seen, code=1, out=_SECRET)
+    elif failure == "empty":
+        _fake_gh(monkeypatch, seen, out="  \n")
+    else:
+
+        def boom(cmd, **kwargs):  # noqa: ANN001, ANN003, ANN202
+            raise subprocess.TimeoutExpired(cmd, 10)
+
+        monkeypatch.setattr(native.subprocess, "run", boom)
+    native.launch_worker([], cwd=feature)
+    captured = capsys.readouterr()
+    assert "WARNING gh_token is enabled but no token could be obtained" in captured.err
+    assert _SECRET not in captured.out + captured.err
+    assert seen["exec"] is not None
+    assert "GH_TOKEN" not in seen["exec"][2]  # type: ignore[index]
+
+
 @pytest.mark.parametrize(
     "bad",
     [
@@ -482,6 +633,11 @@ def test_script_mode_sibling_import_resolves_inside_sdd_scripts(tmp_path: Path) 
         "assert n._we is w or n._we.__file__.endswith('worktree_environment.py'); print('ok')"
     )
     result = subprocess.run(
-        [sys.executable, "-S", "-c", code, str(dev_loop)], capture_output=True, text=True, env={}, cwd=tmp_path, check=False
+        [sys.executable, "-S", "-c", code, str(dev_loop)],
+        capture_output=True,
+        text=True,
+        env={},
+        cwd=tmp_path,
+        check=False,
     )
     assert result.stdout.strip() == "ok", result.stderr

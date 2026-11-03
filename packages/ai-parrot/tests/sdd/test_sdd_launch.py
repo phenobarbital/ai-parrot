@@ -139,6 +139,75 @@ def test_launch_non_tmux_passes_worktree_and_worker_prompt(tmp_path: Path, monke
     assert captured["argv"] == ["--sandbox-allow-domain", "api.example.com", "--", "--verbose"]
 
 
+def test_launch_no_gh_token_reaches_launch_worker_directly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """gh_token=False forwards the launcher-owned flag on the direct path."""
+    primary = _primary(tmp_path)
+    worktree = tmp_path / "feature"
+    worktree.mkdir()
+    captured: dict[str, object] = {}
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: worktree)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    monkeypatch.setattr(
+        launcher.native_claude_sandbox, "launch_worker", lambda argv, **kwargs: captured.update(argv=argv) or 0
+    )
+    kwargs = dict(tmux=False, detach=False, sandbox="legacy", allowed_domains=(), no_upstream=True, claude_args=())
+    assert launcher.launch("sandbox", gh_token=False, **kwargs) == 0
+    assert captured["argv"] == ["--no-gh-token"]
+    assert launcher.launch("sandbox", **kwargs) == 0
+    assert captured["argv"] == []
+
+
+def test_bad_primary_launch_config_fails_before_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A malformed primary-checkout config is a LaunchError(2) raised before tmux/launch starts."""
+    primary = _primary(tmp_path)
+    (primary / "pyproject.toml").write_text('[tool.parrot.sdd]\nsandbox_allowed_domains = ["https://github.com"]\n')
+    worktree = tmp_path / "feature"
+    worktree.mkdir()
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: worktree)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    with pytest.raises(launcher.LaunchError) as exc:
+        launcher.launch(
+            "sandbox", tmux=False, detach=False, sandbox="legacy", allowed_domains=(), no_upstream=True, claude_args=()
+        )
+    assert exc.value.exit_code == 2
+
+
+def test_tmux_child_receives_no_gh_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tmux child command line carries --no-gh-token, and main() forwards it to launch_worker."""
+    primary = _primary(tmp_path)
+    worktree = tmp_path / "feature"
+    worktree.mkdir()
+    calls: list[list[str]] = []
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: worktree)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/tmux" if name == "tmux" else None)
+    monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: "linux")
+    monkeypatch.setattr(launcher, "_run", _tmux_runner(calls, panes=["0|||claude"]))
+    launcher.launch(
+        "FEAT-768",
+        tmux=True,
+        detach=True,
+        sandbox="legacy",
+        allowed_domains=(),
+        no_upstream=True,
+        claude_args=(),
+        gh_token=False,
+    )
+    assert "--no-gh-token" in calls[0][calls[0].index("--in-session") :]
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(
+        launcher.native_claude_sandbox, "launch_worker", lambda argv, **kwargs: seen.update(argv=argv) or 0
+    )
+    assert launcher.main(["--in-session", "FEAT-768", "--cwd", str(worktree), "--no-gh-token"]) == 0
+    assert seen["argv"] == ["--no-gh-token"]
+
+
 def test_tmux_new_session_carries_environment_and_detaches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Detached tmux workers receive the preparation environment explicitly."""
     primary = _primary(tmp_path)

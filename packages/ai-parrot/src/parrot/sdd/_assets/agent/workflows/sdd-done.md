@@ -15,6 +15,9 @@ or the `staging_branch` (during a release freeze); for `type: hotfix` that is th
 NOT inside a worktree. It looks INTO the worktree to verify work, but
 modifies state only on `base_branch`.
 
+**Run it on the host, never from inside a sandboxed `sdd-worker` session** — pushing needs
+`github.com`, which that sandbox deliberately cannot reach.
+
 ## Usage
 ```
 /sdd-done FEAT-014
