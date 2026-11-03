@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -133,6 +134,44 @@ def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     return True
 
 
+def _is_parrot_toolkit_shape(entry: Any, name: str) -> bool:
+    """Whether ``entry`` is a ``parrot mcp-local <name> ...`` server, whatever repository it is pinned to."""
+    if not isinstance(entry, dict):
+        return False
+    command = entry.get("command")
+    args = entry.get("args")
+    return (
+        isinstance(command, str)
+        and _script_basename(command) == "parrot"
+        and isinstance(args, list)
+        and args[:2] == ["mcp-local", name]
+    )
+
+
+def _global_parrot_command(root: Path, existing: dict[str, Any]) -> str:
+    """``parrot`` command for the USER-GLOBAL toolkit entries.
+
+    Bare ``parrot`` when the managed launcher (under ``parrot_home()``) is on PATH; otherwise the command a
+    parrot-shaped entry already uses when it still exists (keeps the file stable across repositories);
+    otherwise this repository's resolved ``parrot`` binary.
+    """
+    from parrot.launcher import parrot_home
+
+    found = shutil.which("parrot")
+    if found:
+        home = parrot_home()
+        homes = {home, home.resolve()}
+        for candidate in {Path(found), Path(found).resolve()}:
+            if any(h == candidate or h in candidate.parents for h in homes):
+                return "parrot"
+    for name, entry in existing.items():
+        if name.startswith("parrot-") and _is_parrot_toolkit_shape(entry, name[len("parrot-") :]):
+            command = entry["command"]
+            if command == "parrot" or Path(command).is_file():
+                return command
+    return assets.resolve_binary(root, "parrot")
+
+
 def _install_gemini_md(root: Path) -> str:
     path = root / assets.GEMINI_PATH
     before = path.read_text(encoding="utf-8") if path.exists() else ""
@@ -190,6 +229,12 @@ def reconcile_toolkit_entries(
     content is not our shape (reported as a warning), and deletes managed entries
     whose section is disabled or gone.
 
+    The USER-GLOBAL file is shared by every repository, so its entries are always
+    written in the portable form (relative ``--config``, no ``cwd``) and replace any
+    ``parrot mcp-local <name>`` entry, even one pinned to another repository; the
+    command is resolved by ``_global_parrot_command``. Portable global entries are
+    never deleted because one repository disabled the toolkit — others may use it.
+
     Returns:
         (actions, warnings) — human-readable strings.
     """
@@ -199,7 +244,8 @@ def reconcile_toolkit_entries(
     enabled_toolkits = {name: section for name, section in cfg.toolkits.items() if section.enabled}
     if portable is None:
         portable = _current_portable_mode(root, mcp_path)
-    desired_toolkits = assets.toolkit_mcp_entries(root, enabled_toolkits, portable=portable)
+    desired_local = assets.toolkit_mcp_entries(root, enabled_toolkits, portable=portable)
+    global_path, _local_path = toolkit_config_paths(root, mcp_path)
 
     all_actions: list[str] = []
     all_warnings: list[str] = []
@@ -207,6 +253,15 @@ def reconcile_toolkit_entries(
     for path in toolkit_config_paths(root, mcp_path):
         data = _load_mcp_config(path)
         servers = data.setdefault("mcpServers", {})
+        is_global = path == global_path
+        if is_global:
+            command = "parrot" if portable else _global_parrot_command(root, servers)
+            desired_toolkits = {
+                name: {**entry, "command": command}
+                for name, entry in assets.toolkit_mcp_entries(root, enabled_toolkits, portable=True).items()
+            }
+        else:
+            desired_toolkits = desired_local
 
         changed = False
         added: list[str] = []
@@ -218,7 +273,12 @@ def reconcile_toolkit_entries(
             if existing == entry:
                 continue
             raw_name = name[len("parrot-") :]
-            if existing is not None and not _is_managed_toolkit_entry(existing, root, raw_name):
+            ours = (
+                _is_parrot_toolkit_shape(existing, raw_name)
+                if is_global
+                else _is_managed_toolkit_entry(existing, root, raw_name)
+            )
+            if existing is not None and not ours:
                 warning = (
                     f"{path} — '{name}' already exists and was not written by "
                     "`parrot google install`; leaving it untouched."
@@ -234,7 +294,10 @@ def reconcile_toolkit_entries(
         for name in list(servers.keys()):
             if name != "wikitoolkit" and name.startswith("parrot-"):
                 raw_name = name[len("parrot-") :]
-                if raw_name not in enabled_toolkits and _is_managed_toolkit_entry(servers[name], root, raw_name):
+                entry = servers[name]
+                args = entry.get("args") if isinstance(entry, dict) else None
+                shared = is_global and isinstance(args, list) and args[3:4] == [assets.PORTABLE_TOOLKIT_CONFIG]
+                if raw_name not in enabled_toolkits and not shared and _is_managed_toolkit_entry(entry, root, raw_name):
                     del servers[name]
                     changed = True
                     removed.append(name)

@@ -32,15 +32,30 @@ def test_unknown_host_is_a_usage_error(tmp_path: Path) -> None:
     assert result.exit_code == 2
 
 
-def test_force_flag_overwrites(tmp_path: Path) -> None:
+def test_install_overwrites_edits_by_default_keep_edits_skips(tmp_path: Path) -> None:
     runner = CliRunner()
     runner.invoke(cli, ["sdd", "install", "--path", str(tmp_path)])
     target = next((tmp_path / ".claude/commands").glob("*.md"))
     target.write_text("user edit\n")
-    skipped = runner.invoke(cli, ["sdd", "install", "--path", str(tmp_path)])
-    assert skipped.exit_code == 0 and target.read_text() == "user edit\n"
-    forced = runner.invoke(cli, ["sdd", "install", "--path", str(tmp_path), "--force"])
-    assert forced.exit_code == 0 and target.read_text() != "user edit\n"
+    kept = runner.invoke(cli, ["sdd", "install", "--path", str(tmp_path), "--keep-edits"])
+    assert kept.exit_code == 0 and target.read_text() == "user edit\n"
+    replaced = runner.invoke(cli, ["sdd", "install", "--path", str(tmp_path)])
+    assert replaced.exit_code == 0 and target.read_text() != "user edit\n"
+    legacy = runner.invoke(cli, ["sdd", "install", "--path", str(tmp_path), "--force"])  # deprecated no-op
+    assert legacy.exit_code == 0
+    both = runner.invoke(cli, ["sdd", "install", "--path", str(tmp_path), "--force", "--keep-edits"])
+    assert both.exit_code != 0
+
+
+def test_uninstall_removes_unrecorded_assets_unless_keep_edits(tmp_path: Path) -> None:
+    runner = CliRunner()
+    runner.invoke(cli, ["sdd", "install", "--path", str(tmp_path)])
+    (tmp_path / "sdd/.sdd-installed.json").unlink()
+    target = next((tmp_path / ".claude/commands").glob("*.md"))
+    assert runner.invoke(cli, ["sdd", "uninstall", "--path", str(tmp_path), "--keep-edits"]).exit_code == 0
+    assert target.exists()
+    assert runner.invoke(cli, ["sdd", "uninstall", "--path", str(tmp_path)]).exit_code == 0
+    assert not target.exists()
 
 
 def test_portable_flag(tmp_path: Path) -> None:
