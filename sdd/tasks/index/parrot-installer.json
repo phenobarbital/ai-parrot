@@ -1391,6 +1391,27 @@
       "parallelism_notes": "issue:a94869a0df2b; feature_launcher.py last owned by TASK-5100/5101",
       "file": "sdd/tasks/completed/TASK-5119-tmux-session-name-per-repo.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5120",
+      "slug": "ledger-claim-ownership",
+      "title": "Parallel /sdd-fix sessions must not close or release each other's ledger claims",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-03T02:58:00+00:00",
+      "completed_at": "2026-11-03T02:39:11+00:00",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5119"
+      ],
+      "parallelism_notes": "issue:5439a91953a4; ledger index/service/cli + sdd-fix/sdd-done twins",
+      "file": "sdd/tasks/completed/TASK-5120-ledger-claim-ownership.md",
+      "verification": "verified"
     }
   ],
   "amended_at": "2026-11-03T00:00:00+00:00",

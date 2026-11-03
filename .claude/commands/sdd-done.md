@@ -667,7 +667,7 @@ If `gh` is missing, unauthenticated, or fails, fail closed: keep the worktree an
 only once the fix is confirmed merged. PR-only finish: print the exact command next to the
 PR URL and do not close it yet:
 ```bash
-wikitoolkit ledger close <ledger_issue> --reason "fixed by <PR url>" --resolved-by commit:<merge-sha>
+wikitoolkit ledger close <ledger_issue> --reason "fixed by <PR url>" --resolved-by commit:<merge-sha> --actor agent:sdd-brief
 ```
 After a confirmed `--merge` on a dev-based brief, run that command.
 
