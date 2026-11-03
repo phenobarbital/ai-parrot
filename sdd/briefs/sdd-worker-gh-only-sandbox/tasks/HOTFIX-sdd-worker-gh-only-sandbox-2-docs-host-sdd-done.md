@@ -122,3 +122,12 @@ Read the brief first. Documentation and instruction text only; commit only the l
 
 ## Completion Note
 
+Implemented by the sdd-worker itself (sequential fallback; `coder_plan` could not route `HOTFIX-…` task ids,
+see task 1). All 13 listed files edited, nothing else touched. Twin pairs received identical edits (the
+sdd-worker.md pair still differs only in the pre-existing hook path). Choices beyond the task text:
+`.agent/workflows/sdd-done.md` already said "NOT inside a worktree", so it got an added host-only paragraph
+rather than a replacement; the Codex `Push:` section now says "Do not run sdd-done yourself" unconditionally.
+Validation: `test_installer.py` + `test_no_repo_script_refs.py`: 76 passed, 1 failed —
+`test_no_c29_findings_in_shipped_files` flags `.claude/agents/sdd-worker.md:335` (bare `python -c` uuid guidance),
+a line this task did not touch; pre-existing on dev. Filed as `issue:6480940ab36a`, not fixed (out of scope).
+

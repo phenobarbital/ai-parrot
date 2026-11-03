@@ -34,7 +34,7 @@
       "feature_id": "BRIEF-sdd-worker-gh-only-sandbox",
       "feature": "sdd-worker-gh-only-sandbox",
       "spec": "sdd/briefs/sdd-worker-gh-only-sandbox.brief.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -43,8 +43,8 @@
       "parallel": true,
       "parallelism_notes": "documents the pyproject keys and --no-gh-token flag that task 1 defines in native_claude_sandbox.py/pyproject.toml; ordered so docs match shipped names",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-11-03T22:27:06+00:00",
+      "completed_at": "2026-11-03T22:27:06+00:00",
       "file": "sdd/briefs/sdd-worker-gh-only-sandbox/tasks/HOTFIX-sdd-worker-gh-only-sandbox-2-docs-host-sdd-done.md"
     }
   ]
