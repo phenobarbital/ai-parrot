@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-795 — `parrot sdd uninstall --stalled` — remove stale and hand-copied SDD files
 **Spec**: `sdd/specs/parrot-sdd-install-remove.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5135

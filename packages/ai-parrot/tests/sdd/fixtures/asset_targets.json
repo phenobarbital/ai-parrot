@@ -1,4 +1,5 @@
 [
+  ".agent/workflows/remove-worktree.md",
   ".agent/workflows/sdd-brainstorm.md",
   ".agent/workflows/sdd-brief.md",
   ".agent/workflows/sdd-codereview.md",
@@ -22,6 +23,7 @@
   ".agents/agents/sdd-research/agent.md",
   ".agents/agents/sdd-secondopinion/agent.md",
   ".agents/agents/sdd-worker/agent.md",
+  ".agents/skills/remove-worktree/SKILL.md",
   ".agents/skills/sdd-brainstorm/SKILL.md",
   ".agents/skills/sdd-brief/SKILL.md",
   ".agents/skills/sdd-codereview/SKILL.md",
@@ -46,6 +48,7 @@
   ".claude/agents/sdd-research.md",
   ".claude/agents/sdd-secondopinion.md",
   ".claude/agents/sdd-worker.md",
+  ".claude/commands/remove-worktree.md",
   ".claude/commands/sdd-brainstorm.md",
   ".claude/commands/sdd-brief.md",
   ".claude/commands/sdd-codereview.md",

@@ -28,18 +28,21 @@ HOST_ORDER: tuple[str, ...] = ("claude", "codex", "google")
 #: (git pathspec glob relative to the repo root, hosts) — see the task's mapping table.
 #: NEVER list `codebase-conventions.md` here (C10: ai-parrot's rulebook does not ship).
 ASSET_SOURCES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (".claude/commands/sdd-*.md", HOST_ORDER),                        # codex/google skills point at the command bodies
+    (".claude/commands/sdd-*.md", HOST_ORDER),  # codex/google skills point at the command bodies
+    (".claude/commands/remove-worktree.md", HOST_ORDER),  # FEAT-795 — calls `parrot sdd worktree`
     (".claude/agents/sdd-*.md", ("claude",)),
     (".claude/hooks/sdd-worker-format.sh", ("claude",)),
     (".claude/rules/worktree-management.md", ("claude",)),
-    (".claude/skills/second-opinion/SKILL.md", ("claude",)),          # C9 — claude only; no codex/google twin
+    (".claude/skills/second-opinion/SKILL.md", ("claude",)),  # C9 — claude only; no codex/google twin
     (".agents/skills/sdd-*/SKILL.md", ("codex", "google")),
+    (".agents/skills/remove-worktree/SKILL.md", ("codex", "google")),
     (".codex/agents/sdd-worker.toml", ("codex",)),
     (".agent/workflows/sdd-*.md", ("google",)),
+    (".agent/workflows/remove-worktree.md", ("google",)),
     (".agents/agents/sdd-*/agent.md", ("google",)),
     ("sdd/templates/*", HOST_ORDER),
     ("sdd/WORKFLOW.md", HOST_ORDER),
-    ("sdd/CONVENTIONS.md", HOST_ORDER),                               # C10 — seed, see SEED_TARGETS
+    ("sdd/CONVENTIONS.md", HOST_ORDER),  # C10 — seed, see SEED_TARGETS
 )
 #: Hand-maintained, repo-neutral assets that exist ONLY in the wheel (their repo-side originals name monorepo paths,
 #: so they cannot be copied): (install target, asset source under ``_assets/``, hosts). The asset file is the source of
