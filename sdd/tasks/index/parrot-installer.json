@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-04T23:59:51+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-03T02:21:18+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -1356,18 +1356,19 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": "2026-11-03T02:18:04+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-03T02:21:18+00:00",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
         "TASK-5117"
       ],
       "parallelism_notes": "issue:80c5e6e510b2; shares doctor.py with TASK-5117",
-      "file": "sdd/tasks/active/TASK-5118-worktree-test-isolation-warning.md"
+      "file": "sdd/tasks/completed/TASK-5118-worktree-test-isolation-warning.md",
+      "verification": "verified"
     }
   ],
   "amended_at": "2026-11-03T00:00:00+00:00",

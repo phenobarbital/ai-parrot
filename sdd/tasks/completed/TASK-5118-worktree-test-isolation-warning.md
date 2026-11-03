@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.12 — ledger fixes)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5117
@@ -89,4 +89,6 @@ above; close with `parrot sdd task close TASK-5118 parrot-installer verified`.
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 (/sdd-fix, sequential)
+**Date**: 2026-11-03
+**Notes**: Helper returns None for non-Python repos, a non-pytest or PYTHONPATH-setting test_command, or a pytest `pythonpath` in pyproject ([tool.pytest.ini_options] / [tool.pytest]), pytest.ini, tox.ini or setup.cfg [tool:pytest]. Editable detection scans `.venv` dist-info `direct_url.json` (dir_info.editable, file:// URL at or under root). Install note is skipped in dry-run (dry-run returns the plan before notes). Doctor check is informational both ways. 11 new tests; sdd installer + self_ + test_command_fallback 152 passed, other sdd installer/CLI suites 87 passed; ruff clean.
