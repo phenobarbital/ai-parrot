@@ -49,7 +49,7 @@ mounted or on any `/keys` call. An `on_cleanup` hook clears the process-global r
 Keyring provisioning stays the host's job and is unchanged: `VAULT_MASTER_KEY_v{N}` and `VAULT_ACTIVE_KEY_ID` in the
 pod environment. Without a keyring, `/keys` and secret writes answer 503 `vault_unavailable`.
 
-**Required schema version.** `STUDIO_SCHEMA_REQUIRED = 8` (migrations 0001-0008) whenever the Studio backend is
+**Required schema version.** `STUDIO_SCHEMA_REQUIRED = 9` (migrations 0001-0009) whenever the Studio backend is
 `database`, regardless of the phase-2 switches (phase 2 is part of the release). The constant lives in
 `parrot.handlers.studio.storage.migrate` and equals `required` of `MANIFEST.json`. The startup probe requires every
 version up to 8 to be in the ledger with the manifest checksum; a database still at version 5 resolves to `unavailable`
@@ -109,7 +109,10 @@ parrot-studio-migrate --dsn "$DSN" --print       # emit the pending files (body 
 parrot-studio-migrate --stamp                    # release tooling, repository checkout only: rewrite trailers + MANIFEST
 ```
 
-- Applying runs **all** pending files, 0001-0008. The phase-2 tables are inert until a store switch is flipped.
+- Applying runs **all** pending files, 0001-0009. The phase-2 tables are inert until a store switch is flipped.
+- 0009 (FEAT-794) adds `agent_id` and `sort_order` to the existing `navigator.prompt_library` (not a Studio table;
+  `ALTER TABLE IF EXISTS`, so a database without that table only records the version). Apply 0009 first, then deploy
+  the release that ships it: the release's `PromptLibrary` model expects `sort_order`.
 - `--print` pipes straight into `psql`: `parrot-studio-migrate --dsn "$DSN" --print | psql -1 -v ON_ERROR_STOP=1 "$DSN"`
   (`-1` is what makes each file one transaction; do not drop it).
 - `--verify` checks versions 1-8 against the manifest and flags any missing version, any recorded version that is
@@ -125,7 +128,7 @@ pinned `ai-parrot-server` wheel, or vendor them byte-for-byte into the host's mi
 numbers. Each file must be executed in one transaction, raw bytes, body then trailer. Because each file records itself,
 parrot's probe sees the same ledger with the same checksums whichever runner applied it; never edit a file after
 vendoring (the checksum would drift and the probe would resolve `unavailable`). The phase-2 files 0006-0008 follow the
-same rule: vendor them together with 0001-0005: the probe requires all of 0001-0008.
+same rule: vendor them together with 0001-0005: the probe requires all of 0001-0009.
 
 ## Moving existing secrets: `secrets_copy`
 
