@@ -1399,18 +1399,19 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": "2026-11-03T02:58:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-03T02:39:11+00:00",
       "priority": "high",
       "effort": "S",
       "depends_on": [
         "TASK-5119"
       ],
       "parallelism_notes": "issue:5439a91953a4; ledger index/service/cli + sdd-fix/sdd-done twins",
-      "file": "sdd/tasks/active/TASK-5120-ledger-claim-ownership.md"
+      "file": "sdd/tasks/completed/TASK-5120-ledger-claim-ownership.md",
+      "verification": "verified"
     }
   ],
   "amended_at": "2026-11-03T00:00:00+00:00",

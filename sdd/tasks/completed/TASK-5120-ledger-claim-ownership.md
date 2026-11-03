@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.12 — ledger fixes)
-**Status**: in-progress
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5119
@@ -95,3 +95,6 @@ above; close with `parrot sdd task close TASK-5120 parrot-installer verified`.
 ---
 
 ## Completion Note
+**Completed by**: Claude Opus 5.5 (/sdd-fix, sequential)
+**Date**: 2026-11-03
+**Notes**: `ClaimHeldByOther` + `_check_claim_owner` in `ledger/index.py`, checked inside the close/unclaim ledger transaction; `force` threaded through `LedgerService` and CLI `--force` (refused with a remote ledger; MCP `ledger_close` schema unchanged, so golden manifests are untouched — an MCP close of a foreign claim now returns an error result). `close_resolved_issues.py` passes `--force` (SDD-lane hand-off); `/sdd-done` brief close acts as `agent:sdd-brief`. `/sdd-fix` twins: per-session `agent:sdd-fix:<8 hex>` actor, scope fixed at claim time, never `--force` past a foreign claim; `_assets` copies synced, twin bodies identical. 4 lifecycle + 3 CLI tests; mutation-checked (disabling the guard fails the two ownership tests). Three existing tests updated to the new contract (closer/unclaimer now the claimant). Validation: 153 passed after merging origin/dev; ruff clean. `fix_planner.group_issues` unchanged: claimed issues are already excluded from `ready_work`.
