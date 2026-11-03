@@ -300,7 +300,7 @@ approved. The agents under `.claude/agents/`:
 - **`sdd-worker`** — implements *all* tasks for a feature sequentially in
   dependency order, committing after each, inside a managed feature worktree.
   Implements exactly what tasks specify (no redesigns). Launch:
-  `parrot devloop launch-worker FEAT-<NNN>`.
+  `parrot sdd launch worker FEAT-<NNN>`.
 - **`sdd-autopilot`** — shell-level AgentCrew that chains
   `worker → code-reviewer → qa-runner → sdd-done → pr-review` with file-based
   quality gates in `.autopilot/` (`state.json` enables resume). Bounded retry
@@ -342,7 +342,7 @@ approved. The agents under `.claude/agents/`:
 ┌─ EXECUTE (in worktree) ───────────────▼───────────────────────────────────┐
 │ cd .claude/worktrees/feat-071-<slug>                                      │
 │ /sdd-start TASK-001  → implement → commit  (repeat per task, deps honored) │
-│        … or: parrot devloop launch-worker FEAT-071 --tmux (unattended)     │
+│        … or: parrot sdd launch worker FEAT-071 --tmux (unattended)     │
 │        … or: claude --agent sdd-autopilot (worker→review→QA→done→pr-review)│
 └──────────────────────────────────────┬───────────────────────────────────┘
                                         │ all tasks done

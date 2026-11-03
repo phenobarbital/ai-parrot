@@ -113,7 +113,7 @@ def test_missing_bubblewrap_fails_closed(checkout: tuple[Path, Path], monkeypatc
     monkeypatch.setattr(policy.shutil, "which", lambda _: None)
     with pytest.raises(RuntimeError, match="legacy SDD hook.*refusing unsandboxed") as error:
         policy.protected_argv(checkout[0], ["true"])
-    assert "parrot devloop launch-worker <FEAT-ID>" in str(error.value)
+    assert "parrot sdd launch worker <FEAT-ID>" in str(error.value)
     response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}})
     assert response["hookSpecificOutput"]["permissionDecision"] == "deny"
 
@@ -1064,3 +1064,26 @@ def test_hook_refuses_legacy_fallback_when_native_markers_are_present(tmp_path: 
     output = _json.loads(result.stdout)["hookSpecificOutput"]
     assert output["permissionDecision"] == "deny"
     assert "PARROT_SDD_SANDBOX_BACKEND is unset" in output["permissionDecisionReason"]
+
+
+def test_packaged_hook_entry_point_denies_in_native_mode_without_import_error(tmp_path: Path) -> None:
+    """``python -m parrot.sdd.scripts.worktree_environment --hook`` loads the sibling native module (TASK-5093)."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    payload = {
+        "cwd": str(feature),
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(feature / ".claude" / "settings.local.json")},
+    }
+    env = {**os.environ, "PARROT_SDD_SANDBOX_BACKEND": "claude-native"}
+    result = subprocess.run(
+        [sys.executable, "-m", "parrot.sdd.scripts.worktree_environment", "--hook"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    assert "Shared-environment guard failed" not in output["permissionDecisionReason"]
+    assert "No module named" not in output["permissionDecisionReason"]

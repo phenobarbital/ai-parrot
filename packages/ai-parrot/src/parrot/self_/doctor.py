@@ -151,6 +151,40 @@ def _check_tools_wiki() -> DoctorCheck:
     return DoctorCheck(name="parrot_tools.wiki", ok=True, detail="importable in the managed venv")
 
 
+_LOCKSTEP_PROBE = (
+    "import importlib.metadata as m\n"
+    "for d in ('ai-parrot', 'ai-parrot-tools'):\n"
+    "    try:\n"
+    "        print(m.version(d))\n"
+    "    except m.PackageNotFoundError:\n"
+    "        print('')\n"
+)
+
+
+def _check_runtime_lockstep() -> DoctorCheck:
+    """C20 / TASK-5117: ai-parrot and ai-parrot-tools are at the same version in the managed venv."""
+    name = "runtime lockstep"
+    python = script_path(managed_venv(), "python")
+    if not python.exists():
+        return DoctorCheck(name=name, ok=True, informational=True, detail=f"no interpreter at {python}")
+    try:
+        result = subprocess.run([str(python), "-c", _LOCKSTEP_PROBE], capture_output=True, text=True, check=False)
+    except OSError as exc:
+        return DoctorCheck(name=name, ok=True, informational=True, detail=f"cannot run {python}: {exc}")
+    lines = result.stdout.splitlines()
+    if result.returncode != 0 or len(lines) != 2 or not all(v.strip() for v in lines):
+        return DoctorCheck(name=name, ok=True, informational=True,
+                           detail="ai-parrot / ai-parrot-tools version not readable (see parrot_tools.wiki)")
+    core, tools = (v.strip() for v in lines)
+    if core == tools:
+        return DoctorCheck(name=name, ok=True, detail=f"ai-parrot and ai-parrot-tools both {core}")
+    from parrot.self_.components import version_sort_key
+
+    lower = min(core, tools, key=version_sort_key)
+    return DoctorCheck(name=name, ok=False, detail=f"ai-parrot {core} but ai-parrot-tools {tools}",
+                       fix=f"parrot self update --version {lower}")
+
+
 # --- C15: SDD readiness (lazy, absence-tolerant; run only in "full" with <root>/sdd present, or "sdd") ---
 
 #: Upper bound for any single ``git`` call the doctor makes (``ls-remote`` over a dead network would hang it).
@@ -200,7 +234,31 @@ def _check_sdd(root: Path) -> list[DoctorCheck]:
     checks.append(_check_ledger_attributes(root))
     checks.append(_check_ledger_hooks(root))
     checks.append(_check_guard_hook(status))
+    checks.append(_check_worktree_tests(root))
     return checks
+
+
+def _check_worktree_tests(root: Path) -> DoctorCheck:
+    """TASK-5118: informational — worktree tests may import the main checkout (no pytest ``pythonpath``)."""
+    name = "sdd: worktree tests isolated"
+    try:
+        from parrot.sdd.installer import worktree_test_isolation  # TASK-5118 — lazy on purpose
+    except ImportError:
+        return DoctorCheck(name=name, ok=True, informational=True,
+                           detail="parrot.sdd.installer unavailable in this build")
+    try:
+        from parrot.sdd.config import load_sdd_config
+
+        test_command = load_sdd_config(root).test_command
+    except Exception:  # noqa: BLE001 — an invalid config is reported by the `sdd config` check
+        test_command = None
+    problem = worktree_test_isolation(root, test_command)
+    if problem is None:
+        return DoctorCheck(name=name, ok=True, informational=True,
+                           detail="no worktree test-isolation issue detected (pytest pythonpath, test_command, "
+                                  "or not a Python project)")
+    cause, _, fix = problem.partition("; ")
+    return DoctorCheck(name=name, ok=False, informational=True, detail=cause, fix=fix)
 
 
 def _check_sdd_git(root: Path, branch: str) -> list[DoctorCheck]:
@@ -261,25 +319,36 @@ def _check_sdd_assets(root: Path, status: dict[str, Any] | None) -> list[DoctorC
     """jq (while referenced), installed files current, host CLIs (informational)."""
     checks: list[DoctorCheck] = []
     hosts: dict[str, Any] = (status or {}).get("hosts") or {}
+    # A host is installed when any of its targets is on disk; install writes every selected target, so a
+    # `missing` target on an installed host is a gap (sdd_status lists every supported host, installed or not).
+    installed_hosts = {host: groups or {} for host, groups in hosts.items()
+                       if any((groups or {}).get(kind) for kind in ("current", "outdated", "edited", "foreign"))}
     if status is None:
         checks.append(DoctorCheck(name="sdd: files current", ok=True, informational=True,
                                   detail="SDD flow not installed (parrot.sdd.installer unavailable in this build)"))
-    elif not any(hosts.values()):
+    elif not installed_hosts:
         checks.append(DoctorCheck(name="sdd: files current", ok=True, informational=True,
                                   detail="SDD flow not installed"))
     else:
         problems: list[str] = []
         edited = False
-        for host, groups in hosts.items():
-            for kind in ("outdated", "edited"):
-                targets = list((groups or {}).get(kind) or [])
+        foreign: list[str] = []
+        for host, groups in installed_hosts.items():
+            for kind in ("outdated", "edited", "missing"):
+                targets = list(groups.get(kind) or [])
                 if targets:
                     edited = edited or kind == "edited"
                     problems.append(f"{host} {kind}: {', '.join(str(t) for t in targets)}")
+            foreign.extend(f"{host}: {t}" for t in groups.get("foreign") or [])
         checks.append(DoctorCheck(
             name="sdd: files current", ok=not problems,
             detail="all installed SDD files current" if not problems else "; ".join(problems),
             fix="" if not problems else ("parrot sdd status" if edited else "parrot sdd install")))
+        if foreign:
+            checks.append(DoctorCheck(
+                name="sdd: foreign files", ok=False, informational=True,
+                detail=f"not written by parrot sdd (never overwritten): {', '.join(foreign)}",
+                fix="delete the hand-copied files and re-run `parrot sdd install`"))
     # jq and python3 — each only while an installed shipped file still references it.
     try:
         from parrot.sdd.audit import missing_tools, scan_paths  # TASK-4070 — lazy on purpose
@@ -337,18 +406,22 @@ def _check_ledger_hooks(root: Path) -> DoctorCheck:
 
     fix = "parrot sdd install (installs the four ledger hooks)"
     missing: list[str] = []
+    hooks_dir: Path | None = None
     for event in claude_assets.LEDGER_HOOK_EVENTS:
-        hook = _git_hook_path(root, event)
+        hook = _git_hook_path(root, event)  # honours core.hooksPath (TASK-5116)
         if hook is None:
             return DoctorCheck(name="sdd: ledger hooks", ok=False, detail="not a git repository", fix=fix)
+        hooks_dir = hook.parent
         try:
             text = hook.read_text(encoding="utf-8")
         except OSError:
             text = ""
         if claude_assets.LEDGER_HOOK_BEGIN not in text:
             missing.append(event)
+    where = f" in {hooks_dir}" if hooks_dir is not None else ""
     return DoctorCheck(name="sdd: ledger hooks", ok=not missing,
-                       detail="all four ledger hooks installed" if not missing else f"missing hooks: {', '.join(missing)}",
+                       detail=(f"all four ledger hooks installed{where}" if not missing
+                               else f"missing hooks{where}: {', '.join(missing)}"),
                        fix="" if not missing else fix)
 
 
@@ -386,6 +459,37 @@ def _command_problem(entry: Any, root: Path) -> str | None:
     return None if shutil.which(command) else f"{command} (not on PATH)"
 
 
+#: MCP server keys the parrot installers write (the cross-repo collision check also matches by command/args).
+PARROT_MCP_KEYS: frozenset[str] = frozenset({"wikitoolkit", "bookstore"})
+
+
+def _is_parrot_entry(key: Any, entry: Any) -> bool:
+    """True for an MCP entry written by a parrot installer.
+
+    Matches the known keys (``wikitoolkit``, ``bookstore``, ``parrot-*``), a command whose basename is a parrot
+    entry point, or args that run a ``parrot.*`` module (``python -m parrot.knowledge.bookstore.cli mcp``).
+    """
+    name = str(key)
+    if name in PARROT_MCP_KEYS or name.startswith("parrot-"):
+        return True
+    if not isinstance(entry, dict):
+        return False
+    command = entry.get("command")
+    if isinstance(command, str) and command:
+        base = Path(command).name
+        if base.lower().endswith(".exe"):
+            base = base[:-4]
+        if base in RUNTIME_ENTRYPOINTS:
+            return True
+    args = entry.get("args")
+    if isinstance(args, list):
+        for pos, arg in enumerate(args[:-1]):
+            nxt = args[pos + 1]
+            if arg == "-m" and isinstance(nxt, str) and (nxt == "parrot" or nxt.startswith("parrot.")):
+                return True
+    return False
+
+
 def _other_root(entry: Any, root: Path) -> str | None:
     """The foreign repo root an entry is baked for (``cwd`` or absolute ``--config`` arg), else None."""
     if not isinstance(entry, dict):
@@ -412,8 +516,8 @@ def _other_root(entry: Any, root: Path) -> str | None:
 def _check_host_configs(root: Path) -> list[DoctorCheck]:
     """Claude .mcp.json, Codex .codex/config.toml, both Google mcp_config.json files (rev 0.5 C24).
 
-    The user-global Google file also flags the cross-repo collision: a ``wikitoolkit`` / ``parrot-*``
-    entry whose ``cwd`` (or absolute ``--config`` arg) belongs to another root — fix: re-install with
+    The user-global Google file also flags the cross-repo collision: a parrot-managed entry
+    (``_is_parrot_entry``: ``wikitoolkit`` / ``bookstore`` / ``parrot-*`` or a parrot command) whose ``cwd`` (or absolute ``--config`` arg) belongs to another root — fix: re-install with
     ``--portable`` (spec §7). The repo-local Google file gets the command check only (C24).
     """
     from parrot.knowledge.wiki.google.installer import toolkit_config_paths  # verified: google/installer.py:142
@@ -451,8 +555,7 @@ def _check_host_configs(root: Path) -> list[DoctorCheck]:
             fix="" if not broken else "re-run the host installer (parrot claude|codex|google install) or `parrot toolkits` to rewrite the entry"))
         if global_file:
             collisions = [f"{key} -> {other}" for key, entry in servers.items()
-                          if (key == "wikitoolkit" or str(key).startswith("parrot-"))
-                          and (other := _other_root(entry, root))]
+                          if _is_parrot_entry(key, entry) and (other := _other_root(entry, root))]
             if collisions:
                 checks.append(DoctorCheck(
                     name="host config: google cross-repo collision", ok=False,
@@ -488,10 +591,11 @@ def run_doctor(root: Path, *, scope: DoctorScope = "full") -> list[DoctorCheck]:
     """Run the checks of ``scope`` in spec order; never raises for a broken environment.
 
     "runtime-only" (C14 bootstrap) touches neither ``root`` nor the network and includes parrot_tools.wiki
-    (rev 0.5 C20); "full" adds host configs, toolkits and — iff ``root/sdd`` exists — the C15 SDD readiness checks;
+    and the ai-parrot / ai-parrot-tools version lockstep (rev 0.5 C20, TASK-5117); "full" adds host configs, toolkits and — iff ``root/sdd`` exists — the C15 SDD readiness checks;
     "sdd" forces the latter.
     """
-    checks = [_check_uv(), _check_python(), _check_entrypoints(), _check_path(), _check_tools_wiki()]
+    checks = [_check_uv(), _check_python(), _check_entrypoints(), _check_path(), _check_tools_wiki(),
+              _check_runtime_lockstep()]
     if scope == "runtime-only":
         return checks
     checks.extend(_check_host_configs(root))

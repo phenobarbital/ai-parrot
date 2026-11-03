@@ -1,4 +1,4 @@
-"""Tests for the host-prepared ``parrot devloop launch-worker`` command."""
+"""Tests for the host-prepared ``parrot sdd launch worker`` command."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import sys
 import pytest
 from click.testing import CliRunner
 
-from parrot.cli.devloop import devloop
+from parrot.cli import cli as devloop
 from parrot.flows.dev_loop import feature_launcher as launcher
 
 _REAL_PREFLIGHT = launcher._preflight_sandbox
@@ -29,7 +29,7 @@ def _restore_sandbox_mode(monkeypatch: pytest.MonkeyPatch) -> None:
 # The package under test, pinned for child interpreters. A subprocess started from a linked worktree
 # would otherwise import ``parrot`` from the editable-installed primary checkout (see memory:
 # worktree tests run main-checkout code), which lacks this feature.
-_SRC = str(Path(__file__).resolve().parents[3] / "src")
+_SRC = str(Path(__file__).resolve().parents[2] / "src")
 
 
 def _child_env(**extra: str) -> dict[str, str]:
@@ -160,10 +160,10 @@ def test_tmux_new_session_carries_environment_and_detaches(tmp_path: Path, monke
         == 0
     )
     command = calls[0]
-    assert command[:8] == ["tmux", "new-session", "-d", "-s", "sdd-FEAT-768", "-c", str(worktree), "-e"]
+    assert command[:8] == ["tmux", "new-session", "-d", "-s", "sdd-feat-768-sandbox", "-c", str(worktree), "-e"]
     assert "PARROT_SDD_SANDBOX_MODE=legacy" in command
     assert "PARROT_SDD_EXTRA=yes" in command
-    assert command[-7:] == [";", "set-option", "-w", "-t", "=sdd-FEAT-768:", "remain-on-exit", "failed"]
+    assert command[-7:] == [";", "set-option", "-w", "-t", "=sdd-feat-768-sandbox:", "remain-on-exit", "failed"]
     tail = command[command.index("--") : command.index(";")]
     assert tail == [
         "--",
@@ -276,7 +276,7 @@ def test_ensure_feature_worktree_uses_json_runner_and_surfaces_failure(
     payload = json.dumps({"path": str(tmp_path / "wt")})
     monkeypatch.setattr(launcher, "_run", lambda argv, *, cwd: calls.append(argv) or _result(argv, stdout=payload))
     assert launcher.ensure_feature_worktree(primary, ref) == tmp_path / "wt"
-    assert calls[0][1:3] == ["-m", "scripts.sdd.ensure_worktree"] and calls[0][-1] == "--json"
+    assert calls[0][1:3] == ["-m", "parrot.sdd.scripts.ensure_worktree"] and calls[0][-1] == "--json"
     assert calls[0][calls[0].index("--index") + 1] == "sdd/tasks/index/sandbox.json"
 
     monkeypatch.setattr(launcher, "_run", lambda argv, *, cwd: _result(argv, 1, stderr="spec missing"))
@@ -298,12 +298,12 @@ def test_existing_session_refuses_non_tmux_launch(tmp_path: Path, monkeypatch: p
     monkeypatch.chdir(primary)
     monkeypatch.setenv("PWD", str(primary))
     _no_host_prep(monkeypatch)
-    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: name == "sdd-FEAT-768")
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: name == "sdd-feat-768-sandbox")
     with pytest.raises(launcher.LaunchError) as exc:
         launcher.launch(
             "FEAT-768", tmux=False, detach=False, sandbox=None, allowed_domains=(), no_upstream=False, claude_args=()
         )
-    assert exc.value.exit_code == 2 and "sdd-FEAT-768" in str(exc.value)
+    assert exc.value.exit_code == 2 and "sdd-feat-768-sandbox" in str(exc.value)
 
 
 @pytest.mark.parametrize("inside_tmux", [False, True])
@@ -328,9 +328,9 @@ def test_existing_session_attaches_without_host_prep(
         "FEAT-768", tmux=True, detach=False, sandbox=None, allowed_domains=(), no_upstream=False, claude_args=()
     )
     if inside_tmux:
-        assert calls == [["tmux", "switch-client", "-t", "sdd-FEAT-768"]] and not execs
+        assert calls == [["tmux", "switch-client", "-t", "sdd-feat-768-sandbox"]] and not execs
     else:
-        assert execs == [["tmux", "attach-session", "-t", "sdd-FEAT-768"]] and not calls
+        assert execs == [["tmux", "attach-session", "-t", "sdd-feat-768-sandbox"]] and not calls
 
 
 def test_existing_session_with_detach_only_prints_hint(
@@ -349,7 +349,102 @@ def test_existing_session_with_detach_only_prints_hint(
         )
         == 0
     )
-    assert "tmux attach -t sdd-FEAT-768" in capsys.readouterr().err
+    assert "tmux attach -t sdd-feat-768-sandbox" in capsys.readouterr().err
+
+
+# --- issue:a94869a0df2b: tmux session names must not collide across repositories ---------------------------
+
+
+@pytest.mark.parametrize(
+    ("feature_id", "slug", "expected"),
+    [
+        ("FEAT-2", "simple-agent", "sdd-feat-2-simple-agent"),
+        ("FEAT-2", "v1.2:api", "sdd-feat-2-v1-2-api"),
+        ("FEAT-7", "", "sdd-feat-7"),
+    ],
+)
+def test_tmux_session_name_includes_slug_and_is_tmux_safe(feature_id: str, slug: str, expected: str) -> None:
+    """The name is ``sdd-<feature id>-<slug>``, lower-cased, without ``.`` or ``:``."""
+    assert launcher.tmux_session_name(feature_id, slug) == expected
+
+
+def test_tmux_session_name_truncates_long_slug() -> None:
+    """A very long slug is cut so the name stays within 64 characters and never ends in ``-``."""
+    name = launcher.tmux_session_name("FEAT-1234", "a-" * 60)
+    assert len(name) <= 64 and name.startswith("sdd-feat-1234-a") and not name.endswith("-")
+    assert launcher.tmux_session_name("FEAT-1234", "a-" * 60) == name  # deterministic
+
+
+def _legacy_session(monkeypatch: pytest.MonkeyPatch, session_path: Path) -> list[list[str]]:
+    """Only the legacy ``sdd-FEAT-768`` session exists, started in ``session_path``."""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: name == "sdd-FEAT-768")
+
+    def fake_run(argv: list[str], *, cwd: Path, env=None) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if argv[:2] == ["tmux", "display-message"] and argv[-1] == "#{session_path}":
+            return _result(argv, stdout=f"{session_path}\n")
+        return _result(argv)
+
+    monkeypatch.setattr(launcher, "_run", fake_run)
+    return calls
+
+
+def test_legacy_session_of_this_repo_is_still_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A live pre-fix ``sdd-<FEAT-ID>`` session started inside this checkout still blocks a duplicate worker."""
+    primary = _primary(tmp_path)
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    _no_host_prep(monkeypatch)
+    worktree = primary / ".claude" / "worktrees" / "feat-FEAT-768-sandbox"
+    worktree.mkdir(parents=True)
+    _legacy_session(monkeypatch, worktree)
+    with pytest.raises(launcher.LaunchError) as exc:
+        launcher.launch(
+            "FEAT-768", tmux=False, detach=False, sandbox=None, allowed_domains=(), no_upstream=False, claude_args=()
+        )
+    assert exc.value.exit_code == 2 and "tmux session sdd-FEAT-768;" in str(exc.value)
+
+
+def test_legacy_session_of_this_repo_is_reattached(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``--tmux`` reattaches to this repo's live legacy session instead of launching a second worker."""
+    primary = _primary(tmp_path)
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.delenv("TMUX", raising=False)
+    _no_host_prep(monkeypatch)
+    _legacy_session(monkeypatch, primary)
+    execs: list[list[str]] = []
+    monkeypatch.setattr(launcher.os, "execvp", lambda file, args: execs.append(args))
+    launcher.launch(
+        "FEAT-768", tmux=True, detach=False, sandbox=None, allowed_domains=(), no_upstream=False, claude_args=()
+    )
+    assert execs == [["tmux", "attach-session", "-t", "sdd-FEAT-768"]]
+
+
+def test_legacy_session_of_another_repo_is_ignored(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Another repository's ``sdd-FEAT-768`` is never attached to: a new, slug-named worker is launched."""
+    primary = _primary(tmp_path)
+    other_repo = tmp_path / "other-repo" / ".claude" / "worktrees" / "feat-FEAT-768-other"
+    other_repo.mkdir(parents=True)
+    worktree = tmp_path / "feature"
+    worktree.mkdir()
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: worktree)
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/tmux" if name == "tmux" else None)
+    monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: "linux")
+    monkeypatch.setattr(launcher, "_await_worker_start", lambda name: None)
+    calls = _legacy_session(monkeypatch, other_repo)
+    assert (
+        launcher.launch(
+            "FEAT-768", tmux=True, detach=True, sandbox="legacy", allowed_domains=(), no_upstream=True, claude_args=()
+        )
+        == 0
+    )
+    new_sessions = [argv for argv in calls if argv[:2] == ["tmux", "new-session"]]
+    assert len(new_sessions) == 1 and new_sessions[0][4] == "sdd-feat-768-sandbox"
+    assert not any(argv[:2] in (["tmux", "attach-session"], ["tmux", "switch-client"]) for argv in calls)
 
 
 @pytest.mark.parametrize(
@@ -413,7 +508,7 @@ def test_click_command_maps_launch_errors(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(
         launcher, "launch", lambda *args, **kwargs: (_ for _ in ()).throw(launcher.LaunchError(2, "bad key"))
     )
-    result = CliRunner().invoke(devloop, ["launch-worker", "missing"])
+    result = CliRunner().invoke(devloop, ["sdd", "launch", "worker", "missing"])
     assert result.exit_code == 2
     assert "launch-worker: bad key" in result.output
 
@@ -518,7 +613,7 @@ def test_detached_launch_reports_a_worker_that_died_while_starting(
     with pytest.raises(launcher.LaunchError) as exc:
         _launch_detached()
     assert exc.value.exit_code == 1
-    assert "exited (status 3)" in str(exc.value) and "tmux kill-session -t sdd-FEAT-768" in str(exc.value)
+    assert "exited (status 3)" in str(exc.value) and "tmux kill-session -t sdd-feat-768-sandbox" in str(exc.value)
     assert sum(command[:2] == ["tmux", "display-message"] for command in calls) == 3
 
 
@@ -541,7 +636,7 @@ def test_detached_launch_returns_once_the_worker_execs_claude(
     assert _launch_detached() == 0
     assert slept == [launcher._DETACH_POLL_SECONDS]
     err = capsys.readouterr().err
-    assert "tmux attach -t sdd-FEAT-768" in err and "WARNING" not in err
+    assert "tmux attach -t sdd-feat-768-sandbox" in err and "WARNING" not in err
 
 
 def test_detached_launch_warns_when_start_cannot_be_confirmed(
@@ -553,7 +648,7 @@ def test_detached_launch_warns_when_start_cannot_be_confirmed(
     monkeypatch.setattr(launcher.time, "monotonic", lambda: next(clock))
     monkeypatch.setattr(launcher, "_run", _tmux_runner([], panes=["0|||python"]))
     assert _launch_detached() == 0
-    assert "WARNING could not confirm the worker in sdd-FEAT-768 started" in capsys.readouterr().err
+    assert "WARNING could not confirm the worker in sdd-feat-768-sandbox started" in capsys.readouterr().err
 
 
 def test_detach_on_existing_dead_session_reports_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -693,7 +788,7 @@ def test_cli_snapshots_environment_before_importing_parrot_flows(tmp_path: Path)
     code = """
 import importlib.abc, importlib.util, os, sys
 from click.testing import CliRunner
-from parrot.cli.devloop import devloop
+from parrot.cli import cli as devloop
 
 NAME = "parrot.flows.dev_loop.feature_launcher"
 seen = {}
@@ -719,7 +814,7 @@ class Finder(importlib.abc.MetaPathFinder):
 sys.meta_path.insert(0, Finder())
 sys.modules.pop(NAME, None)
 os.environ.pop("ANTHROPIC_API_KEY", None)
-result = CliRunner().invoke(devloop, ["launch-worker", "FEAT-768"])
+result = CliRunner().invoke(devloop, ["sdd", "launch", "worker", "FEAT-768"])
 assert result.exit_code == 0, result.output
 assert os.environ.get("ANTHROPIC_API_KEY") == "sk-injected-by-import", "probe import never ran"
 assert "ANTHROPIC_API_KEY" not in seen["base_env"], "base_env was taken after the import"
@@ -733,3 +828,52 @@ assert "ANTHROPIC_API_KEY" not in seen["base_env"], "base_env was taken after th
         env={**{k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}, "PYTHONPATH": _SRC},
     )
     assert result.returncode == 0, result.stderr[-3000:]
+
+
+def _capture_exec(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, object]:
+    """Mock ``claude`` discovery and exec; point the invocation dir at a primary checkout."""
+    primary = _primary(tmp_path)
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/claude")
+    monkeypatch.setattr(launcher, "_invocation_dir", lambda: primary)
+    monkeypatch.setattr(launcher.os, "chdir", lambda path: seen.__setitem__("cwd", Path(path)))
+
+    def _exec(file: str, argv: list[str], env: dict[str, str]) -> None:
+        seen.update(argv=list(argv), env=env)
+        raise SystemExit(0)  # the real exec never returns
+
+    monkeypatch.setattr(launcher.os, "execvpe", _exec)
+    seen["primary"] = primary
+    return seen
+
+
+@pytest.mark.parametrize(
+    ("argv", "prompt"),
+    [
+        (["sdd", "launch", "brief", "NAV-1", "--no-interview"], "/sdd-brief NAV-1 --no-interview"),
+        (["sdd", "launch", "fix", "--top", "2"], "/sdd-fix --top 2"),
+    ],
+)
+def test_launch_brief_and_fix_exec_slash_command(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, argv: list[str], prompt: str
+) -> None:
+    """brief/fix run a plain Claude session in the primary checkout with the slash command as the last argument."""
+    seen = _capture_exec(monkeypatch, tmp_path)
+    result = CliRunner().invoke(devloop, argv)
+    assert result.exit_code == 0, result.output
+    command = seen["argv"]
+    assert isinstance(command, list)
+    assert seen["cwd"] == seen["primary"]
+    assert command[-1] == prompt
+    assert command[1:3] == ["--setting-sources", "project,local"]
+    assert "--model" in command
+    assert "--agent" not in command and "--settings" not in command
+
+
+def test_launch_help_lists_three_verbs() -> None:
+    """The launch noun carries worker, brief and fix; the devloop spelling is gone."""
+    result = CliRunner().invoke(devloop, ["sdd", "launch", "--help"])
+    assert result.exit_code == 0
+    for verb in ("worker", "brief", "fix"):
+        assert verb in result.output
+    assert "Usage" in CliRunner().invoke(devloop, ["devloop", "launch-worker"]).output

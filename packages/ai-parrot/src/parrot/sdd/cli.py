@@ -70,12 +70,52 @@ def sdd() -> None:
         "installing venv's `parrot` when the launcher is not on PATH."
     ),
 )
+@click.option("--base-branch", "base_branch", default=None, help="SDD base branch to seed and prepare (default: dev).")
+@click.option("--push-base", is_flag=True, help="Also `git push -u origin <base-branch>` when origin lacks it.")
+@click.option(
+    "--hotfix-base",
+    "hotfix_base",
+    default=None,
+    help="Hotfix branch to seed (default: main); required with --base-branch main.",
+)
+@click.option(
+    "--no-dangerous-guard",
+    is_flag=True,
+    help="Do not register the PreToolUse dangerous-actions guard in .claude/settings.json.",
+)
+@click.option(
+    "--no-sdd-coder",
+    is_flag=True,
+    help="Do not register the sdd-coder and bounded-source MCP toolkits.",
+)
 @_dry_run_option
-def install(path_: Path | None, hosts: tuple[str, ...], force: bool, portable: bool, dry_run: bool) -> None:
+def install(
+    path_: Path | None,
+    hosts: tuple[str, ...],
+    force: bool,
+    portable: bool,
+    base_branch: str | None,
+    push_base: bool,
+    hotfix_base: str | None,
+    no_dangerous_guard: bool,
+    no_sdd_coder: bool,
+    dry_run: bool,
+) -> None:
     """Deploy the packaged SDD assets into the repository (upgrades untouched files, keeps your edits)."""
     try:
         _echo_actions(
-            install_sdd_integration(_root(path_), hosts or ("claude",), force=force, dry_run=dry_run, portable=portable)
+            install_sdd_integration(
+                _root(path_),
+                hosts or ("claude",),
+                force=force,
+                dry_run=dry_run,
+                portable=portable,
+                base_branch=base_branch,
+                push_base=push_base,
+                hotfix_base=hotfix_base,
+                dangerous_guard=not no_dangerous_guard,
+                sdd_coder=not no_sdd_coder,
+            )
         )
     except (ValueError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc
@@ -173,10 +213,14 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
         "run": ("run_closeout_hooks", (), "Dispatch /sdd-done closeout hooks."),
         "resolve-issues": ("close_resolved_issues", (), "Close the ledger issues a finished feature fixed."),
     },
-    "hooks": {"install": ("install_hooks", (), "Install the SDD git hooks.")},
+    "hooks": {
+        "install": ("install_hooks", (), "Install the SDD git hooks."),
+        "dangerous-actions": ("dangerous_actions", (), "Serve the PreToolUse dangerous-actions guard (--hook)."),
+    },
 }
 #: Packaged modules with a main() that are deliberately NOT mounted (C22: /sdd-insight does not ship).
-_UNMOUNTED: frozenset[str] = frozenset()
+# `native_claude_sandbox.main()` serves the `launch-worker` script entry; its CLI is `parrot sdd launch worker`.
+_UNMOUNTED: frozenset[str] = frozenset({"native_claude_sandbox"})
 _PASSTHROUGH = {"ignore_unknown_options": True, "allow_interspersed_args": False}
 
 
@@ -233,6 +277,10 @@ sdd.add_command(
         help="Work ledger (same commands as `wikitoolkit ledger`; both spellings are valid).",
     ),
 )
+
+from parrot.sdd.launch_cli import launch as _launch  # noqa: E402  light: click only; parrot.flows loads inside
+
+sdd.add_command(_launch)
 
 for _noun, _verbs in VERBS.items():
     _group = sdd.group(name=_noun, help=f"SDD {_noun} helpers.")(lambda: None)

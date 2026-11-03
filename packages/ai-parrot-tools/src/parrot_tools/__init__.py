@@ -127,7 +127,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "query_plan": "parrot_tools.think.QueryPlanTool",
     "rag_retrieval_think": "parrot_tools.think.RAGRetrievalThinkTool",
     "local_git": "parrot_tools.tool_optimizations.git.LocalGitToolkit",
-    "bounded_source": "parrot_tools.tool_optimizations.reader.BoundedSourceToolkit",
+    "bounded_source": "parrot.tools.optimizations.reader.BoundedSourceToolkit",
     "targeted_writer": "parrot_tools.tool_optimizations.writer.TargetedWriterToolkit",
     "publish_surface": "parrot_tools.ui_surfaces.PublishSurfaceTool",
     "wiki_decisions_for_symbol": "parrot_tools.wiki.decisions.WikiDecisionsForSymbolTool",

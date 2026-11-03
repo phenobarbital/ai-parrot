@@ -40,7 +40,7 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:
             "wiki-first",
             "Prefer task-context inspection when the engine is present; fallback keeps explicit checks.",
             "declared test selector",
-            "parrot sdd run finalize_task",
+            "parrot sdd task finalize",
             "inspect returned staged paths and commit explicitly",
             "Reject stale evidence and divergent active/completed twins",
             "never reset unrelated staging",
@@ -56,7 +56,7 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:
         ".agents/skills/sdd-start/SKILL.md",
     ):
         body = (repo_root / rel_path).read_text(encoding="utf-8")
-        assert "parrot sdd run close_task" in body, f"{rel_path} lost its close_task reference"
+        assert "parrot sdd task close" in body, f"{rel_path} lost its close_task reference"
         assert "sdd/tasks/index" in body, f"{rel_path} lost its per-spec index reference"
 
     agent_md = (repo_root / ".agent/agents/sdd-worker/agent.md").read_text(encoding="utf-8")

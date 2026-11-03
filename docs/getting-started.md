@@ -444,6 +444,30 @@ parrot sdd status                            # missing | current | outdated | ed
   never overwritten.
 - Then open your assistant and run your first `/sdd-spec` ... command. Helpers run as
   `parrot sdd <noun> <verb>` (for example `parrot sdd ids reserve --help`).
+- The install also prepares the SDD base branch (`base_branch` from `sdd/config.json`, default `dev`): when the
+  repository has a commit and the branch is missing it creates the local branch (tracking `origin/<base>` if that
+  exists, otherwise from `HEAD`); it never moves or deletes an existing branch and uninstall keeps it. A repo with no
+  commit yet, or no `origin`, gets a `warning:` / `note:` with the exact command. `--base-branch NAME` seeds
+  `sdd/config.json` with that branch (refused if the config already sets another); a repo that integrates on
+  `main` also passes `--hotfix-base NAME`, because the base and hotfix branches must differ and `main` is the
+  default hotfix branch; `--push-base` also runs
+  `git push -u origin <base>` when origin lacks it. `--dry-run` shows `plan: base-branch ...` and creates nothing.
+- For the Claude host the install also registers a portable **dangerous-actions guard** (a `PreToolUse` hook on
+  `Bash|Edit|Write|MultiEdit` in `.claude/settings.json`, served by `parrot sdd hooks dangerous-actions --hook`; stdlib
+  only, so it works the same on Linux, macOS and Windows). It blocks `git reset --hard`, `git clean -fd`, force-push to
+  or deleting a protected branch (`base_branch`, `staging_branch`, `hotfix_base`, `main`, `master`), `git worktree
+  remove --force`, recursive deletes of `/`, `~`, a drive root or `.git`/`.venv`, `mkfs`/`diskutil erase*`/`format X:`,
+  destructive SQL through a database client, direct package publication, bare `pip install` in a uv-managed repo,
+  literal API keys, and writes to secret files; each block names a safe alternative. A deliberate recovery session can
+  set `PARROT_ALLOW_DANGEROUS=1`; `parrot sdd install --no-dangerous-guard` skips the registration. Foreign hook
+  entries are never touched, a repository that already runs `dangerous-actions-blocker` is left alone, and
+  `parrot sdd uninstall` removes only the entry the install recorded.
+- The install also registers the two MCP toolkits the `sdd-worker` agent relies on — `sdd-coder` and
+  `bounded-source` — in `.parrot/mcp-toolkits.yaml` and the host MCP config (`.mcp.json` for Claude). It keeps the
+  shipped `sdd-coder` roster and prints a static `note: sdd-coder seats available: …; unavailable: … (<reason>)`
+  line (credentials and CLIs only, no model call). A `warning:` that complex tasks have "no retry seat" means fewer
+  than two strong MCP seats (codex/gemini/nova) are usable — add credentials and re-run. Toolkits you installed
+  yourself are never recorded or removed by `parrot sdd uninstall`; `parrot sdd install --no-sdd-coder` skips all of this.
 - Re-running `parrot sdd install` upgrades files you have not touched and keeps the ones you edited
   (`--force` overwrites edited files; foreign files are never touched).
 

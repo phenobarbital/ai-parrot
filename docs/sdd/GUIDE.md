@@ -459,10 +459,10 @@ Si quieres dejar a Claude implementando una feature **completa** sin
 intervención, lanza `sdd-worker` dentro del worktree:
 
 ```bash
-parrot devloop launch-worker FEAT-150
+parrot sdd launch worker FEAT-150
 
 # En background:
-parrot devloop launch-worker FEAT-150 --tmux --detach
+parrot sdd launch worker FEAT-150 --tmux --detach
 # Ejecuta el mismo comando con --tmux para volver a adjuntarte.
 ```
 

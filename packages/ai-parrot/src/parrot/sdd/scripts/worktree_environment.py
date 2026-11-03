@@ -248,7 +248,7 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
         raise RuntimeError(
             "Bubblewrap (bwrap) is required for the legacy SDD hook and is not available on "
             f"{sys.platform}; refusing unsandboxed execution. Launch the worker with "
-            "`parrot devloop launch-worker <FEAT-ID>` (native sandbox) instead."
+            "`parrot sdd launch worker <FEAT-ID>` (native sandbox) instead."
         )
     root, git_dir = repository_paths(cwd)
     command = [
@@ -508,27 +508,18 @@ def rtk_rewrite(command: str) -> str | None:
 
 
 def _load_native_sandbox() -> Any:
-    """Load ``native_claude_sandbox`` with the stdlib only (FEAT-768; TASK-5093 moves it next door).
+    """Return the sibling ``native_claude_sandbox`` module (FEAT-768; moved next door by TASK-5093).
 
-    The module still lives in ``parrot/flows/dev_loop/``. Importing it through the package would
-    execute ``parrot.flows.dev_loop.__init__`` (dispatchers, flow, Pydantic models) inside a hook
-    that fires on every PreToolUse, so it is loaded by path instead. Its own
-    ``import worktree_environment`` script-sibling fallback is pre-seeded with this module.
+    Imported lazily so the Bubblewrap backend never pays for it. The sibling imports this module back
+    (``import worktree_environment`` in script mode), so the running module is pre-seeded under that name
+    to keep one copy of the policy helpers.
     """
-    import importlib.util
-
-    cached = sys.modules.get("native_claude_sandbox")
-    if cached is not None:
-        return cached
-    sys.modules.setdefault("worktree_environment", sys.modules[__name__])
-    path = Path(__file__).resolve().parents[2] / "flows" / "dev_loop" / "native_claude_sandbox.py"
-    spec = importlib.util.spec_from_file_location("native_claude_sandbox", path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load the native sandbox module from {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["native_claude_sandbox"] = module
-    spec.loader.exec_module(module)
-    return module
+    if __package__:
+        from . import native_claude_sandbox
+    else:  # run as a script: this file's directory is sys.path[0]
+        sys.modules.setdefault("worktree_environment", sys.modules[__name__])
+        import native_claude_sandbox
+    return native_claude_sandbox
 
 
 def hook_response(payload: dict[str, Any], *, backend: str = "bubblewrap") -> dict[str, Any]:

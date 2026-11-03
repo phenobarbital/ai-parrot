@@ -251,6 +251,19 @@ parrot sdd uninstall --dry-run
 - `sdd/CONVENTIONS.md` is a seed with `## Repository layout` and `## Project areas`; created once, never
   overwritten. `/sdd-insight` is not installed.
 
+### The `parrot sdd` command tree
+
+Besides `install`, `uninstall` and `status`, `parrot sdd` groups the packaged helpers by noun (`parrot sdd <noun> --help` lists the verbs):
+
+- `ids` — `reserve`, `check`, `ledger`: TASK/FEAT id allocation and collision checks.
+- `worktree` — `ensure`, `status`, `guard`: feature/hotfix worktrees and the PreToolUse shared-environment guard.
+- `task` — `close`, `finalize`, `graph`, `heal`, `review`, `state`: task lifecycle and index health.
+- `tests` — `select`, `contract`, `report`, `e2e-closeout`: test selection, Validation Contract, reports and the E2E gate.
+- `ledger` — the work ledger; a second spelling of `wikitoolkit ledger` (same commands).
+- `launch` — `worker`, `brief`, `fix`: start an SDD cycle interactively (`parrot sdd launch worker <FEAT-ID> [--tmux]`).
+- `spec`, `docs`, `brief`, `hooks`, `closeout` — spec/document tooling, briefs, git hooks and closeout helpers.
+
+
 ## Version skew
 
 If `wikitoolkit` (or any wiki code) opens a store written with a newer schema than the running runtime, it

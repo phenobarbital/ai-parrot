@@ -128,3 +128,58 @@ def test_toolkit_missing_env_and_dist(isolated_home: Path, tmp_path: Path, monke
 def test_run_doctor_never_raises_on_empty_home(isolated_home: Path, tmp_path: Path) -> None:
     checks = doctor.run_doctor(tmp_path)
     assert all(isinstance(c, doctor.DoctorCheck) for c in checks)
+
+
+@pytest.mark.parametrize(
+    "key, entry",
+    [
+        ("bookstore", {"command": ".venv/bin/python3", "args": ["-m", "parrot.knowledge.bookstore.cli", "mcp"]}),
+        ("my-wiki", {"command": "/opt/x/.venv/bin/wikitoolkit", "args": ["mcp"]}),
+        ("books", {"command": "python3", "args": ["-m", "parrot.knowledge.bookstore.cli", "mcp"]}),
+    ],
+)
+def test_gemini_cross_repo_collision_matches_parrot_entries(
+    isolated_home: Path, tmp_path: Path, key: str, entry: dict
+) -> None:
+    """TASK-5115 (issue:a7deda11b8c3): bookstore and command-matched parrot entries are collision candidates."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    cfg = isolated_home / ".gemini" / "config" / "mcp_config.json"
+    cfg.parent.mkdir(parents=True)
+    other = tmp_path / "other-repo"
+    cfg.write_text(json.dumps({"mcpServers": {key: {**entry, "cwd": str(other)}}}), encoding="utf-8")
+    collision = [c for c in doctor._check_host_configs(repo) if c.name == "host config: google cross-repo collision"]
+    assert collision and f"{key} -> {other.resolve()}" in collision[0].detail
+
+
+def test_gemini_foreign_non_parrot_entry_is_not_a_collision(isolated_home: Path, tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    cfg = isolated_home / ".gemini" / "config" / "mcp_config.json"
+    cfg.parent.mkdir(parents=True)
+    entry = {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem"], "cwd": str(tmp_path / "x")}
+    cfg.write_text(json.dumps({"mcpServers": {"filesystem": entry}}), encoding="utf-8")
+    assert not [c for c in doctor._check_host_configs(repo) if "collision" in c.name]
+
+
+@pytest.mark.parametrize(
+    "stdout, ok, informational, fix",
+    [
+        ("1.4.0\n1.4.0\n", True, False, ""),
+        ("1.5.0\n1.4.0\n", False, False, "parrot self update --version 1.4.0"),
+        ("1.5.0\n\n", True, True, ""),  # ai-parrot-tools absent: parrot_tools.wiki already reports it
+    ],
+)
+def test_runtime_lockstep_check(
+    isolated_home: Path, monkeypatch: pytest.MonkeyPatch, stdout: str, ok: bool, informational: bool, fix: str
+) -> None:
+    """TASK-5117 (issue:66700eac9b2f): doctor compares ai-parrot and ai-parrot-tools in the managed venv."""
+    assert doctor._check_runtime_lockstep().informational  # no interpreter yet
+    python = doctor.script_path(doctor.managed_venv(), "python")
+    python.parent.mkdir(parents=True)
+    python.write_text("")
+    real = subprocess.CompletedProcess
+    monkeypatch.setattr(doctor.subprocess, "run", lambda *a, **k: real(a[0], 0, stdout, ""))
+    check = doctor._check_runtime_lockstep()
+    assert (check.ok, check.informational, check.fix) == (ok, informational, fix)
+    assert (check in doctor.failed([check])) is (not ok and not informational)

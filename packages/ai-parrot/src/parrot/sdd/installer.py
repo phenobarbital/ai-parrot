@@ -35,7 +35,10 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 SUPPORTED_HOSTS: tuple[str, ...] = ("claude", "codex", "google")
+#: C34 — MCP toolkits the SDD flow needs (``sdd-worker`` frontmatter references both servers).
+SDD_TOOLKITS: tuple[str, ...] = ("sdd-coder", "bounded-source")
 MANIFEST_SCHEMA_VERSION = 1
+SETTINGS_PATH = Path(".claude/settings.json")
 RECEIPT_PATH = Path("sdd/.sdd-installed.json")  # C4: committed with sdd/; .parrot/ is gitignored (.gitignore:411)
 RECEIPT_SCHEMA_VERSION = 1
 GITIGNORE_BEGIN = "# >>> parrot sdd (managed) >>>"
@@ -44,6 +47,12 @@ GITIGNORE_BLOCK = (
     f"{GITIGNORE_BEGIN}\n"
     "# SDD feature worktrees (parrot sdd worktree ensure)\n.claude/worktrees/\n"
     "# parrot's local state (ledger index, wiki store), ignored as parrot claude|codex|google install do\n.parrot/\n"
+    "# Claude Code per-user settings (personal permissions written by parrot claude install)\n"
+    ".claude/settings.local.json\n"
+    "# navconfig environment files hold credentials (env/.env, env/<ENV>/.env); env/.env.example stays tracked\n"
+    "/.env\nenv/**/.env\n"
+    "# navconfig runtime log directory (LOG_DIR at the project root only)\n/logs/\n"
+    "# parrot runtime output (OUTPUT_DIR at the project root: generated charts, files)\n/outputs/\n"
     f"{GITIGNORE_END}"
 )
 #: rev 0.5 C23 — the shared ledger's union merge (FEAT-694), same marker pair as the .gitignore block.
@@ -62,9 +71,9 @@ _GUARD_MARKERS = ("worktree guard --hook", "worktree_environment")
 
 FileState = Literal["missing", "current", "outdated", "edited", "foreign"]
 #: Plan vocabulary (C5). install: write | upgrade | overwrite | skip-current | skip-edited | skip-foreign |
-#: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed. uninstall: remove |
+#: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed | base-branch | dangerous-guard | toolkits. uninstall: remove |
 #: keep-edited | keep-foreign | skip-missing | keep-shared | gitignore-remove | gitattributes-remove |
-#: keep-gitattributes | ledger-hooks-remove | keep-ledger-hooks | receipt-remove.   [rev 0.5 C23 / D5]
+#: keep-gitattributes | ledger-hooks-remove | keep-ledger-hooks | toolkits-remove | receipt-remove.   [rev 0.5 C23 / D5]
 PlanAction = Literal[
     "write",
     "upgrade",
@@ -79,6 +88,11 @@ PlanAction = Literal[
     "ledger-hooks",
     "ledger-seed",
     "config-seed",
+    "base-branch",
+    "dangerous-guard",
+    "dangerous-guard-remove",
+    "toolkits",
+    "toolkits-remove",
     "remove",
     "keep-edited",
     "keep-foreign",
@@ -212,13 +226,22 @@ def load_receipt(root: Path) -> dict[str, Any]:
     files = data.get("files")
     blocks = data.get("blocks")
     hooks = data.get("ledger_hooks")
-    return {
+    receipt: dict[str, Any] = {
         "schema_version": RECEIPT_SCHEMA_VERSION,
         "version": data.get("version"),
         "files": dict(files) if isinstance(files, dict) else {},
         "blocks": dict(blocks) if isinstance(blocks, dict) else {},
         "ledger_hooks": list(hooks) if isinstance(hooks, list) else [],
     }
+    settings_hooks = data.get("settings_hooks")
+    if isinstance(settings_hooks, list):
+        receipt["settings_hooks"] = [h for h in settings_hooks if isinstance(h, str)]  # C32
+    if isinstance(data.get("base_branch_created"), str):
+        receipt["base_branch_created"] = data["base_branch_created"]  # C31, status only
+    toolkits = data.get("toolkits")
+    if isinstance(toolkits, list):
+        receipt["toolkits"] = [t for t in toolkits if isinstance(t, str)]  # C34
+    return receipt
 
 
 def _package_version() -> str:
@@ -268,6 +291,137 @@ def guard_hook_command(*, portable: bool) -> tuple[str, Literal["bare", "baked"]
     return baked + _GUARD_HOOK_SUFFIX, "baked"
 
 
+#: rev 0.11 C32 — the dangerous-actions guard command (one executable plus arguments: no shell operators, so the
+#: same line runs under cmd, PowerShell and bash).
+DANGEROUS_HOOK_LINE = "parrot sdd hooks dangerous-actions --hook"
+_DANGEROUS_SUFFIX = " sdd hooks dangerous-actions --hook"
+_DANGEROUS_MATCHER = "Bash|Edit|Write|MultiEdit"
+
+
+def dangerous_hook_command(*, portable: bool) -> tuple[str, Literal["bare", "baked"]]:
+    """Return the dangerous-actions guard command and its form; same bare/baked rule as :func:`guard_hook_command`."""
+    guard, form = guard_hook_command(portable=portable)
+    if form == "bare":
+        return DANGEROUS_HOOK_LINE, "bare"
+    return guard.removesuffix(_GUARD_HOOK_SUFFIX) + _DANGEROUS_SUFFIX, "baked"
+
+
+def _is_dangerous_command(command: object) -> bool:
+    return isinstance(command, str) and command.rstrip().endswith(_DANGEROUS_SUFFIX.strip())
+
+
+def _pre_tool_use(settings: dict[str, Any], path: Path, *, create: bool) -> list[Any] | None:
+    hooks = settings.get("hooks")
+    if hooks is None:
+        if not create:
+            return None
+        hooks = settings["hooks"] = {}
+    if not isinstance(hooks, dict):
+        raise RuntimeError(f"{path}: 'hooks' is not a JSON object")
+    pre = hooks.get("PreToolUse")
+    if pre is None:
+        if not create:
+            return None
+        pre = hooks["PreToolUse"] = []
+    if not isinstance(pre, list):
+        raise RuntimeError(f"{path}: 'hooks.PreToolUse' is not a list")
+    return pre
+
+
+def _install_dangerous_guard(root: Path, receipt: dict[str, Any], *, portable: bool) -> list[str]:
+    """C32: merge one dangerous-actions PreToolUse entry into ``.claude/settings.json`` (foreign entries untouched)."""
+    from parrot.knowledge.wiki.claude_code.installer import _load_settings, _write_settings  # lazy, as for ledger hooks
+
+    path = root / SETTINGS_PATH
+    settings = _load_settings(path) or {}
+    pre = _pre_tool_use(settings, path, create=True)
+    assert pre is not None
+    for entry in pre:
+        for hook in entry.get("hooks", []) if isinstance(entry, dict) else []:
+            command = hook.get("command") if isinstance(hook, dict) else None
+            if isinstance(command, str) and "dangerous-actions-blocker" in command:
+                return [
+                    f"note: {SETTINGS_PATH} — a dangerous-actions-blocker hook is already registered; guard skipped"
+                ]
+    command, form = dangerous_hook_command(portable=portable)
+    ours = [
+        hook
+        for entry in pre
+        if isinstance(entry, dict)
+        for hook in entry.get("hooks", [])
+        if isinstance(hook, dict) and _is_dangerous_command(hook.get("command"))
+    ]
+    if ours:
+        if all(h.get("command") == command for h in ours):
+            result = f"{SETTINGS_PATH} — dangerous-actions guard already registered"
+        else:
+            for hook in ours:
+                hook["command"] = command
+            _write_settings(path, settings)
+            result = f"{SETTINGS_PATH} — dangerous-actions guard updated ({form})"
+    else:
+        pre.append({"matcher": _DANGEROUS_MATCHER, "hooks": [{"type": "command", "command": command, "timeout": 10}]})
+        _write_settings(path, settings)
+        result = f"{SETTINGS_PATH} — dangerous-actions guard registered ({form})"
+    recorded = receipt.setdefault("settings_hooks", [])
+    if "dangerous-actions" not in recorded:
+        recorded.append("dangerous-actions")
+    return [result]
+
+
+def _remove_dangerous_guard(root: Path, receipt: dict[str, Any]) -> list[str]:
+    """C32: remove only our entry (matched by its command suffix) from ``.claude/settings.json``."""
+    from parrot.knowledge.wiki.claude_code.installer import _load_settings, _write_settings
+
+    path = root / SETTINGS_PATH
+    receipt["settings_hooks"] = [h for h in receipt.get("settings_hooks", []) if h != "dangerous-actions"]
+    settings = _load_settings(path)
+    if settings is None:
+        return []
+    pre = _pre_tool_use(settings, path, create=False)
+    if pre is None:
+        return []
+    changed = False
+    kept: list[Any] = []
+    for entry in pre:
+        if isinstance(entry, dict) and isinstance(entry.get("hooks"), list):
+            remaining = [
+                h for h in entry["hooks"] if not (isinstance(h, dict) and _is_dangerous_command(h.get("command")))
+            ]
+            if len(remaining) != len(entry["hooks"]):
+                changed = True
+                if not remaining:
+                    continue
+                entry["hooks"] = remaining
+        kept.append(entry)
+    if not changed:
+        return []
+    pre[:] = kept
+    if not pre:
+        settings["hooks"].pop("PreToolUse", None)
+        if not settings["hooks"]:
+            settings.pop("hooks")
+    _write_settings(path, settings)
+    return [f"{SETTINGS_PATH} — dangerous-actions guard removed"]
+
+
+def _dangerous_guard_report(root: Path) -> dict[str, Any]:
+    """C32 status: ``{"form": "bare" | "baked" | None, "command": str | None}`` from ``.claude/settings.json``."""
+    try:
+        from parrot.knowledge.wiki.claude_code.installer import _load_settings
+
+        settings = _load_settings(root / SETTINGS_PATH) or {}
+        pre = _pre_tool_use(settings, root / SETTINGS_PATH, create=False) or []
+    except (RuntimeError, ImportError):
+        return {"form": None, "command": None}
+    for entry in pre:
+        for hook in entry.get("hooks", []) if isinstance(entry, dict) else []:
+            command = hook.get("command") if isinstance(hook, dict) else None
+            if _is_dangerous_command(command):
+                return {"form": "bare" if command == DANGEROUS_HOOK_LINE else "baked", "command": command}
+    return {"form": None, "command": None}
+
+
 def _rendered_payload(entry: dict[str, Any], hook: str) -> bytes:
     """Packaged bytes of ``entry`` with the guard-hook line replaced by ``hook`` (YAML single-quote escaped)."""
     payload = (_assets_root() / entry["source"]).read_bytes()
@@ -302,7 +456,14 @@ def classify_entry(
 
 
 def plan_install(
-    root: Path, hosts: Sequence[str], *, force: bool = False, hook: str = GUARD_HOOK_LINE
+    root: Path,
+    hosts: Sequence[str],
+    *,
+    force: bool = False,
+    hook: str = GUARD_HOOK_LINE,
+    base_branch: str | None = None,
+    dangerous_guard: bool = True,
+    sdd_coder: bool = True,
 ) -> list[PlannedAction]:
     """Pure: the ordered plan for ``install`` (assets, seeds, gitignore, ledger, config). No I/O writes."""
     receipt = load_receipt(root)
@@ -337,7 +498,113 @@ def plan_install(
         plan.append(PlannedAction(action="ledger-seed", target="sdd/tasks/.id_ledger.json"))
     if not (root / "sdd/config.json").exists():
         plan.append(PlannedAction(action="config-seed", target="sdd/config.json"))
+    from parrot.sdd.config import load_sdd_config  # TASK-4299
+
+    base = base_branch or load_sdd_config(root).base_branch
+    plan.append(PlannedAction(action="base-branch", target=base, note=_base_branch_state(root, base)))  # C31
+    if dangerous_guard and "claude" in _validate_hosts(hosts):
+        plan.append(PlannedAction(action="dangerous-guard", target=SETTINGS_PATH.as_posix()))  # C32
+    if sdd_coder:
+        plan.append(PlannedAction(action="toolkits", target=", ".join(SDD_TOOLKITS)))  # C34
     return plan
+
+
+# --------------------------------------------------------------------------
+# base branch preflight (C31)
+# --------------------------------------------------------------------------
+
+
+def _git_run(root: Path, *args: str) -> subprocess.CompletedProcess[str] | None:
+    """Bounded, prompt-free ``git -C root ...``; ``None`` when git is missing or the call times out."""
+    try:
+        return subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _git_ok(root: Path, *args: str) -> bool:
+    proc = _git_run(root, *args)
+    return proc is not None and proc.returncode == 0
+
+
+def _git_out(root: Path, *args: str) -> str:
+    proc = _git_run(root, *args)
+    return proc.stdout.strip() if proc is not None and proc.returncode == 0 else ""
+
+
+def _base_branch_state(root: Path, base: str) -> str:
+    """Read-only probe: ``exists`` | ``create from HEAD`` | ``track origin/<base>`` | ``skip: <reason>``."""
+    if not _git_ok(root, "rev-parse", "--is-inside-work-tree"):
+        return "skip: not a git work tree"
+    if not _git_ok(root, "rev-parse", "--verify", "-q", "HEAD"):
+        return "skip: no commit yet"
+    if _git_ok(root, "show-ref", "--verify", "-q", f"refs/heads/{base}"):
+        return "exists"
+    if _git_ok(root, "show-ref", "--verify", "-q", f"refs/remotes/origin/{base}"):
+        return f"track origin/{base}"
+    return "create from HEAD"
+
+
+def _base_branch_step(root: Path, config: Any, *, push: bool, receipt: dict[str, Any] | None = None) -> list[str]:
+    """C31: make ``config.base_branch`` exist locally when safe; warn/note about everything else (never raises)."""
+    base = config.base_branch
+    state = _base_branch_state(root, base)
+    out: list[str] = []
+    if state == "skip: not a git work tree":
+        return [f"warning: {base} — base branch not prepared: {root} is not a git work tree (or git is missing)"]
+    if state == "skip: no commit yet":
+        return [
+            f"warning: {base} — base branch not prepared: HEAD has no commit yet; commit once, then re-run "
+            f"`parrot sdd install` (or `git branch {base}`)"
+        ]
+    if state == "exists":
+        out.append(f"{base} — base branch present")
+    else:
+        if state.startswith("track"):
+            proc = _git_run(root, "branch", "--track", base, f"origin/{base}")
+            label = f"created, tracking origin/{base}"
+        else:
+            proc = _git_run(root, "branch", base, "HEAD")
+            current = _git_out(root, "symbolic-ref", "-q", "--short", "HEAD") or _git_out(
+                root, "rev-parse", "--short", "HEAD"
+            )
+            label = f"created from {current}"
+        if proc is None or proc.returncode != 0:
+            detail = (proc.stderr.strip() if proc is not None else "git unavailable") or "git branch failed"
+            out.append(f"warning: {base} — could not create base branch ({detail})")
+        else:
+            out.append(f"{base} — {label}")
+            if receipt is not None:
+                receipt["base_branch_created"] = base
+    if not _git_ok(root, "remote", "get-url", "origin"):
+        out.append(
+            f"note: no `origin` remote; SDD worktrees branch from origin/{base}: "
+            f"`git remote add origin <url> && git push -u origin {base}`"
+        )
+    elif not _git_ok(root, "show-ref", "--verify", "-q", f"refs/remotes/origin/{base}"):
+        if push:
+            proc = _git_run(root, "push", "-u", "origin", base)
+            if proc is not None and proc.returncode == 0:
+                out.append(f"{base} — pushed to origin and tracking it")
+            else:
+                detail = (proc.stderr.strip() if proc is not None else "git unavailable") or "push failed"
+                out.append(f"warning: {base} — push to origin failed ({detail})")
+        else:
+            out.append(
+                f"warning: origin/{base} not found locally; SDD worktrees branch from it: "
+                f"`git push -u origin {base}` (or re-run with --push-base)"
+            )
+    for other in (config.staging_branch, config.hotfix_base):
+        if other and other != base and not _git_ok(root, "show-ref", "--verify", "-q", f"refs/heads/{other}"):
+            out.append(f"note: branch {other} is configured but missing locally; create it when you need it")
+    return out
 
 
 def _host_installed(root: Path, host: str, entries: list[dict[str, Any]], receipt: dict[str, Any]) -> bool:
@@ -397,6 +664,10 @@ def plan_uninstall(root: Path, hosts: Sequence[str]) -> list[PlannedAction]:
         else:
             plan.append(PlannedAction(action="remove", target=target))
             removed.add(target)
+    if "claude" in selected_hosts and "dangerous-actions" in receipt.get("settings_hooks", []):
+        plan.append(PlannedAction(action="dangerous-guard-remove", target=SETTINGS_PATH.as_posix()))  # C32
+    if receipt.get("toolkits"):
+        plan.append(PlannedAction(action="toolkits-remove", target=", ".join(receipt["toolkits"])))  # C34
     if set(receipt["files"]) - removed:
         return plan  # recorded files remain: the shared blocks, hooks and receipt stay
     gitignore = root / ".gitignore"
@@ -462,29 +733,75 @@ def _apply_asset(
     return f"{entry['target']} — {verb[action.action]}"
 
 
-def _seed_config(root: Path) -> str:
-    """C6: write ``sdd/config.json`` from ``default_sdd_config()`` iff absent (TASK-4299; lazy import)."""
+def _apply_branch_overrides(
+    root: Path, config: "SddConfig", *, base_branch: str | None, hotfix_base: str | None
+) -> "SddConfig":
+    """C31: validate ``--base-branch`` / ``--hotfix-base`` before anything is written.
+
+    Each name must pass ``git check-ref-format --branch`` (skipped when git is unavailable) and the merged
+    config must pass ``SddConfig`` validation (distinct lanes, no ``origin/`` prefix). With an existing
+    ``sdd/config.json`` the overrides must match it — the file is the source of truth and is never rewritten.
+
+    Raises:
+        ValueError: invalid name, a conflicting existing config, or a combination ``SddConfig`` rejects.
+    """
+    from pydantic import ValidationError
+
+    from parrot.sdd.config import SddConfig  # TASK-4299
+
+    overrides = {field: value for field, value in (("base_branch", base_branch), ("hotfix_base", hotfix_base)) if value}
+    for field, name in overrides.items():
+        proc = _git_run(root, "check-ref-format", "--branch", name)
+        if proc is not None and proc.returncode != 0:
+            raise ValueError(f"invalid {field} name: {name!r}")
+    if (root / "sdd/config.json").exists():
+        clash = {field: getattr(config, field) for field, value in overrides.items() if getattr(config, field) != value}
+        if clash:
+            current = ", ".join(f"{field}={value}" for field, value in clash.items())
+            raise ValueError(f"sdd/config.json already sets {current}; edit it there")
+        return config
+    merged = {**config.model_dump(), **overrides}
+    try:
+        return SddConfig.model_validate(merged)
+    except ValidationError as exc:
+        reason = "; ".join(err["msg"] for err in exc.errors())
+        hint = ""
+        if merged["base_branch"] == merged["hotfix_base"]:
+            hint = " — pass --hotfix-base <branch> (the base and hotfix branches must differ)"
+        raise ValueError(f"invalid SDD branch settings: {reason}{hint}") from None
+
+
+def _seed_config(root: Path, seed: "SddConfig | None" = None) -> str:
+    """C6: write ``sdd/config.json`` iff absent (TASK-4299; lazy import).
+
+    ``seed`` is the already-validated config carrying the ``--base-branch`` / ``--hotfix-base`` overrides
+    (C31); ``None`` writes ``default_sdd_config()``.
+    """
     from parrot.sdd.config import CONFIG_PATH, default_sdd_config  # TASK-4299
 
     path = root / CONFIG_PATH
     if path.exists():
         return ""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(default_sdd_config().model_dump_json(indent=2) + "\n", encoding="utf-8")
+    path.write_text((seed or default_sdd_config()).model_dump_json(indent=2) + "\n", encoding="utf-8")
     return (
         f"{CONFIG_PATH} — seeded; edit base_branch/hotfix_base/issue_tracker/test_command for this repo and commit it"
     )
 
 
 def _install_gitignore(root: Path) -> str:
-    """Upsert the managed ``.claude/worktrees/`` + ``.parrot/`` block into ``<root>/.gitignore``."""
+    """Upsert the managed ``GITIGNORE_BLOCK`` into ``<root>/.gitignore``, creating the file when it is missing.
+
+    The block covers SDD worktrees, parrot's local state, Claude Code's per-user settings, navconfig's
+    credential files and log directory, and parrot's runtime output. User lines around the block are kept.
+    """
     path = root / ".gitignore"
     text = path.read_text(encoding="utf-8") if path.exists() else ""
     updated = _upsert_marker_block(text, GITIGNORE_BLOCK, GITIGNORE_BEGIN, GITIGNORE_END)
     if updated == text:
-        return ".gitignore — managed .claude/worktrees/ + .parrot/ block up to date"
+        return ".gitignore — managed block up to date"
     path.write_text(updated, encoding="utf-8")
-    return ".gitignore — managed .claude/worktrees/ + .parrot/ block written"
+    return ".gitignore — managed block written"
 
 
 def _install_gitattributes(root: Path, receipt: dict[str, Any]) -> str:
@@ -533,6 +850,120 @@ def _test_command_warning(config: "SddConfig") -> str | None:
         "warning: sdd/config.json test_command is null — set it to the command that runs this repo's tests; "
         "the shipped test steps run it once from the repo root (C21)"
     )
+
+
+_PYTHON_PROJECT_FILES: tuple[str, ...] = ("pyproject.toml", "setup.py", "setup.cfg")
+
+
+def _read_pyproject(root: Path) -> dict[str, Any]:
+    """``<root>/pyproject.toml`` as a dict; ``{}`` when absent or unparsable."""
+    import tomllib
+
+    try:
+        with (root / "pyproject.toml").open("rb") as handle:
+            data = tomllib.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _pytest_pythonpath_configured(root: Path, pyproject: dict[str, Any]) -> bool:
+    """True when any pytest config file under ``root`` sets ``pythonpath``."""
+    import configparser
+
+    pytest_tool = (pyproject.get("tool") or {}).get("pytest") or {}
+    if isinstance(pytest_tool, dict):
+        ini = pytest_tool.get("ini_options") or {}
+        if (isinstance(ini, dict) and "pythonpath" in ini) or "pythonpath" in pytest_tool:
+            return True
+    for name, section in (("pytest.ini", "pytest"), ("tox.ini", "pytest"), ("setup.cfg", "tool:pytest")):
+        path = root / name
+        if not path.is_file():
+            continue
+        parser = configparser.ConfigParser(interpolation=None)
+        try:
+            parser.read(path, encoding="utf-8")
+        except (OSError, configparser.Error):
+            continue
+        if parser.has_option(section, "pythonpath"):
+            return True
+    return False
+
+
+def _editable_from_root(root: Path) -> list[str]:
+    """Distributions installed editable in ``<root>/.venv`` from ``root`` itself (PEP 610 ``direct_url.json``)."""
+    from urllib.parse import unquote, urlparse
+
+    venv = root / ".venv"
+    if not venv.is_dir():
+        return []
+    try:
+        mine = root.resolve()
+    except (OSError, RuntimeError):
+        return []
+    found: list[str] = []
+    for direct_url in sorted(venv.glob("lib*/python*/site-packages/*.dist-info/direct_url.json")) + sorted(
+        venv.glob("Lib/site-packages/*.dist-info/direct_url.json")
+    ):
+        try:
+            data = json.loads(direct_url.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict) or not (data.get("dir_info") or {}).get("editable"):
+            continue
+        url = urlparse(str(data.get("url", "")))
+        if url.scheme != "file":
+            continue
+        try:
+            source = Path(unquote(url.path)).resolve()
+        except (OSError, RuntimeError):
+            continue
+        if source == mine or mine in source.parents:
+            found.append(direct_url.parent.name.split("-")[0])
+    return found
+
+
+def worktree_test_isolation(root: Path, test_command: str | None) -> str | None:
+    """Why tests run inside ``.claude/worktrees/<feature>/`` may not exercise the worktree's own code, else None.
+
+    SDD runs each task's tests in a worktree, but the shared ``.venv`` usually has the project installed
+    editable from the MAIN checkout, so pytest silently imports that copy; a virtual project
+    (``[tool.uv] package = false``) cannot import its own modules at all. A rootdir-relative pytest
+    ``pythonpath`` fixes both. Read-only and never raises; it never edits the user's pytest config.
+
+    Args:
+        root: Repository root (the main checkout).
+        test_command: ``sdd/config.json`` ``test_command`` (``None`` when unset).
+
+    Returns:
+        One sentence naming the cause and the recommended ``pythonpath`` setting, or None when the repo is
+        not a Python project, ``test_command`` does not run pytest or already sets ``PYTHONPATH``, or pytest
+        already has a ``pythonpath`` setting.
+    """
+    try:
+        if not any((root / name).is_file() for name in _PYTHON_PROJECT_FILES):
+            return None
+        if test_command and ("pytest" not in test_command or "PYTHONPATH" in test_command):
+            return None
+        pyproject = _read_pyproject(root)
+        if _pytest_pythonpath_configured(root, pyproject):
+            return None
+        editable = _editable_from_root(root)
+        virtual = ((pyproject.get("tool") or {}).get("uv") or {}).get("package") is False
+    except Exception as exc:  # noqa: BLE001 — advisory only
+        logger.debug("worktree test isolation check skipped: %s", exc)
+        return None
+    if editable:
+        cause = (f"{', '.join(editable)} is installed editable from {root} in .venv, so pytest in a worktree "
+                 "imports the main checkout's code instead of the branch under test")
+    elif virtual:
+        cause = "this is a virtual project ([tool.uv] package = false), so pytest cannot import its own modules"
+    else:
+        cause = "pytest has no `pythonpath` setting, so tests in a worktree may import the main checkout's code"
+    layout = "src" if (root / "src").is_dir() else "."
+    return (f"{cause}; add `pythonpath = [\"{layout}\"]` under [tool.pytest.ini_options] in pyproject.toml "
+            "(rootdir-relative, so each worktree tests its own code), or set sdd/config.json test_command to a "
+            "command that sets PYTHONPATH")
 
 
 def _seed_id_ledger(root: Path) -> str | None:
@@ -621,6 +1052,11 @@ def install_sdd_integration(
     force: bool = False,
     dry_run: bool = False,
     portable: bool = False,
+    base_branch: str | None = None,
+    push_base: bool = False,
+    hotfix_base: str | None = None,
+    dangerous_guard: bool = True,
+    sdd_coder: bool = True,
 ) -> list[str]:
     """Deploy packaged SDD assets for ``hosts`` into ``root``; never overwrites foreign content.
 
@@ -633,6 +1069,15 @@ def install_sdd_integration(
             seed, gitignore, ledger, config, receipt, or directory.
         portable: Write the bare guard-hook command (needs the global launcher on PATH) instead of
             baking the installing venv's ``parrot`` when the launcher is not on PATH (C25).
+        base_branch: C31 — seed ``sdd/config.json`` with this base branch (when absent) and prepare it.
+            Conflicts with an existing config that sets a different one.
+        dangerous_guard: C32 — register the PreToolUse dangerous-actions guard in ``.claude/settings.json``
+            (claude host); ``False`` skips it.
+        sdd_coder: C34 — register the ``sdd-coder`` and ``bounded-source`` MCP toolkits (``.parrot/mcp-toolkits.yaml``
+            plus the host MCP config) and report the usable roster; ``False`` skips all of it.
+        push_base: C31 — also ``git push -u origin <base_branch>`` when origin lacks it.
+        hotfix_base: C31 — seed ``sdd/config.json`` with this hotfix branch (when absent). Needed when
+            ``base_branch`` is ``main`` (the default hotfix branch): the two must differ.
 
     Returns:
         Human-readable action log; skipped conflicts and audit findings start with ``warning:``;
@@ -649,8 +1094,21 @@ def install_sdd_integration(
     from parrot.sdd.config import load_sdd_config  # TASK-4299
 
     config = load_sdd_config(root)
+    seed: SddConfig | None = None
+    if base_branch or hotfix_base:
+        config = _apply_branch_overrides(root, config, base_branch=base_branch, hotfix_base=hotfix_base)
+        if not (root / "sdd/config.json").exists():
+            seed = config
     hook, form = guard_hook_command(portable=portable)
-    plan = plan_install(root, hosts, force=force, hook=hook)
+    plan = plan_install(
+        root,
+        hosts,
+        force=force,
+        hook=hook,
+        base_branch=config.base_branch,
+        dangerous_guard=dangerous_guard,
+        sdd_coder=sdd_coder,
+    )
     if dry_run:
         return [str(step) for step in plan]
     receipt = load_receipt(root)
@@ -668,10 +1126,18 @@ def install_sdd_integration(
         elif step.action == "ledger-seed":
             actions.append(_seed_id_ledger(root) or "")
         elif step.action == "config-seed":
-            actions.append(_seed_config(root))
+            actions.append(_seed_config(root, seed))
+        elif step.action == "base-branch":
+            actions.extend(_base_branch_step(root, config, push=push_base, receipt=receipt))
+        elif step.action == "dangerous-guard":
+            actions.extend(_install_dangerous_guard(root, receipt, portable=portable))
+        elif step.action == "toolkits":
+            actions.extend(_install_toolkits_step(root, hosts, receipt))
     _save_receipt(root, receipt)
     actions.append(f"{RECEIPT_PATH} — written; commit it with the installed files (it drives upgrades and uninstall)")
     actions.append(_test_command_warning(config) or "")
+    isolation = worktree_test_isolation(root, config.test_command)  # TASK-5118
+    actions.append(f"note: worktree tests — {isolation}" if isolation else "")
     if "claude" in hosts:
         actions.append(HOOK_WIRING_NOTE)
         if form == "baked":
@@ -683,6 +1149,96 @@ def install_sdd_integration(
     installed = [root / t for t in receipt["files"] if (root / t).is_file()]
     actions.extend(_audit(root, installed))
     return [a for a in actions if a]
+
+
+def _toolkit_hosts(hosts: Sequence[str]) -> list[Any]:
+    """Map install host names to :class:`parrot.mcp.hosts.HostKind` (lazy import)."""
+    from parrot.mcp.hosts import HostKind
+
+    return [HostKind(h) for h in hosts if h in {k.value for k in HostKind}]
+
+
+def _roster_report(root: Path) -> list[str]:
+    """C34 — static availability of the shipped ``sdd-coder`` seats (no model call, no network).
+
+    Returns ``note:``/``warning:`` lines; any failure becomes a single ``warning:`` line, never an exception.
+    """
+    try:
+        import asyncio
+
+        from parrot.flows.dev_loop.sdd_coder.models import RosterConfig
+        from parrot.flows.dev_loop.sdd_coder.roster import RosterProbe
+        from parrot.mcp.toolkit_config import load_toolkits_config
+
+        section = load_toolkits_config(root).toolkits.get("sdd-coder")
+        if section is None or not section.enabled:
+            return []
+        kwargs = section.kwargs or {}
+        roster = RosterConfig(seats=kwargs["roster"])
+        if kwargs.get("complexity") is not None:
+            roster = roster.model_copy(update={"complexity": roster.complexity.model_validate(kwargs["complexity"])})
+        results = asyncio.run(RosterProbe(smoke=None).probe(roster))
+        strong = {(m.backend, m.model) for m in roster.complexity.strong_models}
+        kinds = {seat.label: seat for seat in roster.seats}
+        available = [r for r in results if r.available]
+        unavailable = [r for r in results if not r.available]
+        lines = [
+            "note: sdd-coder seats available: "
+            + (", ".join(r.label for r in available) or "none")
+            + (
+                "; unavailable: " + ", ".join(f"{r.label} ({r.reason or 'unavailable'})" for r in unavailable)
+                if unavailable
+                else ""
+            )
+        ]
+        strong_mcp = [
+            r
+            for r in available
+            if kinds[r.label].kind == "mcp" and (kinds[r.label].backend, kinds[r.label].model) in strong
+        ]
+        if len(strong_mcp) < 2:
+            lines.append(
+                "warning: fewer than two strong MCP seats are available — complex tasks will have no retry seat; "
+                "configure codex/gemini/nova credentials (see issue:569e81756247)"
+            )
+        return lines
+    except Exception as exc:  # noqa: BLE001 — a roster report must never fail the install
+        return [f"warning: sdd-coder roster could not be checked ({exc})"]
+
+
+def _install_toolkits_step(root: Path, hosts: Sequence[str], receipt: dict[str, Any]) -> list[str]:
+    """C34 — register the SDD MCP toolkits; record in the receipt only those this run added."""
+    try:
+        from parrot.mcp.toolkit_install import install_toolkits
+
+        report = install_toolkits(root, list(SDD_TOOLKITS), _toolkit_hosts(hosts))
+    except (ValueError, OSError, ImportError) as exc:
+        return [f"warning: MCP toolkits not registered ({exc})"]
+    lines: list[str] = list(report.actions)
+    for text in report.warnings:
+        lines.append(f"{text}" if text.endswith("already installed") else f"warning: {text}")
+    lines.extend(
+        f"warning: toolkit host {host.value} not reconciled ({why})" for host, why in report.failed_hosts.items()
+    )
+    added = [a.split(" — ")[0] for a in report.actions if a.endswith(" — seeded")]
+    receipt["toolkits"] = sorted(set(receipt.get("toolkits", [])) | set(added))
+    lines.extend(_roster_report(root))
+    return lines
+
+
+def _remove_toolkits(root: Path, hosts: Sequence[str], receipt: dict[str, Any]) -> list[str]:
+    """C34 — remove only the toolkits this install recorded; a user-installed one is left alone."""
+    names = list(receipt.get("toolkits", []))
+    if not names:
+        return []
+    try:
+        from parrot.mcp.toolkit_install import uninstall_toolkits
+
+        report = uninstall_toolkits(root, names, _toolkit_hosts(hosts))
+    except (ValueError, OSError, ImportError) as exc:
+        return [f"warning: MCP toolkits not removed ({exc})"]
+    receipt["toolkits"] = []
+    return [*report.actions, *(f"warning: {w}" for w in report.warnings)]
 
 
 def _prune_empty_parents(root: Path, path: Path) -> None:
@@ -741,12 +1297,19 @@ def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *,
         elif step.action == "ledger-hooks-remove":
             from parrot.knowledge.wiki.claude_code.installer import _uninstall_ledger_hooks
 
-            actions.extend(_uninstall_ledger_hooks(root))
+            # Only the events this integration created (the receipt); other blocks belong to someone else.
+            actions.extend(_uninstall_ledger_hooks(root, receipt.get("ledger_hooks") or []))
             receipt["ledger_hooks"] = []
         elif step.action == "keep-ledger-hooks":
             actions.append(f"git ledger hooks — kept (keep-ledger-hooks: {step.note})")
+        elif step.action == "dangerous-guard-remove":
+            actions.extend(_remove_dangerous_guard(root, receipt))
+        elif step.action == "toolkits-remove":
+            actions.extend(_remove_toolkits(root, hosts, receipt))
         elif step.action == "receipt-remove":
             drop_receipt = True
+    if receipt.get("base_branch_created"):
+        actions.append(f"note: base branch {receipt['base_branch_created']} was created by install; it is kept")
     if drop_receipt:
         (root / RECEIPT_PATH).unlink(missing_ok=True)
         _prune_empty_parents(root, root / RECEIPT_PATH)
@@ -830,6 +1393,17 @@ def _ledger_hooks_present(root: Path) -> bool:
     return True
 
 
+def _toolkits_report(root: Path) -> dict[str, str]:
+    """C34 — declared state (``enabled``/``disabled``/``not_installed``) of the SDD MCP toolkits."""
+    try:
+        from parrot.mcp.toolkit_install import inventory
+
+        rows = {row.name: row.state.value for row in inventory(root)}
+    except Exception:  # noqa: BLE001 — status is informational
+        rows = {}
+    return {name: rows.get(name, "not_installed") for name in SDD_TOOLKITS}
+
+
 def sdd_status(root: Path) -> dict[str, Any]:
     """Per-host install state (C4/C15/C25):
 
@@ -870,5 +1444,7 @@ def sdd_status(root: Path) -> dict[str, Any]:
         "gitattributes": attributes.is_file() and GITIGNORE_BEGIN in attributes.read_text(encoding="utf-8"),
         "ledger_hooks": _ledger_hooks_present(root),
         "guard_hook": guard,
+        "dangerous_guard": _dangerous_guard_report(root),
+        "toolkits": _toolkits_report(root),
         "receipt_version": receipt.get("version"),
     }

@@ -24,11 +24,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shlex
 import stat
+import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any, Iterable, Optional, Sequence
 
 from parrot.knowledge.wiki.claude_code import assets
 from parrot.knowledge.wiki.project import (
@@ -923,8 +925,44 @@ def _install_slash_command(root: Path) -> str:
     return ".claude/commands/parrotwiki.md — " + ("updated" if existing is not None else "created")
 
 
+#: Upper bound for the ``git rev-parse`` call that resolves the hooks directory.
+_GIT_HOOKS_TIMEOUT_S: float = 10.0
+
+
+def _git_resolved_hook_path(root: Path, hook_name: str) -> Optional[Path]:
+    """Ask git where ``hooks/<hook_name>`` lives (honours ``core.hooksPath`` and linked worktrees).
+
+    Returns None when git is unavailable, fails, or reports a different toplevel than ``root``
+    (for example a bare ``.git`` directory that is not a repository); the caller then falls back
+    to the file-based lookup.
+    """
+    cmd = ["git", "-C", str(root), "rev-parse", "--show-toplevel", "--git-path", f"hooks/{hook_name}"]
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=_GIT_HOOKS_TIMEOUT_S,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    lines = result.stdout.splitlines()
+    if result.returncode != 0 or len(lines) != 2:
+        return None
+    toplevel, hook = Path(lines[0]), Path(lines[1])
+    try:
+        if toplevel.resolve() != root.resolve():
+            return None
+    except (OSError, RuntimeError):
+        return None
+    # A relative answer is relative to the worktree root (git runs hooks from there).
+    return hook if hook.is_absolute() else root / hook
+
+
 def _git_hook_path(root: Path, hook_name: str = "post-commit") -> Optional[Path]:
-    """Locate .git/hooks/<hook_name>, or None when not a git repo.
+    """Locate the git hook file ``hook_name``, or None when not a git repo.
+
+    Git itself resolves the path first (``git rev-parse --git-path hooks/<name>``), so a
+    ``core.hooksPath`` setting (husky, lefthook, a shared hooks dir) is honoured; without a
+    usable git answer it falls back to ``.git/hooks`` (or the common dir of a linked worktree).
 
     Args:
         root: Repository root.
@@ -932,6 +970,11 @@ def _git_hook_path(root: Path, hook_name: str = "post-commit") -> Optional[Path]
             (default) or ``"post-merge"`` (FEAT-566 Module 10).
     """
     git_dir = root / ".git"
+    if not git_dir.exists():
+        return None
+    resolved = _git_resolved_hook_path(root, hook_name)
+    if resolved is not None:
+        return resolved
     if git_dir.is_dir():
         return git_dir / "hooks" / hook_name
     if git_dir.is_file():  # worktree: `gitdir: <path>` pointer
@@ -1122,10 +1165,17 @@ def _install_ledger_hooks(root: Path) -> list[str]:
     return actions
 
 
-def _uninstall_ledger_hooks(root: Path) -> list[str]:
-    """Strip the ``parrot-ledger`` block from each ledger hook; never touch other blocks."""
+def _uninstall_ledger_hooks(root: Path, events: Optional[Iterable[str]] = None) -> list[str]:
+    """Strip the ``parrot-ledger`` block from each ledger hook; never touch other blocks.
+
+    Args:
+        root: Repository root.
+        events: Limit the strip to these hook events (``parrot sdd uninstall`` passes the events
+            its install receipt recorded). ``None`` means every ledger hook event.
+    """
+    wanted = set(assets.LEDGER_HOOK_EVENTS if events is None else events)
     actions: list[str] = []
-    for event in assets.LEDGER_HOOK_EVENTS:
+    for event in (e for e in assets.LEDGER_HOOK_EVENTS if e in wanted):
         hook_path = _git_hook_path(root, event)
         if hook_path is None or not hook_path.exists():
             continue

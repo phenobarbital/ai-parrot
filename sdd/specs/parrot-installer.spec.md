@@ -12,7 +12,17 @@ tags: [installer, bootstrap, uv, launcher, mcp, windows, sdd-packaging]
 **Author**: Jesus Lara (brainstorm + decisions); spec drafted with Claude
 **Status**: approved
 **Target version**: Next release (assigned by release tooling)
-**Revision**: 0.10 (2026-11-01) — C30 revised (proposal rev 0.9): `launch` is a noun — `launch worker`
+**Revision**: 0.12 (2026-11-03) — amendments C34–C35 from the end-to-end SDD run in the sandbox project (FEAT-1
+`stats-module`, `/sdd-spec` → `/sdd-task` → `sdd-worker` → `/sdd-done`): the worker fell back to sequential
+self-implementation because `parrot sdd install` never registered `parrot-sdd-coder`. C34 the SDD install
+registers the `sdd-coder` and `bounded-source` toolkits and reports the usable roster (TASK-5113); C35 moves
+`bounded-source` into core so it always installs (TASK-5112).
+**Revision 0.11** (2026-11-03) — amendments C31–C33 from the installer simulation in a fresh project
+(`install-develop` = `dev` + FEAT-633, installed from source into an empty uv project): C31 the installer
+prepares the SDD base branch (TASK-5109); C32 a portable, cross-platform dangerous-actions guard ships and is
+registered in `.claude/settings.json` (TASK-5110); C33 the managed `.gitignore` block covers navconfig/parrot
+runtime and credential files (PR #1932, no task).
+**Revision 0.10** (2026-11-01) — C30 revised (proposal rev 0.9): `launch` is a noun — `launch worker`
 (FEAT-768), `launch brief <source>` / `launch fix …` open a Claude session on the slash command in the
 primary checkout; `wikitoolkit ledger` stays and is not rewritten; every shipped command/agent/skill/workflow
 keeps its name.
@@ -62,7 +72,7 @@ ships through the installer (amends TASK-4070, 4085, 4089, 4090, 4091, 4299).
 `worktree_environment` enters scope (amends TASK-4085, 4072, 4089, 4090, 4091).
 **Revision 0.2** (2026-10-14) — folds in the approved amendments of the same proposal
 (rev 0.3): C2–C6, C8–C15, Q1, C7.
-Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`, `[rev 0.4 C17]`, `[rev 0.5 C<n>]`, `[rev 0.5 D<n>]`, `[rev 0.6 C25]`, `[rev 0.7 C26]`, `[rev 0.7 C27]`, `[rev 0.8 C28]`, `[rev 0.8 C29]`, `[rev 0.9 C30]`, `[rev 0.10]`) mark every changed clause.
+Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`, `[rev 0.4 C17]`, `[rev 0.5 C<n>]`, `[rev 0.5 D<n>]`, `[rev 0.6 C25]`, `[rev 0.7 C26]`, `[rev 0.7 C27]`, `[rev 0.8 C28]`, `[rev 0.8 C29]`, `[rev 0.9 C30]`, `[rev 0.10]`, `[rev 0.11 C31]`–`[rev 0.11 C33]`, `[rev 0.12 C34]`–`[rev 0.12 C35]`) mark every changed clause.
 
 > Source brainstorm: `sdd/proposals/parrot-installer.brainstorm.md` (accepted, Option B′,
 > all 16 open questions resolved). Supersedes `sdd/specs/portable-sdd-flow.spec.md`
@@ -679,6 +689,67 @@ class ToolkitTemplate(BaseModel):
     (TASK-4080).
   - **Hand-copied agents** stay `foreign` (never overwritten). Doctor names them; the fix is
     to delete them and re-install. No adopt path in v1. (TASK-4091, TASK-4080)
+- **Rev 0.12 amendments C34–C35 (M6 part)** *[rev 0.12 C34–C35]* (found by the first end-to-end SDD run in a
+  foreign repo: `sdd-worker` lists 20 `mcp__parrot-sdd-coder__*` tools and one `mcp__parrot-bounded-source__*`
+  tool, but `parrot sdd install` registered neither, so the worker fell back to its sequential loop).
+  - **C34 — the SDD install registers its MCP toolkits (TASK-5113).** For the claude host (and codex/google when
+    selected) `install` calls `parrot.mcp.toolkit_install.install_toolkits(root, ["sdd-coder", "bounded-source"],
+    hosts)` after the assets — the same path as `parrot toolkits install`, so `.parrot/mcp-toolkits.yaml` is seeded
+    from the packaged templates, the host files (`.mcp.json`, …) are reconciled and Claude approvals synced.
+    Already-installed toolkits are left as they are (no drift rewrite). The seeded `sdd-coder` roster is the
+    shipped template, unchanged; install then runs `RosterProbe` statically (no smoke call, no network) and prints
+    one `note:` naming the usable seats and, per dropped seat, the missing credential/CLI — plus a `warning:` when
+    fewer than two strong MCP seats survive (complex tasks then have no retry seat, `issue:569e81756247`).
+    `--no-sdd-coder` skips the step; the receipt records `toolkits` this install added, and uninstall removes only
+    those (`uninstall_toolkits`). `--dry-run` prints `plan: toolkits sdd-coder, bounded-source` and writes nothing.
+    `sdd_status()` reports each toolkit's state.
+  - **C35 — `bounded-source` moves to core (TASK-5112).** It is the one non-core MCP server a shipped SDD agent
+    uses. `BoundedSourceToolkit` and the modules it needs (`base`, `models`, `policy`, `inspection`,
+    `inspection_models`, `reader`) move from `parrot_tools.tool_optimizations` to core
+    `parrot.tools.optimizations`; each old module stays as a `sys.modules` alias of the new one, so every
+    `parrot_tools.tool_optimizations.<x>` import (writer, patches, git, hooks, tests) keeps working with the
+    same module object. `WorktreeLock` stops importing `fcntl` at module load (Windows has none): `fcntl.flock` on
+    POSIX, `msvcrt.locking` on Windows. The `bounded-source` template points at the core class and drops
+    `requires_dist` / `requires_pip`. This is a deliberate exception to "concrete toolkits live in ai-parrot-tools":
+    the SDD flow ships in core and must not depend on an optional distribution.
+- **Rev 0.11 amendments C31–C33 (M6 part)** *[rev 0.11 C31–C33]* (found while simulating `parrot sdd install`
+  + `parrot claude install` in an empty uv project that installs the workspace from a worktree). The amended
+  tasks are `done` on the feature branch, so the work is filed as new tasks there.
+  - **C31 — base branch preflight (TASK-5109).** Every SDD worktree branches from `origin/<base_branch>`,
+    yet `install` never looked at git: a fresh repo (`main` only, no commits, no remote) installs cleanly and
+    then fails at the first `worktree ensure`. `install` gains a `base-branch` plan step that, after the
+    config seed: warns and skips when `root` is not a git work tree or `HEAD` is unborn (no commits);
+    creates the local `<base_branch>` when it is missing — tracking `origin/<base_branch>` when that
+    remote-tracking ref exists, else from `HEAD`; never checks out, moves, resets or deletes a branch (uninstall
+    leaves it); warns, with the exact command, when there is no `origin` remote or no local
+    `refs/remotes/origin/<base_branch>`, and pushes only with the new `--push-base` flag. No network call —
+    `doctor --sdd`'s `ls-remote` check stays the remote truth. `staging_branch` / `hotfix_base` that do not
+    exist locally get a `note:` and are never created. `--base-branch NAME` / `--hotfix-base NAME` seed
+    `sdd/config.json` (each validated with `git check-ref-format --branch`, then the merged config with
+    `SddConfig` — distinct lanes, no `origin/` prefix); they are refused, before any write, when an existing
+    config sets a different value. A repo that integrates on `main` passes both
+    (`--base-branch main --hotfix-base <branch>`): `main` alone is refused with that hint, since `main` is the
+    default `hotfix_base`. `--dry-run` prints `plan: base-branch <name> (<what>)`.
+  - **C32 — portable dangerous-actions guard (TASK-5110).** Supersedes the 2026-10-14 amendments-proposal
+    classification "`dangerous-actions-blocker.sh` stays in the repo" for foreign repos (the repo's own bash
+    hook stays for ai-parrot). The bash hook needs `bash`, `jq`, `python3`, GNU `grep -E` and `pgrep`, fails open
+    without `jq` (so on a stock Windows host it never blocks), hard-codes `main|dev|staging|master` and names
+    ai-parrot-only fixes (`scripts/remove_worktree.py`, `/release`, `make distclean`). It is ported to a
+    stdlib-only `parrot.sdd.scripts.dangerous_actions` served as `parrot sdd hooks dangerous-actions --hook`
+    (launcher fast path, like `SDD_HOOK_ARGV`), answering with the `permissionDecision: "deny"` JSON the
+    worktree guard already uses — one executable, no shell operators, so the same command line runs under
+    cmd, PowerShell and bash. Protected branches come from `sdd/config.json` (`base_branch`,
+    `staging_branch`, `hotfix_base`) plus `main`/`master`; rules add Windows (`Remove-Item -Recurse`,
+    `rd|rmdir /s`, `del /s`, `format X:`) and macOS (`diskutil erase*|partitionDisk`) destroyers; the bare-`pip`
+    rule applies only when the repo has `uv.lock`; `PARROT_ALLOW_DANGEROUS=1` stays the escape hatch.
+    `install` (claude host) merges one `PreToolUse` entry (matcher `Bash|Edit|Write|MultiEdit`) into
+    `.claude/settings.json`, bare/baked like C25, records it in the receipt (`settings_hooks`), skips with a
+    `note:` when a `dangerous-actions-blocker` command is already registered, and is opted out with
+    `--no-dangerous-guard`; uninstall removes only the entry it recorded. `sdd_status()` reports it.
+  - **C33 — managed `.gitignore` block (PR #1932, no task).** The block also ignores `/.env`, `env/**/.env`
+    (navconfig credentials), `/logs/` (navconfig `LOG_DIR`), `/outputs/` (parrot `OUTPUT_DIR`) and
+    `.claude/settings.local.json`; `logs/`/`outputs/` are root-anchored so `artifacts/logs/` stays tracked, and
+    `env/.env.example`, `etc/`, `agents/`, `plugins/` stay versioned.
 - **Rev 0.9 amendment C30 (M6 part)** *[rev 0.9 C30]* (full text and the command ↔ module table in the
   amendments proposal §3, rev 0.8). `parrot sdd run <module>` is removed, not aliased. `cli.py` mounts one
   lazy click group per noun and one passthrough verb per helper (`main([*prefix, *args])`, no `runpy`);
@@ -1277,6 +1348,20 @@ tests:
 - packages/ai-parrot/tests/flows/dev_loop/test_native_claude_sandbox.py  # 5093 (FEAT-768, arrives with the dev merge)
 - packages/ai-parrot/tests/flows/dev_loop/test_dispatcher.py  # 5093
 - tests/sdd/test_launch_worker.py  # 5093
+- packages/ai-parrot/tests/sdd/test_sdd_launch.py  # 5100 (FEAT-768 worker tests, moved)
+- packages/ai-parrot/tests/sdd/test_sdd_ledger_mount.py  # 5099
+- tests/sdd_scripts/test_check_spec_consequences.py  # 5096
+- packages/ai-parrot/tests/sdd/test_installer_base_branch.py  # 5109 (C31)
+- packages/ai-parrot/tests/sdd/test_dangerous_actions.py  # 5110 (C32)
+- packages/ai-parrot/tests/sdd/test_installer_dangerous_guard.py  # 5110 (C32)
+- packages/ai-parrot/tests/sdd/test_installer_toolkits.py  # 5113 (C34)
+- packages/ai-parrot/tests/tools/test_optimizations_core.py  # 5112 (C35)
+- packages/ai-parrot-tools/tests/tool_optimizations/test_reader.py  # 5112 (C35, unchanged — proves the aliases)
+- packages/ai-parrot-tools/tests/tool_optimizations/test_inspection.py  # 5112 (C35)
+- packages/ai-parrot-tools/tests/tool_optimizations/test_policy.py  # 5112 (C35)
+- packages/ai-parrot-tools/tests/tool_optimizations/test_writer.py  # 5112 (C35, imports the moved models/policy)
+- packages/ai-parrot/tests/tools/test_resolver_without_parrot_tools.py  # 5114 (C34–C35 acceptance: served without ai-parrot-tools)
+- packages/ai-parrot/tests/tools/test_toolkit_resolver.py  # 5114
 markers: none
 
 ### Test Data / Fixtures
@@ -1736,3 +1821,5 @@ Summary: **11** confirmed (1 scoped) · **0** rejected · **0** escalated.
 | 0.8 | 2026-11-01 | Jesus Lara (decisions) + Claude | Post-#1910 refresh: TASK-5092 (merge current dev, re-sync `_assets`, rewrite the 3 shipped `scripts/check_portable_paths.py` mentions — D3, never allowlisted) and TASK-5093 (absorb FEAT-768 after PR #1884 merges: native sandbox moves next to the packaged hook, `parrot sdd launch-worker` aliases `parrot devloop launch-worker`; resolves issue:3253d3dc39b0). Validation Contract adds the FEAT-768 suites |
 | 0.9 | 2026-11-01 | Jesus Lara + Claude | Amendment C30 folded in (proposal rev 0.8; numbered C26 / spec rev 0.7 on `dev`, renumbered on the branch where rev 0.7–0.8 and C26–C29 already existed): `parrot sdd run <module>` replaced by a noun-grouped CLI (`worktree task ids spec brief docs tests closeout hooks ledger` + `launch-worker`), no alias; `parrot sdd ledger` (wikitoolkit ledger group, 87 shipped refs) and `parrot sdd launch-worker` (FEAT-768) join the flow; `check_spec_consequences` joins move D; mount-completeness test replaces `test_sdd_scripts_module_entrypoints`; hook line `sdd worktree guard --hook`. Counts re-verified on the branch at `54868dcb2d`: 29 packaged modules (27 with `main`), 330 `parrot sdd run` refs in shipped files. Decided while PR #1823 is open, so no deprecation cycle |
 | 0.10 | 2026-11-01 | Jesus Lara + Claude | C30 revised (proposal rev 0.9; was spec rev 0.8 on `dev`): `launch` is a noun — `launch worker` (FEAT-768), `launch brief <source>` / `launch fix …` open a Claude session on the slash command in the primary checkout (no agent, sandbox or tmux in v1); `wikitoolkit ledger` stays and is not rewritten; every shipped command/agent/skill/workflow keeps its name (verified on the branch, `test_rewrite_preserves_asset_names`) |
+| 0.11 | 2026-11-03 | Jesus Lara (decisions) + Claude | Amendments C31–C33 from the installer simulation in a fresh uv project: C31 base-branch preflight in `parrot sdd install` (create local `<base_branch>`, warn on unborn HEAD / missing `origin`, `--push-base`, `--base-branch`; TASK-5109); C32 portable stdlib dangerous-actions guard `parrot sdd hooks dangerous-actions --hook` registered in `.claude/settings.json` (TASK-5110; supersedes the "blocker stays in the repo" classification for foreign repos); C33 managed `.gitignore` block extended (PR #1932). Validation Contract adds the three new test files |
+| 0.12 | 2026-11-03 | Jesus Lara (decisions) + Claude | Amendments C34–C35 from the first end-to-end SDD run in a foreign repo: `parrot sdd install` registers the `sdd-coder` and `bounded-source` toolkits (shipped roster, static roster report, `--no-sdd-coder`; TASK-5113); `bounded-source` and its modules move to core `parrot.tools.optimizations` with `sys.modules` aliases and a portable `WorktreeLock` (TASK-5112); TASK-5114 closes the acceptance gap the sandbox handshake found: `ToolkitResolver._builtin_classes()` imported `LLMWikiToolkit` (an `ai-parrot-tools` re-export), so no core toolkit could list its tools — and no `parrot mcp-local` server could start — without that distribution; TASK-5115–5118 fold in six FEAT-633 ledger issues via `/sdd-fix`: doctor reports missing/foreign SDD files and the `bookstore` cross-repo entry, ledger hooks honour `core.hooksPath` (uninstall scoped to the receipt), `parrot self update` keeps the two base dists in lockstep with a doctor skew check, and a worktree test-isolation note/check (pytest `pythonpath`) |

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-04T23:59:51+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-03T02:21:18+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -197,7 +197,21 @@
           "tests/sdd_scripts/test_worktree_status.py",
           "packages/ai-parrot/tests/flows/dev_loop/test_native_claude_sandbox.py",
           "packages/ai-parrot/tests/flows/dev_loop/test_dispatcher.py",
-          "tests/sdd/test_launch_worker.py"
+          "tests/sdd/test_launch_worker.py",
+          "packages/ai-parrot/tests/sdd/test_sdd_launch.py",
+          "packages/ai-parrot/tests/sdd/test_sdd_ledger_mount.py",
+          "tests/sdd_scripts/test_check_spec_consequences.py",
+          "packages/ai-parrot/tests/sdd/test_installer_base_branch.py",
+          "packages/ai-parrot/tests/sdd/test_dangerous_actions.py",
+          "packages/ai-parrot/tests/sdd/test_installer_dangerous_guard.py",
+          "packages/ai-parrot/tests/sdd/test_installer_toolkits.py",
+          "packages/ai-parrot/tests/tools/test_optimizations_core.py",
+          "packages/ai-parrot-tools/tests/tool_optimizations/test_reader.py",
+          "packages/ai-parrot-tools/tests/tool_optimizations/test_inspection.py",
+          "packages/ai-parrot-tools/tests/tool_optimizations/test_policy.py",
+          "packages/ai-parrot-tools/tests/tool_optimizations/test_writer.py",
+          "packages/ai-parrot/tests/tools/test_resolver_without_parrot_tools.py",
+          "packages/ai-parrot/tests/tools/test_toolkit_resolver.py"
         ],
         "settings": {
           "markers": ""
@@ -209,7 +223,7 @@
         ]
       }
     ],
-    "digest": "sha256:5e6a3ec69e5e1f5ab7322330e70ae5d4667100ebebb448da8517711d2f2561a9"
+    "digest": "sha256:b58d24db6e33c07b789f12b9e006733e2443828bbf21389bf80e5d68744fe9a4"
   },
   "tasks": [
     {
@@ -948,11 +962,11 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "pending",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-11-02T12:54:35+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -966,7 +980,8 @@
         "TASK-5098"
       ],
       "parallelism_notes": "external: blocked until PR #1884 (FEAT-768 incl. TASK-5086..5089) is merged into dev; needs the noun CLI from TASK-5095 (cli.py) and the `sdd worktree guard --hook` spelling from TASK-5097 (installer.py GUARD_HOOK_LINE, agents) before porting FEAT-768's compiled hook settings; serialized after TASK-5098 (both regenerate _assets/**) so the FEAT-768 merge resolves markdown conflicts once, against the rewritten assets",
-      "file": "sdd/tasks/active/TASK-5093-absorb-feat-768-native-sandbox.md"
+      "file": "sdd/tasks/completed/TASK-5093-absorb-feat-768-native-sandbox.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5095",
@@ -1096,11 +1111,11 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "pending",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-11-02T12:58:19+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -1110,7 +1125,8 @@
         "TASK-5099"
       ],
       "parallelism_notes": "exclusive: regenerates _assets/; needs feature_launcher.py + cli/devloop/launch_worker.py from TASK-5093 (FEAT-768 absorbed), the `sdd` group from TASK-5095 (cli.py), and TASK-5098's rewrite done so only the five launch_worker.sh refs remain; serialized after TASK-5099 (both edit cli.py: the ledger mount is the insertion anchor)",
-      "file": "sdd/tasks/active/TASK-5100-sdd-launch-noun.md"
+      "file": "sdd/tasks/completed/TASK-5100-sdd-launch-noun.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5101",
@@ -1119,11 +1135,11 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "pending",
+      "status": "done",
       "parallel": true,
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
+      "completed_at": "2026-11-02T12:59:17+00:00",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -1133,9 +1149,250 @@
         "TASK-5100"
       ],
       "parallelism_notes": "documents the final tree: verbs from TASK-5098's rewrite, `ledger` from TASK-5099, `launch` from TASK-5100; re-caches the index test_contract with the test files those tasks create; docs/getting-started.md and docs/install/global-runtime.md were written by TASK-4095",
-      "file": "sdd/tasks/active/TASK-5101-sdd-cli-docs-and-contract.md"
+      "file": "sdd/tasks/completed/TASK-5101-sdd-cli-docs-and-contract.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5109",
+      "slug": "installer-base-branch-preflight",
+      "title": "`parrot sdd install` prepares the SDD base branch",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-02T23:42:46+00:00",
+      "completed_at": "2026-11-02T23:45:06+00:00",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4080",
+        "TASK-4091",
+        "TASK-4299",
+        "TASK-5101"
+      ],
+      "parallelism_notes": "rev 0.11 C31; edits installer.py/cli.py, which TASK-5110 also edits — runs first",
+      "file": "sdd/tasks/completed/TASK-5109-installer-base-branch-preflight.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5110",
+      "slug": "portable-dangerous-actions-guard",
+      "title": "Portable dangerous-actions guard, installed by `parrot sdd install`",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-03T00:01:06+00:00",
+      "completed_at": "2026-11-03T00:07:19+00:00",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4085",
+        "TASK-4089",
+        "TASK-4509",
+        "TASK-5109"
+      ],
+      "parallelism_notes": "rev 0.11 C32; same installer.py/cli.py as TASK-5109, so it waits for it",
+      "file": "sdd/tasks/completed/TASK-5110-portable-dangerous-actions-guard.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5111",
+      "slug": "noun-grouped-cli-test-assertions",
+      "title": "Worker/start-twin tests assert the noun-grouped `parrot sdd` CLI spellings",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-11-03T00:40:00+00:00",
+      "completed_at": "2026-11-03T00:37:50+00:00",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5098"
+      ],
+      "discovered_from": "issue:209fdbe18647",
+      "file": "sdd/tasks/completed/TASK-5111-noun-grouped-cli-test-assertions.md",
+      "verification": "verified",
+      "parallelism_notes": "test-only fix; exclusive with the other FEAT-633 tasks touching dev_loop tests"
+    },
+    {
+      "id": "TASK-5112",
+      "slug": "bounded-source-to-core",
+      "title": "Move `bounded-source` into core (`parrot.tools.optimizations`)",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-03T01:16:44+00:00",
+      "completed_at": "2026-11-03T01:19:52+00:00",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4077"
+      ],
+      "parallelism_notes": "rev 0.12 C35; touches only tool_optimizations / parrot.tools.optimizations / the bounded-source template",
+      "file": "sdd/tasks/completed/TASK-5112-bounded-source-to-core.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5113",
+      "slug": "sdd-install-registers-toolkits",
+      "title": "`parrot sdd install` registers the `sdd-coder` and `bounded-source` toolkits",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-03T01:24:15+00:00",
+      "completed_at": "2026-11-03T01:28:19+00:00",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5110",
+        "TASK-5112"
+      ],
+      "parallelism_notes": "rev 0.12 C34; same installer.py/cli.py/getting-started.md as TASK-5109/5110, and needs the core bounded-source from TASK-5112",
+      "file": "sdd/tasks/completed/TASK-5113-sdd-install-registers-toolkits.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5114",
+      "slug": "resolver-without-parrot-tools",
+      "title": "Core toolkits serve without ai-parrot-tools (resolver built-ins tolerate a missing distribution)",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-03T01:48:10+00:00",
+      "completed_at": "2026-11-03T01:50:31+00:00",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5113"
+      ],
+      "parallelism_notes": "acceptance gap of rev 0.12 C34–C35 found by the sandbox handshake; runs after TASK-5113",
+      "file": "sdd/tasks/completed/TASK-5114-resolver-without-parrot-tools.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5115",
+      "slug": "doctor-sdd-file-states-and-bookstore",
+      "title": "doctor reports missing/foreign SDD files and flags the bookstore cross-repo entry",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-03T02:12:03+00:00",
+      "completed_at": "2026-11-03T02:13:04+00:00",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5114"
+      ],
+      "parallelism_notes": "ledger fixes via /sdd-fix (issue:dcd763dd04f9, issue:a7deda11b8c3); runs after TASK-5114 (same doctor/installer files as the rev 0.11-0.12 tasks); 5115-5118 all touch doctor.py, so they run in order",
+      "file": "sdd/tasks/completed/TASK-5115-doctor-sdd-file-states-and-bookstore.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5116",
+      "slug": "ledger-hooks-honour-hookspath",
+      "title": "ledger git hooks honour core.hooksPath; sdd uninstall scoped to the receipt",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-03T02:13:15+00:00",
+      "completed_at": "2026-11-03T02:16:25+00:00",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5115"
+      ],
+      "parallelism_notes": "issue:4c5b3404e8fb; shares doctor.py with TASK-5115",
+      "file": "sdd/tasks/completed/TASK-5116-ledger-hooks-honour-hookspath.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5117",
+      "slug": "self-update-lockstep",
+      "title": "parrot self update keeps ai-parrot / ai-parrot-tools in lockstep; doctor reports skew",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-03T02:16:27+00:00",
+      "completed_at": "2026-11-03T02:18:02+00:00",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5116"
+      ],
+      "parallelism_notes": "issue:66700eac9b2f; shares doctor.py with TASK-5116",
+      "file": "sdd/tasks/completed/TASK-5117-self-update-lockstep.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5118",
+      "slug": "worktree-test-isolation-warning",
+      "title": "warn when worktree tests would import the main checkout (sdd install note + doctor check)",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-03T02:18:04+00:00",
+      "completed_at": "2026-11-03T02:21:18+00:00",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5117"
+      ],
+      "parallelism_notes": "issue:80c5e6e510b2; shares doctor.py with TASK-5117",
+      "file": "sdd/tasks/completed/TASK-5118-worktree-test-isolation-warning.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5119",
+      "slug": "tmux-session-name-per-repo",
+      "title": "launch worker --tmux session name must not collide across repositories",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "done",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-03T02:26:40+00:00",
+      "completed_at": "2026-11-03T02:28:26+00:00",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5118",
+        "TASK-5101"
+      ],
+      "parallelism_notes": "issue:a94869a0df2b; feature_launcher.py last owned by TASK-5100/5101",
+      "file": "sdd/tasks/completed/TASK-5119-tmux-session-name-per-repo.md",
+      "verification": "verified"
     }
   ],
-  "amended_at": "2026-11-01T00:00:00+00:00",
-  "spec_revision": "0.8"
+  "amended_at": "2026-11-03T00:00:00+00:00",
+  "spec_revision": "0.12"
 }
