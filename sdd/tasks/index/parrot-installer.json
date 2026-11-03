@@ -1369,6 +1369,27 @@
       "parallelism_notes": "issue:80c5e6e510b2; shares doctor.py with TASK-5117",
       "file": "sdd/tasks/completed/TASK-5118-worktree-test-isolation-warning.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5119",
+      "slug": "tmux-session-name-per-repo",
+      "title": "launch worker --tmux session name must not collide across repositories",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "in-progress",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-03T02:26:40+00:00",
+      "completed_at": null,
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5118",
+        "TASK-5101"
+      ],
+      "parallelism_notes": "issue:a94869a0df2b; feature_launcher.py last owned by TASK-5100/5101",
+      "file": "sdd/tasks/active/TASK-5119-tmux-session-name-per-repo.md"
     }
   ],
   "amended_at": "2026-11-03T00:00:00+00:00",
