@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.12, amendment C34)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5112, TASK-5110 (done)
@@ -248,6 +248,10 @@ def test_status_reports_toolkits(repo: Path) -> None: ...
 ## Completion Note
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 5.5 (sdd-start, sequential)
+**Date**: 2026-11-03
+**Notes**: New `toolkits` plan step (+ `toolkits-remove` on uninstall), `receipt["toolkits"]` records only toolkits this run
+seeded, static roster note/strong-seat warning via `RosterProbe(smoke=None)`, `--no-sdd-coder`, `sdd_status()["toolkits"]`,
+docs. All new imports lazy; any toolkit/roster failure is a `warning:` line. Strong seat = kind mcp AND (backend, model)
+in `complexity.strong_models`. Tests: new suite (9) + all of tests/sdd pass. Note: run the sdd suites with an ABSOLUTE
+PYTHONPATH — a relative one makes subprocess-based tests import the main checkout and fail spuriously.
