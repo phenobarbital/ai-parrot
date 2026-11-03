@@ -1293,18 +1293,19 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": "2026-11-03T02:12:03+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-03T02:13:04+00:00",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
         "TASK-5114"
       ],
       "parallelism_notes": "ledger fixes via /sdd-fix (issue:dcd763dd04f9, issue:a7deda11b8c3); runs after TASK-5114 (same doctor/installer files as the rev 0.11-0.12 tasks); 5115-5118 all touch doctor.py, so they run in order",
-      "file": "sdd/tasks/active/TASK-5115-doctor-sdd-file-states-and-bookstore.md"
+      "file": "sdd/tasks/completed/TASK-5115-doctor-sdd-file-states-and-bookstore.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5116",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.12 — ledger fixes)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5114
@@ -92,4 +92,6 @@ above; close with `parrot sdd task close TASK-5115 parrot-installer verified`.
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 (/sdd-fix, sequential)
+**Date**: 2026-11-03
+**Notes**: Installed host = any non-missing state group. `missing` on an installed host fails `sdd: files current` (fix `parrot sdd install`); `foreign` is an informational `sdd: foreign files` check. The old `not any(hosts.values())` branch was dead (sdd_status lists every supported host), so "SDD flow not installed" is reachable again. Collision filter is `_is_parrot_entry` (known keys, parrot entry-point command basename, `-m parrot.*` args). 5 new tests; test_doctor.py + test_doctor_sdd.py 35 passed; ruff clean.
