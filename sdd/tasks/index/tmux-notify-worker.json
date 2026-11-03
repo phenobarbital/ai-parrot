@@ -1,0 +1,71 @@
+{
+  "feature": "tmux-notify-worker",
+  "feature_id": "FEAT-793",
+  "spec": "sdd/specs/tmux-notify-worker.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-03T03:11:20.025793+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-5122",
+      "slug": "worker-completion-receipt",
+      "title": "Completion receipt and host notifier",
+      "feature_id": "FEAT-793",
+      "feature": "tmux-notify-worker",
+      "spec": "sdd/specs/tmux-notify-worker.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies; owns new worker_notification.py and test_worker_notification.py. All Git, process and filesystem fixtures are temporary and isolated.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5122-worker-completion-receipt.md"
+    },
+    {
+      "id": "TASK-5123",
+      "slug": "tmux-notification-launch-wiring",
+      "title": "Tmux notification environment and Stop-hook wiring",
+      "feature_id": "FEAT-793",
+      "feature": "tmux-notify-worker",
+      "spec": "sdd/specs/tmux-notify-worker.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5122"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes configure_notification from TASK-5122 (packages/ai-parrot/src/parrot/sdd/scripts/worker_notification.py); owns launcher/native settings and their two existing test files, with no overlapping writers or external shared-state mutations.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5123-tmux-notification-launch-wiring.md"
+    },
+    {
+      "id": "TASK-5124",
+      "slug": "worker-notification-protocol",
+      "title": "Worker completion protocol and operator documentation",
+      "feature_id": "FEAT-793",
+      "feature": "tmux-notify-worker",
+      "spec": "sdd/specs/tmux-notify-worker.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5123"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes PARROT_SDD_NOTIFY_PYTHON and PARROT_SDD_NOTIFY_HELPER exports from TASK-5123 and transitively the TASK-5122 --complete CLI. Owns both worker assets, operator documentation and a separate protocol test file; no overlapping writers.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5124-worker-notification-protocol.md"
+    }
+  ]
+}
