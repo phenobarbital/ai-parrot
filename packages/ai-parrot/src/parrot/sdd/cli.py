@@ -10,7 +10,13 @@ from pathlib import Path
 
 import click
 
-from parrot.sdd.installer import SUPPORTED_HOSTS, install_sdd_integration, sdd_status, uninstall_sdd_integration
+from parrot.sdd.installer import (
+    SUPPORTED_HOSTS,
+    install_sdd_integration,
+    remove_stale_sdd_files,
+    sdd_status,
+    uninstall_sdd_integration,
+)
 
 _HELPER_PACKAGE = "parrot.sdd.scripts"
 _dry_run_option = click.option("--dry-run", is_flag=True, help="Print the plan and change nothing.")
@@ -134,12 +140,61 @@ def install(
 @_host_option
 @_keep_edits_option
 @_dry_run_option
-def uninstall(path_: Path | None, hosts: tuple[str, ...], keep_edits: bool, dry_run: bool) -> None:
-    """Remove the SDD files (commands, agents, rules, templates); seeds and state are kept."""
+@click.option(
+    "--stalled",
+    "--stale",
+    "stalled",
+    is_flag=True,
+    help=(
+        "Remove only stale SDD files (hand-copied, retired or no longer shipped) and stale MCP toolkit entries for "
+        "all hosts unless --host narrows it; current assets are kept."
+    ),
+)
+@click.option(
+    "--keep",
+    "keep",
+    multiple=True,
+    metavar="GLOB",
+    help="With --stalled: never remove paths matching GLOB (repeatable).",
+)
+def uninstall(
+    path_: Path | None,
+    hosts: tuple[str, ...],
+    keep_edits: bool,
+    dry_run: bool,
+    stalled: bool,
+    keep: tuple[str, ...],
+) -> None:
+    """Remove the SDD files (commands, agents, rules, templates); seeds and state are kept.
+
+    With --stalled, remove only stale files and stale MCP entries instead.
+    """
+    if stalled and keep_edits:
+        raise click.UsageError("--stalled cannot be combined with --keep-edits")
+    if keep and not stalled:
+        raise click.UsageError("--keep requires --stalled")
+    root = _root(path_)
+    if stalled:
+        selected = hosts or SUPPORTED_HOSTS
+        refused: str | None = None
+        try:
+            _echo_actions(remove_stale_sdd_files(root, selected, keep=keep, dry_run=dry_run))
+        except RuntimeError as exc:
+            refused = str(exc)
+            click.echo(f"  ! {exc}", err=True)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        from parrot.mcp.toolkit_stale import remove_stale_mcp_entries
+
+        try:
+            _echo_actions(remove_stale_mcp_entries(root, selected, keep=keep, dry_run=dry_run))
+        except (ValueError, RuntimeError, OSError) as exc:
+            raise click.ClickException(str(exc)) from exc
+        if refused is not None:
+            raise click.ClickException(refused)
+        return
     try:
-        _echo_actions(
-            uninstall_sdd_integration(_root(path_), hosts or ("claude",), keep_edits=keep_edits, dry_run=dry_run)
-        )
+        _echo_actions(uninstall_sdd_integration(root, hosts or ("claude",), keep_edits=keep_edits, dry_run=dry_run))
     except (ValueError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -168,6 +223,12 @@ def status(path_: Path | None, as_json: bool) -> None:
     guard = report["guard_hook"]
     if guard["form"] is not None:
         click.echo(f"guard hook: {guard['form']} ({'resolvable' if guard['resolvable'] else 'NOT resolvable'})")
+    click.echo(f"stale: {len(report['stale'])}")
+    for entry in report["stale"]:
+        click.echo(f"  stale: {entry['path']} ({entry['reason']})")
+    click.echo(f"stale mcp: {len(report['stale_mcp'])}")
+    for entry in report["stale_mcp"]:
+        click.echo(f"  stale mcp: {entry['file']}#{entry['key']} ({entry['reason']})")
     click.echo(f"receipt version: {report['receipt_version'] or 'none'}")
 
 
