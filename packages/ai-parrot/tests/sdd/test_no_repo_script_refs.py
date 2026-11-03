@@ -40,6 +40,7 @@ _SHIPPED_GLOBS: tuple[str, ...] = (
     ".claude/rules/worktree-management.md", ".claude/skills/second-opinion/SKILL.md",
     ".agents/skills/sdd-*/SKILL.md", ".codex/agents/sdd-worker.toml", ".agent/workflows/sdd-*.md",
     ".agents/agents/sdd-*/agent.md", "sdd/templates/*", "sdd/WORKFLOW.md", "sdd/CONVENTIONS.md",
+    ".claude/commands/remove-worktree.md", ".agents/skills/remove-worktree/SKILL.md", ".agent/workflows/remove-worktree.md",
 )
 _C11_KINDS: tuple[str, ...] = ("org-data", "claude-md-ref", "branch-literal")
 # C16: a monorepo source path — `packages/…`, `scripts/…`, `$CLAUDE_PROJECT_DIR/…` / `${CLAUDE_PROJECT_DIR…}/…`.

@@ -9,7 +9,7 @@ allowed-tools: Bash, Read
 Remove leftover worktrees under `.claude/worktrees/` without destroying work
 a running `sdd-worker` still owns.
 
-Backed by `scripts/remove_worktree.py`. **Always run `list` first** and show
+Backed by `parrot sdd worktree list|remove`. **Always run `list` first** and show
 the user what is there before removing anything.
 
 ## Two kinds of leftovers
@@ -33,7 +33,7 @@ the user what is there before removing anything.
 ## Step 1 — Always inspect first
 
 ```bash
-source .venv/bin/activate && python scripts/remove_worktree.py list
+parrot sdd worktree list
 ```
 
 State flags:
@@ -72,7 +72,7 @@ overrides dirty/unpushed gates, never the live-process gate.
 ## Step 3 — Preview
 
 ```bash
-source .venv/bin/activate && python scripts/remove_worktree.py remove <target> --dry-run
+parrot sdd worktree remove <target> --dry-run
 ```
 
 Show the output. If `--dry-run` was in `$ARGUMENTS`, stop here.
@@ -80,7 +80,7 @@ Show the output. If `--dry-run` was in `$ARGUMENTS`, stop here.
 ## Step 4 — Remove
 
 ```bash
-source .venv/bin/activate && python scripts/remove_worktree.py remove <target>
+parrot sdd worktree remove <target>
 ```
 
 Add `--delete-branch` to drop the local branch as well (uses `git branch -d`,
@@ -124,5 +124,4 @@ Remaining worktrees:
 | Command | Purpose |
 |---|---|
 | `/remove-worktree` | Targeted, gated removal (THIS) |
-| `python scripts/sweep_worktrees.py` | dev-loop sweep: removes worktrees whose PR is merged/closed, keeps open ones |
 | `/sdd-done <FEAT-ID>` | Normal end-of-feature path — merges, then cleans its own worktree |
