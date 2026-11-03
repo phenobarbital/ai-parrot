@@ -84,7 +84,38 @@ def test_default_emission_unchanged(tmp_path: Path, global_cfg: Path) -> None:
         "args": ["mcp"],
         "cwd": str(root.resolve()),
     }
-    assert servers["parrot-stub"]["cwd"] == str(root.resolve())
+    # The USER-GLOBAL file is shared across repositories: toolkit entries are portable even by default
+    # (relative --config, no cwd); only the command is baked when no managed launcher is on PATH.
+    assert servers["parrot-stub"]["args"][-1] == assets.PORTABLE_TOOLKIT_CONFIG and "cwd" not in servers["parrot-stub"]
+    local = json.loads((root / assets.PLUGIN_DIR / "mcp_config.json").read_text())["mcpServers"]
+    assert local["parrot-stub"]["cwd"] == str(root.resolve())
+
+
+def test_global_toolkit_entry_pinned_to_another_repo_is_replaced(tmp_path: Path, global_cfg: Path) -> None:
+    """A parrot-shaped global entry pinned to another repository is upgraded to the shared portable form."""
+    other = tmp_path / "other"
+    root = _make_root(tmp_path / "repo")
+    global_cfg.parent.mkdir(parents=True, exist_ok=True)
+    global_cfg.write_text(json.dumps({"mcpServers": {"parrot-stub": {
+        "command": str(other / ".venv" / "bin" / "parrot"),
+        "args": ["mcp-local", "stub", "--config", str(other / ".parrot" / "mcp-toolkits.yaml")],
+        "cwd": str(other),
+    }}}))
+    _actions, warnings = reconcile_toolkit_entries(root, global_cfg, portable=False)
+    assert warnings == []
+    entry = json.loads(global_cfg.read_text())["mcpServers"]["parrot-stub"]
+    assert entry["args"] == ["mcp-local", "stub", "--config", assets.PORTABLE_TOOLKIT_CONFIG] and "cwd" not in entry
+
+
+def test_global_portable_entry_survives_disable_in_one_repo(tmp_path: Path, global_cfg: Path) -> None:
+    """Another repository may still use a shared global entry: disabling it here only cleans the repo-local file."""
+    root = _make_root(tmp_path / "repo")
+    reconcile_toolkit_entries(root, global_cfg, portable=False)
+    (root / ".parrot" / "mcp-toolkits.yaml").write_text("toolkits: {}\n")
+    reconcile_toolkit_entries(root, global_cfg, portable=False)
+    assert "parrot-stub" in json.loads(global_cfg.read_text())["mcpServers"]
+    local = json.loads((root / assets.PLUGIN_DIR / "mcp_config.json").read_text())["mcpServers"]
+    assert "parrot-stub" not in local
 
 
 def test_portable_transitions_and_sticky_reconcile(tmp_path: Path, global_cfg: Path) -> None:

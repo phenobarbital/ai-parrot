@@ -2,10 +2,12 @@
 
 Conflict rule (C4, receipt-driven — ``sdd/.sdd-installed.json`` records the SHA-256 of every
 byte sequence this installer wrote): absent → write + record; matches the receipt → upgrade;
-differs from the receipt → edited → skip + warning unless ``force``; not in the receipt →
-foreign → skip + warning, never overwritten; unrecorded but byte-identical → adopt as current.
-``uninstall`` removes only files whose SHA matches the receipt. Seeds (``sdd/config.json`` and
-manifest entries flagged ``"seed": true``) are written once and never touched again.
+differs from the receipt → edited; not in the receipt and not byte-identical → foreign;
+unrecorded but byte-identical → adopt as current. Every manifest target is a parrot-owned SDD asset,
+so by default install overwrites edited and foreign targets (an upgrade replaces them) and
+uninstall removes them; ``keep_edits`` restores the conservative rule (skip/keep them + warning).
+Seeds (``sdd/config.json`` and manifest entries flagged ``"seed": true``) are written once and
+never touched again.
 """
 
 from __future__ import annotations
@@ -459,7 +461,7 @@ def plan_install(
     root: Path,
     hosts: Sequence[str],
     *,
-    force: bool = False,
+    keep_edits: bool = False,
     hook: str = GUARD_HOOK_LINE,
     base_branch: str | None = None,
     dangerous_guard: bool = True,
@@ -481,16 +483,14 @@ def plan_install(
         elif state == "outdated":
             plan.append(PlannedAction(action="upgrade", target=target))
         elif state == "edited":
-            if force:
-                plan.append(PlannedAction(action="overwrite", target=target, note="--force"))
+            if keep_edits:
+                plan.append(PlannedAction(action="skip-edited", target=target, note="edited since parrot wrote it"))
             else:
-                plan.append(
-                    PlannedAction(action="skip-edited", target=target, note="edited since parrot wrote it; use --force")
-                )
+                plan.append(PlannedAction(action="overwrite", target=target, note="edited since parrot wrote it"))
+        elif keep_edits:
+            plan.append(PlannedAction(action="skip-foreign", target=target, note="not recorded in the receipt"))
         else:
-            plan.append(
-                PlannedAction(action="skip-foreign", target=target, note="not written by parrot sdd; never overwritten")
-            )
+            plan.append(PlannedAction(action="overwrite", target=target, note="not recorded in the receipt"))
     plan.append(PlannedAction(action="gitignore", target=".gitignore"))
     plan.append(PlannedAction(action="gitattributes", target=".gitattributes"))  # rev 0.5 C23, any host
     plan.append(PlannedAction(action="ledger-hooks", target=".git/hooks"))  # rev 0.5 C23, any host
@@ -607,10 +607,17 @@ def _base_branch_step(root: Path, config: Any, *, push: bool, receipt: dict[str,
     return out
 
 
-def _host_installed(root: Path, host: str, entries: list[dict[str, Any]], receipt: dict[str, Any]) -> bool:
-    """True when ``host`` has at least one host-specific (single-host) target recorded and present."""
+def _host_installed(
+    root: Path, host: str, entries: list[dict[str, Any]], receipt: dict[str, Any], *, recorded_only: bool = True
+) -> bool:
+    """True when ``host`` has at least one host-specific (single-host) target present on disk.
+
+    With ``recorded_only`` the target must also be in the receipt; without it, any present target counts
+    (a host installed before the receipt existed, or by hand, still shares the common assets).
+    """
     return any(
-        e["hosts"] == [host] and e["target"] in receipt["files"] and (root / e["target"]).is_file() for e in entries
+        e["hosts"] == [host] and (not recorded_only or e["target"] in receipt["files"]) and (root / e["target"]).is_file()
+        for e in entries
     )
 
 
@@ -634,14 +641,17 @@ def _any_ledger_hook_block(root: Path) -> bool:
     return False
 
 
-def plan_uninstall(root: Path, hosts: Sequence[str]) -> list[PlannedAction]:
-    """Pure: ``remove`` only targets whose on-disk SHA matches the receipt; keep edited/foreign; keep shared
-    assets another installed host still needs; seeds and state are never planned for removal."""
+def plan_uninstall(root: Path, hosts: Sequence[str], *, keep_edits: bool = False) -> list[PlannedAction]:
+    """Pure: ``remove`` every present manifest target (edited/foreign included) unless ``keep_edits``, which
+    removes only targets whose on-disk SHA matches the receipt; keep shared assets another installed host
+    still needs; seeds and state are never planned for removal."""
     selected_hosts = _validate_hosts(hosts)
     receipt = load_receipt(root)
     entries = load_manifest()
     remaining_hosts = [
-        h for h in SUPPORTED_HOSTS if h not in selected_hosts and _host_installed(root, h, entries, receipt)
+        h
+        for h in SUPPORTED_HOSTS
+        if h not in selected_hosts and _host_installed(root, h, entries, receipt, recorded_only=keep_edits)
     ]
     plan: list[PlannedAction] = []
     removed: set[str] = set()
@@ -655,14 +665,15 @@ def plan_uninstall(root: Path, hosts: Sequence[str]) -> list[PlannedAction]:
             plan.append(PlannedAction(action="skip-missing", target=target))
             if recorded:
                 removed.add(target)  # deleted by hand: nothing left to remove, so it must not pin the receipt/hooks
-        elif state == "edited":
+        elif keep_edits and state == "edited":
             plan.append(PlannedAction(action="keep-edited", target=target, note="edited since parrot wrote it"))
-        elif state == "foreign" or not recorded:
+        elif keep_edits and (state == "foreign" or not recorded):
             plan.append(PlannedAction(action="keep-foreign", target=target, note="not recorded in the receipt"))
         elif set(entry["hosts"]) & set(remaining_hosts):
             plan.append(PlannedAction(action="keep-shared", target=target, note="still needed by another host"))
         else:
-            plan.append(PlannedAction(action="remove", target=target))
+            note = {"edited": "edited since parrot wrote it"}.get(state, "" if recorded else "not recorded in the receipt")
+            plan.append(PlannedAction(action="remove", target=target, note=note))
             removed.add(target)
     if "claude" in selected_hosts and "dangerous-actions" in receipt.get("settings_hooks", []):
         plan.append(PlannedAction(action="dangerous-guard-remove", target=SETTINGS_PATH.as_posix()))  # C32
@@ -727,7 +738,7 @@ def _apply_asset(
     verb = {
         "write": "installed",
         "upgrade": "upgraded",
-        "overwrite": "overwritten (--force)",
+        "overwrite": f"overwritten ({action.note})",
         "seed": "seeded (team-owned; never overwritten)",
     }
     return f"{entry['target']} — {verb[action.action]}"
@@ -1049,7 +1060,7 @@ def install_sdd_integration(
     root: Path,
     hosts: Sequence[str] = ("claude",),
     *,
-    force: bool = False,
+    keep_edits: bool = False,
     dry_run: bool = False,
     portable: bool = False,
     base_branch: str | None = None,
@@ -1058,13 +1069,14 @@ def install_sdd_integration(
     dangerous_guard: bool = True,
     sdd_coder: bool = True,
 ) -> list[str]:
-    """Deploy packaged SDD assets for ``hosts`` into ``root``; never overwrites foreign content.
+    """Deploy packaged SDD assets for ``hosts`` into ``root``, replacing older or hand-edited copies.
 
     Args:
         root: Target repository root (need not be a Python project).
         hosts: Any of ``SUPPORTED_HOSTS``; shared assets (templates, WORKFLOW.md) install for every host.
-        force: Overwrite manifest targets the receipt says we wrote but the team edited since.
-            Never touches foreign (unrecorded) files or seeds.
+        keep_edits: Skip manifest targets edited since parrot wrote them or not recorded in the receipt
+            (default: overwrite them — every manifest target is a parrot-owned SDD asset). Seeds are never
+            overwritten either way.
         dry_run: Return the plan (``plan: <action> <target>`` lines) and write NOTHING — no asset,
             seed, gitignore, ledger, config, receipt, or directory.
         portable: Write the bare guard-hook command (needs the global launcher on PATH) instead of
@@ -1103,7 +1115,7 @@ def install_sdd_integration(
     plan = plan_install(
         root,
         hosts,
-        force=force,
+        keep_edits=keep_edits,
         hook=hook,
         base_branch=config.base_branch,
         dangerous_guard=dangerous_guard,
@@ -1252,8 +1264,11 @@ def _prune_empty_parents(root: Path, path: Path) -> None:
         parent = parent.parent
 
 
-def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *, dry_run: bool = False) -> list[str]:
-    """Remove SDD assets for ``hosts`` whose on-disk SHA matches the receipt (edited/foreign files are kept and reported).
+def uninstall_sdd_integration(
+    root: Path, hosts: Sequence[str] = ("claude",), *, keep_edits: bool = False, dry_run: bool = False
+) -> list[str]:
+    """Remove the SDD assets for ``hosts`` — every present manifest target, including ones edited since install
+    or never recorded in the receipt; with ``keep_edits`` only receipt-matching files go (others are kept and reported).
 
     The ``.gitignore`` block, the recorded ``.gitattributes`` block (C23) and the receipt are removed only
     when no recorded file remains; the ledger hooks are removed only when ``receipt["ledger_hooks"]`` says this
@@ -1261,7 +1276,7 @@ def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *,
     ``sdd/tasks/.id_ledger.json``, ``sdd/config.json`` and seeds are never removed (state / team-owned).
     ``dry_run`` returns the plan and writes nothing.
     """
-    plan = plan_uninstall(root, hosts)
+    plan = plan_uninstall(root, hosts, keep_edits=keep_edits)
     if dry_run:
         return [str(step) for step in plan]
     receipt = load_receipt(root)
@@ -1273,7 +1288,7 @@ def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *,
             target.unlink(missing_ok=True)
             _prune_empty_parents(root, target)
             receipt["files"].pop(step.target, None)
-            actions.append(f"{step.target} — removed")
+            actions.append(f"{step.target} — removed" + (f" ({step.note})" if step.note else ""))
         elif step.action in {"keep-edited", "keep-foreign"}:
             actions.append(f"warning: {step.target} — kept ({step.note})")
         elif step.action == "keep-shared":
