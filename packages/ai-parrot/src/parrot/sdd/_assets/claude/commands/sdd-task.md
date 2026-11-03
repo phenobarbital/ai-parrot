@@ -548,6 +548,17 @@ git diff --cached --name-only
 
 # 4. Commit
 git commit -m "sdd: add <N> tasks for FEAT-<ID> — <feature-name>"
+
+# 5. Publish — worktrees are created from origin/$BASE, never from local $BASE
+#    (FEAT-466), so /sdd-start and the workers cannot see these commits until
+#    they are pushed. Fold in reserve_ids' ledger commit (it lands on origin only
+#    when local $BASE could not fast-forward), then push.
+git fetch origin "$BASE"
+git merge --no-edit "origin/$BASE"
+git push origin "$BASE"
+# If the merge or the push fails, STOP: report the error plus the exact
+# commands left to run (`git merge origin/$BASE` / `git push origin $BASE`).
+# Do not tell the user the work is ready to implement until the push succeeded.
 ```
 
 ### 6. Output

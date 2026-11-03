@@ -653,6 +653,17 @@ git diff --cached --name-only
 
 # 4. Commit
 git commit -m "sdd: add spec for FEAT-<ID> — <feature-name>"
+
+# 5. Publish — worktrees are created from origin/$BASE_BRANCH, never from local $BASE_BRANCH
+#    (FEAT-466), so /sdd-start and the workers cannot see these commits until
+#    they are pushed. Fold in reserve_ids' ledger commit (it lands on origin only
+#    when local $BASE_BRANCH could not fast-forward), then push.
+git fetch origin "$BASE_BRANCH"
+git merge --no-edit "origin/$BASE_BRANCH"
+git push origin "$BASE_BRANCH"
+# If the merge or the push fails, STOP: report the error plus the exact
+# commands left to run (`git merge origin/$BASE_BRANCH` / `git push origin $BASE_BRANCH`).
+# Do not tell the user the work is ready to implement until the push succeeded.
 ```
 
 ### 7. Output

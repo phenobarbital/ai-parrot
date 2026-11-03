@@ -165,6 +165,10 @@ stay with the thinking model — eligibility never delegates a design choice.
      the collision for inspection; preserve source artifacts until copying succeeds
    - verify cached names
    - commit `sdd: add spec for FEAT-NNN - <feature-slug>`
+   - publish: `git fetch origin <base_branch>`, `git merge --no-edit origin/<base_branch>`,
+     `git push origin <base_branch>` — worktrees are created from `origin/<base_branch>`
+     (FEAT-466), so unpushed commits are invisible to sdd-start and the workers; on a
+     merge or push failure stop and report the exact commands left to run
 
 ## Output
 

@@ -474,3 +474,76 @@ def test_ensure_worktree_import_keeps_cwd_and_skips_parrot_utils():
         [sys.executable, "-c", code], capture_output=True, text=True, cwd=Path(__file__).resolve().parents[2]
     )
     assert res.stdout.strip().splitlines()[-1] == "True False False", res.stderr
+
+
+def _git_in(repo: Path, *args: str) -> str:
+    return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True).stdout
+
+
+def _diverge_local_base(repo: Path, tmp_path: Path, local_only: str) -> None:
+    """Commit ``local_only`` on local ``dev`` unpushed, and push a different commit to origin.
+
+    That is the shape /sdd-task leaves behind: its own commits on local ``dev``
+    next to a ``reserve_ids`` commit that only reached ``origin/dev``.
+    """
+    (repo / local_only).parent.mkdir(parents=True, exist_ok=True)
+    (repo / local_only).write_text("{}", encoding="utf-8")
+    _git_in(repo, "add", local_only)
+    _git_in(repo, "commit", "-m", "local-only task commit")
+
+    other = tmp_path / "other"
+    origin = _git_in(repo, "remote", "get-url", "origin").strip()
+    subprocess.run(["git", "clone", "-q", "-b", "dev", origin, str(other)], check=True)
+    _git_in(other, "config", "user.email", "test@example.com")
+    _git_in(other, "config", "user.name", "Test User")
+    (other / "ledger.json").write_text("{}", encoding="utf-8")
+    _git_in(other, "add", "ledger.json")
+    _git_in(other, "commit", "-m", "reservation commit")
+    _git_in(other, "push", "-q", "origin", "dev")
+
+
+def test_failed_verification_on_diverged_base_removes_branch(tmp_git_repo: Path, tmp_path: Path) -> None:
+    """issue:e493230f1b6a — a diverged local base must not leave the branch behind."""
+    missing = "sdd/tasks/index/local-only.json"
+    _diverge_local_base(tmp_git_repo, tmp_path, missing)
+    plan = _plan()
+
+    for _attempt in range(2):  # the retry must hit the same verification error, not Step 3
+        with pytest.raises(EnsureWorktreeError, match="Verification failed"):
+            ensure(plan, repo_root=tmp_git_repo, require_paths=[missing])
+        assert _git_in(tmp_git_repo, "branch", "--list", plan.name).strip() == ""
+
+
+def test_verification_error_names_unpushed_local_base(tmp_git_repo: Path, tmp_path: Path) -> None:
+    """issue:c34721a5b110 — a miss that exists only on local <base> says how to publish it."""
+    missing = "sdd/tasks/index/local-only.json"
+    _diverge_local_base(tmp_git_repo, tmp_path, missing)
+
+    with pytest.raises(EnsureWorktreeError) as exc_info:
+        ensure(_plan(), repo_root=tmp_git_repo, require_paths=[missing])
+    message = str(exc_info.value)
+    assert "which has 1 commit(s) not on 'origin/dev'" in message
+    assert message.endswith("git push origin dev")
+
+
+def test_verification_error_without_local_copy_has_no_push_hint(tmp_git_repo: Path) -> None:
+    """A path missing everywhere is not blamed on an unpushed base."""
+    with pytest.raises(EnsureWorktreeError) as exc_info:
+        ensure(_plan(), repo_root=tmp_git_repo, require_paths=["sdd/tasks/index/absent.json"])
+    assert "git push" not in str(exc_info.value)
+
+
+def test_discard_keeps_branch_that_gained_commits(tmp_git_repo: Path) -> None:
+    """The compare-and-swap delete never removes a branch holding work of its own."""
+    from scripts.sdd.ensure_worktree import _discard_new_worktree
+
+    plan = _plan()
+    path, _ = ensure(plan, repo_root=tmp_git_repo)
+    start_sha = _git_in(tmp_git_repo, "rev-parse", f"refs/heads/{plan.name}").strip()
+    (path / "work.txt").write_text("work", encoding="utf-8")
+    _git_in(path, "add", "work.txt")
+    _git_in(path, "commit", "-m", "real work")
+
+    _discard_new_worktree(plan, path, repo_root=tmp_git_repo, start_sha=start_sha)
+
+    assert _git_in(tmp_git_repo, "branch", "--list", plan.name).strip() != ""
