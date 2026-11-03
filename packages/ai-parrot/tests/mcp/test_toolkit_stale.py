@@ -17,7 +17,6 @@ from parrot.mcp.toolkit_stale import (
     remove_stale_mcp_entries,
 )
 
-
 def _entry(name: str, config: str) -> dict[str, object]:
     return {"command": "/venv/bin/parrot", "args": ["mcp-local", name, "--config", config]}
 
@@ -249,9 +248,7 @@ def test_keep_matches_file_key(repo: Path, gemini: Path) -> None:
     _write_servers(path, {"parrot-scraping": _entry("scraping", config)})
     before = path.read_bytes()
 
-    lines = remove_stale_mcp_entries(
-        repo, ("claude",), keep=[".mcp.json#parrot-scraping"], gemini_config=gemini
-    )
+    lines = remove_stale_mcp_entries(repo, ("claude",), keep=[".mcp.json#parrot-scraping"], gemini_config=gemini)
 
     assert path.read_bytes() == before
     assert lines == [".mcp.json#parrot-scraping — kept (--keep)"]

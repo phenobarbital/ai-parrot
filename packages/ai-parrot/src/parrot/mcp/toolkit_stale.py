@@ -250,10 +250,7 @@ def remove_stale_mcp_entries(
     to_remove = [entry for entry in entries if entry not in kept]
     if dry_run:
         return [
-            *[
-                f"plan: stale-mcp-remove {entry.file}#{entry.key} ({entry.reason})"
-                for entry in to_remove
-            ],
+            *[f"plan: stale-mcp-remove {entry.file}#{entry.key} ({entry.reason})" for entry in to_remove],
             *[f"plan: keep-stale {entry.file}#{entry.key} (--keep)" for entry in kept],
         ]
 
