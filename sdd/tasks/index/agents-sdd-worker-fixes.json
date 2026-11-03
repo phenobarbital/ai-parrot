@@ -14,13 +14,14 @@
       "feature_id": "FEAT-797",
       "feature": "agents-sdd-worker-fixes",
       "spec": "sdd/specs/agents-sdd-worker-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "assigned_to": "unassigned",
-      "file": "sdd/tasks/active/TASK-5144-sdd-worker-python3-uuid.md"
+      "assigned_to": "claude-opus-5-5 (session)",
+      "file": "sdd/tasks/active/TASK-5144-sdd-worker-python3-uuid.md",
+      "started_at": "2026-11-03T22:46:10+00:00"
     }
   ]
 }
