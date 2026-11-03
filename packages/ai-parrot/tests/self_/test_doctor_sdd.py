@@ -210,3 +210,38 @@ def test_sdd_tool_checks_follow_the_installed_assets(ready_repo: Path, monkeypat
         check = checks[f"sdd: {tool}"]
         assert check.ok is (tool != missing)
         assert (f"install {tool}" in check.fix) is (tool == missing)
+
+
+# --- TASK-5115 (issue:dcd763dd04f9): missing / foreign targets of an installed host ---------------------------
+
+
+def _assets_checks(status: dict) -> dict[str, doctor.DoctorCheck]:
+    return {c.name: c for c in doctor._check_sdd_assets(Path("."), status)}
+
+
+def test_missing_target_of_installed_host_fails_files_current() -> None:
+    status = {"hosts": {"claude": {"current": [".claude/commands/sdd-start.md"],
+                                   "missing": [".claude/commands/sdd-done.md"]},
+                        "codex": {"missing": [".agents/skills/sdd-start/SKILL.md"]}}}
+    check = _assets_checks(status)["sdd: files current"]
+    assert not check.ok and not check.informational
+    assert ".claude/commands/sdd-done.md" in check.detail and "parrot sdd install" in check.fix
+    assert "codex" not in check.detail  # a host with nothing on disk is not installed
+
+
+def test_foreign_target_is_informational() -> None:
+    status = {"hosts": {"claude": {"current": [".claude/commands/sdd-start.md"],
+                                   "foreign": [".claude/agents/sdd-worker.md"]}}}
+    checks = _assets_checks(status)
+    assert checks["sdd: files current"].ok
+    foreign = checks["sdd: foreign files"]
+    assert not foreign.ok and foreign.informational and ".claude/agents/sdd-worker.md" in foreign.detail
+    assert "re-run `parrot sdd install`" in foreign.fix
+    assert not doctor.failed(list(checks.values()))
+
+
+def test_all_missing_hosts_mean_not_installed() -> None:
+    status = {"hosts": {"claude": {"current": [], "outdated": [], "edited": [], "foreign": [],
+                                   "missing": [".claude/commands/sdd-start.md"]}}}
+    check = _assets_checks(status)["sdd: files current"]
+    assert check.ok and check.informational and check.detail == "SDD flow not installed"

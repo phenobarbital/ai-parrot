@@ -261,25 +261,36 @@ def _check_sdd_assets(root: Path, status: dict[str, Any] | None) -> list[DoctorC
     """jq (while referenced), installed files current, host CLIs (informational)."""
     checks: list[DoctorCheck] = []
     hosts: dict[str, Any] = (status or {}).get("hosts") or {}
+    # A host is installed when any of its targets is on disk; install writes every selected target, so a
+    # `missing` target on an installed host is a gap (sdd_status lists every supported host, installed or not).
+    installed_hosts = {host: groups or {} for host, groups in hosts.items()
+                       if any((groups or {}).get(kind) for kind in ("current", "outdated", "edited", "foreign"))}
     if status is None:
         checks.append(DoctorCheck(name="sdd: files current", ok=True, informational=True,
                                   detail="SDD flow not installed (parrot.sdd.installer unavailable in this build)"))
-    elif not any(hosts.values()):
+    elif not installed_hosts:
         checks.append(DoctorCheck(name="sdd: files current", ok=True, informational=True,
                                   detail="SDD flow not installed"))
     else:
         problems: list[str] = []
         edited = False
-        for host, groups in hosts.items():
-            for kind in ("outdated", "edited"):
-                targets = list((groups or {}).get(kind) or [])
+        foreign: list[str] = []
+        for host, groups in installed_hosts.items():
+            for kind in ("outdated", "edited", "missing"):
+                targets = list(groups.get(kind) or [])
                 if targets:
                     edited = edited or kind == "edited"
                     problems.append(f"{host} {kind}: {', '.join(str(t) for t in targets)}")
+            foreign.extend(f"{host}: {t}" for t in groups.get("foreign") or [])
         checks.append(DoctorCheck(
             name="sdd: files current", ok=not problems,
             detail="all installed SDD files current" if not problems else "; ".join(problems),
             fix="" if not problems else ("parrot sdd status" if edited else "parrot sdd install")))
+        if foreign:
+            checks.append(DoctorCheck(
+                name="sdd: foreign files", ok=False, informational=True,
+                detail=f"not written by parrot sdd (never overwritten): {', '.join(foreign)}",
+                fix="delete the hand-copied files and re-run `parrot sdd install`"))
     # jq and python3 — each only while an installed shipped file still references it.
     try:
         from parrot.sdd.audit import missing_tools, scan_paths  # TASK-4070 — lazy on purpose
@@ -386,6 +397,37 @@ def _command_problem(entry: Any, root: Path) -> str | None:
     return None if shutil.which(command) else f"{command} (not on PATH)"
 
 
+#: MCP server keys the parrot installers write (the cross-repo collision check also matches by command/args).
+PARROT_MCP_KEYS: frozenset[str] = frozenset({"wikitoolkit", "bookstore"})
+
+
+def _is_parrot_entry(key: Any, entry: Any) -> bool:
+    """True for an MCP entry written by a parrot installer.
+
+    Matches the known keys (``wikitoolkit``, ``bookstore``, ``parrot-*``), a command whose basename is a parrot
+    entry point, or args that run a ``parrot.*`` module (``python -m parrot.knowledge.bookstore.cli mcp``).
+    """
+    name = str(key)
+    if name in PARROT_MCP_KEYS or name.startswith("parrot-"):
+        return True
+    if not isinstance(entry, dict):
+        return False
+    command = entry.get("command")
+    if isinstance(command, str) and command:
+        base = Path(command).name
+        if base.lower().endswith(".exe"):
+            base = base[:-4]
+        if base in RUNTIME_ENTRYPOINTS:
+            return True
+    args = entry.get("args")
+    if isinstance(args, list):
+        for pos, arg in enumerate(args[:-1]):
+            nxt = args[pos + 1]
+            if arg == "-m" and isinstance(nxt, str) and (nxt == "parrot" or nxt.startswith("parrot.")):
+                return True
+    return False
+
+
 def _other_root(entry: Any, root: Path) -> str | None:
     """The foreign repo root an entry is baked for (``cwd`` or absolute ``--config`` arg), else None."""
     if not isinstance(entry, dict):
@@ -412,8 +454,8 @@ def _other_root(entry: Any, root: Path) -> str | None:
 def _check_host_configs(root: Path) -> list[DoctorCheck]:
     """Claude .mcp.json, Codex .codex/config.toml, both Google mcp_config.json files (rev 0.5 C24).
 
-    The user-global Google file also flags the cross-repo collision: a ``wikitoolkit`` / ``parrot-*``
-    entry whose ``cwd`` (or absolute ``--config`` arg) belongs to another root — fix: re-install with
+    The user-global Google file also flags the cross-repo collision: a parrot-managed entry
+    (``_is_parrot_entry``: ``wikitoolkit`` / ``bookstore`` / ``parrot-*`` or a parrot command) whose ``cwd`` (or absolute ``--config`` arg) belongs to another root — fix: re-install with
     ``--portable`` (spec §7). The repo-local Google file gets the command check only (C24).
     """
     from parrot.knowledge.wiki.google.installer import toolkit_config_paths  # verified: google/installer.py:142
@@ -451,8 +493,7 @@ def _check_host_configs(root: Path) -> list[DoctorCheck]:
             fix="" if not broken else "re-run the host installer (parrot claude|codex|google install) or `parrot toolkits` to rewrite the entry"))
         if global_file:
             collisions = [f"{key} -> {other}" for key, entry in servers.items()
-                          if (key == "wikitoolkit" or str(key).startswith("parrot-"))
-                          and (other := _other_root(entry, root))]
+                          if _is_parrot_entry(key, entry) and (other := _other_root(entry, root))]
             if collisions:
                 checks.append(DoctorCheck(
                     name="host config: google cross-repo collision", ok=False,
