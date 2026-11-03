@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.12, amendments C34–C35 — acceptance gap)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5113
@@ -200,6 +200,11 @@ def test_wiki_still_builtin_when_parrot_tools_present() -> None: ...
 ## Completion Note
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 5.5 (sdd-start, sequential)
+**Date**: 2026-11-03
+**Notes**: `_builtin_classes()` now imports each built-in independently and omits one that raises ImportError (DEBUG log).
+Tests run in subprocesses with a `sys.meta_path` finder blocking `parrot_tools` (an in-process hide is unreliable: the
+lazy `parrot.knowledge.wiki` export caches). 4 of 5 new tests fail without the fix, all pass with it; resolver,
+optimizations-core and installer-toolkits suites pass (38). Handshake check (no sandbox project in this checkout, so run
+in a fresh git repo after `parrot sdd install`, parrot_tools blocked): `initialize` OK and `tools/list` =
+bounded-source 3 tools, sdd-coder 20 tools. Re-running in the real sandbox project is still to be done by the owner.
