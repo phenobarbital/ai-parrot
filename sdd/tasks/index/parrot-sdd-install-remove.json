@@ -163,7 +163,7 @@
       "feature_id": "FEAT-795",
       "feature": "parrot-sdd-install-remove",
       "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -175,8 +175,9 @@
       "parallelism_notes": "TASK-5132: imports remove_stale_sdd_files and prints sdd_status stale/stale_mcp keys; TASK-5131: lazily imports remove_stale_mcp_entries; TASK-5133: both edit parrot/sdd/cli.py (serialized, TASK-5133 first).",
       "assigned_to": null,
       "started_at": "2026-11-03T17:07:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5135-cli-stalled-flags.md"
+      "completed_at": "2026-11-03T17:56:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5135-cli-stalled-flags.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5136",
