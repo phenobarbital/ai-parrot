@@ -316,14 +316,19 @@ See §3 Module 1 skeleton.
 ### Validation Contract
 
 tests:
+- packages/ai-parrot/tests/unit/test_conf_default_llm.py
 - packages/ai-parrot/tests/unit/test_llm_defaults.py
+- packages/ai-parrot/tests/observability/test_usage_component.py
+- packages/ai-parrot/tests/observability/test_usage_record_attribution.py
+- packages/ai-parrot/tests/bots/flows/crew/test_crew_llm_defaults.py
 - packages/ai-parrot/tests/bots/flows/crew/test_crew_credentials.py
 - packages/ai-parrot/tests/bots/flows/crew/test_crew_key_documented.py
+- packages/ai-parrot/tests/experts/test_expert_llm_defaults.py
 - packages/ai-parrot/tests/experts/test_integration.py
+- packages/ai-parrot-server/tests/handlers/test_agent_handler_llm_defaults.py
 - packages/ai-parrot-server/tests/handlers/test_crew_handler_google_key.py
 - packages/ai-parrot-server/tests/manager/test_crew_google_key.py
-- packages/ai-parrot/tests/test_conf.py
-- packages/ai-parrot/tests/observability/test_usage_component.py
+- packages/ai-parrot/tests/test_llm_defaults_documented.py
 markers: none
 
 ### Test Data / Fixtures
