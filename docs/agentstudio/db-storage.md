@@ -52,8 +52,8 @@ pod environment. Without a keyring, `/keys` and secret writes answer 503 `vault_
 **Required schema version.** `STUDIO_SCHEMA_REQUIRED = 9` (migrations 0001-0009) whenever the Studio backend is
 `database`, regardless of the phase-2 switches (phase 2 is part of the release). The constant lives in
 `parrot.handlers.studio.storage.migrate` and equals `required` of `MANIFEST.json`. The startup probe requires every
-version up to 8 to be in the ledger with the manifest checksum; a database still at version 5 resolves to `unavailable`
-(503). Apply 0006-0008 first.
+version up to 9 to be in the ledger with the manifest checksum; a database still at version 5 resolves to `unavailable`
+(503). Apply 0006-0009 first.
 
 ## Supported PostgreSQL
 
@@ -115,7 +115,7 @@ parrot-studio-migrate --stamp                    # release tooling, repository c
   the release that ships it: the release's `PromptLibrary` model expects `sort_order`.
 - `--print` pipes straight into `psql`: `parrot-studio-migrate --dsn "$DSN" --print | psql -1 -v ON_ERROR_STOP=1 "$DSN"`
   (`-1` is what makes each file one transaction; do not drop it).
-- `--verify` checks versions 1-8 against the manifest and flags any missing version, any recorded version that is
+- `--verify` checks versions 1-9 against the manifest and flags any missing version, any recorded version that is
   unknown and any checksum that drifted. After applying phase 2, confirm with `--dry-run` that nothing is
   pending (`pending: []`).
 - A host deploy hook can call `await apply_studio_migrations(pool)` from `parrot.handlers.studio.storage.migrate`

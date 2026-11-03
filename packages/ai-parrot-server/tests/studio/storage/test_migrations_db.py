@@ -2,6 +2,8 @@
 import asyncio
 import os
 
+import pytest
+
 
 from parrot.handlers.studio.storage.migrate import (
     STUDIO_SCHEMA_REQUIRED,
@@ -206,6 +208,9 @@ _PROMPT_LIBRARY_NEW_COLUMNS = (
 async def test_0009_adds_prompt_library_columns_idempotently(studio_pool) -> None:
     """FEAT-794: 0009 skips a missing prompt_library, then adds nullable agent_id/sort_order to the production shape."""
     pool = studio_pool
+    if (await _one(pool, "SELECT to_regclass('navigator.prompt_library') IS NOT NULL AS present"))["present"]:
+        if (await _one(pool, "SELECT count(*) AS n FROM navigator.prompt_library"))["n"]:
+            pytest.skip("navigator.prompt_library holds data: TEST_STUDIO_PG_DSN must be a disposable database")
     await _empty(pool)
     assert await _run(pool, "DROP TABLE IF EXISTS navigator.prompt_library") is None
     try:

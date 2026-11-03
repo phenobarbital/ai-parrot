@@ -96,9 +96,15 @@ class PromptLibraryManagement(ModelView):
             return await self.get_userid(session=self._session)
         return value
 
-    async def _set_updated_at(self, value, column, data):
-        """Every write records when it happened (FEAT-794)."""
+    async def _post_updated_at(self, value, column, data):
+        """Every PUT/POST write records when it happened (FEAT-794).
+
+        A ``_post_``/``_patch_`` hook, not ``_set_``: ``ModelView._del_data`` falls back to
+        ``_set_<column>`` hooks, and a timestamp in a DELETE body filter breaks the delete.
+        """
         return datetime.now()
+
+    _patch_updated_at = _post_updated_at
 
     async def _set_update(self, model, data):
         """An update never changes the author (FEAT-794).

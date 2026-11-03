@@ -46,6 +46,14 @@ async def prompt_library(aiohttp_client):
     await pool.connect()
     async with pool.acquire() as conn:
         await conn.execute("CREATE SCHEMA IF NOT EXISTS navigator")
+        existing = await conn.fetch_one(
+            "SELECT to_regclass('navigator.prompt_library') IS NOT NULL AS present"
+        )
+        if dict(existing)["present"]:
+            rows = await conn.fetch_one("SELECT count(*) AS n FROM navigator.prompt_library")
+            if dict(rows)["n"]:
+                await pool.close()
+                pytest.skip("navigator.prompt_library holds data: TEST_STUDIO_PG_DSN must be a disposable database")
         await conn.execute("DROP TABLE IF EXISTS navigator.prompt_library")
         await conn.execute(_PROD_PROMPT_LIBRARY)
         # Re-run 0009 on the fresh table even when an earlier test already recorded version 9.
@@ -135,3 +143,37 @@ class TestPromptLibraryHandler:
         rows = await resp.json()
         rows = rows if isinstance(rows, list) else [rows]
         assert sorted(r["title"] for r in rows) == ["Legacy", "New"]
+
+    async def test_delete_by_body_filter(self, prompt_library):
+        """DELETE with a body filter and no pk removes the caller's matching rows (the write hooks stay out of it)."""
+        client, pool = prompt_library
+        chatbot_id = str(uuid.uuid4())
+        for title in ("One", "Two"):
+            resp = await client.put(
+                _BASE, json={"chatbot_id": chatbot_id, "title": title, "query": "q"}, headers=_as(11)
+            )
+            assert resp.status == 201, await resp.text()
+        resp = await client.delete(_BASE, json={"chatbot_id": chatbot_id}, headers=_as(11))
+        assert resp.status in (200, 202, 204), await resp.text()
+        async with pool.acquire() as conn:
+            left = await conn.fetch_one("SELECT count(*) AS n FROM navigator.prompt_library")
+        assert dict(left)["n"] == 0
+
+    async def test_patch_dict_keeps_author_and_stamps_updated_at(self, prompt_library):
+        """PATCH /{id} with a dict body as another user → author kept, updated_at advanced (the PATCH hooks)."""
+        client, pool = prompt_library
+        resp = await client.put(
+            _BASE, json={"chatbot_id": str(uuid.uuid4()), "title": "Daily", "query": "q"}, headers=_as(11)
+        )
+        assert resp.status == 201, await resp.text()
+        prompt_id = (await resp.json())["prompt_id"]
+        before = await _row(pool, prompt_id)
+        await asyncio.sleep(0.05)
+
+        resp = await client.patch(f"{_BASE}/{prompt_id}", json={"sort_order": 5}, headers=_as(22))
+        assert resp.status == 202, await resp.text()
+        after = await _row(pool, prompt_id)
+        assert after["sort_order"] == 5
+        assert after["created_by"] == 11
+        assert after["updated_at"] > before["updated_at"]
+

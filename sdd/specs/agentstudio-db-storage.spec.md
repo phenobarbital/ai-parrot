@@ -1280,8 +1280,8 @@ CREATE INDEX IF NOT EXISTS ai_user_toolkit_overrides_agent_idx ON navigator.ai_u
 - v1 (before phase 2): hosts may leave `/keys` unmounted (testing and the assistant fall back to
   the org/server key, `testing.py:288-305`); toolkit/MCP secrets need the DocumentDB vault, and
   a host without it can store secret-free tooling only (a secret write answers 503).
-- `STUDIO_SCHEMA_REQUIRED` is 8 with the `database` backend (phase 2 ships in the same release, whatever
-  the store switches say); `parrot-studio-migrate --verify` covers versions 1-8, checked by the same probe.
+- `STUDIO_SCHEMA_REQUIRED` is 9 with the `database` backend (phase 2 ships in the same release, whatever
+  the store switches say; 0009 is FEAT-794); `parrot-studio-migrate --verify` covers versions 1-9, checked by the same probe.
 
 ### 2.11 Non-tenant host behaviour (plain ai-parrot-server)
 
@@ -1369,7 +1369,7 @@ CREATE INDEX IF NOT EXISTS ai_user_toolkit_overrides_agent_idx ON navigator.ai_u
 - **Interface Skeleton**:
   ```python
   # parrot/handlers/studio/storage/migrate.py  (new)
-  STUDIO_SCHEMA_REQUIRED: int = 8
+  STUDIO_SCHEMA_REQUIRED: int = 9
   STUDIO_MIGRATION_LOCK_KEY: int = 4715391001
   STUDIO_MIN_SERVER_VERSION_NUM: int = 140000
   LEDGER_MARKER: str = "-- @studio-ledger"
