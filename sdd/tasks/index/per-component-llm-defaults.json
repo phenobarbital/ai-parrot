@@ -48,14 +48,14 @@
       "feature_id": "FEAT-796",
       "feature": "per-component-llm-defaults",
       "spec": "sdd/specs/per-component-llm-defaults.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task; touches only parrot/conf.py and its own new test",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-03T22:26:11+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5137-conf-default-llm.md"
     },
@@ -66,7 +66,7 @@
       "feature_id": "FEAT-796",
       "feature": "per-component-llm-defaults",
       "spec": "sdd/specs/per-component-llm-defaults.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -75,7 +75,7 @@
       "parallel": true,
       "parallelism_notes": "reads conf.DEFAULT_LLM created by TASK-5137 (parrot/conf.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-03T22:26:11+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5138-llm-defaults-resolver.md"
     },
@@ -86,14 +86,14 @@
       "feature_id": "FEAT-796",
       "feature": "per-component-llm-defaults",
       "spec": "sdd/specs/per-component-llm-defaults.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task; owns observability/context.py, recorders/models.py, recorders/subscriber.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-03T22:26:11+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5139-usage-component-tagging.md"
     },
@@ -104,7 +104,7 @@
       "feature_id": "FEAT-796",
       "feature": "per-component-llm-defaults",
       "spec": "sdd/specs/per-component-llm-defaults.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -114,7 +114,7 @@
       "parallel": true,
       "parallelism_notes": "imports resolve_component_llm/resolve_component_api_key from TASK-5138 (parrot/llm_defaults.py) for crew.py lazy client + credentials.py; usage_component from TASK-5139 (observability/context.py) for the CREW decorator",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-03T22:26:11+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5140-crew-llm-defaults.md"
     },
@@ -125,7 +125,7 @@
       "feature_id": "FEAT-796",
       "feature": "per-component-llm-defaults",
       "spec": "sdd/specs/per-component-llm-defaults.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -135,7 +135,7 @@
       "parallel": true,
       "parallelism_notes": "experts/policy.py tier_policy calls resolve_component_llm (TASK-5138, parrot/llm_defaults.py); experts/agent.py uses resolve_component_api_key (TASK-5138) and usage_component (TASK-5139, observability/context.py) in ExpertAgent.ask",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-03T22:26:11+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5141-expert-tier-llm-defaults.md"
     },
@@ -146,7 +146,7 @@
       "feature_id": "FEAT-796",
       "feature": "per-component-llm-defaults",
       "spec": "sdd/specs/per-component-llm-defaults.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -156,7 +156,7 @@
       "parallel": true,
       "parallelism_notes": "handlers/agents/abstract.py _create_agent calls resolve_component_llm/resolve_component_api_key (TASK-5138, parrot/llm_defaults.py); ask_agent wraps agent.ask in usage_component (TASK-5139, observability/context.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-03T22:26:11+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5142-agent-handler-llm-defaults.md"
     },
@@ -167,7 +167,7 @@
       "feature_id": "FEAT-796",
       "feature": "per-component-llm-defaults",
       "spec": "sdd/specs/per-component-llm-defaults.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -178,7 +178,7 @@
       "parallel": true,
       "parallelism_notes": "documents final env names implemented by TASK-5140 (crew.py), TASK-5141 (experts/policy.py) and TASK-5142 (handlers/agents/abstract.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-03T22:26:11+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5143-llm-defaults-docs.md"
     }
