@@ -5,12 +5,16 @@ from __future__ import annotations
 import logging
 import tomllib
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Literal, Sequence
 
 from pydantic import BaseModel
 
-from parrot.knowledge.wiki.google.installer import _load_mcp_config, toolkit_config_paths
+from parrot.knowledge.wiki.claude_code.installer import uninstall_toolkit_approvals
+from parrot.knowledge.wiki.codex import assets as codex_assets
+from parrot.knowledge.wiki.codex.installer import _remove_marker_block, _remove_toml_table, _validate_toml
+from parrot.knowledge.wiki.google.installer import _load_mcp_config, _save_mcp_config, toolkit_config_paths
 from parrot.mcp.toolkit_config import load_toolkits_config
 from parrot.mcp.toolkit_seed import available_templates
 
@@ -174,3 +178,113 @@ def find_stale_mcp_entries(
             reason, detail = stale_reason
             found.append(StaleMcpEntry(host=item.host, file=item.display, key=key, reason=reason, detail=detail))
     return sorted(found, key=lambda entry: (entry.file, entry.key))
+
+
+def _remove_from_file(item: _McpFile, keys: Sequence[str]) -> tuple[list[str], str | None]:
+    """Delete ``keys`` from one config file and write it once.
+
+    Args:
+        item: Config file to update.
+        keys: Candidate server keys identified as stale.
+
+    Returns:
+        Removed keys and an optional warning line.
+    """
+    try:
+        if item.fmt == "json":
+            data = _load_mcp_config(item.path)
+            servers = data["mcpServers"]
+            removed = [key for key in keys if key in servers and is_parrot_toolkit_entry(key, servers[key])]
+            if removed:
+                for key in removed:
+                    servers.pop(key)
+                _save_mcp_config(item.path, data)
+            return removed, None
+
+        text = item.path.read_text(encoding="utf-8")
+        servers = tomllib.loads(text).get("mcp_servers", {})
+        if not isinstance(servers, dict):
+            raise RuntimeError(f"{item.path}: 'mcp_servers' is not a table")
+        removed = [key for key in keys if key in servers and is_parrot_toolkit_entry(key, servers[key])]
+        if not removed:
+            return [], None
+        for key in removed:
+            text = _remove_toml_table(text, f"mcp_servers.{key}")
+        if codex_assets.MCP_BEGIN in text:
+            _, _, rest = text.partition(codex_assets.MCP_BEGIN)
+            block = rest.partition(codex_assets.MCP_END)[0] if codex_assets.MCP_END in rest else rest
+            if not any(line.lstrip().startswith("[") for line in block.splitlines()):
+                text = _remove_marker_block(text, codex_assets.MCP_BEGIN, codex_assets.MCP_END)
+        _validate_toml(item.path, text)
+        item.path.write_text(text, encoding="utf-8")
+        return removed, None
+    except (OSError, RuntimeError, tomllib.TOMLDecodeError) as exc:
+        return [], f"warning: {item.display} — not changed ({exc})"
+
+
+def remove_stale_mcp_entries(
+    root: Path,
+    hosts: Sequence[str],
+    *,
+    keep: Sequence[str] = (),
+    dry_run: bool = False,
+    gemini_config: Path | None = None,
+) -> list[str]:
+    """Remove stale toolkit MCP entries from selected host configuration files.
+
+    Args:
+        root: Repository owning repo-scoped host configuration files.
+        hosts: Host names whose configuration files are eligible for cleanup.
+        keep: Globs matching ``<file>#<key>`` entries to retain.
+        dry_run: Return the planned changes without writing any file.
+        gemini_config: Optional global Gemini MCP config override.
+
+    Returns:
+        Per-entry removal, retention, warning, approval, and re-registration lines.
+    """
+    entries = find_stale_mcp_entries(root, hosts, gemini_config=gemini_config)
+    if not entries:
+        return ["no stale MCP entries"]
+
+    kept = [entry for entry in entries if any(fnmatch(f"{entry.file}#{entry.key}", glob) for glob in keep)]
+    to_remove = [entry for entry in entries if entry not in kept]
+    if dry_run:
+        return [
+            *[f"plan: stale-mcp-remove {entry.file}#{entry.key} ({entry.reason})" for entry in to_remove],
+            *[f"plan: keep-stale {entry.file}#{entry.key} (--keep)" for entry in kept],
+        ]
+
+    files = {item.display: item for item in _mcp_files(root, hosts, gemini_config)}
+    by_file: dict[str, list[StaleMcpEntry]] = {}
+    for entry in to_remove:
+        by_file.setdefault(entry.file, []).append(entry)
+
+    lines: list[str] = []
+    removed_claude_keys: list[str] = []
+    removed_toolkits: set[str] = set()
+    for file, file_entries in by_file.items():
+        item = files[file]
+        removed, warning = _remove_from_file(item, [entry.key for entry in file_entries])
+        entries_by_key = {entry.key: entry for entry in file_entries}
+        for key in removed:
+            entry = entries_by_key[key]
+            lines.append(f"{entry.file}#{key} — removed ({entry.reason})")
+            removed_toolkits.add(key[len("parrot-") :])
+            if item.host == "claude":
+                removed_claude_keys.append(key)
+        if warning is not None:
+            lines.append(warning)
+
+    lines.extend(f"{entry.file}#{entry.key} — kept (--keep)" for entry in kept)
+    if removed_claude_keys:
+        approval_message = uninstall_toolkit_approvals(root, removed_claude_keys)
+        if approval_message is not None:
+            lines.append(approval_message)
+    try:
+        enabled = {name for name, section in load_toolkits_config(root).toolkits.items() if section.enabled}
+    except ValueError:
+        enabled = set()
+    names = sorted(removed_toolkits & enabled)
+    if names:
+        lines.append(f"note: re-register with `parrot toolkits install {' '.join(names)}`")
+    return lines
