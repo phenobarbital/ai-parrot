@@ -245,7 +245,9 @@ if not AGENTS_BOTS_PROMPT_DIR.exists():
     AGENTS_BOTS_PROMPT_DIR.mkdir(parents=True, exist_ok=True)
 
 # LLM Model
-DEFAULT_LLM_MODEL_NAME = config.get("LLM_MODEL_NAME", fallback="gemini-2.5-pro")
+# Opt-in global default for per-component LLM selection (FEAT-796), "provider:model".
+# Unset -> each component keeps its builtin default. Independent of LLM_MODEL below.
+DEFAULT_LLM: str | None = config.get("DEFAULT_LLM", fallback=None)
 
 
 ## MILVUS DB ##:
