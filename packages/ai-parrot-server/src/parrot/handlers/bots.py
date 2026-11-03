@@ -96,6 +96,20 @@ class PromptLibraryManagement(ModelView):
             return await self.get_userid(session=self._session)
         return value
 
+    async def _set_updated_at(self, value, column, data):
+        """Every write records when it happened (FEAT-794)."""
+        return datetime.now()
+
+    async def _set_update(self, model, data):
+        """An update never changes the author (FEAT-794).
+
+        ``ModelView._post_data`` runs ``_set_created_by`` on every write, so by the time
+        ``post()`` applies the body it already carries the editor's id. Dropping the key here,
+        on the update path only, keeps the stored author; inserts still stamp it.
+        """
+        data = {key: value for key, value in data.items() if key != "created_by"}
+        await super()._set_update(model, data)
+
     async def get(self):
         """Override GET to filter by chatbot_id OR agent_id query param.
 
