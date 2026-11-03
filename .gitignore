@@ -476,3 +476,19 @@ examples/planogram/e2e/*
 examples/clients/bestbuy_catalog/
 examples/planogram/pipelines/
 sdd/state/FEAT-585/
+
+# >>> parrot sdd (managed) >>>
+# SDD feature worktrees (parrot sdd worktree ensure)
+.claude/worktrees/
+# parrot's local state (ledger index, wiki store), ignored as parrot claude|codex|google install do
+.parrot/
+# Claude Code per-user settings (personal permissions written by parrot claude install)
+.claude/settings.local.json
+# navconfig environment files hold credentials (env/.env, env/<ENV>/.env); env/.env.example stays tracked
+/.env
+env/**/.env
+# navconfig runtime log directory (LOG_DIR at the project root only)
+/logs/
+# parrot runtime output (OUTPUT_DIR at the project root: generated charts, files)
+/outputs/
+# <<< parrot sdd (managed) <<<
