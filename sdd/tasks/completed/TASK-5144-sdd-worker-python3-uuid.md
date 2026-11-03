@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-797 — sdd-worker agent: drop bare `python` from execution_id guidance
 **Spec**: `sdd/specs/agents-sdd-worker-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -53,4 +53,8 @@ Keep the two files byte-identical.
 
 ## Completion Note
 
-*(filled in on close)*
+Done 2026-11-03 (commit fc52eed3f7). Line 335 of both `sdd-worker.md` copies now says `python3 -c`.
+`pytest packages/ai-parrot/tests/sdd/test_no_repo_script_refs.py -q` → 11 passed (was 1 failed).
+Note: the two copies were already not byte-identical before this task — line 32 of the repo copy pins
+the local venv path for the worktree-guard hook, the shipped asset uses bare `parrot`. That difference is
+intentional and was left alone; apart from it the files match.
