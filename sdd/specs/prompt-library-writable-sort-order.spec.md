@@ -8,11 +8,11 @@ tags: [prompt-library, agentstudio, migrations]
 
 # Feature Specification: Prompt Library — writable again, with manual order
 
-**Feature ID**: FEAT-TBD (provisional — reserve with `reserve_ids` on approval)
+**Feature ID**: FEAT-794
 **Date**: 2026-11-02
 **Author**: Juan Ruffato (with Claude)
 **Status**: draft
-**Target version**: next ai-parrot / ai-parrot-server patch after 1.3.5 (released together)
+**Target version**: the next ai-parrot / ai-parrot-server release (released together)
 
 Companion spec (consumer): navigator-svelte `sdd/specs/astudio-public-prompts.spec.md` (FEAT-TBD), from the
 brainstorm `navigator-svelte:sdd/proposals/astudio-public-prompts.brainstorm.md` (branch `sdd/astudio-public-prompts`).
@@ -85,8 +85,10 @@ Two smaller defects on the same write path:
 Four small changes, one release:
 
 1. **Migration `0009_prompt_library_agent_id_sort_order.sql`** in the Studio migrations package: the advisory lock,
-   `ALTER TABLE navigator.prompt_library ADD COLUMN IF NOT EXISTS agent_id varchar`,
-   `ADD COLUMN IF NOT EXISTS sort_order integer`, and the `-- @studio-ledger` trailer. `MANIFEST.json` gets the entry
+   `ALTER TABLE IF EXISTS navigator.prompt_library ADD COLUMN IF NOT EXISTS agent_id varchar`,
+   `ADD COLUMN IF NOT EXISTS sort_order integer`, and the `-- @studio-ledger` trailer. `IF EXISTS` on the table is
+   required: every Studio test database (`TEST_STUDIO_PG_DSN`) and the FieldSync raw per-file runner apply all
+   packaged migrations to databases that may have no `prompt_library`, and a plain `ALTER TABLE` would abort the chain. `MANIFEST.json` gets the entry
    and `"required": 9`; `STUDIO_SCHEMA_REQUIRED = 9`. Checksums are written by the release tool
    (`parrot-studio-migrate --stamp`), never by hand.
 2. **`PromptLibrary`** gains `sort_order: Optional[int]`, and `prompt_category`'s default becomes the string
@@ -138,8 +140,8 @@ prompt_category: str = Field(required=False, default=PromptCategory.OTHER.value)
 ```sql
 -- 0009_prompt_library_agent_id_sort_order.sql (body; trailer written by --stamp)
 SELECT pg_advisory_xact_lock(4715391001);
-ALTER TABLE navigator.prompt_library ADD COLUMN IF NOT EXISTS agent_id   varchar;
-ALTER TABLE navigator.prompt_library ADD COLUMN IF NOT EXISTS sort_order integer;
+ALTER TABLE IF EXISTS navigator.prompt_library ADD COLUMN IF NOT EXISTS agent_id   varchar;
+ALTER TABLE IF EXISTS navigator.prompt_library ADD COLUMN IF NOT EXISTS sort_order integer;
 ```
 
 ### New Public Interfaces
@@ -380,3 +382,4 @@ Status: skipped (spec drafted from a reviewed brainstorm; run before approval if
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-02 | Juan Ruffato (with Claude) | Initial draft from the astudio-public-prompts review and the staging smoke |
+| 0.2 | 2026-11-03 | Emmanuel Arroyo (with Claude) | FEAT-794 reserved; `0009` uses `ALTER TABLE IF EXISTS` (test databases and the FieldSync runner may lack `prompt_library`); target version left to the release owner; tasks TASK-5125..5128 |
