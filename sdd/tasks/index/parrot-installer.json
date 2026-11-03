@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-04T23:59:51+00:00",
-  "completed_at": "2026-11-03T00:07:19+00:00",
+  "completed_at": null,
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -203,7 +203,13 @@
           "tests/sdd_scripts/test_check_spec_consequences.py",
           "packages/ai-parrot/tests/sdd/test_installer_base_branch.py",
           "packages/ai-parrot/tests/sdd/test_dangerous_actions.py",
-          "packages/ai-parrot/tests/sdd/test_installer_dangerous_guard.py"
+          "packages/ai-parrot/tests/sdd/test_installer_dangerous_guard.py",
+          "packages/ai-parrot/tests/sdd/test_installer_toolkits.py",
+          "packages/ai-parrot/tests/tools/test_optimizations_core.py",
+          "packages/ai-parrot-tools/tests/tool_optimizations/test_reader.py",
+          "packages/ai-parrot-tools/tests/tool_optimizations/test_inspection.py",
+          "packages/ai-parrot-tools/tests/tool_optimizations/test_policy.py",
+          "packages/ai-parrot-tools/tests/tool_optimizations/test_writer.py"
         ],
         "settings": {
           "markers": ""
@@ -215,7 +221,7 @@
         ]
       }
     ],
-    "digest": "sha256:3306cb846a6e2d5b6504ba0cc52d70ebf19c9b4a1fcd1877929bd14a24724c94"
+    "digest": "sha256:9ca01d7d430733d1d0f36a2c43e23ddd863846992e51c7fd15a81dd259988349"
   },
   "tasks": [
     {
@@ -1211,9 +1217,51 @@
       ],
       "discovered_from": "issue:209fdbe18647",
       "file": "sdd/tasks/completed/TASK-5111-noun-grouped-cli-test-assertions.md",
-      "verification": "verified"
+      "verification": "verified",
+      "parallelism_notes": "test-only fix; exclusive with the other FEAT-633 tasks touching dev_loop tests"
+    },
+    {
+      "id": "TASK-5112",
+      "slug": "bounded-source-to-core",
+      "title": "Move `bounded-source` into core (`parrot.tools.optimizations`)",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4077"
+      ],
+      "parallelism_notes": "rev 0.12 C35; touches only tool_optimizations / parrot.tools.optimizations / the bounded-source template",
+      "file": "sdd/tasks/active/TASK-5112-bounded-source-to-core.md"
+    },
+    {
+      "id": "TASK-5113",
+      "slug": "sdd-install-registers-toolkits",
+      "title": "`parrot sdd install` registers the `sdd-coder` and `bounded-source` toolkits",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5110",
+        "TASK-5112"
+      ],
+      "parallelism_notes": "rev 0.12 C34; same installer.py/cli.py/getting-started.md as TASK-5109/5110, and needs the core bounded-source from TASK-5112",
+      "file": "sdd/tasks/active/TASK-5113-sdd-install-registers-toolkits.md"
     }
   ],
   "amended_at": "2026-11-03T00:00:00+00:00",
-  "spec_revision": "0.11"
+  "spec_revision": "0.12"
 }

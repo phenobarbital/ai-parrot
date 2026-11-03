@@ -52,11 +52,8 @@ on both `dev` and this branch. Found during the `/sdd-done FEAT-633` feature-tie
 
 ## Validation Commands
 
-```bash
-PYTHONPATH=packages/ai-parrot/src pytest -q \
-  packages/ai-parrot/tests/flows/dev_loop/test_worker_prompt_orchestrator.py \
-  packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_start_optimization_contract.py
-```
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_worker_prompt_orchestrator.py -q`
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_start_optimization_contract.py -q`
 
 ## Completion Note
 
