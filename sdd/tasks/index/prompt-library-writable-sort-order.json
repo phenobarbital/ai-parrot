@@ -98,7 +98,7 @@
       "feature_id": "FEAT-794",
       "feature": "prompt-library-writable-sort-order",
       "spec": "sdd/specs/prompt-library-writable-sort-order.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -106,8 +106,9 @@
       "parallelism_notes": "leaf: text-only edits to the three X1 spec rows, docs/agentstudio/db-storage.md and test_feat605_contract_doc.py, which reads those files and never imports the migrate constant",
       "assigned_to": "claude-opus-5-5 (session)",
       "started_at": "2026-11-03T11:25:38-04:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5128-studio-contract-x1-schema-nine.md"
+      "completed_at": "2026-11-03T15:29:32+00:00",
+      "file": "sdd/tasks/completed/TASK-5128-studio-contract-x1-schema-nine.md",
+      "verification": "verified"
     }
   ]
 }

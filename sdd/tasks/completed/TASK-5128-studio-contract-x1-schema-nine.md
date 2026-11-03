@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-794 — Prompt Library — writable again, with manual order
 **Spec**: `sdd/specs/prompt-library-writable-sort-order.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -163,8 +163,18 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: claude-opus-5-5 (interactive session, Emmanuel Arroyo)
+**Date**: 2026-11-03
+**Notes**: X1 edited once in `agentstudio-db-storage.spec.md` and copied byte-identical into the other two specs: it now
+lists `navigator.prompt_library` (not Studio-owned) as extended in place by 0009, names migration 0009 (FEAT-794) and
+says 1..9 in both places. `:1339` says `STUDIO_SCHEMA_REQUIRED = 9`. `docs/agentstudio/db-storage.md` says 9 at `:52`,
+and the two other "0001-0008" mentions (`:112`, `:128`) now say 0001-0009, plus one bullet on what 0009 does. The two
+pinned tests are renamed `_nine` and also reject a leftover "1..8" / "= 8". Red first: 4 failed, then
+`pytest packages/ai-parrot-server/tests/studio/test_feat605_contract_doc.py -q` → 52 passed, 1 failed.
 
-**Deviations from spec**: none | describe if any
+The 1 failure is pre-existing and out of scope: `test_changelog_lists_the_plain_host_behaviour_changes` fails the same
+way on `dev` (the v2.0.0 release emptied `## [Unreleased]` in `CHANGELOG.md`; the test also pins "required migration
+level is 8"). Not touched: `CHANGELOG.md` is not in this task's files.
+
+**Deviations from spec**: the two extra "0001-0008" lines in the doc (`:112`, `:128`) were updated too, so the doc does
+not contradict itself; same file the task lists.
