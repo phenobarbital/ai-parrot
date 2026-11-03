@@ -71,7 +71,12 @@ def find_root(cwd: str | Path | None) -> Path | None:
 
 
 def protected_branches(root: Path | None) -> tuple[str, ...]:
-    """``{base_branch, staging_branch, hotfix_base, main, master}`` from ``sdd/config.json``; defaults otherwise."""
+    """The protected branches: ``dev``, ``main``, ``master``, ``staging`` always, plus ``base_branch``,
+    ``staging_branch`` and ``hotfix_base`` from ``sdd/config.json`` when it is present and valid.
+
+    The defaults stay protected even when the config names other lanes (FEAT-792 D2): over-protecting is the
+    safe direction, and a repo whose base branch is ``trunk`` usually still cares about ``dev`` or ``staging``.
+    """
     names: set[str] = set(_DEFAULT_PROTECTED)
     if root is not None and (root / "sdd" / "config.json").is_file():
         try:
@@ -145,6 +150,27 @@ def _branch_re(branches: Sequence[str]) -> str:
     return r"\b(" + "|".join(re.escape(b) for b in branches) + r")\b"
 
 
+def _forced_refspec_targets(scan: str) -> list[str]:
+    """Destination branches of ``+<refspec>`` arguments in every ``git … push`` segment of ``scan``.
+
+    A leading ``+`` forces the update exactly like ``--force`` (issue:047c5435b564). The destination is the part
+    after ``:`` when present, else the whole refspec; a ``refs/heads/`` prefix is stripped.
+    """
+    targets: list[str] = []
+    for segment in re.split(r"[;&|]", scan):
+        tokens = segment.split()
+        if "git" not in tokens or "push" not in tokens[tokens.index("git") :]:
+            continue
+        start = tokens.index("push", tokens.index("git")) + 1
+        for token in tokens[start:]:
+            if not token.startswith("+") or len(token) == 1:
+                continue
+            refspec = token[1:]
+            destination = refspec.split(":", 1)[1] if ":" in refspec else refspec
+            targets.append(destination.removeprefix("refs/heads/"))
+    return targets
+
+
 _WRAPPER = re.compile(r"^(?:(?:pwsh|powershell)(?:\.exe)?\s+(?:-\w+\s+)*|cmd(?:\.exe)?\s+/[ck]\s+)", re.IGNORECASE)
 
 
@@ -198,12 +224,13 @@ def _bash(cmd: str, root: Path | None, protected: Sequence[str]) -> Verdict:  # 
             "git clean -nd          # dry run — list what WOULD be deleted, first",
             "git stash -u           # keep untracked work recoverable instead",
         )
-    if (
+    forced_flag = bool(
         re.search(r"git\s+push\b", scan)
         and _FORCE_FLAG.search(scan)
         and "--force-with-lease" not in scan
         and re.search(_branch_re(protected), scan)
-    ):
+    )
+    if forced_flag or any(target in protected for target in _forced_refspec_targets(scan)):
         return _deny(
             f"Force-push to a protected branch ({'/'.join(protected)}) rewrites history other worktrees and CI "
             "depend on.",

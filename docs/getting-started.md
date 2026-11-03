@@ -455,7 +455,8 @@ parrot sdd status                            # missing | current | outdated | ed
 - For the Claude host the install also registers a portable **dangerous-actions guard** (a `PreToolUse` hook on
   `Bash|Edit|Write|MultiEdit` in `.claude/settings.json`, served by `parrot sdd hooks dangerous-actions --hook`; stdlib
   only, so it works the same on Linux, macOS and Windows). It blocks `git reset --hard`, `git clean -fd`, force-push to
-  or deleting a protected branch (`base_branch`, `staging_branch`, `hotfix_base`, `main`, `master`), `git worktree
+  (`--force`, `-f` or a `+refspec`) or deleting a protected branch (`dev`, `main`, `master`, `staging` always, plus
+  `base_branch`, `staging_branch` and `hotfix_base` from `sdd/config.json`), `git worktree
   remove --force`, recursive deletes of `/`, `~`, a drive root or `.git`/`.venv`, `mkfs`/`diskutil erase*`/`format X:`,
   destructive SQL through a database client, direct package publication, bare `pip install` in a uv-managed repo,
   literal API keys, and writes to secret files; each block names a safe alternative. A deliberate recovery session can

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from parrot.sdd.scripts.dangerous_actions import evaluate
+from parrot.sdd.scripts.dangerous_actions import evaluate, protected_branches
 
 FAKE_GHP = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
 
@@ -29,6 +29,13 @@ DENIED = [
     "git clean -fdx",
     "git push --force origin dev",
     "git push -f origin main",
+    # FEAT-792 / issue:047c5435b564 — a leading "+" on a refspec forces the update like --force
+    "git push origin +dev",
+    "git push origin +HEAD:main",
+    "git push origin +refs/heads/main",
+    "git push -u origin +main",
+    "git -C repo push origin +staging",
+    "git push --force-with-lease origin +dev",
     "git checkout .",
     "git restore .",
     "git branch -D dev",
@@ -61,6 +68,11 @@ ALLOWED = [
     'echo "git reset --hard"',
     "git push --force-with-lease origin feat-x",
     "git push --force origin feat-x",
+    "git push origin +feat-x",
+    "git push origin +HEAD:feat-x",
+    "git push origin +feat-x:feat-x",
+    "git push origin dev",
+    'echo "git push origin +dev"',
     "git reset --soft HEAD~1",
     "rm -rf build/",
     "rm -rf /tmp/build",
@@ -99,6 +111,16 @@ def test_protected_branches_follow_sdd_config(tmp_path: Path) -> None:
     (tmp_path / "sdd/config.json").write_text(json.dumps({"base_branch": "trunk"}))
     assert evaluate(_bash("git push --force origin trunk"), root=tmp_path).decision == "deny"
     assert evaluate(_bash("git push --force origin feat-x"), root=tmp_path).decision == "allow"
+
+
+def test_default_branches_stay_protected_with_custom_base(tmp_path: Path) -> None:
+    """FEAT-792 D2 / issue:47b61e69475b: the config adds lanes, it never removes the defaults."""
+    (tmp_path / "sdd").mkdir()
+    (tmp_path / "sdd/config.json").write_text(json.dumps({"base_branch": "trunk", "hotfix_base": "release"}))
+    assert set(protected_branches(tmp_path)) == {"trunk", "release", "dev", "main", "master", "staging"}
+    for branch in ("trunk", "release", "dev", "staging", "main", "master"):
+        assert evaluate(_bash(f"git push origin +{branch}"), root=tmp_path).decision == "deny", branch
+    assert evaluate(_bash("git push origin +feat-x"), root=tmp_path).decision == "allow"
 
 
 def test_invalid_config_falls_back_to_defaults(tmp_path: Path) -> None:
@@ -209,6 +231,9 @@ PARITY = [
     "git clean -fdx",
     "git push --force origin dev",
     "git push --force-with-lease origin feat-x",
+    "git push origin +dev",
+    "git push origin +HEAD:main",
+    "git push origin +feat-x",
     "git checkout .",
     "git branch -D main",
     "git worktree remove --force /tmp/x",
