@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -196,9 +197,61 @@ def prepare_upstream(worktree: Path) -> str:
     raise LaunchError(2, f"branch diverged from origin/{branch}; reconcile it before launching")
 
 
-def tmux_session_name(feature_id: str) -> str:
-    """Return the deterministic tmux session name for a feature."""
+_TMUX_NAME_MAX = 64
+_TMUX_UNSAFE = re.compile(r"[^a-z0-9_-]+")
+
+
+def tmux_session_name(feature_id: str, slug: str) -> str:
+    """Return the deterministic tmux session name for a feature.
+
+    The tmux server is shared by every repository of the user and FEAT ids restart at ``FEAT-1`` in each
+    one, so the spec slug is part of the name. It stays deterministic so reattach and the duplicate-worker
+    guard keep working.
+
+    Args:
+        feature_id: Feature id, e.g. ``FEAT-2``.
+        slug: Feature (spec) slug, e.g. ``simple-agent``.
+
+    Returns:
+        ``sdd-<feature id>-<slug>`` lower-cased, with characters tmux rejects (``.``, ``:``) replaced by
+        ``-`` and the slug truncated to keep the name within 64 characters.
+    """
+    prefix = "sdd-" + _TMUX_UNSAFE.sub("-", feature_id.lower()).strip("-")
+    tail = _TMUX_UNSAFE.sub("-", slug.lower()).strip("-")
+    tail = tail[: max(_TMUX_NAME_MAX - len(prefix) - 1, 0)].rstrip("-")
+    return f"{prefix}-{tail}" if tail else prefix
+
+
+def legacy_tmux_session_name(feature_id: str) -> str:
+    """Return the pre-TASK-5119 session name ``sdd-<FEAT-ID>``, still honoured for live sessions."""
     return f"sdd-{feature_id}"
+
+
+def _session_path(name: str) -> Path | None:
+    """Return the start directory of a tmux session, ``None`` when unknown."""
+    try:
+        result = _run(["tmux", "display-message", "-p", "-t", f"={name}:", "#{session_path}"], cwd=Path.cwd())
+    except LaunchError:
+        return None
+    path = result.stdout.strip()
+    return Path(path) if result.returncode == 0 and path else None
+
+
+def _existing_session(primary: Path, ref: FeatureRef) -> str:
+    """Return the session name to use for ``ref``: the new name, or a live legacy session of this repo.
+
+    A legacy ``sdd-<FEAT-ID>`` session is reused only when it was started inside ``primary`` (the feature
+    worktrees live under it); one from another repository is ignored, so it can never be attached to.
+    """
+    name = tmux_session_name(ref.feature_id, ref.slug)
+    if tmux_session_exists(name):
+        return name
+    legacy = legacy_tmux_session_name(ref.feature_id)
+    if tmux_session_exists(legacy):
+        path = _session_path(legacy)
+        if path is not None and path.resolve().is_relative_to(primary.resolve()):
+            return legacy
+    return name
 
 
 def tmux_session_exists(name: str) -> bool:
@@ -336,7 +389,7 @@ def launch(
         os.environ[native_claude_sandbox.MODE_ENV] = sandbox  # read by the in-process host preflight
     primary = resolve_primary_checkout(_invocation_dir())
     ref = resolve_feature(primary, key)
-    name = tmux_session_name(ref.feature_id)
+    name = _existing_session(primary, ref)
     if tmux_session_exists(name):
         if not tmux:
             raise LaunchError(
