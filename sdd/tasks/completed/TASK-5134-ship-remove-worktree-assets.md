@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-795 — `parrot sdd uninstall --stalled` — remove stale and hand-copied SDD files
 **Spec**: `sdd/specs/parrot-sdd-install-remove.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5133
@@ -257,10 +257,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 (interactive session, merged the sdd-coder a2 delivery by hand)
+**Date**: 2026-11-03
+**Notes**: Implemented by the sdd-coder attempt `a2` (commits dd0ce97da5, 346166d261), merged in 424b9161d6. The
+sdd-worker could not merge it: Claude Code's native sandbox keeps `.claude/commands/` read-only, so the merge failed
+with "unable to unlink old '.claude/commands/remove-worktree.md'" and left five untracked files (byte-identical to
+a2) that were parked outside the tree before merging from an unsandboxed session.
+Validation: `test_no_repo_script_refs.py` + `test_installer.py` — 77 passed; `check_asset_sync.py --check` exit 0;
+manifest has the three entries (`[claude,codex,google]`, `[codex,google]`, `[google]`); no `scripts/`, `.venv` or bare
+`python` in the shipped command or twins.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: the file list gained `tests/sdd/fixtures/asset_targets.json` (pinned by
+`test_rewrite_preserves_asset_names`, commit 7caf32f2ae); the task's Complexity Contract was not updated to match,
+since the task was merged instead of re-dispatched.

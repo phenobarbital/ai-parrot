@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-03T16:52:09Z",
-  "completed_at": null,
+  "completed_at": "2026-11-03T19:54:32+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -143,7 +143,7 @@
       "feature_id": "FEAT-795",
       "feature": "parrot-sdd-install-remove",
       "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -153,8 +153,9 @@
       "parallelism_notes": "TASK-5133: the shipped command calls the `parrot sdd worktree list|remove` verbs it mounts. Exclusive: `check_asset_sync.py --write` regenerates the shared parrot/sdd/_assets/ tree and manifest.json every installer test reads.",
       "assigned_to": null,
       "started_at": "2026-11-03T17:07:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5134-ship-remove-worktree-assets.md"
+      "completed_at": "2026-11-03T19:54:32+00:00",
+      "file": "sdd/tasks/completed/TASK-5134-ship-remove-worktree-assets.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5135",
