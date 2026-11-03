@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import json
 import logging
+import tomllib
 from pathlib import Path
 
 import pytest
 
 from parrot.mcp.toolkit_seed import seed_toolkit_sections, set_section_enabled
-from parrot.mcp.toolkit_stale import find_stale_mcp_entries, is_parrot_toolkit_entry
+from parrot.mcp.toolkit_stale import (
+    StaleMcpEntry,
+    find_stale_mcp_entries,
+    is_parrot_toolkit_entry,
+    remove_stale_mcp_entries,
+)
 
 
 def _entry(name: str, config: str) -> dict[str, object]:
@@ -153,3 +159,152 @@ def test_host_filter(repo: Path, gemini: Path, caplog: pytest.LogCaptureFixture)
 def test_unknown_host_raises(repo: Path, gemini: Path) -> None:
     with pytest.raises(ValueError, match=r"unknown host\(s\): vscode"):
         find_stale_mcp_entries(repo, ("vscode",), gemini_config=gemini)
+
+
+def test_remove_mcp_json_keeps_others(repo: Path, gemini: Path, tmp_path: Path) -> None:
+    """Remove a stale JSON toolkit entry without changing unrelated servers."""
+    config = str(repo / ".parrot" / "mcp-toolkits.yaml")
+    foreign = str(tmp_path / "foreign" / ".parrot" / "mcp-toolkits.yaml")
+    servers = {
+        "wikitoolkit": {"command": "wikitoolkit", "args": ["mcp"]},
+        "bookstore": {"command": "bookstore", "args": ["mcp"]},
+        "parrot-x": {"command": "python", "args": ["mcp-local", "x"]},
+        "parrot-scraping": _entry("scraping", config),
+        "parrot-browsing": _entry("browsing", foreign),
+    }
+    _write_servers(repo / ".mcp.json", servers)
+
+    lines = remove_stale_mcp_entries(repo, ("claude",), gemini_config=gemini)
+    remaining = json.loads((repo / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]
+
+    assert set(remaining) == {"wikitoolkit", "bookstore", "parrot-x"}
+    assert {key: remaining[key] for key in remaining} == {key: servers[key] for key in remaining}
+    assert ".mcp.json#parrot-scraping — removed (undeclared)" in lines
+    assert ".mcp.json#parrot-browsing — removed (foreign-repo)" in lines
+
+
+def test_codex_tables_removed_inside_and_outside_block(repo: Path, gemini: Path) -> None:
+    """Remove stale Codex tables wherever they are while retaining valid TOML."""
+    config = repo / ".codex" / "config.toml"
+    config.parent.mkdir()
+    wikitoolkit = '[mcp_servers.wikitoolkit]\ncommand = "wikitoolkit"\nargs = ["mcp"]\n'
+    config.write_text(
+        "\n".join(
+            (
+                '[mcp_servers.parrot-scraping]\ncommand = "parrot"\nargs = ["mcp-local", "scraping"]\n',
+                "# >>> parrot-wiki Codex MCP >>>",
+                '[mcp_servers.parrot-lsp]\ncommand = "parrot"\nargs = ["mcp-local", "lsp"]\n',
+                wikitoolkit,
+                "# <<< parrot-wiki Codex MCP >>>",
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    remove_stale_mcp_entries(repo, ("codex",), gemini_config=gemini)
+    result = config.read_text(encoding="utf-8")
+
+    assert "parrot-scraping" not in result
+    assert "parrot-lsp" not in result
+    assert wikitoolkit in result
+    assert tomllib.loads(result)["mcp_servers"] == {"wikitoolkit": {"command": "wikitoolkit", "args": ["mcp"]}}
+
+
+def test_codex_emptied_block_removed(repo: Path, gemini: Path) -> None:
+    """Remove a Codex managed block when its final server table is stale."""
+    config = repo / ".codex" / "config.toml"
+    config.parent.mkdir()
+    config.write_text(
+        "# >>> parrot-wiki Codex MCP >>>\n"
+        '[mcp_servers.parrot-scraping]\ncommand = "parrot"\nargs = ["mcp-local", "scraping"]\n'
+        "# <<< parrot-wiki Codex MCP >>>\n",
+        encoding="utf-8",
+    )
+
+    remove_stale_mcp_entries(repo, ("codex",), gemini_config=gemini)
+
+    assert "parrot-wiki Codex MCP" not in config.read_text(encoding="utf-8")
+
+
+def test_claude_approvals_dropped(repo: Path, gemini: Path) -> None:
+    """Remove only approvals associated with removed Claude toolkit servers."""
+    config = str(repo / ".parrot" / "mcp-toolkits.yaml")
+    _write_servers(repo / ".mcp.json", {"parrot-scraping": _entry("scraping", config)})
+    settings = repo / ".claude" / "settings.local.json"
+    settings.parent.mkdir()
+    settings.write_text(
+        json.dumps({"enabledMcpjsonServers": ["wikitoolkit", "parrot-scraping", "bookstore"]}), encoding="utf-8"
+    )
+
+    lines = remove_stale_mcp_entries(repo, ("claude",), gemini_config=gemini)
+
+    assert json.loads(settings.read_text(encoding="utf-8"))["enabledMcpjsonServers"] == ["wikitoolkit", "bookstore"]
+    assert ".claude/settings.local.json — 1 MCP server approval(s) removed" in lines
+
+
+def test_keep_matches_file_key(repo: Path, gemini: Path) -> None:
+    """Retain a stale entry selected by its displayed file and key."""
+    config = str(repo / ".parrot" / "mcp-toolkits.yaml")
+    path = repo / ".mcp.json"
+    _write_servers(path, {"parrot-scraping": _entry("scraping", config)})
+    before = path.read_bytes()
+
+    lines = remove_stale_mcp_entries(
+        repo, ("claude",), keep=[".mcp.json#parrot-scraping"], gemini_config=gemini
+    )
+
+    assert path.read_bytes() == before
+    assert lines == [".mcp.json#parrot-scraping — kept (--keep)"]
+
+
+def test_unparsable_file_untouched(repo: Path, gemini: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Leave a file untouched if it becomes invalid after stale detection."""
+    config = repo / ".codex" / "config.toml"
+    config.parent.mkdir()
+    config.write_text("[broken", encoding="utf-8")
+    before = config.read_bytes()
+    entry = StaleMcpEntry(
+        host="codex", file=".codex/config.toml", key="parrot-scraping", reason="undeclared", detail="test"
+    )
+    monkeypatch.setattr("parrot.mcp.toolkit_stale.find_stale_mcp_entries", lambda *args, **kwargs: [entry])
+
+    lines = remove_stale_mcp_entries(repo, ("codex",), gemini_config=gemini)
+
+    assert config.read_bytes() == before
+    assert len(lines) == 1
+    assert lines[0].startswith("warning: .codex/config.toml — not changed (")
+
+
+def test_reregister_note(repo: Path, gemini: Path, tmp_path: Path) -> None:
+    """Advise re-registration when an enabled toolkit loses a foreign entry."""
+    foreign = tmp_path / "foreign" / ".parrot" / "mcp-toolkits.yaml"
+    _write_servers(repo / ".mcp.json", {"parrot-browsing": _entry("browsing", str(foreign))})
+
+    lines = remove_stale_mcp_entries(repo, ("claude",), gemini_config=gemini)
+
+    assert lines.count("note: re-register with `parrot toolkits install browsing`") == 1
+
+
+def test_dry_run_mcp_writes_nothing(repo: Path, gemini: Path) -> None:
+    """Plan stale cleanup without writing any selected host configuration file."""
+    config = str(repo / ".parrot" / "mcp-toolkits.yaml")
+    claude = repo / ".mcp.json"
+    codex = repo / ".codex" / "config.toml"
+    plugin = repo / ".agents" / "plugins" / "parrot" / "mcp_config.json"
+    _write_servers(claude, {"parrot-scraping": _entry("scraping", config)})
+    codex.parent.mkdir()
+    codex.write_text('[mcp_servers.parrot-scraping]\ncommand = "parrot"\nargs = ["mcp-local", "scraping"]\n')
+    _write_servers(plugin, {"parrot-scraping": _entry("scraping", config)})
+    before = {path: path.read_bytes() for path in (claude, codex, plugin, gemini)}
+
+    lines = remove_stale_mcp_entries(repo, ("claude", "codex", "google"), dry_run=True, gemini_config=gemini)
+
+    assert all(line.startswith("plan:") for line in lines)
+    assert {path: path.read_bytes() for path in before} == before
+
+
+def test_nothing_stale(repo: Path, gemini: Path) -> None:
+    """Report an empty result when no selected host has stale toolkit entries."""
+    assert remove_stale_mcp_entries(repo, ("claude", "codex", "google"), gemini_config=gemini) == [
+        "no stale MCP entries"
+    ]
