@@ -32,9 +32,15 @@ worktree-local ledger, and exit non-zero WITHOUT claiming anything.
    key attributes for selection.
 2. **Select** — picker, or deterministic resolution from the arguments (issue-id → its whole group; --top N → first N groups).
    Require a positive N. An empty plan or an issue absent from it is a no-op with an explanation, never a guessed selection.
-3. **Claim** — one `wikitoolkit ledger claim <issue-id> --actor agent:sdd-fix` per issue in the group, immediately before
+3. **Claim** — first mint this session's actor ONCE: `ACTOR=agent:sdd-fix:<8 hex>` from
+   `python -c "import secrets; print(secrets.token_hex(4))"`, and reuse that literal string for every claim, close and unclaim
+   below (a constant `agent:sdd-fix` cannot tell this session's claims from a parallel session's). Then one
+   `wikitoolkit ledger claim <issue-id> --actor <ACTOR>` per issue in the group, immediately before
    executing. The plan is a snapshot; the claim is authoritative: a non-zero exit DROPS that issue and continues. Never close an
    issue merely because an earlier plan listed it. Skip groups with no successful claims; preserve the planned lane for remaining issues.
+   **Scope is fixed at claim time**: the issues this session claimed are its whole scope. Never widen it afterwards (a group
+   sibling, a QA follow-up, "fix the whole group?") — and never offer to — without first claiming each added issue with the
+   same actor; one whose claim fails belongs to another session and is dropped, never fixed or closed here.
 4. **Prime** — `wikitoolkit ledger context <group.files…> --max-tokens 3000` (full repo-relative paths from the plan, never basenames).
 5. **Route** by `group.lane`:
    - NEVER switch the main checkout's branch and never require it to be clean; every lane
@@ -65,11 +71,13 @@ worktree-local ledger, and exit non-zero WITHOUT claiming anything.
      `/sdd-done` finds the issue to close. If implementation does not finish in this session, hand the claim off (step 7).
 6. **Close** — two keys, fail-closed: an issue closes only if the implementing agent asserts its id as resolved AND at least one of
    its `files` appears in `git diff --name-only <base>...HEAD`. Then `wikitoolkit ledger close <issue-id> --reason "<what changed>"
-   --actor agent:sdd-fix --resolved-by commit:<sha>` (fast, the implementing commit on the pushed PR branch)
+   --actor <ACTOR> --resolved-by commit:<sha>` (fast, the implementing commit on the pushed PR branch)
    or `--resolved-by task:TASK-<NNN>` (SDD, a completed and validated task).
    Capture `<base>` before implementation and check the diff from the implementing checkout.
    Do not infer a merge or fabricate a merge SHA merely because a PR was opened.
-7. **Release** — every claimed issue that failed either key: `wikitoolkit ledger unclaim <issue-id> --reason "<why>" --actor agent:sdd-fix`.
+7. **Release** — every claimed issue that failed either key: `wikitoolkit ledger unclaim <issue-id> --reason "<why>" --actor <ACTOR>`.
+   `ledger close`/`unclaim` refuse an issue claimed by another actor (exit 1, naming the claimant): that issue is not
+   this session's — report it and leave it; never pass `--force` to get past it.
    Run release on every exit path, including test/push/PR failures or interrupted execution.
    If unclaim itself fails, report the issue ID and reason for recovery; do not claim success.
    Never leave an issue claimed silently; acknowledgement stays human-only and out of scope here.

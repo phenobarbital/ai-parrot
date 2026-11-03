@@ -228,7 +228,11 @@ def close_resolved_issues(
             outcome.outcome = "would-close"
             outcome.detail = reason
             continue
-        closed = ledger(["close", issue_id, "--reason", reason, "--actor", actor, "--resolved-by", outcome.resolved_by])
+        # --force: the claim belongs to the /sdd-fix session that handed this issue off; the two keys above
+        # (verified tasks + touched files) are the authority to close it on that session's behalf.
+        closed = ledger(
+            ["close", issue_id, "--reason", reason, "--actor", actor, "--resolved-by", outcome.resolved_by, "--force"]
+        )
         if closed.returncode == 0:
             outcome.outcome = "closed"
             outcome.detail = reason

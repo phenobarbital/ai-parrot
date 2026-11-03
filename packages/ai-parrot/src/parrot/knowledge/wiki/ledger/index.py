@@ -36,6 +36,45 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 logger = logging.getLogger(__name__)
 
+
+class ClaimHeldByOther(Exception):
+    """A close/unclaim was refused because another actor holds the issue's claim.
+
+    Raised by :meth:`LedgerIndex.close_issue` and :meth:`LedgerIndex.unclaim_issue`
+    when the issue is ``claimed`` by an actor other than the caller and ``force``
+    was not passed — so one session can no longer close or release an issue a
+    parallel session claimed (issue:5439a91953a4).
+
+    Attributes:
+        issue_id: The issue whose claim is held.
+        claimed_by: The actor holding the claim.
+        actor: The actor whose close/unclaim was refused.
+    """
+
+    def __init__(self, issue_id: str, claimed_by: str, actor: str) -> None:
+        self.issue_id = issue_id
+        self.claimed_by = claimed_by
+        self.actor = actor
+        super().__init__(f"{issue_id} is claimed by {claimed_by!r}, not {actor!r}; pass force to override")
+
+
+def _check_claim_owner(issue_id: str, state: dict[str, Any], actor: str, force: bool) -> None:
+    """Raise :class:`ClaimHeldByOther` when ``state`` is claimed by someone other than ``actor``.
+
+    Args:
+        issue_id: Issue being closed or unclaimed.
+        state: The issue's current materialized state.
+        actor: Actor attempting the write.
+        force: When true, the check is skipped (an explicit, deliberate override).
+
+    Raises:
+        ClaimHeldByOther: The issue is ``claimed`` by a different actor and ``force`` is false.
+    """
+    claimed_by = state.get("claimed_by")
+    if force or state.get("status") != "claimed" or not claimed_by or claimed_by == actor:
+        return
+    raise ClaimHeldByOther(issue_id, claimed_by, actor)
+
 # An issue page's ``body`` column carries a machine-readable state header —
 # a single-line JSON object wrapped in an HTML comment — followed by a
 # human-readable rendering. Reading and writing always go through the same
@@ -461,22 +500,31 @@ class LedgerIndex:
             await self._apply_from(conn, offset, last_event_id)
             return True
 
-    async def close_issue(self, issue_id: str, actor: str, reason: str, resolved_by: str | None = None) -> bool:
+    async def close_issue(
+        self, issue_id: str, actor: str, reason: str, resolved_by: str | None = None, force: bool = False
+    ) -> bool:
         """Atomically close an open or claimed issue.
 
         Same atomic pattern as :meth:`claim_issue`: sync, check, append,
         re-apply — all under one ``ledger_transaction``, so a busy sync
-        cannot leave the read stale.
+        cannot leave the read stale. A ``claimed`` issue closes only for its
+        claimant unless ``force`` is set; the check runs inside the same
+        transaction, so it cannot race a concurrent claim.
 
         Args:
             issue_id: Issue to close, e.g. ``issue:3f8a1c9e``.
             actor: Actor closing the issue, e.g. ``agent:sdd-fix``.
             reason: Reason for closing.
             resolved_by: Evidence ref, e.g. ``commit:<sha>`` or ``task:TASK-<NNN>``.
+            force: Close even when another actor holds the claim (deliberate hand-off,
+                e.g. ``/sdd-done`` closing an issue a ``/sdd-fix`` session claimed).
 
         Returns:
             ``True`` if this call closed the issue, ``False`` if it was
             missing, already closed, or superseded.
+
+        Raises:
+            ClaimHeldByOther: The issue is claimed by another actor and ``force`` is false.
         """
         async with self.store.ledger_transaction("ledger.close") as conn:
             _applied, offset, last_event_id = await self._sync_locked(conn)
@@ -489,6 +537,7 @@ class LedgerIndex:
                     state and state.get("status"),
                 )
                 return False
+            _check_claim_owner(issue_id, state, actor, force)
 
             payload: dict[str, Any] = {"reason": reason, "closed_by": actor}
             if resolved_by is not None:
@@ -498,19 +547,24 @@ class LedgerIndex:
             await self._apply_from(conn, offset, last_event_id)
             return True
 
-    async def unclaim_issue(self, issue_id: str, actor: str, reason: str) -> bool:
+    async def unclaim_issue(self, issue_id: str, actor: str, reason: str, force: bool = False) -> bool:
         """Atomically unclaim a claimed issue, returning it to the ready pool.
 
-        Same atomic pattern as :meth:`claim_issue`/:meth:`close_issue`.
+        Same atomic pattern as :meth:`claim_issue`/:meth:`close_issue`. Only the
+        claimant may release a claim unless ``force`` is set.
 
         Args:
             issue_id: Issue to unclaim, e.g. ``issue:3f8a1c9e``.
             actor: Actor releasing the claim.
             reason: Reason for unclaiming.
+            force: Release even when another actor holds the claim (e.g. a stale claim).
 
         Returns:
             ``True`` if this call unclaimed the issue, ``False`` if it was
             not in ``claimed`` status.
+
+        Raises:
+            ClaimHeldByOther: The issue is claimed by another actor and ``force`` is false.
         """
         async with self.store.ledger_transaction("ledger.unclaim") as conn:
             _applied, offset, last_event_id = await self._sync_locked(conn)
@@ -518,6 +572,7 @@ class LedgerIndex:
             state = await self._read_issue(conn, issue_id)
             if state is None or state.get("status") != "claimed":
                 return False
+            _check_claim_owner(issue_id, state, actor, force)
 
             event = LedgerEvent(
                 kind="issue.unclaimed",
