@@ -3,6 +3,7 @@
 Resolves ``<COMPONENT>_LLM`` -> ``DEFAULT_LLM`` -> builtin (all ``provider:model``) and
 ``<COMPONENT>_<PROVIDER>_API_KEY`` -> legacy vars -> ``None``. Key values are never logged.
 """
+
 from __future__ import annotations
 
 from typing import Literal, Optional, Sequence
@@ -67,9 +68,7 @@ def provider_key_token(provider: str) -> str:
     return provider.upper().replace("-", "_")
 
 
-def resolve_component_api_key(
-    components: Sequence[str], provider: str, *, legacy: Sequence[str] = ()
-) -> Optional[str]:
+def resolve_component_api_key(components: Sequence[str], provider: str, *, legacy: Sequence[str] = ()) -> Optional[str]:
     """First set ``<C>_<TOKEN>_API_KEY`` for C in ``components``, then ``legacy`` vars, else None."""
     token = provider_key_token(provider)
     for name in [f"{component.upper()}_{token}_API_KEY" for component in components] + list(legacy):
