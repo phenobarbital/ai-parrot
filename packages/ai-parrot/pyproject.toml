@@ -186,7 +186,11 @@ dependencies = [
     "pyarrow>=25.0",
     # SQL validation for DatabaseToolkit (FEAT-062)
     "sqlglot>=20.0",
-    "numexpr==2.10.2",
+    # Floor raised to >=2.11.0: newer pandas releases (3.1.0+) hard-require
+    # numexpr>=2.11.0 (previously just silently disabled numexpr below that
+    # floor); a hard ==2.10.2 pin here breaks any consumer whose resolver
+    # picks a newer pandas than this repo's own locked 3.0.6.
+    "numexpr>=2.11.0",
     # Episodic memory default backend (FAISS) — required whenever an agent
     # enables episodic memory without an explicit pgvector DSN.
     "faiss-cpu>=1.9.0",

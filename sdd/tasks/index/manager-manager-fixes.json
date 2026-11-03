@@ -1,0 +1,117 @@
+{
+  "feature": "manager-manager-fixes",
+  "feature_id": "FEAT-791",
+  "spec": "sdd/specs/manager-manager-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-03T00:20:00+00:00",
+  "completed_at": "2026-11-02T23:31:36+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot-server/tests/unit/test_jira_provider_registration.py",
+          "packages/ai-parrot-server/tests/unit/test_o365_provider_registration.py",
+          "packages/ai-parrot-server/tests/unit/test_register_oauth2_providers.py",
+          "packages/ai-parrot-server/tests/manager/test_oauth2_identity_store_binding.py",
+          "packages/ai-parrot/tests/bots/prompts/test_yaml_prompt_config.py",
+          "packages/ai-parrot/tests/manager/test_botmanager_prompt_config.py",
+          "packages/ai-parrot-server/tests/studio/test_tooling_integration.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:6af8068db54d0dba52adf1f2a94d390a0dc33b55a9ce981fe45765c5e2cb5370"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5105",
+      "slug": "jira-oauth2-web-registration",
+      "title": "Auto-register the Jira OAuth2 provider for the web channel",
+      "feature_id": "FEAT-791",
+      "feature": "manager-manager-fixes",
+      "spec": "sdd/specs/manager-manager-fixes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Lane A. Sole task touching packages/ai-parrot-server/src/parrot/manager/manager.py, docs/auth/connections.md and the new tests/unit/test_jira_provider_registration.py; no file overlap with TASK-5106 or TASK-5107.",
+      "assigned_to": null,
+      "started_at": "2026-11-02T23:11:05.074707+00:00",
+      "completed_at": "2026-11-02T23:12:56+00:00",
+      "file": "sdd/tasks/completed/TASK-5105-jira-oauth2-web-registration.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5106",
+      "slug": "repoint-yaml-prompt-config-tests",
+      "title": "Repoint test_yaml_prompt_config.py at the current prompt-config API",
+      "feature_id": "FEAT-791",
+      "feature": "manager-manager-fixes",
+      "spec": "sdd/specs/manager-manager-fixes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Lane B part 1. Sole task touching packages/ai-parrot/tests/bots/prompts/test_yaml_prompt_config.py; reads only already-shipped symbols (AgentRegistry._apply_prompt_config, get_preset), creates nothing TASK-5105 or TASK-5107 consume.",
+      "assigned_to": null,
+      "started_at": "2026-11-02T23:09:14.179080+00:00",
+      "completed_at": "2026-11-02T23:10:36+00:00",
+      "file": "sdd/tasks/completed/TASK-5106-repoint-yaml-prompt-config-tests.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5107",
+      "slug": "repair-studio-tooling-integration-tests",
+      "title": "Diagnose and repair the three red tests in test_tooling_integration.py",
+      "feature_id": "FEAT-791",
+      "feature": "manager-manager-fixes",
+      "spec": "sdd/specs/manager-manager-fixes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Lane B part 2. Sole task touching packages/ai-parrot-server/tests/studio/test_tooling_integration.py; diagnosis-first, reads manager.py but never modifies it, so it does not collide with TASK-5105's edit of that file.",
+      "assigned_to": null,
+      "started_at": "2026-11-02T23:13:06.548188+00:00",
+      "completed_at": "2026-11-02T23:17:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5107-repair-studio-tooling-integration-tests.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5108",
+      "slug": "dedupe-identity-credential-store-construction",
+      "title": "Build IdentityVaultCredentialStore once per startup",
+      "feature_id": "FEAT-791",
+      "feature": "manager-manager-fixes",
+      "spec": "sdd/specs/manager-manager-fixes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5105"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies packages/ai-parrot-server/src/parrot/manager/manager.py, the same file TASK-5105 edits, so it is serialized after it (lower id first).",
+      "assigned_to": null,
+      "started_at": "2026-11-02T23:30:20.754053+00:00",
+      "completed_at": "2026-11-02T23:31:36+00:00",
+      "file": "sdd/tasks/completed/TASK-5108-dedupe-identity-credential-store-construction.md",
+      "verification": "verified"
+    }
+  ]
+}

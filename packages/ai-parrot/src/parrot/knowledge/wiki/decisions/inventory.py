@@ -142,12 +142,14 @@ class InventorySnapshot:
     ) -> tuple[frozenset[str], dict[str, str]]:
         """Return verified-and-published batches and their observed marker states."""
         approved: set[str] = set()
+        rejected: set[str] = set()
         marker_states: dict[str, str] = {}
         for entry in approvals.entries:
             if entry.kind not in {"spec", "seed"}:
                 continue
             spec_path = root / entry.spec_path
             if not spec_path.is_file():
+                rejected.add(entry.batch_id)
                 diagnostics.append(
                     DecisionDiagnostic(
                         code=APPROVAL_UNVERIFIED,
@@ -165,7 +167,9 @@ class InventorySnapshot:
             marker_states[entry.batch_id] = state
             if verified and state == "published":
                 approved.add(entry.batch_id)
-        return frozenset(approved), marker_states
+            else:
+                rejected.add(entry.batch_id)
+        return frozenset(approved - rejected), marker_states
 
     @staticmethod
     def _validate_supersession(

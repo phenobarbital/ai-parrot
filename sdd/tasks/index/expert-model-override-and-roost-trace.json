@@ -1,0 +1,80 @@
+{
+  "feature": "expert-model-override-and-roost-trace",
+  "feature_id": "FEAT-790",
+  "spec": "sdd/specs/expert-model-override-and-roost-trace.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-02T13:06:00.274416+00:00",
+  "completed_at": "2026-11-02T16:11:26+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/experts/test_model_overrides.py",
+          "packages/ai-parrot/tests/experts/test_registry.py",
+          "packages/ai-parrot/tests/experts/test_policy.py",
+          "packages/ai-parrot/tests/experts/test_agent_activation.py",
+          "packages/ai-parrot/tests/experts/test_resolver.py",
+          "packages/ai-parrot/tests/roost/test_query_trace.py",
+          "packages/ai-parrot/tests/roost/test_endpoint.py",
+          "packages/ai-parrot/tests/roost/test_protocols.py",
+          "packages/ai-parrot/tests/roost/test_audit.py",
+          "packages/ai-parrot/tests/roost/test_squawk_bridge.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:d00eaf79d872de1ce39aa918c489e723cbdbc840e25e39ffc2d01eaa95d9a3ac"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5103",
+      "slug": "expert-model-overrides",
+      "title": "Per-expert model overrides and readiness accessor",
+      "feature_id": "FEAT-790",
+      "feature": "expert-model-override-and-roost-trace",
+      "spec": "sdd/specs/expert-model-override-and-roost-trace.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Owns experts/registry.py, test_model_overrides.py and docs/experts/domain-experts.md; consumes only existing policy and agent APIs; no Roost file or new symbol dependency.",
+      "assigned_to": null,
+      "started_at": "2026-11-02T15:57:57+00:00",
+      "completed_at": "2026-11-02T16:11:25+00:00",
+      "file": "sdd/tasks/completed/TASK-5103-expert-model-overrides.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5104",
+      "slug": "roost-query-trace",
+      "title": "Trace-carrying Roost queries and terminal audit coverage",
+      "feature_id": "FEAT-790",
+      "feature": "expert-model-override-and-roost-trace",
+      "spec": "sdd/specs/expert-model-override-and-roost-trace.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Owns roost/protocols.py, roost/endpoint.py, test_query_trace.py and docs/roost/README.md; envelope retention and endpoint consumers are in this task; no registry file or new symbol dependency.",
+      "assigned_to": null,
+      "started_at": "2026-11-02T15:57:57+00:00",
+      "completed_at": "2026-11-02T16:11:26+00:00",
+      "file": "sdd/tasks/completed/TASK-5104-roost-query-trace.md",
+      "verification": "verified"
+    }
+  ]
+}

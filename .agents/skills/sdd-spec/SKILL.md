@@ -165,6 +165,9 @@ stay with the thinking model — eligibility never delegates a design choice.
      the collision for inspection; preserve source artifacts until copying succeeds
    - verify cached names
    - commit `sdd: add spec for FEAT-NNN - <feature-slug>`
+   - publish the base branch: `git pull --no-rebase --no-edit origin <base_branch> && git push origin <base_branch>`
+     — worktrees are created from `origin/<base_branch>`, so an unpushed spec is invisible to the
+     next implementation run; on failure never force, stop and print that exact command
 
 ## Output
 
