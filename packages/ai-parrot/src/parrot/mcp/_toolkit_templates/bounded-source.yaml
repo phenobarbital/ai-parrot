@@ -1,9 +1,7 @@
 # parrot:summary: Bounded source reading — large files require an explicit line range.
 # parrot:requires_llm: false
-# parrot:requires_dist: parrot_tools
-# parrot:requires_pip: ai-parrot-tools
   bounded-source:
-    class: parrot_tools.tool_optimizations.reader.BoundedSourceToolkit
+    class: parrot.tools.optimizations.reader.BoundedSourceToolkit
     kwargs:
       repo_root: {{repo_root}}
       # Both thresholds are configurable; these are the defaults.
