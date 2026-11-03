@@ -59,11 +59,19 @@ def test_install_writes_toolkit_entries(tmp_root_with_config: Path, mcp_config_p
     doc = _config(mcp_config_path)
     servers = doc["mcpServers"]
     assert "wikitoolkit" in servers
+    # The USER-GLOBAL file is shared by every repository, so its toolkit entries are always written
+    # in the portable form (relative --config, no cwd); only the repo-local plugin file is pinned.
     stub = servers["parrot-stub"]
-    assert stub["command"] == assets.resolve_binary(root, "parrot")
-    assert stub["args"] == ["mcp-local", "stub", "--config", str(root.resolve() / ".parrot" / "mcp-toolkits.yaml")]
-    assert stub["cwd"] == str(root.resolve())
+    assert Path(stub["command"]).name == "parrot"
+    assert stub["args"] == ["mcp-local", "stub", "--config", assets.PORTABLE_TOOLKIT_CONFIG]
+    assert "cwd" not in stub
     assert stub["env"] == {"FOO": "bar"}
+
+    local = _config(root / assets.PLUGIN_DIR / "mcp_config.json")["mcpServers"]["parrot-stub"]
+    assert local["command"] == assets.resolve_binary(root, "parrot")
+    assert local["args"] == ["mcp-local", "stub", "--config", str(root.resolve() / ".parrot" / "mcp-toolkits.yaml")]
+    assert local["cwd"] == str(root.resolve())
+    assert local["env"] == {"FOO": "bar"}
     assert "parrot-scraping" not in servers
     assert "parrot-browsing" not in servers
     assert "parrot-memory" not in servers
@@ -104,12 +112,9 @@ def test_google_legacy_entry_adopted(tmp_root_with_config: Path, mcp_config_path
     _install_mcp(root, mcp_path=mcp_config_path)
 
     servers = _config(mcp_config_path)["mcpServers"]
-    assert servers["parrot-stub"]["args"] == [
-        "mcp-local",
-        "stub",
-        "--config",
-        str(root.resolve() / ".parrot" / "mcp-toolkits.yaml"),
-    ]
+    # Upgraded into the shared portable form — this is the USER-GLOBAL file.
+    assert servers["parrot-stub"]["args"] == ["mcp-local", "stub", "--config", assets.PORTABLE_TOOLKIT_CONFIG]
+    assert "cwd" not in servers["parrot-stub"]
     stderr = capsys.readouterr().err
     assert "Warning:" not in stderr
 
@@ -136,7 +141,11 @@ def test_disabled_section_table_removed_on_rerun(tmp_root_with_config: Path, mcp
     cfg_path.write_text(text, encoding="utf-8")
 
     _install_mcp(root, mcp_path=mcp_config_path)
-    assert "parrot-stub" not in _config(mcp_config_path)["mcpServers"]
+    # The repo-local plugin entry goes; the shared portable entry in the USER-GLOBAL file stays,
+    # because another repository may still enable that toolkit.
+    plugin_mcp_file = root / assets.PLUGIN_DIR / "mcp_config.json"
+    assert "parrot-stub" not in _config(plugin_mcp_file)["mcpServers"]
+    assert "parrot-stub" in _config(mcp_config_path)["mcpServers"]
 
 
 def test_foreign_colliding_toolkit_preserved(tmp_root_with_config: Path, mcp_config_path: Path, capsys):
@@ -219,7 +228,13 @@ def test_reconcile_updates_both_config_files(tmp_root_with_config: Path, mcp_con
 
     assert "parrot-stub" in primary_servers
     assert "parrot-stub" in plugin_servers
-    assert primary_servers["parrot-stub"] == plugin_servers["parrot-stub"]
+    # One toolkit, two shapes by design: the shared USER-GLOBAL entry is portable, the repo-local
+    # plugin entry stays pinned to this root.
+    assert primary_servers["parrot-stub"]["args"] == ["mcp-local", "stub", "--config", assets.PORTABLE_TOOLKIT_CONFIG]
+    assert "cwd" not in primary_servers["parrot-stub"]
+    assert plugin_servers["parrot-stub"]["args"][-1] == str(root.resolve() / ".parrot" / "mcp-toolkits.yaml")
+    assert plugin_servers["parrot-stub"]["cwd"] == str(root.resolve())
+    assert primary_servers["parrot-stub"]["env"] == plugin_servers["parrot-stub"]["env"] == {"FOO": "bar"}
     assert not warnings
     assert any("parrot-stub" in a for a in actions)
 
