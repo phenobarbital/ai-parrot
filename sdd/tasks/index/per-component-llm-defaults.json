@@ -48,7 +48,7 @@
       "feature_id": "FEAT-796",
       "feature": "per-component-llm-defaults",
       "spec": "sdd/specs/per-component-llm-defaults.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -56,8 +56,9 @@
       "parallelism_notes": "root task; touches only parrot/conf.py and its own new test",
       "assigned_to": null,
       "started_at": "2026-11-03T22:26:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5137-conf-default-llm.md"
+      "completed_at": "2026-11-03T23:53:38+00:00",
+      "file": "sdd/tasks/completed/TASK-5137-conf-default-llm.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5138",
@@ -86,7 +87,7 @@
       "feature_id": "FEAT-796",
       "feature": "per-component-llm-defaults",
       "spec": "sdd/specs/per-component-llm-defaults.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -94,8 +95,9 @@
       "parallelism_notes": "root task; owns observability/context.py, recorders/models.py, recorders/subscriber.py",
       "assigned_to": null,
       "started_at": "2026-11-03T22:26:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5139-usage-component-tagging.md"
+      "completed_at": "2026-11-03T23:53:38+00:00",
+      "file": "sdd/tasks/completed/TASK-5139-usage-component-tagging.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5140",
