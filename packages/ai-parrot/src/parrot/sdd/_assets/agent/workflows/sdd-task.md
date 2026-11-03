@@ -544,6 +544,18 @@ git diff --cached --name-only
 
 # 4. Commit
 git commit -m "sdd: add <N> tasks for FEAT-<ID> — <feature-name>"
+
+# 5. Publish <BASE> — worktrees are created from origin/<BASE>, never from the local branch,
+#    so /sdd-start, sdd-worker and every worker launch cannot see an unpushed task set.
+#    The pull takes in the reserve_ids ledger commit, which is already on origin/<BASE>.
+git pull --no-rebase --no-edit origin "$BASE" && git push origin "$BASE"
+```
+
+If the pull or the push fails, do not force anything. Stop and print:
+```
+⚠️  The task set is committed on local <BASE> but NOT on origin/<BASE>. Worktrees branch from
+   origin/<BASE>, so the next /sdd-start or worker launch will not find it. Reconcile, then run:
+   git pull --no-rebase origin <BASE> && git push origin <BASE>
 ```
 
 ### 6. Output
