@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.12 — ledger fixes)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5115
@@ -93,4 +93,6 @@ above; close with `parrot sdd task close TASK-5116 parrot-installer verified`.
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 (/sdd-fix, sequential)
+**Date**: 2026-11-03
+**Notes**: `_git_resolved_hook_path` runs `git -C root rev-parse --show-toplevel --git-path hooks/<name>` (10 s timeout, no prompt) and is used only when the toplevel resolves to root; relative answers resolve against root. Fake-`.git` test repos fall back to the old lookup unchanged. `_uninstall_ledger_hooks(root, events=None)`; sdd uninstall passes `receipt["ledger_hooks"]`. Doctor detail names the hooks dir. 5 new tests; 283 passed across every hook-related suite (claude/codex installers, worktree guard, install_hooks, sdd installer, ledger outbox) + doctor_sdd; ruff clean.

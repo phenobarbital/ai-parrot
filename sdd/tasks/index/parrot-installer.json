@@ -1314,18 +1314,19 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": "2026-11-03T02:13:15+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-03T02:16:25+00:00",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
         "TASK-5115"
       ],
       "parallelism_notes": "issue:4c5b3404e8fb; shares doctor.py with TASK-5115",
-      "file": "sdd/tasks/active/TASK-5116-ledger-hooks-honour-hookspath.md"
+      "file": "sdd/tasks/completed/TASK-5116-ledger-hooks-honour-hookspath.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5117",
