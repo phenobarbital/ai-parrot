@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-792 — Dangerous-actions guard fixes
 **Spec**: `sdd/specs/scripts-dangerous-actions-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -103,6 +103,17 @@ Work in `.claude/worktrees/feat-FEAT-792-scripts-dangerous-actions-fixes`; run t
 ## Completion Note
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Opus 5.5 (`/sdd-fix`, actor `agent:sdd-fix:98973fa0`)
+**Date**: 2026-11-03
+**Notes**: Implementing commit `11cc37ef2c`. `_forced_refspec_targets()` reads the `+<refspec>` arguments of every
+`git … push` segment (destination after `:`, `refs/heads/` stripped); the force-push rule now denies when either the
+old `--force` condition or a forced refspec targets a protected branch. `+` to a protected branch is denied even with
+`--force-with-lease` (the `+` overrides the lease). The bash hook gained the same check (fixed
+`main|dev|staging|master` list). `protected_branches()` logic unchanged — docstring, spec C32 and
+`docs/getting-started.md` now describe the superset (D2).
+Validation: `test_dangerous_actions.py` + `test_installer_dangerous_guard.py` 112 passed, none skipped — the 3 new
+PARITY cases ran against this worktree's bash hook. `ruff check` clean, `bash -n` ok, `check_asset_sync --check` ok.
+Pre-existing, not caused here: `test_getting_started_claims.py::test_hello_world_snippet_executes` fails only when run
+after `test_check_asset_sync.py` + `test_command_twin_parity.py` + `test_no_repo_script_refs.py` in one session
+(`importlib.metadata` AttributeError); the same 4-file run fails identically on the base `c23fc82532`, and the test
+passes alone or with its own file.
