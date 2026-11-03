@@ -415,7 +415,7 @@ wikitoolkit query "where is the ingest pipeline implemented?"
 <!-- verify: cli-verb=sdd install -->
 <!-- verify: flag=sdd install:--host -->
 <!-- verify: flag=sdd install:--dry-run -->
-<!-- verify: flag=sdd install:--force -->
+<!-- verify: flag=sdd install:--keep-edits -->
 <!-- verify: cli-verb=sdd status -->
 <!-- verify: cli-verb=sdd ids reserve -->
 <!-- verify: cli-verb=self doctor -->
@@ -469,8 +469,9 @@ parrot sdd status                            # missing | current | outdated | ed
   line (credentials and CLIs only, no model call). A `warning:` that complex tasks have "no retry seat" means fewer
   than two strong MCP seats (codex/gemini/nova) are usable — add credentials and re-run. Toolkits you installed
   yourself are never recorded or removed by `parrot sdd uninstall`; `parrot sdd install --no-sdd-coder` skips all of this.
-- Re-running `parrot sdd install` upgrades files you have not touched and keeps the ones you edited
-  (`--force` overwrites edited files; foreign files are never touched).
+- Re-running `parrot sdd install` (e.g. after upgrading parrot) replaces every installed SDD file — commands,
+  agents, rules, templates — with the packaged copy, including ones you edited or copied in by hand. Pass
+  `--keep-edits` to leave those untouched (a warning lists them). Seeds such as `sdd/config.json` are never overwritten.
 
 More: [docs/install/global-runtime.md](install/global-runtime.md).
 
