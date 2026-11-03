@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.12, amendment C35)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4077 (done; created the bounded-source template)
@@ -246,6 +246,10 @@ def test_bounded_source_template_points_at_core() -> None: ...
 ## Completion Note
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 5.5 (sdd-start, sequential)
+**Date**: 2026-11-03
+**Notes**: Six modules `git mv`'d to `parrot.tools.optimizations` (imports rewritten, lazy `__init__`); old paths are
+`sys.modules` aliases. `WorktreeLock` now imports fcntl/msvcrt inside `_try_lock`/`_unlock`. Template and registry
+point at the core class. Tests: new core suite (10) + all of ai-parrot-tools `tool_optimizations` (443) pass.
+A `reload`-based fcntl test corrupted exception identity for later tests, so it runs in a subprocess instead.
+Pre-existing ruff findings remain in untouched ai-parrot-tools files (git.py, patches.py, writer.py).

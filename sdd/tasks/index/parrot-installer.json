@@ -1227,18 +1227,19 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
       "started_at": "2026-11-03T01:16:44+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-03T01:19:52+00:00",
       "priority": "high",
       "effort": "L",
       "depends_on": [
         "TASK-4077"
       ],
       "parallelism_notes": "rev 0.12 C35; touches only tool_optimizations / parrot.tools.optimizations / the bounded-source template",
-      "file": "sdd/tasks/active/TASK-5112-bounded-source-to-core.md"
+      "file": "sdd/tasks/completed/TASK-5112-bounded-source-to-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5113",
