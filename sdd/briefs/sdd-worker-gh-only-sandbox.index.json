@@ -16,15 +16,15 @@
       "feature_id": "BRIEF-sdd-worker-gh-only-sandbox",
       "feature": "sdd-worker-gh-only-sandbox",
       "spec": "sdd/briefs/sdd-worker-gh-only-sandbox.brief.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "code-only; no shared files with task 2",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-11-03T22:23:53+00:00",
+      "completed_at": "2026-11-03T22:23:53+00:00",
       "file": "sdd/briefs/sdd-worker-gh-only-sandbox/tasks/HOTFIX-sdd-worker-gh-only-sandbox-1-config-domains-gh-token.md"
     },
     {

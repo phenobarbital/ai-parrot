@@ -142,3 +142,16 @@ Read the brief first. Implement exactly the scope; commit code only. Do not run 
 
 ## Completion Note
 
+Implemented by the sdd-worker itself (sequential fallback): `coder_plan` returned a `complexity_audit_failed`
+routing block ("Could not extract task ID from task content") for the `HOTFIX-…` brief task id, so the engine
+could not route it and no coder was dispatched. Execution `0d8f8059-…` was opened and closed with no attempts.
+
+- `native_claude_sandbox.py`: `load_launch_config(primary)`, `merge_domains`, `_resolve_gh_token`,
+  `--no-gh-token` (5th element of `_parse_launch_arguments`), domain union + `GH_TOKEN` injection in
+  `launch_worker`. Config is read from the primary checkout (`_native_roots(cwd)[2]`) only.
+- `feature_launcher.py`: `launch(..., gh_token=True)`; config+flag union validated in preflight
+  (`ValueError` → `LaunchError(2)`); `--no-gh-token` forwarded on the direct path and the tmux child; `main()` parses it.
+- `launch_cli.py`: `--no-gh-token`. `pyproject.toml`: `[tool.parrot.sdd]` keys (no table existed).
+- Tests: 110 passed (`test_native_claude_sandbox.py`, `test_sdd_launch.py`); `ruff check` clean.
+- Note: `resolve_sandbox_mode` still reads `sandbox` from the worktree pyproject (pre-existing, out of scope).
+
