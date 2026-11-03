@@ -78,7 +78,7 @@
       "feature_id": "FEAT-794",
       "feature": "prompt-library-writable-sort-order",
       "spec": "sdd/specs/prompt-library-writable-sort-order.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -87,8 +87,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "needs migration 0009 from TASK-5125 (its tests apply it to add the columns); needs PromptLibrary.sort_order from TASK-5126 (models/bots.py) and both modify test_prompt_library.py; exclusive: creates/drops navigator.prompt_library in the shared TEST_STUDIO_PG_DSN database",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "claude-opus-5-5 (session)",
+      "started_at": "2026-11-03T11:40:45-04:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5127-prompt-library-handler-write-hooks.md"
     },
