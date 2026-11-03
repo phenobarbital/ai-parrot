@@ -10,7 +10,7 @@ tags: [sdd, tmux, notifications, worker]
 **Feature ID**: FEAT-793
 **Date**: 2026-11-03
 **Author**: Jesus Lara (request), Codex (specification)
-**Status**: draft
+**Status**: approved
 **Target version**: Next release
 
 ## 1. Motivation & Business Requirements
