@@ -374,7 +374,7 @@ def test_notification_settings_preserve_policy(
 
     class Loader:
         def exec_module(self, module: object) -> None:
-            setattr(module, "configure_notification", configure)
+            module.configure_notification = configure
 
     spec = type("Spec", (), {"loader": Loader()})()
     monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
@@ -415,7 +415,11 @@ def test_notification_settings_preserve_policy(
 @pytest.mark.parametrize(
     "base_env",
     [
-        {"PARROT_SDD_NOTIFY_FEATURE": "FEAT-768", "PARROT_SDD_NOTIFY_SLUG": "sandbox", "PARROT_SDD_NOTIFY_DESKTOP": "{}"},
+        {
+            "PARROT_SDD_NOTIFY_FEATURE": "FEAT-768",
+            "PARROT_SDD_NOTIFY_SLUG": "sandbox",
+            "PARROT_SDD_NOTIFY_DESKTOP": "{}",
+        },
         {
             "TMUX_PANE": "%4",
             "PARROT_SDD_NOTIFY_FEATURE": "",
@@ -460,7 +464,9 @@ def test_notification_setup_failure_does_not_fail_launch(
     monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", settings))
     monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
     monkeypatch.setattr(native, "_allocate_session_cache", lambda: feature / "cache")
-    monkeypatch.setattr(native.importlib.util, "spec_from_file_location", lambda *args: (_ for _ in ()).throw(OSError("gone")))
+    monkeypatch.setattr(
+        native.importlib.util, "spec_from_file_location", lambda *args: (_ for _ in ()).throw(OSError("gone"))
+    )
     monkeypatch.setattr(native.os, "chdir", lambda cwd: captured.append(("chdir", cwd)))
     monkeypatch.setattr(native.os, "execvpe", lambda *args: captured.append(args))
 
