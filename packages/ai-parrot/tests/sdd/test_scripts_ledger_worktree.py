@@ -129,3 +129,73 @@ def test_kernel_lookup_from_wheel_layout(tmp_path: Path) -> None:  # AC-12
     mod, path = proc.stdout.split()
     assert mod == "test_scope.guard"
     assert path.startswith(str(pkg))
+
+
+def _git_repo(path: Path) -> Path:
+    path.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", "-b", "feature-x"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"],
+        cwd=path,
+        check=True,
+    )
+    return path
+
+
+def test_remove_worktree_root_is_primary_checkout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from parrot.sdd.scripts import remove_worktree
+
+    primary = _git_repo(tmp_path / "repo")
+    worktree = primary / ".claude" / "worktrees" / "wt"
+    worktree.parent.mkdir(parents=True)
+    subprocess.run(["git", "worktree", "add", "-q", str(worktree), "-b", "wt"], cwd=primary, check=True)
+    monkeypatch.chdir(worktree)
+    remove_worktree._ROOT = None
+
+    assert remove_worktree.repo_root() == primary.resolve()
+
+
+def test_remove_worktree_list_and_dry_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from parrot.sdd.scripts import remove_worktree
+
+    primary = _git_repo(tmp_path / "repo")
+    monkeypatch.chdir(primary)
+    remove_worktree._ROOT = None
+    assert remove_worktree.main(["list"]) == 0
+
+    worktree = primary / ".claude" / "worktrees" / "wt"
+    worktree.parent.mkdir(parents=True)
+    subprocess.run(["git", "worktree", "add", "-q", str(worktree), "-b", "wt"], cwd=primary, check=True)
+    assert remove_worktree.main(["remove", "wt", "--dry-run"]) == 0
+    assert worktree.is_dir()
+
+
+def test_remove_worktree_refuses_dirty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from parrot.sdd.scripts import remove_worktree
+
+    primary = _git_repo(tmp_path / "repo")
+    worktree = primary / ".claude" / "worktrees" / "wt"
+    worktree.parent.mkdir(parents=True)
+    subprocess.run(["git", "worktree", "add", "-q", str(worktree), "-b", "wt"], cwd=primary, check=True)
+    (worktree / "dirty.txt").write_text("uncommitted\n")
+    monkeypatch.chdir(primary)
+    remove_worktree._ROOT = None
+
+    assert remove_worktree.main(["remove", "wt"]) != 0
+    assert worktree.is_dir()
+
+
+def test_remove_worktree_shim_aliases() -> None:
+    package_module = importlib.import_module("parrot.sdd.scripts.remove_worktree")
+    sys.modules.pop("scripts.remove_worktree", None)
+
+    shim_module = importlib.import_module("scripts.remove_worktree")
+
+    assert shim_module is package_module
+
+
+def test_worktree_verbs_mounted() -> None:
+    from parrot.sdd.cli import VERBS, mounted_modules
+
+    assert "remove_worktree" in mounted_modules()
+    assert VERBS["worktree"]["list"][0] == "remove_worktree"
