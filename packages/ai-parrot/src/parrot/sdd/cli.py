@@ -14,6 +14,14 @@ from parrot.sdd.installer import SUPPORTED_HOSTS, install_sdd_integration, sdd_s
 
 _HELPER_PACKAGE = "parrot.sdd.scripts"
 _dry_run_option = click.option("--dry-run", is_flag=True, help="Print the plan and change nothing.")
+_keep_edits_option = click.option(
+    "--keep-edits",
+    is_flag=True,
+    help=(
+        "Leave SDD files that were edited since parrot wrote them, or that parrot did not record, untouched "
+        "(default: replace/remove them — they are parrot-owned assets)."
+    ),
+)
 
 _path_option = click.option(
     "--path",
@@ -57,11 +65,8 @@ def sdd() -> None:
 @sdd.command()
 @_path_option
 @_host_option
-@click.option(
-    "--force",
-    is_flag=True,
-    help="Overwrite SDD files you edited since parrot wrote them (never foreign files or seeds).",
-)
+@_keep_edits_option
+@click.option("--force", is_flag=True, hidden=True, help="Deprecated no-op: overwriting is now the default.")
 @click.option(
     "--portable",
     is_flag=True,
@@ -92,6 +97,7 @@ def sdd() -> None:
 def install(
     path_: Path | None,
     hosts: tuple[str, ...],
+    keep_edits: bool,
     force: bool,
     portable: bool,
     base_branch: str | None,
@@ -101,13 +107,15 @@ def install(
     no_sdd_coder: bool,
     dry_run: bool,
 ) -> None:
-    """Deploy the packaged SDD assets into the repository (upgrades untouched files, keeps your edits)."""
+    """Deploy the packaged SDD assets into the repository, replacing older or edited copies (seeds are kept)."""
+    if force and keep_edits:
+        raise click.UsageError("--force and --keep-edits are mutually exclusive")
     try:
         _echo_actions(
             install_sdd_integration(
                 _root(path_),
                 hosts or ("claude",),
-                force=force,
+                keep_edits=keep_edits,
                 dry_run=dry_run,
                 portable=portable,
                 base_branch=base_branch,
@@ -124,11 +132,14 @@ def install(
 @sdd.command()
 @_path_option
 @_host_option
+@_keep_edits_option
 @_dry_run_option
-def uninstall(path_: Path | None, hosts: tuple[str, ...], dry_run: bool) -> None:
-    """Remove SDD files that parrot wrote and you have not edited (seeds and state are kept)."""
+def uninstall(path_: Path | None, hosts: tuple[str, ...], keep_edits: bool, dry_run: bool) -> None:
+    """Remove the SDD files (commands, agents, rules, templates); seeds and state are kept."""
     try:
-        _echo_actions(uninstall_sdd_integration(_root(path_), hosts or ("claude",), dry_run=dry_run))
+        _echo_actions(
+            uninstall_sdd_integration(_root(path_), hosts or ("claude",), keep_edits=keep_edits, dry_run=dry_run)
+        )
     except (ValueError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc
 

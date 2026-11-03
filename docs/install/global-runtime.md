@@ -209,7 +209,7 @@ form for monorepo developers: the portable form only works once the global insta
 <!-- verify: cli-verb=sdd install -->
 <!-- verify: flag=sdd install:--host -->
 <!-- verify: flag=sdd install:--dry-run -->
-<!-- verify: flag=sdd install:--force -->
+<!-- verify: flag=sdd install:--keep-edits -->
 <!-- verify: cli-verb=sdd status -->
 <!-- verify: cli-verb=sdd uninstall -->
 <!-- verify: flag=sdd uninstall:--dry-run -->
@@ -232,9 +232,11 @@ parrot sdd uninstall --dry-run
   cannot import parrot.
 - `sdd/.sdd-installed.json` records every file parrot wrote with its hash. `parrot sdd status` reports each
   asset as `missing | current | outdated | edited | foreign`, and seeds as `seed-present | missing`.
-- Upgrade rule: a file whose hash matches the record is upgraded; one that differs is kept with a warning
-  unless `--force`; one parrot did not write is skipped. Seeds are never overwritten, even with `--force`.
-- `parrot sdd uninstall` removes only files parrot wrote and you have not edited; seeds and state are kept.
+- Upgrade rule: every SDD file the package ships is replaced with the packaged copy — untouched (`outdated`),
+  `edited`, and `foreign` (present but not in the receipt) alike. `--keep-edits` skips `edited` and `foreign`
+  files with a warning. Seeds are never overwritten. (`--force` is accepted as a deprecated no-op.)
+- `parrot sdd uninstall` removes every SDD file the package ships, including edited or unrecorded ones;
+  `--keep-edits` removes only files whose hash matches the receipt. Seeds and state are kept.
 - It also seeds `sdd/tasks/.id_ledger.json` and an ignore block for `.claude/worktrees/` and `.parrot/` (parrot's
   local ledger index and wiki store), writes a marked
   `.gitattributes` block (`merge=union` for the shared ledger log, recorded in the receipt) and installs the four

@@ -69,18 +69,23 @@ def _tree_digest(root: Path) -> dict[str, str]:
     }
 
 
-def test_modified_file_skipped_unless_force_and_kept_on_uninstall(empty_repo: Path) -> None:
-    """C4: a file in the receipt whose bytes changed is `edited` — kept unless --force, never uninstalled."""
+def test_edited_file_overwritten_by_default_kept_with_keep_edits(empty_repo: Path) -> None:
+    """A recorded file whose bytes changed is `edited`: --keep-edits skips/keeps it; the default replaces/removes it."""
     install_sdd_integration(empty_repo)
     target = empty_repo / _claude_targets()[0]
     target.write_text("user edit\n")
-    assert any(a.startswith("warning:") for a in install_sdd_integration(empty_repo))
+    assert any(a.startswith("warning:") and str(_claude_targets()[0]) in a
+               for a in install_sdd_integration(empty_repo, keep_edits=True))
     assert target.read_text() == "user edit\n"
-    uninstall_sdd_integration(empty_repo)
+    uninstall_sdd_integration(empty_repo, keep_edits=True)
     assert target.read_text() == "user edit\n"
-    install_sdd_integration(empty_repo, force=True)
+    actions = install_sdd_integration(empty_repo)
+    assert any("overwritten (edited since parrot wrote it)" in a for a in actions)
     assert target.read_text() != "user edit\n"
-    assert sdd_status(empty_repo)["hosts"]["claude"]["current"]  # re-recorded after --force
+    assert _claude_targets()[0] in sdd_status(empty_repo)["hosts"]["claude"]["current"]  # re-recorded
+    target.write_text("user edit\n")
+    uninstall_sdd_integration(empty_repo)
+    assert not target.exists()
 
 
 def test_untouched_file_upgrades_from_older_record(empty_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -100,18 +105,42 @@ def test_untouched_file_upgrades_from_older_record(empty_repo: Path, monkeypatch
     assert json.loads((empty_repo / RECEIPT_PATH).read_text())["version"] != "0.0.1"
 
 
-def test_foreign_file_never_touched_even_with_force(empty_repo: Path) -> None:
-    """C4: a target that exists but was not written by us (and is not byte-identical) is `foreign`."""
+def test_foreign_file_kept_only_with_keep_edits(empty_repo: Path) -> None:
+    """A target present but not in the receipt (and not byte-identical) is `foreign`: kept with --keep-edits."""
     target = empty_repo / _claude_targets()[0]
     target.parent.mkdir(parents=True)
     target.write_text("theirs\n")
-    for force in (False, True):
-        actions = install_sdd_integration(empty_repo, force=force)
-        assert any(a.startswith("warning:") and "never overwritten" in a for a in actions)
-        assert target.read_text() == "theirs\n"
-    assert sdd_status(empty_repo)["hosts"]["claude"]["foreign"] == [_claude_targets()[0]]
-    uninstall_sdd_integration(empty_repo)
+    actions = install_sdd_integration(empty_repo, keep_edits=True)
+    assert any(a.startswith("warning:") and "not recorded in the receipt" in a for a in actions)
     assert target.read_text() == "theirs\n"
+    assert sdd_status(empty_repo)["hosts"]["claude"]["foreign"] == [_claude_targets()[0]]
+    uninstall_sdd_integration(empty_repo, keep_edits=True)
+    assert target.read_text() == "theirs\n"
+
+
+def test_foreign_file_overwritten_by_default(empty_repo: Path) -> None:
+    """Upgrade path: an SDD file parrot never recorded (copied by hand, older flow) is replaced and recorded."""
+    target = empty_repo / _claude_targets()[0]
+    target.parent.mkdir(parents=True)
+    target.write_text("theirs\n")
+    actions = install_sdd_integration(empty_repo)
+    assert any("overwritten (not recorded in the receipt)" in a for a in actions)
+    assert target.read_text() != "theirs\n"
+    report = sdd_status(empty_repo)["hosts"]["claude"]
+    assert report["foreign"] == [] and _claude_targets()[0] in report["current"]
+
+
+def test_uninstall_removes_files_install_never_recorded(empty_repo: Path) -> None:
+    """Uninstall without a receipt (assets copied by hand / an older flow) removes every present SDD asset."""
+    install_sdd_integration(empty_repo)
+    (empty_repo / RECEIPT_PATH).unlink()
+    edited = empty_repo / _claude_targets()[0]
+    edited.write_text("theirs\n")
+    plan = uninstall_sdd_integration(empty_repo, dry_run=True)
+    assert any(line.startswith("plan: remove") for line in plan)
+    uninstall_sdd_integration(empty_repo)
+    assert not any((empty_repo / t).exists() for t in _claude_targets())
+    assert (empty_repo / "sdd/config.json").is_file()  # seeds/state stay
 
 
 def test_unrecorded_identical_file_is_adopted(empty_repo: Path) -> None:
@@ -154,7 +183,7 @@ def test_seeds_written_once_never_overwritten_or_removed(empty_repo: Path) -> No
     config.write_text('{"base_branch": "develop", "hotfix_base": "main"}\n')
     for t in seeds:
         (empty_repo / t).write_text("# ours\n")
-    install_sdd_integration(empty_repo, force=True)
+    install_sdd_integration(empty_repo)  # overwrite is the default; seeds still never touched
     assert "develop" in config.read_text()
     assert all((empty_repo / t).read_text() == "# ours\n" for t in seeds)
     receipt = json.loads((empty_repo / RECEIPT_PATH).read_text())
@@ -396,8 +425,8 @@ def test_guard_hook_status_flags_hand_patched_foreign(empty_repo: Path, no_launc
         "          command: 'python3 /x/site-packages/parrot/sdd/scripts/worktree_environment.py --hook'\n---\nbody\n",
         encoding="utf-8",
     )
-    actions = install_sdd_integration(empty_repo, force=True)
-    assert any(a.startswith("warning:") and WORKER in a for a in actions)  # foreign: never overwritten
+    actions = install_sdd_integration(empty_repo, keep_edits=True)
+    assert any(a.startswith("warning:") and WORKER in a for a in actions)  # foreign: kept with --keep-edits
     guard = sdd_status(empty_repo)["guard_hook"]
     assert (guard["form"], guard["resolvable"]) == ("other", False)
     assert WORKER in guard["targets"]
