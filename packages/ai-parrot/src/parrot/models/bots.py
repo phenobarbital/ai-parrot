@@ -629,49 +629,34 @@ class PromptLibrary(Model):
 
     Saving information about Prompt Library.
 
-    -- PostgreSQL CREATE TABLE Syntax --
-    CREATE TABLE IF NOT EXISTS navigator.prompt_library (
-            prompt_id  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-            chatbot_id UUID,                                  -- now nullable
-            agent_id   VARCHAR,                               -- NEW
-            title      VARCHAR,
-            query      VARCHAR,
-            description TEXT,
-            prompt_category VARCHAR,
-            prompt_tags VARCHAR[],
-            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            created_by INTEGER,
-            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            CONSTRAINT chk_prompt_library_target_xor
-                CHECK ((chatbot_id IS NOT NULL) <> (agent_id IS NOT NULL)),
-            CONSTRAINT unq_prompt_library_target_title
-                UNIQUE (chatbot_id, agent_id, title)
-    );
-    CREATE INDEX IF NOT EXISTS idx_prompt_library_agent_id
-        ON navigator.prompt_library(agent_id);
+    -- Deployed shape of navigator.prompt_library --
+    prompt_id       UUID PRIMARY KEY
+    chatbot_id      UUID NULL            -- the chatbot, or the Studio agent's UUID
+    agent_id        VARCHAR NULL         -- added by Studio migration 0009 (FEAT-794)
+    title           VARCHAR
+    query           VARCHAR
+    description     TEXT
+    prompt_category VARCHAR
+    prompt_tags     VARCHAR[]
+    sort_order      INTEGER NULL         -- added by Studio migration 0009 (FEAT-794); NULL = unordered
+    created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    created_by      INTEGER
+    updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 
-    -- ALTER TABLE (live-database migration) --
-    ALTER TABLE navigator.prompt_library
-        ADD COLUMN IF NOT EXISTS agent_id VARCHAR;
-    ALTER TABLE navigator.prompt_library
-        ALTER COLUMN chatbot_id DROP NOT NULL;
-    ALTER TABLE navigator.prompt_library
-        ADD CONSTRAINT chk_prompt_library_target_xor
-        CHECK ((chatbot_id IS NOT NULL) <> (agent_id IS NOT NULL));
-    ALTER TABLE navigator.prompt_library
-        ADD CONSTRAINT unq_prompt_library_target_title
-        UNIQUE (chatbot_id, agent_id, title);
-    CREATE INDEX IF NOT EXISTS idx_prompt_library_agent_id
-        ON navigator.prompt_library(agent_id);
+    The table has only its primary key: FEAT-167's CHECK (exactly one of
+    chatbot_id / agent_id) and UNIQUE (chatbot_id, agent_id, title) were
+    never applied. Schema changes go through the Studio migrations
+    (parrot.handlers.studio.storage.migrations), never through this docstring.
     """
 
     prompt_id: uuid.UUID = Field(primary_key=True, required=False, default_factory=uuid.uuid4)
     chatbot_id: Optional[uuid.UUID] = Field(required=False, default=None)
     agent_id: Optional[str] = Field(required=False, default=None)
+    sort_order: Optional[int] = Field(required=False, default=None)
     title: str = Field(required=True)
     query: str = Field(required=True)
     description: str = Field(required=False)
-    prompt_category: str = Field(required=False, default=PromptCategory.OTHER)
+    prompt_category: str = Field(required=False, default=PromptCategory.OTHER.value)
     prompt_tags: list = Field(required=False, default_factory=list)
     created_at: datetime = Field(required=False, default=datetime.now)
     created_by: int = Field(required=False)
