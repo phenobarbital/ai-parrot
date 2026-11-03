@@ -164,6 +164,21 @@ current_usage_attribution: ContextVar[Optional["UsageAttribution"]] = ContextVar
     "parrot_current_usage_attribution", default=None
 )
 
+current_component: ContextVar[Optional[str]] = ContextVar("parrot_current_component", default=None)
+
+
+@contextmanager
+def usage_component(name: Optional[str]) -> Iterator[None]:
+    """Tag every client call in this scope with ``name`` in ``UsageRecord.component`` (FEAT-796).
+
+    Token-based set/reset: nested scopes restore the outer value; innermost wins.
+    """
+    token = current_component.set(name)
+    try:
+        yield
+    finally:
+        current_component.reset(token)
+
 
 @contextmanager
 def usage_attribution(
