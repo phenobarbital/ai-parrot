@@ -213,6 +213,10 @@ form for monorepo developers: the portable form only works once the global insta
 <!-- verify: cli-verb=sdd status -->
 <!-- verify: cli-verb=sdd uninstall -->
 <!-- verify: flag=sdd uninstall:--dry-run -->
+<!-- verify: flag=sdd uninstall:--stalled -->
+<!-- verify: flag=sdd uninstall:--keep -->
+<!-- verify: cli-verb=sdd worktree list -->
+<!-- verify: cli-verb=sdd worktree remove -->
 <!-- verify: cli-verb=sdd ids reserve -->
 ```bash
 parrot sdd install --host claude --dry-run
@@ -222,6 +226,7 @@ git add sdd .claude .gitignore .gitattributes   # what --host claude wrote
 git commit -m "sdd: install the SDD flow" && git push   # reserve_ids reads the ledger from git
 parrot sdd ids reserve --kind task --count 1 --base-branch dev --label demo
 parrot sdd uninstall --dry-run
+parrot sdd uninstall --stalled --dry-run    # stale files + stale MCP entries, all hosts
 ```
 
 `reserve_ids` needs the base branch (`dev` above, `base_branch` in `sdd/config.json`) on `origin`, with the seeded
@@ -252,6 +257,41 @@ parrot sdd uninstall --dry-run
   installed, they stop with a one-line message. `parrot sdd install` warns when it is null.
 - `sdd/CONVENTIONS.md` is a seed with `## Repository layout` and `## Project areas`; created once, never
   overwritten. `/sdd-insight` is not installed.
+
+### Cleaning up stale SDD files
+
+`parrot sdd uninstall --stalled` removes stale SDD files and stale MCP toolkit entries. It scans all three
+hosts by default; `--host claude` (or `codex`, `google`) narrows the scan.
+
+**Stale file reasons:**
+- `receipt-orphan`: a file recorded in `sdd/.sdd-installed.json` that the current manifest no longer ships.
+- `retired`: a known legacy path (e.g. `scripts/sdd/**`, old worktree rules).
+- `sdd-orphan`: a file in a host folder whose name starts with `sdd-` but is not in the current manifest.
+  The `sdd-` prefix belongs to parrot — team-made `sdd-*` commands are removed unless `--keep` protects them.
+
+**Stale MCP entry reasons:**
+- `retired-toolkit`: a `parrot-<name>` entry whose toolkit no longer exists.
+- `undeclared`: a `parrot-<name>` entry not enabled in this repository's `.parrot/mcp-toolkits.yaml`.
+- `foreign-repo`: a `parrot-<name>` entry whose `--config` points to another repository.
+- `missing-repo`: (Gemini global only) a `parrot-<name>` entry whose repository folder no longer exists.
+
+**Usage:**
+- Always run with `--dry-run` first to preview.
+- `--keep GLOB` protects files matching the glob; `--keep '<file>#<key>'` protects an MCP entry by file and key.
+- `parrot sdd install` reports stale files and points to `parrot sdd uninstall --stalled`.
+- `parrot sdd status` shows `stale: N` and `stale mcp: M` when present.
+
+**Source-checkout guard:** in the ai-parrot source checkout, `--stalled` refuses to delete files (they are the
+originals). `--dry-run` still lists them with a note.
+
+**CI note:** if your CI still runs `scripts/sdd/<x>.py`, switch to `parrot sdd <noun> <verb>` or use
+`--keep 'scripts/sdd/<file>'` to preserve the old scripts.
+
+**Re-registering toolkits:** after removing a stale MCP entry, re-enable the toolkit with
+`parrot toolkits install <name>`.
+
+**Worktree management:** `parrot sdd worktree list` and `parrot sdd worktree remove` manage feature worktrees.
+These commands are now shipped to all three hosts (`claude`, `codex`, `google`).
 
 ### The `parrot sdd` command tree
 
