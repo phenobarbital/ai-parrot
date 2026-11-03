@@ -10,7 +10,7 @@ tags: [llm-config, credentials, agentcrew, experts, configuration, observability
 **Feature ID**: FEAT-796
 **Date**: 2026-11-03
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -42,8 +42,8 @@ FEAT-575), and its name does not say which provider it is for.
   (e.g. `CREW_LLM=google:gemini-2.5-pro`), cascading to one new optional global
   `DEFAULT_LLM` (`provider:model`), then to the component's **current hardcoded value**.
 - G2. Each component resolves its API key by the same cascade, per resolved provider:
-  `<COMPONENT>_<PROVIDER>_API_KEY` (e.g. `CREW_GOOGLE_API_KEY`) → component-family key
-  (e.g. `EXPERT_GOOGLE_API_KEY` for the expert tiers) → legacy alias (crew: `CREW_AI_KEY`)
+  `<COMPONENT>_<PROVIDER>_API_KEY` (e.g. `CREW_GOOGLE_API_KEY`, per expert tier
+  `EXPERT_JUDGMENT_GOOGLE_API_KEY`; no shared expert key) → legacy alias (crew: `CREW_AI_KEY`)
   → `None` (the client then uses its provider-wide key, e.g. `GOOGLE_API_KEY`, as today).
 - G3. Components covered: `AGENT` (agent HTTP handler), `CREW` (AgentCrew default/synthesis
   client), `EXPERT_JUDGMENT` / `EXPERT_BALANCED` / `EXPERT_TEMPLATED` (expert tiers).
@@ -68,7 +68,7 @@ FEAT-575), and its name does not say which provider it is for.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:bc905ce231016d892ee5240419488e0d1daded3f81b91602deb2079e18fc4a71 evaluation_digest=sha256:bd2123c372de18020d8b1e0243d1e640fed8f0b086585bdf0468aa902570e3d8 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:c768bae9c789666f082d3fc0a9efddb0102e268c9475c36e36ee62cf9861c522 evaluation_digest=sha256:2bcdf162b068fede653868a21b11ff126adf62c36de30b0cb1cfeed05b95d182 rules_version=1 status=pass -->
 
 No eligible decisions govern subsystems: auth, bots, clients, config, flows, knowledge-graphindex, knowledge-wiki, memory, server, skills, tools
 
@@ -87,7 +87,7 @@ resolve_component_llm("CREW", builtin="google:gemini-2.5-pro")
   3. builtin                           → today's hardcoded value
 → ComponentLLM(provider="google", model="gemini-2.5-pro", source="builtin")
 
-resolve_component_api_key(("EXPERT_JUDGMENT", "EXPERT"), provider="google",
+resolve_component_api_key(("EXPERT_JUDGMENT",), provider="google",
                           legacy=())
   for name in components: config.get(f"{name}_{PROVIDER}_API_KEY")
   then each legacy var (crew: "CREW_AI_KEY")
@@ -125,7 +125,7 @@ client call ──→ AfterClientCallEvent ──→ UsageSubscriber ──→ U
 | `AgentCrew.run_sequential` / lazy `_llm` | modifies | model + key from `CREW_LLM` / `CREW_GOOGLE_API_KEY` |
 | `crew/credentials.get_crew_google_api_key` | modifies | cascade `CREW_GOOGLE_API_KEY` → `CREW_AI_KEY` |
 | `experts.policy.DEFAULT_TIER_POLICY` | modifies | built from `EXPERT_<TIER>_LLM` at call time |
-| `ExpertAgent.__init__` | modifies | inject `EXPERT_<TIER>_<P>_API_KEY` → `EXPERT_<P>_API_KEY` |
+| `ExpertAgent.__init__` | modifies | inject `EXPERT_<TIER>_<P>_API_KEY` (per tier only) |
 | `observability.context` | modifies | new `current_component` ContextVar + `usage_component()` CM |
 | `UsageRecord` / `UsageSubscriber` | modifies | new `component` field, filled from the ContextVar |
 
@@ -226,7 +226,7 @@ See §3 Module 1 skeleton.
   `tier_policy(tier) -> dict` overlays `resolve_component_llm(f"EXPERT_{tier.name}",
   builtin=...)`; `model_config_for` uses it. `DEFAULT_TIER_POLICY` stays exported, equal to
   the builtin dict (back-compat for importers). `ExpertAgent.__init__` passes
-  `api_key=resolve_component_api_key((f"EXPERT_{tier}", "EXPERT"), provider)` in the
+  `api_key=resolve_component_api_key((f"EXPERT_{tier}",), provider)` (per-tier only, no shared `EXPERT_<P>_API_KEY`) in the
   client kwargs when not None and not already in `kwargs`.
 - **Depends on**: M1
 - **Interface Skeleton**:
@@ -292,13 +292,13 @@ See §3 Module 1 skeleton.
 | `test_bare_model_inherits_builtin_provider` | M1 | `CREW_LLM=gemini-2.5-flash` → google |
 | `test_malformed_raises_named_var` | M1 | `CREW_LLM=nope:x` → ValueError mentioning `CREW_LLM` |
 | `test_provider_token_google_family` | M1 | gemini-live / google-compat → GOOGLE |
-| `test_api_key_cascade_order` | M1 | `<C>_GOOGLE_API_KEY` → family → legacy → None |
+| `test_api_key_cascade_order` | M1 | `<C>_GOOGLE_API_KEY` (in order) → legacy → None |
 | `test_crew_google_key_precedence` | M3 | `CREW_GOOGLE_API_KEY` beats `CREW_AI_KEY` |
 | `test_crew_lazy_llm_uses_crew_llm` | M3 | lazy client gets resolved model/provider + key |
 | `test_crew_sequential_default_model` | M3 | `model=None` → resolved model |
 | `test_tier_policy_env_override` | M4 | `EXPERT_BALANCED_LLM=openai:gpt-x` |
 | `test_default_tier_policy_unchanged` | M4 | exported dict equals today's literal |
-| `test_expert_agent_api_key_injected` | M4 | `EXPERT_GOOGLE_API_KEY` reaches client kwargs |
+| `test_expert_agent_api_key_injected` | M4 | `EXPERT_BALANCED_GOOGLE_API_KEY` reaches only the BALANCED client; `EXPERT_GOOGLE_API_KEY` is ignored |
 | `test_handler_agent_llm_env` | M5 | `AGENT_LLM` used when subclass sets nothing |
 | `test_handler_subclass_override_wins` | M5 | subclass `_use_model` beats env |
 | `test_default_llm_model_name_removed` | M2 | `parrot.conf` has no `DEFAULT_LLM_MODEL_NAME` |
@@ -484,7 +484,7 @@ None.
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:bc905ce231016d892ee5240419488e0d1daded3f81b91602deb2079e18fc4a71 evaluation_digest=sha256:bd2123c372de18020d8b1e0243d1e640fed8f0b086585bdf0468aa902570e3d8 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:c768bae9c789666f082d3fc0a9efddb0102e268c9475c36e36ee62cf9861c522 evaluation_digest=sha256:2bcdf162b068fede653868a21b11ff126adf62c36de30b0cb1cfeed05b95d182 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -540,10 +540,10 @@ Coverage:
       "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/per-component-llm-defaults.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:bd2123c372de18020d8b1e0243d1e640fed8f0b086585bdf0468aa902570e3d8",
+  "evaluation_digest": "sha256:2bcdf162b068fede653868a21b11ff126adf62c36de30b0cb1cfeed05b95d182",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:bc905ce231016d892ee5240419488e0d1daded3f81b91602deb2079e18fc4a71",
+  "input_digest": "sha256:c768bae9c789666f082d3fc0a9efddb0102e268c9475c36e36ee62cf9861c522",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -558,9 +558,9 @@ Coverage:
 
 ## 8. Open Questions
 
-- [ ] Should `CREW_AI_KEY` be deprecated (warning when used) or kept silently as an alias? Spec keeps it silently. — *Owner: Jesus*
-- [ ] One `EXPERT_GOOGLE_API_KEY` for all tiers plus optional per-tier keys (spec), or per-tier only? — *Owner: Jesus*
-- [ ] Is `LLM_MODEL_NAME` set in any deployment `env/` file that should be migrated to `DEFAULT_LLM`? — *Owner: Jesus*
+- [x] Should `CREW_AI_KEY` be deprecated or kept as an alias? — *Resolved by Jesus*: stays as a silent alias (no deprecation warning).
+- [x] Shared `EXPERT_GOOGLE_API_KEY` or per-tier keys? — *Resolved by Jesus*: per-tier keys only (`EXPERT_<TIER>_<PROVIDER>_API_KEY`).
+- [x] Is `LLM_MODEL_NAME` set in deployments needing migration to `DEFAULT_LLM`? — *Resolved by Jesus*: no; hard-delete with no migration.
 
 ---
 
@@ -593,3 +593,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-11-03 | Jesus Lara | Initial draft |
 | 0.2 | 2026-11-03 | Jesus Lara | Add M7: per-component tagging of UsageRecord (observability) |
+| 0.3 | 2026-11-03 | Jesus Lara | Resolve §8 (alias kept, per-tier expert keys, no migration); approved |
