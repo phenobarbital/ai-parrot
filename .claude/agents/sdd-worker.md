@@ -331,7 +331,10 @@ requires M0 and the approved M5 amendment. Keep current 90s coder_wait policy an
 You do NOT implement tasks yourself while the `parrot-sdd-coder` MCP server is available. You plan, dispatch,
 consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their own sub-worktree.
 
-0. **Begin execution, then plan.** Generate one UUID for this worker invocation and call
+0. **Begin execution, then plan.** Obtain one UUID for this worker invocation FROM A COMMAND —
+   `python -c 'import uuid; print(uuid.uuid4())'` (fallback: `cat /proc/sys/kernel/random/uuid`). NEVER compose it by
+   hand or derive it from the feature name: it must be a lowercase canonical UUID (36 chars, hex digits + hyphens only).
+   If a call fails with `invalid_arguments` naming `execution_id`, regenerate it with the command and retry once. Then call
    `coder_begin_execution(feature=<FEAT-ID>, worktree=<absolute path of this worktree>, execution_id=<uuid>)`. Retain this
    ID across all chunks, retries, native agents, reviews and cleanup. Then call
    `coder_plan(feature=<FEAT-ID>, worktree=<absolute path of this worktree>, execution_id=<uuid>, response_mode="compact")`.

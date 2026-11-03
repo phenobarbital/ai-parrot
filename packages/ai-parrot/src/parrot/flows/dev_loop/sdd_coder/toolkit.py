@@ -59,6 +59,21 @@ def _is_missing_execution_id(exc: ValidationError) -> bool:
     return any(err["type"] == "missing" and err["loc"] == ("execution_id",) for err in exc.errors())
 
 
+def _summarize_errors(exc: ValidationError, limit: int = 5) -> str:
+    """Bounded ``loc: msg`` summary of pydantic errors (input values are never echoed)."""
+    parts = []
+    for err in exc.errors()[:limit]:
+        loc = ".".join(str(p) for p in err["loc"]) or "<root>"
+        msg = str(err["msg"])
+        if len(msg) > 160:
+            msg = msg[:157] + "..."
+        parts.append(f"{loc}: {msg}")
+    more = len(exc.errors()) - limit
+    if more > 0:
+        parts.append(f"(+{more} more)")
+    return "; ".join(parts)
+
+
 #: How long a state-changing tool waits for `_exclusive` before reporting ``engine_busy``.
 EXCLUSIVE_WAIT_S: float = 300.0
 
@@ -164,7 +179,17 @@ class SddCoderToolkit(AbstractToolkit):
         except ValidationError as exc:
             if _is_missing_execution_id(exc):
                 raise CoderFailure("execution_required", "execution_id is required for this tool") from exc
-            raise CoderFailure("invalid_arguments", "invalid tool arguments", errors=exc.errors()) from exc
+            raise CoderFailure(
+                "invalid_arguments", f"invalid tool arguments: {_summarize_errors(exc)}", errors=exc.errors()
+            ) from exc
+
+    def _create_tool_from_method(self, name: str, bound_method: Any) -> Any:
+        """Advertise the validating `arg_models` schema (UUID pattern/description) to MCP clients."""
+        tool = super()._create_tool_from_method(name, bound_method)
+        model = self.arg_models.get(name)
+        if model is not None:
+            tool.args_schema = model
+        return tool
 
     async def _post_execute(self, tool_name: str, result: Any, /, **kwargs: Any) -> Any:
         """adapter.py's 'direct result' branch does `str(result)` (a Python repr, NOT JSON) for
