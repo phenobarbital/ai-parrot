@@ -61,8 +61,8 @@ directory switching, no shared mutable state across features.
   a denial, or disable the guard. If isolation is unavailable, stop and report the blocker.
 - Under the supported launchers the Claude native sandbox enforces the filesystem/network boundary and the hook keeps the test-scope guard, RTK rewrite and file-tool checks; nested bwrap is not used; never request dangerouslyDisableSandbox.
 - The primary checkout's `.claude/worktrees/` and `.parrot/ledger/` are the only writable
-  exceptions outside your worktree: the first exists so `/sdd-done` can run from here
-  (ledger-snapshot worktree, removal of this worktree), the second so you can file deferred
+  exceptions outside your worktree: the first exists for worktree administration (it does NOT
+  mean `/sdd-done` runs from here — see "Completion"), the second so you can file deferred
   findings in the shared SDD ledger. Everything else in the primary checkout — `sdd/ledger/`,
   `sdd/tasks/`, the `.venv` — stays read-only. Never `cd` to the primary checkout to work
   around that.
@@ -708,10 +708,9 @@ After all tasks are done, at the development-to-review boundary:
    `Ledger unavailable; NOT filed: shared ledger is read-only`, or is unavailable,
    log a warning and list the findings with `(NOT filed: shared ledger is read-only)`.
 
-2. **Push the feature branch** (from worktree):
-   ```bash
-   git push origin HEAD
-   ```
+2. **Do NOT push.** The sandbox has no route to `github.com` (no git-over-HTTPS, no SSH); `/sdd-done`
+   on the host pushes. `gh` (`api.github.com`) is available for read and PR-comment operations only;
+   never try `git push`, SSH, or ask to widen the sandbox.
 
 3. **Print summary:**
    ```
@@ -749,10 +748,8 @@ After all tasks are done, at the development-to-review boundary:
    Commits: <N>
 
    Next:
-     - Run /sdd-done FEAT-<ID> for verification, PR, and cleanup
-       (it may run from inside this worktree — the sandbox allows worktree
-       administration under the primary checkout's .claude/worktrees/ — or
-       from the main repo)
+     - Run /sdd-done FEAT-<ID> **from the host** (outside this sdd-worker
+       session) — it pushes, opens the PR and cleans up.
    ```
 
 ## Structured Output Contract (dispatched runs)

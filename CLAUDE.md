@@ -240,7 +240,8 @@ parrot sdd launch worker FEAT-<NNN>
 ```
 
 Key properties: uses Sonnet, implements EXACTLY what tasks
-specify (no redesigns), commits after each task.
+specify (no redesigns), commits after each task. The worker commits but does not push
+(its sandbox reaches GitHub only through `gh`/`api.github.com`); run `/sdd-done` from the host.
 
 For background execution:
 ```bash

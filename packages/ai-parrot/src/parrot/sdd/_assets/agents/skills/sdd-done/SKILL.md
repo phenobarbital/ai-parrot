@@ -5,6 +5,9 @@ description: Verify a completed SDD feature worktree, check for merge blockers, 
 
 # SDD Done
 
+**Run it on the host, never from inside a sandboxed `sdd-worker` session** — pushing needs
+`github.com`, which that sandbox deliberately cannot reach.
+
 ## Full procedure and Codex adaptations
 
 Before executing, read the [full sdd-done procedure](../../../.claude/commands/sdd-done.md)

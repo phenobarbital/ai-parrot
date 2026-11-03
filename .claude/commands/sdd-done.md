@@ -12,8 +12,9 @@ ensure the branch is pushed, and clean up the worktree.
 **This command runs on the spec's `base_branch`** — read from the spec's
 YAML frontmatter (FEAT-145). For `type: feature` that is the `base_branch` (default)
 or the `staging_branch` (during a release freeze); for `type: hotfix` that is the `hotfix_base` — all from `sdd/config.json`.
-It may be invoked from the main repo or from inside the feature worktree
-(the `sdd-worker` agent does the latter). It looks INTO the worktree to
+It may be invoked from the main repo or from inside the feature worktree, but
+**always on the host — never from inside a sandboxed `sdd-worker` session**: pushing needs
+`github.com`, which that sandbox deliberately cannot reach. It looks INTO the worktree to
 verify work, but modifies state only on `base_branch`.
 
 ## Usage

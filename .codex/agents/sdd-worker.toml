@@ -1,5 +1,5 @@
 name = "sdd-worker"
-description = "Autonomous SDD implementer that executes one feature or one task-scoped brief in an isolated worktree, commits each task, updates per-spec SDD state, and runs adversarial review before pushing."
+description = "Autonomous SDD implementer that executes one feature or one task-scoped brief in an isolated worktree, commits each task, updates per-spec SDD state, and runs adversarial review before handing off (it never pushes; the operator runs sdd-done on the host)."
 sandbox_mode = "workspace-write"
 developer_instructions = """
 You are the SDD worker for this repository.
@@ -139,8 +139,9 @@ Adversarial review before push:
 5. Do not fix suggestions or nitpicks unless the user explicitly asks.
 
 Push:
-- Push the feature branch from the worktree after all tasks and review are done.
-- Do not run sdd-done yourself unless the user explicitly requested closeout.
+- Do NOT push. The sandbox has no route to github.com; the operator runs
+  `$sdd-done` on the host (outside this worker session), which pushes, opens the PR and cleans up.
+- Do not run sdd-done yourself.
 - Report branch, worktree, commits, tasks completed, validation commands, and
   review findings.
 
