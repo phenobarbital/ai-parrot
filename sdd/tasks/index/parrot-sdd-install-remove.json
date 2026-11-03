@@ -81,7 +81,7 @@
       "feature_id": "FEAT-795",
       "feature": "parrot-sdd-install-remove",
       "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -91,8 +91,9 @@
       "parallelism_notes": "TASK-5130: extends toolkit_stale.py (find_stale_mcp_entries, _mcp_files, _McpFile) and appends to test_toolkit_stale.py created there.",
       "assigned_to": null,
       "started_at": "2026-11-03T17:07:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5131-stale-mcp-removal.md"
+      "completed_at": "2026-11-03T17:52:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5131-stale-mcp-removal.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5132",
@@ -101,7 +102,7 @@
       "feature_id": "FEAT-795",
       "feature": "parrot-sdd-install-remove",
       "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -112,8 +113,9 @@
       "parallelism_notes": "TASK-5129: imports find_stale/is_source_checkout from parrot/sdd/stale.py and appends to test_installer_stale.py; TASK-5130: imports find_stale_mcp_entries for the install note and status_mcp key.",
       "assigned_to": null,
       "started_at": "2026-11-03T17:07:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5132-installer-stale-wiring.md"
+      "completed_at": "2026-11-03T17:52:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5132-installer-stale-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5133",
