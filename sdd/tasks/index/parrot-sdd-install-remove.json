@@ -43,7 +43,7 @@
       "feature_id": "FEAT-795",
       "feature": "parrot-sdd-install-remove",
       "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -51,8 +51,9 @@
       "parallelism_notes": "No dependencies: new module stale.py + new test file; reads only existing installer helpers (load_manifest, load_receipt).",
       "assigned_to": null,
       "started_at": "2026-11-03T17:07:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5129-stale-sdd-detector.md"
+      "completed_at": "2026-11-03T17:35:36+00:00",
+      "file": "sdd/tasks/completed/TASK-5129-stale-sdd-detector.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5130",
@@ -61,7 +62,7 @@
       "feature_id": "FEAT-795",
       "feature": "parrot-sdd-install-remove",
       "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -69,8 +70,9 @@
       "parallelism_notes": "No dependencies: creates parrot/mcp/toolkit_stale.py and tests/mcp/test_toolkit_stale.py from existing mcp/google helpers.",
       "assigned_to": null,
       "started_at": "2026-11-03T17:07:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5130-stale-mcp-detection.md"
+      "completed_at": "2026-11-03T17:35:37+00:00",
+      "file": "sdd/tasks/completed/TASK-5130-stale-mcp-detection.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5131",
@@ -120,7 +122,7 @@
       "feature_id": "FEAT-795",
       "feature": "parrot-sdd-install-remove",
       "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -128,8 +130,9 @@
       "parallelism_notes": "No dependencies: new parrot/sdd/scripts/remove_worktree.py, shim, VERBS rows in cli.py (cli.py also edited by TASK-5135, which depends on this task).",
       "assigned_to": null,
       "started_at": "2026-11-03T17:07:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5133-port-remove-worktree.md"
+      "completed_at": "2026-11-03T17:35:37+00:00",
+      "file": "sdd/tasks/completed/TASK-5133-port-remove-worktree.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5134",
