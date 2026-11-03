@@ -178,7 +178,11 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
         "status": ("worktree_status", (), "Discover SDD worktrees and report task state and health."),
         "guard": ("worktree_environment", (), "Serve the PreToolUse shared-environment guard (--hook)."),
         "list": ("remove_worktree", ("list",), "List worktrees and orphan dirs: dirty, unpushed, PR, live processes."),
-        "remove": ("remove_worktree", ("remove",), "Remove a worktree safely (refuses a live sdd-worker, dirty, unpushed)."),
+        "remove": (
+            "remove_worktree",
+            ("remove",),
+            "Remove a worktree safely (refuses a live sdd-worker, dirty, unpushed).",
+        ),
     },
     "task": {
         "close": ("close_task", (), "Close a task: move it to completed/ and stamp the per-spec index."),

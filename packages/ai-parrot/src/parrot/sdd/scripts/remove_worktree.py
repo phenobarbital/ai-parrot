@@ -34,6 +34,7 @@ Safety gates (each overridable only with an explicit flag):
 * uncommitted changes abort unless ``--force``;
 * commits not present on the upstream branch abort unless ``--force``.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -112,11 +113,7 @@ class Worktree:
             ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
             cwd=self.path,
         )
-        rev = (
-            f"{upstream.stdout.strip()}..HEAD"
-            if upstream.returncode == 0
-            else "origin/dev..HEAD"
-        )
+        rev = f"{upstream.stdout.strip()}..HEAD" if upstream.returncode == 0 else "origin/dev..HEAD"
         proc = run(["git", "log", "--oneline", rev], cwd=self.path)
         if proc.returncode != 0:
             return []
@@ -126,11 +123,21 @@ class Worktree:
         """Return the PR state for this branch via gh, or None if unknown."""
         if not self.branch:
             return None
-        proc = run([
-            "gh", "pr", "list", "--head", self.branch,
-            "--state", "all", "--json", "state,number",
-            "--jq", '.[0] | "\\(.state) #\\(.number)"',
-        ])
+        proc = run(
+            [
+                "gh",
+                "pr",
+                "list",
+                "--head",
+                self.branch,
+                "--state",
+                "all",
+                "--json",
+                "state,number",
+                "--jq",
+                '.[0] | "\\(.state) #\\(.number)"',
+            ]
+        )
         if proc.returncode != 0:
             return None
         out = proc.stdout.strip()
@@ -196,12 +203,14 @@ def discover() -> list[Worktree]:
                 branch = current.get("branch")
                 if branch:
                     branch = branch.replace("refs/heads/", "")
-                worktrees.append(Worktree(
-                    path=path,
-                    branch=branch,
-                    registered=True,
-                    primary=path.resolve() == _root().resolve(),
-                ))
+                worktrees.append(
+                    Worktree(
+                        path=path,
+                        branch=branch,
+                        registered=True,
+                        primary=path.resolve() == _root().resolve(),
+                    )
+                )
             current = {}
             continue
         key, _, value = line.partition(" ")
@@ -266,10 +275,7 @@ def _match(worktrees: list[Worktree], target: str) -> list[Worktree]:
     ``feat-FEAT-378-devloop-enhancement``.
     """
     needle = target.lower()
-    exact = [
-        w for w in worktrees
-        if w.name.lower() == needle or (w.branch or "").lower() == needle
-    ]
+    exact = [w for w in worktrees if w.name.lower() == needle or (w.branch or "").lower() == needle]
     if exact:
         return exact
     candidates = [w for w in worktrees if not w.primary]
@@ -280,10 +286,7 @@ def _match(worktrees: list[Worktree], target: str) -> list[Worktree]:
             return by_path
     except OSError:
         pass
-    return [
-        w for w in candidates
-        if needle in w.name.lower() or needle in (w.branch or "").lower()
-    ]
+    return [w for w in candidates if needle in w.name.lower() or needle in (w.branch or "").lower()]
 
 
 def _remove_one(wt: Worktree, args: argparse.Namespace) -> int:
@@ -294,22 +297,20 @@ def _remove_one(wt: Worktree, args: argparse.Namespace) -> int:
     sys.stdout.flush()  # keep the header ahead of any stderr refusal below
 
     if wt.primary:
-        print("  REFUSED: this is the primary repository checkout.",
-              file=sys.stderr)
+        print("  REFUSED: this is the primary repository checkout.", file=sys.stderr)
         return 1
     if wt.branch in PROTECTED_BRANCHES:
         print(f"  REFUSED: {wt.branch} is a protected branch.", file=sys.stderr)
         return 1
 
     if wt.live_processes:
-        print("  REFUSED: a live process is running inside this worktree.",
-              file=sys.stderr)
+        print("  REFUSED: a live process is running inside this worktree.", file=sys.stderr)
         for pid, cmdline in wt.live_processes:
             print(f"    pid {pid}: {cmdline}", file=sys.stderr)
-        print("  Stop it first (the worker commits as it goes; removing now "
-              "drops anything unpushed).", file=sys.stderr)
-        print(f"    kill {wt.live_processes[0][0]}    # or detach the tmux "
-              "session running it", file=sys.stderr)
+        print(
+            "  Stop it first (the worker commits as it goes; removing now " "drops anything unpushed).", file=sys.stderr
+        )
+        print(f"    kill {wt.live_processes[0][0]}    # or detach the tmux " "session running it", file=sys.stderr)
         return 1
 
     dirty = wt.dirty_files()
@@ -319,24 +320,20 @@ def _remove_one(wt: Worktree, args: argparse.Namespace) -> int:
             print(f"    {line}", file=sys.stderr)
         if len(dirty) > 10:
             print(f"    ... and {len(dirty) - 10} more", file=sys.stderr)
-        print("  Commit and push them, or re-run with --force to discard.",
-              file=sys.stderr)
+        print("  Commit and push them, or re-run with --force to discard.", file=sys.stderr)
         return 1
 
     unpushed = wt.unpushed()
     if unpushed and not args.force:
-        print(f"  REFUSED: {len(unpushed)} commit(s) not on origin.",
-              file=sys.stderr)
+        print(f"  REFUSED: {len(unpushed)} commit(s) not on origin.", file=sys.stderr)
         for line in unpushed[:10]:
             print(f"    {line}", file=sys.stderr)
-        print(f"  Push them first:  git -C {wt.path} push -u origin "
-              f"{wt.branch}", file=sys.stderr)
+        print(f"  Push them first:  git -C {wt.path} push -u origin " f"{wt.branch}", file=sys.stderr)
         print("  Or re-run with --force to discard them.", file=sys.stderr)
         return 1
 
     if args.dry_run:
-        print("  [dry-run] would remove this worktree"
-              + (" and delete its branch" if args.delete_branch else ""))
+        print("  [dry-run] would remove this worktree" + (" and delete its branch" if args.delete_branch else ""))
         return 0
 
     if wt.registered:
@@ -345,12 +342,12 @@ def _remove_one(wt: Worktree, args: argparse.Namespace) -> int:
             cmd.append("--force")
         result = run(cmd)
         if result.returncode != 0:
-            print(f"  git worktree remove failed: {result.stderr.strip()}",
-                  file=sys.stderr)
+            print(f"  git worktree remove failed: {result.stderr.strip()}", file=sys.stderr)
             return 1
         print("  removed (git worktree remove)")
     else:
         import shutil
+
         shutil.rmtree(wt.path)
         print("  removed (orphan directory)")
 
@@ -362,8 +359,7 @@ def _remove_one(wt: Worktree, args: argparse.Namespace) -> int:
         if deleted.returncode == 0:
             print(f"  branch {wt.branch} deleted")
         else:
-            print(f"  branch {wt.branch} NOT deleted: "
-                  f"{deleted.stderr.strip()}")
+            print(f"  branch {wt.branch} NOT deleted: " f"{deleted.stderr.strip()}")
             print("  (unmerged — pass --force to force-delete)")
     return 0
 
@@ -380,21 +376,22 @@ def cmd_remove(args: argparse.Namespace) -> int:
         print(f"Orphan directories to remove: {len(targets)}")
     elif args.target:
         if args.target.lower() in PROTECTED_BRANCHES:
-            print(f"error: {args.target} is a protected branch — refusing to "
-                  "resolve it to any worktree.", file=sys.stderr)
+            print(
+                f"error: {args.target} is a protected branch — refusing to " "resolve it to any worktree.",
+                file=sys.stderr,
+            )
             return 1
         targets = _match(worktrees, args.target)
         if not targets:
-            print(f"error: no worktree matches {args.target!r}.\n",
-                  file=sys.stderr)
+            print(f"error: no worktree matches {args.target!r}.\n", file=sys.stderr)
             return cmd_list(argparse.Namespace(check_pr=False)) or 1
         if len(targets) > 1:
-            print(f"error: {args.target!r} is ambiguous — matches: "
-                  + ", ".join(t.name for t in targets), file=sys.stderr)
+            print(
+                f"error: {args.target!r} is ambiguous — matches: " + ", ".join(t.name for t in targets), file=sys.stderr
+            )
             return 1
     else:
-        print("error: pass a target, or --stale for orphan directories.",
-              file=sys.stderr)
+        print("error: pass a target, or --stale for orphan directories.", file=sys.stderr)
         return 1
 
     failures = 0
@@ -417,20 +414,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_list = sub.add_parser("list", help="Show worktrees and their state.")
-    p_list.add_argument("--check-pr", action="store_true",
-                        help="Also query PR state via gh (slower).")
+    p_list.add_argument("--check-pr", action="store_true", help="Also query PR state via gh (slower).")
     p_list.set_defaults(func=cmd_list)
 
     p_rm = sub.add_parser("remove", help="Remove a worktree safely.")
-    p_rm.add_argument("target", nargs="?",
-                      help="Branch name, directory name, FEAT id, or path.")
-    p_rm.add_argument("--stale", action="store_true",
-                      help="Remove every orphan directory (no git record).")
-    p_rm.add_argument("--delete-branch", action="store_true",
-                      help="Also delete the local branch.")
-    p_rm.add_argument("--force", action="store_true",
-                      help="Discard uncommitted/unpushed work. Never "
-                           "overrides the live-process gate.")
+    p_rm.add_argument("target", nargs="?", help="Branch name, directory name, FEAT id, or path.")
+    p_rm.add_argument("--stale", action="store_true", help="Remove every orphan directory (no git record).")
+    p_rm.add_argument("--delete-branch", action="store_true", help="Also delete the local branch.")
+    p_rm.add_argument(
+        "--force",
+        action="store_true",
+        help="Discard uncommitted/unpushed work. Never " "overrides the live-process gate.",
+    )
     p_rm.add_argument("--dry-run", action="store_true")
     p_rm.set_defaults(func=cmd_remove)
 
