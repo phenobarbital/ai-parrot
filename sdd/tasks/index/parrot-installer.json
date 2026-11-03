@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-04T23:59:51+00:00",
-  "completed_at": "2026-11-03T01:28:19+00:00",
+  "completed_at": null,
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -209,7 +209,9 @@
           "packages/ai-parrot-tools/tests/tool_optimizations/test_reader.py",
           "packages/ai-parrot-tools/tests/tool_optimizations/test_inspection.py",
           "packages/ai-parrot-tools/tests/tool_optimizations/test_policy.py",
-          "packages/ai-parrot-tools/tests/tool_optimizations/test_writer.py"
+          "packages/ai-parrot-tools/tests/tool_optimizations/test_writer.py",
+          "packages/ai-parrot/tests/tools/test_resolver_without_parrot_tools.py",
+          "packages/ai-parrot/tests/tools/test_toolkit_resolver.py"
         ],
         "settings": {
           "markers": ""
@@ -221,7 +223,7 @@
         ]
       }
     ],
-    "digest": "sha256:9ca01d7d430733d1d0f36a2c43e23ddd863846992e51c7fd15a81dd259988349"
+    "digest": "sha256:b58d24db6e33c07b789f12b9e006733e2443828bbf21389bf80e5d68744fe9a4"
   },
   "tasks": [
     {
@@ -1262,6 +1264,26 @@
       "parallelism_notes": "rev 0.12 C34; same installer.py/cli.py/getting-started.md as TASK-5109/5110, and needs the core bounded-source from TASK-5112",
       "file": "sdd/tasks/completed/TASK-5113-sdd-install-registers-toolkits.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5114",
+      "slug": "resolver-without-parrot-tools",
+      "title": "Core toolkits serve without ai-parrot-tools (resolver built-ins tolerate a missing distribution)",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5113"
+      ],
+      "parallelism_notes": "acceptance gap of rev 0.12 C34–C35 found by the sandbox handshake; runs after TASK-5113",
+      "file": "sdd/tasks/active/TASK-5114-resolver-without-parrot-tools.md"
     }
   ],
   "amended_at": "2026-11-03T00:00:00+00:00",
