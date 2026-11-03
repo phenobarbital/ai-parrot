@@ -234,7 +234,31 @@ def _check_sdd(root: Path) -> list[DoctorCheck]:
     checks.append(_check_ledger_attributes(root))
     checks.append(_check_ledger_hooks(root))
     checks.append(_check_guard_hook(status))
+    checks.append(_check_worktree_tests(root))
     return checks
+
+
+def _check_worktree_tests(root: Path) -> DoctorCheck:
+    """TASK-5118: informational — worktree tests may import the main checkout (no pytest ``pythonpath``)."""
+    name = "sdd: worktree tests isolated"
+    try:
+        from parrot.sdd.installer import worktree_test_isolation  # TASK-5118 — lazy on purpose
+    except ImportError:
+        return DoctorCheck(name=name, ok=True, informational=True,
+                           detail="parrot.sdd.installer unavailable in this build")
+    try:
+        from parrot.sdd.config import load_sdd_config
+
+        test_command = load_sdd_config(root).test_command
+    except Exception:  # noqa: BLE001 — an invalid config is reported by the `sdd config` check
+        test_command = None
+    problem = worktree_test_isolation(root, test_command)
+    if problem is None:
+        return DoctorCheck(name=name, ok=True, informational=True,
+                           detail="no worktree test-isolation issue detected (pytest pythonpath, test_command, "
+                                  "or not a Python project)")
+    cause, _, fix = problem.partition("; ")
+    return DoctorCheck(name=name, ok=False, informational=True, detail=cause, fix=fix)
 
 
 def _check_sdd_git(root: Path, branch: str) -> list[DoctorCheck]:

@@ -256,3 +256,14 @@ def test_ledger_hooks_check_follows_core_hookspath(ready_repo: Path) -> None:
 
     _install_ledger_hooks(ready_repo)
     assert "sdd: ledger hooks" not in {c.name for c in doctor.failed(doctor._check_sdd(ready_repo))}
+
+
+def test_worktree_tests_check_is_informational(ready_repo: Path) -> None:
+    """TASK-5118 (issue:80c5e6e510b2): a Python repo with no pytest pythonpath gets an advisory, never a failure."""
+    check = {c.name: c for c in doctor._check_sdd(ready_repo)}["sdd: worktree tests isolated"]
+    assert check.ok  # not a Python project
+    (ready_repo / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
+    checks = doctor._check_sdd(ready_repo)
+    check = {c.name: c for c in checks}["sdd: worktree tests isolated"]
+    assert not check.ok and check.informational and "pythonpath" in check.fix
+    assert check not in doctor.failed(checks)

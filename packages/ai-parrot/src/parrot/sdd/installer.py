@@ -852,6 +852,120 @@ def _test_command_warning(config: "SddConfig") -> str | None:
     )
 
 
+_PYTHON_PROJECT_FILES: tuple[str, ...] = ("pyproject.toml", "setup.py", "setup.cfg")
+
+
+def _read_pyproject(root: Path) -> dict[str, Any]:
+    """``<root>/pyproject.toml`` as a dict; ``{}`` when absent or unparsable."""
+    import tomllib
+
+    try:
+        with (root / "pyproject.toml").open("rb") as handle:
+            data = tomllib.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _pytest_pythonpath_configured(root: Path, pyproject: dict[str, Any]) -> bool:
+    """True when any pytest config file under ``root`` sets ``pythonpath``."""
+    import configparser
+
+    pytest_tool = (pyproject.get("tool") or {}).get("pytest") or {}
+    if isinstance(pytest_tool, dict):
+        ini = pytest_tool.get("ini_options") or {}
+        if (isinstance(ini, dict) and "pythonpath" in ini) or "pythonpath" in pytest_tool:
+            return True
+    for name, section in (("pytest.ini", "pytest"), ("tox.ini", "pytest"), ("setup.cfg", "tool:pytest")):
+        path = root / name
+        if not path.is_file():
+            continue
+        parser = configparser.ConfigParser(interpolation=None)
+        try:
+            parser.read(path, encoding="utf-8")
+        except (OSError, configparser.Error):
+            continue
+        if parser.has_option(section, "pythonpath"):
+            return True
+    return False
+
+
+def _editable_from_root(root: Path) -> list[str]:
+    """Distributions installed editable in ``<root>/.venv`` from ``root`` itself (PEP 610 ``direct_url.json``)."""
+    from urllib.parse import unquote, urlparse
+
+    venv = root / ".venv"
+    if not venv.is_dir():
+        return []
+    try:
+        mine = root.resolve()
+    except (OSError, RuntimeError):
+        return []
+    found: list[str] = []
+    for direct_url in sorted(venv.glob("lib*/python*/site-packages/*.dist-info/direct_url.json")) + sorted(
+        venv.glob("Lib/site-packages/*.dist-info/direct_url.json")
+    ):
+        try:
+            data = json.loads(direct_url.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict) or not (data.get("dir_info") or {}).get("editable"):
+            continue
+        url = urlparse(str(data.get("url", "")))
+        if url.scheme != "file":
+            continue
+        try:
+            source = Path(unquote(url.path)).resolve()
+        except (OSError, RuntimeError):
+            continue
+        if source == mine or mine in source.parents:
+            found.append(direct_url.parent.name.split("-")[0])
+    return found
+
+
+def worktree_test_isolation(root: Path, test_command: str | None) -> str | None:
+    """Why tests run inside ``.claude/worktrees/<feature>/`` may not exercise the worktree's own code, else None.
+
+    SDD runs each task's tests in a worktree, but the shared ``.venv`` usually has the project installed
+    editable from the MAIN checkout, so pytest silently imports that copy; a virtual project
+    (``[tool.uv] package = false``) cannot import its own modules at all. A rootdir-relative pytest
+    ``pythonpath`` fixes both. Read-only and never raises; it never edits the user's pytest config.
+
+    Args:
+        root: Repository root (the main checkout).
+        test_command: ``sdd/config.json`` ``test_command`` (``None`` when unset).
+
+    Returns:
+        One sentence naming the cause and the recommended ``pythonpath`` setting, or None when the repo is
+        not a Python project, ``test_command`` does not run pytest or already sets ``PYTHONPATH``, or pytest
+        already has a ``pythonpath`` setting.
+    """
+    try:
+        if not any((root / name).is_file() for name in _PYTHON_PROJECT_FILES):
+            return None
+        if test_command and ("pytest" not in test_command or "PYTHONPATH" in test_command):
+            return None
+        pyproject = _read_pyproject(root)
+        if _pytest_pythonpath_configured(root, pyproject):
+            return None
+        editable = _editable_from_root(root)
+        virtual = ((pyproject.get("tool") or {}).get("uv") or {}).get("package") is False
+    except Exception as exc:  # noqa: BLE001 — advisory only
+        logger.debug("worktree test isolation check skipped: %s", exc)
+        return None
+    if editable:
+        cause = (f"{', '.join(editable)} is installed editable from {root} in .venv, so pytest in a worktree "
+                 "imports the main checkout's code instead of the branch under test")
+    elif virtual:
+        cause = "this is a virtual project ([tool.uv] package = false), so pytest cannot import its own modules"
+    else:
+        cause = "pytest has no `pythonpath` setting, so tests in a worktree may import the main checkout's code"
+    layout = "src" if (root / "src").is_dir() else "."
+    return (f"{cause}; add `pythonpath = [\"{layout}\"]` under [tool.pytest.ini_options] in pyproject.toml "
+            "(rootdir-relative, so each worktree tests its own code), or set sdd/config.json test_command to a "
+            "command that sets PYTHONPATH")
+
+
 def _seed_id_ledger(root: Path) -> str | None:
     """Create ``sdd/tasks/.id_ledger.json`` iff absent (reserve_ids reads it from git and raises when missing)."""
     from parrot.sdd.scripts.id_ledger import LEDGER_PATH, bootstrap_ledger, save_ledger  # TASK-4085
@@ -1022,6 +1136,8 @@ def install_sdd_integration(
     _save_receipt(root, receipt)
     actions.append(f"{RECEIPT_PATH} — written; commit it with the installed files (it drives upgrades and uninstall)")
     actions.append(_test_command_warning(config) or "")
+    isolation = worktree_test_isolation(root, config.test_command)  # TASK-5118
+    actions.append(f"note: worktree tests — {isolation}" if isolation else "")
     if "claude" in hosts:
         actions.append(HOOK_WIRING_NOTE)
         if form == "baked":

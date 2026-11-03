@@ -544,3 +544,81 @@ def test_sdd_uninstall_strips_only_receipt_ledger_events(empty_repo: Path) -> No
     for event in recorded:
         hook = empty_repo / ".git/hooks" / event
         assert not hook.exists() or "# >>> parrot-ledger >>>" not in hook.read_text()
+
+
+# --- TASK-5118 (issue:80c5e6e510b2): worktree tests importing the main checkout -----------------------------
+
+
+def _python_repo(root: Path, pyproject: str = '[project]\nname = "demo"\nversion = "0.1"\n') -> Path:
+    (root / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+    return root
+
+
+def _editable_dist(root: Path, source: Path, name: str = "demo") -> None:
+    info = root / ".venv/lib/python3.12/site-packages" / f"{name}-0.1.dist-info"
+    info.mkdir(parents=True)
+    (info / "direct_url.json").write_text(
+        json.dumps({"url": source.resolve().as_uri(), "dir_info": {"editable": True}}), encoding="utf-8"
+    )
+
+
+def test_isolation_none_for_non_python_repo(empty_repo: Path) -> None:
+    from parrot.sdd.installer import worktree_test_isolation
+
+    assert worktree_test_isolation(empty_repo, None) is None
+
+
+def test_isolation_flags_missing_pythonpath(tmp_path: Path) -> None:
+    from parrot.sdd.installer import worktree_test_isolation
+
+    note = worktree_test_isolation(_python_repo(tmp_path), None)
+    assert note and 'pythonpath = ["."]' in note and "test_command" in note
+    (tmp_path / "src").mkdir()
+    assert 'pythonpath = ["src"]' in (worktree_test_isolation(tmp_path, None) or "")
+
+
+def test_isolation_names_editable_install_from_main_checkout(tmp_path: Path) -> None:
+    from parrot.sdd.installer import worktree_test_isolation
+
+    (tmp_path / "repo").mkdir()
+    repo = _python_repo(tmp_path / "repo")
+    _editable_dist(repo, repo)
+    note = worktree_test_isolation(repo, None)
+    assert note and "demo is installed editable" in note and "main checkout" in note
+    elsewhere = tmp_path / "other"
+    elsewhere.mkdir()
+    (repo / ".venv").rename(tmp_path / "old-venv")
+    _editable_dist(repo, elsewhere)
+    assert "installed editable" not in (worktree_test_isolation(repo, None) or "")
+
+
+def test_isolation_names_virtual_project(tmp_path: Path) -> None:
+    from parrot.sdd.installer import worktree_test_isolation
+
+    _python_repo(tmp_path, '[project]\nname = "demo"\n\n[tool.uv]\npackage = false\n')
+    assert "virtual project" in (worktree_test_isolation(tmp_path, None) or "")
+
+
+@pytest.mark.parametrize(
+    "files, test_command",
+    [
+        ({"pyproject.toml": '[project]\nname = "d"\n\n[tool.pytest.ini_options]\npythonpath = ["."]\n'}, None),
+        ({"pyproject.toml": '[project]\nname = "d"\n', "pytest.ini": "[pytest]\npythonpath = src\n"}, None),
+        ({"setup.cfg": "[tool:pytest]\npythonpath = .\n"}, None),
+        ({"pyproject.toml": '[project]\nname = "d"\n'}, "make test"),
+        ({"pyproject.toml": '[project]\nname = "d"\n'}, "PYTHONPATH=src uv run --no-sync pytest"),
+    ],
+)
+def test_isolation_satisfied(tmp_path: Path, files: dict[str, str], test_command: str | None) -> None:
+    from parrot.sdd.installer import worktree_test_isolation
+
+    for name, text in files.items():
+        (tmp_path / name).write_text(text, encoding="utf-8")
+    assert worktree_test_isolation(tmp_path, test_command) is None
+
+
+def test_install_prints_worktree_tests_note(empty_repo: Path) -> None:
+    _python_repo(empty_repo)
+    actions = install_sdd_integration(empty_repo, hosts=("codex",))
+    assert any(a.startswith("note: worktree tests") and "pythonpath" in a for a in actions)
+    assert not any(a.startswith("note: worktree tests") for a in install_sdd_integration(empty_repo, dry_run=True))
