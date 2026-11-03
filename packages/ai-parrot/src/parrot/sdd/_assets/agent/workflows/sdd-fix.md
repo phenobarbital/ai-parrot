@@ -37,7 +37,7 @@ worktree-local ledger, and exit non-zero WITHOUT claiming anything.
 2. **Select** — picker, or deterministic resolution from the arguments (issue-id → its whole group; --top N → first N groups).
    Require a positive N. An empty plan or an issue absent from it is a no-op with an explanation, never a guessed selection.
 3. **Claim** — first mint this session's actor ONCE: `ACTOR=agent:sdd-fix:<8 hex>` from
-   `python -c "import secrets; print(secrets.token_hex(4))"`, and reuse that literal string for every claim, close and unclaim
+   `python3 -c "import secrets; print(secrets.token_hex(4))"`, and reuse that literal string for every claim, close and unclaim
    below (a constant `agent:sdd-fix` cannot tell this session's claims from a parallel session's). Then one
    `wikitoolkit ledger claim <issue-id> --actor <ACTOR>` per issue in the group, immediately before
    executing. The plan is a snapshot; the claim is authoritative: a non-zero exit DROPS that issue and continues. Never close an
