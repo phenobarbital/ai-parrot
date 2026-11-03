@@ -16,7 +16,7 @@
       "feature_id": "FEAT-793",
       "feature": "tmux-notify-worker",
       "spec": "sdd/specs/tmux-notify-worker.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "No dependencies; owns new worker_notification.py and test_worker_notification.py. All Git, process and filesystem fixtures are temporary and isolated.",
       "assigned_to": null,
       "started_at": "2026-11-03T17:44:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5122-worker-completion-receipt.md"
+      "completed_at": "2026-11-03T19:58:26+00:00",
+      "file": "sdd/tasks/completed/TASK-5122-worker-completion-receipt.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5123",
