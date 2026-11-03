@@ -147,7 +147,8 @@ def install(
     is_flag=True,
     help=(
         "Remove only stale SDD files (hand-copied, retired or no longer shipped) and stale MCP toolkit entries for "
-        "all hosts unless --host narrows it; current assets are kept."
+        "the selected hosts (default: claude, like a plain uninstall; repeat --host for codex/google); current "
+        "assets are kept."
     ),
 )
 @click.option(
@@ -155,7 +156,7 @@ def install(
     "keep",
     multiple=True,
     metavar="GLOB",
-    help="With --stalled: never remove paths matching GLOB (repeatable).",
+    help="With --stalled: never remove paths matching GLOB (repeatable); MCP entries match as <file>#<key>.",
 )
 def uninstall(
     path_: Path | None,
@@ -175,7 +176,7 @@ def uninstall(
         raise click.UsageError("--keep requires --stalled")
     root = _root(path_)
     if stalled:
-        selected = hosts or SUPPORTED_HOSTS
+        selected = hosts or ("claude",)
         refused: str | None = None
         try:
             _echo_actions(remove_stale_sdd_files(root, selected, keep=keep, dry_run=dry_run))

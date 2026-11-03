@@ -69,26 +69,33 @@ def gemini(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return path
 
 
-def test_cli_uninstall_stalled_all_hosts_by_default(tmp_path: Path, gemini: Path) -> None:
-    """Stalled cleanup scans all hosts while preserving current packaged assets."""
+def test_cli_uninstall_stalled_claude_by_default(tmp_path: Path, gemini: Path) -> None:
+    """Stalled cleanup defaults to the claude host, like a plain uninstall; other hosts need --host."""
     runner = CliRunner()
     for host in ("claude", "codex", "google"):
         result = runner.invoke(cli, ["sdd", "install", "--path", str(tmp_path), "--host", host])
         assert result.exit_code == 0, result.output
-    stale_paths = (
-        tmp_path / ".claude/commands/sdd-old.md",
+    claude_only = tmp_path / ".claude/commands/sdd-old.md"
+    other_hosts = (
         tmp_path / ".agents/skills/sdd-old/SKILL.md",
         tmp_path / ".agent/agents/sdd-worker/agent.md",
     )
-    for path in stale_paths:
+    for path in (claude_only, *other_hosts):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("stale\n", encoding="utf-8")
 
     result = runner.invoke(cli, ["sdd", "uninstall", "--path", str(tmp_path), "--stalled"])
 
     assert result.exit_code == 0, result.output
-    assert all(not path.exists() for path in stale_paths)
+    assert not claude_only.exists()
+    assert all(path.exists() for path in other_hosts)
     assert (tmp_path / ".claude/commands/sdd-status.md").is_file()
+
+    args = ["sdd", "uninstall", "--path", str(tmp_path), "--stalled", "--host", "codex", "--host", "google"]
+    result = runner.invoke(cli, args)
+
+    assert result.exit_code == 0, result.output
+    assert all(not path.exists() for path in other_hosts)
 
 
 def test_cli_uninstall_stalled_rejects_keep_edits(tmp_path: Path, gemini: Path) -> None:

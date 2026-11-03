@@ -226,7 +226,7 @@ git add sdd .claude .gitignore .gitattributes   # what --host claude wrote
 git commit -m "sdd: install the SDD flow" && git push   # reserve_ids reads the ledger from git
 parrot sdd ids reserve --kind task --count 1 --base-branch dev --label demo
 parrot sdd uninstall --dry-run
-parrot sdd uninstall --stalled --dry-run    # stale files + stale MCP entries, all hosts
+parrot sdd uninstall --stalled --dry-run    # stale files + stale MCP entries, claude host (add --host codex/google)
 ```
 
 `reserve_ids` needs the base branch (`dev` above, `base_branch` in `sdd/config.json`) on `origin`, with the seeded
