@@ -37,14 +37,14 @@
       "feature_id": "FEAT-792",
       "feature": "scripts-dangerous-actions-fixes",
       "spec": "sdd/specs/scripts-dangerous-actions-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "single task; owns dangerous_actions.py, the repo bash hook, its test file and the two doc sentences",
       "assigned_to": "agent:sdd-fix:98973fa0",
-      "started_at": null,
+      "started_at": "2026-11-03T02:50:24.172361+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5121-refspec-force-push-and-protected-set.md"
     }
