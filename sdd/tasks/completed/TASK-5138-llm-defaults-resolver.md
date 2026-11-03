@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-796 — Per-Component LLM Defaults
 **Spec**: `sdd/specs/per-component-llm-defaults.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5137
@@ -241,10 +241,8 @@ def test_api_key_cascade_order(env): ...  # <C>_GOOGLE_API_KEY in order -> legac
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker; seat gpt-5.6-terra (codex), 1 attempt, 0 retries
+**Date**: 2026-11-04
+**Notes**: Delivery reviewed vs task; merge-tier validation green (12 passed). Review not recorded (coder_record_review server bug); 0 fix commits.
 
 **Deviations from spec**: none

@@ -67,7 +67,7 @@
       "feature_id": "FEAT-796",
       "feature": "per-component-llm-defaults",
       "spec": "sdd/specs/per-component-llm-defaults.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -77,8 +77,9 @@
       "parallelism_notes": "reads conf.DEFAULT_LLM created by TASK-5137 (parrot/conf.py)",
       "assigned_to": null,
       "started_at": "2026-11-03T22:26:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5138-llm-defaults-resolver.md"
+      "completed_at": "2026-11-03T23:57:44+00:00",
+      "file": "sdd/tasks/completed/TASK-5138-llm-defaults-resolver.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5139",
