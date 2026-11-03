@@ -1,0 +1,51 @@
+{
+  "feature": "sdd-worker-gh-only-sandbox",
+  "feature_id": "BRIEF-sdd-worker-gh-only-sandbox",
+  "spec": "sdd/briefs/sdd-worker-gh-only-sandbox.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-11-03",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-sdd-worker-gh-only-sandbox-1",
+      "slug": "config-domains-gh-token",
+      "title": "Config-driven sandbox domains and host-resolved GH_TOKEN for sdd-worker",
+      "feature_id": "BRIEF-sdd-worker-gh-only-sandbox",
+      "feature": "sdd-worker-gh-only-sandbox",
+      "spec": "sdd/briefs/sdd-worker-gh-only-sandbox.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "code-only; no shared files with task 2",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/sdd-worker-gh-only-sandbox/tasks/HOTFIX-sdd-worker-gh-only-sandbox-1-config-domains-gh-token.md"
+    },
+    {
+      "id": "HOTFIX-sdd-worker-gh-only-sandbox-2",
+      "slug": "docs-host-sdd-done",
+      "title": "Document gh-only GitHub access and host-side /sdd-done",
+      "feature_id": "BRIEF-sdd-worker-gh-only-sandbox",
+      "feature": "sdd-worker-gh-only-sandbox",
+      "spec": "sdd/briefs/sdd-worker-gh-only-sandbox.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "HOTFIX-sdd-worker-gh-only-sandbox-1"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents the pyproject keys and --no-gh-token flag that task 1 defines in native_claude_sandbox.py/pyproject.toml; ordered so docs match shipped names",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/sdd-worker-gh-only-sandbox/tasks/HOTFIX-sdd-worker-gh-only-sandbox-2-docs-host-sdd-done.md"
+    }
+  ]
+}
