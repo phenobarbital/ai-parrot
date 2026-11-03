@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-794 — Prompt Library — writable again, with manual order
 **Spec**: `sdd/specs/prompt-library-writable-sort-order.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -174,8 +174,13 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: claude-opus-5-5 (interactive session, Emmanuel Arroyo)
+**Date**: 2026-11-03
+**Notes**: `sort_order: Optional[int]` added after `agent_id`; `prompt_category` defaults to `PromptCategory.OTHER.value`;
+the docstring now lists the deployed columns (and that `agent_id` / `sort_order` come from Studio migration `0009`)
+instead of DDL that never ran. Three model tests added; the `:35` workaround removed. Red first: 4 failed / 16 passed
+before the model change (including `test_agent_id_field_accepts_slug` once its workaround was gone), then 20 passed.
+`pytest packages/ai-parrot/tests/handlers/test_prompt_library.py -q` → 20 passed. No ruff in the shared venv, so no
+linter was run.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

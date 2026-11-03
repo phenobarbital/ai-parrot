@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-794 — Prompt Library — writable again, with manual order
 **Spec**: `sdd/specs/prompt-library-writable-sort-order.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -245,8 +245,17 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: claude-opus-5-5 (interactive session, Emmanuel Arroyo)
+**Date**: 2026-11-03
+**Notes**: `0009_prompt_library_agent_id_sort_order.sql` (lock + two `ALTER TABLE IF EXISTS … ADD COLUMN IF NOT EXISTS`),
+`STUDIO_SCHEMA_REQUIRED = 9`, `MANIFEST.json` and the trailer written by `stamp_migrations` (sha256 `484ca733…`; the
+stamp ran against the worktree's module — path asserted first — and the main checkout stayed clean). Version-pinned
+tests renamed `_nine`; `test_backend` also checks that `upto=8` now reports "missing 9". New
+`test_0009_adds_prompt_library_columns_idempotently`: no table → chain applies with 9; production shape → `[9]` adds
+both nullable columns; re-running the body is a no-op.
+Validation, with `TEST_STUDIO_PG_DSN` on a disposable PostgreSQL 16 (127.0.0.1:5433): `test_migration_files.py`,
+`test_backend.py`, `test_migrations_db.py` → 50 passed, 0 skipped.
+Mutation check: without `IF EXISTS` (re-stamped) the new test fails with `relation "navigator.prompt_library" does not
+exist`; restored, it passes.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (spec rev 0.2 already specifies `ALTER TABLE IF EXISTS`).

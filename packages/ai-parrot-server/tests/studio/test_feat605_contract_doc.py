@@ -95,14 +95,15 @@ def test_x14_lists_the_new_codes(spec):
 
 
 @pytest.mark.parametrize("spec", SPECS)
-def test_required_schema_version_is_eight(spec):
-    assert "required versions 1..8 for the `database` backend" in _contract(spec)
-    assert "1..5" not in _contract(spec)
+def test_required_schema_version_is_nine(spec):
+    assert "required versions 1..9 for the `database` backend" in _contract(spec)
+    assert "1..5" not in _contract(spec) and "1..8" not in _contract(spec)
 
 
-def test_storage_spec_states_required_eight():
+def test_storage_spec_states_required_nine():
     text = (ROOT / "sdd" / "specs" / "agentstudio-db-storage.spec.md").read_text(encoding="utf-8")
-    assert "STUDIO_SCHEMA_REQUIRED = 8" in text and "STUDIO_SCHEMA_REQUIRED stays 5" not in text
+    assert "STUDIO_SCHEMA_REQUIRED = 9" in text and "STUDIO_SCHEMA_REQUIRED = 8" not in text
+    assert "STUDIO_SCHEMA_REQUIRED stays 5" not in text
 
 
 def test_doc_error_table_has_no_open_question_and_documents_behaviour_changes():

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import datetime
 
 
 from parrot.handlers.models.bots import PromptLibrary
@@ -32,7 +33,6 @@ class TestPromptLibraryModel:
             agent_id="web_search_agent",
             title="Find docs",
             query="Search official docs for {topic}.",
-            prompt_category="other",  # use string value; Enum default has pre-existing issue
         )
         assert p.agent_id == "web_search_agent"
         assert p.chatbot_id is None
@@ -93,6 +93,36 @@ class TestPromptLibraryModel:
     def test_meta_schema(self):
         """Model Meta.schema must be 'navigator'."""
         assert PromptLibrary.Meta.schema == "navigator"
+
+    def test_prompt_category_default_validates(self):
+        """No prompt_category → builds and defaults to the string "other" (FEAT-794)."""
+        p = PromptLibrary(chatbot_id=uuid.uuid4(), title="t", query="q")
+        assert p.prompt_category == "other"
+        assert isinstance(p.prompt_category, str)
+
+    def test_sort_order_optional_int(self):
+        """sort_order exists, defaults to None and accepts an int (FEAT-794)."""
+        assert PromptLibrary(chatbot_id=uuid.uuid4(), title="t", query="q").sort_order is None
+        assert PromptLibrary(chatbot_id=uuid.uuid4(), title="t", query="q", sort_order=3).sort_order == 3
+
+    def test_model_builds_from_full_row(self):
+        """Every DB column builds the strict model, as asyncdb does on SELECT * (FEAT-794)."""
+        row = {
+            "prompt_id": uuid.uuid4(),
+            "chatbot_id": uuid.uuid4(),
+            "agent_id": None,
+            "title": "Daily summary",
+            "query": "Summarise {{yesterday}}.",
+            "description": None,
+            "prompt_category": "other",
+            "prompt_tags": [],
+            "created_at": datetime.now(),
+            "created_by": 1,
+            "updated_at": datetime.now(),
+            "sort_order": 0,
+        }
+        p = PromptLibrary(**row)
+        assert p.sort_order == 0
 
 
 # ---------------------------------------------------------------------------

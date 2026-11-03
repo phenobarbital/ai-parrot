@@ -221,6 +221,7 @@ Each new assertion is mutation-checked: revert the fix and the test goes red.
 
 tests:
 - packages/ai-parrot/tests/handlers/test_prompt_library.py
+- packages/ai-parrot-server/tests/handlers/test_prompt_library_handler.py
 - packages/ai-parrot-server/tests/studio/storage/test_migration_files.py
 - packages/ai-parrot-server/tests/studio/storage/test_migrations_db.py
 - packages/ai-parrot-server/tests/studio/storage/test_backend.py
@@ -382,4 +383,5 @@ Status: skipped (spec drafted from a reviewed brainstorm; run before approval if
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-02 | Juan Ruffato (with Claude) | Initial draft from the astudio-public-prompts review and the staging smoke |
+| 0.3 | 2026-11-03 | Emmanuel Arroyo (with Claude) | Handler tests live in `packages/ai-parrot-server/tests/handlers/test_prompt_library_handler.py` (from `packages/ai-parrot/tests` a worktree run imports `parrot.handlers` from the main checkout); added to the Validation Contract |
 | 0.2 | 2026-11-03 | Emmanuel Arroyo (with Claude) | FEAT-794 reserved; `0009` uses `ALTER TABLE IF EXISTS` (test databases and the FieldSync runner may lack `prompt_library`); target version left to the release owner; tasks TASK-5125..5128 |
