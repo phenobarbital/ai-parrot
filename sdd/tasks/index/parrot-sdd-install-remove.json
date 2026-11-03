@@ -186,7 +186,7 @@
       "feature_id": "FEAT-795",
       "feature": "parrot-sdd-install-remove",
       "spec": "sdd/specs/parrot-sdd-install-remove.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -196,8 +196,9 @@
       "parallelism_notes": "TASK-5135: docs verify markers flag=sdd uninstall:--stalled/--keep must resolve against the real CLI (test_cited_flags_exist); the worktree list/remove markers come from TASK-5133 via TASK-5135.",
       "assigned_to": null,
       "started_at": "2026-11-03T17:07:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5136-docs-stalled-and-worktree.md"
+      "completed_at": "2026-11-03T18:00:39+00:00",
+      "file": "sdd/tasks/completed/TASK-5136-docs-stalled-and-worktree.md",
+      "verification": "verified"
     }
   ]
 }
