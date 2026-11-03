@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_HOSTS: tuple[str, ...] = ("claude", "codex", "google")
 MANIFEST_SCHEMA_VERSION = 1
+SETTINGS_PATH = Path(".claude/settings.json")
 RECEIPT_PATH = Path("sdd/.sdd-installed.json")  # C4: committed with sdd/; .parrot/ is gitignored (.gitignore:411)
 RECEIPT_SCHEMA_VERSION = 1
 GITIGNORE_BEGIN = "# >>> parrot sdd (managed) >>>"
@@ -68,7 +69,7 @@ _GUARD_MARKERS = ("worktree guard --hook", "worktree_environment")
 
 FileState = Literal["missing", "current", "outdated", "edited", "foreign"]
 #: Plan vocabulary (C5). install: write | upgrade | overwrite | skip-current | skip-edited | skip-foreign |
-#: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed | base-branch. uninstall: remove |
+#: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed | base-branch | dangerous-guard. uninstall: remove |
 #: keep-edited | keep-foreign | skip-missing | keep-shared | gitignore-remove | gitattributes-remove |
 #: keep-gitattributes | ledger-hooks-remove | keep-ledger-hooks | receipt-remove.   [rev 0.5 C23 / D5]
 PlanAction = Literal[
@@ -86,6 +87,8 @@ PlanAction = Literal[
     "ledger-seed",
     "config-seed",
     "base-branch",
+    "dangerous-guard",
+    "dangerous-guard-remove",
     "remove",
     "keep-edited",
     "keep-foreign",
@@ -226,6 +229,9 @@ def load_receipt(root: Path) -> dict[str, Any]:
         "blocks": dict(blocks) if isinstance(blocks, dict) else {},
         "ledger_hooks": list(hooks) if isinstance(hooks, list) else [],
     }
+    settings_hooks = data.get("settings_hooks")
+    if isinstance(settings_hooks, list):
+        receipt["settings_hooks"] = [h for h in settings_hooks if isinstance(h, str)]  # C32
     if isinstance(data.get("base_branch_created"), str):
         receipt["base_branch_created"] = data["base_branch_created"]  # C31, status only
     return receipt
@@ -278,6 +284,133 @@ def guard_hook_command(*, portable: bool) -> tuple[str, Literal["bare", "baked"]
     return baked + _GUARD_HOOK_SUFFIX, "baked"
 
 
+#: rev 0.11 C32 — the dangerous-actions guard command (one executable plus arguments: no shell operators, so the
+#: same line runs under cmd, PowerShell and bash).
+DANGEROUS_HOOK_LINE = "parrot sdd hooks dangerous-actions --hook"
+_DANGEROUS_SUFFIX = " sdd hooks dangerous-actions --hook"
+_DANGEROUS_MATCHER = "Bash|Edit|Write|MultiEdit"
+
+
+def dangerous_hook_command(*, portable: bool) -> tuple[str, Literal["bare", "baked"]]:
+    """Return the dangerous-actions guard command and its form; same bare/baked rule as :func:`guard_hook_command`."""
+    guard, form = guard_hook_command(portable=portable)
+    if form == "bare":
+        return DANGEROUS_HOOK_LINE, "bare"
+    return guard.removesuffix(_GUARD_HOOK_SUFFIX) + _DANGEROUS_SUFFIX, "baked"
+
+
+def _is_dangerous_command(command: object) -> bool:
+    return isinstance(command, str) and command.rstrip().endswith(_DANGEROUS_SUFFIX.strip())
+
+
+def _pre_tool_use(settings: dict[str, Any], path: Path, *, create: bool) -> list[Any] | None:
+    hooks = settings.get("hooks")
+    if hooks is None:
+        if not create:
+            return None
+        hooks = settings["hooks"] = {}
+    if not isinstance(hooks, dict):
+        raise RuntimeError(f"{path}: 'hooks' is not a JSON object")
+    pre = hooks.get("PreToolUse")
+    if pre is None:
+        if not create:
+            return None
+        pre = hooks["PreToolUse"] = []
+    if not isinstance(pre, list):
+        raise RuntimeError(f"{path}: 'hooks.PreToolUse' is not a list")
+    return pre
+
+
+def _install_dangerous_guard(root: Path, receipt: dict[str, Any], *, portable: bool) -> list[str]:
+    """C32: merge one dangerous-actions PreToolUse entry into ``.claude/settings.json`` (foreign entries untouched)."""
+    from parrot.knowledge.wiki.claude_code.installer import _load_settings, _write_settings  # lazy, as for ledger hooks
+
+    path = root / SETTINGS_PATH
+    settings = _load_settings(path) or {}
+    pre = _pre_tool_use(settings, path, create=True)
+    assert pre is not None
+    for entry in pre:
+        for hook in entry.get("hooks", []) if isinstance(entry, dict) else []:
+            command = hook.get("command") if isinstance(hook, dict) else None
+            if isinstance(command, str) and "dangerous-actions-blocker" in command:
+                return [f"note: {SETTINGS_PATH} — a dangerous-actions-blocker hook is already registered; guard skipped"]
+    command, form = dangerous_hook_command(portable=portable)
+    ours = [
+        hook
+        for entry in pre
+        if isinstance(entry, dict)
+        for hook in entry.get("hooks", [])
+        if isinstance(hook, dict) and _is_dangerous_command(hook.get("command"))
+    ]
+    if ours:
+        if all(h.get("command") == command for h in ours):
+            result = f"{SETTINGS_PATH} — dangerous-actions guard already registered"
+        else:
+            for hook in ours:
+                hook["command"] = command
+            _write_settings(path, settings)
+            result = f"{SETTINGS_PATH} — dangerous-actions guard updated ({form})"
+    else:
+        pre.append({"matcher": _DANGEROUS_MATCHER, "hooks": [{"type": "command", "command": command, "timeout": 10}]})
+        _write_settings(path, settings)
+        result = f"{SETTINGS_PATH} — dangerous-actions guard registered ({form})"
+    recorded = receipt.setdefault("settings_hooks", [])
+    if "dangerous-actions" not in recorded:
+        recorded.append("dangerous-actions")
+    return [result]
+
+
+def _remove_dangerous_guard(root: Path, receipt: dict[str, Any]) -> list[str]:
+    """C32: remove only our entry (matched by its command suffix) from ``.claude/settings.json``."""
+    from parrot.knowledge.wiki.claude_code.installer import _load_settings, _write_settings
+
+    path = root / SETTINGS_PATH
+    receipt["settings_hooks"] = [h for h in receipt.get("settings_hooks", []) if h != "dangerous-actions"]
+    settings = _load_settings(path)
+    if settings is None:
+        return []
+    pre = _pre_tool_use(settings, path, create=False)
+    if pre is None:
+        return []
+    changed = False
+    kept: list[Any] = []
+    for entry in pre:
+        if isinstance(entry, dict) and isinstance(entry.get("hooks"), list):
+            remaining = [h for h in entry["hooks"] if not (isinstance(h, dict) and _is_dangerous_command(h.get("command")))]
+            if len(remaining) != len(entry["hooks"]):
+                changed = True
+                if not remaining:
+                    continue
+                entry["hooks"] = remaining
+        kept.append(entry)
+    if not changed:
+        return []
+    pre[:] = kept
+    if not pre:
+        settings["hooks"].pop("PreToolUse", None)
+        if not settings["hooks"]:
+            settings.pop("hooks")
+    _write_settings(path, settings)
+    return [f"{SETTINGS_PATH} — dangerous-actions guard removed"]
+
+
+def _dangerous_guard_report(root: Path) -> dict[str, Any]:
+    """C32 status: ``{"form": "bare" | "baked" | None, "command": str | None}`` from ``.claude/settings.json``."""
+    try:
+        from parrot.knowledge.wiki.claude_code.installer import _load_settings
+
+        settings = _load_settings(root / SETTINGS_PATH) or {}
+        pre = _pre_tool_use(settings, root / SETTINGS_PATH, create=False) or []
+    except (RuntimeError, ImportError):
+        return {"form": None, "command": None}
+    for entry in pre:
+        for hook in entry.get("hooks", []) if isinstance(entry, dict) else []:
+            command = hook.get("command") if isinstance(hook, dict) else None
+            if _is_dangerous_command(command):
+                return {"form": "bare" if command == DANGEROUS_HOOK_LINE else "baked", "command": command}
+    return {"form": None, "command": None}
+
+
 def _rendered_payload(entry: dict[str, Any], hook: str) -> bytes:
     """Packaged bytes of ``entry`` with the guard-hook line replaced by ``hook`` (YAML single-quote escaped)."""
     payload = (_assets_root() / entry["source"]).read_bytes()
@@ -318,6 +451,7 @@ def plan_install(
     force: bool = False,
     hook: str = GUARD_HOOK_LINE,
     base_branch: str | None = None,
+    dangerous_guard: bool = True,
 ) -> list[PlannedAction]:
     """Pure: the ordered plan for ``install`` (assets, seeds, gitignore, ledger, config). No I/O writes."""
     receipt = load_receipt(root)
@@ -356,6 +490,8 @@ def plan_install(
 
     base = base_branch or load_sdd_config(root).base_branch
     plan.append(PlannedAction(action="base-branch", target=base, note=_base_branch_state(root, base)))  # C31
+    if dangerous_guard and "claude" in _validate_hosts(hosts):
+        plan.append(PlannedAction(action="dangerous-guard", target=SETTINGS_PATH.as_posix()))  # C32
     return plan
 
 
@@ -514,6 +650,8 @@ def plan_uninstall(root: Path, hosts: Sequence[str]) -> list[PlannedAction]:
         else:
             plan.append(PlannedAction(action="remove", target=target))
             removed.add(target)
+    if "claude" in selected_hosts and "dangerous-actions" in receipt.get("settings_hooks", []):
+        plan.append(PlannedAction(action="dangerous-guard-remove", target=SETTINGS_PATH.as_posix()))  # C32
     if set(receipt["files"]) - removed:
         return plan  # recorded files remain: the shared blocks, hooks and receipt stay
     gitignore = root / ".gitignore"
@@ -787,6 +925,7 @@ def install_sdd_integration(
     base_branch: str | None = None,
     push_base: bool = False,
     hotfix_base: str | None = None,
+    dangerous_guard: bool = True,
 ) -> list[str]:
     """Deploy packaged SDD assets for ``hosts`` into ``root``; never overwrites foreign content.
 
@@ -801,6 +940,8 @@ def install_sdd_integration(
             baking the installing venv's ``parrot`` when the launcher is not on PATH (C25).
         base_branch: C31 — seed ``sdd/config.json`` with this base branch (when absent) and prepare it.
             Conflicts with an existing config that sets a different one.
+        dangerous_guard: C32 — register the PreToolUse dangerous-actions guard in ``.claude/settings.json``
+            (claude host); ``False`` skips it.
         push_base: C31 — also ``git push -u origin <base_branch>`` when origin lacks it.
         hotfix_base: C31 — seed ``sdd/config.json`` with this hotfix branch (when absent). Needed when
             ``base_branch`` is ``main`` (the default hotfix branch): the two must differ.
@@ -826,7 +967,9 @@ def install_sdd_integration(
         if not (root / "sdd/config.json").exists():
             seed = config
     hook, form = guard_hook_command(portable=portable)
-    plan = plan_install(root, hosts, force=force, hook=hook, base_branch=config.base_branch)
+    plan = plan_install(
+        root, hosts, force=force, hook=hook, base_branch=config.base_branch, dangerous_guard=dangerous_guard
+    )
     if dry_run:
         return [str(step) for step in plan]
     receipt = load_receipt(root)
@@ -847,6 +990,8 @@ def install_sdd_integration(
             actions.append(_seed_config(root, seed))
         elif step.action == "base-branch":
             actions.extend(_base_branch_step(root, config, push=push_base, receipt=receipt))
+        elif step.action == "dangerous-guard":
+            actions.extend(_install_dangerous_guard(root, receipt, portable=portable))
     _save_receipt(root, receipt)
     actions.append(f"{RECEIPT_PATH} — written; commit it with the installed files (it drives upgrades and uninstall)")
     actions.append(_test_command_warning(config) or "")
@@ -923,6 +1068,8 @@ def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *,
             receipt["ledger_hooks"] = []
         elif step.action == "keep-ledger-hooks":
             actions.append(f"git ledger hooks — kept (keep-ledger-hooks: {step.note})")
+        elif step.action == "dangerous-guard-remove":
+            actions.extend(_remove_dangerous_guard(root, receipt))
         elif step.action == "receipt-remove":
             drop_receipt = True
     if receipt.get("base_branch_created"):
@@ -1050,5 +1197,6 @@ def sdd_status(root: Path) -> dict[str, Any]:
         "gitattributes": attributes.is_file() and GITIGNORE_BEGIN in attributes.read_text(encoding="utf-8"),
         "ledger_hooks": _ledger_hooks_present(root),
         "guard_hook": guard,
+        "dangerous_guard": _dangerous_guard_report(root),
         "receipt_version": receipt.get("version"),
     }

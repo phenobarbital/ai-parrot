@@ -267,6 +267,7 @@ def _dispatch(script: str, load_entry: Callable[[], Callable[[], Any]]) -> int:
 
 
 SDD_HOOK_ARGV = ["sdd", "worktree", "guard", "--hook"]
+DANGEROUS_HOOK_ARGV = ["sdd", "hooks", "dangerous-actions", "--hook"]  # FEAT-633 C32
 
 
 def main_parrot() -> int:
@@ -281,6 +282,15 @@ def main_parrot() -> int:
                 return 0
 
             return run_hook
+        if sys.argv[1:] == DANGEROUS_HOOK_ARGV:
+            from parrot.sdd.scripts.dangerous_actions import main as dangerous_main
+
+            def run_dangerous() -> int:
+                sys.argv[1:] = ["--hook"]
+                dangerous_main()
+                return 0
+
+            return run_dangerous
         from parrot.cli import cli
         return cli
     return _dispatch("parrot", load)

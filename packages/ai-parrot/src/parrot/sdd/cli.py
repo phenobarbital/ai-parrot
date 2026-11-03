@@ -78,6 +78,11 @@ def sdd() -> None:
     default=None,
     help="Hotfix branch to seed (default: main); required with --base-branch main.",
 )
+@click.option(
+    "--no-dangerous-guard",
+    is_flag=True,
+    help="Do not register the PreToolUse dangerous-actions guard in .claude/settings.json.",
+)
 @_dry_run_option
 def install(
     path_: Path | None,
@@ -87,6 +92,7 @@ def install(
     base_branch: str | None,
     push_base: bool,
     hotfix_base: str | None,
+    no_dangerous_guard: bool,
     dry_run: bool,
 ) -> None:
     """Deploy the packaged SDD assets into the repository (upgrades untouched files, keeps your edits)."""
@@ -101,6 +107,7 @@ def install(
                 base_branch=base_branch,
                 push_base=push_base,
                 hotfix_base=hotfix_base,
+                dangerous_guard=not no_dangerous_guard,
             )
         )
     except (ValueError, RuntimeError) as exc:
@@ -199,7 +206,10 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
         "run": ("run_closeout_hooks", (), "Dispatch /sdd-done closeout hooks."),
         "resolve-issues": ("close_resolved_issues", (), "Close the ledger issues a finished feature fixed."),
     },
-    "hooks": {"install": ("install_hooks", (), "Install the SDD git hooks.")},
+    "hooks": {
+        "install": ("install_hooks", (), "Install the SDD git hooks."),
+        "dangerous-actions": ("dangerous_actions", (), "Serve the PreToolUse dangerous-actions guard (--hook)."),
+    },
 }
 #: Packaged modules with a main() that are deliberately NOT mounted (C22: /sdd-insight does not ship).
 # `native_claude_sandbox.main()` serves the `launch-worker` script entry; its CLI is `parrot sdd launch worker`.
