@@ -9,7 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from parrot.sdd.installer import RECEIPT_PATH, SUPPORTED_HOSTS, install_sdd_integration
+from parrot.sdd.installer import (
+    RECEIPT_PATH,
+    SUPPORTED_HOSTS,
+    install_sdd_integration,
+    remove_stale_sdd_files,
+    sdd_status,
+    uninstall_sdd_integration,
+)
 from parrot.sdd.stale import SOURCE_CHECKOUT_MARKER, find_stale, is_source_checkout
 
 
@@ -149,3 +156,111 @@ def test_unknown_host_raises(stale_repo: Path) -> None:
     """Unsupported host names are rejected before scanning the filesystem."""
     with pytest.raises(ValueError, match="unknown host"):
         find_stale(stale_repo, ("unknown",))
+
+
+def test_remove_stale_removes_and_prunes(stale_repo: Path) -> None:
+    """Stale files and their empty parents are removed without changing current assets."""
+    current_asset = stale_repo / "sdd/WORKFLOW.md"
+    current_bytes = current_asset.read_bytes()
+
+    actions = remove_stale_sdd_files(stale_repo)
+
+    assert not (stale_repo / "scripts/sdd").exists()
+    assert not (stale_repo / ".agent/agents/sdd-worker").exists()
+    assert current_asset.read_bytes() == current_bytes
+    assert any("scripts/sdd/reserve_ids.py — removed (retired)" in action for action in actions)
+    assert actions[-1].startswith("note: commit the deletions")
+
+
+def test_remove_stale_updates_receipt(stale_repo: Path) -> None:
+    """Removing a receipt orphan drops only its stale receipt key and keeps the receipt."""
+    receipt_path = stale_repo / RECEIPT_PATH
+    before = json.loads(receipt_path.read_text(encoding="utf-8"))
+
+    remove_stale_sdd_files(stale_repo)
+
+    after = json.loads(receipt_path.read_text(encoding="utf-8"))
+    expected_files = dict(before["files"])
+    expected_files.pop(".claude/commands/sdd-dropped.md")
+    assert after["files"] == expected_files
+    assert receipt_path.is_file()
+
+
+def test_remove_stale_keep_glob(stale_repo: Path, tmp_path: Path) -> None:
+    """Keep globs and symlink safeguards preserve matching stale entries."""
+    kept = stale_repo / ".claude/commands/sdd-team-local.md"
+    kept.write_text("team command\n", encoding="utf-8")
+    outside = tmp_path / "outside-rule.md"
+    outside.write_text("outside\n", encoding="utf-8")
+    symlink = stale_repo / ".claude/rules/worktree-start-feature.md"
+    os.symlink(outside, symlink)
+
+    actions = remove_stale_sdd_files(stale_repo, keep=(".claude/commands/sdd-team-*",))
+
+    assert kept.read_text(encoding="utf-8") == "team command\n"
+    assert symlink.is_symlink()
+    assert ".claude/commands/sdd-team-local.md — kept (--keep)" in actions
+    assert "warning: .claude/rules/worktree-start-feature.md — symlink; kept" in actions
+
+
+def test_remove_stale_dry_run_writes_nothing(stale_repo: Path) -> None:
+    """A stale-removal dry run leaves every repository file byte-identical."""
+
+    def snapshot() -> dict[str, bytes]:
+        return {
+            path.relative_to(stale_repo).as_posix(): path.read_bytes()
+            for path in stale_repo.rglob("*")
+            if path.is_file()
+        }
+
+    before = snapshot()
+    actions = remove_stale_sdd_files(stale_repo, dry_run=True)
+
+    assert snapshot() == before
+    assert actions
+    assert all(action.startswith("plan:") for action in actions)
+
+
+def test_remove_stale_refuses_source_checkout(stale_repo: Path) -> None:
+    """Source checkouts reject real deletion while retaining an inspectable dry run."""
+    marker = stale_repo / SOURCE_CHECKOUT_MARKER
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="refusing:.*source checkout"):
+        remove_stale_sdd_files(stale_repo)
+
+    assert remove_stale_sdd_files(stale_repo, dry_run=True)[0].startswith("note:")
+    assert (stale_repo / "scripts/sdd/reserve_ids.py").is_file()
+
+
+def test_install_reports_stale_note(stale_repo: Path) -> None:
+    """Install reports stale files once without deleting them."""
+    orphan = stale_repo / "scripts/sdd/reserve_ids.py"
+
+    actions = install_sdd_integration(stale_repo, ("claude",), sdd_coder=False)
+
+    notes = [action for action in actions if "stale SDD file(s)" in action]
+    assert len(notes) == 1
+    assert notes[0].startswith("note:")
+    assert orphan.read_text(encoding="utf-8") == "stale\n"
+
+
+def test_status_reports_stale(stale_repo: Path) -> None:
+    """Status exposes serialized stale-file entries and the stale-MCP key."""
+    report = sdd_status(stale_repo)
+
+    assert any(entry["path"] == "scripts/sdd/reserve_ids.py" for entry in report["stale"])
+    assert "stale_mcp" in report
+    assert isinstance(report["stale_mcp"], list)
+
+
+def test_plain_uninstall_unchanged(stale_repo: Path) -> None:
+    """Plain uninstall continues to leave stale files outside its manifest plan untouched."""
+    orphan = stale_repo / "scripts/sdd/reserve_ids.py"
+    dropped = stale_repo / ".claude/commands/sdd-dropped.md"
+
+    uninstall_sdd_integration(stale_repo, ("claude",))
+
+    assert orphan.read_text(encoding="utf-8") == "stale\n"
+    assert dropped.read_text(encoding="utf-8") == "stale\n"

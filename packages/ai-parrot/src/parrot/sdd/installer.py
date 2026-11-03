@@ -12,6 +12,7 @@ never touched again.
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import os
@@ -75,7 +76,8 @@ FileState = Literal["missing", "current", "outdated", "edited", "foreign"]
 #: Plan vocabulary (C5). install: write | upgrade | overwrite | skip-current | skip-edited | skip-foreign |
 #: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed | base-branch | dangerous-guard | toolkits. uninstall: remove |
 #: keep-edited | keep-foreign | skip-missing | keep-shared | gitignore-remove | gitattributes-remove |
-#: keep-gitattributes | ledger-hooks-remove | keep-ledger-hooks | toolkits-remove | receipt-remove.   [rev 0.5 C23 / D5]
+#: keep-gitattributes | ledger-hooks-remove | keep-ledger-hooks | toolkits-remove | receipt-remove.
+#: stale: stale-remove | keep-stale | skip-symlink.   [rev 0.5 C23 / D5]
 PlanAction = Literal[
     "write",
     "upgrade",
@@ -106,6 +108,9 @@ PlanAction = Literal[
     "ledger-hooks-remove",
     "keep-ledger-hooks",
     "receipt-remove",
+    "stale-remove",
+    "keep-stale",
+    "skip-symlink",
 ]
 
 
@@ -1160,6 +1165,7 @@ def install_sdd_integration(
             actions.append(_baked_venv_warning(root) or "")
     installed = [root / t for t in receipt["files"] if (root / t).is_file()]
     actions.extend(_audit(root, installed))
+    actions.append(_stale_note(root, hosts))
     return [a for a in actions if a]
 
 
@@ -1262,6 +1268,96 @@ def _prune_empty_parents(root: Path, path: Path) -> None:
         except OSError:
             break
         parent = parent.parent
+
+
+def _stale_note(root: Path, hosts: Sequence[str]) -> str:
+    """Report-only install note (G5): count stale files and stale MCP entries."""
+    from parrot.mcp.toolkit_stale import find_stale_mcp_entries
+    from parrot.sdd.stale import find_stale, is_source_checkout
+
+    files = 0 if is_source_checkout(root) else len(find_stale(root, SUPPORTED_HOSTS))
+    try:
+        entries = len(find_stale_mcp_entries(root, hosts))
+    except (ValueError, OSError, RuntimeError):
+        entries = 0
+    if files == entries == 0:
+        return ""
+    entry_label = "entry" if entries == 1 else "entries"
+    return (
+        f"note: {files} stale SDD file(s), {entries} stale MCP {entry_label} — review with "
+        "`parrot sdd uninstall --stalled --dry-run`"
+    )
+
+
+def plan_stale(root: Path, hosts: Sequence[str], *, keep: Sequence[str] = ()) -> list[PlannedAction]:
+    """Build the pure stale-file removal plan, honoring keep globs and symlink safety."""
+    from parrot.sdd.stale import find_stale
+
+    plan: list[PlannedAction] = []
+    for entry in find_stale(root, hosts):
+        if entry.symlink:
+            plan.append(PlannedAction(action="skip-symlink", target=entry.path, note="symlink; never followed"))
+        elif any(fnmatch.fnmatch(entry.path, pattern) for pattern in keep):
+            plan.append(PlannedAction(action="keep-stale", target=entry.path, note="--keep"))
+        else:
+            plan.append(
+                PlannedAction(
+                    action="stale-remove",
+                    target=entry.path,
+                    note=f"{entry.reason}: {entry.detail}",
+                )
+            )
+    return plan
+
+
+def remove_stale_sdd_files(
+    root: Path, hosts: Sequence[str] = SUPPORTED_HOSTS, *, keep: Sequence[str] = (), dry_run: bool = False
+) -> list[str]:
+    """Remove stale SDD files while preserving current assets, seeds, state, and the receipt."""
+    from parrot.sdd.stale import is_source_checkout
+
+    source = is_source_checkout(root)
+    plan = plan_stale(root, hosts, keep=keep)
+    if dry_run:
+        head = [f"note: {root} is the ai-parrot source checkout — a real run refuses to delete here"] if source else []
+        return head + ([str(step) for step in plan] or ["no stale SDD files"])
+    if source:
+        raise RuntimeError(
+            f"refusing: {root} is the ai-parrot source checkout — its sdd-* files and scripts/sdd/ are the asset "
+            "sources; use --dry-run to inspect"
+        )
+    if not plan:
+        return ["no stale SDD files"]
+
+    receipt = load_receipt(root)
+    actions: list[str] = []
+    removed = 0
+    receipt_changed = False
+    real_root = Path(os.path.realpath(root))
+    for step in plan:
+        if step.action == "stale-remove":
+            path = root / step.target
+            real_parent = Path(os.path.realpath(path.parent))
+            if not _under(real_parent, real_root):
+                actions.append(f"warning: {step.target} — resolves outside the repository; kept")
+                continue
+            path.unlink(missing_ok=True)
+            _prune_empty_parents(root, path)
+            popped = receipt["files"].pop(step.target, None)
+            receipt_changed = receipt_changed or popped is not None
+            reason = step.note.split(":", 1)[0]
+            actions.append(f"{step.target} — removed ({reason})")
+            removed += 1
+        elif step.action == "keep-stale":
+            actions.append(f"{step.target} — kept (--keep)")
+        elif step.action == "skip-symlink":
+            actions.append(f"warning: {step.target} — symlink; kept")
+
+    if receipt_changed and (root / RECEIPT_PATH).exists():
+        _save_receipt(root, receipt)
+    if removed:
+        actions.append("note: commit the deletions (git add -A <paths> && git commit)")
+    return actions
 
 
 def uninstall_sdd_integration(
@@ -1419,6 +1515,25 @@ def _toolkits_report(root: Path) -> dict[str, str]:
     return {name: rows.get(name, "not_installed") for name in SDD_TOOLKITS}
 
 
+def _stale_report(root: Path) -> list[dict[str, Any]]:
+    """Return serializable stale-file entries, skipping source checkouts."""
+    from parrot.sdd.stale import find_stale, is_source_checkout
+
+    if is_source_checkout(root):
+        return []
+    return [entry.model_dump() for entry in find_stale(root)]
+
+
+def _stale_mcp_report(root: Path) -> list[dict[str, Any]]:
+    """Return serializable stale MCP entries without allowing lookup failures to break status."""
+    from parrot.mcp.toolkit_stale import find_stale_mcp_entries
+
+    try:
+        return [entry.model_dump() for entry in find_stale_mcp_entries(root, SUPPORTED_HOSTS)]
+    except (ValueError, OSError, RuntimeError):
+        return []
+
+
 def sdd_status(root: Path) -> dict[str, Any]:
     """Per-host install state (C4/C15/C25):
 
@@ -1427,7 +1542,8 @@ def sdd_status(root: Path) -> dict[str, Any]:
     "gitattributes": bool, "ledger_hooks": bool,  # [rev 0.5 D5]
     "guard_hook": {"form": "bare" | "baked" | "other" | None, "command": str | None, "targets": [str],
     "resolvable": bool},  # [rev 0.6 C25]
-    "receipt_version": str | None}`` (targets are repo-relative strings). Import-cheap: ``parrot self
+    "stale": [...], "stale_mcp": [...], "receipt_version": str | None}`` (targets are repo-relative strings).
+    Import-cheap: ``parrot self
     doctor`` (TASK-4080) imports this lazily and treats ``outdated``/``edited`` as "not current". Guard-hook
     assets are compared against the rendering matching the form already on disk, so a bare or baked install
     reports ``current`` until the mode is changed by a re-install.
@@ -1461,5 +1577,7 @@ def sdd_status(root: Path) -> dict[str, Any]:
         "guard_hook": guard,
         "dangerous_guard": _dangerous_guard_report(root),
         "toolkits": _toolkits_report(root),
+        "stale": _stale_report(root),
+        "stale_mcp": _stale_mcp_report(root),
         "receipt_version": receipt.get("version"),
     }
