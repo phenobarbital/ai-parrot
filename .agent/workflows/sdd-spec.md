@@ -606,9 +606,9 @@ generated sections. **Refuse `**Status**: approved` on any non-zero exit** and r
 
 ### 6. Commit the Spec
 
-> **CRITICAL — Worktrees branch from the current state of the repo.**
-> If the spec is not committed, any worktree created later will NOT see it,
-> and the `sdd-worker` agent will fail with "no spec found".
+> **CRITICAL — Worktrees branch from `origin/<BASE>`, not from the local branch.**
+> If the spec is not committed AND pushed, any worktree created later will NOT
+> see it, and the `sdd-worker` agent will fail with "no spec found".
 
 > **CRITICAL — Only commit the spec file. NEVER commit unrelated changes.**
 > Other files may be modified or unstaged in the working directory — do NOT
@@ -657,6 +657,19 @@ git diff --cached --name-only
 
 # 4. Commit
 git commit -m "sdd: add spec for FEAT-<ID> — <feature-name>"
+
+# 5. Publish <BASE> — worktrees are created from origin/<BASE>, never from the local branch,
+#    so /sdd-start, sdd-worker and every worker launch cannot see an unpushed spec.
+#    The pull takes in the reserve_ids ledger commit, which is already on origin/<BASE>.
+BASE=$(git rev-parse --abbrev-ref HEAD)   # the branch the spec commit just landed on
+git pull --no-rebase --no-edit origin "$BASE" && git push origin "$BASE"
+```
+
+If the pull or the push fails, do not force anything. Stop and print:
+```
+⚠️  The spec is committed on local <BASE> but NOT on origin/<BASE>. Worktrees branch from
+   origin/<BASE>, so the next /sdd-start or worker launch will not find it. Reconcile, then run:
+   git pull --no-rebase origin <BASE> && git push origin <BASE>
 ```
 
 ### 7. Output
