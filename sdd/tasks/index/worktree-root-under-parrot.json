@@ -1,0 +1,252 @@
+{
+  "feature": "worktree-root-under-parrot",
+  "feature_id": "FEAT-802",
+  "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-04T23:09:10Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/sdd/test_config.py",
+          "packages/ai-parrot/tests/sdd/test_installer.py",
+          "packages/ai-parrot/tests/sdd/test_audit.py",
+          "packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py",
+          "packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py",
+          "packages/ai-parrot/tests/self_/test_doctor_sdd.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py",
+          "packages/ai-parrot/tests/test_conf.py",
+          "packages/ai-parrot/tests/sdd/test_dangerous_actions.py",
+          "tests/sdd_scripts/test_worktree_plan.py",
+          "tests/sdd_scripts/test_ensure_worktree.py",
+          "tests/sdd_scripts/test_brief_meta.py",
+          "tests/sdd_scripts/test_worktree_status.py",
+          "tests/sdd_scripts/test_command_contracts.py",
+          "tests/sdd/test_ledger_workflow_twins.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:b0362e98988e5ca32e95197db9b4e35b8571e5d12d707a1c2ff158cc250ce695"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5174",
+      "slug": "worktree-root-resolver",
+      "title": "Worktree root resolver, legacy detection and migration recipe",
+      "feature_id": "FEAT-802",
+      "feature": "worktree-root-under-parrot",
+      "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Root of the graph: creates DEFAULT/LEGACY_WORKTREE_ROOT, worktree_root_setting/worktree_root, legacy_worktrees, legacy_migration_recipe in parrot/sdd/config.py; no dependencies.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5174-worktree-root-resolver.md"
+    },
+    {
+      "id": "TASK-5175",
+      "slug": "worktree-root-cli-and-conf",
+      "title": "`parrot sdd worktree root` CLI and `conf.py` derivation",
+      "feature_id": "FEAT-802",
+      "feature": "worktree-root-under-parrot",
+      "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5174"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports worktree_root from TASK-5174 (parrot/sdd/config.py) for the new worktree_root script and conf.py; also edits tests/sdd/test_config.py after TASK-5174.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5175-worktree-root-cli-and-conf.md"
+    },
+    {
+      "id": "TASK-5176",
+      "slug": "plan-builders-and-exact-reuse",
+      "title": "Plan builders use the resolver; `ensure` reuses only the exact target",
+      "feature_id": "FEAT-802",
+      "feature": "worktree-root-under-parrot",
+      "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5174",
+        "TASK-5175"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports worktree_root_setting/worktree_root from TASK-5174 (parrot/sdd/config.py); depends on TASK-5175 only because both edit packages/ai-parrot/tests/sdd/test_config.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5176-plan-builders-and-exact-reuse.md"
+    },
+    {
+      "id": "TASK-5177",
+      "slug": "script-consumers-and-legacy-status",
+      "title": "Script consumers resolve the root; `worktree_status` reports legacy entries",
+      "feature_id": "FEAT-802",
+      "feature": "worktree-root-under-parrot",
+      "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5176"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Edits worktree_status.py and tests/sdd_scripts/test_worktree_status.py after TASK-5176 changed their WORKTREE_ROOT import/patches; uses LEGACY_WORKTREE_ROOT from TASK-5174 transitively.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5177-script-consumers-and-legacy-status.md"
+    },
+    {
+      "id": "TASK-5178",
+      "slug": "guards-audit-and-wiki-exclusion",
+      "title": "Dangerous-action guards, audit regex, wiki exclusion and e2e docstring",
+      "feature_id": "FEAT-802",
+      "feature": "worktree-root-under-parrot",
+      "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5174"
+      ],
+      "parallel": true,
+      "parallelism_notes": "dangerous_actions._worktrees_dir_exists imports worktree_root from TASK-5174 (parrot/sdd/config.py); its other files are touched by no other task.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5178-guards-audit-and-wiki-exclusion.md"
+    },
+    {
+      "id": "TASK-5179",
+      "slug": "installer-doctor-hard-cut",
+      "title": "Installer and doctor hard cut, resolved-root ignore rule",
+      "feature_id": "FEAT-802",
+      "feature": "worktree-root-under-parrot",
+      "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5174"
+      ],
+      "parallel": true,
+      "parallelism_notes": "install_sdd_integration and doctor._check_sdd_git call legacy_worktrees/legacy_migration_recipe/worktree_root and raise LegacyWorktreesError from TASK-5174 (parrot/sdd/config.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5179-installer-doctor-hard-cut.md"
+    },
+    {
+      "id": "TASK-5180",
+      "slug": "claude-rules-commands-agents",
+      "title": "Claude-side rule, commands and agents use the resolved root",
+      "feature_id": "FEAT-802",
+      "feature": "worktree-root-under-parrot",
+      "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5175"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Shell snippets call `parrot sdd worktree root --root`, the verb TASK-5175 mounts in parrot/sdd/cli.py; .claude/ prose files only.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5180-claude-rules-commands-agents.md"
+    },
+    {
+      "id": "TASK-5181",
+      "slug": "agent-and-agents-twins",
+      "title": "Codex/Gemini twins (`.agent/`, `.agents/`) use the resolved root",
+      "feature_id": "FEAT-802",
+      "feature": "worktree-root-under-parrot",
+      "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5175"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Twin snippets call `parrot sdd worktree root --root` from TASK-5175 (parrot/sdd/cli.py + sdd/scripts/worktree_root.py); .agent/ and .agents/ files only.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5181-agent-and-agents-twins.md"
+    },
+    {
+      "id": "TASK-5182",
+      "slug": "claude-md-and-docs",
+      "title": "`CLAUDE.md` and human docs name the new default",
+      "feature_id": "FEAT-802",
+      "feature": "worktree-root-under-parrot",
+      "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5175"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Docs reference the `parrot sdd worktree root` verb and WORKTREE_BASE_PATH derivation that TASK-5175 adds (sdd/scripts/worktree_root.py, conf.py); CLAUDE.md + docs/ only.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5182-claude-md-and-docs.md"
+    },
+    {
+      "id": "TASK-5183",
+      "slug": "assets-regen-and-guard-tests",
+      "title": "Regenerate packaged assets; legacy-root guard, twins and wheel-only tests",
+      "feature_id": "FEAT-802",
+      "feature": "worktree-root-under-parrot",
+      "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5176",
+        "TASK-5177",
+        "TASK-5178",
+        "TASK-5179",
+        "TASK-5180",
+        "TASK-5181",
+        "TASK-5182"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Exclusive: regenerates parrot/sdd/_assets/** + manifest.json (shared generated files). Needs the prose of TASK-5180/5181/5182 and the .sh hook of TASK-5178 for the guard test; plan paths of TASK-5176 and worktree_status of TASK-5177; TASK-5179's parrot/sdd/installer.py refusal, which the wheel-only test's `parrot sdd install` runs.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5183-assets-regen-and-guard-tests.md"
+    }
+  ]
+}
