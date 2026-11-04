@@ -10,7 +10,7 @@ tags: [installer, sandbox, rich, cli, onboarding, bwrap]
 **Feature ID**: FEAT-799
 **Date**: 2026-11-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
