@@ -1222,7 +1222,9 @@ def test_auto_backend_derives_pythonpath_at_run_time(tmp_path: Path, monkeypatch
     assert _resend(first, payload, "auto") == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
 
 
-def test_auto_backend_without_uid_map_relies_on_sandbox_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_auto_backend_without_uid_map_relies_on_sandbox_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A platform without /proc/self/uid_map (macOS Seatbelt) trusts SANDBOX_RUNTIME alone."""
     feature, _task, _main = _native_hook_worktrees(tmp_path)
     _fake_bwrap(tmp_path, monkeypatch)
@@ -1324,9 +1326,7 @@ def test_auto_lookalike_wrapper_is_still_guarded(tmp_path: Path, monkeypatch: py
     first = policy.hook_response(payload, backend="auto")["hookSpecificOutput"]["updatedInput"]["command"]
     forged = first.replace("/bin/bash -c true", "/bin/bash -c 'true; rm x'", 1)
     assert forged != first
-    response = policy.hook_response(
-        {**payload, "tool_input": {"command": forged}}, backend="auto"
-    )
+    response = policy.hook_response({**payload, "tool_input": {"command": forged}}, backend="auto")
     assert response["hookSpecificOutput"]["updatedInput"]["command"] != forged
 
 
@@ -1350,15 +1350,15 @@ def test_launcher_environment_is_a_fixed_point(tmp_path: Path, monkeypatch: pyte
     assert native.native_command_environment(feature) == exported
 
 
-def test_claude_native_plain_command_passes_through_unchanged(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_claude_native_plain_command_passes_through_unchanged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """With the launcher's environment inherited, a plain command with nothing to change gets no rewrite."""
     feature, _task, _main = _native_hook_worktrees(tmp_path)
     _launcher_environment(monkeypatch, feature)
     monkeypatch.setattr(policy, "rtk_rewrite", lambda command: None)
     payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "git status"}}
-    assert policy.hook_response(payload, backend="claude-native") == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+    assert policy.hook_response(payload, backend="claude-native") == {
+        "hookSpecificOutput": {"hookEventName": "PreToolUse"}
+    }
 
 
 def test_claude_native_sub_worktree_gets_only_its_own_pythonpath(
@@ -1369,7 +1369,9 @@ def test_claude_native_sub_worktree_gets_only_its_own_pythonpath(
     _launcher_environment(monkeypatch, feature)
     monkeypatch.setattr(policy, "rtk_rewrite", lambda command: None)
     payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": f"cd {task} && pytest x.py"}}
-    argv = shlex.split(policy.hook_response(payload, backend="claude-native")["hookSpecificOutput"]["updatedInput"]["command"])
+    argv = shlex.split(
+        policy.hook_response(payload, backend="claude-native")["hookSpecificOutput"]["updatedInput"]["command"]
+    )
     assignments = [item for item in argv if "=" in item and not item.startswith("/")]
     assert [item.split("=", 1)[0] for item in assignments] == ["PYTHONPATH"]
     assert assignments[0].split("=", 1)[1].split(os.pathsep)[0] == str(task / "packages" / "test-package" / "src")

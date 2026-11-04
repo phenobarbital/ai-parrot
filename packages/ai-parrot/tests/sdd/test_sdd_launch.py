@@ -107,7 +107,9 @@ def _list_worktrees(monkeypatch: pytest.MonkeyPatch, *roots: Path) -> None:
 
     def fake_run(argv: list[str], *, cwd: Path, env: object = None) -> subprocess.CompletedProcess[str]:
         if list(argv[:3]) == ["git", "worktree", "list"]:
-            return _result(argv, stdout="".join(f"worktree {root}\nHEAD abc\nbranch refs/heads/x\n\n" for root in roots))
+            return _result(
+                argv, stdout="".join(f"worktree {root}\nHEAD abc\nbranch refs/heads/x\n\n" for root in roots)
+            )
         return real(argv, cwd=cwd) if env is None else real(argv, cwd=cwd, env=env)
 
     monkeypatch.setattr(launcher, "_run", fake_run)
@@ -170,7 +172,9 @@ def test_launch_brief_uses_existing_worktree_and_slug_prompt(tmp_path: Path, mon
     monkeypatch.setattr(launcher, "prepare_upstream", lambda path: "launch-worker: ready")
     monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
     monkeypatch.setattr(
-        launcher.native_claude_sandbox, "launch_worker", lambda argv, **kwargs: captured.update(argv=argv, **kwargs) or 0
+        launcher.native_claude_sandbox,
+        "launch_worker",
+        lambda argv, **kwargs: captured.update(argv=argv, **kwargs) or 0,
     )
     result = launcher.launch(
         "BRIEF-fix-thing",

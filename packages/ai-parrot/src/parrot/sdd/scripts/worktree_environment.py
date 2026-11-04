@@ -646,9 +646,7 @@ def _wrap_auto(command: str, cwd: Path, tool_input: dict[str, Any]) -> str:
     return _wrap_bash(command, cwd, tool_input, _load_native_sandbox(), "auto")
 
 
-def _is_own_wrapper(
-    command: str, cwd: Path, tool_input: dict[str, Any], native: Any, backend: str = ""
-) -> bool:
+def _is_own_wrapper(command: str, cwd: Path, tool_input: dict[str, Any], native: Any, backend: str = "") -> bool:
     """True when ``command`` is exactly what this hook would emit for the command it wraps.
 
     Auto mode reviews a Bash call before hooks run; when a hook changes it, the
