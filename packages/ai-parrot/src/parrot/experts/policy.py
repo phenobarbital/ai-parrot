@@ -16,9 +16,19 @@ MANDATORY_TOOLKITS: Final[tuple[str, ...]] = ("LLMWikiToolkit", "BookstoreToolki
 SPAWN_DENY_PRIORITY: Final[int] = 100
 
 
+def tier_policy(tier: ExpertTier) -> dict[str, Any]:
+    """Return tier defaults with provider/model resolved from component LLM settings."""
+    from parrot.llm_defaults import resolve_component_llm  # noqa: PLC0415
+
+    base = dict(DEFAULT_TIER_POLICY[tier])
+    resolved = resolve_component_llm(f"EXPERT_{tier.name}", builtin=f"{base['provider']}:{base['model']}")
+    base.update(provider=resolved.provider, model=resolved.model)
+    return base
+
+
 def model_config_for(tier: ExpertTier, *, overrides: Mapping[str, Any] | None = None) -> ModelConfig:
     """Return the model configuration for a tier with caller-provided overrides."""
-    return ModelConfig(**{**DEFAULT_TIER_POLICY[tier], **dict(overrides or {})})
+    return ModelConfig(**{**tier_policy(tier), **dict(overrides or {})})
 
 
 def effective_toolkits(manifest: ExpertManifest) -> list[str]:
