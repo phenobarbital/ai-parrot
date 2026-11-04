@@ -10,7 +10,7 @@ tags: [sdd, worktree, installer, doctor, portability]
 **Feature ID**: FEAT-802
 **Date**: 2026-11-04
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 2.1.0
 
 ---
