@@ -43,6 +43,11 @@ RETIRED_VALUES = (
     "gemini-3.7-flash-thinking",
     "gemini-3.7-flash-lite",
     "gemini-deep-research-preview-04-2026",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-preview-tts",
+    "gemini-2.5-pro-preview-tts",
+    "gemini-2.5-computer-use-preview-10-2025",
 )
 RETIRED_NAMES = (
     "GEMINI_3_7_PRO",
@@ -50,6 +55,12 @@ RETIRED_NAMES = (
     "GEMINI_3_7_FLASH_LITE",
     "GEMINI_DEEP_RESEARCH",
     "GEMINI_DEEP_RESEARCH_PREVIEW",
+    "GEMINI_2_5_FLASH",
+    "GEMINI_2_5_FLASH_PREVIEW",
+    "GEMINI_2_5_PRO",
+    "GEMINI_2_5_FLASH_TTS",
+    "GEMINI_2_5_PRO_TTS",
+    "GEMINI_COMPUTER_USE",
 )
 
 
@@ -75,11 +86,11 @@ def test_google_model_retired_values_raise(value):
 
 
 def test_google_model_retired_names_absent():
-    """The five retired member names are gone from GoogleModel."""
+    """The eleven retired member names are gone from GoogleModel."""
     assert not set(RETIRED_NAMES) & GoogleModel.__members__.keys()
 
 
 def test_google_model_alias_count():
     """Guards against a new member silently collapsing onto an existing value."""
-    assert len(GoogleModel.__members__) == 51
-    assert len({model.value for model in GoogleModel}) == 33
+    assert len(GoogleModel.__members__) == 45
+    assert len({model.value for model in GoogleModel}) == 28
