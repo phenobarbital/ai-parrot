@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-801 — GitHub Wiki as the Technical Reference
 **Spec**: `sdd/specs/github-wiki-technical-reference.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none
@@ -498,10 +498,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-terra (codex), attempt 1 (uid 519a4182…), 352s, 0 retries.
+**Date**: 2026-11-04
+**Notes**: All 9 listed files delivered, no extras. Merge-tier validation green (74 passed). Engine lint commit df00732b08. Review recorded as: orchestrator diff review, 0 fix commits (`coder_record_review` failed server-side with "CoderReview() argument after ** must be a mapping" — review NOT recorded in the feedback plane).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

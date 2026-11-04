@@ -48,7 +48,7 @@
       "feature_id": "FEAT-801",
       "feature": "github-wiki-technical-reference",
       "spec": "sdd/specs/github-wiki-technical-reference.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -56,8 +56,9 @@
       "parallelism_notes": "exclusive: edits pyproject.toml (shared dependency manifest) and cli.py (shared CLI mount point)",
       "assigned_to": null,
       "started_at": "2026-11-04T22:31:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5166-techwiki-config-naming-cli.md"
+      "completed_at": "2026-11-04T22:40:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5166-techwiki-config-naming-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5167",
