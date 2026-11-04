@@ -3,7 +3,7 @@
   "feat_id": "FEAT-798",
   "feature_slug": "google-migration",
   "started_at": "2026-11-04T01:33:46Z",
-  "updated_at": "2026-11-04T02:01:42Z",
+  "updated_at": "2026-11-04T02:01:52Z",
   "source": {
     "kind": "inline",
     "jira_key": null,
@@ -14,7 +14,7 @@
     "summary_oneline": "google-migration: upgrade google-genai, retire gemini-2.5-{pro,flash} from GoogleModel, parrot.conf defaults and pre-built parrot.bots agents; adopt Gemini 4 Argon"
   },
   "mode": "auto",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "phases": {
     "source": {
       "status": "completed",
@@ -117,12 +117,12 @@
       "skipped_reason": null
     },
     "output": {
-      "status": "running",
+      "status": "completed",
       "started_at": "2026-11-04T02:01:42Z",
-      "completed_at": null,
+      "completed_at": "2026-11-04T02:01:52Z",
       "duration_seconds": null,
       "proposal_path": "sdd/proposals/google-migration.proposal.md",
-      "commit_sha": null,
+      "commit_sha": "420ba0f8994121e2f76f13cc0d96f35c72311f85",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "localization high-confidence with the FEAT-688 precedent; U1-U4 resolved; no architectural fork"
     }
@@ -143,8 +143,8 @@
   },
   "errors": [],
   "resume_hint": {
-    "next_phase": "committed",
-    "next_action": "git add proposal + state dir, commit"
+    "next_phase": "done",
+    "next_action": "/sdd-spec FEAT-798"
   },
   "detected_mode": "enrichment"
 }
