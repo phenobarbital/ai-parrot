@@ -12,9 +12,7 @@ from typing import Sequence
 
 def _commit(root: Path) -> str | None:
     """Return the current commit SHA when the root is a Git repository."""
-    result = subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, check=False
-    )
+    result = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, check=False)
     return result.stdout.strip() if result.returncode == 0 else None
 
 

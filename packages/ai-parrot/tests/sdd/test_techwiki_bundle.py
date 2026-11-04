@@ -23,7 +23,18 @@ def techwiki_repo(tmp_path: Path) -> Path:
     subprocess.run(["git", "init", "-q", str(root)], check=True)
     subprocess.run(["git", "-C", str(root), "add", "."], check=True)
     subprocess.run(
-        ["git", "-C", str(root), "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-qm", "fixture"],
+        [
+            "git",
+            "-C",
+            str(root),
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.test",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
         check=True,
     )
     return root

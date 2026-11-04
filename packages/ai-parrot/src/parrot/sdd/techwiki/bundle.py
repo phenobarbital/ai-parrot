@@ -16,7 +16,7 @@ from parrot.sdd.techwiki.config import TechwikiConfig
 from parrot.sdd.techwiki.naming import PageNameError, page_name, page_title, rewrite_links
 
 if TYPE_CHECKING:
-    from parrot.sdd.techwiki.api import RenderedPage
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +136,9 @@ def collect_adrs(cfg: TechwikiConfig, root: Path) -> list[BundlePage]:
     return pages
 
 
-def _generated_pages(cfg: TechwikiConfig, root: Path, release: str | None) -> tuple[list[BundlePage], list[dict[str, Any]]]:
+def _generated_pages(
+    cfg: TechwikiConfig, root: Path, release: str | None
+) -> tuple[list[BundlePage], list[dict[str, Any]]]:
     """Generate API pages lazily so sidebar-only does not require griffe."""
     from parrot.sdd.techwiki.api import generate
 
@@ -155,7 +157,9 @@ def _manifest_entries(pages: list[BundlePage]) -> list[dict[str, str]]:
             module = page.title.removeprefix("Reference: ")
             entries.append({"id": f"ref:{module}", "name": page.name, "section": "api", "kind": "generated"})
         else:
-            entries.append({"id": page.source.as_posix(), "name": page.name, "section": page.section, "kind": "authored"})
+            entries.append(
+                {"id": page.source.as_posix(), "name": page.name, "section": page.section, "kind": "authored"}
+            )
     return entries
 
 
@@ -203,9 +207,7 @@ def assemble(
         by_name.setdefault(page.name, []).append(page)
     for name, matching in sorted(by_name.items()):
         if len(matching) > 1:
-            report.collisions.append(
-                {"name": name, "sources": ", ".join(str(page.source) for page in matching)}
-            )
+            report.collisions.append({"name": name, "sources": ", ".join(str(page.source) for page in matching)})
 
     manifest: dict[str, str] = {}
     for page in pages:
@@ -273,6 +275,8 @@ def write_bundle(pages: list[BundlePage], report: BundleReport, cfg: TechwikiCon
     for page in pages:
         (out / f"{page.name}.md").write_text(page.body, encoding="utf-8")
     write_navigation(pages, report, cfg, out)
-    (out / "techwiki-report.json").write_text(json.dumps(asdict(report), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (out / "techwiki-report.json").write_text(
+        json.dumps(asdict(report), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     manifest = {"pages": _manifest_entries(pages)}
     (out / "techwiki-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
