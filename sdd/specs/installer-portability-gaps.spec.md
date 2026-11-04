@@ -74,8 +74,10 @@ fixes (see `sdd/proposals/parrot-installer-amendments.proposal.md` §5 for what 
   a failing `repo: checkout` check. Read-only verbs (`status`, `list`) only resolve, never refuse.
 - **G5 — Say what was written.** The install log prints the form and, when baked, the fix; `doctor`
   reports the form of every host config informationally.
-- **G6 — The wiki plane never splits.** Host installers read and write `.parrot/wiki.json` at
-  `find_shared_root(root) or root`, even when `--path` points at a linked worktree.
+- **G6 — The wiki plane never splits.** Host CLIs and installers use `InstallRoot.shared_root` for
+  wiki configuration, remote lookup and initial wiki builds, even when `--path` points at a linked
+  worktree. Host assets still target `InstallRoot.root`. Ordinary checkouts with external Git metadata
+  keep their own wiki state; an external gitdir alone is not evidence of a linked worktree.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -98,7 +100,7 @@ fixes (see `sdd/proposals/parrot-installer-amendments.proposal.md` §5 for what 
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:6a6263db7dbff420d0cf9eef22c738c4c9373029e2ecd4394a430fd816d29a4f evaluation_digest=sha256:f83d540bf192b3c659a8880b934d5d9119175abfd73172b1f28df62c47969ed9 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:180886adb14f1ed918ba57622caecb4a652862c76d251f6f32c60f6629768ad1 evaluation_digest=sha256:c9b8f821b46b72710ac40b5a590d5cac28be3ce4e52369739445df6386f403a1 rules_version=1 status=pass -->
 
 No eligible decisions govern subsystems: bots, clients, config, flows, knowledge-graphindex, knowledge-wiki, memory, sdd-tooling, skills, tools
 
@@ -112,7 +114,9 @@ them:
 1. **`parrot.launcher.install_root()`** — the install-target resolver. It wraps the existing
    `repository_paths()` walk (`launcher.py:58-84`) and returns an `InstallRoot(root, shared_root, linked,
    explicit)`: `root` is the checkout the command targets, `shared_root` the primary checkout
-   (`common_git_dir.parent`, equal to `root` when not linked), `linked` whether `root` is a linked worktree.
+   (`common_git_dir.parent` for a conventional linked worktree, equal to `root` when not linked),
+   `linked` whether the checkout's gitdir has valid `commondir` metadata. An external gitdir without
+   `commondir` (a submodule or `--separate-git-dir` checkout) is not linked.
    `require_primary_checkout()` turns `linked and not explicit` into `LinkedWorktreeError` with the
    primary checkout and `--path` in the message. The launcher module stays stdlib-only
    (`tests/launcher/test_launcher_stdlib_only.py`). `managed_launcher_on_path()` — the "does `parrot` on
@@ -141,11 +145,13 @@ Then the rewiring:
   (default `None`).
 - The three host `_resolve_root()` helpers (`claude_code/cli.py:36`, `codex/cli.py:25`, `google/cli.py:25`),
   `sdd/cli.py::_root` and the seven `Path.cwd()` in `cli/toolkits.py` call `install_root()`; write verbs
-  call `require_primary_checkout()`, read verbs do not. Host installers resolve the wiki config at
-  `find_shared_root(root) or root` (G6).
+  call `require_primary_checkout()`, read verbs do not. Toolkit write verbs gain `--path` and pass it
+  as an explicit target. Host CLIs and installers resolve wiki configuration and build targets at
+  `InstallRoot.shared_root` (G6), before loading or passing any config object.
 - `doctor` gains `repo: checkout` (failing when linked, `fix` names the primary checkout) and
   `host config: form` (informational: `portable` or `baked to <venv>`); `self_/cli.py` keeps the launcher's
-  `--project`/`PARROT_PROJECT`/`CLAUDE_PROJECT_DIR` pins — a pin counts as explicit.
+  `--project`/`PARROT_PROJECT`/`CLAUDE_PROJECT_DIR` pins — only an actual pin counts as explicit;
+  automatic repository discovery must not be passed as an explicit override.
 
 Decisions by the owner (2026-11-04): fresh-repository default = *launcher on PATH ⇒ portable, else baked +
 note* (supersedes FEAT-633's "default stays baked"); inside a linked worktree without `--path` = *refuse*,
@@ -179,14 +185,14 @@ doctor: repo: checkout (fails when linked) · host config: form (informational)
 |---|---|---|
 | `parrot.launcher.repository_paths` (`launcher.py:58`) | uses | `install_root()` reuses its walk and the `commondir` resolution; no new git subprocess. |
 | `parrot.launcher.parrot_home` (`launcher.py:24`) | uses | `managed_launcher_on_path()` compares `shutil.which("parrot")` against `parrot_home()` exactly as `guard_hook_command()` does today (`sdd/installer.py:290-297`). |
-| `sdd/installer.guard_hook_command` (`:280`) | refactors | body calls `managed_launcher_on_path()`; signature, return values and the `note: guard hook baked …` line are unchanged. |
+| `sdd/installer.guard_hook_command` (`:280`) | refactors | tri-state parameter; body calls `managed_launcher_on_path()`; return values and the `note: guard hook baked …` line are unchanged. |
 | `claude_code/installer._current_portable_mode` (`:139`), `codex/installer._current_portable_mode` (`:188`), `google/installer._current_portable_mode` (`:75`) | modifies | return `None` when no managed entry / block exists (today `False`). |
 | `claude_code/installer.reconcile_toolkit_entries` (`:705`), `codex/installer.reconcile_toolkit_tables` (`:263`), `google/installer.reconcile_toolkit_entries` (`:220`) | modifies | the `portable is None` branch goes through `resolve_portable_mode`; the baked note is appended to `actions`. |
-| `install_claude_integration` (`:1216`), `install_codex_integration` (`:420`), `install_google_integration` (`:380`) | modifies | same rule; wiki config at `find_shared_root(root) or root`. |
+| `install_claude_integration` (`:1216`), `install_codex_integration` (`:420`), `install_google_integration` (`:380`) and their CLI callers | modifies | same rule; load configuration, resolve remote settings and build the wiki at `InstallRoot.shared_root`; host assets target `root`. |
 | `mcp/hosts.HostAdapter.reconcile` (`:51`) + three adapters (`:95,:167,:219`) | extends | keyword `portable: bool | None = None`, forwarded. |
 | `mcp/toolkit_install.install_toolkits` (`:158`), `set_toolkits_enabled` (`:222`), `_reconcile_all` (`:145`) | extends | keyword `portable` threaded to `adapter.reconcile`. |
-| `sdd/installer._install_toolkits_step` (`:1227`) and its call (`:1152`) | modifies | `portable=True if portable else None`. |
-| `knowledge/wiki/project.find_shared_root` (`:1560`) | uses | G6 — wiki config location for the host installers. |
+| `sdd/installer._install_toolkits_step` (`:1227`) and its call (`:1152`) | modifies | forward `portable` verbatim, preserving explicit `False`. |
+| `knowledge/wiki/project.find_shared_root` (`:1560`) | reference | existing shared-plane resolver remains unchanged; installers use the classified `InstallRoot.shared_root` so external gitdirs are not mistaken for worktrees. |
 | `self_/doctor.run_doctor` (`:664`), `_check_host_configs` (`:590`) | extends | new `repo: checkout` check (non-runtime scopes) and `host config: form` informational check. |
 | `docs/install/global-runtime.md:182-205` | docs | "The default stays baked" paragraph rewritten; worktree refusal documented. |
 | `knowledge/wiki/{claude_code,codex,google}/bookstore_assets.py` ("If MCP is disconnected, run `parrot … install --no-build` in the target repository") | docs | add "from the primary checkout (or pass `--path`)". |
@@ -220,6 +226,7 @@ class PortableDecision:
 ```python
 # parrot/launcher.py
 def managed_launcher_on_path(env: Mapping[str, str] | None = None) -> bool: ...
+def explicit_project_pin(argv: Sequence[str], env: Mapping[str, str], cwd: Path) -> Path | None: ...
 def install_root(cwd: Path, *, explicit: Path | None = None) -> InstallRoot: ...
 def require_primary_checkout(resolved: InstallRoot) -> InstallRoot: ...
 
@@ -227,8 +234,9 @@ def require_primary_checkout(resolved: InstallRoot) -> InstallRoot: ...
 def resolve_portable_mode(explicit: bool | None, *, current: bool | None) -> PortableDecision: ...
 
 # CLI
-parrot toolkits install <names> [--portable | --no-portable]
-parrot toolkits enable  <names> [--portable | --no-portable]
+parrot toolkits install <names> [--path DIRECTORY] [--portable | --no-portable]
+parrot toolkits enable  <names> [--path DIRECTORY] [--portable | --no-portable]
+parrot toolkits uninstall|disable <names> [--path DIRECTORY]
 parrot self doctor   → new checks "repo: checkout" (fails in a linked worktree) and "host config: form"
 ```
 
@@ -243,16 +251,16 @@ parrot self doctor   → new checks "repo: checkout" (fails in a linked worktree
 
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
-| M1: launcher resolvers | yes | dataclass + three functions fixed below; stdlib-only; reuse `repository_paths`; error text fixed | — |
+| M1: launcher resolvers | yes | dataclass + four functions fixed below; stdlib-only; reuse `repository_paths`; error text fixed | — |
 | M2: portable rule + tri-state inference | yes | `resolve_portable_mode` truth table fixed below; six call sites listed; note text fixed | — |
-| M3: toolkit forwarding | yes | keyword threading only; `True`/`None` mapping fixed | — |
+| M3: toolkit forwarding | yes | keyword threading only; tri-state forwarded verbatim | — |
 | M4: install-root adoption in CLIs + wiki config at shared root | yes | per-file list of call sites; write/read verb split fixed | — |
 | M5: doctor checks | yes | check names, `ok`/`informational`/`fix` semantics fixed | — |
 | M6: docs + bookstore skill wording | yes | prose only | — |
 
 ### Module 1: Launcher resolvers
 - **Path**: `packages/ai-parrot/src/parrot/launcher.py` (modify)
-- **Responsibility**: `InstallRoot`, `LinkedWorktreeError`, `managed_launcher_on_path()`, `install_root()`,
+- **Responsibility**: `InstallRoot`, `LinkedWorktreeError`, `managed_launcher_on_path()`, `explicit_project_pin()`, `install_root()`,
   `require_primary_checkout()`. Stdlib imports only (`dataclasses`, `shutil` are allowed).
 - **Depends on**: existing `repository_paths` (`launcher.py:58`), `parrot_home` (`:24`), `_existing_directory` (`:49`).
 - **Interface Skeleton** *(signatures + docstrings only — bodies belong to task blueprints, FEAT-545)*:
@@ -278,10 +286,25 @@ parrot self doctor   → new checks "repo: checkout" (fails in a linked worktree
 
       ``explicit`` (``--path``/``--project``/an env pin) is returned verbatim after ``_existing_directory``
       and ``explicit=True``; it is still classified (linked/shared_root) through ``repository_paths``.
-      Otherwise ``repository_paths(cwd)`` (launcher.py:58) gives ``(root, common)``: no ``.git`` found →
-      ``InstallRoot(cwd, cwd, False, False)``; ``common`` resolving to ``root/.git`` → not linked; any other
-      ``common`` → ``linked=True, shared_root=common.parent``. Never raises for a malformed ``.git`` file
-      (repository_paths already yields ``(cwd, None)``)."""
+      Otherwise ``repository_paths(cwd)`` (launcher.py:58) supplies the discovered checkout and common
+      gitdir. Classify the discovered checkout even when the explicit target is a subdirectory.
+      Inspect its .git marker and the referenced gitdir before commondir resolution: only a valid
+      commondir file resolving to an existing common gitdir establishes linked=True. A gitdir outside
+      root/.git without commondir is not linked (submodules and --separate-git-dir checkouts).
+      For linked checkouts, shared_root=common.parent; otherwise shared_root=root, preserving the
+      explicit target. No .git found without an explicit target → InstallRoot(cwd, cwd, False, False);
+      an explicit non-repository directory yields InstallRoot(target, target, False, True).
+      Malformed/unreadable .git
+      or commondir metadata never raises and must not manufacture a linked classification."""
+
+  def explicit_project_pin(argv: Sequence[str], env: Mapping[str, str], cwd: Path) -> Path | None:
+      """Return only a valid explicit project pin, never a discovered repository.
+
+      Preserve find_project_root's pin precedence and validation: leading --project/--project=,
+      PARROT_PROJECT, then CLAUDE_PROJECT_DIR; expand user paths, resolve relative to cwd and accept
+      existing directories. Return None when no valid pin exists. Extract this logic from the
+      existing launcher find_project_root, which delegates here before its unchanged .git walk.
+      The launcher resolver's existing public behavior remains unchanged."""
 
   def require_primary_checkout(resolved: InstallRoot) -> InstallRoot:
       """Return ``resolved`` unchanged unless ``resolved.linked and not resolved.explicit``, in which case
@@ -394,8 +417,8 @@ parrot self doctor   → new checks "repo: checkout" (fails in a linked worktree
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py`, `packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py`, `packages/ai-parrot/src/parrot/knowledge/wiki/google/cli.py`, `packages/ai-parrot/src/parrot/sdd/cli.py`, `packages/ai-parrot/src/parrot/cli/toolkits.py`, `packages/ai-parrot/src/parrot/self_/cli.py`, `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py`, `packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py`, `packages/ai-parrot/src/parrot/knowledge/wiki/google/installer.py` (modify)
 - **Responsibility**: every root resolution goes through `install_root()`; write verbs add
   `require_primary_checkout()` and turn `LinkedWorktreeError` into `click.ClickException` (exit 1);
-  read verbs (`status`, `list`) only resolve. Host installers read/write `.parrot/wiki.json` at
-  `find_shared_root(root) or root`.
+  read verbs (`status`, `list`) only resolve. Host CLIs and installers read/write `.parrot/wiki.json`
+  at `InstallRoot.shared_root` and use that same root for remote lookup and initial builds.
 - **Depends on**: M1.
 - **Interface Skeleton**:
   ```python
@@ -411,17 +434,37 @@ parrot self doctor   → new checks "repo: checkout" (fails in a linked worktree
       """Same contract; install/uninstall write=True, status write=False."""
 
   # parrot/cli/toolkits.py  (replaces the seven Path.cwd() at :98,:126,:164,:184,:224,:249,:271)
-  def _root(*, write: bool) -> Path:
-      """install/uninstall/enable/disable write=True; list/status write=False; _warn_user_global receives root."""
+  def _root(path_: Path | None = None, *, write: bool) -> Path:
+      """Resolve install_root(Path.cwd(), explicit=path_); write=True applies require_primary_checkout.
+      install/uninstall/enable/disable use write=True; list/status use write=False.
+      LinkedWorktreeError becomes click.ClickException; _warn_user_global receives the resolved root."""
+  # Add --path to each of install/uninstall/enable/disable:
+  # @click.option("--path", "path_", type=click.Path(exists=True, file_okay=False, path_type=Path), default=None)
+  # Each callback accepts path_: Path | None and obtains root = _root(path_, write=True) before any
+  # selection, confirmation, config loading or writes. Missing --path keeps discovery/refusal behavior.
+  # Read-only list/status call _root(write=False); no path option is required for these verbs.
 
   # parrot/self_/cli.py  (modifies doctor :72)
-  # resolved = install_root(Path.cwd(), explicit=find_project_root(sys.argv[1:], os.environ, Path.cwd()))
+  # pin = explicit_project_pin(sys.argv[1:], os.environ, Path.cwd())
+  # resolved = install_root(Path.cwd(), explicit=pin)
   # checks = run_doctor(resolved.root, scope=scope, install_root=resolved)     # M5
+  # Never use find_project_root's discovered fallback as the explicit argument.
 
-  # host installers (claude_code/installer.py install_claude_integration :1216ff; codex :420ff; google :380ff)
-  #   state_root = find_shared_root(root) or root            # verified: knowledge/wiki/project.py:1560
+  # All three host CLI install callbacks (claude_code/cli.py:172; codex/cli.py:106; google/cli.py:79):
+  #   root = _resolve_root(path_)                          # install target, refusal already enforced
+  #   state_root = install_root(root, explicit=root).shared_root
+  #   config = load_effective_config(state_root).config
+  #   remote lookup uses this config; pass this config to the library installer, never one loaded at root.
+  #   config.is_built(state_root) and wiki_build(path_=str(state_root)) use the same shared state root.
+  # Apply this to every default first-build path; --no-build still suppresses building.
+  # Host config/status reads of wiki state also use state_root; host asset/status paths still use root.
+  #
+  # Host library installers (claude_code/installer.py:1216ff; codex:420ff; google:380ff):
+  #   state_root = install_root(root, explicit=root).shared_root
   #   config = config or load_effective_config(state_root).config; existed = config_path(state_root).exists()
   #   save_project_config(state_root, config)                 # tracked assets still go to `root`
+  # An explicitly supplied config remains a deliberate library override. CLI callers must supply
+  # shared-root configuration so worktree defaults cannot overwrite existing primary settings.
   ```
 
 ### Module 5: Doctor checks
@@ -437,7 +480,8 @@ parrot self doctor   → new checks "repo: checkout" (fails in a linked worktree
       runs first after the runtime checks."""
 
   def _check_checkout(resolved: InstallRoot) -> DoctorCheck:
-      """name="repo: checkout". ok=True detail=f"{root} (primary checkout)" when not linked or explicit;
+      """name="repo: checkout". ok=True detail=f"{root} (primary checkout)" when not linked;
+      linked and explicit → ok=True, detail=f"{root} (explicitly selected linked worktree of {shared_root})";
       otherwise ok=False, detail=f"{root} is a linked worktree of {shared_root}", fix=f"run doctor and the
       installers from {shared_root}, or pass --project {root}"."""
 
@@ -465,6 +509,9 @@ parrot self doctor   → new checks "repo: checkout" (fails in a linked worktree
 |---|---|---|
 | `test_install_root_plain_repo_and_subdirectory` | M1 | `install_root(repo/sub/dir)` → `root=repo`, `shared_root=repo`, `linked=False`; no `.git` anywhere → `root=cwd`, `linked=False` |
 | `test_install_root_linked_worktree` | M1 | with `linked_worktree_repo` (`tests/launcher/test_launcher_core.py:26`): `root=wt`, `shared_root=main`, `linked=True`; `require_primary_checkout` raises `LinkedWorktreeError` naming both paths; with `explicit=wt` it returns |
+| `test_install_root_external_gitdir_is_not_linked` | M1 | real submodule and `git init --separate-git-dir` fixtures: gitdir has no commondir; `linked=False`, `shared_root=root`; installers are not refused and wiki state remains in the checkout |
+| `test_install_root_explicit_subdir_and_malformed_metadata` | M1 | explicit subdirectory preserves its target while classification uses its containing checkout; malformed/unreadable .git or commondir never raises or produces a false linked classification |
+| `test_explicit_project_pin_provenance` | M1 | no flags/env pins returns None even inside a repository; CLI/env precedence, relative paths and invalid-directory fallback match existing launcher behavior; find_project_root still discovers the repository |
 | `test_install_root_stops_at_temp_root` | M1 | a stray `/tmp/.git` never becomes a root (`_is_temp_root`, `launcher.py:37`) |
 | `test_managed_launcher_on_path` | M1 | `which` under `parrot_home` (direct and via symlink) → True; elsewhere/absent → False |
 | `test_launcher_stdlib_only` (existing, `tests/launcher/test_launcher_stdlib_only.py`) | M1 | still passes with `dataclasses`/`shutil` imported |
@@ -481,8 +528,11 @@ parrot self doctor   → new checks "repo: checkout" (fails in a linked worktree
 | `test_host_cli_refuses_linked_worktree` (×3 host CLIs) | M4 | `install` from a worktree cwd → exit 1, message names the primary checkout and `--path`; `--path <wt>` proceeds; `status` from the worktree works |
 | `test_sdd_cli_refuses_linked_worktree_and_resolves_subdir` (extends `tests/sdd/test_sdd_cli.py`) | M4 | `sdd install` in a worktree → exit 1; in `repo/sub` → installs into `repo` |
 | `test_toolkits_cli_resolves_repo_root` | M4 | `toolkits install` from a subdirectory seeds `<repo>/.parrot/mcp-toolkits.yaml`; `list` in a non-git dir still works (`test_list_on_empty_repo` unchanged) |
-| `test_host_install_keeps_wiki_config_on_primary_checkout` | M4 | `install_claude_integration(wt_root)` writes `main/.parrot/wiki.json` and nothing under `wt/.parrot/`; `find_project_root(wt)` (wiki) still returns `main` |
+| `test_toolkits_cli_worktree_path_override` | M4 | parameterize install/uninstall/enable/disable: no --path from a linked worktree exits 1 before prompts/writes; --path wt proceeds on wt; invalid paths fail validation; list/status never refuse |
+| `test_host_install_keeps_wiki_config_on_primary_checkout` | M4 | all three library installers at wt_root preserve existing non-default primary wiki settings and create no wt/.parrot/wiki.json; `find_project_root(wt)` (wiki) still returns main |
+| `test_host_cli_worktree_preserves_shared_config_and_build_root` | M4 | all three CLIs with --path wt and no local wiki.json: primary wiki name/backend/settings are preserved, config loading and build checks/build invocation target main, no worktree wiki plane is created; --no-build skips builds; Claude/Codex --remote reuse primary remote settings without --remote-url |
 | `test_doctor_repo_checkout` (extends `tests/self_/test_doctor_sdd.py`) | M5 | linked worktree without pin → failing `repo: checkout` with fix; primary checkout / explicit pin → ok |
+| `test_doctor_cli_pin_provenance` | M5 | invoke doctor from worktree cwd with argv/env pins absent: repo: checkout fails; genuine --project/PARROT_PROJECT/CLAUDE_PROJECT_DIR pins pass and retain linked classification; --runtime-only omits checkout check |
 | `test_doctor_host_config_form` (extends `tests/self_/test_doctor.py`) | M5 | baked `.mcp.json` → informational `host config: claude .mcp.json form` with the `--portable` hint; portable → `portable`; never fails doctor |
 
 ### Integration Tests
@@ -531,15 +581,15 @@ def managed_launcher(tmp_path, monkeypatch):
 
 > This feature is complete when ALL of the following are true:
 
-- [ ] AC1 `parrot.launcher` still imports only the stdlib (`test_launcher_stdlib_only`), and exposes `InstallRoot`, `LinkedWorktreeError`, `managed_launcher_on_path`, `install_root`, `require_primary_checkout`.
-- [ ] AC2 `install_root()` returns the same `root` for a repository root and any of its subdirectories; a linked worktree yields `linked=True` and `shared_root` = the primary checkout; a directory outside any repository yields itself.
+- [ ] AC1 `parrot.launcher` still imports only the stdlib (`test_launcher_stdlib_only`), and exposes `InstallRoot`, `LinkedWorktreeError`, `managed_launcher_on_path`, `explicit_project_pin`, `install_root`, `require_primary_checkout`; extracting pin resolution preserves existing `find_project_root` behavior.
+- [ ] AC2 Without an explicit target, `install_root()` returns the same `root` for a repository root and any of its subdirectories; a linked worktree with valid commondir metadata yields `linked=True` and `shared_root` = the primary checkout; a directory outside any repository yields itself. Submodules and separate-git-dir checkouts without commondir yield `linked=False`, `shared_root=root`, and are not refused. An explicit subdirectory remains the target while classification uses its containing checkout.
 - [ ] AC3 On a fresh repository (no host config) with the managed launcher on `PATH`, `parrot claude|codex|google install`, `parrot sdd install` and `parrot toolkits install` write no absolute path into `.mcp.json`, `.codex/config.toml`, the Google configs, `.claude/settings.json` or the agents' guard hook — without any `--portable` flag.
 - [ ] AC4 On a fresh repository with no managed launcher, the same commands write the baked form and each prints exactly one `note: host config baked to absolute paths (…)` line naming the fix; `guard hook baked` keeps its own existing note.
 - [ ] AC5 A repository whose host config is already baked stays baked on a plain re-install even with the launcher on `PATH` (sticky), and migrates with an explicit `--portable`; a portable one stays portable; `--no-portable` migrates it back (existing transition tests keep passing).
 - [ ] AC6 `parrot sdd install --portable` on a fresh repository produces portable `parrot-sdd-coder` / `parrot-bounded-source` entries for every selected host; `parrot sdd install --no-portable` writes the baked form for the guard hook, the dangerous guard and the toolkit entries even with the launcher on `PATH`; `parrot toolkits install|enable --portable/--no-portable` are accepted and honoured.
 - [ ] AC7 Run from inside a linked worktree without `--path`, `parrot claude|codex|google install|uninstall`, `parrot sdd install|uninstall` and `parrot toolkits install|uninstall|enable|disable` write nothing, exit 1 and name the primary checkout and the `--path` escape hatch; with `--path <worktree>` they proceed; `status`/`list` verbs never refuse.
-- [ ] AC8 A host installer pointed at a linked worktree (`--path`) writes `.parrot/wiki.json` only under the primary checkout; `wikitoolkit`'s `find_project_root()` from that worktree still resolves the primary checkout.
-- [ ] AC9 `parrot self doctor` inside a linked worktree (no `--project`/pin) fails with `repo: checkout` and a fix naming the primary checkout; with a pin or from the primary checkout the check passes; `--runtime-only` never runs it.
+- [ ] AC8 Each host CLI and library installer pointed at a linked worktree preserves existing non-default primary wiki settings, loads configuration and remote settings from the primary checkout, and writes `.parrot/wiki.json` only there. Initial build checks and builds target that same primary checkout; `--no-build` suppresses builds. Host assets remain at the explicit install target, no worktree wiki plane is created, and `wikitoolkit`'s `find_project_root()` from the worktree still resolves the primary checkout.
+- [ ] AC9 `parrot self doctor` inside a linked worktree (no `--project`/pin) fails with `repo: checkout` and a fix naming the primary checkout, verified through the CLI with argv/env pins absent. Only a genuine valid CLI/environment pin sets `explicit=True`; with a pin or from the primary checkout the check passes; `--runtime-only` never runs it.
 - [ ] AC10 `parrot self doctor` reports one informational `host config: <label> form` check per present host config (`portable` / `baked absolute paths` / `no managed entries`); it never changes doctor's exit code.
 - [ ] AC11 `guard_hook_command(portable=None)` and `guard_hook_command(portable=True)` return byte-identical outputs to today's `False`/`True` for the same `PATH`/`PARROT_HOME`; `portable=False` now forces the baked form (`tests/sdd/test_installer.py:353-407` pass after replacing `portable=False` with `portable=None` in the two auto-rule tests).
 - [ ] AC12 `docs/install/global-runtime.md` no longer says "The default stays baked absolute paths"; it documents the launcher rule, stickiness, the note, the worktree refusal and `--path`; the three bookstore skill assets tell agents to run the host installer from the primary checkout or pass `--path`.
@@ -660,12 +710,13 @@ def _project_root_for(cwd: Path, relative: Path) -> Path                        
 | `HostAdapter.reconcile(..., portable=)` | `_reconcile_all` | keyword forward | `toolkit_install.py:150` |
 | `_install_toolkits_step(..., portable=)` | `install_sdd_integration` | call site | `sdd/installer.py:1152` |
 | `_resolve_root(write=)` | host CLI commands | `install`/`uninstall` write, `status` read | `claude_code/cli.py:140,255,276`; `codex/cli.py:92,156,181`; `google/cli.py:69,105,119` |
-| `find_shared_root(root) or root` | host installers' wiki config | `load_effective_config`/`config_path`/`save_project_config` argument | `claude_code/installer.py:1216ff`; `codex/installer.py:420ff`; `google/installer.py:380ff` |
+| `InstallRoot.shared_root` | host CLIs and installers' wiki config, remote lookup and builds | `load_effective_config`/`config_path`/`save_project_config`/`is_built`/`wiki_build` argument | CLI config loads: `claude_code/cli.py:172`; `codex/cli.py:106`; `google/cli.py:79`; installer entry functions in §2 |
 | `_check_checkout()` | `run_doctor` | appended after the runtime checks when scope ≠ runtime-only | `self_/doctor.py:673-675` |
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`parrot.mcp.portability`~~ — created by M2; nothing imports it today.
-- ~~`parrot.launcher.install_root` / `InstallRoot` / `LinkedWorktreeError` / `managed_launcher_on_path` / `require_primary_checkout`~~ — created by M1.
+- ~~`parrot.launcher.install_root` / `InstallRoot` / `LinkedWorktreeError` / `managed_launcher_on_path` / `explicit_project_pin` / `require_primary_checkout`~~ — created by M1.
+- ~~`parrot toolkits install|uninstall|enable|disable --path`~~ — added by M4, with explicit target forwarding and directory validation.
 - ~~`install_toolkits(..., portable=)`, `HostAdapter.reconcile(..., portable=)`~~ — no `portable` parameter exists on either today (`toolkit_install.py:158`, `hosts.py:51`).
 - ~~`parrot toolkits install --portable`~~ — the flag exists only on `claude|codex|google install` (`--portable/--no-portable`) and `sdd install` (`--portable`, boolean flag).
 - ~~`run_doctor(..., install_root=)`~~ — added by M5.
@@ -705,6 +756,7 @@ Verified against: `bc9bb3ead6`
 | `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py` | MODIFY | `def _resolve_root(path: Optional[str]) -> Path:` | `cli.py:36` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py` | MODIFY | `def _resolve_root(path: Optional[str]) -> Path:` | `cli.py:25` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/google/cli.py` | MODIFY | `def _resolve_root(path: Optional[str]) -> Path:` | `cli.py:25` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py`, `…/codex/cli.py`, `…/google/cli.py` | MODIFY | `        config = load_effective_config(root).config` | `claude_code/cli.py:172`; `codex/cli.py:106`; `google/cli.py:79` | 1 per install callback; also route its remote lookup, `config.is_built(root)` and `context.invoke(wiki_build, path_=str(root), quiet=True)` through state_root |
 | `packages/ai-parrot/src/parrot/self_/cli.py` | MODIFY | `    root = find_project_root(sys.argv[1:], os.environ, Path.cwd()) or Path.cwd()` | `cli.py:72` | 1 |
 | `packages/ai-parrot/src/parrot/self_/doctor.py` | MODIFY | `def run_doctor(root: Path, *, scope: DoctorScope = "full") -> list[DoctorCheck]:` | `doctor.py:664` | 1 |
 | `packages/ai-parrot/src/parrot/self_/doctor.py` | MODIFY | `def _check_host_configs(root: Path) -> list[DoctorCheck]:` | `doctor.py:590` | 1 |
@@ -719,8 +771,9 @@ Verified against: `bc9bb3ead6`
 ### Patterns to Follow
 - **`parrot.launcher` is stdlib-only and hook-critical** (`launcher.py:1-5`): `install_root()` must not
   import `parrot.knowledge.wiki.project`; the primary-checkout resolution is `repository_paths()`'s
-  `commondir` logic, which is already there. `find_shared_root()` is used only by the host *installers*
-  (M4, G6), which already import the wiki project module.
+  `commondir` logic, which is already there, plus inspection of the original gitdir to establish actual
+  linked-worktree metadata. Installers and host CLIs use `InstallRoot.shared_root`; do not substitute
+  `find_shared_root()` for classification, since its external-gitdir behavior also assumes common.parent.
 - **Stickiness first, launcher second.** `resolve_portable_mode` must never flip an existing baked host to
   portable without `--portable` (AC5) — the tri-state `None` is what makes "fresh" distinguishable; keep the
   tie-break rules of the existing `_current_portable_mode` helpers intact and only change their "nothing
@@ -729,8 +782,9 @@ Verified against: `bc9bb3ead6`
   called from `install_*_integration` must not add a second copy (pass the resolved `bool`, as today).
 - **Refuse before writing.** `require_primary_checkout()` runs before any plan/write in every write verb,
   `--dry-run` included; `status`/`list` resolve with `write=False`.
-- **Doctor pins count as explicit.** `self_/cli.py` passes the launcher's `find_project_root()` result as
-  `explicit=` so `--project`, `PARROT_PROJECT` and `CLAUDE_PROJECT_DIR` behave as `--path`.
+- **Only genuine doctor pins count as explicit.** `self_/cli.py` passes `explicit_project_pin()` as
+  `explicit=` so `--project`, `PARROT_PROJECT` and `CLAUDE_PROJECT_DIR` behave as `--path`. The existing
+  `find_project_root()` discovery fallback is never evidence of an explicit selection.
 - Error and note texts are fixed in §3; tests assert on them.
 
 ### Known Risks / Gotchas
@@ -780,7 +834,7 @@ Verified against: `bc9bb3ead6`
 - **Shared files** (their tasks get serialized): `sdd/installer.py` (M2 `guard_hook_command` and the
   tri-state signatures; M3 `_install_toolkits_step` + call site); `sdd/cli.py` (M3 `--portable/--no-portable`;
   M4 `_root`); `knowledge/wiki/{claude_code,codex,google}/installer.py` (M2
-  tri-state + `portable is None` sites; M4 `find_shared_root` state root in the three `install_*_integration`
+  tri-state + `portable is None` sites; M4 `InstallRoot.shared_root` state root in the three `install_*_integration`
   functions); `cli/toolkits.py` (M3 `--portable` options; M4 root helper); `self_/doctor.py` (M5 only);
   `self_/cli.py` (M4 only).
 - **Exclusive resources**: none (no extension rebuild, no lockfile, no asset regeneration — the bookstore
@@ -824,10 +878,10 @@ entries:
     rationale: "Owner decision 2026-11-04 (block, do not warn). Installing in place would also tempt writing .parrot/wiki.json into the worktree and split the wiki plane; redirecting is what happened by accident and hid the bug."
     rejected_alternatives: ["install into the worktree with a note", "redirect to the primary checkout with a note"]
   - id: wiki-config-lives-on-the-primary-checkout
-    statement: Host installers read and write .parrot/wiki.json at find_shared_root(root) or root, so a linked worktree never acquires its own wiki plane.
+    statement: Host CLIs and installers load and save wiki configuration, resolve remote settings and perform initial builds at InstallRoot.shared_root, preserving the primary configuration when targeting a linked worktree. Host assets use InstallRoot.root; external gitdirs without commondir are not linked worktrees.
     relation: requires
     about: [sdd-tooling]
-    targets: [sym:packages/ai-parrot/src/parrot/knowledge/wiki/project.py#find_shared_root]
+    targets: [file:packages/ai-parrot/src/parrot/launcher.py, file:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py, file:packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py, file:packages/ai-parrot/src/parrot/knowledge/wiki/google/cli.py]
     contradicts: []
     supersedes: []
     rationale: "FEAT-697: the plane exists only in the primary checkout; a worktree-local wiki.json would make find_project_root stop at the worktree."
@@ -845,7 +899,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:6a6263db7dbff420d0cf9eef22c738c4c9373029e2ecd4394a430fd816d29a4f evaluation_digest=sha256:f83d540bf192b3c659a8880b934d5d9119175abfd73172b1f28df62c47969ed9 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:180886adb14f1ed918ba57622caecb4a652862c76d251f6f32c60f6629768ad1 evaluation_digest=sha256:c9b8f821b46b72710ac40b5a590d5cac28be3ce4e52369739445df6386f403a1 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -853,11 +907,11 @@ Findings:
 - `blast-radius` [advisory]; waived_by: not recorded; participants: adr:spec:installer-portability-gaps#single-portable-rule@1; scope: sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py#install_claude_integration; message: sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py#install_claude_integration impacts 38 dependent(s): sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#_install, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_default_install_unchanged, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_foreign_toolkit_entry_untouched, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_plain_reinstall_keeps_portable_wikitoolkit_without_toolkits, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_portable_install_no_abs_paths, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_portable_transitions_both_ways, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_reconcile_respects_portable, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_remote_does_not_reset_portable_mode, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_remote_portable_sticky, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#_install_claude, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_baked_install_falls_back_to_the_bare_wikitoolkit_command, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_bare_wikitoolkit_tie_broken_by_toolkit_entries, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_bare_wikitoolkit_without_toolkit_entries_is_portable, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_explicit_portable_migrates_a_baked_install, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_mixed_toolkit_entries_are_portable, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_plain_reinstall_keeps_a_baked_install_baked, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_chains_into_env_bash_git_hook, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_chains_into_existing_git_hook, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_claude_md_repaired_when_end_marker_lost, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_customised_nudge_tools_not_overridden, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_duplicate_sharing_an_entry_keeps_the_foreign_hook, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_fresh_install_writes_all_artifacts, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_install_is_idempotent, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_invalid_settings_json_aborts, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_no_git_hook_option, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_preserves_existing_claude_md, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_preserves_existing_settings_hooks, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_reinstall_collapses_a_quoted_duplicate, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_reinstall_migrates_nudge_tools, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_reinstall_migrates_permissions_to_local, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_reinstall_upgrades_hook_matcher, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_skips_chaining_into_non_sh_git_hook, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_status_reflects_install_state, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_uninstall_keeps_a_foreign_hook_sharing_our_entry, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_uninstall_removes_only_ours, sym:tests/knowledge/wiki/test_claude_code_compaction.py#TestIntegrationWiring.test_library_default_is_opt_in_and_cli_default_is_on, sym:tests/knowledge/wiki/test_claude_code_compaction.py#TestIntegrationWiring.test_status_labels_include_compaction, sym:tests/knowledge/wiki/test_installer_ledger_hooks.py#test_install_claude_integration_action_count
 - `blast-radius` [advisory]; waived_by: not recorded; participants: adr:spec:installer-portability-gaps#linked-worktrees-refuse-installers@1; scope: sym:packages/ai-parrot/src/parrot/self_/doctor.py#run_doctor; message: sym:packages/ai-parrot/src/parrot/self_/doctor.py#run_doctor impacts 3 dependent(s): sym:packages/ai-parrot/src/parrot/self_/cli.py#doctor, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_run_doctor_never_raises_on_empty_home, sym:packages/ai-parrot/tests/self_/test_doctor_sdd.py#test_scope_runtime_only_excludes_repo_host_and_component_checks
 - `blast-radius` [advisory]; waived_by: not recorded; participants: adr:spec:installer-portability-gaps#host-config-form-is-informational@1; scope: sym:packages/ai-parrot/src/parrot/self_/doctor.py#_check_host_configs; message: sym:packages/ai-parrot/src/parrot/self_/doctor.py#_check_host_configs impacts 8 dependent(s): sym:packages/ai-parrot/src/parrot/self_/cli.py#doctor, sym:packages/ai-parrot/src/parrot/self_/doctor.py#run_doctor, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_doctor_flags_broken_host_config, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_gemini_cross_repo_collision, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_gemini_repo_local_config_checked, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_remote_http_entry_is_not_flagged, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_run_doctor_never_raises_on_empty_home, sym:packages/ai-parrot/tests/self_/test_doctor_sdd.py#test_scope_runtime_only_excludes_repo_host_and_component_checks
-- `blast-radius` [advisory]; waived_by: not recorded; participants: adr:spec:installer-portability-gaps#wiki-config-lives-on-the-primary-checkout@1; scope: sym:packages/ai-parrot/src/parrot/knowledge/wiki/project.py#find_shared_root; message: sym:packages/ai-parrot/src/parrot/knowledge/wiki/project.py#find_shared_root impacts 25 dependent(s): sym:examples/dev_loop/server.py#_on_startup, sym:packages/ai-parrot/src/parrot/cli/devloop/bootstrap.py#build_dev_flow_runtime, sym:packages/ai-parrot/src/parrot/cli/devloop/bootstrap.py#build_runtime, sym:packages/ai-parrot/src/parrot/flows/dev_loop/wiki_search.py#DevLoopWikiSearch.from_project, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#_git_toplevel, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#ledger_export_log, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#ledger_import_log, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#ledger_rotate_log, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#schema_add_source, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#schema_ingest_ddl, sym:packages/ai-parrot/src/parrot/knowledge/wiki/mcp_server.py#abuild_wiki_tools, sym:packages/ai-parrot/src/parrot/knowledge/wiki/mcp_server.py#build_wiki_tools, sym:packages/ai-parrot/src/parrot/knowledge/wiki/schema/service.py#SchemaPlaneService.from_root, sym:packages/ai-parrot/src/parrot/knowledge/wiki/standup/collectors/ledger.py#collect, sym:packages/ai-parrot/src/parrot/sdd/scripts/close_task.py#_emit_task_closed, sym:packages/ai-parrot/tests/knowledge/wiki/test_project_roots.py#test_configured_project_below_temp_root_wins_over_git_fallback, sym:packages/ai-parrot/tests/knowledge/wiki/test_project_roots.py#test_project_below_temp_root_still_resolves, sym:packages/ai-parrot/tests/knowledge/wiki/test_project_roots.py#test_stray_git_at_temp_root_is_not_a_project_root, sym:packages/ai-parrot/tests/knowledge/wiki/test_project_roots.py#test_temp_root_itself_is_never_a_root, sym:packages/ai-parrot/tests/knowledge/wiki/test_wiki_tool_bundle.py#test_async_builder_no_transient_loop, sym:tests/knowledge/wiki/test_devloop_ledger_context.py#TestDevLoopWikiLedgerContext.test_linked_worktree_opens_main_wiki, sym:tests/knowledge/wiki/test_project_shared_root.py#TestFindSharedRoot.test_find_shared_root_no_git, sym:tests/knowledge/wiki/test_project_shared_root.py#TestFindSharedRoot.test_find_shared_root_regular_repo, sym:tests/knowledge/wiki/test_project_shared_root.py#TestFindSharedRoot.test_find_shared_root_tolerance_to_failures, sym:tests/knowledge/wiki/test_project_shared_root.py#TestFindSharedRoot.test_find_shared_root_with_start_param; inferred: sym:packages/ai-parrot/src/parrot/sdd/scripts/close_task.py#_emit_task_closed_inprocess
 - `blast-radius` [advisory]; waived_by: not recorded; participants: adr:spec:installer-portability-gaps#single-portable-rule@1; scope: sym:packages/ai-parrot/src/parrot/knowledge/wiki/google/installer.py#install_google_integration; message: sym:packages/ai-parrot/src/parrot/knowledge/wiki/google/installer.py#install_google_integration impacts 11 dependent(s): sym:packages/ai-parrot/src/parrot/knowledge/wiki/google/cli.py#install, sym:packages/ai-parrot/tests/knowledge/wiki/test_google_portable.py#_install, sym:packages/ai-parrot/tests/knowledge/wiki/test_google_portable.py#test_default_emission_unchanged, sym:packages/ai-parrot/tests/knowledge/wiki/test_google_portable.py#test_foreign_entries_untouched, sym:packages/ai-parrot/tests/knowledge/wiki/test_google_portable.py#test_portable_config_two_roots, sym:packages/ai-parrot/tests/knowledge/wiki/test_google_portable.py#test_portable_entries_no_abs_paths, sym:packages/ai-parrot/tests/knowledge/wiki/test_google_portable.py#test_portable_transitions_and_sticky_reconcile, sym:tests/knowledge/wiki/test_google_integration.py#test_install_is_idempotent_and_preserves_unrelated_config, sym:tests/knowledge/wiki/test_google_integration.py#test_install_writes_mcp_skill_instructions_and_plugin, sym:tests/knowledge/wiki/test_google_integration.py#test_invalid_mcp_config_aborts_without_overwriting, sym:tests/knowledge/wiki/test_google_integration.py#test_uninstall_removes_only_managed_assets
 - `blast-radius` [advisory]; waived_by: not recorded; participants: adr:spec:installer-portability-gaps#single-portable-rule@1; scope: sym:packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py#install_codex_integration; message: sym:packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py#install_codex_integration impacts 19 dependent(s): sym:packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py#install, sym:packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py#test_default_emission_unchanged, sym:packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py#test_portable_entries_no_abs_paths, sym:packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py#test_portable_transitions_both_ways, sym:packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py#test_reconcile_sticky, sym:packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py#test_remote_does_not_reset_portable_mode, sym:packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py#test_remote_portable_sticky, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_baked_install_falls_back_to_the_bare_wikitoolkit_command, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_bare_wikitoolkit_tie_broken_by_toolkit_entries, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_bare_wikitoolkit_without_toolkit_entries_is_portable, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_explicit_portable_migrates_a_baked_install, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_plain_reinstall_keeps_a_baked_install_baked, sym:tests/knowledge/wiki/test_codex_installer_toolkit_entries.py#test_codex_install_reconciles_declared_toolkits, sym:tests/knowledge/wiki/test_codex_integration.py#test_install_is_idempotent_and_preserves_unrelated_config, sym:tests/knowledge/wiki/test_codex_integration.py#test_install_replaces_manual_wikitoolkit_mcp_table, sym:tests/knowledge/wiki/test_codex_integration.py#test_install_writes_mcp_skill_instructions_and_permissions, sym:tests/knowledge/wiki/test_codex_integration.py#test_invalid_config_aborts_without_overwriting, sym:tests/knowledge/wiki/test_codex_integration.py#test_uninstall_removes_only_managed_assets, sym:tests/knowledge/wiki/test_codex_toolkit_reconcile.py#test_empty_toolkit_config_hints_at_new_command; inferred: sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#_install_codex
 - `blast-radius` [advisory]; waived_by: not recorded; participants: adr:spec:installer-portability-gaps#single-portable-rule@1; scope: sym:packages/ai-parrot/src/parrot/sdd/installer.py#guard_hook_command; message: sym:packages/ai-parrot/src/parrot/sdd/installer.py#guard_hook_command impacts 40 dependent(s): sym:packages/ai-parrot/src/parrot/sdd/installer.py#_install_dangerous_guard, sym:packages/ai-parrot/src/parrot/sdd/installer.py#dangerous_hook_command, sym:packages/ai-parrot/src/parrot/sdd/installer.py#install_sdd_integration, sym:packages/ai-parrot/src/parrot/sdd/installer.py#sdd_status, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_agents_dispatched_by_packaged_autopilot_are_installed, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_dry_run_changes_nothing, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_existing_gitignore_content_preserved, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_foreign_file_never_touched_even_with_force, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_gitattributes_block_written_recorded_and_removed, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_gitignore_block_ignores_worktrees_and_parrot_state, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_guard_hook_absent_is_resolvable, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_guard_hook_baked_when_launcher_absent, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_guard_hook_bare_when_managed_launcher_on_path, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_guard_hook_mode_change_is_outdated_not_edited, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_guard_hook_portable_flag_forces_bare, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_guard_hook_quoting_space_and_quote, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_guard_hook_status_flags_hand_patched_foreign, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_install_never_writes_through_a_symlink_out_of_the_repo, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_install_refuses_malformed_config_before_writing, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_install_warns_when_test_command_is_null, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_ledger_hooks_installed_for_any_host, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_ledger_hooks_kept_when_shared_with_claude_integration, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_ledger_hooks_removed_on_uninstall_when_sdd_created_them, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_modified_file_skipped_unless_force_and_kept_on_uninstall, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_non_claude_host_skills_have_every_file_they_read, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_reinstall_is_idempotent, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_reinstall_upgrades_an_old_gitignore_block, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_sdd_flow_in_foreign_repo, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_sdd_install_into_empty_repo, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_seeds_written_once_never_overwritten_or_removed, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_status_shape, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_uninstall_after_hand_deleting_one_asset_still_cleans_up, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_unknown_host_rejected, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_unrecorded_identical_file_is_adopted, sym:packages/ai-parrot/tests/sdd/test_installer.py#test_untouched_file_upgrades_from_older_record, sym:packages/ai-parrot/tests/sdd/test_installer_stale.py#stale_repo, sym:packages/ai-parrot/tests/sdd/test_installer_stale.py#test_current_targets_and_seeds_never_stale, sym:packages/ai-parrot/tests/sdd/test_installer_stale.py#test_install_reports_stale_note, sym:packages/ai-parrot/tests/sdd/test_installer_stale.py#test_status_reports_stale, sym:packages/ai-parrot/tests/sdd/test_installer_stale.py#test_unreadable_folder_does_not_break_install_or_status
 - `potential-conflict` [advisory]; waived_by: not recorded; participants: adr:spec:installer-portability-gaps#installers-target-the-checkout-you-run-in@1, adr:spec:installer-portability-gaps#linked-worktrees-refuse-installers@1; scope: file:packages/ai-parrot/src/parrot/launcher.py; message: adr:spec:installer-portability-gaps#installers-target-the-checkout-you-run-in (constrains) and adr:spec:installer-portability-gaps#linked-worktrees-refuse-installers (forbids) govern overlapping scope
+- `potential-conflict` [advisory]; waived_by: not recorded; participants: adr:spec:installer-portability-gaps#linked-worktrees-refuse-installers@1, adr:spec:installer-portability-gaps#wiki-config-lives-on-the-primary-checkout@1; scope: file:packages/ai-parrot/src/parrot/launcher.py; message: adr:spec:installer-portability-gaps#linked-worktrees-refuse-installers (forbids) and adr:spec:installer-portability-gaps#wiki-config-lives-on-the-primary-checkout (requires) govern overlapping scope
 
 Diagnostics:
 - none
@@ -865,7 +919,7 @@ Diagnostics:
 Coverage:
 - Subsystems: bots, clients, config, flows, knowledge-graphindex, knowledge-wiki, memory, sdd-tooling, skills, tools
 - Unmapped tags: doctor, installer, mcp-toolkits, portability, worktree
-- Targets resolved: 13/13
+- Targets resolved: 12/12
 - Impact complete: true
 - Inventory complete: true
 - Omitted ids: not recorded
@@ -888,8 +942,8 @@ Coverage:
       "skills",
       "tools"
     ],
-    "targets_resolved": 13,
-    "targets_total": 13,
+    "targets_resolved": 12,
+    "targets_total": 12,
     "unmapped_tags": [
       "doctor",
       "installer",
@@ -899,7 +953,7 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:f83d540bf192b3c659a8880b934d5d9119175abfd73172b1f28df62c47969ed9",
+  "evaluation_digest": "sha256:c9b8f821b46b72710ac40b5a590d5cac28be3ce4e52369739445df6386f403a1",
   "exit_code": 0,
   "findings": [
     {
@@ -950,23 +1004,6 @@ Coverage:
       "rule_version": 1,
       "scope": [
         "sym:packages/ai-parrot/src/parrot/self_/doctor.py#_check_host_configs"
-      ],
-      "waived_by": null
-    },
-    {
-      "blocking": false,
-      "fingerprint": "sha256:52326cd078f5221df731c0f613ebf9d7bd5d0e68d9f5cbc25a18c0446a7a931d",
-      "kind": "blast-radius",
-      "message": "sym:packages/ai-parrot/src/parrot/knowledge/wiki/project.py#find_shared_root impacts 25 dependent(s): sym:examples/dev_loop/server.py#_on_startup, sym:packages/ai-parrot/src/parrot/cli/devloop/bootstrap.py#build_dev_flow_runtime, sym:packages/ai-parrot/src/parrot/cli/devloop/bootstrap.py#build_runtime, sym:packages/ai-parrot/src/parrot/flows/dev_loop/wiki_search.py#DevLoopWikiSearch.from_project, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#_git_toplevel, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#ledger_export_log, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#ledger_import_log, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#ledger_rotate_log, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#schema_add_source, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#schema_ingest_ddl, sym:packages/ai-parrot/src/parrot/knowledge/wiki/mcp_server.py#abuild_wiki_tools, sym:packages/ai-parrot/src/parrot/knowledge/wiki/mcp_server.py#build_wiki_tools, sym:packages/ai-parrot/src/parrot/knowledge/wiki/schema/service.py#SchemaPlaneService.from_root, sym:packages/ai-parrot/src/parrot/knowledge/wiki/standup/collectors/ledger.py#collect, sym:packages/ai-parrot/src/parrot/sdd/scripts/close_task.py#_emit_task_closed, sym:packages/ai-parrot/tests/knowledge/wiki/test_project_roots.py#test_configured_project_below_temp_root_wins_over_git_fallback, sym:packages/ai-parrot/tests/knowledge/wiki/test_project_roots.py#test_project_below_temp_root_still_resolves, sym:packages/ai-parrot/tests/knowledge/wiki/test_project_roots.py#test_stray_git_at_temp_root_is_not_a_project_root, sym:packages/ai-parrot/tests/knowledge/wiki/test_project_roots.py#test_temp_root_itself_is_never_a_root, sym:packages/ai-parrot/tests/knowledge/wiki/test_wiki_tool_bundle.py#test_async_builder_no_transient_loop, sym:tests/knowledge/wiki/test_devloop_ledger_context.py#TestDevLoopWikiLedgerContext.test_linked_worktree_opens_main_wiki, sym:tests/knowledge/wiki/test_project_shared_root.py#TestFindSharedRoot.test_find_shared_root_no_git, sym:tests/knowledge/wiki/test_project_shared_root.py#TestFindSharedRoot.test_find_shared_root_regular_repo, sym:tests/knowledge/wiki/test_project_shared_root.py#TestFindSharedRoot.test_find_shared_root_tolerance_to_failures, sym:tests/knowledge/wiki/test_project_shared_root.py#TestFindSharedRoot.test_find_shared_root_with_start_param; inferred: sym:packages/ai-parrot/src/parrot/sdd/scripts/close_task.py#_emit_task_closed_inprocess",
-      "participants": [
-        {
-          "decision_id": "adr:spec:installer-portability-gaps#wiki-config-lives-on-the-primary-checkout",
-          "revision": 1
-        }
-      ],
-      "rule_version": 1,
-      "scope": [
-        "sym:packages/ai-parrot/src/parrot/knowledge/wiki/project.py#find_shared_root"
       ],
       "waived_by": null
     },
@@ -1041,15 +1078,36 @@ Coverage:
         "file:packages/ai-parrot/src/parrot/launcher.py"
       ],
       "waived_by": null
+    },
+    {
+      "blocking": false,
+      "fingerprint": "sha256:559fb283aa6e176840f43923b368a079085ae3987b78693c54ca42e077687218",
+      "kind": "potential-conflict",
+      "message": "adr:spec:installer-portability-gaps#linked-worktrees-refuse-installers (forbids) and adr:spec:installer-portability-gaps#wiki-config-lives-on-the-primary-checkout (requires) govern overlapping scope",
+      "participants": [
+        {
+          "decision_id": "adr:spec:installer-portability-gaps#linked-worktrees-refuse-installers",
+          "revision": 1
+        },
+        {
+          "decision_id": "adr:spec:installer-portability-gaps#wiki-config-lives-on-the-primary-checkout",
+          "revision": 1
+        }
+      ],
+      "rule_version": 1,
+      "scope": [
+        "file:packages/ai-parrot/src/parrot/launcher.py"
+      ],
+      "waived_by": null
     }
   ],
-  "input_digest": "sha256:6a6263db7dbff420d0cf9eef22c738c4c9373029e2ecd4394a430fd816d29a4f",
+  "input_digest": "sha256:180886adb14f1ed918ba57622caecb4a652862c76d251f6f32c60f6629768ad1",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
     "inventory": {},
     "rules_version": 1,
-    "structural_revision": "sha256:ad339b4ea8aa6a0addca7b8760aa5b85a0a39d0196b802a8e8e8ea00ccc22f81",
+    "structural_revision": "sha256:6488397c5f24951c41796856dcbb3c99e68a91b9b5b6a5742b2743721b6432fa",
     "taxonomy_digest": "9887c26aa37a5daa626531f2ef465c9f7ef63adf1a9d890eb248ea33c0053dbd"
   },
   "status": "pass"
@@ -1085,3 +1143,5 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-11-04 | Jesus Lara / Claude | Initial draft from the 2026-11-04 installer evaluation and chat decisions |
 | 0.2 | 2026-11-04 | Jesus Lara / Claude | §8 resolved: `sdd install --portable/--no-portable` tri-state through the guard hook, dangerous guard and toolkits; doctor form check stays informational (new decision entry) |
+| 0.3 | 2026-11-04 | Codex | Resolve review issues 7a8775764864, fad32abb34ef, a7c49cf2413a and f110ff4c0d20: preserve shared wiki config across CLI loading/builds, retain doctor pin provenance, add toolkit --path plumbing, distinguish external gitdirs from linked worktrees; align regression tests and tri-state contracts. |
+| 0.4 | 2026-11-04 | Jesus Lara / Claude | Status → approved; decision audit re-rendered for the 0.3 contracts (`pass`, 8 advisory findings) |
