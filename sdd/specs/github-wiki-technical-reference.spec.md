@@ -33,7 +33,7 @@ GitHub Pages site at `https://phenobarbital.github.io/ai-parrot/docs/`.
 2. **Technical documentation is not a deliverable of the SDD flow.** `/sdd-spec` → `/sdd-task`
    → `/sdd-done` produce code, tests, ledger events and an E2E gate, but no documentation page.
    Hundreds of merged FEATs have no technical page.
-3. **The generated API reference covers one of nine Python namespaces** and renders HTML only,
+3. **The generated API reference covers only the core distribution** and renders HTML only,
    so it cannot feed a markdown wiki.
 
 The GitHub Wiki of `phenobarbital/ai-parrot` was bootstrapped on 2026-11-04
@@ -46,7 +46,7 @@ before `mkdocstrings` leaves the Pages site; the Pages redesign itself is a sepa
   configuration, examples, gotchas) plus a generated API reference for the public API of every
   Python distribution in the workspace.
 - G2. The monorepo is the single source of truth: a versioned `wiki/` tree plus generated pages,
-  pushed to `ai-parrot.wiki.git` by a workflow on every push to `main`. The wiki reflects released
+  pushed to `ai-parrot.wiki.git` by a workflow on every published release. The wiki reflects released
   code only.
 - G3. Make technical documentation a deliverable of every `type: feature` spec: a `docs:`
   frontmatter key and a `## 10. Documentation` chapter in the spec template, one documentation task
@@ -120,7 +120,7 @@ ships them to other repositories; `techwiki` configuration lives in `sdd/config.
 
 Resolved brainstorm/clarification decisions reflected here: CLI noun `techwiki` (collision-free
 with `parrot wiki`); `docs/decisions/**` stays in place (wikitoolkit `adr_globs` read it) and the
-bundle includes it; `docs/sdd/**` (except `WORKFLOW.md` and anything `@`-included by `CLAUDE.md`),
+bundle includes it; `docs/sdd/**` (except `WORKFLOW.md`, `CODEX.md` and other local workflow contracts),
 `docs/wiki/**` and `docs/migration/**` move to the wiki; the chapter is numbered `## 10.` so §8/§9,
 cited by number elsewhere, keep their numbers.
 
@@ -276,10 +276,19 @@ VERBS["techwiki"] = {
 `pyproject.toml`: add `techwiki = ["griffe>=2.4,<3", "jinja2>=3.1"]` to
 `[project.optional-dependencies]` (jinja2 is declared explicitly because core only gets it through
 the `agents` extra, `pyproject.toml:476`; the package floor is `>=3.11,<3.14` at line 18, so griffe
-needs no Python marker), and `"techwiki/templates/*.j2"` to the `"parrot.sdd"` package-data list. `sdd/config.json`: add the `techwiki` object listing the nine Python
-distributions (`ai-parrot`, `ai-parrot-tools`, `ai-parrot-loaders`, `ai-parrot-pipelines`,
-`ai-parrot-server`, `ai-parrot-embeddings`, `ai-parrot-integrations`, `ai-parrot-advisors`,
-`ai-parrot-visualizations`), `site_url`, `source_url`.
+needs no Python marker), and `"techwiki/templates/*.j2"` to the `"parrot.sdd"` package-data list.
+`sdd/config.json`: add the `techwiki` object with `site_url`, `source_url` and a complete
+`packages` inventory derived from the root `pyproject.toml` workspace members and each member's
+distribution metadata and Python source layout. Do not freeze the inventory at nine packages:
+include every member shipping Python sources or stubs, including all `ai-parrot-client-*`
+providers, `ai-parrot-openlit-bridge`, and Python wrappers around native code. Record the actual
+distribution name, repository-relative search path and import roots; do not infer import names
+from distribution names or import packages to discover them. Non-Python-only members are outside
+the API scope; native modules without Python sources/stubs retain the documented skip policy.
+`test_techwiki_config.py` must compare configured distributions/search paths with the workspace's
+Python-bearing members so a new or omitted distribution fails validation. M2 must additionally
+assert representative rendered modules from client and other satellite distributions; merely
+listing their paths is not evidence that namespace merging loaded them.
 
 ### Module 2: API reference generator (`M2`) — depends on M1
 
@@ -490,18 +499,24 @@ check locally; it is advisory and off by default.
 
 **Files**: CREATE `wiki/_index.yaml`, `wiki/<section>/*.md` (moved with `git mv`, translated to
 English when needed, links rewritten); MODIFY `mkdocs.yml` (nav), `docs/index.md` (moved-page
-notice), `CLAUDE.md`/`.agent/CONTEXT.md` only where they link a moved page; CREATE
+notice), retained `docs/**/*.md` pages wherever they link a moved page (including
+`docs/chapters/*.md`), `CLAUDE.md`/`.agent/CONTEXT.md` only where they link a moved page; CREATE
 `sdd/state/FEAT-801/migration-map.md` (the executed file → page mapping).
 
 Classification rule (the task writes the mapping from it; the spec does not list 200 files):
 - **Stays on Pages**: `docs/index.md`, `INSTALL.md`, `config.md`, `tools_quick.md`,
   `STYLE_GUIDE.md`, `chapters/**`, `guides/**`, `examples/**`, `branding/**`, `postman/**`,
   `aws/**`, `superpowers/**`, `docs/decisions/**` (ADRs, included by the bundle),
-  `docs/sdd/WORKFLOW.md` and every file `@`-included by `CLAUDE.md`, roadmap/brainstorm pages.
+  `docs/sdd/WORKFLOW.md`, `docs/sdd/CODEX.md` and every file `@`-included by `CLAUDE.md`,
+  roadmap/brainstorm pages. Preserve any other document read as a local workflow contract by
+  commands, skills, scripts or tests; enumerate these exceptions and their consumers in the
+  migration map before moving files. `docs/sdd/CODEX.md` is a mandatory read for SDD skills;
+  its separate packaged-only wheel copy does not protect checkout consumers or make asset-sync
+  a check for broken local links.
 - **Moves to `wiki/`**: every other page reachable from the mkdocs nav sections Foundations,
   LLM Clients, Bots & Agents, Memory & Knowledge, Knowledge Graph, Tools/Loaders & RAG,
   Integrations & Transport, Prompts, Orchestration & Flows, Advanced (APIs, outputs, security,
-  operations, migration guides), plus `docs/sdd/**` (except WORKFLOW.md), `docs/wiki/**`,
+  operations, migration guides), plus `docs/sdd/**` (except the local workflow contracts above), `docs/wiki/**`,
   `docs/migration/**`, `docs/dev_loop/**` and the top-level technical pages not in the nav.
 - Sections in `_index.yaml`: Architecture · Clients · Bots & Agents · Memory · Knowledge ·
   Tools & Toolkits · Flows · Skills · Stores & Loaders · MCP & A2A · Server & APIs ·
@@ -509,6 +524,13 @@ Classification rule (the task writes the mapping from it; the spec does not list
   LLM Wiki · Decisions · API Reference (last two are bundle-generated).
 - `mkdocs build --strict` must pass after the move (AC-10); moved pages get no redirects, only a
   "Technical reference moved to the Wiki" notice on `docs/index.md`.
+- Use the migration map to rewrite every inbound link from retained Pages documents to the
+  destination wiki URL, preserving link labels and mapping fragments to destination headings.
+  For example, `docs/chapters/foundations.md` links to `docs/architecture/01-mcp-server.md` and
+  other architecture pages that move in M7. Repair these links in M7, before its strict build;
+  M9 only owns the later `api-reference/` removal. Validate mapped destinations against the
+  bundle manifest as well as running MkDocs, since MkDocs does not verify external wiki URLs.
+  Keep the existing API Reference nav and plugin until the separately delivered M9.
 
 ### Module 8: Backfill subsystem pages (`M8`) — depends on M4 (template), M7 (sections)
 
@@ -520,7 +542,16 @@ Classification rule (the task writes the mapping from it; the spec does not list
 `sdd/templates/techwiki-page.md`, each linking its `ref:` pages, written from the code and
 existing specs; a page that already exists after M7 is extended, not duplicated).
 
-### Module 9: Pages cut-over (`M9`) — depends on M6 having published a release green (human-observed)
+### Module 9: Pages cut-over (`M9`) — separate post-release delivery
+
+M9 is a follow-up contract, not a task in FEAT-801's initial M1–M8 index or a prerequisite for
+its closeout. First merge and release M1–M8 with the existing Pages API reference intact. After
+the first successful `techwiki` release run, create a separate cut-over spec/task index, worktree
+and PR from the then-current integration branch. Carry this M9 scope and AC-12b/AC-13 into that
+follow-up, recording the successful run URL, release tag and source SHA before implementation.
+The initial delivery handoff must explicitly retain this outstanding follow-up; it must not claim
+that Pages cut-over or production publication has already happened. Preview dispatch artifacts
+do not satisfy the release precondition.
 
 **Files**: MODIFY `mkdocs.yml` (remove `mkdocstrings` plugin block and the `API Reference` nav
 block), `requirements-docs.txt` (drop `mkdocstrings[python]`), `docs/index.md` ("Browse the
@@ -546,7 +577,7 @@ Completion Note must cite the green `techwiki` **release** run URL before it is 
 | M6 | yes | workflow shape fixed above |
 | M7 | no (judgement: classification + translation) | rule fixed; mapping is the task's artifact |
 | M8 | no (content) | template fixed; content needs the thinking model |
-| M9 | yes | mechanical edits, gated on a human-observed precondition |
+| M9 | follow-up only | separate post-release task index/PR; never generated in the initial feature graph |
 
 ---
 
@@ -556,6 +587,8 @@ Completion Note must cite the green `techwiki` **release** run URL before it is 
 | Test | Module | Description |
 |---|---|---|
 | `test_techwiki_config_defaults_and_forbid_extra` | M1 | `load_techwiki_config` defaults; unknown key rejected; `SddConfig.techwiki` round-trips `sdd/config.json` |
+| `test_workspace_python_distribution_coverage` | M1 | configured distributions and search paths cover every Python-bearing workspace member, including provider clients and Python wrappers; an omitted member fails |
+| `test_generate_satellite_coverage` | M2 | representative modules from configured client and other satellite source trees actually render, including shared `parrot` namespace contributions |
 | `test_page_name_rules` | M1 | spaces → `-`, section prefix, literal hyphen → `PageNameError`, empty title → error |
 | `test_rewrite_links_relative_and_ref` | M1 | relative `.md` and `ref:` links → `[[Name]]`; unknown → collected as dangling |
 | `test_generate_static_no_import` | M2 | fixture package renders without being importable (sys.modules untouched) |
@@ -583,6 +616,11 @@ Completion Note must cite the green `techwiki` **release** run URL before it is 
 | `test_check_asset_sync --check` (existing CI step) | `_assets/` regenerated for every changed command/template |
 | `test_command_twin_parity` (existing) | `.agent/workflows/sdd-spec.md` / `sdd-task.md` stay byte-identical to the commands modulo frontmatter |
 | `test_cli_techwiki_mounted` (`packages/ai-parrot/tests/sdd/`) | `parrot sdd techwiki --help` lists api/bundle/check/sidebar via `mounted_modules()` |
+
+M7 validation additionally checks every migration-map destination against the bundle manifest,
+audits inbound links in retained Pages documents, verifies that local workflow-contract paths
+(including `docs/sdd/CODEX.md`) still exist, and runs `mkdocs build --strict`. Record these checks
+in its Completion Note; asset-sync alone cannot validate checkout documentation consumers.
 
 ### Validation Contract
 
@@ -620,10 +658,12 @@ def techwiki_repo(tmp_path: Path) -> Path:
 
 ## 5. Acceptance Criteria
 
-> This feature is complete when ALL of the following are true:
+> Initial FEAT-801 delivery (M1–M8) requires all criteria below except AC-12b and AC-13.
+> Those two criteria belong to the separate post-release M9 delivery and remain outstanding
+> in the initial handoff. `/sdd-task` must not generate M9 in the initial feature task index.
 
 - [ ] AC-1 `parrot sdd techwiki --help` lists `api`, `bundle`, `check`, `sidebar`; `mounted_modules()` includes the three new script modules.
-- [ ] AC-2 `parrot sdd techwiki api` renders the public API of every distribution listed in `sdd/config.json` without importing any of them (test asserts `sys.modules` unchanged for the fixture package).
+- [ ] AC-2 `sdd/config.json` covers every Python-bearing workspace distribution and its search paths (workspace inventory test); `parrot sdd techwiki api` renders their public API, with representative client/satellite coverage assertions, without importing any of them (test asserts `sys.modules` unchanged for the fixture package).
 - [ ] AC-3 Without griffe installed, `api`/`bundle` exit 3 with a message naming `ai-parrot[techwiki]`; `check` and `sidebar` work without griffe and in a foreign repository that has only `sdd/config.json` (S12).
 - [ ] AC-3b The `techwiki` extra declares `griffe` and `jinja2` itself; `uv sync --package ai-parrot --extra techwiki` in a clean environment makes `parrot sdd techwiki api` run (S7).
 - [ ] AC-4 Two consecutive `techwiki api` runs on the same commit produce byte-identical output.
@@ -633,10 +673,11 @@ def techwiki_repo(tmp_path: Path) -> Path:
 - [ ] AC-7b `techwiki api --strict` exits 4 when any module is skipped; the bundle report and manifest list skipped modules first; the fixture package matches its golden output.
 - [ ] AC-8 `sdd/templates/spec.md` carries the commented `# docs:` block and `## 10. Documentation`; `sdd/templates/techwiki-page.md` exists; all three `sdd-spec`, `sdd-task` and `sdd-done` twins carry their FEAT-801 text; `scripts/sdd/check_asset_sync.py --check` passes.
 - [ ] AC-9 `/sdd-done` prints a `Docs:` line for every feature; a pre-existing spec without `docs:` reports `Docs: unset — skipped`.
-- [ ] AC-10 After M7, `mkdocs build --strict` passes, the nav contains only informative entries, no moved page remains under `docs/`, and `wiki/_index.yaml` lists every section that has a page.
+- [ ] AC-10 After M7, `mkdocs build --strict` passes; the nav contains informative entries plus the existing API Reference pending M9; no moved page remains under `docs/`; local workflow contracts including `docs/sdd/CODEX.md` remain readable at their existing paths; every retained-document link to a moved page is rewritten and its destination verified against the bundle manifest; `wiki/_index.yaml` lists every section that has a page.
 - [ ] AC-11 `wikitoolkit build` indexes `wiki/**/*.md` with no config change (`wikitoolkit query` finds a migrated page by title).
-- [ ] AC-12 `.github/workflows/techwiki.yml` passes `test_techwiki_workflow_contract`; its first `release: published` run pushes a commit `techwiki: sync <tag> (<sha>)` to `ai-parrot.wiki.git` (human-observed, URL recorded in M9's Completion Note); a `pull_request` run is read-only and fails on collisions, dangling links or skipped modules.
-- [ ] AC-13 M9 removes `mkdocstrings` from `mkdocs.yml` and `requirements-docs.txt`, deletes `docs/api-reference/`, rewrites the 11 inbound `api-reference/` links in `docs/index.md` and the six chapter pages, and `mkdocs build --strict` still passes.
+- [ ] AC-12 `.github/workflows/techwiki.yml` passes `test_techwiki_workflow_contract`; a `pull_request` run is read-only and fails on collisions, dangling links or skipped modules. Initial closeout records the outstanding post-release M9 handoff without requiring a production release run.
+- [ ] AC-12b **Post-release follow-up only:** the first successful `release: published` run pushes a commit `techwiki: sync <tag> (<sha>)` to `ai-parrot.wiki.git`; its run URL, release tag and source SHA are recorded in the separate M9 task before cut-over begins and cited in its Completion Note.
+- [ ] AC-13 **Post-release follow-up only:** M9 removes `mkdocstrings` from `mkdocs.yml` and `requirements-docs.txt`, deletes `docs/api-reference/`, rewrites the 11 inbound `api-reference/` links in `docs/index.md` and the six chapter pages, and `mkdocs build --strict` still passes.
 - [ ] AC-14 No `requests`/`httpx`/LangChain imports; `ruff check` passes on every touched file; every new function has a Google docstring and type hints.
 - [ ] AC-15 Every migrated page is in English (M7 Completion Note lists the translated files).
 
@@ -785,7 +826,7 @@ Line numbers marked `~` were read from a nearby anchor; `/sdd-task` re-runs `gre
   `page_name` rejects hyphenated titles (AC-5). Section prefixes use the same rule.
 - **`import parrot` side effects**: the CLI itself imports parrot (Navigator settings, observability
   boot). That is acceptable in CI (docs.yml already installs the core); the *generator* must stay
-  static so the 30 distributions are never imported.
+  static so the configured workspace distributions are never imported.
 - **Python floor**: the brainstorm claimed a 3.10 floor from the stale `docs/STYLE_GUIDE.md`;
   `requires-python` is `>=3.11,<3.14` (`packages/ai-parrot/pyproject.toml:18`), so griffe 2.x
   fits without a marker (S7). `techwiki` stays an optional extra; `check`/`sidebar` import griffe
@@ -931,7 +972,7 @@ Coverage:
 
 - [x] CLI noun — *Resolved (clarification, 2026-11-04)*: `parrot sdd techwiki`.
 - [x] ADRs location — *Resolved*: stay in `docs/decisions/`; bundle includes them read-only.
-- [x] `docs/sdd/**` and `docs/wiki/**` — *Resolved*: move to the wiki ("SDD Tooling", "LLM Wiki" sections); `docs/sdd/WORKFLOW.md` and `@`-included files stay.
+- [x] `docs/sdd/**` and `docs/wiki/**` — *Resolved*: move to the wiki ("SDD Tooling", "LLM Wiki" sections); `docs/sdd/WORKFLOW.md`, `docs/sdd/CODEX.md`, `@`-included files and other local workflow contracts stay.
 - [x] `docs/migration/**` — *Resolved*: move to the wiki ("Migration" section).
 - [x] Wiki reflects which branch — *Resolved in brainstorm*: `main` only.
 - [x] Organisation of authored pages — *Resolved in brainstorm*: by subsystem.
@@ -977,23 +1018,27 @@ Summary: **12** confirmed (2 partial) · **0** rejected outright · **1** escala
 
 ## Worktree Strategy
 
-- **Isolation**: one feature worktree `feat-FEAT-801-github-wiki-technical-reference`; the
-  `sdd-coder` engine gives each task its own sub-worktree.
+- **Isolation**: one feature worktree `feat-FEAT-801-github-wiki-technical-reference` for M1–M8;
+  the `sdd-coder` engine gives each task its own sub-worktree. M9 uses a separate follow-up
+  spec/task index, worktree and PR after the initial implementation is merged, released and
+  published successfully. No initial task depends on that future release.
 - **Module dependency graph** (evidence):
   - M2 → M1 (imports `TechwikiConfig`, `page_name`); M3 → M1, M2 (imports `generate`,
     `rewrite_links`); M5 → M1 (imports `load_techwiki_config`, mounts verb); M6 → M3 (runs
     `bundle`); M7 → M3 (link format), M4 (page template); M8 → M4, M7 (sections exist);
-    M9 → M6 (green run on `main`, human-observed; recorded in the Completion Note).
+    M9 is outside this graph: its follow-up requires a green release run of the delivered M6
+    (human-observed, URL/tag/SHA recorded before cut-over and cited in the Completion Note).
   - M4 has no code dependency and can run concurrently with M1–M3; M5's command edits can run
     concurrently with M2/M3.
 - **Shared files** (serialise their tasks): `packages/ai-parrot/pyproject.toml` (M1 only),
   `packages/ai-parrot/src/parrot/sdd/cli.py` (M1 only), `mkdocs.yml` and `docs/index.md`
-  (M7 then M9), `_assets/manifest.json` (M4 and M5 both regenerate it → M5's command task
+  (M7 initially, M9 in the later follow-up), `_assets/manifest.json` (M4 and M5 both regenerate it → M5's command task
   depends on M4's task), the three `sdd-spec`/`sdd-task`/`sdd-done` twin sets (M4 touches
   sdd-spec; M5 touches sdd-task and sdd-done — disjoint files).
 - **Exclusive resources** (`parallel: false`): M1 (edits `pyproject.toml`), M7 (mass `git mv`
   across `docs/` + `mkdocs.yml`), M9 (`requirements-docs.txt`, `mkdocs.yml`, workflow).
-- **Cross-feature dependencies**: none to merge first. Check in-flight specs touching
+- **Cross-feature dependencies**: none to merge before M1–M8. M9's follow-up depends on the
+  released M1–M8 implementation and AC-12b evidence. Check in-flight specs touching
   `.claude/commands/sdd-{spec,task,done}.md` or `sdd/templates/spec.md` at `/sdd-task` time
   (FEAT-799 touches the installer only).
 
@@ -1018,3 +1063,4 @@ Summary: **12** confirmed (2 partial) · **0** rejected outright · **1** escala
 |---|---|---|---|
 | 0.1 | 2026-11-04 | Jesus Lara / Claude | Initial draft from the accepted brainstorm (Option B) and the clarification round |
 | 0.2 | 2026-11-04 | Jesus Lara / Claude | Design research (12 suggestions) folded in; all §8 questions resolved: release-published trigger, no redirects, `## 10.` numbering, artifact-only preview |
+| 0.3 | 2026-11-04 | Codex | Review fixes: workspace-wide Python package coverage; preserve local workflow contracts; repair retained Pages inbound links during M7; split M1–M8 delivery from post-release M9 and its acceptance gates |
