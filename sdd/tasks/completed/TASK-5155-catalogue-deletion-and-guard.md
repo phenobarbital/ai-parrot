@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-798 — Retire gemini-2.5-{pro,flash}: move the Google defaults to Gemini 4 Argon / 3.8-flash and bump google-genai
 **Spec**: `sdd/specs/google-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5146, TASK-5147, TASK-5148, TASK-5149, TASK-5150, TASK-5151, TASK-5153
@@ -268,10 +268,9 @@ See the blueprint.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (orchestrator); coder gpt-5.6-luna (attempt 2; gpt-5.6-sol returned an empty delivery)
+**Date**: 2026-11-04
+**Verification**: verified
+**Notes**: Catalogue deletion and guard test; test_flash_default_literals green in merge-tier validation. Merge-tier validation (chunk 3) completed green.
 
 **Deviations from spec**: none

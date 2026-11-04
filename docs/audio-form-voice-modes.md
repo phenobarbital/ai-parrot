@@ -1103,7 +1103,7 @@ The same check is available over HTTP (additive, for the visual renderer):
 - `POST /api/v1/{tenant}/forms/{form_uid}/data` returns the same `plausibility` block alongside the submission.
 
 ```json
-{"is_valid": true, "errors": {}, "plausibility": {"status": "ok", "threshold": 0.7, "model": "gemini-2.5-flash",
+{"is_valid": true, "errors": {}, "plausibility": {"status": "ok", "threshold": 0.7, "model": "gemini-3.8-flash",
  "latency_ms": 640, "items": {"age": {"plausible": false, "confidence": 0.31, "reason": "Age 212 is not realistic"}}}}
 ```
 

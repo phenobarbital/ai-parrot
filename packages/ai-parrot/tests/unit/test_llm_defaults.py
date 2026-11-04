@@ -18,15 +18,15 @@ def env(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
 
 def test_resolve_builtin_when_unset(env: dict[str, str]) -> None:
     """Builtins are retained when no component or global default is set."""
-    assert ld.resolve_component_llm("CREW", builtin="google:gemini-2.5-pro") == ld.ComponentLLM(
-        provider="google", model="gemini-2.5-pro", source="builtin"
+    assert ld.resolve_component_llm("CREW", builtin="google:gemini-4-argon") == ld.ComponentLLM(
+        provider="google", model="gemini-4-argon", source="builtin"
     )
 
 
 def test_component_var_wins_over_global(env: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
     """A component-specific LLM overrides the global default."""
     env["CREW_LLM"] = "openai:gpt-4.1"
-    monkeypatch.setattr(ld.conf, "DEFAULT_LLM", "google:gemini-2.5-pro")
+    monkeypatch.setattr(ld.conf, "DEFAULT_LLM", "google:gemini-4-argon")
 
     resolved = ld.resolve_component_llm("CREW", builtin="google:gemini-2.0-flash")
 
@@ -44,9 +44,18 @@ def test_global_used_when_component_unset(env: dict[str, str], monkeypatch: pyte
 
 def test_bare_model_inherits_builtin_provider(env: dict[str, str]) -> None:
     """Bare component models retain the provider from the builtin default."""
-    env["CREW_LLM"] = "gemini-2.5-pro"
+    env["CREW_LLM"] = "gemini-4-argon"
 
     resolved = ld.resolve_component_llm("CREW", builtin="google:gemini-2.0-flash")
+
+    assert resolved == ld.ComponentLLM(provider="google", model="gemini-4-argon", source="component")
+
+
+def test_explicit_override_preserves_retired_id(env: dict[str, str]) -> None:
+    """FEAT-798 (codex S9): an operator-set retired id is preserved, never remapped by the resolver."""
+    env["CREW_LLM"] = "google:gemini-2.5-pro"
+
+    resolved = ld.resolve_component_llm("CREW", builtin="google:gemini-4-argon")
 
     assert resolved == ld.ComponentLLM(provider="google", model="gemini-2.5-pro", source="component")
 

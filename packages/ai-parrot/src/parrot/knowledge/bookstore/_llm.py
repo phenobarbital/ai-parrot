@@ -3,7 +3,7 @@
 The model is configured via environment variables (or an explicit CLI
 flag) as an ``LLMFactory`` spec string:
 
-- ``PARROT_BOOKSTORE_LLM`` — heavy model, e.g. ``"google:gemini-2.5-flash"``
+- ``PARROT_BOOKSTORE_LLM`` — heavy model, e.g. ``"google:gemini-3.8-flash"``
   or ``"anthropic:claude-sonnet-5"``.
 - ``PARROT_BOOKSTORE_LLM_LIGHT`` — optional cheap model **id** for
   PageIndex helper calls. Must belong to the same provider as the heavy

@@ -8,9 +8,9 @@ from parrot.experts.models import SPAWN_TOOL_NAME, ExpertManifest, ExpertPolicyE
 from parrot.models.basic import ModelConfig
 
 DEFAULT_TIER_POLICY: Final[dict[ExpertTier, dict[str, Any]]] = {
-    ExpertTier.JUDGMENT: {"provider": "google", "model": "gemini-2.5-pro", "temperature": 0.2},
-    ExpertTier.BALANCED: {"provider": "google", "model": "gemini-2.5-flash", "temperature": 0.1},
-    ExpertTier.TEMPLATED: {"provider": "google", "model": "gemini-2.5-flash", "temperature": 0.0},
+    ExpertTier.JUDGMENT: {"provider": "google", "model": "gemini-4-argon", "temperature": 0.2},
+    ExpertTier.BALANCED: {"provider": "google", "model": "gemini-3.8-flash", "temperature": 0.1},
+    ExpertTier.TEMPLATED: {"provider": "google", "model": "gemini-3.8-flash", "temperature": 0.0},
 }
 MANDATORY_TOOLKITS: Final[tuple[str, ...]] = ("LLMWikiToolkit", "BookstoreToolkit")
 SPAWN_DENY_PRIORITY: Final[int] = 100

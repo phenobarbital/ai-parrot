@@ -5,11 +5,14 @@
 | Variable | Component | Builtin default |
 |---|---|---|
 | `DEFAULT_LLM` | Global fallback | `None` (falls back to builtin) |
-| `AGENT_LLM` | Agent | `google:gemini-2.5-pro` |
-| `CREW_LLM` | Crew | `google:gemini-2.5-pro` |
-| `EXPERT_JUDGMENT_LLM` | Expert (Judgment tier) | `google:gemini-2.5-pro` |
-| `EXPERT_BALANCED_LLM` | Expert (Balanced tier) | `google:gemini-2.5-flash` |
-| `EXPERT_TEMPLATED_LLM` | Expert (Templated tier) | `google:gemini-2.5-flash` |
+| `AGENT_LLM` | Agent | `google:gemini-4-argon` |
+| `CREW_LLM` | Crew | `google:gemini-4-argon` |
+| `EXPERT_JUDGMENT_LLM` | Expert (Judgment tier) | `google:gemini-4-argon` |
+| `EXPERT_BALANCED_LLM` | Expert (Balanced tier) | `google:gemini-3.8-flash` |
+| `EXPERT_TEMPLATED_LLM` | Expert (Templated tier) | `google:gemini-3.8-flash` |
+
+`gemini-4-argon` does not support Gemini context caching. Set `AGENT_LLM=google:gemini-3.8-flash`
+(or `CREW_LLM`, `EXPERT_JUDGMENT_LLM`) to keep caching on that component.
 
 ## API keys
 

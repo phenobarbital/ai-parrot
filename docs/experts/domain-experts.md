@@ -109,7 +109,7 @@ registry = ExpertRegistry(
     model_overrides={
         "security-review": {
             "provider": "google",
-            "model": "gemini-2.5-pro",
+            "model": "gemini-4-argon",
             "temperature": 0.15,
             "max_tokens": 12000,
         }

@@ -61,7 +61,7 @@ class GoogleAnalysis:
     def analyze_sentiment(
         self,
         text: str,
-        model: Union[GoogleModel, str] = GoogleModel.GEMINI_2_5_FLASH,
+        model: Union[GoogleModel, str] = GoogleModel.GEMINI_3_8_FLASH,
         temperature: Optional[float] = 0.1,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -136,7 +136,7 @@ class GoogleAnalysis:
         self,
         review_text: str,
         product_id: str,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_8_FLASH,
         temperature: Optional[float] = 0.1,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -628,7 +628,7 @@ class GoogleAnalysis:
         self,
         prompt: str,
         documents: Union[str, Path, List[Union[str, Path]]],
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_8_FLASH,
         prompt_instruction: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -812,7 +812,7 @@ class GoogleAnalysis:
         detections: List[DetectionBox],
         shelf_regions: List[ShelfRegion],
         reference_images: Optional[Dict[str, Union[Path, bytes, Image.Image]]] = None,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_PRO,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_4_ARGON,
         temperature: float = 0.0,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -908,10 +908,10 @@ class GoogleAnalysis:
             )
         except Exception:
             # if is 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'The model is overloaded. Please try again later.', 'status': 'UNAVAILABLE'}}
-            # then, retry with a short delay but chaing to use gemini-2,5-flash instead pro.
+            # then, retry with a short delay on the cheaper flash tier instead of the pro-class model.
             await asyncio.sleep(1.5)
             response = await self.client.aio.models.generate_content(
-                model="gemini-2.5-flash",
+                model=GoogleModel.GEMINI_3_8_FLASH.value,
                 contents=contents,
                 config=generation_config,
             )
@@ -1072,7 +1072,7 @@ class GoogleAnalysis:
         text: str,
         max_length: int = 1200,
         min_length: int = 100,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_8_FLASH,
         temperature: Optional[float] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -1127,7 +1127,7 @@ class GoogleAnalysis:
         text: str,
         target_lang: str,
         source_lang: Optional[str] = None,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_8_FLASH,
         temperature: Optional[float] = 0.2,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -1182,7 +1182,7 @@ class GoogleAnalysis:
         self,
         text: str,
         num_points: int = 5,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_8_FLASH,
         temperature: Optional[float] = 0.3,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,

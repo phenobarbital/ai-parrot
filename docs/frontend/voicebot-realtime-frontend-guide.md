@@ -309,7 +309,7 @@ Se elige en `start_session` con `streaming_mode` (default `"streaming"`).
   "voice_name": "Puck",        // opcional
   "language": "en-US",         // opcional
   "system_prompt": "...",      // opcional, override del prompt
-  "model": "gemini-2.5-...",   // opcional
+  "model": "gemini-3.8-live",   // opcional
   "send_welcome": false         // opcional, saludo inicial
 }
 ```

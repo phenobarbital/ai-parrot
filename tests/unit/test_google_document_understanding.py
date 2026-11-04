@@ -393,7 +393,7 @@ class TestDocumentUnderstanding:
         result = await google_client.document_understanding(
             prompt="Summarize",
             documents=sample_pdf,
-            model=GoogleModel.GEMINI_2_5_FLASH,
+            model=GoogleModel.GEMINI_3_8_FLASH,
         )
 
         assert isinstance(result, AIMessage)

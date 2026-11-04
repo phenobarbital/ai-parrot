@@ -60,7 +60,7 @@ async def test_handler_builtin_default(monkeypatch):
     _env(monkeypatch, {})
     agent = await _create(_handler())
     assert agent.kwargs["llm"] == "google"
-    assert agent.kwargs["model"] == "gemini-2.5-pro"
+    assert agent.kwargs["model"] == "gemini-4-argon"
     assert "llm_kwargs" not in agent.kwargs
 
 
@@ -74,22 +74,22 @@ async def test_handler_agent_llm_env(monkeypatch):
 async def test_handler_subclass_override_wins(monkeypatch):
     class Custom(AgentHandler):
         _use_llm = "google"
-        _use_model = "gemini-2.5-flash"
+        _use_model = "gemini-3.8-flash"
 
     _env(monkeypatch, {"AGENT_LLM": "openai:gpt-4o"})
     agent = await _create(_handler(Custom))
     assert agent.kwargs["llm"] == "google"
-    assert agent.kwargs["model"] == "gemini-2.5-flash"
+    assert agent.kwargs["model"] == "gemini-3.8-flash"
 
 
 async def test_handler_subclass_model_only(monkeypatch):
     class ModelOnly(AgentHandler):
-        _use_model = "gemini-2.5-flash"
+        _use_model = "gemini-3.8-flash"
 
     _env(monkeypatch, {})
     agent = await _create(_handler(ModelOnly))
     assert agent.kwargs["llm"] == "google"
-    assert agent.kwargs["model"] == "gemini-2.5-flash"
+    assert agent.kwargs["model"] == "gemini-3.8-flash"
 
 
 async def test_handler_api_key_passed(monkeypatch):
@@ -126,12 +126,12 @@ async def test_handler_subclass_model_only_ignores_env_provider(monkeypatch):
     """A subclass owning the model never gets a foreign env provider paired with it."""
 
     class ModelOnly(AgentHandler):
-        _use_model = "gemini-2.5-flash"
+        _use_model = "gemini-3.8-flash"
 
     _env(monkeypatch, {"AGENT_LLM": "anthropic:claude-sonnet-4"})
     agent = await _create(_handler(ModelOnly))
     assert agent.kwargs["llm"] == "google"
-    assert agent.kwargs["model"] == "gemini-2.5-flash"
+    assert agent.kwargs["model"] == "gemini-3.8-flash"
 
 
 async def test_handler_subclass_provider_only_ignores_env_model(monkeypatch):

@@ -67,7 +67,7 @@ from parrot.bots.chrome import WebAgent, ChromeConfig
 async def main():
     agent = WebAgent(
         chrome_config=ChromeConfig(headless=False, viewport="1920x1080"),
-        llm="google:gemini-2.5-flash",
+        llm="google:gemini-3.8-flash",
     )
     await agent.configure()   # awaits Chrome startup (if needed) + the MCP server
     result = await agent.ask(

@@ -8,7 +8,7 @@
             "name": "Pricing Researcher",
             "agent_class": "Agent",
             "config": {
-                "model": "gemini-2.5-pro",
+                "model": "gemini-4-argon",
                 "temperature": 0.1
             },
             "tools": [
@@ -23,7 +23,7 @@
             "name": "Features Researcher",
             "agent_class": "Agent",
             "config": {
-                "model": "gemini-2.5-pro",
+                "model": "gemini-4-argon",
                 "temperature": 0.1
             },
             "tools": [
@@ -38,7 +38,7 @@
             "name": "Relevant Info Researcher",
             "agent_class": "Agent",
             "config": {
-                "model": "gemini-2.5-pro",
+                "model": "gemini-4-argon",
                 "temperature": 0.1
             },
             "tools": [
@@ -53,7 +53,7 @@
             "name": "Reviews Researcher",
             "agent_class": "Agent",
             "config": {
-                "model": "gemini-2.5-pro",
+                "model": "gemini-4-argon",
                 "temperature": 0.1
             },
             "tools": [
@@ -68,7 +68,7 @@
             "name": "Professional Reviews Researcher",
             "agent_class": "Agent",
             "config": {
-                "model": "gemini-2.5-pro",
+                "model": "gemini-4-argon",
                 "temperature": 0.1
             },
             "tools": [
@@ -83,7 +83,7 @@
             "name": "Specialized Comments Researcher",
             "agent_class": "Agent",
             "config": {
-                "model": "gemini-2.5-pro",
+                "model": "gemini-4-argon",
                 "temperature": 0.1
             },
             "tools": [
@@ -97,7 +97,7 @@
             "name": "Competitors Researcher",
             "agent_class": "Agent",
             "config": {
-                "model": "gemini-2.5-pro",
+                "model": "gemini-4-argon",
                 "temperature": 0.1
             },
             "tools": [
@@ -111,7 +111,7 @@
             "name": "Competitors Market Researcher",
             "agent_class": "Agent",
             "config": {
-                "model": "gemini-2.5-pro",
+                "model": "gemini-4-argon",
                 "temperature": 0.1
             },
             "tools": [
