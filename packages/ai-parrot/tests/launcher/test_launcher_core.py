@@ -8,7 +8,6 @@ import pytest
 from parrot import launcher  # created by this task
 from .conftest import make_venv
 
-
 @pytest.fixture(autouse=True)
 def _reset_warnings(monkeypatch):
     monkeypatch.setattr(launcher, "_WARNED", set())

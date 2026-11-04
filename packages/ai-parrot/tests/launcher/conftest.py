@@ -1,4 +1,5 @@
 """Reusable fake venv and linked-worktree fixtures for launcher tests."""
+
 from __future__ import annotations
 
 from pathlib import Path
