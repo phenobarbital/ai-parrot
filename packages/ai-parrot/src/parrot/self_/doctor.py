@@ -336,7 +336,7 @@ def _check_worktree_tests(root: Path) -> DoctorCheck:
 
 
 def _check_sdd_git(root: Path, branch: str) -> list[DoctorCheck]:
-    """Base branch on origin, ledger tracked, worktrees ignored."""
+    """Base branch on origin, ledger tracked, worktrees ignored, no legacy worktrees."""
     checks: list[DoctorCheck] = []
     remote = _git(root, "ls-remote", "--heads", "origin", branch)
     if remote.returncode != 0:
@@ -353,11 +353,67 @@ def _check_sdd_git(root: Path, branch: str) -> list[DoctorCheck]:
         name="sdd: id ledger tracked", ok=tracked.returncode == 0,
         detail=f"{SDD_LEDGER} {'is' if tracked.returncode == 0 else 'is NOT'} git-tracked",
         fix="" if tracked.returncode == 0 else f'git add {SDD_LEDGER} && git commit -m "sdd: seed id ledger"'))
-    ignored = _git(root, "check-ignore", "-q", ".claude/worktrees/x")
-    checks.append(DoctorCheck(
-        name="sdd: worktrees ignored", ok=ignored.returncode == 0,
-        detail=f".claude/worktrees/ {'is' if ignored.returncode == 0 else 'is NOT'} git-ignored",
-        fix="" if ignored.returncode == 0 else "parrot sdd install (adds the .gitignore block)"))
+    try:
+        from parrot.sdd.config import legacy_migration_recipe, legacy_worktrees  # lazy on purpose
+        from parrot.sdd.installer import worktree_root_scope
+    except ImportError:
+        checks.append(
+            DoctorCheck(
+                name="sdd: worktrees ignored",
+                ok=True,
+                informational=True,
+                detail="parrot.sdd modules unavailable in this build",
+            )
+        )
+        return checks
+    scope, rel = worktree_root_scope(root)
+    if scope == "repo-root":
+        checks.append(
+            DoctorCheck(
+                name="sdd: worktrees ignored",
+                ok=False,
+                detail="the worktree root resolves to the repository root itself",
+                fix="set WORKTREE_BASE_PATH to a subdirectory (default: .parrot/worktrees)",
+            )
+        )
+    elif scope == "external":
+        checks.append(
+            DoctorCheck(
+                name="sdd: worktrees ignored",
+                ok=True,
+                informational=True,
+                detail="external worktree root; outside repository tracking scope",
+            )
+        )
+    else:
+        ignored = _git(root, "check-ignore", "-q", f"{rel}/x")
+        checks.append(
+            DoctorCheck(
+                name="sdd: worktrees ignored",
+                ok=ignored.returncode == 0,
+                detail=f"{rel}/ {'is' if ignored.returncode == 0 else 'is NOT'} git-ignored",
+                fix="" if ignored.returncode == 0 else "parrot sdd install (adds the .gitignore block)",
+            )
+        )
+    legacy = legacy_worktrees(root)
+    recipe: list[str] = []
+    if legacy:
+        try:
+            recipe = legacy_migration_recipe(root, legacy)
+        except ValueError as exc:
+            recipe = [f"cannot generate a safe migration recipe: {exc}"]
+    checks.append(
+        DoctorCheck(
+            name="sdd: legacy worktrees",
+            ok=not legacy,
+            detail=(
+                f"{len(legacy)} worktree(s) registered under .claude/worktrees/"
+                if legacy
+                else "none under .claude/worktrees/"
+            ),
+            fix="\n".join(recipe),
+        )
+    )
     return checks
 
 
