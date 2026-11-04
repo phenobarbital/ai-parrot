@@ -69,7 +69,7 @@
       "feature_id": "FEAT-802",
       "feature": "worktree-root-under-parrot",
       "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -79,8 +79,9 @@
       "parallelism_notes": "Imports worktree_root from TASK-5174 (parrot/sdd/config.py) for the new worktree_root script and conf.py; also edits tests/sdd/test_config.py after TASK-5174.",
       "assigned_to": null,
       "started_at": "2026-11-04T23:16:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5175-worktree-root-cli-and-conf.md"
+      "completed_at": "2026-11-04T23:32:12+00:00",
+      "file": "sdd/tasks/completed/TASK-5175-worktree-root-cli-and-conf.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5176",
@@ -130,7 +131,7 @@
       "feature_id": "FEAT-802",
       "feature": "worktree-root-under-parrot",
       "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -140,8 +141,9 @@
       "parallelism_notes": "dangerous_actions._worktrees_dir_exists imports worktree_root from TASK-5174 (parrot/sdd/config.py); its other files are touched by no other task.",
       "assigned_to": null,
       "started_at": "2026-11-04T23:16:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5178-guards-audit-and-wiki-exclusion.md"
+      "completed_at": "2026-11-04T23:32:12+00:00",
+      "file": "sdd/tasks/completed/TASK-5178-guards-audit-and-wiki-exclusion.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5179",
@@ -150,7 +152,7 @@
       "feature_id": "FEAT-802",
       "feature": "worktree-root-under-parrot",
       "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -160,8 +162,9 @@
       "parallelism_notes": "install_sdd_integration and doctor._check_sdd_git call legacy_worktrees/legacy_migration_recipe/worktree_root and raise LegacyWorktreesError from TASK-5174 (parrot/sdd/config.py).",
       "assigned_to": null,
       "started_at": "2026-11-04T23:16:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5179-installer-doctor-hard-cut.md"
+      "completed_at": "2026-11-04T23:32:12+00:00",
+      "file": "sdd/tasks/completed/TASK-5179-installer-doctor-hard-cut.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5180",

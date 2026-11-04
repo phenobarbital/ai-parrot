@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-802 — Worktree Root Under `.parrot/`
 **Spec**: `sdd/specs/worktree-root-under-parrot.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5174
@@ -281,10 +281,10 @@ def test_doctor_custom_root_scope(ready_repo, tmp_path, monkeypatch): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by seat opus (native), 1 commit 6b8bead2ef; own tests: installer 70 passed, doctor 31 passed, 1 attempt, merged cleanly.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (orchestrator)
+**Date**: 2026-11-05
+**Notes**: Merge-tier: 167 passed, 1 pre-existing failure (test_no_command_hand_rolls_a_worktree[sdd-worker.md], also red on origin/dev). Closed via `parrot sdd task close`; finalize unavailable (coder_record_review tool error). feedback NOT recorded.
 
 **Deviations from spec**:
