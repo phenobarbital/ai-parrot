@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
+import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
@@ -101,6 +105,153 @@ def find_repo_root(start: Path | None = None) -> Path | None:
         if (candidate / ".git").exists():
             return candidate
     return None
+
+
+DEFAULT_WORKTREE_ROOT: str = ".parrot/worktrees"
+LEGACY_WORKTREE_ROOT: str = ".claude/worktrees"
+WORKTREE_ROOT_ENV: str = "WORKTREE_BASE_PATH"
+
+
+class LegacyWorktreesError(RuntimeError):
+    """Registered git worktrees still live under ``.claude/worktrees/``; the message is the recipe."""
+
+
+def worktree_root_setting(override: str | None = None) -> str:
+    """Return the configured raw worktree root without consulting application configuration.
+
+    Args:
+        override: Explicit root setting that takes precedence over the environment.
+
+    Returns:
+        The normalized absolute setting, or a normalized repository-relative setting.
+    """
+    candidates = (override, os.environ.get(WORKTREE_ROOT_ENV))
+    value = next(
+        (candidate.strip() for candidate in candidates if candidate and candidate.strip()),
+        DEFAULT_WORKTREE_ROOT,
+    )
+    normalized = os.path.normpath(value)
+    if os.path.isabs(normalized):
+        return normalized
+    return normalized.removeprefix(f".{os.sep}")
+
+
+def worktree_root(repo_root: Path, override: str | None = None) -> Path:
+    """Return the absolute, normalized worktree root for ``repo_root``.
+
+    Args:
+        repo_root: Primary repository root used for relative settings.
+        override: Explicit root setting that takes precedence over the environment.
+
+    Returns:
+        The normalized absolute worktree root.
+    """
+    setting = worktree_root_setting(override)
+    root = Path(setting) if os.path.isabs(setting) else Path(repo_root) / setting
+    return Path(os.path.normpath(root.absolute()))
+
+
+def legacy_worktrees(repo_root: Path) -> list[Path]:
+    """Return registered worktrees inside the legacy root, sorted by resolved path.
+
+    Args:
+        repo_root: Primary repository root passed to git.
+
+    Returns:
+        Registered legacy worktree paths, or an empty list when git is unavailable or fails.
+    """
+    legacy_root = (Path(repo_root) / LEGACY_WORKTREE_ROOT).resolve()
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo_root), "worktree", "list", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return []
+    if proc.returncode != 0:
+        return []
+
+    paths: list[Path] = []
+    for line in proc.stdout.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        path = Path(line.removeprefix("worktree ")).resolve()
+        if path == legacy_root:
+            continue
+        try:
+            path.relative_to(legacy_root)
+        except ValueError:
+            continue
+        paths.append(path)
+    return sorted(paths)
+
+
+def legacy_migration_recipe(repo_root: Path, paths: Sequence[Path]) -> list[str]:
+    """Return shell lines that move legacy worktrees and repair Git registrations.
+
+    Args:
+        repo_root: Primary repository root.
+        paths: Registered legacy worktree paths to move.
+
+    Returns:
+        A fail-fast shell recipe, or an empty list when there are no paths.
+
+    Raises:
+        ValueError: When a mapping is unsafe or a destination is already occupied.
+    """
+    if not paths:
+        return []
+
+    root = Path(repo_root).resolve()
+    legacy_root = (root / LEGACY_WORKTREE_ROOT).resolve()
+    new_root = worktree_root(root)
+    resolved_new_root = new_root.resolve()
+    if resolved_new_root.is_relative_to(legacy_root) or legacy_root.is_relative_to(resolved_new_root):
+        raise ValueError(f"legacy and new worktree roots overlap: {legacy_root} and {new_root}")
+
+    mappings: list[tuple[Path, Path]] = []
+    destinations: set[Path] = set()
+    for path in paths:
+        old_path = Path(path).resolve()
+        try:
+            relative_path = old_path.relative_to(legacy_root)
+        except ValueError as exc:
+            raise ValueError(f"legacy worktree is outside {legacy_root}: {old_path}") from exc
+        destination = new_root / relative_path
+        if destination in destinations:
+            raise ValueError(f"duplicate migration destination: {destination}")
+        destinations.add(destination)
+        mappings.append((old_path, destination))
+
+    mappings.sort(key=lambda item: str(item[0]))
+    old_paths = {old_path for old_path, _ in mappings}
+    topmost = [
+        mapping
+        for mapping in mappings
+        if not any(ancestor != mapping[0] and mapping[0].is_relative_to(ancestor) for ancestor in old_paths)
+    ]
+    for _, destination in topmost:
+        if os.path.lexists(destination):
+            raise ValueError(f"migration destination already exists: {destination}")
+
+    quote = shlex.quote
+    lines = ["(", "set -e"]
+    for _, destination in topmost:
+        rendered_destination = quote(str(destination))
+        message = quote(f"error: migration destination already exists: {destination}")
+        lines.append(
+            f"[ ! -e {rendered_destination} ] && [ ! -L {rendered_destination} ] || "
+            f"{{ echo {message} >&2; exit 1; }}"
+        )
+    for old_path, destination in topmost:
+        lines.append(f"mkdir -p {quote(str(destination.parent))}")
+        lines.append(f"mv {quote(str(old_path))} {quote(str(destination))}")
+    repaired_paths = " ".join(quote(str(destination)) for _, destination in mappings)
+    lines.append(f"git -C {quote(str(root))} worktree repair {repaired_paths}")
+    lines.append(")")
+    return lines
 
 
 def load_sdd_config(root: Path | None = None) -> SddConfig:

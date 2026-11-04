@@ -3,18 +3,26 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import subprocess
 
 import pytest
 from pydantic import ValidationError
 
 from parrot.sdd.config import (
+    DEFAULT_WORKTREE_ROOT,
+    LEGACY_WORKTREE_ROOT,
     SddConfig,
     SddConfigError,
     default_sdd_config,
     find_repo_root,
+    legacy_migration_recipe,
+    legacy_worktrees,
     ledger_destination,
     load_sdd_config,
+    worktree_root,
+    worktree_root_setting,
     write_default_config,
 )
 from parrot.sdd.scripts import brief_meta, sdd_meta
@@ -198,3 +206,162 @@ def test_ledger_destination_follows_base_branch_unless_set() -> None:
     assert ledger_destination(SddConfig(base_branch="develop", ledger_branch="ledger")) == "ledger"
     with pytest.raises(ValidationError):
         SddConfig(ledger_branch="origin/dev")
+
+
+def _git_repo(tmp_path: Path) -> Path:
+    """Create a real repository with one commit for worktree tests."""
+    repo = tmp_path / "repo with spaces"
+    subprocess.run(["git", "init", "-q", "-b", "dev", str(repo)], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "seed",
+        ],
+        check=True,
+    )
+    return repo
+
+
+def _add_worktree(repo: Path, relative_path: str, branch: str) -> Path:
+    """Create and return a registered worktree rooted at ``relative_path``."""
+    path = repo / relative_path
+    subprocess.run(
+        ["git", "-C", str(repo), "worktree", "add", "-q", "-b", branch, str(path), "dev"],
+        check=True,
+    )
+    return path
+
+
+def test_worktree_root_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The default resolver root lives beneath ``.parrot``."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    assert worktree_root_setting() == DEFAULT_WORKTREE_ROOT
+    assert worktree_root(tmp_path) == tmp_path / ".parrot" / "worktrees"
+
+
+def test_worktree_root_env_relative(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Relative environment settings remain repository-relative."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    monkeypatch.setenv("WORKTREE_BASE_PATH", "./wt//x/")
+    assert worktree_root_setting() == "wt/x"
+    assert worktree_root(tmp_path) == tmp_path / "wt" / "x"
+
+
+def test_worktree_root_env_absolute(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Absolute settings are normalized and blank settings are ignored."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    configured = os.path.join(str(tmp_path), "absolute", ".", "child", "..", "worktrees")
+    monkeypatch.setenv("WORKTREE_BASE_PATH", configured)
+    assert worktree_root_setting() == os.path.normpath(configured)
+    assert worktree_root(tmp_path) == Path(os.path.normpath(configured))
+    monkeypatch.setenv("WORKTREE_BASE_PATH", "  ")
+    assert worktree_root_setting() == DEFAULT_WORKTREE_ROOT
+
+
+def test_worktree_root_override_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit setting supersedes the environment."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    monkeypatch.setenv("WORKTREE_BASE_PATH", "from-environment")
+    assert worktree_root_setting("from-override/") == "from-override"
+    assert worktree_root(tmp_path, "from-override") == tmp_path / "from-override"
+
+
+def test_legacy_worktrees_detects_registered(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only registered worktrees below the legacy root are returned."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    repo = _git_repo(tmp_path)
+    worktree = _add_worktree(repo, ".claude/worktrees/feat-FEAT-1-x", "feat-1")
+    (repo / LEGACY_WORKTREE_ROOT / "plain").mkdir()
+    assert legacy_worktrees(repo) == [worktree.resolve()]
+
+
+def test_legacy_worktrees_no_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-repository has no registered legacy worktrees."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    assert legacy_worktrees(tmp_path) == []
+
+
+def test_legacy_migration_recipe_shape(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The recipe preflights before moving only registered top-level paths."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    repo = _git_repo(tmp_path)
+    parent = _add_worktree(repo, ".claude/worktrees/feature--pool", "feature-pool")
+    child = _add_worktree(repo, ".claude/worktrees/feature--pool/w1", "feature-worker")
+    recipe = legacy_migration_recipe(repo, [child, parent])
+    moves = [line for line in recipe if line.startswith("mv ")]
+    checks = [line for line in recipe if line.startswith("[ ! -e ")]
+    repair = [line for line in recipe if " worktree repair " in line]
+    assert recipe[:2] == ["(", "set -e"]
+    assert len(moves) == 1 and str(parent) in moves[0]
+    assert checks and recipe.index(checks[-1]) < recipe.index(moves[0])
+    assert len(repair) == 1
+    assert str(repo / ".parrot/worktrees/feature--pool") in repair[0]
+    assert str(repo / ".parrot/worktrees/feature--pool/w1") in repair[0]
+    assert f"'{repo}'" in repair[0]
+
+
+def test_legacy_migration_collisions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Generation and execution collision checks preserve the old worktree."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    repo = _git_repo(tmp_path)
+    old_path = _add_worktree(repo, ".claude/worktrees/feature", "feature")
+    destination = repo / ".parrot/worktrees/feature"
+    destination.parent.mkdir(parents=True)
+    destination.mkdir()
+    with pytest.raises(ValueError, match="already exists"):
+        legacy_migration_recipe(repo, [old_path])
+    destination.rmdir()
+    destination.symlink_to(repo / "missing")
+    with pytest.raises(ValueError, match="already exists"):
+        legacy_migration_recipe(repo, [old_path])
+    destination.unlink()
+    with pytest.raises(ValueError, match="duplicate"):
+        legacy_migration_recipe(repo, [old_path, old_path])
+    monkeypatch.setenv("WORKTREE_BASE_PATH", ".claude/worktrees/new")
+    with pytest.raises(ValueError, match="overlap"):
+        legacy_migration_recipe(repo, [old_path])
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    recipe = legacy_migration_recipe(repo, [old_path])
+    destination.mkdir()
+    completed = subprocess.run(["bash", "-c", "\n".join(recipe)], capture_output=True, text=True, check=False)
+    assert completed.returncode != 0
+    assert old_path.exists()
+
+
+def test_legacy_migration_recipe_executes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The recipe preserves nested registrations, branches, and worktree files."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    repo = _git_repo(tmp_path)
+    parent = _add_worktree(repo, ".claude/worktrees/a--pool", "a-pool")
+    child = _add_worktree(repo, ".claude/worktrees/a--pool/w1", "a-worker")
+    sibling = _add_worktree(repo, ".claude/worktrees/b--pool/w1", "b-worker")
+    for worktree in (parent, child, sibling):
+        (worktree / "proof.txt").write_text(worktree.name, encoding="utf-8")
+    heads = {
+        worktree: subprocess.run(
+            ["git", "-C", str(worktree), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        for worktree in (parent, child, sibling)
+    }
+    subprocess.run(["bash", "-c", "\n".join(legacy_migration_recipe(repo, [parent, child, sibling]))], check=True)
+    new_paths = [
+        repo / ".parrot/worktrees/a--pool",
+        repo / ".parrot/worktrees/a--pool/w1",
+        repo / ".parrot/worktrees/b--pool/w1",
+    ]
+    assert legacy_worktrees(repo) == []
+    for path, head in zip(new_paths, heads.values(), strict=True):
+        assert (path / "proof.txt").is_file()
+        assert subprocess.run(
+            ["git", "-C", str(path), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip() == head
