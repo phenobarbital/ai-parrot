@@ -1263,35 +1263,75 @@ def test_auto_lookalike_wrapper_is_still_guarded(tmp_path: Path, monkeypatch: py
     assert response["hookSpecificOutput"]["updatedInput"]["command"] != forged
 
 
-def test_claude_native_fails_closed_outside_the_native_sandbox(
+def _launcher_environment(monkeypatch: pytest.MonkeyPatch, session: Path) -> dict[str, str]:
+    """Inherit what ``launch_worker`` exports for ``session``, as the hook process sees it."""
+    from parrot.sdd.scripts import native_claude_sandbox as native
+
+    env = native.native_command_environment(session, os.environ)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    return env
+
+
+def test_launcher_environment_is_a_fixed_point(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Re-deriving the environment from what the launcher exported changes nothing (no duplicated PYTHONPATH)."""
+    from parrot.sdd.scripts import native_claude_sandbox as native
+
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    exported = _launcher_environment(monkeypatch, feature)
+    assert {"UV_NO_SYNC", "PYTHONDONTWRITEBYTECODE", "PYTHONPATH", "XDG_CACHE_HOME", "UV_CACHE_DIR"} <= set(exported)
+    assert native.native_command_environment(feature) == exported
+
+
+def test_claude_native_plain_command_passes_through_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Outside the sandbox the wrapper prints the launcher hint and exits non-zero without running the command."""
+    """With the launcher's environment inherited, a plain command with nothing to change gets no rewrite."""
     feature, _task, _main = _native_hook_worktrees(tmp_path)
-    uid_file = tmp_path / "uid_map"
-    uid_file.write_text("      1000       1000          1\n", encoding="utf-8")
-    monkeypatch.setattr(policy, "UID_MAP_PATH", str(uid_file))
-    marker = tmp_path / "ran"
-    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": f"touch {marker}"}}
-    command = policy.hook_response(payload, backend="claude-native")["hookSpecificOutput"]["updatedInput"]["command"]
-    outside = _run_emitted(command, sandbox=False, tmp_path=tmp_path)
-    assert outside.returncode != 0
-    assert "parrot sdd launch worker" in outside.stderr
-    assert not marker.exists()
-    inside = _run_emitted(command, sandbox=True, tmp_path=tmp_path)
-    assert inside.returncode == 0, inside.stderr
-    assert marker.exists()
+    _launcher_environment(monkeypatch, feature)
+    monkeypatch.setattr(policy, "rtk_rewrite", lambda command: None)
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "git status"}}
+    assert policy.hook_response(payload, backend="claude-native") == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def test_claude_native_sub_worktree_gets_only_its_own_pythonpath(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A task cwd outside the session worktree is the one case that still needs an env prefix, and only for that."""
+    feature, task, _main = _native_hook_worktrees(tmp_path)
+    _launcher_environment(monkeypatch, feature)
+    monkeypatch.setattr(policy, "rtk_rewrite", lambda command: None)
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": f"cd {task} && pytest x.py"}}
+    argv = shlex.split(policy.hook_response(payload, backend="claude-native")["hookSpecificOutput"]["updatedInput"]["command"])
+    assignments = [item for item in argv if "=" in item and not item.startswith("/")]
+    assert [item.split("=", 1)[0] for item in assignments] == ["PYTHONPATH"]
+    assert assignments[0].split("=", 1)[1].split(os.pathsep)[0] == str(task / "packages" / "test-package" / "src")
+
+
+@pytest.mark.parametrize("field", [{"timeout": 30_000}, {"run_in_background": True}])
+def test_claude_native_explicit_timeout_or_background_keeps_the_backstop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: dict[str, Any]
+) -> None:
+    """The in-sandbox backstop is kept where the host would not bound the call; the rewrite is idempotent."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    _launcher_environment(monkeypatch, feature)
+    monkeypatch.setattr(policy, "rtk_rewrite", _idempotent_rtk)
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "sleep 1", **field}}
+    first = policy.hook_response(payload, backend="claude-native")
+    argv = shlex.split(first["hookSpecificOutput"]["updatedInput"]["command"])
+    assert argv[:1] == ["env"] and argv[-3:-1] == ["/bin/bash", "-c"]
+    assert _resend(first, payload, "claude-native") == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
 
 
 def test_claude_native_degraded_runs_outside_the_sandbox_with_banner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Degraded and `off` launches keep the banner and run the command."""
+    """Degraded launches keep the banner (so they are rewritten) and run the command."""
     feature, _task, _main = _native_hook_worktrees(tmp_path)
+    _launcher_environment(monkeypatch, feature)
     monkeypatch.setenv("PARROT_SDD_SANDBOX_DEGRADED", "1")
     payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "echo RAN"}}
     command = policy.hook_response(payload, backend="claude-native")["hookSpecificOutput"]["updatedInput"]["command"]
-    assert not command.startswith("if ")
     result = _run_emitted(command, sandbox=False, tmp_path=tmp_path)
     assert result.returncode == 0, result.stderr
     assert result.stdout.split() == ["RAN"]

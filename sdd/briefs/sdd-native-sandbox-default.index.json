@@ -73,7 +73,7 @@
       "feature_id": "BRIEF-sdd-native-sandbox-default",
       "feature": "sdd-native-sandbox-default",
       "spec": "sdd/briefs/sdd-native-sandbox-default.brief.md",
-      "status": "pending",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallel": false,
       "parallelism_notes": "edits worktree_environment.py after task 1; sdd-worker.md copies may overlap task 3 text \u2014 run after 3 or rebase",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-11-04T04:00:00+00:00",
+      "completed_at": "2026-11-04T04:40:00+00:00",
       "file": "sdd/briefs/sdd-native-sandbox-default/tasks/HOTFIX-sdd-native-sandbox-default-4-fewer-automode-rewrites.md"
     }
   ]

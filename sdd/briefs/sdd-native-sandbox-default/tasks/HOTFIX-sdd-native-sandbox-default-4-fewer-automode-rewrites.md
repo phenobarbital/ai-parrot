@@ -160,3 +160,15 @@ sandbox (no nested `claude`), record that in the Completion Note and measure fro
 named above.
 
 ## Completion Note
+
+Status `done-with-issues`. Operator decision (2026-11-04): the hook trusts the launcher's backend variable, so
+task 1's fail-closed check on `claude-native` was **dropped**. `launch_worker` and the dispatcher now export the
+session-fixed variables (`native_command_environment(cwd, environ)`, `PYTHONPATH` kept as a fixed point). In
+`_wrap_bash`, `claude-native` emits only the env diff, keeps the `timeout` backstop only for an explicit
+`timeout`/`run_in_background`, and returns an unchanged command as-is; `hook_response` then omits `updatedInput`.
+`auto` is unchanged. Added the resend-verbatim line to both `sdd-worker.md` copies and rewrote the doc row.
+Tests: 222 passed (worktree_environment, native_claude_sandbox, sdd_launch).
+
+Not done: (1) a live launcher before/after measurement and re-reading the transcripts — `automode-rewrites.md`
+holds the operator's baseline and a derived "after"; (2) shortening the `auto` wrapper's `PYTHONPATH` (still the full
+list); (3) `.codex/agents/sdd-worker.toml` guidance line (not checked).

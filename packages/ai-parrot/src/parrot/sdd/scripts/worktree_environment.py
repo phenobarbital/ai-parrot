@@ -529,7 +529,6 @@ DEGRADED_BANNER = "echo '[sdd] degraded sandbox: no OS write boundary' >&2; "
 BACKENDS = ("auto", "bubblewrap", "claude-native")
 #: Linux user-namespace map; a single-uid map that is not the identity map means a sandboxed command.
 UID_MAP_PATH = "/proc/self/uid_map"
-NATIVE_INACTIVE_MESSAGE = "[sdd] native sandbox not active; launch with: parrot sdd launch worker <FEAT>"
 NATIVE_BWRAP_DENIAL = "native sandbox is active; resend the command without the bwrap wrapper"
 _ELSE = " ; else "
 _FI = " ; fi"
@@ -563,8 +562,8 @@ def _wrap_bash(command: str, cwd: Path, tool_input: dict[str, Any], native: Any,
         tool_input: The native ``Bash`` tool input, for the timeout fields.
         native: The ``native_claude_sandbox`` module, or ``None`` for Bubblewrap.
         backend: ``auto`` (runtime branch: native inside the native sandbox, ``bwrap`` outside),
-            ``claude-native`` (native; fail closed outside the sandbox unless degraded) or
-            ``bubblewrap``. Empty derives it from ``native``.
+            ``claude-native`` (the launcher's session: trusted, env diff only, no rewrite when nothing
+            changes) or ``bubblewrap``. Empty derives it from ``native``.
 
     Returns:
         The wrapped command line.
@@ -585,16 +584,24 @@ def _wrap_bash(command: str, cwd: Path, tool_input: dict[str, Any], native: Any,
     degraded = bool(native) and os.environ.get(native.DEGRADED_ENV) == "1"
     if degraded:
         command = DEGRADED_BANNER + command
+    if native and backend == "claude-native":
+        # The launcher started this session inside the native sandbox and exported the session-fixed
+        # variables, so emit only what differs, and bound the call only when the host would not already
+        # (an explicit `timeout` or `run_in_background`; a plain call is bounded by the host itself).
+        # A plain command with nothing to change is returned as is: no rewrite, no auto-mode refusal.
+        env = native.native_command_environment(task_cwd)
+        diff = {key: value for key, value in env.items() if os.environ.get(key) != value}
+        explicit = bool(tool_input.get("timeout") or tool_input.get("run_in_background"))
+        if not diff and not explicit:
+            return command
+        shell = bounded_shell_argv(command, tool_input) if explicit else ["/bin/bash", "-c", command]
+        return shlex.join(["env", *(f"{key}={value}" for key, value in diff.items()), *shell])
     shell = bounded_shell_argv(command, tool_input)
-    if native:
+    if native:  # auto: the launcher did not run, so the full environment is needed in the native branch
         env = native.native_command_environment(task_cwd)
         wrapped = shlex.join(["env", *(f"{key}={value}" for key, value in env.items()), *shell])
-        if backend == "claude-native" and not degraded:
-            return _branch(wrapped, f"echo {shlex.quote(NATIVE_INACTIVE_MESSAGE)} >&2; exit 1")
-        if backend == "auto":
-            # Guard, RTK and the bounded shell ran once above; only the sandbox wrapper differs per branch.
-            return _branch(wrapped, shlex.join(protected_argv(cwd, shell)))
-        return wrapped
+        # Guard, RTK and the bounded shell ran once above; only the sandbox wrapper differs per branch.
+        return _branch(wrapped, shlex.join(protected_argv(cwd, shell)))
     return shlex.join(protected_argv(cwd, shell))
 
 
@@ -617,9 +624,9 @@ def _is_own_wrapper(
     change it again on every attempt, so auto mode could never approve it. The
     inner command is run through the full pipeline again — guard, RTK, wrapper —
     and only a byte-identical result counts, so a hand-written look-alike wrapper
-    never skips the guard. Handles the three backends: the plain ``bubblewrap`` and
-    degraded native shapes end in ``/bin/bash -c <inner>``; the ``auto`` and
-    fail-closed ``claude-native`` shapes are an ``if`` wrapper whose first branch does.
+    never skips the guard. Handles the three backends: the ``bubblewrap`` and ``claude-native``
+    shapes end in ``/bin/bash -c <inner>``; the ``auto`` shape is an ``if`` wrapper whose first
+    branch does. An unchanged ``claude-native`` command is its own fixed point.
 
     Args:
         command: The Bash command the seat issued.
@@ -673,9 +680,10 @@ def hook_response(payload: dict[str, Any], *, backend: str = "bubblewrap") -> di
     """Apply guards and file checks for one of three backends; deny invalid modes.
 
     * ``bubblewrap`` (the keyword default; explicit legacy): always wrap in ``bwrap``.
-    * ``claude-native`` (launcher): never nest ``bwrap``; outside the native sandbox the command
-      fails closed with the launcher message unless the launch is degraded. A hand-written ``bwrap``
-      command is denied.
+    * ``claude-native`` (launcher): never nest ``bwrap``. The launcher's backend variable is trusted (the
+      hook cannot see the sandbox), so there is no runtime check; the command is rewritten only when its
+      environment differs from the inherited one, the guard/RTK changed it, or it carries an explicit
+      ``timeout``/``run_in_background``. A hand-written ``bwrap`` command is denied.
     * ``auto`` (what ``main()`` selects when the backend is unset): one wrapper that runs natively
       inside the native sandbox and through ``bwrap`` outside it.
 
@@ -703,7 +711,8 @@ def hook_response(payload: dict[str, Any], *, backend: str = "bubblewrap") -> di
                     if backend == "auto"
                     else _wrap_bash(command, cwd, tool_input, native, backend)
                 )
-                output["updatedInput"] = {**tool_input, "command": wrapped}
+                if wrapped != command:  # a native no-op needs no rewrite, so auto mode never refuses it
+                    output["updatedInput"] = {**tool_input, "command": wrapped}
         else:
             path = tool_input.get("file_path") or tool_input.get("notebook_path")
             if not isinstance(path, str):
