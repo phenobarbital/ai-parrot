@@ -1,0 +1,15 @@
+.agents/skills/sdd-done/SKILL.md
+.claude/commands/sdd-done.md
+.claude/commands/sdd-spec.md
+.claude/commands/sdd-task.md
+.github/workflows/docs.yml
+.parrot/wiki.json
+docs/api-reference/a2a.md
+docs/index.md
+docs/sdd/closeout-hooks.md
+mkdocs.yml
+pyproject.toml
+requirements-docs.txt
+sdd/CONVENTIONS.md
+sdd/templates/sdd_hooks.example.toml
+sdd/templates/spec.md
