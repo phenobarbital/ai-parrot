@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-798 — Retire gemini-2.5-{pro,flash}: move the Google defaults to Gemini 4 Argon / 3.8-flash and bump google-genai
 **Spec**: `sdd/specs/google-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (<1h)
 **Depends-on**: TASK-5154, TASK-5155
@@ -49,9 +49,9 @@ members; the guard must not match them.
 
 ## Acceptance Criteria
 
-- [ ] No file under `docs/`, `examples/`, `plugins/` names a retired `GEMINI_2_5_*` member.
-- [ ] The guard test fails on a retired member name and does not match `GEMINI_2_5_FLASH_LITE` / `_IMAGE`.
-- [ ] `test_no_retired_gemini_in_docs.py` and `test_google_models.py` pass.
+- [x] No file under `docs/`, `examples/`, `plugins/` names a retired `GEMINI_2_5_*` member.
+- [x] The guard test fails on a retired member name and does not match `GEMINI_2_5_FLASH_LITE` / `_IMAGE`.
+- [x] `test_no_retired_gemini_in_docs.py` and `test_google_models.py` pass.
 
 ## Validation Commands
 
@@ -61,4 +61,12 @@ PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-client-google/src pytest pa
 
 ## Completion Note
 
-_(filled on close)_
+Filed and implemented by `/sdd-fix issue:00b3fc295988` after the FEAT-798 sdd-worker's review raised it.
+Code commit `0a23e9f932`.
+
+- `scraper.py` and `next/google.py` (10 commented-out call sites) → `GEMINI_3_8_FLASH`;
+  `image_analysis/test.py` → `GEMINI_4_ARGON`.
+- Guard: new `RETIRED_MEMBERS` regex (`GEMINI_2_5_FLASH[_PREVIEW|_TTS]`, `GEMINI_2_5_PRO[_TTS]`) plus a unit
+  test proving it spares `GEMINI_2_5_FLASH_LITE*` / `GEMINI_2_5_FLASH_IMAGE*`.
+- Mutation check: the regex matches 1/1/10 lines in the three files at the pre-fix base and 0 after.
+- Validation: the task's command — 20 passed. `ruff check` clean.

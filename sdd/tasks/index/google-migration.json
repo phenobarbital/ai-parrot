@@ -259,7 +259,7 @@
       "feature_id": "FEAT-798",
       "feature": "google-migration",
       "spec": "sdd/specs/google-migration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -270,8 +270,9 @@
       "parallelism_notes": "ledger follow-up issue:00b3fc295988",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5160-examples-retired-enum-members.md"
+      "completed_at": "2026-11-04T17:28:09+00:00",
+      "file": "sdd/tasks/completed/TASK-5160-examples-retired-enum-members.md",
+      "verification": "verified"
     }
   ]
 }
