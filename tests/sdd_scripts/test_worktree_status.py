@@ -90,7 +90,7 @@ def _discover_with_fake_worktree(
 ):
     """Build a single fake SDD worktree under tmp_path and run discover_worktree_reports
     against it with every subprocess/filesystem boundary mocked out."""
-    worktree_root = tmp_path / ".claude" / "worktrees"
+    worktree_root = tmp_path / ".parrot" / "worktrees"
     wt_path = worktree_root / "feat-FEAT-550-token-budget-bedrock"
     idx_dir = wt_path / "sdd" / "tasks" / "index"
     idx_dir.mkdir(parents=True)
@@ -117,7 +117,7 @@ def _discover_with_fake_worktree(
         return _completed("")
 
     with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setenv("WORKTREE_BASE_PATH", str(worktree_root))
+        monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
         with (
             patch("scripts.sdd.worktree_status._git", side_effect=fake_git),
             patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
@@ -137,7 +137,7 @@ def _discover_with_branches(
 ):
     """Run ``discover_worktree_reports`` over several fake worktrees at once.
 
-    Every branch gets a directory under ``tmp_path/.claude/worktrees/<flattened>``
+    Every branch gets a directory under ``tmp_path/.parrot/worktrees/<flattened>``
     carrying a ``.git`` marker file (a real worktree has one; a bare directory
     such as an sdd-coder ``--pool`` container does not). The primary checkout
     (``tmp_path`` itself, on ``dev``) is always the first porcelain block, so
@@ -155,7 +155,7 @@ def _discover_with_branches(
         The full, unfiltered report list.
     """
     registered = set(branches) if registered is None else registered
-    worktree_root = tmp_path / ".claude" / "worktrees"
+    worktree_root = tmp_path / ".parrot" / "worktrees"
     worktree_root.mkdir(parents=True, exist_ok=True)
 
     porcelain = f"worktree {tmp_path}\nHEAD aaa000\nbranch refs/heads/dev\n\n"
@@ -183,7 +183,7 @@ def _discover_with_branches(
         return _completed("")
 
     with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setenv("WORKTREE_BASE_PATH", str(worktree_root))
+        monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
         with (
             patch("scripts.sdd.worktree_status._git", side_effect=fake_git),
             patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
@@ -542,6 +542,57 @@ class TestNonSddWorktrees:
         reports = _discover_with_branches(tmp_path, [pool_branch, "chore-ruff-config"])
         assert [r.branch for r in reports] == ["chore-ruff-config"]
 
+    def test_worktree_status_legacy_entry(self, tmp_path, monkeypatch):
+        """A registered worktree under the former root is visible as a migration-only row."""
+        monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+        legacy_worktree = tmp_path / ".claude" / "worktrees" / "feat-FEAT-9-x"
+        legacy_worktree.mkdir(parents=True)
+        porcelain = (
+            f"worktree {tmp_path}\nHEAD aaa000\nbranch refs/heads/dev\n\n"
+            f"worktree {legacy_worktree}\nHEAD bbb111\nbranch refs/heads/feat-FEAT-9-x\n\n"
+        )
+
+        def fake_git(*args, cwd):
+            if args[:2] == ("worktree", "list"):
+                return _completed(porcelain)
+            return _completed("")
+
+        with (
+            patch("scripts.sdd.worktree_status._git", side_effect=fake_git),
+            patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
+        ):
+            reports = discover_worktree_reports(tmp_path)
+
+        assert len(reports) == 1
+        report = reports[0]
+        assert report.flow_type == "legacy"
+        assert report.ready_for_done is False
+        assert report.tasks == []
+        assert report.index_found is False
+
+    def test_worktree_status_scans_resolved_root(self, tmp_path, monkeypatch):
+        """An orphan worktree under the default resolved root is discovered without an override."""
+        monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+        worktree = tmp_path / ".parrot" / "worktrees" / "chore-resolved-root"
+        worktree.mkdir(parents=True)
+        (worktree / ".git").write_text("gitdir: fake\n")
+        porcelain = f"worktree {tmp_path}\nHEAD aaa000\nbranch refs/heads/dev\n\n"
+
+        def fake_git(*args, cwd):
+            if args[:2] == ("worktree", "list"):
+                return _completed(porcelain)
+            if args[:1] == ("rev-parse",) and Path(cwd) == worktree:
+                return _completed("chore-resolved-root\n")
+            return _completed("")
+
+        with (
+            patch("scripts.sdd.worktree_status._git", side_effect=fake_git),
+            patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
+        ):
+            reports = discover_worktree_reports(tmp_path)
+
+        assert [report.branch for report in reports] == ["chore-resolved-root"]
+
     def test_orphan_directory_without_git_is_not_reported(self, tmp_path):
         """A bare directory under WORKTREE_ROOT is not a worktree.
 
@@ -549,7 +600,7 @@ class TestNonSddWorktrees:
         to the primary checkout and reports ITS branch — which would surface a
         bogus row per sdd-coder ``--pool`` container directory.
         """
-        worktree_root = tmp_path / ".claude" / "worktrees"
+        worktree_root = tmp_path / ".parrot" / "worktrees"
         reports_before = _discover_with_branches(tmp_path, ["chore-ruff-config"])
         (worktree_root / "feat-FEAT-616-odoo-toolkit-upgrades--pool").mkdir(parents=True, exist_ok=True)
         reports_after = _discover_with_branches(tmp_path, ["chore-ruff-config"])
@@ -558,7 +609,7 @@ class TestNonSddWorktrees:
     def test_sdd_worktree_still_reported_alongside(self, tmp_path, sample_index):
         """Adding non-SDD rows must not regress normal feature discovery."""
         branches = ["feat-FEAT-550-token-budget-bedrock", "chore-ruff-config"]
-        worktree_root = tmp_path / ".claude" / "worktrees"
+        worktree_root = tmp_path / ".parrot" / "worktrees"
         idx_dir = worktree_root / "feat-FEAT-550-token-budget-bedrock" / "sdd" / "tasks" / "index"
         idx_dir.mkdir(parents=True, exist_ok=True)
         (idx_dir / "token-budget-bedrock.json").write_text(json.dumps(sample_index))

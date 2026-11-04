@@ -28,6 +28,7 @@ from parrot.knowledge.wiki.ledger.outbox import (
 from parrot.knowledge.wiki.ledger.service import LedgerService
 from parrot.knowledge.wiki.ledger.shared_log import ARCHIVE_REL_DIR, SHARED_LOG_REL_PATH, shared_log_files
 from parrot.knowledge.wiki.store import WikiStoreBusy
+from parrot.sdd.config import worktree_root
 
 logger = logging.getLogger(__name__)
 
@@ -373,7 +374,7 @@ class LedgerIntegrator:
             )
         base_sha = base.stdout.strip()
         primary = await self._primary_root()
-        tmp = primary / ".claude" / "worktrees" / f"_ledger-outbox-{uuid.uuid4()}"
+        tmp = worktree_root(primary) / f"_ledger-outbox-{uuid.uuid4()}"
         tmp.parent.mkdir(parents=True, exist_ok=True)
         added = await _git("worktree", "add", "--detach", str(tmp), base_sha, cwd=self.repo_root)
         if added.returncode != 0:

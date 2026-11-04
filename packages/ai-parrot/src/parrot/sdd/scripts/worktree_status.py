@@ -17,7 +17,7 @@ from typing import Literal, Sequence
 
 from pydantic import BaseModel, Field
 
-from parrot.sdd.config import worktree_root
+from parrot.sdd.config import LEGACY_WORKTREE_ROOT, worktree_root
 
 # ---------------------------------------------------------------------------
 # Branch-name patterns
@@ -63,9 +63,10 @@ class WorktreeReport(BaseModel):
 
     feature_slug: str
     feature_id: str | None = None
-    #: ``"non-sdd"`` marks a worktree under the resolved worktree root whose branch is not an
-    #: SDD branch: health only, no tasks, never ready_for_done (FEAT-582 §8).
-    flow_type: Literal["feature", "hotfix", "non-sdd"]
+    #: ``"non-sdd"`` marks a worktree under the resolved worktree root whose branch is not an SDD branch;
+    #: ``"legacy"`` marks one still registered under ``.claude/worktrees/`` (FEAT-802 — move it). Both are
+    #: health only, no tasks, never ready_for_done (FEAT-582 §8).
+    flow_type: Literal["feature", "hotfix", "non-sdd", "legacy"]
     worktree_path: str
     branch: str
     base_branch: str = "dev"
@@ -299,6 +300,7 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
     # Scan the resolved worktree root for orphan directories. The resolver
     # handles relative settings against repo_root and honours absolute settings.
     worktree_root_path = worktree_root(repo_root).resolve()
+    legacy_root = (repo_root / LEGACY_WORKTREE_ROOT).resolve()
     orphan_paths: list[Path] = []
     if worktree_root_path.exists():
         for entry in worktree_root_path.iterdir():
@@ -344,6 +346,23 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
         # exclude them, and _parse_branch() returns None for them exactly as it
         # does for a non-SDD branch — hence the explicit test here.
         if _POOL_SUB_WORKTREE_RE.search(branch):
+            continue
+
+        if _is_under_worktree_root(wt_path, legacy_root):
+            reports.append(
+                WorktreeReport(
+                    feature_slug=branch,
+                    feature_id=None,
+                    flow_type="legacy",
+                    worktree_path=str(wt_path),
+                    branch=branch,
+                    base_branch="dev",
+                    health=_check_health(wt_path, "dev"),
+                    tasks=[],
+                    index_found=False,
+                    ready_for_done=False,
+                )
+            )
             continue
 
         parsed = _parse_branch(branch)

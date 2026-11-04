@@ -35,7 +35,7 @@ def existing_directory(path: Path) -> Path:
     subsequent command — the session loses its own shell and cannot even
     ``cd`` back to the primary checkout. Anchoring on the nearest surviving
     ancestor keeps the sandbox on a real directory instead: for a removed
-    worktree that is the primary checkout's ``.claude/worktrees``, so the next
+    worktree that is the primary checkout's worktree root, so the next
     command lands back inside the primary checkout.
 
     Args:
@@ -136,7 +136,6 @@ def command_policy_error(cwd: Path, argv: Sequence[str]) -> str | None:
     return POLICY_MESSAGE
 
 
-WORKTREE_ADMIN_DIR = Path(".claude") / "worktrees"
 # The shared SDD work ledger (``WikiProjectConfig.ledger_path``). It always
 # resolves to the primary checkout, so a worktree agent filing a finding with
 # ``wikitoolkit ledger open`` writes there, never into its own checkout.
@@ -146,7 +145,8 @@ SHARED_LEDGER_DIR = Path(".parrot") / "ledger"
 # seat to use it for temporary files. The sandbox replaces ``/tmp`` with a
 # private tmpfs, so the root is bound back in — writable — for all sessions of
 # this user at once; every session on the host belongs to the same user.
-# ``os.getuid`` does not exist on Windows; the hook must still import there (the path is only used by the POSIX sandbox).
+# ``os.getuid`` does not exist on Windows; the hook must still import there.
+# The path is only used by the POSIX sandbox.
 CLAUDE_SCRATCH_ROOT = Path("/tmp") / f"claude-{os.getuid() if hasattr(os, 'getuid') else 0}"
 
 
@@ -154,7 +154,7 @@ def worktree_admin_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
     """Return the primary checkout's worktree directory when ``root`` is a linked worktree.
 
     Linked worktrees (feature and pool checkouts) live under the primary
-    checkout's ``.claude/worktrees``. ``/sdd-done`` run from inside one must
+    checkout's resolved worktree root (default ``.parrot/worktrees``). ``/sdd-done`` run from inside one must
     create a throwaway ledger-snapshot worktree there and remove the feature
     worktree itself, and both operations write to that directory rather than
     to the worktree being executed in. The rest of the primary checkout is
@@ -174,7 +174,9 @@ def worktree_admin_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
     primary = git_dir.parent
     if primary == root:
         return ()
-    admin_dir = (primary / WORKTREE_ADMIN_DIR).resolve()
+    from parrot.sdd.config import worktree_root  # lazy: the hook path stays stdlib-only until needed
+
+    admin_dir = worktree_root(primary).resolve()
     if not admin_dir.is_dir() or admin_dir.is_relative_to(root):
         return ()
     return (admin_dir,)
@@ -230,7 +232,7 @@ def protected_argv(cwd: Path, argv: Sequence[str], *, derive_pythonpath: bool = 
     """Build a fail-closed Linux filesystem sandbox for a command and its children.
 
     Only the checkout, Git administration directory, the primary checkout's
-    worktree directory (``.claude/worktrees``, so a worktree agent can run
+    worktree directory (the resolved worktree root, so a worktree agent can run
     ``git worktree add/remove`` for ``/sdd-done``), the primary checkout's
     shared SDD ledger (``.parrot/ledger``, so a worktree agent can file and
     claim ledger issues), private temporary storage,
