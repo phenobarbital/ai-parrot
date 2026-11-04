@@ -26,7 +26,7 @@
 - CREATE `techwiki/templates/module.md.j2` Jinja template for one API reference page
 - CREATE `parrot.sdd.scripts.techwiki_api` CLI shim (`main(argv) -> int`)
 - CREATE test fixture package `tests/sdd/fixtures/techwiki_pkg/samplepkg/`
-- CREATE golden output `tests/sdd/fixtures/techwiki_golden/`
+- CREATE golden output file `tests/sdd/fixtures/techwiki_golden/samplepkg.core.md` (the single generated page for fixture module `samplepkg.core`; if the generator's page name differs, name the file exactly after the generated page)
 - CREATE `test_techwiki_api.py` covering: static loading, determinism, `__all__` filter, griffe
   unavailable exit 3, golden output match, `--strict` exit 4 on skipped modules, satellite
   distribution coverage
@@ -44,7 +44,7 @@
 | `packages/ai-parrot/src/parrot/sdd/scripts/techwiki_api.py` | CREATE | CLI entrypoint |
 | `packages/ai-parrot/tests/sdd/fixtures/techwiki_pkg/samplepkg/__init__.py` | CREATE | Fixture package init |
 | `packages/ai-parrot/tests/sdd/fixtures/techwiki_pkg/samplepkg/core.py` | CREATE | Fixture module |
-| `packages/ai-parrot/tests/sdd/fixtures/techwiki_golden/` | CREATE | Golden output files |
+| `packages/ai-parrot/tests/sdd/fixtures/techwiki_golden/samplepkg.core.md` | CREATE | Golden output file |
 | `packages/ai-parrot/tests/sdd/test_techwiki_api.py` | CREATE | Unit tests |
 
 ---
@@ -93,6 +93,7 @@ def page_name(section: str | None, title: str) -> str: ...
     {"path": "packages/ai-parrot/src/parrot/sdd/scripts/techwiki_api.py", "action": "CREATE"},
     {"path": "packages/ai-parrot/tests/sdd/fixtures/techwiki_pkg/samplepkg/__init__.py", "action": "CREATE"},
     {"path": "packages/ai-parrot/tests/sdd/fixtures/techwiki_pkg/samplepkg/core.py", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/sdd/fixtures/techwiki_golden/samplepkg.core.md", "action": "CREATE"},
     {"path": "packages/ai-parrot/tests/sdd/test_techwiki_api.py", "action": "CREATE"}
   ],
   "contract_symbols": []
