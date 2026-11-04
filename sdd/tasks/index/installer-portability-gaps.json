@@ -1,0 +1,272 @@
+{
+  "feature": "installer-portability-gaps",
+  "feature_id": "FEAT-804",
+  "spec": "sdd/specs/installer-portability-gaps.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-04T23:07:51.077864+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/launcher/test_launcher_core.py",
+          "packages/ai-parrot/tests/launcher/test_launcher_stdlib_only.py",
+          "packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py",
+          "packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py",
+          "packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py",
+          "packages/ai-parrot/tests/knowledge/wiki/test_google_portable.py",
+          "packages/ai-parrot/tests/knowledge/wiki/test_project_roots.py",
+          "packages/ai-parrot/tests/mcp/test_toolkit_install.py",
+          "packages/ai-parrot/tests/mcp/test_hosts.py",
+          "packages/ai-parrot/tests/cli/test_toolkits_cli.py",
+          "packages/ai-parrot/tests/sdd/test_installer.py",
+          "packages/ai-parrot/tests/sdd/test_installer_toolkits.py",
+          "packages/ai-parrot/tests/sdd/test_sdd_cli.py",
+          "packages/ai-parrot/tests/self_/test_doctor.py",
+          "packages/ai-parrot/tests/self_/test_doctor_sdd.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:c215eaaf7aa046e4a1c138a0f4a6db9a83ebb577ef1c216a6654c5c65607501e"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5184",
+      "slug": "installer-root-primitives",
+      "title": "Install-root classification and explicit-pin primitives",
+      "feature_id": "FEAT-804",
+      "feature": "installer-portability-gaps",
+      "spec": "sdd/specs/installer-portability-gaps.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Exclusive: creates tests/launcher/conftest.py loaded by launcher tests; no dependencies.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5184-installer-root-primitives.md"
+    },
+    {
+      "id": "TASK-5185",
+      "slug": "portable-mode-decision",
+      "title": "Shared tri-state portability decision",
+      "feature_id": "FEAT-804",
+      "feature": "installer-portability-gaps",
+      "spec": "sdd/specs/installer-portability-gaps.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5184"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5184 creates managed_launcher_on_path in launcher.py, consumed by the new decision function.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5185-portable-mode-decision.md"
+    },
+    {
+      "id": "TASK-5186",
+      "slug": "claude-installer-portability-root",
+      "title": "Claude installer portability and shared wiki root",
+      "feature_id": "FEAT-804",
+      "feature": "installer-portability-gaps",
+      "spec": "sdd/specs/installer-portability-gaps.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5185"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5185 creates resolve_portable_mode; its dependency TASK-5184 supplies install_root and worktree refusal. Owns claude_code installer.py/cli.py and test_claude_installer_portable.py; no host-file overlap.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5186-claude-installer-portability-root.md"
+    },
+    {
+      "id": "TASK-5187",
+      "slug": "codex-installer-portability-root",
+      "title": "Codex installer portability and shared wiki root",
+      "feature_id": "FEAT-804",
+      "feature": "installer-portability-gaps",
+      "spec": "sdd/specs/installer-portability-gaps.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5185"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5185 creates resolve_portable_mode; its dependency TASK-5184 supplies install_root and worktree refusal. Owns codex installer.py/cli.py and test_codex_portable.py; no host-file overlap.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5187-codex-installer-portability-root.md"
+    },
+    {
+      "id": "TASK-5188",
+      "slug": "google-installer-portability-root",
+      "title": "Google installer portability and shared wiki root",
+      "feature_id": "FEAT-804",
+      "feature": "installer-portability-gaps",
+      "spec": "sdd/specs/installer-portability-gaps.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5185"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5185 creates resolve_portable_mode; its dependency TASK-5184 supplies install_root and worktree refusal. Owns google installer.py/cli.py and test_google_portable.py; no host-file overlap.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5188-google-installer-portability-root.md"
+    },
+    {
+      "id": "TASK-5189",
+      "slug": "toolkit-portable-forwarding",
+      "title": "Forward portability through host adapters and toolkit services",
+      "feature_id": "FEAT-804",
+      "feature": "installer-portability-gaps",
+      "spec": "sdd/specs/installer-portability-gaps.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5186",
+        "TASK-5187",
+        "TASK-5188"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5186, TASK-5187, TASK-5188 supply the tri-state host reconcilers whose fresh-host behavior these service tests consume.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5189-toolkit-portable-forwarding.md"
+    },
+    {
+      "id": "TASK-5190",
+      "slug": "sdd-installer-portable-root",
+      "title": "SDD tri-state hooks, toolkit forwarding and checkout roots",
+      "feature_id": "FEAT-804",
+      "feature": "installer-portability-gaps",
+      "spec": "sdd/specs/installer-portability-gaps.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5189"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5189 adds install_toolkits(portable=); inherited TASK-5184 supplies launcher/root primitives. All SDD installer/CLI writes are owned here.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5190-sdd-installer-portable-root.md"
+    },
+    {
+      "id": "TASK-5191",
+      "slug": "toolkits-cli-portable-root",
+      "title": "Toolkit CLI portability flags and explicit checkout targets",
+      "feature_id": "FEAT-804",
+      "feature": "installer-portability-gaps",
+      "spec": "sdd/specs/installer-portability-gaps.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5189"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5189 adds portable keywords to install_toolkits/set_toolkits_enabled; inherited TASK-5184 provides install_root/refusal.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5191-toolkits-cli-portable-root.md"
+    },
+    {
+      "id": "TASK-5192",
+      "slug": "doctor-checkout-config-forms",
+      "title": "Doctor checkout provenance and informational host forms",
+      "feature_id": "FEAT-804",
+      "feature": "installer-portability-gaps",
+      "spec": "sdd/specs/installer-portability-gaps.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5186",
+        "TASK-5187",
+        "TASK-5188"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5186, TASK-5187, TASK-5188 define tri-state host inference; inherited TASK-5184 provides InstallRoot and explicit_project_pin. Owns doctor.py and self_/cli.py only.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5192-doctor-checkout-config-forms.md"
+    },
+    {
+      "id": "TASK-5193",
+      "slug": "installer-portability-integration",
+      "title": "Cross-host portability and shared-state regression gate",
+      "feature_id": "FEAT-804",
+      "feature": "installer-portability-gaps",
+      "spec": "sdd/specs/installer-portability-gaps.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5190",
+        "TASK-5191",
+        "TASK-5192"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5190 owns test_installer_toolkits.py before this task and supplies SDD tri-state wiring; TASK-5191 supplies toolkit CLI flags/root; TASK-5192 supplies doctor form/provenance checks.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5193-installer-portability-integration.md"
+    },
+    {
+      "id": "TASK-5194",
+      "slug": "installer-portability-guidance",
+      "title": "Document installer defaults and worktree escape hatches",
+      "feature_id": "FEAT-804",
+      "feature": "installer-portability-gaps",
+      "spec": "sdd/specs/installer-portability-gaps.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5190",
+        "TASK-5191"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5190 supplies SDD --no-portable/root behavior and TASK-5191 supplies toolkit flags verified by the CLI-doc harness; host behavior is inherited through TASK-5189.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5194-installer-portability-guidance.md"
+    }
+  ]
+}
