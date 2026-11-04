@@ -130,7 +130,7 @@ DEFAULT_EXCLUDES: tuple[str, ...] = (
     "build",
     "dist",
     ".egg-info",
-    ".claude/worktrees",
+    ".parrot/worktrees",
     "site-packages",
 )
 

@@ -169,8 +169,8 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
     fi
 
     # Repo-critical paths that must never be blown away wholesale.
-    if echo "$SCAN" | grep -qE 'rm\s+(-[a-zA-Z]+\s+)*-?[a-zA-Z]*[rR][a-zA-Z]*\s+[^;&|]*(\.venv|packages/?\s*$|\.git(/|\s|$)|\.claude/worktrees)'; then
-        block "Recursive delete of a repo-critical path (.venv, packages/, .git, .claude/worktrees)." \
+    if echo "$SCAN" | grep -qE 'rm\s+(-[a-zA-Z]+\s+)*-?[a-zA-Z]*[rR][a-zA-Z]*\s+[^;&|]*(\.venv|packages/?\s*$|\.git(/|\s|$)|\.(claude|parrot)/worktrees)'; then
+        block "Recursive delete of a repo-critical path (.venv, packages/, .git, .parrot/worktrees, .claude/worktrees)." \
             "# .venv:              make distclean   (then: uv sync)" \
             "# a worktree:         parrot sdd worktree remove <target>" \
             "# build artefacts:    make clean"
@@ -228,7 +228,7 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
     fi
 
     # --- warn (non-blocking) ----------------------------------------------
-    if echo "$SCAN" | grep -qE 'git\s+(merge|pull)\b' && [[ -d .claude/worktrees ]]; then
+    if echo "$SCAN" | grep -qE 'git\s+(merge|pull)\b' && [[ -d "${WORKTREE_BASE_PATH:-.parrot/worktrees}" ]]; then
         if pgrep -f 'sdd-worker' >/dev/null 2>&1; then
             echo '{"systemMessage": "A sdd-worker process is live. A merge/pull on a shared branch can check out files over its uncommitted edits — verify with `git status` and `ps -eo pid,args | grep sdd-worker` before proceeding."}'
         fi
