@@ -90,7 +90,7 @@
       "feature_id": "FEAT-802",
       "feature": "worktree-root-under-parrot",
       "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -101,8 +101,9 @@
       "parallelism_notes": "Imports worktree_root_setting/worktree_root from TASK-5174 (parrot/sdd/config.py); depends on TASK-5175 only because both edit packages/ai-parrot/tests/sdd/test_config.py.",
       "assigned_to": null,
       "started_at": "2026-11-04T23:16:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5176-plan-builders-and-exact-reuse.md"
+      "completed_at": "2026-11-04T23:41:11+00:00",
+      "file": "sdd/tasks/completed/TASK-5176-plan-builders-and-exact-reuse.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5177",
@@ -173,7 +174,7 @@
       "feature_id": "FEAT-802",
       "feature": "worktree-root-under-parrot",
       "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -183,8 +184,9 @@
       "parallelism_notes": "Shell snippets call `parrot sdd worktree root --root`, the verb TASK-5175 mounts in parrot/sdd/cli.py; .claude/ prose files only.",
       "assigned_to": null,
       "started_at": "2026-11-04T23:16:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5180-claude-rules-commands-agents.md"
+      "completed_at": "2026-11-04T23:41:11+00:00",
+      "file": "sdd/tasks/completed/TASK-5180-claude-rules-commands-agents.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5181",
@@ -193,7 +195,7 @@
       "feature_id": "FEAT-802",
       "feature": "worktree-root-under-parrot",
       "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -203,8 +205,9 @@
       "parallelism_notes": "Twin snippets call `parrot sdd worktree root --root` from TASK-5175 (parrot/sdd/cli.py + sdd/scripts/worktree_root.py); .agent/ and .agents/ files only.",
       "assigned_to": null,
       "started_at": "2026-11-04T23:16:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5181-agent-and-agents-twins.md"
+      "completed_at": "2026-11-04T23:41:11+00:00",
+      "file": "sdd/tasks/completed/TASK-5181-agent-and-agents-twins.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5182",
@@ -213,7 +216,7 @@
       "feature_id": "FEAT-802",
       "feature": "worktree-root-under-parrot",
       "spec": "sdd/specs/worktree-root-under-parrot.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -223,8 +226,9 @@
       "parallelism_notes": "Docs reference the `parrot sdd worktree root` verb and WORKTREE_BASE_PATH derivation that TASK-5175 adds (sdd/scripts/worktree_root.py, conf.py); CLAUDE.md + docs/ only.",
       "assigned_to": null,
       "started_at": "2026-11-04T23:16:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5182-claude-md-and-docs.md"
+      "completed_at": "2026-11-04T23:41:12+00:00",
+      "file": "sdd/tasks/completed/TASK-5182-claude-md-and-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5183",
