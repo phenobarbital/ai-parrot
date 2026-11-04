@@ -37,14 +37,14 @@
       "feature_id": "FEAT-799",
       "feature": "claude-install-welcome-wizard",
       "spec": "sdd/specs/claude-install-welcome-wizard.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: renames doctor._check_bwrap_sandbox (self_/doctor.py), no deps",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-04T17:00:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5156-promote-check-bwrap-sandbox.md"
     },
@@ -55,7 +55,7 @@
       "feature_id": "FEAT-799",
       "feature": "claude-install-welcome-wizard",
       "spec": "sdd/specs/claude-install-welcome-wizard.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -64,7 +64,7 @@
       "parallel": true,
       "parallelism_notes": "imports check_bwrap_sandbox created by TASK-5156 (self_/doctor.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-04T17:00:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5157-welcome-renderer.md"
     },
@@ -75,7 +75,7 @@
       "feature_id": "FEAT-799",
       "feature": "claude-install-welcome-wizard",
       "spec": "sdd/specs/claude-install-welcome-wizard.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -84,7 +84,7 @@
       "parallel": true,
       "parallelism_notes": "modifies welcome.py + test_welcome.py created by TASK-5157 (same files)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-04T17:00:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5158-sandbox-mode-wizard.md"
     },
@@ -95,7 +95,7 @@
       "feature_id": "FEAT-799",
       "feature": "claude-install-welcome-wizard",
       "spec": "sdd/specs/claude-install-welcome-wizard.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -104,7 +104,7 @@
       "parallel": true,
       "parallelism_notes": "imports sandbox_mode_wizard from TASK-5158 (claude_code/welcome.py); appends to test_welcome.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-04T17:00:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5159-claude-install-cli-wiring.md"
     }
