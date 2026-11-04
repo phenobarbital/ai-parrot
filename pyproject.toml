@@ -22,6 +22,7 @@ dependencies = [
     "ai-parrot-advisors",
     "ai-parrot-squawk",
     "navrules",
+    "google-genai==2.34.0",
 ]
 
 [project.optional-dependencies]
