@@ -129,6 +129,14 @@ def claude() -> None:
     help="Emit bare launcher commands (wikitoolkit/parrot/bookstore) with no absolute paths, so the "
     "config can be committed. Default: keep the current form (baked absolute paths on a fresh install).",
 )
+@click.option(
+    "--sandbox-mode",
+    type=click.Choice(["native", "legacy"]),
+    default=None,
+    help="Set the SDD sandbox mode (native or legacy) without prompting.",
+)
+@click.option("--non-interactive", is_flag=True, default=False, help="Skip interactive prompts (the wizard is also skipped when stdin is not a TTY).")
+@click.option("--no-welcome", is_flag=True, default=False, help="Suppress the welcome and bwrap diagnostic; an explicit --sandbox-mode is still applied.")
 def install(
     path_: Optional[str],
     git_hook: bool,
@@ -144,6 +152,9 @@ def install(
     remote_url: Optional[str],
     token_env: Optional[str],
     portable: Optional[bool],
+    sandbox_mode: Optional[str],
+    non_interactive: bool,
+    no_welcome: bool,
 ) -> None:
     """Install the wiki toolkit as Claude Code infrastructure.
 
@@ -154,6 +165,7 @@ def install(
     also enables the fast-jev-compaction plugin, which replaces Claude
     Code's compaction summary with a verbatim history pruned by
     TypeSafe's Jev model (`--no-compaction` to skip).
+    A post-install wizard can configure the SDD sandbox mode.
     """
     root = _resolve_root(path_)
     try:
@@ -215,6 +227,27 @@ def install(
         "Claude Code integration installed. Try: " '`wikitoolkit query "<question>"` or /parrotwiki in Claude Code.',
         fg="green",
     )
+
+    from parrot.knowledge.wiki.claude_code.welcome import (
+        render_welcome,
+        run_bwrap_diagnostic,
+        sandbox_mode_wizard,
+    )
+
+    interactive_ok = not non_interactive and sys.stdin.isatty()
+    try:
+        if no_welcome:
+            sandbox_mode_wizard(root, non_interactive=True, preset=sandbox_mode)
+            return
+        bwrap_checks = run_bwrap_diagnostic()
+        selected_sandbox_mode = sandbox_mode_wizard(
+            root,
+            non_interactive=not interactive_ok,
+            preset=sandbox_mode,
+        )
+        render_welcome(actions, bwrap_checks, selected_sandbox_mode, non_interactive=not interactive_ok)
+    except (ValueError, RuntimeError) as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 @claude.command()

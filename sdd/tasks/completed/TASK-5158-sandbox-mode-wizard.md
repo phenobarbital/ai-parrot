@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-799 — `parrot claude install` Welcome Wizard
 **Spec**: `sdd/specs/claude-install-welcome-wizard.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5157
@@ -214,4 +214,8 @@ Standard SDD flow; close with `parrot sdd task close TASK-5158 claude-install-we
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Extended `welcome.py` with `current_sandbox_mode`, `write_sandbox_mode`, `sandbox_mode_wizard` and the TOML/local-env helpers; extended `test_welcome.py`.
+
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 224s · Tokens: n/a
+Merge-tier validation: 15 passed. Review: orchestrator diff review, no corrections.
+Note: `coder_record_review` failing server-side (see TASK-5156); not recorded.
