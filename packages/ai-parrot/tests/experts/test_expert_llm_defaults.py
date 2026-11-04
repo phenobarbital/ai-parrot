@@ -17,7 +17,6 @@ from parrot.experts.policy import DEFAULT_TIER_POLICY, model_config_for
 from parrot.models.basic import ModelConfig
 from parrot.observability.context import current_component
 
-
 _BUILTIN_POLICY = {
     ExpertTier.JUDGMENT: {"provider": "google", "model": "gemini-2.5-pro", "temperature": 0.2},
     ExpertTier.BALANCED: {"provider": "google", "model": "gemini-2.5-flash", "temperature": 0.1},
