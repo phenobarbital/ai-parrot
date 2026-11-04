@@ -202,8 +202,7 @@ def _find_reusable_worktree(plan: WorktreePlan, target_path: Path, *, repo_root:
     at_target = branches.get(target_path)
     if at_target is not None and at_target != plan.name:
         raise EnsureWorktreeError(
-            f"Worktree at {target_path} is checked out on branch {at_target!r}, "
-            f"but expected branch {plan.name!r}."
+            f"Worktree at {target_path} is checked out on branch {at_target!r}, " f"but expected branch {plan.name!r}."
         )
     if at_target == plan.name:
         return target_path

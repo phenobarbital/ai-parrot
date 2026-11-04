@@ -19,9 +19,20 @@ MOVED_HOOK = SRC / "parrot" / "sdd" / "scripts" / "worktree_environment.py"  # r
 OLD_HOOK = SRC / "parrot" / "flows" / "dev_loop" / "worktree_environment.py"  # rev 0.5 C19 shim
 MOVED_LIBS = ("brief_meta",)  # rev 0.4 C17: library module, no main() until TASK-4299 adds the CLI
 SDD_META_NAMES = (
-    "KNOWN_BRANCHES", "KNOWN_PROJECTS", "PROJECT_ALIASES", "WORK_KIND_FLOW", "DocTaxonomy",
-    "FlowMeta", "WorktreePlan", "emit", "normalize_project", "normalize_tag", "parse", "parse_taxonomy",
-    "plan_worktree", "resolve_flow",
+    "KNOWN_BRANCHES",
+    "KNOWN_PROJECTS",
+    "PROJECT_ALIASES",
+    "WORK_KIND_FLOW",
+    "DocTaxonomy",
+    "FlowMeta",
+    "WorktreePlan",
+    "emit",
+    "normalize_project",
+    "normalize_tag",
+    "parse",
+    "parse_taxonomy",
+    "plan_worktree",
+    "resolve_flow",
 )
 
 
@@ -69,9 +80,9 @@ def test_sdd_meta_worktree_root_removed() -> None:
     pkg = importlib.import_module("parrot.sdd.scripts.sdd_meta")
     src = importlib.import_module("parrot.knowledge.wiki.ledger.sdd_meta")
     with pytest.raises(AttributeError):
-        getattr(pkg, "WORKTREE_ROOT")
+        pkg.WORKTREE_ROOT
     with pytest.raises(AttributeError):
-        getattr(src, "WORKTREE_ROOT")
+        src.WORKTREE_ROOT
 
 
 def test_worktree_environment_shim_reexports_moved_module() -> None:  # rev 0.3 C16 / AC-8
