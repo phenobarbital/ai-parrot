@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-796 — Per-Component LLM Defaults
 **Spec**: `sdd/specs/per-component-llm-defaults.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5138, TASK-5139
@@ -178,10 +178,8 @@ async def test_handler_api_key_passed(monkeypatch): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker; seat opus (native), 1 attempt, 0 retries
+**Date**: 2026-11-04
+**Notes**: Reviewed vs task; 34 feature tests pass. Review not recorded (coder_record_review server bug); 0 fix commits. Deviation: api_key passed via llm_kwargs because AbstractBot ignores a bare api_key kwarg.
 
 **Deviations from spec**: none

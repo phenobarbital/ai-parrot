@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-796 — Per-Component LLM Defaults
 **Spec**: `sdd/specs/per-component-llm-defaults.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5138, TASK-5139
@@ -200,10 +200,8 @@ async def test_expert_ask_tagged(monkeypatch): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker; seat gpt-5.6-sol (codex), 1 attempt, 0 retries
+**Date**: 2026-11-04
+**Notes**: Reviewed vs task; 34 feature tests pass. Review not recorded (coder_record_review server bug); 0 fix commits.
 
 **Deviations from spec**: none

@@ -107,7 +107,7 @@
       "feature_id": "FEAT-796",
       "feature": "per-component-llm-defaults",
       "spec": "sdd/specs/per-component-llm-defaults.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -118,8 +118,9 @@
       "parallelism_notes": "imports resolve_component_llm/resolve_component_api_key from TASK-5138 (parrot/llm_defaults.py) for crew.py lazy client + credentials.py; usage_component from TASK-5139 (observability/context.py) for the CREW decorator",
       "assigned_to": null,
       "started_at": "2026-11-03T22:26:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5140-crew-llm-defaults.md"
+      "completed_at": "2026-11-04T00:11:22+00:00",
+      "file": "sdd/tasks/completed/TASK-5140-crew-llm-defaults.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5141",
@@ -128,7 +129,7 @@
       "feature_id": "FEAT-796",
       "feature": "per-component-llm-defaults",
       "spec": "sdd/specs/per-component-llm-defaults.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -139,8 +140,9 @@
       "parallelism_notes": "experts/policy.py tier_policy calls resolve_component_llm (TASK-5138, parrot/llm_defaults.py); experts/agent.py uses resolve_component_api_key (TASK-5138) and usage_component (TASK-5139, observability/context.py) in ExpertAgent.ask",
       "assigned_to": null,
       "started_at": "2026-11-03T22:26:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5141-expert-tier-llm-defaults.md"
+      "completed_at": "2026-11-04T00:11:22+00:00",
+      "file": "sdd/tasks/completed/TASK-5141-expert-tier-llm-defaults.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5142",
@@ -149,7 +151,7 @@
       "feature_id": "FEAT-796",
       "feature": "per-component-llm-defaults",
       "spec": "sdd/specs/per-component-llm-defaults.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -160,8 +162,9 @@
       "parallelism_notes": "handlers/agents/abstract.py _create_agent calls resolve_component_llm/resolve_component_api_key (TASK-5138, parrot/llm_defaults.py); ask_agent wraps agent.ask in usage_component (TASK-5139, observability/context.py)",
       "assigned_to": null,
       "started_at": "2026-11-03T22:26:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5142-agent-handler-llm-defaults.md"
+      "completed_at": "2026-11-04T00:11:22+00:00",
+      "file": "sdd/tasks/completed/TASK-5142-agent-handler-llm-defaults.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5143",
