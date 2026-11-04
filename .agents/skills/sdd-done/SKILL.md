@@ -71,7 +71,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - read `feature`, `feature_id`, `spec`, `type`, and `base_branch`
 2. Verify branch and location:
    - resolve `MAIN_ROOT` from the absolute `git-common-dir` parent and
-     `WORKTREES_DIR` as `<MAIN_ROOT>/.claude/worktrees`
+     `WORKTREES_DIR` as the output of `parrot sdd worktree root --root <MAIN_ROOT>`
    - compare absolute `git-dir` and `git-common-dir` to detect `IN_WORKTREE`
    - in the main checkout, current branch must equal `base_branch`
    - in a linked worktree, verify it is the selected feature's worktree;
@@ -277,7 +277,7 @@ E2E: <policy> - <status> (gate_satisfied: <bool>)
 Hooks: pre_pr <n pass / m fail>, post_pr <n pass / m fail, or skipped (--dry-run)>
 Hook evidence: <absolute artifact paths from evidence_md, or none>
 Tests: <passed>/<tests> (<failed> failed) - re-run: done
-Worktree removed: .claude/worktrees/<name>
+Worktree removed: .parrot/worktrees/<name>
 ```
 
 ## References
