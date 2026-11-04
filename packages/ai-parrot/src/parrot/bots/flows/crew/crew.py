@@ -32,6 +32,7 @@ from typing import (
 )
 from datetime import datetime
 from pathlib import Path
+import functools
 
 if TYPE_CHECKING:
     from ....models.crew_definition import CrewDefinition
@@ -58,6 +59,8 @@ from ...agent import BasicAgent
 from ...abstract import AbstractBot, _resolve_supported_client
 from ....clients import AbstractClient
 from ....clients.factory import SUPPORTED_CLIENTS
+from ....llm_defaults import resolve_component_api_key, resolve_component_llm
+from ....observability.context import usage_component
 from .credentials import GOOGLE_PROVIDER_KEYS, apply_google_api_key, has_explicit_google_credential
 from ....tools.manager import ToolManager
 from ....tools.agent import AgentTool
@@ -114,6 +117,19 @@ AgentNode = CrewAgentNode
 # These must NOT be forwarded to agent calls (agent.ask / .conversation / .invoke)
 # because they contain non-serialisable internal objects (ExecutionMemory, dicts, …).
 _INTERNAL_SHARED_KEYS: frozenset = frozenset({"execution_memory", "shared_state", "crew_execution_id"})
+
+_CREW_BUILTIN_LLM = "google:gemini-2.5-pro"
+
+
+def _crew_usage_scope(func):
+    """Tag every client call made inside a crew entry point as component ``CREW`` (FEAT-796)."""
+
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        with usage_component("CREW"):
+            return await func(*args, **kwargs)
+
+    return wrapper
 
 
 class AgentCrew(PersistenceMixin, SynthesisMixin):
@@ -1741,6 +1757,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
     # Execution Methods (run_parallel, sequential, loop, flow)
     # -------------------------------
 
+    @_crew_usage_scope
     async def run_sequential(
         self,
         query: str,
@@ -1752,7 +1769,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         agent_sequence: List[str] = None,
         max_tokens: int = 8192,
         temperature: float = 0.1,
-        model: Optional[str] = "gemini-2.5-pro",
+        model: Optional[str] = None,
         **kwargs,
     ) -> FlowResult:
         """
@@ -1789,6 +1806,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 - agent_results: Dictionary mapping agent_id to its result
                 - success: Whether all agents executed successfully
         """
+        model = model or resolve_component_llm("CREW", builtin=_CREW_BUILTIN_LLM).model
         if not self.agents:
             return FlowResult(
                 output="No agents in crew",
@@ -2087,6 +2105,7 @@ Current task: {current_input}"""
 
         return result
 
+    @_crew_usage_scope
     async def run_loop(
         self,
         initial_task: str,
@@ -2144,16 +2163,17 @@ Current task: {current_input}"""
             )
 
         if not self._llm:
-            # Let's create an LLM session if none is provided:
-            # FEAT-523 (TASK-2852): lazy import — core must not import a
-            # provider module at module scope (AC-3); "google" now ships
-            # from the ai-parrot-client-google satellite.
-            from ....clients.google import GoogleGenAIClient
-
-            if self._google_api_key:
-                self._llm = GoogleGenAIClient(model="gemini-2.5-pro", max_tokens=8192, api_key=self._google_api_key)
-            else:
-                self._llm = GoogleGenAIClient(model="gemini-2.5-pro", max_tokens=8192)
+            resolved = resolve_component_llm("CREW", builtin=_CREW_BUILTIN_LLM)
+            client_cls = _resolve_supported_client(SUPPORTED_CLIENTS.get(resolved.provider.lower(), None))
+            if client_cls is None:
+                raise RuntimeError(f"No client available for provider '{resolved.provider}'")
+            api_key = self._google_api_key or resolve_component_api_key(
+                ("CREW",), resolved.provider, legacy=("CREW_AI_KEY",)
+            )
+            client_kwargs = {"model": resolved.model, "max_tokens": 8192}
+            if api_key:
+                client_kwargs["api_key"] = api_key
+            self._llm = client_cls(**client_kwargs)
 
         agent_sequence = agent_sequence or list(self.agents.keys())
         if not agent_sequence:
@@ -2584,6 +2604,7 @@ Current task: {current_input}"""
 
         return result
 
+    @_crew_usage_scope
     async def run_parallel(
         self,
         tasks: List[Dict[str, Any]],
@@ -2930,6 +2951,7 @@ Current task: {current_input}"""
 
         return result
 
+    @_crew_usage_scope
     async def run_flow(
         self,
         initial_task: str,
@@ -3829,6 +3851,7 @@ analyze, and present information in the most helpful way for the user.
 
         return context
 
+    @_crew_usage_scope
     async def ask(
         self,
         question: str,
