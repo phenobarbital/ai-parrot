@@ -18,9 +18,7 @@ class TestIsComputerUseModel:
     """Tests for GoogleGenAIClient._is_computer_use_model()."""
 
     def test_retired_computer_use_preview_model(self):
-        assert GoogleGenAIClient._is_computer_use_model(
-            "gemini-2.5-computer-use-preview-10-2025"
-        ) is False
+        assert GoogleGenAIClient._is_computer_use_model("gemini-2.5-computer-use-preview-10-2025") is False
 
     def test_gemini_3_flash_preview(self):
         assert GoogleGenAIClient._is_computer_use_model("gemini-3-flash-preview") is True
@@ -42,9 +40,7 @@ class TestRequiresThinkingComputerUse:
     """Tests that computer-use models require thinking mode."""
 
     def test_computer_use_requires_thinking(self):
-        assert GoogleGenAIClient._requires_thinking(
-            "gemini-2.5-computer-use-preview-10-2025"
-        ) is False
+        assert GoogleGenAIClient._requires_thinking("gemini-2.5-computer-use-preview-10-2025") is False
 
     def test_regular_model_no_thinking(self):
         assert GoogleGenAIClient._requires_thinking("gemini-2.5-flash") is False

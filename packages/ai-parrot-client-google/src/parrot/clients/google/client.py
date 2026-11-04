@@ -308,9 +308,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
-        return model.startswith(
-            ("gemini-3.1-pro", "gemini-3-pro")
-        ) or GoogleGenAIClient._is_computer_use_model(model)
+        return model.startswith(("gemini-3.1-pro", "gemini-3-pro")) or GoogleGenAIClient._is_computer_use_model(model)
 
     @staticmethod
     def _rejects_zero_thinking_budget(model: str) -> bool:
