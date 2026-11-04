@@ -22,7 +22,6 @@ from parrot.knowledge.wiki.claude_code.installer import (
 from parrot.knowledge.wiki.project import WikiProjectConfig, WikiRemoteConfig, save_project_config  # [rev 0.5] D7
 from parrot.mcp import portability
 
-
 @pytest.fixture
 def repo_root(tmp_path: Path) -> Path:
     """Repo with a project venv so the baked form is distinguishable from the portable one."""
