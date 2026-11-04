@@ -4,7 +4,7 @@ title: "Make the packaged SDD flow work in non-Python repositories: configuratio
 slug: sdd-non-python-repos
 type: feature
 mode: enrichment
-status: discussion
+status: accepted
 source:
   kind: inline
   jira_key: null
@@ -329,25 +329,30 @@ not depend on it.
   (Recomendado)" — a declared command `ensure_worktree` runs on the host at worktree creation.
   *Resolves claims*: C12
 
+### Resolved (during `/sdd-spec`, 2026-11-05)
+
+- [x] **Where do runner settings live?** — *Resolved*: "Bloque runners en sdd/config.json
+  (Recomendado)" — committed with the rest of the configuration; the TOML stays as a fallback and for the
+  Python extensions, so ai-parrot does not change.
+  *Resolves claims*: C6
+- [x] **Can a detected profile be overridden or scoped by path?** — *Resolved*: "Detección + override
+  opcional (Recomendado)" — detection at the repository root and at each configured runner `cwd`; an
+  optional `toolchain` block in `sdd/config.json` adds roots or replaces a command.
+  *Resolves claims*: C11
+- [x] **When does the setup command re-run, and does its failure block?** — *Resolved*: "Al crear y si
+  cambia el lockfile; el fallo bloquea (Recomendado)" — it re-runs on reuse only when the declared input
+  files changed; a failure ends `ensure` with an error and the command's output; `--no-setup` skips it.
+  *Resolves claims*: C12
+- [x] **Is the proposal accepted?** — *Resolved*: "Aceptar y ejecutar codex (Recomendado)" — status set
+  to `accepted`; the independent design review runs over this document.
+
 ### Unresolved (defer to spec / implementation)
 
-- [ ] **Where do runner settings live?** — *Owner*: tbd
-  *Blocks claims*: C6
-  *Plausible answers*: a) a `runners` block in `sdd/config.json`, read from the primary checkout, which
-  also answers ledger issue `issue:29e8e7ad138f` · b) keep `.parrot/test_runners.toml` and un-ignore it
-  in the installer's `.gitignore` block (conflicts with FEAT-802 keeping `.parrot/` fully ignored)
-- [ ] **How does the contract probe become language-aware?** — *Owner*: tbd
+- [ ] **How does the contract probe become language-aware?** — *Owner*: tbd (phase 3, not in the first
+  spec)
   *Blocks claims*: C14, C19
   *Plausible answers*: a) a command table keyed by file extension inside the probe prompt ·
   b) delegate `symbol` / `outline` to `wikitoolkit symbols`, which already scans JS / TS / Svelte
-- [ ] **Can a detected profile be overridden or scoped by path?** — *Owner*: tbd
-  *Blocks claims*: C11
-  *Plausible answers*: a) detection only, one profile per marker file found, scoped to that file's
-  directory · b) detection plus an optional override block in `sdd/config.json`
-- [ ] **When does the setup command re-run, and does its failure block?** — *Owner*: tbd
-  *Blocks claims*: C12
-  *Plausible answers*: a) on create only, failure is a warning · b) on create and whenever the lockfile
-  differs from the last run, failure blocks the launch
 
 ---
 
