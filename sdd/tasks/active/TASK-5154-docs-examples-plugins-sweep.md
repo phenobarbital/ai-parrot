@@ -28,6 +28,8 @@ Apply the spec §2 replacement table to the files below (whole ids only):
 
 Leave `gemini-2.5-flash-lite` and `gemini-2.5-flash-image` untouched. Create the docs guard test.
 
+**Worktree note (orchestrator, 2026-11-04)**: 5 listed files (`examples/decision_simple_working.py`, `examples/orchestration/messaging.py`, `examples/orchestration/sample_autonomous_agent.py`, `examples/voice/bot.py`, `plugins/agents/epson.py`) are untracked/gitignored and exist only in the main checkout; removed from the contract. Operator must swap their gemini-2.5 ids by hand.
+
 **NOT in scope**: `docs/config.md`, `docs/configuration/llm-defaults.md`, `docs/migration/gemini-2-5-retirement.md`
 (TASK-5150; the migration guide names the retired ids on purpose); `sdd/` (historical records); any `src/` file.
 
@@ -59,7 +61,6 @@ Leave `gemini-2.5-flash-lite` and `gemini-2.5-flash-image` untouched. Create the
 | `examples/data/scenario_test.py` | MODIFY | id swap |
 | `examples/data/whatif_scenario_e2e.py` | MODIFY | id swap |
 | `examples/db_tool_usage.py` | MODIFY | id swap |
-| `examples/decision_simple_working.py` | MODIFY | id swap |
 | `examples/flow/consensus_synthesis_flow.py` | MODIFY | id swap |
 | `examples/genmedia_example.py` | MODIFY | id swap |
 | `examples/google/structured_with_tools.py` | MODIFY | id swap |
@@ -68,12 +69,8 @@ Leave `gemini-2.5-flash-lite` and `gemini-2.5-flash-image` untouched. Create the
 | `examples/matrix_swarm/.env.example` | MODIFY | id swap |
 | `examples/matrix_swarm/README.md` | MODIFY | id swap |
 | `examples/navigator_agent.py` | MODIFY | id swap |
-| `examples/orchestration/messaging.py` | MODIFY | id swap (10 hits) |
-| `examples/orchestration/sample_autonomous_agent.py` | MODIFY | id swap |
 | `examples/passkey/server.py` | MODIFY | id swap |
 | `examples/tool/o365.py` | MODIFY | id swap |
-| `examples/voice/bot.py` | MODIFY | id swap (:225 native-audio → `gemini-3.8-live`) |
-| `plugins/agents/epson.py` | MODIFY | id swap |
 | `packages/ai-parrot/tests/test_no_retired_gemini_in_docs.py` | CREATE | guard over docs/examples/plugins |
 
 ---
@@ -128,7 +125,6 @@ Some hits are gemini-2.5-flash-lite or -image: keep those.
     {"path": "examples/data/scenario_test.py", "action": "MODIFY"},
     {"path": "examples/data/whatif_scenario_e2e.py", "action": "MODIFY"},
     {"path": "examples/db_tool_usage.py", "action": "MODIFY"},
-    {"path": "examples/decision_simple_working.py", "action": "MODIFY"},
     {"path": "examples/flow/consensus_synthesis_flow.py", "action": "MODIFY"},
     {"path": "examples/genmedia_example.py", "action": "MODIFY"},
     {"path": "examples/google/structured_with_tools.py", "action": "MODIFY"},
@@ -137,12 +133,8 @@ Some hits are gemini-2.5-flash-lite or -image: keep those.
     {"path": "examples/matrix_swarm/.env.example", "action": "MODIFY"},
     {"path": "examples/matrix_swarm/README.md", "action": "MODIFY"},
     {"path": "examples/navigator_agent.py", "action": "MODIFY"},
-    {"path": "examples/orchestration/messaging.py", "action": "MODIFY"},
-    {"path": "examples/orchestration/sample_autonomous_agent.py", "action": "MODIFY"},
     {"path": "examples/passkey/server.py", "action": "MODIFY"},
     {"path": "examples/tool/o365.py", "action": "MODIFY"},
-    {"path": "examples/voice/bot.py", "action": "MODIFY"},
-    {"path": "plugins/agents/epson.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/tests/test_no_retired_gemini_in_docs.py", "action": "CREATE"}
   ],
   "contract_symbols": []
