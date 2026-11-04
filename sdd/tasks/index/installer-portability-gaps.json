@@ -90,7 +90,7 @@
       "feature_id": "FEAT-804",
       "feature": "installer-portability-gaps",
       "spec": "sdd/specs/installer-portability-gaps.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,8 +100,9 @@
       "parallelism_notes": "TASK-5185 creates resolve_portable_mode; its dependency TASK-5184 supplies install_root and worktree refusal. Owns claude_code installer.py/cli.py and test_claude_installer_portable.py; no host-file overlap.",
       "assigned_to": null,
       "started_at": "2026-11-04T23:17:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5186-claude-installer-portability-root.md"
+      "completed_at": "2026-11-04T23:40:15+00:00",
+      "file": "sdd/tasks/completed/TASK-5186-claude-installer-portability-root.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5187",
@@ -110,7 +111,7 @@
       "feature_id": "FEAT-804",
       "feature": "installer-portability-gaps",
       "spec": "sdd/specs/installer-portability-gaps.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -120,8 +121,9 @@
       "parallelism_notes": "TASK-5185 creates resolve_portable_mode; its dependency TASK-5184 supplies install_root and worktree refusal. Owns codex installer.py/cli.py and test_codex_portable.py; no host-file overlap.",
       "assigned_to": null,
       "started_at": "2026-11-04T23:17:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5187-codex-installer-portability-root.md"
+      "completed_at": "2026-11-04T23:40:15+00:00",
+      "file": "sdd/tasks/completed/TASK-5187-codex-installer-portability-root.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5188",
@@ -130,7 +132,7 @@
       "feature_id": "FEAT-804",
       "feature": "installer-portability-gaps",
       "spec": "sdd/specs/installer-portability-gaps.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -140,8 +142,9 @@
       "parallelism_notes": "TASK-5185 creates resolve_portable_mode; its dependency TASK-5184 supplies install_root and worktree refusal. Owns google installer.py/cli.py and test_google_portable.py; no host-file overlap.",
       "assigned_to": null,
       "started_at": "2026-11-04T23:17:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5188-google-installer-portability-root.md"
+      "completed_at": "2026-11-04T23:40:16+00:00",
+      "file": "sdd/tasks/completed/TASK-5188-google-installer-portability-root.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5189",
