@@ -37,7 +37,7 @@
       "feature_id": "FEAT-799",
       "feature": "claude-install-welcome-wizard",
       "spec": "sdd/specs/claude-install-welcome-wizard.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -45,8 +45,9 @@
       "parallelism_notes": "root task: renames doctor._check_bwrap_sandbox (self_/doctor.py), no deps",
       "assigned_to": null,
       "started_at": "2026-11-04T17:00:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5156-promote-check-bwrap-sandbox.md"
+      "completed_at": "2026-11-04T17:03:52+00:00",
+      "file": "sdd/tasks/completed/TASK-5156-promote-check-bwrap-sandbox.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5157",
