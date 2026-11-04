@@ -52,7 +52,7 @@
       "feature_id": "BRIEF-sdd-native-sandbox-default",
       "feature": "sdd-native-sandbox-default",
       "spec": "sdd/briefs/sdd-native-sandbox-default.brief.md",
-      "status": "pending",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallel": true,
       "parallelism_notes": "text/asset copies; documents the behavior tasks 1-2 ship",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-11-04T03:10:00+00:00",
+      "completed_at": "2026-11-04T03:40:00+00:00",
       "file": "sdd/briefs/sdd-native-sandbox-default/tasks/HOTFIX-sdd-native-sandbox-default-3-launcher-only-guidance.md"
     },
     {

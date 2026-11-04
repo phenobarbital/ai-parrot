@@ -132,3 +132,23 @@ if `fix-sdd-worker-gh-only-sandbox-sdd-worker-gh-only-sandbox` has merged (it ed
 `_assets/claude/agents/` copies).
 
 ## Completion Note
+
+Status `done-with-issues`. Replaced the direct worker launch with `parrot sdd launch worker …` in
+`/sdd-brief`, `/sdd-task` (Claude + `.agent` twins), `sdd-autopilot` (all repo copies), both
+`worktree-management` copies (plus the one-sentence backend rule), the Codex `sdd-brief` skill (launcher
+added as the sandboxed Claude option), and the `_assets/` twins that exist. Rewrote the sandbox doc
+(three backends, signals, `bwrap` denial, nested-bwrap impossibility, auto-mode resend), amended the two
+FEAT-768 statements and added revision row 0.5, and updated the pinned text in
+`test_sdd_brief_twin_contract.py`.
+
+Kept (documented with a one-line "Not natively sandboxed" comment): the three autopilot `-p` calls
+(`claude --agent sdd-worker … -p …`) per copy — the launcher starts an interactive `run <id>` session and
+cannot forward `-p`.
+No `_assets` twin exists for `.agent/agents/sdd-autopilot/agent.md` or `.agent/skills/worktree-management/SKILL.md`.
+
+Validation: `test_sdd_brief_twin_contract.py` and `test_no_repo_script_refs.py` pass. `test_installer.py`:
+6 failed / 76 passed — `test_untouched_file_upgrades_from_older_record` (extra upgrades of
+`sdd-coder.md`/`sdd-worker.md`, which this task did not touch) and five `test_guard_hook_*` tests (the guard
+hook line is baked with the shared `.venv/bin/parrot` path). I did not baseline them on `origin/dev`; they
+look environmental/pre-existing but that is unverified.
+The gh-only-sandbox branch (edits the `_assets/claude/agents/` worker/coder copies) was not rebased onto.
