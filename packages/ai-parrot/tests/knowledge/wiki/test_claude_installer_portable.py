@@ -6,8 +6,10 @@ import json
 import os
 from pathlib import Path
 
+import click
 import pytest
 from click.testing import CliRunner
+from parrot.knowledge.wiki import cli as wiki_cli
 from parrot.knowledge.wiki.claude_code import assets
 from parrot.knowledge.wiki.claude_code.cli import claude
 from parrot.knowledge.wiki.claude_code.installer import (
@@ -17,7 +19,8 @@ from parrot.knowledge.wiki.claude_code.installer import (
     install_claude_integration,
     reconcile_toolkit_entries,
 )
-from parrot.knowledge.wiki.project import WikiRemoteConfig  # [rev 0.5] D7
+from parrot.knowledge.wiki.project import WikiProjectConfig, WikiRemoteConfig, save_project_config  # [rev 0.5] D7
+from parrot.mcp import portability
 
 
 @pytest.fixture
@@ -45,9 +48,116 @@ def _install(root: Path, portable: bool | None, remote: WikiRemoteConfig | None 
     )
 
 
-def test_default_install_unchanged(repo_root: Path) -> None:
+def test_default_install_unchanged(repo_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A fresh host without the managed launcher retains baked output and names the fallback once."""
+    monkeypatch.setattr(portability, "managed_launcher_on_path", lambda: False)
     _install(repo_root, None)
     assert _servers(repo_root)["wikitoolkit"] == assets.mcp_json_entry(repo_root)
+
+
+def test_fresh_install_uses_managed_launcher(repo_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A fresh host emits portable entries when the managed launcher is on PATH."""
+    monkeypatch.setattr(portability, "managed_launcher_on_path", lambda: True)
+    _install(repo_root, None)
+    assert _servers(repo_root)["wikitoolkit"] == assets.mcp_json_entry(repo_root, portable=True)
+
+
+def test_baked_fallback_note_is_emitted_once(repo_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The integration boundary, rather than nested reconcilers, reports a baked fallback."""
+    monkeypatch.setattr(portability, "managed_launcher_on_path", lambda: False)
+    actions = install_claude_integration(repo_root, git_hook=False, gitignore=False, bookstore=False)
+    assert sum(action.startswith("note: host config baked to absolute paths") for action in actions) == 1
+
+
+def _linked_worktree(primary: Path) -> Path:
+    """Create lightweight linked-worktree metadata that install_root classifies without Git commands."""
+    primary.mkdir()
+    (primary / ".git").mkdir()
+    worktree = primary.parent / "worktree"
+    worktree.mkdir()
+    git_dir = primary / ".git" / "worktrees" / "worktree"
+    git_dir.mkdir(parents=True)
+    (git_dir / "commondir").write_text("../..\n", encoding="utf-8")
+    (worktree / ".git").write_text(f"gitdir: {git_dir}\n", encoding="utf-8")
+    return worktree
+
+
+def test_host_cli_worktree_preserves_shared_config_and_build_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Explicit worktree installs write host assets locally but use the primary wiki configuration and build root."""
+    primary = tmp_path / "primary"
+    worktree = _linked_worktree(primary)
+    config = WikiProjectConfig(
+        wiki_name="primary-wiki",
+        remote=WikiRemoteConfig(url="https://wiki.example/mcp", token_env="WIKITOOLKIT_TOKEN"),
+    )
+    save_project_config(primary, config)
+    captured: list[Path] = []
+
+    @click.command()
+    @click.option("--path", "path_", required=True)
+    @click.option("--quiet", is_flag=True)
+    def fake_wiki_build(path_: str, quiet: bool) -> None:
+        """Capture the wiki build root without running a provider build."""
+        captured.append(Path(path_))
+
+    monkeypatch.setattr(wiki_cli, "build", fake_wiki_build)
+    result = CliRunner().invoke(
+        claude,
+        [
+            "install",
+            "--path",
+            str(worktree),
+            "--no-git-hook",
+            "--no-gitignore",
+            "--no-bookstore",
+            "--no-compaction",
+            "--no-welcome",
+            "--remote",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert captured == [primary]
+    assert config.wiki_name == "primary-wiki"
+    assert _servers(worktree)["wikitoolkit"]["url"] == "https://wiki.example/mcp"
+    assert not (worktree / ".parrot" / "wiki.json").exists()
+    assert (worktree / ".mcp.json").exists()
+
+    captured.clear()
+    no_build_result = CliRunner().invoke(
+        claude,
+        [
+            "install",
+            "--path",
+            str(worktree),
+            "--no-build",
+            "--no-git-hook",
+            "--no-gitignore",
+            "--no-bookstore",
+            "--no-compaction",
+            "--no-welcome",
+        ],
+    )
+    assert no_build_result.exit_code == 0, no_build_result.output
+    assert captured == []
+
+
+def test_host_cli_refuses_implicit_worktree_writes_but_allows_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Implicit linked-worktree writes fail before artifacts are created, while status remains read-only."""
+    primary = tmp_path / "primary"
+    worktree = _linked_worktree(primary)
+    monkeypatch.chdir(worktree)
+    runner = CliRunner()
+    install_result = runner.invoke(claude, ["install", "--no-build", "--no-welcome"])
+    assert install_result.exit_code == 1
+    assert str(primary) in install_result.output
+    assert "--path" in install_result.output
+    assert not (worktree / ".mcp.json").exists()
+    status_result = runner.invoke(claude, ["status"])
+    assert status_result.exit_code == 0, status_result.output
 
 
 def test_portable_transitions_both_ways(repo_root: Path) -> None:
