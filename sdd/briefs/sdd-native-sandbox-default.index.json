@@ -52,7 +52,7 @@
       "feature_id": "BRIEF-sdd-native-sandbox-default",
       "feature": "sdd-native-sandbox-default",
       "spec": "sdd/briefs/sdd-native-sandbox-default.brief.md",
-      "status": "done-with-issues",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -73,7 +73,7 @@
       "feature_id": "BRIEF-sdd-native-sandbox-default",
       "feature": "sdd-native-sandbox-default",
       "spec": "sdd/briefs/sdd-native-sandbox-default.brief.md",
-      "status": "done-with-issues",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [

@@ -178,3 +178,10 @@ backend to `auto` unless both launcher markers (`PARROT_SDD_SANDBOX_ROOTS`, `PAR
 hand-exported value can no longer run a command unsandboxed (probe: it ran with write access to the primary checkout
 before). Launcher and dispatcher sessions keep the no-rewrite path. Tests: 226 passed
 (worktree_environment, native_claude_sandbox, sdd_launch).
+
+Resolved (2026-11-04, operator review): measured by deterministic replay of 65 original Bash commands from the three
+baseline transcripts. With the launcher, 41/65 rewritten (was 64/65), average resend ~150 chars (was ~4.8 KB); all
+remaining rewrites are RTK's (0/65 with RTK off), kept on purpose. Numbers and method in
+`sdd/state/BRIEF-sdd-native-sandbox-default/automode-rewrites.md`. The `auto` `PYTHONPATH` is derived at run time
+(624ec1b4d7). The Codex guidance line is not applicable (own hook and sandbox, no auto-mode classifier).
+Status → `done`.

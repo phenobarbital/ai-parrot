@@ -40,9 +40,45 @@ listing every package `src`, so the resend no longer carries the ~3 KB literal (
 
 The task-1 fail-closed check on `claude-native` was dropped (operator, 2026-11-04): the hook trusts the launcher's
 backend variable, which keeps plain commands rewrite-free. The enforcement boundary remains the native sandbox
-settings, as FEAT-768 states.
+settings, as FEAT-768 states. Follow-up (a7cec86e23): that trust now requires the launcher markers
+(`PARROT_SDD_SANDBOX_ROOTS`, `PARROT_SDD_CACHE_DIR`); a hand-exported `claude-native` falls back to `auto`.
 
-## Still to do
+## Measured (2026-11-04, deterministic replay)
 
-A live before/after run (`parrot sdd launch worker <scratch brief>`, then count
-`auto mode classifier gave no verdict` in its transcript) must be done on the host.
+Auto mode refuses a Bash call exactly when the hook returns `updatedInput`, so the refusal count can be measured
+without a model run: every **original** Bash command (verbatim resends of a hook rewrite skipped) from the three
+baseline transcripts was replayed through the hook as a `PreToolUse` payload with `cwd` = this worktree.
+"Before" = the hook on `dev` (main checkout code); "after" = this branch, with the exact environment
+`launch_worker` exports (`native_root_env`, `PARROT_SDD_CACHE_DIR`, `PARROT_SDD_SANDBOX_BACKEND`,
+`native_command_environment`). RTK was on (`rtk` on `PATH`) unless stated. Replay script kept out of the repo.
+
+| Transcript (original commands) | before: legacy | before: native launcher | after: `auto` (no launcher) | after: native launcher | after: native launcher, RTK off |
+|---|---|---|---|---|---|
+| `22911c39` gh-only worker (20) | 20 / 5651 | 20 / 5001 | 20 / 2435 | **8 / 92** | 0 |
+| `agent-ae6a9c0c…` code-reviewer subagent (5) | 5 / 5412 | 4 / 4747 | 4 / 1928 | **3 / 153** | 0 |
+| `03ebac40` FEAT-793 worker (40) | 40 / 5437 | 40 / 4787 | 40 / 2007 | **30 / 204** | 0 |
+| **Total (65)** | **65** | **64** | **64** | **41** | **0** |
+
+Cells: rewritten commands / average resend length in characters (the one non-rewritten command in some columns
+is a scope-guard denial, identical before and after).
+
+Findings:
+
+- With the launcher, rewrites drop from 64/65 to 41/65 and the text the model must echo shrinks from ~4.8 KB to
+  ~150 characters. That shrinking is what fixes the code-reviewer failure in the operator notes: the abbreviated
+  resend happened on a ~3 KB wrapper.
+- **Every remaining rewrite is RTK's** (`git status` → `rtk git status`): with `PARROT_SANDBOX_RTK=0` the count is
+  0/65. They are kept on purpose. A ~150-character echo costs one turn, while RTK's output compression saves far
+  more on the command output, which is the token cost that dominates. Turning RTK off for workers is available
+  (`PARROT_SANDBOX_RTK=0`) but not recommended.
+- Without the launcher (`auto`), every command is still rewritten, as designed (the hook cannot see the session),
+  but the resend is ~2 KB instead of ~5.4 KB because `PYTHONPATH` is derived at run time.
+- Remaining unavoidable rewrites, by cause: RTK-optimised commands; scope-guard rewrites/verdicts; sub-worktree
+  `cd <task> && …` (own `PYTHONPATH`); explicit `timeout`/`run_in_background`; degraded launches (banner); every
+  `auto` command.
+
+## Codex
+
+The `.codex/agents/sdd-worker.toml` line is not applicable: Codex runs its own `PreToolUse` hook
+(`.codex/hooks.json` → `scripts/sdd/codex_hook.sh`) inside its own `workspace-write` sandbox, and has no Claude
+auto-mode classifier, so there is no refused-and-resent rewrite to guide.

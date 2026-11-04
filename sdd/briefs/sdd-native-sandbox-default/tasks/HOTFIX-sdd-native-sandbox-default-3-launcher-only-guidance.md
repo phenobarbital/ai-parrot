@@ -152,3 +152,10 @@ Validation: `test_sdd_brief_twin_contract.py` and `test_no_repo_script_refs.py` 
 hook line is baked with the shared `.venv/bin/parrot` path). I did not baseline them on `origin/dev`; they
 look environmental/pre-existing but that is unverified.
 The gh-only-sandbox branch (edits the `_assets/claude/agents/` worker/coder copies) was not rebased onto.
+
+Resolved (2026-11-04, operator review): the 6 `test_installer.py` failures are pre-existing. The same 6 fail on
+`origin/dev` (export of `origin/dev` + compiled modules: 6 failed / 60 passed). Cause: `_assets/claude/agents/`
+`sdd-coder.md:21` and `sdd-worker.md:32` carry a guard hook baked to `/home/…/.venv/bin/parrot` on `dev` itself;
+open PR #1951 fixes it. Not this branch's defect. The autopilot `-p` calls kept with a "Not natively sandboxed"
+note are an accepted limitation (the launcher cannot forward `-p`). The gh-only-sandbox branch is still unmerged;
+whichever PR merges second resolves the one-line `_assets` overlap. Status → `done`.
