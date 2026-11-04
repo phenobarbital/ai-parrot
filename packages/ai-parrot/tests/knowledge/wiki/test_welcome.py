@@ -188,7 +188,7 @@ def _stub_cli_install(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_install_cli_non_interactive_flag(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The non-interactive flag skips the wizard prompt and succeeds."""
     _stub_cli_install(monkeypatch)
-    monkeypatch.setattr(welcome, "run_bwrap_diagnostic", lambda: [])
+    monkeypatch.setattr(welcome, "run_bwrap_diagnostic", list)
     monkeypatch.setattr(welcome, "sandbox_mode_wizard", lambda *args, **kwargs: None)
     monkeypatch.setattr(welcome, "render_welcome", lambda *args, **kwargs: None)
 
@@ -201,7 +201,7 @@ def test_install_cli_non_interactive_flag(tmp_path, monkeypatch: pytest.MonkeyPa
 def test_install_cli_sandbox_mode_flag(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An explicit native sandbox mode is persisted without a prompt."""
     _stub_cli_install(monkeypatch)
-    monkeypatch.setattr(welcome, "run_bwrap_diagnostic", lambda: [])
+    monkeypatch.setattr(welcome, "run_bwrap_diagnostic", list)
     monkeypatch.setattr(welcome, "render_welcome", lambda *args, **kwargs: None)
 
     result = CliRunner().invoke(
