@@ -43,9 +43,7 @@ def _import_griffe() -> "griffe":
     try:
         import griffe as griffe_module
     except ImportError as exc:
-        raise GriffeUnavailable(
-            "griffe is not installed. Install with: pip install ai-parrot[techwiki]"
-        ) from exc
+        raise GriffeUnavailable("griffe is not installed. Install with: pip install ai-parrot[techwiki]") from exc
     return griffe_module
 
 
@@ -230,9 +228,7 @@ def _template() -> "jinja2.Template":
     try:
         import jinja2
     except ImportError as exc:
-        raise GriffeUnavailable(
-            "jinja2 is not installed. Install with: pip install ai-parrot[techwiki]"
-        ) from exc
+        raise GriffeUnavailable("jinja2 is not installed. Install with: pip install ai-parrot[techwiki]") from exc
     template_path = importlib.resources.files("parrot.sdd.techwiki").joinpath("templates/module.md.j2")
     return jinja2.Template(template_path.read_text(encoding="utf-8"), keep_trailing_newline=True)
 

@@ -74,6 +74,7 @@ class TestCli:
 
     def test_griffe_unavailable_exit_3(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """Unavailable griffe returns the documented dependency exit code."""
+
         def unavailable(*args: object, **kwargs: object) -> tuple[list[object], list[dict[str, str]]]:
             raise GriffeUnavailable("griffe is not installed. Install with: pip install ai-parrot[techwiki]")
 

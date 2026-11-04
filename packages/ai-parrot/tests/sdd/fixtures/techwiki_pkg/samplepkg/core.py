@@ -4,7 +4,6 @@ from typing import overload
 
 from pydantic import BaseModel
 
-
 __all__ = ["PublicModel", "format_value"]
 
 
@@ -21,8 +20,6 @@ class PublicModel(BaseModel):
 
     class Nested:
         """A nested public class."""
-
-        pass
 
 
 @overload
