@@ -525,7 +525,7 @@ class AgentHandler(BaseView):
 
     def _create_actors(self, recipients: Union[List[dict], dict] = None) -> List:
         if isinstance(recipients, dict):
-                recipients = [recipients]
+            recipients = [recipients]
         if not recipients:
             return self.error(
                 {'message': 'Recipients are required'},
