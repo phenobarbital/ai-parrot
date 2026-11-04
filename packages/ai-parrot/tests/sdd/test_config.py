@@ -362,6 +362,9 @@ def test_legacy_migration_recipe_executes(tmp_path: Path, monkeypatch: pytest.Mo
     assert legacy_worktrees(repo) == []
     for path, head in zip(new_paths, heads.values(), strict=True):
         assert (path / "proof.txt").is_file()
-        assert subprocess.run(
-            ["git", "-C", str(path), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
-        ).stdout.strip() == head
+        assert (
+            subprocess.run(
+                ["git", "-C", str(path), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+            ).stdout.strip()
+            == head
+        )
