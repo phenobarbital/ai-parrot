@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-793 — tmux worker completion notifications
 **Spec**: `sdd/specs/tmux-notify-worker.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5122
@@ -266,4 +266,4 @@ Use existing _primary/_tmux_runner and linked/execvpe seams with a valid tempora
 
 ## Completion Note
 
-Pending; populated by the evidence-backed finalizer.
+Implemented by seat gpt-5.6-terra (codex), 1 attempt, 349s. Orchestrator review of the src diff found no defects (coder-review:e3e961032729107109a256dd). Merge-tier validation: 101 passed (test_native_claude_sandbox.py, test_sdd_launch.py). Closed with `parrot sdd task close` (the finalizer needs an EvidenceRef for review evidence, which coder_record_review does not return).

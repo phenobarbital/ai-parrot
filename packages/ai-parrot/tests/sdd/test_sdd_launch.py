@@ -884,13 +884,28 @@ def test_tmux_client_and_e_pairs_use_the_pre_import_environment(
     """Variables only in the loaded os.environ never reach the tmux client env or its -e pairs."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-from-dotenv")
     monkeypatch.setenv("PARROT_SDD_FROM_DOTENV", "leak")
-    base_env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "PARROT_SDD_OPERATOR": "kept"}
+    base_env = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "DISPLAY": ":7",
+        "PARROT_SDD_OPERATOR": "kept",
+        "PARROT_SDD_NOTIFY_HELPER": "/stale/helper.py",
+    }
     seen = _tmux_new_session(tmp_path, monkeypatch, base_env=base_env)
     assert "ANTHROPIC_API_KEY" not in seen["env"] and "PARROT_SDD_FROM_DOTENV" not in seen["env"]
     assert seen["env"]["PARROT_SDD_OPERATOR"] == "kept"
     assert seen["env"]["PARROT_SDD_SANDBOX_MODE"] == "preferred"
     assert "PARROT_SDD_OPERATOR=kept" in seen["argv"] and "PARROT_SDD_SANDBOX_MODE=preferred" in seen["argv"]
     assert not any("FROM_DOTENV" in item or "sk-from-dotenv" in item for item in seen["argv"])
+    assignments = dict(item.split("=", 1) for item in seen["argv"] if item.startswith("PARROT_SDD_"))
+    assert assignments["PARROT_SDD_NOTIFY_FEATURE"] == "FEAT-768"
+    assert assignments["PARROT_SDD_NOTIFY_SLUG"] == "sandbox"
+    assert json.loads(assignments["PARROT_SDD_NOTIFY_DESKTOP"]) == {
+        "PATH": "/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "DISPLAY": ":7",
+    }
+    assert "PARROT_SDD_NOTIFY_HELPER" not in assignments
 
 
 def test_non_tmux_launch_hands_the_pre_import_environment_to_launch_worker(
@@ -915,7 +930,7 @@ def test_non_tmux_launch_hands_the_pre_import_environment_to_launch_worker(
         allowed_domains=(),
         no_upstream=True,
         claude_args=(),
-        base_env={"PATH": "/usr/bin"},
+        base_env={"PATH": "/usr/bin", "PARROT_SDD_NOTIFY_FEATURE": "stale", "PARROT_SDD_NOTIFY_HELPER": "stale"},
     )
     assert captured["base_env"] == {"PATH": "/usr/bin", "PARROT_SDD_SANDBOX_MODE": "legacy"}
 

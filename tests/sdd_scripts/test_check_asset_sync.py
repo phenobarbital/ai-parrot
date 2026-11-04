@@ -188,3 +188,57 @@ def test_package_data_covers_every_manifest_entry() -> None:
     manifest = json.loads((pkg_dir / "_assets/manifest.json").read_text())
     missing = [e["source"] for e in manifest["assets"] if f"_assets/{e['source']}" not in covered]
     assert not missing, missing
+
+
+_BAKED_EXES = (
+    "/home/someone/proj/.venv/bin/parrot",
+    # shlex-quoted path with a space and a quote, then YAML single-quote escaped — the installer's C25 rendering
+    "''/tmp/my venv''\"''\"''s/bin/parrot''",
+)
+
+
+def _agent(exe: str) -> str:
+    return f"---\nhooks:\n  - type: command\n    command: '{exe} sdd worktree guard --hook || exit 2'\n---\n# agent\n"
+
+
+@pytest.mark.parametrize("exe", _BAKED_EXES)
+def test_baked_guard_hook_source_ships_bare(mini_repo: Path, exe: str) -> None:
+    """A repo agent baked by a local `parrot sdd install` is packaged with the bare guard line, and --check is clean."""
+    rel = ".claude/agents/sdd-coder.md"
+    (mini_repo / rel).parent.mkdir(parents=True, exist_ok=True)
+    (mini_repo / rel).write_text(_agent(exe), encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=mini_repo, check=True)
+    assert _run(mini_repo, "--write") == 0
+    assert (mini_repo / "assets/claude/agents/sdd-coder.md").read_text() == _agent("parrot")
+    assert _run(mini_repo, "--check") == 0
+
+
+def test_baked_guard_hook_asset_fails_check(mini_repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """An asset that ships a machine-local guard hook is reported even when it matches nothing else."""
+    rel = ".claude/agents/sdd-coder.md"
+    (mini_repo / rel).parent.mkdir(parents=True, exist_ok=True)
+    (mini_repo / rel).write_text(_agent("parrot"), encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=mini_repo, check=True)
+    _run(mini_repo, "--write")
+    (mini_repo / "assets/claude/agents/sdd-coder.md").write_text(_agent(_BAKED_EXES[0]), encoding="utf-8")
+    assert _run(mini_repo, "--check") == 1
+    err = capsys.readouterr().err
+    assert f"baked-hook: {rel}:4:" in err and "diverged: claude/agents/sdd-coder.md" in err
+
+
+def test_check_wheel_reports_baked_guard_hook(tmp_path: Path) -> None:
+    wheel = tmp_path / "ai_parrot-0-py3-none-any.whl"
+    entry = {"source": "claude/agents/sdd-coder.md", "target": ".claude/agents/sdd-coder.md", "hosts": ["claude"]}
+    with zipfile.ZipFile(wheel, "w") as zf:
+        zf.writestr(cas.WHEEL_PREFIX + "manifest.json", json.dumps({"schema_version": 1, "assets": [entry]}))
+        zf.writestr(cas.WHEEL_PREFIX + entry["source"], _agent(_BAKED_EXES[0]))
+    problems = cas.check_wheel(wheel)
+    assert len(problems) == 1 and problems[0].startswith("baked-hook: .claude/agents/sdd-coder.md:4:")
+
+
+def test_guard_hook_line_matches_installer() -> None:
+    """The stdlib-only script keeps its own copy of the line; it must equal the installer's."""
+    from parrot.sdd.installer import GUARD_HOOK_LINE
+
+    assert cas.GUARD_HOOK_LINE == GUARD_HOOK_LINE
+    assert cas.packaged_bytes(_agent("parrot").encode()) == _agent("parrot").encode()

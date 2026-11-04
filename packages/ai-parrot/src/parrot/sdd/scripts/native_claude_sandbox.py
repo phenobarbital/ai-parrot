@@ -7,8 +7,10 @@ Standard library only: the SDD PreToolUse hook imports this module as a script s
 from __future__ import annotations
 
 import getpass
+import importlib.util
 import ipaddress
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -37,6 +39,7 @@ SANDBOX_MODES = ("required", "preferred", "off", "legacy")
 _HOSTNAME_LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 _NUMERIC_LABEL = re.compile(r"^(0x[0-9a-f]+|[0-9]+)$")
 _CD_PREFIX = re.compile(r"^\s*cd\s+(?P<target>\S+)\s*&&\s*(?P<rest>.+)$", re.DOTALL)
+logger = logging.getLogger(__name__)
 
 
 def sandbox_platform() -> str:
@@ -893,6 +896,32 @@ def launch_worker(
     if mode != "legacy":
         # Session-fixed variables ride in the launch environment, so the hook need not prefix every command.
         env.update(native_command_environment(cwd, env))
+    env.pop("PARROT_SDD_NOTIFY_PYTHON", None)
+    env.pop("PARROT_SDD_NOTIFY_HELPER", None)
+    notification_metadata = (
+        env.get("TMUX_PANE"),
+        env.get("PARROT_SDD_NOTIFY_FEATURE"),
+        env.get("PARROT_SDD_NOTIFY_SLUG"),
+        env.get("PARROT_SDD_NOTIFY_DESKTOP"),
+    )
+    if all(isinstance(value, str) and value for value in notification_metadata):
+        helper_path = Path(__file__).resolve().with_name("worker_notification.py")
+        try:
+            helper_spec = importlib.util.spec_from_file_location("worker_notification", helper_path)
+            if helper_spec is None or helper_spec.loader is None:
+                raise ImportError(f"could not load notification helper at {helper_path}")
+            notification_module = importlib.util.module_from_spec(helper_spec)
+            helper_spec.loader.exec_module(notification_module)
+            hook_command = notification_module.configure_notification(Path(env[CACHE_DIR_ENV]), worktree=cwd, env=env)
+        except (ImportError, OSError, ValueError, AttributeError, RuntimeError) as exc:
+            logger.warning("notification setup skipped: %s", exc)
+        else:
+            if hook_command is not None:
+                settings.setdefault("hooks", {}).setdefault("Stop", []).append(
+                    {"hooks": [{"type": "command", "command": hook_command, "timeout": 5}]}
+                )
+                env["PARROT_SDD_NOTIFY_PYTHON"] = str(Path(sys.executable).absolute())
+                env["PARROT_SDD_NOTIFY_HELPER"] = str(helper_path)
     command = [claude, "--agent", "sdd-worker"]
     if not has_sources:
         command += ["--setting-sources", "project,local"]

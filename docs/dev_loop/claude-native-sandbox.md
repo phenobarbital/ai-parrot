@@ -21,6 +21,27 @@ Bubblewrap: nested bwrap is not used, and the policy is compiled by
   readable by the user is readable by the session. These are spec non-goals, not gaps to be fixed by
   configuration.
 
+## Tmux feature completion notifications
+
+New `parrot sdd launch worker FEAT-ID --tmux` sessions automatically enable
+best-effort host desktop notifications. The feature worker records completion
+only after its tasks, child settlement, review/deferred findings and successful
+feature-branch push. A host Stop hook consumes that explicit receipt; ordinary
+pauses and task-scoped workers do not announce completion. This is worker
+completion, not merge approval or successful `/sdd-done` closeout.
+
+Claude Code and its pane remain open. Delivery needs `notify-send` and a usable
+desktop session on the same host; SSH/headless hosts may show nothing. Nothing
+is installed. Missing services and delivery failures never fail the worker.
+One launch permits at most one attempt, including failed delivery; reattach does
+not install new hooks or resend. Updating an existing installation's managed
+worker asset is required to obtain the receipt instruction; launch a new session.
+
+The launch captures only PATH, HOME, DISPLAY, WAYLAND_DISPLAY,
+DBUS_SESSION_BUS_ADDRESS and XDG_RUNTIME_DIR from the operator environment.
+Host delivery runs outside the worker's Bash sandbox; sandbox permissions and
+socket grants stay unchanged. A changed HEAD invalidates a recorded receipt.
+
 ## Supported launch paths
 
 | Path | How | Policy source |
