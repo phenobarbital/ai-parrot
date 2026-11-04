@@ -402,7 +402,7 @@ class GoogleGeneration:
     async def create_conversation_script(
         self,
         report_data: ConversationalScriptConfig,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_8_FLASH,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         temperature: float = 0.7,
@@ -569,7 +569,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
     async def generate_speech(
         self,
         prompt_data: SpeechGenerationPrompt,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH_TTS,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_8_FLASH_TTS,
         output_directory: Optional[Path] = None,
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
@@ -2318,7 +2318,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         Args:
             prompt: The reel's high-level prompt.
             model: The director model to use (FEAT-564 TASK-3330: was
-                hardcoded to ``GoogleModel.GEMINI_2_5_FLASH``; now forwarded
+                hardcoded to ``GoogleModel.GEMINI_3_8_FLASH``; now forwarded
                 from ``VideoReelRequest.effective_director_model()``).
         """
         system_instruction = """
