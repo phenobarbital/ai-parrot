@@ -90,11 +90,50 @@ def generate(cfg: TechwikiConfig, root: Path, *, release: str | None) -> tuple[l
 {
   "schema_version": 1,
   "targets": [
-    {"path": "packages/ai-parrot/src/parrot/sdd/techwiki/bundle.py", "action": "CREATE"},
-    {"path": "packages/ai-parrot/src/parrot/sdd/techwiki/templates/home.md.j2", "action": "CREATE"},
-    {"path": "packages/ai-parrot/src/parrot/sdd/techwiki/templates/sidebar.md.j2", "action": "CREATE"},
-    {"path": "packages/ai-parrot/src/parrot/sdd/scripts/techwiki_bundle.py", "action": "CREATE"},
-    {"path": "packages/ai-parrot/tests/sdd/test_techwiki_bundle.py", "action": "CREATE"}
+    {
+      "path": "packages/ai-parrot/src/parrot/sdd/techwiki/bundle.py",
+      "action": "CREATE"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/sdd/techwiki/templates/home.md.j2",
+      "action": "CREATE"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/sdd/techwiki/templates/sidebar.md.j2",
+      "action": "CREATE"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/techwiki_bundle.py",
+      "action": "CREATE"
+    },
+    {
+      "path": "packages/ai-parrot/tests/sdd/test_techwiki_bundle.py",
+      "action": "CREATE"
+    },
+    {
+      "path": "packages/ai-parrot/tests/sdd/fixtures/techwiki_repo/docs/decisions/one.md",
+      "action": "CREATE"
+    },
+    {
+      "path": "packages/ai-parrot/tests/sdd/fixtures/techwiki_repo/sdd/config.json",
+      "action": "CREATE"
+    },
+    {
+      "path": "packages/ai-parrot/tests/sdd/fixtures/techwiki_repo/wiki/_index.yaml",
+      "action": "CREATE"
+    },
+    {
+      "path": "packages/ai-parrot/tests/sdd/fixtures/techwiki_repo/wiki/a/one.md",
+      "action": "CREATE"
+    },
+    {
+      "path": "packages/ai-parrot/tests/sdd/fixtures/techwiki_repo/wiki/b/two-copy.md",
+      "action": "CREATE"
+    },
+    {
+      "path": "packages/ai-parrot/tests/sdd/fixtures/techwiki_repo/wiki/b/two.md",
+      "action": "CREATE"
+    }
   ],
   "contract_symbols": []
 }
