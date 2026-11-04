@@ -88,7 +88,8 @@ from .generation import GoogleGeneration
 logging.getLogger(name="PIL.TiffImagePlugin").setLevel(logging.ERROR)  # Suppress TiffImagePlugin warnings
 logging.getLogger(name="google_genai").setLevel(logging.WARNING)  # Suppress GenAI warnings
 
-# Native computer-use action vocabulary: legacy computer-use models vs the Gemini 3.8 tool.
+# Native computer-use action vocabulary: "legacy" for gemini-3-flash-preview (the only
+# remaining dedicated computer-use id) vs "v3_8" for the Gemini 3.8 tool.
 ComputerUseVocabulary = Literal["legacy", "v3_8"]
 
 
@@ -289,8 +290,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     def _computer_use_enabled(self, model: str) -> bool:
         """Return whether computer use is enabled for ``model``.
 
-        The explicit switch enables computer use for current models, while
-        legacy computer-use model identifiers remain enabled for compatibility.
+        The explicit switch enables computer use for current models, while the
+        one remaining legacy computer-use id (``gemini-3-flash-preview``) stays
+        enabled implicitly for compatibility. The 2.5 computer-use preview was
+        shut down and is no longer recognised (FEAT-798).
         """
         return bool(self.computer_use) or self._is_computer_use_model(model)
 

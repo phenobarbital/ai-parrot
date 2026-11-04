@@ -39,7 +39,11 @@ class TestIsComputerUseModel:
 class TestRequiresThinkingComputerUse:
     """Tests that computer-use models require thinking mode."""
 
-    def test_computer_use_requires_thinking(self):
+    def test_computer_use_model_requires_thinking(self):
+        assert GoogleGenAIClient._requires_thinking("gemini-3-flash-preview") is True
+
+    def test_retired_computer_use_preview_no_longer_forces_thinking(self):
+        """FEAT-798: the shut-down 2.5 computer-use id is no longer routed as computer-use."""
         assert GoogleGenAIClient._requires_thinking("gemini-2.5-computer-use-preview-10-2025") is False
 
     def test_regular_model_no_thinking(self):
