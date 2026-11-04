@@ -580,6 +580,12 @@ If ANY check fails, fix or STOP.
   as a background Bash call (`run_in_background: true`, no `timeout`), then read that log — a foreground call is
   bounded at 120 s and this sweep is routinely longer
   (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).
+- To tell whether a failure already happens on `<base_branch>`, rely on the baseline verdict the merge-tier
+  sweep above already computes. Never improvise a baseline tree (`git archive`, `git worktree add --detach`,
+  `git show` into a scratch dir): it carries no gitignored compiled `.so` files, so `import parrot` fails on
+  `parrot.utils.types`, and never hand-copy `.so` files into one. If you need a baseline tree for anything else,
+  get it with `parrot sdd worktree baseline create --base origin/<base_branch>` (prints its path, native
+  artifacts synced) and remove it with `parrot sdd worktree baseline remove <path>` when done.
 - If stuck after 3 attempts, mark as `"done-with-issues"`.
 
 ### f) Commit Code (in worktree)
