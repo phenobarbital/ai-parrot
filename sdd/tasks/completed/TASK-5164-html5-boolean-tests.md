@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-800 — Form Designer — boolean questions render as Yes / No (HTML5 + PDF)
 **Spec**: `sdd/specs/formdesigner-boolean-yes-no.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5162
@@ -164,10 +164,8 @@ Standard procedure; run with `PYTHONPATH=packages/parrot-formdesigner/src`; per-
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Sonnet, sequential, no coder seats)
+**Date**: 2026-11-04
+**Notes**: Created test_html5_boolean.py (17 cases). Mutation-checked: normalization, required, label-once, registry path, SELECT radio golden, None→checked each went RED then restored.
 
 **Deviations from spec**: none | describe if any
