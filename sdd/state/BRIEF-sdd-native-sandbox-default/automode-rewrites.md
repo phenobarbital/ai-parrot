@@ -31,8 +31,10 @@ rewrites/verdicts, sub-worktree `cd <task> && …`, explicit `timeout`/`run_in_b
 Covered by `test_claude_native_*` in `test_worktree_environment.py`.
 
 `auto` (backend unset, no launcher): every command is still rewritten into the runtime-branch wrapper because the
-hook cannot know the session. Its native branch still lists the full `PYTHONPATH`; deriving it at run time to shorten
-the resend was **not done** (follow-up).
+hook cannot know the session. Both branches now derive `PYTHONPATH` at run time
+(`PYTHONPATH="$(printf '%s:' <root>/packages/*/src | sed 's/:$//')${PYTHONPATH:+:$PYTHONPATH}"`) instead of
+listing every package `src`, so the resend no longer carries the ~3 KB literal (the `bwrap` branch drops its
+`--setenv PYTHONPATH`; `bubblewrap` stays byte-identical). Covered by `test_auto_backend_derives_pythonpath_at_run_time`.
 
 ## Decision recorded
 

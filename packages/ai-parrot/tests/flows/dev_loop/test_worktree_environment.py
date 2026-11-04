@@ -1193,6 +1193,29 @@ def test_auto_backend_runs_exactly_one_branch(
     assert result.stdout.split() == [expected]
 
 
+def test_auto_backend_derives_pythonpath_at_run_time(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The auto wrapper does not list package `src` dirs; the shell computes them (short resend, same result)."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    second = feature / "packages" / "other-package" / "src"
+    second.mkdir(parents=True)
+    _fake_bwrap(tmp_path, monkeypatch)
+    uid_file = tmp_path / "uid_map"
+    uid_file.write_text("      1000       1000          1\n", encoding="utf-8")
+    monkeypatch.setattr(policy, "UID_MAP_PATH", str(uid_file))
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": 'printf %s "$PYTHONPATH"'}}
+    first = policy.hook_response(payload, backend="auto")
+    command = first["hookSpecificOutput"]["updatedInput"]["command"]
+    assert "test-package" not in command and "other-package" not in command
+    result = _run_emitted(command, sandbox=True, tmp_path=tmp_path, extra={"PYTHONPATH": "/inherited"})
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split(os.pathsep) == [
+        str(feature / "packages" / "other-package" / "src"),
+        str(feature / "packages" / "test-package" / "src"),
+        "/inherited",
+    ]
+    assert _resend(first, payload, "auto") == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
 def test_auto_backend_without_uid_map_relies_on_sandbox_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A platform without /proc/self/uid_map (macOS Seatbelt) trusts SANDBOX_RUNTIME alone."""
     feature, _task, _main = _native_hook_worktrees(tmp_path)

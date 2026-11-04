@@ -226,7 +226,7 @@ def claude_scratch_root() -> Path:
     return root.resolve()
 
 
-def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
+def protected_argv(cwd: Path, argv: Sequence[str], *, derive_pythonpath: bool = False) -> list[str]:
     """Build a fail-closed Linux filesystem sandbox for a command and its children.
 
     Only the checkout, Git administration directory, the primary checkout's
@@ -240,6 +240,9 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
     environments remain read-only even when the checkout is the primary
     repository. No host chmod or mount changes are performed. Network
     isolation is outside this policy's scope.
+
+    ``derive_pythonpath=True`` omits the ``--setenv PYTHONPATH`` literal: the caller sets ``PYTHONPATH`` in the
+    command's environment (see ``derived_pythonpath_assignment``), which ``bwrap`` passes through.
     """
     if not argv:
         raise ValueError("A command is required.")
@@ -288,13 +291,29 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
     command.extend(["--setenv", "XDG_CACHE_HOME", "/tmp/cache", "--setenv", "UV_CACHE_DIR", "/tmp/uv-cache"])
     command.extend(["--setenv", "UV_NO_SYNC", "1", "--setenv", "PYTHONDONTWRITEBYTECODE", "1"])
     source_roots = sorted((root / "packages").glob("*/src"))
-    if source_roots:
+    if source_roots and not derive_pythonpath:
         python_path = os.pathsep.join(map(str, source_roots))
         if inherited := os.environ.get("PYTHONPATH"):
             python_path += os.pathsep + inherited
         command.extend(["--setenv", "PYTHONPATH", python_path])
     command.extend(["--chdir", str(existing_directory(cwd)), "--", *argv])
     return command
+
+
+def derived_pythonpath_assignment(root: Path) -> str:
+    """Shell text assigning ``PYTHONPATH`` from ``<root>/packages/*/src`` when the command runs.
+
+    Listing every package ``src`` is a ~3 KB literal that a model must echo back verbatim after an auto-mode
+    refusal; the glob keeps the rewrite short and yields the same value. A pre-existing ``PYTHONPATH`` is appended.
+
+    Args:
+        root: The checkout root whose ``packages/*/src`` directories form the path.
+
+    Returns:
+        A ``PYTHONPATH="…"`` assignment, safe as an ``env`` argument or a command prefix.
+    """
+    packages = shlex.quote(str(root / "packages"))
+    return f"PYTHONPATH=\"$(printf '%s:' {packages}/*/src | sed 's/:$//')${{PYTHONPATH:+:$PYTHONPATH}}\""
 
 
 _KERNEL_PARENT = Path(__file__).resolve().parents[2] / "flows" / "dev_loop"
@@ -599,9 +618,20 @@ def _wrap_bash(command: str, cwd: Path, tool_input: dict[str, Any], native: Any,
     shell = bounded_shell_argv(command, tool_input)
     if native:  # auto: the launcher did not run, so the full environment is needed in the native branch
         env = native.native_command_environment(task_cwd)
-        wrapped = shlex.join(["env", *(f"{key}={value}" for key, value in env.items()), *shell])
+        assignments = []
+        for key, value in env.items():
+            if key == "PYTHONPATH":
+                assignments.append(derived_pythonpath_assignment(native._native_roots(task_cwd)[0]))
+            else:
+                assignments.append(shlex.quote(f"{key}={value}"))
+        wrapped = f"env {' '.join(assignments)} {shlex.join(shell)}"
         # Guard, RTK and the bounded shell ran once above; only the sandbox wrapper differs per branch.
-        return _branch(wrapped, shlex.join(protected_argv(cwd, shell)))
+        root = repository_paths(cwd)[0]
+        if (root / "packages").is_dir() and any((root / "packages").glob("*/src")):
+            outside = f"{derived_pythonpath_assignment(root)} {shlex.join(protected_argv(cwd, shell, derive_pythonpath=True))}"
+        else:
+            outside = shlex.join(protected_argv(cwd, shell))
+        return _branch(wrapped, outside)
     return shlex.join(protected_argv(cwd, shell))
 
 
