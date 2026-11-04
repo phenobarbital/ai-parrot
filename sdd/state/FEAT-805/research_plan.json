@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-805",
+  "mode": "enrichment",
+  "note": "Recorded after the fact: the research ran in the same session before /sdd-proposal was invoked (two read-only audit lanes plus direct verification). The queries below are the ones actually executed; there was no pre-approved plan gate.",
+  "queries": [
+    {"id": "Q001", "type": "read", "priority": 1, "intent": "Where is the sdd-worker sandbox mode resolved, and what happens without pyproject.toml?", "params": {"path": "packages/ai-parrot/src/parrot/sdd/scripts/native_claude_sandbox.py", "lines": "246-290"}},
+    {"id": "Q002", "type": "read", "priority": 1, "intent": "Where do the sandbox network allow-list and gh_token policy come from?", "params": {"path": "packages/ai-parrot/src/parrot/sdd/scripts/native_claude_sandbox.py", "lines": "637-675"}, "parent_id": "F001"},
+    {"id": "Q003", "type": "read", "priority": 1, "intent": "How does a worktree get gitignored build artifacts, and where is that declared?", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/native_artifacts.py", "lines": "48-126"}},
+    {"id": "Q004", "type": "read", "priority": 1, "intent": "What language-neutral, committed SDD configuration already exists?", "params": {"path": "packages/ai-parrot/src/parrot/sdd/config.py"}},
+    {"id": "Q005", "type": "grep", "priority": 2, "intent": "Which code WRITES the [tool.parrot.sdd] table?", "params": {"pattern": "tool\\.parrot", "path": "packages/*/src"}, "parent_id": "F001"},
+    {"id": "Q006", "type": "read", "priority": 1, "intent": "How does a repository configure test runners, and does the installer deliver that file?", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/runners/registry.py"}},
+    {"id": "Q007", "type": "read", "priority": 1, "intent": "Does the built-in vitest runner work in a repository that is not ai-parrot?", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/runners/vitest.py"}, "parent_id": "F006"},
+    {"id": "Q008", "type": "read", "priority": 1, "intent": "What does the over-broad test-command guard rewrite a command to?", "params": {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/guard.py"}},
+    {"id": "Q009", "type": "read", "priority": 2, "intent": "Does `select_tests --run` honour a runner's cwd and options for non-pytest runners?", "params": {"path": "packages/ai-parrot/src/parrot/sdd/scripts/select_tests.py", "lines": "494-524"}, "parent_id": "F007"},
+    {"id": "Q010", "type": "read", "priority": 2, "intent": "Which engine-side quality steps only understand Python files and pyproject.toml?", "params": {"paths": ["packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/lint.py", "packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/green_cache.py"]}},
+    {"id": "Q011", "type": "grep", "priority": 1, "intent": "Does any SDD or dev-loop code install dependencies into a new worktree?", "params": {"pattern": "node_modules|pnpm install|npm (ci|install)|package\\.json", "path": "packages/ai-parrot/src/parrot/{sdd/scripts,flows/dev_loop}"}, "parent_id": "F003"},
+    {"id": "Q012", "type": "read", "priority": 1, "intent": "Which shipped agent prompt fails outright in a repository without Python tooling?", "params": {"path": "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-qa.md", "lines": "55-60"}},
+    {"id": "Q013", "type": "read", "priority": 1, "intent": "Can the Codebase Contract verifier check symbols in a non-Python file?", "params": {"path": "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-contract-probe.md", "lines": "61-66"}},
+    {"id": "Q014", "type": "grep", "priority": 2, "intent": "Inventory of Python assumptions in the shipped prompt and template assets", "params": {"pattern": "pyproject|pytest|ruff|\\.venv|PYTHONPATH|uv (add|pip|sync|run)|mypy|black", "path": "packages/ai-parrot/src/parrot/sdd/_assets"}},
+    {"id": "Q015", "type": "tree", "priority": 1, "intent": "How is SDD installed today in the reference non-Python repository?", "params": {"path": "/home/jesuslara/proyectos/navigator/navigator-frontend-next"}},
+    {"id": "Q016", "type": "git_log", "priority": 1, "intent": "Is anyone already specifying this, and what did adjacent specs leave out?", "params": {"paths": ["sdd/specs", "sdd/proposals"], "ref": "origin/dev"}},
+    {"id": "Q017", "type": "grep", "priority": 2, "intent": "What already works when `parrot sdd install` targets a non-Python repository?", "params": {"pattern": "pyproject|_PYTHON_PROJECT_FILES|EXTERNAL_TOOLS", "path": "packages/ai-parrot/src/parrot/sdd"}}
+  ]
+}
