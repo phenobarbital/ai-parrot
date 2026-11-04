@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-04T02:46:04+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-04T17:23:19+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -211,7 +211,7 @@
       "feature_id": "FEAT-798",
       "feature": "google-migration",
       "spec": "sdd/specs/google-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -221,8 +221,9 @@
       "parallelism_notes": "its guard test scans docs/ including docs/config.md and docs/configuration/llm-defaults.md, which TASK-5150 rewrites, and must exclude the docs/migration/gemini-2-5-retirement.md TASK-5150 creates",
       "assigned_to": null,
       "started_at": "2026-11-04T16:10:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5154-docs-examples-plugins-sweep.md"
+      "completed_at": "2026-11-04T17:23:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5154-docs-examples-plugins-sweep.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5155",
@@ -231,7 +232,7 @@
       "feature_id": "FEAT-798",
       "feature": "google-migration",
       "spec": "sdd/specs/google-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -247,8 +248,9 @@
       "parallelism_notes": "modifies models.py + test_google_models.py after TASK-5146; deleting GEMINI_2_5_FLASH/_PRO/_FLASH_TTS needs the by-name call sites removed by TASK-5148 (client.py) and TASK-5149 (analysis.py, generation.py); its src guard scans files swept by TASK-5147 (models/google.py), TASK-5150 (abstract.py, crew.py, policy.py), TASK-5151 (16 core/server files) and TASK-5153 (ui/src lists)",
       "assigned_to": null,
       "started_at": "2026-11-04T16:10:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5155-catalogue-deletion-and-guard.md"
+      "completed_at": "2026-11-04T17:23:19+00:00",
+      "file": "sdd/tasks/completed/TASK-5155-catalogue-deletion-and-guard.md",
+      "verification": "verified"
     }
   ]
 }
