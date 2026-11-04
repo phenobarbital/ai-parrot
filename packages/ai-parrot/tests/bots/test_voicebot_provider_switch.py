@@ -154,13 +154,13 @@ class TestVoiceBotLazyClientWiring:
     def test_resolve_branches_on_provider(self):
         src = _get_voicebot_method("_resolve_llm_config")
         assert "self.voice_config.provider" in src
-        assert "'nova'" in src
-        assert "'gemini_live'" in src
+        assert '"nova"' in src
+        assert '"gemini_live"' in src
 
     def test_create_branches_on_provider(self):
         src = _get_voicebot_method("_create_llm_client")
         assert "config.provider" in src
-        assert "'nova'" in src
+        assert '"nova"' in src
         assert "GeminiLiveClient" in src
 
 
