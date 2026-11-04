@@ -167,7 +167,7 @@
       "feature_id": "FEAT-798",
       "feature": "google-migration",
       "spec": "sdd/specs/google-migration.spec.md",
-      "status": "blocked",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
