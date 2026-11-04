@@ -17,9 +17,7 @@ from typing import Literal, Sequence
 
 from pydantic import BaseModel, Field
 
-from parrot.sdd.scripts.sdd_meta import (  # verified: packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py:322
-    WORKTREE_ROOT,
-)
+from parrot.sdd.config import worktree_root
 
 # ---------------------------------------------------------------------------
 # Branch-name patterns
@@ -65,7 +63,7 @@ class WorktreeReport(BaseModel):
 
     feature_slug: str
     feature_id: str | None = None
-    #: ``"non-sdd"`` marks a worktree under WORKTREE_ROOT whose branch is not an
+    #: ``"non-sdd"`` marks a worktree under the resolved worktree root whose branch is not an
     #: SDD branch: health only, no tasks, never ready_for_done (FEAT-582 §8).
     flow_type: Literal["feature", "hotfix", "non-sdd"]
     worktree_path: str
@@ -237,12 +235,12 @@ def _is_under_worktree_root(path: Path, worktree_root: Path) -> bool:
     """Return True when ``path`` is ``worktree_root`` itself or nested inside it.
 
     Both arguments must already be resolved — the caller resolves once and
-    passes the result, so a symlinked ``.claude/worktrees`` cannot make this
+    passes the result, so a symlinked resolved worktree root cannot make this
     silently return False for every candidate.
 
     Args:
         path: A resolved worktree path.
-        worktree_root: The resolved ``repo_root / WORKTREE_ROOT``.
+        worktree_root: The resolved worktree root.
 
     Returns:
         Whether ``path`` lives in the SDD worktree pool.
@@ -287,7 +285,7 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
     """Main entry point: discover all SDD worktrees and their task state.
 
     1. Parse ``git worktree list --porcelain``.
-    2. Also scan WORKTREE_ROOT for orphan directories (not in porcelain).
+    2. Also scan the resolved worktree root for orphan directories (not in porcelain).
     3. For each SDD branch, parse slug/id, read worktree index, check health.
     4. Compute ready_for_done.
     """
@@ -298,13 +296,12 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
     # Get all worktree paths from git
     git_worktree_paths = {path for path, _ in git_worktrees}
 
-    # Scan WORKTREE_ROOT for orphan directories. WORKTREE_ROOT is relative
-    # (".claude/worktrees") and must be resolved against repo_root, not the
-    # process's current working directory (which may itself be a worktree).
-    worktree_root = (repo_root / WORKTREE_ROOT).resolve()
+    # Scan the resolved worktree root for orphan directories. The resolver
+    # handles relative settings against repo_root and honours absolute settings.
+    worktree_root_path = worktree_root(repo_root).resolve()
     orphan_paths: list[Path] = []
-    if worktree_root.exists():
-        for entry in worktree_root.iterdir():
+    if worktree_root_path.exists():
+        for entry in worktree_root_path.iterdir():
             if entry.is_dir() and entry.resolve() not in git_worktree_paths:
                 orphan_paths.append(entry)
 
@@ -327,7 +324,7 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
         if branch is None:
             # Only a real worktree carries its own ``.git`` (a file pointing at
             # the admin dir). Without this check, ``git rev-parse`` run inside a
-            # plain directory under WORKTREE_ROOT — an sdd-coder ``--pool``
+            # plain directory under the resolved worktree root — an sdd-coder ``--pool``
             # container, or a leftover directory whose worktree was removed —
             # walks UP to the primary checkout and reports ITS branch, which
             # used to be harmless (``dev`` never parsed as an SDD branch) but
@@ -343,7 +340,7 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
 
         # sdd-coder pool sub-worktrees are task-level attempts nested inside a
         # feature worktree (FEAT-549), not worktrees in their own right. They
-        # live UNDER WORKTREE_ROOT, so the containment guard below does not
+        # live under the resolved worktree root, so the containment guard below does not
         # exclude them, and _parse_branch() returns None for them exactly as it
         # does for a non-SDD branch — hence the explicit test here.
         if _POOL_SUB_WORKTREE_RE.search(branch):
@@ -354,9 +351,9 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
             # Non-SDD branch (chore-*, fix-*, a detached "HEAD", a branch whose
             # name does not match the SDD patterns). FEAT-582 §8 resolved these
             # to appear in the Worktrees panel, health only. Only those under
-            # WORKTREE_ROOT qualify: the primary checkout is itself a porcelain
+            # the resolved worktree root qualify: the primary checkout is itself a porcelain
             # entry and must never report itself (issue:07b75dc7dfae).
-            if not _is_under_worktree_root(wt_path, worktree_root):
+            if not _is_under_worktree_root(wt_path, worktree_root_path):
                 continue
             reports.append(
                 WorktreeReport(

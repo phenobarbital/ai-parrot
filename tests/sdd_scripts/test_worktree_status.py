@@ -116,12 +116,13 @@ def _discover_with_fake_worktree(
             return _completed(log_out, returncode=log_rc)
         return _completed("")
 
-    with (
-        patch("scripts.sdd.worktree_status._git", side_effect=fake_git),
-        patch("scripts.sdd.worktree_status.WORKTREE_ROOT", str(worktree_root)),
-        patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
-    ):
-        reports = discover_worktree_reports(tmp_path)
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setenv("WORKTREE_BASE_PATH", str(worktree_root))
+        with (
+            patch("scripts.sdd.worktree_status._git", side_effect=fake_git),
+            patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
+        ):
+            reports = discover_worktree_reports(tmp_path)
 
     return [r for r in reports if r.feature_id == "FEAT-550"]
 
@@ -181,12 +182,13 @@ def _discover_with_branches(
             return _completed("dev\n")
         return _completed("")
 
-    with (
-        patch("scripts.sdd.worktree_status._git", side_effect=fake_git),
-        patch("scripts.sdd.worktree_status.WORKTREE_ROOT", str(worktree_root)),
-        patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
-    ):
-        return discover_worktree_reports(tmp_path)
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setenv("WORKTREE_BASE_PATH", str(worktree_root))
+        with (
+            patch("scripts.sdd.worktree_status._git", side_effect=fake_git),
+            patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
+        ):
+            return discover_worktree_reports(tmp_path)
 
 
 # ---------------------------------------------------------------------------

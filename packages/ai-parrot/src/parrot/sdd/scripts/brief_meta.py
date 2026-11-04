@@ -18,8 +18,8 @@ from typing import Any, Literal, Sequence
 import yaml
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
-from parrot.sdd.config import SddConfig, load_sdd_config
-from parrot.sdd.scripts.sdd_meta import WORKTREE_ROOT, WorktreePlan
+from parrot.sdd.config import SddConfig, load_sdd_config, worktree_root_setting
+from parrot.sdd.scripts.sdd_meta import WorktreePlan
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +196,7 @@ def brief_worktree_plan(*, slug: str, key: str, base_branch: str, config: SddCon
     name = f"{prefix}-{key}-{slug}"
     return WorktreePlan(
         name=name,
-        path=f"{WORKTREE_ROOT}/{name}",
+        path=f"{worktree_root_setting()}/{name}",
         base_ref=f"origin/{base_branch}",
     )
 

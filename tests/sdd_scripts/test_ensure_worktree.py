@@ -79,6 +79,12 @@ def _plan(branch: str = "dev"):
     return plan_worktree(FlowMeta(type="feature", base_branch=branch), slug=SLUG, feature_id=FEATURE_ID)
 
 
+@pytest.fixture(autouse=True)
+def _default_worktree_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep plan paths independent of a caller's worktree-root environment."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+
+
 def test_ensure_creates_worktree_when_absent(tmp_git_repo: Path) -> None:
     """First call creates the branch and the directory and reports created=True."""
     path, created = ensure(_plan(), repo_root=tmp_git_repo)
@@ -103,6 +109,54 @@ def test_ensure_is_idempotent(tmp_git_repo: Path) -> None:
     )
     lines = [line.strip() for line in res.stdout.splitlines() if line.strip()]
     assert len(lines) == 1
+
+
+def test_ensure_reuse_exact_target_only(tmp_git_repo: Path) -> None:
+    """Only the configured target is reusable; legacy worktrees are unrelated."""
+    plan = _plan()
+    legacy_path = tmp_git_repo / ".claude" / "worktrees" / "unrelated"
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "-b", "unrelated-branch", str(legacy_path), "origin/dev"],
+        cwd=tmp_git_repo,
+        check=True,
+    )
+
+    created_path, created = ensure(plan, repo_root=tmp_git_repo)
+    assert created is True
+    assert created_path == (tmp_git_repo / ".parrot" / "worktrees" / plan.name).resolve()
+
+    reused_path, reused = ensure(plan, repo_root=tmp_git_repo)
+    assert reused is False
+    assert reused_path == created_path
+
+
+def test_ensure_rejects_legacy_registration(tmp_git_repo: Path) -> None:
+    """The planned branch registered at the legacy path fails before any write."""
+    plan = _plan()
+    legacy_path = tmp_git_repo / ".claude" / "worktrees" / plan.name
+    target_path = (tmp_git_repo / plan.path).resolve()
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "-b", plan.name, str(legacy_path), "origin/dev"],
+        cwd=tmp_git_repo,
+        check=True,
+    )
+
+    for dry_run in (True, False):
+        with pytest.raises(EnsureWorktreeError) as exc_info:
+            ensure(plan, repo_root=tmp_git_repo, dry_run=dry_run)
+        message = str(exc_info.value)
+        assert str(legacy_path.resolve()) in message
+        assert str(target_path) in message
+        assert "parrot doctor" in message
+    assert not target_path.exists()
+
+
+def test_ensure_worktree_creates_under_parrot(tmp_git_repo: Path) -> None:
+    """The default resolver creates feature worktrees below ``.parrot``."""
+    plan = _plan()
+    path, created = ensure(plan, repo_root=tmp_git_repo)
+    assert created is True
+    assert path == (tmp_git_repo / ".parrot" / "worktrees" / plan.name).resolve()
 
 
 def test_ensure_rejects_path_with_foreign_branch(tmp_git_repo: Path) -> None:
