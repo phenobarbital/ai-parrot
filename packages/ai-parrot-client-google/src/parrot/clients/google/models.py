@@ -39,16 +39,10 @@ class GoogleModel(Enum):
     GEMINI_3_8_FLASH_TTS = "gemini-3.8-flash-tts"
     GEMINI_3_1_FLASH_LIVE_PREVIEW = "gemini-3.1-flash-live-preview"
     GEMINI_3_8_LIVE = "gemini-3.8-live"
-    # Gemini 2.5 series
-    GEMINI_2_5_FLASH = "gemini-2.5-flash"
-    GEMINI_2_5_FLASH_PREVIEW = "gemini-2.5-flash"
+    # Gemini 2.5 series (flash-lite and image remain supported)
     GEMINI_2_5_FLASH_LITE = "gemini-2.5-flash-lite"
     GEMINI_2_5_FLASH_LITE_PREVIEW = "gemini-2.5-flash-lite"
-    GEMINI_2_5_PRO = "gemini-2.5-pro"
-    GEMINI_2_5_FLASH_TTS = "gemini-2.5-flash-preview-tts"
-    GEMINI_2_5_PRO_TTS = "gemini-2.5-pro-preview-tts"
     GEMINI_2_5_FLASH_IMAGE = "gemini-2.5-flash-image"
-    GEMINI_COMPUTER_USE = "gemini-2.5-computer-use-preview-10-2025"
     GEMINI_3_FLASH_COMPUTER_USE = "gemini-3-flash-preview"
     GEMINI_3_5_FLASH_COMPUTER_USE = "gemini-3.5-flash"
     # Specialized & Vision models
@@ -90,9 +84,7 @@ class VertexAIModel(Enum):
     GEMINI_3_PRO_IMAGE = "gemini-3-pro-image"
     GEMINI_3_1_FLASH_IMAGE = "gemini-3.1-flash-image"
     GEMINI_3_1_FLASH_LITE_IMAGE = "gemini-3.1-flash-lite-image"
-    GEMINI_2_5_FLASH = "gemini-2.5-flash"
     GEMINI_2_5_FLASH_LITE = "gemini-2.5-flash-lite"
-    GEMINI_2_5_PRO = "gemini-2.5-pro"
     IMAGEN_3 = "imagen-3.0-generate-002"
     IMAGEN_4 = "imagen-4.0-generate-001"
     IMAGEN_4_ULTRA = "imagen-4.0-ultra-generate-001"
