@@ -5,7 +5,7 @@ from parrot.bots.basic import BasicBot
 async def get_agent():
     agent = BasicBot(
         name='AskGorilla',
-        llm="google:gemini-2.5-flash",
+        llm="google:gemini-3.8-flash",
         max_tokens=8912,
         temperature=0.2,
         backstory="""

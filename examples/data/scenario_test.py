@@ -65,7 +65,7 @@ async def main():
     # Create LLM client
     client = LLMFactory.create(
         llm='google',
-        model='gemini-2.5-pro',
+        model='gemini-4-argon',
         # llm="anthropic",
         # model="claude-sonnet-4-5",
     )

@@ -20,7 +20,7 @@ async def main():
     print("Creating OrchestratorAgent...")
     orchestrator = OrchestratorAgent(
         name="MainOrchestrator",
-        model="gemini-2.5-flash" # explicit model to be sure
+        model="gemini-3.8-flash" # explicit model to be sure
     )
 
     # 2. Create 3 specialized agents
@@ -29,19 +29,19 @@ async def main():
     math_agent = BasicAgent(
         name="MathAgent",
         system_prompt="You are a helpful math assistant. Solve problems concisely.",
-        model="gemini-2.5-flash"
+        model="gemini-3.8-flash"
     )
     
     poetry_agent = BasicAgent(
         name="PoetryAgent",
         system_prompt="You are a creative poet. Write poems when asked.",
-        model="gemini-2.5-flash"
+        model="gemini-3.8-flash"
     )
     
     history_agent = BasicAgent(
         name="HistoryAgent",
         system_prompt="You are a historian. Answer history questions accurately.",
-        model="gemini-2.5-flash"
+        model="gemini-3.8-flash"
     )
 
     # Orchestrator also needs it? No, if fixed in class.

@@ -224,7 +224,7 @@ primitive but exposes it through a richer transition vocabulary
 Iterative refinement. The caller supplies an `initial_task` and a
 natural-language `condition` describing the success criterion. After
 every iteration the crew calls the configured LLM
-(`gemini-2.5-pro` by default) with the latest output and asks
+(`gemini-4-argon` by default) with the latest output and asks
 whether the condition is satisfied. Iteration N+1 receives N's output
 as input. The loop exits when the LLM answers *yes* or when
 `max_iterations` is reached.

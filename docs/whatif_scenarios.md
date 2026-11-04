@@ -667,7 +667,7 @@ python examples/data/whatif_scenario_e2e.py
 
 # add the natural-language round trip through a real LLM
 python examples/data/whatif_scenario_e2e.py --llm
-python examples/data/whatif_scenario_e2e.py --llm --provider google --model gemini-2.5-pro
+python examples/data/whatif_scenario_e2e.py --llm --provider google --model gemini-4-argon
 
 # one stage at a time
 python examples/data/whatif_scenario_e2e.py --stage dsl

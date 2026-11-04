@@ -149,7 +149,7 @@ attachments and arbitrary file uploads.
 
 For real-time bidirectional audio, the **VoiceBot** stack
 (`parrot/voice/server.py:66`) integrates Google Gemini Live native-audio
-models (`gemini-2.5-flash-native-audio-preview`) with VAD, streaming
+models (`gemini-3.8-live`) with VAD, streaming
 mode and buffered mode, all driven over WebSocket (§4.4).
 
 ## 4.4 WebSocket endpoints

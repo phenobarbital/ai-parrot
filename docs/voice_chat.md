@@ -5,7 +5,7 @@ Real-time voice chat interface using **Gemini Live API** for native speech-to-sp
 ## 🎯 Features
 
 - **Bidirectional Voice Streaming**: WebSocket-based real-time audio streaming
-- **Native Speech-to-Speech**: Uses Gemini 2.5 Flash Native Audio for low-latency voice interactions
+- **Native Speech-to-Speech**: Uses Gemini 3.8 Live for low-latency voice interactions
 - **Multimodal Responses**: Receive both text and audio responses simultaneously
 - **Voice Activity Detection**: Automatic speech detection and interruption handling
 - **Modern UI**: Elegant chat interface with audio visualization
@@ -33,7 +33,7 @@ Real-time voice chat interface using **Gemini Live API** for native speech-to-sp
 │  │ VoiceChatServer    │                                         │
 │  │  - WebSocket       │     ┌──────────────────────────────┐   │
 │  │  - Session Mgmt    │────▶│ Gemini Live API              │   │
-│  │  - Audio Buffer    │     │ (gemini-2.5-flash-native)    │   │
+│  │  - Audio Buffer    │     │ (gemini-3.8-live)            │   │
 │  └────────────────────┘     │  - Audio In → Audio Out      │   │
 │                             │  - Text Transcription         │   │
 │                             │  - Tool Calling               │   │

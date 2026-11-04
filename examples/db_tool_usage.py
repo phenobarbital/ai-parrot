@@ -27,7 +27,7 @@ async def manual_usage():
     # Using 'groq:llama-3.3-70b-versatile' as a powerful default for SQL generation
     db_tool = DatabaseTool(
         default_connection_params={DatabaseFlavor.POSTGRESQL: CONNECTION_PARAMS},
-        llm="google:gemini-2.5-flash" 
+        llm="google:gemini-3.8-flash"
     )
 
     # 1. Schema Extract
@@ -96,12 +96,12 @@ async def agent_usage():
     # Initialize Tool
     db_tool = DatabaseTool(
         default_connection_params={DatabaseFlavor.POSTGRESQL: CONNECTION_PARAMS},
-        llm="google:gemini-2.5-flash"
+        llm="google:gemini-3.8-flash"
     )
     
     # Initialize Agent
     agent = BasicAgent(
-        llm="google:gemini-2.5-flash",
+        llm="google:gemini-3.8-flash",
         tools=[db_tool]
     )
 

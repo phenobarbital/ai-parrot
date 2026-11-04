@@ -45,7 +45,7 @@ def create_app(guard_mode: str = "policy", *, policy_dir: str | Path | None = No
     Args:
         guard_mode: ``"policy"`` (default), ``"deny"`` or ``"none"`` — see the module docstring.
         policy_dir: Override the policy dir used in ``"policy"`` mode (default: the example ``policies/``).
-        llm: Optional ``llm`` string for the agent (e.g. ``"google:gemini-2.5-flash"``); default = Agent's.
+        llm: Optional ``llm`` string for the agent (e.g. ``"google:gemini-3.8-flash"``); default = Agent's.
 
     Returns:
         The configured (not yet started) ``web.Application``.

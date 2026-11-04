@@ -14,7 +14,7 @@ async def main():
         name="GenMediaArtist",
         agent_id="genmedia_artist",
         use_llm="google",
-        model="gemini-2.5-flash",
+        model="gemini-3.8-flash",
         max_tokens=16000,
         human_prompt="You are a creative artist. Use the available tools to generate media as requested."
     )

@@ -34,7 +34,7 @@ Usage::
     # add the LLM round-trip
     python examples/data/whatif_scenario_e2e.py --llm
     python examples/data/whatif_scenario_e2e.py --llm --provider google \\
-        --model gemini-2.5-pro
+        --model gemini-4-argon
 
 Exit code is 0 when every check passes, 1 otherwise, so the script doubles as
 a smoke test in CI.

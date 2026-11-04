@@ -117,7 +117,7 @@ agent = WebNavigatorAgent(
     profile_directory="Default",
     driver_type="playwright",   # o "selenium"
     headless=False,
-    llm="google:gemini-2.5-flash",
+    llm="google:gemini-3.8-flash",
 )
 await agent.configure()
 answer, _ = await agent.invoke("dame las citas del tag love")
@@ -192,7 +192,7 @@ async def main():
             browser_url="http://127.0.0.1:9222",   # Chrome ya corriendo
             headless=False,
         ),
-        llm="google:gemini-2.5-flash",
+        llm="google:gemini-3.8-flash",
     )
     await agent.configure()          # levanta chrome-devtools-mcp y se adjunta
     result = await agent.ask("Abre quotes.toscrape.com y dime el primer autor")

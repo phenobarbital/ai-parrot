@@ -130,7 +130,7 @@ agent = WebNavigatorAgent(
     profile_directory="Default",
     driver_type="playwright",
     headless=False,
-    llm="google:gemini-2.5-flash",
+    llm="google:gemini-3.8-flash",
 )
 await agent.configure()
 answer, _ = await agent.invoke("dame las citas del tag love")

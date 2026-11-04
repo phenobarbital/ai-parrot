@@ -1603,7 +1603,7 @@ This is the master comprehensive Executive report document.
    report_result = await report_crew.run_sequential(
       query=report_context,
       max_tokens=8192,
-      model='gemini-2.5-pro',
+      model='gemini-4-argon',
       pass_full_context=True
    )
 
