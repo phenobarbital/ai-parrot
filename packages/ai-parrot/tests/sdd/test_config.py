@@ -30,7 +30,6 @@ from parrot.sdd.config import (
 )
 from parrot.sdd.scripts import brief_meta, sdd_meta, worktree_root as worktree_root_script
 
-
 def _repo(tmp_path: Path, config: dict | str | None = None) -> Path:
     (tmp_path / ".git").mkdir()
     if config is not None:
