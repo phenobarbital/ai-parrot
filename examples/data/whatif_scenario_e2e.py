@@ -39,6 +39,7 @@ Usage::
 Exit code is 0 when every check passes, 1 otherwise, so the script doubles as
 a smoke test in CI.
 """
+
 from __future__ import annotations
 
 import argparse

@@ -1,4 +1,3 @@
-
 import argparse
 import asyncio
 import os
@@ -13,7 +12,7 @@ DEFAULT_MODELS = (
     "gemini-3.5-flash",
     "gemini-3.1-pro-preview",
     "gemini-3.1-flash-lite-preview",
-    "gemini-4-argon",            # falls back to two-phase — keep for regression visibility
+    "gemini-4-argon",  # falls back to two-phase — keep for regression visibility
 )
 
 # 1. Define Structured Output Schema
@@ -116,7 +115,7 @@ if __name__ == "__main__":
         action="append",
         dest="models",
         help="Model identifier to test. Repeat the flag to test multiple. "
-             "If omitted, the default whitelist + gemini-4-argon is tested.",
+        "If omitted, the default whitelist + gemini-4-argon is tested.",
     )
     parser.add_argument(
         "--prompt",

@@ -4,14 +4,14 @@ from parrot.bots.basic import BasicBot
 
 async def get_agent():
     agent = BasicBot(
-        name='AskGorilla',
+        name="AskGorilla",
         llm="google:gemini-3.8-flash",
         max_tokens=8912,
         temperature=0.2,
         backstory="""
 You are an AI assistant that helps users find products from Gorilla Shed's
 catalog. Use the product information provided to answer user queries accurately.
-        """
+        """,
     )
     embed_model = {
         "model": "BAAI/bge-base-en-v1.5",

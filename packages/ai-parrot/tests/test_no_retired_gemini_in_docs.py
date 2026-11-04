@@ -8,7 +8,9 @@ SCANNED = ("docs", "examples", "plugins")
 SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".example", ".toml"}
 # The migration guide names the retired ids on purpose.
 EXCLUDED = {"docs/migration/gemini-2-5-retirement.md"}
-RETIRED = re.compile(r"gemini-2\.5-(?:pro|flash)(?![-\w])|gemini-2\.5-flash-native-audio|gemini-2\.5-(?:flash|pro)-preview-tts")
+RETIRED = re.compile(
+    r"gemini-2\.5-(?:pro|flash)(?![-\w])|gemini-2\.5-flash-native-audio|gemini-2\.5-(?:flash|pro)-preview-tts"
+)
 
 
 def test_no_retired_gemini_id_in_docs_examples_plugins() -> None:

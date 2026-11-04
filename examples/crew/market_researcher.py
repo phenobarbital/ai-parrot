@@ -1507,7 +1507,7 @@ This is the FINAL deliverable - make it exceptional.
    return data_crew, analysis_crew, report_crew
 
 async def execute_workflow(data_crew, analysis_crew, report_crew, industry):
-   data_result: CrewResult = await data_crew.run_parallel(
+    data_result: CrewResult = await data_crew.run_parallel(
       tasks=[
          {'agent_id': 'industry_overview', 'query': f'Provide an overview of {industry}'},
          {'agent_id': 'market_data', 'query': f'Research {industry}'},
@@ -1527,40 +1527,40 @@ async def execute_workflow(data_crew, analysis_crew, report_crew, industry):
       ],
       all_results=True
    )
-   print(
+    print(
       f"✓ Phase 1 complete: {len(data_result.completed)} datasets gathered\n"
    )
-   # data_result.output is a list of results from each agent
-   market_research = '\n'.join(data_result.output)
-   print(market_research)
+       # data_result.output is a list of results from each agent
+    market_research = '\n'.join(data_result.output)
+    print(market_research)
 
-   # Phase 2: Flow-based analysis with dependencies
-   print("Phase 2: Flow-Based Analysis")
-   print("-" * 50)
-   # Create comprehensive context for analysis
-   analysis_context = f"""
+       # Phase 2: Flow-based analysis with dependencies
+    print("Phase 2: Flow-Based Analysis")
+    print("-" * 50)
+       # Create comprehensive context for analysis
+    analysis_context = f"""
 # COMPREHENSIVE INDUSTRY DATA FOR ANALYSIS: {industry}
 
 ## DATA GATHERING RESULTS:
 
 """
-   for agent_name, result in data_result.agent_results.items():
-      analysis_context += f"\n### {agent_name.upper().replace('_', ' ')} DATA:\n{result}\n\n---\n"
+    for agent_name, result in data_result.agent_results.items():
+        analysis_context += f"\n### {agent_name.upper().replace('_', ' ')} DATA:\n{result}\n\n---\n"
 
-   analysis_result: CrewResult = await analysis_crew.run_flow(
+    analysis_result: CrewResult = await analysis_crew.run_flow(
       initial_task=analysis_context
    )
 
-   print("✓ Phase 2 complete: Strategic insights generated\n")
-   market_analysis = analysis_result.output
-   print(market_analysis)
+    print("✓ Phase 2 complete: Strategic insights generated\n")
+    market_analysis = analysis_result.output
+    print(market_analysis)
 
-   # Phase 3: Sequential refinement
-   print("Phase 3: Sequential Report Refinement")
-   print("-" * 50)
+       # Phase 3: Sequential refinement
+    print("Phase 3: Sequential Report Refinement")
+    print("-" * 50)
 
-   # Create comprehensive report context including BOTH data and analysis
-   report_context = f"""
+       # Create comprehensive report context including BOTH data and analysis
+    report_context = f"""
 # COMPREHENSIVE MARKET RESEARCH REPORT COMPILATION
 ## Industry: {industry}
 
@@ -1574,21 +1574,21 @@ You are compiling a comprehensive market research report that includes:
 ## PART 1: ALL DATA GATHERING RESULTS
 
 """
-   # Include all Phase 1 data
-   for result in data_result.output:
-      report_context += f"\n### COMPLETE FINDINGS:\n{result}\n\n---\n"
+       # Include all Phase 1 data
+    for result in data_result.output:
+        report_context += f"\n### COMPLETE FINDINGS:\n{result}\n\n---\n"
 
-   report_context += """
+    report_context += """
 
 ---
 
 ## PART 2: ALL STRATEGIC ANALYSIS RESULTS
 
 """
-   # Include all Phase 2 analysis
-   report_context += f"\n{market_analysis}\n\n---\n"
+       # Include all Phase 2 analysis
+    report_context += f"\n{market_analysis}\n\n---\n"
 
-   report_context += """
+    report_context += """
 
 ---
 
@@ -1600,25 +1600,22 @@ This is the master comprehensive Executive report document.
 
 """
 
-   report_result = await report_crew.run_sequential(
-      query=report_context,
-      max_tokens=8192,
-      model='gemini-4-argon',
-      pass_full_context=True
-   )
+    report_result = await report_crew.run_sequential(
+        query=report_context, max_tokens=8192, model="gemini-4-argon", pass_full_context=True
+    )
 
-   print("✓ Phase 3 complete: Final report ready\n")
+    print("✓ Phase 3 complete: Final report ready\n")
 
-   print("\n" + "="*70)
-   print("HYBRID WORKFLOW COMPLETE")
-   print("="*70)
-   print(f"\nPhase 1 (Parallel): {data_result.total_time:.2f}s")
-   print("Phase 2 (Flow): Multiple stages with auto-parallelization")
-   print("Phase 3 (Sequential): Pipeline refinement")
-   print(f"\nFinal Report (first 400 chars):\n{report_result.output[:400]}...")
-   print("\n" + "="*70)
+    print("\n" + "="*70)
+    print("HYBRID WORKFLOW COMPLETE")
+    print("="*70)
+    print(f"\nPhase 1 (Parallel): {data_result.total_time:.2f}s")
+    print("Phase 2 (Flow): Multiple stages with auto-parallelization")
+    print("Phase 3 (Sequential): Pipeline refinement")
+    print(f"\nFinal Report (first 400 chars):\n{report_result.output[:400]}...")
+    print("\n" + "="*70)
 
-   return {
+    return {
       'data_results': data_result,
       'analysis_results': analysis_result,
       'final_report': report_result,
