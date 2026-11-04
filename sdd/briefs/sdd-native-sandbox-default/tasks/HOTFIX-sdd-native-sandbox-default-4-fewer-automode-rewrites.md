@@ -59,6 +59,40 @@ Tests (`test_worktree_environment.py`, `test_native_claude_sandbox.py`):
 **NOT in scope**: changing Claude Code's auto-mode behavior; the legacy `bubblewrap` wrapper shape
 (it must stay byte-identical, `test_legacy_hook_output_unchanged`).
 
+### Operator notes (2026-11-04) — observed failure and two gaps to close
+
+Observed: in a hand-launched worker (`claude --agent sdd-worker --setting-sources project,local`,
+no launcher, so the legacy `bubblewrap` backend), the `code-reviewer` subagent got stuck. Its first
+command was wrapped in `bwrap` with a 30-entry `PYTHONPATH` (~3 KB), and auto mode refused it as
+expected. The subagent then resent the command *abbreviated*, with `PYTHONPATH` cut down to the core
+`src` only. `_is_own_wrapper` correctly rejected that look-alike, the hook wrapped it again (`bwrap`
+inside `bwrap`), auto mode refused it again, and the subagent could no longer run any Bash command
+that needed classifier review. Evidence: session `22911c39-2d07-4b99-9a8a-525079d2f735`, subagent
+`agent-ae6a9c0c2959fa373.jsonl` (Claude projects dir for the `gh-only-sandbox` worktree). Use it as a
+third baseline transcript in step 1.
+
+The lesson: in auto mode, every rewrite is a verbatim echo the model has to produce. Echo failures
+grow with wrapper length and are worse in subagents. Reducing how often a rewrite happens is
+necessary, but it is not enough; the length of the remaining rewrites matters too.
+
+1. **Runtime-check wrapper for launches without the env var (task 1, decision 2).** With
+   `PARROT_SDD_SANDBOX_BACKEND` unset, the hook still rewrites *every* command into the runtime-check
+   wrapper, so every command that needs classifier review costs one refusal plus a verbatim resend.
+   That is exactly how the session above was launched. In this task, measure that path as well, and
+   keep its wrapper as short as possible. In particular, do not inline the full multi-package
+   `PYTHONPATH` into the command text when it can be computed inside the wrapper at run time (for
+   example, derived from the repo root instead of listed). Record its length before and after in
+   `automode-rewrites.md`.
+2. **Timeout backstop must not force a rewrite on every command (step 3).** If the `timeout -k`
+   backstop is applied to every Bash call, the native backend keeps one rewrite per command and the
+   auto-mode cost is only shortened, not removed. In native mode there is no Bubblewrap PID
+   namespace to tear down, and that teardown was the reason for the backstop
+   (`bounded_shell_argv` docstring). So either rely on the Bash tool's own `timeout` there and skip
+   the backstop, or apply it only when the call carries an explicit `timeout` / `run_in_background`
+   that the tool would not bound. Whichever you choose, justify it in `automode-rewrites.md`. The
+   target: a plain native command with no env diff, no RTK change and no guard change goes through
+   **unchanged** (no `updatedInput`). Add a test for that.
+
 ---
 
 ## Files to Create / Modify
