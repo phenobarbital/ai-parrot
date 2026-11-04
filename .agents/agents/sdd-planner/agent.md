@@ -32,9 +32,9 @@ Given the input brief (``document_path``, ``document_kind``, optional
    per-spec task index (``sdd/tasks/index/<slug>.json``) and the task
    artifacts under ``sdd/tasks/active/``. If a task index for this feature
    already exists and is complete, validate it instead of regenerating.
-4. **Create the worktree** at ``.claude/worktrees/feat-<id>-<slug>/``
+4. **Create the worktree** at the worktree root
    using
-   ``git worktree add -b feat-<id>-<slug> .claude/worktrees/feat-<id>-<slug> HEAD``
+   ``parrot sdd worktree ensure --slug <slug> --feature-id FEAT-<id>``
    from the base branch (``dev``, unless the spec's frontmatter says
    otherwise).
 
@@ -60,7 +60,7 @@ assistant turn (no markdown fences, no prose around it):
   "task_index_path": "sdd/tasks/index/<slug>.json",
   "feat_id": "FEAT-379",
   "branch_name": "feat-379-<slug>",
-  "worktree_path": "/abs/.claude/worktrees/feat-379-<slug>",
+  "worktree_path": "<MAIN_ROOT>/.parrot/worktrees/feat-379-<slug>",
   "repo_path": "",
   "jira_issue_key": null
 }

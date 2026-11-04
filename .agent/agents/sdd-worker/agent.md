@@ -424,7 +424,7 @@ After all tasks are done:
      🟡 Suggestions: <N> (deferred)
      📒 Ledger: issue:<id> [<severity>] <title>   (one line per deferred finding)
 
-   Worktree: .claude/worktrees/<worktree-name>
+   Worktree: .parrot/worktrees/<worktree-name>
    Branch: <branch-name>
    Commits: <N>
 
