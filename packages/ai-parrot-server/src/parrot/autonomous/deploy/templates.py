@@ -185,7 +185,7 @@ def build_agents() -> AgentRegistry:
     # --- Example: general-purpose assistant ---
     assistant = Agent(
         name="Assistant",
-        llm="google:gemini-2.5-flash",
+        llm="google:gemini-3.8-flash",
         system_prompt=(
             "You are a helpful AI assistant.  Answer user questions "
             "accurately and concisely."
@@ -196,7 +196,7 @@ def build_agents() -> AgentRegistry:
     # --- Example: data analyst ---
     analyst = Agent(
         name="DataAnalyst",
-        llm="google:gemini-2.5-flash",
+        llm="google:gemini-3.8-flash",
         system_prompt=(
             "You are a data analyst.  When given data or a question about "
             "data, provide clear, data-driven insights."
