@@ -47,8 +47,8 @@ pages. A newcomer landing on Pages meets 60+ nav entries."*
   tool, plus one additional).
 - G5: Unify the brand identity: consolidate logo/icon usage, add favicon,
   add social card for OG tags.
-- G6: Declare docs build dependencies in `requirements-docs.txt`.
-- G7: Update the CI workflow to remove the mkdocstrings install step.
+- G6: Verify the inherited post-M9 docs build dependencies without introducing dependency files.
+- G7: Verify the post-M9 CI build and landing overlay after the redesign.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -57,7 +57,7 @@ pages. A newcomer landing on Pages meets 60+ nav entries."*
 - No content duplication between Pages and Wiki — cross-link only (two-surface doctrine).
 - No wiki content authoring — FEAT-801 owns that.
 - No mkdocstrings removal from mkdocs.yml — M9 owns that decision, but this
-  spec prepares the nav structure for a world without it.
+  spec consumes the post-M9 configuration.
 
 ---
 
@@ -76,7 +76,7 @@ FEAT-803 operates on the existing two-tier deployment architecture:
 1. **Landing tier** — `landing/index.html` (standalone HTML with
    Inter/JetBrains Mono, Font Awesome, Prism) serves at the site root
    (`phenobarbital.github.io/ai-parrot/`).
-2. **Docs tier** — mkdocs (Material theme) serves at `/docs/`
+2. **Docs tier** — mkdocs (Material theme) serves at `/ai-parrot/docs/`
    (via `site_dir: site/docs`).
 3. **Overlay** — `.github/workflows/docs.yml` builds mkdocs, then runs
    `cp -R landing/. site/` to place the landing page at root.
@@ -102,7 +102,7 @@ phenobarbital.github.io/ai-parrot/
 └── /docs/              ← mkdocs build        (RESTRUCTURE — M3/M4/M5/M6)
     ├── index.md        ← concept hub         (M4)
     ├── getting-started ← surfaced in nav     (M3)
-    ├── chapters/       ← 7 concept overviews (M4, kept 1:1)
+    ├── chapters/       ← 7 concept overviews (M4, explicit wiki mappings)
     ├── tutorials/      ← NEW: 3–4 tutorials  (M6)
     ├── config.md       ← minimal config      (M5)
     ├── tools_quick.md  ← curated showcase    (M5)
@@ -115,8 +115,8 @@ phenobarbital.github.io/ai-parrot/
 | Existing Component | Integration Type | Notes |
 |---|---|---|
 | `landing/index.html` | replaces | Full redesign, preserving the overlay pattern |
-| `mkdocs.yml` | modifies | Nav collapse, theme refresh, custom_dir, plugin removal |
-| `.github/workflows/docs.yml` | modifies | Remove mkdocstrings step, add requirements-docs.txt |
+| `mkdocs.yml` | modifies | Nav collapse, theme refresh, custom_dir; plugin removal belongs to M9 |
+| `.github/workflows/docs.yml` | verifies | Preserve the post-M9 install/build/overlay pipeline |
 | `docs/chapters/*.md` | modifies | Rewrite 7 files as concept pages |
 | `docs/index.md` | modifies | Rewrite as concept hub |
 | GitHub Wiki | cross-links | Every chapter overview links to wiki; never duplicates |
@@ -140,10 +140,10 @@ N/A — content and design only.
 | M1: Landing Page Redesign | yes | HTML/CSS/JS; sections and visual design fixed by spec | — |
 | M2: Brand Identity | yes | Asset creation (favicon, social card); parrot icon as primary | — |
 | M3: MkDocs Theme & Nav | yes | 6-section nav structure fixed; Material custom_dir pattern | — |
-| M4: Content Hub & Chapters | yes | 7 concept overviews, 1:1 with wiki; hub layout fixed | — |
+| M4: Content Hub & Chapters | yes | 7 concept overviews; chapter-to-wiki mapping below; hub layout fixed | — |
 | M5: Page Improvements | yes | Minimal config block pattern; curated tool list | — |
 | M6: Beginner Tutorials | yes | 4 tutorials fixed (chatbot, agent, tool, deployment); pattern in spec | — |
-| M7: Build Pipeline | yes | requirements-docs.txt contents; workflow step removal | — |
+| M7: Build Verification | yes | Verify inherited post-M9 dependencies, strict build, and overlay | — |
 
 ### Module 1: Landing Page Redesign
 
@@ -152,7 +152,7 @@ N/A — content and design only.
   New hero with parrot branding, streamlined value proposition, provider showcase,
   installation snippet, links to docs and wiki, community links.
 - **Depends on**: M2 (uses the consolidated brand assets — favicon, logo)
-- **Files**: all CREATE (full rewrite of existing files)
+- **Files**: all MODIFY (full rewrite of existing files)
 
 **Design requirements**:
 - Keep Inter + JetBrains Mono fonts via Google Fonts CDN.
@@ -165,7 +165,8 @@ N/A — content and design only.
 - Responsive layout (mobile-first).
 - Dark/light theme support matching Material's `default`/`slate` schemes.
 - Sections: Hero → Why AI-Parrot (3–4 cards) → Quick Install → Providers table → Links (Docs, Wiki, GitHub, PyPI).
-- Clear CTA to `/docs/` and to the GitHub Wiki.
+- Clear CTA using `href="docs/"` (resolves to `/ai-parrot/docs/`) and to the GitHub Wiki.
+  Never use root-absolute `href="/docs/"`; validate links under the `/ai-parrot/` deployment prefix.
 - Footer with GitHub, Issues, Discussions, PyPI links.
 
 ### Module 2: Brand Identity Unification
@@ -190,7 +191,7 @@ N/A — content and design only.
 - **Path**: `mkdocs.yml`, `docs/overrides/`
 - **Responsibility**: Collapse the 14-section nav to ~6 sections for the
   post-migration inventory. Add Material theme customization via `custom_dir`.
-  Prepare for mkdocstrings removal (M9 — not executed by this feature).
+  Consume the configuration after M9 has removed mkdocstrings; do not repeat that removal.
 - **Depends on**: none
 - **Files**:
   - MODIFY: `mkdocs.yml` — rewrite `nav:` (lines 114–340), update `theme:` icon/logo,
@@ -218,10 +219,10 @@ nav:
       - Your First Chatbot: tutorials/first-chatbot.md
       - Your First Agent: tutorials/first-agent.md
       - Your First Tool: tutorials/first-tool.md
-        - Deployment: tutorials/deployment.md
+      - Deployment: tutorials/deployment.md
   - Guides:
       - CLI Agent Daemon: guides/cli-agent-daemon.md
-      # other surviving guides from M7 classification
+      # other surviving guides from FEAT-801 M7 classification
   - About:
       - Style Guide: STYLE_GUIDE.md
       - Branding: branding/
@@ -239,8 +240,8 @@ nav:
 - **Path**: `docs/index.md`, `docs/chapters/*.md`
 - **Responsibility**: Rewrite docs landing as a concept-oriented hub with
   chapter cards. Rewrite 7 chapter overviews as concept introductions
-  (what/why) with "deep dive in the Wiki →" CTAs. Keep 1:1 mapping with
-  wiki sections.
+  (what/why) with "deep dive in the Wiki →" CTAs. Preserve seven Pages chapters
+  and use the explicit one-to-many mapping below; the wiki has 21 sections.
 - **Depends on**: none
 - **Files**:
   - MODIFY: `docs/index.md` — full rewrite as concept hub
@@ -251,6 +252,24 @@ nav:
   - MODIFY: `docs/chapters/knowledge-graph.md`
   - MODIFY: `docs/chapters/tools-rag.md`
   - MODIFY: `docs/chapters/integrations.md`
+
+**Chapter → wiki section mapping** (section names from FEAT-801):
+
+| Pages chapter | Wiki sections for deep dives |
+|---|---|
+| Foundations | Architecture |
+| LLM Clients | Clients |
+| Bots & Agents | Bots & Agents; Flows; Skills |
+| Memory & Knowledge | Memory; Knowledge; Stores & Loaders |
+| Knowledge Graph | Knowledge; LLM Wiki |
+| Tools & RAG | Tools & Toolkits; Stores & Loaders |
+| Integrations | Integrations; MCP & A2A; Server & APIs |
+
+Select relevant published pages within these sections using `wiki/_index.yaml`
+and the released `techwiki-manifest.json`. Record the exact page/fragment targets
+in implementation evidence and verify each target exists. Section labels are not
+page slugs; do not synthesize URLs from them. This is a newcomer-oriented subset
+of the 21-section taxonomy, not a requirement to link every wiki section.
 
 **Chapter overview pattern** (each ~300–500 words):
 ```markdown
@@ -326,25 +345,26 @@ For API reference, class signatures, and implementation details, see the
 - Link to wiki section for deeper understanding
 ```
 
-### Module 7: Build Pipeline Update
+### Module 7: Post-M9 Build Verification
 
-- **Path**: `requirements-docs.txt`, `.github/workflows/docs.yml`
-- **Responsibility**: Declare docs build dependencies explicitly. Update the
-  CI workflow to use the requirements file and remove the mkdocstrings
-  editable install step (which M9 makes unnecessary).
-- **Depends on**: M3 (mkdocstrings removal from mkdocs.yml must happen first
-  or simultaneously — otherwise the build breaks without the editable install)
-- **Files**:
-  - CREATE: `requirements-docs.txt`
-  - MODIFY: `.github/workflows/docs.yml` — update install step, remove
-    editable `pip install -e` step
+- **Path**: `requirements-docs.txt`, `.github/workflows/docs.yml` (read-only inputs)
+- **Responsibility**: Verify the inherited pipeline after the content/theme changes.
+  M9 already removes mkdocstrings from the configuration and dependency file and
+  removes the workflow’s editable-install step. Do not repeat those edits.
+- **Depends on**: M1–M6 and the delivered FEAT-801 M9 follow-up.
+- **Files**: No product files to create or modify; record validation evidence in
+  `artifacts/logs/`. Refresh the baseline and anchors after M9 lands.
+- **Checks**: Run `mkdocs build --strict`, overlay `landing/.` onto `site/`, and
+  verify docs navigation and branding URLs under the `/ai-parrot/` project prefix.
+  Verify wiki destinations against the released bundle manifest.
 
-**requirements-docs.txt contents** (post-M9):
-```
-mkdocs-material>=9.5
-mkdocs-glightbox
-pymdown-extensions
-```
+The existing `requirements-docs.txt` is a legacy CI input owned by the prerequisite
+cut-over. This feature does not create, replace, or introduce dependencies through
+it; repository dependency changes use `uv` and `pyproject.toml`. Preserve the
+existing minimums (`mkdocs>=1.6.1`, `mkdocs-material>=9.8.0`,
+`pymdown-extensions>=11.0.2`, `mkdocs-glightbox>=0.5.2`) or stronger post-M9 minimums.
+If the inherited pipeline needs changes beyond this verification scope, resolve
+that contract explicitly before implementation rather than recreating the file.
 
 ---
 
@@ -358,8 +378,8 @@ N/A — no Python code to test.
 
 | Test | Description |
 |---|---|
-| `mkdocs build` | The site builds successfully after all changes |
-| Landing page renders | `landing/index.html` loads without 404s for CSS/JS/fonts |
+| `mkdocs build --strict` | The site builds successfully after all changes, with warnings treated as errors |
+| Landing page renders | After overlay, serve under `/ai-parrot/`; verify docs CTA, CSS/JS/fonts, favicon and social card resolve |
 | Cross-links valid | Wiki links in chapter overviews resolve to real wiki pages |
 
 ### Validation Contract
@@ -379,13 +399,15 @@ N/A
   *Resolved in proposal*: redesign from scratch, not iterate.
 - [ ] **AC2**: MkDocs nav has ≤6 top-level sections (down from 14).
 - [ ] **AC3**: All 7 chapter overview pages rewritten as concept introductions
-  with wiki cross-links. Kept 1:1 with wiki sections.
-  *Resolved in proposal*: keep 1:1, not consolidate.
+  with verified wiki cross-links using the M4 mapping.
+  Preserve the seven chapters; do not consolidate them or assume seven wiki sections.
 - [ ] **AC4**: 3–4 beginner tutorials exist under `docs/tutorials/`.
   *Resolved in proposal*: 3–4 tutorials in scope.
 - [ ] **AC5**: `favicon.ico` and `social-card.png` exist in `docs/branding/`.
-- [ ] **AC6**: `mkdocs build` succeeds with no errors.
-- [ ] **AC7**: `requirements-docs.txt` exists and the CI workflow uses it.
+- [ ] **AC6**: `mkdocs build --strict` succeeds with no errors or warnings.
+- [ ] **AC7**: The inherited post-M9 workflow builds with its existing dependency file,
+  contains no mkdocstrings editable-install step, and preserves the landing overlay.
+  No dependency file is created and no existing version minimum is lowered.
 - [ ] **AC8**: `docs/getting-started.md` appears in the mkdocs nav.
 - [ ] **AC9**: `docs/config.md` has a "Minimal Configuration" section at top.
 - [ ] **AC10**: `docs/tools_quick.md` showcases 3–4 tools with a link to the wiki
@@ -437,7 +459,7 @@ docs/
 
 mkdocs.yml              # 340 lines — verified: mkdocs.yml
 .github/workflows/docs.yml  # 61 lines — verified: .github/workflows/docs.yml
-requirements-docs.txt   # DOES NOT EXIST — will be created
+requirements-docs.txt   # EXISTS; inherited from M9, verification only
 ```
 
 ### Existing Configuration (mkdocs.yml)
@@ -467,22 +489,19 @@ nav:                                       # line 114 — FULL REWRITE by M3
   # ... 14 sections, 175+ entries
 ```
 
-### Existing Workflow (.github/workflows/docs.yml)
+### Workflow Contract After M9 (.github/workflows/docs.yml)
 
-```yaml
-# verified: .github/workflows/docs.yml:35-46
-- name: Install doc tooling               # line 35 — MODIFY: use requirements-docs.txt
-  run: pip install -r requirements-docs.txt
+The current workflow already installs its existing docs requirements file.
+M9 owns removal of the editable-install step and mkdocstrings dependency.
+FEAT-803 verifies this resulting state; these are not removal anchors:
 
-- name: Install ai-parrot (for mkdocstrings imports)  # line 38 — REMOVE after M9
-  run: pip install -e packages/ai-parrot || echo "..."
+- Existing doc-tooling installation remains operational.
+- `Build site` runs MkDocs successfully with the post-M9 configuration.
+- `Overlay static landing page at site root` preserves `cp -R landing/. site/`.
+- The upload artifact remains `site`, containing both tiers.
 
-- name: Build site                         # line 42 — KEEP
-  run: mkdocs build
-
-- name: Overlay static landing page at site root  # line 45 — KEEP (critical)
-  run: cp -R landing/. site/               # line 46
-```
+Refresh all historical line anchors against the delivered M9 baseline before
+implementation. The pre-M9 plugin excerpt above is context, not FEAT-803 scope.
 
 ### Landing Page External Dependencies
 
@@ -494,11 +513,11 @@ nav:                                       # line 114 — FULL REWRITE by M3
 <!-- Diagrams: Mermaid 10.9.0 via cdnjs -->
 ```
 
-### Does NOT Exist (Anti-Hallucination)
+### File Existence Checks (Anti-Hallucination)
 
 - ~~`docs/overrides/`~~ — directory does not exist; must be created by M3
 - ~~`docs/tutorials/`~~ — directory does not exist; must be created by M6
-- ~~`requirements-docs.txt`~~ — file does not exist; must be created by M7
+- `requirements-docs.txt` already exists; M9 updates it before this feature. M7 only verifies it.
 - ~~`docs/branding/favicon.ico`~~ — does not exist; must be created by M2
 - ~~`docs/branding/social-card.png`~~ — does not exist; must be created by M2
 - ~~`mkdocs.yml` `custom_dir`~~ — not configured; must be added by M3
@@ -514,7 +533,7 @@ Verified against: `285e7605df`
 | `landing/css/style.css` | REWRITE | — (full file rewrite) | — | — |
 | `landing/js/main.js` | REWRITE | — (full file rewrite) | — | — |
 | `mkdocs.yml` | MODIFY | `nav:` | `mkdocs.yml:114` | 1 |
-| `mkdocs.yml` | MODIFY | `  - mkdocstrings:` | `mkdocs.yml:54` | 1 |
+| `mkdocs.yml` | VERIFY | No mkdocstrings plugin after M9 | post-M9 baseline | 0 |
 | `mkdocs.yml` | MODIFY | `    logo: material/robot-happy-outline` | `mkdocs.yml:48` | 1 |
 | `docs/index.md` | REWRITE | — (full file rewrite) | — | — |
 | `docs/chapters/foundations.md` | REWRITE | — (full file rewrite) | — | — |
@@ -526,13 +545,13 @@ Verified against: `285e7605df`
 | `docs/chapters/integrations.md` | REWRITE | — (full file rewrite) | — | — |
 | `docs/config.md` | MODIFY | `# AI-Parrot Configuration Guide` | `config.md:1` | 1 |
 | `docs/tools_quick.md` | MODIFY | `# AI-Parrot Tools Quick Reference Guide` | `tools_quick.md:1` | 1 |
-| `.github/workflows/docs.yml` | MODIFY | `- name: Install ai-parrot (for mkdocstrings imports)` | `docs.yml:38` | 1 |
+| `.github/workflows/docs.yml` | VERIFY | `- name: Build site` | refresh after M9 | 1 |
 | `docs/overrides/main.css` | CREATE | — | — | — |
 | `docs/tutorials/first-chatbot.md` | CREATE | — | — | — |
 | `docs/tutorials/first-agent.md` | CREATE | — | — | — |
 | `docs/tutorials/first-tool.md` | CREATE | — | — | — |
 | `docs/tutorials/deployment.md` | CREATE | — | — | — |
-| `requirements-docs.txt` | CREATE | — | — | — |
+| `requirements-docs.txt` | VERIFY | Existing post-M9 dependency minimums preserved | refresh after M9 | — |
 | `docs/branding/favicon.ico` | CREATE | — | — | — |
 | `docs/branding/social-card.png` | CREATE | — | — | — |
 
@@ -551,9 +570,9 @@ Verified against: `285e7605df`
 - **Material custom_dir**: use `docs/overrides/` with the `custom_dir`
   config key for CSS and partial overrides. Do not modify Material's
   installed files.
-- **Chapter 1:1 mapping**: each `docs/chapters/<name>.md` maps to one
-  wiki section. The overview is a concept introduction; the wiki holds the
-  technical reference. [F004]
+- **Chapter mapping**: retain seven concept introductions and use M4’s explicit
+  mapping to the wiki taxonomy. Verify destination pages against the release bundle
+  manifest; do not invent section URLs. The wiki holds technical reference. [F004]
 
 ### Known Risks / Gotchas
 
@@ -565,10 +584,8 @@ Verified against: `285e7605df`
   Cross-links in chapter overviews should use a consistent URL pattern
   (`https://github.com/phenobarbital/ai-parrot/wiki/<Page-Name>`) but the
   exact page names won't be final until FEAT-801 completes.
-- **mkdocstrings removal timing**: M3 prepares the nav for a world without
-  mkdocstrings, but does NOT remove the plugin from `mkdocs.yml` — that's
-  M9's job. The CI workflow's editable install step should only be removed
-  AFTER M9 has removed the plugin from mkdocs.yml.
+- **Post-M9 baseline**: M9 must have removed the plugin, dependency, and editable
+  install before M7 validates the final site. M3 and M7 do not own these removals.
 - **Favicon generation**: generating `.ico` from SVG requires an external
   tool (ImageMagick, realfavicongenerator.net, or manual export). The
   tutorial author must document which tool was used.
@@ -579,16 +596,16 @@ Verified against: `285e7605df`
 
 | Package | Version | Reason |
 |---|---|---|
-| `mkdocs-material` | `>=9.5` | Material theme for mkdocs |
-| `mkdocs-glightbox` | `latest` | Image lightbox plugin |
-| `pymdown-extensions` | `latest` | Markdown extensions (tabs, details, emoji) |
+| `mkdocs-material` | `>=9.8.0` | Material theme for mkdocs |
+| `mkdocs-glightbox` | `>=0.5.2` | Image lightbox plugin |
+| `pymdown-extensions` | `>=11.0.2` | Markdown extensions (tabs, details, emoji) |
 
 No new Python dependencies. No new npm packages.
 
 ### Worktree Strategy
 
 - **Isolation**: one feature worktree `feat-FEAT-803-github-pages-informative-site`.
-- **Module dependency graph**: M2→M1 (landing uses brand assets), M3→M6 (tutorials need nav), M3→M7 (workflow needs mkdocs.yml changes). All other modules are independent.
+- **Module dependency graph**: M2→M1 (landing uses brand assets), M3→M6 (tutorials need nav), M1/M2/M3/M4/M5/M6→M7 (final build and overlay verification).
 - **Shared files**: `mkdocs.yml` is modified by M3 and referenced by M6 — serialize M6 after M3.
 - **Exclusive resources**: none — all changes are documentation files.
 - **Cross-feature dependencies**: FEAT-801 (all 8 tasks) + M9 must merge first. This feature's branch can be developed in parallel but must not merge until that gate is clear.
@@ -663,7 +680,7 @@ Coverage:
 
 - [x] **Should the landing page be redesigned from scratch or iterated?** — *Resolved in proposal*: Redesign from scratch. New layout, new sections, new copy.
 - [x] **How many beginner tutorials in scope?** — *Resolved in proposal*: 3–4 tutorials (first chatbot, first agent, first tool, plus one additional).
-- [x] **Consolidate chapter overviews 7→5 or keep 1:1?** — *Resolved in proposal*: Keep 1:1 with wiki sections.
+- [x] **Consolidate chapter overviews 7→5?** — Preserve seven chapters. Review correction: FEAT-801 defines 21 wiki sections, so use M4’s explicit mapping instead of the proposal’s 1:1 assumption.
 - [x] **Q1: Which 4th tutorial?** — *Resolved in spec*: Deployment guide — deploy an AI-Parrot agent as a service (server setup, aiohttp handler, production config).
 - [x] **Q2: Landing page design system?** — *Resolved in spec*: Material-adjacent tokens — keep Inter + JetBrains Mono + Font Awesome but adopt Material Design color tokens and spacing scale for visual consistency with the mkdocs Material theme.
 
@@ -691,3 +708,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-11-04 | Jesus Lara | Initial draft from FEAT-803 proposal |
 | 0.2 | 2026-11-05 | Jesus Lara | Resolve Q1 (4th tutorial → deployment) and Q2 (design system → Material-adjacent tokens); all modules now delegation-eligible |
+| 0.3 | 2026-11-05 | Codex | Review fixes: valid tutorial nav, project-relative docs CTA, explicit chapter/wiki mappings, and post-M9 verification-only build scope |
