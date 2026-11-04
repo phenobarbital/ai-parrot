@@ -521,7 +521,12 @@ def validate_native_write_path(cwd: Path, path: Path) -> None:
 
 
 def native_task_cwd(session_cwd: Path, command: str) -> Path:
-    """Resolve an exact leading task-worktree ``cd`` prefix.
+    """Resolve an exact leading ``cd`` prefix to the task worktree it selects.
+
+    An absolute target selects a sibling linked worktree (a pool sub-worktree). A relative target
+    (``cd packages && …``) is resolved against ``session_cwd`` and must stay inside the session worktree
+    or one of its permitted sibling worktrees — so the ordinary ``cd <subdir> && <command>`` idiom keeps
+    working under the native backend instead of being denied (issue:2860a2723bad).
 
     Args:
         session_cwd: The session's linked-worktree directory.
@@ -536,19 +541,22 @@ def native_task_cwd(session_cwd: Path, command: str) -> Path:
     match = _CD_PREFIX.match(command)
     if match is None:
         if command.lstrip().startswith("cd "):
-            raise ValueError("A leading cd must have the exact form 'cd <absolute path> && <command>'")
+            raise ValueError("A leading cd must have the exact form 'cd <path> && <command>'")
         return session_cwd
     target_text = match.group("target")
     if any(character in target_text for character in ("'", '"', "$", "`", "~", "*")):
-        raise ValueError("Native task cwd must be an unquoted, literal absolute path")
+        raise ValueError("Native task cwd must be an unquoted, literal path")
     try:
         tokens = shlex.split(target_text)
     except ValueError as exc:
         raise ValueError("Invalid native task cwd prefix") from exc
-    if len(tokens) != 1 or not Path(tokens[0]).is_absolute():
-        raise ValueError("Native task cwd must be an absolute path")
+    if len(tokens) != 1:
+        raise ValueError("Native task cwd must be a single literal path")
+    target = Path(tokens[0])
+    if not target.is_absolute():
+        target = session_cwd / target
     session_root, _session_git, session_primary = _native_roots(session_cwd)
-    target_root, target_git, target_primary = _native_roots(Path(tokens[0]))
+    target_root, target_git, target_primary = _native_roots(target)
     if target_primary != session_primary:
         raise ValueError("Native task cwd must belong to the session primary checkout")
     permitted_roots = (session_root, *_we.worktree_admin_dirs(session_root, target_git))

@@ -693,16 +693,23 @@ def test_write_matrix_positive_and_negative(linked: tuple[Path, Path], monkeypat
 
 
 def test_task_cwd_prefix_rules(linked: tuple[Path, Path]) -> None:
-    """Only a literal absolute prefix selects a sibling linked worktree."""
+    """A literal absolute prefix selects a sibling linked worktree; a relative one resolves against the session."""
     feature, main = linked
     pool = main / ".claude" / "worktrees" / "pool"
     assert native.native_task_cwd(feature, f"cd {pool} && pytest -q") == pool.resolve()
     assert native.native_task_cwd(feature, "pytest -q") == feature
+    # issue:2860a2723bad — `cd packages && …` stays inside the session worktree, so the hook roots there
+    # instead of denying the command with "Native task cwd must be an absolute path".
+    assert native.native_task_cwd(feature, "cd packages && python3 - <<'PY'\nimport re\nPY") == feature.resolve()
+    assert native.native_task_cwd(feature, "cd ./packages/x/src && pytest -q") == feature.resolve()
+    assert native.native_task_cwd(feature, "cd ../pool && pytest -q") == pool.resolve()
     for command in (
-        "cd relative && pytest -q",
         f"cd '{pool}' && pytest -q",
+        "cd $HOME && pytest -q",
         "cd /tmp && pytest -q",
         "cd /tmp",
+        "cd .. && pytest -q",  # the primary checkout's worktree directory
+        "cd ../../.. && pytest -q",  # the primary checkout itself
     ):
         with pytest.raises(ValueError):
             native.native_task_cwd(feature, command)
