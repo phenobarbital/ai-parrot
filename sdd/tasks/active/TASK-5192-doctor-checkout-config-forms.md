@@ -251,3 +251,7 @@ worktree refusal must prove no unintended write; avoid network services and real
 ## Completion Note
 
 Pending. The finalizer records verified implementation evidence when this task is complete.
+
+## Orchestrator Note (FEAT-804, post TASK-5186..5188 merge)
+
+Transitional red to FIX in this task: `tests/self_/test_doctor_sdd.py::ready_repo` monkeypatches `shutil.which` with a lambda that does not accept `path=`; `parrot.launcher.managed_launcher_on_path` now calls `shutil.which("parrot", path=...)`, so `test_sdd_tool_checks_follow_the_installed_assets[*]` fail with TypeError. Make the fixture lambda accept `path=None` (and honour it). Do not weaken the production call.

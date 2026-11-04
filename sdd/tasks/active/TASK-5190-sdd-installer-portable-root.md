@@ -345,3 +345,7 @@ worktree refusal must prove no unintended write; avoid network services and real
 ## Completion Note
 
 Pending. The finalizer records verified implementation evidence when this task is complete.
+
+## Orchestrator Note (FEAT-804, post TASK-5186..5188 merge)
+
+Transitional red to FIX in this task: `tests/sdd/test_installer.py::test_guard_hook_portable_flag_forces_bare` now fails because the install path resolves the portable mode through `resolve_portable_mode` (launcher on PATH => portable). Update the test to pin `portability.managed_launcher_on_path` and separate explicit False from the automatic case, as this task already requires.

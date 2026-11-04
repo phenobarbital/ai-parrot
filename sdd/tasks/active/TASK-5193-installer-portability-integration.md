@@ -229,3 +229,7 @@ worktree refusal must prove no unintended write; avoid network services and real
 ## Completion Note
 
 Pending. The finalizer records verified implementation evidence when this task is complete.
+
+## Orchestrator Note (FEAT-804, post TASK-5186..5188 merge)
+
+Transitional red to FIX in this task: `test_portable_mode_parity.py::test_no_config_is_baked` asserts `_current_portable_mode(root) is False`; since TASK-5186/5187/5188 the function is tri-state and returns `None` when no managed entry exists. Update the assertion to `is None` for claude and codex (and add the google equivalent if absent).
