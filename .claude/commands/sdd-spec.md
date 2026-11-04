@@ -681,8 +681,7 @@ If the pull or the push fails, do not force anything. Stop and print:
    (intake mode only; after the output, run `/sdd-tojira` when Jira = create)
 
    To create a worktree for this feature after task decomposition:
-     git worktree add -b feat-<FEAT-ID>-<feature-name> \
-       .claude/worktrees/feat-<FEAT-ID>-<feature-name> HEAD
+     parrot sdd worktree ensure --slug <feature-name> --feature-id FEAT-<FEAT-ID>
 
 Next:
   1. Review the spec — check Acceptance Criteria and Architectural Design.
