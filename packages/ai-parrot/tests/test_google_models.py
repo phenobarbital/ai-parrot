@@ -59,6 +59,14 @@ def test_google_model_enum_has_gemini_4_argon():
     assert GoogleModel("gemini-4-argon") is GoogleModel.GEMINI_4_ARGON
 
 
+def test_google_model_enum_has_3_8_tts_and_live():
+    """FEAT-798: the 3.8 TTS and Live successors are reachable by name and by value."""
+    assert GoogleModel.GEMINI_3_8_FLASH_TTS.value == "gemini-3.8-flash-tts"
+    assert GoogleModel.GEMINI_3_8_LIVE.value == "gemini-3.8-live"
+    assert GoogleModel("gemini-3.8-flash-tts") is GoogleModel.GEMINI_3_8_FLASH_TTS
+    assert GoogleModel("gemini-3.8-live") is GoogleModel.GEMINI_3_8_LIVE
+
+
 @pytest.mark.parametrize("value", RETIRED_VALUES)
 def test_google_model_retired_values_raise(value):
     """Ids no longer served by the Gemini API are deleted outright (FEAT-688 U2)."""
@@ -73,5 +81,5 @@ def test_google_model_retired_names_absent():
 
 def test_google_model_alias_count():
     """Guards against a new member silently collapsing onto an existing value."""
-    assert len(GoogleModel.__members__) == 49
-    assert len({model.value for model in GoogleModel}) == 31
+    assert len(GoogleModel.__members__) == 51
+    assert len({model.value for model in GoogleModel}) == 33

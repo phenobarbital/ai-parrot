@@ -36,7 +36,9 @@ class GoogleModel(Enum):
     GEMINI_3_FLASH_LITE_PREVIEW = "gemini-3.1-flash-lite"
     GEMINI_3_1_FLASH_TTS_PREVIEW = "gemini-3.1-flash-tts-preview"
     GEMINI_3_FLASH_TTS = "gemini-3.1-flash-tts-preview"
+    GEMINI_3_8_FLASH_TTS = "gemini-3.8-flash-tts"
     GEMINI_3_1_FLASH_LIVE_PREVIEW = "gemini-3.1-flash-live-preview"
+    GEMINI_3_8_LIVE = "gemini-3.8-live"
     # Gemini 2.5 series
     GEMINI_2_5_FLASH = "gemini-2.5-flash"
     GEMINI_2_5_FLASH_PREVIEW = "gemini-2.5-flash"
