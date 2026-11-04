@@ -1,4 +1,5 @@
 """AgentHandler per-component LLM defaults (FEAT-796, TASK-5142)."""
+
 from types import SimpleNamespace
 from typing import Any
 

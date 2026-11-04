@@ -525,7 +525,7 @@ class AgentHandler(BaseView):
 
     def _create_actors(self, recipients: Union[List[dict], dict] = None) -> List:
         if isinstance(recipients, dict):
-                recipients = [recipients]
+            recipients = [recipients]
         if not recipients:
             return self.error(
                 {'message': 'Recipients are required'},
@@ -804,13 +804,7 @@ class AgentHandler(BaseView):
             if api_key:
                 # AbstractBot ignores a bare ``api_key`` kwarg; llm_kwargs reach the client.
                 extra["llm_kwargs"] = {"api_key": api_key}
-            agent = self._agent_class(
-                name=self.agent_name,
-                tools=self._tools,
-                llm=llm,
-                model=model,
-                **extra
-            )
+            agent = self._agent_class(name=self.agent_name, tools=self._tools, llm=llm, model=model, **extra)
             agent.set_response(self._agent_response)
             await agent.configure()
             # define the main agent:
