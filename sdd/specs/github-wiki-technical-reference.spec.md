@@ -10,7 +10,7 @@ tags: [docs, github-wiki, api-reference, sdd-flow, mkdocs, griffe]
 **Feature ID**: FEAT-801
 **Date**: 2026-11-04
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 2.1.0
 **Exploration**: `sdd/proposals/github-wiki-technical-reference.brainstorm.md` (accepted, Option B)
 
@@ -73,7 +73,7 @@ before `mkdocstrings` leaves the Pages site; the Pages redesign itself is a sepa
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:e298362cba74b8b5f3f1fc93c6c3162940e1cb814d71cbc3af5d89e532b142eb evaluation_digest=sha256:45a9135245f5a89fc1774169e79f3158f5b64674b3a693ad9f7647602815ee16 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:59e7392d7df007b4fcf0149f75d1c53825285078242cfc75e6378e828f65b7c9 evaluation_digest=sha256:3a3cc0706d7e32694caf63c79723414dd5a1b7b1c28fa39ff9014033d043e864 rules_version=1 status=pass -->
 
 No eligible decisions govern subsystems: bots, clients, config, flows, knowledge-graphindex, knowledge-wiki, memory, sdd-tooling, skills, tools
 
@@ -530,9 +530,9 @@ API" button → wiki URL; Contributing paragraph), the six chapter pages that li
 `.github/workflows/docs.yml` (`paths:` loses `packages/ai-parrot/src/parrot/**` and the
 editable-install step); DELETE `docs/api-reference/`. `mkdocs build --strict` turns
 `validation: warn` into errors, so a missed inbound link fails the task. Old Pages URLs under
-`api-reference/` break; this is accepted as a versioned change unless §8 Q-redirects decides
-otherwise. The task's Completion Note must cite the green `techwiki` **release** run URL before it
-is closed.
+`api-reference/` and of the moved pages break; this is accepted as a versioned change (§8, no
+redirect stubs) and called out in the release notes of the cut-over release. The task's
+Completion Note must cite the green `techwiki` **release** run URL before it is closed.
 
 ### Delegation-eligible modules
 
@@ -863,7 +863,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:e298362cba74b8b5f3f1fc93c6c3162940e1cb814d71cbc3af5d89e532b142eb evaluation_digest=sha256:45a9135245f5a89fc1774169e79f3158f5b64674b3a693ad9f7647602815ee16 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:59e7392d7df007b4fcf0149f75d1c53825285078242cfc75e6378e828f65b7c9 evaluation_digest=sha256:3a3cc0706d7e32694caf63c79723414dd5a1b7b1c28fa39ff9014033d043e864 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -911,10 +911,10 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:45a9135245f5a89fc1774169e79f3158f5b64674b3a693ad9f7647602815ee16",
+  "evaluation_digest": "sha256:3a3cc0706d7e32694caf63c79723414dd5a1b7b1c28fa39ff9014033d043e864",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:e298362cba74b8b5f3f1fc93c6c3162940e1cb814d71cbc3af5d89e532b142eb",
+  "input_digest": "sha256:59e7392d7df007b4fcf0149f75d1c53825285078242cfc75e6378e828f65b7c9",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -939,15 +939,12 @@ Coverage:
 - [x] Language — *Resolved in brainstorm*: English.
 - [x] Backfill — *Resolved in brainstorm*: main subsystems (M8 list).
 - [x] Gate strictness — *Resolved in brainstorm*: warning only; hotfix/brief exempt.
-- [ ] Chapter numbering: `## 10. Documentation` appended after §9 (my call) to avoid renumbering §8/§9 cited by number in commands and tests. Accept or renumber in a follow-up? — *Owner: Jesus*
-- [ ] Release label on `Home.md`: `git describe --tags --always` plus the `ai-parrot` version from `pyproject.toml` (proposed: both). — *Owner: Claude (M3)*
-- [ ] Preview from `dev`: artifact-only on `workflow_dispatch` (proposed). — *Owner: Jesus*
-- [ ] Q-redirects (S10, escalated): old Pages URLs under `docs/api-reference/` and the moved
-  technical pages break at cut-over. Accept as a versioned change (proposed, no redirect stubs) or
-  generate `meta refresh` stubs for the ten `api-reference/*.md` URLs? — *Owner: Jesus*
-- [ ] Trigger changed from "push to main" (brainstorm) to "release published" after design research
-  S3 (a hotfix merge ahead of its tag would otherwise publish unreleased code). Confirm. — *Owner: Jesus*
-- [ ] Follow-up feature: multi-language reference (Svelte admin UI, TS client) via the wikitoolkit symbol plane. — *Owner: Jesus*
+- [x] Chapter numbering — *Resolved (2026-11-04)*: `## 10. Documentation` stays appended after §9; §8/§9 keep their numbers.
+- [x] Release label on `Home.md` — *Resolved (Claude, M3)*: both the release tag (`github.event.release.tag_name`, else `git describe --tags --always`) and the `ai-parrot` version read from `packages/ai-parrot/pyproject.toml`, plus the short commit SHA.
+- [x] Preview from `dev` — *Resolved (2026-11-04)*: artifact only. `workflow_dispatch` on any ref runs `bundle` and uploads `build/techwiki` as a run artifact; the `publish` job runs only for `release` events. No preview branch in the wiki repo.
+- [x] Q-redirects (S10) — *Resolved (2026-11-04)*: accept the URL breakage as a versioned change. No redirect stubs; `docs/index.md` carries the "Technical reference moved to the Wiki" notice and the release notes of the cut-over release mention it.
+- [x] Publication trigger — *Resolved (2026-11-04)*: `release: published`, replacing the brainstorm's "push to main". A hotfix merged to `main` is published on its release.
+- [x] Multi-language reference (Svelte admin UI, TS client) via the wikitoolkit symbol plane — *Resolved*: deferred to a follow-up feature; not part of FEAT-801.
 
 ---
 
@@ -970,11 +967,11 @@ Coverage:
 | S7 | Make the techwiki extra self-contained (risk) | CONFIRM | `requires-python` is `>=3.11,<3.14`, the 3.10 claim was stale; jinja2 lives only in the `agents` extra | §2 interfaces, §3 M1, §7, AC-3b |
 | S8 | Freeze the generated API surface with golden fixtures (testing) | CONFIRM | rendering rules fixed; golden test; `--strict` exit 4 on skipped modules | §3 M2, §4, AC-7b |
 | S9 | Stable page identifiers instead of title-derived links (architecture) | CONFIRM (partial) | links already resolve by source path / `ref:` module id; a manifest makes that explicit. REJECT a separate ID layer: GitHub needs the title-derived file name anyway, and the U+2010 rule is enforced, not assumed | §2 Data Models, §3 M3, §4 |
-| S10 | Plan migration compatibility and link verification (risk) | CONFIRM + ESCALATE | 11 inbound `api-reference/` links verified by grep (index + 6 chapters) → rewritten in M9 under `mkdocs build --strict`; redirect stubs vs accepted breakage escalated | §3 M9, AC-13, §8 Q-redirects |
+| S10 | Plan migration compatibility and link verification (risk) | CONFIRM + ESCALATE (resolved: accept breakage) | 11 inbound `api-reference/` links verified by grep (index + 6 chapters) → rewritten in M9 under `mkdocs build --strict`; redirect stubs rejected by the user on 2026-11-04 | §3 M9, AC-13, §8 Q-redirects |
 | S11 | Run bundle validation before merge (testing) | CONFIRM | `pull_request` dry-run job + optional advisory `pre_pr` hook; SDD presence check stays warning-only | §2 Overview, §3 M6, AC-12 |
 | S12 | Foreign-repository and asset-sync coverage (testing) | CONFIRM | `check` must run without griffe and only on repo-relative paths; asset sync already gated | AC-3, AC-8, §4 `test_check_repo_relative_only` |
 
-Summary: **12** confirmed (2 partial) · **0** rejected outright · **1** escalated (S10 redirects).
+Summary: **12** confirmed (2 partial) · **0** rejected outright · **1** escalated (S10 redirects, resolved in §8 on 2026-11-04).
 
 ---
 
@@ -1020,3 +1017,4 @@ Summary: **12** confirmed (2 partial) · **0** rejected outright · **1** escala
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-04 | Jesus Lara / Claude | Initial draft from the accepted brainstorm (Option B) and the clarification round |
+| 0.2 | 2026-11-04 | Jesus Lara / Claude | Design research (12 suggestions) folded in; all §8 questions resolved: release-published trigger, no redirects, `## 10.` numbering, artifact-only preview |
