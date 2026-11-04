@@ -5,8 +5,8 @@
 | Variable | Component | Builtin default |
 |---|---|---|
 | `DEFAULT_LLM` | Global fallback | `None` (falls back to builtin) |
-| `AGENT_LLM` | Agent | Builtin agent default |
-| `CREW_LLM` | Crew | Builtin crew default |
+| `AGENT_LLM` | Agent | `google:gemini-2.5-pro` |
+| `CREW_LLM` | Crew | `google:gemini-2.5-pro` |
 | `EXPERT_JUDGMENT_LLM` | Expert (Judgment tier) | `google:gemini-2.5-pro` |
 | `EXPERT_BALANCED_LLM` | Expert (Balanced tier) | `google:gemini-2.5-flash` |
 | `EXPERT_TEMPLATED_LLM` | Expert (Templated tier) | `google:gemini-2.5-flash` |
@@ -24,11 +24,11 @@ The API keys follow the pattern `<COMPONENT>_<PROVIDER>_API_KEY`. For Google pro
 
 ## Usage attribution
 
-The `UsageRecord.component` field captures the component tag for LLM calls. This field is used for attribution and is never used as a metric label. The possible values include:
+The `UsageRecord.component` field captures the component tag for LLM calls. It is durable store/span data for attribution and is never used as a metric label. The tag values are:
 
-- `agent`
-- `crew`
-- `expert_judgment`
-- `expert_balanced`
-- `expert_templated`
-- `global` (for `DEFAULT_LLM`)
+- `AGENT` (Agent HTTP handler)
+- `CREW` (AgentCrew entry points)
+- `EXPERT_JUDGMENT`, `EXPERT_BALANCED`, `EXPERT_TEMPLATED` (ExpertAgent tiers)
+- `None` when the call is not attributed to a component
+
+`DEFAULT_LLM` only changes which provider/model is selected; it does not add a tag value.
