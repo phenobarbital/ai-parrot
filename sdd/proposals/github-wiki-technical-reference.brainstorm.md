@@ -16,7 +16,7 @@ tags: [docs, github-wiki, api-reference, sdd-flow, mkdocs, griffe]
 
 **Date**: 2026-11-04
 **Author**: Jesus Lara (with Claude)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: B
 
 ---
