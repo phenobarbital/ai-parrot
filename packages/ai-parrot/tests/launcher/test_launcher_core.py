@@ -6,33 +6,12 @@ from pathlib import Path
 import pytest
 
 from parrot import launcher  # created by this task
-
-
-def make_venv(path: Path, *scripts: str) -> Path:
-    """Fake venv: pyvenv.cfg + empty POSIX script stubs."""
-    (path / "bin").mkdir(parents=True)
-    (path / "pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
-    for name in scripts:
-        (path / "bin" / name).write_text("#!/bin/sh\n", encoding="utf-8")
-    return path
+from .conftest import make_venv
 
 
 @pytest.fixture(autouse=True)
 def _reset_warnings(monkeypatch):
     monkeypatch.setattr(launcher, "_WARNED", set())
-
-
-@pytest.fixture
-def linked_worktree_repo(tmp_path: Path) -> tuple[Path, Path]:
-    """main checkout (real .git dir) + linked worktree (.git FILE with gitdir:, admin dir with commondir)."""
-    main = tmp_path / "main"
-    admin = main / ".git" / "worktrees" / "wt"
-    admin.mkdir(parents=True)
-    (admin / "commondir").write_text("../..\n", encoding="utf-8")
-    wt = tmp_path / "wt"
-    wt.mkdir()
-    (wt / ".git").write_text(f"gitdir: {admin}\n", encoding="utf-8")
-    return main, wt
 
 
 def test_parrot_home_env_default_and_tilde(tmp_path, monkeypatch):
@@ -117,6 +96,81 @@ def test_find_project_root_precedence(tmp_path):
     assert launcher.find_project_root(["build", "--project", str(a)], {}, d) == d
     # a pinned root that does not exist falls through
     assert launcher.find_project_root([], {"PARROT_PROJECT": str(tmp_path / "nope")}, d) == d
+
+
+def test_install_root_classifies_checkout_metadata(linked_worktree_repo: tuple[Path, Path], tmp_path: Path) -> None:
+    """Only valid commondir metadata makes a checkout a linked worktree."""
+    main, worktree = linked_worktree_repo
+    nested = worktree / "nested"
+    nested.mkdir()
+    linked = launcher.install_root(nested)
+    assert linked == launcher.InstallRoot(worktree.resolve(), main.resolve(), True, False)
+    with pytest.raises(launcher.LinkedWorktreeError, match="--path"):
+        launcher.require_primary_checkout(linked)
+
+    external = tmp_path / "external-gitdir"
+    external.mkdir()
+    separate = tmp_path / "separate"
+    separate.mkdir()
+    (separate / ".git").write_text(f"gitdir: {external}\n", encoding="utf-8")
+    assert launcher.install_root(separate) == launcher.InstallRoot(separate.resolve(), separate.resolve(), False, False)
+
+    explicit_subdir = nested / "chosen"
+    explicit_subdir.mkdir()
+    assert launcher.install_root(worktree, explicit=explicit_subdir) == launcher.InstallRoot(
+        explicit_subdir.resolve(), main.resolve(), True, True
+    )
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    assert launcher.install_root(worktree, explicit=outside) == launcher.InstallRoot(
+        outside.resolve(), outside.resolve(), False, True
+    )
+
+
+def test_install_root_malformed_metadata_never_raises(tmp_path: Path) -> None:
+    """Unreadable or malformed worktree metadata remains an ordinary checkout."""
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / ".git").write_text("gitdir: missing\n", encoding="utf-8")
+    assert launcher.install_root(checkout) == launcher.InstallRoot(checkout.resolve(), checkout.resolve(), False, False)
+
+
+def test_explicit_project_pin_provenance(tmp_path: Path) -> None:
+    """Automatic discovery never becomes an explicit pin."""
+    cli, project, claude, repository = (tmp_path / name for name in ("cli", "project", "claude", "repository"))
+    for path in (cli, project, claude, repository):
+        path.mkdir()
+    (repository / ".git").mkdir()
+    env = {"PARROT_PROJECT": str(project), "CLAUDE_PROJECT_DIR": str(claude)}
+    assert launcher.explicit_project_pin(["--project", str(cli)], env, repository) == cli.resolve()
+    assert launcher.explicit_project_pin([f"--project={cli}"], env, repository) == cli.resolve()
+    assert launcher.explicit_project_pin([], env, repository) == project.resolve()
+    assert launcher.explicit_project_pin([], {"CLAUDE_PROJECT_DIR": str(claude)}, repository) == claude.resolve()
+    assert launcher.explicit_project_pin([], {}, repository) is None
+    assert launcher.explicit_project_pin(["build", "--project", str(cli)], {}, repository) is None
+    assert launcher.install_root(repository).explicit is False
+
+
+def test_managed_launcher_on_path_accepts_direct_and_symlink(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Managed launcher detection handles absent, direct, foreign, and symlink executables."""
+    home = tmp_path / "home"
+    launcher_path = home / "venv" / "bin" / "parrot"
+    launcher_path.parent.mkdir(parents=True)
+    launcher_path.write_text("", encoding="utf-8")
+    launcher_path.chmod(0o755)
+    env = {"PARROT_HOME": str(home), "PATH": str(launcher_path.parent)}
+    assert launcher.managed_launcher_on_path(env) is True
+    foreign = tmp_path / "foreign" / "parrot"
+    foreign.parent.mkdir()
+    foreign.write_text("", encoding="utf-8")
+    foreign.chmod(0o755)
+    assert launcher.managed_launcher_on_path({"PARROT_HOME": str(home), "PATH": str(foreign.parent)}) is False
+    link_dir = tmp_path / "links"
+    link_dir.mkdir()
+    (link_dir / "parrot").symlink_to(launcher_path)
+    assert launcher.managed_launcher_on_path({"PARROT_HOME": str(home), "PATH": str(link_dir)}) is True
+    monkeypatch.setattr(launcher.shutil, "which", lambda *_args, **_kwargs: None)
+    assert launcher.managed_launcher_on_path(env) is False
 
 
 def test_malformed_git_file_does_not_crash(tmp_path):

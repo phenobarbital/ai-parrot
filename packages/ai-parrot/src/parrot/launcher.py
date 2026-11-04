@@ -6,6 +6,8 @@ HARD RULE: import nothing but the standard library here — this module fronts e
 from __future__ import annotations
 
 import os
+import dataclasses
+import shutil
 import sys
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
@@ -84,8 +86,37 @@ def repository_paths(cwd: Path) -> tuple[Path, Path | None]:
     return cwd, None
 
 
-def find_project_root(argv: Sequence[str], env: Mapping[str, str], cwd: Path) -> Path | None:
-    """Leading ``--project <p>``/``--project=<p>`` → PARROT_PROJECT → CLAUDE_PROJECT_DIR → walk-up to ``.git``."""
+@dataclasses.dataclass(frozen=True)
+class InstallRoot:
+    """Install target and shared wiki state location, with explicit-pin provenance."""
+
+    root: Path
+    shared_root: Path
+    linked: bool
+    explicit: bool
+
+
+class LinkedWorktreeError(RuntimeError):
+    """An implicit installation target is a linked worktree."""
+
+
+def managed_launcher_on_path(env: Mapping[str, str] | None = None) -> bool:
+    """Test found/resolved parrot paths against found/resolved parrot_home; never raise."""
+    source = os.environ if env is None else env
+    try:
+        found = shutil.which("parrot", path=source.get("PATH"))
+        if not found:
+            return False
+        home = parrot_home(source)
+        homes = (home, home.resolve())
+        candidates = (Path(found), Path(found).resolve())
+        return any(candidate == base or base in candidate.parents for candidate in candidates for base in homes)
+    except (OSError, RuntimeError):
+        return False
+
+
+def explicit_project_pin(argv: Sequence[str], env: Mapping[str, str], cwd: Path) -> Path | None:
+    """Return a valid CLI/environment pin, never the repository-discovery fallback."""
     pinned: list[str] = []
     if argv:
         first = argv[0]
@@ -93,7 +124,7 @@ def find_project_root(argv: Sequence[str], env: Mapping[str, str], cwd: Path) ->
             pinned.append(argv[1])
         elif first.startswith("--project="):
             pinned.append(first.split("=", 1)[1])
-    pinned.extend(v for v in (env.get(PARROT_PROJECT_ENV), env.get("CLAUDE_PROJECT_DIR")) if v)
+    pinned.extend(value for value in (env.get(PARROT_PROJECT_ENV), env.get("CLAUDE_PROJECT_DIR")) if value)
     for value in pinned:
         candidate = Path(value).expanduser()
         if not candidate.is_absolute():
@@ -103,6 +134,48 @@ def find_project_root(argv: Sequence[str], env: Mapping[str, str], cwd: Path) ->
                 return candidate.resolve()
         except OSError:
             continue
+    return None
+
+
+def install_root(cwd: Path, *, explicit: Path | None = None) -> InstallRoot:
+    """Resolve target and classify actual commondir metadata without changing wiki discovery."""
+    target = _existing_directory(explicit if explicit is not None else cwd)
+    checkout, _ = repository_paths(target)
+    root = target if explicit is not None else checkout
+    marker = checkout / ".git"
+    try:
+        if not marker.is_file():
+            return InstallRoot(root, root, False, explicit is not None)
+        content = marker.read_text(encoding="utf-8").strip()
+        if not content.startswith("gitdir: "):
+            return InstallRoot(root, root, False, explicit is not None)
+        git_dir = Path(os.path.abspath(checkout / content.removeprefix("gitdir: ")))
+        common = git_dir / "commondir"
+        if not common.is_file():
+            return InstallRoot(root, root, False, explicit is not None)
+        shared_git_dir = Path(os.path.abspath(git_dir / common.read_text(encoding="utf-8").strip()))
+        if not shared_git_dir.is_dir():
+            return InstallRoot(root, root, False, explicit is not None)
+        return InstallRoot(root, shared_git_dir.resolve().parent, True, explicit is not None)
+    except (OSError, RuntimeError, UnicodeDecodeError):
+        return InstallRoot(root, root, False, explicit is not None)
+
+
+def require_primary_checkout(resolved: InstallRoot) -> InstallRoot:
+    """Refuse implicit linked-worktree writes; retain deliberate explicit overrides."""
+    if resolved.linked and not resolved.explicit:
+        raise LinkedWorktreeError(
+            f"{resolved.root} is a linked worktree of {resolved.shared_root}; installers "
+            f"write to the checkout you run them in — run this from {resolved.shared_root}, "
+            f"or pass --path {resolved.root} to install into the worktree on purpose"
+        )
+    return resolved
+
+
+def find_project_root(argv: Sequence[str], env: Mapping[str, str], cwd: Path) -> Path | None:
+    """Leading ``--project <p>``/``--project=<p>`` → PARROT_PROJECT → CLAUDE_PROJECT_DIR → walk-up to ``.git``."""
+    if pinned := explicit_project_pin(argv, env, cwd):
+        return pinned
     try:
         current = _existing_directory(cwd)
         for candidate in (current, *current.parents):
