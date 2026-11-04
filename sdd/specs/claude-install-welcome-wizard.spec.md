@@ -266,13 +266,6 @@ All tests in `packages/ai-parrot/tests/knowledge/wiki/test_welcome.py` (new).
 | `test_install_cli_non_interactive_flag` | `parrot claude install --non-interactive --no-build` exits 0, no prompt |
 | `test_install_cli_sandbox_mode_flag` | `--sandbox-mode native` writes the config without prompting |
 
-### Validation Contract
-
-```yaml
-tests:
-  - packages/ai-parrot/tests/knowledge/wiki/test_welcome.py
-```
-
 ---
 
 ## 5. Acceptance Criteria
@@ -428,7 +421,7 @@ Status: skipped (codex CLI not available in this session)
 
 ### Validation Contract
 
-```yaml
 tests:
-  - packages/ai-parrot/tests/knowledge/wiki/test_welcome.py
-```
+- packages/ai-parrot/tests/knowledge/wiki/test_welcome.py
+- packages/ai-parrot/tests/self_/test_doctor_bwrap_public.py
+markers: none
