@@ -108,3 +108,10 @@ Read the brief first. Touch only the listed files. Never create a worktree for a
 already exist (`/sdd-brief` provisions it).
 
 ## Completion Note
+
+`feature_launcher.py`: `FeatureRef` gained `worktree: str | None = None` plus `is_brief`/`prompt_id`
+(slug for a brief, feature id otherwise). `resolve_feature` falls back to `_resolve_briefs`, which walks
+`git worktree list --porcelain` and matches `type == "brief"` indexes by slug, `BRIEF-<slug>` or the
+frontmatter `key:` (case-insensitive); exactly one match or `LaunchError(2)`. `launch()` reuses the brief
+worktree (never `ensure_feature_worktree`) and uses `ref.prompt_id` in both the direct and tmux-child
+paths. Validation: test_sdd_launch.py → 57 passed.

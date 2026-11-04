@@ -715,6 +715,15 @@ def _native_hook_worktrees(tmp_path: Path) -> tuple[Path, Path, Path]:
     return feature, task, main
 
 
+def _native_argv(command: str) -> list[str]:
+    """argv of the native branch of a (fail-closed) ``claude-native`` wrapper; plain commands pass through."""
+    head = f"if {policy._native_check()}; then "
+    if command.startswith(head):
+        body = command[len(head) : -len(policy._FI)]
+        command = body[: body.rindex(policy._ELSE)]
+    return shlex.split(command)
+
+
 def test_native_hook_retains_operational_guards(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Scope/RTK/backstop/environment behavior without an inserted bwrap wrapper."""
     feature, _task, _main = _native_hook_worktrees(tmp_path)
@@ -730,7 +739,7 @@ def test_native_hook_retains_operational_guards(tmp_path: Path, monkeypatch: pyt
         {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "pytest", "timeout": 30_000}},
         backend="claude-native",
     )
-    command = shlex.split(response["hookSpecificOutput"]["updatedInput"]["command"])
+    command = _native_argv(response["hookSpecificOutput"]["updatedInput"]["command"])
     assert seen == [("pytest", feature.resolve())]
     assert command[0] == "env"
     assert "bwrap" not in command
@@ -757,7 +766,7 @@ def test_native_hook_uses_cd_prefix_task_cwd(tmp_path: Path, monkeypatch: pytest
         {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": f"cd {task} && pytest x.py"}},
         backend="claude-native",
     )
-    command = shlex.split(response["hookSpecificOutput"]["updatedInput"]["command"])
+    command = _native_argv(response["hookSpecificOutput"]["updatedInput"]["command"])
     assert seen == [task.resolve()]
     assert next(value for value in command if value.startswith("PYTHONPATH=")).split(os.pathsep)[0] == (
         f"PYTHONPATH={task / 'packages' / 'test-package' / 'src'}"
@@ -902,7 +911,7 @@ def test_main_reads_backend_from_environment(tmp_path: Path) -> None:
         env=environment,
     )
     assert result.returncode == 0, result.stderr
-    command = shlex.split(json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"])
+    command = _native_argv(json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"])
     assert command[0] == "env"
     assert "bwrap" not in command
 
@@ -1135,6 +1144,175 @@ def test_hook_refuses_legacy_fallback_when_native_markers_are_present(tmp_path: 
     output = _json.loads(result.stdout)["hookSpecificOutput"]
     assert output["permissionDecision"] == "deny"
     assert "PARROT_SDD_SANDBOX_BACKEND is unset" in output["permissionDecisionReason"]
+
+
+def _fake_bwrap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A ``bwrap`` stand-in that prints ``BWRAP`` so tests can tell which branch ran."""
+    bin_dir = tmp_path / "fakebin"
+    bin_dir.mkdir(exist_ok=True)
+    bwrap = bin_dir / "bwrap"
+    bwrap.write_text("#!/bin/sh\necho BWRAP\n", encoding="utf-8")
+    bwrap.chmod(0o755)
+    monkeypatch.setattr(policy.shutil, "which", lambda name: str(bwrap) if name == "bwrap" else None)
+    return bwrap
+
+
+def _run_emitted(command: str, *, sandbox: bool, tmp_path: Path, extra: dict[str, str] | None = None) -> Any:
+    """Run the hook's emitted shell text, as the native Bash tool would, inside or outside a 'sandbox'."""
+    env = {k: v for k, v in os.environ.items() if k != "SANDBOX_RUNTIME" and not k.startswith("PARROT_SDD_")}
+    if sandbox:
+        env["SANDBOX_RUNTIME"] = "1"
+    env.update(extra or {})
+    return subprocess.run(["/bin/bash", "-c", command], capture_output=True, text=True, timeout=20, env=env)
+
+
+@pytest.mark.parametrize(
+    ("uid_map", "sandbox", "expected"),
+    [
+        ("      1000       1000          1\n", True, "NATIVE"),
+        ("         0          0 4294967295\n", True, "BWRAP"),
+        ("      1000       1000          1\n", False, "BWRAP"),
+        ("         0          1          1\n         5         10          2\n", True, "BWRAP"),
+    ],
+)
+def test_auto_backend_runs_exactly_one_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, uid_map: str, sandbox: bool, expected: str
+) -> None:
+    """Native path only when SANDBOX_RUNTIME=1 and a single non-identity uid_map; otherwise bwrap; never both."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    _fake_bwrap(tmp_path, monkeypatch)
+    uid_file = tmp_path / "uid_map"
+    uid_file.write_text(uid_map, encoding="utf-8")
+    monkeypatch.setattr(policy, "UID_MAP_PATH", str(uid_file))
+    response = policy.hook_response(
+        {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "echo NATIVE"}}, backend="auto"
+    )
+    command = response["hookSpecificOutput"]["updatedInput"]["command"]
+    result = _run_emitted(command, sandbox=sandbox, tmp_path=tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == [expected]
+
+
+def test_auto_backend_without_uid_map_relies_on_sandbox_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A platform without /proc/self/uid_map (macOS Seatbelt) trusts SANDBOX_RUNTIME alone."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    _fake_bwrap(tmp_path, monkeypatch)
+    monkeypatch.setattr(policy, "UID_MAP_PATH", str(tmp_path / "missing_uid_map"))
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "echo NATIVE"}}
+    command = policy.hook_response(payload, backend="auto")["hookSpecificOutput"]["updatedInput"]["command"]
+    assert _run_emitted(command, sandbox=True, tmp_path=tmp_path).stdout.split() == ["NATIVE"]
+    assert _run_emitted(command, sandbox=False, tmp_path=tmp_path).stdout.split() == ["BWRAP"]
+
+
+def test_main_defaults_to_auto_backend(tmp_path: Path) -> None:
+    """Unset PARROT_SDD_SANDBOX_BACKEND selects the runtime-branch wrapper, not the legacy one."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    bwrap = bin_dir / "bwrap"
+    bwrap.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    bwrap.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PARROT_SDD_")}
+    env.update({"PATH": f"{bin_dir}{os.pathsep}{env.get('PATH', '')}", policy.RTK_ENV_SWITCH: "0"})
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
+    result = subprocess.run(
+        [sys.executable, "-S", policy.__file__, "--hook"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert "permissionDecision" not in output
+    command = output["updatedInput"]["command"]
+    assert command.startswith("if ") and "SANDBOX_RUNTIME" in command and str(bwrap) in command
+
+
+@pytest.mark.parametrize("backend", ["auto", "claude-native", "bubblewrap"])
+def test_all_backends_are_idempotent_and_keep_rtk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, backend: str
+) -> None:
+    """hook(hook(x)) rewrites nothing, and the RTK rewrite of the inner command survives in every backend."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    _fake_bwrap(tmp_path, monkeypatch)
+    monkeypatch.setattr(policy, "rtk_rewrite", _idempotent_rtk)
+    payload = {
+        "cwd": str(feature),
+        "tool_name": "Bash",
+        "tool_input": {"command": "printf '%s' 'a ; else b'; git status", "timeout": 30_000},
+    }
+    first = policy.hook_response(payload, backend=backend)
+    command = first["hookSpecificOutput"]["updatedInput"]["command"]
+    assert "rtk printf" in command
+    assert _resend(first, payload, backend) == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def test_auto_lookalike_wrapper_is_still_guarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hand-edited auto wrapper is rebuilt, never passed through."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    _fake_bwrap(tmp_path, monkeypatch)
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
+    first = policy.hook_response(payload, backend="auto")["hookSpecificOutput"]["updatedInput"]["command"]
+    forged = first.replace("/bin/bash -c true", "/bin/bash -c 'true; rm x'", 1)
+    assert forged != first
+    response = policy.hook_response(
+        {**payload, "tool_input": {"command": forged}}, backend="auto"
+    )
+    assert response["hookSpecificOutput"]["updatedInput"]["command"] != forged
+
+
+def test_claude_native_fails_closed_outside_the_native_sandbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Outside the sandbox the wrapper prints the launcher hint and exits non-zero without running the command."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    uid_file = tmp_path / "uid_map"
+    uid_file.write_text("      1000       1000          1\n", encoding="utf-8")
+    monkeypatch.setattr(policy, "UID_MAP_PATH", str(uid_file))
+    marker = tmp_path / "ran"
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": f"touch {marker}"}}
+    command = policy.hook_response(payload, backend="claude-native")["hookSpecificOutput"]["updatedInput"]["command"]
+    outside = _run_emitted(command, sandbox=False, tmp_path=tmp_path)
+    assert outside.returncode != 0
+    assert "parrot sdd launch worker" in outside.stderr
+    assert not marker.exists()
+    inside = _run_emitted(command, sandbox=True, tmp_path=tmp_path)
+    assert inside.returncode == 0, inside.stderr
+    assert marker.exists()
+
+
+def test_claude_native_degraded_runs_outside_the_sandbox_with_banner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Degraded and `off` launches keep the banner and run the command."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_DEGRADED", "1")
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "echo RAN"}}
+    command = policy.hook_response(payload, backend="claude-native")["hookSpecificOutput"]["updatedInput"]["command"]
+    assert not command.startswith("if ")
+    result = _run_emitted(command, sandbox=False, tmp_path=tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["RAN"]
+    assert "degraded sandbox" in result.stderr
+
+
+@pytest.mark.parametrize("command", ["bwrap --ro-bind / / true", "/usr/bin/bwrap --ro-bind / / true"])
+def test_handwritten_bwrap_denied_in_native_mode_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    """A hand-written bwrap command cannot nest inside the native sandbox, but stays valid for the legacy backend."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    _fake_bwrap(tmp_path, monkeypatch)
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": command}}
+    denied = policy.hook_response(payload, backend="claude-native")["hookSpecificOutput"]
+    assert denied["permissionDecision"] == "deny"
+    assert denied["permissionDecisionReason"] == policy.NATIVE_BWRAP_DENIAL
+    assert "updatedInput" not in denied
+    legacy = policy.hook_response(payload, backend="bubblewrap")["hookSpecificOutput"]
+    assert "permissionDecision" not in legacy
+    assert "updatedInput" in legacy
 
 
 def test_packaged_hook_entry_point_denies_in_native_mode_without_import_error(tmp_path: Path) -> None:

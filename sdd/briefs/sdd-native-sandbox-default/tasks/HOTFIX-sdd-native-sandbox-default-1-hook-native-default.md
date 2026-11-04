@@ -135,3 +135,15 @@ Read the brief first. Touch only the listed files. Never weaken a deny into an a
 that cannot prove a sandbox must still run under `bwrap`, or not run at all.
 
 ## Completion Note
+
+Done by the sdd-worker itself (sequential fallback: `coder_plan` returned `complexity_audit_failed` for
+`HOTFIX-*` ids, so no seat could be routed). `worktree_environment.py`: `BACKENDS = (auto, bubblewrap,
+claude-native)`; `main()` maps an unset backend to `auto`; `auto` and non-degraded `claude-native` emit
+`if <native check>; then <native cmd> ; else <bwrap cmd | launcher message + exit 1> ; fi`; guard, RTK and
+the bounded shell run once. `_is_own_wrapper` rebuilds from the native branch (tries every ` ; else ` split),
+so all three backends are fixed points. Hand-written `bwrap` is denied under `claude-native`.
+Decision: the `hook_response` keyword default stays `"bubblewrap"` (the brief says to update it, but
+`test_legacy_hook_output_unchanged` and ~30 tests pin the implicit call as the legacy wrapper; only
+`main()` implements "unset ⇒ auto"). macOS (no `/proc/self/uid_map`) relies on `SANDBOX_RUNTIME` alone;
+unverified. Existing `claude-native` tests now parse the native branch through `_native_argv`.
+Validation: test_worktree_environment.py + test_native_claude_sandbox.py → 161 passed.

@@ -78,6 +78,114 @@ def test_resolve_feature_rejects_missing_or_ambiguous_keys(tmp_path: Path) -> No
     assert ambiguous.value.exit_code == 2
 
 
+def _brief_worktree(tmp_path: Path, slug: str = "fix-thing", key: str | None = None, name: str = "brief-wt") -> Path:
+    """Create a worktree directory holding one brief (index + frontmatter), as /sdd-brief leaves it."""
+    root = tmp_path / name
+    briefs = root / "sdd" / "briefs"
+    briefs.mkdir(parents=True)
+    (briefs / f"{slug}.index.json").write_text(
+        json.dumps(
+            {
+                "feature": slug,
+                "feature_id": f"BRIEF-{slug}",
+                "spec": f"sdd/briefs/{slug}.brief.md",
+                "type": "brief",
+                "tasks": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (briefs / f"{slug}.brief.md").write_text(
+        f"---\nkind: brief\nslug: {slug}\nkey: {key or slug}\n---\n\n# Brief\n", encoding="utf-8"
+    )
+    return root
+
+
+def _list_worktrees(monkeypatch: pytest.MonkeyPatch, *roots: Path) -> None:
+    """Script ``git worktree list --porcelain`` to report ``roots`` and leave other commands untouched."""
+    real = launcher._run
+
+    def fake_run(argv: list[str], *, cwd: Path, env: object = None) -> subprocess.CompletedProcess[str]:
+        if list(argv[:3]) == ["git", "worktree", "list"]:
+            return _result(argv, stdout="".join(f"worktree {root}\nHEAD abc\nbranch refs/heads/x\n\n" for root in roots))
+        return real(argv, cwd=cwd) if env is None else real(argv, cwd=cwd, env=env)
+
+    monkeypatch.setattr(launcher, "_run", fake_run)
+
+
+@pytest.mark.parametrize("key", ["fix-thing", "FIX-THING", "BRIEF-fix-thing", "JIRA-77"])
+def test_resolve_feature_finds_a_brief_by_slug_id_or_frontmatter_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, key: str
+) -> None:
+    """A brief resolves to its worktree by slug, ``BRIEF-<slug>`` or frontmatter ``key:``, case-insensitively."""
+    primary = _primary(tmp_path)
+    brief = _brief_worktree(tmp_path, key="JIRA-77")
+    _list_worktrees(monkeypatch, primary, brief)
+    ref = launcher.resolve_feature(primary, key)
+    assert ref.is_brief
+    assert ref.worktree == str(brief)
+    assert ref.slug == "fix-thing"
+    assert ref.prompt_id == "fix-thing"
+    assert ref.index == "sdd/briefs/fix-thing.index.json"
+
+
+def test_resolve_feature_brief_missing_or_ambiguous_is_exit_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No brief, or the same brief in two worktrees, is a LaunchError(2) like an unresolved feature."""
+    primary = _primary(tmp_path)
+    first = _brief_worktree(tmp_path, name="wt-a")
+    second = _brief_worktree(tmp_path, name="wt-b")
+    _list_worktrees(monkeypatch, primary, first)
+    with pytest.raises(launcher.LaunchError) as missing:
+        launcher.resolve_feature(primary, "nope")
+    assert missing.value.exit_code == 2
+    _list_worktrees(monkeypatch, primary, first, second)
+    with pytest.raises(launcher.LaunchError) as ambiguous:
+        launcher.resolve_feature(primary, "fix-thing")
+    assert ambiguous.value.exit_code == 2
+
+
+def test_resolve_feature_prefers_feature_index_over_brief(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Feature resolution is unchanged: a feature index wins and carries no worktree."""
+    primary = _primary(tmp_path)
+    _list_worktrees(monkeypatch, primary, _brief_worktree(tmp_path, slug="sandbox"))
+    ref = launcher.resolve_feature(primary, "sandbox")
+    assert ref.feature_id == "FEAT-768"
+    assert not ref.is_brief
+    assert ref.prompt_id == "FEAT-768"
+
+
+def test_launch_brief_uses_existing_worktree_and_slug_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A brief launch reuses its worktree (no ensure_feature_worktree) and starts the worker with ``run <slug>``."""
+    primary = _primary(tmp_path)
+    brief = _brief_worktree(tmp_path)
+    captured: dict[str, object] = {}
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    _list_worktrees(monkeypatch, primary, brief)
+
+    def forbidden(primary: Path, ref: object) -> Path:
+        raise AssertionError("a brief must never get a provisioned worktree")
+
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", forbidden)
+    monkeypatch.setattr(launcher, "prepare_upstream", lambda path: "launch-worker: ready")
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    monkeypatch.setattr(
+        launcher.native_claude_sandbox, "launch_worker", lambda argv, **kwargs: captured.update(argv=argv, **kwargs) or 0
+    )
+    result = launcher.launch(
+        "BRIEF-fix-thing",
+        tmux=False,
+        detach=False,
+        sandbox="legacy",
+        allowed_domains=(),
+        no_upstream=False,
+        claude_args=(),
+    )
+    assert result == 0
+    assert captured["cwd"] == brief
+    assert captured["initial_prompt"] == "run fix-thing"
+
+
 def test_prepare_upstream_divergence_never_mutates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Divergence is reported for reconciliation rather than merged or pushed."""
     worktree = tmp_path / "worktree"
