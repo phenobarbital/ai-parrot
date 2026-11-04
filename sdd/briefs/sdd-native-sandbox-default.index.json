@@ -1,0 +1,90 @@
+{
+  "feature": "sdd-native-sandbox-default",
+  "feature_id": "BRIEF-sdd-native-sandbox-default",
+  "spec": "sdd/briefs/sdd-native-sandbox-default.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-11-04",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-sdd-native-sandbox-default-1",
+      "slug": "hook-native-default",
+      "title": "Hook defaults to native, with a runtime branch and explicit legacy",
+      "feature_id": "BRIEF-sdd-native-sandbox-default",
+      "feature": "sdd-native-sandbox-default",
+      "spec": "sdd/briefs/sdd-native-sandbox-default.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "worktree_environment.py + its tests; task 4 edits the same file later",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/sdd-native-sandbox-default/tasks/HOTFIX-sdd-native-sandbox-default-1-hook-native-default.md"
+    },
+    {
+      "id": "HOTFIX-sdd-native-sandbox-default-2",
+      "slug": "launcher-brief-keys",
+      "title": "parrot sdd launch worker accepts brief keys",
+      "feature_id": "BRIEF-sdd-native-sandbox-default",
+      "feature": "sdd-native-sandbox-default",
+      "spec": "sdd/briefs/sdd-native-sandbox-default.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "feature_launcher.py + test_sdd_launch.py only; no shared files with task 1",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/sdd-native-sandbox-default/tasks/HOTFIX-sdd-native-sandbox-default-2-launcher-brief-keys.md"
+    },
+    {
+      "id": "HOTFIX-sdd-native-sandbox-default-3",
+      "slug": "launcher-only-guidance",
+      "title": "Every hand-off recommends parrot sdd launch worker",
+      "feature_id": "BRIEF-sdd-native-sandbox-default",
+      "feature": "sdd-native-sandbox-default",
+      "spec": "sdd/briefs/sdd-native-sandbox-default.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "HOTFIX-sdd-native-sandbox-default-1",
+        "HOTFIX-sdd-native-sandbox-default-2"
+      ],
+      "parallel": true,
+      "parallelism_notes": "text/asset copies; documents the behavior tasks 1-2 ship",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/sdd-native-sandbox-default/tasks/HOTFIX-sdd-native-sandbox-default-3-launcher-only-guidance.md"
+    },
+    {
+      "id": "HOTFIX-sdd-native-sandbox-default-4",
+      "slug": "fewer-automode-rewrites",
+      "title": "Fewer hook rewrites under auto mode, measured",
+      "feature_id": "BRIEF-sdd-native-sandbox-default",
+      "feature": "sdd-native-sandbox-default",
+      "spec": "sdd/briefs/sdd-native-sandbox-default.brief.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "HOTFIX-sdd-native-sandbox-default-1"
+      ],
+      "parallel": false,
+      "parallelism_notes": "edits worktree_environment.py after task 1; sdd-worker.md copies may overlap task 3 text \u2014 run after 3 or rebase",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/sdd-native-sandbox-default/tasks/HOTFIX-sdd-native-sandbox-default-4-fewer-automode-rewrites.md"
+    }
+  ]
+}
