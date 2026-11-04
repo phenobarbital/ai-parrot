@@ -1,0 +1,112 @@
+{
+  "feature": "formdesigner-boolean-yes-no",
+  "feature_id": "FEAT-800",
+  "spec": "sdd/specs/formdesigner-boolean-yes-no.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-04T19:05:18+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/parrot-formdesigner/tests/unit/renderers/test_html5_boolean.py",
+          "packages/parrot-formdesigner/tests/unit/renderers/test_pdf_boolean.py",
+          "packages/parrot-formdesigner/tests/unit/renderers/test_pdf.py",
+          "packages/parrot-formdesigner/tests/unit/test_renderers.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:7229c352c89a60c50eb12479d6461f7f4c878eb7f8fb96d5a1787b7e0c4602e5"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5162",
+      "slug": "html5-boolean-yes-no-radios",
+      "title": "HTML5 renderer — BOOLEAN renders as Yes / No radios",
+      "feature_id": "FEAT-800",
+      "feature": "formdesigner-boolean-yes-no",
+      "spec": "sdd/specs/formdesigner-boolean-yes-no.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "independent: only edits renderers/html5.py; no dependency",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5162-html5-boolean-yes-no-radios.md"
+    },
+    {
+      "id": "TASK-5163",
+      "slug": "pdf-boolean-yes-no-radios",
+      "title": "PDF renderer — BOOLEAN prints Yes / No radio choices",
+      "feature_id": "FEAT-800",
+      "feature": "formdesigner-boolean-yes-no",
+      "spec": "sdd/specs/formdesigner-boolean-yes-no.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "independent: only edits renderers/pdf.py; runs concurrently with TASK-5162",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5163-pdf-boolean-yes-no-radios.md"
+    },
+    {
+      "id": "TASK-5164",
+      "slug": "html5-boolean-tests",
+      "title": "Tests — HTML5 boolean Yes / No radios",
+      "feature_id": "FEAT-800",
+      "feature": "formdesigner-boolean-yes-no",
+      "spec": "sdd/specs/formdesigner-boolean-yes-no.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5162"
+      ],
+      "parallel": true,
+      "parallelism_notes": "tests _render_boolean_radio_group / _BooleanRenderer created by TASK-5162 (renderers/html5.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5164-html5-boolean-tests.md"
+    },
+    {
+      "id": "TASK-5165",
+      "slug": "pdf-boolean-tests",
+      "title": "Tests — PDF boolean Yes / No choices",
+      "feature_id": "FEAT-800",
+      "feature": "formdesigner-boolean-yes-no",
+      "spec": "sdd/specs/formdesigner-boolean-yes-no.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5163"
+      ],
+      "parallel": true,
+      "parallelism_notes": "tests the radio output and _boolean_selected created by TASK-5163 (renderers/pdf.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5165-pdf-boolean-tests.md"
+    }
+  ]
+}
