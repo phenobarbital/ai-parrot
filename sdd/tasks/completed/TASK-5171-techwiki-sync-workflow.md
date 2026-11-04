@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-801 — GitHub Wiki as the Technical Reference
 **Spec**: `sdd/specs/github-wiki-technical-reference.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5168
@@ -262,10 +262,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by native seat opus, attempt 1 (uid 52e514dc…), commit a21d0cef8b.
+**Date**: 2026-11-05
+**Notes**: Both listed files delivered; workflow contract tests 9 passed. Coder found a TASK-5168 defect: `parrot sdd techwiki bundle` lacked the `--strict` flag the spec/workflow require (would exit 2 in CI). Fixed by the orchestrator in 15c021b0ca (techwiki_bundle.py: `--strict` → exit 4 when modules skipped); bundle + workflow tests 14 passed. Not run: a real GitHub Actions run; workflow push needs SSH/workflow scope. Review not recorded in the feedback plane (`coder_record_review` broken server-side).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `"on"` key quoted (PyYAML parses bare `on` as True); event values passed via `env:` instead of inline `${{ }}` (script-injection hardening).
