@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-793 — tmux worker completion notifications
 **Spec**: `sdd/specs/tmux-notify-worker.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (<1h)
 **Depends-on**: TASK-5122
@@ -45,11 +45,11 @@ without `notify-send` silently consumes the single allowed attempt.
 
 ## Acceptance Criteria
 
-- [ ] A Stop with a valid receipt and no `notify-send` on the desktop `PATH` leaves no `notify-attempted` marker; a later Stop with `notify-send` available still delivers.
-- [ ] No `assert` remains in `handle_stop`.
-- [ ] A non-zero `notify-send` exit logs a warning.
-- [ ] `git rev-parse --show-toplevel` runs once per `handle_stop` call.
-- [ ] Existing tests in `test_worker_notification.py` and `test_worker_notification_protocol.py` still pass.
+- [x] A Stop with a valid receipt and no `notify-send` on the desktop `PATH` leaves no `notify-attempted` marker; a later Stop with `notify-send` available still delivers.
+- [x] No `assert` remains in `handle_stop`.
+- [x] A non-zero `notify-send` exit logs a warning.
+- [x] `git rev-parse --show-toplevel` runs once per `handle_stop` call.
+- [x] Existing tests in `test_worker_notification.py` and `test_worker_notification_protocol.py` still pass.
 
 ## Validation Commands
 
@@ -59,4 +59,11 @@ PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/sdd/test_worke
 
 ## Completion Note
 
-(pending)
+Implemented in `fc0f78eacc` (via `/sdd-fix issue:0c3d7d50744b`). `handle_stop` resolves
+`notify-send` before `_claim_attempt()`, uses an explicit `isinstance` guard instead of
+`assert`, and warns on a non-zero exit. `_receipt()` now calls only `_head()` on the
+worktree that `_context()` already validated, so one Stop runs `rev-parse --show-toplevel`
+once. Three regression tests added; all three fail against the previous code. Validation:
+14 passed (`test_worker_notification.py` + `test_worker_notification_protocol.py`), ruff clean.
+Timeouts were left as-is (out of scope): worst case is now 2s + 2s git + 3s notify-send,
+still above the 5s hook budget only when every subprocess hangs.
