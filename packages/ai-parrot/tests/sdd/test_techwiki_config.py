@@ -76,8 +76,7 @@ class TestTechwikiConfig:
                 str(pyproject.parent.relative_to(root) / "src"),
             )
             for pyproject in (root / "packages").glob("*/pyproject.toml")
-            if any((pyproject.parent / "src").rglob("*.py"))
-            or any((pyproject.parent / "src").rglob("*.pyi"))
+            if any((pyproject.parent / "src").rglob("*.py")) or any((pyproject.parent / "src").rglob("*.pyi"))
         }
 
         assert configured == expected
