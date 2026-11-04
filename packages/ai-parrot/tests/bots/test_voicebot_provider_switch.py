@@ -87,7 +87,7 @@ async def switch_provider(bot: _FakeVoiceBot, new_provider: str) -> None:
         bot.voice_config.model = "nova-2-sonic"
     else:
         bot.voice_config.voice_name = "Puck"
-        bot.voice_config.model = "gemini-2.5-flash-native-audio-preview-12-2025"
+        bot.voice_config.model = "gemini-3.8-live"
 
 
 # ===================================================================
@@ -194,7 +194,7 @@ class TestSwitchProviderHelper:
         await switch_provider(bot, "google_live")
         assert bot.voice_config.provider == "google_live"
         assert bot.voice_config.voice_name == "Puck"
-        assert "native-audio" in bot.voice_config.model
+        assert bot.voice_config.model == "gemini-3.8-live"
 
     @pytest.mark.asyncio
     async def test_round_trip_switch(self):
