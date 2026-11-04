@@ -1,0 +1,93 @@
+name: techwiki
+
+# Publishes the technical-reference bundle to the GitHub wiki on a published
+# release, and validates it (dry run, no push) on pull requests (FEAT-801 M6).
+# The "on" key is quoted so YAML 1.1 loaders do not read it as a boolean.
+"on":
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - 'wiki/**'
+      - 'docs/decisions/**'
+      - 'packages/*/src/**'
+      - 'sdd/config.json'
+      - '.github/workflows/techwiki.yml'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'tag or branch to bundle (preview only unless a published release tag)'
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: techwiki-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.event.inputs.ref || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: uv sync --package ai-parrot --extra techwiki
+      - name: Build bundle
+        env:
+          # Event values reach the shell through env vars, never through direct
+          # ${{ }} interpolation into the script body (script-injection guard).
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || '' }}
+        run: |
+          TAG="$RELEASE_TAG"
+          if [ -z "$TAG" ]; then TAG=$(git describe --tags --always); fi
+          DRY_RUN_FLAG=""
+          if [ "$EVENT_NAME" = "pull_request" ]; then DRY_RUN_FLAG="--dry-run"; fi
+          uv run parrot sdd techwiki bundle \
+            --out build/techwiki \
+            --release "$TAG" \
+            --json --strict \
+            $DRY_RUN_FLAG
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: techwiki-bundle
+          path: build/techwiki/
+
+  publish:
+    needs: bundle
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: techwiki-bundle
+          path: build/techwiki
+      - name: Push to wiki
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.wiki.git" wiki-repo
+          rsync -a --delete --exclude .git build/techwiki/ wiki-repo/
+          cd wiki-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to push"
+          else
+            git commit -m "techwiki: sync ${RELEASE_TAG} (${SHA::7})"
+            git push
+          fi
