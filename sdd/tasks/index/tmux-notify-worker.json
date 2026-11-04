@@ -69,6 +69,26 @@
       "completed_at": "2026-11-03T20:22:41+00:00",
       "file": "sdd/tasks/completed/TASK-5124-worker-notification-protocol.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5145",
+      "slug": "notify-send-before-claim",
+      "title": "Resolve notify-send before claiming the delivery attempt",
+      "feature_id": "FEAT-793",
+      "feature": "tmux-notify-worker",
+      "spec": "sdd/specs/tmux-notify-worker.spec.md",
+      "status": "in-progress",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5122"
+      ],
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-11-04T01:35:00+00:00",
+      "completed_at": null,
+      "discovered_from": "issue:0c3d7d50744b",
+      "file": "sdd/tasks/active/TASK-5145-notify-send-before-claim.md"
     }
   ]
 }
