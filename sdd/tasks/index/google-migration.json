@@ -57,7 +57,7 @@
       "feature_id": "FEAT-798",
       "feature": "google-migration",
       "spec": "sdd/specs/google-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -65,8 +65,9 @@
       "parallelism_notes": "no dependencies; creates GEMINI_3_8_FLASH_TTS/GEMINI_3_8_LIVE in clients/google/models.py consumed by TASK-5149 and touches test_google_models.py that TASK-5155 re-pins",
       "assigned_to": null,
       "started_at": "2026-11-04T16:10:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5146-googlemodel-3-8-tts-live-members.md"
+      "completed_at": "2026-11-04T17:08:07+00:00",
+      "file": "sdd/tasks/completed/TASK-5146-googlemodel-3-8-tts-live-members.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5147",
@@ -75,7 +76,7 @@
       "feature_id": "FEAT-798",
       "feature": "google-migration",
       "spec": "sdd/specs/google-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -83,8 +84,9 @@
       "parallelism_notes": "no dependencies; owns parrot/models/google.py alone (live.py reads GoogleVoiceModel.DEFAULT, untouched); deadline 2026-11-17 so it can run first",
       "assigned_to": null,
       "started_at": "2026-11-04T16:10:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5147-googlevoicemodel-3-8-live-default.md"
+      "completed_at": "2026-11-04T17:08:07+00:00",
+      "file": "sdd/tasks/completed/TASK-5147-googlevoicemodel-3-8-live-default.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5148",
@@ -93,7 +95,7 @@
       "feature_id": "FEAT-798",
       "feature": "google-migration",
       "spec": "sdd/specs/google-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -101,8 +103,9 @@
       "parallelism_notes": "no dependencies; uses only existing GEMINI_3_8_FLASH/GEMINI_4_ARGON; sole owner of client.py and its six test modules",
       "assigned_to": null,
       "started_at": "2026-11-04T16:10:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5148-client-gates-and-fallbacks.md"
+      "completed_at": "2026-11-04T17:08:08+00:00",
+      "file": "sdd/tasks/completed/TASK-5148-client-gates-and-fallbacks.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5149",
@@ -131,7 +134,7 @@
       "feature_id": "FEAT-798",
       "feature": "google-migration",
       "spec": "sdd/specs/google-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -139,8 +142,9 @@
       "parallelism_notes": "no dependencies; owns handlers/agents/abstract.py, crew.py, experts/policy.py, the four FEAT-796 test modules and docs/config.md + docs/configuration/llm-defaults.md",
       "assigned_to": null,
       "started_at": "2026-11-04T16:10:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5150-feat796-builtins-and-docs.md"
+      "completed_at": "2026-11-04T17:08:08+00:00",
+      "file": "sdd/tasks/completed/TASK-5150-feat796-builtins-and-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5151",
