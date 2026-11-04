@@ -1,6 +1,6 @@
 {
   "pricing": {
-    "last_updated": "2026-06-10",
+    "last_updated": "2026-11-04",
     "source": "https://ai.google.dev/gemini-api/docs/pricing",
     "currency": "USD",
     "notes": "Pricing for Gemini API via Google AI. Vertex AI pricing may differ per region. Provider key in CostCalculator: 'gemini'. The calculator uses a single rate per model; for size-tiered models (e.g. gemini-3.1-pro-preview) the <=200k-token tier is used and the >200k tier is noted per-model."
@@ -99,6 +99,12 @@
       "input_per_1m": 0.5,
       "output_per_1m": 1.5,
       "valid_from": "2023-12-13"
+    },
+    "gemini-4-argon": {
+      "input_per_1m": 2.0,
+      "output_per_1m": 10.0,
+      "cached_input_per_1m": 0.1,
+      "valid_from": "2026-11-04"
     },
     "gemini-3.8-flash": [
       {
