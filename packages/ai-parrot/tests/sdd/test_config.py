@@ -6,10 +6,13 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
+from navconfig import BASE_DIR
 from pydantic import ValidationError
 
+from parrot import conf
 from parrot.sdd.config import (
     DEFAULT_WORKTREE_ROOT,
     LEGACY_WORKTREE_ROOT,
@@ -25,8 +28,7 @@ from parrot.sdd.config import (
     worktree_root_setting,
     write_default_config,
 )
-from parrot.sdd.scripts import brief_meta, sdd_meta
-
+from parrot.sdd.scripts import brief_meta, sdd_meta, worktree_root as worktree_root_script
 
 def _repo(tmp_path: Path, config: dict | str | None = None) -> Path:
     (tmp_path / ".git").mkdir()
@@ -274,6 +276,43 @@ def test_worktree_root_override_wins(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("WORKTREE_BASE_PATH", "from-environment")
     assert worktree_root_setting("from-override/") == "from-override"
     assert worktree_root(tmp_path, "from-override") == tmp_path / "from-override"
+
+
+@pytest.mark.parametrize("env", [None, "wt dir/x", "/abs/with space/wt"])
+def test_worktree_root_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], env: str | None
+) -> None:
+    """The read-only root CLI matches the resolver without loading application configuration."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    if env is not None:
+        monkeypatch.setenv("WORKTREE_BASE_PATH", env)
+
+    assert worktree_root_script.main(["--root", str(tmp_path)]) == 0
+    assert capsys.readouterr().out == f"{worktree_root(tmp_path)}\n"
+    assert not (tmp_path / ".parrot").exists()
+
+    fresh_process = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import parrot.sdd.scripts.worktree_root; assert 'parrot.conf' not in sys.modules",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert fresh_process.returncode == 0, fresh_process.stderr
+
+    with pytest.raises(SystemExit) as exc:
+        worktree_root_script.main([])
+    assert exc.value.code == 2
+
+
+def test_conf_worktree_base_path_derives() -> None:
+    """The default configuration shares the resolver's worktree root."""
+    if conf.config.get("WORKTREE_BASE_PATH", fallback=None) is not None:
+        pytest.skip("WORKTREE_BASE_PATH is overridden by navconfig")
+    assert conf.WORKTREE_BASE_PATH == str(worktree_root(BASE_DIR))
 
 
 def test_legacy_worktrees_detects_registered(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

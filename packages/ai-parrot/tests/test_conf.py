@@ -28,7 +28,9 @@ class TestDevLoopSettingsDefaults:
             pytest.skip("WORKTREE_BASE_PATH is overridden by the environment")
         # The default is resolved against BASE_DIR, so it is always absolute.
         assert os.path.isabs(conf.WORKTREE_BASE_PATH)
-        assert conf.WORKTREE_BASE_PATH.endswith(os.path.join(".claude", "worktrees"))
+        assert conf.WORKTREE_BASE_PATH.endswith(os.path.join(".parrot", "worktrees"))
+        if conf.config.get("DEV_LOOP_REPO_BASE_PATH", fallback=None) is None:
+            assert conf.DEV_LOOP_REPO_BASE_PATH == os.path.join(conf.WORKTREE_BASE_PATH, "repos")
 
     def test_stream_ttl_default_seven_days(self):
         assert conf.FLOW_STREAM_TTL_SECONDS == 604800
