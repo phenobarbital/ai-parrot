@@ -172,3 +172,9 @@ Tests: 222 passed (worktree_environment, native_claude_sandbox, sdd_launch).
 Not done: (1) a live launcher before/after measurement and re-reading the transcripts — `automode-rewrites.md`
 holds the operator's baseline and a derived "after"; (2) shortening the `auto` wrapper's `PYTHONPATH` (still the full
 list); (3) `.codex/agents/sdd-worker.toml` guidance line (not checked).
+
+Follow-up (2026-11-04, operator review): decision 3 is partly restored. `main()` downgrades a `claude-native`
+backend to `auto` unless both launcher markers (`PARROT_SDD_SANDBOX_ROOTS`, `PARROT_SDD_CACHE_DIR`) are set, so a
+hand-exported value can no longer run a command unsandboxed (probe: it ran with write access to the primary checkout
+before). Launcher and dispatcher sessions keep the no-rewrite path. Tests: 226 passed
+(worktree_environment, native_claude_sandbox, sdd_launch).

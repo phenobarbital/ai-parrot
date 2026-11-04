@@ -546,6 +546,8 @@ DEGRADED_BANNER = "echo '[sdd] degraded sandbox: no OS write boundary' >&2; "
 #: Hook backends. ``auto`` (the ``main()`` default) picks native or Bubblewrap when the command runs;
 #: ``bubblewrap`` is the explicit legacy wrapper; ``claude-native`` is the launcher's fail-closed mode.
 BACKENDS = ("auto", "bubblewrap", "claude-native")
+# Exported together with `claude-native` by `native_claude_sandbox.launch_worker` and the dev-loop dispatcher.
+LAUNCHER_MARKERS = ("PARROT_SDD_SANDBOX_ROOTS", "PARROT_SDD_CACHE_DIR")
 #: Linux user-namespace map; a single-uid map that is not the identity map means a sandboxed command.
 UID_MAP_PATH = "/proc/self/uid_map"
 NATIVE_BWRAP_DENIAL = "native sandbox is active; resend the command without the bwrap wrapper"
@@ -770,6 +772,11 @@ def main(argv: Sequence[str] | None = None) -> None:
             raise RuntimeError(
                 "native launch markers present but PARROT_SDD_SANDBOX_BACKEND is unset; refusing to guess a wrapper"
             )
+        if backend == "claude-native" and not all(os.environ.get(name) for name in LAUNCHER_MARKERS):
+            # `claude-native` skips the runtime check, so it is trusted only beside the markers the
+            # launcher and the dev-loop dispatcher always export with it. A hand-exported value without
+            # them gets `auto`: native inside the native sandbox, Bubblewrap outside, never unsandboxed.
+            backend = "auto"
         # Unset selects `auto`: native inside the native sandbox, Bubblewrap outside. The legacy wrapper
         # is an explicit opt-in (`PARROT_SDD_SANDBOX_BACKEND=bubblewrap`).
         result = hook_response(json.load(sys.stdin), backend=backend or "auto")

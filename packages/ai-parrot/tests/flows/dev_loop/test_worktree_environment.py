@@ -898,9 +898,15 @@ def test_native_file_tool_denies_control_paths(tmp_path: Path) -> None:
 
 
 def test_main_reads_backend_from_environment(tmp_path: Path) -> None:
-    """The standalone hook selects native wrapping solely from its child environment."""
+    """The standalone hook selects native wrapping from its child environment (backend plus launcher markers)."""
     feature, _task, _main = _native_hook_worktrees(tmp_path)
-    environment = {**os.environ, "PARROT_SDD_SANDBOX_BACKEND": "claude-native", policy.RTK_ENV_SWITCH: "0"}
+    environment = {
+        **os.environ,
+        "PARROT_SDD_SANDBOX_BACKEND": "claude-native",
+        "PARROT_SDD_CACHE_DIR": str(tmp_path / "cache"),
+        "PARROT_SDD_SANDBOX_ROOTS": os.pathsep.join((str(feature), str(_main / ".git"), str(_main))),
+        policy.RTK_ENV_SWITCH: "0",
+    }
     payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
     result = subprocess.run(
         [sys.executable, "-S", policy.__file__, "--hook"],
@@ -1237,6 +1243,44 @@ def test_main_defaults_to_auto_backend(tmp_path: Path) -> None:
     bwrap.chmod(0o755)
     env = {k: v for k, v in os.environ.items() if not k.startswith("PARROT_SDD_")}
     env.update({"PATH": f"{bin_dir}{os.pathsep}{env.get('PATH', '')}", policy.RTK_ENV_SWITCH: "0"})
+    payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
+    result = subprocess.run(
+        [sys.executable, "-S", policy.__file__, "--hook"],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert "permissionDecision" not in output
+    command = output["updatedInput"]["command"]
+    assert command.startswith("if ") and "SANDBOX_RUNTIME" in command and str(bwrap) in command
+
+
+@pytest.mark.parametrize(
+    "markers",
+    [{}, {"PARROT_SDD_CACHE_DIR": "cache"}, {"PARROT_SDD_SANDBOX_ROOTS": "roots"}],
+    ids=["no-markers", "cache-only", "roots-only"],
+)
+def test_main_hand_exported_claude_native_falls_back_to_auto(tmp_path: Path, markers: dict[str, str]) -> None:
+    """`claude-native` without both launcher markers is not trusted: the hook emits the runtime-branch wrapper."""
+    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    bwrap = bin_dir / "bwrap"
+    bwrap.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    bwrap.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PARROT_SDD_")}
+    env.update(
+        {
+            "PATH": f"{bin_dir}{os.pathsep}{env.get('PATH', '')}",
+            "PARROT_SDD_SANDBOX_BACKEND": "claude-native",
+            policy.RTK_ENV_SWITCH: "0",
+        }
+    )
+    env.update({key: str(tmp_path / value) for key, value in markers.items()})
     payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
     result = subprocess.run(
         [sys.executable, "-S", policy.__file__, "--hook"],
