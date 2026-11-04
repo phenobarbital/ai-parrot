@@ -221,8 +221,7 @@ Additional Google services beyond GenAI.
 ## LLM Defaults
 
 ### Model Selection
-- **`DEFAULT_LLM_MODEL`**: Default model across the application (default: `gemini-2.5-flash`)
-- **`LLM_MODEL_NAME`**: Alias for model name (default: `gemini-2.5-pro`)
+- **`DEFAULT_LLM_MODEL`**: Default model across the application (default: `gemini-flash-latest`)
 - **`LLM_TEMPERATURE`**: Default temperature for generation (default: `0.1`)
 
 ### Model-Specific Defaults
@@ -328,7 +327,7 @@ MS_TEAMS_CLIENT_ID=your-client-id
 MS_TEAMS_CLIENT_SECRET=your-client-secret
 
 # LLM Defaults
-DEFAULT_LLM_MODEL=gemini-2.5-flash
+DEFAULT_LLM_MODEL=gemini-flash-latest
 LLM_TEMPERATURE=0.1
 
 # Embeddings

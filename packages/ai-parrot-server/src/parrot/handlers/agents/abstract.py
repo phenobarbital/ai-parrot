@@ -179,7 +179,7 @@ class AgentHandler(BaseView):
     _tools: List[AbstractTool] = []
     _agent: BasicAgent = None
     _use_llm: Optional[str] = None
-    _use_model: Optional[str] = None  # None -> AGENT_LLM / DEFAULT_LLM / google:gemini-2.5-pro (FEAT-796)
+    _use_model: Optional[str] = None  # None -> AGENT_LLM / DEFAULT_LLM / google:gemini-4-argon (FEAT-796)
     # signals
     on_startup: Optional[Callable] = None
     on_shutdown: Optional[Callable] = None
@@ -794,12 +794,12 @@ class AgentHandler(BaseView):
     ) -> BasicAgent:
         """Create and configure a BasicAgent instance."""
         try:
-            resolved = resolve_component_llm("AGENT", builtin="google:gemini-2.5-pro")
+            resolved = resolve_component_llm("AGENT", builtin="google:gemini-4-argon")
             # A subclass that sets either attribute owns the provider/model pair (the unset half
             # falls back to the builtin pair, never to env); env applies only when it sets neither.
             if self._use_llm or self._use_model:
                 llm = self._use_llm or "google"
-                model = self._use_model or ("gemini-2.5-pro" if llm == "google" else None)
+                model = self._use_model or ("gemini-4-argon" if llm == "google" else None)
             else:
                 llm, model = resolved.provider, resolved.model
             extra: dict[str, Any] = {}

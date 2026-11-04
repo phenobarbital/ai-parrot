@@ -18,9 +18,9 @@ from parrot.models.basic import ModelConfig
 from parrot.observability.context import current_component
 
 _BUILTIN_POLICY = {
-    ExpertTier.JUDGMENT: {"provider": "google", "model": "gemini-2.5-pro", "temperature": 0.2},
-    ExpertTier.BALANCED: {"provider": "google", "model": "gemini-2.5-flash", "temperature": 0.1},
-    ExpertTier.TEMPLATED: {"provider": "google", "model": "gemini-2.5-flash", "temperature": 0.0},
+    ExpertTier.JUDGMENT: {"provider": "google", "model": "gemini-4-argon", "temperature": 0.2},
+    ExpertTier.BALANCED: {"provider": "google", "model": "gemini-3.8-flash", "temperature": 0.1},
+    ExpertTier.TEMPLATED: {"provider": "google", "model": "gemini-3.8-flash", "temperature": 0.0},
 }
 
 
@@ -46,7 +46,7 @@ def test_tier_policy_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     judgment = model_config_for(ExpertTier.JUDGMENT)
 
     assert (balanced.provider, balanced.model, balanced.temperature) == ("openai", "gpt-tier", 0.1)
-    assert (judgment.provider, judgment.model, judgment.temperature) == ("google", "gemini-2.5-pro", 0.2)
+    assert (judgment.provider, judgment.model, judgment.temperature) == ("google", "gemini-4-argon", 0.2)
 
 
 def test_default_tier_policy_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -92,7 +92,7 @@ def test_expert_agent_api_key_injected(monkeypatch: pytest.MonkeyPatch) -> None:
         captured.append(kwargs)
 
     monkeypatch.setattr(Agent, "__init__", fake_agent_init)
-    model_config = ModelConfig(provider="google", model="gemini-2.5-flash")
+    model_config = ModelConfig(provider="google", model="gemini-3.8-flash")
 
     ExpertAgent(
         _bundle(ExpertTier.BALANCED),
@@ -126,7 +126,7 @@ def test_explicit_expert_api_key_wins(monkeypatch: pytest.MonkeyPatch) -> None:
     ExpertAgent(
         _bundle(ExpertTier.BALANCED),
         resolver=SimpleNamespace(),
-        model_config=ModelConfig(provider="google", model="gemini-2.5-flash"),
+        model_config=ModelConfig(provider="google", model="gemini-3.8-flash"),
         toolkits=[],
         allowed_tools=[],
         api_key="caller-key",
