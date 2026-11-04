@@ -13,7 +13,7 @@ tags: [installer, portability, worktree, doctor, mcp-toolkits]
 **Feature ID**: FEAT-804
 **Date**: 2026-11-04
 **Author**: Jesus Lara (design captured in chat, 2026-11-04)
-**Status**: draft
+**Status**: approved
 **Target version**: 2.1.0
 
 ---
@@ -98,7 +98,7 @@ fixes (see `sdd/proposals/parrot-installer-amendments.proposal.md` §5 for what 
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:3849e7adae7df64742d5af01b41fb2ed70f3641812f308574a64683a7ecfc23d evaluation_digest=sha256:b4749e556429e065add8fd4430a9e751b6076557f87bfc599a92e9bd1db41df2 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:6a6263db7dbff420d0cf9eef22c738c4c9373029e2ecd4394a430fd816d29a4f evaluation_digest=sha256:f83d540bf192b3c659a8880b934d5d9119175abfd73172b1f28df62c47969ed9 rules_version=1 status=pass -->
 
 No eligible decisions govern subsystems: bots, clients, config, flows, knowledge-graphindex, knowledge-wiki, memory, sdd-tooling, skills, tools
 
@@ -131,11 +131,14 @@ Then the rewiring:
   (`claude_code/installer.py:736,1280`, `codex/installer.py:294,453`, `google/installer.py:245,404`) become
   `decision = resolve_portable_mode(portable, current=_current_portable_mode(...))`; install entry
   functions and the reconcilers append `decision.note` to their action log when set.
-- `guard_hook_command()` keeps its signature and behaviour but calls `managed_launcher_on_path()`.
+- `guard_hook_command()` becomes tri-state — `None` = launcher rule (today's `False`), `True` = bare,
+  `False` = baked on purpose — and calls `managed_launcher_on_path()`; `dangerous_hook_command()`,
+  `_install_dangerous_guard()` and `install_sdd_integration()` carry the same `bool | None`.
 - `HostAdapter.reconcile(root, *, portable=None)` forwards to the reconcilers; `install_toolkits()` and
-  `set_toolkits_enabled()` gain `portable: bool | None = None`; `_install_toolkits_step()` forwards `True`
-  when `--portable` was given, `None` otherwise (sticky per host, launcher rule on a fresh host).
-  `parrot toolkits install|enable` gain `--portable/--no-portable` (default `None`).
+  `set_toolkits_enabled()` gain `portable: bool | None = None`; `_install_toolkits_step()` forwards the
+  tri-state of `parrot sdd install --portable/--no-portable` (`None` = sticky per host, launcher rule on a
+  fresh host). `parrot sdd install` and `parrot toolkits install|enable` carry `--portable/--no-portable`
+  (default `None`).
 - The three host `_resolve_root()` helpers (`claude_code/cli.py:36`, `codex/cli.py:25`, `google/cli.py:25`),
   `sdd/cli.py::_root` and the seven `Path.cwd()` in `cli/toolkits.py` call `install_root()`; write verbs
   call `require_primary_checkout()`, read verbs do not. Host installers resolve the wiki config at
@@ -334,13 +337,25 @@ parrot self doctor   → new checks "repo: checkout" (fails in a linked worktree
       """``None`` when neither the plugin file nor the user-global file holds a ``wikitoolkit`` entry."""
 
   # parrot/sdd/installer.py  (modifies guard_hook_command :280-300)
-  def guard_hook_command(*, portable: bool) -> tuple[str, Literal["bare", "baked"]]:
-      """Unchanged contract; ``bare`` when portable or managed_launcher_on_path(), else baked ``sys.prefix``
-      parrot script (shlex-quoted) — the inline which/parrot_home comparison is deleted."""
+  def guard_hook_command(*, portable: bool | None) -> tuple[str, Literal["bare", "baked"]]:
+      """``True`` → bare; ``False`` → baked ``sys.prefix`` parrot script (shlex-quoted) even with the launcher on
+      PATH; ``None`` → bare iff managed_launcher_on_path() else baked (today's ``False`` behaviour). The inline
+      which/parrot_home comparison is deleted. Same return values and note text as today."""
+
+  def dangerous_hook_command(*, portable: bool | None) -> tuple[str, Literal["bare", "baked"]]:   # modifies :308
+      """Same tri-state, derived from guard_hook_command as today."""
+
+  def _install_dangerous_guard(root: Path, receipt: dict[str, Any], *, portable: bool | None) -> list[str]:   # modifies :338
+      """Unchanged apart from the parameter type."""
+
+  def install_sdd_integration(root, hosts=("claude",), *, keep_edits=False, dry_run=False, portable: bool | None = None, base_branch=None, push_base=False, hotfix_base=None, dangerous_guard=True, sdd_coder=True) -> list[str]:   # modifies :1064-1074
+      """``portable`` is the CLI tri-state; passed verbatim to guard_hook_command, _install_dangerous_guard and
+      _install_toolkits_step (M3)."""
+  # sdd_status :1568 — `guard_hook_command(portable=False)` becomes `guard_hook_command(portable=None)`.
   ```
 
 ### Module 3: Forward the decision into toolkit registration
-- **Path**: `packages/ai-parrot/src/parrot/mcp/hosts.py`, `packages/ai-parrot/src/parrot/mcp/toolkit_install.py`, `packages/ai-parrot/src/parrot/sdd/installer.py`, `packages/ai-parrot/src/parrot/cli/toolkits.py` (modify)
+- **Path**: `packages/ai-parrot/src/parrot/mcp/hosts.py`, `packages/ai-parrot/src/parrot/mcp/toolkit_install.py`, `packages/ai-parrot/src/parrot/sdd/installer.py`, `packages/ai-parrot/src/parrot/sdd/cli.py`, `packages/ai-parrot/src/parrot/cli/toolkits.py` (modify)
 - **Responsibility**: `portable` travels from the CLIs to the three reconcilers; nothing else changes.
 - **Depends on**: M2 (the reconcilers' `None` branch is what makes the fresh-repo case correct).
 - **Interface Skeleton**:
@@ -363,7 +378,12 @@ parrot self doctor   → new checks "repo: checkout" (fails in a linked worktree
   # parrot/sdd/installer.py  (modifies :1227 and the call at :1152)
   def _install_toolkits_step(root: Path, hosts: Sequence[str], receipt: dict[str, Any], *, portable: bool | None) -> list[str]:
       """Calls install_toolkits(root, list(SDD_TOOLKITS), _toolkit_hosts(hosts), portable=portable)."""
-  # call site: _install_toolkits_step(root, hosts, receipt, portable=True if portable else None)
+  # call site: _install_toolkits_step(root, hosts, receipt, portable=portable)
+
+  # parrot/sdd/cli.py  (modifies the option at :76-83)
+  # @click.option("--portable/--no-portable", "portable", default=None, help="Bare launcher commands (portable) or
+  #   baked absolute paths for the guard hook, the dangerous guard and the toolkit entries; default keeps each
+  #   host's current form and, on a fresh host, follows the managed launcher.")
 
   # parrot/cli/toolkits.py  (modifies install :180 and enable)
   # @click.option("--portable/--no-portable", default=None, help="Emit bare launcher commands (portable) or baked
@@ -407,7 +427,7 @@ parrot self doctor   → new checks "repo: checkout" (fails in a linked worktree
 ### Module 5: Doctor checks
 - **Path**: `packages/ai-parrot/src/parrot/self_/doctor.py` (modify)
 - **Responsibility**: `repo: checkout` (fails in a linked worktree without a pin) and `host config: form`
-  (informational).
+  (informational — owner decision 2026-11-04: baked is a valid single-machine state, doctor never fails on it).
 - **Depends on**: M1 (`InstallRoot`), M2 (`_current_portable_mode` tri-state for the form).
 - **Interface Skeleton**:
   ```python
@@ -452,9 +472,11 @@ parrot self doctor   → new checks "repo: checkout" (fails in a linked worktree
 | `test_current_portable_mode_tri_state` (×3 hosts; extends `test_portable_mode_parity.py`) | M2 | no file / no managed entry → `None`; baked entry → `False`; portable entry → `True` |
 | `test_no_config_follows_launcher_rule` (replaces `test_no_config_is_baked`, `test_portable_mode_parity.py:118`) | M2 | fresh repo: launcher on PATH → portable entries; absent → baked entries + the note line |
 | `test_default_install_unchanged` (`test_claude_installer_portable.py:48`), `test_default_emission_unchanged` (`test_codex_portable.py:57`, `test_google_portable.py:78`) | M2 | updated to pin `managed_launcher_on_path → False`; baked output unchanged |
-| `test_guard_hook_bare_when_managed_launcher_on_path` / `_baked_when_launcher_absent` (`tests/sdd/test_installer.py:353,370`) | M2 | unchanged expectations through the refactor |
+| `test_guard_hook_bare_when_managed_launcher_on_path` / `_baked_when_launcher_absent` (`tests/sdd/test_installer.py:353,370`) | M2 | call `guard_hook_command(portable=None)` (was `False`); same expectations |
+| `test_guard_hook_no_portable_forces_baked` | M2 | `guard_hook_command(portable=False)` → baked even with the launcher on PATH; `install_sdd_integration(repo, portable=False)` bakes the guard hook, the dangerous guard and the toolkit entries |
 | `test_reconcile_forwards_portable` | M3 | `install_toolkits(..., portable=True)` on a fresh repo → relative `--config`, bare command, no `cwd` for every host; `portable=None` keeps a baked `.mcp.json` baked |
 | `test_sdd_install_portable_reaches_toolkits` (extends `tests/sdd/test_installer_toolkits.py`) | M3 | fresh repo + `--portable` → both `parrot-*` entries portable; without the flag and launcher absent → baked + note |
+| `test_cli_flag_and_dry_run` (`tests/sdd/test_installer_toolkits.py:121`) | M3 | extended: `--portable` and `--no-portable` accepted; `--dry-run` still writes nothing |
 | `test_toolkits_cli_portable_flag` (extends `tests/cli/test_toolkits_cli.py`) | M3 | `--portable` / `--no-portable` accepted by install and enable |
 | `test_host_cli_refuses_linked_worktree` (×3 host CLIs) | M4 | `install` from a worktree cwd → exit 1, message names the primary checkout and `--path`; `--path <wt>` proceeds; `status` from the worktree works |
 | `test_sdd_cli_refuses_linked_worktree_and_resolves_subdir` (extends `tests/sdd/test_sdd_cli.py`) | M4 | `sdd install` in a worktree → exit 1; in `repo/sub` → installs into `repo` |
@@ -514,12 +536,12 @@ def managed_launcher(tmp_path, monkeypatch):
 - [ ] AC3 On a fresh repository (no host config) with the managed launcher on `PATH`, `parrot claude|codex|google install`, `parrot sdd install` and `parrot toolkits install` write no absolute path into `.mcp.json`, `.codex/config.toml`, the Google configs, `.claude/settings.json` or the agents' guard hook — without any `--portable` flag.
 - [ ] AC4 On a fresh repository with no managed launcher, the same commands write the baked form and each prints exactly one `note: host config baked to absolute paths (…)` line naming the fix; `guard hook baked` keeps its own existing note.
 - [ ] AC5 A repository whose host config is already baked stays baked on a plain re-install even with the launcher on `PATH` (sticky), and migrates with an explicit `--portable`; a portable one stays portable; `--no-portable` migrates it back (existing transition tests keep passing).
-- [ ] AC6 `parrot sdd install --portable` on a fresh repository produces portable `parrot-sdd-coder` / `parrot-bounded-source` entries for every selected host; `parrot toolkits install|enable --portable/--no-portable` are accepted and honoured.
+- [ ] AC6 `parrot sdd install --portable` on a fresh repository produces portable `parrot-sdd-coder` / `parrot-bounded-source` entries for every selected host; `parrot sdd install --no-portable` writes the baked form for the guard hook, the dangerous guard and the toolkit entries even with the launcher on `PATH`; `parrot toolkits install|enable --portable/--no-portable` are accepted and honoured.
 - [ ] AC7 Run from inside a linked worktree without `--path`, `parrot claude|codex|google install|uninstall`, `parrot sdd install|uninstall` and `parrot toolkits install|uninstall|enable|disable` write nothing, exit 1 and name the primary checkout and the `--path` escape hatch; with `--path <worktree>` they proceed; `status`/`list` verbs never refuse.
 - [ ] AC8 A host installer pointed at a linked worktree (`--path`) writes `.parrot/wiki.json` only under the primary checkout; `wikitoolkit`'s `find_project_root()` from that worktree still resolves the primary checkout.
 - [ ] AC9 `parrot self doctor` inside a linked worktree (no `--project`/pin) fails with `repo: checkout` and a fix naming the primary checkout; with a pin or from the primary checkout the check passes; `--runtime-only` never runs it.
 - [ ] AC10 `parrot self doctor` reports one informational `host config: <label> form` check per present host config (`portable` / `baked absolute paths` / `no managed entries`); it never changes doctor's exit code.
-- [ ] AC11 `guard_hook_command()`'s outputs are byte-identical to today's for the same `PATH`/`PARROT_HOME` (`tests/sdd/test_installer.py:353-407` unchanged).
+- [ ] AC11 `guard_hook_command(portable=None)` and `guard_hook_command(portable=True)` return byte-identical outputs to today's `False`/`True` for the same `PATH`/`PARROT_HOME`; `portable=False` now forces the baked form (`tests/sdd/test_installer.py:353-407` pass after replacing `portable=False` with `portable=None` in the two auto-rule tests).
 - [ ] AC12 `docs/install/global-runtime.md` no longer says "The default stays baked absolute paths"; it documents the launcher rule, stickiness, the note, the worktree refusal and `--path`; the three bookstore skill assets tell agents to run the host installer from the primary checkout or pass `--path`.
 - [ ] AC13 Every file in the Validation Contract passes with `PYTHONPATH=packages/ai-parrot/src`.
 
@@ -663,6 +685,11 @@ Verified against: `bc9bb3ead6`
 | `packages/ai-parrot/src/parrot/sdd/installer.py` | MODIFY | `            actions.extend(_install_toolkits_step(root, hosts, receipt))` | `installer.py:1152` | 1 |
 | `packages/ai-parrot/src/parrot/sdd/installer.py` | MODIFY | `def _install_toolkits_step(root: Path, hosts: Sequence[str], receipt: dict[str, Any]) -> list[str]:` | `installer.py:1227` | 1 |
 | `packages/ai-parrot/src/parrot/sdd/cli.py` | MODIFY | `def _root(path_: Path \| None) -> Path:` | `cli.py:48` | 1 |
+| `packages/ai-parrot/src/parrot/sdd/cli.py` | MODIFY | `    "--portable",` | `cli.py:77` | 1 |
+| `packages/ai-parrot/src/parrot/sdd/installer.py` | MODIFY | `def dangerous_hook_command(*, portable: bool) -> tuple[str, Literal["bare", "baked"]]:` | `installer.py:308` | 1 |
+| `packages/ai-parrot/src/parrot/sdd/installer.py` | MODIFY | `def _install_dangerous_guard(root: Path, receipt: dict[str, Any], *, portable: bool) -> list[str]:` | `installer.py:338` | 1 |
+| `packages/ai-parrot/src/parrot/sdd/installer.py` | MODIFY | `    portable: bool = False,` | `installer.py:1070` | 1 |
+| `packages/ai-parrot/src/parrot/sdd/installer.py` | MODIFY | `    hook = guard["command"] if guard["form"] in {"bare", "baked"} else guard_hook_command(portable=False)[0]` | `installer.py:1568` | 1 |
 | `packages/ai-parrot/src/parrot/mcp/hosts.py` | MODIFY | `    def reconcile(self, root: Path) -> tuple[list[str], list[str]]:` | `hosts.py:51,95,167,219` | 4 (protocol + Claude + Codex + Google, in that order; each carries its own lazy-import body) |
 | `packages/ai-parrot/src/parrot/mcp/toolkit_install.py` | MODIFY | `def _reconcile_all(root: Path, hosts: Sequence[HostKind], report: ActionReport) -> None:` | `toolkit_install.py:145` | 1 |
 | `packages/ai-parrot/src/parrot/mcp/toolkit_install.py` | MODIFY | `def install_toolkits(root: Path, names: Sequence[str], hosts: Sequence[HostKind]) -> ActionReport:` | `toolkit_install.py:158` | 1 |
@@ -750,8 +777,9 @@ Verified against: `bc9bb3ead6`
   - M5 → M1 (`InstallRoot`) and M2 (tri-state `_current_portable_mode` for the form check).
   - M6 → M2, M4 (names only; prose).
   - M3, M4 and M5 are mutually independent once M1 and M2 are merged and may run concurrently.
-- **Shared files** (their tasks get serialized): `sdd/installer.py` (M2 `guard_hook_command`; M3
-  `_install_toolkits_step` + call site); `knowledge/wiki/{claude_code,codex,google}/installer.py` (M2
+- **Shared files** (their tasks get serialized): `sdd/installer.py` (M2 `guard_hook_command` and the
+  tri-state signatures; M3 `_install_toolkits_step` + call site); `sdd/cli.py` (M3 `--portable/--no-portable`;
+  M4 `_root`); `knowledge/wiki/{claude_code,codex,google}/installer.py` (M2
   tri-state + `portable is None` sites; M4 `find_shared_root` state root in the three `install_*_integration`
   functions); `cli/toolkits.py` (M3 `--portable` options; M4 root helper); `self_/doctor.py` (M5 only);
   `self_/cli.py` (M4 only).
@@ -804,17 +832,27 @@ entries:
     supersedes: []
     rationale: "FEAT-697: the plane exists only in the primary checkout; a worktree-local wiki.json would make find_project_root stop at the worktree."
     rejected_alternatives: []
+  - id: host-config-form-is-informational
+    statement: doctor reports the form of each host config (portable / baked) as an informational check that never changes its exit code.
+    relation: constrains
+    about: [sdd-tooling]
+    targets: [sym:packages/ai-parrot/src/parrot/self_/doctor.py#_check_host_configs]
+    contradicts: []
+    supersedes: []
+    rationale: "Owner decision 2026-11-04: baked absolute paths are a valid single-machine state; the sticky default keeps writing them for already-installed repos, so failing doctor on them would contradict the installer."
+    rejected_alternatives: ["fail when sdd/config.json opts in with a portable_required key", "always fail when baked"]
 ```
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:3849e7adae7df64742d5af01b41fb2ed70f3641812f308574a64683a7ecfc23d evaluation_digest=sha256:b4749e556429e065add8fd4430a9e751b6076557f87bfc599a92e9bd1db41df2 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:6a6263db7dbff420d0cf9eef22c738c4c9373029e2ecd4394a430fd816d29a4f evaluation_digest=sha256:f83d540bf192b3c659a8880b934d5d9119175abfd73172b1f28df62c47969ed9 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
 Findings:
 - `blast-radius` [advisory]; waived_by: not recorded; participants: adr:spec:installer-portability-gaps#single-portable-rule@1; scope: sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py#install_claude_integration; message: sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py#install_claude_integration impacts 38 dependent(s): sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#_install, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_default_install_unchanged, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_foreign_toolkit_entry_untouched, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_plain_reinstall_keeps_portable_wikitoolkit_without_toolkits, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_portable_install_no_abs_paths, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_portable_transitions_both_ways, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_reconcile_respects_portable, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_remote_does_not_reset_portable_mode, sym:packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py#test_remote_portable_sticky, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#_install_claude, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_baked_install_falls_back_to_the_bare_wikitoolkit_command, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_bare_wikitoolkit_tie_broken_by_toolkit_entries, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_bare_wikitoolkit_without_toolkit_entries_is_portable, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_explicit_portable_migrates_a_baked_install, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_mixed_toolkit_entries_are_portable, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_plain_reinstall_keeps_a_baked_install_baked, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_chains_into_env_bash_git_hook, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_chains_into_existing_git_hook, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_claude_md_repaired_when_end_marker_lost, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_customised_nudge_tools_not_overridden, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_duplicate_sharing_an_entry_keeps_the_foreign_hook, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_fresh_install_writes_all_artifacts, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_install_is_idempotent, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_invalid_settings_json_aborts, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_no_git_hook_option, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_preserves_existing_claude_md, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_preserves_existing_settings_hooks, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_reinstall_collapses_a_quoted_duplicate, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_reinstall_migrates_nudge_tools, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_reinstall_migrates_permissions_to_local, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_reinstall_upgrades_hook_matcher, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_skips_chaining_into_non_sh_git_hook, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_status_reflects_install_state, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_uninstall_keeps_a_foreign_hook_sharing_our_entry, sym:tests/knowledge/wiki/test_claude_code.py#TestInstaller.test_uninstall_removes_only_ours, sym:tests/knowledge/wiki/test_claude_code_compaction.py#TestIntegrationWiring.test_library_default_is_opt_in_and_cli_default_is_on, sym:tests/knowledge/wiki/test_claude_code_compaction.py#TestIntegrationWiring.test_status_labels_include_compaction, sym:tests/knowledge/wiki/test_installer_ledger_hooks.py#test_install_claude_integration_action_count
 - `blast-radius` [advisory]; waived_by: not recorded; participants: adr:spec:installer-portability-gaps#linked-worktrees-refuse-installers@1; scope: sym:packages/ai-parrot/src/parrot/self_/doctor.py#run_doctor; message: sym:packages/ai-parrot/src/parrot/self_/doctor.py#run_doctor impacts 3 dependent(s): sym:packages/ai-parrot/src/parrot/self_/cli.py#doctor, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_run_doctor_never_raises_on_empty_home, sym:packages/ai-parrot/tests/self_/test_doctor_sdd.py#test_scope_runtime_only_excludes_repo_host_and_component_checks
+- `blast-radius` [advisory]; waived_by: not recorded; participants: adr:spec:installer-portability-gaps#host-config-form-is-informational@1; scope: sym:packages/ai-parrot/src/parrot/self_/doctor.py#_check_host_configs; message: sym:packages/ai-parrot/src/parrot/self_/doctor.py#_check_host_configs impacts 8 dependent(s): sym:packages/ai-parrot/src/parrot/self_/cli.py#doctor, sym:packages/ai-parrot/src/parrot/self_/doctor.py#run_doctor, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_doctor_flags_broken_host_config, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_gemini_cross_repo_collision, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_gemini_repo_local_config_checked, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_remote_http_entry_is_not_flagged, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_run_doctor_never_raises_on_empty_home, sym:packages/ai-parrot/tests/self_/test_doctor_sdd.py#test_scope_runtime_only_excludes_repo_host_and_component_checks
 - `blast-radius` [advisory]; waived_by: not recorded; participants: adr:spec:installer-portability-gaps#wiki-config-lives-on-the-primary-checkout@1; scope: sym:packages/ai-parrot/src/parrot/knowledge/wiki/project.py#find_shared_root; message: sym:packages/ai-parrot/src/parrot/knowledge/wiki/project.py#find_shared_root impacts 25 dependent(s): sym:examples/dev_loop/server.py#_on_startup, sym:packages/ai-parrot/src/parrot/cli/devloop/bootstrap.py#build_dev_flow_runtime, sym:packages/ai-parrot/src/parrot/cli/devloop/bootstrap.py#build_runtime, sym:packages/ai-parrot/src/parrot/flows/dev_loop/wiki_search.py#DevLoopWikiSearch.from_project, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#_git_toplevel, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#ledger_export_log, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#ledger_import_log, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#ledger_rotate_log, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#schema_add_source, sym:packages/ai-parrot/src/parrot/knowledge/wiki/cli.py#schema_ingest_ddl, sym:packages/ai-parrot/src/parrot/knowledge/wiki/mcp_server.py#abuild_wiki_tools, sym:packages/ai-parrot/src/parrot/knowledge/wiki/mcp_server.py#build_wiki_tools, sym:packages/ai-parrot/src/parrot/knowledge/wiki/schema/service.py#SchemaPlaneService.from_root, sym:packages/ai-parrot/src/parrot/knowledge/wiki/standup/collectors/ledger.py#collect, sym:packages/ai-parrot/src/parrot/sdd/scripts/close_task.py#_emit_task_closed, sym:packages/ai-parrot/tests/knowledge/wiki/test_project_roots.py#test_configured_project_below_temp_root_wins_over_git_fallback, sym:packages/ai-parrot/tests/knowledge/wiki/test_project_roots.py#test_project_below_temp_root_still_resolves, sym:packages/ai-parrot/tests/knowledge/wiki/test_project_roots.py#test_stray_git_at_temp_root_is_not_a_project_root, sym:packages/ai-parrot/tests/knowledge/wiki/test_project_roots.py#test_temp_root_itself_is_never_a_root, sym:packages/ai-parrot/tests/knowledge/wiki/test_wiki_tool_bundle.py#test_async_builder_no_transient_loop, sym:tests/knowledge/wiki/test_devloop_ledger_context.py#TestDevLoopWikiLedgerContext.test_linked_worktree_opens_main_wiki, sym:tests/knowledge/wiki/test_project_shared_root.py#TestFindSharedRoot.test_find_shared_root_no_git, sym:tests/knowledge/wiki/test_project_shared_root.py#TestFindSharedRoot.test_find_shared_root_regular_repo, sym:tests/knowledge/wiki/test_project_shared_root.py#TestFindSharedRoot.test_find_shared_root_tolerance_to_failures, sym:tests/knowledge/wiki/test_project_shared_root.py#TestFindSharedRoot.test_find_shared_root_with_start_param; inferred: sym:packages/ai-parrot/src/parrot/sdd/scripts/close_task.py#_emit_task_closed_inprocess
 - `blast-radius` [advisory]; waived_by: not recorded; participants: adr:spec:installer-portability-gaps#single-portable-rule@1; scope: sym:packages/ai-parrot/src/parrot/knowledge/wiki/google/installer.py#install_google_integration; message: sym:packages/ai-parrot/src/parrot/knowledge/wiki/google/installer.py#install_google_integration impacts 11 dependent(s): sym:packages/ai-parrot/src/parrot/knowledge/wiki/google/cli.py#install, sym:packages/ai-parrot/tests/knowledge/wiki/test_google_portable.py#_install, sym:packages/ai-parrot/tests/knowledge/wiki/test_google_portable.py#test_default_emission_unchanged, sym:packages/ai-parrot/tests/knowledge/wiki/test_google_portable.py#test_foreign_entries_untouched, sym:packages/ai-parrot/tests/knowledge/wiki/test_google_portable.py#test_portable_config_two_roots, sym:packages/ai-parrot/tests/knowledge/wiki/test_google_portable.py#test_portable_entries_no_abs_paths, sym:packages/ai-parrot/tests/knowledge/wiki/test_google_portable.py#test_portable_transitions_and_sticky_reconcile, sym:tests/knowledge/wiki/test_google_integration.py#test_install_is_idempotent_and_preserves_unrelated_config, sym:tests/knowledge/wiki/test_google_integration.py#test_install_writes_mcp_skill_instructions_and_plugin, sym:tests/knowledge/wiki/test_google_integration.py#test_invalid_mcp_config_aborts_without_overwriting, sym:tests/knowledge/wiki/test_google_integration.py#test_uninstall_removes_only_managed_assets
 - `blast-radius` [advisory]; waived_by: not recorded; participants: adr:spec:installer-portability-gaps#single-portable-rule@1; scope: sym:packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py#install_codex_integration; message: sym:packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py#install_codex_integration impacts 19 dependent(s): sym:packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py#install, sym:packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py#test_default_emission_unchanged, sym:packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py#test_portable_entries_no_abs_paths, sym:packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py#test_portable_transitions_both_ways, sym:packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py#test_reconcile_sticky, sym:packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py#test_remote_does_not_reset_portable_mode, sym:packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py#test_remote_portable_sticky, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_baked_install_falls_back_to_the_bare_wikitoolkit_command, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_bare_wikitoolkit_tie_broken_by_toolkit_entries, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_bare_wikitoolkit_without_toolkit_entries_is_portable, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_explicit_portable_migrates_a_baked_install, sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#test_plain_reinstall_keeps_a_baked_install_baked, sym:tests/knowledge/wiki/test_codex_installer_toolkit_entries.py#test_codex_install_reconciles_declared_toolkits, sym:tests/knowledge/wiki/test_codex_integration.py#test_install_is_idempotent_and_preserves_unrelated_config, sym:tests/knowledge/wiki/test_codex_integration.py#test_install_replaces_manual_wikitoolkit_mcp_table, sym:tests/knowledge/wiki/test_codex_integration.py#test_install_writes_mcp_skill_instructions_and_permissions, sym:tests/knowledge/wiki/test_codex_integration.py#test_invalid_config_aborts_without_overwriting, sym:tests/knowledge/wiki/test_codex_integration.py#test_uninstall_removes_only_managed_assets, sym:tests/knowledge/wiki/test_codex_toolkit_reconcile.py#test_empty_toolkit_config_hints_at_new_command; inferred: sym:packages/ai-parrot/tests/knowledge/wiki/test_portable_mode_parity.py#_install_codex
@@ -827,7 +865,7 @@ Diagnostics:
 Coverage:
 - Subsystems: bots, clients, config, flows, knowledge-graphindex, knowledge-wiki, memory, sdd-tooling, skills, tools
 - Unmapped tags: doctor, installer, mcp-toolkits, portability, worktree
-- Targets resolved: 12/12
+- Targets resolved: 13/13
 - Impact complete: true
 - Inventory complete: true
 - Omitted ids: not recorded
@@ -850,8 +888,8 @@ Coverage:
       "skills",
       "tools"
     ],
-    "targets_resolved": 12,
-    "targets_total": 12,
+    "targets_resolved": 13,
+    "targets_total": 13,
     "unmapped_tags": [
       "doctor",
       "installer",
@@ -861,7 +899,7 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:b4749e556429e065add8fd4430a9e751b6076557f87bfc599a92e9bd1db41df2",
+  "evaluation_digest": "sha256:f83d540bf192b3c659a8880b934d5d9119175abfd73172b1f28df62c47969ed9",
   "exit_code": 0,
   "findings": [
     {
@@ -895,6 +933,23 @@ Coverage:
       "rule_version": 1,
       "scope": [
         "sym:packages/ai-parrot/src/parrot/self_/doctor.py#run_doctor"
+      ],
+      "waived_by": null
+    },
+    {
+      "blocking": false,
+      "fingerprint": "sha256:2ebaa557e4fa010c671c8545aac5865af4ec2e63ca6bfd1866ae5723b86a35b8",
+      "kind": "blast-radius",
+      "message": "sym:packages/ai-parrot/src/parrot/self_/doctor.py#_check_host_configs impacts 8 dependent(s): sym:packages/ai-parrot/src/parrot/self_/cli.py#doctor, sym:packages/ai-parrot/src/parrot/self_/doctor.py#run_doctor, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_doctor_flags_broken_host_config, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_gemini_cross_repo_collision, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_gemini_repo_local_config_checked, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_remote_http_entry_is_not_flagged, sym:packages/ai-parrot/tests/self_/test_doctor.py#test_run_doctor_never_raises_on_empty_home, sym:packages/ai-parrot/tests/self_/test_doctor_sdd.py#test_scope_runtime_only_excludes_repo_host_and_component_checks",
+      "participants": [
+        {
+          "decision_id": "adr:spec:installer-portability-gaps#host-config-form-is-informational",
+          "revision": 1
+        }
+      ],
+      "rule_version": 1,
+      "scope": [
+        "sym:packages/ai-parrot/src/parrot/self_/doctor.py#_check_host_configs"
       ],
       "waived_by": null
     },
@@ -988,13 +1043,13 @@ Coverage:
       "waived_by": null
     }
   ],
-  "input_digest": "sha256:3849e7adae7df64742d5af01b41fb2ed70f3641812f308574a64683a7ecfc23d",
+  "input_digest": "sha256:6a6263db7dbff420d0cf9eef22c738c4c9373029e2ecd4394a430fd816d29a4f",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
     "inventory": {},
     "rules_version": 1,
-    "structural_revision": "sha256:2c15ef81080e8d346d29acefcb082bc4bf4ff2438eddc3ae0c90d05a57fdac96",
+    "structural_revision": "sha256:ad339b4ea8aa6a0addca7b8760aa5b85a0a39d0196b802a8e8e8ea00ccc22f81",
     "taxonomy_digest": "9887c26aa37a5daa626531f2ef465c9f7ef63adf1a9d890eb248ea33c0053dbd"
   },
   "status": "pass"
@@ -1006,8 +1061,8 @@ Coverage:
 - [x] Default form on a fresh repository — *Resolved by Jesus Lara, 2026-11-04*: launcher on `PATH` ⇒ portable; otherwise baked plus a printed note (supersedes FEAT-633's "default stays baked, `--portable` opt-in").
 - [x] Behaviour inside a linked worktree without `--path` — *Resolved by Jesus Lara, 2026-11-04*: refuse (exit 1, name the primary checkout and `--path`); not install-in-place, not redirect.
 - [x] Does the worktree-root relocation (FEAT-802) close gap 3? — *Resolved in chat, 2026-11-04*: no; the install-target root and the wiki-plane root are different questions. Independent specs.
-- [ ] Should `parrot sdd install --portable` stay a boolean flag, or become `--portable/--no-portable` like the host installers so an explicit "migrate back to baked" exists there too? — *Owner: Jesus Lara* (spec default: keep the boolean flag; `--no-portable` is reachable through the host installers and `parrot toolkits`).
-- [ ] Should `doctor`'s `host config: form` check become a failing check for repositories whose `sdd/config.json` declares a multi-machine policy in a later feature? — *Owner: Jesus Lara* (spec default: informational only).
+- [x] Should `parrot sdd install --portable` stay a boolean flag, or become `--portable/--no-portable`? — *Resolved by Jesus Lara, 2026-11-04*: `--portable/--no-portable`, default `None`; the same tri-state reaches `guard_hook_command`, the dangerous guard and the toolkit entries, so `--no-portable` migrates an SDD install back to baked explicitly.
+- [x] Should `doctor`'s `host config: form` check ever fail? — *Resolved by Jesus Lara, 2026-11-04*: informational only; no `sdd/config.json` policy key, doctor's exit code never depends on the form.
 
 ---
 
@@ -1029,3 +1084,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-04 | Jesus Lara / Claude | Initial draft from the 2026-11-04 installer evaluation and chat decisions |
+| 0.2 | 2026-11-04 | Jesus Lara / Claude | §8 resolved: `sdd install --portable/--no-portable` tri-state through the guard hook, dangerous guard and toolkits; doctor form check stays informational (new decision entry) |
