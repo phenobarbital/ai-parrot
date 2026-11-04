@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, Literal, Sequence
 
 from pydantic import BaseModel
 
-from parrot.launcher import parrot_home, script_path
+from parrot.launcher import managed_launcher_on_path, script_path
 from parrot.sdd.audit import EXTERNAL_TOOL_RE, missing_tools, scan_paths  # TASK-4070
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -277,23 +277,17 @@ def _under(path: Path, base: Path) -> bool:
     return path == base or base in path.parents
 
 
-def guard_hook_command(*, portable: bool) -> tuple[str, Literal["bare", "baked"]]:
+def guard_hook_command(*, portable: bool | None) -> tuple[str, Literal["bare", "baked"]]:
     """Return the guard-hook command to render and its form (rev 0.6 C25).
 
-    ``bare`` when ``portable`` is set or when ``parrot`` on PATH resolves under ``parrot_home()`` (the managed
-    launcher shims may be symlinks into ``~/.parrot/venv``, so both the path as found and its resolution are
-    compared); otherwise ``baked``: the absolute path of this interpreter's venv ``parrot`` script.
+    ``bare`` when ``portable`` is true or when it is unspecified and ``parrot`` on PATH resolves under the managed
+    launcher home; otherwise ``baked``: the absolute path of this interpreter's venv ``parrot`` script.
+    An explicit false value always selects the baked form.
     """
-    if portable:
+    if portable is True:
         return GUARD_HOOK_LINE, "bare"
-    found = shutil.which("parrot")
-    if found:
-        home = parrot_home()
-        found_path = Path(found)
-        homes = {home, home.resolve()}
-        candidates = {found_path, found_path.resolve()}
-        if any(_under(c, h) for c in candidates for h in homes):
-            return GUARD_HOOK_LINE, "bare"
+    if portable is None and managed_launcher_on_path():
+        return GUARD_HOOK_LINE, "bare"
     baked = shlex.quote(script_path(Path(sys.prefix), "parrot").as_posix())
     return baked + _GUARD_HOOK_SUFFIX, "baked"
 
@@ -305,7 +299,7 @@ _DANGEROUS_SUFFIX = " sdd hooks dangerous-actions --hook"
 _DANGEROUS_MATCHER = "Bash|Edit|Write|MultiEdit"
 
 
-def dangerous_hook_command(*, portable: bool) -> tuple[str, Literal["bare", "baked"]]:
+def dangerous_hook_command(*, portable: bool | None) -> tuple[str, Literal["bare", "baked"]]:
     """Return the dangerous-actions guard command and its form; same bare/baked rule as :func:`guard_hook_command`."""
     guard, form = guard_hook_command(portable=portable)
     if form == "bare":
@@ -335,7 +329,7 @@ def _pre_tool_use(settings: dict[str, Any], path: Path, *, create: bool) -> list
     return pre
 
 
-def _install_dangerous_guard(root: Path, receipt: dict[str, Any], *, portable: bool) -> list[str]:
+def _install_dangerous_guard(root: Path, receipt: dict[str, Any], *, portable: bool | None) -> list[str]:
     """C32: merge one dangerous-actions PreToolUse entry into ``.claude/settings.json`` (foreign entries untouched)."""
     from parrot.knowledge.wiki.claude_code.installer import _load_settings, _write_settings  # lazy, as for ledger hooks
 
@@ -1067,7 +1061,7 @@ def install_sdd_integration(
     *,
     keep_edits: bool = False,
     dry_run: bool = False,
-    portable: bool = False,
+    portable: bool | None = None,
     base_branch: str | None = None,
     push_base: bool = False,
     hotfix_base: str | None = None,
@@ -1084,8 +1078,8 @@ def install_sdd_integration(
             overwritten either way.
         dry_run: Return the plan (``plan: <action> <target>`` lines) and write NOTHING — no asset,
             seed, gitignore, ledger, config, receipt, or directory.
-        portable: Write the bare guard-hook command (needs the global launcher on PATH) instead of
-            baking the installing venv's ``parrot`` when the launcher is not on PATH (C25).
+        portable: ``True`` writes bare launcher commands, ``False`` writes baked paths, and ``None`` retains
+            a host's existing form or follows the managed launcher for a fresh host (C25).
         base_branch: C31 — seed ``sdd/config.json`` with this base branch (when absent) and prepare it.
             Conflicts with an existing config that sets a different one.
         dangerous_guard: C32 — register the PreToolUse dangerous-actions guard in ``.claude/settings.json``
@@ -1149,7 +1143,7 @@ def install_sdd_integration(
         elif step.action == "dangerous-guard":
             actions.extend(_install_dangerous_guard(root, receipt, portable=portable))
         elif step.action == "toolkits":
-            actions.extend(_install_toolkits_step(root, hosts, receipt))
+            actions.extend(_install_toolkits_step(root, hosts, receipt, portable=portable))
     _save_receipt(root, receipt)
     actions.append(f"{RECEIPT_PATH} — written; commit it with the installed files (it drives upgrades and uninstall)")
     actions.append(_test_command_warning(config) or "")
@@ -1224,12 +1218,14 @@ def _roster_report(root: Path) -> list[str]:
         return [f"warning: sdd-coder roster could not be checked ({exc})"]
 
 
-def _install_toolkits_step(root: Path, hosts: Sequence[str], receipt: dict[str, Any]) -> list[str]:
+def _install_toolkits_step(
+    root: Path, hosts: Sequence[str], receipt: dict[str, Any], *, portable: bool | None
+) -> list[str]:
     """C34 — register the SDD MCP toolkits; record in the receipt only those this run added."""
     try:
         from parrot.mcp.toolkit_install import install_toolkits
 
-        report = install_toolkits(root, list(SDD_TOOLKITS), _toolkit_hosts(hosts))
+        report = install_toolkits(root, list(SDD_TOOLKITS), _toolkit_hosts(hosts), portable=portable)
     except (ValueError, OSError, ImportError) as exc:
         return [f"warning: MCP toolkits not registered ({exc})"]
     lines: list[str] = list(report.actions)
@@ -1565,7 +1561,7 @@ def sdd_status(root: Path) -> dict[str, Any]:
     receipt = load_receipt(root)
     entries = load_manifest()
     guard = _guard_hook_report(root)
-    hook = guard["command"] if guard["form"] in {"bare", "baked"} else guard_hook_command(portable=False)[0]
+    hook = guard["command"] if guard["form"] in {"bare", "baked"} else guard_hook_command(portable=None)[0]
     hosts: dict[str, dict[str, list[str]]] = {}
     for host in SUPPORTED_HOSTS:
         states: dict[str, list[str]] = {"current": [], "outdated": [], "edited": [], "foreign": [], "missing": []}

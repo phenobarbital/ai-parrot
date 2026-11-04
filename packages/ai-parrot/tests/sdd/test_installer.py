@@ -19,13 +19,13 @@ from parrot.sdd.installer import (
     GITIGNORE_BEGIN,
     GUARD_HOOK_LINE,
     RECEIPT_PATH,
+    dangerous_hook_command,
     guard_hook_command,
     install_sdd_integration,
     load_manifest,
     sdd_status,
     uninstall_sdd_integration,
 )
-
 
 @pytest.fixture
 def empty_repo(tmp_path: Path) -> Path:
@@ -360,7 +360,7 @@ def test_guard_hook_bare_when_managed_launcher_on_path(
     shim.chmod(0o755)
     monkeypatch.setenv("PARROT_HOME", str(home))
     monkeypatch.setenv("PATH", str(home / "bin"))
-    assert guard_hook_command(portable=False) == (GUARD_HOOK_LINE, "bare")
+    assert guard_hook_command(portable=None) == (GUARD_HOOK_LINE, "bare")
     install_sdd_integration(empty_repo)
     assert _hook_of(empty_repo) == GUARD_HOOK_LINE
     assert _hook_of(empty_repo, CODER) == GUARD_HOOK_LINE
@@ -368,7 +368,7 @@ def test_guard_hook_bare_when_managed_launcher_on_path(
 
 
 def test_guard_hook_baked_when_launcher_absent(empty_repo: Path, no_launcher: Path) -> None:
-    hook, form = guard_hook_command(portable=False)
+    hook, form = guard_hook_command(portable=None)
     assert form == "baked"
     install_sdd_integration(empty_repo)
     command = _hook_of(empty_repo)
@@ -385,6 +385,33 @@ def test_guard_hook_portable_flag_forces_bare(empty_repo: Path, no_launcher: Pat
     actions = install_sdd_integration(empty_repo, portable=True)
     assert _hook_of(empty_repo) == GUARD_HOOK_LINE
     assert not any("baked" in a for a in actions)
+
+
+def test_guard_hook_no_portable_forces_baked(empty_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """False forces baked commands even when the managed launcher is available."""
+    home = tmp_path / "home"
+    (home / "bin").mkdir(parents=True)
+    shim = home / "bin" / "parrot"
+    shim.write_text("#!/bin/sh\n", encoding="utf-8")
+    shim.chmod(0o755)
+    venv = tmp_path / "venv with space"
+    monkeypatch.setenv("PARROT_HOME", str(home))
+    monkeypatch.setenv("PATH", str(home / "bin"))
+    monkeypatch.setattr(sys, "prefix", str(venv))
+
+    guard, form = guard_hook_command(portable=False)
+    dangerous, dangerous_form = dangerous_hook_command(portable=False)
+
+    assert form == dangerous_form == "baked"
+    assert guard.startswith("'") and str(venv / "bin" / "parrot") in guard
+    assert dangerous == (
+        guard.removesuffix(" sdd worktree guard --hook || exit 2") + " sdd hooks dangerous-actions --hook"
+    )
+    install_sdd_integration(empty_repo, portable=False)
+    assert _hook_of(empty_repo) == guard
+    settings = json.loads((empty_repo / ".claude/settings.json").read_text(encoding="utf-8"))
+    command = settings["hooks"]["PreToolUse"][-1]["hooks"][0]["command"]
+    assert command == dangerous
 
 
 def test_guard_hook_quoting_space_and_quote(
