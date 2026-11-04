@@ -200,10 +200,10 @@
   const supportedModels = [
     { value: "", label: "Default Model" },
     // Google
-    { value: "google:gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-    { value: "google:gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+    { value: "google:gemini-3.8-flash", label: "Gemini 3.8 Flash" },
+    { value: "google:gemini-4-argon", label: "Gemini 4 Argon" },
     { value: "google:gemini-3-flash-preview", label: "Gemini 3 Flash" },
-    { value: "google:gemini-3-pro-preview", label: "Gemini 3 Pro" },
+    { value: "google:gemini-3.1-pro-preview", label: "Gemini 3.1 Pro" },
     // OpenAI
     { value: "openai:gpt-4.1", label: "GPT 4.1" },
     { value: "openai:gpt-4.1-mini", label: "GPT 4.1 Mini" },
