@@ -107,14 +107,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     """
     Client for interacting with Google's Generative AI, with support for parallel function calling.
 
-    Only Gemini-2.5-pro works well with multi-turn function calling.
     Supports both API Key (Gemini Developer API) and Service Account (Vertex AI).
 
     **Combined tools + structured output**: for models whose identifier starts with a prefix
     in ``_default_combined_call_prefixes`` (default: ``gemini-3.1-pro``, ``gemini-3.5-flash``,
     ``gemini-3.1-flash-lite``), ``ask()`` and ``ask_stream()`` send ``tools`` and
     ``response_schema`` in a single ``GenerateContentConfig`` (no reformat round-trip).
-    For all other models (e.g. ``gemini-2.5-pro``), the legacy two-phase flow is preserved.
+    For all other models (e.g. ``gemini-2.0-flash``), the legacy two-phase flow is preserved.
     Override the whitelist per-instance via ``GoogleGenAIClient(combined_call_prefixes=...)``.
     """
 
@@ -161,7 +160,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     _sensitive_tool_result_names: frozenset[str] = frozenset({"python_repl", "python_repl_pandas"})
     # Default model used to reformat tool-using responses into structured
     # output for models that cannot combine tools + response_schema in one
-    # call (e.g., gemini-2.5-pro). Override per-instance via the
+    # call (e.g., gemini-2.0-flash). Override per-instance via the
     # ``reformat_model`` constructor kwarg. DO NOT downgrade the default to
     # a smaller model (e.g. flash-lite): small models hallucinate rows when
     # extracting tabular data from a shape-annotated preview, corrupting
@@ -303,15 +302,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     def _requires_thinking(model: str) -> bool:
         """Check if a model only works in thinking mode (budget > 0).
 
-        Gemini 2.5 Pro, Gemini 3.x Pro, and computer-use models are
+        Gemini 3.x Pro and computer-use models are
         thinking-only and reject budget=0.
         """
         model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
-        return model.startswith(
-            ("gemini-2.5-pro", "gemini-3.1-pro", "gemini-3-pro")
-        ) or GoogleGenAIClient._is_computer_use_model(model)
+        return model.startswith(("gemini-3.1-pro", "gemini-3-pro")) or GoogleGenAIClient._is_computer_use_model(model)
 
     @staticmethod
     def _rejects_zero_thinking_budget(model: str) -> bool:
@@ -417,7 +414,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
-        return model.startswith(("gemini-2.5-computer-use", "gemini-3-flash-preview"))
+        return model.startswith(("gemini-3-flash-preview",))
 
     @staticmethod
     def _supports_combined_tools_and_schema(
@@ -566,7 +563,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         Args:
             client: The active ``genai.Client`` instance.
-            model: Model name string (e.g. ``"gemini-2.5-flash"``).
+            model: Model name string (e.g. ``"gemini-3.8-flash"``).
             payload: The ``generate_content`` payload dict to update.
             segments: The cacheable segments returned by ``_apply_cache_hints()``.
             system_instruction: When given, the text stored in the cache instead of the
@@ -1816,7 +1813,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         Empty / None / `[]` / `{}` results are surfaced as the explicit
         sentinel ``"returned no data"`` instead of the literal string
-        ``"None"``. Without this, Gemini-2.5-pro tends to treat a bare
+        ``"None"``. Without this, older Pro models tend to treat a bare
         ``None`` as ambiguous and reply with imperative-to-self meta
         text ("If you have sufficient information, provide a final
         answer…") rather than reporting the empty result.
@@ -1854,7 +1851,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         """Disabled. Returns ``None`` so the next-turn payload only carries
         the canonical ``function_response`` parts.
 
-        Why: gemini-2.5-pro intermittently treats any extra text part appended
+        Why: older Pro models intermittently treat any extra text part appended
         after the tool responses as a section-header cue and echoes a chunk
         of it verbatim at the start of the visible answer. Both flavours
         observed:
@@ -3319,7 +3316,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         Args:
             prompt (str): The input prompt for the model.
             model (Union[str, GoogleModel]): The model to use. If None, uses the client's configured model
-                or defaults to GEMINI_2_5_FLASH.
+                or defaults to GEMINI_3_8_FLASH.
             max_tokens (int): Maximum number of tokens in the response.
             temperature (float): Sampling temperature for response generation.
             files (Optional[List[Union[str, Path]]]): Optional files to include in the request.
@@ -3367,7 +3364,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # If use_tools is None, use the instance default
         _use_tools = use_tools if use_tools is not None else self.enable_tools
         if not model:
-            model = self.model or GoogleModel.GEMINI_2_5_FLASH.value
+            model = self.model or GoogleModel.GEMINI_3_8_FLASH.value
 
         # Handle case where model is passed as a tuple or list
         if isinstance(model, (list, tuple)):
@@ -3504,7 +3501,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         use_structured_output = bool(output_config)
         # FEAT-193: whitelisted Gemini 3.x models can receive tools + response_schema
         # in a single GenerateContentConfig (combined mode).  Non-whitelisted models
-        # (e.g. gemini-2.5-pro) keep the legacy two-phase reformat flow.
+        # (e.g. gemini-2.0-flash) keep the legacy two-phase reformat flow.
         combined_mode = (
             _use_tools
             and use_structured_output
@@ -4250,7 +4247,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             agent_config: Optional configuration for deep research (e.g., thinking_summaries)
         """
         model = (model.value if isinstance(model, GoogleModel) else model) or (
-            self.model or GoogleModel.GEMINI_2_5_FLASH.value
+            self.model or GoogleModel.GEMINI_3_8_FLASH.value
         )
 
         # Handle case where model is passed as a tuple or list
@@ -4789,7 +4786,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     async def _build_batch_request_payload(self, req: Dict[str, Any]) -> Dict[str, Any]:
         """Convert a standard ask() call parameters dict into a Gemini Batch API request dict."""
         prompt = req.get("prompt", "")
-        model = req.get("model") or self.model or GoogleModel.GEMINI_2_5_FLASH.value
+        model = req.get("model") or self.model or GoogleModel.GEMINI_3_8_FLASH.value
         model = self._as_model_str(model) or model
 
         # Determine tools
@@ -4932,7 +4929,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # Determine the model. Batch jobs require all requests to run on the same model.
         first_req = requests[0]
-        batch_model = first_req.get("model") or self.model or GoogleModel.GEMINI_2_5_FLASH.value
+        batch_model = first_req.get("model") or self.model or GoogleModel.GEMINI_3_8_FLASH.value
         batch_model = self._as_model_str(batch_model) or batch_model
 
         # Build requests payloads
@@ -5224,7 +5221,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         for i, req in enumerate(original_requests):
             key = f"req_{i}"
             prompt = req.get("prompt", "")
-            model = req.get("model") or self.model or GoogleModel.GEMINI_2_5_FLASH.value
+            model = req.get("model") or self.model or GoogleModel.GEMINI_3_8_FLASH.value
             model = self._as_model_str(model) or model
 
             if key not in output_map:
@@ -5327,7 +5324,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         """
         model = model.value if isinstance(model, GoogleModel) else model
         if not model:
-            model = self.model or GoogleModel.GEMINI_2_5_FLASH.value
+            model = self.model or GoogleModel.GEMINI_3_8_FLASH.value
         # The loop-local SDK client must exist before `self.client` is touched: a caller that never
         # entered the async context manager (e.g. a pipeline building its own client) would
         # otherwise hit `self.client.aio` on None. The model hint also rebuilds the client when the
@@ -5633,7 +5630,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     async def question(
         self,
         prompt: str,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_8_FLASH,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
@@ -5649,7 +5646,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         Args:
             prompt (str): The input prompt for the model.
-            model (Union[str, GoogleModel]): The model to use, defaults to GEMINI_2_5_FLASH.
+            model (Union[str, GoogleModel]): The model to use, defaults to GEMINI_3_8_FLASH.
             max_tokens (int): Maximum number of tokens in the response.
             temperature (float): Sampling temperature for response generation.
             files (Optional[List[Union[str, Path]]]): Optional files to include in the request.
