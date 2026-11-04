@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-796 — Per-Component LLM Defaults
 **Spec**: `sdd/specs/per-component-llm-defaults.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -207,10 +207,8 @@ async def test_subscriber_tags_component(): ...  # FILL IN: build AfterClientCal
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestrator; coder seat gpt-5.6-sol (codex), 1 attempt, 0 retries
+**Date**: 2026-11-04
+**Notes**: Merged as f84fa425a5; delivery reviewed against task, merge-tier validation green (5 passed). coder_record_review failed server-side (CoderReview mapping error) — review NOT recorded; 0 fix commits.
 
 **Deviations from spec**: none

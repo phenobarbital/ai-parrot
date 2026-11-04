@@ -569,6 +569,9 @@ curl -X DELETE "http://localhost:8080/api/v1/crew?name=research_crew"
 
 ## Google Credentials (`CREW_AI_KEY`)
 
+> FEAT-796: `CREW_GOOGLE_API_KEY` is now the primary crew key; `CREW_AI_KEY` remains a silent alias.
+> See [per-component LLM defaults](configuration/llm-defaults.md).
+
 `CREW_AI_KEY` is an opt-in operational control for metering, budgeting, and rotating crew-builder Google traffic separately from every other Google consumer in the server. It only does something when an operator sets it.
 
 ### Coverage

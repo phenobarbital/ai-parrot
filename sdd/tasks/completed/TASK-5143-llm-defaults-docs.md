@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-796 — Per-Component LLM Defaults
 **Spec**: `sdd/specs/per-component-llm-defaults.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5140, TASK-5141, TASK-5142
@@ -182,10 +182,8 @@ def test_llm_defaults_documented(name: str) -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker; seat mistral (nova), 1 attempt, 0 retries
+**Date**: 2026-11-04
+**Notes**: Reviewer-correction fb8b480532: doc listed lowercase usage tags and a non-existent `global` tag, and vague builtin defaults; fixed to match code (AGENT/CREW/EXPERT_<TIER>). 6 doc tests pass. Review not recorded (coder_record_review server bug).
 
 **Deviations from spec**: none
