@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-798 — Retire gemini-2.5-{pro,flash}: move the Google defaults to Gemini 4 Argon / 3.8-flash and bump google-genai
 **Spec**: `sdd/specs/google-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (<1h)
 **Depends-on**: TASK-5148, TASK-5152, TASK-5155
@@ -66,11 +66,11 @@ Fixing the voicebot tests (separate, pre-existing).
 
 ## Acceptance Criteria
 
-- [ ] `artifacts/logs/FEAT-798-ac12-models-get.json` shows `models.get` succeeding for all four ids (`"passed": true`).
-- [ ] No test name contradicts its assertion; `gemini-3-flash-preview` is covered as thinking-only and `"legacy"`.
-- [ ] `uv lock --check` passes and `uv.lock` resolves `google-genai` >= 2.34.0.
-- [ ] The voicebot failures are shown to reproduce on `origin/dev`.
-- [ ] `ruff check` clean on touched Python files; the validation command passes.
+- [x] `artifacts/logs/FEAT-798-ac12-models-get.json` shows `models.get` succeeding for all four ids (`"passed": true`).
+- [x] No test name contradicts its assertion; `gemini-3-flash-preview` is covered as thinking-only and `"legacy"`.
+- [x] `uv lock --check` passes and `uv.lock` resolves `google-genai` >= 2.34.0.
+- [x] The voicebot failures are shown to reproduce on `origin/dev`.
+- [x] `ruff check` clean on touched Python files; the validation command passes.
 
 ## Validation Commands
 
@@ -80,4 +80,23 @@ PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-client-google/src pytest pa
 
 ## Completion Note
 
-(filled on close)
+Filed and implemented by `/sdd-fix issue:c95dd1c22324` after the FEAT-798 sdd-worker's review raised it.
+Code commit `bba69fca24`.
+
+- **AC-12 live gate — passed.** Run from the host (2026-11-04T17:43Z, google-genai 2.34.0, `GOOGLE_API_KEY`
+  via navconfig): `client.aio.models.get` resolved all four ids. Log: `artifacts/logs/FEAT-798-ac12-models-get.json`.
+  Note: `gemini-4-argon` does not list `createCachedContent`, consistent with spec S2 (Argon cache loss).
+- **Tests.** `test_computer_use_requires_thinking` → `test_computer_use_model_requires_thinking`
+  (`gemini-3-flash-preview` is True) + `test_retired_computer_use_preview_no_longer_forces_thinking` (2.5 id is False).
+  The vocabulary test now asserts the 2.5 id is neither `_is_computer_use_model` nor implicitly enabled, and a new
+  test pins `gemini-3-flash-preview` as enabled with the `"legacy"` vocabulary.
+- **client.py** — comment above `ComputerUseVocabulary` and the `_computer_use_enabled` docstring only. Left alone:
+  the pre-existing `client.py:~1261` comment ("`_requires_thinking` is False for flash-preview"), which is wrong
+  for `gemini-3-flash-preview` but predates this feature and is out of scope.
+- **uv.lock** — `uv lock --upgrade-package google-genai`: google-genai 2.31.0 → 2.34.0; the rest of the diff is
+  workspace-member version refreshes (the lock was stale). `uv lock --check` passes. No `uv sync` was run.
+- **Voicebot** — `test_voicebot_provider_switch.py::TestVoiceBotLazyClientWiring::test_{resolve,create}_branches_on_provider`
+  fail identically on `origin/dev` (the main checkout, whose `voice.py` and test file equal `origin/dev`): they assert
+  the literal `'nova'` while `voice.py` writes `"nova"`. Pre-existing, not caused by FEAT-798; not fixed here.
+- Validation: the task's command — 40 passed. `ruff check` on the three Python files: 29 findings before and after,
+  none introduced.
