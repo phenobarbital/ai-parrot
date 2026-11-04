@@ -751,6 +751,7 @@ def reconcile_toolkit_entries(root: Path, *, portable: Optional[bool] = None) ->
     updated: list[str] = []
     removed: list[str] = []
     warnings: list[str] = []
+    actions: list[str] = []
     if decision.note:
         actions.append(decision.note)
 
@@ -784,7 +785,6 @@ def reconcile_toolkit_entries(root: Path, *, portable: Optional[bool] = None) ->
     if changed:
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
-    actions: list[str] = []
     if added:
         actions.append(f"{len(added)} toolkit entry(s) added ({', '.join(added)})")
     if updated:
