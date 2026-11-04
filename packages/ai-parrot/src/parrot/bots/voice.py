@@ -435,7 +435,7 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
 
         # Create text-based LLM client
         text_llm = GoogleGenAIClient(
-            model=kwargs.get("model", "gemini-2.5-flash"),
+            model=kwargs.get("model", "gemini-3.8-flash"),
             temperature=kwargs.get("temperature", 0.3),
         )
 

@@ -95,7 +95,7 @@ class _LLMAdapter:
                 self._model
                 or getattr(client, "model", None)
                 or getattr(client, "default_model", None)
-                or "gemini-2.5-flash"
+                or "gemini-3.8-flash"
             )
             # AbstractClient.ask() is the non-streaming completion method.
             # It returns MessageResponse (TypedDict):

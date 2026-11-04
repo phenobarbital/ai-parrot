@@ -163,7 +163,7 @@ ONTOLOGY_CACHE_TTL = config.getint("ONTOLOGY_CACHE_TTL", fallback=86400)
 ONTOLOGY_MAX_TRAVERSAL_DEPTH = config.getint("ONTOLOGY_MAX_TRAVERSAL_DEPTH", fallback=4)
 
 # LLM model for dynamic AQL generation and intent detection.
-ONTOLOGY_AQL_MODEL = config.get("ONTOLOGY_AQL_MODEL", fallback="gemini-2.5-flash")
+ONTOLOGY_AQL_MODEL = config.get("ONTOLOGY_AQL_MODEL", fallback="gemini-3.8-flash")
 
 # Directory for review queue JSON files (ambiguous relation matches).
 # Defaults to {ONTOLOGY_DIR}/review/ at runtime when None.

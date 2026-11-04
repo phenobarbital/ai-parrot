@@ -23,7 +23,7 @@ class ClassifyBase(ImagePlugin):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._model_name: str = kwargs.get("model_name", "gemini-2.5-flash")
+        self._model_name: str = kwargs.get("model_name", "gemini-3.8-flash")
         model = kwargs.get("detection_model", ObjectDetectionResult)
         self.reference_image: Optional[Path] = kwargs.get("reference_image", None)
         self._detection_model: Optional[BaseModel] = self._load_model(model)
