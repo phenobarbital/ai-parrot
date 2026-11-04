@@ -23,7 +23,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         argv: Optional command-line arguments.
 
     Returns:
-        Zero on success, one for validation errors, two for config errors, or three when griffe is absent.
+        Zero on success, one for validation errors, two for config errors, three when griffe is absent, or four with ``--strict`` when a module was skipped.
     """
     parser = argparse.ArgumentParser(description="Assemble a technical-wiki bundle")
     parser.add_argument("--out", type=Path, required=True, help="Output directory")
@@ -32,6 +32,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="Write only techwiki-report.json")
     parser.add_argument("--json", action="store_true", dest="as_json", help="Print JSON report")
     parser.add_argument("--sidebar-only", action="store_true", help="Render Home.md and _Sidebar.md only")
+    parser.add_argument("--strict", action="store_true", help="Exit 4 when any module was skipped")
     args = parser.parse_args(argv)
 
     from parrot.sdd.techwiki.api import GriffeUnavailable
@@ -62,7 +63,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             write_bundle(pages, report, cfg, args.out)
     if args.as_json:
         print(json.dumps(report.__dict__, sort_keys=True))
-    return 0 if report.ok() else 1
+    if not report.ok():
+        return 1
+    return 4 if args.strict and report.skipped_modules else 0
 
 
 if __name__ == "__main__":
