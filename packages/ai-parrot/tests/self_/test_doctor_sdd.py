@@ -57,7 +57,7 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         lambda name, path=None: real_which(name, path=path) if path is not None else f"/usr/bin/{name}",
     )  # gh, jq, claude present; launcher probes honour their explicit PATH
     monkeypatch.setattr(doctor.subprocess, "run", _gh_ok(doctor.subprocess.run))
-    monkeypatch.setattr(doctor, "_check_bwrap_sandbox", lambda: [])  # OS-level check, tested separately
+    monkeypatch.setattr(doctor, "_check_bwrap_sandbox", list)  # OS-level check, tested separately
     return repo
 
 
@@ -89,7 +89,14 @@ def test_doctor_cli_pin_provenance(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
 
     ok_check = doctor.DoctorCheck(name="isolated runtime", ok=True)
-    for name in ("_check_uv", "_check_python", "_check_entrypoints", "_check_path", "_check_tools_wiki", "_check_runtime_lockstep"):
+    for name in (
+        "_check_uv",
+        "_check_python",
+        "_check_entrypoints",
+        "_check_path",
+        "_check_tools_wiki",
+        "_check_runtime_lockstep",
+    ):
         monkeypatch.setattr(doctor, name, lambda: ok_check)
     monkeypatch.setattr(doctor, "_check_host_configs", lambda root: [])
     monkeypatch.setattr(doctor, "_check_toolkits", lambda root: [])
