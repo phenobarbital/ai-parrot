@@ -50,7 +50,7 @@
       "feature_id": "FEAT-804",
       "feature": "installer-portability-gaps",
       "spec": "sdd/specs/installer-portability-gaps.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -58,8 +58,9 @@
       "parallelism_notes": "Exclusive: creates tests/launcher/conftest.py loaded by launcher tests; no dependencies.",
       "assigned_to": null,
       "started_at": "2026-11-04T23:17:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5184-installer-root-primitives.md"
+      "completed_at": "2026-11-04T23:24:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5184-installer-root-primitives.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5185",
