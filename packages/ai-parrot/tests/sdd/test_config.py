@@ -168,12 +168,13 @@ def test_cli_unknown_subcommand_exits_2() -> None:
     assert exc.value.code == 2
 
 
-def test_brief_cli_plan_json(capsys: pytest.CaptureFixture[str]) -> None:
+def test_brief_cli_plan_json(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
     assert brief_meta.main(["plan", "--slug", "crew-guards", "--key", "NAV-1", "--base-branch", "main"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data == {
         "name": "hotfix-NAV-1-crew-guards",
-        "path": ".claude/worktrees/hotfix-NAV-1-crew-guards",
+        "path": ".parrot/worktrees/hotfix-NAV-1-crew-guards",
         "base_ref": "origin/main",
     }
 
