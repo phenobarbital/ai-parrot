@@ -256,8 +256,8 @@ def _receipt(cache: Path, context: Mapping[str, object]) -> bool:
         return False
     if any(document[key] != context[key] for key in ("launch_id", "feature_id", "worktree")):
         return False
-    root = _root(Path(document["worktree"]))
-    return root is not None and _head(root) == document["head"]
+    # ``_context`` already proved ``worktree`` is the Git top-level; do not re-run rev-parse.
+    return _head(Path(document["worktree"])) == document["head"]
 
 
 def _claim_attempt(cache: Path) -> bool:
@@ -277,18 +277,20 @@ def handle_stop(payload: Mapping[str, object], *, cache: Path) -> None:
             return
         cache = _cache(cache)
         context = _context(cache) if cache else None
-        if cache is None or context is None or not _receipt(cache, context) or not _claim_attempt(cache):
+        if cache is None or context is None or not _receipt(cache, context):
             return
         desktop = context["desktop_env"]
-        assert isinstance(desktop, dict)
+        if not isinstance(desktop, dict):
+            return
+        # Resolve the binary before claiming, so a host without notify-send keeps its one attempt.
         notify_send = shutil.which("notify-send", path=desktop.get("PATH", os.defpath))
-        if not notify_send:
+        if not notify_send or not _claim_attempt(cache):
             return
         title = f"SDD work completed: {context['feature_id']}"
         body = (
             f"{html.escape(str(context['slug']))}\n{html.escape(str(context['worktree']))}\nClaude Code remains open."
         )
-        subprocess.run(
+        result = subprocess.run(
             [notify_send, "--urgency=normal", "--app-name=AI-Parrot SDD", title, body],
             env=desktop,
             shell=False,
@@ -296,6 +298,8 @@ def handle_stop(payload: Mapping[str, object], *, cache: Path) -> None:
             check=False,
             capture_output=True,
         )
+        if result.returncode != 0:
+            _warn("notify-send exited non-zero")
     except (OSError, subprocess.SubprocessError):
         _warn("delivery failed")
 

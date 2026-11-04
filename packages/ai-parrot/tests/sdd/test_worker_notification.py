@@ -162,3 +162,65 @@ def test_invalid_state_is_nonblocking(
     else:
         notification_module.handle_stop({"hook_event_name": "Stop"}, cache=cache)
     assert not (cache / "notify-attempted").exists()
+
+
+def test_missing_notify_send_keeps_the_attempt(
+    state: tuple[Path, Path, dict[str, str]], notification_module: ModuleType, tmp_path: Path
+) -> None:
+    """A host without notify-send does not burn the one delivery attempt."""
+    worktree, cache, environment = state
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    environment["PARROT_SDD_NOTIFY_DESKTOP"] = json.dumps({"PATH": str(bin_dir)})
+    assert notification_module.configure_notification(cache, worktree=worktree, env=environment)
+    assert notification_module.record_completion(environment)
+    notification_module.handle_stop({"hook_event_name": "Stop"}, cache=cache)
+    assert not (cache / "notify-attempted").exists()
+    record = _notifier(bin_dir)
+    notification_module.handle_stop({"hook_event_name": "Stop"}, cache=cache)
+    assert record.exists()
+    assert (cache / "notify-attempted").exists()
+
+
+def test_nonzero_notify_send_warns(
+    state: tuple[Path, Path, dict[str, str]],
+    notification_module: ModuleType,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failing notify-send logs one warning instead of failing silently."""
+    worktree, cache, environment = state
+    environment["PARROT_SDD_NOTIFY_DESKTOP"] = json.dumps({"PATH": str(tmp_path)})
+    executable = tmp_path / "notify-send"
+    executable.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
+    executable.chmod(0o755)
+    assert notification_module.configure_notification(cache, worktree=worktree, env=environment)
+    assert notification_module.record_completion(environment)
+    with caplog.at_level("WARNING"):
+        notification_module.handle_stop({"hook_event_name": "Stop"}, cache=cache)
+    assert "notify-send exited non-zero" in caplog.text
+
+
+def test_stop_resolves_toplevel_once(
+    state: tuple[Path, Path, dict[str, str]],
+    notification_module: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One Stop invocation runs ``git rev-parse --show-toplevel`` a single time."""
+    worktree, cache, environment = state
+    environment["PARROT_SDD_NOTIFY_DESKTOP"] = json.dumps({"PATH": str(tmp_path)})
+    assert notification_module.configure_notification(cache, worktree=worktree, env=environment)
+    assert notification_module.record_completion(environment)
+    _notifier(tmp_path)
+    calls: list[list[str]] = []
+    real_run = notification_module.subprocess.run
+
+    def counting_run(command: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess:
+        calls.append(list(command))
+        return real_run(command, *args, **kwargs)
+
+    monkeypatch.setattr(notification_module.subprocess, "run", counting_run)
+    notification_module.handle_stop({"hook_event_name": "Stop"}, cache=cache)
+    assert sum("--show-toplevel" in command for command in calls) == 1
+    assert (cache / "notify-attempted").exists()
