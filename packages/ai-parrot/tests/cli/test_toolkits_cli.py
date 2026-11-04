@@ -27,11 +27,7 @@ def _linked_worktree(tmp_path: Path) -> tuple[Path, Path]:
 
 def _snapshot_files(root: Path) -> dict[str, bytes]:
     """Return a byte-exact snapshot of every file below ``root``."""
-    return {
-        str(path.relative_to(root)): path.read_bytes()
-        for path in sorted(root.rglob("*"))
-        if path.is_file()
-    }
+    return {str(path.relative_to(root)): path.read_bytes() for path in sorted(root.rglob("*")) if path.is_file()}
 
 
 def test_toolkits_is_registered():
@@ -139,9 +135,7 @@ def test_inventory_rows_carry_install_metadata(tmp_path):
 
 
 @pytest.mark.parametrize("verb", ["install", "uninstall", "enable", "disable"])
-def test_toolkits_cli_worktree_path_override(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, verb: str
-) -> None:
+def test_toolkits_cli_worktree_path_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, verb: str) -> None:
     """All write verbs reject implicit worktrees before prompting and accept validated --path."""
     primary, linked = _linked_worktree(tmp_path)
     prompt = Mock(return_value=True)
@@ -179,7 +173,11 @@ def test_toolkits_cli_worktree_path_override(
 @pytest.mark.parametrize("verb,service_name", [("install", "install_toolkits"), ("enable", "set_toolkits_enabled")])
 @pytest.mark.parametrize(
     "flags,expected",
-    [pytest.param((), None, id="default"), pytest.param(("--portable",), True), pytest.param(("--no-portable",), False)],
+    [
+        pytest.param((), None, id="default"),
+        pytest.param(("--portable",), True),
+        pytest.param(("--no-portable",), False),
+    ],
 )
 def test_toolkits_cli_portable_flag(
     tmp_path: Path,
