@@ -121,6 +121,32 @@ _INTERNAL_SHARED_KEYS: frozenset = frozenset({"execution_memory", "shared_state"
 _CREW_BUILTIN_LLM = "google:gemini-2.5-pro"
 
 
+def _build_crew_client(google_api_key: Optional[str], kwargs: Dict[str, Any], **extra: Any):
+    """Build the crew's orchestration client from ``CREW_LLM`` -> ``DEFAULT_LLM`` -> builtin (FEAT-796).
+
+    With nothing configured (source ``builtin``) this is the legacy behavior: a Google client built
+    from ``kwargs`` (+ the crew Google key). A configured ``provider:model`` selects that provider's
+    client and model; an explicit credential in ``kwargs`` always wins, then the crew Google key
+    (Google family only), then ``CREW_<PROVIDER>_API_KEY`` and the legacy ``CREW_AI_KEY``.
+
+    Returns:
+        The client instance, or ``None`` when the provider's client is not installed.
+    """
+    resolved = resolve_component_llm("CREW", builtin=_CREW_BUILTIN_LLM)
+    is_google = resolved.provider.lower() in GOOGLE_PROVIDER_KEYS
+    client_cls = _resolve_supported_client(SUPPORTED_CLIENTS.get(resolved.provider.lower()))
+    client_kwargs = {**kwargs, **extra}
+    if resolved.source != "builtin":
+        client_kwargs.setdefault("model", resolved.model)
+    if not has_explicit_google_credential(client_kwargs):
+        api_key = (google_api_key if is_google else None) or resolve_component_api_key(
+            ("CREW",), resolved.provider, legacy=("CREW_AI_KEY",)
+        )
+        if api_key:
+            client_kwargs["api_key"] = api_key
+    return client_cls(**client_kwargs) if client_cls else None
+
+
 def _crew_usage_scope(func):
     """Tag every client call made inside a crew entry point as component ``CREW`` (FEAT-796)."""
 
@@ -257,11 +283,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         elif isinstance(llm, AbstractClient):
             self._llm = llm  # Optional LLM for orchestration tasks
         else:
-            client_cls = _resolve_supported_client(SUPPORTED_CLIENTS.get("google"))
-            client_kwargs = kwargs
-            if google_api_key and not has_explicit_google_credential(kwargs):
-                client_kwargs = {**kwargs, "api_key": google_api_key}
-            self._llm = client_cls(**client_kwargs) if client_cls else None
+            self._llm = _build_crew_client(google_api_key, kwargs)
         self.truncation_length = (
             truncation_length if truncation_length is not None else self.__class__.default_truncation_length
         )
@@ -1806,7 +1828,11 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 - agent_results: Dictionary mapping agent_id to its result
                 - success: Whether all agents executed successfully
         """
-        model = model or resolve_component_llm("CREW", builtin=_CREW_BUILTIN_LLM).model
+        if model is None:
+            # Agents default to Google: forward the CREW model only when it is a Google-family
+            # model; otherwise each agent keeps its own model (a foreign model name would break it).
+            _crew = resolve_component_llm("CREW", builtin=_CREW_BUILTIN_LLM)
+            model = _crew.model if _crew.provider.lower() in GOOGLE_PROVIDER_KEYS else None
         if not self.agents:
             return FlowResult(
                 output="No agents in crew",
@@ -2163,17 +2189,9 @@ Current task: {current_input}"""
             )
 
         if not self._llm:
-            resolved = resolve_component_llm("CREW", builtin=_CREW_BUILTIN_LLM)
-            client_cls = _resolve_supported_client(SUPPORTED_CLIENTS.get(resolved.provider.lower(), None))
-            if client_cls is None:
-                raise RuntimeError(f"No client available for provider '{resolved.provider}'")
-            api_key = self._google_api_key or resolve_component_api_key(
-                ("CREW",), resolved.provider, legacy=("CREW_AI_KEY",)
-            )
-            client_kwargs = {"model": resolved.model, "max_tokens": 8192}
-            if api_key:
-                client_kwargs["api_key"] = api_key
-            self._llm = client_cls(**client_kwargs)
+            self._llm = _build_crew_client(self._google_api_key, {}, max_tokens=8192)
+            if self._llm is None:
+                raise RuntimeError("No client available for the configured CREW_LLM provider")
 
         agent_sequence = agent_sequence or list(self.agents.keys())
         if not agent_sequence:
@@ -4426,11 +4444,9 @@ above. Ensure the summary:
             try:
                 # Default to Google GenAI if no LLM provided
                 self.logger.warning("No LLM provided for executive summary. Defaulting to Google GenAI.")
-                client_cls = _resolve_supported_client(SUPPORTED_CLIENTS["google"])
-                if self._google_api_key:
-                    self._llm = client_cls(api_key=self._google_api_key)
-                else:
-                    self._llm = client_cls()
+                self._llm = _build_crew_client(self._google_api_key, {})
+                if self._llm is None:
+                    raise RuntimeError("No client available for the configured CREW_LLM provider")
             except Exception as ex:
                 self.logger.error(f"Failed to initialize default LLM: {ex}")
                 raise ValueError(

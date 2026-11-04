@@ -19,8 +19,8 @@ from parrot.tools.toolkit import AbstractToolkit
 class ExpertAgent(IdentityMixin, Agent):
     """Agent configured from an ExpertBundle: identity, knowledge layers, and tool allowlist.
 
-    ``ask`` tags usage with the expert tier. ``ask_stream`` intentionally retains the base
-    async-generator behavior and is not tagged by this class.
+    ``ask`` and ``invoke`` tag usage with the expert tier. ``ask_stream`` intentionally retains
+    the base async-generator behavior and is not tagged by this class.
     """
 
     enable_identity: bool = True
@@ -55,12 +55,11 @@ class ExpertAgent(IdentityMixin, Agent):
         allowed = set(allowed_tools)
         tools = [tool for toolkit in toolkits for tool in toolkit.get_tools() if tool.name in allowed]
         tier_component = f"EXPERT_{bundle.manifest.tier.name}"
-        api_key = resolve_component_api_key((tier_component,), model_config.provider)
-        if api_key and "api_key" not in kwargs:
-            kwargs["api_key"] = api_key
-        if "api_key" in kwargs:
+        api_key = kwargs.get("api_key") or resolve_component_api_key((tier_component,), model_config.provider)
+        if api_key:
+            # AbstractBot ignores a bare ``api_key`` kwarg; ``llm_kwargs`` reach the client.
             llm_kwargs = dict(kwargs.get("llm_kwargs", {}))
-            llm_kwargs.setdefault("api_key", kwargs["api_key"])
+            llm_kwargs.setdefault("api_key", api_key)
             kwargs["llm_kwargs"] = llm_kwargs
         super().__init__(
             name=bundle.manifest.name,
@@ -78,6 +77,11 @@ class ExpertAgent(IdentityMixin, Agent):
         """Run ``Agent.ask`` with usage tagged as this expert's tier (FEAT-796)."""
         with usage_component(self._usage_component):
             return await super().ask(*args, **kwargs)
+
+    async def invoke(self, *args: Any, **kwargs: Any) -> Any:
+        """Run ``Agent.invoke`` with usage tagged as this expert's tier (FEAT-796)."""
+        with usage_component(self._usage_component):
+            return await super().invoke(*args, **kwargs)
 
     async def configure(self, app: Any = None) -> None:
         """Base configure, identity layers, then the resolved knowledge as literal layers.

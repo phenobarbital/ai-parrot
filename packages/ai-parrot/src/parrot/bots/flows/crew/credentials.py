@@ -3,8 +3,8 @@
 FEAT-575. Crews created and executed through the AgentCrew HTTP handlers bill
 their Google traffic to the process-wide ``GOOGLE_API_KEY``, which makes
 crew-builder usage impossible to meter or rotate separately. This module
-resolves ``CREW_GOOGLE_API_KEY`` with ``CREW_AI_KEY`` as its legacy alias and classifies an agent's raw LLM
-declaration so the crew build paths can inject it.
+resolves ``CREW_GOOGLE_API_KEY`` (``CREW_AI_KEY`` is its legacy alias) and classifies an agent's
+raw LLM declaration so the crew build paths can inject it.
 
 Nothing here mutates a ``CrewDefinition``, and the key value is never logged.
 """
@@ -57,15 +57,17 @@ def get_crew_google_api_key() -> Optional[str]:
     Returns:
         The configured crew Google API key, or ``None`` when it is unset/empty.
     """
-    from navconfig import config  # noqa: PLC0415
+    from parrot.llm_defaults import resolve_component_api_key  # noqa: PLC0415
 
     global _warned_unset  # noqa: PLW0603 — deliberate process-wide warn-once latch
-    key = config.get("CREW_GOOGLE_API_KEY") or getattr(conf, "CREW_AI_KEY", None)
+    key = resolve_component_api_key(("CREW",), "google") or getattr(conf, "CREW_AI_KEY", None)
     if key:
         return key
     if not _warned_unset:
         _warned_unset = True
-        logger.warning("CREW_GOOGLE_API_KEY / CREW_AI_KEY not set; crew Google agents fall back to GOOGLE_API_KEY")
+        logger.warning(
+            "CREW_GOOGLE_API_KEY / CREW_AI_KEY not set; crew Google agents fall back to GOOGLE_API_KEY"
+        )
     return None
 
 

@@ -68,10 +68,10 @@ async def test_crew_lazy_llm_uses_crew_llm(env: dict[str, str], monkeypatch: pyt
 
 @pytest.mark.asyncio
 async def test_crew_sequential_default_model(env: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
-    """The sequential model default is resolved from CREW_LLM before agent execution."""
-    env["CREW_LLM"] = "openai:gpt-4.1"
-    monkeypatch.setitem(SUPPORTED_CLIENTS, "openai", _FakeClient)
-    crew = AgentCrew(llm="openai", persist_results=False, enable_execution_wiki=False)
+    """A Google-family CREW_LLM model is the sequential default forwarded to agents."""
+    env["CREW_LLM"] = "google:gemini-2.5-flash"
+    monkeypatch.setitem(SUPPORTED_CLIENTS, "google", _FakeClient)
+    crew = AgentCrew(llm="google", persist_results=False, enable_execution_wiki=False)
     crew.agents = {"agent": SimpleNamespace(name="agent")}
     captured: dict[str, object] = {}
 
@@ -84,7 +84,7 @@ async def test_crew_sequential_default_model(env: dict[str, str], monkeypatch: p
 
     await crew.run_sequential(query="task", generate_summary=False)
 
-    assert captured == {"model": "gpt-4.1", "component": "CREW"}
+    assert captured == {"model": "gemini-2.5-flash", "component": "CREW"}
 
 
 def test_crew_entry_points_preserve_wrapped_methods() -> None:
@@ -97,3 +97,49 @@ def test_crew_entry_points_preserve_wrapped_methods() -> None:
         AgentCrew.ask,
     ):
         assert hasattr(method, "__wrapped__")
+
+
+def test_crew_constructor_default_uses_crew_llm(env: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no ``llm``, the constructor client comes from CREW_LLM (not a hardcoded Google client)."""
+    env.update({"CREW_LLM": "openai:gpt-4.1", "CREW_OPENAI_API_KEY": "component-key"})
+    monkeypatch.setitem(SUPPORTED_CLIENTS, "openai", _FakeClient)
+
+    crew = AgentCrew(persist_results=False, enable_execution_wiki=False)
+
+    assert isinstance(crew._llm, _FakeClient)
+    assert _FakeClient.last_kwargs["model"] == "gpt-4.1"
+    assert _FakeClient.last_kwargs["api_key"] == "component-key"
+
+
+def test_crew_constructor_builtin_keeps_legacy_client(env: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nothing configured: the Google client is built with no injected model (zero behavior change)."""
+    monkeypatch.setitem(SUPPORTED_CLIENTS, "google", _FakeClient)
+
+    crew = AgentCrew(persist_results=False, enable_execution_wiki=False)
+
+    assert isinstance(crew._llm, _FakeClient)
+    assert "model" not in _FakeClient.last_kwargs
+
+
+@pytest.mark.asyncio
+async def test_crew_sequential_does_not_forward_foreign_model(
+    env: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-Google CREW_LLM model name is not forced onto the crew's agents."""
+    env["CREW_LLM"] = "openai:gpt-4.1"
+    monkeypatch.setitem(SUPPORTED_CLIENTS, "openai", _FakeClient)
+    crew = AgentCrew(llm="openai", persist_results=False, enable_execution_wiki=False)
+    crew.agents = {"agent": SimpleNamespace(name="agent")}
+    captured: dict[str, object] = {}
+
+    async def capture_model(*args: object, **kwargs: object) -> SimpleNamespace:
+        captured["model"] = kwargs["model"]
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(crew, "_execute_agent", capture_model, raising=False)
+    try:
+        await crew.run_sequential("task")
+    except Exception:  # noqa: BLE001 — only the forwarded model matters here
+        pass
+
+    assert captured.get("model") is None

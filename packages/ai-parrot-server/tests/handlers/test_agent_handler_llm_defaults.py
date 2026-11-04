@@ -120,3 +120,25 @@ async def test_ask_agent_tagged(monkeypatch):
         pass
     assert agent.seen_component == "AGENT"
     assert current_component.get() is None
+
+
+async def test_handler_subclass_model_only_ignores_env_provider(monkeypatch):
+    """A subclass owning the model never gets a foreign env provider paired with it."""
+
+    class ModelOnly(AgentHandler):
+        _use_model = "gemini-2.5-flash"
+
+    _env(monkeypatch, {"AGENT_LLM": "anthropic:claude-sonnet-4"})
+    agent = await _create(_handler(ModelOnly))
+    assert agent.kwargs["llm"] == "google"
+    assert agent.kwargs["model"] == "gemini-2.5-flash"
+
+
+async def test_handler_subclass_provider_only_ignores_env_model(monkeypatch):
+    class ProviderOnly(AgentHandler):
+        _use_llm = "openai"
+
+    _env(monkeypatch, {"AGENT_LLM": "anthropic:claude-sonnet-4"})
+    agent = await _create(_handler(ProviderOnly))
+    assert agent.kwargs["llm"] == "openai"
+    assert "model" not in agent.kwargs

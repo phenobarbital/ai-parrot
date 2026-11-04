@@ -525,7 +525,7 @@ class AgentHandler(BaseView):
 
     def _create_actors(self, recipients: Union[List[dict], dict] = None) -> List:
         if isinstance(recipients, dict):
-            recipients = [recipients]
+                recipients = [recipients]
         if not recipients:
             return self.error(
                 {'message': 'Recipients are required'},
@@ -795,16 +795,21 @@ class AgentHandler(BaseView):
         """Create and configure a BasicAgent instance."""
         try:
             resolved = resolve_component_llm("AGENT", builtin="google:gemini-2.5-pro")
-            # Provider comes from env only when the subclass left _use_llm unset;
-            # a subclass _use_model always wins over the env model.
-            llm = self._use_llm or resolved.provider
-            model = self._use_model or resolved.model
+            # A subclass that sets either attribute owns the provider/model pair (the unset half
+            # falls back to the builtin pair, never to env); env applies only when it sets neither.
+            if self._use_llm or self._use_model:
+                llm = self._use_llm or "google"
+                model = self._use_model or ("gemini-2.5-pro" if llm == "google" else None)
+            else:
+                llm, model = resolved.provider, resolved.model
             extra: dict[str, Any] = {}
             api_key = resolve_component_api_key(("AGENT",), llm)
             if api_key:
                 # AbstractBot ignores a bare ``api_key`` kwarg; llm_kwargs reach the client.
                 extra["llm_kwargs"] = {"api_key": api_key}
-            agent = self._agent_class(name=self.agent_name, tools=self._tools, llm=llm, model=model, **extra)
+            if model is not None:
+                extra["model"] = model
+            agent = self._agent_class(name=self.agent_name, tools=self._tools, llm=llm, **extra)
             agent.set_response(self._agent_response)
             await agent.configure()
             # define the main agent:

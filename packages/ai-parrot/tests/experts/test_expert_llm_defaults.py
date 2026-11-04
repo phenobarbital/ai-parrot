@@ -152,3 +152,21 @@ async def test_expert_ask_tagged(monkeypatch: pytest.MonkeyPatch) -> None:
     assert await expert.ask("question") == "answer"
     assert seen == ["EXPERT_TEMPLATED"]
     assert current_component.get() is None
+
+
+@pytest.mark.asyncio
+async def test_expert_invoke_tagged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tier component is active during ``Agent.invoke`` and restored afterward."""
+    seen: list[str | None] = []
+
+    async def fake_invoke(self: Agent, *args: Any, **kwargs: Any) -> str:
+        seen.append(current_component.get())
+        return "answer"
+
+    monkeypatch.setattr(Agent, "invoke", fake_invoke)
+    expert = object.__new__(ExpertAgent)
+    expert._usage_component = "EXPERT_JUDGMENT"
+
+    assert await expert.invoke("question") == "answer"
+    assert seen == ["EXPERT_JUDGMENT"]
+    assert current_component.get() is None
