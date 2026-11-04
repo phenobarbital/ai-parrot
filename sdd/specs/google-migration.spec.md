@@ -494,6 +494,12 @@ tests:
 - packages/ai-parrot/tests/clients/test_google_computer_use.py
 - packages/ai-parrot/tests/unit/observability/test_cost_calculator.py
 - tests/unit/test_google_document_understanding.py
+- packages/ai-parrot/tests/models/test_google_voice_model.py
+- packages/ai-parrot-client-google/tests/unit/test_google_default_models.py
+- packages/ai-parrot/tests/unit/test_flash_default_literals.py
+- packages/ai-parrot/tests/unit/test_conf_default_llm.py
+- packages/ai-parrot/tests/test_no_retired_gemini_in_docs.py
+- packages/ai-parrot/tests/test_no_retired_gemini_defaults.py
 markers: none
 
 ### Test Data / Fixtures
@@ -894,3 +900,4 @@ Summary: **9** confirmed (one partial) · **1** rejected · **1** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-04 | jlara@trocglobal.com | Initial draft from the accepted FEAT-798 proposal (U1–U4 carried forward) |
+| 0.2 | 2026-11-04 | jlara@trocglobal.com | /sdd-task: Validation Contract extended with the six test modules the tasks create (TASK-5146..5155) |
