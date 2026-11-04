@@ -377,6 +377,7 @@ scheduler = ["apscheduler==3.11.2"]
 
 # Server layer — all server infrastructure via satellite (FEAT-203)
 wikitoolkit-server = ["ai-parrot-server"]
+techwiki = ["griffe>=2.4,<3", "jinja2>=3.1"]
 server = [
     "ai-parrot-server[all]",
 ]
@@ -1008,6 +1009,8 @@ parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
     "_assets/sdd/WORKFLOW.md",
     "_assets/sdd/CONVENTIONS.md",
     "_assets/sdd/CODEX.md",
+    "techwiki/templates/*.j2",
+    "techwiki/templates/*.md.j2",
 ]
 "parrot.flows.dev_loop" = ["_subagent_data/*.md"]
 # FEAT-778: package-bundled domain experts, read via importlib.resources by parrot.experts.loader.

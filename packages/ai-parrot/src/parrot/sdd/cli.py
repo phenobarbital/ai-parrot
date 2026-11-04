@@ -297,6 +297,12 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
         "run": ("run_closeout_hooks", (), "Dispatch /sdd-done closeout hooks."),
         "resolve-issues": ("close_resolved_issues", (), "Close the ledger issues a finished feature fixed."),
     },
+    "techwiki": {
+        "api": ("techwiki_api", (), "Generate the markdown API reference for the configured packages."),
+        "bundle": ("techwiki_bundle", (), "Assemble the publishable GitHub-wiki bundle (authored + API + ADRs)."),
+        "check": ("techwiki_check", (), "Report a spec's declared documentation pages (never blocking)."),
+        "sidebar": ("techwiki_bundle", ("--sidebar-only",), "Render Home.md and _Sidebar.md only."),
+    },
     "hooks": {
         "install": ("install_hooks", (), "Install the SDD git hooks."),
         "dangerous-actions": ("dangerous_actions", (), "Serve the PreToolUse dangerous-actions guard (--hook)."),

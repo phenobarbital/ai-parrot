@@ -8,6 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
+from parrot.sdd.techwiki.config import TechwikiConfig
+
 CONFIG_PATH = Path("sdd/config.json")
 _BRANCH_FIELDS = ("base_branch", "staging_branch", "hotfix_base", "ledger_branch")
 
@@ -33,6 +35,8 @@ class SddConfig(BaseModel):
     test_command: str | None = None
     #: When set, replaces ``sdd_meta.KNOWN_PROJECTS`` as the project vocabulary (rev 0.5 C22).
     projects: list[str] | None = None
+    #: FEAT-801 — technical-wiki pipeline settings; ``None`` means defaults.
+    techwiki: TechwikiConfig | None = None
 
     @field_validator("test_command")
     @classmethod
