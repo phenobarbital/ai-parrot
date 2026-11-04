@@ -128,6 +128,34 @@ def test_cli_flag_and_dry_run(repo: Path) -> None:
     assert "plan: toolkits" not in off.output
 
 
+@pytest.mark.parametrize("portable", [None, True, False])
+def test_sdd_install_portable_reaches_toolkits(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, portable: bool | None
+) -> None:
+    """Selected hosts receive the explicit form, including False, and retain owned toolkit receipts."""
+    monkeypatch.setattr("parrot.mcp.portability.managed_launcher_on_path", lambda: True)
+    args = ["install", "--path", str(repo), "--host", "claude", "--host", "codex"]
+    if portable is True:
+        args.append("--portable")
+    elif portable is False:
+        args.append("--no-portable")
+    result = CliRunner().invoke(sdd_cli, args)
+    assert result.exit_code == 0, result.output
+
+    claude = json.loads((repo / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]
+    codex = (repo / ".codex/config.toml").read_text(encoding="utf-8")
+    for name in ("sdd-coder", "bounded-source"):
+        entry = claude[f"parrot-{name}"]
+        if portable is False:
+            assert entry["args"][-1] == str(repo / ".parrot/mcp-toolkits.yaml")
+            assert entry["cwd"] == str(repo)
+            assert str(repo / ".parrot/mcp-toolkits.yaml") in codex
+        else:
+            assert entry["command"] == "parrot" and entry["args"][-1] == ".parrot/mcp-toolkits.yaml"
+            assert "cwd" not in entry and 'command = "parrot"' in codex
+    assert load_receipt(repo)["toolkits"] == ["bounded-source", "sdd-coder"]
+
+
 def test_malformed_toolkit_config_is_a_warning(repo: Path) -> None:
     (repo / CONFIG).parent.mkdir(parents=True)
     (repo / CONFIG).write_text("toolkits: [unclosed\n")
