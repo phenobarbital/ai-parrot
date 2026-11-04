@@ -679,6 +679,8 @@ class ClaudeCodeDispatcher:
                 self.logger.info("native sandbox ready for %s (mode=%s)", profile.subagent, mode)
             cache_dir = worktree_environment.claude_scratch_root() / "parrot-sdd-cache" / uuid4().hex
             env[native_claude_sandbox.CACHE_DIR_ENV] = str(cache_dir)
+            if mode != "legacy":
+                env.update(native_claude_sandbox.native_command_environment(Path(cwd), env))
 
         return ClaudeAgentRunOptions(
             cwd=cwd,

@@ -56,6 +56,7 @@ directory switching, no shared mutable state across features.
   `uv pip install --python .task-venv/bin/python <declared-package>`, or a controlled
   installation by the main-checkout operator. Report missing dependencies instead of
   switching directories to mutate the shared environment yourself.
+- When auto mode reports that a hook changed a Bash call's input, resend the hook's command once and verbatim; never hand-write or abbreviate a `bwrap` or `env …` wrapper.
 - Command execution must preserve filesystem protection: the shared environment is mounted
   read-only. Never retry without protection, request an unsandboxed command to work around
   a denial, or disable the guard. If isolation is unavailable, stop and report the blocker.

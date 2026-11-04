@@ -557,25 +557,35 @@ def native_task_cwd(session_cwd: Path, command: str) -> Path:
     return target_root
 
 
-def native_command_environment(cwd: Path) -> dict[str, str]:
+def native_command_environment(cwd: Path, environ: Mapping[str, str] | None = None) -> dict[str, str]:
     """Return task-cwd import, cache and safety overrides without mutation.
+
+    The launcher exports these for the session worktree (``launch_worker``), so the hook only has to emit
+    the variables that differ from the inherited environment — in practice ``PYTHONPATH`` for a sub-worktree
+    task cwd. An inherited ``PYTHONPATH`` that already starts with this root's source roots is kept as is,
+    so the result is a fixed point.
 
     Args:
         cwd: A path in the linked worktree.
+        environ: Environment to inherit from; defaults to ``os.environ``.
 
     Returns:
         Environment variables for native child commands.
     """
+    source = os.environ if environ is None else environ
     root, _git_dir, _primary = _native_roots(cwd)
     env = {"UV_NO_SYNC": "1", "PYTHONDONTWRITEBYTECODE": "1"}
     source_roots = sorted((root / "packages").glob("*/src"))
     if source_roots:
         python_path = os.pathsep.join(map(str, source_roots))
-        if inherited := os.environ.get("PYTHONPATH"):
+        inherited = source.get("PYTHONPATH")
+        if inherited and inherited != python_path and not inherited.startswith(python_path + os.pathsep):
             python_path += os.pathsep + inherited
+        elif inherited:
+            python_path = inherited
         env["PYTHONPATH"] = python_path
     scratch_root = _we.claude_scratch_root()
-    configured = os.environ.get(CACHE_DIR_ENV)
+    configured = source.get(CACHE_DIR_ENV)
     cache_root = (
         _canonical(Path(configured)) if configured else scratch_root / "parrot-sdd-cache" / f"shared-{_user_tag()}"
     )
@@ -883,6 +893,9 @@ def launch_worker(
                 file=sys.stderr,
             )
     env[CACHE_DIR_ENV] = str(_allocate_session_cache())
+    if mode != "legacy":
+        # Session-fixed variables ride in the launch environment, so the hook need not prefix every command.
+        env.update(native_command_environment(cwd, env))
     env.pop("PARROT_SDD_NOTIFY_PYTHON", None)
     env.pop("PARROT_SDD_NOTIFY_HELPER", None)
     notification_metadata = (

@@ -175,7 +175,7 @@ Report the worktree path, brief path, materialized task IDs, and the next
 step. Offer either manual implementation or:
 
 ```bash
-cd <wt> && claude --agent sdd-worker --setting-sources project,local --model sonnet --verbose
+parrot sdd launch worker <KEY>            # add --tmux [--detach] to run unattended
 ```
 
 Finish by directing the owner to run `/sdd-done <KEY>` after implementation: it verifies the
@@ -189,5 +189,5 @@ Return:
 - Worktree: `<wt>`
 - Brief: `<wt>/sdd/briefs/<slug>.brief.md`
 - Tasks: `HOTFIX-<KEY>-<N>` list
-- Next step: `cd <wt> && claude --agent sdd-worker --setting-sources project,local --model sonnet --verbose`,
+- Next step: `parrot sdd launch worker <KEY>`,
   manual implementation, then `/sdd-done <KEY>`

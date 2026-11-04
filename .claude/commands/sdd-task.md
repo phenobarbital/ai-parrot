@@ -591,7 +591,7 @@ Worktree: not created. /sdd-task produces versioned artifacts only — the
 
 Next:
   /sdd-start <task-id>        # creates the worktree, then begins the task
-  # or, unattended:  claude --agent sdd-worker --setting-sources project,local --model sonnet --verbose
+  # or, unattended:  parrot sdd launch worker FEAT-<NNN> --tmux --detach
 ```
 
 ## Reference

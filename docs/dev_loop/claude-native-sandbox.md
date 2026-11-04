@@ -51,7 +51,26 @@ socket grants stay unchanged. A changed HEAD invalidates a recorded receipt.
 | Dev-loop dispatcher (`ClaudeCodeDispatcher`, SDK-bundled CLI) | `ClaudeCodeDispatchProfile(subagent="sdd-worker" \| "sdd-coder", sandbox_allowed_domains=[...])` | compiled for the dispatch cwd; `PARROT_SDD_SANDBOX_BACKEND=claude-native` and a per-dispatch cache dir are set for the child |
 
 A bare `claude --agent sdd-worker` is **not** a qualified native launch: it loads the `user` setting
-source (competing hooks) and carries no compiled policy.
+source (competing hooks) and carries no compiled policy. Always start workers (features **and** briefs) with
+`parrot sdd launch worker <FEAT-ID|KEY>`.
+
+### Hook backends (`PARROT_SDD_SANDBOX_BACKEND`)
+
+| Value | Behavior |
+|---|---|
+| unset (`auto`, default) | One wrapper that decides **when the command runs**: inside Claude Code's native sandbox it runs the command directly (`env` + bounded shell); outside it, through the legacy `bwrap` boundary. Exactly one branch runs and nothing runs unsandboxed. |
+| `claude-native` (set by the launcher) | Never wraps in `bwrap`. The hook cannot see the sandbox, so it **trusts the launcher's backend variable** only beside the launcher markers it always exports with it (`PARROT_SDD_SANDBOX_ROOTS` and `PARROT_SDD_CACHE_DIR`; the dev-loop dispatcher sets both too). A hand-exported `claude-native` without them is downgraded to `auto`, so it runs natively inside the native sandbox and under Bubblewrap outside it, never unsandboxed. With the markers there is no runtime check: the variable is coordination metadata, the enforcement boundary is the native settings. The launcher exports the session-fixed variables (`UV_NO_SYNC`, `PYTHONDONTWRITEBYTECODE`, `PYTHONPATH` for the session worktree, `XDG_CACHE_HOME`, `UV_CACHE_DIR`), so a plain command passes through **unchanged**; the hook rewrites only when the guard/RTK changed the command, the environment differs (a sub-worktree task cwd gets its own `PYTHONPATH`), the launch is degraded (banner), or the call carries an explicit `timeout`/`run_in_background` (the in-sandbox `timeout` backstop is kept only there; a plain call is bounded by the host). A hand-written `bwrap …` command is denied (`native sandbox is active; resend the command without the bwrap wrapper`). |
+| `bubblewrap` (explicit opt-in) | The legacy wrapper, always. |
+
+The hook process runs outside the sandbox and cannot see it, so the wrapped command checks for itself:
+`SANDBOX_RUNTIME=1` and, on Linux, a `/proc/self/uid_map` that is a single line not starting with `0 0`.
+macOS (Seatbelt) has no `uid_map` and relies on `SANDBOX_RUNTIME` alone; that platform is not certified.
+A nested `bwrap` inside the native sandbox can never work: the policy sets `allowNestedUserNamespaces: false`,
+so `bwrap` fails with `No permissions to create new namespace`.
+
+**Auto mode.** Claude Code's auto mode reviews a Bash call before hooks run. When the hook rewrites it, the
+review is refused once and the agent must resend the rewritten text **verbatim**; the hook recognises its own
+output and passes it through unchanged, so the resend is approved. Each rewritten call therefore costs one extra turn.
 
 ## Sandbox mode
 

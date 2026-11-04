@@ -34,6 +34,17 @@ class FeatureRef:
     slug: str
     spec: str
     index: str
+    worktree: str | None = None  # set for a brief: its already-provisioned worktree (never created here)
+
+    @property
+    def is_brief(self) -> bool:
+        """Whether this ref is a brief held in an existing worktree rather than a feature index."""
+        return self.worktree is not None
+
+    @property
+    def prompt_id(self) -> str:
+        """The id the worker is started with: ``<slug>`` for a brief, the feature id otherwise."""
+        return self.slug if self.is_brief else self.feature_id
 
 
 class LaunchError(Exception):
@@ -120,9 +131,76 @@ def resolve_feature(primary: Path, key: str) -> FeatureRef:
             matches.append(
                 FeatureRef(feature_id=feature_id, slug=slug, spec=spec, index=str(index_path.relative_to(primary)))
             )
+    if not matches:
+        matches = _resolve_briefs(primary, key)
     if len(matches) != 1:
         raise LaunchError(2, f"could not uniquely resolve feature {key!r}")
     return matches[0]
+
+
+_BRIEF_KEY = re.compile(r"^key:\s*[\"']?([^\"'\n]+?)[\"']?\s*$", re.MULTILINE)
+
+
+def _worktree_paths(primary: Path) -> list[Path]:
+    """Return every worktree path of the repository (the primary checkout included)."""
+    try:
+        result = _run(["git", "worktree", "list", "--porcelain"], cwd=primary)
+    except LaunchError:
+        return []
+    if result.returncode:
+        return []
+    return [Path(line[len("worktree ") :]) for line in result.stdout.splitlines() if line.startswith("worktree ")]
+
+
+def _brief_frontmatter_key(root: Path, spec: str) -> str | None:
+    """Return the ``key:`` of a brief's frontmatter, ``None`` when unreadable or absent."""
+    try:
+        text = (root / spec).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not text.startswith("---"):
+        return None
+    block = text.split("---", 2)[1] if text.count("---") >= 2 else ""
+    found = _BRIEF_KEY.search(block)
+    return found.group(1) if found else None
+
+
+def _resolve_briefs(primary: Path, key: str) -> list[FeatureRef]:
+    """Find briefs whose slug, ``BRIEF-<slug>`` id or frontmatter key matches ``key`` (case-insensitive).
+
+    A brief lives only in its own worktree (``sdd/briefs/<slug>.index.json`` on its ``fix-*``/``hotfix-*``
+    branch), so every worktree of the repository is searched. Each match carries that worktree.
+    """
+    wanted = key.casefold()
+    matches: list[FeatureRef] = []
+    for root in _worktree_paths(primary):
+        for index_path in sorted((root / "sdd" / "briefs").glob("*.index.json")):
+            try:
+                header = json.loads(index_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(header, dict) or header.get("type") != "brief":
+                continue
+            feature_id = header.get("feature_id")
+            slug = header.get("feature")
+            spec = header.get("spec")
+            if not all(isinstance(value, str) and value for value in (feature_id, slug, spec)):
+                continue
+            names = {feature_id.casefold(), slug.casefold()}
+            frontmatter_key = _brief_frontmatter_key(root, spec)
+            if frontmatter_key:
+                names.add(frontmatter_key.casefold())
+            if wanted in names:
+                matches.append(
+                    FeatureRef(
+                        feature_id=feature_id,
+                        slug=slug,
+                        spec=spec,
+                        index=str(index_path.relative_to(root)),
+                        worktree=str(root),
+                    )
+                )
+    return matches
 
 
 def ensure_feature_worktree(primary: Path, ref: FeatureRef) -> Path:
@@ -409,7 +487,13 @@ def launch(
             return 0
         return _attach_session(name)
 
-    worktree = ensure_feature_worktree(primary, ref)
+    if ref.worktree is not None:
+        # A brief: /sdd-brief already provisioned its worktree; never create one here.
+        worktree = Path(ref.worktree)
+        if not worktree.is_dir():
+            raise LaunchError(2, f"brief worktree {worktree} does not exist")
+    else:
+        worktree = ensure_feature_worktree(primary, ref)
     try:
         # Primary checkout only: the sandboxed session can rewrite its own worktree pyproject.
         config_domains, _config_gh_token = native_claude_sandbox.load_launch_config(primary)
@@ -427,7 +511,7 @@ def launch(
         return native_claude_sandbox.launch_worker(
             [*token_args, *domain_args, *claude_args],
             cwd=worktree,
-            initial_prompt=f"run {ref.feature_id}",
+            initial_prompt=f"run {ref.prompt_id}",
             base_env=env,
         )
     if native_claude_sandbox.sandbox_platform() == "windows":
@@ -455,7 +539,7 @@ def launch(
             "-S",  # no site-packages: parrot (and navconfig's .env loading) cannot be imported by the child
             str(Path(__file__).resolve()),
             "--in-session",
-            ref.feature_id,
+            ref.prompt_id,
             "--cwd",
             str(worktree),
             *domain_args,
