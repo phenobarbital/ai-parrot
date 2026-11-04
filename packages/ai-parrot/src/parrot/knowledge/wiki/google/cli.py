@@ -12,26 +12,43 @@ from parrot.knowledge.wiki.google.installer import (
     integration_status,
     uninstall_google_integration,
 )
-from parrot.knowledge.wiki.project import WikiConfigError, find_project_root, load_effective_config
+from parrot.knowledge.wiki.project import WikiConfigError, load_effective_config
+from parrot.launcher import LinkedWorktreeError, install_root, require_primary_checkout
 
 path_option = click.option(
     "--path",
     "path_",
     default=None,
-    help="Repo root (default: auto-detect).",
+    help="Repo root (default: auto-detect; required to install into a linked worktree on purpose).",
 )
 
 
-def _resolve_root(path: Optional[str]) -> Path:
+def _resolve_root(path: Optional[str], *, write: bool = True) -> Path:
+    """Resolve the install target, rejecting implicit worktree writes before side effects.
+
+    Args:
+        path: Explicit ``--path`` value, or ``None`` to resolve the checkout containing the cwd.
+        write: Whether the verb writes; an implicit linked-worktree target is then refused.
+
+    Returns:
+        The install target (host assets are written here).
+
+    Raises:
+        click.ClickException: ``--path`` is not a directory, or an implicit write target is a
+            linked worktree (the message names the primary checkout and the ``--path`` escape hatch).
+    """
+    explicit: Optional[Path] = None
     if path:
-        root = Path(path).resolve()
-        if not root.is_dir():
-            raise click.ClickException(f"Not a directory: {root}")
-        return root
-    found = find_project_root()
-    if found is None:
-        raise click.ClickException("No repository found upwards from here — run inside a git repo or pass --path.")
-    return found
+        explicit = Path(path).resolve()
+        if not explicit.is_dir():
+            raise click.ClickException(f"Not a directory: {explicit}")
+    try:
+        resolved = install_root(Path.cwd(), explicit=explicit)
+        if write:
+            require_primary_checkout(resolved)
+    except LinkedWorktreeError as exc:
+        raise click.ClickException(str(exc)) from exc
+    return resolved.root
 
 
 @click.group(name="google")
@@ -75,8 +92,11 @@ def install(
 ) -> None:
     """Install WikiToolkit and Bookstore MCP servers and skills for Google Antigravity."""
     root = _resolve_root(path_)
+    # Wiki state lives at the shared root (the primary checkout of a linked worktree): load it there so
+    # worktree defaults never overwrite the primary configuration; host assets still go to `root`.
+    state_root = install_root(root, explicit=root).shared_root
     try:
-        config = load_effective_config(root).config
+        config = load_effective_config(state_root).config
         actions = install_google_integration(
             root, config, gitignore=gitignore, bookstore=bookstore, portable=portable
         )
@@ -86,12 +106,12 @@ def install(
     for action in actions:
         click.echo(f"  ✓ {action}")
 
-    if build_now and not config.is_built(root):
+    if build_now and not config.is_built(state_root):
         click.echo("Building the wiki plane (first run)...")
         from parrot.knowledge.wiki.cli import build as wiki_build
 
         context = click.Context(wiki_build)
-        context.invoke(wiki_build, path_=str(root), quiet=True)
+        context.invoke(wiki_build, path_=str(state_root), quiet=True)
 
     click.secho(
         "Google Antigravity integration installed. Restart Antigravity CLI in this trusted repository "
@@ -118,7 +138,7 @@ def uninstall(path_: Optional[str]) -> None:
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def status(path_: Optional[str], as_json: bool) -> None:
     """Show which Google Antigravity integration pieces are installed."""
-    root = _resolve_root(path_)
+    root = _resolve_root(path_, write=False)
     try:
         info = integration_status(root)
     except (RuntimeError, WikiConfigError) as exc:
