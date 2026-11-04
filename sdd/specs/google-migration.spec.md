@@ -10,7 +10,7 @@ tags: [google-genai, gemini, model-catalog, deprecation, llm-defaults, migration
 **Feature ID**: FEAT-798
 **Date**: 2026-11-04
 **Author**: jlara@trocglobal.com
-**Status**: review
+**Status**: approved
 **Target version**: next minor release — M4 (voice/TTS) must ship before **2026-11-17**, everything else before **2026-12-01**
 
 ---
@@ -860,8 +860,8 @@ Coverage:
 - [x] **U4 — SDK floor?** — *Resolved in proposal*: bump to the newest gate-verified google-genai at implementation time (2.34.0 today) via the TASK-4371 isolated-venv introspection; both pyprojects + `uv.lock`.
 - [x] **Does `CostCalculator` prefix-match model ids?** — *Resolved during spec research*: no — `calculator.py:301` is an exact `provider_pricing.get(model)`; M7 adds the `gemini-4-argon` row (AC-8).
 - [ ] **Q1 — Argon pricing figures** for `pricing/google.json` (`input_per_1m`, `output_per_1m`, `valid_from`) — *Owner: implementer of M7, from Google's pricing page at implementation time; record the source URL and date in the Completion Note.*
-- [ ] **Q2 — `bots/search.py:71` `google:gemini-3-flash` is not a catalogue value** (the enum has `gemini-3-flash-preview` as a computer-use alias and `gemini-3.5-flash`); outside the 2.5 scope — *Owner: jlara — open a ledger issue or fold into M3 if desired.*
-- [ ] **Q3 — Should `VertexAIModel` also gain `GEMINI_4_ARGON`?** Argon's availability on Vertex was not probed (FEAT-688 Q3 left Vertex alone). — *Owner: jlara; default: no (non-goal).*
+- [ ] **Q2 — `bots/search.py:71` `google:gemini-3-flash` is not a catalogue value** (the enum has `gemini-3-flash-preview` as a computer-use alias and `gemini-3.5-flash`); outside the 2.5 scope — *Owner: jlara — open a ledger issue or fold into M3 if desired.*: fix with a real model
+- [ ] **Q3 — Should `VertexAIModel` also gain `GEMINI_4_ARGON`?** Argon's availability on Vertex was not probed (FEAT-688 Q3 left Vertex alone). — *Owner: jlara; default: no (non-goal).*: non-goal
 
 ---
 
