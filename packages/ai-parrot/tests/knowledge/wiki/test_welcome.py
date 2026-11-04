@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
+from click.testing import CliRunner
 from rich.console import Console
 from rich.prompt import Prompt
 
 from parrot.cli import console as console_mod
 from parrot.knowledge.wiki.claude_code import welcome
+from parrot.knowledge.wiki.claude_code import cli
+from parrot.knowledge.wiki.claude_code.cli import claude
 from parrot.self_ import doctor
 from parrot.self_.doctor import DoctorCheck
 from parrot.sdd.scripts.native_claude_sandbox import MODE_ENV, resolve_sandbox_mode
@@ -173,3 +177,49 @@ def test_native_clears_legacy_env(tmp_path) -> None:
     settings = json.loads(path.read_text(encoding="utf-8"))
     assert MODE_ENV not in settings.get("env", {})
     assert settings["other"] == "kept"
+
+
+def _stub_cli_install(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub integration work so CLI tests exercise only welcome wiring."""
+    monkeypatch.setattr(cli, "load_effective_config", lambda root: SimpleNamespace(config=object()))
+    monkeypatch.setattr(cli, "install_claude_integration", lambda *args, **kwargs: ["x"])
+
+
+def test_install_cli_non_interactive_flag(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The non-interactive flag skips the wizard prompt and succeeds."""
+    _stub_cli_install(monkeypatch)
+    monkeypatch.setattr(welcome, "run_bwrap_diagnostic", list)
+    monkeypatch.setattr(welcome, "sandbox_mode_wizard", lambda *args, **kwargs: None)
+    monkeypatch.setattr(welcome, "render_welcome", lambda *args, **kwargs: None)
+
+    result = CliRunner().invoke(claude, ["install", "--path", str(tmp_path), "--non-interactive", "--no-build"])
+
+    assert result.exit_code == 0, result.output
+    assert "Sandbox mode for SDD sessions" not in result.output
+
+
+def test_install_cli_sandbox_mode_flag(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit native sandbox mode is persisted without a prompt."""
+    _stub_cli_install(monkeypatch)
+    monkeypatch.setattr(welcome, "run_bwrap_diagnostic", list)
+    monkeypatch.setattr(welcome, "render_welcome", lambda *args, **kwargs: None)
+
+    result = CliRunner().invoke(
+        claude,
+        ["install", "--path", str(tmp_path), "--sandbox-mode", "native", "--non-interactive", "--no-build"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert 'sandbox = "required"' in (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
+
+
+def test_install_cli_no_welcome(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Suppressing the welcome leaves the existing installer output intact."""
+    _stub_cli_install(monkeypatch)
+    monkeypatch.setattr(welcome, "render_welcome", lambda *args, **kwargs: pytest.fail("welcome rendered"))
+
+    result = CliRunner().invoke(claude, ["install", "--path", str(tmp_path), "--no-welcome", "--no-build"])
+
+    assert result.exit_code == 0, result.output
+    assert "AI-Parrot — Claude Code Integration Installed" not in result.output
+    assert "✓ x" in result.output
