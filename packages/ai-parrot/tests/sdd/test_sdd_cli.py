@@ -166,9 +166,7 @@ def test_portable_flag(tmp_path: Path) -> None:
     )
 
 
-def test_sdd_cli_refuses_linked_worktree_and_resolves_subdir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_sdd_cli_refuses_linked_worktree_and_resolves_subdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Write verbs refuse linked checkouts while status and explicit targets remain available."""
     primary = tmp_path / "primary"
     linked = tmp_path / "linked"

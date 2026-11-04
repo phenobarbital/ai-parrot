@@ -27,7 +27,6 @@ from parrot.sdd.installer import (
     uninstall_sdd_integration,
 )
 
-
 @pytest.fixture
 def empty_repo(tmp_path: Path) -> Path:
     """A fresh, non-Python git repository."""
@@ -388,9 +387,7 @@ def test_guard_hook_portable_flag_forces_bare(empty_repo: Path, no_launcher: Pat
     assert not any("baked" in a for a in actions)
 
 
-def test_guard_hook_no_portable_forces_baked(
-    empty_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_guard_hook_no_portable_forces_baked(empty_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """False forces baked commands even when the managed launcher is available."""
     home = tmp_path / "home"
     (home / "bin").mkdir(parents=True)

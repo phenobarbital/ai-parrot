@@ -82,9 +82,7 @@ def sdd() -> None:
     "--portable/--no-portable",
     "portable",
     default=None,
-    help=(
-        "Bare launcher commands or baked paths; default keeps each host's form then follows the launcher."
-    ),
+    help=("Bare launcher commands or baked paths; default keeps each host's form then follows the launcher."),
 )
 @click.option("--base-branch", "base_branch", default=None, help="SDD base branch to seed and prepare (default: dev).")
 @click.option("--push-base", is_flag=True, help="Also `git push -u origin <base-branch>` when origin lacks it.")
