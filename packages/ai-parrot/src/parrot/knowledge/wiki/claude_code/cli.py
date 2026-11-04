@@ -135,8 +135,8 @@ def claude() -> None:
     default=None,
     help="Set the SDD sandbox mode (native or legacy) without prompting.",
 )
-@click.option("--non-interactive", is_flag=True, default=False, help="Skip interactive prompts.")
-@click.option("--no-welcome", is_flag=True, default=False, help="Suppress the rich welcome message.")
+@click.option("--non-interactive", is_flag=True, default=False, help="Skip interactive prompts (the wizard is also skipped when stdin is not a TTY).")
+@click.option("--no-welcome", is_flag=True, default=False, help="Suppress the welcome and bwrap diagnostic; an explicit --sandbox-mode is still applied.")
 def install(
     path_: Optional[str],
     git_hook: bool,
