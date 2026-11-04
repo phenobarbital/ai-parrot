@@ -55,10 +55,10 @@ Esto nos da tres beneficios concretos:
                        └────────┬─────────┘
                                 ▼
                        ┌──────────────────┐
-                       │  /sdd-task       │  ← crea TASK-* + worktree
+                       │  /sdd-task       │  ← crea TASK-* (worktree vía parrot sdd worktree ensure)
                        └────────┬─────────┘
                                 ▼
-              cd .claude/worktrees/feat-<ID>-<slug>
+              cd "$WORKTREES_DIR/feat-<ID>-<slug>"
                                 │
                                 ▼
        ┌──────────────────┐  loop  ┌──────────────────┐
@@ -202,8 +202,8 @@ Lo que hace:
    `sdd/tasks/index/<feature>.json` (un archivo por feature — sin
    colisiones entre features).
 4. Commitea todo a `<base_branch>`.
-5. Crea el worktree:
-   `git worktree add -b feat-<ID>-<slug> .claude/worktrees/feat-<ID>-<slug> HEAD`
+5. Asegura el worktree bajo el root configurado:
+   `parrot sdd worktree ensure --slug <slug> --feature-id FEAT-<ID>`
 
 > **Importante**: `/sdd-task` se ejecuta desde el repo principal, **no**
 > desde un worktree.
@@ -244,7 +244,9 @@ Lo ordena por prioridad (high → medium → low) y luego por effort
 El caballo de batalla. Acepta el ID o el slug:
 
 ```bash
-cd .claude/worktrees/feat-147-crew-result-storage
+MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+cd "$WORKTREES_DIR/feat-147-crew-result-storage"
 /sdd-start TASK-1019
 # ó
 /sdd-start crew-result-storage-tests
@@ -338,7 +340,9 @@ Pasos:
 /sdd-task sdd/specs/agent-tracing.spec.md
 
 # 4. Trabajar dentro del worktree
-cd .claude/worktrees/feat-150-agent-tracing
+MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+cd "$WORKTREES_DIR/feat-150-agent-tracing"
 /sdd-start TASK-001
 /sdd-start TASK-002
 # ...
@@ -369,7 +373,9 @@ cd .claude/worktrees/feat-150-agent-tracing
 /sdd-tojira sdd/specs/<slug>.spec.md --ticket NAV-8036
 /sdd-task sdd/specs/<slug>.spec.md
 
-cd .claude/worktrees/feat-NNN-<slug>
+MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+cd "$WORKTREES_DIR/feat-NNN-<slug>"
 /sdd-start ...
 # Al terminar:
 # Configura jira.transition en .parrot/sdd_hooks.toml; véase docs/sdd/closeout-hooks.md
@@ -385,7 +391,9 @@ cd .claude/worktrees/feat-NNN-<slug>
 /sdd-spec fix-pgvector-deadlock
 /sdd-task sdd/specs/fix-pgvector-deadlock.spec.md
 
-cd .claude/worktrees/feat-NNN-fix-pgvector-deadlock
+MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+cd "$WORKTREES_DIR/feat-NNN-fix-pgvector-deadlock"
 /sdd-start TASK-...
 
 # Cierre del hotfix — NO mergea a main

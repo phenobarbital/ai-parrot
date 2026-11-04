@@ -74,7 +74,10 @@ Review spec and set status: approved
 /sdd-task
         |
         v
-cd .claude/worktrees/<feature-worktree>
+parrot sdd worktree ensure --slug <slug> --feature-id FEAT-<NNN>
+MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+cd "$WORKTREES_DIR/<feature-worktree>"
         |
         v
 /sdd-start TASK-NNN
@@ -94,7 +97,7 @@ Antigravity CLI shares the exact same underlying SDD engine with Claude Code and
 - **ID Ledger**: `FEAT-<NNN>` and `TASK-<NNN>` IDs are allocated via git-native compare-and-swap through `python -m scripts.sdd.reserve_ids` (FEAT-387).
 - **Knowledge Graph**: Codebase orientation uses `wikitoolkit query` before broad greps or file scans.
 - **Codebase Contract**: Specs and tasks require explicit, verified import paths and function signatures to prevent LLM hallucinations.
-- **Worktree Isolation**: Worktrees live under `.claude/worktrees/` for cross-tool compatibility.
+- **Worktree Isolation**: Worktrees live under the worktree root (host-agnostic, under `.parrot/worktrees/`, override with an exported `WORKTREE_BASE_PATH`).
 - **Task Closure**: Tasks are closed and verified using `scripts/sdd/close_task.sh TASK-NNN <feature-slug> verified`.
 
 ## Using Custom Subagents

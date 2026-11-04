@@ -242,10 +242,11 @@ parrot sdd uninstall --stalled --dry-run    # stale files + stale MCP entries, c
   files with a warning. Seeds are never overwritten. (`--force` is accepted as a deprecated no-op.)
 - `parrot sdd uninstall` removes every SDD file the package ships, including edited or unrecorded ones;
   `--keep-edits` removes only files whose hash matches the receipt. Seeds and state are kept.
-- It also seeds `sdd/tasks/.id_ledger.json` and an ignore block for `.claude/worktrees/` and `.parrot/` (parrot's
+- It also seeds `sdd/tasks/.id_ledger.json` and an ignore block for the resolved worktree root
+  (default `.parrot/worktrees/`, or `WORKTREE_BASE_PATH`) and `.parrot/` (parrot's
   local ledger index and wiki store), writes a marked
   `.gitattributes` block (`merge=union` for the shared ledger log, recorded in the receipt) and installs the four
-  `parrot-ledger` git hooks; `parrot self doctor --sdd` checks both.
+  `parrot-ledger` git hooks; `parrot self doctor --sdd` checks both. `parrot sdd install` and `parrot doctor` refuse while worktrees remain under the legacy `.claude/worktrees/` and print the migration recipe.
 - `sdd/config.json` fields: `base_branch` (default `dev`), `staging_branch`, `hotfix_base` (default `main`),
   `issue_tracker` (`jira` | `none`), `jira_host`, `reviewer` (`codex` | `none`), `test_command`, `projects`.
 - `test_command`: required for a repository whose tests are not pytest. When set (non-blank), each task's
