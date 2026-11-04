@@ -10,7 +10,7 @@ tags: [docs, github-pages, mkdocs, landing-page, branding, tutorials]
 **Feature ID**: FEAT-803
 **Date**: 2026-11-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: post-FEAT-801 + M9
 
 ---
@@ -142,7 +142,7 @@ N/A — content and design only.
 | M3: MkDocs Theme & Nav | yes | 6-section nav structure fixed; Material custom_dir pattern | — |
 | M4: Content Hub & Chapters | yes | 7 concept overviews, 1:1 with wiki; hub layout fixed | — |
 | M5: Page Improvements | yes | Minimal config block pattern; curated tool list | — |
-| M6: Beginner Tutorials | no | — | Which 4th tutorial is an open question (§8 Q1) |
+| M6: Beginner Tutorials | yes | 4 tutorials fixed (chatbot, agent, tool, deployment); pattern in spec | — |
 | M7: Build Pipeline | yes | requirements-docs.txt contents; workflow step removal | — |
 
 ### Module 1: Landing Page Redesign
@@ -155,12 +155,15 @@ N/A — content and design only.
 - **Files**: all CREATE (full rewrite of existing files)
 
 **Design requirements**:
-- Keep Inter + JetBrains Mono fonts (or evaluate alternatives).
-- Use Font Awesome icons (already loaded).
+- Keep Inter + JetBrains Mono fonts via Google Fonts CDN.
+- Use Font Awesome 6 icons (already loaded).
+- Adopt Material Design color tokens and spacing scale (§8 Q2) for visual
+  consistency with the mkdocs Material theme (green primary palette, surface
+  and on-surface tokens, 4/8/16/24/32 px spacing grid).
 - Prism.js for syntax highlighting of code snippets.
 - Mermaid for architecture diagram.
 - Responsive layout (mobile-first).
-- Dark/light theme support matching Material.
+- Dark/light theme support matching Material's `default`/`slate` schemes.
 - Sections: Hero → Why AI-Parrot (3–4 cards) → Quick Install → Providers table → Links (Docs, Wiki, GitHub, PyPI).
 - Clear CTA to `/docs/` and to the GitHub Wiki.
 - Footer with GitHub, Issues, Discussions, PyPI links.
@@ -215,7 +218,7 @@ nav:
       - Your First Chatbot: tutorials/first-chatbot.md
       - Your First Agent: tutorials/first-agent.md
       - Your First Tool: tutorials/first-tool.md
-      # 4th tutorial TBD (§8 Q1)
+        - Deployment: tutorials/deployment.md
   - Guides:
       - CLI Agent Daemon: guides/cli-agent-daemon.md
       # other surviving guides from M7 classification
@@ -228,7 +231,7 @@ nav:
 **Theme changes**:
 - Replace `material/robot-happy-outline` icon with the parrot logo
 - Add `custom_dir: docs/overrides` for custom CSS
-- Keep green palette (or refresh to match landing page design)
+- Keep green primary palette; landing page uses Material-adjacent tokens for consistency
 - Add `extra` OG meta tags referencing `social-card.png`
 
 ### Module 4: Content Hub & Chapter Rewrites
@@ -292,7 +295,7 @@ For API reference, class signatures, and implementation details, see the
   - CREATE: `docs/tutorials/first-chatbot.md`
   - CREATE: `docs/tutorials/first-agent.md`
   - CREATE: `docs/tutorials/first-tool.md`
-  - CREATE: `docs/tutorials/<fourth-tutorial>.md` (TBD — §8 Q1)
+  - CREATE: `docs/tutorials/deployment.md`
 
 **Tutorial pattern** (each ~800–1200 words):
 ```markdown
@@ -528,6 +531,7 @@ Verified against: `285e7605df`
 | `docs/tutorials/first-chatbot.md` | CREATE | — | — | — |
 | `docs/tutorials/first-agent.md` | CREATE | — | — | — |
 | `docs/tutorials/first-tool.md` | CREATE | — | — | — |
+| `docs/tutorials/deployment.md` | CREATE | — | — | — |
 | `requirements-docs.txt` | CREATE | — | — | — |
 | `docs/branding/favicon.ico` | CREATE | — | — | — |
 | `docs/branding/social-card.png` | CREATE | — | — | — |
@@ -660,16 +664,12 @@ Coverage:
 - [x] **Should the landing page be redesigned from scratch or iterated?** — *Resolved in proposal*: Redesign from scratch. New layout, new sections, new copy.
 - [x] **How many beginner tutorials in scope?** — *Resolved in proposal*: 3–4 tutorials (first chatbot, first agent, first tool, plus one additional).
 - [x] **Consolidate chapter overviews 7→5 or keep 1:1?** — *Resolved in proposal*: Keep 1:1 with wiki sections.
+- [x] **Q1: Which 4th tutorial?** — *Resolved in spec*: Deployment guide — deploy an AI-Parrot agent as a service (server setup, aiohttp handler, production config).
+- [x] **Q2: Landing page design system?** — *Resolved in spec*: Material-adjacent tokens — keep Inter + JetBrains Mono + Font Awesome but adopt Material Design color tokens and spacing scale for visual consistency with the mkdocs Material theme.
 
 ### Unresolved
 
-- [ ] **Q1: Which 4th tutorial?** — *Owner: tbd*
-  *Plausible answers*: a) RAG pipeline · b) deployment guide · c) tool creation deep-dive
-  *Can be deferred to implementation* — the first 3 tutorials are well-defined.
-
-- [ ] **Q2: Landing page design system?** — *Owner: tbd*
-  *Plausible answers*: a) keep Inter/JetBrains Mono + FA · b) Material-adjacent tokens · c) custom
-  *Can be deferred to implementation* — doesn't block the spec structure.
+None — all questions resolved.
 
 ---
 
@@ -690,3 +690,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-04 | Jesus Lara | Initial draft from FEAT-803 proposal |
+| 0.2 | 2026-11-05 | Jesus Lara | Resolve Q1 (4th tutorial → deployment) and Q2 (design system → Material-adjacent tokens); all modules now delegation-eligible |
