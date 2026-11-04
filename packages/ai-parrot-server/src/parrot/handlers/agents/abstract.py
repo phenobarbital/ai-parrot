@@ -721,10 +721,10 @@ class AgentHandler(BaseView):
         uploaded_files_info = []
         try:
             reader = await self.request.multipart()
-        except KeyError:
+        except KeyError as err:
             raise FileNotFoundError(
                 "No files found in the request. Please upload a file."
-            )
+            ) from err
         # Process each part of the multipart request
         async for part in reader:
             if part.filename:
@@ -908,7 +908,7 @@ class AgentHandler(BaseView):
             self.logger.error("Error invoking agent: %s", e)
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
-            )
+            ) from e
 
         # Create the response object
         final_report = response.output.strip()
