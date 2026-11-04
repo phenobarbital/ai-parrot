@@ -239,6 +239,11 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
         "ensure": ("ensure_worktree", (), "Create or reuse the feature/hotfix worktree (idempotent)."),
         "status": ("worktree_status", (), "Discover SDD worktrees and report task state and health."),
         "guard": ("worktree_environment", (), "Serve the PreToolUse shared-environment guard (--hook)."),
+        "baseline": (
+            "worktree_baseline",
+            (),
+            "Create/remove a runnable baseline checkout of a base ref, compiled .so files included.",
+        ),
         "list": ("remove_worktree", ("list",), "List worktrees and orphan dirs: dirty, unpushed, PR, live processes."),
         "remove": (
             "remove_worktree",
