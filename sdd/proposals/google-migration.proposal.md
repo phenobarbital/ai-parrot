@@ -4,7 +4,7 @@ title: "Retire gemini-2.5-{pro,flash} before the 2026-12-01 shutdown: sweep the 
 slug: google-migration
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: inline
   jira_key: null
