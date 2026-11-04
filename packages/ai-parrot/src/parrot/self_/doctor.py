@@ -12,6 +12,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any, Literal
@@ -217,9 +218,78 @@ def _sdd_base_branch(root: Path) -> tuple[str, DoctorCheck | None]:
                                   fix="fix sdd/config.json (parrot sdd install --dry-run shows the seed shape)")
 
 
+def _check_bwrap_sandbox() -> list[DoctorCheck]:
+    """Linux-only: verify that Bubblewrap can create nested user namespaces.
+
+    Both Claude Code's native sandbox and the SDD worktree sandbox use bwrap;
+    the combination requires nested userns.  On non-Linux platforms bwrap is not
+    used, so the check is skipped silently.
+    """
+    if sys.platform != "linux":
+        return []
+
+    checks: list[DoctorCheck] = []
+    bwrap = shutil.which("bwrap")
+    if not bwrap:
+        checks.append(DoctorCheck(
+            name="sdd: bwrap", ok=False,
+            detail="bubblewrap (bwrap) not found on PATH",
+            fix="sudo apt install bubblewrap"))
+        return checks
+    checks.append(DoctorCheck(name="sdd: bwrap", ok=True, detail=f"bwrap found at {bwrap}"))
+
+    # Single-level bwrap
+    try:
+        single = subprocess.run(
+            [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--", "echo", "ok"],
+            capture_output=True, text=True, check=False, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        checks.append(DoctorCheck(
+            name="sdd: bwrap userns", ok=False,
+            detail=f"bwrap single namespace failed: {exc}",
+            fix="sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; "
+                "sudo sysctl -w kernel.unprivileged_userns_clone=1"))
+        return checks
+
+    if single.returncode != 0:
+        stderr = single.stderr.strip().splitlines()
+        checks.append(DoctorCheck(
+            name="sdd: bwrap userns", ok=False,
+            detail=f"bwrap single namespace failed: {stderr[-1] if stderr else 'unknown error'}",
+            fix="sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; "
+                "sudo sysctl -w kernel.unprivileged_userns_clone=1"))
+        return checks
+
+    # Nested bwrap (what Claude Code native sandbox + SDD sandbox requires)
+    try:
+        nested = subprocess.run(
+            [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--",
+             bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--", "echo", "ok"],
+            capture_output=True, text=True, check=False, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        checks.append(DoctorCheck(
+            name="sdd: bwrap nested userns", ok=False,
+            detail=f"bwrap nested namespace failed: {exc}",
+            fix="see docs/sdd/sandbox-setup.md — create /etc/apparmor.d/bwrap with userns permission"))
+        return checks
+
+    if nested.returncode != 0:
+        stderr = nested.stderr.strip().splitlines()
+        checks.append(DoctorCheck(
+            name="sdd: bwrap nested userns", ok=False,
+            detail=f"nested bwrap failed: {stderr[-1] if stderr else 'unknown error'}",
+            fix="see docs/sdd/sandbox-setup.md — create /etc/apparmor.d/bwrap with userns permission"))
+    else:
+        checks.append(DoctorCheck(
+            name="sdd: bwrap nested userns", ok=True,
+            detail="nested user namespaces work (Claude Code native sandbox + SDD sandbox compatible)"))
+    return checks
+
+
 def _check_sdd(root: Path) -> list[DoctorCheck]:
     """C15 check list, in proposal order. Never raises; never writes."""
     checks: list[DoctorCheck] = []
+    checks.extend(_check_bwrap_sandbox())
     origin = _git(root, "remote", "get-url", "origin")
     checks.append(DoctorCheck(name="sdd: origin remote", ok=origin.returncode == 0,
                               detail=origin.stdout.strip() or origin.stderr.strip(),

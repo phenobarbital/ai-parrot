@@ -50,6 +50,7 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _install_ledger_hooks(repo)  # after the seed commit, so the pre-commit ledger hook never fires here
     monkeypatch.setattr(doctor.shutil, "which", lambda name: f"/usr/bin/{name}")  # gh, jq, claude present
     monkeypatch.setattr(doctor.subprocess, "run", _gh_ok(doctor.subprocess.run))
+    monkeypatch.setattr(doctor, "_check_bwrap_sandbox", lambda: [])  # OS-level check, tested separately
     return repo
 
 
@@ -267,3 +268,63 @@ def test_worktree_tests_check_is_informational(ready_repo: Path) -> None:
     check = {c.name: c for c in checks}["sdd: worktree tests isolated"]
     assert not check.ok and check.informational and "pythonpath" in check.fix
     assert check not in doctor.failed(checks)
+
+
+# --- bwrap sandbox checks (OS-level, tested with mocks) ---------------------------------------------------
+
+
+class TestBwrapSandbox:
+    """Unit tests for _check_bwrap_sandbox — always mocked, never runs real bwrap."""
+
+    def test_skipped_on_non_linux(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(doctor.sys, "platform", "darwin")
+        assert doctor._check_bwrap_sandbox() == []
+
+    def test_bwrap_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(doctor.sys, "platform", "linux")
+        monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+        checks = doctor._check_bwrap_sandbox()
+        assert len(checks) == 1 and not checks[0].ok and "bubblewrap" in checks[0].fix
+
+    def test_single_bwrap_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(doctor.sys, "platform", "linux")
+        monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/bwrap")
+
+        def fake_run(cmd, **kw):
+            return subprocess.CompletedProcess(cmd, 1, "", "No permissions to create new namespace")
+
+        monkeypatch.setattr(doctor.subprocess, "run", fake_run)
+        checks = doctor._check_bwrap_sandbox()
+        by_name = {c.name: c for c in checks}
+        assert "sdd: bwrap userns" in by_name and not by_name["sdd: bwrap userns"].ok
+
+    def test_nested_bwrap_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(doctor.sys, "platform", "linux")
+        monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/bwrap")
+        call_count = 0
+
+        def fake_run(cmd, **kw):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return subprocess.CompletedProcess(cmd, 0, "ok\n", "")
+            return subprocess.CompletedProcess(cmd, 1, "", "nested userns is capability-restricted")
+
+        monkeypatch.setattr(doctor.subprocess, "run", fake_run)
+        checks = doctor._check_bwrap_sandbox()
+        by_name = {c.name: c for c in checks}
+        assert by_name["sdd: bwrap"].ok
+        nested = by_name["sdd: bwrap nested userns"]
+        assert not nested.ok and "sandbox-setup.md" in nested.fix
+
+    def test_all_ok(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(doctor.sys, "platform", "linux")
+        monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/bwrap")
+
+        def fake_run(cmd, **kw):
+            return subprocess.CompletedProcess(cmd, 0, "ok\n", "")
+
+        monkeypatch.setattr(doctor.subprocess, "run", fake_run)
+        checks = doctor._check_bwrap_sandbox()
+        by_name = {c.name: c for c in checks}
+        assert by_name["sdd: bwrap"].ok and by_name["sdd: bwrap nested userns"].ok
