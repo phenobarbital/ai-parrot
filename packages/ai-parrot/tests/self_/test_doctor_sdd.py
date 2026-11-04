@@ -33,6 +33,7 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # wait on a pinentry prompt.
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
     origin = tmp_path / "origin.git"
     subprocess.run(["git", "init", "-q", "--bare", "-b", "dev", str(origin)], check=True)
     repo = tmp_path / "repo"
@@ -41,7 +42,7 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (repo / "sdd/tasks").mkdir(parents=True)
     (repo / "sdd/tasks/.id_ledger.json").write_text('{"task": 0, "feature": 0}\n')
     (repo / "sdd/config.json").write_text(json.dumps({"base_branch": "dev", "hotfix_base": "main"}) + "\n")
-    (repo / ".gitignore").write_text(".claude/worktrees/\n")
+    (repo / ".gitignore").write_text("/.parrot/worktrees/\n")
     # Bare lines, no installer marker block: `doctor._check_ledger_attributes` only requires the two merge=union lines.
     (repo / ".gitattributes").write_text("sdd/ledger/events.jsonl merge=union\nsdd/ledger/archive/*.jsonl merge=union\n")
     _git(repo, "add", "-A")
@@ -268,6 +269,68 @@ def test_worktree_tests_check_is_informational(ready_repo: Path) -> None:
     check = {c.name: c for c in checks}["sdd: worktree tests isolated"]
     assert not check.ok and check.informational and "pythonpath" in check.fix
     assert check not in doctor.failed(checks)
+
+
+# --- FEAT-802 TASK-5179: resolved worktree root + legacy worktrees ----------------------------------------
+
+
+def _sdd_git_checks(repo: Path) -> dict[str, doctor.DoctorCheck]:
+    return {c.name: c for c in doctor._check_sdd_git(repo, "dev")}
+
+
+def test_doctor_legacy_worktrees_check(ready_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """AC6: a worktree registered under .claude/worktrees/ fails `sdd: legacy worktrees` with the recipe as fix."""
+    from parrot.sdd.config import legacy_migration_recipe, legacy_worktrees
+
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    assert _sdd_git_checks(ready_repo)["sdd: legacy worktrees"].ok
+    _git(ready_repo, "worktree", "add", "-q", "-b", "feat-1", ".claude/worktrees/feat-FEAT-1-x")
+    check = _sdd_git_checks(ready_repo)["sdd: legacy worktrees"]
+    assert not check.ok and not check.informational and "1 worktree(s)" in check.detail
+    assert check.fix == "\n".join(legacy_migration_recipe(ready_repo, legacy_worktrees(ready_repo)))
+    assert "worktree repair" in check.fix and "mv " in check.fix
+    # an occupied destination cannot be migrated safely: the fix is a diagnostic, never a runnable move
+    (ready_repo / ".parrot/worktrees/feat-FEAT-1-x").mkdir(parents=True)
+    check = _sdd_git_checks(ready_repo)["sdd: legacy worktrees"]
+    assert not check.ok and "cannot generate a safe migration recipe" in check.fix and "mv " not in check.fix
+
+
+def test_doctor_custom_root_scope(ready_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """AC7: in-repo roots (relative/absolute) are probed repo-relatively; external roots are informational with no
+    `check-ignore`; a root equal to the repository fails."""
+    from parrot.sdd.installer import install_sdd_integration
+
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    monkeypatch.setenv("WORKTREE_BASE_PATH", "custom wt")
+    check = _sdd_git_checks(ready_repo)["sdd: worktrees ignored"]
+    assert not check.ok and "custom wt/ is NOT" in check.detail and "parrot sdd install" in check.fix
+    install_sdd_integration(ready_repo)
+    check = _sdd_git_checks(ready_repo)["sdd: worktrees ignored"]
+    assert check.ok and check.detail == "custom wt/ is git-ignored"
+
+    monkeypatch.setenv("WORKTREE_BASE_PATH", str(ready_repo / "abs-wt"))
+    install_sdd_integration(ready_repo)
+    check = _sdd_git_checks(ready_repo)["sdd: worktrees ignored"]
+    assert check.ok and check.detail == "abs-wt/ is git-ignored"
+    assert str(ready_repo) not in (ready_repo / ".gitignore").read_text()
+
+    calls: list[tuple[str, ...]] = []
+    real_git = doctor._git
+
+    def spy(root: Path, *args: str):
+        calls.append(args)
+        return real_git(root, *args)
+
+    monkeypatch.setattr(doctor, "_git", spy)
+    monkeypatch.setenv("WORKTREE_BASE_PATH", "../outside")
+    check = _sdd_git_checks(ready_repo)["sdd: worktrees ignored"]
+    assert check.ok and check.informational
+    assert check.detail == "external worktree root; outside repository tracking scope"
+    assert not any(args and args[0] == "check-ignore" for args in calls)
+
+    monkeypatch.setenv("WORKTREE_BASE_PATH", str(ready_repo))
+    check = _sdd_git_checks(ready_repo)["sdd: worktrees ignored"]
+    assert not check.ok and "WORKTREE_BASE_PATH" in check.fix
 
 
 # --- bwrap sandbox checks (OS-level, tested with mocks) ---------------------------------------------------
