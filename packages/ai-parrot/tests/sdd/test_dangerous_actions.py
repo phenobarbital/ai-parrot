@@ -100,6 +100,41 @@ def test_allowed(cmd: str, tmp_path: Path) -> None:
     assert evaluate(_bash(cmd), root=tmp_path).decision == "allow", cmd
 
 
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "rm -rf .claude/worktrees/x",
+        "rm -rf .parrot/worktrees/x",
+        "Remove-Item -Recurse .parrot\\worktrees\\x",
+    ],
+)
+def test_dangerous_rm_both_roots(cmd: str, tmp_path: Path) -> None:
+    assert evaluate(_bash(cmd), root=tmp_path).decision == "deny", cmd
+
+
+def test_merge_guard_uses_resolved_worktree_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    custom_root = tmp_path / "custom-workers"
+    custom_root.mkdir()
+    monkeypatch.setenv("WORKTREE_BASE_PATH", str(custom_root))
+    monkeypatch.setattr("parrot.sdd.scripts.dangerous_actions._live_worker", lambda: True)
+
+    assert evaluate(_bash("git pull"), root=tmp_path).decision == "warn"
+
+
+def test_merge_guard_falls_back_when_resolver_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    fallback_root = tmp_path / ".parrot" / "worktrees"
+    fallback_root.mkdir(parents=True)
+
+    def broken_worktree_root(repo_root: Path, override: str | None = None) -> Path:
+        del repo_root, override
+        raise RuntimeError("resolver unavailable")
+
+    monkeypatch.setattr("parrot.sdd.config.worktree_root", broken_worktree_root)
+    monkeypatch.setattr("parrot.sdd.scripts.dangerous_actions._live_worker", lambda: True)
+
+    assert evaluate(_bash("git merge feat-x"), root=tmp_path).decision == "warn"
+
+
 def test_messages_name_only_portable_fixes(tmp_path: Path) -> None:
     for cmd in DENIED:
         reason = evaluate(_bash(cmd), root=tmp_path).reason

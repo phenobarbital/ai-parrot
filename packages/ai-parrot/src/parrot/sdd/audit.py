@@ -67,7 +67,7 @@ POSIX_SHELL_RE = re.compile(
     r"(?:^\s*source\s|[`;&|]\s*source\s)|\$\(|(?<![\w.])/tmp/|<<-?\s*['\"]?\w+|\bset\s+-[euo]+(?:\s+pipefail)?"
     r"|^#!\s*/(?:usr/)?(?:bin/env\s+)?(?:ba|z)?sh\b"
 )
-MONOREPO_PATH_RE = re.compile(r"\bpackages/ai-parrot\w*|\.claude/worktrees/")
+MONOREPO_PATH_RE = re.compile(r"\bpackages/ai-parrot\w*|\.parrot/worktrees/")
 # bare-python: `python` (never `python3`) run as a command — many hosts ship no `python` (Ubuntu, Debian, macOS).
 # `.venv/bin/python`, `sys.executable`-style names and prose ("Python", "python files") never match.
 BARE_PYTHON_RE = re.compile(r"(?<![\w/.$-])\"?python\"?(?![\w.])(?=\s*<<|\s+(?:-|\.{0,2}/|\S+\.py\b))")

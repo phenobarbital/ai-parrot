@@ -22,17 +22,17 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
         ("source .venv/bin/activate", "venv-path"),
         ("uv run --no-sync pytest", "uv-run"),
         ("TASK_FILES=$(jq -r '.tasks[].file' idx.json)", "external-tool"),
-        ("python3 - \"<TASK-NNN>\" <<'PYEOF' || true", "external-tool"),               # rev 0.8 C29
+        ("python3 - \"<TASK-NNN>\" <<'PYEOF' || true", "external-tool"),  # rev 0.8 C29
         ("TASK_FILES=$(jq -r '.tasks[].file' idx.json)", "posix-shell"),
-        ("cd .claude/worktrees/feat-FEAT-1-x", "monorepo-path"),
-        ("Open https://trocglobal.atlassian.net/browse/NAV-1234 first", "org-data"),      # C11a
-        ("Resolves NAV-1234 and NAV-77", "org-data"),                                      # C11a
-        ("See CLAUDE.md § Adversarial Second Opinion", "claude-md-ref"),                   # C11a
-        ("Follow CLAUDE.md throughout.", "claude-md-ref"),                                 # C11a
-        ("git fetch origin && git rebase origin/dev", "branch-literal"),                   # C11a
+        ("cd .parrot/worktrees/feat-FEAT-1-x", "monorepo-path"),
+        ("Open https://trocglobal.atlassian.net/browse/NAV-1234 first", "org-data"),  # C11a
+        ("Resolves NAV-1234 and NAV-77", "org-data"),  # C11a
+        ("See CLAUDE.md § Adversarial Second Opinion", "claude-md-ref"),  # C11a
+        ("Follow CLAUDE.md throughout.", "claude-md-ref"),  # C11a
+        ("git fetch origin && git rebase origin/dev", "branch-literal"),  # C11a
         ("python -m scripts.sdd.reserve_ids --base-branch dev --count 1", "branch-literal"),  # C11a
-        ("base_branch: main", "branch-literal"),                                           # C11a
-        ("git checkout staging", "branch-literal"),                                        # C11a
+        ("base_branch: main", "branch-literal"),  # C11a
+        ("git checkout staging", "branch-literal"),  # C11a
     ],
 )
 def test_scan_text_kinds(line: str, kind: str) -> None:
@@ -48,6 +48,11 @@ def test_legacy_sdd_run_kind() -> None:
 
 def test_scan_text_prose_is_clean() -> None:
     assert scan_text("Ask codex for a second opinion about the design.", "x.md") == []
+
+
+def test_legacy_worktree_path_is_not_monorepo_specific() -> None:
+    findings = scan_text("cd .claude/worktrees/x", "x.md")
+    assert "monorepo-path" not in {finding.kind for finding in findings}
 
 
 @pytest.mark.parametrize(
