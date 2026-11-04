@@ -1,0 +1,23 @@
+# {{ title }}
+
+{% if source_link %}[View source]({{ source_link }})
+{% endif %}
+{% for member in members %}
+## {{ member.kind|title }} `{{ member.full_name }}`
+
+{% if member.kind == "alias" %}Re-exported from `{{ member.target }}`.
+
+{% endif %}{% if member.docstring %}{{ member.docstring }}
+
+{% endif %}{% if member.parameters %}| Parameter | Type | Default |
+| --- | --- | --- |
+{% for parameter in member.parameters %}| `{{ parameter.name }}` | `{{ parameter.annotation }}` | `{{ parameter.default }}` |
+{% endfor %}
+{% endif %}{% if member.returns %}Returns: `{{ member.returns }}`
+
+{% endif %}{% for child in member.children %}
+### {{ child.kind|title }} `{{ child.full_name }}`
+
+{% if child.docstring %}{{ child.docstring }}
+
+{% endif %}{% endfor %}{% endfor %}
