@@ -5,7 +5,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from parrot.mcp.hosts import HostKind, detect_hosts, get_adapter
+import pytest
+
+from parrot.mcp.hosts import GoogleAdapter, HostKind, detect_hosts, get_adapter
 
 
 def test_detect_hosts_empty_repo(tmp_path, monkeypatch):
@@ -33,6 +35,31 @@ def test_only_google_is_user_scoped():
     assert get_adapter(HostKind.CLAUDE).is_repo_scoped() is True
     assert get_adapter(HostKind.CODEX).is_repo_scoped() is True
     assert get_adapter(HostKind.GOOGLE).is_repo_scoped() is False
+
+
+@pytest.mark.parametrize("portable", [None, False, True])
+@pytest.mark.parametrize("kind", list(HostKind))
+def test_reconcile_forwards_portable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: HostKind, portable: bool | None) -> None:
+    """All adapters forward None, False and True, including Google's mcp_path override."""
+    captured: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def reconciler(*args: object, **kwargs: object) -> tuple[list[str], list[str]]:
+        captured.append((args, kwargs))
+        return ["sentinel action"], ["sentinel warning"]
+
+    target = {
+        HostKind.CLAUDE: "parrot.knowledge.wiki.claude_code.installer.reconcile_toolkit_entries",
+        HostKind.CODEX: "parrot.knowledge.wiki.codex.installer.reconcile_toolkit_tables",
+        HostKind.GOOGLE: "parrot.knowledge.wiki.google.installer.reconcile_toolkit_entries",
+    }[kind]
+    monkeypatch.setattr(target, reconciler)
+
+    mcp_path = tmp_path / "google-mcp.json"
+    adapter = GoogleAdapter(mcp_path) if kind is HostKind.GOOGLE else get_adapter(kind)
+
+    assert adapter.reconcile(tmp_path, portable=portable) == (["sentinel action"], ["sentinel warning"])
+    expected_args: tuple[object, ...] = (tmp_path, mcp_path) if kind is HostKind.GOOGLE else (tmp_path,)
+    assert captured == [(expected_args, {"portable": portable})]
 
 
 def test_detect_hosts_creates_nothing(tmp_path, monkeypatch):

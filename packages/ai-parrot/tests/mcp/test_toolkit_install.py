@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
 import pytest
 
-from parrot.mcp.hosts import HostKind
+from parrot.mcp.hosts import HostKind, get_adapter
 from parrot.mcp.toolkit_install import (
     ToolkitState,
     dist_available,
@@ -59,6 +60,66 @@ def test_install_hostless_still_seeds_yaml(tmp_path):
     rows = inventory(tmp_path, hosts=[])
     row = next(r for r in rows if r.name == "memory")
     assert row.state is ToolkitState.ENABLED
+
+
+def test_install_portable_form_across_hosts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Toolkit orchestration preserves form, failures, foreign entries and one-note output."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    foreign_codex = tmp_path / ".codex"
+    foreign_codex.mkdir()
+    (foreign_codex / "config.toml").write_text(
+        '[mcp_servers.parrot-foreign]\ncommand = "external"\n', encoding="utf-8"
+    )
+    hosts = list(HostKind)
+
+    portable_report = install_toolkits(tmp_path, ["memory"], hosts=hosts, portable=True)
+
+    claude_config = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
+    claude_entry = claude_config["mcpServers"]["parrot-memory"]
+    assert claude_entry["command"] == "parrot"
+    assert not any(str(tmp_path) in value for value in claude_entry.get("args", []))
+
+    codex_text = (foreign_codex / "config.toml").read_text(encoding="utf-8")
+    assert '[mcp_servers.parrot-foreign]\ncommand = "external"' in codex_text
+    assert 'command = "parrot"' in codex_text
+
+    google_global = tmp_path / ".gemini" / "config" / "mcp_config.json"
+    google_config = json.loads(google_global.read_text(encoding="utf-8"))
+    assert google_config["mcpServers"]["parrot-memory"]["command"] == "parrot"
+    assert not portable_report.failed_hosts
+
+    google_plugin = tmp_path / ".agents" / "plugins" / "parrot" / "mcp_config.json"
+    plugin_config = json.loads(google_plugin.read_text(encoding="utf-8"))
+    plugin_config["mcpServers"]["wikitoolkit"] = {"command": "wikitoolkit", "args": ["mcp"]}
+    google_plugin.write_text(json.dumps(plugin_config), encoding="utf-8")
+
+    sticky_report = set_toolkits_enabled(tmp_path, ["memory"], True, hosts=hosts, portable=None)
+    assert not [action for action in sticky_report.actions if action.startswith("note: host config baked")]
+    sticky_claude = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
+    assert sticky_claude["mcpServers"]["parrot-memory"]["command"] == "parrot"
+
+    original_get_adapter = get_adapter
+
+    class FailingCodexAdapter:
+        """Test-only adapter that preserves per-host failure isolation coverage."""
+
+        def reconcile(self, root: Path, *, portable: bool | None = None) -> tuple[list[str], list[str]]:
+            raise OSError("codex unavailable")
+
+    def get_adapter_with_failure(kind: HostKind) -> object:
+        return FailingCodexAdapter() if kind is HostKind.CODEX else original_get_adapter(kind)
+
+    monkeypatch.setattr("parrot.mcp.toolkit_install.get_adapter", get_adapter_with_failure)
+    failed_report = install_toolkits(tmp_path, ["memory"], hosts=hosts, portable=False)
+    assert failed_report.failed_hosts == {HostKind.CODEX: "codex unavailable"}
+    assert any("memory — already installed" == warning for warning in failed_report.warnings)
+
+    fallback_root = tmp_path / "fallback"
+    monkeypatch.setattr("parrot.mcp.portability.managed_launcher_on_path", lambda: False)
+    fallback_report = install_toolkits(fallback_root, ["memory"], hosts=hosts)
+    fallback_notes = [action for action in fallback_report.actions if action.startswith("note: host config baked")]
+    assert len(fallback_notes) == 1
 
 
 def test_disable_keeps_section_and_kwargs(tmp_path):
