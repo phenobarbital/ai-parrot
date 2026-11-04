@@ -420,6 +420,8 @@ tests:
 - packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py
 - packages/ai-parrot/tests/self_/test_doctor_sdd.py
 - packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py
+- packages/ai-parrot/tests/test_conf.py
+- packages/ai-parrot/tests/sdd/test_dangerous_actions.py
 - tests/sdd_scripts/test_worktree_plan.py
 - tests/sdd_scripts/test_ensure_worktree.py
 - tests/sdd_scripts/test_brief_meta.py
@@ -808,3 +810,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | 0.1 | 2026-11-04 | Jesus Lara / Claude | Initial draft from the 2026-11-04 brainstorm (unify roots, `.parrot/worktrees/`, hard cut) |
 | 0.2 | 2026-11-04 | Codex | Review fixes: explicit repair destinations, hierarchy-preserving collision-checked migration, exact-target reuse, resolver CLI for workflow twins, custom-root ignore handling and regression contracts |
 | 0.3 | 2026-11-04 | Jesus Lara / Claude | §8 closed: target version set to the next patch (2.0.1); no open questions remain |
+| 0.4 | 2026-11-05 | Jesus Lara / Claude | /sdd-task: Validation Contract gains `test_conf.py` (conf default changes) and `test_dangerous_actions.py` (two-root rm guard); both are modified by the feature |
