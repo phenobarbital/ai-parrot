@@ -264,16 +264,20 @@ parrot sdd worktree ensure --json \
    Jira: PROJ-123 — "Add OAuth 2.0 support for JiraToolkit"
    Spec: sdd/specs/jira-oauth.spec.md (committed to dev)
    Tasks: 4 tasks generated (committed to dev)
-   Worktree: .claude/worktrees/feat-071-jira-oauth
+   Worktree: .parrot/worktrees/feat-071-jira-oauth
 
    AC Coverage: 3/3 criteria mapped to tasks
 
    To execute autonomously:
-     cd .claude/worktrees/feat-071-jira-oauth
+     MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+     WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+     cd "$WORKTREES_DIR/feat-071-jira-oauth"
      claude --agent sdd-autopilot --verbose
 
    Or manually:
-     cd .claude/worktrees/feat-071-jira-oauth
+     MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+     WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+     cd "$WORKTREES_DIR/feat-071-jira-oauth"
      parrot sdd launch worker <FEAT-ID>
 ```
 
@@ -707,7 +711,9 @@ async def test_oauth_callback_invalid_state():
 /sdd-fromjira PROJ-123
 
 # Then walk away
-cd .claude/worktrees/feat-071-jira-oauth
+MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+cd "$WORKTREES_DIR/feat-071-jira-oauth"
 claude --agent sdd-autopilot --verbose
 # ... coffee ...
 # Come back to a ready-to-review PR
@@ -720,7 +726,9 @@ claude --agent sdd-autopilot --verbose
 /sdd-fromjira PROJ-123
 
 # Run worker + reviewer only
-cd .claude/worktrees/feat-071-jira-oauth
+MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+cd "$WORKTREES_DIR/feat-071-jira-oauth"
 parrot sdd launch worker <FEAT-ID>
 claude --agent code-reviewer -p "Review feat-071"
 
