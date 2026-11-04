@@ -9,7 +9,9 @@ a baked install to portable.
 
 from __future__ import annotations
 
+import dataclasses
 import json
+import sys
 import tomllib
 from pathlib import Path
 
@@ -18,6 +20,7 @@ from parrot.knowledge.wiki.claude_code import assets as claude_assets
 from parrot.knowledge.wiki.claude_code import installer as claude
 from parrot.knowledge.wiki.codex import assets as codex_assets
 from parrot.knowledge.wiki.codex import installer as codex
+from parrot.mcp import portability
 
 _TOOLKITS = "toolkits:\n  memory:\n    class: tests.mcp.stub_toolkit.StubToolkit\n    enabled: true\n"
 
@@ -118,3 +121,53 @@ def test_mixed_toolkit_entries_are_portable(root: Path) -> None:
 def test_no_config_is_baked(root: Path) -> None:
     assert claude._current_portable_mode(root) is False
     assert codex._current_portable_mode(root) is False
+
+
+@pytest.mark.parametrize("explicit", [None, False, True])
+@pytest.mark.parametrize("current", [None, False, True])
+@pytest.mark.parametrize("launcher", [False, True])
+def test_resolve_portable_mode_truth_table(
+    explicit: bool | None, current: bool | None, launcher: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """All precedence combinations produce the expected form, reason and note."""
+    monkeypatch.setattr(portability, "managed_launcher_on_path", lambda: launcher)
+    decision = portability.resolve_portable_mode(explicit, current=current)
+
+    expected = {
+        (True, None, False): (True, "explicit", None),
+        (True, None, True): (True, "explicit", None),
+        (True, False, False): (True, "explicit", None),
+        (True, False, True): (True, "explicit", None),
+        (True, True, False): (True, "explicit", None),
+        (True, True, True): (True, "explicit", None),
+        (False, None, False): (False, "explicit", None),
+        (False, None, True): (False, "explicit", None),
+        (False, False, False): (False, "explicit", None),
+        (False, False, True): (False, "explicit", None),
+        (False, True, False): (False, "explicit", None),
+        (False, True, True): (False, "explicit", None),
+        (None, False, False): (False, "sticky", None),
+        (None, False, True): (False, "sticky", None),
+        (None, True, False): (True, "sticky", None),
+        (None, True, True): (True, "sticky", None),
+        (None, None, True): (True, "launcher", None),
+        (
+            None,
+            None,
+            False,
+        ): (
+            False,
+            "baked-fallback",
+            portability.BAKED_NOTE_TEMPLATE.format(prefix=sys.prefix),
+        ),
+    }[(explicit, current, launcher)]
+
+    assert (decision.portable, decision.reason, decision.note) == expected
+
+
+def test_portable_decision_is_immutable() -> None:
+    """Portable decisions cannot be altered after the emitter consumes them."""
+    decision = portability.PortableDecision(True, "explicit", None)
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        decision.portable = False
