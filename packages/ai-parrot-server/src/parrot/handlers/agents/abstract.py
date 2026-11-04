@@ -40,6 +40,8 @@ from ...bots.agent import BasicAgent
 from ...tools.abstract import AbstractTool
 from ...models.responses import AgentResponse, AIMessage
 from ...conf import AGENTS_DIR
+from ...llm_defaults import resolve_component_llm, resolve_component_api_key
+from ...observability.context import usage_component
 from ..scope import resolve_request_tenant
 
 
@@ -176,8 +178,8 @@ class AgentHandler(BaseView):
     agent_id: str = "nextstop"
     _tools: List[AbstractTool] = []
     _agent: BasicAgent = None
-    _use_llm: str = 'google'
-    _use_model: str = 'gemini-2.5-pro'
+    _use_llm: Optional[str] = None
+    _use_model: Optional[str] = None  # None -> AGENT_LLM / DEFAULT_LLM / google:gemini-2.5-pro (FEAT-796)
     # signals
     on_startup: Optional[Callable] = None
     on_shutdown: Optional[Callable] = None
@@ -523,7 +525,7 @@ class AgentHandler(BaseView):
 
     def _create_actors(self, recipients: Union[List[dict], dict] = None) -> List:
         if isinstance(recipients, dict):
-                recipients = [recipients]
+            recipients = [recipients]
         if not recipients:
             return self.error(
                 {'message': 'Recipients are required'},
@@ -792,12 +794,17 @@ class AgentHandler(BaseView):
     ) -> BasicAgent:
         """Create and configure a BasicAgent instance."""
         try:
-            agent = self._agent_class(
-                name=self.agent_name,
-                tools=self._tools,
-                llm=self._use_llm,
-                model=self._use_model
-            )
+            resolved = resolve_component_llm("AGENT", builtin="google:gemini-2.5-pro")
+            # Provider comes from env only when the subclass left _use_llm unset;
+            # a subclass _use_model always wins over the env model.
+            llm = self._use_llm or resolved.provider
+            model = self._use_model or resolved.model
+            extra: dict[str, Any] = {}
+            api_key = resolve_component_api_key(("AGENT",), llm)
+            if api_key:
+                # AbstractBot ignores a bare ``api_key`` kwarg; llm_kwargs reach the client.
+                extra["llm_kwargs"] = {"api_key": api_key}
+            agent = self._agent_class(name=self.agent_name, tools=self._tools, llm=llm, model=model, **extra)
             agent.set_response(self._agent_response)
             await agent.configure()
             # define the main agent:
@@ -882,13 +889,14 @@ class AgentHandler(BaseView):
         # Resolved outside the try: a resolver's 401/403 must reach the client, not become a 500.
         tenant = await resolve_request_tenant(self.request.app, self.request)
         try:
-            response = await agent.ask(
-                question=query,
-                use_conversation_history=False,
-                use_vector_context=False,
-                max_tokens=16000,
-                tenant=tenant,
-            )
+            with usage_component("AGENT"):
+                response = await agent.ask(
+                    question=query,
+                    use_conversation_history=False,
+                    use_vector_context=False,
+                    max_tokens=16000,
+                    tenant=tenant,
+                )
             if isinstance(response, Exception):
                 raise response
         except Exception as e:
