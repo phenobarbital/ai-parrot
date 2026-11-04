@@ -4,6 +4,7 @@ from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 from PIL import Image
 from parrot.clients.google import GoogleGenAIClient
+from parrot.clients.google.models import GoogleModel
 from parrot.models import AIMessage, CompletionUsage, ToolCall
 
 
@@ -45,7 +46,7 @@ async def test_google_ask():
                 input="Hi",
                 output="Hello, world!",
                 response="Hello, world!",
-                model="gemini-2.5-flash",
+                model="gemini-2.0-flash",
                 provider="google_genai",
                 usage=CompletionUsage(),
             )
@@ -95,7 +96,7 @@ async def test_google_ask_stream():
 
         client = GoogleGenAIClient(api_key="fake_key")
         client.get_client = AsyncMock(return_value=mock_client_instance)
-        await client._ensure_client(model="gemini-2.5-flash")
+        await client._ensure_client(model="gemini-2.0-flash")
 
         chunks = []
         final_msg = None
@@ -173,7 +174,7 @@ async def test_google_deep_research_ask_stream_accepts_parameters():
     with patch("parrot.clients.google.client.genai", mock_genai):
         client = GoogleGenAIClient(api_key="fake_key")
         client.get_client = AsyncMock(return_value=mock_client)
-        await client._ensure_client(model="gemini-2.5-flash")
+        await client._ensure_client(model="gemini-2.0-flash")
 
         chunks = []
         async for chunk in client.ask_stream(
@@ -370,8 +371,8 @@ class TestSupportsCombinedToolsAndSchema:
     @pytest.mark.parametrize(
         "model",
         [
-            "gemini-2.5-pro",
-            "gemini-2.5-flash",
+            "gemini-1.5-pro",
+            "gemini-2.5-flash-lite",
             "gemini-2.0-flash",
             "gemini-3-flash-preview",  # NOT in the prefix list — 3-flash without the .5
             "gemini-3.7-pro",  # retired upstream (FEAT-688) — no longer whitelisted
@@ -405,7 +406,7 @@ class TestModernGeminiGates:
     def test_is_modern_gemini_model_true(self, model):
         assert GoogleGenAIClient._is_modern_gemini_model(model) is True
 
-    @pytest.mark.parametrize("model", ["gemini-2.5-pro", "gemini-flash-latest", "", None])
+    @pytest.mark.parametrize("model", ["gemini-2.0-flash", "gemini-flash-latest", "", None])
     def test_is_modern_gemini_model_false(self, model):
         assert GoogleGenAIClient._is_modern_gemini_model(model) is False
 
@@ -419,11 +420,28 @@ class TestModernGeminiGates:
         client = GoogleGenAIClient(api_key="fake")
         assert client._model_class_key("gemini-4-argon") != client._model_class_key("gemini-3.5-flash")
         assert client._model_class_key("gemini-4-argon").startswith("gemini4_")
-        assert client._model_class_key("gemini-2.5-pro") == "default"
+        assert client._model_class_key("gemini-2.0-flash") == "default"
 
     def test_argon_is_not_thinking_only(self):
         assert GoogleGenAIClient._requires_thinking("gemini-4-argon") is False
         assert GoogleGenAIClient._rejects_zero_thinking_budget("gemini-4-argon") is False
+
+    def test_requires_thinking_excludes_2_5_pro(self):
+        """FEAT-798: the retired 2.5-pro prefix no longer gates thinking."""
+        assert GoogleGenAIClient._requires_thinking("gemini-2.5-pro") is False
+        assert GoogleGenAIClient._requires_thinking("gemini-3.1-pro-preview") is True
+
+    def test_computer_use_gate_excludes_2_5(self):
+        """FEAT-798: the retired 2.5 computer-use id is no longer routed."""
+        assert GoogleGenAIClient._is_computer_use_model("gemini-2.5-computer-use-preview-10-2025") is False
+        assert GoogleGenAIClient._is_computer_use_model("gemini-3-flash-preview") is True
+
+    def test_question_default_model_is_3_8_flash(self):
+        """FEAT-798: question() defaults to GEMINI_3_8_FLASH."""
+        import inspect
+
+        default = inspect.signature(GoogleGenAIClient.question).parameters["model"].default
+        assert default is GoogleModel.GEMINI_3_8_FLASH
 
     def test_gemini_3_7_pro_no_longer_thinking_gated(self):
         assert GoogleGenAIClient._requires_thinking("gemini-3.7-pro") is False
@@ -755,13 +773,13 @@ class TestAskCombinedModeGate:
                 input="weather?",
                 output=reformat_json,
                 response=reformat_json,
-                model="gemini-2.5-pro",
+                model="gemini-2.0-flash",
                 provider="google_genai",
                 usage=CompletionUsage(),
             )
             await client.ask(
                 prompt="weather?",
-                model="gemini-2.5-pro",
+                model="gemini-2.0-flash",
                 structured_output=weather_schema,
                 use_tools=True,
             )
@@ -863,7 +881,7 @@ class TestAskCombinedModeGate:
         """Custom whitelist: only the listed prefix triggers combined mode."""
         weather_schema = _make_weather_schema()
 
-        # Custom prefix that matches gemini-3.5-flash but NOT gemini-2.5-pro.
+        # Custom prefix that matches gemini-3.5-flash but NOT gemini-2.0-flash.
         client, m = _build_mocked_client(combined_call_prefixes=("gemini-3.5-flash",))
 
         json_text = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
@@ -1042,7 +1060,7 @@ class TestAskStreamCombinedModeGate:
         client, m = _build_mocked_client()
 
         # Pre-populate the per-loop client cache.
-        await client._ensure_client(model="gemini-2.5-pro")
+        await client._ensure_client(model="gemini-2.0-flash")
 
         prose_chunk = "It is sunny in Madrid at 25.5 degrees."
         reformat_json = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
@@ -1060,14 +1078,14 @@ class TestAskStreamCombinedModeGate:
                 input="x",
                 output=reformat_json,
                 response=reformat_json,
-                model="gemini-2.5-pro",
+                model="gemini-2.0-flash",
                 provider="google_genai",
                 usage=CompletionUsage(),
             )
             chunks = []
             async for chunk in client.ask_stream(
                 prompt="x",
-                model="gemini-2.5-pro",
+                model="gemini-2.0-flash",
                 structured_output=weather_schema,
                 use_tools=True,
             ):
@@ -1415,7 +1433,7 @@ def _make_client():
     from unittest.mock import MagicMock
 
     client = GoogleGenAIClient.__new__(GoogleGenAIClient)
-    client.model = "gemini-2.5-flash"
+    client.model = "gemini-2.0-flash"
     client.temperature = 0.0
     client.max_tokens = None
     client.logger = MagicMock()

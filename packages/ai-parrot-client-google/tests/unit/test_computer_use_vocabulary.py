@@ -19,10 +19,10 @@ def test_opt_in_enables_v38_vocabulary():
     assert client._computer_use_vocabulary("gemini-3.8-flash") == "v3_8"
 
 
-def test_legacy_model_keeps_legacy_vocabulary():
+def test_retired_legacy_model_no_longer_computer_use():
     client = GoogleGenAIClient(api_key="k")
 
-    assert client._computer_use_vocabulary("gemini-2.5-computer-use-preview-10-2025") == "legacy"
+    assert client._computer_use_vocabulary("gemini-2.5-computer-use-preview-10-2025") == "v3_8"
 
 
 def test_v38_scroll_args():
