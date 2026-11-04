@@ -67,7 +67,7 @@
       "feature_id": "FEAT-801",
       "feature": "github-wiki-technical-reference",
       "spec": "sdd/specs/github-wiki-technical-reference.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -77,8 +77,9 @@
       "parallelism_notes": "imports TechwikiConfig and page_name from TASK-5166 (techwiki/config.py, naming.py)",
       "assigned_to": null,
       "started_at": "2026-11-04T22:31:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5167-techwiki-api-reference-generator.md"
+      "completed_at": "2026-11-04T23:00:12+00:00",
+      "file": "sdd/tasks/completed/TASK-5167-techwiki-api-reference-generator.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5168",

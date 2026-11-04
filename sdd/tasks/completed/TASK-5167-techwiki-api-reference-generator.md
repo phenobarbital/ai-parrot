@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-801 — GitHub Wiki as the Technical Reference
 **Spec**: `sdd/specs/github-wiki-technical-reference.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5166
@@ -404,10 +404,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-terra (codex), attempt 1 (uid 265e0482…), 386s, 0 retries.
+**Date**: 2026-11-05
+**Notes**: All 7 listed paths delivered (golden dir replaced by the single file `techwiki_golden/samplepkg.core.md` — table/contract fixed beforehand, commit fa45cc8fc8). Engine lint commit 16f1878473. Merge-tier validation exit 0 but **2 passed, 5 skipped**: the `griffe` extra is not installed in the shared env and the sandbox has no route to PyPI, so the generator/golden/determinism tests did NOT execute. Verification therefore `partial` — re-run `pytest packages/ai-parrot/tests/sdd/test_techwiki_api.py` with `ai-parrot[techwiki]` installed before merging. `coder_record_review` is broken server-side (not recorded).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: golden output is a single file instead of a directory.
