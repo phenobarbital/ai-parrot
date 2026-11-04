@@ -9,7 +9,6 @@ import pytest
 
 from parrot.mcp.hosts import GoogleAdapter, HostKind, detect_hosts, get_adapter
 
-
 def test_detect_hosts_empty_repo(tmp_path, monkeypatch):
     """A bare directory has no host configs, so nothing is detected.
 
@@ -39,7 +38,9 @@ def test_only_google_is_user_scoped():
 
 @pytest.mark.parametrize("portable", [None, False, True])
 @pytest.mark.parametrize("kind", list(HostKind))
-def test_reconcile_forwards_portable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: HostKind, portable: bool | None) -> None:
+def test_reconcile_forwards_portable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: HostKind, portable: bool | None
+) -> None:
     """All adapters forward None, False and True, including Google's mcp_path override."""
     captured: list[tuple[tuple[object, ...], dict[str, object]]] = []
 

@@ -68,9 +68,7 @@ def test_install_portable_form_across_hosts(tmp_path: Path, monkeypatch: pytest.
 
     foreign_codex = tmp_path / ".codex"
     foreign_codex.mkdir()
-    (foreign_codex / "config.toml").write_text(
-        '[mcp_servers.parrot-foreign]\ncommand = "external"\n', encoding="utf-8"
-    )
+    (foreign_codex / "config.toml").write_text('[mcp_servers.parrot-foreign]\ncommand = "external"\n', encoding="utf-8")
     hosts = list(HostKind)
 
     portable_report = install_toolkits(tmp_path, ["memory"], hosts=hosts, portable=True)
