@@ -51,7 +51,7 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _install_ledger_hooks(repo)  # after the seed commit, so the pre-commit ledger hook never fires here
     monkeypatch.setattr(doctor.shutil, "which", lambda name: f"/usr/bin/{name}")  # gh, jq, claude present
     monkeypatch.setattr(doctor.subprocess, "run", _gh_ok(doctor.subprocess.run))
-    monkeypatch.setattr(doctor, "_check_bwrap_sandbox", lambda: [])  # OS-level check, tested separately
+    monkeypatch.setattr(doctor, "_check_bwrap_sandbox", list)  # OS-level check, tested separately
     return repo
 
 
