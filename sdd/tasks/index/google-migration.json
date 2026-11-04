@@ -114,7 +114,7 @@
       "feature_id": "FEAT-798",
       "feature": "google-migration",
       "spec": "sdd/specs/google-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -124,8 +124,9 @@
       "parallelism_notes": "needs GoogleModel.GEMINI_3_8_FLASH_TTS created by TASK-5146 (clients/google/models.py) for the generate_speech default in generation.py",
       "assigned_to": null,
       "started_at": "2026-11-04T16:10:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5149-analysis-generation-defaults.md"
+      "completed_at": "2026-11-04T17:15:12+00:00",
+      "file": "sdd/tasks/completed/TASK-5149-analysis-generation-defaults.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5150",
@@ -153,7 +154,7 @@
       "feature_id": "FEAT-798",
       "feature": "google-migration",
       "spec": "sdd/specs/google-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -161,8 +162,9 @@
       "parallelism_notes": "no dependencies; string literals only in 16 core/server files no other task touches",
       "assigned_to": null,
       "started_at": "2026-11-04T16:10:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5151-src-flash-literals-sweep.md"
+      "completed_at": "2026-11-04T17:15:12+00:00",
+      "file": "sdd/tasks/completed/TASK-5151-src-flash-literals-sweep.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5152",
@@ -190,7 +192,7 @@
       "feature_id": "FEAT-798",
       "feature": "google-migration",
       "spec": "sdd/specs/google-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -198,8 +200,9 @@
       "parallelism_notes": "no dependencies; owns the two UI files, pricing/google.json and test_cost_calculator.py",
       "assigned_to": null,
       "started_at": "2026-11-04T16:10:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5153-ui-lists-and-argon-pricing.md"
+      "completed_at": "2026-11-04T17:15:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5153-ui-lists-and-argon-pricing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5154",
