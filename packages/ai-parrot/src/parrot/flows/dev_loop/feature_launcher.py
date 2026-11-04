@@ -385,6 +385,9 @@ def launch(
     ``os.environ``. ``None`` falls back to ``os.environ`` for callers that never imported parrot.
     """
     env = dict(os.environ if base_env is None else base_env)
+    for key_to_clear in tuple(env):
+        if key_to_clear.startswith("PARROT_SDD_NOTIFY_"):
+            env.pop(key_to_clear)
     if sandbox is not None:
         if sandbox not in native_claude_sandbox.SANDBOX_MODES:
             raise LaunchError(2, f"invalid sandbox mode: {sandbox}")
@@ -431,6 +434,17 @@ def launch(
         raise LaunchError(1, "--tmux is not available on native Windows")
     if shutil.which("tmux") is None:
         raise LaunchError(1, "tmux is not available on PATH")
+    desktop_keys = (
+        "PATH",
+        "HOME",
+        "DISPLAY",
+        "WAYLAND_DISPLAY",
+        "DBUS_SESSION_BUS_ADDRESS",
+        "XDG_RUNTIME_DIR",
+    )
+    env["PARROT_SDD_NOTIFY_FEATURE"] = ref.feature_id
+    env["PARROT_SDD_NOTIFY_SLUG"] = ref.slug
+    env["PARROT_SDD_NOTIFY_DESKTOP"] = json.dumps({name: env[name] for name in desktop_keys if name in env})
     command = ["tmux", "new-session", "-d", "-s", name, "-c", str(worktree)]
     for assignment in _tmux_environment(env):
         command.extend(("-e", assignment))

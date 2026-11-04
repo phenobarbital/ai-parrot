@@ -712,6 +712,21 @@ After all tasks are done, at the development-to-review boundary:
    on the host pushes. `gh` (`api.github.com`) is available for read and PR-comment operations only;
    never try `git push`, SSH, or ask to widen the sandbox.
 
+2a. **Record optional desktop completion (feature scope only).** Only after all
+    tasks are done, children have settled, review/deferred-finding handling is
+    complete and step 2 pushed successfully, run from the feature worktree:
+    ```bash
+    if [ -n "${PARROT_SDD_NOTIFY_PYTHON:-}" ] && [ -n "${PARROT_SDD_NOTIFY_HELPER:-}" ]; then
+      "$PARROT_SDD_NOTIFY_PYTHON" -S "$PARROT_SDD_NOTIFY_HELPER" --complete
+    fi
+    ```
+    Never run this in task-scoped JSON brief mode, for child completion,
+    interrupts, blocked/unfinished tasks, unfinished review or a failed push.
+    A recording failure is advisory: log it and continue the final summary;
+    never widen sandbox permissions or retry outside the sandbox. The helper's
+    warning is the diagnostic even when its best-effort CLI exits zero.
+    The next eligible Stop event attempts delivery while Claude remains open.
+
 3. **Print summary:**
    ```
    ✅ Feature FEAT-<ID> — <title> completed.
