@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -500,6 +501,149 @@ def test_gh_token_failure_warns_and_launches(
 
 
 @pytest.mark.parametrize(
+    ("mode", "degraded"),
+    [("required", False), ("preferred", True), ("off", False), ("legacy", False)],
+)
+def test_notification_settings_preserve_policy(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, mode: str, degraded: bool
+) -> None:
+    """A marked tmux feature adds one Stop command without changing compiled policy."""
+    feature, _main = linked
+    captured: list[tuple[object, ...]] = []
+    settings = {
+        "sandbox": {"enabled": mode != "legacy", "network": {"allowAllUnixSockets": False}},
+        "hooks": {
+            "PreToolUse": [{"hooks": [{"type": "command", "command": "pre", "timeout": 10}]}],
+            "Stop": [{"hooks": [{"type": "command", "command": "existing", "timeout": 9}]}],
+        },
+    }
+
+    def configure(cache: Path, *, worktree: Path, env: dict[str, str]) -> str:
+        assert cache == feature / "cache" and worktree == feature
+        assert env["TMUX_PANE"] == "%4"
+        return "helper --hook"
+
+    class Loader:
+        def exec_module(self, module: object) -> None:
+            module.configure_notification = configure
+
+    spec = type("Spec", (), {"loader": Loader()})()
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: (mode, degraded, "", settings))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: feature / "cache")
+    monkeypatch.setattr(native.importlib.util, "spec_from_file_location", lambda *args: spec)
+    monkeypatch.setattr(native.importlib.util, "module_from_spec", lambda spec: type("Helper", (), {})())
+    monkeypatch.setattr(native.os, "chdir", lambda cwd: captured.append(("chdir", cwd)))
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: captured.append(args))
+
+    native.launch_worker(
+        [],
+        cwd=feature,
+        base_env={
+            "TMUX_PANE": "%4",
+            "PARROT_SDD_NOTIFY_FEATURE": "FEAT-768",
+            "PARROT_SDD_NOTIFY_SLUG": "sandbox",
+            "PARROT_SDD_NOTIFY_DESKTOP": "{}",
+        },
+    )
+    command = captured[1][1]
+    compiled = json.loads(command[command.index("--settings") + 1])
+    environment = captured[1][2]
+    assert compiled["sandbox"] == {"enabled": mode != "legacy", "network": {"allowAllUnixSockets": False}}
+    assert compiled["hooks"]["PreToolUse"] == settings["hooks"]["PreToolUse"]
+    assert compiled["hooks"]["Stop"] == [
+        {"hooks": [{"type": "command", "command": "existing", "timeout": 9}]},
+        {"hooks": [{"type": "command", "command": "helper --hook", "timeout": 5}]},
+    ]
+    assert environment["PARROT_SDD_NOTIFY_PYTHON"] == str(Path(native.sys.executable).absolute())
+    assert environment["PARROT_SDD_NOTIFY_HELPER"] == str(
+        Path(native.__file__).resolve().with_name("worker_notification.py")
+    )
+
+
+@pytest.mark.parametrize(
+    "base_env",
+    [
+        {
+            "PARROT_SDD_NOTIFY_FEATURE": "FEAT-768",
+            "PARROT_SDD_NOTIFY_SLUG": "sandbox",
+            "PARROT_SDD_NOTIFY_DESKTOP": "{}",
+        },
+        {
+            "TMUX_PANE": "%4",
+            "PARROT_SDD_NOTIFY_FEATURE": "",
+            "PARROT_SDD_NOTIFY_SLUG": "sandbox",
+            "PARROT_SDD_NOTIFY_DESKTOP": "{}",
+        },
+    ],
+)
+def test_notification_requires_tmux_and_complete_metadata(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, base_env: dict[str, str]
+) -> None:
+    """Missing tmux state or identity cannot load a helper or retain stale exports."""
+    feature, _main = linked
+    captured: list[tuple[object, ...]] = []
+    base_env.update({"PARROT_SDD_NOTIFY_PYTHON": "/stale/python", "PARROT_SDD_NOTIFY_HELPER": "/stale/helper"})
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", {"hooks": {}}))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: feature / "cache")
+    monkeypatch.setattr(
+        native.importlib.util, "spec_from_file_location", lambda *args: pytest.fail("metadata must gate helper loading")
+    )
+    monkeypatch.setattr(native.os, "chdir", lambda cwd: captured.append(("chdir", cwd)))
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: captured.append(args))
+
+    native.launch_worker([], cwd=feature, base_env=base_env)
+    environment = captured[1][2]
+    assert "PARROT_SDD_NOTIFY_PYTHON" not in environment
+    assert "PARROT_SDD_NOTIFY_HELPER" not in environment
+
+
+def test_notification_setup_failure_does_not_fail_launch(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invalid metadata and helper loading failures keep the worker executable."""
+    feature, _main = linked
+    captured: list[tuple[object, ...]] = []
+    settings = {"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "pre", "timeout": 10}]}]}}
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", settings))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: feature / "cache")
+    monkeypatch.setattr(
+        native.importlib.util, "spec_from_file_location", lambda *args: (_ for _ in ()).throw(OSError("gone"))
+    )
+    monkeypatch.setattr(native.os, "chdir", lambda cwd: captured.append(("chdir", cwd)))
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: captured.append(args))
+
+    native.launch_worker(
+        [],
+        cwd=feature,
+        initial_prompt="run FEAT-768",
+        base_env={
+            "TMUX_PANE": "%4",
+            "PARROT_SDD_NOTIFY_FEATURE": "FEAT-768",
+            "PARROT_SDD_NOTIFY_SLUG": "sandbox",
+            "PARROT_SDD_NOTIFY_DESKTOP": "{}",
+            "PARROT_SDD_NOTIFY_PYTHON": "/stale/python",
+            "PARROT_SDD_NOTIFY_HELPER": "/stale/helper",
+        },
+    )
+    command = captured[1][1]
+    compiled = json.loads(command[command.index("--settings") + 1])
+    environment = captured[1][2]
+    assert compiled == settings
+    assert "PARROT_SDD_NOTIFY_PYTHON" not in environment
+    assert "PARROT_SDD_NOTIFY_HELPER" not in environment
+    assert command[-1] == "run FEAT-768"
+
+
+@pytest.mark.parametrize(
     "bad",
     [
         "https://github.com",
@@ -626,11 +770,15 @@ def test_script_mode_sibling_import_resolves_inside_sdd_scripts(tmp_path: Path) 
 
     dev_loop = Path(native.__file__).resolve().parents[2] / "flows" / "dev_loop"
     code = (
-        "import sys; sys.path.insert(0, sys.argv[1]); "
+        "import importlib.util, sys; sys.path.insert(0, sys.argv[1]); "
         "import native_claude_sandbox as n, worktree_environment as w; "
         "assert 'parrot' not in sys.modules, 'parrot'; "
         "assert n.__file__.endswith('sdd/scripts/native_claude_sandbox.py'), n.__file__; "
-        "assert n._we is w or n._we.__file__.endswith('worktree_environment.py'); print('ok')"
+        "assert n._we is w or n._we.__file__.endswith('worktree_environment.py'); "
+        "p = __import__('pathlib').Path(n.__file__).with_name('worker_notification.py'); "
+        "s = importlib.util.spec_from_file_location('worker_notification', p); "
+        "m = importlib.util.module_from_spec(s); s.loader.exec_module(m); "
+        "assert callable(m.configure_notification); assert 'parrot' not in sys.modules; print('ok')"
     )
     result = subprocess.run(
         [sys.executable, "-S", "-c", code, str(dev_loop)],

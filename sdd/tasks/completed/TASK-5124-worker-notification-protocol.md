@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-793 — tmux worker completion notifications
 **Spec**: `sdd/specs/tmux-notify-worker.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (<2h)
 **Depends-on**: TASK-5123
@@ -254,4 +254,4 @@ Assert source/shipped parity and structural placement within feature Completion.
 
 ## Completion Note
 
-Pending; populated by the evidence-backed finalizer.
+Implemented by seat qwen (nova), attempt 1 on the third dispatch, 183s, 48 turns. Earlier dispatches on mistral and glm failed (turn budget exhausted / invalid tool-name 400). Orchestrator review of the worker-instruction twins, docs and diff found no defects (coder-review:82fdfef2fa8335efef34b3ff); twins are byte-identical. Merge-tier validation: 4 passed (test_worker_notification_protocol.py). Closed with `parrot sdd task close` (the finalizer needs an EvidenceRef for review evidence, which coder_record_review does not return).
