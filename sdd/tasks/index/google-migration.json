@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-04T02:46:04+00:00",
-  "completed_at": "2026-11-04T17:23:19+00:00",
+  "completed_at": null,
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -273,6 +273,28 @@
       "completed_at": "2026-11-04T17:28:09+00:00",
       "file": "sdd/tasks/completed/TASK-5160-examples-retired-enum-members.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5161",
+      "slug": "ac12-live-gate-and-computer-use-tests",
+      "title": "Record the AC-12 live gate, tighten the computer-use tests, refresh uv.lock for google-genai 2.34",
+      "feature_id": "FEAT-798",
+      "feature": "google-migration",
+      "spec": "sdd/specs/google-migration.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5148",
+        "TASK-5152",
+        "TASK-5155"
+      ],
+      "parallel": false,
+      "parallelism_notes": "ledger follow-up issue:c95dd1c22324",
+      "assigned_to": null,
+      "started_at": "2026-11-04T17:45:01+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5161-ac12-live-gate-and-computer-use-tests.md"
     }
   ]
 }
