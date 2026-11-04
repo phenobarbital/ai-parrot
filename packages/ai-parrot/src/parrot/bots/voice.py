@@ -30,7 +30,7 @@ from ..models.voice import LiveCompletionUsage, LiveVoiceResponse
 # FEAT-416 (TASK-2151): VoiceCapable Protocol for runtime type-checking
 # _create_llm_client()'s return value (spec §3 Module 7).
 from ..clients.protocols import VoiceCapable
-from ..mcp import MCPEnabledMixin, MCPServerConfig
+from ..mcp import MCPServerConfig
 from ..memory import ConversationTurn
 from ..observability.context import (
     current_memory_key_id,
@@ -39,7 +39,7 @@ from ..observability.context import (
 )
 
 # Voice configuration from models (unified VoiceConfig/VoiceProvider, FEAT-416)
-from ..models.voice import AudioFormat, VoiceConfig, VoiceStreamOptions
+from ..models.voice import VoiceConfig, VoiceStreamOptions
 from ..tools import AbstractTool
 from ..tools.manager import ToolDefinition
 from .base import BaseBot
@@ -929,7 +929,6 @@ def create_voice_bot(
 # =============================================================================
 
 if __name__ == "__main__":
-    import os
 
     async def example():
         """Example usage of the refactored VoiceBot."""

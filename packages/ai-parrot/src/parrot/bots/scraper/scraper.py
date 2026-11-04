@@ -158,7 +158,7 @@ class ScrapingAgent(BaseBot):
         # Initialize scraping tool with configuration
         self.scraping_tool = WebScrapingTool(**self.browser_config)
         self.tool_manager.register_tool(self.scraping_tool)
-        self.logger = logging.getLogger(f"AI-Parrot.ScrapingAgent")
+        self.logger = logging.getLogger("AI-Parrot.ScrapingAgent")
 
         # Scraping context and memory
         self.scraping_history: List[Dict[str, Any]] = []
@@ -385,13 +385,13 @@ When given a scraping task, analyze the requirements thoroughly and create a com
 
                     if 'product_selectors' in template:
                         suggested_selectors = template['product_selectors']
-                        template_guidance += f"\n\n** SELECTORS:**\n"
+                        template_guidance += "\n\n** SELECTORS:**\n"
                         for sel in suggested_selectors:
                             template_guidance += f"- {sel['name']}: {sel['selector']}\n"
                     template_guidance += "\n⚠️ CRITICAL: Use the exact 'target' values above. Do not substitute with '#gh-search-input' or other guesses.\n"
         elif steps:
             # use suggested steps from user:
-            template_guidance += f"\n\n**SUGGESTED STEPS:**\n"
+            template_guidance += "\n\n**SUGGESTED STEPS:**\n"
             for step in steps:
                 template_guidance += f"- {step}\n"
 

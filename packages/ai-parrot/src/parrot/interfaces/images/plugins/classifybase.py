@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional
 from pydantic import BaseModel
 import pandas as pd
 from .abstract import ImagePlugin

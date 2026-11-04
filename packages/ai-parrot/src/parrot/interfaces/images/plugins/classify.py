@@ -1,6 +1,6 @@
 from pathlib import Path
-from typing import List, Union, Optional
-from enum import Enum, EnumMeta
+from typing import List, Union
+from enum import Enum
 from pydantic import BaseModel, Field
 from PIL import Image
 from .abstract import ImagePlugin
