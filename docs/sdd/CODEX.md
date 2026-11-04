@@ -145,7 +145,9 @@ review spec and set status: approved
 $sdd-task
         |
         v
-cd .claude/worktrees/<feature-worktree>
+MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+cd "$WORKTREES_DIR/<feature-worktree>"
         |
         v
 $sdd-start TASK-NNN
@@ -157,8 +159,8 @@ repeat until all tasks are done, or delegate to sdd-worker
 $sdd-done FEAT-NNN
 ```
 
-The worktree directory is still `.claude/worktrees/` for compatibility with the
-existing SDD scripts and task indexes. Codex uses `.codex/agents/` only for
+Worktrees live under the worktree root (host-agnostic, under `.parrot/worktrees/`,
+override with an exported `WORKTREE_BASE_PATH`). Codex uses `.codex/agents/` only for
 custom agent configuration.
 
 ## Start From A Ticket Or Bug Report
@@ -274,7 +276,7 @@ This skill:
 4. Writes task files to `sdd/tasks/active/`.
 5. Writes or updates the per-spec index at `sdd/tasks/index/<feature-slug>.json`.
 6. Commits only the task files and index.
-7. Creates the feature worktree under `.claude/worktrees/`.
+7. Feature worktrees are created under the worktree root (default `.parrot/worktrees/`, or `WORKTREE_BASE_PATH`).
 
 Task IDs are reserved with:
 
@@ -289,7 +291,9 @@ Do not hand-compute task IDs.
 Move into the generated worktree:
 
 ```bash
-cd .claude/worktrees/feat-<FEAT-ID>-<feature-slug>
+MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+cd "$WORKTREES_DIR/feat-<FEAT-ID>-<feature-slug>"
 ```
 
 Then run:
@@ -389,7 +393,7 @@ not propagate the hotfix to `staging` and `dev`.
 | Active tasks | `sdd/tasks/active/TASK-NNN-<slug>.md` |
 | Completed tasks | `sdd/tasks/completed/TASK-NNN-<slug>.md` |
 | Per-spec task index | `sdd/tasks/index/<slug>.json` |
-| Worktrees | `.claude/worktrees/<branch-name>/` |
+| Worktrees | `.parrot/worktrees/<branch-name>/` (default, or `WORKTREE_BASE_PATH`) |
 | Codex SDD skills | `.agents/skills/sdd-*/SKILL.md` |
 | Codex worker agent | `.codex/agents/sdd-worker.toml` |
 
@@ -418,7 +422,8 @@ $sdd-proposal NAV-8036
 $sdd-spec nav-8036-<slug>
 # edit spec status to approved
 $sdd-task sdd/specs/nav-8036-<slug>.spec.md
-cd .claude/worktrees/feat-<FEAT-ID>-nav-8036-<slug>
+# enter worktree via parrot sdd worktree root:
+cd "$(parrot sdd worktree root --root "$MAIN_ROOT")/feat-<FEAT-ID>-nav-8036-<slug>"
 $sdd-start TASK-NNN
 # repeat tasks
 cd ../../..
