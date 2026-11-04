@@ -69,7 +69,7 @@ async def test_crew_lazy_llm_uses_crew_llm(env: dict[str, str], monkeypatch: pyt
 @pytest.mark.asyncio
 async def test_crew_sequential_default_model(env: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
     """A Google-family CREW_LLM model is the sequential default forwarded to agents."""
-    env["CREW_LLM"] = "google:gemini-2.5-flash"
+    env["CREW_LLM"] = "google:gemini-3.8-flash"
     monkeypatch.setitem(SUPPORTED_CLIENTS, "google", _FakeClient)
     crew = AgentCrew(llm="google", persist_results=False, enable_execution_wiki=False)
     crew.agents = {"agent": SimpleNamespace(name="agent")}
@@ -84,7 +84,7 @@ async def test_crew_sequential_default_model(env: dict[str, str], monkeypatch: p
 
     await crew.run_sequential(query="task", generate_summary=False)
 
-    assert captured == {"model": "gemini-2.5-flash", "component": "CREW"}
+    assert captured == {"model": "gemini-3.8-flash", "component": "CREW"}
 
 
 def test_crew_entry_points_preserve_wrapped_methods() -> None:
