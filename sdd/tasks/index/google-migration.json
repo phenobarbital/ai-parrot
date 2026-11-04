@@ -167,7 +167,7 @@
       "feature_id": "FEAT-798",
       "feature": "google-migration",
       "spec": "sdd/specs/google-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -175,8 +175,9 @@
       "parallelism_notes": "exclusive: regenerates the shared uv.lock and edits two pyproject.toml dependency manifests",
       "assigned_to": null,
       "started_at": "2026-11-04T16:10:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5152-google-genai-floor-bump.md"
+      "completed_at": "2026-11-04T16:41:06+00:00",
+      "file": "sdd/tasks/completed/TASK-5152-google-genai-floor-bump.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5153",
