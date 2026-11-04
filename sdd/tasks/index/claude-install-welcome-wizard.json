@@ -56,7 +56,7 @@
       "feature_id": "FEAT-799",
       "feature": "claude-install-welcome-wizard",
       "spec": "sdd/specs/claude-install-welcome-wizard.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -66,8 +66,9 @@
       "parallelism_notes": "imports check_bwrap_sandbox created by TASK-5156 (self_/doctor.py)",
       "assigned_to": null,
       "started_at": "2026-11-04T17:00:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5157-welcome-renderer.md"
+      "completed_at": "2026-11-04T17:08:26+00:00",
+      "file": "sdd/tasks/completed/TASK-5157-welcome-renderer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5158",
