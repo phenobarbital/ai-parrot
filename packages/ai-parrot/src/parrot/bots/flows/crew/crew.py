@@ -118,7 +118,7 @@ AgentNode = CrewAgentNode
 # because they contain non-serialisable internal objects (ExecutionMemory, dicts, …).
 _INTERNAL_SHARED_KEYS: frozenset = frozenset({"execution_memory", "shared_state", "crew_execution_id"})
 
-_CREW_BUILTIN_LLM = "google:gemini-2.5-pro"
+_CREW_BUILTIN_LLM = "google:gemini-4-argon"
 
 
 def _build_crew_client(google_api_key: Optional[str], kwargs: Dict[str, Any], **extra: Any):

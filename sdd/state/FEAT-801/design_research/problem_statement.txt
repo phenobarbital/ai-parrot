@@ -1,0 +1,30 @@
+ai-parrot has two kinds of documentation and one surface for both. `docs/` (338 markdown
+files) mixes narrative/informative material (what parrot is, install, chapters, guides) with
+deep technical material (memory compaction internals, toolkits, clients, A2UI outputs, the
+SDD tooling itself), and `mkdocs.yml` renders all of it, plus a `mkdocstrings`-generated API
+reference (`docs/api-reference/*.md`, core package only), into the GitHub Pages site at
+`https://phenobarbital.github.io/ai-parrot/docs/`.
+
+Three pains follow:
+
+1. **The informative site is drowned by technical pages.** A newcomer landing on Pages
+   meets 60+ nav entries, most of them implementation notes that only matter to someone
+   reading the code. The site cannot become a clean "what is parrot, what does it do"
+   front door while it also has to be the reference manual.
+2. **Technical documentation is not a deliverable of the SDD flow.** `/sdd-spec` →
+   `/sdd-task` → `/sdd-done` produce code, tests, ledger events and an E2E gate, but no
+   documentation page. Whether a feature gets a technical page depends on the implementer
+   remembering to write one under `docs/`. Hundreds of merged FEATs have no page at all.
+3. **The generated API reference covers one of nine namespaces.** `mkdocstrings` is pointed
+   at `packages/ai-parrot/src` only; `parrot_tools`, `parrot_loaders`, the server, the
+   embeddings backends and the client packages have no reference. And `mkdocstrings`
+   renders HTML only, so it cannot feed a markdown wiki.
+
+**Who is affected**: developers integrating parrot (need argument-level reference plus
+semantics and examples), the maintainers (want the Pages site to become informative),
+and the SDD agents (need a deterministic place and format to write documentation into).
+
+**Why now**: the GitHub Wiki of `phenobarbital/ai-parrot` was just bootstrapped (the
+`ai-parrot.wiki.git` repository exists with a first Home page, branch `master`), and the
+Pages site is about to be redesigned as an informative site in a follow-up spec. The
+technical content must have a new home before `mkdocstrings` is removed from Pages.

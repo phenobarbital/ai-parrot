@@ -43,7 +43,7 @@ for `director_model`, not for the video model:
 ## Stage models and mixed Veo/Omni reels
 
 - **Director** (scene breakdown, only invoked when `scenes` is omitted):
-  defaults to `gemini-2.5-flash`, overridable via `director_model`.
+  defaults to `gemini-3.8-flash`, overridable via `director_model`.
 - **Image** (background/foreground per scene): defaults to
   `gemini-3.1-flash-image-preview`, overridable via `image_model` — passed
   explicitly to every `generate_image` call, never silently substituted on

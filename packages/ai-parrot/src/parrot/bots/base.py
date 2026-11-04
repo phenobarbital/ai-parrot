@@ -490,9 +490,9 @@ class BaseBot(AbstractBot):
                     if hasattr(llm, "default_model") and llm.default_model:
                         kwargs["model"] = llm.default_model
                     elif llm.client_type == "google":
-                        kwargs["model"] = "gemini-2.5-flash"
+                        kwargs["model"] = "gemini-3.8-flash"
             except Exception:
-                kwargs["model"] = "gemini-2.5-flash"
+                kwargs["model"] = "gemini-3.8-flash"
             # Make the LLM call — retries and fallback are handled at the client level
             try:
                 async with llm as client:

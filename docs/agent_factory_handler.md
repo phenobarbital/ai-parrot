@@ -100,7 +100,7 @@ the terminal `FactoryResult`.
     "module": "parrot.bots.agent",
     "enabled": true,
     "system_prompt": "You are a LinkedIn content assistant…",
-    "model": {"provider": "google", "model": "gemini-2.5-flash", "temperature": 0.4, "max_tokens": 4096},
+    "model": {"provider": "google", "model": "gemini-3.8-flash", "temperature": 0.4, "max_tokens": 4096},
     "tools": {"tools": [], "toolkits": ["openapi_linkedin"], "mcp_servers": []},
     "tags": ["requires_approval"]
   },

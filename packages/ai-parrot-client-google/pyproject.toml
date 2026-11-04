@@ -31,7 +31,9 @@ dependencies = [
     # models.generate_videos, operations.get, files.download, interactions.create,
     # live.music.connect, caches.create and aclose. Gemini 4 Argon (gemini-4-argon)
     # needs nothing beyond 2.24.0; the raise realigns the two divergent pins.
-    "google-genai>=2.31.0",
+    # FEAT-798: floor raised to 2.34.0. Verified 2026-11-04 by introspecting
+    # 2.34.0 (same surfaces as FEAT-688; log: artifacts/logs/feat-798-genai-introspection.log).
+    "google-genai>=2.34.0",
     # NOT declared here: google-api-python-client / google-cloud-texttospeech
     # / google-cloud-aiplatform — verified via grep that nothing under
     # parrot/clients/google/ imports any of them; those SDKs back other,

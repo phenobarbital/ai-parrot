@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-799 — `parrot claude install` Welcome Wizard
 **Spec**: `sdd/specs/claude-install-welcome-wizard.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -157,4 +157,9 @@ commit only listed files, `parrot sdd task close TASK-5156 claude-install-welcom
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Renamed `_check_bwrap_sandbox` → `check_bwrap_sandbox` in `parrot/self_/doctor.py` and kept `_check_bwrap_sandbox` as an alias (`_check_sdd` and existing tests patch it). Added `tests/self_/test_doctor_bwrap_public.py`.
+
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 119s · Tokens: n/a
+Code commit: 760bb27bee (merged as 365d1d1872). Merge-tier validation: 31 passed.
+Review: orchestrator diff review, no corrections.
+Note: `coder_record_review` failed server-side (`CoderReview() argument after ** must be a mapping`), so the review measurement was NOT recorded and the task was closed with `parrot sdd task close` instead of `task finalize` (which needs a review EvidenceRef).

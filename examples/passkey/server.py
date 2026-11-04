@@ -26,7 +26,7 @@ from parrot.bots.agent import BasicAgent  # noqa: E402
 from parrot.manager import BotManager  # noqa: E402
 
 # Any "provider:model" string AbstractBot accepts; the matching API key must be in the environment.
-DEMO_LLM = os.environ.get("DEMO_LLM", "google:gemini-2.5-flash")
+DEMO_LLM = os.environ.get("DEMO_LLM", "google:gemini-3.8-flash")
 
 
 class HelloAgent(BasicAgent):

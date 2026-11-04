@@ -21,7 +21,7 @@ This sample demonstrates:
 - **API Keys** for all 4 LLM providers:
   - [OpenAI](https://platform.openai.com/api-keys) — gpt-4o
   - [Anthropic](https://console.anthropic.com/keys) — claude-sonnet-4-20250514
-  - [Google GenAI](https://ai.google.dev/) — gemini-2.5-flash
+  - [Google GenAI](https://ai.google.dev/) — gemini-3.8-flash
   - [NVIDIA API](https://docs.nvidia.com/nim/llama-2/) — meta/llama-3.3-70b-instruct
 - **Network access** — ports 8008 (Synapse), 8080 (Element), 8449 (appservice) must be available
 
@@ -165,7 +165,7 @@ All 4 agents will collaborate:
 │  Web        │         │  Financial     │     │  Report      │
 │  Researcher │         │  Analyst       │     │  Writer      │
 │  OpenAI     │         │  Anthropic     │     │  Google      │
-│  gpt-4o     │         │  claude-sonnet │     │  gemini-2.5  │
+│  gpt-4o     │         │  claude-sonnet │     │  gemini-3.8  │
 └─────────────┘         └────────────────┘     └──────────────┘
 
     ┌────────────────┐
@@ -181,7 +181,7 @@ All 4 agents will collaborate:
 |-------|----------|---------|--------|-------|------|
 | **Researcher** | `web-researcher` | OpenAI | gpt-4o | WikiToolkit, WorkingMemoryToolkit | Searches & compiles research |
 | **Analyst** | `financial-analyst` | Anthropic | claude-sonnet-4-20250514 | WikiToolkit, WorkingMemoryToolkit | Analyzes trends & metrics |
-| **Writer** | `report-writer` | Google | gemini-2.5-flash | *(none — pure LLM)* | Synthesizes findings into prose |
+| **Writer** | `report-writer` | Google | gemini-3.8-flash | *(none — pure LLM)* | Synthesizes findings into prose |
 | **Synthesizer** | `synthesis-agent` | NVIDIA | meta/llama-3.3-70b-instruct | *(none — pure LLM)* | Integrates perspectives & concludes |
 
 ## Environment Variables

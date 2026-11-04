@@ -19,10 +19,21 @@ def test_opt_in_enables_v38_vocabulary():
     assert client._computer_use_vocabulary("gemini-3.8-flash") == "v3_8"
 
 
-def test_legacy_model_keeps_legacy_vocabulary():
+def test_retired_legacy_model_no_longer_computer_use():
+    """FEAT-798: the shut-down 2.5 computer-use id lost its implicit computer-use routing."""
+    client = GoogleGenAIClient(api_key="k")
+    retired = "gemini-2.5-computer-use-preview-10-2025"
+
+    assert GoogleGenAIClient._is_computer_use_model(retired) is False
+    assert client._computer_use_enabled(retired) is False
+
+
+def test_remaining_legacy_model_keeps_legacy_vocabulary():
+    """gemini-3-flash-preview is the only id still enabled implicitly, with the legacy vocabulary."""
     client = GoogleGenAIClient(api_key="k")
 
-    assert client._computer_use_vocabulary("gemini-2.5-computer-use-preview-10-2025") == "legacy"
+    assert client._computer_use_enabled("gemini-3-flash-preview") is True
+    assert client._computer_use_vocabulary("gemini-3-flash-preview") == "legacy"
 
 
 def test_v38_scroll_args():

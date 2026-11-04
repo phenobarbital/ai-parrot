@@ -218,7 +218,7 @@ def _sdd_base_branch(root: Path) -> tuple[str, DoctorCheck | None]:
                                   fix="fix sdd/config.json (parrot sdd install --dry-run shows the seed shape)")
 
 
-def _check_bwrap_sandbox() -> list[DoctorCheck]:
+def check_bwrap_sandbox() -> list[DoctorCheck]:
     """Linux-only: verify that Bubblewrap can create nested user namespaces.
 
     Both Claude Code's native sandbox and the SDD worktree sandbox use bwrap;
@@ -284,6 +284,10 @@ def _check_bwrap_sandbox() -> list[DoctorCheck]:
             name="sdd: bwrap nested userns", ok=True,
             detail="nested user namespaces work (Claude Code native sandbox + SDD sandbox compatible)"))
     return checks
+
+
+#: Backward-compatible private alias — ``_check_sdd`` and existing tests patch this name.
+_check_bwrap_sandbox = check_bwrap_sandbox
 
 
 def _check_sdd(root: Path) -> list[DoctorCheck]:

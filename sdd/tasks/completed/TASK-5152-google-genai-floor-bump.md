@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-798 — Retire gemini-2.5-{pro,flash}: move the Google defaults to Gemini 4 Argon / 3.8-flash and bump google-genai
 **Spec**: `sdd/specs/google-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -155,10 +155,13 @@ See the blueprint.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator, PARTIAL)
+**Date**: 2026-11-04
+**Notes**: Verified google-genai 2.34.0 in the operator-upgraded shared venv (`ALL OK 2.34.0`, log in
+`artifacts/logs/feat-798-genai-introspection.log`). Floor raised to `>=2.34.0` in both pyprojects and
+`test_reel_sdk_contract.py` re-pinned (commit 542321bdc1). `uv.lock` was NOT regenerated: PyPI is unreachable
+from the sandbox (`uv lock` and `uv lock --offline` both failed). Operator must run
+`uv lock --upgrade-package google-genai && uv lock --check`, then `uv sync` in the main checkout after merge.
+The contract test could not be executed in the sandbox (logging ErrorFileHandler config error).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: uv.lock not updated (see above).

@@ -965,7 +965,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         Expected format:
             {
                 "name": "google",           # or "llm", "provider"
-                "model": "gemini-2.5-pro",
+                "model": "gemini-4-argon",
                 "temperature": 0.1,
                 "top_k": 41,
                 "top_p": 0.9,

@@ -1176,7 +1176,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "ai-parrot", editable = "packages/ai-parrot" },
-    { name = "google-genai", specifier = ">=2.31.0" },
+    { name = "google-genai", specifier = ">=2.34.0" },
 ]
 
 [[package]]
@@ -1434,7 +1434,7 @@ requires-dist = [
     { name = "bm25s", extras = ["full"], marker = "extra == 'huggingface'", specifier = "==0.2.14" },
     { name = "einops", marker = "extra == 'huggingface'", specifier = ">=0.7.0" },
     { name = "google-cloud-bigquery", marker = "extra == 'bigquery'", specifier = ">=3.30.0" },
-    { name = "google-genai", marker = "extra == 'google'", specifier = ">=2.31.0" },
+    { name = "google-genai", marker = "extra == 'google'", specifier = ">=2.34.0" },
     { name = "lancedb", marker = "extra == 'lancedb'", specifier = "==0.38.0" },
     { name = "milvus-lite", marker = "extra == 'milvus'", specifier = ">=2.4.0" },
     { name = "onnxruntime", marker = "extra == 'multimodal'", specifier = ">=1.16" },

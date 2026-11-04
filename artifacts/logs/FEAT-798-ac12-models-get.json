@@ -1,0 +1,55 @@
+{
+  "gate": "FEAT-798 AC-12",
+  "run_at": "2026-11-04T17:43:22.640492+00:00",
+  "google_genai": "2.34.0",
+  "results": {
+    "gemini-4-argon": {
+      "ok": true,
+      "name": "models/gemini-4-argon",
+      "display_name": "Gemini 4 Argon",
+      "supported_actions": [
+        "generateContent",
+        "countTokens",
+        "batchGenerateContent"
+      ],
+      "input_token_limit": 1048576,
+      "output_token_limit": 32768
+    },
+    "gemini-3.8-flash": {
+      "ok": true,
+      "name": "models/gemini-3.8-flash",
+      "display_name": "Gemini 3.8 Flash",
+      "supported_actions": [
+        "generateContent",
+        "countTokens",
+        "createCachedContent",
+        "batchGenerateContent"
+      ],
+      "input_token_limit": 1048576,
+      "output_token_limit": 65536
+    },
+    "gemini-3.8-flash-tts": {
+      "ok": true,
+      "name": "models/gemini-3.8-flash-tts",
+      "display_name": "Gemini 3.8 Flash TTS",
+      "supported_actions": [
+        "generateContent",
+        "countTokens",
+        "batchGenerateContent"
+      ],
+      "input_token_limit": 8192,
+      "output_token_limit": 16384
+    },
+    "gemini-3.8-live": {
+      "ok": true,
+      "name": "models/gemini-3.8-live",
+      "display_name": "Gemini 3.8 Live",
+      "supported_actions": [
+        "bidiGenerateContent"
+      ],
+      "input_token_limit": 131072,
+      "output_token_limit": 65536
+    }
+  },
+  "passed": true
+}
