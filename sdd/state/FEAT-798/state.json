@@ -1,0 +1,150 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-798",
+  "feature_slug": "google-migration",
+  "started_at": "2026-11-04T01:33:46Z",
+  "updated_at": "2026-11-04T02:01:42Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-798/source.md",
+    "fetched_at": "2026-11-04T01:33:46Z",
+    "summary_oneline": "google-migration: upgrade google-genai, retire gemini-2.5-{pro,flash} from GoogleModel, parrot.conf defaults and pre-built parrot.bots agents; adopt Gemini 4 Argon"
+  },
+  "mode": "auto",
+  "phase": "proposal_drafted",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-11-04T01:33:46Z",
+      "completed_at": "2026-11-04T01:33:46Z",
+      "duration_seconds": 0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-11-04T01:35:26Z",
+      "completed_at": "2026-11-04T01:35:26Z",
+      "duration_seconds": 0,
+      "queries_total": 34,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-798/research_plan.json",
+      "wiki_available": true
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-11-04T01:35:26Z",
+      "completed_at": "2026-11-04T01:43:03Z",
+      "duration_seconds": 390,
+      "parallel": {
+        "enabled": true,
+        "fallback_reason": null,
+        "lanes": {
+          "codebase": {
+            "status": "completed",
+            "started_at": "2026-11-04T01:35:26Z",
+            "completed_at": "2026-11-04T01:43:03Z",
+            "duration_seconds": null,
+            "queries_executed": 16,
+            "queries_skipped": 0,
+            "findings_count": 16,
+            "error": null
+          },
+          "git": {
+            "status": "completed",
+            "started_at": "2026-11-04T01:35:26Z",
+            "completed_at": "2026-11-04T01:43:03Z",
+            "duration_seconds": null,
+            "queries_executed": 5,
+            "queries_skipped": 0,
+            "findings_count": 5,
+            "error": null
+          },
+          "wiki": {
+            "status": "completed",
+            "started_at": "2026-11-04T01:35:26Z",
+            "completed_at": "2026-11-04T01:43:03Z",
+            "duration_seconds": null,
+            "queries_executed": 9,
+            "queries_skipped": 0,
+            "findings_count": 9,
+            "error": null
+          }
+        },
+        "merge": {
+          "started_at": "2026-11-04T01:43:03Z",
+          "completed_at": "2026-11-04T01:43:03Z",
+          "input_count": 33,
+          "output_count": 29,
+          "merged_count": 4,
+          "audit_dir": "findings/.audit"
+        }
+      },
+      "queries_executed": 30,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 25,
+      "grep_calls": 20,
+      "git_calls": 5,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-11-04T01:47:53Z",
+      "completed_at": "2026-11-04T01:47:53Z",
+      "duration_seconds": null,
+      "synthesis_path": "sdd/state/FEAT-798/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "high",
+      "claims_total": 16,
+      "claims_high_conf": 11,
+      "claims_medium_conf": 5,
+      "claims_low_conf": 0,
+      "unknowns_count": 4,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-11-04T01:59:22Z",
+      "completed_at": "2026-11-04T01:59:22Z",
+      "duration_seconds": null,
+      "questions_total": 4,
+      "questions_answered": 4,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "running",
+      "started_at": "2026-11-04T02:01:42Z",
+      "completed_at": null,
+      "duration_seconds": null,
+      "proposal_path": "sdd/proposals/google-migration.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "localization high-confidence with the FEAT-688 precedent; U1-U4 resolved; no architectural fork"
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 25,
+    "grep_calls": 20,
+    "git_calls": 5,
+    "wall_seconds": 390
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "git add proposal + state dir, commit"
+  },
+  "detected_mode": "enrichment"
+}
