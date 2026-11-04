@@ -251,6 +251,27 @@
       "completed_at": "2026-11-04T17:23:19+00:00",
       "file": "sdd/tasks/completed/TASK-5155-catalogue-deletion-and-guard.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-5160",
+      "slug": "examples-retired-enum-members",
+      "title": "Swap retired GoogleModel.GEMINI_2_5_* members out of the tracked examples and guard member names",
+      "feature_id": "FEAT-798",
+      "feature": "google-migration",
+      "spec": "sdd/specs/google-migration.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5154",
+        "TASK-5155"
+      ],
+      "parallel": false,
+      "parallelism_notes": "ledger follow-up issue:00b3fc295988",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5160-examples-retired-enum-members.md"
     }
   ]
 }
