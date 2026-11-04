@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-04T19:05:18+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-04T19:19:49+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -39,7 +39,7 @@
       "feature_id": "FEAT-800",
       "feature": "formdesigner-boolean-yes-no",
       "spec": "sdd/specs/formdesigner-boolean-yes-no.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -47,8 +47,9 @@
       "parallelism_notes": "independent: only edits renderers/html5.py; no dependency",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5162-html5-boolean-yes-no-radios.md"
+      "completed_at": "2026-11-04T19:19:43+00:00",
+      "file": "sdd/tasks/completed/TASK-5162-html5-boolean-yes-no-radios.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5163",
@@ -57,7 +58,7 @@
       "feature_id": "FEAT-800",
       "feature": "formdesigner-boolean-yes-no",
       "spec": "sdd/specs/formdesigner-boolean-yes-no.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -65,8 +66,9 @@
       "parallelism_notes": "independent: only edits renderers/pdf.py; runs concurrently with TASK-5162",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5163-pdf-boolean-yes-no-radios.md"
+      "completed_at": "2026-11-04T19:19:45+00:00",
+      "file": "sdd/tasks/completed/TASK-5163-pdf-boolean-yes-no-radios.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5164",
@@ -75,7 +77,7 @@
       "feature_id": "FEAT-800",
       "feature": "formdesigner-boolean-yes-no",
       "spec": "sdd/specs/formdesigner-boolean-yes-no.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -85,8 +87,9 @@
       "parallelism_notes": "tests _render_boolean_radio_group / _BooleanRenderer created by TASK-5162 (renderers/html5.py)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5164-html5-boolean-tests.md"
+      "completed_at": "2026-11-04T19:19:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5164-html5-boolean-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5165",
@@ -95,7 +98,7 @@
       "feature_id": "FEAT-800",
       "feature": "formdesigner-boolean-yes-no",
       "spec": "sdd/specs/formdesigner-boolean-yes-no.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -105,8 +108,9 @@
       "parallelism_notes": "tests the radio output and _boolean_selected created by TASK-5163 (renderers/pdf.py)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5165-pdf-boolean-tests.md"
+      "completed_at": "2026-11-04T19:19:49+00:00",
+      "file": "sdd/tasks/completed/TASK-5165-pdf-boolean-tests.md",
+      "verification": "verified"
     }
   ]
 }

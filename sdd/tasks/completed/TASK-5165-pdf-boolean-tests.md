@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-800 — Form Designer — boolean questions render as Yes / No (HTML5 + PDF)
 **Spec**: `sdd/specs/formdesigner-boolean-yes-no.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5163
@@ -165,10 +165,8 @@ Standard procedure; run with `PYTHONPATH=packages/parrot-formdesigner/src`; per-
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Sonnet, sequential, no coder seats)
+**Date**: 2026-11-04
+**Notes**: Created test_pdf_boolean.py (5 tests, pypdf). Mutation-checked: stringified prefill, always-required, single radio, None→true go RED; weak `No` substring assertion tightened to word match after a surviving mutant. Note: `pypdf` (declared dev dep) was missing in the worktree .venv; installed there with `uv pip install --python .venv/bin/python`.
 
 **Deviations from spec**: none | describe if any

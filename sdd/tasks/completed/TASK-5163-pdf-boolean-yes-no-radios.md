@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-800 — Form Designer — boolean questions render as Yes / No (HTML5 + PDF)
 **Spec**: `sdd/specs/formdesigner-boolean-yes-no.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -179,10 +179,8 @@ Standard procedure: worktree via `parrot sdd worktree ensure`, verify contract, 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Sonnet, sequential, no coder seats)
+**Date**: 2026-11-04
+**Notes**: Implemented in pdf.py: BOOLEAN → two `form.radio` of one group with Yes/No `drawString`; `fieldFlags` adds `required` only when required; prefill from RAW value via module-level `_boolean_selected` (independent of html5 — chosen option: separate helper per renderer).
 
 **Deviations from spec**: none | describe if any
