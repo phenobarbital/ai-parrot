@@ -91,6 +91,13 @@ refs (same prefix/`exec-hex` filtering as `_merged_attempt_branch`) plus the eng
 `AttemptRecord`). The happy path (no leftovers) keeps `attempt` unchanged, so first-run numbering
 is identical to today.
 
+**Attempt cap.** `AttemptRecord.attempt` (`sdd_coder/models.py:391`) and both telemetry rows
+(`sdd_coder/telemetry.py:52` and `:90`) are bounded `ge=1, le=3`. A re-dispatch after three kept
+attempts would be attempt 4 and fail validation, so raise all three bounds to `le=20`. The helper
+searches only up to 20; when every slot up to 20 is taken it returns the requested number
+unchanged, so the failure stays today's `git worktree add` error recorded on the attempt (no new
+error path).
+
 Native `prepare_native` reservations already reuse an existing sub-worktree for a duplicate
 reservation; they are out of scope.
 
@@ -108,15 +115,27 @@ reservation; they are out of scope.
   above every used one) instead of failing, and the returned `AttemptRecord.attempt` and branch
   reflect that number.
 - AC5: With no leftovers, `_run_attempt(..., attempt=1)` still uses attempt 1.
+- AC5b: `AttemptRecord` and both telemetry rows accept attempt numbers up to 20.
 - AC6: Existing `test_toolkit.py`, `test_feedback.py`, `test_engine_dispatch.py` stay green.
 
 ---
 
-## 4. Task Breakdown (guidance for /sdd-task)
+## 4. Validation
+
+### Validation Contract
+
+tests:
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_toolkit.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_feedback.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_dispatch.py
+markers: none
+
+## 4b. Task Breakdown (guidance for /sdd-task)
 
 1. B1 — toolkit record tools accept validated models (`toolkit.py` + tests). Discovered-from
    `issue:3b913ffd77cd`.
-2. B2 — monotonic free attempt slot in `_run_attempt` (`engine.py` + tests). Discovered-from
+2. B2 — monotonic free attempt slot in `_run_attempt` (`engine.py`, attempt cap in `models.py` and
+   `telemetry.py`, + tests). Discovered-from
    `issue:3b913ffd77cd`.
 
 The two tasks touch different files and can run in parallel.
