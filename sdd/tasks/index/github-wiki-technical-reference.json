@@ -194,7 +194,7 @@
       "feature_id": "FEAT-801",
       "feature": "github-wiki-technical-reference",
       "spec": "sdd/specs/github-wiki-technical-reference.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -204,7 +204,7 @@
       "parallel": true,
       "parallelism_notes": "uses the page template from TASK-5169 (techwiki-page.md); writes into wiki sections created by TASK-5172 (wiki/<section>/)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T01:02:43+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5173-techwiki-backfill-subsystem-pages.md"
     }
