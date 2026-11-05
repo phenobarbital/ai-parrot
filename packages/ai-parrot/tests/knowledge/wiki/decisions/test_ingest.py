@@ -10,7 +10,14 @@ import pytest
 
 from parrot.knowledge.wiki.decisions.codec import decision_from_page, decision_to_page, documented_decision_id
 from parrot.knowledge.wiki.decisions.ingest import discover_adr_sources, refresh_decisions
-from parrot.knowledge.wiki.decisions.models import ADR_REVISION_CONFLICT, DecisionConfig, DecisionError, DecisionRecord
+from parrot.knowledge.wiki.decisions.models import (
+    ADR_RECORD_TOO_LARGE,
+    ADR_REVISION_CONFLICT,
+    DecisionConfig,
+    DecisionError,
+    DecisionRecord,
+    ReviewEvent,
+)
 from parrot.knowledge.wiki.decisions.repository import DecisionRepository
 from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord
 
@@ -460,6 +467,29 @@ def _canonical_hash(page: dict) -> str:
     return decision_to_page(decision_from_page(page)).content_hash
 
 
+async def _seed_review_state(store: BaseWikiStore, decision_id: str) -> DecisionRecord:
+    """Give one stored ADR record revision 2 and one review event; return the record as saved."""
+    repo = DecisionRepository(store)
+    record, stored_hash = await repo.get(decision_id)
+    reviewed = record.model_copy(
+        update={
+            "revision": 2,
+            "review_history": [
+                ReviewEvent(
+                    revision=2,
+                    action="accept",
+                    actor="human:reviewer",
+                    timestamp="2026-01-01T00:00:00+00:00",
+                    reason="seeded by test",
+                    before_sha1="a",
+                    after_sha1="b",
+                )
+            ],
+        }
+    )
+    return await repo.save(reviewed, stored_hash)
+
+
 class TestCanonicalEnvelope:
     """issue:42977fa3aaeb — a refresh re-encodes a stored envelope that is not canonical."""
 
@@ -479,12 +509,18 @@ class TestCanonicalEnvelope:
     async def test_refresh_rewrite_keeps_stored_record(self, adr_repo, adr_config, adr_store):
         await refresh_decisions(adr_store, adr_repo, adr_config)
         decision_id = documented_decision_id(_LEGACY_SOURCE)
+        await _seed_review_state(adr_store, decision_id)
         await _make_legacy(adr_store, decision_id)
         before = decision_from_page(await adr_store.get_page(decision_id))
+        assert before.revision == 2 and len(before.review_history) == 1  # the precondition
 
-        await refresh_decisions(adr_store, adr_repo, adr_config)
+        result = await refresh_decisions(adr_store, adr_repo, adr_config)
 
-        assert decision_from_page(await adr_store.get_page(decision_id)) == before
+        after = decision_from_page(await adr_store.get_page(decision_id))
+        assert result.updated == 1
+        assert after == before
+        assert after.revision == 2
+        assert [event.action for event in after.review_history] == ["accept"]
 
     async def test_refresh_rewrite_is_idempotent(self, adr_repo, adr_config, adr_store):
         await refresh_decisions(adr_store, adr_repo, adr_config)
@@ -506,11 +542,15 @@ class TestCanonicalEnvelope:
     async def test_refresh_rewrite_conflict_is_a_diagnostic(self, adr_repo, adr_config, adr_store, monkeypatch):
         await refresh_decisions(adr_store, adr_repo, adr_config)
         decision_id = documented_decision_id(_LEGACY_SOURCE)
-        await _make_legacy(adr_store, decision_id)
+        await _seed_review_state(adr_store, decision_id)
+        legacy_hash = await _make_legacy(adr_store, decision_id)
+        stored = decision_from_page(await adr_store.get_page(decision_id))
         original_save = DecisionRepository.save
+        calls: list[tuple[DecisionRecord, str | None]] = []
 
         async def conflicting_save(self, record, expected_content_hash):
             if record.decision_id == decision_id:
+                calls.append((record, expected_content_hash))
                 raise DecisionError(ADR_REVISION_CONFLICT, "conflict", decision_id=decision_id)
             return await original_save(self, record, expected_content_hash)
 
@@ -521,3 +561,27 @@ class TestCanonicalEnvelope:
         conflicts = [diagnostic for diagnostic in result.diagnostics if diagnostic.code == ADR_REVISION_CONFLICT]
         assert result.updated == 0
         assert [diagnostic.decision_id for diagnostic in conflicts] == [decision_id]
+        assert calls == [(stored, legacy_hash)]
+        assert (await adr_store.get_page(decision_id))["content_hash"] == legacy_hash
+
+    async def test_refresh_rewrite_encode_failure_is_a_diagnostic(self, adr_repo, adr_config, adr_store, monkeypatch):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        clean = await refresh_decisions(adr_store, adr_repo, adr_config)
+        decision_id = documented_decision_id(_LEGACY_SOURCE)
+        legacy_hash = await _make_legacy(adr_store, decision_id)
+
+        def failing_encode(record):
+            if record.decision_id == decision_id:
+                raise DecisionError(ADR_RECORD_TOO_LARGE, "too large", decision_id=decision_id)
+            return decision_to_page(record)
+
+        monkeypatch.setattr("parrot.knowledge.wiki.decisions.ingest.decision_to_page", failing_encode)
+
+        result = await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        failures = [diagnostic for diagnostic in result.diagnostics if diagnostic.code == ADR_RECORD_TOO_LARGE]
+        assert [diagnostic.decision_id for diagnostic in failures] == [decision_id]
+        assert result.updated == 0 and result.created == 0
+        assert (await adr_store.get_page(decision_id))["content_hash"] == legacy_hash
+        assert clean.unchanged > 1  # the fixture holds several ADRs, so the next line means something
+        assert result.unchanged == clean.unchanged - 1
