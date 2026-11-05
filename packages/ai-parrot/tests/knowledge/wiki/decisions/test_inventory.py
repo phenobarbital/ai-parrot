@@ -178,14 +178,33 @@ async def test_snapshot_unstable_when_a_page_has_no_stored_hash(adr_store, tmp_p
 
 async def test_snapshot_unstable_when_a_hashless_page_disappears_mid_read(adr_store, tmp_path, monkeypatch) -> None:
     """The hashless phase-one value cannot pass as unchanged after deletion."""
-    record = _record("adr:doc:hashless")
-    await adr_store.upsert_pages([_hashless_page(record)])
+    await adr_store.upsert_pages([_hashless_page(_record("adr:doc:hashless"))])
+    await DecisionRepository(adr_store).save(_record("adr:doc:hashed"), None)
+    real_page_hashes = adr_store.page_hashes
 
     async def gone(ids: list[str]) -> dict[str, str | None]:
-        """Return the absent-page value phase two would observe after deletion."""
-        return dict.fromkeys(ids)
+        """Report only the hashless page as deleted; every other page keeps its real hash."""
+        observed = await real_page_hashes(ids)
+        observed["adr:doc:hashless"] = None
+        return observed
 
     monkeypatch.setattr(adr_store, "page_hashes", gone)
+    with pytest.raises(DecisionError) as exc:
+        await _snapshot(adr_store, tmp_path)
+
+    assert exc.value.code == SNAPSHOT_UNSTABLE
+    assert "adr:doc:hashless" in str(exc.value)
+
+
+async def test_hashless_gate_fails_before_supersession_validation(adr_store, tmp_path, monkeypatch) -> None:
+    """The hashless refusal runs before supersession is validated, so no work is discarded (issue:643e2720e52d)."""
+    await adr_store.upsert_pages([_hashless_page(_record("adr:doc:hashless"))])
+
+    def must_not_run(*_args: object) -> None:
+        """Fail the test if supersession is validated for a snapshot that will be refused."""
+        raise AssertionError("_validate_supersession ran before the hashless gate")
+
+    monkeypatch.setattr(InventorySnapshot, "_validate_supersession", staticmethod(must_not_run))
     with pytest.raises(DecisionError) as exc:
         await _snapshot(adr_store, tmp_path)
 
