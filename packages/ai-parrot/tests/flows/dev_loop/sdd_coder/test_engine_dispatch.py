@@ -441,8 +441,8 @@ async def test_telemetry_collector_captures_usage():
 
 class TestAttemptIdentity:
     async def test_uid_unique_across_jobs(self, git_sandbox_feature, noop_probe):
-        """Test that two _run_task invocations for the same task in different jobs
-        both produce attempt=1 and DIFFERENT attempt_uids."""
+        """Two _run_task invocations for the same task in different jobs produce
+        DIFFERENT attempt_uids, and the second takes the next free attempt slot."""
         worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
         builder = fake_builder_factory({})
         engine = SddCoderEngine(
@@ -477,9 +477,12 @@ class TestAttemptIdentity:
         job2 = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
         result2 = await engine.wait(job2.job_id, 5)
 
-        # Both should have attempt=1
+        # job1's attempt-1 sub-worktree is still live, so job2 starts at attempt 2
+        # instead of colliding on `git worktree add` (issue:3b913ffd77cd). Before
+        # that fix job2's attempt 1 failed with the collision and only its retry ran.
         assert result1.tasks[0].attempts[0].attempt == 1
-        assert result2.tasks[0].attempts[0].attempt == 1
+        assert result2.tasks[0].attempts[0].attempt == 2
+        assert not result2.tasks[0].attempts[0].error
 
         # But different attempt_uids
         assert result1.tasks[0].attempts[0].attempt_uid != result2.tasks[0].attempts[0].attempt_uid
@@ -1447,3 +1450,45 @@ async def test_engine_applies_seat_effort_to_profile(git_sandbox_feature, noop_p
     await engine.wait(job.job_id, 5)
     call = next(c for d in inner.dispatchers.values() for c in d.calls)
     assert call["profile"].reasoning_effort == "high"
+
+
+async def test_run_attempt_skips_a_leftover_attempt_branch(git_sandbox_feature, noop_probe):
+    """issue:3b913ffd77cd: a kept `-a1` branch must not make the re-dispatch collide."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    rc, _out, err = await _git("branch", f"{feature_branch}--TASK-0001-a1", cwd=str(worktree))
+    assert rc == 0, err
+    engine = SddCoderEngine(
+        roster=_roster(("a", "nova"), ("b", "codex")),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=fake_builder_factory({}),
+    )
+    job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    result = await engine.wait(job.job_id, 5)
+
+    task = result.tasks[0]
+    assert task.outcome == "merged", task
+    assert task.attempts[0].attempt == 2
+    assert task.worktree_path == str(Path(base_path) / f"{feature_branch}--pool" / "TASK-0001-a2")
+
+
+async def test_run_attempt_keeps_attempt_one_without_leftovers(git_sandbox_feature, noop_probe):
+    """With nothing kept, the first attempt is still attempt 1."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    engine = SddCoderEngine(
+        roster=_roster(("a", "nova"), ("b", "codex")),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=fake_builder_factory({}),
+    )
+    job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    result = await engine.wait(job.job_id, 5)
+
+    assert result.tasks[0].attempts[0].attempt == 1
+
+
+def test_attempt_record_accepts_attempt_above_three():
+    """A re-dispatch after three kept attempts is attempt 4 and must validate."""
+    from parrot.flows.dev_loop.sdd_coder.models import AttemptRecord
+
+    assert AttemptRecord(attempt=4, seat_label="a", started_at="2026-11-05T00:00:00+00:00").attempt == 4

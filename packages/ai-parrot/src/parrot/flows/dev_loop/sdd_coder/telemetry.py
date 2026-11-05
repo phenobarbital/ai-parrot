@@ -49,7 +49,7 @@ class AttemptUsageRow(BaseModel):
     job_id: str = Field("", max_length=64)
     feature_id: str = Field(..., max_length=64)
     task_id: str = Field(..., max_length=64)
-    attempt: int = Field(..., ge=1, le=3)
+    attempt: int = Field(..., ge=1, le=20)
     seat_label: str = Field("", max_length=32)
     backend: str = Field("", max_length=32)
     configured_model: str = Field("", max_length=200)
@@ -87,7 +87,7 @@ class OutcomeRow(BaseModel):
     job_id: str = Field("", max_length=64)
     feature_id: str = Field(..., max_length=64)
     task_id: str = Field(..., max_length=64)
-    attempt: int = Field(..., ge=1, le=3)
+    attempt: int = Field(..., ge=1, le=20)
     event_seq: int = Field(..., ge=1)
     outcome: str = Field(..., max_length=32)
     conflict_file_count: int = 0

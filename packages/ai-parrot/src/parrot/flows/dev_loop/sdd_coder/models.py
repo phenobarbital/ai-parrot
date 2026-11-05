@@ -388,7 +388,7 @@ class CoderPlan(BaseModel):
 class AttemptRecord(BaseModel):
     """Per-attempt telemetry (spec G9, design research S8)."""
 
-    attempt: int = Field(..., ge=1, le=3)
+    attempt: int = Field(..., ge=1, le=20)
     seat_label: str
     backend: str = ""
     model: str = ""
