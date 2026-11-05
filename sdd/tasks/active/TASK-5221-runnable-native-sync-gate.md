@@ -5,7 +5,7 @@
 **Status**: pending
 **Priority**: medium
 **Estimated effort**: S
-**Depends-on**: TASK-5220
+**Depends-on**: TASK-5220, TASK-5229
 **Assigned-to**: unassigned
 **Discovered-from**: `issue:815953379c34`
 

@@ -35,7 +35,8 @@
       "priority": "medium",
       "effort": "S",
       "depends_on": [
-        "TASK-5220"
+        "TASK-5220",
+        "TASK-5229"
       ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-5220 (same test file).",
@@ -45,6 +46,26 @@
       "spec": "sdd/specs/scripts-worktree-sync-tech-debt-2.spec.md",
       "assigned_to": null,
       "started_at": "2026-11-05T03:11:07+00:00",
+      "completed_at": null
+    },
+    {
+      "id": "TASK-5229",
+      "slug": "sandbox-tracked-only-dirty-guard",
+      "title": "Sandbox dirty guard checks tracked changes only",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5220"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits worktree_sync.py + test_worktree_sync.py; found by TASK-5221's real gate run.",
+      "file": "sdd/tasks/active/TASK-5229-sandbox-tracked-only-dirty-guard.md",
+      "feature_id": "FEAT-814",
+      "feature": "scripts-worktree-sync-tech-debt-2",
+      "spec": "sdd/specs/scripts-worktree-sync-tech-debt-2.spec.md",
+      "assigned_to": null,
+      "started_at": "2026-11-05T03:16:08+00:00",
       "completed_at": null
     }
   ]
