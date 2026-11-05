@@ -174,6 +174,9 @@ class CoderFailure(Exception):
 #: never reports a timeout at the very instant its children were about to settle (issue:3edabb9b953e).
 _GATE_WAIT_MARGIN_S = 5
 
+#: Highest sub-worktree attempt number `_free_attempt` hands out for one task+execution.
+_MAX_ATTEMPT_NUMBER = 20
+
 
 async def _git(*args: str, cwd: str) -> Tuple[int, str, str]:
     """Run git in `cwd`; returns (rc, stdout, stderr). Shape copied from worktree_manager.py:113.
@@ -2210,6 +2213,51 @@ class SddCoderEngine:
             Path(self._base_path) / f"{ctx.feature_branch}--pool" / SubWorktreeManager._branch_suffix(worker_id)
         )  # noqa: SLF001
 
+    async def _free_attempt(self, ctx: _FeatureCtx, task_id: str, requested: int, execution_id: Optional[str]) -> int:
+        """First attempt number >= *requested* whose branch and sub-worktree are both free.
+
+        A failed attempt keeps its branch and sub-worktree (the orchestrator may inspect or
+        repair from it) and `_run_task` restarts numbering at 1, so re-dispatching a task in the
+        same execution used to collide on `git worktree add` (issue:3b913ffd77cd). When the
+        requested slot is taken the result is also above every slot already used, so numbers
+        stay monotonic per task+execution. Names come from `_branch_for`/`_path_for` (exact
+        matches, so `-a1` never matches `-a10`). Returns *requested* unchanged when nothing up
+        to `_MAX_ATTEMPT_NUMBER` is free -- the attempt then fails exactly as it did before.
+
+        Args:
+            ctx: The resolved feature context.
+            task_id: The task being dispatched.
+            requested: The attempt number the caller asked for.
+            execution_id: The calling execution, if any.
+
+        Returns:
+            The attempt number to use.
+        """
+        prefix = f"{ctx.feature_branch}--{task_id}-a"
+        rc, out, _err = await _git("branch", "--list", f"{prefix}*", "--format=%(refname:short)", cwd=ctx.worktree)
+        # Only what would make `git worktree add -b` fail counts: a live branch or directory.
+        # `_branch_attempts` is deliberately ignored -- it still lists merged attempts whose
+        # branch and sub-worktree were already reclaimed, and reusing those slots is safe.
+        existing = {line.strip() for line in out.splitlines()} if rc == 0 else set()
+
+        async def taken(n: int) -> bool:
+            if self._branch_for(ctx, task_id, n, execution_id) in existing:
+                return True
+            return await asyncio.to_thread(os.path.isdir, self._path_for(ctx, task_id, n, execution_id))
+
+        if requested > _MAX_ATTEMPT_NUMBER or not await taken(requested):
+            return requested
+        # `requested` is taken, so `used` is never empty.
+        used = [n for n in range(1, _MAX_ATTEMPT_NUMBER + 1) if await taken(n)]
+        free = max(used) + 1
+        if free <= _MAX_ATTEMPT_NUMBER:
+            self.logger.info(
+                "attempt %d of %s is still held by a kept sub-worktree; using attempt %d", requested, task_id, free
+            )
+            return free
+        self.logger.warning("no free attempt slot up to %d for %s", _MAX_ATTEMPT_NUMBER, task_id)
+        return requested
+
     async def _merged_attempt_branch(
         self, ctx: _FeatureCtx, task_id: str, execution_id: Optional[str]
     ) -> Optional[str]:
@@ -3522,6 +3570,7 @@ class SddCoderEngine:
         returns immediately with a not_dispatched error without creating a worktree.
         """
         assert seat.backend is not None, "_run_attempt is only called for mcp seats; native tasks use prepare_native"
+        attempt = await self._free_attempt(ctx, task.task_id, attempt, execution_id)
         manager = self._manager_for(ctx, task.task_id, attempt, execution_id)
         # `_branch_for`/`_path_for` derive from the SAME `_worker_id` passed to
         # `manager.create()` below (spec: "centralize derived names; remove
