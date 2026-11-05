@@ -161,7 +161,7 @@ def test_guard_combination_parse_exception_falls_back_to_heuristic(scanner: Luau
     """A treesitter parse-time exception degrades to the heuristic path
     rather than raising or producing a fully-empty outline.
 
-    Per ``docs/design/luau-parser-resource-policy.md`` §1/§3, ``outline()``
+    Per ``wiki/knowledge/design/luau-parser-resource-policy.md`` §1/§3, ``outline()``
     runs tree-sitter synchronously, in-process (no per-file subprocess
     isolation — that mechanism is reserved for the offline benchmark/CI
     regression path). This exercises the in-process failure branch."""

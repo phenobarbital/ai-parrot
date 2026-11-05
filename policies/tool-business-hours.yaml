@@ -14,7 +14,7 @@
 # `resources:` pattern deliberately, with review, if you want this
 # enforced repo-wide.
 #
-# See docs/security/pbac-guardrails.md for the full guide, including the
+# See wiki/security/pbac-guardrails.md for the full guide, including the
 # `enforcement:` key's current limitation (see the -soft variant).
 
 version: "1.0"
@@ -62,7 +62,7 @@ policies:
     # (PBACToolCallGuardrail.on_error). This key is accepted here for
     # forward-compatibility, but the currently-pinned navigator-auth
     # PolicyLoader does NOT forward arbitrary top-level policy keys into
-    # ResourcePolicy.attributes — see docs/security/pbac-guardrails.md for
+    # ResourcePolicy.attributes — see wiki/security/pbac-guardrails.md for
     # the exact gap and how to exercise `enforcement: fail_open` today
     # (constructing a ResourcePolicy directly in Python).
     enforcement: fail_closed

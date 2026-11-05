@@ -191,7 +191,7 @@ vault *is* the raw layer for this agent and analysis is regenerated
 automatically.
 
 Full spec: `sdd/specs/fireflies-meeting-registry.spec.md`. Operator
-runbook: `docs/runbooks/fireflies-meeting-registry.md`.
+runbook: `wiki/operations/runbooks/fireflies-meeting-registry.md`.
 
 ### The three scheduled jobs
 

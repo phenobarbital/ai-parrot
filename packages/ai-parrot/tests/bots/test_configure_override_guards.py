@@ -367,7 +367,7 @@ def test_exempt_override_is_not_guarded(module_name: str, class_name: str) -> No
 
     data.py self-gates on `not self.dataframes`; NarrativeMixin is a pure
     passthrough; InfographicAuthoringMixin's set_bot() is idempotent behind a
-    sentinel header. See docs/agent-configure-lifecycle.md §8.
+    sentinel header. See wiki/bots/agent-configure-lifecycle.md §8.
     """
     import importlib
 
@@ -376,7 +376,7 @@ def test_exempt_override_is_not_guarded(module_name: str, class_name: str) -> No
     source = inspect.getsource(cls.configure)
 
     assert "configure_skipped" not in source, (
-        f"{class_name}.configure is a documented exemption (docs/agent-configure-lifecycle.md §8); "
+        f"{class_name}.configure is a documented exemption (wiki/bots/agent-configure-lifecycle.md §8); "
         "guarding it was not intended — update the doc and the spec if that has genuinely changed"
     )
 

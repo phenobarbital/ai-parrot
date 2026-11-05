@@ -511,7 +511,7 @@ Dos comportamientos que conviene saber:
 >    consola suelta el judge panel y deja que el plan monte su pareja de
 >    revisión (primario + contra-revisor Mantle) como revisor activo.
 
-Referencia completa: `docs/dev_loop/dev-flow-model-plan.md`.
+Referencia completa: `wiki/sdd-tooling/dev_loop/dev-flow-model-plan.md`.
 
 ### 9.9. Variables nuevas
 

@@ -1,0 +1,107 @@
+{% macro params(m) %}
+{% if m.parameters %}
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+{% for p in m.parameters %}
+| `{{ p.name|cell }}` | {{ p.annotation|code }} | {{ p.default|code }} | {{ p.description|cell }} |
+{% endfor %}
+
+{% endif %}
+{% endmacro %}
+{% macro callable_body(m) %}
+{% if m.overloads %}
+Overloads:
+
+{% for sig in m.overloads %}
+- `{{ sig }}`
+{% endfor %}
+
+{% elif m.signature %}
+`{{ m.signature }}`
+
+{% endif %}
+{{ params(m) }}
+{% if m.returns %}
+Returns: `{{ m.returns }}`{% if m.returns_text %} — {{ m.returns_text }}{% endif %}
+
+
+{% endif %}
+{% if m.raises %}
+Raises:
+
+{% for r in m.raises %}
+- `{{ r.type }}`{% if r.description %} — {{ r.description }}{% endif %}
+
+{% endfor %}
+
+{% endif %}
+{% endmacro %}
+{% macro block(m, level) %}
+{% set mark = "#" * (level if level < 6 else 6) %}
+{% if m.kind == "alias" %}
+{{ mark }} Alias `{{ m.full_name }}`
+
+{% if m.target_module %}
+Re-exported from [`{{ m.target }}`](ref:{{ m.target_module }}).
+{% else %}
+Re-exported from `{{ m.target }}`.
+{% endif %}
+
+{% else %}
+{{ mark }} {{ m.kind|title }} `{{ m.full_name }}`
+
+{% if m.description %}
+{{ m.description }}
+
+{% endif %}
+{% if m.kind in ["function", "method"] %}
+{{ callable_body(m) }}
+{% elif m.kind == "attribute" %}
+{% if m.annotation %}
+Type: `{{ m.annotation }}`
+
+{% endif %}
+{% elif m.kind == "class" %}
+{{ params(m) }}
+{% if m.fields %}
+Fields:
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+{% for f in m.fields %}
+| `{{ f.name|cell }}` | {{ f.annotation|code }} | {{ f.default|code }} | {{ f.description|cell }} |
+{% endfor %}
+
+{% endif %}
+{% if m.attributes %}
+Attributes:
+
+| Attribute | Type | Description |
+| --- | --- | --- |
+{% for a in m.attributes %}
+| `{{ a.name|cell }}` | {{ a.annotation|code }} | {{ a.description|cell }} |
+{% endfor %}
+
+{% endif %}
+{% for method in m.methods %}
+{{ block(method, level + 1) }}
+{% endfor %}
+{% for nested in m.classes %}
+{{ block(nested, level + 1) }}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% endmacro %}
+# {{ title }}
+
+{% if source_link %}
+[View source]({{ source_link }})
+
+{% endif %}
+{% if description %}
+{{ description }}
+
+{% endif %}
+{% for member in members %}
+{{ block(member, 2) }}
+{% endfor %}

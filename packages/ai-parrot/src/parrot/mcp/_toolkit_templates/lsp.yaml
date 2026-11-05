@@ -4,7 +4,7 @@
 # parrot:requires_pip: ai-parrot-tools
   lsp:
     class: parrot_tools.lsp.toolkit.LSPToolkit
-    # FEAT-580 SDD LSP research pilot — read docs/sdd/lsp-pilot.md before
+    # FEAT-580 SDD LSP research pilot — read wiki/sdd-tooling/sdd/lsp-pilot.md before
     # installing. Explicit and per-worktree only: importing this module,
     # listing tools (`parrot mcp-local lsp --list`) and installing this
     # template never spawn Pyright, never scan source and never touch the
@@ -14,7 +14,7 @@
     # `environment_id` below is the packaged "operator-unconfigured"
     # sentinel: every lsp_* call returns status="unavailable" before any
     # process starts until it is replaced with a real, immutable
-    # per-environment identifier (docs/sdd/lsp-pilot.md, "Environment
+    # per-environment identifier (wiki/sdd-tooling/sdd/lsp-pilot.md, "Environment
     # identity"). Changing it later invalidates every stored diagnostic
     # baseline.
     kwargs:

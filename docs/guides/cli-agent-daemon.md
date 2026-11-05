@@ -2,7 +2,7 @@
 
 > **Package**: `ai-parrot-integrations[agentd]`
 > **Feature**: FEAT-422
-> **API Reference**: [docs/agentd.md](../agentd.md)
+> **API Reference**: [wiki/bots/agentd.md](https://github.com/phenobarbital/ai-parrot/wiki/Bots-%26-Agents-Agent-CLI-Daemon-%28agentd%29)
 
 This guide walks you through running any AI-Parrot agent as a
 long-lived CLI daemon — from creating the agent, configuring and
@@ -206,7 +206,7 @@ parrot serve my_agents.fireflies:create_agent --name fireflies-sync
 CLI overrides (`--name`, `--socket`, `--dsn`, `--redis`/`--no-redis`,
 `--log-level`) are applied on top of the YAML values.
 
-See [docs/agentd.md](../agentd.md) for the full field reference.
+See [wiki/bots/agentd.md](https://github.com/phenobarbital/ai-parrot/wiki/Bots-%26-Agents-Agent-CLI-Daemon-%28agentd%29) for the full field reference.
 
 ---
 
@@ -644,7 +644,7 @@ kill -SIGTERM <pid>                              # signal
 
 ## Further Reading
 
-- [agentd API Reference](../agentd.md) — full protocol, error codes,
+- [agentd API Reference](https://github.com/phenobarbital/ai-parrot/wiki/Bots-%26-Agents-Agent-CLI-Daemon-%28agentd%29) — full protocol, error codes,
   wire format
 - [Agent CLI Daemon Spec](../../sdd/specs/agent-cli-daemon.spec.md) —
   original design specification

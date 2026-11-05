@@ -353,7 +353,7 @@ class SddCoderToolkit(AbstractToolkit):
         )
 
     async def coder_record_feedback(
-        self, feature: str, worktree: str, feedback: Dict[str, Any], execution_id: str
+        self, feature: str, worktree: str, feedback: Union[Dict[str, Any], BaseModel], execution_id: str
     ) -> CoderResult:
         """Record a confirmed defect corrected by the worker in one coder delivery.
 
@@ -368,6 +368,8 @@ class SddCoderToolkit(AbstractToolkit):
         """
         from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedback
 
+        # The MCP path validates against `CoderRecordFeedbackArgs` first and hands over
+        # a `CoderFeedback`; a direct caller still passes the raw dict.
         return await self._run(
             "coder_record_feedback",
             self._engine.record_feedback(
@@ -377,7 +379,7 @@ class SddCoderToolkit(AbstractToolkit):
         )
 
     async def coder_record_review(
-        self, feature: str, worktree: str, review: Dict[str, Any], execution_id: str
+        self, feature: str, worktree: str, review: Union[Dict[str, Any], BaseModel], execution_id: str
     ) -> CoderResult:
         """Record EVERY completed coder handoff review, including zero corrections.
 
@@ -388,9 +390,12 @@ class SddCoderToolkit(AbstractToolkit):
         """
         from parrot.knowledge.wiki.ledger.coder_reviews import CoderReview
 
+        # Same as `coder_record_feedback`: a `CoderReview` over MCP, a dict otherwise.
         return await self._run(
             "coder_record_review",
-            self._engine.record_review(feature, worktree, CoderReview.model_validate(review), execution_id=execution_id),
+            self._engine.record_review(
+                feature, worktree, CoderReview.model_validate(review), execution_id=execution_id
+            ),
             exclusive=True,
         )
 
@@ -471,7 +476,8 @@ class SddCoderToolkit(AbstractToolkit):
 
         Refuses (`execution_busy`) while known attempts/native reservations/jobs
         are still in flight -- an error report alone never unlocks this; only
-        explicit settlement (a real `coder_merge`) does.
+        explicit settlement (a real `coder_merge`) does. The error names each
+        task still holding the execution and lists them in `details.in_flight`.
         """
         return await self._run("coder_end_execution", self._engine.end_execution(execution_id), exclusive=True)
 

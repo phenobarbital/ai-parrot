@@ -886,7 +886,7 @@ def launch_worker(
         if sandbox_platform() == "macos":
             print(
                 "launch_worker: NOTICE macOS Seatbelt backend is implemented but not certified "
-                "(see docs/dev_loop/claude-native-sandbox.md)",
+                "(see wiki/sdd-tooling/dev_loop/claude-native-sandbox.md)",
                 file=sys.stderr,
             )
     if gh_token and not no_gh_token and not env.get("GH_TOKEN"):

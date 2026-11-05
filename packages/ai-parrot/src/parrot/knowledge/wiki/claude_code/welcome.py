@@ -63,7 +63,7 @@ def build_welcome_markdown(actions: list[str], bwrap_checks: list[DoctorCheck], 
             lines.extend(
                 [
                     "",
-                    "See [SDD Sandbox — OS Setup](docs/sdd/sandbox-setup.md), then run:",
+                    "See [SDD Sandbox — OS Setup](wiki/tools/sdd/sandbox-setup.md), then run:",
                     "",
                     "```bash",
                     SYSCTL_FIX,

@@ -39,10 +39,10 @@ flowchart LR
 
 ## Read next
 
-- [Per-loop Caching](../clients/per-loop-cache.md) — how the client
+- [Per-loop Caching](https://github.com/phenobarbital/ai-parrot/wiki/Clients-Per-Loop-LLM-Client-Cache) — how the client
   layer caches completions inside a single agent turn.
-- [Contextual Embedding](../contextual-embedding.md)
-- [Matryoshka Embeddings](../matryoshka-embeddings.md)
+- [Contextual Embedding](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Contextual-Embedding-Headers)
+- [Matryoshka Embeddings](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Matryoshka-Embedding-Truncation)
 
 ## API reference
 

@@ -17,14 +17,14 @@
 #
 # See packages/ai-parrot/tests/integration/infographic_recipes/test_e2e.py
 # for the full load -> dry_run -> run walkthrough, and
-# docs/outputs/infographic-recipes.md for the annotated line-by-line guide.
+# wiki/outputs/infographic-recipes.md for the annotated line-by-line guide.
 
 schema_version: 2
 name: budget-variance-daily
 title: "Daily Budget Variance"
 description: >
   Daily in-month revenue/EBITDA projections vs budget, replacing the legacy
-  daily_report.py Task Scheduler + Outlook flow (see docs/outputs/infographic-recipes.md
+  daily_report.py Task Scheduler + Outlook flow (see wiki/outputs/infographic-recipes.md
   Migration Story). Replays deterministically with fresh data every day.
 owner: null  # unscoped/shared recipe; FileRecipeStore/DBRecipeStore scope by owner when saved per-user
 
@@ -208,7 +208,7 @@ narrative:
 
 # Scheduled replays require an explicit principal (spec G8) — uncomment and
 # set a real principal before scheduling this recipe via the
-# run_infographic_recipe callback (see docs/outputs/infographic-recipes.md).
+# run_infographic_recipe callback (see wiki/outputs/infographic-recipes.md).
 # tenant_id/roles are optional and default to (principal, no roles) when
 # omitted — set them explicitly for any multi-tenant/role-gated PBAC policy.
 # schedule:

@@ -1465,7 +1465,7 @@ class HTML5Renderer(AbstractFormRenderer):
         # the pre-existing `{form_id}` — that the frontend <RestUploader>
         # component substitutes with the real tenant slug before issuing
         # the upload request. This is a required frontend contract update
-        # (see docs/migration/feat-421-forms-tenant-in-url.md); this
+        # (see wiki/migration/feat-421-forms-tenant-in-url.md); this
         # function has no `form`/`tenant` in scope to substitute it here.
         upload_url = f"/api/v1/{{tenant}}/forms/{{form_id}}/fields/{field.field_id}/upload"
         required_attr = " required" if field.required else ""

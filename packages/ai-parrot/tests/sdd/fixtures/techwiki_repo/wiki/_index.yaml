@@ -1,0 +1,5 @@
+sections:
+  - id: a
+    title: Alpha
+  - id: b
+    title: Beta

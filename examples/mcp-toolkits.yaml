@@ -12,7 +12,7 @@
 # FEAT-570 hard cut: NOTHING resolves implicitly. A name is only
 # resolvable if it is declared as a section below (or in your own copy).
 #
-# See docs/mcp-local-toolkits.md for the full reference and a
+# See wiki/tools/mcp-local-toolkits.md for the full reference and a
 # "trust note" you should read before pointing `class:` at code you did
 # not write.
 

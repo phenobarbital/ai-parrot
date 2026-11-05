@@ -1,7 +1,7 @@
 /**
  * A2UI surface-kind heuristic (FEAT-527).
  *
- * There is no `kind` field on the wire (docs/frontend/agentdashboard-a2ui-reference.md
+ * There is no `kind` field on the wire (wiki/bots/frontend/agentdashboard-a2ui-reference.md
  * §6.2) — the kind is an attribute of how a surface was produced / persisted
  * (`UISurfaceKind` in the `ui_surfaces` plane), never the `createSurface`
  * message itself. This is the reference `inferKind()` from that doc, ported

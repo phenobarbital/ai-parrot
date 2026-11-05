@@ -69,6 +69,11 @@ them to the spec's base branch. This command creates no worktree (FEAT-552);
 5. Plan task decomposition:
    - one task per module, class, or distinct deliverable
    - target 1-4 hours per task
+   - Documentation task (FEAT-801): when the spec's `docs.policy` is `required`, emit exactly one
+     task *Documentation — <pages>* creating/updating the listed `wiki/` pages from
+     `sdd/templates/techwiki-page.md`; `depends_on` every task that creates a documented symbol
+     (last in the graph); validation `parrot sdd techwiki check --spec <spec> --root .`;
+     `parallel: true`; `none`/absent policy: no task
    - `depends_on` is the only ordering: add an edge only for a consumed symbol,
      file, fixture or configuration created by another task, or overlapping
      modified files (serialize overlapping writers, lower ID first)

@@ -353,7 +353,7 @@ install-obscura:
 #
 # Air-gapped hosts do NOT use this target: export a graph directory once on a
 # networked machine and point PARROT_INJECTION_ONNX_DIR at it — that path wins
-# over everything. See docs/security/onnx-injection-guardrail.md.
+# over everything. See wiki/security/onnx-injection-guardrail.md.
 injection-model:
 	@echo "Warming injection classifier '$(INJECTION_MODEL_REPO)'$(if $(FORCE), (FORCE=1: re-fetching),) ..."
 	@python -c "\
@@ -912,7 +912,7 @@ run-whatsapp-bridge: build-whatsapp-bridge
 	@./bin/whatsapp-bridge
 
 # Build the parrot-tools worker image used by the remote tool executors
-# (DockerToolExecutor / K8sToolExecutor — see docs/executors/docker-executor.md).
+# (DockerToolExecutor / K8sToolExecutor — see wiki/flows/executors/docker-executor.md).
 # Customize with e.g.:
 #   make docker-tool-worker TOOL_WORKER_BUILD_ARGS='--build-arg PARROT_EXTRAS=llms --build-arg TOOLS_EXTRAS=pdf,jira'
 docker-tool-worker:

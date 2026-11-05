@@ -2,7 +2,7 @@
 
 Ports the bidirectional speech-to-speech implementation from the deleted
 FEAT-302 voice-only client module (removed in FEAT-315 — see
-``docs/migration/feat-315-novaclient.md``) into a plain capability mixin,
+``wiki/migration/feat-315-novaclient.md``) into a plain capability mixin,
 composed into
 :class:`~parrot.clients.nova.client.NovaClient` alongside
 ``BedrockConverseBase`` (spec ``novaclient-amazon-aws`` §2/§3 Module 3),

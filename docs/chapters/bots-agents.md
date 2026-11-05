@@ -29,12 +29,12 @@ agents together via sequential, parallel or DAG-based execution.
 
 ## Read next
 
-- [Agents](../agent.md), [Agent Mesh](../agent_mesh.md)
-- [Crew Handler](../crew_handler.md)
-- [WebAgent](../web-agent.md) (Chrome DevTools) and
-  [WebNavigatorAgent](../web-navigator-agent.md) (catalogued browsing)
-- [AgentCrew Guide](../orchestration/agentcrew.md) and
-  [AgentsFlow Guide](../orchestration/agentsflow.md)
+- [Agents](https://github.com/phenobarbital/ai-parrot/wiki/Bots-%26-Agents-AgentTalk-Integration-Guide), [Agent Mesh](https://github.com/phenobarbital/ai-parrot/wiki/Architecture-Agent-Mesh)
+- [Crew Handler](https://github.com/phenobarbital/ai-parrot/wiki/Bots-%26-Agents-Usage-Example)
+- [WebAgent](https://github.com/phenobarbital/ai-parrot/wiki/Bots-%26-Agents-WebAgent-%E2%80%94-Browser-Interaction-via-Chrome-DevTools) (Chrome DevTools) and
+  [WebNavigatorAgent](https://github.com/phenobarbital/ai-parrot/wiki/Bots-%26-Agents-WebNavigatorAgent-%E2%80%94-Catalogued-Web-Navigation-on-Your-Chrome-Profile) (catalogued browsing)
+- [AgentCrew Guide](https://github.com/phenobarbital/ai-parrot/wiki/Bots-%26-Agents-AgentCrew-User-Guide) and
+  [AgentsFlow Guide](https://github.com/phenobarbital/ai-parrot/wiki/Bots-%26-Agents-AgentsFlow-User-Guide)
 
 ## API reference
 

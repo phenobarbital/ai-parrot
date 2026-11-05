@@ -5954,7 +5954,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             resolved_model = self._resolve_invoke_model(model)
             max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
 
-            # Per-loop cache contract (docs/clients/per-loop-cache.md): build the client instead of
+            # Per-loop cache contract (wiki/clients/per-loop-cache.md): build the client instead of
             # demanding the caller opened one — an async context manager is no longer required.
             await self._ensure_client(model=resolved_model)
 
