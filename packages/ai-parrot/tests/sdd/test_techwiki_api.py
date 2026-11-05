@@ -103,6 +103,20 @@ class TestGenerate:
         assert {"parrot.clients.base", "parrot.clients.google"} <= modules
         assert {"parrot.stores.abstract", "parrot.stores.faiss_store"} <= modules
 
+    def test_page_title_is_the_module_name_and_section_is_configured(
+        self, techwiki_repo: tuple[Path, TechwikiConfig]
+    ) -> None:
+        """The title is the bare module name (no ``Reference:`` prefix) and the section follows the config."""
+        _require_griffe()
+        root, cfg = techwiki_repo
+        cfg = cfg.model_copy(update={"reference_section": "Code Reference"})
+        pages, _ = generate(cfg, root)
+        core = next(page for page in pages if page.module == "samplepkg.core")
+        assert core.title == "samplepkg.core"
+        assert core.section == "Code Reference"
+        assert core.body.startswith("# samplepkg.core\n")
+        assert ":" not in core.title
+
     def test_generate_reports_syntax_error_modules(self, bad_repo: Path) -> None:
         """A module griffe cannot parse is listed as skipped instead of silently disappearing."""
         _require_griffe()
