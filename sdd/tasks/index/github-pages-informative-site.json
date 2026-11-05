@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-04T23:27:07+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-05T03:30:36+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -176,7 +176,7 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -192,8 +192,9 @@
       "parallelism_notes": "Verifies the assembled site: needs landing from TASK-5196, mkdocs.yml from TASK-5197, chapters from TASK-5198 and TASK-5199 (docs/chapters/*.md), pages from TASK-5200, tutorials from TASK-5201 and TASK-5202 (docs/tutorials/*.md).",
       "assigned_to": null,
       "started_at": "2026-11-05T02:57:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5203-post-m9-build-verification.md"
+      "completed_at": "2026-11-05T03:30:36+00:00",
+      "file": "sdd/tasks/completed/TASK-5203-post-m9-build-verification.md",
+      "verification": "verified"
     }
   ]
 }
