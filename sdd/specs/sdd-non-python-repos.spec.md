@@ -91,7 +91,7 @@ FEAT-804 both list this work as a deferred follow-up.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:130b78d19f0b9f3b6971003269f5f4a97da8d8f9b45a0647ab29c32101b52a69 evaluation_digest=sha256:9a77ecf5d9819c35f1732516158cae508b8aa2a9aa339eff4bd90d02953c1bbe rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:6851e72687ee1a8f00300859374bc57721e5173cded02bb9d979861affe13448 evaluation_digest=sha256:f9de756c4d12d605f332bf5e57e4064d5ca2a618163a7c4df5f78669e36188a2 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -1154,7 +1154,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:130b78d19f0b9f3b6971003269f5f4a97da8d8f9b45a0647ab29c32101b52a69 evaluation_digest=sha256:9a77ecf5d9819c35f1732516158cae508b8aa2a9aa339eff4bd90d02953c1bbe rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:6851e72687ee1a8f00300859374bc57721e5173cded02bb9d979861affe13448 evaluation_digest=sha256:f9de756c4d12d605f332bf5e57e4064d5ca2a618163a7c4df5f78669e36188a2 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -1204,7 +1204,7 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:9a77ecf5d9819c35f1732516158cae508b8aa2a9aa339eff4bd90d02953c1bbe",
+  "evaluation_digest": "sha256:f9de756c4d12d605f332bf5e57e4064d5ca2a618163a7c4df5f78669e36188a2",
   "exit_code": 0,
   "findings": [
     {
@@ -1252,7 +1252,7 @@ Coverage:
       "waived_by": null
     }
   ],
-  "input_digest": "sha256:130b78d19f0b9f3b6971003269f5f4a97da8d8f9b45a0647ab29c32101b52a69",
+  "input_digest": "sha256:6851e72687ee1a8f00300859374bc57721e5173cded02bb9d979861affe13448",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
