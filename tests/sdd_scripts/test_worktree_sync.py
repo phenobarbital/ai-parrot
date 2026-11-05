@@ -11,6 +11,7 @@ import pytest
 
 from parrot.sdd.scripts import native_claude_sandbox, worktree_sync
 
+
 def _run(path: Path, *args: str) -> str:
     """Run Git in a disposable repository and return stdout."""
     return subprocess.run(["git", "-C", str(path), *args], text=True, capture_output=True, check=True).stdout.strip()
@@ -408,3 +409,36 @@ def test_sandbox_late_validation_failure_leaves_tree_unchanged(tmp_path: Path, m
     assert _run(feature, "rev-parse", "HEAD") == before
     assert not (feature / "first.txt").exists()
     assert _run(feature, "status", "--porcelain") == ""
+
+
+def test_hotfix_slug_candidates_handle_hyphenated_keys(tmp_path: Path) -> None:
+    """A hyphenated Jira key must not hide the slug; an unresolved hotfix base is refused, not defaulted to dev."""
+    _origin, primary, _feature = _repository(tmp_path)
+    hotfix = tmp_path / "hotfix"
+    _run(primary, "worktree", "add", "-b", "hotfix-NAV-123-fix-thing", str(hotfix), "dev")
+
+    assert "fix-thing" in worktree_sync._slug_candidates(hotfix)
+    with pytest.raises(worktree_sync.SyncError):
+        worktree_sync.resolve_base_branch(hotfix, None)
+    assert worktree_sync.resolve_base_branch(hotfix, "main") == "main"
+
+
+def test_ff_only_diverged_is_clean_refusal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-fast-forwardable --ff-only leaves the tree untouched and is not an unverified rollback."""
+    _origin, primary, feature = _repository(tmp_path)
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    (feature / "local.txt").write_text("local\n", encoding="utf-8")
+    _run(feature, "add", "local.txt")
+    _run(feature, "commit", "-m", "local")
+    (primary / "shared.txt").write_text("changed\n", encoding="utf-8")
+    _run(primary, "add", "shared.txt")
+    _run(primary, "commit", "-m", "base change")
+    _run(primary, "push")
+    before = _run(feature, "rev-parse", "HEAD")
+
+    result = worktree_sync.sync(feature, "dev", ff_only=True)
+
+    assert _run(feature, "rev-parse", "HEAD") == before
+    assert _run(feature, "status", "--porcelain") == ""
+    assert "unchanged" in result.message
+    assert "not verified" not in result.message

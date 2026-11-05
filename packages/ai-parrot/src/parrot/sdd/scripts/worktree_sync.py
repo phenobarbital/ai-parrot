@@ -130,19 +130,22 @@ def resolve_target(target: str) -> Path:
     return requested
 
 
-def _slug_for(wt: Path) -> str | None:
-    """Derive the selected SDD worktree slug from its registered branch."""
+def _slug_candidates(wt: Path) -> list[str]:
+    """Return candidate SDD slugs for the registered branch, most specific first.
+
+    ``feat-FEAT-<N>-<slug>`` has a fixed three-part prefix. ``hotfix-<KEY>-<slug>`` and
+    ``fix-<KEY>-<slug>`` keys may themselves contain hyphens, so every suffix after the
+    first part is a candidate and the caller keeps the one that names an existing file.
+    """
     branch = _branch(wt)
     if not branch:
-        return None
-    parts = branch.split("-", 3)
-    if len(parts) == 4 and parts[0] == "feat":
-        return parts[3]
-    if len(parts) == 3 and parts[0] == "hotfix":
-        return parts[2]
-    if len(parts) == 3 and parts[0] == "fix":
-        return parts[2]
-    return None
+        return []
+    parts = branch.split("-")
+    if parts[0] == "feat" and len(parts) >= 4:
+        return ["-".join(parts[3:])]
+    if parts[0] in ("hotfix", "fix") and len(parts) >= 3:
+        return ["-".join(parts[i:]) for i in range(2, len(parts))]
+    return []
 
 
 def resolve_base_branch(wt: Path, override: str | None) -> str:
@@ -150,8 +153,7 @@ def resolve_base_branch(wt: Path, override: str | None) -> str:
     if override is not None:
         _validate_base(override)
         return override
-    slug = _slug_for(wt)
-    if slug:
+    for slug in _slug_candidates(wt):
         index = wt / "sdd" / "tasks" / "index" / f"{slug}.json"
         if index.is_file():
             _, base = _read_worktree_index(wt, slug)
@@ -167,6 +169,11 @@ def resolve_base_branch(wt: Path, override: str | None) -> str:
             else:
                 _validate_base(base)
                 return base
+    branch = _branch(wt) or ""
+    if branch.startswith(("hotfix-", "fix-")):
+        raise SyncError(
+            EXIT_TARGET, "cannot resolve the base branch of this hotfix/fix worktree; pass --base explicitly"
+        )
     return "dev"
 
 
@@ -427,6 +434,18 @@ def sync(
         abort = "merge"
     if proc.returncode == 0:
         return _result(wt, base, mode, False, before, commits, "synced", EXIT_OK, "synchronized")
+    if ff_only and not cherry_picks and _head(wt) == before and not _status(wt):
+        return _result(
+            wt,
+            base,
+            mode,
+            False,
+            before,
+            commits,
+            "error",
+            EXIT_CONFLICT,
+            "fast-forward not possible; worktree unchanged",
+        )
     restored, conflicts, detail = _rollback(wt, before, abort)
     if restored:
         return _result(
