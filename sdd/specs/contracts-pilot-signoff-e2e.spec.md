@@ -263,9 +263,14 @@ Update the GitHub wiki page with acceptance results and E2E coverage notes.
 
 ### Validation Contract
 
-`none — fallback`
-
----
+tests:
+- packages/ai-parrot/tests/knowledge/contracts/test_pilot_matrix.py
+- packages/ai-parrot/tests/knowledge/contracts/test_pilot_dispositions.py
+- packages/ai-parrot/tests/e2e/contracts/test_fixtures_smoke.py
+- packages/ai-parrot/tests/e2e/contracts/test_catalog_roundtrip.py
+- packages/ai-parrot/tests/e2e/contracts/test_graph_publication.py
+- packages/ai-parrot/tests/e2e/contracts/test_card_lookup.py
+markers: none
 
 ## 5. Acceptance Criteria
 
