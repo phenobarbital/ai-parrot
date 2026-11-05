@@ -184,3 +184,7 @@ Done 2026-11-05 (commit a703edeb43). `CoderReview(**review)` / `CoderFeedback(**
 `MCPToolAdapter` (parametrized) and direct dict calls. Mutation-checked: against the old toolkit the
 adapter tests fail with the exact ledger error (`argument after ** must be a mapping`).
 Validation: test_feedback.py + test_toolkit.py → 65 passed; ruff/black clean.
+
+Superseded at merge time (2026-11-05): dev already carried the same fix in 2f6ffb810a with
+equivalent tests, so the FEAT-812 merge of origin/dev took dev's toolkit.py/test_feedback.py and
+this task leaves no diff against dev.
