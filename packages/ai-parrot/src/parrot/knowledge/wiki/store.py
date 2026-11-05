@@ -327,6 +327,11 @@ _FTS_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 #: FEAT-633: a migration lockfile older than this is presumed abandoned (crashed holder).
 STALE_MIGRATION_LOCK_S: float = 600.0
 
+#: issue:092b311c2ad1: how many ``<db>.bak-*`` sidecars a plane keeps after a successful migration.
+#: Each sidecar is a full-size copy of the plane, so an unbounded series would grow without limit;
+#: the newest few are what a manual recovery would ever reach for.
+MIGRATION_BACKUP_KEEP: int = 2
+
 
 def _migration_lock_path(db_path: Path) -> Path:
     """Sidecar lockfile guarding cross-process migration of ``db_path``."""
@@ -1562,6 +1567,8 @@ class SQLiteWikiStore(BaseWikiStore):
                 if await self._data_version(conn) == version_before:
                     await asyncio.to_thread(self._restore_store, backup)
                 raise
+            # success: keep only the newest few sidecars (issue:092b311c2ad1)
+            await asyncio.to_thread(self._prune_backups)
 
     async def _maybe_migrate(self, conn: aiosqlite.Connection) -> None:
         """Run the read-first migration probe/apply at most once per store.
@@ -1660,6 +1667,8 @@ class SQLiteWikiStore(BaseWikiStore):
                 await asyncio.to_thread(self._restore_store, backup)
                 self.logger.error("wiki migration of %s failed; restored from backup %s", self._db_path, backup)
                 raise
+            # success: keep only the newest few sidecars (issue:092b311c2ad1)
+            await asyncio.to_thread(self._prune_backups)
 
     @staticmethod
     async def _data_version(conn: aiosqlite.Connection) -> int:
@@ -1730,6 +1739,53 @@ class SQLiteWikiStore(BaseWikiStore):
             if src is not None:
                 src.close()
         return backup
+
+    def _prune_backups(self, keep: int = MIGRATION_BACKUP_KEEP) -> list[Path]:
+        """Delete all but the newest ``keep`` ``<db>.bak-*`` sidecars; run via ``asyncio.to_thread``.
+
+        Called only after a migration has SUCCEEDED, so the snapshot a failed migration keeps for
+        manual recovery is never swept away mid-run. Names carry a UTC microsecond stamp (plus a
+        ``-<n>`` collision suffix), so a plain lexicographic sort is chronological; mtime is not
+        consulted because a copied or restored plane may carry an unrelated one.
+
+        Pruning is best-effort housekeeping: any :class:`OSError` is logged and swallowed, because
+        a sidecar that cannot be removed must never fail an otherwise successful migration.
+
+        Args:
+            keep: How many of the newest sidecars to retain. ``0`` removes every one.
+
+        Returns:
+            The sidecars actually deleted, oldest first.
+        """
+        pattern = f"{self._db_path.name}.bak-*"
+        try:
+            backups = sorted(
+                (
+                    path
+                    for path in self._db_path.parent.glob(pattern)
+                    # a sidecar's own -wal/-shm/-journal would sort after it and be miscounted as a backup
+                    if not path.name.endswith(("-wal", "-shm", "-journal"))
+                ),
+                key=lambda path: path.name,
+            )
+        except OSError as exc:  # unreadable directory — nothing to prune, never fatal
+            self.logger.warning("could not list wiki plane backups for %s: %s", self._db_path, exc)
+            return []
+        stale = backups[: -keep] if keep else backups
+        removed: list[Path] = []
+        for path in stale:
+            try:
+                path.unlink()
+            except OSError as exc:
+                self.logger.warning("could not prune stale wiki plane backup %s: %s", path, exc)
+                continue
+            removed.append(path)
+        if removed:
+            self.logger.info(
+                "pruned %d stale backup(s) of wiki plane %s (keeping the newest %d)",
+                len(removed), self._db_path, keep,
+            )
+        return removed
 
     def _restore_store(self, backup: Path) -> None:
         """Copy ``backup`` back over the plane with the backup API (reverse direction)."""
