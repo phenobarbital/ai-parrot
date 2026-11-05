@@ -61,7 +61,7 @@
       "feature_id": "FEAT-806",
       "feature": "worktree-sync-base",
       "spec": "sdd/specs/worktree-sync-base.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -71,8 +71,9 @@
       "parallelism_notes": "Consumes TASK-5206 live_processes_in(exclude_pids) in remove_worktree.py. TASK-5208 later extends the same core and tests; no dependency on future CLI registration is needed for direct module tests.",
       "assigned_to": null,
       "started_at": "2026-11-05T00:36:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5207-worktree-host-sync.md"
+      "completed_at": "2026-11-05T01:07:32+00:00",
+      "file": "sdd/tasks/completed/TASK-5207-worktree-host-sync.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5208",
