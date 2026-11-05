@@ -157,6 +157,13 @@ def _seed_worktree(clone: Path) -> None:
     _git(clone, "worktree", "add", "-q", f".claude/worktrees/feat-{FEAT}-{SLUG}", "-b", f"feat-{FEAT}-{SLUG}", "origin/dev")
 
 
+def _seed_base_fix(clone: Path) -> None:
+    """``_seed_worktree`` plus a later fix on origin/dev (the clone's HEAD) that the worktree does not have yet."""
+    _seed_worktree(clone)
+    (clone / "sdd/base-fix.md").write_text("a fix that landed on dev after the worktree was cut\n", encoding="utf-8")
+    _commit_push(clone, "fixture: base fix")
+
+
 def _seed_hook_context(clone: Path) -> None:
     """``_seed_worktree`` plus the closeout-hook context JSON that ``/sdd-done`` writes (FEAT-764)."""
     _seed_worktree(clone)
@@ -428,6 +435,20 @@ SCENARIOS: dict[str, Scenario] = {
         expect_stdout='"permissionDecision": "deny"',
     ),
     "worktree_status": Scenario(prepare=_seed_worktree),
+    # `worktree list|remove`: removing the seeded feature worktree (or refusing it) is fine, a traceback is not
+    "remove_worktree": Scenario(
+        prepare=_seed_worktree, expect_exit=_ANY_CLEAN, placeholders={"<target>": f"feat-{FEAT}-{SLUG}"}),
+    # the foreign repo has no techwiki pages: a controlled skip/refusal is the expected outcome
+    "techwiki_check": Scenario(
+        prepare=_seed_worktree, expect_exit=_ANY_CLEAN, placeholders={"$SPEC_PATH": f"sdd/specs/{SLUG}.spec.md"}),
+    "worktree_baseline": Scenario(
+        prepare=_seed_feature, expect_exit=_ANY_CLEAN, placeholders={"<path>": "<repo>/.claude/worktrees/baseline-demo"}),
+    "worktree_push_protection": Scenario(
+        prepare=_seed_worktree, expect_exit=_ANY_CLEAN,
+        placeholders={"<worktree-path>": f"<repo>/.claude/worktrees/feat-{FEAT}-{SLUG}"}),
+    # <head> is the base fix on origin/dev that the seeded worktree lacks: a clean cherry-pick must succeed
+    "worktree_sync": Scenario(
+        prepare=_seed_base_fix, placeholders={"<FEAT-ID|KEY|name|path>": FEAT, "<sha>": "<head>"}),
     # present in the packaged scripts; markdown does not (yet) invoke them, so they are exercised only if it does
     "check_id_collisions": Scenario(prepare=_seed_feature, expect_exit=_ANY_CLEAN),
     "check_task_state": Scenario(prepare=_seed_feature, expect_exit=_ANY_CLEAN),
