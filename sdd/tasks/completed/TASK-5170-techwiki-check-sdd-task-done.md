@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-801 — GitHub Wiki as the Technical Reference
 **Spec**: `sdd/specs/github-wiki-technical-reference.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5166, TASK-5169
@@ -489,10 +489,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5.5) + host manual patch
+**Date**: 2026-11-05
+**Notes**: Delivered in two commits: (1) `f9555a370c` — core `check.py`,
+CLI shim, tests, and the `.agent/`/`.agents/` twins for both `/sdd-task`
+and `/sdd-done`; (2) `688db031fa` — `.claude/commands/sdd-{task,done}.md`
+edits + full `_assets/` regeneration. All acceptance criteria satisfied:
+`techwiki check` implements the §3 M5 decision table (content rules
+`docs_page_empty`, `docs_page_no_title`, `docs_api_module_syntax`,
+`docs_page_outside_root`), never blocks closeout, has no `--force`,
+runs without griffe and in a foreign repo. Both `/sdd-done` twins state
+"No exit code of `techwiki check` aborts closeout." All three `/sdd-task`
+twins carry the documentation-task rule. `check_asset_sync.py --check`
+passes.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The `.claude/commands/sdd-{task,done}.md` edits
+could not be applied by the sdd-worker agent (bwrap EROFS on `.claude/`
+inside the worktree). They were applied on the host from a patch file
+(`/tmp/claude-1000/5170-claude-commands.patch`), and `_assets/` was
+regenerated on the host via `check_asset_sync.py --write`. The content
+is identical to what the agent wrote for the other twins.

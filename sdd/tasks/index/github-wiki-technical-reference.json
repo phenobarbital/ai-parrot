@@ -129,7 +129,7 @@
       "feature_id": "FEAT-801",
       "feature": "github-wiki-technical-reference",
       "spec": "sdd/specs/github-wiki-technical-reference.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -140,8 +140,9 @@
       "parallelism_notes": "imports load_techwiki_config from TASK-5166 (config.py); depends on TASK-5169 so _assets regeneration covers both sets of twin edits (sdd-spec twins in 5169, sdd-task/sdd-done twins here — disjoint files)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5170-techwiki-check-sdd-task-done.md"
+      "completed_at": "2026-11-05T00:40:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5170-techwiki-check-sdd-task-done.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5171",
