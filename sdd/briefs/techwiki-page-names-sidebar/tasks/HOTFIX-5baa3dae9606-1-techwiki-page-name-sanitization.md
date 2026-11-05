@@ -2,7 +2,7 @@
 
 **Feature**: techwiki-page-names-sidebar (BRIEF-5baa3dae9606)
 **Spec**: sdd/briefs/techwiki-page-names-sidebar.brief.md
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none
@@ -51,6 +51,7 @@ brief's Root cause section, items 1–3.
 - MODIFY `packages/ai-parrot/tests/sdd/test_techwiki_bundle.py`
 - MODIFY `packages/ai-parrot/tests/sdd/test_techwiki_api.py`
 - MODIFY `sdd/specs/github-wiki-technical-reference.spec.md`
+- MODIFY `packages/ai-parrot/tests/sdd/fixtures/techwiki_golden/samplepkg.md` and `samplepkg.core.md` (H1 loses the `Reference: ` prefix)
 
 ## Codebase Contract
 - Verified: `naming.py:16` `def page_name(section: str | None, title: str) -> str`; `naming.py:30`
@@ -105,4 +106,9 @@ brief's Root cause section, items 1–3.
 - `PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/sdd/test_techwiki_naming.py packages/ai-parrot/tests/sdd/test_techwiki_bundle.py packages/ai-parrot/tests/sdd/test_techwiki_api.py packages/ai-parrot/tests/sdd/test_techwiki_check.py -q`
 
 ## Completion Note
-(pending)
+Implemented. `page_name` now translates `/ \ " : < > | * ? \r \n` to a space before collapsing to `-` (new
+`FORBIDDEN_NAME_CHARS`, raises when nothing usable remains); `render_module` titles pages with the bare module
+name and takes `section=cfg.reference_section`; `BundlePage.module` added and `_manifest_entries`/`_ref_id`
+derive `ref:<module>` from it. Golden fixtures regenerated (H1 lost the `Reference: ` prefix); spec line 307
+updated. Tests: 72 passed across the four techwiki test files; ruff clean. Full local bundle from the branch:
+3375 files, 0 names with forbidden characters (was 3104). Commit 994c116e27. Seat: native (main session).
