@@ -2,7 +2,7 @@
 
 **Feature**: techwiki-page-names-sidebar (BRIEF-5baa3dae9606)
 **Spec**: sdd/briefs/techwiki-page-names-sidebar.brief.md
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: HOTFIX-5baa3dae9606-1
@@ -83,4 +83,11 @@ sections of the sidebar.
 - `PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/sdd/test_techwiki_bundle.py packages/ai-parrot/tests/sdd/test_techwiki_check.py -q`
 
 ## Completion Note
-(pending)
+Implemented. `assemble` appends `_reference_index_page(cfg, generated)` (source None, module None, name from
+`page_name(None, cfg.reference_section)`) whenever API pages were generated; the manifest records it as
+`{"id": "index:API-Reference", "kind": "index"}` and `_ref_id` returns `index:<name>` for it, so the existing
+collision and reserved-name checks cover it. `write_navigation` renders Home from the full section rows and the
+sidebar from rows where the reference section keeps only `module is None` pages. Tests: 75 passed across the
+four techwiki test files; ruff clean. Full local bundle from the branch: `_Sidebar.md` 18 KB (was 216 KB),
+`API-Reference.md` 164 KB linking 3077 module pages under 7 top-level packages, 3376 files, 0 forbidden
+names. Seat: native (main session).
