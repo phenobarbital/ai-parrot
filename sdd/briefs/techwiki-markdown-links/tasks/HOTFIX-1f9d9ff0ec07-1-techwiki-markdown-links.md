@@ -2,7 +2,7 @@
 
 **Feature**: techwiki-markdown-links (BRIEF-1f9d9ff0ec07)
 **Spec**: sdd/briefs/techwiki-markdown-links.brief.md
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none
@@ -103,4 +103,11 @@ splitting the index page; any authored page under `wiki/`.
 - `PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/sdd/test_techwiki_naming.py packages/ai-parrot/tests/sdd/test_techwiki_bundle.py packages/ai-parrot/tests/sdd/test_techwiki_api.py packages/ai-parrot/tests/sdd/test_techwiki_check.py -q`
 
 ## Completion Note
-(pending)
+Implemented. `naming.page_href` (percent-encoded relative href, `safe="-._~"`) and `naming.page_link`
+(`[text](href)`); `rewrite_links` emits `page_link(page, author_text)` and keeps `#fragment`s; the sidebar and
+home templates render `- [title](href)` from rows carrying `title`/`href`/`count` built in `write_navigation`
+(reference section filtered to the index page for both); `_reference_index_page` links `[module](href)`. Spec
+lines 264 and 593 reworded. Tests: 77 passed in the four techwiki files; ruff clean. Strict full bundle from
+the branch: `_Sidebar.md` 31 KB, `Home.md` 32 KB, `API-Reference.md` 263 KB, none containing `[[`; the only
+remaining `[[` in the bundle are `list[list[...]]` type annotations inside generated module pages.
+Seat: native (main session).
