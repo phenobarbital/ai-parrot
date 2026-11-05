@@ -1,6 +1,7 @@
 from typing import List, Dict, Optional, Literal, Any, Mapping
 import uuid
 from pydantic import BaseModel, Field, field_validator
+from pydantic.json_schema import SkipJsonSchema
 
 class BoundingBox(BaseModel):
     """Normalized bounding box coordinates"""
@@ -88,11 +89,35 @@ class IdentifiedProduct(BaseModel):
     )
     ocr_text: Optional[str] = Field(None, description="OCR text found on the product")
     detection_box: Optional[DetectionBox] = Field(None, description="Detection box information")
-    extra: Dict[str, str] = Field(default_factory=dict, description="Any Extra descriptive tags")
+    # Hidden from the JSON schema: a free-form dict becomes an OBJECT with no properties, which
+    # some Gemini models reject in response_schema (400 INVALID_ARGUMENT).
+    extra: SkipJsonSchema[Dict[str, str]] = Field(default_factory=dict, description="Any Extra descriptive tags")
     out_of_place: bool = Field(
         default=False,
         description="True if product was detected in a cell where it was not expected (grid detection only)"
     )
+
+    @field_validator('visual_features', mode='before')
+    @classmethod
+    def validate_visual_features(cls, v: Any) -> List[str]:
+        """Drop null entries; LLMs sometimes answer ``null`` or ``[null]``."""
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [v]
+        if isinstance(v, (list, tuple)):
+            return [str(item) for item in v if item is not None]
+        return v
+
+    @field_validator('extra', mode='before')
+    @classmethod
+    def validate_extra(cls, v: Any) -> Dict[str, str]:
+        """Drop null values and stringify the rest."""
+        if v is None:
+            return {}
+        if isinstance(v, Mapping):
+            return {str(key): str(value) for key, value in v.items() if value is not None}
+        return v
 
     @field_validator('confidence', mode='before')
     @classmethod
