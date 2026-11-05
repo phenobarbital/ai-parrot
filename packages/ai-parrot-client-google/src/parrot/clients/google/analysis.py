@@ -921,7 +921,7 @@ class GoogleAnalysis:
             if not response_text:
                 raise ValueError("Received an empty response from the model.")
 
-            print("RAW RESPONSE:", response_text)
+            self.logger.debug("image_identification raw response: %s", response_text)
             # Normalize detection_box coords if the model returned normalized floats.
             parsed_payload = json.loads(response_text)
             detections_payload = parsed_payload.get("detections", [])
