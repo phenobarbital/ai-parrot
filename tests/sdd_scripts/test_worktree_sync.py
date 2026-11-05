@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from parrot.sdd.scripts import worktree_sync
+from parrot.sdd.scripts import native_claude_sandbox, worktree_sync
 
 
 def _run(path: Path, *args: str) -> str:
@@ -72,6 +73,94 @@ def _patch_response(primary: Path, sha: str) -> tuple[dict[str, object], str]:
     parent = _run(primary, "rev-parse", f"{sha}^")
     patch = _run(primary, "format-patch", "--stdout", "-1", sha)
     return {"sha": sha, "parents": [{"sha": parent}], "commit": {"message": subject}}, patch
+
+
+def _native_cli() -> Path:
+    """Return the real Claude CLI or mark the required qualification unvalidated."""
+    if os.environ.get("PARROT_TEST_REAL_LLM") != "1":
+        pytest.skip("UNVALIDATED REQUIRED GATE: set PARROT_TEST_REAL_LLM=1 to exercise the real native boundary")
+    available, reason = native_claude_sandbox.native_sandbox_available()
+    if not available:
+        pytest.skip(f"UNVALIDATED REQUIRED GATE: native sandbox unavailable: {reason}")
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        executable = Path(directory) / "claude"
+        if executable.is_file() and os.access(executable, os.X_OK):
+            return executable
+    pytest.skip("UNVALIDATED REQUIRED GATE: Claude CLI is unavailable")
+
+
+def _native_session(feature: Path, command: str) -> subprocess.CompletedProcess[str]:
+    """Run one bounded Bash command through Claude's generated native policy."""
+    executable = _native_cli()
+    settings = native_claude_sandbox.native_sandbox_settings(feature)
+    source = Path(__file__).resolve().parents[2] / "packages" / "ai-parrot" / "src"
+    environment = {
+        **os.environ,
+        **native_claude_sandbox.native_root_env(feature),
+        native_claude_sandbox.BACKEND_ENV: native_claude_sandbox.BACKEND_NATIVE,
+        "PYTHONPATH": str(source),
+    }
+    prompt = f"Use Bash once to run exactly this command, then stop and report its output verbatim:\n{command}"
+    return subprocess.run(
+        [
+            str(executable),
+            "-p",
+            prompt,
+            "--model",
+            "haiku",
+            "--max-turns",
+            "2",
+            "--max-budget-usd",
+            "0.20",
+            "--permission-mode",
+            "bypassPermissions",
+            "--tools",
+            "Bash",
+            "--setting-sources",
+            "project,local",
+            "--settings",
+            json.dumps(settings),
+            "--output-format",
+            "stream-json",
+            "--verbose",
+        ],
+        cwd=feature,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        text=True,
+        capture_output=True,
+        timeout=120,
+        check=False,
+    )
+
+
+def _install_sync_runner(feature: Path, sha: str) -> None:
+    """Commit a fixture runner so the sandbox starts from a clean worktree."""
+    runner = feature / "native_sync_runner.py"
+    runner.write_text(
+        "from pathlib import Path\n"
+        "from parrot.sdd.scripts import worktree_sync\n"
+        "try:\n"
+        f"    result = worktree_sync.sync(Path({str(feature)!r}), 'dev', cherry_picks=[{sha!r}])\n"
+        "except worktree_sync.SyncError as exc:\n"
+        "    raise SystemExit(exc.exit_code) from None\n"
+        "raise SystemExit(result.exit_code)\n",
+        encoding="utf-8",
+    )
+    _run(feature, "add", runner.name)
+    _run(feature, "commit", "-m", "native qualification runner")
+
+
+def _git_control_paths(feature: Path) -> tuple[Path, Path]:
+    """Return the disposable repository's protected common and worktree configs."""
+    common = Path(_run(feature, "rev-parse", "--path-format=absolute", "--git-common-dir")) / "config"
+    worktree = Path(_run(feature, "rev-parse", "--path-format=absolute", "--git-path", "config.worktree"))
+    return common, worktree
+
+
+def _refs(path: Path) -> str:
+    """Snapshot every reference in a disposable repository."""
+    return _run(path, "for-each-ref", "--format=%(refname) %(objectname)")
 
 
 def test_host_merge_from_outside(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -150,6 +239,92 @@ def test_sandbox_cherry_pick_via_gh_patch(tmp_path: Path, monkeypatch: pytest.Mo
     assert (feature / "patch.txt").read_text(encoding="utf-8") == "from gh\n"
     assert f"(cherry picked from commit {sha})" in _run(feature, "log", "-1", "--format=%B")
     assert _run(feature, "config", "--get-all", "remote.origin.pushurl") == "no_push"
+
+
+def test_native_policy_sync_with_protected_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A real native sandbox applies patches without writing protected config."""
+    origin, primary, feature = _repository(tmp_path)
+    sibling = tmp_path / "sibling"
+    _run(primary, "worktree", "add", "-b", "sibling", str(sibling), "dev")
+    _configure_sandbox(feature)
+    (primary / "patch.txt").write_text("from native gh\n", encoding="utf-8")
+    _run(primary, "add", "patch.txt")
+    _run(primary, "commit", "-m", "native gh patch")
+    sha = _run(primary, "rev-parse", "HEAD")
+    _install_gh_stub(tmp_path, monkeypatch, {sha: _patch_response(primary, sha)})
+    _install_sync_runner(feature, sha)
+
+    common_config, worktree_config = _git_control_paths(feature)
+    common_before = common_config.read_bytes()
+    worktree_before = worktree_config.read_bytes()
+    primary_before = (_run(primary, "rev-parse", "HEAD"), _run(primary, "status", "--porcelain"), _refs(primary))
+    sibling_before = (_run(sibling, "rev-parse", "HEAD"), _run(sibling, "status", "--porcelain"))
+    remote_before = _refs(origin)
+    source = Path(__file__).resolve().parents[2] / "packages" / "ai-parrot" / "src"
+    command = (
+        f"printf BAD > {json.dumps(str(common_config))}; echo COMMON_WRITE=$?; "
+        f"printf BAD > {json.dumps(str(worktree_config))}; echo WORKTREE_WRITE=$?; "
+        f"PYTHONPATH={json.dumps(str(source))} python native_sync_runner.py; echo SYNC_EXIT=$?"
+    )
+
+    session = _native_session(feature, command)
+    evidence = f"{session.stdout}\n{session.stderr}"
+
+    assert session.returncode == 0, evidence[-2000:]
+    assert "COMMON_WRITE=" in evidence and "COMMON_WRITE=0" not in evidence
+    assert "WORKTREE_WRITE=" in evidence and "WORKTREE_WRITE=0" not in evidence
+    assert "SYNC_EXIT=0" in evidence
+    assert (feature / "patch.txt").read_text(encoding="utf-8") == "from native gh\n"
+    assert common_config.read_bytes() == common_before
+    assert worktree_config.read_bytes() == worktree_before
+    assert (_run(primary, "rev-parse", "HEAD"), _run(primary, "status", "--porcelain"), _refs(primary)) == primary_before
+    assert (_run(sibling, "rev-parse", "HEAD"), _run(sibling, "status", "--porcelain")) == sibling_before
+    assert _refs(origin) == remote_before
+    assert _run(feature, "status", "--porcelain") == ""
+
+
+def test_native_policy_missing_protection_refuses(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Missing host protection is refused without attempted config repair."""
+    origin, primary, feature = _repository(tmp_path)
+    sibling = tmp_path / "sibling"
+    _run(primary, "worktree", "add", "-b", "sibling", str(sibling), "dev")
+    (primary / "patch.txt").write_text("must not apply\n", encoding="utf-8")
+    _run(primary, "add", "patch.txt")
+    _run(primary, "commit", "-m", "refused native patch")
+    sha = _run(primary, "rev-parse", "HEAD")
+    _install_gh_stub(tmp_path, monkeypatch, {sha: _patch_response(primary, sha)})
+    gh_called = feature / "gh-was-called"
+    gh_stub = tmp_path / "gh"
+    gh_stub.write_text(
+        gh_stub.read_text(encoding="utf-8").replace("#!/bin/sh\n", '#!/bin/sh\n: > "$GH_CALLED"\n', 1),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GH_CALLED", str(gh_called))
+    _install_sync_runner(feature, sha)
+
+    common_config, worktree_config = _git_control_paths(feature)
+    assert not worktree_config.exists()
+    common_before = common_config.read_bytes()
+    feature_before = (_run(feature, "rev-parse", "HEAD"), _run(feature, "status", "--porcelain"), _refs(feature))
+    primary_before = (_run(primary, "rev-parse", "HEAD"), _run(primary, "status", "--porcelain"))
+    sibling_before = (_run(sibling, "rev-parse", "HEAD"), _run(sibling, "status", "--porcelain"))
+    remote_before = _refs(origin)
+    source = Path(__file__).resolve().parents[2] / "packages" / "ai-parrot" / "src"
+    command = f"PYTHONPATH={json.dumps(str(source))} python native_sync_runner.py; echo SYNC_EXIT=$?"
+
+    session = _native_session(feature, command)
+    evidence = f"{session.stdout}\n{session.stderr}"
+
+    assert session.returncode == 0, evidence[-2000:]
+    assert "SYNC_EXIT=5" in evidence
+    assert not gh_called.exists()
+    assert not (feature / "patch.txt").exists()
+    assert common_config.read_bytes() == common_before
+    assert not worktree_config.exists()
+    assert (_run(feature, "rev-parse", "HEAD"), _run(feature, "status", "--porcelain"), _refs(feature)) == feature_before
+    assert (_run(primary, "rev-parse", "HEAD"), _run(primary, "status", "--porcelain")) == primary_before
+    assert (_run(sibling, "rev-parse", "HEAD"), _run(sibling, "status", "--porcelain")) == sibling_before
+    assert _refs(origin) == remote_before
 
 
 def test_sandbox_second_patch_conflict_restores_batch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
