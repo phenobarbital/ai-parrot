@@ -1,63 +1,53 @@
 # Tools, Loaders & RAG
 
-Agents are useful only as far as their tools let them act on the world.
-AI-Parrot treats tools as first-class citizens: a docstring becomes
-the LLM-facing description, a Pydantic model becomes the schema.
+Agents are only as useful as their tools allow them to act on the world.
+Without tools, an agent can only reason in isolation—it cannot access
+external data, execute actions, or manipulate the environment. AI-Parrot
+treats tools as first-class citizens: a docstring becomes the LLM-facing
+description that tells the model what the tool does, and Pydantic models
+define the input schema that becomes the function specification sent to
+the model. This design philosophy ensures that every tool is self-documenting
+and type-safe.
 
-## What lives here
+## Key Concepts
 
-### Tools
+- **@tool Decorator**: The fastest path to creating callable tools. Simply
+  annotate any async function with `@tool` and it becomes available to any
+  agent in your system. The decorator automatically generates the schema
+  from the function signature and docstring.
+- **AbstractToolkit**: Groups related tools that share state such as
+  authentication credentials, client connections, or rate-limit budgets.
+  Toolkits provide a clean separation between tool logic and resource
+  management, making it easy to compose complex agent behaviors.
+- **Loaders**: Transform documents of various formats—PDFs, HTML, DOCX,
+  audio transcripts, database rows, web pages—into chunks ready for vector
+  storage. Every loader subclasses `BaseLoader` and implements
+  `async def load() -> list[Document]`, providing a consistent interface
+  for data ingestion.
+- **RAG Pipeline**: The complete flow from raw documents to agent context.
+  Loaders → chunkers → embeddings → vector store → knowledge retrieval →
+  agent context. Each stage is pluggable, allowing you to swap components
+  based on your specific requirements.
 
-- **`@tool` decorator** — the fast path. Annotate any async function
-  and it becomes callable by any agent.
-- **`AbstractToolkit`** — group related tools that share state
-  (auth, clients, rate-limit budget).
-- **`OpenAPIToolkit`** — turn any OpenAPI spec into a dynamic toolkit.
+## What You Can Build
 
-### Loaders
+- **Custom toolkits** by grouping related `@tool` functions with shared
+  authentication or client state. For example, a GitHub toolkit that
+  includes tools for creating issues, reviewing PRs, and managing repos,
+  all sharing a single authenticated GitHub client.
+- **Document ingestion pipelines** that pull from PDFs, web pages, or
+  databases and prepare them for semantic search, enabling your agents
+  to answer questions about your internal documents.
+- **Multi-origin retrieval** using the MultiStoreSearch toolkit to query
+  across vector stores, PageIndex, GraphIndex, and the LLM Wiki simultaneously,
+  giving agents access to all your knowledge sources in one search.
+- **Agentic workflows** where tools read and write to the LLM Wiki,
+  enabling agents to build persistent knowledge that survives restarts
+  and can be shared across multiple agents.
 
-`parrot.loaders` turns documents — PDFs, HTML, DOCX, audio transcripts,
-database rows, web pages — into chunks ready for the vector store.
-Every loader subclasses `BaseLoader` and implements
-`async def load() -> list[Document]`.
+## Deep Dive
 
-### RAG pipeline
-
-Loaders → chunkers → embeddings (see [LLM Clients](./llm-clients.md))
-→ vector store (see [Memory & Knowledge](./memory-knowledge.md)) →
-`parrot.knowledge` retrieves and assembles context → agent uses it
-in its system prompt or as a tool result.
-
-```mermaid
-flowchart LR
-    Doc[Documents] --> L[Loader]
-    L --> C[Chunker]
-    C --> E[Embeddings]
-    E --> VS[(Vector Store)]
-    Q[User Query] --> R[Retriever]
-    VS --> R
-    R --> A[Agent]
-```
-
-## Golden rules
-
-1. **Docstrings are the API for the LLM** — write them with the model
-   as your audience, not your colleagues.
-2. **Use Pydantic for tool inputs** — the schema becomes the function
-   spec sent to the model. `Field(description=...)` matters.
-3. **Tools must be async** — blocking I/O inside a tool stalls every
-   other agent on the loop.
-
-## Read next
-
-- [Tools Reference](https://github.com/phenobarbital/ai-parrot/wiki/Tools-%26-Toolkits-AI-Parrot-Tools-Documentation), [Sandbox Tool](https://github.com/phenobarbital/ai-parrot/wiki/Tools-%26-Toolkits-gVisor-Installation-Guide-for-AI-Parrot-Secure-Sandbox),
-  [What-If Scenarios](https://github.com/phenobarbital/ai-parrot/wiki/Tools-%26-Toolkits-What-If-Scenario-Analysis), [Hierarchy Tool](https://github.com/phenobarbital/ai-parrot/wiki/Tools-%26-Toolkits-EmployeesTool-Employee-Hierarchy-Tool-for-AI-Parrot)
-- [MultiStoreSearch Toolkit](https://github.com/phenobarbital/ai-parrot/wiki/Tools-%26-Toolkits-MultiStoreSearch-Toolkit-%E2%80%94-Multi-Origin-Retrieval-for-Agents) — multi-origin
-  retrieval across vector stores, PageIndex, GraphIndex & ParrotWiki
-- [Charts & Visualization](https://github.com/phenobarbital/ai-parrot/wiki/Outputs-%26-A2UI-%3D%3D%3D-D3.js-%3D%3D%3D)
-- [Loaders Metadata](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Loader-Metadata-Standard)
-
-## API reference
-
-- [API Reference → Tools](../api-reference/tools.md)
-- [API Reference → Loaders](../api-reference/loaders.md)
+For implementation details, available toolkits, and configuration options,
+see the [Tools & Toolkits](https://github.com/phenobarbital/ai-parrot/wiki/Tools-%26-Toolkits)
+and [Stores & Loaders](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders)
+sections in the Wiki.
