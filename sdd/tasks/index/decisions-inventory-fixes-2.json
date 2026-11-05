@@ -1,0 +1,74 @@
+{
+  "feature": "decisions-inventory-fixes-2",
+  "feature_id": "FEAT-810",
+  "spec": "sdd/specs/decisions-inventory-fixes-2.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-05T00:00:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/knowledge/wiki/decisions/test_inventory.py",
+          "packages/ai-parrot/tests/knowledge/wiki/decisions/test_repository.py",
+          "packages/ai-parrot/tests/knowledge/wiki/decisions/test_consequences.py",
+          "packages/ai-parrot/tests/knowledge/wiki/decisions/test_consequence_digests.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:17ede18aa988bacd747139ea868b0b2e09cf7ddabce525a626709bacaf06c00c"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5214",
+      "slug": "fail-closed-hashless-gate",
+      "title": "Fail the snapshot closed when a decision page has no stored content hash",
+      "feature_id": "FEAT-810",
+      "feature": "decisions-inventory-fixes-2",
+      "spec": "sdd/specs/decisions-inventory-fixes-2.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies. Modifies decisions/inventory.py, test_inventory.py and test_repository.py; TASK-5215 depends on it because both edit InventorySnapshot.take in decisions/inventory.py and both edit test_inventory.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5214-fail-closed-hashless-gate.md"
+    },
+    {
+      "id": "TASK-5215",
+      "slug": "envelope-independent-manifest",
+      "title": "Derive the snapshot manifest from the decoded records, not the stored envelope",
+      "feature_id": "FEAT-810",
+      "feature": "decisions-inventory-fixes-2",
+      "spec": "sdd/specs/decisions-inventory-fixes-2.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5214"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies the same file as TASK-5214 (decisions/inventory.py, inside InventorySnapshot.take, and test_inventory.py) — serialized after it; TASK-5214's insertion above inventory.py:104 shifts the manifest block this task edits.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5215-envelope-independent-manifest.md"
+    }
+  ]
+}

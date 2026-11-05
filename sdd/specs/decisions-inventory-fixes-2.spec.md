@@ -191,6 +191,7 @@ tests:
 - packages/ai-parrot/tests/knowledge/wiki/decisions/test_inventory.py
 - packages/ai-parrot/tests/knowledge/wiki/decisions/test_repository.py
 - packages/ai-parrot/tests/knowledge/wiki/decisions/test_consequences.py
+- packages/ai-parrot/tests/knowledge/wiki/decisions/test_consequence_digests.py
 markers: none
 
 ### Test Data / Fixtures
