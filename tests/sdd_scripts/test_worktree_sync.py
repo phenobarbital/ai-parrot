@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from parrot.sdd.scripts import native_claude_sandbox, worktree_sync
+
+#: The host PATH captured at import, before any test's gh stub narrows PATH to ``<tmp>:/usr/bin``.
+_HOST_PATH = os.environ.get("PATH", "")
 
 
 def _run(path: Path, *args: str) -> str:
@@ -95,10 +100,10 @@ def _native_cli() -> Path:
     available, reason = native_claude_sandbox.native_sandbox_available()
     if not available:
         pytest.skip(f"UNVALIDATED REQUIRED GATE: native sandbox unavailable: {reason}")
-    for directory in os.environ.get("PATH", "").split(os.pathsep):
-        executable = Path(directory) / "claude"
-        if executable.is_file() and os.access(executable, os.X_OK):
-            return executable
+    # Resolve against the host PATH: _install_gh_stub has already narrowed os.environ["PATH"].
+    found = shutil.which("claude", path=_HOST_PATH)
+    if found:
+        return Path(found)
     pytest.skip("UNVALIDATED REQUIRED GATE: Claude CLI is unavailable")
 
 
@@ -277,7 +282,7 @@ def test_native_policy_sync_with_protected_config(tmp_path: Path, monkeypatch: p
     command = (
         f"printf BAD > {json.dumps(str(common_config))}; echo COMMON_WRITE=$?; "
         f"printf BAD > {json.dumps(str(worktree_config))}; echo WORKTREE_WRITE=$?; "
-        f"PYTHONPATH={json.dumps(str(source))} python native_sync_runner.py; echo SYNC_EXIT=$?"
+        f"PYTHONPATH={json.dumps(str(source))} {json.dumps(sys.executable)} native_sync_runner.py; echo SYNC_EXIT=$?"
     )
 
     session = _native_session(feature, command)
@@ -327,7 +332,7 @@ def test_native_policy_missing_protection_refuses(tmp_path: Path, monkeypatch: p
     sibling_before = (_run(sibling, "rev-parse", "HEAD"), _run(sibling, "status", "--porcelain"))
     remote_before = _refs(origin)
     source = Path(__file__).resolve().parents[2] / "packages" / "ai-parrot" / "src"
-    command = f"PYTHONPATH={json.dumps(str(source))} python native_sync_runner.py; echo SYNC_EXIT=$?"
+    command = f"PYTHONPATH={json.dumps(str(source))} {json.dumps(sys.executable)} native_sync_runner.py; echo SYNC_EXIT=$?"
 
     session = _native_session(feature, command)
     evidence = f"{session.stdout}\n{session.stderr}"
