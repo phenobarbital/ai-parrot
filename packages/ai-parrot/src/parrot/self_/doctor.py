@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from parrot.launcher import MANAGED_PYTHON, parrot_home, script_path  # TASK-4071
+from parrot.launcher import InstallRoot, MANAGED_PYTHON, parrot_home, script_path  # TASK-4071, TASK-5184
 from parrot.self_.components import managed_venv  # TASK-4079
 
 logger = logging.getLogger(__name__)
@@ -635,6 +635,60 @@ def _check_host_configs(root: Path) -> list[DoctorCheck]:
                     name="host config: google cross-repo collision", ok=False,
                     detail=f"{path} is user-global but has entries baked for another repo: {'; '.join(collisions)}",
                     fix="re-install the Google host with --portable so the user-global entries carry no repo paths"))
+    checks.extend(_check_host_config_forms(root))
+    return checks
+
+
+def _check_checkout(resolved: InstallRoot) -> DoctorCheck:
+    """Describe primary or explicitly selected roots; fail implicit linked checkouts."""
+    if not resolved.linked:
+        return DoctorCheck(name="repo: checkout", ok=True, detail=f"{resolved.root} (primary checkout)")
+    if resolved.explicit:
+        return DoctorCheck(
+            name="repo: checkout",
+            ok=True,
+            detail=f"{resolved.root} (explicitly selected linked worktree of {resolved.shared_root})",
+        )
+    return DoctorCheck(
+        name="repo: checkout",
+        ok=False,
+        detail=f"{resolved.root} is a linked worktree of {resolved.shared_root}",
+        fix=f"run doctor and the installers from {resolved.shared_root}, or pass --project {resolved.root}",
+    )
+
+
+def _check_host_config_forms(root: Path) -> list[DoctorCheck]:
+    """Emit one informational deployment-form check for each existing host config file."""
+    from parrot.knowledge.wiki.claude_code.installer import _current_portable_mode as claude_portable_mode
+    from parrot.knowledge.wiki.codex.installer import _current_portable_mode as codex_portable_mode
+    from parrot.knowledge.wiki.google.installer import portable_mode_of_config as google_config_form
+    from parrot.knowledge.wiki.google.installer import toolkit_config_paths
+
+    google, google_local = toolkit_config_paths(root)
+    targets = (
+        ("claude .mcp.json", root / ".mcp.json", lambda: claude_portable_mode(root)),
+        ("codex config.toml", root / ".codex" / "config.toml", lambda: codex_portable_mode(root)),
+        # Each Google config reports its OWN form: the single-file helper never falls back to the
+        # other file, so a repo-local entry cannot mask the user-global one — and ``root`` stays a
+        # real directory the managed-entry check is free to use.
+        ("google mcp_config.json (user-global)", google, lambda: google_config_form(google, root)),
+        ("google mcp_config.json (repo-local)", google_local, lambda: google_config_form(google_local, root)),
+    )
+    checks: list[DoctorCheck] = []
+    for label, path, infer in targets:
+        if not path.is_file():
+            continue
+        mode = infer()
+        detail = "portable" if mode is True else "baked absolute paths" if mode is False else "no managed entries"
+        checks.append(
+            DoctorCheck(
+                name=f"host config: {label} form",
+                ok=True,
+                detail=detail,
+                fix="" if mode is not False else "multi-machine repos: re-install with --portable",
+                informational=True,
+            )
+        )
     return checks
 
 
@@ -661,7 +715,12 @@ def _check_toolkits(root: Path) -> list[DoctorCheck]:
     return checks
 
 
-def run_doctor(root: Path, *, scope: DoctorScope = "full") -> list[DoctorCheck]:
+def run_doctor(
+    root: Path,
+    *,
+    scope: DoctorScope = "full",
+    install_root: InstallRoot | None = None,
+) -> list[DoctorCheck]:
     """Run the checks of ``scope`` in spec order; never raises for a broken environment.
 
     "runtime-only" (C14 bootstrap) touches neither ``root`` nor the network and includes parrot_tools.wiki
@@ -672,6 +731,8 @@ def run_doctor(root: Path, *, scope: DoctorScope = "full") -> list[DoctorCheck]:
               _check_runtime_lockstep()]
     if scope == "runtime-only":
         return checks
+    if install_root is not None:
+        checks.append(_check_checkout(install_root))
     checks.extend(_check_host_configs(root))
     checks.extend(_check_toolkits(root))
     if scope == "sdd" or (root / "sdd").is_dir():

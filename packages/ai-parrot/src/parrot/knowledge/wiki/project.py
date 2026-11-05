@@ -1024,14 +1024,15 @@ def config_path(root: Path) -> Path:
 
 
 def _is_temp_root(candidate: Path) -> bool:
-    """True when ``candidate`` is the system temp directory or one of its ancestors.
+    """True when ``candidate`` is the system temp directory itself.
 
     The upward walks in :func:`find_project_root` and :func:`find_shared_root` stop
     there: a stray ``/tmp/.git`` (or ``/tmp/.parrot``) left by an unrelated process
     must never turn every ``tmp_path``-based test — or any scratch checkout under the
     temp dir — into a child of a ``/tmp`` "project" (issue:1270bc83b087). Projects
-    *below* the temp dir are unaffected; only the temp dir itself and its parents
-    (``/``) are excluded.
+    *below* the temp dir are unaffected; only the temp dir itself is excluded — not
+    its ancestors, which may legitimately contain project checkouts (e.g.
+    ``TMPDIR=/home/u/tmp`` must not stop the walk at ``/home/u``).
 
     Args:
         candidate: A resolved directory from the upward walk.
@@ -1043,7 +1044,7 @@ def _is_temp_root(candidate: Path) -> bool:
         temp_root = Path(tempfile.gettempdir()).resolve()
     except (OSError, RuntimeError):
         return False
-    return candidate == temp_root or candidate in temp_root.parents
+    return candidate == temp_root
 
 
 def find_project_root(start: Path | None = None) -> Path | None:

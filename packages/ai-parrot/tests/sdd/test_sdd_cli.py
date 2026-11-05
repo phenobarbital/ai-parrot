@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -163,6 +164,53 @@ def test_portable_flag(tmp_path: Path) -> None:
         "parrot sdd worktree guard --hook || exit 2"
         in (tmp_path / ".claude/agents/sdd-worker.md").read_text()
     )
+
+
+def test_sdd_cli_refuses_linked_worktree_and_resolves_subdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Write verbs refuse linked checkouts while status and explicit targets remain available."""
+    primary = tmp_path / "primary"
+    linked = tmp_path / "linked"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(primary)], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(primary),
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-qm",
+            "init",
+            "--allow-empty",
+        ],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(primary), "worktree", "add", "-q", str(linked)], check=True)
+    calls: list[Path] = []
+    monkeypatch.setattr(
+        "parrot.sdd.cli.install_sdd_integration", lambda root, *args, **kwargs: calls.append(root) or []
+    )
+    monkeypatch.chdir(linked)
+    runner = CliRunner()
+
+    for command in (["install", "--dry-run"], ["uninstall", "--dry-run"]):
+        result = runner.invoke(sdd, command)
+        assert result.exit_code == 1 and "linked worktree" in result.output
+    assert calls == []
+    assert runner.invoke(sdd, ["status", "--json"]).exit_code == 0
+
+    result = runner.invoke(sdd, ["install", "--path", str(linked), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert calls == [linked.resolve()]
+
+    nested = primary / "nested"
+    nested.mkdir()
+    monkeypatch.chdir(nested)
+    result = runner.invoke(sdd, ["install", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert calls[-1] == primary.resolve()
 
 
 def test_status_human_output(tmp_path: Path) -> None:

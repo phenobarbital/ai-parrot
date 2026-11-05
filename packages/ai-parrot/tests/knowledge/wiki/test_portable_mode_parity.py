@@ -9,7 +9,9 @@ a baked install to portable.
 
 from __future__ import annotations
 
+import dataclasses
 import json
+import sys
 import tomllib
 from pathlib import Path
 
@@ -18,6 +20,8 @@ from parrot.knowledge.wiki.claude_code import assets as claude_assets
 from parrot.knowledge.wiki.claude_code import installer as claude
 from parrot.knowledge.wiki.codex import assets as codex_assets
 from parrot.knowledge.wiki.codex import installer as codex
+from parrot.knowledge.wiki.google import installer as google
+from parrot.mcp import portability
 
 _TOOLKITS = "toolkits:\n  memory:\n    class: tests.mcp.stub_toolkit.StubToolkit\n    enabled: true\n"
 
@@ -38,6 +42,17 @@ def _install_claude(root: Path, portable: bool | None) -> None:
 
 def _install_codex(root: Path, portable: bool | None) -> None:
     codex.install_codex_integration(root, gitignore=False, bookstore=False, portable=portable)
+
+
+def _install_google(root: Path, portable: bool | None) -> None:
+    """Install Google against a test-local user-global MCP config."""
+    google.install_google_integration(
+        root,
+        gitignore=False,
+        bookstore=False,
+        mcp_config_path=root / "google-mcp.json",
+        portable=portable,
+    )
 
 
 def _claude_servers(root: Path) -> dict:
@@ -115,6 +130,90 @@ def test_mixed_toolkit_entries_are_portable(root: Path) -> None:
     assert claude._current_portable_mode(root) is True
 
 
-def test_no_config_is_baked(root: Path) -> None:
-    assert claude._current_portable_mode(root) is False
-    assert codex._current_portable_mode(root) is False
+@pytest.mark.parametrize("launcher", [False, True])
+def test_no_config_follows_launcher_rule(root: Path, monkeypatch: pytest.MonkeyPatch, launcher: bool) -> None:
+    """Fresh hosts use launcher availability, then preserve and explicitly change that form."""
+    google_path = root / "google-mcp.json"
+    assert claude._current_portable_mode(root) is None
+    assert codex._current_portable_mode(root) is None
+    assert google._current_portable_mode(root, google_path) is None
+
+    monkeypatch.setattr(portability, "managed_launcher_on_path", lambda: launcher)
+    actions = [
+        *claude.install_claude_integration(root, git_hook=False, gitignore=False, bookstore=False, portable=None),
+        *codex.install_codex_integration(root, gitignore=False, bookstore=False, portable=None),
+        *google.install_google_integration(
+            root, gitignore=False, bookstore=False, mcp_config_path=google_path, portable=None
+        ),
+    ]
+    expected = launcher
+    assert claude._current_portable_mode(root) is expected
+    assert codex._current_portable_mode(root) is expected
+    assert google._current_portable_mode(root, google_path) is expected
+    notes = [action for action in actions if action.startswith("note: host config baked to absolute paths")]
+    assert len(notes) == (0 if launcher else 3)
+
+    monkeypatch.setattr(portability, "managed_launcher_on_path", lambda: not launcher)
+    _install_claude(root, None)
+    _install_codex(root, None)
+    _install_google(root, None)
+    assert claude._current_portable_mode(root) is expected
+    assert codex._current_portable_mode(root) is expected
+    assert google._current_portable_mode(root, google_path) is expected
+
+    _install_claude(root, not expected)
+    _install_codex(root, not expected)
+    _install_google(root, not expected)
+    assert claude._current_portable_mode(root) is not expected
+    assert codex._current_portable_mode(root) is not expected
+    assert google._current_portable_mode(root, google_path) is not expected
+
+
+@pytest.mark.parametrize("explicit", [None, False, True])
+@pytest.mark.parametrize("current", [None, False, True])
+@pytest.mark.parametrize("launcher", [False, True])
+def test_resolve_portable_mode_truth_table(
+    explicit: bool | None, current: bool | None, launcher: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """All precedence combinations produce the expected form, reason and note."""
+    monkeypatch.setattr(portability, "managed_launcher_on_path", lambda: launcher)
+    decision = portability.resolve_portable_mode(explicit, current=current)
+
+    expected = {
+        (True, None, False): (True, "explicit", None),
+        (True, None, True): (True, "explicit", None),
+        (True, False, False): (True, "explicit", None),
+        (True, False, True): (True, "explicit", None),
+        (True, True, False): (True, "explicit", None),
+        (True, True, True): (True, "explicit", None),
+        (False, None, False): (False, "explicit", None),
+        (False, None, True): (False, "explicit", None),
+        (False, False, False): (False, "explicit", None),
+        (False, False, True): (False, "explicit", None),
+        (False, True, False): (False, "explicit", None),
+        (False, True, True): (False, "explicit", None),
+        (None, False, False): (False, "sticky", None),
+        (None, False, True): (False, "sticky", None),
+        (None, True, False): (True, "sticky", None),
+        (None, True, True): (True, "sticky", None),
+        (None, None, True): (True, "launcher", None),
+        (
+            None,
+            None,
+            False,
+        ): (
+            False,
+            "baked-fallback",
+            portability.BAKED_NOTE_TEMPLATE.format(prefix=sys.prefix),
+        ),
+    }[(explicit, current, launcher)]
+
+    assert (decision.portable, decision.reason, decision.note) == expected
+
+
+def test_portable_decision_is_immutable() -> None:
+    """Portable decisions cannot be altered after the emitter consumes them."""
+    decision = portability.PortableDecision(True, "explicit", None)
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        decision.portable = False

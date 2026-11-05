@@ -184,14 +184,17 @@ nothing changes.
 <!-- verify: flag=claude install:--portable -->
 <!-- verify: flag=codex install:--portable -->
 <!-- verify: flag=google install:--portable -->
+<!-- verify: flag=toolkits install:--portable -->
+<!-- verify: flag=toolkits enable:--portable -->
 ```bash
 parrot claude install --portable
 parrot codex install --portable
 parrot google install --portable
 ```
 
-The default stays baked absolute paths. `--portable` writes bare launcher commands (`wikitoolkit`, `parrot`,
-`bookstore`) that need the global launcher on PATH, so the file can be committed:
+Fresh host configurations use portable commands when the managed launcher is on PATH.
+Otherwise the installer writes baked paths and prints a note explaining how to migrate.
+Existing managed configurations keep their form until --portable or --no-portable is supplied.
 
 - Claude Code: `.mcp.json` entries and the `PreToolUse` hook use bare commands; no `PARROT_PROJECT` pin is
   emitted, the host's cwd scopes the project.
@@ -200,9 +203,10 @@ The default stays baked absolute paths. `--portable` writes bare launcher comman
 - Google Antigravity: bare commands with no absolute paths or `cwd`, which a multi-repo-safe
   `~/.gemini/config/mcp_config.json` requires.
 
-Stickiness: `parrot toolkits` re-emits a host's toolkit entries in portable form if, and only if, that host's
-current managed `wikitoolkit` entry is already portable. `.mcp.json.example` deliberately keeps the resolver
-form for monorepo developers: the portable form only works once the global install puts `wikitoolkit` on PATH.
+Run installers from the primary checkout. An implicit linked-worktree target is refused;
+pass --path DIRECTORY to select a worktree deliberately. Toolkit install, uninstall,
+enable and disable accept this override. Wiki configuration and initial builds remain
+on the primary checkout while host assets are written into the selected checkout.
 
 ## The SDD flow in any repository
 

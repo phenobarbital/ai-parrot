@@ -13,6 +13,8 @@ from pathlib import Path
 
 import click
 
+from parrot.launcher import LinkedWorktreeError, install_root, require_primary_checkout
+
 host_option = click.option(
     "--host",
     "hosts_",
@@ -85,7 +87,18 @@ def _resolve_names(root: Path, names: tuple[str, ...], hosts) -> list[str]:
     return selected or []
 
 
-def _warn_user_global(hosts) -> list[str]:
+def _root(path_: Path | None = None, *, write: bool) -> Path:
+    """Resolve the target checkout and refuse only implicit linked-worktree mutations."""
+    try:
+        resolved = install_root(Path.cwd(), explicit=path_)
+        if write:
+            require_primary_checkout(resolved)
+    except LinkedWorktreeError as exc:
+        raise click.ClickException(str(exc)) from exc
+    return resolved.root
+
+
+def _warn_user_global(root: Path, hosts) -> list[str]:
     """Warn for any host whose primary config is user-global (Google).
 
     Spec §8 Q1 interim default (a): Antigravity's `~/.gemini/config/mcp_config.json`
@@ -95,7 +108,7 @@ def _warn_user_global(hosts) -> list[str]:
     from parrot.mcp.hosts import get_adapter
 
     return [
-        f"{kind.value}: writes {get_adapter(kind).config_paths(Path.cwd())[0]} — "
+        f"{kind.value}: writes {get_adapter(kind).config_paths(root)[0]} — "
         f"USER-GLOBAL, affects every project on this machine"
         for kind in hosts
         if not get_adapter(kind).is_repo_scoped()
@@ -123,7 +136,7 @@ def list_(hosts_: tuple[str, ...]) -> None:
 
     from parrot.mcp.toolkit_install import inventory
 
-    root = Path.cwd()
+    root = _root(write=False)
     hosts = _resolve_hosts(root, hosts_)
     rows = inventory(root, hosts)
 
@@ -161,7 +174,7 @@ def status(hosts_: tuple[str, ...]) -> None:
     """Show each host's resolved config paths, scope and health."""
     from parrot.mcp.hosts import HostKind, get_adapter
 
-    root = Path.cwd()
+    root = _root(write=False)
     hosts = [HostKind(h) for h in hosts_] if hosts_ else list(HostKind)
 
     for kind in hosts:
@@ -177,22 +190,30 @@ def status(hosts_: tuple[str, ...]) -> None:
 @click.argument("names", nargs=-1)
 @host_option
 @yes_option
-def install(names: tuple[str, ...], hosts_: tuple[str, ...], yes: bool) -> None:
-    """Seed NAMES into .parrot/mcp-toolkits.yaml and register them with each host."""
+@click.option("--path", "path_", type=click.Path(exists=True, file_okay=False, path_type=Path), default=None)
+@click.option(
+    "--portable/--no-portable",
+    default=None,
+    help="Bare launcher commands or baked paths; default keeps form then follows the launcher.",
+)
+def install(
+    names: tuple[str, ...], hosts_: tuple[str, ...], yes: bool, path_: Path | None, portable: bool | None
+) -> None:
+    """Seed selected toolkits at the resolved target using the selected command form."""
+    root = _root(path_, write=True)
     from parrot.mcp.toolkit_install import install_toolkits
 
-    root = Path.cwd()
     hosts = _resolve_hosts(root, hosts_)
     selected = _resolve_names(root, names, hosts)
     if not selected:
         click.echo("Nothing selected.")
         return
-    for warning in _warn_user_global(hosts):
+    for warning in _warn_user_global(root, hosts):
         click.secho(f"  ⚠ {warning}", fg="yellow")
     if not yes and not click.confirm(f"Install {', '.join(selected)} into {[h.value for h in hosts]}?"):
         return
     try:
-        report = install_toolkits(root, selected, hosts)
+        report = install_toolkits(root, selected, hosts, portable=portable)
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
     _render(report)
@@ -213,21 +234,22 @@ def install(names: tuple[str, ...], hosts_: tuple[str, ...], yes: bool) -> None:
 @click.argument("names", nargs=-1)
 @host_option
 @yes_option
-def uninstall(names: tuple[str, ...], hosts_: tuple[str, ...], yes: bool) -> None:
-    """Remove NAMES from .parrot/mcp-toolkits.yaml and deregister them from each host.
+@click.option("--path", "path_", type=click.Path(exists=True, file_okay=False, path_type=Path), default=None)
+def uninstall(names: tuple[str, ...], hosts_: tuple[str, ...], yes: bool, path_: Path | None) -> None:
+    """Remove selected toolkit configuration from the resolved target.
 
     Removes CONFIG ONLY — spec §8 Q2: operator data (scraping plans, db results)
     is never deleted.
     """
+    root = _root(path_, write=True)
     from parrot.mcp.toolkit_install import uninstall_toolkits
 
-    root = Path.cwd()
     hosts = _resolve_hosts(root, hosts_)
     selected = _resolve_names(root, names, hosts)
     if not selected:
         click.echo("Nothing selected.")
         return
-    for warning in _warn_user_global(hosts):
+    for warning in _warn_user_global(root, hosts):
         click.secho(f"  ⚠ {warning}", fg="yellow")
     prompt = (
         f"Remove {', '.join(selected)} (config only — operator data is never deleted) from {[h.value for h in hosts]}?"
@@ -242,21 +264,29 @@ def uninstall(names: tuple[str, ...], hosts_: tuple[str, ...], yes: bool) -> Non
 @click.argument("names", nargs=-1)
 @host_option
 @yes_option
-def enable(names: tuple[str, ...], hosts_: tuple[str, ...], yes: bool) -> None:
-    """Enable NAMES and (re-)register them with each host."""
+@click.option("--path", "path_", type=click.Path(exists=True, file_okay=False, path_type=Path), default=None)
+@click.option(
+    "--portable/--no-portable",
+    default=None,
+    help="Bare launcher commands or baked paths; default keeps form then follows the launcher.",
+)
+def enable(
+    names: tuple[str, ...], hosts_: tuple[str, ...], yes: bool, path_: Path | None, portable: bool | None
+) -> None:
+    """Enable selected toolkits at the resolved target using the selected command form."""
+    root = _root(path_, write=True)
     from parrot.mcp.toolkit_install import set_toolkits_enabled
 
-    root = Path.cwd()
     hosts = _resolve_hosts(root, hosts_)
     selected = _resolve_names(root, names, hosts)
     if not selected:
         click.echo("Nothing selected.")
         return
-    for warning in _warn_user_global(hosts):
+    for warning in _warn_user_global(root, hosts):
         click.secho(f"  ⚠ {warning}", fg="yellow")
     if not yes and not click.confirm(f"Enable {', '.join(selected)} for {[h.value for h in hosts]}?"):
         return
-    report = set_toolkits_enabled(root, selected, True, hosts)
+    report = set_toolkits_enabled(root, selected, True, hosts, portable=portable)
     _render(report)
 
 
@@ -264,17 +294,18 @@ def enable(names: tuple[str, ...], hosts_: tuple[str, ...], yes: bool) -> None:
 @click.argument("names", nargs=-1)
 @host_option
 @yes_option
-def disable(names: tuple[str, ...], hosts_: tuple[str, ...], yes: bool) -> None:
-    """Disable NAMES and deregister them from each host, keeping the section and its kwargs."""
+@click.option("--path", "path_", type=click.Path(exists=True, file_okay=False, path_type=Path), default=None)
+def disable(names: tuple[str, ...], hosts_: tuple[str, ...], yes: bool, path_: Path | None) -> None:
+    """Disable selected toolkits without deleting their retained configuration."""
+    root = _root(path_, write=True)
     from parrot.mcp.toolkit_install import set_toolkits_enabled
 
-    root = Path.cwd()
     hosts = _resolve_hosts(root, hosts_)
     selected = _resolve_names(root, names, hosts)
     if not selected:
         click.echo("Nothing selected.")
         return
-    for warning in _warn_user_global(hosts):
+    for warning in _warn_user_global(root, hosts):
         click.secho(f"  ⚠ {warning}", fg="yellow")
     if not yes and not click.confirm(f"Disable {', '.join(selected)} for {[h.value for h in hosts]}?"):
         return

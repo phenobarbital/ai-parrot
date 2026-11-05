@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-804 — Installer portability gaps — one root, one portable rule
 **Spec**: `sdd/specs/installer-portability-gaps.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5189
@@ -274,4 +274,10 @@ worktree refusal must prove no unintended write; avoid network services and real
 
 ## Completion Note
 
-Pending. The finalizer records verified implementation evidence when this task is complete.
+Completed 2026-11-05 via sdd-worker orchestration.
+
+- Seat: gpt-5.6-sol · Backend: codex · Attempts: 1 · Duration: 226s · Tokens: n/a.
+- Wave merge-tier validation (5190+5191): 173 passed, 2 failed — test_portable_mode_parity::test_no_config_is_baked (transitional, owned by TASK-5193)
+  and test_sdd_cli::test_sdd_cli_mounts_every_helper (baseline red, also red in the TASK-5184 gate).
+- Closure deviation: `coder_record_review` fails server-side (`CoderReview() argument after ** must be a mapping`), so no review EvidenceRef
+  exists for `parrot sdd task finalize`; closed via `parrot sdd task close` with this hand-written note. Review/feedback NOT recorded; fix_commits: none.
