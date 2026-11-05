@@ -34,7 +34,7 @@
       "feature_id": "BRIEF-5baa3dae9606",
       "feature": "techwiki-page-names-sidebar",
       "spec": "sdd/briefs/techwiki-page-names-sidebar.brief.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": false,
       "parallelism_notes": "Edits bundle.py and test_techwiki_bundle.py after HOTFIX-5baa3dae9606-1; depends on BundlePage.module.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T14:18:02+00:00",
       "completed_at": null,
       "file": "sdd/briefs/techwiki-page-names-sidebar/tasks/HOTFIX-5baa3dae9606-2-techwiki-sidebar-reference-index.md"
     }
