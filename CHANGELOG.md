@@ -9,6 +9,37 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.1.1] — 2026-11-05 — First published 2.1.x; documentation site and technical-wiki fixes
+
+Patch release. Core and its siblings move to `2.1.1`; the fifteen `ai-parrot-client-*`
+satellites and `ai-parrot-openlit-bridge` move to `1.1.1`. Every sibling now pins
+`ai-parrot>=2.1.1`.
+
+**`2.1.0` never reached PyPI** — its `deploy` job was skipped because the
+`smoke-sdd-foreign` release gate failed. `2.1.1` is therefore the first published
+`2.1.x`: everything listed under `[2.1.0]` ships here as well.
+
+### Added
+- **Informative documentation site (FEAT-803):** a GitHub Pages site with chapter
+  overviews (hub, core, data, integrations), tutorials (first chatbot, first agent,
+  first tool, deployment), a minimal-configuration section and a curated tools page,
+  built strictly with overlay verification.
+
+### Fixed
+- **Release gate (the `2.1.0` blocker):** `remove_worktree`, `techwiki_check`,
+  `worktree_baseline`, `worktree_push_protection` and `worktree_sync` were documented in
+  the installed markdown with no C3 scenario in `test_wheel_only_foreign_repo.py`, which
+  failed `smoke-sdd-foreign` and skipped the PyPI publish.
+- **Technical wiki (FEAT-818/819 + hotfixes):** generated API pages emit Markdown links
+  instead of `[[wiki links]]`; artifact-forbidden characters are sanitized out of page
+  names; a single API Reference index page is linked from the sidebar; links in generated
+  pages are rewritten and validated; a re-export is linked only when its target has a
+  page, and a generated page's final link is no longer re-resolved; a package with no
+  public members of its own still renders an index page.
+- `IdentifiedProduct` tolerates null LLM values.
+
+---
+
 ## [2.1.0] — 2026-11-05 — Gemini 2.5 retirement, per-component LLM defaults, worktree sync-base, technical wiki
 
 Minor release. Core and its siblings move to `2.1.0`; the fifteen `ai-parrot-client-*`
