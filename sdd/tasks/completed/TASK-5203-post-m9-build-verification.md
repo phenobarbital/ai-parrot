@@ -154,3 +154,5 @@ def test_dependency_minimums_not_lowered() -> None:
 **Notes**: Merged by the engine; merge-tier validation green (tests/docs_site/test_site_build.py: 3 passed). Per-task semantic review deferred to the feature-level code review.
 
 **Deviations from spec**: none
+
+**Review caveat (sdd-worker)**: done-with-issues — M9 gate not met: mkdocs --strict fails and test_no_mkdocstrings_after_m9 asserts the pre-M9 state. See ledger issue:8ca6be34e853, issue:addf13e056e0.
