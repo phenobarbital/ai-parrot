@@ -16,7 +16,7 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "Root task: creates docs/branding/favicon.ico + social-card.png that TASK-5196 and TASK-5197 reference; touches no other task's files.",
       "assigned_to": null,
       "started_at": "2026-11-05T02:57:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5195-brand-favicon-social-card.md"
+      "completed_at": "2026-11-05T03:02:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5195-brand-favicon-social-card.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5196",
@@ -74,7 +75,7 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -82,8 +83,9 @@
       "parallelism_notes": "No dependency: modifies only its own docs/ pages (foundations, llm-clients, bots-agents, index.md) and its own test file; wiki cross-links are external URLs.",
       "assigned_to": null,
       "started_at": "2026-11-05T02:57:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5198-hub-and-core-chapters.md"
+      "completed_at": "2026-11-05T03:02:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5198-hub-and-core-chapters.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5199",
@@ -92,7 +94,7 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -100,8 +102,9 @@
       "parallelism_notes": "No dependency: modifies only its own docs/ pages (memory-knowledge, knowledge-graph, tools-rag, integrations) and its own test file; wiki cross-links are external URLs.",
       "assigned_to": null,
       "started_at": "2026-11-05T02:57:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5199-data-and-integration-chapters.md"
+      "completed_at": "2026-11-05T03:02:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5199-data-and-integration-chapters.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5200",
@@ -110,7 +113,7 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -118,8 +121,9 @@
       "parallelism_notes": "No dependency: modifies only docs/config.md, docs/tools_quick.md and its own test file.",
       "assigned_to": null,
       "started_at": "2026-11-05T02:57:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5200-config-and-tools-pages.md"
+      "completed_at": "2026-11-05T03:02:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5200-config-and-tools-pages.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5201",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-803 — GitHub Pages Informative Site Redesign
 **Spec**: `sdd/specs/github-pages-informative-site.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M
 **Depends-on**: none
@@ -186,10 +186,8 @@ def test_chapter_follows_pattern(name: str) -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestrator; implemented by seat glm (nova zai.glm-4.7-flash)
+**Date**: 2026-11-05
+**Notes**: Merged by the engine; merge-tier validation green (tests/docs_site: 16 passed). Per-task semantic review deferred to the feature-level code review.
 
 **Deviations from spec**: none
