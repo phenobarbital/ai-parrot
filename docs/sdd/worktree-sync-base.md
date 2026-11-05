@@ -27,7 +27,10 @@ parrot sdd worktree sync-base FEAT-806 --cherry-pick <sha>
 
 The sandbox retrieves commit patches through `gh`, applies one ordered batch
 with `git am -3`, and adds `(cherry picked from commit <sha>)` to each applied
-commit. It never runs `git fetch`, `git pull`, `git push`, or `git rebase`.
+commit. Before downloading a patch it asks GitHub's compare API whether the
+commit is an ancestor of (or equal to) `<base>`; any other answer is refused
+with exit code 5, the same guarantee as the host's `merge-base --is-ancestor`
+check. It never runs `git fetch`, `git pull`, `git push`, or `git rebase`.
 Full-base synchronization is a host operation.
 
 ## Host setup before sandbox launch
@@ -86,6 +89,11 @@ destructive reset as a substitute. No mode pushes or rebases.
 | 4 | `refused` | A foreign live process is using the worktree. |
 | 5 | `error` | Transport or sandbox push-protection prerequisite is unavailable. |
 | 6 | `conflict` or `error` | Integration conflicted after verified restoration, or restoration failed. |
+
+Exit code 2 is also argparse's usage-error code. A usage error prints no
+`--json` body, so a missing or unparsable body with exit 2 means the command
+line was rejected, not the target. A missing `git` or `gh` binary is a
+`refused` result with exit 5.
 
 With `--json`, `status` distinguishes a verified conflict from an unrecovered
 error even when both originate during integration. The JSON result also records
