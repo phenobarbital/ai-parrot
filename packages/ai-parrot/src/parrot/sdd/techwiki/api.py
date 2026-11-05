@@ -434,6 +434,7 @@ def render_module(
     source_url: str | None,
     release: str | None,
     root: Path | None = None,
+    section: str = "API Reference",
 ) -> RenderedPage | None:
     """Render one module page, returning ``None`` when it has no public members.
 
@@ -443,9 +444,12 @@ def render_module(
         source_url: Base URL for source links.
         release: Release tag for source links.
         root: Repository root used to build repository-relative source links.
+        section: Wiki section the page belongs to (``TechwikiConfig.reference_section``).
 
     Returns:
-        A rendered page, or ``None`` for modules with no public members.
+        A rendered page, or ``None`` for modules with no public members. The page title is the bare module
+        name: it becomes part of the wiki page name, which must stay free of ``:`` and the other characters
+        ``actions/upload-artifact`` rejects.
     """
     module_name = str(_safe(mod, "path", None) or _safe(mod, "name", ""))
     module_root = module_name.split(".", 1)[0]
@@ -459,11 +463,11 @@ def render_module(
     rendered_members = [
         _render_member(member, module_root=module_root) for member in sorted(members, key=lambda item: str(item.name))
     ]
-    title = f"Reference: {module_name}"
+    title = module_name
     description = _doc_parts(mod)["description"]
     return RenderedPage(
         module=module_name,
-        section="API Reference",
+        section=section,
         title=title,
         body=re.sub(
             r"\n{3,}",
@@ -544,7 +548,14 @@ def _generate(cfg: TechwikiConfig, root: Path, release: str | None) -> tuple[lis
     for root_module in modules:
         for module in _module_tree(root_module):
             try:
-                page = render_module(module, template=template, source_url=cfg.source_url, release=release, root=root)
+                page = render_module(
+                    module,
+                    template=template,
+                    source_url=cfg.source_url,
+                    release=release,
+                    root=root,
+                    section=cfg.reference_section,
+                )
             except Exception as exc:
                 module_name = str(getattr(module, "path", None) or getattr(module, "name", "<unknown>"))
                 logger.warning("Unable to render %s: %s", module_name, exc)

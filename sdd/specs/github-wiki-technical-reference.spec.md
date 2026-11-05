@@ -304,7 +304,7 @@ listing their paths is not evidence that namespace merging loaded them.
 class RenderedPage:
     module: str            # "parrot.memory.compaction"
     section: str           # reference_section
-    title: str             # "Reference: parrot.memory.compaction"
+    title: str             # "parrot.memory.compaction" (bare module name: no ":" in a page name)
     body: str
 
 class GriffeUnavailable(RuntimeError):

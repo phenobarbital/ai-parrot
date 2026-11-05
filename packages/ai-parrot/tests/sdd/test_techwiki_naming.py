@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from parrot.sdd.techwiki.naming import PageNameError, page_name, page_title, rewrite_links
+from parrot.sdd.techwiki.naming import FORBIDDEN_NAME_CHARS, PageNameError, page_name, page_title, rewrite_links
 
 
 class TestPageName:
@@ -33,6 +33,22 @@ class TestPageName:
         """Empty titles are not valid page names."""
         with pytest.raises(PageNameError):
             page_name(None, "")
+
+    def test_colon_in_title_and_section_becomes_a_separator(self) -> None:
+        """A colon (rejected by actions/upload-artifact) is dropped from the name; the title keeps it."""
+        assert page_name("Server & APIs", "Server Layer: BotManager") == "Server-&-APIs-Server-Layer-BotManager"
+        assert page_name("Sec: tion", "A:B") == "Sec-tion-A-B"
+        assert page_name("API Reference", "parrot.memory.compaction") == "API-Reference-parrot.memory.compaction"
+
+    def test_every_forbidden_character_is_replaced(self) -> None:
+        """Each character actions/upload-artifact refuses becomes one hyphen-separated gap."""
+        assert page_name(None, 'a"b<c>d|e*f?g') == "a-b-c-d-e-f-g"
+        assert page_name(None, "a\rb\nc") == "a-b-c"
+
+    def test_title_made_only_of_forbidden_characters_raises(self) -> None:
+        """A title with nothing usable left is an error, never an empty page name."""
+        with pytest.raises(PageNameError):
+            page_name(None, ":?")
 
 
 class TestPageTitle:
@@ -95,6 +111,14 @@ def test_page_name_never_contains_path_separators(title: str) -> None:
     """Titles with separators are flattened so a page name can never address another directory."""
     name = page_name(None, title)
     assert "/" not in name and "\\" not in name
+
+
+@pytest.mark.parametrize("char", list(FORBIDDEN_NAME_CHARS))
+def test_page_name_never_contains_an_artifact_forbidden_character(char: str) -> None:
+    """No character ``actions/upload-artifact`` rejects survives in a page name, in the section or the title."""
+    name = page_name(f"Sec{char}tion", f"Title{char}Here")
+    assert char not in name
+    assert name == "Sec-tion-Title-Here"
 
 
 def test_rewrite_links_leaves_fenced_code_untouched() -> None:

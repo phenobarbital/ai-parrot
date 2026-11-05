@@ -148,7 +148,7 @@ def test_collision_with_generated_page_names_its_ref_id(techwiki_repo: Path) -> 
     from parrot.sdd.techwiki import bundle as bundle_module
 
     class _Gen:
-        module, title, name, body, section, source = "x.y", "Reference: x.y", "Dup", "b", "API Reference", None
+        module, title, name, body, section, source = "x.y", "x.y", "Dup", "b", "API Reference", None
 
     cfg = load_techwiki_config(techwiki_repo)
     original = bundle_module._generated_pages
@@ -159,6 +159,7 @@ def test_collision_with_generated_page_names_its_ref_id(techwiki_repo: Path) -> 
         bundle_module._generated_pages = original
     sources = " ".join(c.get("sources", "") for c in report.collisions)
     assert "None" not in sources
+    assert "ref:x.y" in sources
 
 
 # --- bundle + real generated API pages (needs the griffe extra) --------------------------------------------
@@ -197,9 +198,36 @@ def test_ref_links_resolve_to_generated_pages(api_repo: Path, tmp_path: Path) ->
     cfg = load_techwiki_config(api_repo)
     pages, report = assemble(cfg, api_repo)
     page = next(p for p in pages if p.source == Path("wiki/a/one.md"))
-    assert "[[API-Reference-Reference:-samplepkg.core]]" in page.body
+    assert "[[API-Reference-samplepkg.core]]" in page.body
     assert "[Nope](ref:samplepkg.nope)" in page.body
     assert report.dangling == [{"source": "wiki/a/one.md", "target": "ref:samplepkg.nope"}]
+    core = next(p for p in pages if p.module == "samplepkg.core")
+    assert core.title == "samplepkg.core" and core.name == "API-Reference-samplepkg.core"
+
+
+def test_generated_pages_use_the_configured_reference_section(api_repo: Path) -> None:
+    """The section of a generated page comes from ``techwiki.reference_section``, not a hard-coded name."""
+    cfg = load_techwiki_config(api_repo).model_copy(update={"reference_section": "Code Reference"})
+    pages, report = assemble(cfg, api_repo)
+    core = next(p for p in pages if p.module == "samplepkg.core")
+    assert core.section == "Code Reference" and core.name == "Code-Reference-samplepkg.core"
+    assert not report.collisions
+
+
+def test_written_bundle_file_names_are_artifact_safe(api_repo: Path, tmp_path: Path) -> None:
+    """No written file carries a character ``actions/upload-artifact`` rejects (the 2.1.0 release failure)."""
+    from parrot.sdd.techwiki.naming import FORBIDDEN_NAME_CHARS
+
+    (api_repo / "wiki" / "a" / "colon.md").write_text("# Server Layer: BotManager and Handlers\n", encoding="utf-8")
+    cfg = load_techwiki_config(api_repo)
+    pages, report = assemble(cfg, api_repo)
+    assert report.ok(), (report.collisions, report.dangling)
+    out = tmp_path / "out"
+    write_bundle(pages, report, cfg, out)
+    names = [path.name for path in out.iterdir()]
+    assert "Alpha-Server-Layer-BotManager-and-Handlers.md" in names
+    assert "API-Reference-samplepkg.core.md" in names
+    assert not [name for name in names if any(char in name for char in FORBIDDEN_NAME_CHARS)]
 
 
 def test_every_rewritten_link_resolves_in_the_manifest(api_repo: Path, tmp_path: Path) -> None:
@@ -219,14 +247,53 @@ def test_every_rewritten_link_resolves_in_the_manifest(api_repo: Path, tmp_path:
             assert target in names or target in {"Home", "_Sidebar"}, (written.name, target)
 
 
+def test_sidebar_links_one_reference_index_page_instead_of_every_module(api_repo: Path, tmp_path: Path) -> None:
+    """The reference section of ``_Sidebar.md`` is one ``[[API-Reference]]`` link; the index page links every module."""
+    cfg = load_techwiki_config(api_repo)
+    pages, report = assemble(cfg, api_repo)
+    assert report.ok(), (report.collisions, report.dangling)
+    out = tmp_path / "out"
+    write_bundle(pages, report, cfg, out)
+    sidebar = (out / "_Sidebar.md").read_text(encoding="utf-8")
+    assert "## API Reference\n- [[API-Reference]]\n" in sidebar
+    assert "[[API-Reference-samplepkg" not in sidebar
+    assert "[[Decisions-Decision-One]]" in sidebar  # other sections still list every page
+    index = (out / "API-Reference.md").read_text(encoding="utf-8")
+    assert index.startswith("# API Reference\n")
+    assert "## samplepkg\n" in index
+    generated = [p for p in pages if p.module]
+    assert generated and all(f"- [[{p.name}]]" in index for p in generated)
+    manifest = json.loads((out / "techwiki-manifest.json").read_text(encoding="utf-8"))
+    entry = next(e for e in manifest["pages"] if e["name"] == "API-Reference")
+    assert entry == {"id": "index:API-Reference", "name": "API-Reference", "section": "api", "kind": "index"}
+    home = (out / "Home.md").read_text(encoding="utf-8")
+    assert f"{len(generated) + 1} page(s)" in home  # Home still counts the module pages plus the index
+
+
+def test_authored_api_reference_page_collides_with_the_index(api_repo: Path) -> None:
+    """A top-level authored page titled like the reference section is reported as a collision with the index."""
+    (api_repo / "wiki" / "api-reference.md").write_text("# API Reference\n\nMine.\n", encoding="utf-8")
+    cfg = load_techwiki_config(api_repo)
+    _, report = assemble(cfg, api_repo)
+    clash = [c for c in report.collisions if c.get("name") == "API-Reference"]
+    assert clash and "index:API-Reference" in clash[0]["sources"] and "wiki/api-reference.md" in clash[0]["sources"]
+
+
+def test_no_reference_index_without_generated_pages(techwiki_repo: Path) -> None:
+    """Sidebar-only / no-API assembly emits no index page."""
+    cfg = load_techwiki_config(techwiki_repo)
+    pages, _ = assemble(cfg, techwiki_repo, with_api=False)
+    assert not [p for p in pages if p.name == "API-Reference"]
+
+
 def test_authored_page_colliding_with_a_generated_name(api_repo: Path) -> None:
     """An authored page whose name equals a generated reference page's name is a reported collision (AC-5)."""
     (api_repo / "wiki" / "_index.yaml").write_text(
         "sections:\n  - id: ref\n    title: API Reference\n", encoding="utf-8"
     )
     (api_repo / "wiki" / "ref").mkdir()
-    (api_repo / "wiki" / "ref" / "core.md").write_text("# Reference: samplepkg.core\n\nClash.\n", encoding="utf-8")
+    (api_repo / "wiki" / "ref" / "core.md").write_text("# samplepkg.core\n\nClash.\n", encoding="utf-8")
     cfg = load_techwiki_config(api_repo)
     _, report = assemble(cfg, api_repo)
-    clash = [c for c in report.collisions if c.get("name") == "API-Reference-Reference:-samplepkg.core"]
+    clash = [c for c in report.collisions if c.get("name") == "API-Reference-samplepkg.core"]
     assert clash and "ref:samplepkg.core" in clash[0]["sources"] and "wiki/ref/core.md" in clash[0]["sources"]

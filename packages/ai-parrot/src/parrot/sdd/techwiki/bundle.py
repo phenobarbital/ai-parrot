@@ -29,6 +29,7 @@ class BundlePage:
     title: str
     name: str
     body: str
+    module: str | None = None  # dotted module of a generated API page; None for authored and ADR pages
 
 
 @dataclass
@@ -153,18 +154,53 @@ def _generated_pages(
 
     rendered, skipped = generate(cfg, root, release=release)
     pages = [
-        BundlePage(None, page.section, page.title, page_name(page.section, page.title), page.body) for page in rendered
+        BundlePage(None, page.section, page.title, page_name(page.section, page.title), page.body, module=page.module)
+        for page in rendered
     ]
     return pages, skipped
 
 
+def _reference_index_page(cfg: TechwikiConfig, generated: list[BundlePage]) -> BundlePage:
+    """Build the one generated page the sidebar links for the reference section.
+
+    GitHub renders ``_Sidebar.md`` on every wiki page, so listing thousands of module pages there makes the
+    wiki unusable; the sidebar links this index instead, and the index links every module page grouped by
+    top-level package.
+
+    Args:
+        cfg: Technical-wiki configuration (section name).
+        generated: The generated module pages, each carrying ``module``.
+
+    Returns:
+        A page with ``source=None`` and ``module=None`` named after the reference section (``API-Reference``).
+    """
+    by_root: dict[str, list[BundlePage]] = {}
+    for page in generated:
+        by_root.setdefault(str(page.module).split(".", 1)[0], []).append(page)
+    lines = [
+        f"# {cfg.reference_section}",
+        "",
+        "Generated reference for every public module, one page per module, grouped by top-level package.",
+    ]
+    for root_name in sorted(by_root):
+        lines.extend(["", f"## {root_name}", ""])
+        lines.extend(f"- [[{page.name}]]" for page in sorted(by_root[root_name], key=lambda item: str(item.module)))
+    return BundlePage(
+        source=None,
+        section=cfg.reference_section,
+        title=cfg.reference_section,
+        name=page_name(None, cfg.reference_section),
+        body="\n".join(lines) + "\n",
+    )
+
+
 def _manifest_entries(pages: list[BundlePage]) -> list[dict[str, str]]:
-    """Build stable manifest rows for source paths and generated module identifiers."""
+    """Build stable manifest rows for source paths, generated module identifiers and the reference index."""
     entries: list[dict[str, str]] = []
     for page in pages:
         if page.source is None:
-            module = page.title.removeprefix("Reference: ")
-            entries.append({"id": f"ref:{module}", "name": page.name, "section": "api", "kind": "generated"})
+            kind = "generated" if page.module else "index"
+            entries.append({"id": _ref_id(page), "name": page.name, "section": "api", "kind": kind})
         else:
             entries.append(
                 {"id": page.source.as_posix(), "name": page.name, "section": page.section, "kind": "authored"}
@@ -210,6 +246,8 @@ def assemble(
             generated = []
         report.generated = len(generated)
         pages.extend(generated)
+        if generated:
+            pages.append(_reference_index_page(cfg, generated))
 
     by_name: dict[str, list[BundlePage]] = {}
     for page in pages:
@@ -255,8 +293,8 @@ def assemble(
 
 
 def _ref_id(page: BundlePage) -> str:
-    """Return the ``ref:<module>`` identifier of a generated page (the key links use)."""
-    return f"ref:{page.title.removeprefix('Reference: ')}"
+    """Return the ``ref:<module>`` identifier of a generated page (the key links use), or ``index:<name>``."""
+    return f"ref:{page.module}" if page.module else f"index:{page.name}"
 
 
 def report_payload(report: BundleReport) -> dict[str, Any]:
@@ -284,6 +322,10 @@ def _template(name: str) -> Any:
 def write_navigation(pages: list[BundlePage], report: BundleReport, cfg: TechwikiConfig, out: Path) -> None:
     """Write only the Home and Sidebar navigation files.
 
+    Home counts every page of every section. The sidebar lists every authored and decision page, but for the
+    reference section only the index page (``module is None``): GitHub renders the sidebar on every wiki
+    page, so the thousands of module pages must not appear there.
+
     Args:
         pages: Assembled pages used to construct navigation.
         report: Bundle metadata rendered onto Home.
@@ -294,11 +336,18 @@ def write_navigation(pages: list[BundlePage], report: BundleReport, cfg: Techwik
     sections: dict[str, list[BundlePage]] = {}
     for page in pages:
         sections.setdefault(page.section, []).append(page)
-    section_rows = [{"name": name, "pages": items} for name, items in sections.items()]
+    home_rows = [{"name": name, "pages": items} for name, items in sections.items()]
+    sidebar_rows = [
+        {
+            "name": name,
+            "pages": [p for p in items if p.module is None] if name == cfg.reference_section else items,
+        }
+        for name, items in sections.items()
+    ]
     (out / "Home.md").write_text(
-        _template("home.md.j2").render(report=report, site_url=cfg.site_url, sections=section_rows), encoding="utf-8"
+        _template("home.md.j2").render(report=report, site_url=cfg.site_url, sections=home_rows), encoding="utf-8"
     )
-    (out / "_Sidebar.md").write_text(_template("sidebar.md.j2").render(sections=section_rows), encoding="utf-8")
+    (out / "_Sidebar.md").write_text(_template("sidebar.md.j2").render(sections=sidebar_rows), encoding="utf-8")
 
 
 def write_bundle(pages: list[BundlePage], report: BundleReport, cfg: TechwikiConfig, out: Path) -> None:

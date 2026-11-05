@@ -1,4 +1,4 @@
-# Reference: samplepkg
+# samplepkg
 
 Fixture package for static techwiki analysis.
 
