@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-539 - Contracts Card & Ontology
 **Spec**: `sdd/specs/contracts-card-ontology.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2–4h active work; elapsed time depends on pilot review)
 **Depends-on**: TASK-3053, TASK-3054, TASK-3055
@@ -111,3 +111,18 @@ signoff block that is explicitly blank. Evidence is referenced by `contract_id` 
 **Not done**: no case has been run, no disposition recorded, no signoff obtained. I
 did not invent questions, answers or an agreement. AC15 remains open, and the feature
 should not be reported as pilot-accepted.
+
+## Completion Note
+
+**Closed as `forced`** (2026-11-05) — deferred to a follow-up feature.
+
+All code tasks for FEAT-539 (contracts card & ontology) are merged to `dev`
+via PRs #1347 and #1349 (2026-09-09). This external acceptance task (Bob's
+twelve-case pilot review) was never started because it depends on
+operational inputs (verbatim questions, pilot corpus, reviewer time) that
+have not materialized.
+
+A follow-up feature will track the pilot signoff and end-to-end validation
+as a separate deliverable, decoupled from the code implementation which is
+complete. `docs/knowledge/contracts-pilot-acceptance.md` was moved to the
+GitHub wiki by FEAT-801 (commit 321c9883a3).
