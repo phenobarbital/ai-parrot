@@ -330,9 +330,11 @@ tests:
 - tests/sdd_scripts/test_worktree_sync.py
 - packages/ai-parrot/tests/sdd/test_sdd_cli.py
 - packages/ai-parrot/tests/sdd/test_sdd_launch.py
+- tests/sdd_scripts/test_sync_process_exclusions.py
+- tests/sdd_scripts/test_check_asset_sync.py
+- packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py
+- packages/ai-parrot/tests/flows/dev_loop/test_worker_prompt_orchestrator.py
 markers: none
-
----
 
 ## 5. Acceptance Criteria
 
