@@ -105,3 +105,12 @@ def test_adr_title_with_hyphen_is_sanitized_not_fatal(techwiki_repo: Path) -> No
     assert not [c for c in report.collisions if c.get("reason") == "invalid page name"]
     assert any(p.title == "Clients are memory less" and "-" not in p.title for p in pages)
     assert "Clients are memory-less" in adr.read_text(encoding="utf-8")
+
+
+def test_reserved_page_name_is_a_collision(techwiki_repo: Path) -> None:
+    """A top-level page titled Home must not silently be overwritten by the generated navigation."""
+    (techwiki_repo / "wiki" / "home.md").write_text("# Home\n\nBody.\n", encoding="utf-8")
+    cfg = load_techwiki_config(techwiki_repo)
+    _, report = assemble(cfg, techwiki_repo, with_api=False)
+    assert any(c.get("name") == "Home" and c.get("reason") == "reserved name" for c in report.collisions)
+    assert not report.ok()

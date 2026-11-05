@@ -69,7 +69,7 @@ def resolve_docs_policy(spec_path: Path) -> tuple[str, list[str], list[str]]:
 
     api_modules = docs.get("api_modules", [])
     if not isinstance(api_modules, list):
-        api_modules = []
+        return ("invalid", [], [])
 
     return (policy, [str(p) for p in pages], [str(m) for m in api_modules])
 
@@ -132,9 +132,14 @@ def evaluate_docs(policy: str, pages: list[str], api_modules: list[str], root: P
         path = root / page
         if not path.is_file():
             decision.missing.append(page)
-            reasons.append("docs_page_missing")
+            reasons.append("docs_required_missing_pages")
             continue
-        text = path.read_text(encoding="utf-8")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            decision.empty.append(page)
+            reasons.append("docs_page_unreadable")
+            continue
         if not text.strip():
             decision.empty.append(page)
             reasons.append("docs_page_empty")

@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_RESERVED_NAMES = frozenset({"Home", "_Sidebar", "techwiki-report", "techwiki-manifest"})
+
 
 @dataclass
 class BundlePage:
@@ -219,6 +221,15 @@ def assemble(
         if len(matching) > 1:
             report.collisions.append({"name": name, "sources": ", ".join(str(page.source) for page in matching)})
 
+    for reserved in sorted(_RESERVED_NAMES & set(by_name)):
+        report.collisions.append(
+            {
+                "name": reserved,
+                "reason": "reserved name",
+                "sources": ", ".join(str(page.source or f"ref:{page.title}") for page in by_name[reserved]),
+            }
+        )
+
     manifest: dict[str, str] = {}
     for page in pages:
         if page.source is None:
@@ -282,8 +293,12 @@ def write_bundle(pages: list[BundlePage], report: BundleReport, cfg: TechwikiCon
         out: Destination directory.
     """
     out.mkdir(parents=True, exist_ok=True)
+    out_root = out.resolve()
     for page in pages:
-        (out / f"{page.name}.md").write_text(page.body, encoding="utf-8")
+        target = (out / f"{page.name}.md").resolve()
+        if target.parent != out_root:
+            raise PageNameError(f"Page name {page.name!r} would be written outside the output directory")
+        target.write_text(page.body, encoding="utf-8")
     write_navigation(pages, report, cfg, out)
     (out / "techwiki-report.json").write_text(
         json.dumps(asdict(report), indent=2, sort_keys=True) + "\n", encoding="utf-8"

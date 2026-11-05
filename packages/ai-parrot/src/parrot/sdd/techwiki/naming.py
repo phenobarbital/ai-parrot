@@ -33,11 +33,14 @@ def page_name(section: str | None, title: str) -> str:
             f"Title {title!r} contains a literal hyphen — GitHub would store it "
             "as U+2010 ('‐'), breaking [[Title]] links. Use a space instead."
         )
+    # Path separators would turn the name into a nested path (or escape the output directory):
+    # replace them with spaces. The name is computed once and reused for every link.
+    title = title.replace("/", " ").replace("\\", " ")
     name = "-".join(title.strip().split())
     if section:
         if "-" in section:
             raise PageNameError(f"Section {section!r} contains a literal hyphen")
-        prefix = "-".join(section.strip().split())
+        prefix = "-".join(section.replace("/", " ").replace("\\", " ").strip().split())
         name = f"{prefix}-{name}"
     return name
 
@@ -82,9 +85,14 @@ def rewrite_links(text: str, resolver: Callable[[str], str | None]) -> str:
         target = match.group(2)
         if not target.startswith("ref:") and re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", target):
             return match.group(0)  # external URL: never a wiki-page reference
-        if not (target.startswith("ref:") or target.endswith(".md")):
+        base, _, fragment = target.partition("#")
+        if not (base.startswith("ref:") or base.endswith(".md")):
             return match.group(0)
-        page = resolver(target)
-        return f"[[{page}]]" if page is not None else match.group(0)
+        page = resolver(base)
+        if page is None:
+            return match.group(0)
+        if fragment:
+            return f"[{match.group(1)}]({page}#{fragment})"
+        return f"[[{page}]]"
 
     return pattern.sub(replace, text)

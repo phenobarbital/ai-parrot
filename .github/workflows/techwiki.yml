@@ -20,7 +20,7 @@ name: techwiki
         required: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: techwiki-${{ github.event_name }}-${{ github.ref }}
@@ -35,6 +35,7 @@ jobs:
           ref: ${{ github.event.release.tag_name || github.event.inputs.ref || github.sha }}
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v6
       - uses: actions/setup-python@v5
         with:
@@ -67,6 +68,8 @@ jobs:
     needs: bundle
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:

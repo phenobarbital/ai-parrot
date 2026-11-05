@@ -34,8 +34,15 @@ class TestTechwikiWorkflow:
         assert "workflow_dispatch" in self.wf["on"]
 
     def test_permissions_contents_write(self) -> None:
-        """Pushing to the wiki needs contents: write."""
-        assert self.wf["permissions"]["contents"] == "write"
+        """The token is read-only workflow-wide; only the publish job may write (it pushes to the wiki)."""
+        assert self.wf["permissions"]["contents"] == "read"
+        assert self.wf["jobs"]["publish"]["permissions"]["contents"] == "write"
+        assert "permissions" not in self.wf["jobs"]["bundle"]
+
+    def test_bundle_checkout_does_not_persist_credentials(self) -> None:
+        """The PR-executed bundle job must not leave the token in the checkout's git config."""
+        checkout = next(s for s in self.wf["jobs"]["bundle"]["steps"] if str(s.get("uses", "")).startswith("actions/checkout"))
+        assert checkout["with"]["persist-credentials"] is False
 
     def test_concurrency_serialises_runs(self) -> None:
         """Runs are serialised per event/ref and never cancelled mid-push."""

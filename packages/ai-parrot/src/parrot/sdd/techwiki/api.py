@@ -172,7 +172,7 @@ def _render_member(obj: Any, prefix: str = "") -> dict[str, Any]:
     return item
 
 
-def _source_link(module: Any, source_url: str | None, release: str | None) -> str | None:
+def _source_link(module: Any, source_url: str | None, release: str | None, root: Path | None = None) -> str | None:
     """Return a stable source link when configuration and source location exist."""
     if not source_url or not release:
         return None
@@ -180,8 +180,15 @@ def _source_link(module: Any, source_url: str | None, release: str | None) -> st
     if filepath is None:
         return None
     path = str(filepath).replace("\\", "/")
-    marker = "/src/"
-    relative = path.split(marker, 1)[-1] if marker in path else Path(path).name
+    relative: str | None = None
+    if root is not None:
+        try:
+            relative = Path(path).resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            relative = None
+    if relative is None:
+        marker = "/packages/"
+        relative = "packages/" + path.split(marker, 1)[1] if marker in path else Path(path).name
     return f"{source_url.rstrip('/')}/blob/{release}/{relative}"
 
 
@@ -191,6 +198,7 @@ def render_module(
     template: "jinja2.Template",
     source_url: str | None,
     release: str | None,
+    root: Path | None = None,
 ) -> RenderedPage | None:
     """Render one module page, returning ``None`` when it has no public members.
 
@@ -217,7 +225,7 @@ def render_module(
             module=module_name,
             title=title,
             members=rendered_members,
-            source_link=_source_link(mod, source_url, release),
+            source_link=_source_link(mod, source_url, release, root),
         ).rstrip()
         + "\n",
     )
@@ -259,7 +267,7 @@ def generate(
     for root_module in modules:
         for module in _module_tree(root_module):
             try:
-                page = render_module(module, template=template, source_url=cfg.source_url, release=release)
+                page = render_module(module, template=template, source_url=cfg.source_url, release=release, root=root)
             except Exception as exc:
                 module_name = str(getattr(module, "path", None) or getattr(module, "name", "<unknown>"))
                 logger.warning("Unable to render %s: %s", module_name, exc)

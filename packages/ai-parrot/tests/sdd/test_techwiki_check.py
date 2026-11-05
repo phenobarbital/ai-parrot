@@ -91,3 +91,25 @@ class TestEvaluateDocs:
     def test_missing_spec_is_usage_error(self, tmp_path):
         """A missing spec file → exit 2."""
         assert techwiki_check.main(["--spec", str(tmp_path / "nope.md")]) == 2
+
+
+def test_unreadable_page_warns_instead_of_crashing(tmp_path):
+    """A page that is not valid UTF-8 yields a warning, never a traceback."""
+    (tmp_path / "wiki").mkdir()
+    (tmp_path / "wiki" / "bin.md").write_bytes(b"\xff\xfe\x00bad")
+    decision = evaluate_docs("required", ["wiki/bin.md"], [], tmp_path)
+    assert decision.status == "warning"
+    assert "docs_page_unreadable" in decision.reason_codes
+
+
+def test_missing_pages_use_the_spec_reason_code(tmp_path):
+    """The reason code for a missing required page is the spec's docs_required_missing_pages."""
+    decision = evaluate_docs("required", ["wiki/nope.md"], [], tmp_path)
+    assert "docs_required_missing_pages" in decision.reason_codes
+
+
+def test_non_list_api_modules_is_invalid_not_coerced(tmp_path):
+    """A malformed api_modules value is invalid rather than silently ignored."""
+    spec = tmp_path / "spec.md"
+    spec.write_text("---\ndocs:\n  policy: required\n  api_modules: parrot.x\n---\n")
+    assert resolve_docs_policy(spec)[0] == "invalid"

@@ -75,3 +75,23 @@ def test_rewrite_links_skips_external_urls() -> None:
     text = "[Spec](https://github.com/o/r/blob/main/spec.md) and [Local](local.md)"
     out = rewrite_links(text, lambda target: {"local.md": "Local"}.get(target))
     assert out == "[Spec](https://github.com/o/r/blob/main/spec.md) and [[Local]]"
+
+
+def test_rewrite_links_resolves_fragment_links_and_flags_missing() -> None:
+    """A `page.md#frag` link is resolved (fragment kept) and an unresolved one reaches the resolver."""
+    seen: list[str] = []
+
+    def resolver(target: str) -> str | None:
+        seen.append(target)
+        return {"local.md": "Local-Page"}.get(target)
+
+    out = rewrite_links("[A](local.md#part) [B](missing.md#frag)", resolver)
+    assert out == "[A](Local-Page#part) [B](missing.md#frag)"
+    assert seen == ["local.md", "missing.md"]
+
+
+@pytest.mark.parametrize("title", ["../../escaped", "a/b", "a\\b"])
+def test_page_name_never_contains_path_separators(title: str) -> None:
+    """Titles with separators are flattened so a page name can never address another directory."""
+    name = page_name(None, title)
+    assert "/" not in name and "\\" not in name
