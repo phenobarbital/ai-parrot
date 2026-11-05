@@ -35,6 +35,13 @@ All commands require `--repo-root PATH`; `--ledger-dir PATH` explicitly selects 
 
 An `issue.closed` for an issue that is already closed or superseded on `origin/dev` is **set aside**: it is not appended, it is never a conflict, and the rest of its batch is delivered. The close already on `dev` is kept, because closing a closed issue changes no state, and appending a second close would overwrite the recorded resolution. The receipt lists set-aside events under `skipped_event_ids`, and `prepare` / `status` exclude those ids, so a set-aside close is never sealed again. The report shows them as `skipped`. The superseded close stays in the local journal.
 
+The same applies to an `issue.unclaimed` for an issue that is already closed or superseded (on
+`origin/dev` or earlier in the batch). It is routine: a session working from a stale local ledger
+claims an issue that another session's `/sdd-done` already closed, then releases it. The unclaim is a
+no-op, so it is set aside and receipted in `skipped_event_ids` rather than reported as an
+`unclaim-terminal` conflict that would block the whole batch. The matching `issue.claimed` is still
+delivered: it is not a conflict, and the reducer ignores a claim of a closed issue.
+
 ## Recovery and migration
 
 ### Migrate installed hooks
