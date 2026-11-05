@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-808 — Decision ingest rewrites a stored ADR page whose envelope is not canonical
 **Spec**: `sdd/specs/decisions-ingest-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -354,8 +354,16 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude (session /sdd-fix, actor agent:sdd-fix:824da58f)
+**Date**: 2026-11-05
+**Notes**: In `_persist_if_changed`, the fingerprint-equal branch now compares the stored hash with
+`decision_to_page(stored_record).content_hash`. When they differ the stored record is saved back with a
+compare-and-swap against the stored hash and counted in `SyncResult.updated`; a `DecisionError` from
+encoding or saving becomes a diagnostic. Five tests added in `TestCanonicalEnvelope`. Evidence: with the
+unfixed `ingest.py`, `test_refresh_rewrites_legacy_envelope` and
+`test_refresh_rewrite_conflict_is_a_diagnostic` fail; on this branch the Validation Contract
+(`test_ingest.py`, `test_codec.py`) gives 54 passed; `ruff check` is clean on the two files.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. `_make_legacy` falls back to the concept id and an empty summary when a
+stored row lacks `node_id` / `summary`, so it does not depend on which keys the test store returns. The
+other three new tests pass on the unfixed code too: they guard behaviour the fix must keep, not the bug.

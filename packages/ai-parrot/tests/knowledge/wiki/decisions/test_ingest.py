@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
 
-from parrot.knowledge.wiki.decisions.codec import documented_decision_id
+from parrot.knowledge.wiki.decisions.codec import decision_from_page, decision_to_page, documented_decision_id
 from parrot.knowledge.wiki.decisions.ingest import discover_adr_sources, refresh_decisions
-from parrot.knowledge.wiki.decisions.models import DecisionConfig, DecisionRecord
+from parrot.knowledge.wiki.decisions.models import ADR_REVISION_CONFLICT, DecisionConfig, DecisionError, DecisionRecord
 from parrot.knowledge.wiki.decisions.repository import DecisionRepository
-from parrot.knowledge.wiki.store import BaseWikiStore
+from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord
+
 
 class TestDiscovery:
     def test_only_configured_globs_are_discovered(self, adr_repo, adr_config):
@@ -405,3 +408,116 @@ class TestPrefixedRefresh:
             "external_id": "ADR-3",
             "links": [("sym:src/legacy.py#cited", "explains", "extracted")],
         }
+
+
+_SCHEMA_2_KEYS = (
+    "about",
+    "batch_id",
+    "contradicts",
+    "document_id",
+    "entry_id",
+    "lifecycle",
+    "normative",
+    "rationale",
+    "rejected_alternatives",
+    "supersedes_refs",
+    "targets",
+)
+_LEGACY_SOURCE = "docs/adr/0001-use-pgvector.md"
+
+
+async def _make_legacy(store: BaseWikiStore, decision_id: str) -> str:
+    """Rewrite one stored ADR page the way an older codec wrote it; return its legacy hash."""
+    page = await store.get_page(decision_id, include_body=True)
+    marker, envelope, rest = page["body"].split("\n", 2)
+    payload = json.loads(envelope)
+    for key in _SCHEMA_2_KEYS:
+        payload.pop(key, None)
+    legacy = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    legacy_hash = hashlib.sha1(legacy.encode("utf-8")).hexdigest()  # noqa: S324 — identity, not security
+    await store.upsert_pages(
+        [
+            WikiPageRecord(
+                concept_id=page["concept_id"],
+                node_id=page.get("node_id") or page["concept_id"],
+                title=page["title"],
+                category=page["category"],
+                summary=page.get("summary") or "",
+                body=f"{marker}\n{legacy}\n{rest}",
+                source_id=page.get("source_id"),
+                token_count=page.get("token_count") or 0,
+                origin=page.get("origin") or "ingest",
+                asserted_by=page.get("asserted_by"),
+                content_hash=legacy_hash,
+            )
+        ]
+    )
+    return legacy_hash
+
+
+def _canonical_hash(page: dict) -> str:
+    """The hash the current codec gives the record stored in ``page``."""
+    return decision_to_page(decision_from_page(page)).content_hash
+
+
+class TestCanonicalEnvelope:
+    """issue:42977fa3aaeb — a refresh re-encodes a stored envelope that is not canonical."""
+
+    async def test_refresh_rewrites_legacy_envelope(self, adr_repo, adr_config, adr_store):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        decision_id = documented_decision_id(_LEGACY_SOURCE)
+        legacy_hash = await _make_legacy(adr_store, decision_id)
+        assert legacy_hash != _canonical_hash(await adr_store.get_page(decision_id))  # the precondition
+
+        result = await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        page = await adr_store.get_page(decision_id)
+        assert result.updated == 1 and result.created == 0
+        assert page["content_hash"] == _canonical_hash(page)
+        assert page["content_hash"] != legacy_hash
+
+    async def test_refresh_rewrite_keeps_stored_record(self, adr_repo, adr_config, adr_store):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        decision_id = documented_decision_id(_LEGACY_SOURCE)
+        await _make_legacy(adr_store, decision_id)
+        before = decision_from_page(await adr_store.get_page(decision_id))
+
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        assert decision_from_page(await adr_store.get_page(decision_id)) == before
+
+    async def test_refresh_rewrite_is_idempotent(self, adr_repo, adr_config, adr_store):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        await _make_legacy(adr_store, documented_decision_id(_LEGACY_SOURCE))
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        result = await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        assert result.updated == 0 and result.created == 0 and result.unchanged > 0
+
+    async def test_refresh_canonical_pages_stay_unchanged(self, adr_repo, adr_config, adr_store):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        result = await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        assert result.updated == 0 and result.created == 0 and result.unchanged > 0
+        assert all(diagnostic.code != ADR_REVISION_CONFLICT for diagnostic in result.diagnostics)
+
+    async def test_refresh_rewrite_conflict_is_a_diagnostic(self, adr_repo, adr_config, adr_store, monkeypatch):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        decision_id = documented_decision_id(_LEGACY_SOURCE)
+        await _make_legacy(adr_store, decision_id)
+        original_save = DecisionRepository.save
+
+        async def conflicting_save(self, record, expected_content_hash):
+            if record.decision_id == decision_id:
+                raise DecisionError(ADR_REVISION_CONFLICT, "conflict", decision_id=decision_id)
+            return await original_save(self, record, expected_content_hash)
+
+        monkeypatch.setattr(DecisionRepository, "save", conflicting_save)
+
+        result = await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        conflicts = [diagnostic for diagnostic in result.diagnostics if diagnostic.code == ADR_REVISION_CONFLICT]
+        assert result.updated == 0
+        assert [diagnostic.decision_id for diagnostic in conflicts] == [decision_id]
