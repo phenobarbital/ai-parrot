@@ -311,14 +311,12 @@ def _sandbox_patches(wt: Path, cherry_picks: Sequence[str]) -> list[tuple[str, s
         source_sha = metadata.get("sha")
         parents = metadata.get("parents")
         message = metadata.get("commit", {}).get("message")
-        canonical_sha = isinstance(source_sha, str) and len(source_sha) == 40 and all(
-            character in "0123456789abcdefABCDEF" for character in source_sha
+        canonical_sha = (
+            isinstance(source_sha, str)
+            and len(source_sha) == 40
+            and all(character in "0123456789abcdefABCDEF" for character in source_sha)
         )
-        if (
-            not canonical_sha
-            or not source_sha.lower().startswith(requested.lower())
-            or len(parents or []) != 1
-        ):
+        if not canonical_sha or not source_sha.lower().startswith(requested.lower()) or len(parents or []) != 1:
             raise SyncError(EXIT_TRANSPORT, _sandbox_hint("merge commits need the host transport"))
         if not isinstance(message, str) or not message:
             raise SyncError(EXIT_TRANSPORT, _sandbox_hint("gh commit metadata is incomplete"))

@@ -53,11 +53,11 @@ def _install_gh_stub(
     executable = tmp_path / "gh"
     executable.write_text(
         "#!/bin/sh\n"
-        "for argument in \"$@\"; do case \"$argument\" in repos/*) endpoint=$argument ;; esac; done\n"
+        'for argument in "$@"; do case "$argument" in repos/*) endpoint=$argument ;; esac; done\n'
         "sha=${endpoint##*/}\n"
-        "case \"$*\" in\n"
+        'case "$*" in\n'
         "  *'Accept: application/vnd.github.patch'*) cat \"$GH_FIXTURES/$sha.patch\" ;;\n"
-        "  *) cat \"$GH_FIXTURES/$sha.json\" ;;\n"
+        '  *) cat "$GH_FIXTURES/$sha.json" ;;\n'
         "esac\n",
         encoding="utf-8",
     )
@@ -198,9 +198,7 @@ def test_sandbox_push_protection_refuses_before_gh(tmp_path: Path, monkeypatch: 
     assert "host-provisioned" in str(raised.value)
 
 
-def test_sandbox_late_validation_failure_leaves_tree_unchanged(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_sandbox_late_validation_failure_leaves_tree_unchanged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A bad second response prevents the already downloaded first patch from being applied."""
     _origin, primary, feature = _repository(tmp_path)
     _configure_sandbox(feature)
