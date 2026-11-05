@@ -5,25 +5,26 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-05T04:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-05T03:20:23+00:00",
   "tasks": [
     {
       "id": "TASK-5231",
       "slug": "github-reviewer-test-matrix",
       "title": "Complete FEAT-759 §4 test matrix for GitHubReviewer SDD fallback",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
-      "file": "sdd/tasks/active/TASK-5231-github-reviewer-test-matrix.md",
+      "file": "sdd/tasks/completed/TASK-5231-github-reviewer-test-matrix.md",
       "feature_id": "FEAT-817",
       "feature": "github-reviewer-test-matrix",
       "spec": "sdd/specs/github-reviewer-test-matrix.spec.md",
       "discovered_from": "issue:9e74a96838c7",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null
+      "completed_at": "2026-11-05T03:20:23+00:00",
+      "verification": "verified"
     }
   ]
 }
