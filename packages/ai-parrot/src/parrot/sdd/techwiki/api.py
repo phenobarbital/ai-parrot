@@ -6,7 +6,7 @@ import ast
 import importlib.resources
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -508,6 +508,32 @@ def _template() -> "jinja2.Template":
     return environment.from_string(template_path.read_text(encoding="utf-8"))
 
 
+_ALIAS_REF_LINK = re.compile(r"\[(`[^`]+`)\]\(ref:([^)\s]+)\)")
+
+
+def _unlink_pageless_refs(pages: dict[str, RenderedPage]) -> None:
+    """Downgrade ``ref:`` alias links whose target module produced no page to plain code text.
+
+    ``render_module`` renders one module at a time and cannot know which modules end up with a
+    page, so ``module.md.j2`` links every re-export target. A target that produced no page has no
+    manifest entry, so :func:`parrot.sdd.techwiki.bundle.assemble` cannot rewrite it and it would
+    reach the published wiki as a literal ``ref:`` URL. The replacement is exactly the template's
+    own ``{% else %}`` form, so no new output shape is introduced. ``RenderedPage`` is frozen, so
+    rewritten entries are rebuilt rather than mutated.
+
+    Args:
+        pages: Rendered pages keyed by module name. Mutated in place.
+    """
+
+    def _resolve(match: "re.Match[str]") -> str:
+        return match.group(0) if match.group(2) in pages else match.group(1)
+
+    for module, page in list(pages.items()):
+        body = _ALIAS_REF_LINK.sub(_resolve, page.body)
+        if body != page.body:
+            pages[module] = replace(page, body=body)
+
+
 def generate(
     cfg: TechwikiConfig, root: Path, *, release: str | None = None
 ) -> tuple[list[RenderedPage], list[dict[str, str]]]:
@@ -563,4 +589,5 @@ def _generate(cfg: TechwikiConfig, root: Path, release: str | None) -> tuple[lis
             else:
                 if page is not None:
                     pages.setdefault(page.module, page)  # first configured distribution wins a duplicate module
+    _unlink_pageless_refs(pages)
     return sorted(pages.values(), key=lambda page: page.module), sorted(skipped, key=lambda item: item["module"])

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-819 — Only link an API re-export when the target module has a page
 **Spec**: `sdd/specs/fixgroup-c95c1c7e8e5b.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -64,6 +64,7 @@ redirect; `parrot.bots.orchestration` was removed in FEAT-143).
 |---|---|---|
 | `packages/ai-parrot/src/parrot/sdd/techwiki/api.py` | MODIFY | `_unlink_pageless_refs` + one call in `_generate` |
 | `packages/ai-parrot/tests/sdd/test_techwiki_api.py` | MODIFY | Regression tests (append at end of file) |
+| `packages/ai-parrot/src/parrot/sdd/techwiki/bundle.py` | MODIFY | AC-9 only (scope amended — see Completion Note) |
 
 ---
 
@@ -327,8 +328,10 @@ from `parrot.sdd.techwiki.api` at the top of the file alongside the existing imp
 - [ ] AC-6: `pytest test_techwiki_api.py test_techwiki_bundle.py` green, no pre-existing test
       modified to accommodate the change.
 - [ ] AC-7: `ruff check` and `black --check` clean on both changed files.
-- [ ] AC-8: No change to `module.md.j2`, `bundle.py`, `naming.py`, or `techwiki.packages`
-      in `sdd/config.json`.
+- [ ] AC-8 *(amended)*: No change to `module.md.j2`, `naming.py`, or `techwiki.packages`.
+      One narrowly-scoped `bundle.py` change is in scope, for AC-9 only.
+- [ ] AC-9 *(added)*: A generated page's link to an already-final page name ending in `.md`
+      is left alone, not reported dangling.
 
 ---
 
@@ -368,4 +371,96 @@ by hand during implementation, with the result recorded in the Completion Note.
 
 ## Completion Note
 
-*(filled in when the task is closed)*
+**Closed**: 2026-11-05 · verification=verified · commits `ff8756f8df`, `916b500f2c`
+
+### Decisive evidence — the real CI gate
+
+The `bundle` job of `.github/workflows/techwiki.yml` runs
+`parrot sdd techwiki bundle --json --strict --dry-run`. That exact command on this branch:
+
+```json
+{"skipped_modules": [], "adrs": 9, "authored": 285, "collisions": [], "commit": "916b500f2c",
+ "dangling": [], "generated": 3077, "release": "v2.1.0"}
+```
+exit 0.  Before: **300 dangling rows / 49 distinct targets**, and the job red on PR #1993.
+
+### What changed
+
+**Part 1 — `api.py` (`ff8756f8df`), the issue as filed.** `_unlink_pageless_refs(pages)` runs once
+in `_generate` after the render loop, where the completed `pages` dict *is* the linkable set. A
+`](ref:<module>)` alias link whose target is not a key is downgraded to plain code text —
+byte-identical to `module.md.j2`'s own `{% else %}` branch, so no new output shape exists.
+`RenderedPage` is `frozen=True`, so entries are rebuilt via `dataclasses.replace`.
+
+**Part 2 — `bundle.py` (`916b500f2c`), AC-9, a scope amendment.** See below.
+
+### The ledger issue's stated cause was wrong
+
+`issue:3ecba9ea5ffc` blamed "modules **outside the configured roots**". Measured: **0 skipped
+modules**, 3078 pages, and all 49 targets already in scope and already walked. Widening
+`techwiki.packages[].roots` would have fixed nothing. The real cause is that `render_module`
+returns `None` for a module with no public members, and the renderer — working one module at a
+time — links every re-export target regardless. Breakdown: 19 packages whose only public members
+are submodules (their children *do* get pages), 14 modules with no public members, 2 compiled
+`.so`, and 14 dotted names with no source file (`parrot.tools.excel` resolves only through the
+`sys.meta_path` redirect; `parrot.bots.orchestration` was removed in FEAT-143). The spec's §1
+correction table carries the full evidence.
+
+### Scope amendment (AC-8 → AC-9) — stated, not silent
+
+AC-8 originally forbade touching `bundle.py`. After Part 1, **one** dangling row remained:
+`{'source': 'index:API-Reference', 'target': 'API-Reference-parrot.loaders.splitters.md'}`.
+
+`parrot/loaders/splitters/md.py` is a module literally named `md`, so its page name ends in
+`.md`. `naming.rewrite_links` (`naming.py:133`) resolves any target ending `.md` as a relative
+path, and `_reference_index_page` (`bundle.py:188`) emits already-final page links. Before
+FEAT-818 the index page was never validated, so this never surfaced — it is a consequence of
+FEAT-818, not of this feature's own change.
+
+Leaving it would have kept the bundle gate red, which is the entire purpose of this work, so the
+fix was folded in rather than deferred: `resolve()` returns `None` **without** reporting dangling
+when `unquote(target)` is a known page name and the page has no source. `urllib.parse.unquote` is
+imported because the index percent-encodes hrefs. Nothing else in `bundle.py` changed and the
+dangling check is **not** weakened for any other case — AC-4 holds (see below).
+
+### Test evidence
+
+- **AC-5**: with the `_unlink_pageless_refs(pages)` call site removed, `2 failed, 3 passed`
+  (the end-to-end wiring test and the full-bundle test). Restored: all pass.
+- **Mid-task correction**: the first two unit tests drove `_unlink_pageless_refs` directly, so
+  they passed with the helper present but *unwired* — they did not prove the wiring. Added
+  `test_generate_links_only_re_exports_whose_target_has_a_page`, which goes through `generate()`
+  on a tmp package where `pkgx.real` has a page and `pkgx.nosuch` does not. That is the test that
+  actually fails without the call site.
+- **Full techwiki suite**: `85 passed`, 0 failed (`test_techwiki_api.py`, `test_techwiki_bundle.py`,
+  `test_techwiki_naming.py`, `test_techwiki_check.py`), with `TECHWIKI_FULL_BUNDLE=1` so the
+  repo-level bundle assertion ran.
+- **AC-4** (validation not weakened): `test_ref_links_resolve_to_generated_pages` and the FEAT-818
+  tests are green and unmodified — an unresolvable `ref:` in an *authored* page is still dangling.
+- **AC-7**: `ruff check` → "All checks passed!"; `black` clean on all three changed files.
+
+### Tests added
+
+| Test | Proves |
+|---|---|
+| `test_alias_link_to_a_module_without_a_page_is_plain_text` | AC-1, helper level |
+| `test_alias_link_to_a_paged_module_is_still_linked` | AC-2 — the downgrade is not indiscriminate |
+| `test_unlink_leaves_images_and_ordinary_links_alone` | the regex is anchored, not greedy |
+| `test_generate_links_only_re_exports_whose_target_has_a_page` | **the wiring**, end-to-end |
+| `test_generated_page_link_to_a_page_named_like_a_markdown_file_is_not_dangling` | AC-9 |
+| `test_full_repository_bundle_has_no_dangling_links` | AC-3 (opt-in: `TECHWIKI_FULL_BUNDLE=1`, ~20s) |
+
+### Known follow-up, deliberately NOT done here
+
+The 14 dotted names with no source file are real link rot (`parrot.tools.excel` should be
+`parrot_tools.excel`; `parrot.bots.orchestration` is gone). This feature renders them as plain
+text, which is correct for the wiki, but that also removes the only signal that they are stale.
+Spec §7 R3 — open a separate ledger issue if it is worth chasing.
+
+### Coordination
+
+Session `ai-parrot-e1` is fixing `issue:6b80e9a6474b` (`parrot.auth` gets no page) in the same
+file. Settled by cross-session message: FEAT-819 lands first, they rebase onto post-merge `dev`.
+Their change targets the `is_public`/`render_module` member filter (~`api.py` L168-192, L430-484),
+disjoint from this task's region. Their fix is purely additive to this one — once those packages
+get pages, `_unlink_pageless_refs` simply leaves those refs linked.

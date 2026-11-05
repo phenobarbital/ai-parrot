@@ -246,8 +246,13 @@ unit test. The implementing task picks one and records which.
 - [ ] AC-6: `pytest test_techwiki_api.py test_techwiki_bundle.py` green, no
       pre-existing test modified to accommodate the change.
 - [ ] AC-7: `ruff check` and `black --check` clean on changed files.
-- [ ] AC-8: No change to `module.md.j2`, `bundle.py`, `naming.py`, or
-      `techwiki.packages` in `sdd/config.json`.
+- [ ] AC-8 *(amended during implementation — see §7 R6)*: No change to
+      `module.md.j2`, `naming.py`, or `techwiki.packages` in `sdd/config.json`.
+      One narrowly-scoped change to `bundle.py` IS in scope, for AC-9 only.
+- [ ] AC-9 *(added during implementation)*: A generated page's link to an
+      already-final page name whose name ends in `.md` is left alone, not
+      reported dangling. Covered by
+      `test_generated_page_link_to_a_page_named_like_a_markdown_file_is_not_dangling`.
 
 ---
 
@@ -360,6 +365,22 @@ Re-exported from `{{ m.target }}`.                                 {# line 47 �
 - **R5 — `parrot.utils.types` and `parrot.utils.parsers.toml` are compiled.**
   They can never produce a page from source, so they must land in the
   plain-text branch, not be treated as an error.
+
+- **R6 — AC-8 was amended mid-implementation.** With all 300 re-export rows
+  fixed, **one** dangling row remained:
+  `{'source': 'index:API-Reference', 'target': 'API-Reference-parrot.loaders.splitters.md'}`.
+  Cause: `parrot/loaders/splitters/md.py` is a module literally named `md`, so
+  its page name ends in `.md`; `naming.rewrite_links` (`naming.py:133`) resolves
+  any target ending `.md` as a relative path, and `_reference_index_page`
+  (`bundle.py:188`) emits already-final page links. Before FEAT-818 the index
+  page was never validated, so this never showed. It is a direct consequence of
+  FEAT-818, not of this feature's own change, but leaving it would keep the
+  bundle gate red — which is the entire point of this work — so the fix was
+  folded in rather than deferred: `resolve()` now returns `None` without
+  reporting dangling when `unquote(target)` is a known page name and the page
+  has no source. `urllib.parse.unquote` is imported for it because the index
+  percent-encodes hrefs. Nothing else in `bundle.py` changed, and the dangling
+  check is **not** weakened for any other case.
 
 ### External Dependencies
 
