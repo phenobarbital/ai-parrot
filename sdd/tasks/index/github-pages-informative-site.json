@@ -134,7 +134,7 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -144,8 +144,9 @@
       "parallelism_notes": "Creates docs/tutorials/ pages that the nav written by TASK-5197 (mkdocs.yml Tutorials section) points at; spec §7 serializes M6 after M3.",
       "assigned_to": null,
       "started_at": "2026-11-05T02:57:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5201-tutorials-chatbot-agent.md"
+      "completed_at": "2026-11-05T03:26:31+00:00",
+      "file": "sdd/tasks/completed/TASK-5201-tutorials-chatbot-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5202",
@@ -154,7 +155,7 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -164,8 +165,9 @@
       "parallelism_notes": "Creates docs/tutorials/ pages that the nav written by TASK-5197 (mkdocs.yml Tutorials section) points at; spec §7 serializes M6 after M3.",
       "assigned_to": null,
       "started_at": "2026-11-05T02:57:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5202-tutorials-tool-deployment.md"
+      "completed_at": "2026-11-05T03:26:32+00:00",
+      "file": "sdd/tasks/completed/TASK-5202-tutorials-tool-deployment.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5203",
