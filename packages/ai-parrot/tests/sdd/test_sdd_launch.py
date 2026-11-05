@@ -1141,3 +1141,65 @@ def test_launch_help_lists_three_verbs() -> None:
     for verb in ("worker", "brief", "fix"):
         assert verb in result.output
     assert "Usage" in CliRunner().invoke(devloop, ["devloop", "launch-worker"]).output
+
+
+def test_launch_enables_push_protection_before_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """FEAT-813: the host provisions the sandbox no_push guard after the advisory, before the worker."""
+    from parrot.sdd.scripts import worktree_push_protection
+
+    events: list[str] = []
+    monkeypatch.setattr(
+        worktree_push_protection, "enable", lambda wt: events.append("protect") or "push protection enabled"
+    )
+
+    def summary(wt: Path, base: str | None = None) -> str:
+        events.append("summary")
+        return "base dev: up to date"
+
+    _advisory_launch(tmp_path, monkeypatch, events, summary)
+    assert events == ["upstream", "summary", "protect", "worker"]
+    assert "launch-worker: push protection enabled" in capsys.readouterr().err
+
+
+def test_launch_push_protection_refusal_is_not_fatal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refused enable is reported and the worker still starts (no_upstream does not skip it)."""
+    from parrot.sdd.scripts import worktree_push_protection
+
+    def refuse(wt: Path) -> str:
+        raise worktree_sync.SyncError(worktree_sync.EXIT_TARGET, "common core.bare=true")
+
+    monkeypatch.setattr(worktree_push_protection, "enable", refuse)
+    events: list[str] = []
+    _advisory_launch(tmp_path, monkeypatch, events, lambda wt, base=None: "unused", no_upstream=True)
+    assert events == ["worker"]
+    assert "push protection skipped: common core.bare=true" in capsys.readouterr().err
+
+
+def test_tmux_launch_enables_push_protection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tmux path provisions the guard on the host before creating the session."""
+    from parrot.sdd.scripts import worktree_push_protection
+
+    primary = _primary(tmp_path)
+    worktree = tmp_path / "feature"
+    worktree.mkdir()
+    calls: list[list[str]] = []
+    protected: list[Path] = []
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: worktree)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/tmux" if name == "tmux" else None)
+    monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: "linux")
+    monkeypatch.setattr(launcher, "_run", _tmux_runner(calls, panes=["0|||claude"]))
+    monkeypatch.setattr(
+        worktree_push_protection, "enable", lambda wt: protected.append(wt) or "push protection enabled"
+    )
+    launcher.launch(
+        "FEAT-768", tmux=True, detach=True, sandbox="legacy", allowed_domains=(), no_upstream=True, claude_args=()
+    )
+    assert protected == [worktree]
+    assert calls[0][:2] == ["tmux", "new-session"]
