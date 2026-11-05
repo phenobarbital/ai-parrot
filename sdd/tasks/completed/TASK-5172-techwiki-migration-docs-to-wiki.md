@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-801 — GitHub Wiki as the Technical Reference
 **Spec**: `sdd/specs/github-wiki-technical-reference.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-5168, TASK-5169
@@ -246,13 +246,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (executed as a split; no coder dispatch — judgement-heavy, path-pinned).
+**Date**: 2026-11-05
+**Notes**: Moved 275 pages `docs/` → `wiki/<section>/` (commit 321c9883a3), `wiki/_index.yaml`, 139 hyphenated titles fixed, 16 Spanish pages translated by parallel agents (Spanish runtime strings / sample data inside code blocks intentionally left; a few ASCII-diagram labels may remain), links rewritten in all three directions, `mkdocs.yml` nav pruned, `docs/index.md` notice added, ~130 consumer files rewritten, 14 test files' path construction fixed. Bundle dry-run: 275 authored + 9 ADR pages, 0 collisions, 0 dangling. Executed map: `sdd/state/FEAT-801/migration-map.md`. Bundle fixes made along the way: `rewrite_links` now skips external URLs, ADR titles are hyphen-sanitised (sources untouched), loop-variable bind (B023).
+**Verification is `partial` because**: (1) `mkdocs build --strict` NOT run (mkdocs not installed; no network); (2) three read-only files still hold old paths and need the host patch (`.claude/commands/planogram-migrate.md`, `.claude/commands/sdd-done.md`, `packages/ai-parrot/src/parrot/sdd/scripts/native_claude_sandbox.py`), after which `check_asset_sync.py --write` must be run; (3) section assignment is heuristic — review before merge; (4) pre-existing/env failures left alone: `test_changelog_lists_the_plain_host_behaviour_changes`, standup runbook "Identity" assertion, `test_worker_notification_protocol_order`, `test_hello_world_snippet_executes` (network), `test_projection` (EdgeKind).
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Translated files**:
-**Workflow contract exceptions**:
-**mkdocs build --strict exit code**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: unlisted (not-in-nav) pages moved by proposal; `docs/getting-started.md` kept on Pages.

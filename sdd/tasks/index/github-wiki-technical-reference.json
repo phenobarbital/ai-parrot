@@ -172,7 +172,7 @@
       "feature_id": "FEAT-801",
       "feature": "github-wiki-technical-reference",
       "spec": "sdd/specs/github-wiki-technical-reference.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -183,8 +183,9 @@
       "parallelism_notes": "exclusive: mass git mv across docs/, edits mkdocs.yml, CLAUDE.md and docs/chapters/*.md — shared state that other tasks must not touch concurrently; needs TASK-5168's rewrite_links/page_name (naming.py via bundle) and validates migration destinations against techwiki-manifest.json (bundle.py output)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5172-techwiki-migration-docs-to-wiki.md"
+      "completed_at": "2026-11-05T00:59:08+00:00",
+      "file": "sdd/tasks/completed/TASK-5172-techwiki-migration-docs-to-wiki.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5173",
