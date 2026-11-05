@@ -203,6 +203,8 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - First run `wikitoolkit ledger outbox status --repo-root <worktree> --json`; on exit 4 report the
      `contaminated_paths` and point to `docs/sdd/ledger-outbox.md` § Legacy feature diff — do not restore or
      drop them and do not block the code PR
+   - Then `parrot sdd worktree push-protection disable <worktree>` (FEAT-813: removes the `no_push` guard a
+     sandboxed worker left; idempotent) — on failure warn and continue
    - `git -C <worktree> push origin <branch>`
 10. Check merge blockers (feature flows only):
     - If `--merge` flag is set and not a hotfix, run `wikitoolkit ledger blockers <FEAT-ID>`

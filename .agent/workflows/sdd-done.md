@@ -420,6 +420,9 @@ if (( STATUS_RC == 4 )); then
     echo "See docs/sdd/ledger-outbox.md § Legacy feature diff; do not restore or drop these paths."
 fi
 # Contamination is reported, not repaired here, and does not block the code PR.
+# FEAT-813: a sandboxed worker left `remote.origin.pushurl=no_push` on this worktree; drop it
+# (idempotent, a no-op when never enabled) so the host push below can reach origin.
+parrot sdd worktree push-protection disable "<worktree-path>" || echo "⚠️  push-protection disable failed; push may be refused"
 git -C <worktree-path> push origin feat-<FEAT-ID>-<slug>
 ```
 

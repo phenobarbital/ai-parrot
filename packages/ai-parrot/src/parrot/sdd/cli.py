@@ -253,6 +253,11 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
             (),
             "Bring origin/<base_branch> (or chosen commits) into a worktree; never pushes.",
         ),
+        "push-protection": (
+            "worktree_push_protection",
+            (),
+            "Enable/disable/inspect the host-provisioned no_push guard sandboxed sync-base needs.",
+        ),
         "remove": (
             "remove_worktree",
             ("remove",),

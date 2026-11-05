@@ -35,8 +35,31 @@ Full-base synchronization is a host operation.
 
 ## Host setup before sandbox launch
 
-Provision push protection on the trusted host before launching a sandbox. Never
-perform these writes from a sandbox. First inspect the primary and every linked
+Push protection is provisioned automatically on the trusted host:
+
+- `parrot sdd launch worker <FEAT-ID|KEY>` runs
+  `parrot sdd worktree push-protection enable <worktree>` before it starts the
+  worker (direct and `--tmux` paths). A refusal is printed as
+  `push protection skipped: <reason>` and the launch continues; sandbox
+  cherry-picks then exit 5 until the protection is set up by hand.
+- `/sdd-done` runs `parrot sdd worktree push-protection disable <worktree>`
+  right before it pushes the branch, so the host push is not blocked by
+  `no_push`. Run the same command before any other host push from a worktree
+  that a sandboxed worker used (the push otherwise fails with
+  `'no_push' does not appear to be a git repository`).
+- `parrot sdd worktree push-protection status <target> [--json]` reports the
+  current state. All three verbs refuse inside a sandbox (exit 5) and refuse
+  the primary checkout (exit 2).
+
+`enable` writes only `extensions.worktreeConfig=true` (common) and the target
+worktree's `config.worktree` push URL. It refuses with exit 2, writing
+nothing, when the common configuration has a `core.worktree`, `core.bare=true`
+or a `remote.origin.pushurl`; those repositories need the manual procedure
+below.
+
+### Manual procedure
+
+Never perform these writes from a sandbox. First inspect the primary and every linked
 worktree for common `core.worktree` and `core.bare` values:
 
 ```bash

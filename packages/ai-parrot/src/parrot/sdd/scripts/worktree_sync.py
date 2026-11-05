@@ -307,17 +307,22 @@ def _sandbox_hint(detail: str) -> str:
     return f"{detail} — run 'parrot sdd worktree sync-base <target>' from the host"
 
 
-def _check_sandbox_push_protection(wt: Path) -> None:
-    """Require host-provisioned worktree config and the sole no-push URL without writing configuration."""
+def push_protection_ok(wt: Path) -> bool:
+    """Return whether worktree config is enabled and ``no_push`` is the sole effective push URL."""
     extension = _git(wt, "config", "--bool", "extensions.worktreeConfig")
     push_urls = _git(wt, "config", "--get-all", "remote.origin.pushurl")
     urls = [line for line in push_urls.stdout.splitlines() if line]
-    if extension.returncode != 0 or extension.stdout.strip().lower() != "true" or urls != ["no_push"]:
+    return extension.returncode == 0 and extension.stdout.strip().lower() == "true" and urls == ["no_push"]
+
+
+def _check_sandbox_push_protection(wt: Path) -> None:
+    """Require host-provisioned worktree config and the sole no-push URL without writing configuration."""
+    if not push_protection_ok(wt):
         raise SyncError(
             EXIT_TRANSPORT,
             _sandbox_hint(
                 "sandbox patch sync requires host-provisioned extensions.worktreeConfig=true and exactly "
-                "one effective remote.origin.pushurl=no_push"
+                "one effective remote.origin.pushurl=no_push (host: parrot sdd worktree push-protection enable <target>)"
             ),
         )
 
