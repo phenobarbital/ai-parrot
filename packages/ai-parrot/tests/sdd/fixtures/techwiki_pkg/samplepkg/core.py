@@ -31,7 +31,14 @@ def format_value(value: str) -> str: ...
 
 
 def format_value(value: int | str) -> str:
-    """Format a value."""
+    """Format a value.
+
+    Args:
+        value: The value to format.
+
+    Returns:
+        The formatted string.
+    """
     return str(value)
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -82,14 +83,19 @@ class TestCli:
         assert main(["--out", str(tmp_path), "--root", str(tmp_path)]) == 3
 
     def test_generate_matches_golden(self, techwiki_repo: tuple[Path, TechwikiConfig]) -> None:
-        """Core module output contains the stable golden documentation headings."""
+        """Core module output equals the golden file byte for byte (spec S8 / AC-7b).
+
+        Regenerate after an intentional template or renderer change with
+        ``TECHWIKI_UPDATE_GOLDEN=1 pytest packages/ai-parrot/tests/sdd/test_techwiki_api.py -k golden`` and review the diff.
+        """
         _require_griffe()
         root, cfg = techwiki_repo
         pages, _ = generate(cfg, root)
         core = next(page for page in pages if page.module == "samplepkg.core")
         golden = Path(__file__).parent / "fixtures" / "techwiki_golden" / "samplepkg.core.md"
-        for line in golden.read_text(encoding="utf-8").splitlines():
-            assert line in core.body
+        if os.environ.get("TECHWIKI_UPDATE_GOLDEN") == "1":
+            golden.write_text(core.body, encoding="utf-8")
+        assert core.body == golden.read_text(encoding="utf-8")
 
     def test_strict_fails_on_skipped_module(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """Strict mode returns four when generation reports a skipped module."""

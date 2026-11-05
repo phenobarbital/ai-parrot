@@ -49,7 +49,10 @@ def _import_griffe() -> "griffe":
 
 def _members(obj: Any) -> dict[str, Any]:
     """Return an object's members without relying on a griffe version-specific type."""
-    members = getattr(obj, "members", {})
+    try:
+        members = getattr(obj, "members", {})
+    except Exception:  # noqa: BLE001 - griffe raises AliasResolutionError (not AttributeError) for unresolved aliases
+        return {}
     return members if isinstance(members, dict) else {}
 
 
@@ -109,7 +112,15 @@ def is_public(obj: "griffe.Object") -> bool:
     if parent is None or not getattr(parent, "is_module", False):
         return True
     exports = _module_all(parent)
-    return exports is None or name in exports
+    if exports is not None:
+        return name in exports
+    if getattr(obj, "is_alias", False):
+        # Without __all__, only re-exports that stay inside the documented top-level package are public;
+        # `import os` / `from typing import Any` style aliases are noise.
+        target = str(getattr(obj, "target_path", "") or "")
+        top = str(getattr(parent, "path", "") or "").split(".", 1)[0]
+        return not target or not top or target.split(".", 1)[0] == top
+    return True
 
 
 def _line_number(obj: Any) -> int:
@@ -257,6 +268,9 @@ def generate(
     template = _template()
     pages: list[RenderedPage] = []
     skipped: list[dict[str, str]] = []
+    if not cfg.packages:
+        logger.warning("No packages configured under techwiki.packages; no API reference will be generated")
+        return [], [{"module": "<configured packages>", "reason": "no packages configured"}]
     try:
         modules = load_packages(cfg, root)
     except GriffeUnavailable:

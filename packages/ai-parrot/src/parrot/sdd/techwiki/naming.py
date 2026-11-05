@@ -95,4 +95,12 @@ def rewrite_links(text: str, resolver: Callable[[str], str | None]) -> str:
             return f"[{match.group(1)}]({page}#{fragment})"
         return f"[[{page}]]"
 
-    return pattern.sub(replace, text)
+    out: list[str] = []
+    in_fence = False
+    for line in text.split("\n"):
+        if line.lstrip().startswith(("```", "~~~")):
+            in_fence = not in_fence
+            out.append(line)
+        else:
+            out.append(line if in_fence else pattern.sub(replace, line))
+    return "\n".join(out)

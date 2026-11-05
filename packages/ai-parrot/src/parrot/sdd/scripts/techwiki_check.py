@@ -28,7 +28,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--spec", type=Path, required=True, help="Path to spec file")
     parser.add_argument("--root", type=Path, default=Path("."), help="Repository root")
     parser.add_argument("--json", action="store_true", dest="as_json", help="JSON output")
-    # No --force argument (AC-7)
+    # Deliberately no --force argument: nothing here can block, so there is nothing to bypass.
     args = parser.parse_args(argv)
 
     if not args.spec.exists():

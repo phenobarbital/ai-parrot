@@ -8,15 +8,12 @@ import logging
 import posixpath
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import yaml
 
 from parrot.sdd.techwiki.config import TechwikiConfig
 from parrot.sdd.techwiki.naming import PageNameError, page_name, page_title, rewrite_links
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +216,9 @@ def assemble(
         by_name.setdefault(page.name, []).append(page)
     for name, matching in sorted(by_name.items()):
         if len(matching) > 1:
-            report.collisions.append({"name": name, "sources": ", ".join(str(page.source) for page in matching)})
+            report.collisions.append(
+                {"name": name, "sources": ", ".join(str(page.source or f"ref:{page.title}") for page in matching)}
+            )
 
     for reserved in sorted(_RESERVED_NAMES & set(by_name)):
         report.collisions.append(
@@ -255,6 +254,20 @@ def assemble(
     return pages, report
 
 
+def report_payload(report: BundleReport) -> dict[str, Any]:
+    """Return the report as an ordered mapping with skipped modules first (AC-7b).
+
+    Args:
+        report: Bundle result to serialize.
+
+    Returns:
+        A dict whose first key is ``skipped_modules``; remaining keys are alphabetical, so output stays deterministic.
+    """
+    payload = asdict(report)
+    skipped = payload.pop("skipped_modules")
+    return {"skipped_modules": skipped, **{key: payload[key] for key in sorted(payload)}}
+
+
 def _template(name: str) -> Any:
     """Load a packaged Jinja template only when writing output."""
     import jinja2
@@ -286,6 +299,9 @@ def write_navigation(pages: list[BundlePage], report: BundleReport, cfg: Techwik
 def write_bundle(pages: list[BundlePage], report: BundleReport, cfg: TechwikiConfig, out: Path) -> None:
     """Write bundle pages, navigation, report, and manifest into a flat directory.
 
+    The directory is not cleared first: stale pages from an earlier run survive, so publish from a fresh
+    directory (CI does) or sync with deletion.
+
     Args:
         pages: Assembled pages.
         report: Bundle result to serialize.
@@ -301,7 +317,7 @@ def write_bundle(pages: list[BundlePage], report: BundleReport, cfg: TechwikiCon
         target.write_text(page.body, encoding="utf-8")
     write_navigation(pages, report, cfg, out)
     (out / "techwiki-report.json").write_text(
-        json.dumps(asdict(report), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        json.dumps(report_payload(report), indent=2) + "\n", encoding="utf-8"
     )
-    manifest = {"pages": _manifest_entries(pages)}
-    (out / "techwiki-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest = {"skipped_modules": report.skipped_modules, "pages": _manifest_entries(pages)}
+    (out / "techwiki-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

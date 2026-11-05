@@ -78,6 +78,26 @@ def _summarize_errors(exc: ValidationError, limit: int = 5) -> str:
 EXCLUSIVE_WAIT_S: float = 300.0
 
 
+def _coerce_model(model_cls: type[BaseModel], value: Any) -> Any:
+    """Return ``value`` as ``model_cls``, accepting an instance, another model or a plain mapping.
+
+    The MCP schema types ``review``/``feedback`` as models, so the host may hand the toolkit an already
+    validated instance; ``model_cls(**instance)`` would then fail with "argument after ** must be a mapping".
+
+    Args:
+        model_cls: Target pydantic model.
+        value: A ``model_cls`` instance, any other ``BaseModel`` or a mapping.
+
+    Returns:
+        A ``model_cls`` instance.
+    """
+    if isinstance(value, model_cls):
+        return value
+    if isinstance(value, BaseModel):
+        return model_cls(**value.model_dump())
+    return model_cls(**value)
+
+
 class SddCoderToolkit(AbstractToolkit):
     """Orchestration and correction feedback for sdd-worker; every result is a CoderResult."""
 
@@ -370,7 +390,7 @@ class SddCoderToolkit(AbstractToolkit):
 
         return await self._run(
             "coder_record_feedback",
-            self._engine.record_feedback(feature, worktree, CoderFeedback(**feedback), execution_id=execution_id),
+            self._engine.record_feedback(feature, worktree, _coerce_model(CoderFeedback, feedback), execution_id=execution_id),
             exclusive=True,
         )
 
@@ -388,7 +408,7 @@ class SddCoderToolkit(AbstractToolkit):
 
         return await self._run(
             "coder_record_review",
-            self._engine.record_review(feature, worktree, CoderReview(**review), execution_id=execution_id),
+            self._engine.record_review(feature, worktree, _coerce_model(CoderReview, review), execution_id=execution_id),
             exclusive=True,
         )
 

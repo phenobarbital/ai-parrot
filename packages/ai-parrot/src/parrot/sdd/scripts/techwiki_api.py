@@ -45,11 +45,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         (args.out / f"{page.module}.md").write_text(page.body, encoding="utf-8")
     report = {"generated": [page.module for page in pages], "skipped_modules": skipped}
     if args.as_json:
-        print(json.dumps(report, sort_keys=True))
+        print(json.dumps({"skipped_modules": skipped, "generated": report["generated"]}))
     else:
         print(f"Generated {len(pages)} API reference pages")
-        for skipped_module in skipped:
-            print(f"Skipped {skipped_module['module']}: {skipped_module['reason']}", file=sys.stderr)
+    for skipped_module in skipped:
+        print(f"Skipped {skipped_module['module']}: {skipped_module['reason']}", file=sys.stderr)
     return 4 if args.strict and skipped else 0
 
 

@@ -23,7 +23,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         argv: Optional command-line arguments.
 
     Returns:
-        Zero on success, one for validation errors, two for config errors, three when griffe is absent, or four with ``--strict`` when a module was skipped.
+        Zero on success, one for validation errors, two for config or bundle errors, three when griffe is
+        absent, or four with ``--strict`` when a module was skipped.
     """
     parser = argparse.ArgumentParser(description="Assemble a technical-wiki bundle")
     parser.add_argument("--out", type=Path, required=True, help="Output directory")
@@ -36,11 +37,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     from parrot.sdd.techwiki.api import GriffeUnavailable
-    from parrot.sdd.techwiki.bundle import assemble, write_bundle, write_navigation
+    from parrot.sdd.techwiki.bundle import assemble, report_payload, write_bundle, write_navigation
     from parrot.sdd.techwiki.config import load_techwiki_config
 
     try:
         cfg = load_techwiki_config(args.root)
+    except Exception as exc:
+        print(f"Config error: {exc}", file=sys.stderr)
+        return 2
+    try:
         pages, report = assemble(
             cfg, args.root, release=args.release, commit=_commit(args.root), with_api=not args.sidebar_only
         )
@@ -48,13 +53,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 3
     except Exception as exc:
-        print(f"Config error: {exc}", file=sys.stderr)
+        print(f"Bundle error ({type(exc).__name__}): {exc}", file=sys.stderr)
         return 2
 
     if args.dry_run:
         args.out.mkdir(parents=True, exist_ok=True)
         (args.out / "techwiki-report.json").write_text(
-            json.dumps(report.__dict__, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            json.dumps(report_payload(report), indent=2) + "\n", encoding="utf-8"
         )
     else:
         if args.sidebar_only:
@@ -62,7 +67,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             write_bundle(pages, report, cfg, args.out)
     if args.as_json:
-        print(json.dumps(report.__dict__, sort_keys=True))
+        print(json.dumps(report_payload(report)))
+    for skipped_module in report.skipped_modules:
+        print(f"Skipped {skipped_module['module']}: {skipped_module['reason']}", file=sys.stderr)
     if not report.ok():
         return 1
     return 4 if args.strict and report.skipped_modules else 0

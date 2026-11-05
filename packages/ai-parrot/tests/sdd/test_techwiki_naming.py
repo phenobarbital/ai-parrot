@@ -95,3 +95,10 @@ def test_page_name_never_contains_path_separators(title: str) -> None:
     """Titles with separators are flattened so a page name can never address another directory."""
     name = page_name(None, title)
     assert "/" not in name and "\\" not in name
+
+
+def test_rewrite_links_leaves_fenced_code_untouched() -> None:
+    """Links inside fenced code blocks are examples, not page references."""
+    text = "[A](local.md)\n```md\n[B](local.md)\n```\n~~~\n[C](local.md)\n~~~\n[D](local.md)"
+    out = rewrite_links(text, lambda target: "Local")
+    assert out == "[[Local]]\n```md\n[B](local.md)\n```\n~~~\n[C](local.md)\n~~~\n[[Local]]"
