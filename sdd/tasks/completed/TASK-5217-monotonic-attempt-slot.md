@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-812 — coder_record_review/feedback accept validated models, and re-dispatched attempts never collide
 **Spec**: `sdd/specs/ledger-coder-reviews-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -204,4 +204,18 @@ Touch only the four files listed. Run with `PYTHONPATH=packages/ai-parrot/src` i
 
 ## Completion Note
 
-*(filled in on completion)*
+Done 2026-11-05 (commit 435af4f2f8). Added `_MAX_ATTEMPT_NUMBER = 20` and
+`SddCoderEngine._free_attempt`, called at the top of `_run_attempt`; attempt bounds `le=3` → `le=20`
+in `AttemptRecord` and both telemetry rows.
+
+Deviation from the blueprint: `_branch_attempts` is NOT counted as "taken". It still lists merged
+attempts whose branch and sub-worktree are gone, and reusing those slots is safe; only a live branch
+or an existing path makes `git worktree add -b` fail.
+
+Existing test changed: `TestAttemptIdentity::test_uid_unique_across_jobs` asserted attempt 1 for the
+second job. That only held because job2's attempt 1 failed on this very collision (job1's a1
+sub-worktree is still live) and the retry ran as attempt 2; it now asserts attempt 2 with no error.
+Mutation-checked: the new leftover-branch test fails on the old engine with
+`git worktree add failed for worker 'TASK-0001.a1'`.
+Validation: test_engine_dispatch/test_toolkit/test_feedback/test_telemetry → 141 passed; merge-tier
+selector → 795 + 57 + 27 passed; ruff/black clean.
