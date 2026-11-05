@@ -1,4 +1,5 @@
 """FEAT-803 AC3/AC11: chapter overviews are concept intros with wiki links."""
+
 import re
 from pathlib import Path
 
@@ -29,6 +30,4 @@ def test_no_code_blocks(name: str) -> None:
     for block in code_blocks:
         lines = block.split("\n")
         # Allow short code blocks (e.g., imports, small examples) but not long ones
-        assert len(lines) <= 15, (
-            f"{name}.md has a code block with {len(lines)} lines (max 15)"
-        )
+        assert len(lines) <= 15, f"{name}.md has a code block with {len(lines)} lines (max 15)"
