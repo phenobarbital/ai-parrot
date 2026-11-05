@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-04T23:27:07+00:00",
-  "completed_at": "2026-11-05T03:30:36+00:00",
+  "completed_at": "2026-11-05T03:45:58+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -141,7 +141,7 @@
         "TASK-5197"
       ],
       "parallel": true,
-      "parallelism_notes": "Creates docs/tutorials/ pages that the nav written by TASK-5197 (mkdocs.yml Tutorials section) points at; spec §7 serializes M6 after M3.",
+      "parallelism_notes": "Creates docs/tutorials/ pages that the nav written by TASK-5197 (mkdocs.yml Tutorials section) points at; spec \u00a77 serializes M6 after M3.",
       "assigned_to": null,
       "started_at": "2026-11-05T02:57:20+00:00",
       "completed_at": "2026-11-05T03:26:31+00:00",
@@ -162,7 +162,7 @@
         "TASK-5197"
       ],
       "parallel": true,
-      "parallelism_notes": "Creates docs/tutorials/ pages that the nav written by TASK-5197 (mkdocs.yml Tutorials section) points at; spec §7 serializes M6 after M3.",
+      "parallelism_notes": "Creates docs/tutorials/ pages that the nav written by TASK-5197 (mkdocs.yml Tutorials section) points at; spec \u00a77 serializes M6 after M3.",
       "assigned_to": null,
       "started_at": "2026-11-05T02:57:20+00:00",
       "completed_at": "2026-11-05T03:26:32+00:00",
