@@ -1,5 +1,6 @@
 # packages/ai-parrot/tests/sdd/test_audit.py
 """Tests for parrot.sdd.audit (FEAT-633 spike S5)."""
+
 from __future__ import annotations
 
 import subprocess
@@ -58,8 +59,8 @@ def test_legacy_worktree_path_is_not_monorepo_specific() -> None:
 @pytest.mark.parametrize(
     ("line", "kind"),
     [
-        ("Tracker: https://your-org.atlassian.net/browse/PROJ-123", "org-data"),   # placeholders
-        ("FEAT-633 decomposes into TASK-4070 … TASK-4095", "org-data"),            # SDD's own ids
+        ("Tracker: https://your-org.atlassian.net/browse/PROJ-123", "org-data"),  # placeholders
+        ("FEAT-633 decomposes into TASK-4070 … TASK-4095", "org-data"),  # SDD's own ids
         ("checksum SHA-256, encoding UTF-8, dates ISO-8601, criterion AC-1", "org-data"),
         ("the main checkout, the dev-loop and the staging area", "branch-literal"),  # prose words
         ("git fetch origin/<base_branch>; --base <base_branch>", "branch-literal"),  # placeholders
@@ -73,8 +74,8 @@ def test_c11a_kinds_skip_placeholders_and_prose(line: str, kind: str) -> None:
 @pytest.mark.parametrize(
     ("line", "kind"),
     [
-        ('DRY_RUN="${DRY_RUN:-}" python - "$HOOKS_DIR/context.json" <<\'PY\'', "bare-python"),          # rev 0.8 C29
-        ("python -c \"import hashlib\" pkg/__init__.py", "bare-python"),
+        ('DRY_RUN="${DRY_RUN:-}" python - "$HOOKS_DIR/context.json" <<\'PY\'', "bare-python"),  # rev 0.8 C29
+        ('python -c "import hashlib" pkg/__init__.py', "bare-python"),
         ("`python -m json.tool x.json`", "bare-python"),
         ("python <<'PY'", "bare-python"),
         ("python<<'PY'", "bare-python"),
@@ -102,7 +103,7 @@ def test_scan_text_c29_kinds(line: str, kind: str) -> None:
 @pytest.mark.parametrize(
     ("line", "kind"),
     [
-        ('python3 - "$HOOKS_DIR/context.json" <<\'PY\'', "bare-python"),
+        ("python3 - \"$HOOKS_DIR/context.json\" <<'PY'", "bare-python"),
         ("$WT/.venv/bin/python -m pytest", "bare-python"),
         ("changed Python files; the python files under src/", "bare-python"),
         ("command -v python3 && python3 -c pass", "bare-python"),
@@ -151,14 +152,18 @@ def test_import_is_stdlib_only() -> None:
 def test_real_assets_reference_map() -> None:
     """TASK-4089 rewrote every ``scripts/sdd`` reference to ``parrot sdd run``: the real asset has none left."""
     findings = scan_paths([REPO_ROOT / ".claude/commands/sdd-spec.md"])
-    names = {m.group("name") for f in findings if f.kind == "repo-script" for m in audit.REPO_SCRIPT_RE.finditer(f.snippet)}
+    names = {
+        m.group("name") for f in findings if f.kind == "repo-script" for m in audit.REPO_SCRIPT_RE.finditer(f.snippet)
+    }
     assert names == set()
 
 
 def test_default_globs_cover_codex_and_google_twins() -> None:  # rev 0.5 C24
     assert {
-        ".agents/skills/sdd-*/SKILL.md", ".agents/agents/sdd-*/agent.md",
-        ".agent/workflows/sdd-*.md", ".agent/agents/sdd-*/agent.md",
+        ".agents/skills/sdd-*/SKILL.md",
+        ".agents/agents/sdd-*/agent.md",
+        ".agent/workflows/sdd-*.md",
+        ".agent/agents/sdd-*/agent.md",
     } <= set(audit.DEFAULT_GLOBS)
 
 

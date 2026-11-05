@@ -20,7 +20,9 @@ from parrot.self_ import doctor
 
 
 def _git(root: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@x", *args], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@x", *args], check=True, capture_output=True
+    )
 
 
 @pytest.fixture
@@ -44,7 +46,9 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (repo / "sdd/config.json").write_text(json.dumps({"base_branch": "dev", "hotfix_base": "main"}) + "\n")
     (repo / ".gitignore").write_text("/.parrot/worktrees/\n")
     # Bare lines, no installer marker block: `doctor._check_ledger_attributes` only requires the two merge=union lines.
-    (repo / ".gitattributes").write_text("sdd/ledger/events.jsonl merge=union\nsdd/ledger/archive/*.jsonl merge=union\n")
+    (repo / ".gitattributes").write_text(
+        "sdd/ledger/events.jsonl merge=union\nsdd/ledger/archive/*.jsonl merge=union\n"
+    )
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "seed")
     _git(repo, "push", "-q", "-u", "origin", "dev")
@@ -57,10 +61,12 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _gh_ok(real_run):
     """Pass-through for git; fake `gh auth status` → exit 0."""
+
     def run(cmd, *a, **k):
         if cmd[:3] == ["gh", "auth", "status"]:
             return subprocess.CompletedProcess(cmd, 0, "", "")
         return real_run(cmd, *a, **k)
+
     return run
 
 
@@ -73,14 +79,35 @@ def test_ready_repo_has_no_sdd_failures(ready_repo: Path) -> None:
     "break_it, check_name, fix_fragment",
     [
         (lambda r: _git(r, "remote", "remove", "origin"), "sdd: origin remote", "git remote add origin"),
-        (lambda r: subprocess.run(["git", "-C", str(r), "push", "-q", "origin", "--delete", "dev"], check=True), "sdd: base branch on origin", "git push -u origin dev"),
-        (lambda r: (_git(r, "rm", "-q", "--cached", "sdd/tasks/.id_ledger.json"), _git(r, "commit", "-q", "--no-verify", "-m", "untrack")), "sdd: id ledger tracked", "git add sdd/tasks/.id_ledger.json"),
+        (
+            lambda r: subprocess.run(["git", "-C", str(r), "push", "-q", "origin", "--delete", "dev"], check=True),
+            "sdd: base branch on origin",
+            "git push -u origin dev",
+        ),
+        (
+            lambda r: (
+                _git(r, "rm", "-q", "--cached", "sdd/tasks/.id_ledger.json"),
+                _git(r, "commit", "-q", "--no-verify", "-m", "untrack"),
+            ),
+            "sdd: id ledger tracked",
+            "git add sdd/tasks/.id_ledger.json",
+        ),
         (lambda r: (r / ".gitignore").write_text(""), "sdd: worktrees ignored", "parrot sdd install"),
-        (lambda r: (r / ".gitattributes").write_text(""), "sdd: ledger merge=union", "parrot sdd install"),  # rev 0.5 C23
-        (lambda r: (r / ".git" / "hooks" / "post-merge").unlink(), "sdd: ledger hooks", "parrot sdd install"),  # rev 0.5 C23
+        (
+            lambda r: (r / ".gitattributes").write_text(""),
+            "sdd: ledger merge=union",
+            "parrot sdd install",
+        ),  # rev 0.5 C23
+        (
+            lambda r: (r / ".git" / "hooks" / "post-merge").unlink(),
+            "sdd: ledger hooks",
+            "parrot sdd install",
+        ),  # rev 0.5 C23
     ],
 )
-def test_each_missing_prerequisite_fails_its_check_with_a_fix(ready_repo: Path, break_it, check_name: str, fix_fragment: str) -> None:
+def test_each_missing_prerequisite_fails_its_check_with_a_fix(
+    ready_repo: Path, break_it, check_name: str, fix_fragment: str
+) -> None:
     """C15 'done when': a fixture repo missing each prerequisite gets the matching check failing, with its fix."""
     break_it(ready_repo)
     bad = {c.name: c for c in doctor.failed(doctor._check_sdd(ready_repo))}
@@ -113,6 +140,7 @@ def test_host_cli_missing_is_informational_only(ready_repo: Path, monkeypatch: p
 def test_sdd_modules_absent_degrade_to_informational(ready_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """ImportError for parrot.sdd.config / installer / audit must yield informational checks, never raise."""
     import builtins
+
     real_import = builtins.__import__
 
     def no_sdd(name, *a, **k):
@@ -130,7 +158,9 @@ def _guard_status(**guard):
 
 
 def test_guard_hook_unresolvable_fails_with_fix() -> None:
-    check = doctor._check_guard_hook(_guard_status(form="baked", command="/gone/python x.py", targets=["a"], resolvable=False))
+    check = doctor._check_guard_hook(
+        _guard_status(form="baked", command="/gone/python x.py", targets=["a"], resolvable=False)
+    )
     assert not check.ok and not check.informational and "parrot sdd install" in check.fix and "--portable" in check.fix
 
 
@@ -149,7 +179,9 @@ def test_guard_hook_absent_is_informational() -> None:
     assert ok.ok and not ok.informational and "PATH" in ok.detail
 
 
-def test_scope_runtime_only_excludes_repo_host_and_component_checks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_scope_runtime_only_excludes_repo_host_and_component_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """C14: a broken repo / host config / toolkit must NOT surface under --runtime-only."""
     repo = tmp_path / "repo"
     (repo / "sdd").mkdir(parents=True)  # no git at all → every SDD check would fail in "full"
@@ -175,7 +207,9 @@ def test_cli_flags_mutually_exclusive_and_exit_codes(monkeypatch: pytest.MonkeyP
         assert result.exit_code == 1 and "gh auth login" in result.output
 
 
-def test_hung_ls_remote_times_out_as_informational(ready_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hung_ls_remote_times_out_as_informational(
+    ready_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """`git ls-remote` that never answers must not hang the doctor: it degrades to an informational check."""
     import os
     import shutil
@@ -199,7 +233,9 @@ def test_hung_ls_remote_times_out_as_informational(ready_repo: Path, tmp_path: P
 
 
 @pytest.mark.parametrize("missing", [None, "python3", "jq"])
-def test_sdd_tool_checks_follow_the_installed_assets(ready_repo: Path, monkeypatch: pytest.MonkeyPatch, missing) -> None:
+def test_sdd_tool_checks_follow_the_installed_assets(
+    ready_repo: Path, monkeypatch: pytest.MonkeyPatch, missing
+) -> None:
     """rev 0.8 C29: jq and python3 are checked while the installed SDD files invoke them; a missing one fails
     with its install fix (a minimal host such as the ubuntu:24.04 image has no python3)."""
     from parrot.sdd.installer import install_sdd_integration
@@ -222,9 +258,12 @@ def _assets_checks(status: dict) -> dict[str, doctor.DoctorCheck]:
 
 
 def test_missing_target_of_installed_host_fails_files_current() -> None:
-    status = {"hosts": {"claude": {"current": [".claude/commands/sdd-start.md"],
-                                   "missing": [".claude/commands/sdd-done.md"]},
-                        "codex": {"missing": [".agents/skills/sdd-start/SKILL.md"]}}}
+    status = {
+        "hosts": {
+            "claude": {"current": [".claude/commands/sdd-start.md"], "missing": [".claude/commands/sdd-done.md"]},
+            "codex": {"missing": [".agents/skills/sdd-start/SKILL.md"]},
+        }
+    }
     check = _assets_checks(status)["sdd: files current"]
     assert not check.ok and not check.informational
     assert ".claude/commands/sdd-done.md" in check.detail and "parrot sdd install" in check.fix
@@ -232,8 +271,9 @@ def test_missing_target_of_installed_host_fails_files_current() -> None:
 
 
 def test_foreign_target_is_informational() -> None:
-    status = {"hosts": {"claude": {"current": [".claude/commands/sdd-start.md"],
-                                   "foreign": [".claude/agents/sdd-worker.md"]}}}
+    status = {
+        "hosts": {"claude": {"current": [".claude/commands/sdd-start.md"], "foreign": [".claude/agents/sdd-worker.md"]}}
+    }
     checks = _assets_checks(status)
     assert checks["sdd: files current"].ok
     foreign = checks["sdd: foreign files"]
@@ -243,8 +283,17 @@ def test_foreign_target_is_informational() -> None:
 
 
 def test_all_missing_hosts_mean_not_installed() -> None:
-    status = {"hosts": {"claude": {"current": [], "outdated": [], "edited": [], "foreign": [],
-                                   "missing": [".claude/commands/sdd-start.md"]}}}
+    status = {
+        "hosts": {
+            "claude": {
+                "current": [],
+                "outdated": [],
+                "edited": [],
+                "foreign": [],
+                "missing": [".claude/commands/sdd-start.md"],
+            }
+        }
+    }
     check = _assets_checks(status)["sdd: files current"]
     assert check.ok and check.informational and check.detail == "SDD flow not installed"
 

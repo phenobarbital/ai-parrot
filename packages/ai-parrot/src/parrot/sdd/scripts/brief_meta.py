@@ -37,6 +37,8 @@ def brief_base_branches(config: SddConfig) -> frozenset[str]:
     if config.staging_branch:
         branches.add(config.staging_branch)
     return frozenset(branches)
+
+
 _SAFE_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 

@@ -74,8 +74,10 @@ def test_edited_file_overwritten_by_default_kept_with_keep_edits(empty_repo: Pat
     install_sdd_integration(empty_repo)
     target = empty_repo / _claude_targets()[0]
     target.write_text("user edit\n")
-    assert any(a.startswith("warning:") and str(_claude_targets()[0]) in a
-               for a in install_sdd_integration(empty_repo, keep_edits=True))
+    assert any(
+        a.startswith("warning:") and str(_claude_targets()[0]) in a
+        for a in install_sdd_integration(empty_repo, keep_edits=True)
+    )
     assert target.read_text() == "user edit\n"
     uninstall_sdd_integration(empty_repo, keep_edits=True)
     assert target.read_text() == "user edit\n"
@@ -327,7 +329,9 @@ def _hook_of(repo: Path, rel: str = WORKER) -> str:
 
     def walk(node: object) -> None:
         if isinstance(node, dict):
-            if isinstance(node.get("command"), str) and ("worktree guard" in node["command"] or "worktree_environment" in node["command"]):
+            if isinstance(node.get("command"), str) and (
+                "worktree guard" in node["command"] or "worktree_environment" in node["command"]
+            ):
                 found.append(node["command"])
             for value in node.values():
                 walk(value)

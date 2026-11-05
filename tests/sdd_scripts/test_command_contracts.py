@@ -98,6 +98,7 @@ def test_no_legacy_naming_template_remains() -> None:
 
     assert not offenders, f"Legacy template `{_LEGACY_TEMPLATE}` found in: " + ", ".join(str(p) for p in offenders)
 
+
 _LEGACY_ROOT = ".claude/worktrees"
 _GUARD_DIRS = (".claude", ".agent", ".agents", "packages/ai-parrot/src/parrot/sdd/_assets")
 _GUARD_SUFFIXES = {".md", ".toml", ".sh"}

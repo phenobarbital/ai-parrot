@@ -1,5 +1,6 @@
 # packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py
 """FEAT-633 move A: ledger/worktree helpers live in parrot.sdd.scripts; scripts/sdd shims alias them."""
+
 from __future__ import annotations
 
 import importlib
@@ -63,9 +64,15 @@ def test_shim_aliases_package_module(name: str) -> None:
 
 @pytest.mark.parametrize("name", ("reserve_ids", "ensure_worktree"))
 def test_live_cli_help_and_usage_error_unchanged(name: str) -> None:
-    shim, pkg = _run(f"scripts.sdd.{name}", "--help", cwd=REPO_ROOT), _run(f"parrot.sdd.scripts.{name}", "--help", cwd=REPO_ROOT)
+    shim, pkg = _run(f"scripts.sdd.{name}", "--help", cwd=REPO_ROOT), _run(
+        f"parrot.sdd.scripts.{name}", "--help", cwd=REPO_ROOT
+    )
     assert (shim.returncode, shim.stdout) == (pkg.returncode, pkg.stdout)
-    assert _run(f"scripts.sdd.{name}", cwd=REPO_ROOT).returncode == _run(f"parrot.sdd.scripts.{name}", cwd=REPO_ROOT).returncode == 2
+    assert (
+        _run(f"scripts.sdd.{name}", cwd=REPO_ROOT).returncode
+        == _run(f"parrot.sdd.scripts.{name}", cwd=REPO_ROOT).returncode
+        == 2
+    )
 
 
 def test_sdd_meta_reexport_identity() -> None:
@@ -80,9 +87,9 @@ def test_sdd_meta_worktree_root_removed() -> None:
     pkg = importlib.import_module("parrot.sdd.scripts.sdd_meta")
     src = importlib.import_module("parrot.knowledge.wiki.ledger.sdd_meta")
     with pytest.raises(AttributeError):
-        pkg.WORKTREE_ROOT
+        _ = pkg.WORKTREE_ROOT
     with pytest.raises(AttributeError):
-        src.WORKTREE_ROOT
+        _ = src.WORKTREE_ROOT
 
 
 def test_worktree_environment_shim_reexports_moved_module() -> None:  # rev 0.3 C16 / AC-8
@@ -108,7 +115,11 @@ def test_hook_answers_with_bare_interpreter(hook: Path, tmp_path: Path) -> None:
     # -I -S: stdlib only (no site-packages, no PYTHONPATH, no script dir on sys.path).
     proc = subprocess.run(
         [sys.executable, "-I", "-S", str(hook), "--hook"],
-        input="{}", cwd=tmp_path, capture_output=True, text=True, timeout=10,
+        input="{}",
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     assert proc.returncode == 0, proc.stderr
     assert json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"

@@ -97,7 +97,9 @@ def _check_python() -> DoctorCheck:
             break
     ok = version == MANAGED_PYTHON or version.startswith(f"{MANAGED_PYTHON}.")
     return DoctorCheck(
-        name="python", ok=ok, detail=f"managed Python {version or 'unknown'} (expected {MANAGED_PYTHON})",
+        name="python",
+        ok=ok,
+        detail=f"managed Python {version or 'unknown'} (expected {MANAGED_PYTHON})",
         fix="" if ok else fix,
     )
 
@@ -118,7 +120,7 @@ def _check_path() -> DoctorCheck:
     if os.name == "nt":
         fix = f'add "{home_bin}" to your user PATH (Settings > Environment Variables) and open a new terminal'
     else:
-        fix = f"add to your shell profile: export PATH=\"{home_bin}:$PATH\""
+        fix = f'add to your shell profile: export PATH="{home_bin}:$PATH"'
     return DoctorCheck(
         name="PATH", ok=ok, detail=f"{home_bin} {'is' if ok else 'is NOT'} on PATH", fix="" if ok else fix
     )
@@ -127,10 +129,15 @@ def _check_path() -> DoctorCheck:
 def _check_entrypoints() -> DoctorCheck:
     """C14 runtime scope: the three console-script shims exist under ~/.parrot/bin AND resolve in the managed venv."""
     home_bin = parrot_home() / "bin"
-    missing = [n for n in RUNTIME_ENTRYPOINTS if not (home_bin / (f"{n}.exe" if os.name == "nt" else n)).exists()
-               or not script_path(managed_venv(), n).exists()]
+    missing = [
+        n
+        for n in RUNTIME_ENTRYPOINTS
+        if not (home_bin / (f"{n}.exe" if os.name == "nt" else n)).exists()
+        or not script_path(managed_venv(), n).exists()
+    ]
     return DoctorCheck(
-        name="runtime entry points", ok=not missing,
+        name="runtime entry points",
+        ok=not missing,
         detail="all present" if not missing else f"missing: {', '.join(missing)}",
         fix="" if not missing else "re-run install-parrot --global (or: parrot self update)",
     )
@@ -143,7 +150,9 @@ def _check_tools_wiki() -> DoctorCheck:
     if not python.exists():
         return DoctorCheck(name="parrot_tools.wiki", ok=False, detail=f"no interpreter at {python}", fix=fix)
     try:
-        result = subprocess.run([str(python), "-c", "import parrot_tools.wiki"], capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            [str(python), "-c", "import parrot_tools.wiki"], capture_output=True, text=True, check=False
+        )
     except OSError as exc:
         return DoctorCheck(name="parrot_tools.wiki", ok=False, detail=f"cannot run {python}: {exc}", fix=fix)
     if result.returncode != 0:
@@ -174,16 +183,24 @@ def _check_runtime_lockstep() -> DoctorCheck:
         return DoctorCheck(name=name, ok=True, informational=True, detail=f"cannot run {python}: {exc}")
     lines = result.stdout.splitlines()
     if result.returncode != 0 or len(lines) != 2 or not all(v.strip() for v in lines):
-        return DoctorCheck(name=name, ok=True, informational=True,
-                           detail="ai-parrot / ai-parrot-tools version not readable (see parrot_tools.wiki)")
+        return DoctorCheck(
+            name=name,
+            ok=True,
+            informational=True,
+            detail="ai-parrot / ai-parrot-tools version not readable (see parrot_tools.wiki)",
+        )
     core, tools = (v.strip() for v in lines)
     if core == tools:
         return DoctorCheck(name=name, ok=True, detail=f"ai-parrot and ai-parrot-tools both {core}")
     from parrot.self_.components import version_sort_key
 
     lower = min(core, tools, key=version_sort_key)
-    return DoctorCheck(name=name, ok=False, detail=f"ai-parrot {core} but ai-parrot-tools {tools}",
-                       fix=f"parrot self update --version {lower}")
+    return DoctorCheck(
+        name=name,
+        ok=False,
+        detail=f"ai-parrot {core} but ai-parrot-tools {tools}",
+        fix=f"parrot self update --version {lower}",
+    )
 
 
 # --- C15: SDD readiness (lazy, absence-tolerant; run only in "full" with <root>/sdd present, or "sdd") ---
@@ -197,7 +214,11 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     cmd = ["git", "-C", str(root), *args]
     try:
         return subprocess.run(
-            cmd, capture_output=True, text=True, check=False, timeout=GIT_TIMEOUT_S,
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GIT_TIMEOUT_S,
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
     except subprocess.TimeoutExpired:
@@ -209,13 +230,21 @@ def _sdd_base_branch(root: Path) -> tuple[str, DoctorCheck | None]:
     try:
         from parrot.sdd.config import load_sdd_config  # TASK-4299 — lazy on purpose
     except ImportError:
-        return "dev", DoctorCheck(name="sdd config", ok=True, informational=True,
-                                  detail="parrot.sdd.config unavailable in this build; assuming base branch 'dev'")
+        return "dev", DoctorCheck(
+            name="sdd config",
+            ok=True,
+            informational=True,
+            detail="parrot.sdd.config unavailable in this build; assuming base branch 'dev'",
+        )
     try:
         return load_sdd_config(root).base_branch, None
     except (OSError, ValueError) as exc:  # unreadable / invalid sdd/config.json is itself a failed check
-        return "dev", DoctorCheck(name="sdd config", ok=False, detail=f"sdd/config.json invalid: {exc}",
-                                  fix="fix sdd/config.json (parrot sdd install --dry-run shows the seed shape)")
+        return "dev", DoctorCheck(
+            name="sdd config",
+            ok=False,
+            detail=f"sdd/config.json invalid: {exc}",
+            fix="fix sdd/config.json (parrot sdd install --dry-run shows the seed shape)",
+        )
 
 
 def check_bwrap_sandbox() -> list[DoctorCheck]:
@@ -231,10 +260,14 @@ def check_bwrap_sandbox() -> list[DoctorCheck]:
     checks: list[DoctorCheck] = []
     bwrap = shutil.which("bwrap")
     if not bwrap:
-        checks.append(DoctorCheck(
-            name="sdd: bwrap", ok=False,
-            detail="bubblewrap (bwrap) not found on PATH",
-            fix="sudo apt install bubblewrap"))
+        checks.append(
+            DoctorCheck(
+                name="sdd: bwrap",
+                ok=False,
+                detail="bubblewrap (bwrap) not found on PATH",
+                fix="sudo apt install bubblewrap",
+            )
+        )
         return checks
     checks.append(DoctorCheck(name="sdd: bwrap", ok=True, detail=f"bwrap found at {bwrap}"))
 
@@ -242,47 +275,91 @@ def check_bwrap_sandbox() -> list[DoctorCheck]:
     try:
         single = subprocess.run(
             [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--", "echo", "ok"],
-            capture_output=True, text=True, check=False, timeout=10)
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        checks.append(DoctorCheck(
-            name="sdd: bwrap userns", ok=False,
-            detail=f"bwrap single namespace failed: {exc}",
-            fix="sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; "
-                "sudo sysctl -w kernel.unprivileged_userns_clone=1"))
+        checks.append(
+            DoctorCheck(
+                name="sdd: bwrap userns",
+                ok=False,
+                detail=f"bwrap single namespace failed: {exc}",
+                fix="sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; "
+                "sudo sysctl -w kernel.unprivileged_userns_clone=1",
+            )
+        )
         return checks
 
     if single.returncode != 0:
         stderr = single.stderr.strip().splitlines()
-        checks.append(DoctorCheck(
-            name="sdd: bwrap userns", ok=False,
-            detail=f"bwrap single namespace failed: {stderr[-1] if stderr else 'unknown error'}",
-            fix="sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; "
-                "sudo sysctl -w kernel.unprivileged_userns_clone=1"))
+        checks.append(
+            DoctorCheck(
+                name="sdd: bwrap userns",
+                ok=False,
+                detail=f"bwrap single namespace failed: {stderr[-1] if stderr else 'unknown error'}",
+                fix="sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; "
+                "sudo sysctl -w kernel.unprivileged_userns_clone=1",
+            )
+        )
         return checks
 
     # Nested bwrap (what Claude Code native sandbox + SDD sandbox requires)
     try:
         nested = subprocess.run(
-            [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--",
-             bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--", "echo", "ok"],
-            capture_output=True, text=True, check=False, timeout=10)
+            [
+                bwrap,
+                "--ro-bind",
+                "/",
+                "/",
+                "--dev",
+                "/dev",
+                "--",
+                bwrap,
+                "--ro-bind",
+                "/",
+                "/",
+                "--dev",
+                "/dev",
+                "--",
+                "echo",
+                "ok",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        checks.append(DoctorCheck(
-            name="sdd: bwrap nested userns", ok=False,
-            detail=f"bwrap nested namespace failed: {exc}",
-            fix="see docs/sdd/sandbox-setup.md — create /etc/apparmor.d/bwrap with userns permission"))
+        checks.append(
+            DoctorCheck(
+                name="sdd: bwrap nested userns",
+                ok=False,
+                detail=f"bwrap nested namespace failed: {exc}",
+                fix="see docs/sdd/sandbox-setup.md — create /etc/apparmor.d/bwrap with userns permission",
+            )
+        )
         return checks
 
     if nested.returncode != 0:
         stderr = nested.stderr.strip().splitlines()
-        checks.append(DoctorCheck(
-            name="sdd: bwrap nested userns", ok=False,
-            detail=f"nested bwrap failed: {stderr[-1] if stderr else 'unknown error'}",
-            fix="see docs/sdd/sandbox-setup.md — create /etc/apparmor.d/bwrap with userns permission"))
+        checks.append(
+            DoctorCheck(
+                name="sdd: bwrap nested userns",
+                ok=False,
+                detail=f"nested bwrap failed: {stderr[-1] if stderr else 'unknown error'}",
+                fix="see docs/sdd/sandbox-setup.md — create /etc/apparmor.d/bwrap with userns permission",
+            )
+        )
     else:
-        checks.append(DoctorCheck(
-            name="sdd: bwrap nested userns", ok=True,
-            detail="nested user namespaces work (Claude Code native sandbox + SDD sandbox compatible)"))
+        checks.append(
+            DoctorCheck(
+                name="sdd: bwrap nested userns",
+                ok=True,
+                detail="nested user namespaces work (Claude Code native sandbox + SDD sandbox compatible)",
+            )
+        )
     return checks
 
 
@@ -295,9 +372,14 @@ def _check_sdd(root: Path) -> list[DoctorCheck]:
     checks: list[DoctorCheck] = []
     checks.extend(_check_bwrap_sandbox())
     origin = _git(root, "remote", "get-url", "origin")
-    checks.append(DoctorCheck(name="sdd: origin remote", ok=origin.returncode == 0,
-                              detail=origin.stdout.strip() or origin.stderr.strip(),
-                              fix="git remote add origin <url>"))
+    checks.append(
+        DoctorCheck(
+            name="sdd: origin remote",
+            ok=origin.returncode == 0,
+            detail=origin.stdout.strip() or origin.stderr.strip(),
+            fix="git remote add origin <url>",
+        )
+    )
     branch, cfg_check = _sdd_base_branch(root)
     if cfg_check:
         checks.append(cfg_check)
@@ -318,8 +400,9 @@ def _check_worktree_tests(root: Path) -> DoctorCheck:
     try:
         from parrot.sdd.installer import worktree_test_isolation  # TASK-5118 — lazy on purpose
     except ImportError:
-        return DoctorCheck(name=name, ok=True, informational=True,
-                           detail="parrot.sdd.installer unavailable in this build")
+        return DoctorCheck(
+            name=name, ok=True, informational=True, detail="parrot.sdd.installer unavailable in this build"
+        )
     try:
         from parrot.sdd.config import load_sdd_config
 
@@ -328,9 +411,13 @@ def _check_worktree_tests(root: Path) -> DoctorCheck:
         test_command = None
     problem = worktree_test_isolation(root, test_command)
     if problem is None:
-        return DoctorCheck(name=name, ok=True, informational=True,
-                           detail="no worktree test-isolation issue detected (pytest pythonpath, test_command, "
-                                  "or not a Python project)")
+        return DoctorCheck(
+            name=name,
+            ok=True,
+            informational=True,
+            detail="no worktree test-isolation issue detected (pytest pythonpath, test_command, "
+            "or not a Python project)",
+        )
     cause, _, fix = problem.partition("; ")
     return DoctorCheck(name=name, ok=False, informational=True, detail=cause, fix=fix)
 
@@ -341,18 +428,33 @@ def _check_sdd_git(root: Path, branch: str) -> list[DoctorCheck]:
     remote = _git(root, "ls-remote", "--heads", "origin", branch)
     if remote.returncode != 0:
         reason = remote.stderr.strip().splitlines()
-        checks.append(DoctorCheck(name="sdd: base branch on origin", ok=True, informational=True,
-                                  detail=f"could not reach origin: {reason[-1] if reason else 'unknown error'}"))
+        checks.append(
+            DoctorCheck(
+                name="sdd: base branch on origin",
+                ok=True,
+                informational=True,
+                detail=f"could not reach origin: {reason[-1] if reason else 'unknown error'}",
+            )
+        )
     else:
         found = bool(remote.stdout.strip())
-        checks.append(DoctorCheck(name="sdd: base branch on origin", ok=found,
-                                  detail=f"origin/{branch} {'exists' if found else 'does not exist'}",
-                                  fix="" if found else f"git push -u origin {branch}"))
+        checks.append(
+            DoctorCheck(
+                name="sdd: base branch on origin",
+                ok=found,
+                detail=f"origin/{branch} {'exists' if found else 'does not exist'}",
+                fix="" if found else f"git push -u origin {branch}",
+            )
+        )
     tracked = _git(root, "ls-files", "--error-unmatch", str(SDD_LEDGER))
-    checks.append(DoctorCheck(
-        name="sdd: id ledger tracked", ok=tracked.returncode == 0,
-        detail=f"{SDD_LEDGER} {'is' if tracked.returncode == 0 else 'is NOT'} git-tracked",
-        fix="" if tracked.returncode == 0 else f'git add {SDD_LEDGER} && git commit -m "sdd: seed id ledger"'))
+    checks.append(
+        DoctorCheck(
+            name="sdd: id ledger tracked",
+            ok=tracked.returncode == 0,
+            detail=f"{SDD_LEDGER} {'is' if tracked.returncode == 0 else 'is NOT'} git-tracked",
+            fix="" if tracked.returncode == 0 else f'git add {SDD_LEDGER} && git commit -m "sdd: seed id ledger"',
+        )
+    )
     try:
         from parrot.sdd.config import legacy_migration_recipe, legacy_worktrees  # lazy on purpose
         from parrot.sdd.installer import worktree_root_scope
@@ -420,15 +522,23 @@ def _check_sdd_git(root: Path, branch: str) -> list[DoctorCheck]:
 def _check_gh() -> DoctorCheck:
     """``gh`` present and authenticated."""
     if not shutil.which("gh"):
-        return DoctorCheck(name="sdd: gh", ok=False, detail="gh not found on PATH",
-                           fix="install gh (https://cli.github.com), then: gh auth login")
+        return DoctorCheck(
+            name="sdd: gh",
+            ok=False,
+            detail="gh not found on PATH",
+            fix="install gh (https://cli.github.com), then: gh auth login",
+        )
     try:
         auth = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True, check=False)
     except OSError as exc:
         return DoctorCheck(name="sdd: gh", ok=False, detail=f"cannot run gh: {exc}", fix="gh auth login")
     ok = auth.returncode == 0
-    return DoctorCheck(name="sdd: gh", ok=ok, detail="gh authenticated" if ok else "gh is not authenticated",
-                       fix="" if ok else "gh auth login")
+    return DoctorCheck(
+        name="sdd: gh",
+        ok=ok,
+        detail="gh authenticated" if ok else "gh is not authenticated",
+        fix="" if ok else "gh auth login",
+    )
 
 
 def _sdd_status(root: Path) -> dict[str, Any] | None:
@@ -451,14 +561,24 @@ def _check_sdd_assets(root: Path, status: dict[str, Any] | None) -> list[DoctorC
     hosts: dict[str, Any] = (status or {}).get("hosts") or {}
     # A host is installed when any of its targets is on disk; install writes every selected target, so a
     # `missing` target on an installed host is a gap (sdd_status lists every supported host, installed or not).
-    installed_hosts = {host: groups or {} for host, groups in hosts.items()
-                       if any((groups or {}).get(kind) for kind in ("current", "outdated", "edited", "foreign"))}
+    installed_hosts = {
+        host: groups or {}
+        for host, groups in hosts.items()
+        if any((groups or {}).get(kind) for kind in ("current", "outdated", "edited", "foreign"))
+    }
     if status is None:
-        checks.append(DoctorCheck(name="sdd: files current", ok=True, informational=True,
-                                  detail="SDD flow not installed (parrot.sdd.installer unavailable in this build)"))
+        checks.append(
+            DoctorCheck(
+                name="sdd: files current",
+                ok=True,
+                informational=True,
+                detail="SDD flow not installed (parrot.sdd.installer unavailable in this build)",
+            )
+        )
     elif not installed_hosts:
-        checks.append(DoctorCheck(name="sdd: files current", ok=True, informational=True,
-                                  detail="SDD flow not installed"))
+        checks.append(
+            DoctorCheck(name="sdd: files current", ok=True, informational=True, detail="SDD flow not installed")
+        )
     else:
         problems: list[str] = []
         edited = False
@@ -470,15 +590,24 @@ def _check_sdd_assets(root: Path, status: dict[str, Any] | None) -> list[DoctorC
                     edited = edited or kind == "edited"
                     problems.append(f"{host} {kind}: {', '.join(str(t) for t in targets)}")
             foreign.extend(f"{host}: {t}" for t in groups.get("foreign") or [])
-        checks.append(DoctorCheck(
-            name="sdd: files current", ok=not problems,
-            detail="all installed SDD files current" if not problems else "; ".join(problems),
-            fix="" if not problems else ("parrot sdd status" if edited else "parrot sdd install")))
+        checks.append(
+            DoctorCheck(
+                name="sdd: files current",
+                ok=not problems,
+                detail="all installed SDD files current" if not problems else "; ".join(problems),
+                fix="" if not problems else ("parrot sdd status" if edited else "parrot sdd install"),
+            )
+        )
         if foreign:
-            checks.append(DoctorCheck(
-                name="sdd: foreign files", ok=False, informational=True,
-                detail=f"not written by parrot sdd (never overwritten): {', '.join(foreign)}",
-                fix="delete the hand-copied files and re-run `parrot sdd install`"))
+            checks.append(
+                DoctorCheck(
+                    name="sdd: foreign files",
+                    ok=False,
+                    informational=True,
+                    detail=f"not written by parrot sdd (never overwritten): {', '.join(foreign)}",
+                    fix="delete the hand-copied files and re-run `parrot sdd install`",
+                )
+            )
     # jq and python3 — each only while an installed shipped file still references it.
     try:
         from parrot.sdd.audit import missing_tools, scan_paths  # TASK-4070 — lazy on purpose
@@ -486,8 +615,11 @@ def _check_sdd_assets(root: Path, status: dict[str, Any] | None) -> list[DoctorC
         pass
     else:
         installed = [
-            root / str(t) for groups in hosts.values() for targets in (groups or {}).values()
-            if isinstance(targets, (list, tuple)) for t in targets
+            root / str(t)
+            for groups in hosts.values()
+            for targets in (groups or {}).values()
+            if isinstance(targets, (list, tuple))
+            for t in targets
         ]
         try:
             findings = [f for f in scan_paths(installed) if f.kind == "external-tool"]
@@ -499,18 +631,28 @@ def _check_sdd_assets(root: Path, status: dict[str, Any] | None) -> list[DoctorC
             if not any(tool in f.snippet for f in findings):
                 continue
             present = tool not in missing
-            checks.append(DoctorCheck(name=f"sdd: {tool}", ok=present,
-                                      detail=f"{tool} " + ("found" if present else "not found"),
-                                      fix="" if present else fix))
+            checks.append(
+                DoctorCheck(
+                    name=f"sdd: {tool}",
+                    ok=present,
+                    detail=f"{tool} " + ("found" if present else "not found"),
+                    fix="" if present else fix,
+                )
+            )
     for host, groups in hosts.items():
         if not (groups or {}).get("current"):
             continue
         cli_name = HOST_CLIS.get(host, host)
         found = shutil.which(cli_name) is not None
-        checks.append(DoctorCheck(
-            name=f"sdd: host cli {host}", ok=found, informational=True,
-            detail=f"{cli_name} {'found' if found else 'not found on PATH'}",
-            fix="" if found else f"install the {cli_name} CLI"))
+        checks.append(
+            DoctorCheck(
+                name=f"sdd: host cli {host}",
+                ok=found,
+                informational=True,
+                detail=f"{cli_name} {'found' if found else 'not found on PATH'}",
+                fix="" if found else f"install the {cli_name} CLI",
+            )
+        )
     return checks
 
 
@@ -524,9 +666,13 @@ def _check_ledger_attributes(root: Path) -> DoctorCheck:
     present = {ln.split()[0] for ln in lines if ln.split() and "merge=union" in ln.split()[1:]}
     missing = [w for w in wanted if w not in present]
     return DoctorCheck(
-        name="sdd: ledger merge=union", ok=not missing,
-        detail="ledger merge=union lines present" if not missing else f"missing in .gitattributes: {', '.join(missing)}",
-        fix="" if not missing else "parrot sdd install (writes the .gitattributes ledger block)")
+        name="sdd: ledger merge=union",
+        ok=not missing,
+        detail=(
+            "ledger merge=union lines present" if not missing else f"missing in .gitattributes: {', '.join(missing)}"
+        ),
+        fix="" if not missing else "parrot sdd install (writes the .gitattributes ledger block)",
+    )
 
 
 def _check_ledger_hooks(root: Path) -> DoctorCheck:
@@ -549,10 +695,14 @@ def _check_ledger_hooks(root: Path) -> DoctorCheck:
         if claude_assets.LEDGER_HOOK_BEGIN not in text:
             missing.append(event)
     where = f" in {hooks_dir}" if hooks_dir is not None else ""
-    return DoctorCheck(name="sdd: ledger hooks", ok=not missing,
-                       detail=(f"all four ledger hooks installed{where}" if not missing
-                               else f"missing hooks{where}: {', '.join(missing)}"),
-                       fix="" if not missing else fix)
+    return DoctorCheck(
+        name="sdd: ledger hooks",
+        ok=not missing,
+        detail=(
+            f"all four ledger hooks installed{where}" if not missing else f"missing hooks{where}: {', '.join(missing)}"
+        ),
+        fix="" if not missing else fix,
+    )
 
 
 def _check_guard_hook(status: dict[str, Any] | None) -> DoctorCheck:
@@ -563,15 +713,25 @@ def _check_guard_hook(status: dict[str, Any] | None) -> DoctorCheck:
         return DoctorCheck(name=name, ok=True, informational=True, detail="no sdd-coder/sdd-worker agents")
     form, command, targets = guard.get("form"), guard.get("command"), guard.get("targets")
     if form == "other":
-        return DoctorCheck(name=name, ok=False, fix="delete the hand-copied agent files and re-run `parrot sdd install`",
-                           detail=f"guard hook was hand-patched or copied by hand: targets={targets}, command={command}")
+        return DoctorCheck(
+            name=name,
+            ok=False,
+            fix="delete the hand-copied agent files and re-run `parrot sdd install`",
+            detail=f"guard hook was hand-patched or copied by hand: targets={targets}, command={command}",
+        )
     if guard.get("resolvable") is False:
         return DoctorCheck(
-            name=name, ok=False, detail=f"guard hook command {command!r} does not resolve (targets={targets})",
+            name=name,
+            ok=False,
+            detail=f"guard hook command {command!r} does not resolve (targets={targets})",
             fix="re-run `parrot sdd install` (re-bakes the path), or install the global launcher "
-                "(`install-parrot.sh --global`) and re-install with `--portable`")
-    return DoctorCheck(name=name, ok=True,
-                       detail=f"{form} guard hook resolves (checks the shell's PATH, not the Claude Code process's)")
+            "(`install-parrot.sh --global`) and re-install with `--portable`",
+        )
+    return DoctorCheck(
+        name=name,
+        ok=True,
+        detail=f"{form} guard hook resolves (checks the shell's PATH, not the Claude Code process's)",
+    )
 
 
 def _command_problem(entry: Any, root: Path) -> str | None:
@@ -654,7 +814,9 @@ def _check_host_configs(root: Path) -> list[DoctorCheck]:
 
     claude = root / ".mcp.json"
     codex = root / ".codex" / "config.toml"
-    google, google_local = toolkit_config_paths(root)  # (default_mcp_config_path(), root/.agents/plugins/parrot/mcp_config.json)
+    google, google_local = toolkit_config_paths(
+        root
+    )  # (default_mcp_config_path(), root/.agents/plugins/parrot/mcp_config.json)
     checks: list[DoctorCheck] = []
     targets: list[tuple[str, Path, str, bool]] = [
         ("claude .mcp.json", claude, "json", False),
@@ -675,22 +837,43 @@ def _check_host_configs(root: Path) -> list[DoctorCheck]:
             if not isinstance(servers, dict):
                 raise ValueError("MCP servers section is not a mapping")
         except (OSError, ValueError) as exc:  # tomllib.TOMLDecodeError and JSONDecodeError are ValueError
-            checks.append(DoctorCheck(name=name, ok=False, detail=f"cannot parse {path}: {exc}",
-                                      fix=f"fix or regenerate {path} (parrot toolkits / parrot claude|codex|google install)"))
+            checks.append(
+                DoctorCheck(
+                    name=name,
+                    ok=False,
+                    detail=f"cannot parse {path}: {exc}",
+                    fix=f"fix or regenerate {path} (parrot toolkits / parrot claude|codex|google install)",
+                )
+            )
             continue
         broken = [f"{key}: {problem}" for key, entry in servers.items() if (problem := _command_problem(entry, root))]
-        checks.append(DoctorCheck(
-            name=name, ok=not broken,
-            detail=f"{path} OK" if not broken else f"{path}: broken command(s): {'; '.join(broken)}",
-            fix="" if not broken else "re-run the host installer (parrot claude|codex|google install) or `parrot toolkits` to rewrite the entry"))
+        checks.append(
+            DoctorCheck(
+                name=name,
+                ok=not broken,
+                detail=f"{path} OK" if not broken else f"{path}: broken command(s): {'; '.join(broken)}",
+                fix=(
+                    ""
+                    if not broken
+                    else "re-run the host installer (parrot claude|codex|google install) or `parrot toolkits` to rewrite the entry"
+                ),
+            )
+        )
         if global_file:
-            collisions = [f"{key} -> {other}" for key, entry in servers.items()
-                          if _is_parrot_entry(key, entry) and (other := _other_root(entry, root))]
+            collisions = [
+                f"{key} -> {other}"
+                for key, entry in servers.items()
+                if _is_parrot_entry(key, entry) and (other := _other_root(entry, root))
+            ]
             if collisions:
-                checks.append(DoctorCheck(
-                    name="host config: google cross-repo collision", ok=False,
-                    detail=f"{path} is user-global but has entries baked for another repo: {'; '.join(collisions)}",
-                    fix="re-install the Google host with --portable so the user-global entries carry no repo paths"))
+                checks.append(
+                    DoctorCheck(
+                        name="host config: google cross-repo collision",
+                        ok=False,
+                        detail=f"{path} is user-global but has entries baked for another repo: {'; '.join(collisions)}",
+                        fix="re-install the Google host with --portable so the user-global entries carry no repo paths",
+                    )
+                )
     return checks
 
 
@@ -703,17 +886,27 @@ def _check_toolkits(root: Path) -> list[DoctorCheck]:
         if row.state is ToolkitState.NOT_INSTALLED:
             continue
         if not row.dist_available:
-            checks.append(DoctorCheck(
-                name=f"toolkit {row.name}: packages", ok=False,
-                detail=f"requires {', '.join(row.requires_dist)} which is not installed",
-                fix=f"parrot self add {row.name}"))
+            checks.append(
+                DoctorCheck(
+                    name=f"toolkit {row.name}: packages",
+                    ok=False,
+                    detail=f"requires {', '.join(row.requires_dist)} which is not installed",
+                    fix=f"parrot self add {row.name}",
+                )
+            )
         missing_env = [var for var in row.requires_env if not os.environ.get(var)]
         if missing_env:
-            checks.append(DoctorCheck(
-                name=f"toolkit {row.name}: env", ok=False,
-                detail=(f"missing environment variable(s): {', '.join(missing_env)} "
-                        "(navconfig may still supply them from env/.env, which os.environ does not show)"),
-                fix=f"set {', '.join(missing_env)} (environment or env/.env); packages: parrot self add {row.name}"))
+            checks.append(
+                DoctorCheck(
+                    name=f"toolkit {row.name}: env",
+                    ok=False,
+                    detail=(
+                        f"missing environment variable(s): {', '.join(missing_env)} "
+                        "(navconfig may still supply them from env/.env, which os.environ does not show)"
+                    ),
+                    fix=f"set {', '.join(missing_env)} (environment or env/.env); packages: parrot self add {row.name}",
+                )
+            )
     return checks
 
 
@@ -724,8 +917,14 @@ def run_doctor(root: Path, *, scope: DoctorScope = "full") -> list[DoctorCheck]:
     and the ai-parrot / ai-parrot-tools version lockstep (rev 0.5 C20, TASK-5117); "full" adds host configs, toolkits and — iff ``root/sdd`` exists — the C15 SDD readiness checks;
     "sdd" forces the latter.
     """
-    checks = [_check_uv(), _check_python(), _check_entrypoints(), _check_path(), _check_tools_wiki(),
-              _check_runtime_lockstep()]
+    checks = [
+        _check_uv(),
+        _check_python(),
+        _check_entrypoints(),
+        _check_path(),
+        _check_tools_wiki(),
+        _check_runtime_lockstep(),
+    ]
     if scope == "runtime-only":
         return checks
     checks.extend(_check_host_configs(root))

@@ -23,7 +23,6 @@ from parrot.sdd.scripts.brief_meta import brief_worktree_plan
 from parrot.sdd.scripts.sdd_meta import WorktreePlan, plan_worktree, resolve_flow
 
 
-
 def _load_native_artifacts():
     """Load ``native_artifacts.py`` by file path (stdlib + pydantic only).
 

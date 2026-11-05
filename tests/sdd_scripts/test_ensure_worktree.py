@@ -251,7 +251,9 @@ def test_discard_keeps_branch_that_gained_commits(tmp_git_repo: Path) -> None:
     plan = _plan()
     target = (tmp_git_repo / plan.path).resolve()
     start_sha = _git_out(tmp_git_repo, "rev-parse", "origin/dev")
-    subprocess.run(["git", "worktree", "add", "-q", "-b", plan.name, str(target), "origin/dev"], cwd=tmp_git_repo, check=True)
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "-b", plan.name, str(target), "origin/dev"], cwd=tmp_git_repo, check=True
+    )
     _commit_file(target, "work.txt", "real work", "own commit")
     own_sha = _git_out(target, "rev-parse", "HEAD")
 

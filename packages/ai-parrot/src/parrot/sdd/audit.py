@@ -5,6 +5,7 @@ Usage:
 
 Stdlib-only by contract: imported by ``parrot sdd install`` (TASK-4091) to warn about missing tooling.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -16,10 +17,21 @@ from dataclasses import dataclass
 from pathlib import Path
 
 KINDS: tuple[str, ...] = (
-    "repo-script", "venv-path", "uv-run", "external-tool", "posix-shell", "monorepo-path",
-    "org-data", "claude-md-ref", "branch-literal",            # C11a — publication safety
+    "repo-script",
+    "venv-path",
+    "uv-run",
+    "external-tool",
+    "posix-shell",
+    "monorepo-path",
+    "org-data",
+    "claude-md-ref",
+    "branch-literal",  # C11a — publication safety
     # rev 0.8 C29 — foreign-repo breakage found by the 2026-10-30 end-to-end review
-    "bare-python", "worktree-artifact", "jira-org-default", "unshipped-command", "nonexistent-cli",
+    "bare-python",
+    "worktree-artifact",
+    "jira-org-default",
+    "unshipped-command",
+    "nonexistent-cli",
     "legacy-sdd-run",  # C30 — `parrot sdd run <module>` was replaced by `parrot sdd <noun> <verb>`
 )
 #: python3 (rev 0.8 C29): the shipped commands run inline python3 snippets, and neither a minimal host (e.g. the
@@ -31,7 +43,18 @@ PLACEHOLDER_TICKET_PREFIX = "PROJ"
 # org-data (a): any *.atlassian.net host that is not the placeholder.
 ORG_HOST_RE = re.compile(r"(?<![\w-])(?!your-org\.atlassian\.net\b)[a-z0-9][a-z0-9-]*\.atlassian\.net\b")
 # org-data (b): a Jira-style ticket key. Allow-listed prefixes are SDD's own ids and common non-ticket tokens.
-TICKET_KEY_ALLOW: tuple[str, ...] = (PLACEHOLDER_TICKET_PREFIX, "FEAT", "TASK", "AC", "SHA", "UTF", "ISO", "RFC", "PEP", "CVE")
+TICKET_KEY_ALLOW: tuple[str, ...] = (
+    PLACEHOLDER_TICKET_PREFIX,
+    "FEAT",
+    "TASK",
+    "AC",
+    "SHA",
+    "UTF",
+    "ISO",
+    "RFC",
+    "PEP",
+    "CVE",
+)
 TICKET_KEY_RE = re.compile(r"(?<![\w-])(?!(?:" + "|".join(TICKET_KEY_ALLOW) + r")-)[A-Z][A-Z0-9]{1,9}-\d+\b")
 # claude-md-ref: any reference to CLAUDE.md, with or without a section anchor (`CLAUDE.md § …`, `CLAUDE.md#…`).
 CLAUDE_MD_RE = re.compile(r"\bCLAUDE\.md\b")
@@ -51,7 +74,7 @@ DEFAULT_GLOBS: tuple[str, ...] = (
     ".claude/hooks/sdd-worker-format.sh",
     "sdd/templates/*",
     "sdd/WORKFLOW.md",
-    ".agents/skills/sdd-*/SKILL.md",      # rev 0.5 C24 — Codex/Google twins
+    ".agents/skills/sdd-*/SKILL.md",  # rev 0.5 C24 — Codex/Google twins
     ".agents/agents/sdd-*/agent.md",
     ".agent/workflows/sdd-*.md",
     ".agent/agents/sdd-*/agent.md",
@@ -79,11 +102,39 @@ JIRA_ORG_DEFAULT_RE = re.compile(r"\bNAV\b|\bNav-AI\b|\bcustomfield_100(?:21|22|
 #: Host built-ins and commands other parrot installers write; any other backticked `/name` must be a shipped
 #: `/sdd-*` command (the asset globs ship every `sdd-*` except `/sdd-insight`, rev 0.5 C22).
 HOST_COMMANDS: tuple[str, ...] = (
-    "agent", "agents", "clear", "compact", "config", "context", "copy", "cost", "help", "init", "loop", "mcp",
-    "memory", "model", "parrotwiki", "permissions", "plan", "reload-plugins", "review", "second-opinion",
-    "security-review", "skills", "subagents",
+    "agent",
+    "agents",
+    "clear",
+    "compact",
+    "config",
+    "context",
+    "copy",
+    "cost",
+    "help",
+    "init",
+    "loop",
+    "mcp",
+    "memory",
+    "model",
+    "parrotwiki",
+    "permissions",
+    "plan",
+    "reload-plugins",
+    "review",
+    "second-opinion",
+    "security-review",
+    "skills",
+    "subagents",
     # absolute paths and URL roots written in backticks, never commands
-    "api", "docs", "etc", "health", "home", "opt", "tmp", "usr", "var",
+    "api",
+    "docs",
+    "etc",
+    "health",
+    "home",
+    "opt",
+    "tmp",
+    "usr",
+    "var",
 )
 UNSHIPPED_COMMAND_RE = re.compile(
     r"(?<![\w`])`/(?!(?:sdd-(?!insight\b)[a-z0-9-]*|sdd-|" + "|".join(map(re.escape, HOST_COMMANDS)) + r")(?=[\s`]))"
@@ -150,7 +201,9 @@ def scan_paths(paths: Iterable[Path]) -> list[AssumptionFinding]:
 
 def missing_tools(findings: Sequence[AssumptionFinding]) -> list[str]:
     """Sorted unique external tools named by ``external-tool`` findings that ``shutil.which`` cannot find."""
-    names = {m.group("tool") for f in findings if f.kind == "external-tool" for m in EXTERNAL_TOOL_RE.finditer(f.snippet)}
+    names = {
+        m.group("tool") for f in findings if f.kind == "external-tool" for m in EXTERNAL_TOOL_RE.finditer(f.snippet)
+    }
     return sorted(name for name in names if shutil.which(name) is None)
 
 
@@ -171,9 +224,14 @@ def render_report(findings: Sequence[AssumptionFinding], *, scanned: Sequence[st
     for finding in findings:
         by_kind.setdefault(finding.kind, []).append(finding)
     lines = [
-        "# S5 — SDD asset assumption inventory (FEAT-633)", "",
-        f"Scanned {len(scanned)} file(s).", "",
-        "## Summary", "", "| Kind | Findings | Files |", "|---|---|---|",
+        "# S5 — SDD asset assumption inventory (FEAT-633)",
+        "",
+        f"Scanned {len(scanned)} file(s).",
+        "",
+        "## Summary",
+        "",
+        "| Kind | Findings | Files |",
+        "|---|---|---|",
     ]
     for kind in KINDS:
         items = by_kind.get(kind, [])
@@ -215,7 +273,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument(
-        "--fail-on", default="", metavar="KIND[,KIND...]",
+        "--fail-on",
+        default="",
+        metavar="KIND[,KIND...]",
         help="exit 1 when any finding of these kinds exists (e.g. org-data,claude-md-ref,branch-literal)",
     )
     args = parser.parse_args(argv)

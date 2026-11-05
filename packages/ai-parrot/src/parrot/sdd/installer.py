@@ -685,7 +685,9 @@ def _host_installed(
     (a host installed before the receipt existed, or by hand, still shares the common assets).
     """
     return any(
-        e["hosts"] == [host] and (not recorded_only or e["target"] in receipt["files"]) and (root / e["target"]).is_file()
+        e["hosts"] == [host]
+        and (not recorded_only or e["target"] in receipt["files"])
+        and (root / e["target"]).is_file()
         for e in entries
     )
 
@@ -741,7 +743,9 @@ def plan_uninstall(root: Path, hosts: Sequence[str], *, keep_edits: bool = False
         elif set(entry["hosts"]) & set(remaining_hosts):
             plan.append(PlannedAction(action="keep-shared", target=target, note="still needed by another host"))
         else:
-            note = {"edited": "edited since parrot wrote it"}.get(state, "" if recorded else "not recorded in the receipt")
+            note = {"edited": "edited since parrot wrote it"}.get(
+                state, "" if recorded else "not recorded in the receipt"
+            )
             plan.append(PlannedAction(action="remove", target=target, note=note))
             removed.add(target)
     if "claude" in selected_hosts and "dangerous-actions" in receipt.get("settings_hooks", []):
@@ -1039,16 +1043,20 @@ def worktree_test_isolation(root: Path, test_command: str | None) -> str | None:
         logger.debug("worktree test isolation check skipped: %s", exc)
         return None
     if editable:
-        cause = (f"{', '.join(editable)} is installed editable from {root} in .venv, so pytest in a worktree "
-                 "imports the main checkout's code instead of the branch under test")
+        cause = (
+            f"{', '.join(editable)} is installed editable from {root} in .venv, so pytest in a worktree "
+            "imports the main checkout's code instead of the branch under test"
+        )
     elif virtual:
         cause = "this is a virtual project ([tool.uv] package = false), so pytest cannot import its own modules"
     else:
         cause = "pytest has no `pythonpath` setting, so tests in a worktree may import the main checkout's code"
     layout = "src" if (root / "src").is_dir() else "."
-    return (f"{cause}; add `pythonpath = [\"{layout}\"]` under [tool.pytest.ini_options] in pyproject.toml "
-            "(rootdir-relative, so each worktree tests its own code), or set sdd/config.json test_command to a "
-            "command that sets PYTHONPATH")
+    return (
+        f'{cause}; add `pythonpath = ["{layout}"]` under [tool.pytest.ini_options] in pyproject.toml '
+        "(rootdir-relative, so each worktree tests its own code), or set sdd/config.json test_command to a "
+        "command that sets PYTHONPATH"
+    )
 
 
 def _seed_id_ledger(root: Path) -> str | None:
