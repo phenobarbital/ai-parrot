@@ -42,14 +42,14 @@
       "feature_id": "FEAT-806",
       "feature": "worktree-sync-base",
       "spec": "sdd/specs/worktree-sync-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent M2: edits only remove_worktree.py and its new focused tests; no shared external resources.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T00:36:23+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5206-sync-process-exclusions.md"
     },
@@ -60,7 +60,7 @@
       "feature_id": "FEAT-806",
       "feature": "worktree-sync-base",
       "spec": "sdd/specs/worktree-sync-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -69,7 +69,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes TASK-5206 live_processes_in(exclude_pids) in remove_worktree.py. TASK-5208 later extends the same core and tests; no dependency on future CLI registration is needed for direct module tests.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T00:36:23+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5207-worktree-host-sync.md"
     },
@@ -80,7 +80,7 @@
       "feature_id": "FEAT-806",
       "feature": "worktree-sync-base",
       "spec": "sdd/specs/worktree-sync-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -89,7 +89,7 @@
       "parallel": true,
       "parallelism_notes": "Extends TASK-5207 worktree_sync.sync/SyncResult and its real-Git test file; serializes both overlapping writers after TASK-5207.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T00:36:23+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5208-worktree-sandbox-patch-sync.md"
     },
@@ -100,7 +100,7 @@
       "feature_id": "FEAT-806",
       "feature": "worktree-sync-base",
       "spec": "sdd/specs/worktree-sync-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -109,7 +109,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes TASK-5207 worktree_sync.main through lazy registry dispatch; sandbox transport TASK-5208 is not required for registration/help tests.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T00:36:23+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5209-worktree-sync-cli.md"
     },
@@ -120,14 +120,14 @@
       "feature_id": "FEAT-806",
       "feature": "worktree-sync-base",
       "spec": "sdd/specs/worktree-sync-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent M4: authors the approved command contract, not runtime behavior. No edge to TASK-5207 or TASK-5209: command examples do not consume their new files. All repo/package prompt writers are owned by this task.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T00:36:23+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5210-worktree-sync-documentation.md"
     },
@@ -138,7 +138,7 @@
       "feature_id": "FEAT-806",
       "feature": "worktree-sync-base",
       "spec": "sdd/specs/worktree-sync-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -147,7 +147,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes TASK-5207 stale_base_summary in worktree_sync.py. No edge to TASK-5209: docs mention the CLI but launcher calls the API directly; CLI registration is verified by its own task. TASK-5210 edits different worker/rule documents.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T00:36:23+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5211-worktree-stale-base-advisory.md"
     },
@@ -158,7 +158,7 @@
       "feature_id": "FEAT-806",
       "feature": "worktree-sync-base",
       "spec": "sdd/specs/worktree-sync-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -167,7 +167,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes TASK-5208 sandbox transport and modifies its test_worktree_sync.py after TASK-5208; TASK-5207 is transitively required. Uses only disposable repositories and per-test sandbox resources, not shared configuration.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T00:36:23+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5212-worktree-sync-native-qualification.md"
     }
