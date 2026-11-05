@@ -37,15 +37,17 @@ def is_managed(prefix: str | None = None, *, env: Mapping[str, str] | None = Non
 
 
 def _is_temp_root(candidate: Path) -> bool:
-    """True when ``candidate`` is the system temp dir or one of its ancestors (rev 0.5 C24).
+    """True when ``candidate`` is the system temp dir itself (rev 0.5 C24).
 
-    Mirrors ``wiki.project._is_temp_root`` (project.py:1011-1031); the ``.git`` walk-ups stop there.
+    Mirrors ``wiki.project._is_temp_root`` (project.py:1026-1046); the ``.git`` walk-ups stop
+    there.  Only the temp dir itself is excluded — not its ancestors, which may legitimately
+    contain project checkouts (e.g. ``TMPDIR=/home/u/tmp`` must not stop the walk at ``/home/u``).
     """
     try:
         temp_root = Path(tempfile.gettempdir()).resolve()
     except (OSError, RuntimeError):
         return False
-    return candidate == temp_root or candidate in temp_root.parents
+    return candidate == temp_root
 
 
 def _existing_directory(path: Path) -> Path:
