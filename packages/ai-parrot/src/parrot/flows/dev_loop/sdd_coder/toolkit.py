@@ -370,7 +370,9 @@ class SddCoderToolkit(AbstractToolkit):
 
         return await self._run(
             "coder_record_feedback",
-            self._engine.record_feedback(feature, worktree, CoderFeedback(**feedback), execution_id=execution_id),
+            self._engine.record_feedback(
+                feature, worktree, CoderFeedback.model_validate(feedback), execution_id=execution_id
+            ),
             exclusive=True,
         )
 
@@ -388,7 +390,7 @@ class SddCoderToolkit(AbstractToolkit):
 
         return await self._run(
             "coder_record_review",
-            self._engine.record_review(feature, worktree, CoderReview(**review), execution_id=execution_id),
+            self._engine.record_review(feature, worktree, CoderReview.model_validate(review), execution_id=execution_id),
             exclusive=True,
         )
 

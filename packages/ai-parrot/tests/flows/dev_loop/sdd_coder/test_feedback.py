@@ -516,3 +516,66 @@ async def test_retracted_feedback_is_dropped_from_replay(store: CoderFeedbackSto
     await restarted.record(wrong)
     context = await restarted.context("nova", "gpt-5.6-terra", ["artifacts/x.py"])
     assert "gitignored-file-not-force-added" in context and "confirmed deliveries: 1" in context
+
+
+_EXECUTION_ID = "0b6f3c3e-8f0a-4c1e-9d2a-5a7e4b1c2d3f"
+
+
+def _review_payload() -> dict:
+    return {
+        "task_id": "TASK-0001",
+        "attempt_uid": "attempt-1",
+        "backend": "nova",
+        "model": "qwen",
+        "fix_commits": [],
+        "review_evidence": "Review completed, pytest passed",
+    }
+
+
+def _mocked_toolkit(roster: RosterConfig):
+    from parrot.flows.dev_loop.sdd_coder.toolkit import SddCoderToolkit
+
+    toolkit = SddCoderToolkit(roster=roster)
+    toolkit._engine.record_review = AsyncMock(return_value={"recorded": True})
+    toolkit._engine.record_feedback = AsyncMock(return_value={"recorded": True})
+    return toolkit
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arg_name", "engine_method", "model_cls"),
+    [
+        ("coder_record_review", "review", "record_review", CoderReview),
+        ("coder_record_feedback", "feedback", "record_feedback", CoderFeedback),
+    ],
+)
+async def test_record_tools_accept_validated_model_through_mcp_adapter(
+    three_seat_roster: RosterConfig, tool_name: str, arg_name: str, engine_method: str, model_cls: type
+) -> None:
+    """issue:3b913ffd77cd: the MCP adapter hands the method a model instance, not a mapping."""
+    from parrot.mcp.adapter import MCPToolAdapter
+
+    toolkit = _mocked_toolkit(three_seat_roster)
+    tool = next(tool for tool in toolkit.get_tools() if tool.name == tool_name)
+    payload = _review_payload() if arg_name == "review" else feedback().model_dump()
+    result = await MCPToolAdapter(tool).execute(
+        {"feature": "demo", "worktree": "/abs", "execution_id": _EXECUTION_ID, arg_name: payload}
+    )
+
+    assert result["isError"] is False, result
+    mock = getattr(toolkit._engine, engine_method)
+    mock.assert_awaited_once()
+    assert isinstance(mock.await_args.args[2], model_cls)
+    assert mock.await_args.kwargs["execution_id"] == _EXECUTION_ID
+
+
+async def test_record_tools_still_accept_plain_dicts(three_seat_roster: RosterConfig) -> None:
+    """Direct calls with a mapping keep working."""
+    toolkit = _mocked_toolkit(three_seat_roster)
+
+    review_result = await toolkit.coder_record_review("demo", "/abs", _review_payload(), _EXECUTION_ID)
+    feedback_result = await toolkit.coder_record_feedback("demo", "/abs", feedback().model_dump(), _EXECUTION_ID)
+
+    assert review_result.status == "ok", review_result
+    assert feedback_result.status == "ok", feedback_result
+    assert isinstance(toolkit._engine.record_review.await_args.args[2], CoderReview)
+    assert isinstance(toolkit._engine.record_feedback.await_args.args[2], CoderFeedback)
