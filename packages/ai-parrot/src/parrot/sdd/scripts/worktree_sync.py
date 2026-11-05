@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 import subprocess
@@ -261,7 +260,9 @@ def sync(
         raise SyncError(EXIT_TARGET, "--ff-only cannot be combined with --cherry-pick")
     for commit in cherry_picks:
         _validate_commit(commit)
-    mode: Literal["merge", "ff-only", "cherry-pick"] = "cherry-pick" if cherry_picks else "ff-only" if ff_only else "merge"
+    mode: Literal["merge", "ff-only", "cherry-pick"] = (
+        "cherry-pick" if cherry_picks else "ff-only" if ff_only else "merge"
+    )
     before = _head(wt)
     if not before:
         raise SyncError(EXIT_TARGET, "target has no readable HEAD")
@@ -305,10 +306,20 @@ def sync(
     restored, conflicts, detail = _rollback(wt, before, abort)
     if restored:
         return _result(
-            wt, base, mode, False, before, commits, "conflict", EXIT_CONFLICT,
-            "integration conflicted and was aborted", conflicts,
+            wt,
+            base,
+            mode,
+            False,
+            before,
+            commits,
+            "conflict",
+            EXIT_CONFLICT,
+            "integration conflicted and was aborted",
+            conflicts,
         )
-    recovery = "integration failed; automatic rollback was not verified. Inspect the worktree and run Git recovery manually."
+    recovery = (
+        "integration failed; automatic rollback was not verified. Inspect the worktree and run Git recovery manually."
+    )
     if detail:
         recovery = f"{recovery} {detail}"
     return _result(wt, base, mode, False, before, commits, "error", EXIT_CONFLICT, recovery, conflicts)
@@ -333,8 +344,17 @@ def _refusal(target: str, base: str, exc: SyncError, dry_run: bool) -> SyncResul
     """Build JSON-safe CLI refusal output without assuming a valid target path."""
     path = Path(target)
     return SyncResult(
-        worktree=str(path), branch=None, base_branch=base, transport="sandbox-gh" if in_sandbox() else "host-git",
-        mode="merge", dry_run=dry_run, before="", after="", commits=[], status="refused", exit_code=exc.exit_code,
+        worktree=str(path),
+        branch=None,
+        base_branch=base,
+        transport="sandbox-gh" if in_sandbox() else "host-git",
+        mode="merge",
+        dry_run=dry_run,
+        before="",
+        after="",
+        commits=[],
+        status="refused",
+        exit_code=exc.exit_code,
         message=str(exc),
     )
 
