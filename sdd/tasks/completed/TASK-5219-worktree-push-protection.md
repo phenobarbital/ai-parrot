@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-813 — sync-base sandbox reachability check, clean OSError refusal, and host-provisioned push protection
 **Spec**: `sdd/specs/scripts-worktree-sync-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M
 **Depends-on**: TASK-5218
@@ -147,4 +147,14 @@ Regenerate assets with the script, never by hand. `ruff check --fix` changed Pyt
 
 ## Completion Note
 
-(filled on close)
+Done in `b86f755172`. New `worktree_push_protection.py` (`enable`/`disable`/`main`, `status` verb via
+`main`) plus `worktree_sync.push_protection_ok()` shared with `_check_sandbox_push_protection` (whose
+refusal now names the enable command). `enable` refuses the primary checkout (git-dir == common-dir),
+a sandbox, and common `core.worktree` / `core.bare=true` / `remote.origin.pushurl`, writing nothing.
+Launcher: `_enable_push_protection()` runs after the stale-base advisory on both paths and regardless
+of `--no-upstream`; refusals print `push protection skipped: …`. `/sdd-done` Step 8 runs
+`push-protection disable` before its push in all three sources; `_assets` regenerated,
+`check_asset_sync --check` clean. Tests: new `test_worktree_push_protection.py` (real git: round trip
+with a real push after disable, idempotence, sibling/primary untouched, refusals); launcher order /
+non-fatal / tmux tests; CLI help test. Combined run: 148 passed, 2 skipped (real-Claude gate).
+Resolves item (2) of `issue:891a632132e0`.
