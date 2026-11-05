@@ -267,6 +267,15 @@ def test_worktree_sync_base_help() -> None:
     assert "--dry-run" in result.output
 
 
+def test_worktree_push_protection_help() -> None:
+    """FEAT-813: the installed CLI dispatches push-protection help to its helper."""
+    result = CliRunner().invoke(cli, ["sdd", "worktree", "push-protection", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "enable" in result.output
+    assert "disable" in result.output
+
+
 def test_worktree_sync_base_refusal_exit_and_json(tmp_path: Path) -> None:
     """A missing target retains the helper refusal code and JSON result contract."""
     target = tmp_path / "missing-worktree"

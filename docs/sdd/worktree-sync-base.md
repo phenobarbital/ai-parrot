@@ -27,13 +27,39 @@ parrot sdd worktree sync-base FEAT-806 --cherry-pick <sha>
 
 The sandbox retrieves commit patches through `gh`, applies one ordered batch
 with `git am -3`, and adds `(cherry picked from commit <sha>)` to each applied
-commit. It never runs `git fetch`, `git pull`, `git push`, or `git rebase`.
+commit. Before downloading a patch it asks GitHub's compare API whether the
+commit is an ancestor of (or equal to) `<base>`; any other answer is refused
+with exit code 5, the same guarantee as the host's `merge-base --is-ancestor`
+check. It never runs `git fetch`, `git pull`, `git push`, or `git rebase`.
 Full-base synchronization is a host operation.
 
 ## Host setup before sandbox launch
 
-Provision push protection on the trusted host before launching a sandbox. Never
-perform these writes from a sandbox. First inspect the primary and every linked
+Push protection is provisioned automatically on the trusted host:
+
+- `parrot sdd launch worker <FEAT-ID|KEY>` runs
+  `parrot sdd worktree push-protection enable <worktree>` before it starts the
+  worker (direct and `--tmux` paths). A refusal is printed as
+  `push protection skipped: <reason>` and the launch continues; sandbox
+  cherry-picks then exit 5 until the protection is set up by hand.
+- `/sdd-done` runs `parrot sdd worktree push-protection disable <worktree>`
+  right before it pushes the branch, so the host push is not blocked by
+  `no_push`. Run the same command before any other host push from a worktree
+  that a sandboxed worker used (the push otherwise fails with
+  `'no_push' does not appear to be a git repository`).
+- `parrot sdd worktree push-protection status <target> [--json]` reports the
+  current state. All three verbs refuse inside a sandbox (exit 5) and refuse
+  the primary checkout (exit 2).
+
+`enable` writes only `extensions.worktreeConfig=true` (common) and the target
+worktree's `config.worktree` push URL. It refuses with exit 2, writing
+nothing, when the common configuration has a `core.worktree`, `core.bare=true`
+or a `remote.origin.pushurl`; those repositories need the manual procedure
+below.
+
+### Manual procedure
+
+Never perform these writes from a sandbox. First inspect the primary and every linked
 worktree for common `core.worktree` and `core.bare` values:
 
 ```bash
@@ -86,6 +112,11 @@ destructive reset as a substitute. No mode pushes or rebases.
 | 4 | `refused` | A foreign live process is using the worktree. |
 | 5 | `error` | Transport or sandbox push-protection prerequisite is unavailable. |
 | 6 | `conflict` or `error` | Integration conflicted after verified restoration, or restoration failed. |
+
+Exit code 2 is also argparse's usage-error code. A usage error prints no
+`--json` body, so a missing or unparsable body with exit 2 means the command
+line was rejected, not the target. A missing `git` or `gh` binary is a
+`refused` result with exit 5.
 
 With `--json`, `status` distinguishes a verified conflict from an unrecovered
 error even when both originate during integration. The JSON result also records

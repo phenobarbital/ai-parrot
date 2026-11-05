@@ -19,7 +19,11 @@ from parrot.sdd.scripts.remove_worktree import _match, discover, live_processes_
 from parrot.sdd.scripts.sdd_meta import parse
 from parrot.sdd.scripts.worktree_status import _read_worktree_index
 
+# EXIT_TARGET (2) is the FEAT-806 spec value; argparse also exits 2 on a usage error. A usage error
+# prints no --json body, which is how callers tell the two apart.
 EXIT_OK, EXIT_TARGET, EXIT_DIRTY, EXIT_LIVE, EXIT_TRANSPORT, EXIT_CONFLICT = 0, 2, 3, 4, 5, 6
+#: GitHub compare statuses meaning the head commit is an ancestor of, or equal to, the base tip.
+_REACHABLE_COMPARE_STATUSES = frozenset({"behind", "identical"})
 logger = logging.getLogger(__name__)
 
 
@@ -255,22 +259,70 @@ def _rollback(wt: Path, before: str, command: str) -> tuple[bool, list[str], str
     return restored, conflicts, detail
 
 
+def _integration_failure(
+    wt: Path,
+    base: str,
+    mode: Literal["merge", "ff-only", "cherry-pick"],
+    before: str,
+    commits: list[str],
+    abort_command: str,
+) -> SyncResult:
+    """Abort a failed integration and report a verified conflict or an unrecovered error.
+
+    Args:
+        wt: Target worktree.
+        base: Base branch name for the result.
+        mode: Integration mode for the result.
+        before: HEAD before the integration started.
+        commits: Commit summaries that were being integrated.
+        abort_command: Git command whose ``--abort`` undoes the integration (``am``, ``merge``, ``cherry-pick``).
+
+    Returns:
+        ``conflict`` when HEAD and the worktree were restored, otherwise ``error`` with recovery guidance.
+    """
+    restored, conflicts, detail = _rollback(wt, before, abort_command)
+    if restored:
+        return _result(
+            wt,
+            base,
+            mode,
+            False,
+            before,
+            commits,
+            "conflict",
+            EXIT_CONFLICT,
+            "integration conflicted and was aborted",
+            conflicts,
+        )
+    recovery = (
+        "integration failed; automatic rollback was not verified. Inspect the worktree and run Git recovery manually."
+    )
+    if detail:
+        recovery = f"{recovery} {detail}"
+    return _result(wt, base, mode, False, before, commits, "error", EXIT_CONFLICT, recovery, conflicts)
+
+
 def _sandbox_hint(detail: str) -> str:
     """Return a transport refusal with the required host recovery guidance."""
     return f"{detail} — run 'parrot sdd worktree sync-base <target>' from the host"
 
 
-def _check_sandbox_push_protection(wt: Path) -> None:
-    """Require host-provisioned worktree config and the sole no-push URL without writing configuration."""
+def push_protection_ok(wt: Path) -> bool:
+    """Return whether worktree config is enabled and ``no_push`` is the sole effective push URL."""
     extension = _git(wt, "config", "--bool", "extensions.worktreeConfig")
     push_urls = _git(wt, "config", "--get-all", "remote.origin.pushurl")
     urls = [line for line in push_urls.stdout.splitlines() if line]
-    if extension.returncode != 0 or extension.stdout.strip().lower() != "true" or urls != ["no_push"]:
+    return extension.returncode == 0 and extension.stdout.strip().lower() == "true" and urls == ["no_push"]
+
+
+def _check_sandbox_push_protection(wt: Path) -> None:
+    """Require host-provisioned worktree config and the sole no-push URL without writing configuration."""
+    if not push_protection_ok(wt):
         raise SyncError(
             EXIT_TRANSPORT,
             _sandbox_hint(
                 "sandbox patch sync requires host-provisioned extensions.worktreeConfig=true and exactly "
-                "one effective remote.origin.pushurl=no_push"
+                "one effective remote.origin.pushurl=no_push (host: parrot sdd worktree push-protection enable <target>)"
             ),
         )
 
@@ -305,8 +357,26 @@ def _patch_with_trailer(patch: str, source_sha: str) -> str:
     return "".join([*lines[:separator_index], trailer, *lines[separator_index:]])
 
 
-def _sandbox_patches(wt: Path, cherry_picks: Sequence[str]) -> list[tuple[str, str]]:
-    """Download and validate all requested non-merge commits before any worktree mutation."""
+def _require_reachable(wt: Path, repository: str, base: str, requested: str, source_sha: str) -> None:
+    """Refuse a commit that GitHub does not report as an ancestor of, or equal to, ``base``.
+
+    This is the sandbox counterpart of the host path's ``merge-base --is-ancestor`` check. Any
+    unexpected response fails closed.
+    """
+    refusal = SyncError(EXIT_TRANSPORT, _sandbox_hint(f"cherry-pick {requested} is not reachable from origin/{base}"))
+    try:
+        comparison = json.loads(_gh(wt, f"repos/{repository}/compare/{base}...{source_sha}"))
+    except json.JSONDecodeError as exc:
+        raise refusal from exc
+    if not isinstance(comparison, dict) or comparison.get("status") not in _REACHABLE_COMPARE_STATUSES:
+        raise refusal
+
+
+def _sandbox_patches(wt: Path, cherry_picks: Sequence[str], base: str) -> list[tuple[str, str]]:
+    """Download and validate all requested non-merge commits before any worktree mutation.
+
+    Each commit must be canonical, single-parent and reachable from ``base`` on GitHub.
+    """
     repository = owner_repo(wt)
     patches: list[tuple[str, str]] = []
     for requested in cherry_picks:
@@ -327,6 +397,7 @@ def _sandbox_patches(wt: Path, cherry_picks: Sequence[str]) -> list[tuple[str, s
             raise SyncError(EXIT_TRANSPORT, _sandbox_hint("merge commits need the host transport"))
         if not isinstance(message, str) or not message:
             raise SyncError(EXIT_TRANSPORT, _sandbox_hint("gh commit metadata is incomplete"))
+        _require_reachable(wt, repository, base, requested, source_sha)
         patch = _patch_with_trailer(_gh(wt, endpoint, patch=True), source_sha)
         patches.append((f"{source_sha} {message.splitlines()[0]}", patch))
     return patches
@@ -361,7 +432,7 @@ def sync(
         _check_sandbox_push_protection(wt)
         if not dry_run:
             check_guards(wt)
-        patches = _sandbox_patches(wt, cherry_picks)
+        patches = _sandbox_patches(wt, cherry_picks, base)
         commits = [summary for summary, _patch in patches]
         if dry_run:
             return _result(
@@ -384,24 +455,7 @@ def sync(
             proc = _git(wt, "am", "-3", *patch_paths)
         if proc.returncode == 0:
             return _result(wt, base, mode, False, before, commits, "synced", EXIT_OK, "synchronized")
-        restored, conflicts, detail = _rollback(wt, before, "am")
-        if restored:
-            return _result(
-                wt,
-                base,
-                mode,
-                False,
-                before,
-                commits,
-                "conflict",
-                EXIT_CONFLICT,
-                "integration conflicted and was aborted",
-                conflicts,
-            )
-        recovery = "integration failed; automatic rollback was not verified. Inspect the worktree and run Git recovery manually."
-        if detail:
-            recovery = f"{recovery} {detail}"
-        return _result(wt, base, mode, False, before, commits, "error", EXIT_CONFLICT, recovery, conflicts)
+        return _integration_failure(wt, base, mode, before, commits, "am")
     if not dry_run:
         check_guards(wt)
     fetched = _git(wt, "fetch", "origin", base)
@@ -446,26 +500,7 @@ def sync(
             EXIT_CONFLICT,
             "fast-forward not possible; worktree unchanged",
         )
-    restored, conflicts, detail = _rollback(wt, before, abort)
-    if restored:
-        return _result(
-            wt,
-            base,
-            mode,
-            False,
-            before,
-            commits,
-            "conflict",
-            EXIT_CONFLICT,
-            "integration conflicted and was aborted",
-            conflicts,
-        )
-    recovery = (
-        "integration failed; automatic rollback was not verified. Inspect the worktree and run Git recovery manually."
-    )
-    if detail:
-        recovery = f"{recovery} {detail}"
-    return _result(wt, base, mode, False, before, commits, "error", EXIT_CONFLICT, recovery, conflicts)
+    return _integration_failure(wt, base, mode, before, commits, abort)
 
 
 def stale_base_summary(wt: Path, base: str | None = None) -> str:
@@ -518,6 +553,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = sync(wt, base, cherry_picks=args.cherry_pick, ff_only=args.ff_only, dry_run=args.dry_run)
     except SyncError as exc:
         result = _refusal(args.target, args.base or "dev", exc, args.dry_run)
+    except (OSError, subprocess.SubprocessError) as exc:
+        unavailable = SyncError(EXIT_TRANSPORT, f"required tool unavailable: {exc}")
+        result = _refusal(args.target, args.base or "dev", unavailable, args.dry_run)
     if args.json:
         print(result.model_dump_json())
     else:

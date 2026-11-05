@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-813 — sync-base sandbox reachability check, clean OSError refusal, and host-provisioned push protection
 **Spec**: `sdd/specs/scripts-worktree-sync-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none
@@ -130,4 +130,11 @@ Work inside the FEAT-813 worktree. Touch only the files listed. Run the validati
 
 ## Completion Note
 
-(filled on close)
+Done in `652395f2cf`. `_require_reachable()` calls `gh api repos/<o>/<r>/compare/<base>...<sha>` per
+commit inside the validate-before-mutate loop; `behind`/`identical` pass, anything else (including
+invalid JSON or a missing status) refuses with exit 5. `sync()` passes `base`; both rollback branches
+use `_integration_failure()`. `main()` also catches `OSError`/`SubprocessError` → exit-5 `refused`.
+The gh test stub now serves compare responses (`behind` by default, overridable). Tests:
+`tests/sdd_scripts/test_worktree_sync.py` 16 passed / 2 skipped (real-Claude gate),
+`test_sdd_cli.py` green. Resolves `issue:e613f365cf61`; resolves items (1) and (3) of
+`issue:891a632132e0` (item (2) is TASK-5219).

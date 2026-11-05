@@ -43,19 +43,32 @@ def _configure_sandbox(feature: Path) -> None:
 
 
 def _install_gh_stub(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, responses: dict[str, tuple[dict[str, object], str]]
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    responses: dict[str, tuple[dict[str, object], str]],
+    compare: dict[str, str] | None = None,
 ) -> None:
-    """Provide deterministic metadata and patch responses through a PATH-local gh stub."""
+    """Provide deterministic metadata, patch and compare responses through a PATH-local gh stub.
+
+    Every sha gets a ``behind`` compare response (reachable from the base) unless ``compare``
+    overrides its status.
+    """
     fixtures = tmp_path / "gh-fixtures"
     fixtures.mkdir()
+    statuses = compare or {}
     for sha, (metadata, patch) in responses.items():
         (fixtures / f"{sha}.json").write_text(json.dumps(metadata), encoding="utf-8")
         (fixtures / f"{sha}.patch").write_text(patch, encoding="utf-8")
+        status = statuses.get(sha, "behind")
+        (fixtures / f"compare-{sha}.json").write_text(json.dumps({"status": status}), encoding="utf-8")
     executable = tmp_path / "gh"
     executable.write_text(
         "#!/bin/sh\n"
         'for argument in "$@"; do case "$argument" in repos/*) endpoint=$argument ;; esac; done\n'
         "sha=${endpoint##*/}\n"
+        'case "$endpoint" in\n'
+        '  */compare/*) cat "$GH_FIXTURES/compare-${sha##*...}.json"; exit ;;\n'
+        "esac\n"
         'case "$*" in\n'
         "  *'Accept: application/vnd.github.patch'*) cat \"$GH_FIXTURES/$sha.patch\" ;;\n"
         '  *) cat "$GH_FIXTURES/$sha.json" ;;\n'
@@ -442,3 +455,76 @@ def test_ff_only_diverged_is_clean_refusal(tmp_path: Path, monkeypatch: pytest.M
     assert _run(feature, "status", "--porcelain") == ""
     assert "unchanged" in result.message
     assert "not verified" not in result.message
+
+
+def _sandbox_commit(tmp_path: Path) -> tuple[Path, Path, str]:
+    """Return a sandbox-configured feature worktree plus one new commit on the primary clone."""
+    _origin, primary, feature = _repository(tmp_path)
+    _configure_sandbox(feature)
+    (primary / "patch.txt").write_text("from gh\n", encoding="utf-8")
+    _run(primary, "add", "patch.txt")
+    _run(primary, "commit", "-m", "gh patch")
+    return primary, feature, _run(primary, "rev-parse", "HEAD")
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.parametrize("status", ["ahead", "diverged"])
+def test_sandbox_unreachable_cherry_pick_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: str, dry_run: bool
+) -> None:
+    """A commit GitHub does not place on the base branch is refused before any worktree change."""
+    primary, feature, sha = _sandbox_commit(tmp_path)
+    _install_gh_stub(tmp_path, monkeypatch, {sha: _patch_response(primary, sha)}, compare={sha: status})
+    monkeypatch.setenv(worktree_sync.BACKEND_ENV, "native")
+    before = _run(feature, "rev-parse", "HEAD")
+
+    with pytest.raises(worktree_sync.SyncError) as raised:
+        worktree_sync.sync(feature, "dev", cherry_picks=[sha], dry_run=dry_run)
+
+    assert raised.value.exit_code == worktree_sync.EXIT_TRANSPORT
+    assert "not reachable from origin/dev" in str(raised.value)
+    assert _run(feature, "rev-parse", "HEAD") == before
+    assert _run(feature, "status", "--porcelain") == ""
+    assert not (feature / "patch.txt").exists()
+
+
+def test_sandbox_invalid_compare_response_refuses(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A compare body without a known status fails closed."""
+    primary, feature, sha = _sandbox_commit(tmp_path)
+    _install_gh_stub(tmp_path, monkeypatch, {sha: _patch_response(primary, sha)}, compare={sha: "unknown"})
+    monkeypatch.setenv(worktree_sync.BACKEND_ENV, "native")
+
+    with pytest.raises(worktree_sync.SyncError) as raised:
+        worktree_sync.sync(feature, "dev", cherry_picks=[sha])
+
+    assert raised.value.exit_code == worktree_sync.EXIT_TRANSPORT
+    assert not (feature / "patch.txt").exists()
+
+
+def test_sandbox_identical_compare_syncs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A commit equal to the base tip is reachable and applies."""
+    primary, feature, sha = _sandbox_commit(tmp_path)
+    _install_gh_stub(tmp_path, monkeypatch, {sha: _patch_response(primary, sha)}, compare={sha: "identical"})
+    monkeypatch.setenv(worktree_sync.BACKEND_ENV, "native")
+
+    result = worktree_sync.sync(feature, "dev", cherry_picks=[sha])
+
+    assert result.status == "synced"
+    assert (feature / "patch.txt").read_text(encoding="utf-8") == "from gh\n"
+
+
+def test_main_missing_git_is_clean_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A missing git binary yields a JSON refusal with exit 5, never a traceback."""
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+
+    code = worktree_sync.main([str(tmp_path / "missing"), "--json"])
+
+    body = json.loads(capsys.readouterr().out)
+    assert code == worktree_sync.EXIT_TRANSPORT
+    assert body["status"] == "refused"
+    assert body["exit_code"] == worktree_sync.EXIT_TRANSPORT
+    assert "required tool unavailable" in body["message"]
