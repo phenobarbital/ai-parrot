@@ -176,7 +176,7 @@
       "feature_id": "FEAT-804",
       "feature": "installer-portability-gaps",
       "spec": "sdd/specs/installer-portability-gaps.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -186,8 +186,9 @@
       "parallelism_notes": "TASK-5189 adds install_toolkits(portable=); inherited TASK-5184 supplies launcher/root primitives. All SDD installer/CLI writes are owned here.",
       "assigned_to": null,
       "started_at": "2026-11-04T23:17:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5190-sdd-installer-portable-root.md"
+      "completed_at": "2026-11-05T00:00:49+00:00",
+      "file": "sdd/tasks/completed/TASK-5190-sdd-installer-portable-root.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5191",
@@ -196,7 +197,7 @@
       "feature_id": "FEAT-804",
       "feature": "installer-portability-gaps",
       "spec": "sdd/specs/installer-portability-gaps.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -206,8 +207,9 @@
       "parallelism_notes": "TASK-5189 adds portable keywords to install_toolkits/set_toolkits_enabled; inherited TASK-5184 provides install_root/refusal.",
       "assigned_to": null,
       "started_at": "2026-11-04T23:17:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5191-toolkits-cli-portable-root.md"
+      "completed_at": "2026-11-05T00:00:49+00:00",
+      "file": "sdd/tasks/completed/TASK-5191-toolkits-cli-portable-root.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5192",
