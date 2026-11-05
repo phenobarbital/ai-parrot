@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-806 — Worktree Sync Base
 **Spec**: `sdd/specs/worktree-sync-base.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -283,4 +283,14 @@ Use existing parity and prompt suites; no new superficial text-matching test is 
 
 ## Completion Note
 
-Pending; populated by the finalization tool after implementation and validation.
+Delivered over several attempts (codex gpt-5.6-sol / gpt-5.6-terra). Attempt a3 was complete except it left
+`.codex/agents/sdd-worker.toml` unmodified (asset-sync test failed on twin divergence); it could not be merged from the
+sandboxed worktree because `.claude/agents/` is read-only there. A later engine attempt (a2 of the second run,
+sol) merged cleanly but delivered only the five `.claude`/`.agent` prompt files. The orchestrator completed it:
+`docs/sdd/worktree-sync-base.md` and the packaged Codex TOML taken from attempt a3, `.codex/agents/sdd-worker.toml`
+mirrored from the packaged copy. Guide checked against the checklist (host setup, exit codes, JSON status, rollback,
+trailers, advisory). Validation commands: 45 passed (asset sync, subagent parity, worker prompt orchestrator).
+The engine's merge-tier validation for this task was vacuous ("no applicable pytest invocations", all cached), so the
+three listed suites were run directly. Stale a1/a2 attempt branches of the first run were deleted because they blocked
+new sub-worktrees (engine attempt-name collision). `coder_record_review` fails server-side; closed via
+`parrot sdd task close`.
