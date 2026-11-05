@@ -115,7 +115,10 @@ class InventorySnapshot:
             raise DecisionError(SNAPSHOT_UNSTABLE, "batch visibility markers changed while reading")
 
         manifest = SnapshotManifest(
-            inventory={record.decision_id: content_hash or record_hash(record) for record, content_hash in pairs},
+            # The manifest describes the decisions, not the envelope they are stored in: a legacy and a
+            # canonical page of the same record hash alike, so the FEAT-808 rewrite does not stale a
+            # rendered spec (issue:d219d0707031). The stability check above still uses stored hashes.
+            inventory={record.decision_id: record_hash(record) for record, _content_hash in pairs},
             taxonomy_digest=taxonomy.digest(),
             approvals_digest=approvals.digest(),
             structural_revision=structural_revision,
