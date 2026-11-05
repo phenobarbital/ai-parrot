@@ -96,11 +96,19 @@ class InventorySnapshot:
         records = [record for record, _content_hash in pairs]
         diagnostics.extend(repo.last_diagnostics)
         # Stored hashes, not re-encoded ones: a page written by an older codec re-encodes
-        # differently although it did not change (issue:5918ff019737).
+        # differently although it did not change (issue:5918ff019737). A page with no stored
+        # hash cannot be compared at all, so the snapshot refuses it below (issue:c7f16ecf903e).
         stored = {record.decision_id: content_hash for record, content_hash in pairs}
         candidates = [record for record in records if is_eligible(record, approved_batches=approved)]
         eligible, heads = cls._validate_supersession(candidates, records, diagnostics)
 
+        unverifiable = sorted(decision_id for decision_id, content_hash in stored.items() if content_hash is None)
+        if unverifiable:
+            raise DecisionError(
+                SNAPSHOT_UNSTABLE,
+                "decision pages have no stored content hash, so a mid-read change cannot be detected: "
+                + ", ".join(unverifiable),
+            )
         if await store.page_hashes(sorted(stored)) != stored:
             raise DecisionError(SNAPSHOT_UNSTABLE, "decision inventory changed while reading")
         if await cls._marker_states(store, marker_states) != marker_states:
