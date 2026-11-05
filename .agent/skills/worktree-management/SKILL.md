@@ -72,10 +72,9 @@ user explicitly asks, and look for orphan directories under
 the worktree root that `git worktree list` no longer knows about —
 `/remove-worktree` handles those; `prune` does not.
 
-If you have worktrees under the legacy `.claude/worktrees/` location, run the
-migration recipe `parrot doctor` prints to move them to the new worktree root
-and update your workflows. Every line that names `.claude/worktrees` must also
-contain `git worktree repair` to guard against accidental use of the old path.
+If you still have worktrees under the legacy location, run the migration recipe
+`parrot doctor` prints (it moves them to the new worktree root and ends with
+`git worktree repair`) and update your workflows.
 
 Untracked leftovers (logs or scratch files a tool left behind) are not uncommitted
 changes, but `git worktree remove` refuses them too unless the path is gitignored. Park

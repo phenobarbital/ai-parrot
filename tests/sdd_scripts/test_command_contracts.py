@@ -120,7 +120,7 @@ def test_no_legacy_worktree_root_remains() -> None:
         candidates.append(claude_md)
 
     for path in candidates:
-        if "worktrees" in path.parts or path.name == "settings.local.json":
+        if "worktrees" in path.relative_to(_REPO_ROOT).parts or path.name == "settings.local.json":
             continue
         try:
             content = path.read_text(encoding="utf-8")
@@ -128,8 +128,10 @@ def test_no_legacy_worktree_root_remains() -> None:
             continue
         for lineno, line in enumerate(content.splitlines(), start=1):
             if _LEGACY_ROOT in line:
-                if "git worktree repair" in line or "(claude|parrot)" in line:
+                if "git worktree repair" in line:
                     continue
+                if path.name.startswith("dangerous-actions-blocker"):
+                    continue  # the blocker must still name the legacy root (spec AC1 allow-list)
                 rel = path.relative_to(_REPO_ROOT)
                 offenders.append(f"{rel}:{lineno}")
 

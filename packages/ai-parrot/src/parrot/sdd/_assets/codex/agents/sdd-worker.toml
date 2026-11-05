@@ -68,7 +68,7 @@ Feature mode:
    - hotfix bases on main
 4. Sync the base branch with git pull --ff-only. Refuse dirty worktrees. Do not
    stash.
-5. Create or reuse the feature worktree under .claude/worktrees/.
+5. Create or reuse the feature worktree under the worktree root (default .parrot/worktrees/).
 6. Inside the worktree, on the feature branch, mark pending tasks in progress
    in the per-spec index and commit only that index change. Never write task
    state on the base branch: an abandoned run would strand the tasks

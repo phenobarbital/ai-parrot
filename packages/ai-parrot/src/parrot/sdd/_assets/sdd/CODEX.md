@@ -141,7 +141,7 @@ review spec and set status: approved
 $sdd-task
         |
         v
-cd .claude/worktrees/<feature-worktree>
+cd .parrot/worktrees/<feature-worktree>
         |
         v
 $sdd-start TASK-NNN
@@ -153,8 +153,8 @@ repeat until all tasks are done, or delegate to sdd-worker
 $sdd-done FEAT-NNN
 ```
 
-The worktree directory is still `.claude/worktrees/` for compatibility with the
-existing SDD scripts and task indexes. Codex uses `.codex/agents/` only for
+The worktree directory is `.parrot/worktrees/` by default (override with an exported
+`WORKTREE_BASE_PATH`; print it with `parrot sdd worktree root`). Codex uses `.codex/agents/` only for
 custom agent configuration.
 
 ## Start From A Ticket Or Bug Report
@@ -270,7 +270,7 @@ This skill:
 4. Writes task files to `sdd/tasks/active/`.
 5. Writes or updates the per-spec index at `sdd/tasks/index/<feature-slug>.json`.
 6. Commits only the task files and index.
-7. Creates the feature worktree under `.claude/worktrees/`.
+7. Creates the feature worktree under `.parrot/worktrees/`.
 
 Task IDs are reserved with:
 
@@ -285,7 +285,7 @@ Do not hand-compute task IDs.
 Move into the generated worktree:
 
 ```bash
-cd .claude/worktrees/feat-<FEAT-ID>-<feature-slug>
+cd .parrot/worktrees/feat-<FEAT-ID>-<feature-slug>
 ```
 
 Then run:
@@ -385,7 +385,7 @@ not propagate the hotfix to `staging` and `dev`.
 | Active tasks | `sdd/tasks/active/TASK-NNN-<slug>.md` |
 | Completed tasks | `sdd/tasks/completed/TASK-NNN-<slug>.md` |
 | Per-spec task index | `sdd/tasks/index/<slug>.json` |
-| Worktrees | `.claude/worktrees/<branch-name>/` |
+| Worktrees | `.parrot/worktrees/<branch-name>/` |
 | Codex SDD skills | `.agents/skills/sdd-*/SKILL.md` |
 | Codex worker agent | `.codex/agents/sdd-worker.toml` |
 
@@ -415,7 +415,7 @@ $sdd-proposal PROJ-123
 $sdd-spec proj-123-<slug>
 # edit spec status to approved
 $sdd-task sdd/specs/proj-123-<slug>.spec.md
-cd .claude/worktrees/feat-<FEAT-ID>-proj-123-<slug>
+cd .parrot/worktrees/feat-<FEAT-ID>-proj-123-<slug>
 $sdd-start TASK-NNN
 # repeat tasks
 cd ../../..
