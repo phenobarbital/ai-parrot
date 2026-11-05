@@ -38,14 +38,14 @@
       "feature_id": "FEAT-807",
       "feature": "decisions-inventory-fixes",
       "spec": "sdd/specs/decisions-inventory-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task of FEAT-807; edits decisions/repository.py and decisions/inventory.py with their tests; no dependency and no shared resource",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T00:16:33+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5204-stored-hash-snapshot.md"
     }
