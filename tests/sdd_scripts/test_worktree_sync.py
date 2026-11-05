@@ -528,3 +528,235 @@ def test_main_missing_git_is_clean_refusal(
     assert body["status"] == "refused"
     assert body["exit_code"] == worktree_sync.EXIT_TRANSPORT
     assert "required tool unavailable" in body["message"]
+
+
+# --- FEAT-814 / TASK-5220: refusal classification and transport hardening -------------------------
+
+
+def test_ff_only_divergence_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A diverged --ff-only reports status refused with exit 6, not an error."""
+    _origin, primary, feature = _repository(tmp_path)
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    (feature / "local.txt").write_text("local\n", encoding="utf-8")
+    _run(feature, "add", "local.txt")
+    _run(feature, "commit", "-m", "local")
+    (primary / "shared.txt").write_text("changed\n", encoding="utf-8")
+    _run(primary, "add", "shared.txt")
+    _run(primary, "commit", "-m", "base change")
+    _run(primary, "push")
+
+    result = worktree_sync.sync(feature, "dev", ff_only=True)
+
+    assert result.status == "refused"
+    assert result.exit_code == worktree_sync.EXIT_CONFLICT
+    assert result.before == result.after
+    assert result.message == "fast-forward not possible; worktree unchanged"
+
+
+def test_untracked_overwrite_merge_is_refused_unchanged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A merge Git refuses because an untracked file is in the way is a refusal, not an unverified rollback."""
+    _origin, primary, feature = _repository(tmp_path)
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    (primary / "incoming.txt").write_text("from base\n", encoding="utf-8")
+    _run(primary, "add", "incoming.txt")
+    _run(primary, "commit", "-m", "base adds incoming")
+    _run(primary, "push")
+    before = _run(feature, "rev-parse", "HEAD")
+    real_guards = worktree_sync.check_guards
+    calls = {"count": 0}
+
+    def racing_guards(wt: Path) -> None:
+        # The file appears after the last guard ran: the race the guards cannot close.
+        real_guards(wt)
+        calls["count"] += 1
+        if calls["count"] == 2:
+            (wt / "incoming.txt").write_text("local untracked\n", encoding="utf-8")
+
+    monkeypatch.setattr(worktree_sync, "check_guards", racing_guards)
+
+    result = worktree_sync.sync(feature, "dev")
+
+    assert result.status == "refused"
+    assert result.exit_code == worktree_sync.EXIT_CONFLICT
+    assert result.before == result.after == before
+    assert result.message.startswith("integration refused before starting; worktree unchanged")
+    assert "not verified" not in result.message
+    assert (feature / "incoming.txt").read_text(encoding="utf-8") == "local untracked\n"
+
+
+def test_cherry_pick_merge_commit_is_refused_unchanged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A host cherry-pick of a merge SHA (no -m) is refused without touching the worktree."""
+    _origin, primary, feature = _repository(tmp_path)
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    _run(primary, "checkout", "-q", "-b", "side")
+    (primary / "side.txt").write_text("side\n", encoding="utf-8")
+    _run(primary, "add", "side.txt")
+    _run(primary, "commit", "-m", "side")
+    _run(primary, "checkout", "-q", "dev")
+    (primary / "main.txt").write_text("main\n", encoding="utf-8")
+    _run(primary, "add", "main.txt")
+    _run(primary, "commit", "-m", "main")
+    _run(primary, "merge", "--no-edit", "side")
+    _run(primary, "push")
+    merge_sha = _run(primary, "rev-parse", "HEAD")
+    before = _run(feature, "rev-parse", "HEAD")
+
+    result = worktree_sync.sync(feature, "dev", cherry_picks=[merge_sha])
+
+    assert result.status == "refused"
+    assert result.exit_code == worktree_sync.EXIT_CONFLICT
+    assert result.before == result.after == before
+    assert result.message.startswith("integration refused before starting; worktree unchanged")
+    assert _run(feature, "status", "--porcelain") == ""
+
+
+def test_rollback_status_error_is_reported_as_exit_6(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """_rollback never raises: a status failure after the abort is an unverified rollback."""
+    _origin, _primary, feature = _repository(tmp_path)
+    before = _run(feature, "rev-parse", "HEAD")
+
+    def broken_status(_wt: Path) -> list[str]:
+        raise worktree_sync.SyncError(worktree_sync.EXIT_TARGET, "cannot inspect target worktree: boom")
+
+    monkeypatch.setattr(worktree_sync, "_status", broken_status)
+
+    restored, conflicts, detail = worktree_sync._rollback(feature, before, "merge")
+
+    assert restored is False
+    assert conflicts == []
+    assert "boom" in detail
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("diff --git a/x b/x\n", True),
+        ("Index: x\n", True),
+        ("--- a/x\n", True),
+        ("---\n", True),
+        ("---   \n", True),
+        ("------\n", False),
+        ("---x\n", False),
+        ("---  two-spaces\n", False),
+        ("plain body\n", False),
+    ],
+)
+def test_patch_break_matches_mailinfo(line: str, expected: bool) -> None:
+    """Patch-break detection follows git mailinfo's patchbreak() rules."""
+    assert worktree_sync._is_patch_break(line) is expected
+
+
+def test_trailer_survives_pasted_diff_body(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A commit body containing a pasted diff header keeps its cherry-pick trailer after git am."""
+    _origin, primary, feature = _repository(tmp_path)
+    _configure_sandbox(feature)
+    (primary / "patch.txt").write_text("pasted\n", encoding="utf-8")
+    _run(primary, "add", "patch.txt")
+    # mailinfo ends the message at "Index: " (a pasted diff header); the old "---"-only heuristic put the
+    # trailer after that cut, where git am discarded it.
+    message = "pasted diff body\n\nWhy:\nIndex: notes\nmore text\n"
+    _run(primary, "commit", "-m", message)
+    sha = _run(primary, "rev-parse", "HEAD")
+    _install_gh_stub(tmp_path, monkeypatch, {sha: _patch_response(primary, sha)})
+    monkeypatch.setenv(worktree_sync.BACKEND_ENV, "native")
+
+    result = worktree_sync.sync(feature, "dev", cherry_picks=[sha])
+
+    assert result.status == "synced"
+    assert f"(cherry picked from commit {sha})" in _run(feature, "log", "-1", "--format=%B")
+
+
+def test_fetch_timeout_is_transport_refusal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A stalled fetch is bounded by PARROT_SDD_SYNC_TIMEOUT and becomes an exit-5 refusal."""
+    _origin, _primary, feature = _repository(tmp_path)
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    monkeypatch.setenv(worktree_sync.TIMEOUT_ENV, "7")
+    real_git = worktree_sync._git
+    seen: dict[str, object] = {}
+
+    def stalled_git(wt: Path, *args: str, timeout: int | None = None) -> subprocess.CompletedProcess[str]:
+        if args[:1] == ("fetch",):
+            seen["timeout"] = timeout
+            raise subprocess.TimeoutExpired(["git", *args], timeout or 0)
+        return real_git(wt, *args, timeout=timeout)
+
+    monkeypatch.setattr(worktree_sync, "_git", stalled_git)
+
+    with pytest.raises(worktree_sync.SyncError) as raised:
+        worktree_sync.sync(feature, "dev", dry_run=True)
+
+    assert raised.value.exit_code == worktree_sync.EXIT_TRANSPORT
+    assert "timed out after 7s" in str(raised.value)
+    assert seen["timeout"] == 7
+    assert worktree_sync.stale_base_summary(feature, "dev").startswith("stale-base check skipped:")
+
+
+@pytest.mark.parametrize(("raw", "expected"), [("", 120), ("30", 30), ("0", 120), ("-5", 120), ("soon", 120)])
+def test_network_timeout_parsing(monkeypatch: pytest.MonkeyPatch, raw: str, expected: int) -> None:
+    """Only a positive integer overrides the 120-second default."""
+    monkeypatch.setenv(worktree_sync.TIMEOUT_ENV, raw)
+    assert worktree_sync.network_timeout() == expected
+
+
+def test_git_disables_terminal_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every Git call runs with GIT_TERMINAL_PROMPT=0 so a credential prompt can never block."""
+    captured: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured.update(kwargs)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(worktree_sync.subprocess, "run", fake_run)
+
+    worktree_sync._git(tmp_path, "status")
+
+    environment = captured["env"]
+    assert isinstance(environment, dict) and environment["GIT_TERMINAL_PROMPT"] == "0"
+    assert captured["timeout"] is None
+
+
+def test_detached_head_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A mutating sync of a detached HEAD is refused with exit 2; a dry run still reports."""
+    _origin, primary, feature = _repository(tmp_path)
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    (primary / "base.txt").write_text("from base\n", encoding="utf-8")
+    _run(primary, "add", "base.txt")
+    _run(primary, "commit", "-m", "base update")
+    _run(primary, "push")
+    _run(feature, "checkout", "-q", "--detach")
+
+    with pytest.raises(worktree_sync.SyncError) as raised:
+        worktree_sync.sync(feature, "dev")
+
+    assert raised.value.exit_code == worktree_sync.EXIT_TARGET
+    assert "detached HEAD" in str(raised.value)
+    assert not (feature / "base.txt").exists()
+    assert worktree_sync.sync(feature, "dev", dry_run=True).commits
+
+
+def test_cli_refusal_goes_to_stderr(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """In human mode a refusal message is printed on stderr, leaving stdout empty."""
+    code = worktree_sync.main([str(tmp_path / "missing")])
+
+    captured = capsys.readouterr()
+    assert code == worktree_sync.EXIT_TARGET
+    assert captured.out == ""
+    assert "target must resolve to one worktree" in captured.err
+
+
+def test_short_sha_refused_before_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A too-short sandbox --cherry-pick value is refused (exit 2) before gh is invoked."""
+    _origin, _primary, feature = _repository(tmp_path)
+    _configure_sandbox(feature)
+    gh_called = tmp_path / "gh-was-called"
+    gh = tmp_path / "gh"
+    gh.write_text(f'#!/bin/sh\n: > "{gh_called}"\n', encoding="utf-8")
+    gh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}:{Path('/usr/bin')}")
+    monkeypatch.setenv(worktree_sync.BACKEND_ENV, "native")
+
+    with pytest.raises(worktree_sync.SyncError) as raised:
+        worktree_sync.sync(feature, "dev", cherry_picks=["abc"])
+
+    assert raised.value.exit_code == worktree_sync.EXIT_TARGET
+    assert not gh_called.exists()
