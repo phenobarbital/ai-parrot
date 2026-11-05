@@ -37,7 +37,7 @@ def test_dependency_minimums_not_lowered() -> None:
     for name, floor in MINIMUMS.items():
         match = re.search(rf"^{re.escape(name)}>=([\d.]+)", REQS, re.MULTILINE)
         assert match, name
-        version_tuple = tuple(int(p) for p in match.group(1).split('.'))
+        version_tuple = tuple(int(p) for p in match.group(1).split("."))
         assert version_tuple >= floor, f"{name} version {version_tuple} is below minimum {floor}"
         version_tuple = tuple(int(p) for p in match.group(1).split("."))
         assert version_tuple >= floor, f"{name} version {version_tuple} is below minimum {floor}"
