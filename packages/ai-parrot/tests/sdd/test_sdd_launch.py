@@ -13,6 +13,7 @@ from click.testing import CliRunner
 
 from parrot.cli import cli as devloop
 from parrot.flows.dev_loop import feature_launcher as launcher
+from parrot.sdd.scripts import worktree_sync
 
 _REAL_PREFLIGHT = launcher._preflight_sandbox
 
@@ -170,6 +171,7 @@ def test_launch_brief_uses_existing_worktree_and_slug_prompt(tmp_path: Path, mon
 
     monkeypatch.setattr(launcher, "ensure_feature_worktree", forbidden)
     monkeypatch.setattr(launcher, "prepare_upstream", lambda path: "launch-worker: ready")
+    monkeypatch.setattr(worktree_sync, "stale_base_summary", lambda wt, base=None: "base dev: up to date")
     monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
     monkeypatch.setattr(
         launcher.native_claude_sandbox,
@@ -228,6 +230,7 @@ def test_launch_non_tmux_passes_worktree_and_worker_prompt(tmp_path: Path, monke
     monkeypatch.setenv("PWD", str(primary))
     monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: worktree)
     monkeypatch.setattr(launcher, "prepare_upstream", lambda path: "launch-worker: ready")
+    monkeypatch.setattr(worktree_sync, "stale_base_summary", lambda wt, base=None: "base dev: up to date")
     monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
     monkeypatch.setattr(
         launcher.native_claude_sandbox,
@@ -249,6 +252,71 @@ def test_launch_non_tmux_passes_worktree_and_worker_prompt(tmp_path: Path, monke
     assert captured["cwd"] == worktree
     assert captured["initial_prompt"] == "run FEAT-768"
     assert captured["argv"] == ["--sandbox-allow-domain", "api.example.com", "--", "--verbose"]
+
+
+def _advisory_launch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, events: list[str], summary: object, *, no_upstream: bool = False
+) -> None:
+    """Run a non-tmux launch recording upstream/worker calls into ``events`` (summary records itself)."""
+    primary = _primary(tmp_path)
+    worktree = tmp_path / "feature"
+    worktree.mkdir()
+    captured: dict[str, object] = {}
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: worktree)
+    monkeypatch.setattr(launcher, "prepare_upstream", lambda path: events.append("upstream") or "launch-worker: ready")
+    monkeypatch.setattr(worktree_sync, "stale_base_summary", summary)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    monkeypatch.setattr(
+        launcher.native_claude_sandbox,
+        "launch_worker",
+        lambda argv, **kwargs: events.append("worker") or captured.update(kwargs) or 0,
+    )
+    result = launcher.launch(
+        "sandbox",
+        tmux=False,
+        detach=False,
+        sandbox="legacy",
+        allowed_domains=(),
+        no_upstream=no_upstream,
+        claude_args=(),
+    )
+    assert result == 0
+    assert captured["cwd"] == worktree
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["base dev: 3 commit(s) ahead of this worktree", "stale-base check skipped: origin remote is unavailable"],
+)
+def test_launch_prints_stale_base_advisory_between_upstream_and_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], text: str
+) -> None:
+    """The advisory runs after prepare_upstream, before the worker; a skipped result still launches."""
+    events: list[str] = []
+
+    def summary(wt: Path, base: str | None = None) -> str:
+        events.append("summary")
+        return text
+
+    _advisory_launch(tmp_path, monkeypatch, events, summary)
+    assert events == ["upstream", "summary", "worker"]
+    assert text in capsys.readouterr().err
+
+
+def test_launch_no_upstream_skips_stale_base_advisory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--no-upstream bypasses both the upstream preparation and the stale-base check."""
+
+    def forbidden(wt: Path, base: str | None = None) -> str:
+        raise AssertionError("stale-base check must be skipped with --no-upstream")
+
+    events: list[str] = []
+    _advisory_launch(tmp_path, monkeypatch, events, forbidden, no_upstream=True)
+    assert events == ["worker"]
+    assert "stale-base" not in capsys.readouterr().err
 
 
 def test_launch_no_gh_token_reaches_launch_worker_directly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
