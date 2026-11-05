@@ -476,7 +476,8 @@ class SddCoderToolkit(AbstractToolkit):
 
         Refuses (`execution_busy`) while known attempts/native reservations/jobs
         are still in flight -- an error report alone never unlocks this; only
-        explicit settlement (a real `coder_merge`) does.
+        explicit settlement (a real `coder_merge`) does. The error names each
+        task still holding the execution and lists them in `details.in_flight`.
         """
         return await self._run("coder_end_execution", self._engine.end_execution(execution_id), exclusive=True)
 
