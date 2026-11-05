@@ -21,7 +21,6 @@ from parrot.knowledge.wiki.project import (
     save_project_config,
 )
 
-
 @pytest.fixture
 def temp_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A fake system temp dir with a stray ``.git`` and ``.parrot`` at its root."""
