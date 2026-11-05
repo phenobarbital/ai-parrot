@@ -740,7 +740,7 @@ claude --agent code-reviewer -p "Review feat-071"
 ### Background Execution (tmux)
 
 ```bash
-cd .claude/worktrees/feat-071-jira-oauth
+cd .parrot/worktrees/feat-071-jira-oauth
 tmux new -s feat-071 \
   "claude --agent sdd-autopilot --verbose 2>&1 | tee .autopilot/full.log"
 # Ctrl+B, D to detach
