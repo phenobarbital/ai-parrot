@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-817 — github-reviewer-test-matrix
 **Spec**: `sdd/specs/github-reviewer-test-matrix.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: none
@@ -35,4 +35,11 @@ PYTHONPATH=$PWD/packages/ai-parrot/src pytest packages/ai-parrot/tests/bots/test
 ```
 
 ## Completion Note
-_(filled on close)_
+Added 4 test classes (32 tests) to `test_github_reviewer.py` covering every spec §1 gap row:
+AC filter placeholder/substantive (incl. checked/whitespace/comment/full-template variants), locate fast-path hit
+(no listing), 10 invalid-candidate fallbacks (FEAT-81 vs FEAT-811, fenced header, incidental mention, wrong
+ext/path, missing/error/truncated/raising read), rate_limited search fallback, ordered scan, no-source /
+unresolvable-spec / fallback-disabled in both entry points, Jira source reported over LLM-claimed source,
+strict deferred/blocked/submission-error exposing `sdd_spec`, and an end-to-end spec-sourced review with fake
+GitToolkit + fake LLM through the real `_ask_llm_for_review`. No production bug found; no production code changed.
+Full module: 353 passed. ruff clean.
