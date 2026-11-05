@@ -193,6 +193,11 @@ version change requires re-qualification):
 - **Token scope warning:** the agent can read `GH_TOKEN` and it carries `gh`'s full scopes — every repository
   the logged-in account can reach. To grant less, log `gh` in with a narrower token or pass `--no-gh-token`.
 - Unknown destinations never trigger an unattended authorization prompt and are never auto-learned.
+- tiktoken: the session exports `TIKTOKEN_CACHE_DIR=<scratch root>/parrot-sdd-cache/shared-<uid>/tiktoken`
+  (tiktoken's default `$TMPDIR/data-gym-cache` is private and empty in the sandbox, so every token count
+  tried `openaipublic.blob.core.windows.net` and was denied). The launcher seeds it on the host — copying the
+  host's cached encodings, else downloading `cl100k_base` with a 15 s timeout — so no domain grant is needed.
+  Best effort: a cold cache only means callers use their fallback token estimate.
 
 ## Git inside a native session
 
