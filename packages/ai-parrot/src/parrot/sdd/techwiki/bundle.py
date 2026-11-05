@@ -29,6 +29,7 @@ class BundlePage:
     title: str
     name: str
     body: str
+    module: str | None = None  # dotted module of a generated API page; None for authored and ADR pages
 
 
 @dataclass
@@ -153,7 +154,8 @@ def _generated_pages(
 
     rendered, skipped = generate(cfg, root, release=release)
     pages = [
-        BundlePage(None, page.section, page.title, page_name(page.section, page.title), page.body) for page in rendered
+        BundlePage(None, page.section, page.title, page_name(page.section, page.title), page.body, module=page.module)
+        for page in rendered
     ]
     return pages, skipped
 
@@ -163,8 +165,7 @@ def _manifest_entries(pages: list[BundlePage]) -> list[dict[str, str]]:
     entries: list[dict[str, str]] = []
     for page in pages:
         if page.source is None:
-            module = page.title.removeprefix("Reference: ")
-            entries.append({"id": f"ref:{module}", "name": page.name, "section": "api", "kind": "generated"})
+            entries.append({"id": _ref_id(page), "name": page.name, "section": "api", "kind": "generated"})
         else:
             entries.append(
                 {"id": page.source.as_posix(), "name": page.name, "section": page.section, "kind": "authored"}
@@ -256,7 +257,7 @@ def assemble(
 
 def _ref_id(page: BundlePage) -> str:
     """Return the ``ref:<module>`` identifier of a generated page (the key links use)."""
-    return f"ref:{page.title.removeprefix('Reference: ')}"
+    return f"ref:{page.module}"
 
 
 def report_payload(report: BundleReport) -> dict[str, Any]:

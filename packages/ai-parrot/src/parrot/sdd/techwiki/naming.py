@@ -13,8 +13,18 @@ class PageNameError(ValueError):
     """Raised for a title GitHub would rewrite (literal hyphen) or an empty title."""
 
 
+# Characters ``actions/upload-artifact`` (and NTFS) refuse in a file name. A page name is also the bundle
+# file name, so these never reach it: they are replaced by a space, the title keeps them.
+FORBIDDEN_NAME_CHARS = '":<>|*?\r\n'
+
+_NAME_SEPARATORS = str.maketrans(dict.fromkeys("/\\" + FORBIDDEN_NAME_CHARS, " "))
+
+
 def page_name(section: str | None, title: str) -> str:
     """Return the GitHub wiki page name with spaces represented by hyphens.
+
+    Path separators and the characters in :data:`FORBIDDEN_NAME_CHARS` (which ``actions/upload-artifact``
+    rejects in a file name) are replaced by a space in the name; the title itself is not changed.
 
     Args:
         section: Optional wiki section name.
@@ -33,14 +43,16 @@ def page_name(section: str | None, title: str) -> str:
             f"Title {title!r} contains a literal hyphen — GitHub would store it "
             "as U+2010 ('‐'), breaking [[Title]] links. Use a space instead."
         )
-    # Path separators would turn the name into a nested path (or escape the output directory):
-    # replace them with spaces. The name is computed once and reused for every link.
-    title = title.replace("/", " ").replace("\\", " ")
-    name = "-".join(title.strip().split())
+    # Path separators would turn the name into a nested path (or escape the output directory) and the
+    # forbidden characters would make the bundle unuploadable: replace them with spaces. The name is
+    # computed once and reused for every link.
+    name = "-".join(title.translate(_NAME_SEPARATORS).strip().split())
+    if not name:
+        raise PageNameError(f"Title {title!r} has no characters usable in a page name")
     if section:
         if "-" in section:
             raise PageNameError(f"Section {section!r} contains a literal hyphen")
-        prefix = "-".join(section.replace("/", " ").replace("\\", " ").strip().split())
+        prefix = "-".join(section.translate(_NAME_SEPARATORS).strip().split())
         name = f"{prefix}-{name}"
     return name
 

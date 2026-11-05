@@ -1,4 +1,4 @@
-# Reference: samplepkg.core
+# samplepkg.core
 
 Public fixture API.
 
