@@ -8,6 +8,7 @@ import logging
 import posixpath
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
+from urllib.parse import unquote
 from typing import Any
 
 import yaml
@@ -293,7 +294,13 @@ def assemble(
             if target.startswith(("ref:", "index:")):
                 key = target
             elif page.source is None:
-                # A generated page has no location in the source tree to resolve a relative link against.
+                if unquote(target) in by_name:
+                    # A generated page (the reference index) links final page names, not source paths; such a
+                    # link is already correct. Only a page whose name ends in ``.md`` -- a module literally
+                    # named ``md`` -- reaches here at all, because that is what rewrite_links treats as a path.
+                    return None
+                # Any other relative target: a generated page has no location in the source tree to resolve
+                # it against, so it can never be anything but dangling.
                 report.dangling.append({"source": origin, "target": target})
                 return None
             else:

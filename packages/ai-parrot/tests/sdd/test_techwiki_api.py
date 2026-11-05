@@ -299,3 +299,23 @@ def test_full_repository_bundle_has_no_dangling_links() -> None:
     _, report = assemble(cfg, root)
     assert report.dangling == [], report.dangling[:10]
     assert report.ok(), (report.collisions[:5], report.dangling[:5])
+
+
+def test_generated_page_link_to_a_page_named_like_a_markdown_file_is_not_dangling(tmp_path: Path) -> None:
+    """A module literally named ``md`` yields a page name ending in ``.md``.
+
+    ``rewrite_links`` resolves any target ending ``.md`` as a relative path, so the reference index's
+    already-final link to such a page used to be reported dangling once FEAT-818 began validating
+    generated pages. The link is correct and must be left alone.
+    """
+    from parrot.sdd.techwiki.bundle import assemble
+
+    pkg = tmp_path / "packages" / "sample" / "src" / "pkgy"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text('"""Pkg."""\n', encoding="utf-8")
+    (pkg / "md.py").write_text('"""Markdown splitter."""\n\n\nclass MdSplitter:\n    """Splits."""\n', encoding="utf-8")
+    cfg = TechwikiConfig(packages=[TechwikiPackage(dist="sample", src="packages/sample/src", roots=["pkgy"])])
+    pages, report = assemble(cfg, tmp_path)
+    assert any(page.name == "API-Reference-pkgy.md" for page in pages), [p.name for p in pages]
+    assert report.dangling == [], report.dangling
+    assert report.ok(), (report.collisions, report.dangling)

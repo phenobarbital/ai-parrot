@@ -64,6 +64,7 @@ redirect; `parrot.bots.orchestration` was removed in FEAT-143).
 |---|---|---|
 | `packages/ai-parrot/src/parrot/sdd/techwiki/api.py` | MODIFY | `_unlink_pageless_refs` + one call in `_generate` |
 | `packages/ai-parrot/tests/sdd/test_techwiki_api.py` | MODIFY | Regression tests (append at end of file) |
+| `packages/ai-parrot/src/parrot/sdd/techwiki/bundle.py` | MODIFY | AC-9 only (scope amended — see Completion Note) |
 
 ---
 
@@ -327,8 +328,10 @@ from `parrot.sdd.techwiki.api` at the top of the file alongside the existing imp
 - [ ] AC-6: `pytest test_techwiki_api.py test_techwiki_bundle.py` green, no pre-existing test
       modified to accommodate the change.
 - [ ] AC-7: `ruff check` and `black --check` clean on both changed files.
-- [ ] AC-8: No change to `module.md.j2`, `bundle.py`, `naming.py`, or `techwiki.packages`
-      in `sdd/config.json`.
+- [ ] AC-8 *(amended)*: No change to `module.md.j2`, `naming.py`, or `techwiki.packages`.
+      One narrowly-scoped `bundle.py` change is in scope, for AC-9 only.
+- [ ] AC-9 *(added)*: A generated page's link to an already-final page name ending in `.md`
+      is left alone, not reported dangling.
 
 ---
 
