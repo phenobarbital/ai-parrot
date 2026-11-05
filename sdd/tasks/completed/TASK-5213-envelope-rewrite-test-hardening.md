@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-809 — Envelope-rewrite tests pin the stored record, the CAS hash and the encode failure
 **Spec**: `sdd/specs/decisions-test-ingest-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -333,8 +333,20 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude (session /sdd-fix, actor agent:sdd-fix:8f950552)
+**Date**: 2026-11-05
+**Notes**: `test_ingest.py` only (commit `013a2ca917`). Added `_seed_review_state`; tightened
+`test_refresh_rewrite_keeps_stored_record` (seeded revision 2 + one review event must survive) and
+`test_refresh_rewrite_conflict_is_a_diagnostic` (`save` must receive the stored record and the legacy
+hash; the page keeps the legacy hash); added `test_refresh_rewrite_encode_failure_is_a_diagnostic`.
+Evidence, run in the feature worktree with `PYTHONPATH=packages/ai-parrot/src`: unmodified code gives
+31 passed on `test_ingest.py`; `ruff check` and `black --check -l 120` are clean. Mutations of
+`ingest.py`, each reverted with `git checkout --`:
+`repo.save(record, stored_hash)` → the keeps-stored-record test fails (the conflict test fails too);
+`repo.save(stored_record, None)` → the conflict test fails;
+`decision_to_page` moved above `try:` → the encode-failure test fails.
+`ingest.py` is not in the diff.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Both FILL IN markers were completed as bounded: the conflict test asserts
+the page still holds the legacy hash; the encode-failure test asserts `clean.unchanged > 1` and
+`result.unchanged == clean.unchanged - 1`.
