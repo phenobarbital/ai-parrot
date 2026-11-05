@@ -11,7 +11,6 @@ import pytest
 
 from parrot.sdd.scripts import native_claude_sandbox, worktree_sync
 
-
 def _run(path: Path, *args: str) -> str:
     """Run Git in a disposable repository and return stdout."""
     return subprocess.run(["git", "-C", str(path), *args], text=True, capture_output=True, check=True).stdout.strip()
@@ -277,7 +276,11 @@ def test_native_policy_sync_with_protected_config(tmp_path: Path, monkeypatch: p
     assert (feature / "patch.txt").read_text(encoding="utf-8") == "from native gh\n"
     assert common_config.read_bytes() == common_before
     assert worktree_config.read_bytes() == worktree_before
-    assert (_run(primary, "rev-parse", "HEAD"), _run(primary, "status", "--porcelain"), _refs(primary)) == primary_before
+    assert (
+        _run(primary, "rev-parse", "HEAD"),
+        _run(primary, "status", "--porcelain"),
+        _refs(primary),
+    ) == primary_before
     assert (_run(sibling, "rev-parse", "HEAD"), _run(sibling, "status", "--porcelain")) == sibling_before
     assert _refs(origin) == remote_before
     assert _run(feature, "status", "--porcelain") == ""
@@ -321,7 +324,11 @@ def test_native_policy_missing_protection_refuses(tmp_path: Path, monkeypatch: p
     assert not (feature / "patch.txt").exists()
     assert common_config.read_bytes() == common_before
     assert not worktree_config.exists()
-    assert (_run(feature, "rev-parse", "HEAD"), _run(feature, "status", "--porcelain"), _refs(feature)) == feature_before
+    assert (
+        _run(feature, "rev-parse", "HEAD"),
+        _run(feature, "status", "--porcelain"),
+        _refs(feature),
+    ) == feature_before
     assert (_run(primary, "rev-parse", "HEAD"), _run(primary, "status", "--porcelain")) == primary_before
     assert (_run(sibling, "rev-parse", "HEAD"), _run(sibling, "status", "--porcelain")) == sibling_before
     assert _refs(origin) == remote_before
