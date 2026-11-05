@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-803 — GitHub Pages Informative Site Redesign
 **Spec**: `sdd/specs/github-pages-informative-site.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: TASK-5195
@@ -190,10 +190,8 @@ def test_parrot_branding_and_custom_dir() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-sol (codex)
+**Date**: 2026-11-05
+**Notes**: Merged by the engine; merge-tier validation green (tests/docs_site: 7 passed). Per-task semantic review deferred to the feature-level code review.
 
 **Deviations from spec**: none

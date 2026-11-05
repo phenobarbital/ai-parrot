@@ -35,7 +35,7 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "Needs docs/branding/favicon.ico and social-card.png created by TASK-5195 (referenced from landing/index.html head).",
       "assigned_to": null,
       "started_at": "2026-11-05T02:57:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5196-landing-page-redesign.md"
+      "completed_at": "2026-11-05T03:11:08+00:00",
+      "file": "sdd/tasks/completed/TASK-5196-landing-page-redesign.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5197",
@@ -55,7 +56,7 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -65,8 +66,9 @@
       "parallelism_notes": "mkdocs.yml theme favicon/logo and extra OG meta reference docs/branding/favicon.ico + social-card.png created by TASK-5195.",
       "assigned_to": null,
       "started_at": "2026-11-05T02:57:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5197-mkdocs-theme-nav.md"
+      "completed_at": "2026-11-05T03:11:09+00:00",
+      "file": "sdd/tasks/completed/TASK-5197-mkdocs-theme-nav.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5198",
