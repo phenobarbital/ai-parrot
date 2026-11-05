@@ -9,6 +9,59 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.1.0] — 2026-11-05 — Gemini 2.5 retirement, per-component LLM defaults, worktree sync-base, technical wiki
+
+Minor release. Core and its siblings move to `2.1.0`; the fifteen `ai-parrot-client-*`
+satellites and `ai-parrot-openlit-bridge` move to `1.1.0`. Every sibling now pins
+`ai-parrot>=2.1.0`.
+
+### Breaking changes
+- **Gemini 2.5 retired from the catalogue (FEAT-798).** Google shuts down `gemini-2.5-pro` /
+  `gemini-2.5-flash` on 2026-12-01 (2.5 TTS / native-audio on 2026-11-17). `GoogleModel` drops
+  `GEMINI_2_5_PRO`, `GEMINI_2_5_FLASH` (+ `_PREVIEW`), `GEMINI_2_5_FLASH_TTS`, `GEMINI_2_5_PRO_TTS`
+  and `GEMINI_COMPUTER_USE`; `VertexAIModel` drops its two 2.5 members; `GoogleVoiceModel` loses its
+  2.5 members. Pro-class defaults move to `gemini-4-argon`, flash-class defaults to
+  `gemini-3.8-flash`, Live to `gemini-3.8-live`, TTS to `gemini-3.8-flash-tts`. `flash-lite` and
+  `flash-image` members stay. Code referencing the removed members must switch.
+
+### Added
+- **Per-component LLM defaults (FEAT-796):** `AGENT_LLM`, `CREW_LLM`,
+  `EXPERT_{JUDGMENT,BALANCED,TEMPLATED}_LLM` and `<COMPONENT>_<PROVIDER>_API_KEY` settings, with
+  per-component usage tags.
+- **`parrot sdd worktree sync-base` (FEAT-806)** — cherry-pick a base fix into a sandboxed
+  worktree, with a stale-base advisory; refusal classification and transport hardening
+  (FEAT-813/814). **`parrot sdd worktree baseline`** — a runnable base-ref checkout with native
+  `.so` files synced.
+- **Technical reference wiki (FEAT-801):** technical docs moved to `wiki/` (275 pages), an API
+  reference generator, a `techwiki.yml` sync workflow and the `ai-parrot[techwiki]` extra.
+- **SDD worker lifecycle:** tmux completion receipts and host notifications (FEAT-793);
+  `parrot sdd uninstall --stalled/--keep`, `parrot sdd worktree list|remove` and `/remove-worktree`
+  shipped to all hosts (FEAT-795); `parrot self doctor` detects bwrap nested-userns support; SDD
+  sandbox OS setup guide.
+- **Form designer:** BOOLEAN fields render Yes/No radios in HTML5 and PDF (FEAT-800).
+- **Studio prompt library:** `agent_id` and `sort_order` columns (migration 0009, FEAT-794).
+- GitHub reviewer test matrix completed (FEAT-817).
+
+### Fixed
+- Installer portability: Google config forms inferred per file, shared portable toolkit entries in
+  the user-global Gemini config, no guard hook baked to one machine's venv (FEAT-804).
+- SDD decisions: snapshot compares stored page hashes; ingest re-encodes legacy ADR envelopes
+  (fixes the `SNAPSHOT_UNSTABLE` gate); hashless pages refused (FEAT-807/808/809/810).
+- Native Claude sandbox becomes the default backend when launcher markers are present; the Bash
+  hook is idempotent so auto mode can review it; gh-only worker access with host-side `/sdd-done`;
+  persistent tiktoken cache for sandboxed workers; dirty guard checks tracked changes only.
+- sdd-coder: record tools accept validated review/feedback models; a failed native prepare frees
+  its seat; re-dispatched attempts take the next free slot (FEAT-812).
+- A2UI KPI: linked row-scalar bindings marked optional on empty snapshots (FEAT-816).
+- Ledger outbox sets aside unclaims of terminal issues instead of blocking the batch; wiki prunes
+  stale `wiki.db.bak-*` sidecars and reports malformed frontmatter as one warning.
+- TUI composer awaits `TextArea._on_key`; prompt library keeps `created_by` on update.
+
+### Dependencies
+- `google-genai>=2.34.0`, `pytest-asyncio` 1.4.1, `pytest-mock` 3.17.0.
+
+---
+
 ## [2.0.0] — 2026-11-03 — Parrot installer and noun-grouped SDD CLI, Connections, Domain Experts, Squawk
 
 Major release. Core and its siblings move to `2.0.0`; the fifteen `ai-parrot-client-*`
