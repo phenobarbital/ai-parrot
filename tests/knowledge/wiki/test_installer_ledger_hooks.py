@@ -116,6 +116,10 @@ def test_install_claude_integration_action_count(tmp_path: Path, monkeypatch: py
     assert calls == [repo]
     assert "x" in on
     off = installer.install_claude_integration(repo, git_hook=False)
+    # FEAT-804: a baked-fallback install adds an informational "note:" line
+    # unless a managed launcher is on PATH; it is not an action, so ignore it.
+    on = [a for a in on if not a.startswith("note: ")]
+    off = [a for a in off if not a.startswith("note: ")]
     assert len(on) == len(off) + 2
 
 

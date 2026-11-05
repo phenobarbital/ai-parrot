@@ -68,7 +68,11 @@ def test_reconcile_skips_foreign_table_outside_block(tmp_path):
     assert any("parrot-memory" in warning for warning in warnings)
     # AC5 — a toolkit-only reconcile never introduces a wikitoolkit table.
     assert "wikitoolkit" not in doc.get("mcp_servers", {})
-    assert actions == [".codex/config.toml — toolkit tables already current"]
+    # FEAT-804: a baked-fallback install adds an informational "note:" line
+    # unless a managed launcher is on PATH; it is not an action, so ignore it.
+    assert [a for a in actions if not a.startswith("note: ")] == [
+        ".codex/config.toml — toolkit tables already current"
+    ]
 
 
 def test_reconcile_output_is_valid_toml(tmp_path):
