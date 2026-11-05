@@ -427,6 +427,84 @@ def _source_link(module: Any, source_url: str | None, release: str | None, root:
     return f"{source_url.rstrip('/')}/blob/{release}/{relative}"
 
 
+_PACKAGE_TEMPLATE: "jinja2.Template | None" = None
+
+
+def _public_members(mod: Any) -> list[Any]:
+    """Return the members that render on ``mod``'s own page.
+
+    A child module is never a member of its parent's page: it has a page of its own. An alias to one
+    (a re-export) is, because it documents the parent's public surface.
+
+    Args:
+        mod: Statically loaded module.
+
+    Returns:
+        The public, non-module members, in member order.
+    """
+    return [
+        member
+        for member in _members(mod).values()
+        if is_public(member) and (_is_alias(member) or not _safe(member, "is_module", False))
+    ]
+
+
+def _submodules(mod: Any) -> list[Any]:
+    """Return ``mod``'s statically discovered child modules, private names excluded.
+
+    Args:
+        mod: Statically loaded module.
+
+    Returns:
+        The child modules, aliases and underscore-prefixed names excluded.
+    """
+    return [
+        member
+        for member in _members(mod).values()
+        if not _is_alias(member)
+        and _safe(member, "is_module", False)
+        and not str(_safe(member, "name", "") or "").startswith("_")
+    ]
+
+
+def _has_page(mod: Any) -> bool:
+    """Whether ``mod`` produces a page: it has public members, or a descendant that does.
+
+    This mirrors :func:`render_module`'s own decision, so a package index never links a module that
+    rendered nothing — such a link would leave an unresolvable ``ref:`` in the assembled bundle.
+
+    Args:
+        mod: Statically loaded module.
+
+    Returns:
+        Whether a page exists for ``mod``.
+    """
+    if _public_members(mod):
+        return True
+    return any(_has_page(child) for child in _submodules(mod))
+
+
+def _package_template() -> "jinja2.Template":
+    """Load and cache the packaged package-index template without importing documented packages.
+
+    Returns:
+        The compiled template for a package index page.
+
+    Raises:
+        GriffeUnavailable: If jinja2 is not installed.
+    """
+    global _PACKAGE_TEMPLATE  # noqa: PLW0603 - one process-wide compile of a packaged template
+    if _PACKAGE_TEMPLATE is None:
+        try:
+            import jinja2
+        except ImportError as exc:
+            raise GriffeUnavailable("jinja2 is not installed. Install with: pip install ai-parrot[techwiki]") from exc
+        template_path = importlib.resources.files("parrot.sdd.techwiki").joinpath("templates/package.md.j2")
+        environment = jinja2.Environment(trim_blocks=True, lstrip_blocks=True, keep_trailing_newline=True)
+        _PACKAGE_TEMPLATE = environment.from_string(template_path.read_text(encoding="utf-8"))
+    return _PACKAGE_TEMPLATE
+
+
 def render_module(
     mod: "griffe.Module",
     *,
@@ -436,7 +514,12 @@ def render_module(
     root: Path | None = None,
     section: str = "API Reference",
 ) -> RenderedPage | None:
-    """Render one module page, returning ``None`` when it has no public members.
+    """Render one module page, returning ``None`` when the module documents nothing.
+
+    A module with public members renders those members. A package with none of its own — a namespace
+    whose public names are re-exported lazily (``__getattr__``) or simply live in its submodules —
+    renders an index page listing its declared ``__all__`` and its child module pages instead of
+    disappearing, so re-exports elsewhere can link it.
 
     Args:
         mod: Statically loaded module.
@@ -447,40 +530,46 @@ def render_module(
         section: Wiki section the page belongs to (``TechwikiConfig.reference_section``).
 
     Returns:
-        A rendered page, or ``None`` for modules with no public members. The page title is the bare module
-        name: it becomes part of the wiki page name, which must stay free of ``:`` and the other characters
-        ``actions/upload-artifact`` rejects.
+        A rendered page, or ``None`` for a module with neither public members nor a child module page.
+        The page title is the bare module name: it becomes part of the wiki page name, which must stay
+        free of ``:`` and the other characters ``actions/upload-artifact`` rejects.
     """
     module_name = str(_safe(mod, "path", None) or _safe(mod, "name", ""))
     module_root = module_name.split(".", 1)[0]
-    members = [
-        member
-        for member in _members(mod).values()
-        if is_public(member) and (_is_alias(member) or not _safe(member, "is_module", False))
-    ]
-    if not members:
-        return None
-    rendered_members = [
-        _render_member(member, module_root=module_root) for member in sorted(members, key=lambda item: str(item.name))
-    ]
-    title = module_name
-    description = _doc_parts(mod)["description"]
+    members = _public_members(mod)
+    if members:
+        rendered_members = [
+            _render_member(member, module_root=module_root)
+            for member in sorted(members, key=lambda item: str(item.name))
+        ]
+        rendered = template.render(
+            module=module_name,
+            title=module_name,
+            description=_doc_parts(mod)["description"],
+            members=rendered_members,
+            source_link=_source_link(mod, source_url, release, root),
+        )
+    else:
+        submodules = sorted(
+            str(_safe(child, "path", None) or _safe(child, "name", ""))
+            for child in _submodules(mod)
+            if _has_page(child)
+        )
+        if not submodules:
+            return None
+        rendered = _package_template().render(
+            module=module_name,
+            title=module_name,
+            description=_doc_parts(mod)["description"],
+            exports=sorted(_module_all(mod) or ()),
+            submodules=submodules,
+            source_link=_source_link(mod, source_url, release, root),
+        )
     return RenderedPage(
         module=module_name,
         section=section,
-        title=title,
-        body=re.sub(
-            r"\n{3,}",
-            "\n\n",
-            template.render(
-                module=module_name,
-                title=title,
-                description=description,
-                members=rendered_members,
-                source_link=_source_link(mod, source_url, release, root),
-            ),
-        ).rstrip()
-        + "\n",
+        title=module_name,
+        body=re.sub(r"\n{3,}", "\n\n", rendered).rstrip() + "\n",
     )
 
 

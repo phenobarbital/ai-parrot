@@ -189,6 +189,52 @@ class TestRenderingRules:
         assert "BaseModel`" not in core.replace("PublicModel", "")  # the imported base class is not documented here
         assert "overload" not in core.lower().replace("overloads:", "")
 
+    def test_lazy_export_package_renders_an_index_page(self, techwiki_repo: tuple[Path, TechwikiConfig]) -> None:
+        """A package whose ``__all__`` resolves lazily still gets a page, listing its exports and submodules.
+
+        ``issue:6b80e9a6474b`` — ``parrot.auth`` declares 47 exports behind ``__getattr__``, so griffe sees
+        no public member on the package itself and it used to render nothing, leaving every re-export that
+        pointed at it unlinked.
+        """
+        pages = self._pages(techwiki_repo)
+        assert "samplepkg.lazy" in pages
+        body = pages["samplepkg.lazy"]
+        assert body.startswith("# samplepkg.lazy\n")
+        assert "A namespace package whose public names resolve lazily." in body
+        assert "- `LazyThing`" in body
+        assert "- [`samplepkg.lazy.impl`](ref:samplepkg.lazy.impl)" in body
+        assert "_LAZY_ATTRS" not in body  # private members stay private on an index page
+        assert "__getattr__" not in body
+
+    def test_package_index_links_only_submodules_that_have_pages(self, tmp_path: Path) -> None:
+        """An index page links a child only when that child rendered a page, so no ``ref:`` dangles."""
+        _require_griffe()
+        package = tmp_path / "src" / "mixedpkg"
+        (package / "hidden").mkdir(parents=True)
+        (package / "__init__.py").write_text('"""A namespace with one documented child."""\n', encoding="utf-8")
+        (package / "shown.py").write_text('def visible() -> None:\n    """Public."""\n', encoding="utf-8")
+        (package / "hidden" / "__init__.py").write_text('"""Nothing public."""\n\n_X = 1\n', encoding="utf-8")
+        cfg = TechwikiConfig(packages=[TechwikiPackage(dist="mixed", src="src", roots=["mixedpkg"])])
+        pages, skipped = generate(cfg, tmp_path)
+        assert not skipped
+        bodies = {page.module: page.body for page in pages}
+        assert set(bodies) == {"mixedpkg", "mixedpkg.shown"}
+        assert "- [`mixedpkg.shown`](ref:mixedpkg.shown)" in bodies["mixedpkg"]
+        assert "mixedpkg.hidden" not in bodies["mixedpkg"]
+        assert "## Exports" not in bodies["mixedpkg"]  # no ``__all__`` declared
+
+    def test_package_with_no_documented_descendant_renders_nothing(self, tmp_path: Path) -> None:
+        """A package whose whole subtree is private still produces no page (no empty index pages)."""
+        _require_griffe()
+        package = tmp_path / "src" / "quietpkg"
+        (package / "sub").mkdir(parents=True)
+        (package / "__init__.py").write_text('"""Quiet namespace."""\n', encoding="utf-8")
+        (package / "sub" / "__init__.py").write_text('"""Also quiet."""\n\n_X = 1\n', encoding="utf-8")
+        cfg = TechwikiConfig(packages=[TechwikiPackage(dist="quiet", src="src", roots=["quietpkg"])])
+        pages, skipped = generate(cfg, tmp_path)
+        assert not skipped
+        assert pages == []
+
     def test_reexport_alias_is_one_line_not_a_duplicate_body(self, techwiki_repo: tuple[Path, TechwikiConfig]) -> None:
         """A re-export renders as a single 'Re-exported from' line linking the source module page."""
         package = self._pages(techwiki_repo)["samplepkg"]
