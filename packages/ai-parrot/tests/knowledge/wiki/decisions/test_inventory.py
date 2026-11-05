@@ -159,6 +159,39 @@ def _legacy_page(record: DecisionRecord) -> WikiPageRecord:
     return page.model_copy(update={"body": f"{marker}\n{legacy}\n{rest}", "content_hash": content_hash})
 
 
+def _hashless_page(record: DecisionRecord) -> WikiPageRecord:
+    """Return a canonical envelope whose out-of-band row stores no content hash."""
+    return decision_to_page(record).model_copy(update={"content_hash": None})
+
+
+async def test_snapshot_unstable_when_a_page_has_no_stored_hash(adr_store, tmp_path) -> None:
+    """A page the store holds no hash for cannot be verified, so the snapshot refuses it."""
+    record = _record("adr:doc:hashless")
+    await adr_store.upsert_pages([_hashless_page(record)])
+
+    with pytest.raises(DecisionError) as exc:
+        await _snapshot(adr_store, tmp_path)
+
+    assert exc.value.code == SNAPSHOT_UNSTABLE
+    assert "adr:doc:hashless" in str(exc.value)
+
+
+async def test_snapshot_unstable_when_a_hashless_page_disappears_mid_read(adr_store, tmp_path, monkeypatch) -> None:
+    """The hashless phase-one value cannot pass as unchanged after deletion."""
+    record = _record("adr:doc:hashless")
+    await adr_store.upsert_pages([_hashless_page(record)])
+
+    async def gone(ids: list[str]) -> dict[str, str | None]:
+        """Return the absent-page value phase two would observe after deletion."""
+        return dict.fromkeys(ids)
+
+    monkeypatch.setattr(adr_store, "page_hashes", gone)
+    with pytest.raises(DecisionError) as exc:
+        await _snapshot(adr_store, tmp_path)
+
+    assert exc.value.code == SNAPSHOT_UNSTABLE
+
+
 async def test_snapshot_stable_with_legacy_envelope(adr_store, tmp_path) -> None:
     """An unchanged page written by an older codec is not reported as changed (issue:5918ff019737)."""
     record = _record("adr:doc:legacy")
