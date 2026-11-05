@@ -107,6 +107,35 @@ def test_doctor_host_config_form(isolated_home: Path, tmp_path: Path) -> None:
     assert malformed_form.detail == "no managed entries" and malformed_form.informational
 
 
+def test_doctor_google_form_uses_repo_root(
+    isolated_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Google form helper receives the repo root and the file to inspect — never a config as ``root``."""
+    from parrot.knowledge.wiki.google import installer as google_installer
+    from parrot.knowledge.wiki.google.installer import toolkit_config_paths
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    google, google_local = toolkit_config_paths(repo)
+    google.parent.mkdir(parents=True)
+    google_local.parent.mkdir(parents=True)
+    managed = json.dumps({"mcpServers": {"wikitoolkit": {"command": "wikitoolkit", "args": ["mcp"]}}})
+    google.write_text(managed, encoding="utf-8")
+    google_local.write_text(managed, encoding="utf-8")
+
+    seen: list[tuple[Path, Path]] = []
+    real = google_installer.portable_mode_of_config
+
+    def _spy(path: Path, root: Path) -> bool | None:
+        seen.append((path, root))
+        return real(path, root)
+
+    monkeypatch.setattr(google_installer, "portable_mode_of_config", _spy)
+    doctor._check_host_config_forms(repo)
+    assert seen == [(google, repo), (google_local, repo)]
+    assert all(root.is_dir() for _, root in seen)
+
+
 def test_remote_http_entry_is_not_flagged(isolated_home: Path, tmp_path: Path) -> None:
     """A remote MCP entry has no `command` (claude_code/assets.py:128-134) — never a broken-command finding."""
     repo = tmp_path / "repo"

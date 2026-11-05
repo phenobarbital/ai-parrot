@@ -19,6 +19,7 @@ from parrot.knowledge.wiki.google.installer import (
     _is_managed_toolkit_entry,
     _is_managed_wikitoolkit_entry,
     install_google_integration,
+    portable_mode_of_config,
     reconcile_toolkit_entries,
 )
 from parrot.knowledge.wiki.project import WikiProjectConfig, config_path, save_project_config
@@ -231,6 +232,29 @@ def test_current_portable_mode_tri_state(tmp_path: Path, isolated_env: dict[str,
     assert _current_portable_mode(root, cfg) is False
     _install(root, cfg, True)
     assert _current_portable_mode(root, cfg) is True
+
+
+def test_portable_mode_of_config_reads_one_file(tmp_path: Path, isolated_env: dict[str, Path]) -> None:
+    """Each config reports its OWN form — the single-file helper never falls back to the other file."""
+    cfg = isolated_env["global_cfg"]
+    root = _make_root(tmp_path / "repo")
+    local = root / assets.PLUGIN_DIR / "mcp_config.json"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    local.parent.mkdir(parents=True, exist_ok=True)
+
+    assert portable_mode_of_config(cfg, root) is None  # missing
+    cfg.write_text(json.dumps({"mcpServers": {"wikitoolkit": {"command": "node", "args": ["wiki.js"]}}}))
+    assert portable_mode_of_config(cfg, root) is None  # foreign entry
+    cfg.write_text("{", encoding="utf-8")
+    assert portable_mode_of_config(cfg, root) is None  # malformed
+
+    cfg.write_text(json.dumps({"mcpServers": {"wikitoolkit": assets.wikitoolkit_mcp_entry(root, portable=True)}}))
+    local.write_text(json.dumps({"mcpServers": {"wikitoolkit": assets.wikitoolkit_mcp_entry(root, portable=False)}}))
+    assert portable_mode_of_config(cfg, root) is True
+    assert portable_mode_of_config(local, root) is False
+    # The chaining inference still answers with the repo-local file, which is why a caller that
+    # wants one file's own form must use the single-file helper instead of a sacrificial ``root``.
+    assert _current_portable_mode(root, cfg) is False
 
 
 def test_fresh_install_with_managed_launcher_is_portable(

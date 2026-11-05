@@ -74,6 +74,38 @@ def _script_basename(command: str) -> str:
     return name[:-4] if name.lower().endswith(".exe") else name
 
 
+def portable_mode_of_config(path: Path, root: Path) -> bool | None:
+    """Infer the deployment form from ONE MCP config file, judged against ``root``.
+
+    Unlike :func:`_current_portable_mode`, this inspects exactly the file it is given and never
+    falls back to the other config. A caller that must report a single file's own form (``parrot
+    self doctor``) therefore does not have to suppress the fallback by passing a config file in
+    place of ``root``, and ``root`` stays a real directory for the managed-entry check. Never
+    raises.
+
+    Args:
+        path: the MCP config file to inspect.
+        root: the repository root the managed-entry shape is judged against.
+
+    Returns:
+        ``True`` (portable) or ``False`` (baked) when ``path`` holds a managed ``wikitoolkit``
+        entry; ``None`` when the file is missing, unreadable, malformed, or carries only foreign
+        entries.
+    """
+    try:
+        if not path.exists():
+            return None
+        servers = _load_mcp_config(path).get("mcpServers")
+    except (RuntimeError, OSError, ValueError):
+        return None
+    if not isinstance(servers, dict):
+        return None
+    entry = servers.get("wikitoolkit")
+    if entry is None or not _is_managed_wikitoolkit_entry(entry, root):
+        return None
+    return entry == assets.wikitoolkit_mcp_entry(root, portable=True)
+
+
 def _current_portable_mode(root: Path, mcp_path: Optional[Path] = None) -> bool | None:
     """Infer the current mode (FEAT-633, sticky) from the managed wikitoolkit entry.
 
@@ -87,19 +119,10 @@ def _current_portable_mode(root: Path, mcp_path: Optional[Path] = None) -> bool 
         when neither file holds a managed ``wikitoolkit`` entry (FEAT-804 M2 — the caller then
         applies the launcher rule).
     """
-    portable_entry = assets.wikitoolkit_mcp_entry(root, portable=True)
     for path in (root / assets.PLUGIN_DIR / "mcp_config.json", mcp_path or assets.default_mcp_config_path()):
-        try:
-            if not path.exists():
-                continue
-            servers = _load_mcp_config(path).get("mcpServers")
-        except (RuntimeError, OSError, ValueError):
-            continue
-        if not isinstance(servers, dict):
-            continue
-        entry = servers.get("wikitoolkit")
-        if entry is not None and _is_managed_wikitoolkit_entry(entry, root):
-            return entry == portable_entry
+        mode = portable_mode_of_config(path, root)
+        if mode is not None:
+            return mode
     return None
 
 

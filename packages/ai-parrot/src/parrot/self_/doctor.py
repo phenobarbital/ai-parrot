@@ -661,26 +661,18 @@ def _check_host_config_forms(root: Path) -> list[DoctorCheck]:
     """Emit one informational deployment-form check for each existing host config file."""
     from parrot.knowledge.wiki.claude_code.installer import _current_portable_mode as claude_portable_mode
     from parrot.knowledge.wiki.codex.installer import _current_portable_mode as codex_portable_mode
-    from parrot.knowledge.wiki.google.installer import _current_portable_mode as google_portable_mode
+    from parrot.knowledge.wiki.google.installer import portable_mode_of_config as google_config_form
     from parrot.knowledge.wiki.google.installer import toolkit_config_paths
 
     google, google_local = toolkit_config_paths(root)
     targets = (
         ("claude .mcp.json", root / ".mcp.json", lambda: claude_portable_mode(root)),
         ("codex config.toml", root / ".codex" / "config.toml", lambda: codex_portable_mode(root)),
-        # Passing the user-global config itself as ``root`` prevents a repo-local Google file from
-        # masking its independent form. The Google inference only uses this value to recognise the
-        # managed entry shape; the explicit ``mcp_path`` remains the file being inspected.
-        (
-            "google mcp_config.json (user-global)",
-            google,
-            lambda: google_portable_mode(google, mcp_path=google),
-        ),
-        (
-            "google mcp_config.json (repo-local)",
-            google_local,
-            lambda: google_portable_mode(root, mcp_path=google_local),
-        ),
+        # Each Google config reports its OWN form: the single-file helper never falls back to the
+        # other file, so a repo-local entry cannot mask the user-global one — and ``root`` stays a
+        # real directory the managed-entry check is free to use.
+        ("google mcp_config.json (user-global)", google, lambda: google_config_form(google, root)),
+        ("google mcp_config.json (repo-local)", google_local, lambda: google_config_form(google_local, root)),
     )
     checks: list[DoctorCheck] = []
     for label, path, infer in targets:
