@@ -16,14 +16,14 @@
       "feature_id": "BRIEF-1f9d9ff0ec07",
       "feature": "techwiki-markdown-links",
       "spec": "sdd/briefs/techwiki-markdown-links.brief.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Single task; edits naming.py, bundle.py, both navigation templates and their tests.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T16:13:00+00:00",
       "completed_at": null,
       "file": "sdd/briefs/techwiki-markdown-links/tasks/HOTFIX-1f9d9ff0ec07-1-techwiki-markdown-links.md"
     }
