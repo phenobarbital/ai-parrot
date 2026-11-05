@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-801 — GitHub Wiki as the Technical Reference
 **Spec**: `sdd/specs/github-wiki-technical-reference.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5169, TASK-5172
@@ -188,10 +188,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (attempt 3). Both codex seats (gpt-5.6-terra, gpt-5.6-sol) returned `empty_delivery`; the ten pages were written by ten parallel general-purpose agents, one page each, then validated by the orchestrator. Commit fe8d2c6fa2.
+**Date**: 2026-11-05
+**Notes**: All ten pages exist with the template structure (frontmatter title+summary, six `##` sections), hyphen-free English titles, 0 non-`ref:` dangling links, 0 collisions (bundle `--sidebar-only --dry-run`: 285 authored + 9 ADR pages), every `ref:` module verified to exist as a public module under `sdd/config.json` roots, every relative link verified. `tests/sdd_scripts/test_feat801_doc_contract.py`: 4 passed.
+**Verification is `partial` because**: (1) `ref:` links were checked for module existence only — resolution against the generated API pages needs `griffe` (not installed in the sandbox): run `parrot sdd techwiki bundle --out <dir> --json --strict` locally and confirm `dangling` is empty; (2) code examples were NOT executed (agents read signatures from source; a few were flagged: bots page tools example returns an empty list, chatbot example avoids a provider:model string); (3) content accuracy was source-read by the authoring agents, not independently re-reviewed.
+**Finding filed**: issue:2ca771a39a23 — `supported_stores` maps `faiss_store`/`arango` to non-existent class names (`FaissStore`/`ArangoStore`; real: `FAISSStore`/`ArangoDBStore`); documented under Gotchas in `wiki/stores/vector-stores-and-embeddings.md`.
+`coder_record_review` was broken server-side throughout this feature (no review/feedback recorded).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: pages authored by parallel agents rather than the engine's single coder seat.
