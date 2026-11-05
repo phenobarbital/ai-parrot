@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Callable
+from urllib.parse import quote
 
 import yaml
 
@@ -81,15 +82,46 @@ def page_title(path: Path, text: str) -> str:
     return path.stem.replace("_", " ").replace("-", " ").title()
 
 
+def page_href(name: str) -> str:
+    """Return the relative, percent-encoded URL of a wiki page (``/wiki/<href>`` on GitHub).
+
+    Args:
+        name: A page name from :func:`page_name`.
+
+    Returns:
+        The name with every character outside ``-._~`` and the unreserved set percent-encoded, which is
+        how GitHub itself links pages whose names carry ``—``, ``,`` or ``&``.
+    """
+    return quote(name, safe="-._~")
+
+
+def page_link(name: str, text: str) -> str:
+    """Return a standard Markdown link to a wiki page.
+
+    The bundle never emits ``[[Page Name]]`` wiki links: GitHub resolves each one against the whole page list
+    at render time, and a sidebar or index carrying hundreds of them fails to render in a wiki with
+    thousands of pages. A plain ``[text](href)`` link renders at constant cost.
+
+    Args:
+        name: A page name from :func:`page_name`.
+        text: Link text shown to the reader.
+
+    Returns:
+        ``[text](percent-encoded-name)``.
+    """
+    return f"[{text}]({page_href(name)})"
+
+
 def rewrite_links(text: str, resolver: Callable[[str], str | None]) -> str:
-    """Rewrite resolved relative Markdown and ``ref:`` links to wiki links.
+    """Rewrite resolved relative Markdown and ``ref:`` links to links to the wiki page.
 
     Args:
         text: Markdown content.
         resolver: Maps a relative path or ``ref:<module>`` to a wiki page name.
 
     Returns:
-        Markdown content with resolved links converted to ``[[Page Name]]``.
+        Markdown content with every resolved link converted to ``[original text](page-href)``; the
+        author's link text and any ``#fragment`` are kept.
     """
     pattern = re.compile(r"(?<!!)\[([^]]+)\]\(([^\s)]+)\)")
 
@@ -104,8 +136,8 @@ def rewrite_links(text: str, resolver: Callable[[str], str | None]) -> str:
         if page is None:
             return match.group(0)
         if fragment:
-            return f"[{match.group(1)}]({page}#{fragment})"
-        return f"[[{page}]]"
+            return f"[{match.group(1)}]({page_href(page)}#{fragment})"
+        return page_link(page, match.group(1))
 
     out: list[str] = []
     in_fence = False

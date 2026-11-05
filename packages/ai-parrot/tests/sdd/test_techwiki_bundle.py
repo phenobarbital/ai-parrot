@@ -66,7 +66,9 @@ class TestBundle:
         sidebar = (out / "_Sidebar.md").read_text(encoding="utf-8")
         assert "v1.2.3" in home and "abc" in home and "https://example.test/docs" in home
         assert sidebar.index("## Alpha") < sidebar.index("## Beta") < sidebar.index("## Decisions")
-        assert "[[Decisions-Decision-One]]" in sidebar
+        assert "- [Decision One](Decisions-Decision-One)\n" in sidebar
+        assert "- [Decision One](Decisions-Decision-One)\n" in home  # Home links every page too, not only counts
+        assert "[[" not in sidebar and "[[" not in home
 
     def test_bundle_dry_run_writes_only_report(self, techwiki_repo: Path, tmp_path: Path) -> None:
         """Dry-run writes the validation report but no wiki pages or navigation."""
@@ -92,7 +94,7 @@ class TestBundle:
         manifest = json.loads((out / "techwiki-manifest.json").read_text(encoding="utf-8"))
         names = {entry["name"] for entry in manifest["pages"]}
         one = next(page for page in pages if page.source == Path("wiki/a/one.md"))
-        assert "[[Beta-Two]]" in one.body
+        assert "[Two](Beta-Two)" in one.body  # the author's link text survives the rewrite
         assert "Beta-Two" in names
 
 
@@ -190,7 +192,7 @@ def api_repo(techwiki_repo: Path) -> Path:
 
 
 def test_ref_links_resolve_to_generated_pages(api_repo: Path, tmp_path: Path) -> None:
-    """``ref:<module>`` links become wiki links to the generated reference page; an unknown module is dangling."""
+    """``ref:<module>`` links become links to the generated reference page; an unknown module is dangling."""
     one = api_repo / "wiki" / "a" / "one.md"
     one.write_text(
         "---\ntitle: One\n---\n\n# One\n\n[Core](ref:samplepkg.core) [Nope](ref:samplepkg.nope)\n", encoding="utf-8"
@@ -198,7 +200,7 @@ def test_ref_links_resolve_to_generated_pages(api_repo: Path, tmp_path: Path) ->
     cfg = load_techwiki_config(api_repo)
     pages, report = assemble(cfg, api_repo)
     page = next(p for p in pages if p.source == Path("wiki/a/one.md"))
-    assert "[[API-Reference-samplepkg.core]]" in page.body
+    assert "[Core](API-Reference-samplepkg.core)" in page.body
     assert "[Nope](ref:samplepkg.nope)" in page.body
     assert report.dangling == [{"source": "wiki/a/one.md", "target": "ref:samplepkg.nope"}]
     core = next(p for p in pages if p.module == "samplepkg.core")
@@ -231,8 +233,9 @@ def test_written_bundle_file_names_are_artifact_safe(api_repo: Path, tmp_path: P
 
 
 def test_every_rewritten_link_resolves_in_the_manifest(api_repo: Path, tmp_path: Path) -> None:
-    """S9: every ``[[Page]]`` in every written page names a page registered in the manifest."""
+    """S9: every page link in every written page (navigation and index included) names a manifest page."""
     import re
+    from urllib.parse import unquote
 
     cfg = load_techwiki_config(api_repo)
     pages, report = assemble(cfg, api_repo)
@@ -242,32 +245,45 @@ def test_every_rewritten_link_resolves_in_the_manifest(api_repo: Path, tmp_path:
     manifest = json.loads((out / "techwiki-manifest.json").read_text(encoding="utf-8"))
     names = {entry["name"] for entry in manifest["pages"]}
     assert any(name.startswith("API-Reference-") for name in names)
+    checked = 0
     for written in out.glob("*.md"):
-        for target in re.findall(r"\[\[([^\]]+)\]\]", written.read_text(encoding="utf-8")):
-            assert target in names or target in {"Home", "_Sidebar"}, (written.name, target)
+        text = written.read_text(encoding="utf-8")
+        assert "[[" not in text, written.name  # no wiki-link syntax anywhere in the bundle
+        for target in re.findall(r"(?<!!)\[[^\]]*\]\(([^)\s]+)\)", text):
+            if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", target) or target.startswith("#"):
+                continue  # external URL or in-page anchor
+            page = unquote(target.partition("#")[0])
+            if page.endswith(".md") or "/" in page:
+                continue  # an unresolved (dangling) relative link, reported separately
+            checked += 1
+            assert page in names or page == "Home", (written.name, target)
+    assert checked > 0
 
 
 def test_sidebar_links_one_reference_index_page_instead_of_every_module(api_repo: Path, tmp_path: Path) -> None:
-    """The reference section of ``_Sidebar.md`` is one ``[[API-Reference]]`` link; the index page links every module."""
+    """The reference section of the sidebar and Home is one ``API-Reference`` link; the index links every module."""
     cfg = load_techwiki_config(api_repo)
     pages, report = assemble(cfg, api_repo)
     assert report.ok(), (report.collisions, report.dangling)
     out = tmp_path / "out"
     write_bundle(pages, report, cfg, out)
     sidebar = (out / "_Sidebar.md").read_text(encoding="utf-8")
-    assert "## API Reference\n- [[API-Reference]]\n" in sidebar
-    assert "[[API-Reference-samplepkg" not in sidebar
-    assert "[[Decisions-Decision-One]]" in sidebar  # other sections still list every page
+    assert "## API Reference\n- [API Reference](API-Reference)\n" in sidebar
+    assert "(API-Reference-samplepkg" not in sidebar
+    assert "- [Decision One](Decisions-Decision-One)\n" in sidebar  # other sections still list every page
     index = (out / "API-Reference.md").read_text(encoding="utf-8")
     assert index.startswith("# API Reference\n")
     assert "## samplepkg\n" in index
     generated = [p for p in pages if p.module]
-    assert generated and all(f"- [[{p.name}]]" in index for p in generated)
+    assert generated and all(f"- [{p.module}]({p.name})" in index for p in generated)
     manifest = json.loads((out / "techwiki-manifest.json").read_text(encoding="utf-8"))
     entry = next(e for e in manifest["pages"] if e["name"] == "API-Reference")
     assert entry == {"id": "index:API-Reference", "name": "API-Reference", "section": "api", "kind": "index"}
     home = (out / "Home.md").read_text(encoding="utf-8")
     assert f"{len(generated) + 1} page(s)" in home  # Home still counts the module pages plus the index
+    assert "- [API Reference](API-Reference)\n" in home and "(API-Reference-samplepkg" not in home
+    authored = [p for p in pages if p.source is not None]
+    assert authored and all(f"- [{p.title}]({p.name})" in home for p in authored if "-" not in p.title)
 
 
 def test_authored_api_reference_page_collides_with_the_index(api_repo: Path) -> None:

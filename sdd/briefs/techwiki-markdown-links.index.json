@@ -1,0 +1,31 @@
+{
+  "feature": "techwiki-markdown-links",
+  "feature_id": "BRIEF-1f9d9ff0ec07",
+  "spec": "sdd/briefs/techwiki-markdown-links.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-11-05",
+  "completed_at": "2026-11-05T16:16:39+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-1f9d9ff0ec07-1",
+      "slug": "techwiki-markdown-links",
+      "title": "Emit Markdown links instead of [[wiki links]] in the techwiki bundle",
+      "feature_id": "BRIEF-1f9d9ff0ec07",
+      "feature": "techwiki-markdown-links",
+      "spec": "sdd/briefs/techwiki-markdown-links.brief.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Single task; edits naming.py, bundle.py, both navigation templates and their tests.",
+      "assigned_to": null,
+      "started_at": "2026-11-05T16:13:00+00:00",
+      "completed_at": "2026-11-05T16:16:39+00:00",
+      "file": "sdd/briefs/techwiki-markdown-links/tasks/HOTFIX-1f9d9ff0ec07-1-techwiki-markdown-links.md"
+    }
+  ]
+}
