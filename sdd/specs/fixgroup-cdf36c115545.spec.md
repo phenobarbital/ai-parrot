@@ -210,21 +210,29 @@ None. `assemble()` keeps its signature and return type.
 | `test_generated_page_ref_links_are_rewritten` | M2 | The generated `samplepkg` page's re-export link becomes `[[API-Reference-samplepkg.core]]`; no literal `](ref:` survives in **any** generated page body; `report.ok()` is true. |
 | `test_unresolvable_link_in_a_generated_page_is_dangling` | M2 | With an injected unresolvable `ref:` target in a generated body, `report.dangling` carries a row whose `source` is the page's `ref:<module>` id and `report.ok()` is false. |
 
-Both tests are added to `packages/ai-parrot/tests/sdd/test_techwiki_bundle.py`
-in the "bundle + real generated API pages" section (after
-`test_every_rewritten_link_resolves_in_the_manifest`, `:233`). They use the
-`api_repo` fixture, so they skip cleanly when the `griffe` extra is absent and
-fail loudly under `TECHWIKI_REQUIRE_GRIFFE=1`.
+Both tests are **appended at the end of**
+`packages/ai-parrot/tests/sdd/test_techwiki_bundle.py` (after
+`test_authored_page_colliding_with_a_generated_name`, `:289`), not inserted
+mid-file — see §7 R5: the unmerged branch
+`fix-1f9d9ff0ec07-techwiki-markdown-links` rewrites lines 66-290 of that file,
+and end-of-file placement keeps the two lanes out of each other's diff.
 
-For the second test, the unresolvable target is injected by monkeypatching the
-rendered body rather than by editing the template: after `_generated_pages`
-runs it is simpler and more honest to drive `assemble()` against a config whose
-`reference_section` is unchanged and to append the bad link via a
-`monkeypatch`-ed `_generated_pages` wrapper — or, equivalently, by adding a
-module to the fixture package that re-exports from a module excluded by the
-configured roots. The implementing task picks one and records which; both
-satisfy the assertion contract above. **Do not** weaken the test to assert only
-on authored pages.
+Neither test may assert on link **syntax**. `rewrite_links` emits `[[Page]]` on
+`dev` today and `[text](percent-encoded-name)` once that branch merges, so the
+assertions check that the resolved page **name** is present and that `](ref:`
+is absent — true under both forms.
+
+The first test drives the real griffe pipeline and the real template through the
+`api_repo` fixture, so it skips cleanly without the `griffe` extra and fails
+loudly under `TECHWIKI_REQUIRE_GRIFFE=1`.
+
+The second test is deliberately griffe-free: it monkeypatches
+`bundle._generated_pages` (called by name inside `assemble()`, `bundle.py:240`)
+to return one hand-built `BundlePage(source=None, module=...)` carrying both an
+unresolvable `ref:` target and a relative `.md` target. That is the only way to
+reach AC-3's relative-path branch, since the real template never emits a
+relative link from a generated page. **Do not** weaken either test to assert
+only on authored pages.
 
 ### Integration Tests
 
@@ -261,6 +269,8 @@ Existing only — `api_repo` (`test_techwiki_bundle.py:168`) and
 - [ ] AC-6: `ruff check` clean on both changed files.
 - [ ] AC-7: No change to `naming.py`, `module.md.j2`, the manifest schema, or
       `assemble()`'s signature.
+- [ ] AC-8: No assertion in either new test depends on `[[Page]]` vs `[text](Page)`
+      link syntax, and both are appended after the file's last existing function.
 
 ---
 
@@ -359,6 +369,14 @@ Note: the loop head `    for page in pages:` occurs more than once in
   the Completion Note and open a ledger issue for them — do **not** suppress
   the validation to keep the exit code green, and do not widen this task to fix
   them.
+- **R5 — peer branch in the same files.** `fix-1f9d9ff0ec07-techwiki-markdown-links`
+  (brief `1f9d9ff0ec07`, based on `dev`, pushed, awaiting `/sdd-done`) changes
+  `rewrite_links` to emit Markdown links and rewrites `test_techwiki_bundle.py`
+  lines 66-290. It leaves `assemble()`'s rewrite loop untouched, so this
+  feature's `bundle.py` edit does not conflict; and its strengthened guard still
+  skips `ref:` targets as external URLs, so this bug survives it. Mitigations are
+  in §4: append tests at end-of-file, never assert on link syntax. Base on
+  `origin/dev` as usual — do not rebase onto that branch.
 - **R2 — `_reference_index_page` bodies use `[[...]]` directly** (`bundle.py:187`),
   not `[x](ref:…)`, so the index page has nothing for the resolver to rewrite.
   Including it in the loop is harmless and keeps the rule uniform; do not
