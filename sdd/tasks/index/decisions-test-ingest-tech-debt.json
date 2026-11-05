@@ -36,14 +36,14 @@
       "feature_id": "FEAT-809",
       "feature": "decisions-test-ingest-tech-debt",
       "spec": "sdd/specs/decisions-test-ingest-tech-debt.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task; edits only tests/knowledge/wiki/decisions/test_ingest.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T00:51:11+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5213-envelope-rewrite-test-hardening.md"
     }
