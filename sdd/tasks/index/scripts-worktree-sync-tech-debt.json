@@ -12,7 +12,7 @@
       "id": "TASK-5218",
       "slug": "sync-base-sandbox-reachability",
       "title": "sync-base sandbox reachability check, clean OSError refusal, rollback-result helper",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -23,7 +23,7 @@
       "feature": "scripts-worktree-sync-tech-debt",
       "spec": "sdd/specs/scripts-worktree-sync-tech-debt.spec.md",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T02:30:01+00:00",
       "completed_at": null
     },
     {
