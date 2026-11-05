@@ -505,6 +505,10 @@ def launch(
     _preflight_sandbox(worktree, effective_domains)
     if not no_upstream:
         print(prepare_upstream(worktree), file=sys.stderr)
+        # Host-only advisory; imported here because the tmux child runs under python -S.
+        from parrot.sdd.scripts.worktree_sync import stale_base_summary
+
+        print(stale_base_summary(worktree), file=sys.stderr)
     domain_args = [item for domain in allowed_domains for item in ("--sandbox-allow-domain", domain)]
     token_args = [] if gh_token else ["--no-gh-token"]
     if not tmux:
