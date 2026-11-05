@@ -13,7 +13,15 @@ from typing import Any
 import yaml
 
 from parrot.sdd.techwiki.config import TechwikiConfig
-from parrot.sdd.techwiki.naming import PageNameError, page_href, page_link, page_name, page_title, rewrite_links
+from parrot.sdd.techwiki.naming import (
+    UNLINK,
+    PageNameError,
+    page_href,
+    page_link,
+    page_name,
+    page_title,
+    rewrite_links,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +52,12 @@ class BundleReport:
     skipped_modules: list[dict[str, Any]] = field(default_factory=list)
     collisions: list[dict[str, str]] = field(default_factory=list)
     dangling: list[dict[str, str]] = field(default_factory=list)
+    # Informational: generated-page ``ref:`` links whose module has no page (a re-export from an import
+    # shim without a public API). The link is dropped and its text kept; this never fails the bundle.
+    unlinked: list[dict[str, str]] = field(default_factory=list)
 
     def ok(self) -> bool:
-        """Return whether the bundle has neither collisions nor dangling links."""
+        """Return whether the bundle has neither collisions nor dangling links (unlinked rows do not count)."""
         return not self.collisions and not self.dangling
 
 
@@ -278,8 +289,10 @@ def assemble(
             manifest[_source_id(root, page.source)] = page.name
 
     for page in pages:
+        if page.source is None and page.module is None:
+            continue  # the reference index page: its links are final hrefs built by _reference_index_page
 
-        def resolve(target: str, page: BundlePage = page) -> str | None:
+        def resolve(target: str, page: BundlePage = page) -> str | None | object:
             """Return the wiki page name a link target names, recording unresolved targets as dangling.
 
             Args:
@@ -287,7 +300,9 @@ def assemble(
                 page: The page the link appears on, bound at definition time.
 
             Returns:
-                The resolved page name, or ``None`` when the target is not in the manifest.
+                The resolved page name; ``None`` when the target is not in the manifest (reported as
+                dangling); :data:`UNLINK` for a generated page's ``ref:`` to a module that has no page
+                (reported as unlinked, the link text is kept).
             """
             origin = _source_id(root, page.source) if page.source is not None else _ref_id(page)
             if target.startswith(("ref:", "index:")):
@@ -300,6 +315,11 @@ def assemble(
                 key = posixpath.normpath(str(PurePosixPath(_source_id(root, page.source)).parent / target))
             resolved = manifest.get(key)
             if resolved is None:
+                if page.source is None and target.startswith("ref:"):
+                    # Re-export from a module without public members (e.g. an import shim without
+                    # __all__): there is no page to link, and that is not an authoring error.
+                    report.unlinked.append({"source": origin, "target": target})
+                    return UNLINK
                 report.dangling.append({"source": origin, "target": target})
             return resolved
 

@@ -8,6 +8,7 @@ import pytest
 
 from parrot.sdd.techwiki.naming import (
     FORBIDDEN_NAME_CHARS,
+    UNLINK,
     PageNameError,
     page_href,
     page_link,
@@ -110,6 +111,15 @@ class TestRewriteLinks:
     def test_unknown_target_collected(self) -> None:
         """An unresolved target is left in authored Markdown unchanged."""
         assert rewrite_links("[Missing](missing.md)", lambda target: None) == "[Missing](missing.md)"
+
+    def test_unlink_keeps_the_text_only(self) -> None:
+        """``UNLINK`` drops the link (fragment included) and keeps its text; ``None`` still leaves it as is."""
+        assert rewrite_links("[x](ref:gone) [y](a.md#f) [z](https://e.test/p.md)", lambda target: UNLINK) == (
+            "x y [z](https://e.test/p.md)"
+        )
+        assert rewrite_links("[`pkg.mod.Name`](ref:pkg.mod)", lambda target: UNLINK) == "`pkg.mod.Name`"
+        with pytest.raises(TypeError):
+            rewrite_links("[x](ref:gone)", lambda target: 42)
 
 
 def test_rewrite_links_skips_external_urls() -> None:
