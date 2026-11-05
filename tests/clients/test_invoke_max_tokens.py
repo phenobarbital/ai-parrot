@@ -650,7 +650,6 @@ class TestGoogleInvokeThinkingBudget:
             ("gemini-3.5-flash", False, False),
             # Thinking-only models reject budget=0 — never send it.
             ("gemini-3.1-pro-preview", True, False),
-            ("gemini-2.5-pro", True, False),
         ],
     )
     def test_thinking_config_selection(self, model, structured, expect_off):

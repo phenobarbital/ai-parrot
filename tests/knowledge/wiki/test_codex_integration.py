@@ -25,7 +25,9 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_install_writes_mcp_skill_instructions_and_permissions(repo: Path) -> None:
-    actions = install_codex_integration(repo)
+    # FEAT-804: a baked-fallback install adds an informational "note:" line
+    # unless a managed launcher is on PATH; it is not an action, so ignore it.
+    actions = [a for a in install_codex_integration(repo) if not a.startswith("note: ")]
 
     # FEAT-570 TASK-3378: an empty/absent toolkit config appends a hint
     # naming `parrot toolkits install` as the replacement seeding surface.

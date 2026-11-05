@@ -70,7 +70,9 @@ class TestStructuralPermissionRules:
 
 class TestInstaller:
     def test_fresh_install_writes_all_artifacts(self, repo):
-        actions = install_claude_integration(repo)
+        # FEAT-804: a baked-fallback install adds an informational "note:" line
+        # unless a managed launcher is on PATH; it is not an action, so ignore it.
+        actions = [a for a in install_claude_integration(repo) if not a.startswith("note: ")]
         # FEAT-556: approve_mcp defaults to True, adding one MCP-approval action.
         # FEAT-570 TASK-3377: an empty/absent toolkit config appends a hint
         # naming `parrot toolkits install` as the replacement seeding surface.
