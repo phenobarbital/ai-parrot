@@ -202,7 +202,8 @@ async def test_snapshot_stable_with_legacy_envelope(adr_store, tmp_path) -> None
     snapshot = await _snapshot(adr_store, tmp_path)
 
     assert [eligible.decision_id for eligible in snapshot.eligible] == ["adr:doc:legacy"]
-    assert snapshot.manifest.inventory == {"adr:doc:legacy": legacy.content_hash}
+    assert snapshot.manifest.inventory == {"adr:doc:legacy": record_hash(record)}
+    assert snapshot.manifest.inventory["adr:doc:legacy"] != legacy.content_hash  # issue:d219d0707031
 
 
 async def test_snapshot_manifest_unchanged_for_canonical_pages(adr_store, tmp_path) -> None:
@@ -215,6 +216,23 @@ async def test_snapshot_manifest_unchanged_for_canonical_pages(adr_store, tmp_pa
     snapshot = await _snapshot(adr_store, tmp_path, repo)
 
     assert snapshot.manifest.inventory == {record.decision_id: record_hash(record) for record in records}
+
+
+async def test_snapshot_manifest_is_independent_of_the_stored_envelope(adr_store, tmp_path) -> None:
+    """The same decision hashes alike whether its page is legacy or canonical (issue:d219d0707031)."""
+    record = _record("adr:doc:same")
+    legacy = _legacy_page(record)
+
+    await adr_store.upsert_pages([legacy])
+    legacy_manifest = (await _snapshot(adr_store, tmp_path)).manifest.inventory
+
+    await DecisionRepository(adr_store).save(record, legacy.content_hash)
+    canonical_page = await adr_store.get_page(record.decision_id, include_body=True)
+    assert canonical_page is not None
+    assert canonical_page["content_hash"] == record_hash(record)
+    canonical_manifest = (await _snapshot(adr_store, tmp_path)).manifest.inventory
+
+    assert legacy_manifest == canonical_manifest == {"adr:doc:same": record_hash(record)}
 
 
 async def test_inventory_overflow_raises(adr_store, tmp_path) -> None:
