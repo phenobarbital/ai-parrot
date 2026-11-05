@@ -26,7 +26,7 @@
 - CREATE `test_techwiki_check.py`
 - MODIFY `/sdd-task` twins (claude + codex + google): add documentation-task rule
 - MODIFY `/sdd-done` twins (claude + codex + google): add Step 4.6b
-- Regenerate `_assets/`
+- (Operator, after merge) regenerate `_assets/` via `python scripts/sdd/check_asset_sync.py --write`; the coder must NOT touch `_assets/`
 - CREATE `tests/sdd_scripts/test_techwiki_closeout_contract.py`
 
 **NOT in scope**: API generator (TASK-5167), bundle (TASK-5168), spec template (TASK-5169), workflow (TASK-5171).
@@ -46,7 +46,6 @@
 | `.claude/commands/sdd-done.md` | MODIFY | Add Step 4.6b |
 | `.agent/workflows/sdd-done.md` | MODIFY | Add Step 4.6b (twin) |
 | `.agents/skills/sdd-done/SKILL.md` | MODIFY | Add Step 4.6b (codex twin) |
-| `packages/ai-parrot/src/parrot/sdd/_assets/` | MODIFY | Regenerated |
 | `tests/sdd_scripts/test_techwiki_closeout_contract.py` | CREATE | Closeout contract test |
 
 ---
