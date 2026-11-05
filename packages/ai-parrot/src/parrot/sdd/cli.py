@@ -245,7 +245,11 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
             "Create/remove a runnable baseline checkout of a base ref, compiled .so files included.",
         ),
         "list": ("remove_worktree", ("list",), "List worktrees and orphan dirs: dirty, unpushed, PR, live processes."),
-        "sync-base": ("worktree_sync", (), "Bring origin/<base_branch> (or chosen commits) into a worktree; never pushes."),
+        "sync-base": (
+            "worktree_sync",
+            (),
+            "Bring origin/<base_branch> (or chosen commits) into a worktree; never pushes.",
+        ),
         "remove": (
             "remove_worktree",
             ("remove",),
