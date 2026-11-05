@@ -173,7 +173,7 @@ def test_bounded_candidate_extraction_grammar_unavailable(monkeypatch):
 @requires_treesitter
 def test_bounded_candidate_extraction_parse_failure_is_diagnostic(monkeypatch):
     """A parse-time exception (in-process — no per-file subprocess
-    isolation, per docs/design/luau-parser-resource-policy.md §1/§3)
+    isolation, per wiki/knowledge/design/luau-parser-resource-policy.md §1/§3)
     degrades to a diagnostic, never a raise."""
     import parrot.knowledge.wiki.roblox.references as references_module
 

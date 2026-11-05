@@ -1,0 +1,8 @@
+{
+  "techwiki": {
+    "source_dir": "wiki",
+    "index_file": "wiki/_index.yaml",
+    "include_adrs": ["docs/decisions/**/*.md"],
+    "site_url": "https://example.test/docs"
+  }
+}

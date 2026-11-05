@@ -22,7 +22,7 @@ cd ai-parrot
 Follow the canonical guide: [getting-started.md](getting-started.md). It covers the project-venv
 install, the machine-wide managed runtime (`install-parrot.sh --global` / `install-parrot.ps1
 -Global`, with what each command downloads, writes and verifies, and a non-piped alternative),
-providers and verification. Managed-runtime reference: [install/global-runtime.md](install/global-runtime.md).
+providers and verification. Managed-runtime reference: [install/global-runtime.md](https://github.com/phenobarbital/ai-parrot/wiki/Operations-Global-install%3A-the-parrot-managed-runtime-%28reference%29).
 
 ## Environment configuration
 The app relies on `navconfig` for settings (env vars, .ini files). Common variables:

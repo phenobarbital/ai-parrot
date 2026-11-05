@@ -283,7 +283,7 @@ class TestRustAvailabilityLogging:
     """The extension is a separate maturin sub-project that never ships in
     the `ai-parrot` wheel, so its absence is the DEFAULT state -- logging it
     at `warning` cried wolf on every single process start (and contradicted
-    both the docstring and docs/tools/compression.md).
+    both the docstring and wiki/tools/compression.md).
     """
 
     @pytest.fixture(autouse=True)

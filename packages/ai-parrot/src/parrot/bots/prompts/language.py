@@ -4,7 +4,7 @@ An operator-supplied language value ends up interpolated into the system prompt,
 so it is normalized against an allowlist here and NEVER passed through raw.
 Adding a language means adding an entry to SUPPORTED_LANGUAGES plus its rows in
 GROUNDING_SENTINELS (domain_layers.py) and JIRA_MESSAGES (jira_messages.py) —
-see docs/prompts/output-language.md.
+see wiki/prompts/output-language.md.
 """
 
 from __future__ import annotations

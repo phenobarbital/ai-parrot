@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-04T22:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-11-05T01:13:36+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -48,16 +48,17 @@
       "feature_id": "FEAT-801",
       "feature": "github-wiki-technical-reference",
       "spec": "sdd/specs/github-wiki-technical-reference.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: edits pyproject.toml (shared dependency manifest) and cli.py (shared CLI mount point)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5166-techwiki-config-naming-cli.md"
+      "started_at": "2026-11-04T22:31:54+00:00",
+      "completed_at": "2026-11-04T22:40:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5166-techwiki-config-naming-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5167",
@@ -66,7 +67,7 @@
       "feature_id": "FEAT-801",
       "feature": "github-wiki-technical-reference",
       "spec": "sdd/specs/github-wiki-technical-reference.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -75,9 +76,10 @@
       "parallel": true,
       "parallelism_notes": "imports TechwikiConfig and page_name from TASK-5166 (techwiki/config.py, naming.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5167-techwiki-api-reference-generator.md"
+      "started_at": "2026-11-04T22:31:54+00:00",
+      "completed_at": "2026-11-04T23:00:12+00:00",
+      "file": "sdd/tasks/completed/TASK-5167-techwiki-api-reference-generator.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5168",
@@ -86,7 +88,7 @@
       "feature_id": "FEAT-801",
       "feature": "github-wiki-technical-reference",
       "spec": "sdd/specs/github-wiki-technical-reference.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -96,9 +98,10 @@
       "parallel": true,
       "parallelism_notes": "imports generate/RenderedPage from TASK-5167 (api.py) and naming functions from TASK-5166 (naming.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5168-techwiki-bundle-assembler.md"
+      "started_at": "2026-11-04T22:31:54+00:00",
+      "completed_at": "2026-11-04T23:08:26+00:00",
+      "file": "sdd/tasks/completed/TASK-5168-techwiki-bundle-assembler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5169",
@@ -107,7 +110,7 @@
       "feature_id": "FEAT-801",
       "feature": "github-wiki-technical-reference",
       "spec": "sdd/specs/github-wiki-technical-reference.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -115,8 +118,9 @@
       "parallelism_notes": "no code dependency on M1–M3; edits disjoint files (sdd/templates/*, sdd-spec twins)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5169-techwiki-spec-template-docs-chapter.md"
+      "completed_at": "2026-11-05T00:26:36+00:00",
+      "file": "sdd/tasks/completed/TASK-5169-techwiki-spec-template-docs-chapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5170",
@@ -125,7 +129,7 @@
       "feature_id": "FEAT-801",
       "feature": "github-wiki-technical-reference",
       "spec": "sdd/specs/github-wiki-technical-reference.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -136,8 +140,9 @@
       "parallelism_notes": "imports load_techwiki_config from TASK-5166 (config.py); depends on TASK-5169 so _assets regeneration covers both sets of twin edits (sdd-spec twins in 5169, sdd-task/sdd-done twins here — disjoint files)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5170-techwiki-check-sdd-task-done.md"
+      "completed_at": "2026-11-05T00:40:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5170-techwiki-check-sdd-task-done.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5171",
@@ -146,7 +151,7 @@
       "feature_id": "FEAT-801",
       "feature": "github-wiki-technical-reference",
       "spec": "sdd/specs/github-wiki-technical-reference.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -155,9 +160,10 @@
       "parallel": true,
       "parallelism_notes": "runs the bundle CLI from TASK-5168 (techwiki_bundle.py); creates a new file only (.github/workflows/techwiki.yml)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5171-techwiki-sync-workflow.md"
+      "started_at": "2026-11-04T22:31:54+00:00",
+      "completed_at": "2026-11-04T23:17:26+00:00",
+      "file": "sdd/tasks/completed/TASK-5171-techwiki-sync-workflow.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5172",
@@ -166,7 +172,7 @@
       "feature_id": "FEAT-801",
       "feature": "github-wiki-technical-reference",
       "spec": "sdd/specs/github-wiki-technical-reference.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -177,8 +183,9 @@
       "parallelism_notes": "exclusive: mass git mv across docs/, edits mkdocs.yml, CLAUDE.md and docs/chapters/*.md — shared state that other tasks must not touch concurrently; needs TASK-5168's rewrite_links/page_name (naming.py via bundle) and validates migration destinations against techwiki-manifest.json (bundle.py output)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5172-techwiki-migration-docs-to-wiki.md"
+      "completed_at": "2026-11-05T00:59:08+00:00",
+      "file": "sdd/tasks/completed/TASK-5172-techwiki-migration-docs-to-wiki.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5173",
@@ -187,7 +194,7 @@
       "feature_id": "FEAT-801",
       "feature": "github-wiki-technical-reference",
       "spec": "sdd/specs/github-wiki-technical-reference.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -197,9 +204,10 @@
       "parallel": true,
       "parallelism_notes": "uses the page template from TASK-5169 (techwiki-page.md); writes into wiki sections created by TASK-5172 (wiki/<section>/)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5173-techwiki-backfill-subsystem-pages.md"
+      "started_at": "2026-11-05T01:02:43+00:00",
+      "completed_at": "2026-11-05T01:13:36+00:00",
+      "file": "sdd/tasks/completed/TASK-5173-techwiki-backfill-subsystem-pages.md",
+      "verification": "partial"
     }
   ]
 }

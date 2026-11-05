@@ -9,9 +9,9 @@ the opposite — **compile** knowledge once, keep it structured, and let agents
 
 | Layer | Unit of work | The question it answers |
 |---|---|---|
-| **[PageIndex](../pageindex.md)** | One document | *Where inside this document is the answer?* |
-| **[GraphIndex](../graphindex.md)** | A whole corpus | *How do these things relate to each other?* |
-| **[LLM Wiki](../llm-wiki.md)** | A durable page set | *What have we already established?* |
+| **[PageIndex](https://github.com/phenobarbital/ai-parrot/wiki/Knowledge-PageIndex-%E2%80%94-Tree-Based-RAG-for-Document-Retrieval)** | One document | *Where inside this document is the answer?* |
+| **[GraphIndex](https://github.com/phenobarbital/ai-parrot/wiki/Knowledge-GraphIndex-%E2%80%94-Structured-Knowledge-Graph-Indexing)** | A whole corpus | *How do these things relate to each other?* |
+| **[LLM Wiki](https://github.com/phenobarbital/ai-parrot/wiki/LLM-Wiki-LLM-Wiki-%E2%80%94-an-agent-maintained-knowledge-repository)** | A durable page set | *What have we already established?* |
 
 They compose. The LLM Wiki is built on GraphIndex pages and edges; GraphIndex
 can hand hierarchical documents to PageIndex so a `SECTION` node resolves to
@@ -23,7 +23,7 @@ Builds a **hierarchical semantic tree** from a PDF or Markdown document using
 LLM reasoning, then navigates that structure to find relevant sections. No
 vector database required, and it works with any provider AI-Parrot supports.
 
-→ [PageIndex reference](../pageindex.md)
+→ [PageIndex reference](https://github.com/phenobarbital/ai-parrot/wiki/Knowledge-PageIndex-%E2%80%94-Tree-Based-RAG-for-Document-Retrieval)
 
 ### GraphIndex — typed graph over code, docs and skills
 
@@ -33,7 +33,7 @@ cross-domain edges by similarity, and produces an interactive `graph.html`
 map plus a `GRAPH_REPORT.md` naming god nodes, communities and knowledge gaps.
 The code pass is deterministic and LLM-free.
 
-→ [GraphIndex reference](../graphindex.md)
+→ [GraphIndex reference](https://github.com/phenobarbital/ai-parrot/wiki/Knowledge-GraphIndex-%E2%80%94-Structured-Knowledge-Graph-Indexing)
 
 ### LLM Wiki — an agent-maintained knowledge repository
 
@@ -43,25 +43,25 @@ graph does not". `wikitoolkit build` creates it, `wikitoolkit query` reads it,
 `wikitoolkit remember` writes to it, and namespaces let several corpora
 (a codebase, an Obsidian vault, a Jira backlog) federate behind one query.
 
-→ [LLM Wiki overview](../llm-wiki.md) · [Complete guide](../guides/llm-wiki-guide.md)
+→ [LLM Wiki overview](https://github.com/phenobarbital/ai-parrot/wiki/LLM-Wiki-LLM-Wiki-%E2%80%94-an-agent-maintained-knowledge-repository) · [Complete guide](../guides/llm-wiki-guide.md)
 
 ## Decision matrix
 
 | Use case | Reach for |
 |---|---|
-| Retrieve from one long PDF without a vector DB | [PageIndex](../pageindex.md) |
-| Map how a codebase hangs together | [GraphIndex](../graphindex.md) CLI (`parrot-graphindex`) |
-| Give an agent memory that survives restarts | `GraphMemoryMixin` — [Persistent graph memory](../graphindex.md#persistent-graph-memory) |
-| Let a coding assistant consult the repo before grepping | [WikiToolkit as Claude Code infrastructure](../wiki-claude-code.md) |
-| Query Jira tickets as a knowledge base | [Jira issues namespace](../runbooks/jira-issues-namespace.md) |
+| Retrieve from one long PDF without a vector DB | [PageIndex](https://github.com/phenobarbital/ai-parrot/wiki/Knowledge-PageIndex-%E2%80%94-Tree-Based-RAG-for-Document-Retrieval) |
+| Map how a codebase hangs together | [GraphIndex](https://github.com/phenobarbital/ai-parrot/wiki/Knowledge-GraphIndex-%E2%80%94-Structured-Knowledge-Graph-Indexing) CLI (`parrot-graphindex`) |
+| Give an agent memory that survives restarts | `GraphMemoryMixin` — [Persistent graph memory](https://github.com/phenobarbital/ai-parrot/wiki/Knowledge-GraphIndex-%E2%80%94-Structured-Knowledge-Graph-Indexing#persistent-graph-memory) |
+| Let a coding assistant consult the repo before grepping | [WikiToolkit as Claude Code infrastructure](https://github.com/phenobarbital/ai-parrot/wiki/LLM-Wiki-WikiToolkit-as-Claude-Code-infrastructure) |
+| Query Jira tickets as a knowledge base | [Jira issues namespace](https://github.com/phenobarbital/ai-parrot/wiki/Integrations-Runbook-%E2%80%94-the-%60issues%60-namespace-%28Jira-ticket-corpus%29) |
 
 ## Read next
 
 - [LLM Wiki — Complete Guide](../guides/llm-wiki-guide.md) — build, query,
   federate, and wire it into Claude Code, Codex and Gemini.
-- [WikiToolkit as Claude Code infrastructure](../wiki-claude-code.md)
+- [WikiToolkit as Claude Code infrastructure](https://github.com/phenobarbital/ai-parrot/wiki/LLM-Wiki-WikiToolkit-as-Claude-Code-infrastructure)
 - [Jira Ticket Extractor](../guides/jira-ticket-extractor.md) and
   [Integrating the Jira namespace with an agent](../guides/jira-wiki-agent-integration.md)
-- [Architecture — Ontologic RAG](../architecture/09-ontologic-rag.md)
+- [Architecture — Ontologic RAG](https://github.com/phenobarbital/ai-parrot/wiki/Architecture-9.-Ontologic-RAG-%E2%80%94-graph-first-retrieval%2C-intent-routing-%26-multi-tenant-knowledge)
 - [Memory & Knowledge chapter](memory-knowledge.md) — conversation memory and
   the vector stores underneath all of this.

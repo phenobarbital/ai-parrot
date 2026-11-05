@@ -1,6 +1,6 @@
 """Row-level migration runner for ``troc.planograms_configurations`` (FEAT-574, FEAT-612).
 
-Drives the deployment sequence of ``docs/pipelines/planogram-cycle-migration.md`` over every
+Drives the deployment sequence of ``wiki/flows/pipelines/planogram-cycle-migration.md`` over every
 active row: export originals, convert each one into a reviewable candidate, render the approved
 candidates as one guarded SQL transaction, and apply it. ``migration.py`` stays offline and
 read-only; this module is the only place that writes, and only through ``alter`` / ``apply`` with

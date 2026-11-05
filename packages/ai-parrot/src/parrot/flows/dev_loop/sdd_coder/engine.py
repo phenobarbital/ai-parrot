@@ -516,7 +516,7 @@ class SddCoderEngine:
         # Telemetry setup (FEAT-554). `conf.DEV_LOOP_CODER_TELEMETRY` is the
         # master switch — mirrors the same conf-fallback pattern `redis_url`/
         # `worktree_base_path` already use above, so the documented env-var
-        # workflow (docs/dev_loop/sdd-coder-orchestrator.md) actually enables
+        # workflow (wiki/sdd-tooling/dev_loop/sdd-coder-orchestrator.md) actually enables
         # the sink, not just the observational ledger in llm.py. An explicit
         # `telemetry_dir` constructor kwarg (e.g. from a test, or a future
         # toolkit YAML override) still wins over conf either way.

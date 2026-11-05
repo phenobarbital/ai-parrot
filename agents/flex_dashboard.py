@@ -34,7 +34,7 @@ transformers`), the kb docs (``kb/*.md``), and the composite skills
    same supported, documented way any OTHER host can register this
    recipe's transformers without instantiating :class:`FlexDashboard` at
    all (no LLM, no toolkit; see that function's docstring). See
-   ``docs/outputs/infographic-recipes.md`` § Replaying in another service.
+   ``wiki/outputs/infographic-recipes.md`` § Replaying in another service.
 
    One true fact remains, unaffected by the above: ``agents/flex_dashboard/``
    is still a REGULAR package (has its own ``__init__.py``), so a plain

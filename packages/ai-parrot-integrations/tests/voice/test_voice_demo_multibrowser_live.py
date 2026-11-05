@@ -12,7 +12,7 @@ captures a ten-second synchronized A/V sample per browser for the human
 lip-sync assessment that TASK-2969 signs off.
 
 It skips by default. A skipped live test is reported as **NOT VERIFIED**, never
-as a pass: `docs/testing/voicebot-multiroom-live-gate.md` is the record, and at
+as a pass: `wiki/integrations/testing/voicebot-multiroom-live-gate.md` is the record, and at
 the time of writing it reads 0 of 12.
 """
 
@@ -52,7 +52,7 @@ _GATE_ENABLED: bool = os.environ.get("PARROT_LIVE_BROADCAST_GATE") == "1" and al
 _SKIP_REASON: str = (
     "real-vendor multi-browser gate not enabled / credentials missing — "
     "NOT VERIFIED (set PARROT_LIVE_BROADCAST_GATE=1 plus "
-    f"{', '.join(_REQUIRED_ENV)}; see docs/testing/voicebot-multiroom-live-gate.md)"
+    f"{', '.join(_REQUIRED_ENV)}; see wiki/integrations/testing/voicebot-multiroom-live-gate.md)"
 )
 
 pytest.importorskip("playwright.async_api", reason="playwright is required for browser tests")
@@ -86,7 +86,7 @@ async def test_live_scenario1_three_real_browsers(live_env) -> None:
         "would be worse than leaving it NOT RUN: the run must be authored "
         "against an actual account so the track manifest, codec observations "
         "and lip-sync capture reflect what the vendor really does. "
-        "See docs/testing/voicebot-multiroom-live-gate.md rows 5-12."
+        "See wiki/integrations/testing/voicebot-multiroom-live-gate.md rows 5-12."
     )
 
 

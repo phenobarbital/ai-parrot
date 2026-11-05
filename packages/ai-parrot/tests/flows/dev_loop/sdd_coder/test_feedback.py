@@ -518,6 +518,46 @@ async def test_retracted_feedback_is_dropped_from_replay(store: CoderFeedbackSto
     assert "gitignored-file-not-force-added" in context and "confirmed deliveries: 1" in context
 
 
+@pytest.mark.parametrize("as_model", [True, False])
+async def test_record_review_and_feedback_accept_model_or_mapping(
+    three_seat_roster: RosterConfig, monkeypatch: pytest.MonkeyPatch, as_model: bool
+) -> None:
+    """Regression: the MCP layer passes validated models; ``Model(**instance)`` used to raise TypeError."""
+    from parrot.flows.dev_loop.sdd_coder.toolkit import SddCoderToolkit
+    from parrot.knowledge.wiki.ledger.coder_reviews import CoderReview
+
+    toolkit = SddCoderToolkit(roster=three_seat_roster)
+    seen: dict[str, object] = {}
+
+    async def fake_record_review(feature, worktree, review, execution_id=None):
+        seen["review"] = review
+        return {"ok": True}
+
+    async def fake_record_feedback(feature, worktree, item, execution_id=None):
+        seen["feedback"] = item
+        return {"ok": True}
+
+    monkeypatch.setattr(toolkit._engine, "record_review", fake_record_review)
+    monkeypatch.setattr(toolkit._engine, "record_feedback", fake_record_feedback)
+
+    review = CoderReview(
+        task_id="TASK-0001",
+        attempt_uid="attempt-1",
+        backend="nova",
+        model="qwen",
+        fix_commits=[],
+        review_evidence="orchestrator diff review, no fixes",
+    )
+    fb = feedback()
+    review_arg = review if as_model else review.model_dump()
+    feedback_arg = fb if as_model else fb.model_dump()
+    # _run wraps the engine result; only the argument coercion is under test, so call the coroutine bodies directly.
+    await toolkit.coder_record_review("demo", "/abs", review_arg, "3f2b8c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c")
+    await toolkit.coder_record_feedback("demo", "/abs", feedback_arg, "3f2b8c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c")
+    assert isinstance(seen["review"], CoderReview) and seen["review"].task_id == "TASK-0001"
+    assert isinstance(seen["feedback"], CoderFeedback) and seen["feedback"].pattern == "fail-open-authorization"
+
+
 async def test_record_tools_store_a_valid_payload_through_mcp_adapter(
     git_sandbox_feature: tuple, noop_probe: object
 ) -> None:

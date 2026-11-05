@@ -1,7 +1,7 @@
 """Mermaid C4 dialect codec for ``GraphSpec(kind=\"c4\")`` (FEAT-754, spec §3 Module 2).
 
 Dependency-free like :mod:`.mermaid`. Emits C4Context / C4Container / C4Component / C4Dynamic
-source; the supported subset and the lossy fields are documented in ``docs/outputs/a2ui-v1.md``.
+source; the supported subset and the lossy fields are documented in ``wiki/outputs/a2ui-v1.md``.
 """
 
 from __future__ import annotations

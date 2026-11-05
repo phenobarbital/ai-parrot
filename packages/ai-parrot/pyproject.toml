@@ -351,10 +351,11 @@ wiki = [
 ]
 
 # TechWiki — GitHub Wiki technical reference pipeline (FEAT-801).
-# griffe powers the API-reference generator; mkdocs-material validates the
-# legacy mkdocs.yml after migration.  Both are heavy, so kept opt-in.
+# griffe powers the API-reference generator, jinja2 renders its page templates;
+# the mkdocs set validates the legacy mkdocs.yml after migration. Heavy, so opt-in.
 techwiki = [
-    "griffe>=1.7",
+    "griffe>=2.4,<3",
+    "jinja2>=3.1",
     "mkdocs>=1.6",
     "mkdocs-material>=9.6",
     "mkdocstrings[python]>=0.29",
@@ -1019,6 +1020,8 @@ parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
     "_assets/sdd/WORKFLOW.md",
     "_assets/sdd/CONVENTIONS.md",
     "_assets/sdd/CODEX.md",
+    "techwiki/templates/*.j2",
+    "techwiki/templates/*.md.j2",
 ]
 "parrot.flows.dev_loop" = ["_subagent_data/*.md"]
 # FEAT-778: package-bundled domain experts, read via importlib.resources by parrot.experts.loader.

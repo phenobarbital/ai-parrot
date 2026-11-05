@@ -79,7 +79,7 @@ def _check_env() -> None:
         logger.error(
             "Missing required env vars: %s\n"
             "Set them in your shell and retry. See "
-            "docs/integrations/office365-oauth2.md for the Azure AD setup.",
+            "wiki/integrations/office365-oauth2.md for the Azure AD setup.",
             ", ".join(missing),
         )
         sys.exit(2)

@@ -1,0 +1,41 @@
+# GitHub Wiki section ordering for ai-parrot technical reference
+sections:
+  - id: architecture
+    title: Architecture
+  - id: clients
+    title: Clients
+  - id: bots
+    title: Bots & Agents
+  - id: memory
+    title: Memory
+  - id: knowledge
+    title: Knowledge
+  - id: tools
+    title: Tools & Toolkits
+  - id: flows
+    title: Flows
+  - id: skills
+    title: Skills
+  - id: stores
+    title: Stores & Loaders
+  - id: mcp
+    title: MCP & A2A
+  - id: server
+    title: Server & APIs
+  - id: integrations
+    title: Integrations
+  - id: outputs
+    title: Outputs & A2UI
+  - id: prompts
+    title: Prompts
+  - id: security
+    title: Security
+  - id: operations
+    title: Operations
+  - id: migration
+    title: Migration
+  - id: sdd-tooling
+    title: SDD Tooling
+  - id: wiki
+    title: LLM Wiki
+# Decisions and API Reference are appended by the bundle

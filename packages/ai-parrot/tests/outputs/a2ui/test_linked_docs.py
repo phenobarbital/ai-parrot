@@ -8,11 +8,17 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 DOCS = REPO_ROOT / "docs"
+_MOVED = {
+    "frontend/agentdashboard-a2ui-reference.md": "wiki/bots/frontend/agentdashboard-a2ui-reference.md",
+    "outputs/a2ui-linked-surfaces.md": "wiki/outputs/a2ui-linked-surfaces.md",
+    "outputs/a2ui-v1.md": "wiki/outputs/a2ui-v1.md",
+    "tools/querysource-toolkit.md": "wiki/tools/querysource-toolkit.md",
+}
 
 
 def _read(rel: str) -> str:
     """Return a docs file's text, failing clearly when it is missing."""
-    path = DOCS / rel
+    path = REPO_ROOT / _MOVED[rel] if rel in _MOVED else DOCS / rel
     assert path.is_file(), f"missing doc: {path}"
     return path.read_text(encoding="utf-8")
 

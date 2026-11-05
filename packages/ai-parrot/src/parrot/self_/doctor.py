@@ -270,7 +270,7 @@ def check_bwrap_sandbox() -> list[DoctorCheck]:
         checks.append(DoctorCheck(
             name="sdd: bwrap nested userns", ok=False,
             detail=f"bwrap nested namespace failed: {exc}",
-            fix="see docs/sdd/sandbox-setup.md — create /etc/apparmor.d/bwrap with userns permission"))
+            fix="see wiki/tools/sdd/sandbox-setup.md — create /etc/apparmor.d/bwrap with userns permission"))
         return checks
 
     if nested.returncode != 0:
@@ -278,7 +278,7 @@ def check_bwrap_sandbox() -> list[DoctorCheck]:
         checks.append(DoctorCheck(
             name="sdd: bwrap nested userns", ok=False,
             detail=f"nested bwrap failed: {stderr[-1] if stderr else 'unknown error'}",
-            fix="see docs/sdd/sandbox-setup.md — create /etc/apparmor.d/bwrap with userns permission"))
+            fix="see wiki/tools/sdd/sandbox-setup.md — create /etc/apparmor.d/bwrap with userns permission"))
     else:
         checks.append(DoctorCheck(
             name="sdd: bwrap nested userns", ok=True,

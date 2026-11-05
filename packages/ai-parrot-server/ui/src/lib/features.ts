@@ -9,7 +9,7 @@
  * runtime, means the guarded chunk is never *fetched* when a flag is
  * `false`.
  *
- * KNOWN LIMITATION (see `docs/admin-ui.md` "Known limitation"): because
+ * KNOWN LIMITATION (see `wiki/server/admin-ui.md` "Known limitation"): because
  * `features.x` is a runtime object-property read (not a bare `const` at
  * each call site), Rollup's dead-code elimination cannot prove the
  * guarded `import()` is unreachable when the flag is compiled `false` —

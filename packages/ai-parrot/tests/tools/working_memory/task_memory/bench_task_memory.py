@@ -60,7 +60,7 @@ from parrot.tools.working_memory.task_memory.tools import TaskMemory
 
 #: The documentation this task produces, checked by two of the cases.
 #: parents: task_memory/working_memory/tools/tests/ai-parrot/packages/<repo root>
-DOC_PATH = Path(__file__).resolve().parents[6] / "docs" / "memory" / "recoverable-task-memory.md"
+DOC_PATH = Path(__file__).resolve().parents[6] / "wiki" / "memory" / "recoverable-task-memory.md"
 
 #: Repetitions for the timing samples. Small on purpose: these are
 #: recorded observations, not a statistical claim.

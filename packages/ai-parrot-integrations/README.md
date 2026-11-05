@@ -60,7 +60,7 @@ from parrot.human.channels import ChannelRegistry
 
 ## Migration Guide
 
-See [docs/migration/feat-202-ai-parrot-integrations.md](../../docs/migration/feat-202-ai-parrot-integrations.md)
+See [wiki/integrations/migration/feat-202-ai-parrot-integrations.md](https://github.com/phenobarbital/ai-parrot/wiki/Integrations-Migration-Guide%3A-FEAT-202-%E2%80%94-ai-parrot-integrations)
 for full migration details.
 
 ### Breaking changes from `ai-parrot` core

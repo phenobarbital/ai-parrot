@@ -38,11 +38,11 @@ facts, documents, embeddings used by RAG).
 
 - [Knowledge Graph & LLM Wiki chapter](knowledge-graph.md) — PageIndex,
   GraphIndex and the agent-maintained wiki built on top of them.
-- [LLM Wiki — an agent-maintained knowledge repository](../llm-wiki.md)
-- [Execution Memory](../EXECUTION_MEMORY.md)
-- [Local Knowledge Base](../local_kb.md)
-- [Parent-Child Retrieval](../parent-child-retrieval.md)
-- [DocumentDB](../documentdb.md), [Storage Backends](../storage-backends.md)
+- [LLM Wiki — an agent-maintained knowledge repository](https://github.com/phenobarbital/ai-parrot/wiki/LLM-Wiki-LLM-Wiki-%E2%80%94-an-agent-maintained-knowledge-repository)
+- [Execution Memory](https://github.com/phenobarbital/ai-parrot/wiki/Memory-ExecutionMemory-Integration-Guide)
+- [Local Knowledge Base](https://github.com/phenobarbital/ai-parrot/wiki/Knowledge-Local-Kb)
+- [Parent-Child Retrieval](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Parent-Child-Retrieval-%28Small-to-Big%29)
+- [DocumentDB](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Async-context-manager-para-cleanup-autom%C3%A1tico), [Storage Backends](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Storage-Backends-Guide)
 
 ## API reference
 

@@ -28,7 +28,7 @@ __all__ = ("LocalTools", "build_local_tools")
 
 #: Hard caps so a single tool call can never return an unbounded amount of
 #: text to the model (mirrors the LSP toolkit's own bounded-output
-#: discipline, docs/sdd/lsp-pilot.md's "200 rendered items").
+#: discipline, wiki/sdd-tooling/sdd/lsp-pilot.md's "200 rendered items").
 _MAX_LIST_ENTRIES = 200
 _MAX_SEARCH_MATCHES = 50
 _MAX_FILE_BYTES = 1_000_000

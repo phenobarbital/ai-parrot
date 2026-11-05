@@ -884,7 +884,7 @@ VECTOR_HANDLER_MAX_FILE_SIZE = config.getint("VECTOR_HANDLER_MAX_FILE_SIZE", fal
 ## POST /api/v1/agents/infographic/render (data-splice/jinja HTML sources —
 ## NOT the block-spec metadata registry `parrot.helpers.infographics` uses
 ## for the pre-render 404 check; the two are intentionally separate
-## registries, see docs/api/infographic_render.md's Known Limitation).
+## registries, see wiki/server/api/infographic_render.md's Known Limitation).
 ## Comma-separated list of directories; empty by default — the render
 ## route logs a loud warning and every render request fails with
 ## TEMPLATE_ENGINE_UNSET until this is configured for a deployment.

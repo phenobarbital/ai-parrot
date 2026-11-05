@@ -2,7 +2,7 @@
 #
 # Full guidance (provisioning, per-worktree installation, seat visibility
 # checks, the four tools, baselines/deltas, fallbacks, and known
-# limitations): docs/sdd/lsp-pilot.md. This file is a complete, safe-default
+# limitations): wiki/sdd-tooling/sdd/lsp-pilot.md. This file is a complete, safe-default
 # example — installing it does NOT start Pyright or change host behavior.
 #
 # Serve with:
@@ -48,7 +48,7 @@
 #   lsp_* tool call returns `status="unavailable"` before any process
 #   starts. Replace it with a real, immutable per-environment identifier
 #   only after Pyright 1.1.414 and a supported Node.js runtime are
-#   provisioned (docs/sdd/lsp-pilot.md, "Environment identity").
+#   provisioned (wiki/sdd-tooling/sdd/lsp-pilot.md, "Environment identity").
 #
 # NOTE ON CREDENTIALS
 #   No secrets appear here. `requires_llm: false` — this toolkit never
@@ -61,7 +61,7 @@ toolkits:
       config:
         repo_root: {{repo_root}}
         environment_id: operator-unconfigured
-        # Pinned pilot backend (docs/sdd/lsp-pilot.md, "Provisioning"):
+        # Pinned pilot backend (wiki/sdd-tooling/sdd/lsp-pilot.md, "Provisioning"):
         # server_command: [pyright-langserver, --stdio]
         # version_command: [pyright, --version]
         # expected_server_version: "1.1.414"

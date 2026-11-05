@@ -1,6 +1,6 @@
 """PDF print-layout tests (FEAT-493, TASK-2713): PDFRenderer forces
 `layout="print"`, and the print stylesheet behaves as WeasyPrint 69.0
-actually renders it (see docs/weasyprint-css-support.md for the full
+actually renders it (see wiki/outputs/weasyprint-css-support.md for the full
 empirical findings)."""
 
 import io
@@ -56,7 +56,7 @@ class TestPdfPrintLayout:
 
     async def test_intermediate_html_has_print_shadow_override(self):
         """The print scope's `--shadow: none` override is present — WeasyPrint
-        itself never renders box-shadow at all (docs/weasyprint-css-support.md),
+        itself never renders box-shadow at all (wiki/outputs/weasyprint-css-support.md),
         but the override documents intent and is verified present regardless."""
         doc, _degraded = await pdf_mod.PDFRenderer()._build_intermediate_html(_envelope())
         assert "--shadow: none" in doc
@@ -79,7 +79,7 @@ class TestPdfPrintLayout:
         """A representative multi-page table, rendered with the ACTUAL composed
         print stylesheet through PDFRenderer's own rasterization call, produces
         a multi-page PDF (WeasyPrint's break-inside/table-header-group support
-        confirmed empirically — docs/weasyprint-css-support.md)."""
+        confirmed empirically — wiki/outputs/weasyprint-css-support.md)."""
         style = DesignSystem.stylesheet("light", "print")
         rows = "".join(
             f'<tr><td class="num">{i}</td><td>Row {i} with padding to add height</td></tr>' for i in range(80)

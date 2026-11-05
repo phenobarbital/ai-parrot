@@ -20,7 +20,7 @@ passes without its integration point is worse than no suite.
 
 Vendor boundaries (LiveKit rooms, LiveAvatar, Nova) are faked. **This suite is
 not evidence for AC10**, which requires real vendors — see
-`docs/testing/voicebot-multiroom-live-gate.md`.
+`wiki/integrations/testing/voicebot-multiroom-live-gate.md`.
 """
 
 from __future__ import annotations

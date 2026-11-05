@@ -1,7 +1,7 @@
 """Measured Luau parse admission/cancellation/fallback guard (FEAT-532 TASK-2899).
 
 Implements the three combined resource-policy guards TASK-2896 measured
-and recorded in ``docs/design/luau-parser-resource-policy.md`` §3:
+and recorded in ``wiki/knowledge/design/luau-parser-resource-policy.md`` §3:
 
 1. **Pre-parse size admission** (:func:`admit_for_treesitter`) — the
    primary, cheap defense. At the 1 MiB cap the worst measured shape
@@ -18,7 +18,7 @@ and recorded in ``docs/design/luau-parser-resource-policy.md`` §3:
    This guard forks a child process per call and terminates (SIGTERM,
    escalating to SIGKILL) it on deadline expiry.
 
-   Per ``docs/design/luau-parser-resource-policy.md`` §1/§3, this is
+   Per ``wiki/knowledge/design/luau-parser-resource-policy.md`` §1/§3, this is
    **NOT** wired into :meth:`~parrot.knowledge.wiki.languages.luau.LuauScanner.outline`'s
    per-file production hot path — the measured pre-parse byte cap
    (:func:`admit_for_treesitter`) already bounds worst-case wall time to
@@ -49,7 +49,7 @@ import multiprocessing as mp
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-#: Reviewed policy (docs/design/luau-parser-resource-policy.md §3).
+#: Reviewed policy (wiki/knowledge/design/luau-parser-resource-policy.md §3).
 BYTE_LIMIT = 1024 * 1024
 DENSITY_THRESHOLD = 0.10
 DEADLINE_SECONDS = 2.0

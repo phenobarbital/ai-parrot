@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-DOC = Path(__file__).resolve().parents[4] / "docs" / "agent_studio_api.md"
+DOC = Path(__file__).resolve().parents[4] / "wiki" / "bots" / "agent_studio_api.md"
 
 CODES = [
     "name_taken",
@@ -72,7 +72,7 @@ def test_registry_only_no_longer_marked_incomplete():
     assert "incomplete lifecycle" not in _text().lower()
 
 
-ROOT = DOC.parents[1]
+ROOT = DOC.parents[2]
 SPECS = ["agentstudio-db-storage", "agentstudio-tenant-visibility", "agentstudio-host-toolkits"]
 HEADING = "## Cross-spec contract (package)"
 
@@ -114,7 +114,7 @@ def test_doc_error_table_has_no_open_question_and_documents_behaviour_changes():
         "`groups_not_allowed` | 422",
         "`name_taken` (409) on agents",
         "(+ `version` for a Studio agent)",
-        "docs/agentstudio/db-storage.md",
+        "wiki/bots/agentstudio/db-storage.md",
         "host-toolkits.md",
     ):
         assert needle in text.replace("`name_taken` (409)\non agents", "`name_taken` (409) on agents"), needle
