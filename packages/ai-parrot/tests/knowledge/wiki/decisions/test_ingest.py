@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ import pytest
 from parrot.knowledge.wiki.decisions.codec import decision_from_page, decision_to_page, documented_decision_id
 from parrot.knowledge.wiki.decisions.ingest import discover_adr_sources, refresh_decisions
 from parrot.knowledge.wiki.decisions.models import (
+    ADR_READ_ONLY,
     ADR_RECORD_TOO_LARGE,
     ADR_REVISION_CONFLICT,
     DecisionConfig,
@@ -585,3 +587,51 @@ class TestCanonicalEnvelope:
         assert (await adr_store.get_page(decision_id))["content_hash"] == legacy_hash
         assert clean.unchanged > 1  # the fixture holds several ADRs, so the next line means something
         assert result.unchanged == clean.unchanged - 1
+
+
+class TestCanonicalEnvelopeReadOnly:
+    """issue:84c5f270394d — a failed re-encode on a read-only plane counts as unchanged."""
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            DecisionError(ADR_READ_ONLY, "read-only plane"),
+            sqlite3.OperationalError("attempt to write a readonly database"),
+        ],
+    )
+    async def test_read_only_rewrite_is_unchanged(self, adr_repo, adr_config, adr_store, monkeypatch, error):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        clean = await refresh_decisions(adr_store, adr_repo, adr_config)
+        decision_id = documented_decision_id(_LEGACY_SOURCE)
+        legacy_hash = await _make_legacy(adr_store, decision_id)
+        original_save = DecisionRepository.save
+
+        async def read_only_save(self, record, expected_content_hash):
+            if record.decision_id == decision_id:
+                raise error
+            return await original_save(self, record, expected_content_hash)
+
+        monkeypatch.setattr(DecisionRepository, "save", read_only_save)
+
+        result = await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        assert [d for d in result.diagnostics if d.decision_id == decision_id] == []
+        assert result.updated == 0 and result.created == 0
+        assert result.unchanged == clean.unchanged
+        assert (await adr_store.get_page(decision_id))["content_hash"] == legacy_hash
+
+    async def test_other_sqlite_errors_still_propagate(self, adr_repo, adr_config, adr_store, monkeypatch):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        decision_id = documented_decision_id(_LEGACY_SOURCE)
+        await _make_legacy(adr_store, decision_id)
+        original_save = DecisionRepository.save
+
+        async def locked_save(self, record, expected_content_hash):
+            if record.decision_id == decision_id:
+                raise sqlite3.OperationalError("database is locked")
+            return await original_save(self, record, expected_content_hash)
+
+        monkeypatch.setattr(DecisionRepository, "save", locked_save)
+
+        with pytest.raises(sqlite3.OperationalError, match="locked"):
+            await refresh_decisions(adr_store, adr_repo, adr_config)
