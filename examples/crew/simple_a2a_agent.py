@@ -21,7 +21,7 @@ from parrot.a2a import A2AServer
 # ─────────────────────────────────────────────────────────────────────────────
 
 PORT = 8081
-LLM_MODEL = "google:gemini-2.5-flash"
+LLM_MODEL = "google:gemini-3.8-flash"
 
 
 def generate_api_key() -> str:

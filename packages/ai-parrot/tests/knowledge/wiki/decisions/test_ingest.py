@@ -2,15 +2,27 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import sqlite3
 from pathlib import Path
 
 import pytest
 
-from parrot.knowledge.wiki.decisions.codec import documented_decision_id
+from parrot.knowledge.wiki.decisions.codec import decision_from_page, decision_to_page, documented_decision_id
 from parrot.knowledge.wiki.decisions.ingest import discover_adr_sources, refresh_decisions
-from parrot.knowledge.wiki.decisions.models import DecisionConfig, DecisionRecord
+from parrot.knowledge.wiki.decisions.models import (
+    ADR_READ_ONLY,
+    ADR_RECORD_TOO_LARGE,
+    ADR_REVISION_CONFLICT,
+    DecisionConfig,
+    DecisionError,
+    DecisionRecord,
+    ReviewEvent,
+)
 from parrot.knowledge.wiki.decisions.repository import DecisionRepository
-from parrot.knowledge.wiki.store import BaseWikiStore
+from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord
+
 
 class TestDiscovery:
     def test_only_configured_globs_are_discovered(self, adr_repo, adr_config):
@@ -405,3 +417,221 @@ class TestPrefixedRefresh:
             "external_id": "ADR-3",
             "links": [("sym:src/legacy.py#cited", "explains", "extracted")],
         }
+
+
+_SCHEMA_2_KEYS = (
+    "about",
+    "batch_id",
+    "contradicts",
+    "document_id",
+    "entry_id",
+    "lifecycle",
+    "normative",
+    "rationale",
+    "rejected_alternatives",
+    "supersedes_refs",
+    "targets",
+)
+_LEGACY_SOURCE = "docs/adr/0001-use-pgvector.md"
+
+
+async def _make_legacy(store: BaseWikiStore, decision_id: str) -> str:
+    """Rewrite one stored ADR page the way an older codec wrote it; return its legacy hash."""
+    page = await store.get_page(decision_id, include_body=True)
+    marker, envelope, rest = page["body"].split("\n", 2)
+    payload = json.loads(envelope)
+    for key in _SCHEMA_2_KEYS:
+        payload.pop(key, None)
+    legacy = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    legacy_hash = hashlib.sha1(legacy.encode("utf-8")).hexdigest()  # noqa: S324 — identity, not security
+    await store.upsert_pages(
+        [
+            WikiPageRecord(
+                concept_id=page["concept_id"],
+                node_id=page.get("node_id") or page["concept_id"],
+                title=page["title"],
+                category=page["category"],
+                summary=page.get("summary") or "",
+                body=f"{marker}\n{legacy}\n{rest}",
+                source_id=page.get("source_id"),
+                token_count=page.get("token_count") or 0,
+                origin=page.get("origin") or "ingest",
+                asserted_by=page.get("asserted_by"),
+                content_hash=legacy_hash,
+            )
+        ]
+    )
+    return legacy_hash
+
+
+def _canonical_hash(page: dict) -> str:
+    """The hash the current codec gives the record stored in ``page``."""
+    return decision_to_page(decision_from_page(page)).content_hash
+
+
+async def _seed_review_state(store: BaseWikiStore, decision_id: str) -> DecisionRecord:
+    """Give one stored ADR record revision 2 and one review event; return the record as saved."""
+    repo = DecisionRepository(store)
+    record, stored_hash = await repo.get(decision_id)
+    reviewed = record.model_copy(
+        update={
+            "revision": 2,
+            "review_history": [
+                ReviewEvent(
+                    revision=2,
+                    action="accept",
+                    actor="human:reviewer",
+                    timestamp="2026-01-01T00:00:00+00:00",
+                    reason="seeded by test",
+                    before_sha1="a",
+                    after_sha1="b",
+                )
+            ],
+        }
+    )
+    return await repo.save(reviewed, stored_hash)
+
+
+class TestCanonicalEnvelope:
+    """issue:42977fa3aaeb — a refresh re-encodes a stored envelope that is not canonical."""
+
+    async def test_refresh_rewrites_legacy_envelope(self, adr_repo, adr_config, adr_store):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        decision_id = documented_decision_id(_LEGACY_SOURCE)
+        legacy_hash = await _make_legacy(adr_store, decision_id)
+        assert legacy_hash != _canonical_hash(await adr_store.get_page(decision_id))  # the precondition
+
+        result = await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        page = await adr_store.get_page(decision_id)
+        assert result.updated == 1 and result.created == 0
+        assert page["content_hash"] == _canonical_hash(page)
+        assert page["content_hash"] != legacy_hash
+
+    async def test_refresh_rewrite_keeps_stored_record(self, adr_repo, adr_config, adr_store):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        decision_id = documented_decision_id(_LEGACY_SOURCE)
+        await _seed_review_state(adr_store, decision_id)
+        await _make_legacy(adr_store, decision_id)
+        before = decision_from_page(await adr_store.get_page(decision_id))
+        assert before.revision == 2 and len(before.review_history) == 1  # the precondition
+
+        result = await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        after = decision_from_page(await adr_store.get_page(decision_id))
+        assert result.updated == 1
+        assert after == before
+        assert after.revision == 2
+        assert [event.action for event in after.review_history] == ["accept"]
+
+    async def test_refresh_rewrite_is_idempotent(self, adr_repo, adr_config, adr_store):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        await _make_legacy(adr_store, documented_decision_id(_LEGACY_SOURCE))
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        result = await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        assert result.updated == 0 and result.created == 0 and result.unchanged > 0
+
+    async def test_refresh_canonical_pages_stay_unchanged(self, adr_repo, adr_config, adr_store):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        result = await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        assert result.updated == 0 and result.created == 0 and result.unchanged > 0
+        assert all(diagnostic.code != ADR_REVISION_CONFLICT for diagnostic in result.diagnostics)
+
+    async def test_refresh_rewrite_conflict_is_a_diagnostic(self, adr_repo, adr_config, adr_store, monkeypatch):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        decision_id = documented_decision_id(_LEGACY_SOURCE)
+        await _seed_review_state(adr_store, decision_id)
+        legacy_hash = await _make_legacy(adr_store, decision_id)
+        stored = decision_from_page(await adr_store.get_page(decision_id))
+        original_save = DecisionRepository.save
+        calls: list[tuple[DecisionRecord, str | None]] = []
+
+        async def conflicting_save(self, record, expected_content_hash):
+            if record.decision_id == decision_id:
+                calls.append((record, expected_content_hash))
+                raise DecisionError(ADR_REVISION_CONFLICT, "conflict", decision_id=decision_id)
+            return await original_save(self, record, expected_content_hash)
+
+        monkeypatch.setattr(DecisionRepository, "save", conflicting_save)
+
+        result = await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        conflicts = [diagnostic for diagnostic in result.diagnostics if diagnostic.code == ADR_REVISION_CONFLICT]
+        assert result.updated == 0
+        assert [diagnostic.decision_id for diagnostic in conflicts] == [decision_id]
+        assert calls == [(stored, legacy_hash)]
+        assert (await adr_store.get_page(decision_id))["content_hash"] == legacy_hash
+
+    async def test_refresh_rewrite_encode_failure_is_a_diagnostic(self, adr_repo, adr_config, adr_store, monkeypatch):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        clean = await refresh_decisions(adr_store, adr_repo, adr_config)
+        decision_id = documented_decision_id(_LEGACY_SOURCE)
+        legacy_hash = await _make_legacy(adr_store, decision_id)
+
+        def failing_encode(record):
+            if record.decision_id == decision_id:
+                raise DecisionError(ADR_RECORD_TOO_LARGE, "too large", decision_id=decision_id)
+            return decision_to_page(record)
+
+        monkeypatch.setattr("parrot.knowledge.wiki.decisions.ingest.decision_to_page", failing_encode)
+
+        result = await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        failures = [diagnostic for diagnostic in result.diagnostics if diagnostic.code == ADR_RECORD_TOO_LARGE]
+        assert [diagnostic.decision_id for diagnostic in failures] == [decision_id]
+        assert result.updated == 0 and result.created == 0
+        assert (await adr_store.get_page(decision_id))["content_hash"] == legacy_hash
+        assert clean.unchanged > 1  # the fixture holds several ADRs, so the next line means something
+        assert result.unchanged == clean.unchanged - 1
+
+
+class TestCanonicalEnvelopeReadOnly:
+    """issue:84c5f270394d — a failed re-encode on a read-only plane counts as unchanged."""
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            DecisionError(ADR_READ_ONLY, "read-only plane"),
+            sqlite3.OperationalError("attempt to write a readonly database"),
+        ],
+    )
+    async def test_read_only_rewrite_is_unchanged(self, adr_repo, adr_config, adr_store, monkeypatch, error):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        clean = await refresh_decisions(adr_store, adr_repo, adr_config)
+        decision_id = documented_decision_id(_LEGACY_SOURCE)
+        legacy_hash = await _make_legacy(adr_store, decision_id)
+        original_save = DecisionRepository.save
+
+        async def read_only_save(self, record, expected_content_hash):
+            if record.decision_id == decision_id:
+                raise error
+            return await original_save(self, record, expected_content_hash)
+
+        monkeypatch.setattr(DecisionRepository, "save", read_only_save)
+
+        result = await refresh_decisions(adr_store, adr_repo, adr_config)
+
+        assert [d for d in result.diagnostics if d.decision_id == decision_id] == []
+        assert result.updated == 0 and result.created == 0
+        assert result.unchanged == clean.unchanged
+        assert (await adr_store.get_page(decision_id))["content_hash"] == legacy_hash
+
+    async def test_other_sqlite_errors_still_propagate(self, adr_repo, adr_config, adr_store, monkeypatch):
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        decision_id = documented_decision_id(_LEGACY_SOURCE)
+        await _make_legacy(adr_store, decision_id)
+        original_save = DecisionRepository.save
+
+        async def locked_save(self, record, expected_content_hash):
+            if record.decision_id == decision_id:
+                raise sqlite3.OperationalError("database is locked")
+            return await original_save(self, record, expected_content_hash)
+
+        monkeypatch.setattr(DecisionRepository, "save", locked_save)
+
+        with pytest.raises(sqlite3.OperationalError, match="locked"):
+            await refresh_decisions(adr_store, adr_repo, adr_config)

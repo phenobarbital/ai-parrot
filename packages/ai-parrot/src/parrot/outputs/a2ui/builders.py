@@ -650,6 +650,34 @@ def _validate_axes(component: dict[str, Any], keys: Collection[str], frames: Map
         validate_column("value", value_column)
 
 
+def _mark_row_scalars_optional(component: dict[str, Any], keys: Collection[str]) -> dict[str, Any]:
+    """Return ``component`` with its row-scalar bindings listed in ``metadata.extensions.parrot_optional``.
+
+    A top-level ``{"path": "/<key>/rows/<n>/..."}`` binding (e.g. ``KPICard.value``) cannot resolve when the
+    source carries no rows (no snapshot, or an empty result); marking it optional makes ``bake_envelope`` omit
+    it instead of raising, so every linked envelope stays bakeable (FEAT-598 M4 / AC16).
+    """
+    pointers: list[str] = []
+    for prop, binding in component.items():
+        if prop in {"id", "component", "metadata"} or not isinstance(binding, Mapping):
+            continue
+        path = binding.get("path")
+        if not isinstance(path, str) or not path.startswith("/"):
+            continue
+        tokens = path[1:].split("/")
+        if len(tokens) >= 3 and tokens[0] in keys and tokens[1] == "rows":
+            pointers.append(path)
+    if not pointers:
+        return component
+    metadata = dict(component.get("metadata") or {})
+    extensions = dict(metadata.get("extensions") or {})
+    optional = list(extensions.get("parrot_optional") or [])
+    optional.extend(pointer for pointer in pointers if pointer not in optional)
+    extensions["parrot_optional"] = optional
+    metadata["extensions"] = extensions
+    return {**component, "metadata": metadata}
+
+
 def build_linked_surface(
     components: Sequence[dict[str, Any]],
     sources: Mapping[str, "LinkedSource"],
@@ -719,7 +747,7 @@ def build_linked_surface(
     envelope = CreateSurface(
         surfaceId=surface_id,
         catalogId=catalog_id,
-        components=[Component(**component) for component in components],
+        components=[Component(**_mark_row_scalars_optional(component, keys)) for component in components],
         dataModel=data_model,
         metadata=metadata,
     )

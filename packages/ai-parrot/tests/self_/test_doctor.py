@@ -32,6 +32,110 @@ def test_doctor_flags_broken_host_config(isolated_home: Path, tmp_path: Path) ->
     assert any(not c.ok and str(missing) in c.detail for c in checks)
 
 
+def test_doctor_host_config_form(isolated_home: Path, tmp_path: Path) -> None:
+    """Each present config gets its own informational form without altering failure status."""
+    from parrot.knowledge.wiki.codex import assets as codex_assets
+    from parrot.knowledge.wiki.google.installer import toolkit_config_paths
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    assert not doctor._check_host_config_forms(repo)
+
+    claude = repo / ".mcp.json"
+    codex = repo / ".codex" / "config.toml"
+    google, google_local = toolkit_config_paths(repo)
+    codex.parent.mkdir(parents=True)
+    google.parent.mkdir(parents=True)
+    google_local.parent.mkdir(parents=True)
+
+    claude.write_text(json.dumps({"mcpServers": {"foreign": {"command": "foreign"}}}), encoding="utf-8")
+    codex.write_text("title = 'foreign'\n", encoding="utf-8")
+    google.write_text(json.dumps({"mcpServers": {"foreign": {"command": "foreign"}}}), encoding="utf-8")
+    google_local.write_text(json.dumps({"mcpServers": {"foreign": {"command": "foreign"}}}), encoding="utf-8")
+    forms = doctor._check_host_config_forms(repo)
+    assert len(forms) == 4
+    assert {check.detail for check in forms} == {"no managed entries"}
+    assert not doctor.failed(forms)
+
+    claude.write_text(
+        json.dumps({"mcpServers": {"wikitoolkit": {"command": "wikitoolkit", "args": ["mcp"]}}}),
+        encoding="utf-8",
+    )
+    codex.write_text(
+        "\n".join(
+            (
+                codex_assets.MCP_BEGIN,
+                f"[{codex_assets.MCP_TABLE}]",
+                'command = "/opt/parrot/bin/wikitoolkit"',
+                'args = ["mcp"]',
+                codex_assets.MCP_END,
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    google.write_text(
+        json.dumps({"mcpServers": {"wikitoolkit": {"command": "wikitoolkit", "args": ["mcp"]}}}),
+        encoding="utf-8",
+    )
+    google_local.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "wikitoolkit": {
+                        "command": "/opt/parrot/bin/wikitoolkit",
+                        "args": ["mcp"],
+                        "cwd": str(repo),
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    forms = {check.name: check for check in doctor._check_host_config_forms(repo)}
+    assert forms["host config: claude .mcp.json form"].detail == "portable"
+    assert forms["host config: codex config.toml form"].detail == "baked absolute paths"
+    assert forms["host config: google mcp_config.json (user-global) form"].detail == "portable"
+    assert forms["host config: google mcp_config.json (repo-local) form"].detail == "baked absolute paths"
+    assert all(check.informational and check.ok for check in forms.values())
+    assert all("--portable" in check.fix for check in forms.values() if check.detail == "baked absolute paths")
+
+    claude.write_text("{", encoding="utf-8")
+    checks = doctor._check_host_configs(repo)
+    assert any(check.name == "host config: claude .mcp.json" and not check.ok for check in checks)
+    malformed_form = next(check for check in checks if check.name == "host config: claude .mcp.json form")
+    assert malformed_form.detail == "no managed entries" and malformed_form.informational
+
+
+def test_doctor_google_form_uses_repo_root(
+    isolated_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Google form helper receives the repo root and the file to inspect — never a config as ``root``."""
+    from parrot.knowledge.wiki.google import installer as google_installer
+    from parrot.knowledge.wiki.google.installer import toolkit_config_paths
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    google, google_local = toolkit_config_paths(repo)
+    google.parent.mkdir(parents=True)
+    google_local.parent.mkdir(parents=True)
+    managed = json.dumps({"mcpServers": {"wikitoolkit": {"command": "wikitoolkit", "args": ["mcp"]}}})
+    google.write_text(managed, encoding="utf-8")
+    google_local.write_text(managed, encoding="utf-8")
+
+    seen: list[tuple[Path, Path]] = []
+    real = google_installer.portable_mode_of_config
+
+    def _spy(path: Path, root: Path) -> bool | None:
+        seen.append((path, root))
+        return real(path, root)
+
+    monkeypatch.setattr(google_installer, "portable_mode_of_config", _spy)
+    doctor._check_host_config_forms(repo)
+    assert seen == [(google, repo), (google_local, repo)]
+    assert all(root.is_dir() for _, root in seen)
+
+
 def test_remote_http_entry_is_not_flagged(isolated_home: Path, tmp_path: Path) -> None:
     """A remote MCP entry has no `command` (claude_code/assets.py:128-134) — never a broken-command finding."""
     repo = tmp_path / "repo"

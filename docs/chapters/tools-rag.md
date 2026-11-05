@@ -50,12 +50,12 @@ flowchart LR
 
 ## Read next
 
-- [Tools Reference](../tools.md), [Sandbox Tool](../sandbox_tool.md),
-  [What-If Scenarios](../whatif_scenarios.md), [Hierarchy Tool](../hierarchy_tool.md)
-- [MultiStoreSearch Toolkit](../multistoresearch-toolkit.md) — multi-origin
+- [Tools Reference](https://github.com/phenobarbital/ai-parrot/wiki/Tools-%26-Toolkits-AI-Parrot-Tools-Documentation), [Sandbox Tool](https://github.com/phenobarbital/ai-parrot/wiki/Tools-%26-Toolkits-gVisor-Installation-Guide-for-AI-Parrot-Secure-Sandbox),
+  [What-If Scenarios](https://github.com/phenobarbital/ai-parrot/wiki/Tools-%26-Toolkits-What-If-Scenario-Analysis), [Hierarchy Tool](https://github.com/phenobarbital/ai-parrot/wiki/Tools-%26-Toolkits-EmployeesTool-Employee-Hierarchy-Tool-for-AI-Parrot)
+- [MultiStoreSearch Toolkit](https://github.com/phenobarbital/ai-parrot/wiki/Tools-%26-Toolkits-MultiStoreSearch-Toolkit-%E2%80%94-Multi-Origin-Retrieval-for-Agents) — multi-origin
   retrieval across vector stores, PageIndex, GraphIndex & ParrotWiki
-- [Charts & Visualization](../charts_samples.md)
-- [Loaders Metadata](../loaders-metadata.md)
+- [Charts & Visualization](https://github.com/phenobarbital/ai-parrot/wiki/Outputs-%26-A2UI-%3D%3D%3D-D3.js-%3D%3D%3D)
+- [Loaders Metadata](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Loader-Metadata-Standard)
 
 ## API reference
 

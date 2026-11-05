@@ -230,7 +230,7 @@ def render_report(
     args: argparse.Namespace,
     synthetic_results: Optional[Dict[str, "evaluate.PhotoResult"]] = None,
 ) -> str:
-    """Markdown with the fixed sections of docs/pipelines/planogram-perception-spike.md."""
+    """Markdown with the fixed sections of wiki/flows/pipelines/planogram-perception-spike.md."""
     evaluable = [p for p in photos if p.slot_recall is not None]
     exercised = sorted({c for p in evaluable for c in p.conditions})
     membership_detail = (

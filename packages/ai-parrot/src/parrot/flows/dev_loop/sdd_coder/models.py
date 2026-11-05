@@ -388,7 +388,7 @@ class CoderPlan(BaseModel):
 class AttemptRecord(BaseModel):
     """Per-attempt telemetry (spec G9, design research S8)."""
 
-    attempt: int = Field(..., ge=1, le=3)
+    attempt: int = Field(..., ge=1, le=20)
     seat_label: str
     backend: str = ""
     model: str = ""
@@ -634,10 +634,30 @@ class CoderResult(BaseModel):
     elapsed_ms: int = Field(default=0, ge=0)
 
 
+#: Canonical lowercase UUID (same pattern as `checkpoint.py`/`background.py`/`evidence.py`).
+EXECUTION_ID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+EXECUTION_ID_DESCRIPTION = (
+    "Canonical lowercase UUID4 identifying this worker execution; generate it with uuid.uuid4() "
+    "(e.g. `python -c 'import uuid; print(uuid.uuid4())'`), never hand-write it. "
+    "Reuse the same id for every call."
+)
+
+
+def _advertise_execution_id(schema: Dict[str, Any], _model: Any = None) -> None:
+    """Make the JSON schema of every `_Args` model describe `execution_id` (format + pattern).
+
+    The MCP client otherwise only sees the generic ``Parameter: execution_id`` text.
+    """
+    prop = schema.get("properties", {}).get("execution_id")
+    if prop is not None:
+        prop["description"] = EXECUTION_ID_DESCRIPTION
+        prop["pattern"] = EXECUTION_ID_PATTERN
+
+
 class _Args(BaseModel):
     """Base for every MCP tool argument model — no undeclared keys accepted (design research S6)."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_advertise_execution_id)
 
 
 def _check_task_id(v: str) -> str:

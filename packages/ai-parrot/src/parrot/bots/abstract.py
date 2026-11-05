@@ -965,7 +965,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         Expected format:
             {
                 "name": "google",           # or "llm", "provider"
-                "model": "gemini-2.5-pro",
+                "model": "gemini-4-argon",
                 "temperature": 0.1,
                 "top_k": 41,
                 "top_p": 0.9,
@@ -1616,7 +1616,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         ``await super().configure(app)`` guard it with
         ``if self.configure_skipped: return``. Overrides that work BEFORE the
         ``super()`` call guard it with ``if self.configure_is_noop(app): ...``
-        (see ``docs/agent-configure-lifecycle.md`` §6 and §8).
+        (see ``wiki/bots/agent-configure-lifecycle.md`` §6 and §8).
 
         Do NOT use ``configure_count > 1`` for either guard: it is ``2`` on the
         CLI-then-server path, where this method genuinely DOES run its
@@ -1853,7 +1853,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         reconfigure(). An override MUST be safe to run more than once per instance:
         adopt an already-registered toolkit via
         ``self.tool_manager.find_registered_toolkit(...)`` instead of building a
-        second one. See ``docs/agent-configure-lifecycle.md``.
+        second one. See ``wiki/bots/agent-configure-lifecycle.md``.
         """
         return None
 
@@ -1991,7 +1991,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
 
         The ONLY supported way to re-run the configure pipeline on a live
         instance. ``post_configure()`` runs again, so overrides must adopt
-        already-registered toolkits (see ``docs/agent-configure-lifecycle.md``).
+        already-registered toolkits (see ``wiki/bots/agent-configure-lifecycle.md``).
 
         Args:
             app: The aiohttp app to bind; defaults to the currently bound one.

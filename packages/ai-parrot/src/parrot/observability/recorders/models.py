@@ -60,6 +60,8 @@ class UsageRecord(BaseModel):
             unavailable.
         dispatch_kind: FEAT-783 — dispatch mechanism identifier, or ``None``.
         roster_seat: FEAT-783 — sdd-coder roster seat label, or ``None``.
+        component: FEAT-796 — LLM-default component tag, or ``None`` when
+            unattributed. Durable store/span data only, never a metric label.
         pricing_policy: FEAT-783 — derived billed/subscription/estimate policy.
         equivalent_usd: FEAT-783 — list-price equivalent for subscription usage.
         usage_reported: FEAT-479 — ``False`` when the provider reported
@@ -99,6 +101,7 @@ class UsageRecord(BaseModel):
     execution_id: Optional[str] = None
     dispatch_kind: Optional[str] = None
     roster_seat: Optional[str] = None
+    component: Optional[str] = None
 
     # ── FEAT-783: four-counter usage + provider-reported cost (reconciliation only). ──
     cache_read_tokens: int = 0

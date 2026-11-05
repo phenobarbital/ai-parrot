@@ -5,6 +5,9 @@ description: Verify a completed SDD feature worktree, check for merge blockers, 
 
 # SDD Done
 
+**Run it on the host, never from inside a sandboxed `sdd-worker` session** — pushing needs
+`github.com`, which that sandbox deliberately cannot reach.
+
 ## Full procedure and Codex adaptations
 
 Before executing, read the [full sdd-done procedure](../../../.claude/commands/sdd-done.md)
@@ -122,6 +125,13 @@ do not run task closure again on base_branch and do not clean worktrees with unk
      plans; validator errors; an uninstalled `ai-parrot-server`) lives in
      `parrot.sdd.scripts.check_e2e_closeout`, not here — the exit code is the
      contract, and the gate takes no `--force` argument at all
+4.6b. Documentation check (FEAT-801), after 4.6 and before 4.7's test report:
+   - run `parrot sdd techwiki check --spec <spec> --root <worktree> --json || true`; it never blocks
+     closeout and `--force` has nothing to bypass
+   - record `Docs: <policy> — <status>[ (missing: <pages>)]`; exit 2 → `Docs: invalid — <reason_codes>`
+     and continue; any other failure → `Docs: check failed` and continue
+   - carry the `Docs:` line into the report, the PR body Evidence section and the final output;
+     no exit code of `techwiki check` aborts closeout
 4.8. Closeout hooks — pre_pr (FEAT-764), after 4.7's test report and before step 6:
    - write the hook context JSON (`feat_id`, `spec_path`, `branch`, `base_branch`, `worktree`,
      `test_report_md` as the rendered report text, `e2e_gate` as the step 4.6 JSON object,
@@ -198,8 +208,10 @@ do not run task closure again on base_branch and do not clean worktrees with unk
      `(NOT closed: shared ledger is read-only)`); never fails `$sdd-done`
 9. Push feature branch:
    - First run `wikitoolkit ledger outbox status --repo-root <worktree> --json`; on exit 4 report the
-     `contaminated_paths` and point to `docs/sdd/ledger-outbox.md` § Legacy feature diff — do not restore or
+     `contaminated_paths` and point to `wiki/sdd-tooling/sdd/ledger-outbox.md` § Legacy feature diff — do not restore or
      drop them and do not block the code PR
+   - Then `parrot sdd worktree push-protection disable <worktree>` (FEAT-813: removes the `no_push` guard a
+     sandboxed worker left; idempotent) — on failure warn and continue
    - `git -C <worktree> push origin <branch>`
 10. Check merge blockers (feature flows only):
     - If `--merge` flag is set and not a hotfix, run `wikitoolkit ledger blockers <FEAT-ID>`

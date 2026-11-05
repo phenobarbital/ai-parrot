@@ -1272,3 +1272,7 @@ class FAISSStore(AbstractStore):
             store.load(str(pickle_path))
             _log.info("load_from_s3: loaded FAISS store from %s", key)
             return store
+
+
+# Backward-compatible alias: parrot.stores.supported_stores maps the "faiss_store" slug to "FaissStore".
+FaissStore = FAISSStore

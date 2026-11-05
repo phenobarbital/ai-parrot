@@ -68,12 +68,16 @@ installs the retained SDD hook. Never blindly merge user-provided security setti
 
 Use `PARROT_SDD_SANDBOX_BACKEND=claude-native` in the child process environment to select the hook's
 non-Bubblewrap branch. This is coordination metadata, not proof of isolation: the launcher's native
-settings are the enforcement boundary. Missing metadata retains the existing Bubblewrap hook;
+settings are the enforcement boundary. Missing metadata retains the existing Bubblewrap hook
+*(amended 2026-11-04, `sdd/briefs/sdd-native-sandbox-default.brief.md`: missing metadata now selects the
+`auto` backend — native inside the native sandbox, Bubblewrap outside; `bubblewrap` is an explicit opt-in)*;
 unknown values deny execution. The dispatcher must override an inherited conflicting value on
 its sandboxed path. It must not mutate cached authentication environment dictionaries.
 
 The supported interactive entry point is `scripts/sdd/launch_worker.sh`; direct `claude --agent`
-invocation is not a qualified native launch. Existing direct launches retain the legacy wrapper,
+invocation is not a qualified native launch. Existing direct launches retain the legacy wrapper
+*(amended 2026-11-04, `sdd/briefs/sdd-native-sandbox-default.brief.md`: a direct launch gets the `auto`
+runtime branch; the launcher also launches briefs)*,
 not a runtime fallback following native failure. Do not instruct users to fix native failures by
 restarting without protection. Reverting this feature is a code/deployment rollback.
 
@@ -634,3 +638,4 @@ The original probe report and current source were reviewed; no independent revie
 | 0.2 | 2026-10-29 | Jesus Lara / Claude | Resolve §8 with preflight probes: target host + AppArmor, both CLIs qualified separately, leading-`cd` task cwd, no settings widening observed |
 | 0.3 | 2026-10-29 | Jesus Lara / Claude | /sdd-task: Validation Contract adds the dispatcher tests that policy 2 forces onto linked worktrees and the agent-twin/doc-contract tests M5 must keep green |
 | 0.4 | 2026-11-01 | Jesus Lara / Claude | Follow-ups TASK-5086..5089: `legacy` mode (policy 11), per-platform probe — macOS Seatbelt uncertified, native Windows message (policy 12), `parrot devloop launch-worker <FEAT> [--tmux]` supersedes `launch_worker.sh` (policy 13); AC14–AC17; Validation Contract + devloop CLI tests |
+| 0.5 | 2026-11-04 | Jesus Lara / Claude | `sdd-native-sandbox-default` brief: unset backend selects `auto` (runtime native/Bubblewrap branch), `claude-native` fails closed outside the native sandbox, hand-written `bwrap` denied in native mode, `parrot sdd launch worker` launches briefs; amends the "missing metadata" and "direct launches" statements |

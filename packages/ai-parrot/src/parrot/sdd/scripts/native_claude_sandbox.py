@@ -7,8 +7,10 @@ Standard library only: the SDD PreToolUse hook imports this module as a script s
 from __future__ import annotations
 
 import getpass
+import importlib.util
 import ipaddress
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -37,6 +39,7 @@ SANDBOX_MODES = ("required", "preferred", "off", "legacy")
 _HOSTNAME_LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 _NUMERIC_LABEL = re.compile(r"^(0x[0-9a-f]+|[0-9]+)$")
 _CD_PREFIX = re.compile(r"^\s*cd\s+(?P<target>\S+)\s*&&\s*(?P<rest>.+)$", re.DOTALL)
+logger = logging.getLogger(__name__)
 
 
 def sandbox_platform() -> str:
@@ -405,7 +408,9 @@ def native_sandbox_settings(
             allow_write.append(canonical)
     # `-m` keeps the command free of monorepo paths (C16): the launching interpreter can import
     # parrot in every supported context (venv editable install, wheel install in a foreign repo).
-    hook_command = shlex.join([sys.executable, "-m", "parrot.sdd.scripts.worktree_environment", "--hook"]) + " || exit 2"
+    hook_command = (
+        shlex.join([sys.executable, "-m", "parrot.sdd.scripts.worktree_environment", "--hook"]) + " || exit 2"
+    )
     settings: dict[str, Any] = {
         "hooks": {
             "PreToolUse": [
@@ -516,7 +521,12 @@ def validate_native_write_path(cwd: Path, path: Path) -> None:
 
 
 def native_task_cwd(session_cwd: Path, command: str) -> Path:
-    """Resolve an exact leading task-worktree ``cd`` prefix.
+    """Resolve an exact leading ``cd`` prefix to the task worktree it selects.
+
+    An absolute target selects a sibling linked worktree (a pool sub-worktree). A relative target
+    (``cd packages && …``) is resolved against ``session_cwd`` and must stay inside the session worktree
+    or one of its permitted sibling worktrees — so the ordinary ``cd <subdir> && <command>`` idiom keeps
+    working under the native backend instead of being denied (issue:2860a2723bad).
 
     Args:
         session_cwd: The session's linked-worktree directory.
@@ -531,19 +541,22 @@ def native_task_cwd(session_cwd: Path, command: str) -> Path:
     match = _CD_PREFIX.match(command)
     if match is None:
         if command.lstrip().startswith("cd "):
-            raise ValueError("A leading cd must have the exact form 'cd <absolute path> && <command>'")
+            raise ValueError("A leading cd must have the exact form 'cd <path> && <command>'")
         return session_cwd
     target_text = match.group("target")
     if any(character in target_text for character in ("'", '"', "$", "`", "~", "*")):
-        raise ValueError("Native task cwd must be an unquoted, literal absolute path")
+        raise ValueError("Native task cwd must be an unquoted, literal path")
     try:
         tokens = shlex.split(target_text)
     except ValueError as exc:
         raise ValueError("Invalid native task cwd prefix") from exc
-    if len(tokens) != 1 or not Path(tokens[0]).is_absolute():
-        raise ValueError("Native task cwd must be an absolute path")
+    if len(tokens) != 1:
+        raise ValueError("Native task cwd must be a single literal path")
+    target = Path(tokens[0])
+    if not target.is_absolute():
+        target = session_cwd / target
     session_root, _session_git, session_primary = _native_roots(session_cwd)
-    target_root, target_git, target_primary = _native_roots(Path(tokens[0]))
+    target_root, target_git, target_primary = _native_roots(target)
     if target_primary != session_primary:
         raise ValueError("Native task cwd must belong to the session primary checkout")
     permitted_roots = (session_root, *_we.worktree_admin_dirs(session_root, target_git))
@@ -552,25 +565,35 @@ def native_task_cwd(session_cwd: Path, command: str) -> Path:
     return target_root
 
 
-def native_command_environment(cwd: Path) -> dict[str, str]:
+def native_command_environment(cwd: Path, environ: Mapping[str, str] | None = None) -> dict[str, str]:
     """Return task-cwd import, cache and safety overrides without mutation.
+
+    The launcher exports these for the session worktree (``launch_worker``), so the hook only has to emit
+    the variables that differ from the inherited environment — in practice ``PYTHONPATH`` for a sub-worktree
+    task cwd. An inherited ``PYTHONPATH`` that already starts with this root's source roots is kept as is,
+    so the result is a fixed point.
 
     Args:
         cwd: A path in the linked worktree.
+        environ: Environment to inherit from; defaults to ``os.environ``.
 
     Returns:
         Environment variables for native child commands.
     """
+    source = os.environ if environ is None else environ
     root, _git_dir, _primary = _native_roots(cwd)
     env = {"UV_NO_SYNC": "1", "PYTHONDONTWRITEBYTECODE": "1"}
     source_roots = sorted((root / "packages").glob("*/src"))
     if source_roots:
         python_path = os.pathsep.join(map(str, source_roots))
-        if inherited := os.environ.get("PYTHONPATH"):
+        inherited = source.get("PYTHONPATH")
+        if inherited and inherited != python_path and not inherited.startswith(python_path + os.pathsep):
             python_path += os.pathsep + inherited
+        elif inherited:
+            python_path = inherited
         env["PYTHONPATH"] = python_path
     scratch_root = _we.claude_scratch_root()
-    configured = os.environ.get(CACHE_DIR_ENV)
+    configured = source.get(CACHE_DIR_ENV)
     cache_root = (
         _canonical(Path(configured)) if configured else scratch_root / "parrot-sdd-cache" / f"shared-{_user_tag()}"
     )
@@ -578,7 +601,69 @@ def native_command_environment(cwd: Path) -> dict[str, str]:
         cache_root = scratch_root / "parrot-sdd-cache" / f"shared-{_user_tag()}"
     env["XDG_CACHE_HOME"] = str(cache_root / "xdg")
     env["UV_CACHE_DIR"] = str(cache_root / "uv")
+    env["TIKTOKEN_CACHE_DIR"] = str(tiktoken_cache_dir())
     return env
+
+
+def tiktoken_cache_dir() -> Path:
+    """Return the persistent, per-user tiktoken cache shared by native sessions.
+
+    tiktoken defaults to ``$TMPDIR/data-gym-cache``, which is private and empty inside the sandbox, so every
+    sandboxed process tried to download its encoding from ``openaipublic.blob.core.windows.net`` and was
+    denied. This directory lives under the scratch root (bound into the sandbox) but outside the per-session
+    caches the launcher reaps, so the launcher can seed it once on the host.
+
+    Returns:
+        The cache directory path (not created).
+    """
+    return _we.claude_scratch_root() / "parrot-sdd-cache" / f"shared-{_user_tag()}" / "tiktoken"
+
+
+_TIKTOKEN_CACHE_NAME = re.compile(r"[0-9a-f]{40}")
+_TIKTOKEN_WARM_TIMEOUT_S = 15
+
+
+def warm_tiktoken_cache(target: Path, environ: Mapping[str, str]) -> None:
+    """Seed the sandbox tiktoken cache on the host, where the network is reachable.
+
+    Copies cached encodings from the host's tiktoken cache directories. When none are found, downloads
+    ``cl100k_base`` in a short-lived subprocess. Best effort: tiktoken missing, offline or slow only
+    leaves the cache empty, and in-sandbox callers fall back to their own token estimate.
+
+    Args:
+        target: Cache directory exported to the sandbox as ``TIKTOKEN_CACHE_DIR``.
+        environ: Host environment, used to find the host's own cache directories.
+    """
+    try:
+        target.mkdir(mode=0o700, parents=True, exist_ok=True)
+        sources = [environ.get("TIKTOKEN_CACHE_DIR"), environ.get("DATA_GYM_CACHE_DIR")]
+        sources.append(str(Path(environ.get("TMPDIR") or "/tmp") / "data-gym-cache"))
+        for source in sources:
+            if not source or not Path(source).is_dir() or _canonical(Path(source)) == _canonical(target):
+                continue
+            for entry in Path(source).iterdir():
+                destination = target / entry.name
+                if (
+                    _TIKTOKEN_CACHE_NAME.fullmatch(entry.name)
+                    and entry.is_file()
+                    and not entry.is_symlink()
+                    and not destination.exists()
+                ):
+                    shutil.copyfile(entry, destination)
+        if any(_TIKTOKEN_CACHE_NAME.fullmatch(entry.name) for entry in target.iterdir()):
+            return
+        if importlib.util.find_spec("tiktoken") is None:
+            return
+        subprocess.run(
+            [sys.executable, "-c", "import tiktoken; tiktoken.get_encoding('cl100k_base')"],
+            env={**environ, "TIKTOKEN_CACHE_DIR": str(target)},
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=_TIKTOKEN_WARM_TIMEOUT_S,
+            check=False,
+        )
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        logger.debug("tiktoken cache warm-up skipped: %s", exc)
 
 
 _REJECTED_OPTIONS = (
@@ -611,14 +696,88 @@ def _option_value(argv: Sequence[str], index: int, option: str) -> tuple[str, in
     return argv[index + 1], index + 2
 
 
-def _parse_launch_arguments(argv: Sequence[str]) -> tuple[list[str], list[str], bool, bool]:
+def load_launch_config(primary: Path) -> tuple[list[str], bool]:
+    """Read the launcher's network/token policy from ``[tool.parrot.sdd]``.
+
+    Call it with the PRIMARY checkout, never the worktree: the sandboxed session can write its own
+    worktree ``pyproject.toml``, so only the primary checkout's file is trusted.
+
+    Args:
+        primary: Primary checkout root.
+
+    Returns:
+        Validated ``sandbox_allowed_domains`` (default ``[]``) and ``gh_token`` (default ``False``).
+
+    Raises:
+        ValueError: If the file is malformed or a value has the wrong type or is not an exact hostname.
+    """
+    config_path = primary / "pyproject.toml"
+    if not config_path.is_file():
+        return [], False
+    prefix = f"Invalid sandbox launch config in {config_path}"
+    try:
+        with config_path.open("rb") as handle:
+            configuration = tomllib.load(handle)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"{prefix}: unreadable or malformed TOML ({exc})") from exc
+    table: Any = configuration
+    for name in ("tool", "parrot", "sdd"):
+        table = table.get(name) if isinstance(table, dict) else None
+        if table is None:
+            return [], False
+    if not isinstance(table, dict):
+        raise ValueError(f"{prefix}: [tool.parrot.sdd] must be a table")
+    raw_domains = table.get("sandbox_allowed_domains", [])
+    if not isinstance(raw_domains, list) or not all(isinstance(item, str) for item in raw_domains):
+        raise ValueError(f"{prefix}: sandbox_allowed_domains must be a list of strings")
+    gh_token = table.get("gh_token", False)
+    if not isinstance(gh_token, bool):
+        raise ValueError(f"{prefix}: gh_token must be a boolean")
+    try:
+        domains = validate_allowed_domains(raw_domains)
+    except ValueError as exc:
+        raise ValueError(f"{prefix}: {exc}") from exc
+    return domains, gh_token
+
+
+def merge_domains(*groups: Sequence[str]) -> list[str]:
+    """Return the order-stable, de-duplicated union of domain lists."""
+    merged: list[str] = []
+    for group in groups:
+        for domain in group:
+            if domain not in merged:
+                merged.append(domain)
+    return merged
+
+
+def _resolve_gh_token() -> tuple[str | None, str]:
+    """Run ``gh auth token`` on the host; return the token (or ``None``) and a failure reason."""
+    gh = shutil.which("gh")
+    if gh is None:
+        return None, "gh not on PATH"
+    try:
+        result = subprocess.run([gh, "auth", "token"], capture_output=True, text=True, timeout=10, check=False)
+    except subprocess.TimeoutExpired:
+        return None, "timeout"
+    except OSError as exc:
+        return None, f"gh failed to run: {type(exc).__name__}"
+    if result.returncode != 0:
+        return None, f"gh exited {result.returncode}"
+    token = result.stdout.strip()
+    if not token:
+        return None, "gh returned an empty token"
+    return token, ""
+
+
+def _parse_launch_arguments(argv: Sequence[str]) -> tuple[list[str], list[str], bool, bool, bool]:
     """Validate launcher arguments and separate policy-only domain grants.
 
     Args:
         argv: Arguments intended for Claude Code.
 
     Returns:
-        Allowed domains, forwarded arguments, model presence and setting-source presence.
+        Allowed domains, forwarded arguments, model presence, setting-source presence and whether
+        ``--no-gh-token`` was given.
 
     Raises:
         ValueError: If an argument attempts to override launcher policy.
@@ -627,12 +786,17 @@ def _parse_launch_arguments(argv: Sequence[str]) -> tuple[list[str], list[str], 
     forwarded: list[str] = []
     has_model = False
     has_sources = False
+    no_gh_token = False
     index = 0
     while index < len(argv):
         argument = argv[index]
         if argument == "--":
             forwarded.extend(argv[index:])
             break
+        if argument == "--no-gh-token":
+            no_gh_token = True
+            index += 1
+            continue
         if argument == "--sandbox-allow-domain":
             domain, index = _option_value(argv, index, argument)
             domains.append(domain)
@@ -683,7 +847,7 @@ def _parse_launch_arguments(argv: Sequence[str]) -> tuple[list[str], list[str], 
             has_model = True
         forwarded.append(argument)
         index += 1
-    return domains, forwarded, has_model, has_sources
+    return domains, forwarded, has_model, has_sources, no_gh_token
 
 
 def _process_is_alive(pid: int) -> bool:
@@ -742,7 +906,7 @@ def launch_worker(
     """
     cwd = cwd or Path.cwd()
     try:
-        domains, forwarded, has_model, has_sources = _parse_launch_arguments(argv)
+        argv_domains, forwarded, has_model, has_sources, no_gh_token = _parse_launch_arguments(argv)
     except ValueError as exc:
         print(f"launch_worker: {exc}", file=sys.stderr)
         return 2
@@ -752,6 +916,8 @@ def launch_worker(
         return 1
     try:
         mode = resolve_sandbox_mode(_native_roots(cwd)[0])
+        config_domains, gh_token = load_launch_config(_native_roots(cwd)[2])
+        domains = merge_domains(config_domains, validate_allowed_domains(argv_domains))
         mode, degraded, reason, settings = plan_native_launch(cwd, allowed_domains=domains)
     except ValueError as exc:
         print(f"launch_worker: {exc}", file=sys.stderr)
@@ -782,10 +948,51 @@ def launch_worker(
         if sandbox_platform() == "macos":
             print(
                 "launch_worker: NOTICE macOS Seatbelt backend is implemented but not certified "
-                "(see docs/dev_loop/claude-native-sandbox.md)",
+                "(see wiki/sdd-tooling/dev_loop/claude-native-sandbox.md)",
+                file=sys.stderr,
+            )
+    if gh_token and not no_gh_token and not env.get("GH_TOKEN"):
+        # gh's keyring is a D-Bus socket the sandbox blocks, so the host resolves the token. Never printed.
+        token, failure = _resolve_gh_token()
+        if token is not None:
+            env["GH_TOKEN"] = token
+        else:
+            print(
+                f"launch_worker: WARNING gh_token is enabled but no token could be obtained ({failure}); "
+                "launching without GH_TOKEN",
                 file=sys.stderr,
             )
     env[CACHE_DIR_ENV] = str(_allocate_session_cache())
+    if mode != "legacy":
+        # Session-fixed variables ride in the launch environment, so the hook need not prefix every command.
+        env.update(native_command_environment(cwd, env))
+        warm_tiktoken_cache(Path(env["TIKTOKEN_CACHE_DIR"]), base_env if base_env is not None else os.environ)
+    env.pop("PARROT_SDD_NOTIFY_PYTHON", None)
+    env.pop("PARROT_SDD_NOTIFY_HELPER", None)
+    notification_metadata = (
+        env.get("TMUX_PANE"),
+        env.get("PARROT_SDD_NOTIFY_FEATURE"),
+        env.get("PARROT_SDD_NOTIFY_SLUG"),
+        env.get("PARROT_SDD_NOTIFY_DESKTOP"),
+    )
+    if all(isinstance(value, str) and value for value in notification_metadata):
+        helper_path = Path(__file__).resolve().with_name("worker_notification.py")
+        try:
+            helper_spec = importlib.util.spec_from_file_location("worker_notification", helper_path)
+            if helper_spec is None or helper_spec.loader is None:
+                raise ImportError(f"could not load notification helper at {helper_path}")
+            notification_module = importlib.util.module_from_spec(helper_spec)
+            helper_spec.loader.exec_module(notification_module)
+            hook_command = notification_module.configure_notification(Path(env[CACHE_DIR_ENV]), worktree=cwd, env=env)
+        except (ImportError, OSError, ValueError, AttributeError, RuntimeError) as exc:
+            logger.warning("notification setup skipped: %s", exc)
+        else:
+            if hook_command is not None:
+                settings.setdefault("hooks", {}).setdefault("Stop", []).append(
+                    {"hooks": [{"type": "command", "command": hook_command, "timeout": 5}]}
+                )
+                env["PARROT_SDD_NOTIFY_PYTHON"] = str(Path(sys.executable).absolute())
+                env["PARROT_SDD_NOTIFY_HELPER"] = str(helper_path)
     command = [claude, "--agent", "sdd-worker"]
     if not has_sources:
         command += ["--setting-sources", "project,local"]

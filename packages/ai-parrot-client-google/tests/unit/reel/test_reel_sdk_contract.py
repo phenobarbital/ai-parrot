@@ -15,7 +15,7 @@ invoke it:
 - ``aio.aclose`` (every adapter's owned-client cleanup — TASK-3324/3326/3327/3331)
 
 This is the evidence backing ``packages/ai-parrot-client-google/pyproject.toml``'s
-``google-genai>=2.23.0`` floor (TASK-3335) — the lowest version these
+``google-genai>=2.34.0`` floor (TASK-3335) — the lowest version these
 surfaces were actually verified against, not a guess. A future SDK release
 that renames/removes any of them should fail THIS file first, not silently
 surface as a runtime ``AttributeError`` deep in a reel adapter.
@@ -30,16 +30,16 @@ from google import genai
 
 
 class TestInstalledSdkFloor:
-    """The installed SDK meets the declared >=2.23.0 floor."""
+    """The installed SDK meets the declared >=2.34.0 floor."""
 
     def test_installed_version_meets_declared_floor(self):
         from packaging.version import Version
 
         installed = Version(genai.__version__)
-        assert installed >= Version("2.23.0"), (
+        assert installed >= Version("2.34.0"), (
             f"Installed google-genai {genai.__version__} is below the declared "
-            "floor (>=2.23.0, packages/ai-parrot-client-google/pyproject.toml). "
-            "This feature's async reel surfaces were only verified at 2.23.0+."
+            "floor (>=2.34.0, packages/ai-parrot-client-google/pyproject.toml). "
+            "This feature's async reel surfaces were only verified at 2.34.0+."
         )
 
 

@@ -36,10 +36,21 @@ _ASSET_GLOBS: tuple[str, ...] = (
 # gates apply to these only. `_ASSET_GLOBS` above is wider (non-SDD commands/agents/skills, the
 # rulebooks, CLAUDE.md / AGENTS.md / docs/sdd/WORKFLOW.md), none of which ships.
 _SHIPPED_GLOBS: tuple[str, ...] = (
-    ".claude/commands/sdd-*.md", ".claude/agents/sdd-*.md", ".claude/hooks/sdd-worker-format.sh",
-    ".claude/rules/worktree-management.md", ".claude/skills/second-opinion/SKILL.md",
-    ".agents/skills/sdd-*/SKILL.md", ".codex/agents/sdd-worker.toml", ".agent/workflows/sdd-*.md",
-    ".agents/agents/sdd-*/agent.md", "sdd/templates/*", "sdd/WORKFLOW.md", "sdd/CONVENTIONS.md",
+    ".claude/commands/sdd-*.md",
+    ".claude/agents/sdd-*.md",
+    ".claude/hooks/sdd-worker-format.sh",
+    ".claude/rules/worktree-management.md",
+    ".claude/skills/second-opinion/SKILL.md",
+    ".agents/skills/sdd-*/SKILL.md",
+    ".codex/agents/sdd-worker.toml",
+    ".agent/workflows/sdd-*.md",
+    ".agents/agents/sdd-*/agent.md",
+    "sdd/templates/*",
+    "sdd/WORKFLOW.md",
+    "sdd/CONVENTIONS.md",
+    ".claude/commands/remove-worktree.md",
+    ".agents/skills/remove-worktree/SKILL.md",
+    ".agent/workflows/remove-worktree.md",
 )
 _C11_KINDS: tuple[str, ...] = ("org-data", "claude-md-ref", "branch-literal")
 # C16: a monorepo source path — `packages/…`, `scripts/…`, `$CLAUDE_PROJECT_DIR/…` / `${CLAUDE_PROJECT_DIR…}/…`.

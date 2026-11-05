@@ -4,7 +4,7 @@ Subcommands: ``add`` / ``add-folder`` / ``list`` / ``show`` / ``search`` /
 ``toc`` / ``card`` / ``related`` / ``relate`` / ``communities`` /
 ``export-wiki`` / ``remove`` / ``mcp`` / ``locations`` (FEAT-533 adds
 ``related``/``relate``/``communities``/``export-wiki`` — see
-``docs/bookstore-graph.md``). Heavy parrot imports are deferred into
+``wiki/knowledge/bookstore-graph.md``). Heavy parrot imports are deferred into
 command bodies (the ``wiki/cli.py`` discipline) so ``bookstore --help``
 stays fast and the ``mcp`` path keeps stdout clean.
 """

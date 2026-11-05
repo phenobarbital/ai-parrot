@@ -120,6 +120,12 @@ Analyze the spec and identify atomic tasks:
 - Order tasks to respect implementation dependencies.
 - Aim for tasks completable in 1–4 hours each.
 
+**Documentation task (FEAT-801).** When the spec's `docs.policy` is `required`, emit exactly one
+task *Documentation — <pages>* that creates/updates the listed `wiki/` pages from
+`sdd/templates/techwiki-page.md`, `depends_on` every task that creates a symbol the pages document
+(last in the graph), validation command `parrot sdd techwiki check --spec <spec> --root .`,
+`parallel: true`. `none`/absent: no task.
+
 **Task graph rules (`depends_on`, `parallel`, `parallelism_notes`):**
 
 Every task runs in its own sub-worktree, dispatched by the `sdd-coder` engine as
@@ -591,7 +597,7 @@ Worktree: not created. /sdd-task produces versioned artifacts only — the
 
 Next:
   /sdd-start <task-id>        # creates the worktree, then begins the task
-  # or, unattended:  claude --agent sdd-worker --setting-sources project,local --model sonnet --verbose
+  # or, unattended:  parrot sdd launch worker FEAT-<NNN> --tmux --detach
 ```
 
 ## Reference

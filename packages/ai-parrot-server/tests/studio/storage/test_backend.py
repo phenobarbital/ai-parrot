@@ -78,14 +78,16 @@ def test_backend_resolution_matrix(setting, has_pool, state, expected):
     assert (reason is None) == (expected == "database")
 
 
-def test_required_schema_is_eight_whatever_the_store_switches(monkeypatch):
-    """D3: phase 2 ships in the release, so ``database`` needs 1-8 even with every switch on ``documentdb``."""
+def test_required_schema_is_nine_whatever_the_store_switches(monkeypatch):
+    """D3 + FEAT-794: ``database`` needs 1-9 (phase 2 and 0009 ship in the release) whatever the store switches say."""
     for name in ("BYOK_STORE", "VAULT_STORE", "TOOLKIT_OVERRIDES_STORE"):
         monkeypatch.delenv(name, raising=False)
-    assert REQ == 8
-    assert be._resolve("database", object(), _state(upto=8)) == ("database", None)
+    assert REQ == 9
+    assert be._resolve("database", object(), _state(upto=9)) == ("database", None)
+    backend, reason = be._resolve("database", object(), _state(upto=8))
+    assert backend == "unavailable" and "missing 9" in reason
     backend, reason = be._resolve("database", object(), _state(upto=5))
-    assert backend == "unavailable" and all(f"missing {v}" in reason for v in (6, 7, 8))
+    assert backend == "unavailable" and all(f"missing {v}" in reason for v in (6, 7, 8, 9))
 
 
 @pytest.mark.parametrize("setting,has_pool,state,expected", CASES)

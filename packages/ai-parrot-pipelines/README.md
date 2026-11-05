@@ -70,8 +70,8 @@ result = await pipeline.run("shelf_photo.jpg")
 ```
 
 Provide a complete, validated slots definition and rule bindings before a production run. See the
-[cycle reference](../../docs/pipelines/planogram-compliance-cycle.md) and the
-[migration runbook](../../docs/pipelines/planogram-cycle-migration.md).
+[cycle reference](https://github.com/phenobarbital/ai-parrot/wiki/Flows-Planogram-compliance-cycle-%28perceive-%E2%86%92-identify-%E2%86%92-compare%29) and the
+[migration runbook](https://github.com/phenobarbital/ai-parrot/wiki/Flows-Planogram-compliance-%E2%80%94-migrating-configurations-to-the-new-cycle-%28FEAT-574%2C-FEAT-612%29).
 
 ## Dependencies
 
@@ -83,7 +83,7 @@ Provide a complete, validated slots definition and rule bindings before a produc
 ## 1.1.0 breaking changes
 
 The removed detector APIs and required configuration migration are documented in the
-[migration runbook](../../docs/pipelines/planogram-cycle-migration.md).
+[migration runbook](https://github.com/phenobarbital/ai-parrot/wiki/Flows-Planogram-compliance-%E2%80%94-migrating-configurations-to-the-new-cycle-%28FEAT-574%2C-FEAT-612%29).
 
 ## License
 

@@ -13,6 +13,7 @@ from click.testing import CliRunner
 
 from parrot.cli import cli as devloop
 from parrot.flows.dev_loop import feature_launcher as launcher
+from parrot.sdd.scripts import worktree_sync
 
 _REAL_PREFLIGHT = launcher._preflight_sandbox
 
@@ -78,6 +79,119 @@ def test_resolve_feature_rejects_missing_or_ambiguous_keys(tmp_path: Path) -> No
     assert ambiguous.value.exit_code == 2
 
 
+def _brief_worktree(tmp_path: Path, slug: str = "fix-thing", key: str | None = None, name: str = "brief-wt") -> Path:
+    """Create a worktree directory holding one brief (index + frontmatter), as /sdd-brief leaves it."""
+    root = tmp_path / name
+    briefs = root / "sdd" / "briefs"
+    briefs.mkdir(parents=True)
+    (briefs / f"{slug}.index.json").write_text(
+        json.dumps(
+            {
+                "feature": slug,
+                "feature_id": f"BRIEF-{slug}",
+                "spec": f"sdd/briefs/{slug}.brief.md",
+                "type": "brief",
+                "tasks": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (briefs / f"{slug}.brief.md").write_text(
+        f"---\nkind: brief\nslug: {slug}\nkey: {key or slug}\n---\n\n# Brief\n", encoding="utf-8"
+    )
+    return root
+
+
+def _list_worktrees(monkeypatch: pytest.MonkeyPatch, *roots: Path) -> None:
+    """Script ``git worktree list --porcelain`` to report ``roots`` and leave other commands untouched."""
+    real = launcher._run
+
+    def fake_run(argv: list[str], *, cwd: Path, env: object = None) -> subprocess.CompletedProcess[str]:
+        if list(argv[:3]) == ["git", "worktree", "list"]:
+            return _result(
+                argv, stdout="".join(f"worktree {root}\nHEAD abc\nbranch refs/heads/x\n\n" for root in roots)
+            )
+        return real(argv, cwd=cwd) if env is None else real(argv, cwd=cwd, env=env)
+
+    monkeypatch.setattr(launcher, "_run", fake_run)
+
+
+@pytest.mark.parametrize("key", ["fix-thing", "FIX-THING", "BRIEF-fix-thing", "JIRA-77"])
+def test_resolve_feature_finds_a_brief_by_slug_id_or_frontmatter_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, key: str
+) -> None:
+    """A brief resolves to its worktree by slug, ``BRIEF-<slug>`` or frontmatter ``key:``, case-insensitively."""
+    primary = _primary(tmp_path)
+    brief = _brief_worktree(tmp_path, key="JIRA-77")
+    _list_worktrees(monkeypatch, primary, brief)
+    ref = launcher.resolve_feature(primary, key)
+    assert ref.is_brief
+    assert ref.worktree == str(brief)
+    assert ref.slug == "fix-thing"
+    assert ref.prompt_id == "fix-thing"
+    assert ref.index == "sdd/briefs/fix-thing.index.json"
+
+
+def test_resolve_feature_brief_missing_or_ambiguous_is_exit_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No brief, or the same brief in two worktrees, is a LaunchError(2) like an unresolved feature."""
+    primary = _primary(tmp_path)
+    first = _brief_worktree(tmp_path, name="wt-a")
+    second = _brief_worktree(tmp_path, name="wt-b")
+    _list_worktrees(monkeypatch, primary, first)
+    with pytest.raises(launcher.LaunchError) as missing:
+        launcher.resolve_feature(primary, "nope")
+    assert missing.value.exit_code == 2
+    _list_worktrees(monkeypatch, primary, first, second)
+    with pytest.raises(launcher.LaunchError) as ambiguous:
+        launcher.resolve_feature(primary, "fix-thing")
+    assert ambiguous.value.exit_code == 2
+
+
+def test_resolve_feature_prefers_feature_index_over_brief(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Feature resolution is unchanged: a feature index wins and carries no worktree."""
+    primary = _primary(tmp_path)
+    _list_worktrees(monkeypatch, primary, _brief_worktree(tmp_path, slug="sandbox"))
+    ref = launcher.resolve_feature(primary, "sandbox")
+    assert ref.feature_id == "FEAT-768"
+    assert not ref.is_brief
+    assert ref.prompt_id == "FEAT-768"
+
+
+def test_launch_brief_uses_existing_worktree_and_slug_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A brief launch reuses its worktree (no ensure_feature_worktree) and starts the worker with ``run <slug>``."""
+    primary = _primary(tmp_path)
+    brief = _brief_worktree(tmp_path)
+    captured: dict[str, object] = {}
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    _list_worktrees(monkeypatch, primary, brief)
+
+    def forbidden(primary: Path, ref: object) -> Path:
+        raise AssertionError("a brief must never get a provisioned worktree")
+
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", forbidden)
+    monkeypatch.setattr(launcher, "prepare_upstream", lambda path: "launch-worker: ready")
+    monkeypatch.setattr(worktree_sync, "stale_base_summary", lambda wt, base=None: "base dev: up to date")
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    monkeypatch.setattr(
+        launcher.native_claude_sandbox,
+        "launch_worker",
+        lambda argv, **kwargs: captured.update(argv=argv, **kwargs) or 0,
+    )
+    result = launcher.launch(
+        "BRIEF-fix-thing",
+        tmux=False,
+        detach=False,
+        sandbox="legacy",
+        allowed_domains=(),
+        no_upstream=False,
+        claude_args=(),
+    )
+    assert result == 0
+    assert captured["cwd"] == brief
+    assert captured["initial_prompt"] == "run fix-thing"
+
+
 def test_prepare_upstream_divergence_never_mutates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Divergence is reported for reconciliation rather than merged or pushed."""
     worktree = tmp_path / "worktree"
@@ -116,6 +230,7 @@ def test_launch_non_tmux_passes_worktree_and_worker_prompt(tmp_path: Path, monke
     monkeypatch.setenv("PWD", str(primary))
     monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: worktree)
     monkeypatch.setattr(launcher, "prepare_upstream", lambda path: "launch-worker: ready")
+    monkeypatch.setattr(worktree_sync, "stale_base_summary", lambda wt, base=None: "base dev: up to date")
     monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
     monkeypatch.setattr(
         launcher.native_claude_sandbox,
@@ -137,6 +252,140 @@ def test_launch_non_tmux_passes_worktree_and_worker_prompt(tmp_path: Path, monke
     assert captured["cwd"] == worktree
     assert captured["initial_prompt"] == "run FEAT-768"
     assert captured["argv"] == ["--sandbox-allow-domain", "api.example.com", "--", "--verbose"]
+
+
+def _advisory_launch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, events: list[str], summary: object, *, no_upstream: bool = False
+) -> None:
+    """Run a non-tmux launch recording upstream/worker calls into ``events`` (summary records itself)."""
+    primary = _primary(tmp_path)
+    worktree = tmp_path / "feature"
+    worktree.mkdir()
+    captured: dict[str, object] = {}
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: worktree)
+    monkeypatch.setattr(launcher, "prepare_upstream", lambda path: events.append("upstream") or "launch-worker: ready")
+    monkeypatch.setattr(worktree_sync, "stale_base_summary", summary)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    monkeypatch.setattr(
+        launcher.native_claude_sandbox,
+        "launch_worker",
+        lambda argv, **kwargs: events.append("worker") or captured.update(kwargs) or 0,
+    )
+    result = launcher.launch(
+        "sandbox",
+        tmux=False,
+        detach=False,
+        sandbox="legacy",
+        allowed_domains=(),
+        no_upstream=no_upstream,
+        claude_args=(),
+    )
+    assert result == 0
+    assert captured["cwd"] == worktree
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["base dev: 3 commit(s) ahead of this worktree", "stale-base check skipped: origin remote is unavailable"],
+)
+def test_launch_prints_stale_base_advisory_between_upstream_and_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], text: str
+) -> None:
+    """The advisory runs after prepare_upstream, before the worker; a skipped result still launches."""
+    events: list[str] = []
+
+    def summary(wt: Path, base: str | None = None) -> str:
+        events.append("summary")
+        return text
+
+    _advisory_launch(tmp_path, monkeypatch, events, summary)
+    assert events == ["upstream", "summary", "worker"]
+    assert text in capsys.readouterr().err
+
+
+def test_launch_no_upstream_skips_stale_base_advisory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--no-upstream bypasses both the upstream preparation and the stale-base check."""
+
+    def forbidden(wt: Path, base: str | None = None) -> str:
+        raise AssertionError("stale-base check must be skipped with --no-upstream")
+
+    events: list[str] = []
+    _advisory_launch(tmp_path, monkeypatch, events, forbidden, no_upstream=True)
+    assert events == ["worker"]
+    assert "stale-base" not in capsys.readouterr().err
+
+
+def test_launch_no_gh_token_reaches_launch_worker_directly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """gh_token=False forwards the launcher-owned flag on the direct path."""
+    primary = _primary(tmp_path)
+    worktree = tmp_path / "feature"
+    worktree.mkdir()
+    captured: dict[str, object] = {}
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: worktree)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    monkeypatch.setattr(
+        launcher.native_claude_sandbox, "launch_worker", lambda argv, **kwargs: captured.update(argv=argv) or 0
+    )
+    kwargs = dict(tmux=False, detach=False, sandbox="legacy", allowed_domains=(), no_upstream=True, claude_args=())
+    assert launcher.launch("sandbox", gh_token=False, **kwargs) == 0
+    assert captured["argv"] == ["--no-gh-token"]
+    assert launcher.launch("sandbox", **kwargs) == 0
+    assert captured["argv"] == []
+
+
+def test_bad_primary_launch_config_fails_before_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A malformed primary-checkout config is a LaunchError(2) raised before tmux/launch starts."""
+    primary = _primary(tmp_path)
+    (primary / "pyproject.toml").write_text('[tool.parrot.sdd]\nsandbox_allowed_domains = ["https://github.com"]\n')
+    worktree = tmp_path / "feature"
+    worktree.mkdir()
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: worktree)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    with pytest.raises(launcher.LaunchError) as exc:
+        launcher.launch(
+            "sandbox", tmux=False, detach=False, sandbox="legacy", allowed_domains=(), no_upstream=True, claude_args=()
+        )
+    assert exc.value.exit_code == 2
+
+
+def test_tmux_child_receives_no_gh_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tmux child command line carries --no-gh-token, and main() forwards it to launch_worker."""
+    primary = _primary(tmp_path)
+    worktree = tmp_path / "feature"
+    worktree.mkdir()
+    calls: list[list[str]] = []
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: worktree)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/tmux" if name == "tmux" else None)
+    monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: "linux")
+    monkeypatch.setattr(launcher, "_run", _tmux_runner(calls, panes=["0|||claude"]))
+    launcher.launch(
+        "FEAT-768",
+        tmux=True,
+        detach=True,
+        sandbox="legacy",
+        allowed_domains=(),
+        no_upstream=True,
+        claude_args=(),
+        gh_token=False,
+    )
+    assert "--no-gh-token" in calls[0][calls[0].index("--in-session") :]
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(
+        launcher.native_claude_sandbox, "launch_worker", lambda argv, **kwargs: seen.update(argv=argv) or 0
+    )
+    assert launcher.main(["--in-session", "FEAT-768", "--cwd", str(worktree), "--no-gh-token"]) == 0
+    assert seen["argv"] == ["--no-gh-token"]
 
 
 def test_tmux_new_session_carries_environment_and_detaches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -707,13 +956,28 @@ def test_tmux_client_and_e_pairs_use_the_pre_import_environment(
     """Variables only in the loaded os.environ never reach the tmux client env or its -e pairs."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-from-dotenv")
     monkeypatch.setenv("PARROT_SDD_FROM_DOTENV", "leak")
-    base_env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "PARROT_SDD_OPERATOR": "kept"}
+    base_env = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "DISPLAY": ":7",
+        "PARROT_SDD_OPERATOR": "kept",
+        "PARROT_SDD_NOTIFY_HELPER": "/stale/helper.py",
+    }
     seen = _tmux_new_session(tmp_path, monkeypatch, base_env=base_env)
     assert "ANTHROPIC_API_KEY" not in seen["env"] and "PARROT_SDD_FROM_DOTENV" not in seen["env"]
     assert seen["env"]["PARROT_SDD_OPERATOR"] == "kept"
     assert seen["env"]["PARROT_SDD_SANDBOX_MODE"] == "preferred"
     assert "PARROT_SDD_OPERATOR=kept" in seen["argv"] and "PARROT_SDD_SANDBOX_MODE=preferred" in seen["argv"]
     assert not any("FROM_DOTENV" in item or "sk-from-dotenv" in item for item in seen["argv"])
+    assignments = dict(item.split("=", 1) for item in seen["argv"] if item.startswith("PARROT_SDD_"))
+    assert assignments["PARROT_SDD_NOTIFY_FEATURE"] == "FEAT-768"
+    assert assignments["PARROT_SDD_NOTIFY_SLUG"] == "sandbox"
+    assert json.loads(assignments["PARROT_SDD_NOTIFY_DESKTOP"]) == {
+        "PATH": "/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "DISPLAY": ":7",
+    }
+    assert "PARROT_SDD_NOTIFY_HELPER" not in assignments
 
 
 def test_non_tmux_launch_hands_the_pre_import_environment_to_launch_worker(
@@ -738,7 +1002,7 @@ def test_non_tmux_launch_hands_the_pre_import_environment_to_launch_worker(
         allowed_domains=(),
         no_upstream=True,
         claude_args=(),
-        base_env={"PATH": "/usr/bin"},
+        base_env={"PATH": "/usr/bin", "PARROT_SDD_NOTIFY_FEATURE": "stale", "PARROT_SDD_NOTIFY_HELPER": "stale"},
     )
     assert captured["base_env"] == {"PATH": "/usr/bin", "PARROT_SDD_SANDBOX_MODE": "legacy"}
 
@@ -877,3 +1141,65 @@ def test_launch_help_lists_three_verbs() -> None:
     for verb in ("worker", "brief", "fix"):
         assert verb in result.output
     assert "Usage" in CliRunner().invoke(devloop, ["devloop", "launch-worker"]).output
+
+
+def test_launch_enables_push_protection_before_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """FEAT-813: the host provisions the sandbox no_push guard after the advisory, before the worker."""
+    from parrot.sdd.scripts import worktree_push_protection
+
+    events: list[str] = []
+    monkeypatch.setattr(
+        worktree_push_protection, "enable", lambda wt: events.append("protect") or "push protection enabled"
+    )
+
+    def summary(wt: Path, base: str | None = None) -> str:
+        events.append("summary")
+        return "base dev: up to date"
+
+    _advisory_launch(tmp_path, monkeypatch, events, summary)
+    assert events == ["upstream", "summary", "protect", "worker"]
+    assert "launch-worker: push protection enabled" in capsys.readouterr().err
+
+
+def test_launch_push_protection_refusal_is_not_fatal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refused enable is reported and the worker still starts (no_upstream does not skip it)."""
+    from parrot.sdd.scripts import worktree_push_protection
+
+    def refuse(wt: Path) -> str:
+        raise worktree_sync.SyncError(worktree_sync.EXIT_TARGET, "common core.bare=true")
+
+    monkeypatch.setattr(worktree_push_protection, "enable", refuse)
+    events: list[str] = []
+    _advisory_launch(tmp_path, monkeypatch, events, lambda wt, base=None: "unused", no_upstream=True)
+    assert events == ["worker"]
+    assert "push protection skipped: common core.bare=true" in capsys.readouterr().err
+
+
+def test_tmux_launch_enables_push_protection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tmux path provisions the guard on the host before creating the session."""
+    from parrot.sdd.scripts import worktree_push_protection
+
+    primary = _primary(tmp_path)
+    worktree = tmp_path / "feature"
+    worktree.mkdir()
+    calls: list[list[str]] = []
+    protected: list[Path] = []
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda primary, ref: worktree)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/tmux" if name == "tmux" else None)
+    monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: "linux")
+    monkeypatch.setattr(launcher, "_run", _tmux_runner(calls, panes=["0|||claude"]))
+    monkeypatch.setattr(
+        worktree_push_protection, "enable", lambda wt: protected.append(wt) or "push protection enabled"
+    )
+    launcher.launch(
+        "FEAT-768", tmux=True, detach=True, sandbox="legacy", allowed_domains=(), no_upstream=True, claude_args=()
+    )
+    assert protected == [worktree]
+    assert calls[0][:2] == ["tmux", "new-session"]

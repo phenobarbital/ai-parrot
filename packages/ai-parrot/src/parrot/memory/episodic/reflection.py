@@ -91,7 +91,7 @@ class ReflectionEngine:
         self,
         llm_client: AbstractClient | None = None,
         llm_provider: str = "google",
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-3.8-flash",
         fallback_to_heuristic: bool = True,
     ) -> None:
         self._llm_client = llm_client

@@ -17,7 +17,7 @@ navigator-auth's Identity Vault (``auth.user_identities``), written by
 ``JiraOAuthManager``'s credential sink, with Redis as the hot cache
 (FEAT-735). Keys written before that change are inert and were deliberately
 left in place. Do not add a Jira path back here — see
-``docs/auth/jira-credential-ownership.md``.
+``wiki/integrations/auth/jira-credential-ownership.md``.
 """
 
 from __future__ import annotations

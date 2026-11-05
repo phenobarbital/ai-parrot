@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -19,6 +20,15 @@ def scratch_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "claude-scratch"
     monkeypatch.setattr(policy, "CLAUDE_SCRATCH_ROOT", root)
     return root
+
+
+_REAL_WARM_TIKTOKEN_CACHE = native.warm_tiktoken_cache
+
+
+@pytest.fixture(autouse=True)
+def no_tiktoken_warmup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep launcher tests off the network; the warm-up has its own tests below."""
+    monkeypatch.setattr(native, "warm_tiktoken_cache", lambda target, environ: None)
 
 
 @pytest.fixture
@@ -348,6 +358,300 @@ def test_launch_worker_uses_requested_cwd_and_final_prompt(
     assert command[-2] == "--verbose"
 
 
+_SECRET = "ghp_SECRET_TOKEN_VALUE"
+
+
+def _launch_harness(
+    linked: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    primary_toml: str | None,
+    worktree_toml: str | None = None,
+) -> tuple[Path, dict[str, object]]:
+    """Wire launch_worker to a fake claude and record the plan domains, exec command and env."""
+    feature, main = linked
+    if primary_toml is not None:
+        (main / "pyproject.toml").write_text(primary_toml)
+    if worktree_toml is not None:
+        (feature / "pyproject.toml").write_text(worktree_toml)
+    seen: dict[str, object] = {"gh_calls": 0, "exec": None}
+
+    def fake_plan(cwd: Path, *, allowed_domains=()):  # noqa: ANN001, ANN202
+        seen["domains"] = list(allowed_domains)
+        return "required", False, "", {}
+
+    monkeypatch.setattr(native.shutil, "which", lambda name: f"/usr/bin/{name}" if name in ("claude", "gh") else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", main))
+    monkeypatch.setattr(native, "plan_native_launch", fake_plan)
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: feature / "cache")
+    monkeypatch.setattr(native.os, "chdir", lambda cwd: None)
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: seen.__setitem__("exec", args))
+    monkeypatch.delenv(native.MODE_ENV, raising=False)
+    return feature, seen
+
+
+def _fake_gh(
+    monkeypatch: pytest.MonkeyPatch, seen: dict[str, object], *, code: int = 0, out: str = _SECRET + "\n"
+) -> None:
+    def run(cmd, **kwargs):  # noqa: ANN001, ANN003, ANN202
+        seen["gh_calls"] = int(seen["gh_calls"]) + 1  # type: ignore[call-overload]
+        return subprocess.CompletedProcess(cmd, code, stdout=out, stderr="")
+
+    monkeypatch.setattr(native.subprocess, "run", run)
+
+
+_CONFIG = 'tool = {parrot = {sdd = {sandbox_allowed_domains = ["api.github.com"], gh_token = true}}}\n'
+
+
+def test_launch_config_domains_union_with_flags(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Primary-checkout config domains reach the plan, unioned order-stably with flags."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=_CONFIG)
+    _fake_gh(monkeypatch, seen)
+    args = ["--sandbox-allow-domain", "pypi.org", "--sandbox-allow-domain", "API.github.com"]
+    assert native.launch_worker(args, cwd=feature) == 1
+    assert seen["domains"] == ["api.github.com", "pypi.org"]
+
+
+def test_worktree_config_is_ignored(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """A worktree pyproject (session-writable) never widens egress."""
+    feature, seen = _launch_harness(
+        linked,
+        monkeypatch,
+        primary_toml=None,
+        worktree_toml='tool = {parrot = {sdd = {sandbox_allowed_domains = ["evil.example.com"], gh_token = true}}}\n',
+    )
+    _fake_gh(monkeypatch, seen)
+    native.launch_worker([], cwd=feature)
+    assert seen["domains"] == []
+    assert seen["gh_calls"] == 0
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'sandbox_allowed_domains = "api.github.com"',
+        'sandbox_allowed_domains = ["https://github.com"]',
+        "gh_token = 1",
+        "sandbox_allowed_domains = [",
+    ],
+)
+def test_malformed_launch_config_exits_2(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], body: str
+) -> None:
+    """Bad config refuses to launch claude and names the file."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=f"[tool.parrot.sdd]\n{body}\n")
+    assert native.launch_worker([], cwd=feature) == 2
+    assert seen["exec"] is None
+    assert "Invalid sandbox launch config" in capsys.readouterr().err
+
+
+def test_gh_token_injected_never_leaked(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The host-resolved token reaches only the exec env, never argv or output."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=_CONFIG)
+    _fake_gh(monkeypatch, seen)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    native.launch_worker([], cwd=feature)
+    _path, command, env = seen["exec"]  # type: ignore[misc]
+    assert env["GH_TOKEN"] == _SECRET
+    assert all(_SECRET not in part for part in command)
+    captured = capsys.readouterr()
+    assert _SECRET not in captured.out + captured.err
+
+
+def test_existing_gh_token_kept_and_gh_not_called(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """A GH_TOKEN already in the environment wins."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=_CONFIG)
+    _fake_gh(monkeypatch, seen)
+    monkeypatch.setenv("GH_TOKEN", "preset")
+    native.launch_worker([], cwd=feature)
+    assert seen["gh_calls"] == 0
+    assert seen["exec"][2]["GH_TOKEN"] == "preset"  # type: ignore[index]
+
+
+def test_no_gh_token_flag_skips_resolution(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """--no-gh-token is launcher-owned: no token, no gh call, not forwarded to claude."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=_CONFIG)
+    _fake_gh(monkeypatch, seen)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    native.launch_worker(["--no-gh-token"], cwd=feature)
+    assert seen["gh_calls"] == 0
+    assert "GH_TOKEN" not in seen["exec"][2]  # type: ignore[index]
+    assert "--no-gh-token" not in seen["exec"][1]  # type: ignore[index]
+
+
+@pytest.mark.parametrize("failure", ["missing", "nonzero", "timeout", "empty"])
+def test_gh_token_failure_warns_and_launches(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str
+) -> None:
+    """Any gh failure warns on stderr and proceeds without GH_TOKEN."""
+    feature, seen = _launch_harness(linked, monkeypatch, primary_toml=_CONFIG)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    if failure == "missing":
+        monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    elif failure == "nonzero":
+        _fake_gh(monkeypatch, seen, code=1, out=_SECRET)
+    elif failure == "empty":
+        _fake_gh(monkeypatch, seen, out="  \n")
+    else:
+
+        def boom(cmd, **kwargs):  # noqa: ANN001, ANN003, ANN202
+            raise subprocess.TimeoutExpired(cmd, 10)
+
+        monkeypatch.setattr(native.subprocess, "run", boom)
+    native.launch_worker([], cwd=feature)
+    captured = capsys.readouterr()
+    assert "WARNING gh_token is enabled but no token could be obtained" in captured.err
+    assert _SECRET not in captured.out + captured.err
+    assert seen["exec"] is not None
+    assert "GH_TOKEN" not in seen["exec"][2]  # type: ignore[index]
+
+
+@pytest.mark.parametrize(
+    ("mode", "degraded"),
+    [("required", False), ("preferred", True), ("off", False), ("legacy", False)],
+)
+def test_notification_settings_preserve_policy(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, mode: str, degraded: bool
+) -> None:
+    """A marked tmux feature adds one Stop command without changing compiled policy."""
+    feature, _main = linked
+    captured: list[tuple[object, ...]] = []
+    settings = {
+        "sandbox": {"enabled": mode != "legacy", "network": {"allowAllUnixSockets": False}},
+        "hooks": {
+            "PreToolUse": [{"hooks": [{"type": "command", "command": "pre", "timeout": 10}]}],
+            "Stop": [{"hooks": [{"type": "command", "command": "existing", "timeout": 9}]}],
+        },
+    }
+
+    def configure(cache: Path, *, worktree: Path, env: dict[str, str]) -> str:
+        assert cache == feature / "cache" and worktree == feature
+        assert env["TMUX_PANE"] == "%4"
+        return "helper --hook"
+
+    class Loader:
+        def exec_module(self, module: object) -> None:
+            module.configure_notification = configure
+
+    spec = type("Spec", (), {"loader": Loader()})()
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: (mode, degraded, "", settings))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: feature / "cache")
+    monkeypatch.setattr(native.importlib.util, "spec_from_file_location", lambda *args: spec)
+    monkeypatch.setattr(native.importlib.util, "module_from_spec", lambda spec: type("Helper", (), {})())
+    monkeypatch.setattr(native.os, "chdir", lambda cwd: captured.append(("chdir", cwd)))
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: captured.append(args))
+
+    native.launch_worker(
+        [],
+        cwd=feature,
+        base_env={
+            "TMUX_PANE": "%4",
+            "PARROT_SDD_NOTIFY_FEATURE": "FEAT-768",
+            "PARROT_SDD_NOTIFY_SLUG": "sandbox",
+            "PARROT_SDD_NOTIFY_DESKTOP": "{}",
+        },
+    )
+    command = captured[1][1]
+    compiled = json.loads(command[command.index("--settings") + 1])
+    environment = captured[1][2]
+    assert compiled["sandbox"] == {"enabled": mode != "legacy", "network": {"allowAllUnixSockets": False}}
+    assert compiled["hooks"]["PreToolUse"] == settings["hooks"]["PreToolUse"]
+    assert compiled["hooks"]["Stop"] == [
+        {"hooks": [{"type": "command", "command": "existing", "timeout": 9}]},
+        {"hooks": [{"type": "command", "command": "helper --hook", "timeout": 5}]},
+    ]
+    assert environment["PARROT_SDD_NOTIFY_PYTHON"] == str(Path(native.sys.executable).absolute())
+    assert environment["PARROT_SDD_NOTIFY_HELPER"] == str(
+        Path(native.__file__).resolve().with_name("worker_notification.py")
+    )
+
+
+@pytest.mark.parametrize(
+    "base_env",
+    [
+        {
+            "PARROT_SDD_NOTIFY_FEATURE": "FEAT-768",
+            "PARROT_SDD_NOTIFY_SLUG": "sandbox",
+            "PARROT_SDD_NOTIFY_DESKTOP": "{}",
+        },
+        {
+            "TMUX_PANE": "%4",
+            "PARROT_SDD_NOTIFY_FEATURE": "",
+            "PARROT_SDD_NOTIFY_SLUG": "sandbox",
+            "PARROT_SDD_NOTIFY_DESKTOP": "{}",
+        },
+    ],
+)
+def test_notification_requires_tmux_and_complete_metadata(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, base_env: dict[str, str]
+) -> None:
+    """Missing tmux state or identity cannot load a helper or retain stale exports."""
+    feature, _main = linked
+    captured: list[tuple[object, ...]] = []
+    base_env.update({"PARROT_SDD_NOTIFY_PYTHON": "/stale/python", "PARROT_SDD_NOTIFY_HELPER": "/stale/helper"})
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", {"hooks": {}}))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: feature / "cache")
+    monkeypatch.setattr(
+        native.importlib.util, "spec_from_file_location", lambda *args: pytest.fail("metadata must gate helper loading")
+    )
+    monkeypatch.setattr(native.os, "chdir", lambda cwd: captured.append(("chdir", cwd)))
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: captured.append(args))
+
+    native.launch_worker([], cwd=feature, base_env=base_env)
+    environment = captured[1][2]
+    assert "PARROT_SDD_NOTIFY_PYTHON" not in environment
+    assert "PARROT_SDD_NOTIFY_HELPER" not in environment
+
+
+def test_notification_setup_failure_does_not_fail_launch(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invalid metadata and helper loading failures keep the worker executable."""
+    feature, _main = linked
+    captured: list[tuple[object, ...]] = []
+    settings = {"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "pre", "timeout": 10}]}]}}
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (feature, feature / ".git", feature))
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("required", False, "", settings))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: feature / "cache")
+    monkeypatch.setattr(
+        native.importlib.util, "spec_from_file_location", lambda *args: (_ for _ in ()).throw(OSError("gone"))
+    )
+    monkeypatch.setattr(native.os, "chdir", lambda cwd: captured.append(("chdir", cwd)))
+    monkeypatch.setattr(native.os, "execvpe", lambda *args: captured.append(args))
+
+    native.launch_worker(
+        [],
+        cwd=feature,
+        initial_prompt="run FEAT-768",
+        base_env={
+            "TMUX_PANE": "%4",
+            "PARROT_SDD_NOTIFY_FEATURE": "FEAT-768",
+            "PARROT_SDD_NOTIFY_SLUG": "sandbox",
+            "PARROT_SDD_NOTIFY_DESKTOP": "{}",
+            "PARROT_SDD_NOTIFY_PYTHON": "/stale/python",
+            "PARROT_SDD_NOTIFY_HELPER": "/stale/helper",
+        },
+    )
+    command = captured[1][1]
+    compiled = json.loads(command[command.index("--settings") + 1])
+    environment = captured[1][2]
+    assert compiled == settings
+    assert "PARROT_SDD_NOTIFY_PYTHON" not in environment
+    assert "PARROT_SDD_NOTIFY_HELPER" not in environment
+    assert command[-1] == "run FEAT-768"
+
+
 @pytest.mark.parametrize(
     "bad",
     [
@@ -398,16 +702,23 @@ def test_write_matrix_positive_and_negative(linked: tuple[Path, Path], monkeypat
 
 
 def test_task_cwd_prefix_rules(linked: tuple[Path, Path]) -> None:
-    """Only a literal absolute prefix selects a sibling linked worktree."""
+    """A literal absolute prefix selects a sibling linked worktree; a relative one resolves against the session."""
     feature, main = linked
     pool = main / ".claude" / "worktrees" / "pool"
     assert native.native_task_cwd(feature, f"cd {pool} && pytest -q") == pool.resolve()
     assert native.native_task_cwd(feature, "pytest -q") == feature
+    # issue:2860a2723bad — `cd packages && …` stays inside the session worktree, so the hook roots there
+    # instead of denying the command with "Native task cwd must be an absolute path".
+    assert native.native_task_cwd(feature, "cd packages && python3 - <<'PY'\nimport re\nPY") == feature.resolve()
+    assert native.native_task_cwd(feature, "cd ./packages/x/src && pytest -q") == feature.resolve()
+    assert native.native_task_cwd(feature, "cd ../pool && pytest -q") == pool.resolve()
     for command in (
-        "cd relative && pytest -q",
         f"cd '{pool}' && pytest -q",
+        "cd $HOME && pytest -q",
         "cd /tmp && pytest -q",
         "cd /tmp",
+        "cd .. && pytest -q",  # the primary checkout's worktree directory
+        "cd ../../.. && pytest -q",  # the primary checkout itself
     ):
         with pytest.raises(ValueError):
             native.native_task_cwd(feature, command)
@@ -426,6 +737,7 @@ def test_environment_does_not_mutate_os_environ(
     assert environment["PYTHONPATH"].split(os.pathsep)[0] == str(feature / "packages" / "x" / "src")
     assert Path(environment["XDG_CACHE_HOME"]).is_relative_to(scratch_root)
     assert Path(environment["UV_CACHE_DIR"]).is_relative_to(scratch_root)
+    assert Path(environment["TIKTOKEN_CACHE_DIR"]).is_relative_to(scratch_root)
     assert os.environ[native.CACHE_DIR_ENV] == str(scratch_root / "configured")
     assert {key: value for key, value in os.environ.items() if key != native.CACHE_DIR_ENV} == {
         key: value for key, value in before.items() if key != native.CACHE_DIR_ENV
@@ -475,13 +787,84 @@ def test_script_mode_sibling_import_resolves_inside_sdd_scripts(tmp_path: Path) 
 
     dev_loop = Path(native.__file__).resolve().parents[2] / "flows" / "dev_loop"
     code = (
-        "import sys; sys.path.insert(0, sys.argv[1]); "
+        "import importlib.util, sys; sys.path.insert(0, sys.argv[1]); "
         "import native_claude_sandbox as n, worktree_environment as w; "
         "assert 'parrot' not in sys.modules, 'parrot'; "
         "assert n.__file__.endswith('sdd/scripts/native_claude_sandbox.py'), n.__file__; "
-        "assert n._we is w or n._we.__file__.endswith('worktree_environment.py'); print('ok')"
+        "assert n._we is w or n._we.__file__.endswith('worktree_environment.py'); "
+        "p = __import__('pathlib').Path(n.__file__).with_name('worker_notification.py'); "
+        "s = importlib.util.spec_from_file_location('worker_notification', p); "
+        "m = importlib.util.module_from_spec(s); s.loader.exec_module(m); "
+        "assert callable(m.configure_notification); assert 'parrot' not in sys.modules; print('ok')"
     )
     result = subprocess.run(
-        [sys.executable, "-S", "-c", code, str(dev_loop)], capture_output=True, text=True, env={}, cwd=tmp_path, check=False
+        [sys.executable, "-S", "-c", code, str(dev_loop)],
+        capture_output=True,
+        text=True,
+        env={},
+        cwd=tmp_path,
+        check=False,
     )
     assert result.stdout.strip() == "ok", result.stderr
+
+
+def test_tiktoken_cache_is_shared_not_per_session(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    """The tiktoken cache survives the launcher reaping per-session caches."""
+    feature, _main = linked
+    session = scratch_root / "parrot-sdd-cache" / "8c1b7f0e-6a4e-4d8a-9b1e-2f6c5d4a3b21"
+    monkeypatch.setenv(native.CACHE_DIR_ENV, str(session))
+    environment = native.native_command_environment(feature)
+    cache = Path(environment["TIKTOKEN_CACHE_DIR"])
+    assert cache == native.tiktoken_cache_dir()
+    assert not cache.is_relative_to(session)
+    assert cache.parent.name.startswith("shared-")
+
+
+def test_warm_tiktoken_cache_copies_host_cache_without_download(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Encodings already cached on the host are copied; nothing is downloaded."""
+    host_tmp = tmp_path / "host-tmp"
+    host_cache = host_tmp / "data-gym-cache"
+    host_cache.mkdir(parents=True)
+    encoding = "9b5ad71b2ce5302211f9c61530b329a4922fc6a4"
+    (host_cache / encoding).write_bytes(b"encoding")
+    (host_cache / "notes.txt").write_text("not an encoding", encoding="utf-8")
+    (host_cache / ("a" * 40)).symlink_to(host_cache / "notes.txt")
+
+    def no_download(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("must not download when the host cache is seeded")
+
+    monkeypatch.setattr(native.subprocess, "run", no_download)
+    target = tmp_path / "sandbox-cache"
+    _REAL_WARM_TIKTOKEN_CACHE(target, {"TMPDIR": str(host_tmp)})
+    assert sorted(entry.name for entry in target.iterdir()) == [encoding]
+    assert (target / encoding).read_bytes() == b"encoding"
+
+
+def test_warm_tiktoken_cache_downloads_into_target_when_host_cache_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no host cache, the host downloads straight into the sandbox cache, bounded by a timeout."""
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(native.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(native.subprocess, "run", lambda argv, **kwargs: calls.append({"argv": argv, **kwargs}))
+    target = tmp_path / "sandbox-cache"
+    _REAL_WARM_TIKTOKEN_CACHE(target, {"TMPDIR": str(tmp_path / "empty-tmp")})
+    assert len(calls) == 1
+    assert calls[0]["env"]["TIKTOKEN_CACHE_DIR"] == str(target)  # type: ignore[index]
+    assert calls[0]["timeout"] == native._TIKTOKEN_WARM_TIMEOUT_S
+    assert "cl100k_base" in calls[0]["argv"][-1]  # type: ignore[index]
+
+
+def test_warm_tiktoken_cache_never_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A slow or failing download leaves the cache empty instead of failing the launch."""
+
+    def timeout(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.TimeoutExpired(cmd="tiktoken", timeout=1)
+
+    monkeypatch.setattr(native.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(native.subprocess, "run", timeout)
+    _REAL_WARM_TIKTOKEN_CACHE(tmp_path / "sandbox-cache", {"TMPDIR": str(tmp_path / "empty-tmp")})

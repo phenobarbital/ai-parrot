@@ -1,6 +1,6 @@
 from pathlib import Path
-from typing import List, Union, Optional
-from enum import Enum, EnumMeta
+from typing import List, Union
+from enum import Enum
 from pydantic import BaseModel, Field
 from PIL import Image
 from .abstract import ImagePlugin
@@ -52,7 +52,7 @@ class ClassificationPlugin(ImagePlugin):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._model_name: str = kwargs.get("model_name", "gemini-2.5-flash")
+        self._model_name: str = kwargs.get("model_name", "gemini-3.8-flash")
         self.prompt: List[str] = kwargs.get("prompt", DEFAULT_PROMPT)
         self.confidence: float = kwargs.get("confidence", 0.5)
         self._classification_model = kwargs.get(

@@ -117,7 +117,7 @@ def test_skill_sdd_done_runner_rows(rel):
 
 
 def test_validation_runners_doc_exists():
-    assert (ROOT / "docs/dev_loop/validation-runners.md").exists()
+    assert (ROOT / "wiki/sdd-tooling/dev_loop/validation-runners.md").exists()
 
 
 @pytest.mark.parametrize("rel", VALIDATION_RUNNER_FILES)

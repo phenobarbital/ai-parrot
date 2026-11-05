@@ -119,8 +119,8 @@ async def example_agent_integration():
             "and schedule calendar events."
         ),
         tools=o365_tools,  # Pass tools directly
-        llm_client='google',
-        model='gemini-2.5-flash'
+        llm_client="google",
+        model="gemini-3.8-flash",
     )
 
     # Now the agent can use the tools

@@ -264,7 +264,7 @@ class Composer(TextArea):
         self._completions = completions
         self._history_pos: Optional[int] = None  # None = editing a fresh entry
 
-    def _on_key(self, event: events.Key) -> None:  # type: ignore[override]
+    async def _on_key(self, event: events.Key) -> None:  # type: ignore[override]
         if event.key == "enter":
             event.prevent_default()
             event.stop()
@@ -313,7 +313,7 @@ class Composer(TextArea):
             if len(matches) == 1:
                 self.load_text(matches[0])
             return
-        super()._on_key(event)
+        await super()._on_key(event)
 
 
 class StatusBar(Static):

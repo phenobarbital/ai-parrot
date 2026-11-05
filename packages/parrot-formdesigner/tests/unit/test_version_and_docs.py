@@ -7,7 +7,7 @@ from packaging.version import Version
 
 import parrot_formdesigner.version as v
 
-GUIDE = Path(__file__).parents[4] / "docs" / "migration" / "feat-421-forms-tenant-in-url.md"
+GUIDE = Path(__file__).parents[4] / "wiki" / "migration" / "feat-421-forms-tenant-in-url.md"
 
 
 def test_version_bumped() -> None:

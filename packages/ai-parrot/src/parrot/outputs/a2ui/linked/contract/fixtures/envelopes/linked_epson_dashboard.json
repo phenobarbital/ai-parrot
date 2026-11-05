@@ -25,6 +25,13 @@
       "component": "KPICard",
       "id": "kpi_visits",
       "label": "Total visits",
+      "metadata": {
+        "extensions": {
+          "parrot_optional": [
+            "/kpis/rows/0/visits"
+          ]
+        }
+      },
       "value": {
         "path": "/kpis/rows/0/visits"
       }
@@ -33,6 +40,13 @@
       "component": "KPICard",
       "id": "kpi_stores",
       "label": "Stores visited",
+      "metadata": {
+        "extensions": {
+          "parrot_optional": [
+            "/kpis/rows/0/store_id"
+          ]
+        }
+      },
       "value": {
         "path": "/kpis/rows/0/store_id"
       }
@@ -42,6 +56,13 @@
       "format": "percent",
       "id": "kpi_attainment",
       "label": "% attainment",
+      "metadata": {
+        "extensions": {
+          "parrot_optional": [
+            "/kpis/rows/0/attainment_pct"
+          ]
+        }
+      },
       "value": {
         "path": "/kpis/rows/0/attainment_pct"
       }

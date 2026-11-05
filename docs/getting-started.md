@@ -142,7 +142,7 @@ Instead of a per-project venv you can install AI-Parrot once per machine. One co
 > navigator-api, navigator-auth) publish no arm64 wheel, so the install compiles them and needs a C toolchain. On Windows it currently fails: navigator-auth has no Windows wheel, and
 > uvloop, which proxylists requires, does not run on Windows. This affects a project install on
 > Windows too.
-> Details: [docs/install/global-runtime.md](install/global-runtime.md).
+> Details: [wiki/operations/install/global-runtime.md](https://github.com/phenobarbital/ai-parrot/wiki/Operations-Global-install%3A-the-parrot-managed-runtime-%28reference%29).
 
 **Linux / macOS:**
 
@@ -201,7 +201,7 @@ Your API keys go in `~/.parrot/env/.env`: uncomment the lines you need and fill 
 `wikitoolkit` need no key.
 
 Reference detail (gate, plan text, launcher order, `--portable`, version skew) is in
-[docs/install/global-runtime.md](install/global-runtime.md).
+[wiki/operations/install/global-runtime.md](https://github.com/phenobarbital/ai-parrot/wiki/Operations-Global-install%3A-the-parrot-managed-runtime-%28reference%29).
 
 ### Manage the runtime: `parrot self`
 
@@ -415,7 +415,7 @@ wikitoolkit query "where is the ingest pipeline implemented?"
 <!-- verify: cli-verb=sdd install -->
 <!-- verify: flag=sdd install:--host -->
 <!-- verify: flag=sdd install:--dry-run -->
-<!-- verify: flag=sdd install:--force -->
+<!-- verify: flag=sdd install:--keep-edits -->
 <!-- verify: cli-verb=sdd status -->
 <!-- verify: cli-verb=sdd ids reserve -->
 <!-- verify: cli-verb=self doctor -->
@@ -469,10 +469,11 @@ parrot sdd status                            # missing | current | outdated | ed
   line (credentials and CLIs only, no model call). A `warning:` that complex tasks have "no retry seat" means fewer
   than two strong MCP seats (codex/gemini/nova) are usable — add credentials and re-run. Toolkits you installed
   yourself are never recorded or removed by `parrot sdd uninstall`; `parrot sdd install --no-sdd-coder` skips all of this.
-- Re-running `parrot sdd install` upgrades files you have not touched and keeps the ones you edited
-  (`--force` overwrites edited files; foreign files are never touched).
+- Re-running `parrot sdd install` (e.g. after upgrading parrot) replaces every installed SDD file — commands,
+  agents, rules, templates — with the packaged copy, including ones you edited or copied in by hand. Pass
+  `--keep-edits` to leave those untouched (a warning lists them). Seeds such as `sdd/config.json` are never overwritten.
 
-More: [docs/install/global-runtime.md](install/global-runtime.md).
+More: [wiki/operations/install/global-runtime.md](https://github.com/phenobarbital/ai-parrot/wiki/Operations-Global-install%3A-the-parrot-managed-runtime-%28reference%29).
 
 ---
 
@@ -489,7 +490,7 @@ pip install "ai-parrot[jev]"
 - Installs the client for [TypeSafe AI's Jev](https://typesafe.ai) System
   One model — typed, calibrated decisions (routing/ranking/verification)
   instead of free text. Requires a `TYPESAFE_API_KEY` environment variable.
-  See `docs/clients/jev.md` for the full client reference.
+  See `wiki/clients/jev.md` for the full client reference.
 
 <!-- verify: extra=rust -->
 ```bash
@@ -530,9 +531,9 @@ Confirm each of these before moving on:
 
 ## 8. Where to go next
 
-- `docs/wiki-claude-code.md` — wiring `wikitoolkit` into Claude Code as
+- `wiki/wiki/wiki-claude-code.md` — wiring `wikitoolkit` into Claude Code as
   coding-assistant infrastructure.
-- `docs/clients/jev.md` — the Jev typed-decision client in depth.
+- `wiki/clients/jev.md` — the Jev typed-decision client in depth.
 - The repository's `.agent/CONTEXT.md` — architectural overview of AI-Parrot's
   core abstractions (`AbstractClient`, `AbstractBot`/`Chatbot`/`Agent`,
   `AbstractTool`) if you're going to build beyond the hello-world above.

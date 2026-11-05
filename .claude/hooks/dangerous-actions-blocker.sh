@@ -152,8 +152,8 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
     if echo "$SCAN" | grep -qE 'git\s+worktree\s+remove\s+[^;&|]*--force'; then
         block "the \`--force\` flag on \`git worktree remove\` is refused outright (the worktree's state was NOT inspected — it may well be clean). --force would bypass git's dirty check and could kill a live sdd-worker's checkout." \
             "git worktree remove <path>                                # try without --force first: git refuses only if it is dirty" \
-            "python scripts/remove_worktree.py list                    # see LIVE / dirty / unpushed" \
-            "python scripts/remove_worktree.py remove <target> --dry-run" \
+            "parrot sdd worktree list                                  # see LIVE / dirty / unpushed" \
+            "parrot sdd worktree remove <target> --dry-run" \
             "# or use the /remove-worktree command, which gates on all three."
     fi
 
@@ -172,7 +172,7 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
     if echo "$SCAN" | grep -qE 'rm\s+(-[a-zA-Z]+\s+)*-?[a-zA-Z]*[rR][a-zA-Z]*\s+[^;&|]*(\.venv|packages/?\s*$|\.git(/|\s|$)|\.claude/worktrees)'; then
         block "Recursive delete of a repo-critical path (.venv, packages/, .git, .claude/worktrees)." \
             "# .venv:              make distclean   (then: uv sync)" \
-            "# a worktree:         python scripts/remove_worktree.py remove <target>" \
+            "# a worktree:         parrot sdd worktree remove <target>" \
             "# build artefacts:    make clean"
     fi
 

@@ -10,6 +10,7 @@ import html
 import json
 import logging
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Any
 
 import jinja2
@@ -17,6 +18,7 @@ import markdown2
 
 from ..core.constraints import DependencyRule
 from ..core.events import FormEventsConfig
+from ..core.options import FieldOption
 from ..core.schema import (
     FormField,
     FormSchema,
@@ -33,12 +35,36 @@ from .worker_bridge import render_worker_boot_block
 
 logger = logging.getLogger(__name__)
 
+# Boolean questions render as Yes / No radios (FEAT-800): (submitted value, label).
+_BOOLEAN_OPTIONS: tuple[tuple[str, str], ...] = (("true", "Yes"), ("false", "No"))
+
+
+def _normalize_boolean(value: Any) -> str:
+    """Normalize a raw boolean value to the radio value it selects.
+
+    Args:
+        value: Raw pre-filled value (bool, int or string).
+
+    Returns:
+        ``"true"`` for True/"true"/"True"/1/"1", ``"false"`` for
+        False/"false"/"False"/0/"0", otherwise ``""``.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value in (1, "1", "true", "True"):
+        return "true"
+    if value in (0, "0", "false", "False"):
+        return "false"
+    return ""
+
+
 # FieldType → HTML5 input type mapping
 _INPUT_TYPE_MAP: dict[FieldType, str] = {
     FieldType.TEXT: "text",
     FieldType.NUMBER: "number",
     FieldType.INTEGER: "number",
-    FieldType.BOOLEAN: "checkbox",
     FieldType.DATE: "date",
     FieldType.DATETIME: "datetime-local",
     FieldType.TIME: "time",
@@ -196,14 +222,14 @@ class HTML5Renderer(AbstractFormRenderer):
             ) -> Any:
                 return self_._r._render_textarea(field, prefilled, locale)
 
-        class _CheckboxRenderer:
+        class _BooleanRenderer:
             def __init__(self_, renderer: "HTML5Renderer") -> None:
                 self_._r = renderer
 
             async def render(
                 self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
             ) -> Any:
-                return self_._r._render_checkbox(field, prefilled)
+                return self_._r._render_boolean_radio_group(field, prefilled, locale)
 
         class _InputRenderer:
             def __init__(self_, renderer: "HTML5Renderer") -> None:
@@ -348,7 +374,7 @@ class HTML5Renderer(AbstractFormRenderer):
             FieldType.FILE: input_renderer,
             FieldType.IMAGE: input_renderer,
             FieldType.TEXT_AREA: _TextAreaRenderer(self),
-            FieldType.BOOLEAN: _CheckboxRenderer(self),
+            FieldType.BOOLEAN: _BooleanRenderer(self),
             FieldType.SELECT: _SelectRenderer(self, multiple=False),
             FieldType.MULTI_SELECT: _SelectRenderer(self, multiple=True),
             FieldType.GROUP: _GroupRenderer(self),
@@ -789,11 +815,10 @@ class HTML5Renderer(AbstractFormRenderer):
             parts.append(self._render_textarea(field, value, locale))
 
         elif ft == FieldType.BOOLEAN:
-            parts.append(
-                f'<label class="form-field__checkbox-label inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">'
-                f"{self._render_checkbox(field, value)}"
-                f" {label_text}</label>"
-            )
+            parts.append(f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>')
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_boolean_radio_group(field, value, locale))
 
         elif ft == FieldType.GROUP:
             parts.append(
@@ -1440,7 +1465,7 @@ class HTML5Renderer(AbstractFormRenderer):
         # the pre-existing `{form_id}` — that the frontend <RestUploader>
         # component substitutes with the real tenant slug before issuing
         # the upload request. This is a required frontend contract update
-        # (see docs/migration/feat-421-forms-tenant-in-url.md); this
+        # (see wiki/migration/feat-421-forms-tenant-in-url.md); this
         # function has no `form`/`tenant` in scope to substitute it here.
         upload_url = f"/api/v1/{{tenant}}/forms/{{form_id}}/fields/{field.field_id}/upload"
         required_attr = " required" if field.required else ""
@@ -1695,30 +1720,6 @@ class HTML5Renderer(AbstractFormRenderer):
 
         return f'<input {" ".join(attrs)}>'
 
-    def _render_checkbox(self, field: FormField, value: Any) -> str:
-        """Render a checkbox <input>.
-
-        Args:
-            field: BOOLEAN FormField.
-            value: Pre-filled value (truthy = checked).
-
-        Returns:
-            HTML checkbox input string.
-        """
-        tw = "h-4 w-4 rounded border-gray-300 text-blue-600 " "focus:ring-blue-500"
-        attrs: list[str] = [
-            'type="checkbox"',
-            f'id="{field.field_id}"',
-            f'name="{field.field_id}"',
-            'value="true"',
-            f'class="{tw}"',
-        ]
-        if field.required:
-            attrs.append("required")
-        if value in (True, "true", "True", "1", 1):
-            attrs.append("checked")
-        return f'<input {" ".join(attrs)}>'
-
     def _render_textarea(self, field: FormField, value: Any, locale: str) -> str:
         """Render a <textarea> element.
 
@@ -1818,6 +1819,7 @@ class HTML5Renderer(AbstractFormRenderer):
         field: FormField,
         value: Any,
         locale: str,
+        options: Sequence[FieldOption] | None = None,
     ) -> str:
         """Render a group of radio button inputs for SELECT fields.
 
@@ -1825,6 +1827,7 @@ class HTML5Renderer(AbstractFormRenderer):
             field: SELECT FormField with render_as=radio.
             value: Pre-filled value.
             locale: Locale for i18n option labels.
+            options: Explicit options replacing ``field.options`` when given.
 
         Returns:
             HTML radio group string.
@@ -1832,8 +1835,9 @@ class HTML5Renderer(AbstractFormRenderer):
         selected = str(value) if value is not None else ""
         parts: list[str] = ['<div class="form-field__radio-group space-y-2">']
 
-        if field.options:
-            for opt in field.options:
+        effective = options if options is not None else field.options
+        if effective:
+            for opt in effective:
                 opt_label = _resolve(opt.label, locale) or opt.value
                 checked = " checked" if opt.value == selected else ""
                 disabled = " disabled" if opt.disabled else ""
@@ -1848,6 +1852,20 @@ class HTML5Renderer(AbstractFormRenderer):
 
         parts.append("</div>")
         return "\n".join(parts)
+
+    def _render_boolean_radio_group(self, field: FormField, value: Any, locale: str) -> str:
+        """Render a BOOLEAN field as a Yes / No radio group.
+
+        Args:
+            field: BOOLEAN FormField.
+            value: Raw pre-filled value (normalized to ``"true"``/``"false"``/``""``).
+            locale: Locale passed through to the shared radio markup.
+
+        Returns:
+            HTML radio group string (values ``"true"`` / ``"false"``).
+        """
+        options = [FieldOption(value=val, label=label) for val, label in _BOOLEAN_OPTIONS]
+        return self._render_radio_group(field, _normalize_boolean(value), locale, options=options)
 
     def _render_formula_placeholder(self, field: FormField) -> str:
         """Render a FORMULA field as a read-only placeholder.

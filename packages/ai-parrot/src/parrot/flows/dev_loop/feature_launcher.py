@@ -34,6 +34,17 @@ class FeatureRef:
     slug: str
     spec: str
     index: str
+    worktree: str | None = None  # set for a brief: its already-provisioned worktree (never created here)
+
+    @property
+    def is_brief(self) -> bool:
+        """Whether this ref is a brief held in an existing worktree rather than a feature index."""
+        return self.worktree is not None
+
+    @property
+    def prompt_id(self) -> str:
+        """The id the worker is started with: ``<slug>`` for a brief, the feature id otherwise."""
+        return self.slug if self.is_brief else self.feature_id
 
 
 class LaunchError(Exception):
@@ -120,9 +131,76 @@ def resolve_feature(primary: Path, key: str) -> FeatureRef:
             matches.append(
                 FeatureRef(feature_id=feature_id, slug=slug, spec=spec, index=str(index_path.relative_to(primary)))
             )
+    if not matches:
+        matches = _resolve_briefs(primary, key)
     if len(matches) != 1:
         raise LaunchError(2, f"could not uniquely resolve feature {key!r}")
     return matches[0]
+
+
+_BRIEF_KEY = re.compile(r"^key:\s*[\"']?([^\"'\n]+?)[\"']?\s*$", re.MULTILINE)
+
+
+def _worktree_paths(primary: Path) -> list[Path]:
+    """Return every worktree path of the repository (the primary checkout included)."""
+    try:
+        result = _run(["git", "worktree", "list", "--porcelain"], cwd=primary)
+    except LaunchError:
+        return []
+    if result.returncode:
+        return []
+    return [Path(line[len("worktree ") :]) for line in result.stdout.splitlines() if line.startswith("worktree ")]
+
+
+def _brief_frontmatter_key(root: Path, spec: str) -> str | None:
+    """Return the ``key:`` of a brief's frontmatter, ``None`` when unreadable or absent."""
+    try:
+        text = (root / spec).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not text.startswith("---"):
+        return None
+    block = text.split("---", 2)[1] if text.count("---") >= 2 else ""
+    found = _BRIEF_KEY.search(block)
+    return found.group(1) if found else None
+
+
+def _resolve_briefs(primary: Path, key: str) -> list[FeatureRef]:
+    """Find briefs whose slug, ``BRIEF-<slug>`` id or frontmatter key matches ``key`` (case-insensitive).
+
+    A brief lives only in its own worktree (``sdd/briefs/<slug>.index.json`` on its ``fix-*``/``hotfix-*``
+    branch), so every worktree of the repository is searched. Each match carries that worktree.
+    """
+    wanted = key.casefold()
+    matches: list[FeatureRef] = []
+    for root in _worktree_paths(primary):
+        for index_path in sorted((root / "sdd" / "briefs").glob("*.index.json")):
+            try:
+                header = json.loads(index_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(header, dict) or header.get("type") != "brief":
+                continue
+            feature_id = header.get("feature_id")
+            slug = header.get("feature")
+            spec = header.get("spec")
+            if not all(isinstance(value, str) and value for value in (feature_id, slug, spec)):
+                continue
+            names = {feature_id.casefold(), slug.casefold()}
+            frontmatter_key = _brief_frontmatter_key(root, spec)
+            if frontmatter_key:
+                names.add(frontmatter_key.casefold())
+            if wanted in names:
+                matches.append(
+                    FeatureRef(
+                        feature_id=feature_id,
+                        slug=slug,
+                        spec=spec,
+                        index=str(index_path.relative_to(root)),
+                        worktree=str(root),
+                    )
+                )
+    return matches
 
 
 def ensure_feature_worktree(primary: Path, ref: FeatureRef) -> Path:
@@ -363,6 +441,20 @@ def _tmux_environment(env: Mapping[str, str]) -> list[str]:
     return [f"{name}={env[name]}" for name in names]
 
 
+def _enable_push_protection(worktree: Path) -> str:
+    """Provision the sandbox ``no_push`` guard on the host; a refusal is reported, never fatal.
+
+    ``/sdd-done`` disables it again before pushing the branch.
+    """
+    # Host-only; imported here because the tmux child runs under python -S.
+    from parrot.sdd.scripts import worktree_push_protection
+
+    try:
+        return f"launch-worker: {worktree_push_protection.enable(worktree)}"
+    except (worktree_push_protection.SyncError, OSError, subprocess.SubprocessError) as exc:
+        return f"launch-worker: push protection skipped: {exc}"
+
+
 def launch(
     key: str,
     *,
@@ -373,8 +465,11 @@ def launch(
     no_upstream: bool,
     claude_args: Sequence[str],
     base_env: Mapping[str, str] | None = None,
+    gh_token: bool = True,
 ) -> int:
     """Prepare and launch or attach to the worker for one feature.
+
+    ``gh_token=False`` forwards ``--no-gh-token`` so the launcher skips host-side ``GH_TOKEN`` resolution.
 
     ``base_env`` is the operator's environment captured BEFORE anything imported ``parrot``:
     that import lets navconfig load the project's settings ``.env`` (API keys and other secrets)
@@ -382,6 +477,9 @@ def launch(
     ``os.environ``. ``None`` falls back to ``os.environ`` for callers that never imported parrot.
     """
     env = dict(os.environ if base_env is None else base_env)
+    for key_to_clear in tuple(env):
+        if key_to_clear.startswith("PARROT_SDD_NOTIFY_"):
+            env.pop(key_to_clear)
     if sandbox is not None:
         if sandbox not in native_claude_sandbox.SANDBOX_MODES:
             raise LaunchError(2, f"invalid sandbox mode: {sandbox}")
@@ -403,19 +501,53 @@ def launch(
             return 0
         return _attach_session(name)
 
-    worktree = ensure_feature_worktree(primary, ref)
-    _preflight_sandbox(worktree, allowed_domains)
+    if ref.worktree is not None:
+        # A brief: /sdd-brief already provisioned its worktree; never create one here.
+        worktree = Path(ref.worktree)
+        if not worktree.is_dir():
+            raise LaunchError(2, f"brief worktree {worktree} does not exist")
+    else:
+        worktree = ensure_feature_worktree(primary, ref)
+    try:
+        # Primary checkout only: the sandboxed session can rewrite its own worktree pyproject.
+        config_domains, _config_gh_token = native_claude_sandbox.load_launch_config(primary)
+        effective_domains = native_claude_sandbox.merge_domains(
+            config_domains, native_claude_sandbox.validate_allowed_domains(allowed_domains)
+        )
+    except ValueError as exc:
+        raise LaunchError(2, str(exc)) from exc
+    _preflight_sandbox(worktree, effective_domains)
     if not no_upstream:
         print(prepare_upstream(worktree), file=sys.stderr)
+        # Host-only advisory; imported here because the tmux child runs under python -S.
+        from parrot.sdd.scripts.worktree_sync import stale_base_summary
+
+        print(stale_base_summary(worktree), file=sys.stderr)
+    print(_enable_push_protection(worktree), file=sys.stderr)
     domain_args = [item for domain in allowed_domains for item in ("--sandbox-allow-domain", domain)]
+    token_args = [] if gh_token else ["--no-gh-token"]
     if not tmux:
         return native_claude_sandbox.launch_worker(
-            [*domain_args, *claude_args], cwd=worktree, initial_prompt=f"run {ref.feature_id}", base_env=env
+            [*token_args, *domain_args, *claude_args],
+            cwd=worktree,
+            initial_prompt=f"run {ref.prompt_id}",
+            base_env=env,
         )
     if native_claude_sandbox.sandbox_platform() == "windows":
         raise LaunchError(1, "--tmux is not available on native Windows")
     if shutil.which("tmux") is None:
         raise LaunchError(1, "tmux is not available on PATH")
+    desktop_keys = (
+        "PATH",
+        "HOME",
+        "DISPLAY",
+        "WAYLAND_DISPLAY",
+        "DBUS_SESSION_BUS_ADDRESS",
+        "XDG_RUNTIME_DIR",
+    )
+    env["PARROT_SDD_NOTIFY_FEATURE"] = ref.feature_id
+    env["PARROT_SDD_NOTIFY_SLUG"] = ref.slug
+    env["PARROT_SDD_NOTIFY_DESKTOP"] = json.dumps({name: env[name] for name in desktop_keys if name in env})
     command = ["tmux", "new-session", "-d", "-s", name, "-c", str(worktree)]
     for assignment in _tmux_environment(env):
         command.extend(("-e", assignment))
@@ -426,10 +558,11 @@ def launch(
             "-S",  # no site-packages: parrot (and navconfig's .env loading) cannot be imported by the child
             str(Path(__file__).resolve()),
             "--in-session",
-            ref.feature_id,
+            ref.prompt_id,
             "--cwd",
             str(worktree),
             *domain_args,
+            *token_args,
         ]
     )
     if claude_args:
@@ -485,6 +618,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # The worktree is passed explicitly rather than trusted from the process cwd.
     parser.add_argument("--cwd", type=Path, default=None)
     parser.add_argument("--sandbox-allow-domain", action="append", default=[])
+    parser.add_argument("--no-gh-token", action="store_true", default=False)
     parser.add_argument("claude_args", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if args.in_session is None:
@@ -493,8 +627,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if forwarded[:1] == ["--"]:
         forwarded.pop(0)
     domain_args = [item for domain in args.sandbox_allow_domain for item in ("--sandbox-allow-domain", domain)]
+    token_args = ["--no-gh-token"] if args.no_gh_token else []
     return native_claude_sandbox.launch_worker(
-        [*domain_args, *forwarded], cwd=args.cwd or _invocation_dir(), initial_prompt=f"run {args.in_session}"
+        [*token_args, *domain_args, *forwarded],
+        cwd=args.cwd or _invocation_dir(),
+        initial_prompt=f"run {args.in_session}",
     )
 
 

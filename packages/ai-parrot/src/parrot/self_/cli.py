@@ -63,14 +63,15 @@ def doctor(sdd_scope: bool, runtime_only: bool) -> None:
 
     Exit 1 only when a non-informational check in the selected scope fails.
     """
-    from parrot.launcher import find_project_root  # TASK-4071
+    from parrot.launcher import explicit_project_pin, install_root
     from parrot.self_.doctor import failed, run_doctor
 
     if sdd_scope and runtime_only:
         raise click.UsageError("--sdd and --runtime-only are mutually exclusive")
     scope = "runtime-only" if runtime_only else ("sdd" if sdd_scope else "full")
-    root = find_project_root(sys.argv[1:], os.environ, Path.cwd()) or Path.cwd()
-    checks = run_doctor(root, scope=scope)
+    pin = explicit_project_pin(sys.argv[1:], os.environ, Path.cwd())
+    resolved = install_root(Path.cwd(), explicit=pin)
+    checks = run_doctor(resolved.root, scope=scope, install_root=resolved)
     for check in checks:
         if check.informational:
             mark, colour = "·", "yellow" if not check.ok else None

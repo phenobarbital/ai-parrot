@@ -1,4 +1,3 @@
-
 import asyncio
 import os
 import logging
@@ -22,12 +21,11 @@ async def manual_usage():
     print("\n" + "="*50)
     print("MANUAL USAGE OF DATABASE TOOL")
     print("="*50)
-    
+
     # Initialize tool with LLM (using string for Factory)
     # Using 'groq:llama-3.3-70b-versatile' as a powerful default for SQL generation
     db_tool = DatabaseTool(
-        default_connection_params={DatabaseFlavor.POSTGRESQL: CONNECTION_PARAMS},
-        llm="google:gemini-2.5-flash" 
+        default_connection_params={DatabaseFlavor.POSTGRESQL: CONNECTION_PARAMS}, llm="google:gemini-3.8-flash"
     )
 
     # 1. Schema Extract
@@ -52,34 +50,34 @@ async def manual_usage():
     print(
         f"\n---> [Manual] Step 2: Generating Query for: '{nl_query}'"
     )
-    
+
     gen_res = await db_tool.execute(
         operation="query_generate",
         natural_language_query=nl_query,
         database_flavor=DatabaseFlavor.POSTGRESQL,
         connection_params=CONNECTION_PARAMS
     )
-    
+
     if gen_res.status == "success":
         sql_query = gen_res.result["sql_query"]
         print(f"Generated SQL: {sql_query}")
-        
+
         # 3. Explain Query
-        print(f"\n---> [Manual] Step 3: Explaining Query...")
+        print("\n---> [Manual] Step 3: Explaining Query...")
         explain_res = await db_tool.execute(
             operation="explain_query",
             sql_query=sql_query,
             database_flavor=DatabaseFlavor.POSTGRESQL,
-            connection_params=CONNECTION_PARAMS
+            connection_params=CONNECTION_PARAMS,
         )
-        
+
         if explain_res.status == "success":
-             print("\nPlan Analysis from LLM:")
-             print("-" * 20)
-             print(explain_res.result["analysis"])
-             print("-" * 20)
+            print("\nPlan Analysis from LLM:")
+            print("-" * 20)
+            print(explain_res.result["analysis"])
+            print("-" * 20)
         else:
-             print(
+            print(
                 f"Explain failed: {explain_res.error}"
             )
     else:
@@ -92,21 +90,17 @@ async def agent_usage():
     print("\n" + "="*50)
     print("AGENT USAGE WITH DATABASE TOOL")
     print("="*50)
-    
+
     # Initialize Tool
     db_tool = DatabaseTool(
-        default_connection_params={DatabaseFlavor.POSTGRESQL: CONNECTION_PARAMS},
-        llm="google:gemini-2.5-flash"
-    )
-    
-    # Initialize Agent
-    agent = BasicAgent(
-        llm="google:gemini-2.5-flash",
-        tools=[db_tool]
+        default_connection_params={DatabaseFlavor.POSTGRESQL: CONNECTION_PARAMS}, llm="google:gemini-3.8-flash"
     )
 
+    # Initialize Agent
+    agent = BasicAgent(llm="google:gemini-3.8-flash", tools=[db_tool])
+
     await agent.configure()
-    
+
     async with agent:
         # Prompt the agent to do the tasks
         instruction = (
@@ -115,9 +109,9 @@ async def agent_usage():
             "3. Explain the query you just created."
         )
         print(f"\n---> [Agent] Asking Agent to:\n{instruction}")
-        
+
         response = await agent.ask(instruction)
-        
+
         print("\n---> [Agent] Final Response:")
         print(response.output)
 

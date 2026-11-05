@@ -1,10 +1,10 @@
-"""Default Google credential for handler-built AgentCrews (``CREW_AI_KEY``).
+"""Default Google credential for handler-built AgentCrews.
 
 FEAT-575. Crews created and executed through the AgentCrew HTTP handlers bill
 their Google traffic to the process-wide ``GOOGLE_API_KEY``, which makes
 crew-builder usage impossible to meter or rotate separately. This module
-resolves an opt-in ``CREW_AI_KEY`` and classifies an agent's raw LLM
-declaration so the crew build paths can inject it.
+resolves ``CREW_GOOGLE_API_KEY`` (``CREW_AI_KEY`` is its legacy alias) and classifies an agent's
+raw LLM declaration so the crew build paths can inject it.
 
 Nothing here mutates a ``CrewDefinition``, and the key value is never logged.
 """
@@ -31,7 +31,7 @@ def has_explicit_google_credential(kwargs: Mapping[str, Any]) -> bool:
     """Report whether ``kwargs`` carries an explicit Google credential signal.
 
     True when any of ``api_key``/``credentials_file``/``credentials`` is truthy,
-    or ``vertexai`` is truthy (see ``docs/crew_handler.md`` "Precedence").
+    or ``vertexai`` is truthy (see ``wiki/bots/crew_handler.md`` "Precedence").
 
     Args:
         kwargs: Client / LLM keyword arguments to inspect (never mutated).
@@ -48,22 +48,26 @@ _warned_unset: bool = False
 
 
 def get_crew_google_api_key() -> Optional[str]:
-    """Return the configured crew Google API key, or ``None``.
+    """Return ``CREW_GOOGLE_API_KEY`` -> ``CREW_AI_KEY`` -> ``None``.
 
     Reads ``parrot.conf.CREW_AI_KEY`` through the module object (never a
     from-import) so a monkeypatched value is honoured. Logs a single warning
     per process when the key is unset; the key value is never logged.
 
     Returns:
-        The configured ``CREW_AI_KEY``, or ``None`` when it is unset/empty.
+        The configured crew Google API key, or ``None`` when it is unset/empty.
     """
+    from parrot.llm_defaults import resolve_component_api_key  # noqa: PLC0415
+
     global _warned_unset  # noqa: PLW0603 — deliberate process-wide warn-once latch
-    key = getattr(conf, "CREW_AI_KEY", None)
+    key = resolve_component_api_key(("CREW",), "google") or getattr(conf, "CREW_AI_KEY", None)
     if key:
         return key
     if not _warned_unset:
         _warned_unset = True
-        logger.warning("CREW_AI_KEY is not set; crew Google agents fall back to GOOGLE_API_KEY")
+        logger.warning(
+            "CREW_GOOGLE_API_KEY / CREW_AI_KEY not set; crew Google agents fall back to GOOGLE_API_KEY"
+        )
     return None
 
 

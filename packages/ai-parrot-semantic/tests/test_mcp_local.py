@@ -23,7 +23,7 @@ from parrot.semantic.models import SemanticQuery
 from . import _guard_factory
 from ._models import models_dir  # noqa: F401
 
-_DOC_PATH = Path(__file__).resolve().parents[3] / "docs" / "tools" / "semantic-layer.md"
+_DOC_PATH = Path(__file__).resolve().parents[3] / "wiki" / "tools" / "semantic-layer.md"
 _FENCE = re.compile(r"^```(?P<lang>[a-z]+)\n(?P<body>.*?)^```$", re.MULTILINE | re.DOTALL)
 _FACTORY_MODULE = "semantic_mcp_local_guard_factory"
 _QUERY = SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"])

@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 from unittest import mock
 
@@ -48,8 +50,14 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _git(repo, "commit", "-qm", "seed")
     _git(repo, "push", "-q", "-u", "origin", "dev")
     _install_ledger_hooks(repo)  # after the seed commit, so the pre-commit ledger hook never fires here
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: f"/usr/bin/{name}")  # gh, jq, claude present
+    real_which = shutil.which
+    monkeypatch.setattr(
+        doctor.shutil,
+        "which",
+        lambda name, path=None: real_which(name, path=path) if path is not None else f"/usr/bin/{name}",
+    )  # gh, jq, claude present; launcher probes honour their explicit PATH
     monkeypatch.setattr(doctor.subprocess, "run", _gh_ok(doctor.subprocess.run))
+    monkeypatch.setattr(doctor, "_check_bwrap_sandbox", list)  # OS-level check, tested separately
     return repo
 
 
@@ -65,6 +73,55 @@ def _gh_ok(real_run):
 def test_ready_repo_has_no_sdd_failures(ready_repo: Path) -> None:
     checks = doctor._check_sdd(ready_repo)
     assert checks and not doctor.failed(checks), [c.model_dump() for c in doctor.failed(checks)]
+
+
+def test_doctor_cli_pin_provenance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only actual argv/env pins allow a linked checkout check to pass."""
+    main = tmp_path / "main"
+    admin = main / ".git" / "worktrees" / "worktree"
+    admin.mkdir(parents=True)
+    (admin / "commondir").write_text("../..\n", encoding="utf-8")
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    (worktree / ".git").write_text(f"gitdir: {admin}\n", encoding="utf-8")
+    monkeypatch.chdir(worktree)
+    monkeypatch.delenv("PARROT_PROJECT", raising=False)
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+
+    ok_check = doctor.DoctorCheck(name="isolated runtime", ok=True)
+    for name in (
+        "_check_uv",
+        "_check_python",
+        "_check_entrypoints",
+        "_check_path",
+        "_check_tools_wiki",
+        "_check_runtime_lockstep",
+    ):
+        monkeypatch.setattr(doctor, name, lambda: ok_check)
+    monkeypatch.setattr(doctor, "_check_host_configs", lambda root: [])
+    monkeypatch.setattr(doctor, "_check_toolkits", lambda root: [])
+
+    monkeypatch.setattr(sys, "argv", ["parrot", "self", "doctor"])
+    unpinned = CliRunner().invoke(cli, ["self", "doctor"])
+    assert unpinned.exit_code == 1
+    assert "repo: checkout" in unpinned.output and str(main.resolve()) in unpinned.output
+
+    monkeypatch.setattr(sys, "argv", ["parrot", "--project", str(worktree), "self", "doctor"])
+    argv_pinned = CliRunner().invoke(cli, ["self", "doctor"])
+    assert argv_pinned.exit_code == 0
+    assert "explicitly selected linked worktree" in argv_pinned.output
+
+    monkeypatch.setattr(sys, "argv", ["parrot", "self", "doctor"])
+    for variable in ("PARROT_PROJECT", "CLAUDE_PROJECT_DIR"):
+        monkeypatch.setenv(variable, str(worktree))
+        env_pinned = CliRunner().invoke(cli, ["self", "doctor"])
+        assert env_pinned.exit_code == 0
+        assert "explicitly selected linked worktree" in env_pinned.output
+        monkeypatch.delenv(variable)
+
+    runtime_only = CliRunner().invoke(cli, ["self", "doctor", "--runtime-only"])
+    assert runtime_only.exit_code == 0
+    assert "repo: checkout" not in runtime_only.output
 
 
 @pytest.mark.parametrize(
@@ -267,3 +324,63 @@ def test_worktree_tests_check_is_informational(ready_repo: Path) -> None:
     check = {c.name: c for c in checks}["sdd: worktree tests isolated"]
     assert not check.ok and check.informational and "pythonpath" in check.fix
     assert check not in doctor.failed(checks)
+
+
+# --- bwrap sandbox checks (OS-level, tested with mocks) ---------------------------------------------------
+
+
+class TestBwrapSandbox:
+    """Unit tests for _check_bwrap_sandbox — always mocked, never runs real bwrap."""
+
+    def test_skipped_on_non_linux(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(doctor.sys, "platform", "darwin")
+        assert doctor._check_bwrap_sandbox() == []
+
+    def test_bwrap_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(doctor.sys, "platform", "linux")
+        monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+        checks = doctor._check_bwrap_sandbox()
+        assert len(checks) == 1 and not checks[0].ok and "bubblewrap" in checks[0].fix
+
+    def test_single_bwrap_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(doctor.sys, "platform", "linux")
+        monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/bwrap")
+
+        def fake_run(cmd, **kw):
+            return subprocess.CompletedProcess(cmd, 1, "", "No permissions to create new namespace")
+
+        monkeypatch.setattr(doctor.subprocess, "run", fake_run)
+        checks = doctor._check_bwrap_sandbox()
+        by_name = {c.name: c for c in checks}
+        assert "sdd: bwrap userns" in by_name and not by_name["sdd: bwrap userns"].ok
+
+    def test_nested_bwrap_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(doctor.sys, "platform", "linux")
+        monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/bwrap")
+        call_count = 0
+
+        def fake_run(cmd, **kw):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return subprocess.CompletedProcess(cmd, 0, "ok\n", "")
+            return subprocess.CompletedProcess(cmd, 1, "", "nested userns is capability-restricted")
+
+        monkeypatch.setattr(doctor.subprocess, "run", fake_run)
+        checks = doctor._check_bwrap_sandbox()
+        by_name = {c.name: c for c in checks}
+        assert by_name["sdd: bwrap"].ok
+        nested = by_name["sdd: bwrap nested userns"]
+        assert not nested.ok and "sandbox-setup.md" in nested.fix
+
+    def test_all_ok(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(doctor.sys, "platform", "linux")
+        monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/bwrap")
+
+        def fake_run(cmd, **kw):
+            return subprocess.CompletedProcess(cmd, 0, "ok\n", "")
+
+        monkeypatch.setattr(doctor.subprocess, "run", fake_run)
+        checks = doctor._check_bwrap_sandbox()
+        by_name = {c.name: c for c in checks}
+        assert by_name["sdd: bwrap"].ok and by_name["sdd: bwrap nested userns"].ok

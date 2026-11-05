@@ -2,6 +2,13 @@
   "schema_version": 1,
   "assets": [
     {
+      "source": "agent/workflows/remove-worktree.md",
+      "target": ".agent/workflows/remove-worktree.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
       "source": "agent/workflows/sdd-brainstorm.md",
       "target": ".agent/workflows/sdd-brainstorm.md",
       "hosts": [
@@ -159,6 +166,14 @@
       "source": "agents/agents/sdd-worker/agent.md",
       "target": ".agents/agents/sdd-worker/agent.md",
       "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agents/skills/remove-worktree/SKILL.md",
+      "target": ".agents/skills/remove-worktree/SKILL.md",
+      "hosts": [
+        "codex",
         "google"
       ]
     },
@@ -342,6 +357,15 @@
       "target": ".claude/agents/sdd-worker.md",
       "hosts": [
         "claude"
+      ]
+    },
+    {
+      "source": "claude/commands/remove-worktree.md",
+      "target": ".claude/commands/remove-worktree.md",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
       ]
     },
     {
@@ -637,6 +661,15 @@
     {
       "source": "sdd/sdd_templates/task.md",
       "target": "sdd/templates/task.md",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
+      "source": "sdd/sdd_templates/techwiki-page.md",
+      "target": "sdd/templates/techwiki-page.md",
       "hosts": [
         "claude",
         "codex",

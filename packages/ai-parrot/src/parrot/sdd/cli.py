@@ -10,10 +10,25 @@ from pathlib import Path
 
 import click
 
-from parrot.sdd.installer import SUPPORTED_HOSTS, install_sdd_integration, sdd_status, uninstall_sdd_integration
+from parrot.launcher import LinkedWorktreeError, install_root, require_primary_checkout
+from parrot.sdd.installer import (
+    SUPPORTED_HOSTS,
+    install_sdd_integration,
+    remove_stale_sdd_files,
+    sdd_status,
+    uninstall_sdd_integration,
+)
 
 _HELPER_PACKAGE = "parrot.sdd.scripts"
 _dry_run_option = click.option("--dry-run", is_flag=True, help="Print the plan and change nothing.")
+_keep_edits_option = click.option(
+    "--keep-edits",
+    is_flag=True,
+    help=(
+        "Leave SDD files that were edited since parrot wrote them, or that parrot did not record, untouched "
+        "(default: replace/remove them — they are parrot-owned assets)."
+    ),
+)
 
 _path_option = click.option(
     "--path",
@@ -31,12 +46,16 @@ _host_option = click.option(
 )
 
 
-def _root(path_: Path | None) -> Path:
-    """Resolve ``--path`` (default cwd) or abort when it is not a directory."""
-    root = (path_ or Path.cwd()).resolve()
-    if not root.is_dir():
-        raise click.ClickException(f"Not a directory: {root}")
-    return root
+def _root(path_: Path | None, *, write: bool = True) -> Path:
+    """Resolve an install target and reject implicit linked-worktree writes."""
+    candidate = path_ or Path.cwd()
+    if not candidate.is_dir():
+        raise click.ClickException(f"Not a directory: {candidate.resolve()}")
+    resolved = install_root(Path.cwd(), explicit=path_)
+    try:
+        return (require_primary_checkout(resolved) if write else resolved).root
+    except LinkedWorktreeError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 def _echo_actions(actions: list[str]) -> None:
@@ -57,18 +76,13 @@ def sdd() -> None:
 @sdd.command()
 @_path_option
 @_host_option
+@_keep_edits_option
+@click.option("--force", is_flag=True, hidden=True, help="Deprecated no-op: overwriting is now the default.")
 @click.option(
-    "--force",
-    is_flag=True,
-    help="Overwrite SDD files you edited since parrot wrote them (never foreign files or seeds).",
-)
-@click.option(
-    "--portable",
-    is_flag=True,
-    help=(
-        "Write the bare guard-hook command (needs the global launcher on PATH); default bakes the "
-        "installing venv's `parrot` when the launcher is not on PATH."
-    ),
+    "--portable/--no-portable",
+    "portable",
+    default=None,
+    help=("Bare launcher commands or baked paths; default keeps each host's form then follows the launcher."),
 )
 @click.option("--base-branch", "base_branch", default=None, help="SDD base branch to seed and prepare (default: dev).")
 @click.option("--push-base", is_flag=True, help="Also `git push -u origin <base-branch>` when origin lacks it.")
@@ -92,8 +106,9 @@ def sdd() -> None:
 def install(
     path_: Path | None,
     hosts: tuple[str, ...],
+    keep_edits: bool,
     force: bool,
-    portable: bool,
+    portable: bool | None,
     base_branch: str | None,
     push_base: bool,
     hotfix_base: str | None,
@@ -101,13 +116,15 @@ def install(
     no_sdd_coder: bool,
     dry_run: bool,
 ) -> None:
-    """Deploy the packaged SDD assets into the repository (upgrades untouched files, keeps your edits)."""
+    """Deploy the packaged SDD assets into the repository, replacing older or edited copies (seeds are kept)."""
+    if force and keep_edits:
+        raise click.UsageError("--force and --keep-edits are mutually exclusive")
     try:
         _echo_actions(
             install_sdd_integration(
-                _root(path_),
+                _root(path_, write=True),
                 hosts or ("claude",),
-                force=force,
+                keep_edits=keep_edits,
                 dry_run=dry_run,
                 portable=portable,
                 base_branch=base_branch,
@@ -124,11 +141,64 @@ def install(
 @sdd.command()
 @_path_option
 @_host_option
+@_keep_edits_option
 @_dry_run_option
-def uninstall(path_: Path | None, hosts: tuple[str, ...], dry_run: bool) -> None:
-    """Remove SDD files that parrot wrote and you have not edited (seeds and state are kept)."""
+@click.option(
+    "--stalled",
+    "--stale",
+    "stalled",
+    is_flag=True,
+    help=(
+        "Remove only stale SDD files (hand-copied, retired or no longer shipped) and stale MCP toolkit entries for "
+        "the selected hosts (default: claude, like a plain uninstall; repeat --host for codex/google); current "
+        "assets are kept."
+    ),
+)
+@click.option(
+    "--keep",
+    "keep",
+    multiple=True,
+    metavar="GLOB",
+    help="With --stalled: never remove paths matching GLOB (repeatable); MCP entries match as <file>#<key>.",
+)
+def uninstall(
+    path_: Path | None,
+    hosts: tuple[str, ...],
+    keep_edits: bool,
+    dry_run: bool,
+    stalled: bool,
+    keep: tuple[str, ...],
+) -> None:
+    """Remove the SDD files (commands, agents, rules, templates); seeds and state are kept.
+
+    With --stalled, remove only stale files and stale MCP entries instead.
+    """
+    if stalled and keep_edits:
+        raise click.UsageError("--stalled cannot be combined with --keep-edits")
+    if keep and not stalled:
+        raise click.UsageError("--keep requires --stalled")
+    root = _root(path_, write=True)
+    if stalled:
+        selected = hosts or ("claude",)
+        refused: str | None = None
+        try:
+            _echo_actions(remove_stale_sdd_files(root, selected, keep=keep, dry_run=dry_run))
+        except RuntimeError as exc:
+            refused = str(exc)
+            click.echo(f"  ! {exc}", err=True)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        from parrot.mcp.toolkit_stale import remove_stale_mcp_entries
+
+        try:
+            _echo_actions(remove_stale_mcp_entries(root, selected, keep=keep, dry_run=dry_run))
+        except (ValueError, RuntimeError, OSError) as exc:
+            raise click.ClickException(str(exc)) from exc
+        if refused is not None:
+            raise click.ClickException(refused)
+        return
     try:
-        _echo_actions(uninstall_sdd_integration(_root(path_), hosts or ("claude",), dry_run=dry_run))
+        _echo_actions(uninstall_sdd_integration(root, hosts or ("claude",), keep_edits=keep_edits, dry_run=dry_run))
     except (ValueError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -138,7 +208,7 @@ def uninstall(path_: Path | None, hosts: tuple[str, ...], dry_run: bool) -> None
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
 def status(path_: Path | None, as_json: bool) -> None:
     """Show each SDD asset as current, outdated, edited, foreign or missing per host, plus seeds and state."""
-    report = sdd_status(_root(path_))
+    report = sdd_status(_root(path_, write=False))
     if as_json:
         click.echo(json.dumps(report, indent=2))
         return
@@ -157,6 +227,12 @@ def status(path_: Path | None, as_json: bool) -> None:
     guard = report["guard_hook"]
     if guard["form"] is not None:
         click.echo(f"guard hook: {guard['form']} ({'resolvable' if guard['resolvable'] else 'NOT resolvable'})")
+    click.echo(f"stale: {len(report['stale'])}")
+    for entry in report["stale"]:
+        click.echo(f"  stale: {entry['path']} ({entry['reason']})")
+    click.echo(f"stale mcp: {len(report['stale_mcp'])}")
+    for entry in report["stale_mcp"]:
+        click.echo(f"  stale mcp: {entry['file']}#{entry['key']} ({entry['reason']})")
     click.echo(f"receipt version: {report['receipt_version'] or 'none'}")
 
 
@@ -166,6 +242,27 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
         "ensure": ("ensure_worktree", (), "Create or reuse the feature/hotfix worktree (idempotent)."),
         "status": ("worktree_status", (), "Discover SDD worktrees and report task state and health."),
         "guard": ("worktree_environment", (), "Serve the PreToolUse shared-environment guard (--hook)."),
+        "baseline": (
+            "worktree_baseline",
+            (),
+            "Create/remove a runnable baseline checkout of a base ref, compiled .so files included.",
+        ),
+        "list": ("remove_worktree", ("list",), "List worktrees and orphan dirs: dirty, unpushed, PR, live processes."),
+        "sync-base": (
+            "worktree_sync",
+            (),
+            "Bring origin/<base_branch> (or chosen commits) into a worktree; never pushes.",
+        ),
+        "push-protection": (
+            "worktree_push_protection",
+            (),
+            "Enable/disable/inspect the host-provisioned no_push guard sandboxed sync-base needs.",
+        ),
+        "remove": (
+            "remove_worktree",
+            ("remove",),
+            "Remove a worktree safely (refuses a live sdd-worker, dirty, unpushed).",
+        ),
     },
     "task": {
         "close": ("close_task", (), "Close a task: move it to completed/ and stamp the per-spec index."),
@@ -213,6 +310,12 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
         "run": ("run_closeout_hooks", (), "Dispatch /sdd-done closeout hooks."),
         "resolve-issues": ("close_resolved_issues", (), "Close the ledger issues a finished feature fixed."),
     },
+    "techwiki": {
+        "api": ("techwiki_api", (), "Generate the markdown API reference for the configured packages."),
+        "bundle": ("techwiki_bundle", (), "Assemble the publishable GitHub-wiki bundle (authored + API + ADRs)."),
+        "check": ("techwiki_check", (), "Report a spec's declared documentation pages (never blocking)."),
+        "sidebar": ("techwiki_bundle", ("--sidebar-only",), "Render Home.md and _Sidebar.md only."),
+    },
     "hooks": {
         "install": ("install_hooks", (), "Install the SDD git hooks."),
         "dangerous-actions": ("dangerous_actions", (), "Serve the PreToolUse dangerous-actions guard (--hook)."),
@@ -220,7 +323,8 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
 }
 #: Packaged modules with a main() that are deliberately NOT mounted (C22: /sdd-insight does not ship).
 # `native_claude_sandbox.main()` serves the `launch-worker` script entry; its CLI is `parrot sdd launch worker`.
-_UNMOUNTED: frozenset[str] = frozenset({"native_claude_sandbox"})
+# `worker_notification.main()` is invoked as a host lifecycle hook, not as an operator-facing SDD command.
+_UNMOUNTED: frozenset[str] = frozenset({"native_claude_sandbox", "worker_notification"})
 _PASSTHROUGH = {"ignore_unknown_options": True, "allow_interspersed_args": False}
 
 

@@ -2,14 +2,17 @@
 
 Conflict rule (C4, receipt-driven — ``sdd/.sdd-installed.json`` records the SHA-256 of every
 byte sequence this installer wrote): absent → write + record; matches the receipt → upgrade;
-differs from the receipt → edited → skip + warning unless ``force``; not in the receipt →
-foreign → skip + warning, never overwritten; unrecorded but byte-identical → adopt as current.
-``uninstall`` removes only files whose SHA matches the receipt. Seeds (``sdd/config.json`` and
-manifest entries flagged ``"seed": true``) are written once and never touched again.
+differs from the receipt → edited; not in the receipt and not byte-identical → foreign;
+unrecorded but byte-identical → adopt as current. Every manifest target is a parrot-owned SDD asset,
+so by default install overwrites edited and foreign targets (an upgrade replaces them) and
+uninstall removes them; ``keep_edits`` restores the conservative rule (skip/keep them + warning).
+Seeds (``sdd/config.json`` and manifest entries flagged ``"seed": true``) are written once and
+never touched again.
 """
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import os
@@ -26,7 +29,7 @@ from typing import TYPE_CHECKING, Any, Literal, Sequence
 
 from pydantic import BaseModel
 
-from parrot.launcher import parrot_home, script_path
+from parrot.launcher import managed_launcher_on_path, script_path
 from parrot.sdd.audit import EXTERNAL_TOOL_RE, missing_tools, scan_paths  # TASK-4070
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -73,7 +76,8 @@ FileState = Literal["missing", "current", "outdated", "edited", "foreign"]
 #: Plan vocabulary (C5). install: write | upgrade | overwrite | skip-current | skip-edited | skip-foreign |
 #: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed | base-branch | dangerous-guard | toolkits. uninstall: remove |
 #: keep-edited | keep-foreign | skip-missing | keep-shared | gitignore-remove | gitattributes-remove |
-#: keep-gitattributes | ledger-hooks-remove | keep-ledger-hooks | toolkits-remove | receipt-remove.   [rev 0.5 C23 / D5]
+#: keep-gitattributes | ledger-hooks-remove | keep-ledger-hooks | toolkits-remove | receipt-remove.
+#: stale: stale-remove | keep-stale | skip-symlink.   [rev 0.5 C23 / D5]
 PlanAction = Literal[
     "write",
     "upgrade",
@@ -104,6 +108,9 @@ PlanAction = Literal[
     "ledger-hooks-remove",
     "keep-ledger-hooks",
     "receipt-remove",
+    "stale-remove",
+    "keep-stale",
+    "skip-symlink",
 ]
 
 
@@ -270,23 +277,17 @@ def _under(path: Path, base: Path) -> bool:
     return path == base or base in path.parents
 
 
-def guard_hook_command(*, portable: bool) -> tuple[str, Literal["bare", "baked"]]:
+def guard_hook_command(*, portable: bool | None) -> tuple[str, Literal["bare", "baked"]]:
     """Return the guard-hook command to render and its form (rev 0.6 C25).
 
-    ``bare`` when ``portable`` is set or when ``parrot`` on PATH resolves under ``parrot_home()`` (the managed
-    launcher shims may be symlinks into ``~/.parrot/venv``, so both the path as found and its resolution are
-    compared); otherwise ``baked``: the absolute path of this interpreter's venv ``parrot`` script.
+    ``bare`` when ``portable`` is true or when it is unspecified and ``parrot`` on PATH resolves under the managed
+    launcher home; otherwise ``baked``: the absolute path of this interpreter's venv ``parrot`` script.
+    An explicit false value always selects the baked form.
     """
-    if portable:
+    if portable is True:
         return GUARD_HOOK_LINE, "bare"
-    found = shutil.which("parrot")
-    if found:
-        home = parrot_home()
-        found_path = Path(found)
-        homes = {home, home.resolve()}
-        candidates = {found_path, found_path.resolve()}
-        if any(_under(c, h) for c in candidates for h in homes):
-            return GUARD_HOOK_LINE, "bare"
+    if portable is None and managed_launcher_on_path():
+        return GUARD_HOOK_LINE, "bare"
     baked = shlex.quote(script_path(Path(sys.prefix), "parrot").as_posix())
     return baked + _GUARD_HOOK_SUFFIX, "baked"
 
@@ -298,7 +299,7 @@ _DANGEROUS_SUFFIX = " sdd hooks dangerous-actions --hook"
 _DANGEROUS_MATCHER = "Bash|Edit|Write|MultiEdit"
 
 
-def dangerous_hook_command(*, portable: bool) -> tuple[str, Literal["bare", "baked"]]:
+def dangerous_hook_command(*, portable: bool | None) -> tuple[str, Literal["bare", "baked"]]:
     """Return the dangerous-actions guard command and its form; same bare/baked rule as :func:`guard_hook_command`."""
     guard, form = guard_hook_command(portable=portable)
     if form == "bare":
@@ -328,7 +329,7 @@ def _pre_tool_use(settings: dict[str, Any], path: Path, *, create: bool) -> list
     return pre
 
 
-def _install_dangerous_guard(root: Path, receipt: dict[str, Any], *, portable: bool) -> list[str]:
+def _install_dangerous_guard(root: Path, receipt: dict[str, Any], *, portable: bool | None) -> list[str]:
     """C32: merge one dangerous-actions PreToolUse entry into ``.claude/settings.json`` (foreign entries untouched)."""
     from parrot.knowledge.wiki.claude_code.installer import _load_settings, _write_settings  # lazy, as for ledger hooks
 
@@ -459,7 +460,7 @@ def plan_install(
     root: Path,
     hosts: Sequence[str],
     *,
-    force: bool = False,
+    keep_edits: bool = False,
     hook: str = GUARD_HOOK_LINE,
     base_branch: str | None = None,
     dangerous_guard: bool = True,
@@ -481,16 +482,14 @@ def plan_install(
         elif state == "outdated":
             plan.append(PlannedAction(action="upgrade", target=target))
         elif state == "edited":
-            if force:
-                plan.append(PlannedAction(action="overwrite", target=target, note="--force"))
+            if keep_edits:
+                plan.append(PlannedAction(action="skip-edited", target=target, note="edited since parrot wrote it"))
             else:
-                plan.append(
-                    PlannedAction(action="skip-edited", target=target, note="edited since parrot wrote it; use --force")
-                )
+                plan.append(PlannedAction(action="overwrite", target=target, note="edited since parrot wrote it"))
+        elif keep_edits:
+            plan.append(PlannedAction(action="skip-foreign", target=target, note="not recorded in the receipt"))
         else:
-            plan.append(
-                PlannedAction(action="skip-foreign", target=target, note="not written by parrot sdd; never overwritten")
-            )
+            plan.append(PlannedAction(action="overwrite", target=target, note="not recorded in the receipt"))
     plan.append(PlannedAction(action="gitignore", target=".gitignore"))
     plan.append(PlannedAction(action="gitattributes", target=".gitattributes"))  # rev 0.5 C23, any host
     plan.append(PlannedAction(action="ledger-hooks", target=".git/hooks"))  # rev 0.5 C23, any host
@@ -607,10 +606,17 @@ def _base_branch_step(root: Path, config: Any, *, push: bool, receipt: dict[str,
     return out
 
 
-def _host_installed(root: Path, host: str, entries: list[dict[str, Any]], receipt: dict[str, Any]) -> bool:
-    """True when ``host`` has at least one host-specific (single-host) target recorded and present."""
+def _host_installed(
+    root: Path, host: str, entries: list[dict[str, Any]], receipt: dict[str, Any], *, recorded_only: bool = True
+) -> bool:
+    """True when ``host`` has at least one host-specific (single-host) target present on disk.
+
+    With ``recorded_only`` the target must also be in the receipt; without it, any present target counts
+    (a host installed before the receipt existed, or by hand, still shares the common assets).
+    """
     return any(
-        e["hosts"] == [host] and e["target"] in receipt["files"] and (root / e["target"]).is_file() for e in entries
+        e["hosts"] == [host] and (not recorded_only or e["target"] in receipt["files"]) and (root / e["target"]).is_file()
+        for e in entries
     )
 
 
@@ -634,14 +640,17 @@ def _any_ledger_hook_block(root: Path) -> bool:
     return False
 
 
-def plan_uninstall(root: Path, hosts: Sequence[str]) -> list[PlannedAction]:
-    """Pure: ``remove`` only targets whose on-disk SHA matches the receipt; keep edited/foreign; keep shared
-    assets another installed host still needs; seeds and state are never planned for removal."""
+def plan_uninstall(root: Path, hosts: Sequence[str], *, keep_edits: bool = False) -> list[PlannedAction]:
+    """Pure: ``remove`` every present manifest target (edited/foreign included) unless ``keep_edits``, which
+    removes only targets whose on-disk SHA matches the receipt; keep shared assets another installed host
+    still needs; seeds and state are never planned for removal."""
     selected_hosts = _validate_hosts(hosts)
     receipt = load_receipt(root)
     entries = load_manifest()
     remaining_hosts = [
-        h for h in SUPPORTED_HOSTS if h not in selected_hosts and _host_installed(root, h, entries, receipt)
+        h
+        for h in SUPPORTED_HOSTS
+        if h not in selected_hosts and _host_installed(root, h, entries, receipt, recorded_only=keep_edits)
     ]
     plan: list[PlannedAction] = []
     removed: set[str] = set()
@@ -655,14 +664,15 @@ def plan_uninstall(root: Path, hosts: Sequence[str]) -> list[PlannedAction]:
             plan.append(PlannedAction(action="skip-missing", target=target))
             if recorded:
                 removed.add(target)  # deleted by hand: nothing left to remove, so it must not pin the receipt/hooks
-        elif state == "edited":
+        elif keep_edits and state == "edited":
             plan.append(PlannedAction(action="keep-edited", target=target, note="edited since parrot wrote it"))
-        elif state == "foreign" or not recorded:
+        elif keep_edits and (state == "foreign" or not recorded):
             plan.append(PlannedAction(action="keep-foreign", target=target, note="not recorded in the receipt"))
         elif set(entry["hosts"]) & set(remaining_hosts):
             plan.append(PlannedAction(action="keep-shared", target=target, note="still needed by another host"))
         else:
-            plan.append(PlannedAction(action="remove", target=target))
+            note = {"edited": "edited since parrot wrote it"}.get(state, "" if recorded else "not recorded in the receipt")
+            plan.append(PlannedAction(action="remove", target=target, note=note))
             removed.add(target)
     if "claude" in selected_hosts and "dangerous-actions" in receipt.get("settings_hooks", []):
         plan.append(PlannedAction(action="dangerous-guard-remove", target=SETTINGS_PATH.as_posix()))  # C32
@@ -727,7 +737,7 @@ def _apply_asset(
     verb = {
         "write": "installed",
         "upgrade": "upgraded",
-        "overwrite": "overwritten (--force)",
+        "overwrite": f"overwritten ({action.note})",
         "seed": "seeded (team-owned; never overwritten)",
     }
     return f"{entry['target']} — {verb[action.action]}"
@@ -1049,26 +1059,27 @@ def install_sdd_integration(
     root: Path,
     hosts: Sequence[str] = ("claude",),
     *,
-    force: bool = False,
+    keep_edits: bool = False,
     dry_run: bool = False,
-    portable: bool = False,
+    portable: bool | None = None,
     base_branch: str | None = None,
     push_base: bool = False,
     hotfix_base: str | None = None,
     dangerous_guard: bool = True,
     sdd_coder: bool = True,
 ) -> list[str]:
-    """Deploy packaged SDD assets for ``hosts`` into ``root``; never overwrites foreign content.
+    """Deploy packaged SDD assets for ``hosts`` into ``root``, replacing older or hand-edited copies.
 
     Args:
         root: Target repository root (need not be a Python project).
         hosts: Any of ``SUPPORTED_HOSTS``; shared assets (templates, WORKFLOW.md) install for every host.
-        force: Overwrite manifest targets the receipt says we wrote but the team edited since.
-            Never touches foreign (unrecorded) files or seeds.
+        keep_edits: Skip manifest targets edited since parrot wrote them or not recorded in the receipt
+            (default: overwrite them — every manifest target is a parrot-owned SDD asset). Seeds are never
+            overwritten either way.
         dry_run: Return the plan (``plan: <action> <target>`` lines) and write NOTHING — no asset,
             seed, gitignore, ledger, config, receipt, or directory.
-        portable: Write the bare guard-hook command (needs the global launcher on PATH) instead of
-            baking the installing venv's ``parrot`` when the launcher is not on PATH (C25).
+        portable: ``True`` writes bare launcher commands, ``False`` writes baked paths, and ``None`` retains
+            a host's existing form or follows the managed launcher for a fresh host (C25).
         base_branch: C31 — seed ``sdd/config.json`` with this base branch (when absent) and prepare it.
             Conflicts with an existing config that sets a different one.
         dangerous_guard: C32 — register the PreToolUse dangerous-actions guard in ``.claude/settings.json``
@@ -1103,7 +1114,7 @@ def install_sdd_integration(
     plan = plan_install(
         root,
         hosts,
-        force=force,
+        keep_edits=keep_edits,
         hook=hook,
         base_branch=config.base_branch,
         dangerous_guard=dangerous_guard,
@@ -1132,7 +1143,7 @@ def install_sdd_integration(
         elif step.action == "dangerous-guard":
             actions.extend(_install_dangerous_guard(root, receipt, portable=portable))
         elif step.action == "toolkits":
-            actions.extend(_install_toolkits_step(root, hosts, receipt))
+            actions.extend(_install_toolkits_step(root, hosts, receipt, portable=portable))
     _save_receipt(root, receipt)
     actions.append(f"{RECEIPT_PATH} — written; commit it with the installed files (it drives upgrades and uninstall)")
     actions.append(_test_command_warning(config) or "")
@@ -1148,6 +1159,7 @@ def install_sdd_integration(
             actions.append(_baked_venv_warning(root) or "")
     installed = [root / t for t in receipt["files"] if (root / t).is_file()]
     actions.extend(_audit(root, installed))
+    actions.append(_stale_note(root, hosts))
     return [a for a in actions if a]
 
 
@@ -1206,12 +1218,14 @@ def _roster_report(root: Path) -> list[str]:
         return [f"warning: sdd-coder roster could not be checked ({exc})"]
 
 
-def _install_toolkits_step(root: Path, hosts: Sequence[str], receipt: dict[str, Any]) -> list[str]:
+def _install_toolkits_step(
+    root: Path, hosts: Sequence[str], receipt: dict[str, Any], *, portable: bool | None
+) -> list[str]:
     """C34 — register the SDD MCP toolkits; record in the receipt only those this run added."""
     try:
         from parrot.mcp.toolkit_install import install_toolkits
 
-        report = install_toolkits(root, list(SDD_TOOLKITS), _toolkit_hosts(hosts))
+        report = install_toolkits(root, list(SDD_TOOLKITS), _toolkit_hosts(hosts), portable=portable)
     except (ValueError, OSError, ImportError) as exc:
         return [f"warning: MCP toolkits not registered ({exc})"]
     lines: list[str] = list(report.actions)
@@ -1252,8 +1266,112 @@ def _prune_empty_parents(root: Path, path: Path) -> None:
         parent = parent.parent
 
 
-def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *, dry_run: bool = False) -> list[str]:
-    """Remove SDD assets for ``hosts`` whose on-disk SHA matches the receipt (edited/foreign files are kept and reported).
+def _stale_note(root: Path, hosts: Sequence[str]) -> str:
+    """Report-only install note (G5): count stale files and stale MCP entries."""
+    from parrot.mcp.toolkit_stale import find_stale_mcp_entries
+    from parrot.sdd.stale import find_stale, is_source_checkout
+
+    try:
+        files = 0 if is_source_checkout(root) else len(find_stale(root, hosts))
+    except (ValueError, OSError):
+        files = 0
+    try:
+        entries = len(find_stale_mcp_entries(root, hosts))
+    except (ValueError, OSError, RuntimeError):
+        entries = 0
+    if files == entries == 0:
+        return ""
+    entry_label = "entry" if entries == 1 else "entries"
+    host_flags = "" if tuple(hosts) == ("claude",) else "".join(f" --host {host}" for host in hosts)
+    return (
+        f"note: {files} stale SDD file(s), {entries} stale MCP {entry_label} — review with "
+        f"`parrot sdd uninstall --stalled{host_flags} --dry-run`"
+    )
+
+
+def plan_stale(root: Path, hosts: Sequence[str], *, keep: Sequence[str] = ()) -> list[PlannedAction]:
+    """Build the pure stale-file removal plan, honoring keep globs and symlink safety."""
+    from parrot.sdd.stale import find_stale
+
+    plan: list[PlannedAction] = []
+    for entry in find_stale(root, hosts):
+        if entry.symlink:
+            plan.append(PlannedAction(action="skip-symlink", target=entry.path, note="symlink; never followed"))
+        elif any(fnmatch.fnmatch(entry.path, pattern) for pattern in keep):
+            plan.append(PlannedAction(action="keep-stale", target=entry.path, note="--keep"))
+        else:
+            plan.append(
+                PlannedAction(
+                    action="stale-remove",
+                    target=entry.path,
+                    note=f"{entry.reason}: {entry.detail}",
+                )
+            )
+    return plan
+
+
+def remove_stale_sdd_files(
+    root: Path, hosts: Sequence[str] = SUPPORTED_HOSTS, *, keep: Sequence[str] = (), dry_run: bool = False
+) -> list[str]:
+    """Remove stale SDD files while preserving current assets, seeds, state, and the receipt."""
+    from parrot.sdd.stale import has_symlinked_ancestor, is_source_checkout
+
+    source = is_source_checkout(root)
+    plan = plan_stale(root, hosts, keep=keep)
+    if dry_run:
+        head = [f"note: {root} is the ai-parrot source checkout — a real run refuses to delete here"] if source else []
+        return head + ([str(step) for step in plan] or ["no stale SDD files"])
+    if source:
+        raise RuntimeError(
+            f"refusing: {root} is the ai-parrot source checkout — its sdd-* files and scripts/sdd/ are the asset "
+            "sources; use --dry-run to inspect"
+        )
+    if not plan:
+        return ["no stale SDD files"]
+
+    receipt = load_receipt(root)
+    actions: list[str] = []
+    removed = 0
+    receipt_changed = False
+    real_root = Path(os.path.realpath(root))
+    for step in plan:
+        if step.action == "stale-remove":
+            path = root / step.target
+            parts = Path(step.target).parts
+            if Path(step.target).is_absolute() or ".." in parts:
+                actions.append(f"warning: {step.target} — not a plain repository path; kept")
+                continue
+            if path.is_symlink() or has_symlinked_ancestor(root, step.target):
+                actions.append(f"warning: {step.target} — symlink; kept")
+                continue
+            real_parent = Path(os.path.realpath(path.parent))
+            if not _under(real_parent, real_root):
+                actions.append(f"warning: {step.target} — resolves outside the repository; kept")
+                continue
+            path.unlink(missing_ok=True)
+            _prune_empty_parents(root, path)
+            popped = receipt["files"].pop(step.target, None)
+            receipt_changed = receipt_changed or popped is not None
+            reason = step.note.split(":", 1)[0]
+            actions.append(f"{step.target} — removed ({reason})")
+            removed += 1
+        elif step.action == "keep-stale":
+            actions.append(f"{step.target} — kept (--keep)")
+        elif step.action == "skip-symlink":
+            actions.append(f"warning: {step.target} — symlink; kept")
+
+    if receipt_changed and (root / RECEIPT_PATH).exists():
+        _save_receipt(root, receipt)
+    if removed:
+        actions.append("note: commit the deletions (git add -A <paths> && git commit)")
+    return actions
+
+
+def uninstall_sdd_integration(
+    root: Path, hosts: Sequence[str] = ("claude",), *, keep_edits: bool = False, dry_run: bool = False
+) -> list[str]:
+    """Remove the SDD assets for ``hosts`` — every present manifest target, including ones edited since install
+    or never recorded in the receipt; with ``keep_edits`` only receipt-matching files go (others are kept and reported).
 
     The ``.gitignore`` block, the recorded ``.gitattributes`` block (C23) and the receipt are removed only
     when no recorded file remains; the ledger hooks are removed only when ``receipt["ledger_hooks"]`` says this
@@ -1261,7 +1379,7 @@ def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *,
     ``sdd/tasks/.id_ledger.json``, ``sdd/config.json`` and seeds are never removed (state / team-owned).
     ``dry_run`` returns the plan and writes nothing.
     """
-    plan = plan_uninstall(root, hosts)
+    plan = plan_uninstall(root, hosts, keep_edits=keep_edits)
     if dry_run:
         return [str(step) for step in plan]
     receipt = load_receipt(root)
@@ -1273,7 +1391,7 @@ def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *,
             target.unlink(missing_ok=True)
             _prune_empty_parents(root, target)
             receipt["files"].pop(step.target, None)
-            actions.append(f"{step.target} — removed")
+            actions.append(f"{step.target} — removed" + (f" ({step.note})" if step.note else ""))
         elif step.action in {"keep-edited", "keep-foreign"}:
             actions.append(f"warning: {step.target} — kept ({step.note})")
         elif step.action == "keep-shared":
@@ -1404,6 +1522,28 @@ def _toolkits_report(root: Path) -> dict[str, str]:
     return {name: rows.get(name, "not_installed") for name in SDD_TOOLKITS}
 
 
+def _stale_report(root: Path) -> list[dict[str, Any]]:
+    """Return serializable stale-file entries, skipping source checkouts."""
+    from parrot.sdd.stale import find_stale, is_source_checkout
+
+    if is_source_checkout(root):
+        return []
+    try:
+        return [entry.model_dump() for entry in find_stale(root)]
+    except (ValueError, OSError):
+        return []
+
+
+def _stale_mcp_report(root: Path) -> list[dict[str, Any]]:
+    """Return serializable stale MCP entries without allowing lookup failures to break status."""
+    from parrot.mcp.toolkit_stale import find_stale_mcp_entries
+
+    try:
+        return [entry.model_dump() for entry in find_stale_mcp_entries(root, SUPPORTED_HOSTS)]
+    except (ValueError, OSError, RuntimeError):
+        return []
+
+
 def sdd_status(root: Path) -> dict[str, Any]:
     """Per-host install state (C4/C15/C25):
 
@@ -1412,7 +1552,8 @@ def sdd_status(root: Path) -> dict[str, Any]:
     "gitattributes": bool, "ledger_hooks": bool,  # [rev 0.5 D5]
     "guard_hook": {"form": "bare" | "baked" | "other" | None, "command": str | None, "targets": [str],
     "resolvable": bool},  # [rev 0.6 C25]
-    "receipt_version": str | None}`` (targets are repo-relative strings). Import-cheap: ``parrot self
+    "stale": [...], "stale_mcp": [...], "receipt_version": str | None}`` (targets are repo-relative strings).
+    Import-cheap: ``parrot self
     doctor`` (TASK-4080) imports this lazily and treats ``outdated``/``edited`` as "not current". Guard-hook
     assets are compared against the rendering matching the form already on disk, so a bare or baked install
     reports ``current`` until the mode is changed by a re-install.
@@ -1420,7 +1561,7 @@ def sdd_status(root: Path) -> dict[str, Any]:
     receipt = load_receipt(root)
     entries = load_manifest()
     guard = _guard_hook_report(root)
-    hook = guard["command"] if guard["form"] in {"bare", "baked"} else guard_hook_command(portable=False)[0]
+    hook = guard["command"] if guard["form"] in {"bare", "baked"} else guard_hook_command(portable=None)[0]
     hosts: dict[str, dict[str, list[str]]] = {}
     for host in SUPPORTED_HOSTS:
         states: dict[str, list[str]] = {"current": [], "outdated": [], "edited": [], "foreign": [], "missing": []}
@@ -1446,5 +1587,7 @@ def sdd_status(root: Path) -> dict[str, Any]:
         "guard_hook": guard,
         "dangerous_guard": _dangerous_guard_report(root),
         "toolkits": _toolkits_report(root),
+        "stale": _stale_report(root),
+        "stale_mcp": _stale_mcp_report(root),
         "receipt_version": receipt.get("version"),
     }

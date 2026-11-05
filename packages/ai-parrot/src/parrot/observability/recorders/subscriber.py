@@ -20,7 +20,7 @@ from parrot.core.events.lifecycle.events import (
     ClientCallFailedEvent,
 )
 from parrot.observability.attributes import resolve_gen_ai_system
-from parrot.observability.context import current_run_id, current_seat, current_usage_attribution
+from parrot.observability.context import current_component, current_run_id, current_seat, current_usage_attribution
 from parrot.observability.recorders.models import UsageRecord
 
 if TYPE_CHECKING:
@@ -154,6 +154,7 @@ class UsageRecordingSubscriber:
             run_id=run_id,
             seat=seat,
             node_id=_node_id_from_seat(seat),
+            component=current_component.get(),
             usage_reported=usage_reported,
             cache_read_tokens=event.cache_read_tokens or 0,
             cache_creation_tokens=event.cache_creation_tokens or 0,
@@ -191,6 +192,7 @@ class UsageRecordingSubscriber:
             run_id=run_id,
             seat=seat,
             node_id=_node_id_from_seat(seat),
+            component=current_component.get(),
             usage_reported=False,
             status="failed",
             error_type=event.error_type or None,

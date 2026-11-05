@@ -121,6 +121,9 @@ stay with the thinking model — eligibility never delegates a design choice.
 10. Write the spec:
    - frontmatter `type` and `base_branch`
    - frontmatter `projects` and `tags`, carried from the exploration doc (FEAT-576)
+   - Documentation chapter (FEAT-801): for `type: feature` write the `docs:` frontmatter (`policy: required`,
+     `pages: [wiki/...]`, optional `api_modules`) and `## 10. Documentation`; for hotfix/`/sdd-brief` use
+     `policy: none`. Informational — never blocks closeout.
    - Feature ID
    - date
    - architecture and module breakdown

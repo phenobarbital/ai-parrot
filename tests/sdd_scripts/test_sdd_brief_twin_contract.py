@@ -40,10 +40,10 @@ def test_agy_preserves_full_procedure_with_native_handoff() -> None:
     """Only metadata and the two Claude launch examples differ for agy."""
     original = _CLAUDE.read_text(encoding="utf-8")
     expected = original.replace(
-        "```bash\ncd <wt> && claude --agent sdd-worker --setting-sources project,local --model sonnet --verbose\n```",
+        "```bash\nparrot sdd launch worker <KEY>            # add --tmux [--detach] to run unattended\n```",
         "```text\nOpen <wt> in agy and ask: Use the sdd-worker subagent to implement <KEY>.\n```",
     ).replace(
-        "`cd <wt> && claude --agent sdd-worker --setting-sources project,local --model sonnet --verbose`,",
+        "`parrot sdd launch worker <KEY>`,",
         "open `<wt>` in agy and ask the `sdd-worker` subagent to implement `<KEY>`,",
     )
     agy = _AGY.read_text(encoding="utf-8")

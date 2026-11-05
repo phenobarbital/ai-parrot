@@ -56,13 +56,14 @@ directory switching, no shared mutable state across features.
   `uv pip install --python .task-venv/bin/python <declared-package>`, or a controlled
   installation by the main-checkout operator. Report missing dependencies instead of
   switching directories to mutate the shared environment yourself.
+- When auto mode reports that a hook changed a Bash call's input, resend the hook's command once and verbatim; never hand-write or abbreviate a `bwrap` or `env …` wrapper.
 - Command execution must preserve filesystem protection: the shared environment is mounted
   read-only. Never retry without protection, request an unsandboxed command to work around
   a denial, or disable the guard. If isolation is unavailable, stop and report the blocker.
 - Under the supported launchers the Claude native sandbox enforces the filesystem/network boundary and the hook keeps the test-scope guard, RTK rewrite and file-tool checks; nested bwrap is not used; never request dangerouslyDisableSandbox.
 - The primary checkout's `.claude/worktrees/` and `.parrot/ledger/` are the only writable
-  exceptions outside your worktree: the first exists so `/sdd-done` can run from here
-  (ledger-snapshot worktree, removal of this worktree), the second so you can file deferred
+  exceptions outside your worktree: the first exists for worktree administration (it does NOT
+  mean `/sdd-done` runs from here — see "Completion"), the second so you can file deferred
   findings in the shared SDD ledger. Everything else in the primary checkout — `sdd/ledger/`,
   `sdd/tasks/`, the `.venv` — stays read-only. Never `cd` to the primary checkout to work
   around that.
@@ -148,9 +149,12 @@ multi-task Execution Loop described below, unchanged.
 
 ### 0. Sync the Base Branch (FEAT-145)
 
-Read the spec's frontmatter to discover the base branch, then detect whether
-you were launched inside a linked worktree (the documented launch mode) or in
-the primary checkout:
+The trusted host launcher performs the stale-base advisory before the sandbox
+starts. Full-base synchronization is a host operator action; this worker never
+runs a second stale-base check.
+
+Read the spec metadata and retain the existing linked-worktree detection used
+by the remaining startup steps, without fetching or integrating here:
 
 ```bash
 META=$(parrot sdd docs parse "<spec-path>")
@@ -158,23 +162,17 @@ TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 
 if [ "$(git rev-parse --absolute-git-dir)" != "$(cd "$(git rev-parse --git-common-dir)" && pwd)" ]; then
-  IN_WORKTREE=1                      # linked worktree: primary checkout is read-only
-  git fetch origin "$BASE_BRANCH"    # updates shared refs only — never touches the primary tree
+  IN_WORKTREE=1
 else
   IN_WORKTREE=0
-  git checkout "$BASE_BRANCH"
-  git pull --ff-only origin "$BASE_BRANCH"
 fi
 ```
 
-**Inside a linked worktree, NEVER `cd` into the primary checkout, and never run
-`git pull`, `checkout`, `merge`, `reset`, `stash` or `commit` against it (also not
-via `git -C <primary>`).** The Bash sandbox binds only the current checkout and
-the common `.git` directory writable; the primary checkout's working tree is
-mounted read-only, so those commands fail with `Read-only file system` — and a
-half-applied pull there would also clobber other sessions. `git fetch` works
-because it only writes the shared `.git`. Compare against `origin/$BASE_BRANCH`
-instead of the local `$BASE_BRANCH`.
+Need a base fix inside the sandbox? Run
+`parrot sdd worktree sync-base <FEAT-ID|KEY|name|path> --cherry-pick <sha>`.
+Never run `git fetch`, `git pull` or `git push` inside the worker sandbox. If
+push-protection prerequisites are missing, ask the host operator to provision
+them; never change protected Git config. Never request widened network access.
 
 `base_branch` defaults to `dev` for `type: feature` and is fixed to `main`
 for `type: hotfix`. `staging` is also a valid `base_branch` for `type: feature`
@@ -281,11 +279,11 @@ If the command exits non-zero, STOP and report its message. Do not implement on
 
 Already enforced: §3 passed `--spec` and `--index`, and the CLI refuses to hand
 back a worktree in which either is missing. If you reached this point, both are
-present. A failure here means the base branch does not carry the task artifacts
-yet — fetch and re-run §3 rather than working around it. With `IN_WORKTREE=1`,
-§3 reuses the current worktree and will not refresh it: bring the artifacts in
-with `git merge origin/$BASE_BRANCH` *inside this worktree* (stop and report on
-a conflict), never by pulling in the primary checkout.
+present. If a required artifact landed on the base after this worktree was
+created, bring its commit in with
+`parrot sdd worktree sync-base <FEAT-ID|KEY|name|path> --cherry-pick <sha>`.
+For a full-base refresh, stop and ask the host operator to run sync-base before
+restarting the worker.
 
 ### 4.5. Mark Tasks as In-Progress (on the feature branch)
 
@@ -331,7 +329,10 @@ requires M0 and the approved M5 amendment. Keep current 90s coder_wait policy an
 You do NOT implement tasks yourself while the `parrot-sdd-coder` MCP server is available. You plan, dispatch,
 consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their own sub-worktree.
 
-0. **Begin execution, then plan.** Generate one UUID for this worker invocation and call
+0. **Begin execution, then plan.** Obtain one UUID for this worker invocation FROM A COMMAND —
+   `python3 -c 'import uuid; print(uuid.uuid4())'` (fallback: `cat /proc/sys/kernel/random/uuid`). NEVER compose it by
+   hand or derive it from the feature name: it must be a lowercase canonical UUID (36 chars, hex digits + hyphens only).
+   If a call fails with `invalid_arguments` naming `execution_id`, regenerate it with the command and retry once. Then call
    `coder_begin_execution(feature=<FEAT-ID>, worktree=<absolute path of this worktree>, execution_id=<uuid>)`. Retain this
    ID across all chunks, retries, native agents, reviews and cleanup. Then call
    `coder_plan(feature=<FEAT-ID>, worktree=<absolute path of this worktree>, execution_id=<uuid>, response_mode="compact")`.
@@ -577,6 +578,12 @@ If ANY check fails, fix or STOP.
   as a background Bash call (`run_in_background: true`, no `timeout`), then read that log — a foreground call is
   bounded at 120 s and this sweep is routinely longer
   (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).
+- To tell whether a failure already happens on `<base_branch>`, rely on the baseline verdict the merge-tier
+  sweep above already computes. Never improvise a baseline tree (`git archive`, a hand-built detached worktree,
+  `git show` into a scratch dir): it carries no gitignored compiled `.so` files, so `import parrot` fails on
+  `parrot.utils.types`, and never hand-copy `.so` files into one. If you need a baseline tree for anything else,
+  get it with `parrot sdd worktree baseline create --base origin/<base_branch>` (prints its path, native
+  artifacts synced) and remove it with `parrot sdd worktree baseline remove <path>` when done.
 - If stuck after 3 attempts, mark as `"done-with-issues"`.
 
 ### f) Commit Code (in worktree)
@@ -705,10 +712,24 @@ After all tasks are done, at the development-to-review boundary:
    `Ledger unavailable; NOT filed: shared ledger is read-only`, or is unavailable,
    log a warning and list the findings with `(NOT filed: shared ledger is read-only)`.
 
-2. **Push the feature branch** (from worktree):
-   ```bash
-   git push origin HEAD
-   ```
+2. **Do NOT push.** The sandbox has no route to `github.com` (no git-over-HTTPS, no SSH); `/sdd-done`
+   on the host pushes. `gh` (`api.github.com`) is available for read and PR-comment operations only;
+   never try `git push`, SSH, or ask to widen the sandbox.
+
+2a. **Record optional desktop completion (feature scope only).** Only after all
+    tasks are done, children have settled, review/deferred-finding handling is
+    complete and step 2 pushed successfully, run from the feature worktree:
+    ```bash
+    if [ -n "${PARROT_SDD_NOTIFY_PYTHON:-}" ] && [ -n "${PARROT_SDD_NOTIFY_HELPER:-}" ]; then
+      "$PARROT_SDD_NOTIFY_PYTHON" -S "$PARROT_SDD_NOTIFY_HELPER" --complete
+    fi
+    ```
+    Never run this in task-scoped JSON brief mode, for child completion,
+    interrupts, blocked/unfinished tasks, unfinished review or a failed push.
+    A recording failure is advisory: log it and continue the final summary;
+    never widen sandbox permissions or retry outside the sandbox. The helper's
+    warning is the diagnostic even when its best-effort CLI exits zero.
+    The next eligible Stop event attempts delivery while Claude remains open.
 
 3. **Print summary:**
    ```
@@ -746,10 +767,8 @@ After all tasks are done, at the development-to-review boundary:
    Commits: <N>
 
    Next:
-     - Run /sdd-done FEAT-<ID> for verification, PR, and cleanup
-       (it may run from inside this worktree — the sandbox allows worktree
-       administration under the primary checkout's .claude/worktrees/ — or
-       from the main repo)
+     - Run /sdd-done FEAT-<ID> **from the host** (outside this sdd-worker
+       session) — it pushes, opens the PR and cleans up.
    ```
 
 ## Structured Output Contract (dispatched runs)

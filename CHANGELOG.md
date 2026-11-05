@@ -9,6 +9,59 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.0.0] — 2026-11-03 — Parrot installer and noun-grouped SDD CLI, Connections, Domain Experts, Squawk
+
+Major release. Core and its siblings move to `2.0.0`; the fifteen `ai-parrot-client-*`
+satellites and `ai-parrot-openlit-bridge` move to `1.0.0`. Every sibling now pins
+`ai-parrot>=2.0.0`.
+
+### Breaking changes
+- **SDD CLI is noun-grouped, with no aliases (FEAT-633 C26/C30).** `parrot sdd run <module>`
+  is gone: use `parrot sdd <noun> <verb>` (`task close|finalize|heal|review validate`,
+  `worktree ensure|guard`, `ids reserve|check`, `tests select|report|e2e-closeout`,
+  `closeout run|resolve-issues`, `docs parse`, `hooks dangerous-actions`).
+  `parrot devloop launch-worker` is now `parrot sdd launch worker` (+ `launch brief|fix`).
+  Repo-local `scripts/sdd/*` invocations move into the package.
+- **`bounded-source` toolkit moved to core** as `parrot.tools.optimizations` (FEAT-633 C35);
+  `parrot_tools.tool_optimizations.*` remain as aliases of the same modules.
+
+### Added
+- **Parrot installer (FEAT-633):** `parrot sdd install|status|uninstall` and
+  `parrot claude install` set up SDD in any git repo — commands, agents, hooks, ledger,
+  a managed `.gitignore` block (navconfig `env/.env`, `/logs/`, `/outputs/`, `.parrot/`),
+  base-branch preparation (`--base-branch`, `--hotfix-base`, `--push-base`), the
+  `sdd-coder` and `bounded-source` MCP toolkits with a seat-availability report, and a
+  portable Python dangerous-actions guard (`--no-dangerous-guard`). `parrot self doctor`
+  checks host configs for cross-repo collisions.
+- **Native Claude sandbox for SDD execution** (FEAT-768) and tmux worker sessions named
+  `sdd-<feat-id>-<slug>`.
+- **Connections** — principal-keyed delegated auth (FEAT-773) for CLI agents and local MCP
+  (FEAT-774), Web + Slack (FEAT-777), MS Teams (FEAT-775) and Telegram (FEAT-776), with a
+  default `allow_connections` policy.
+- **Domain Experts** (FEAT-778) with per-expert model overrides and Roost query traces (FEAT-790).
+- **Squawk**, a typed binary inter-agent protocol — tranche 1 (FEAT-746, `ai-parrot-squawk`).
+- Passkey (WebAuthn) sign-in in the Admin UI (FEAT-772); Semantic Layer example agents
+  (FEAT-769); unified usage and cost metrics per SDD spec (FEAT-783); SDD decision audit
+  (FEAT-784); studio named test conversations.
+
+### Fixed
+- Roost: caller authority, fail-closed serving, runtime budget enforcement and
+  PermissionContext binding (BRIEF-59d1cb0c9814, FEAT-786, FEAT-788).
+- Security: RBAC gate on `POST /forms/export`; `MCPToolAdapter` rejects undeclared and
+  reserved arguments; E2E exploration agents' Write tool confined; guard denies
+  `+refspec` force-pushes to protected branches (FEAT-792).
+- Identity Vault store bound at startup and AgentTalk wired into OAuth hydration;
+  Jira web OAuth2 registration (FEAT-791).
+- Gemini cache+tools 400 and verbatim stream chunks (FEAT-781); OpenAI completion params
+  (FEAT-770); CVE toolkit OSV CVSS scoring and malformed-body handling.
+- SDD: `ensure_worktree` recovers after a failed verification; `/sdd-spec` and `/sdd-task`
+  publish the base branch; parallel `/sdd-fix` sessions cannot close each other's claims.
+- OpenTelemetry and the default executor are torn down on shutdown.
+
+### Dependencies
+- `anthropic` 2.3.0, `claude-agent-sdk` 0.2.174, `sentence-transformers>=6.2.0`, `ruff>=0.17.2`,
+  `pylint` 4.1.3, `mkdocs-material>=9.8.0`.
+
 ## [1.2.6] — 2026-10-29 — Follow-up suggestion chips, metric registry, A2UI diagrams, agent security guardrails
 
 Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.6`, `ai-parrot-server` to `1.3.5`,

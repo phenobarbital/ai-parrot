@@ -2,7 +2,9 @@
 
 Modes: ``--write`` regenerate _assets/ + manifest.json; ``--check`` (default) exit 1 on divergence;
 ``--wheel <whl>`` verify a built wheel carries every manifest entry. ``--check`` and ``--wheel`` also
-report any shipped line naming a monorepo source path (C16) or other monorepo-specific text (C22).
+report any shipped line naming a monorepo source path (C16) or other monorepo-specific text (C22), and any
+guard-hook line baked to one machine's venv. ``--write`` and ``--check`` restore a baked guard hook in a repo
+source to the bare form before copying or comparing, so a local ``parrot sdd install`` never leaks into _assets/.
 Stdlib only — never import parrot.
 """
 
@@ -28,18 +30,21 @@ HOST_ORDER: tuple[str, ...] = ("claude", "codex", "google")
 #: (git pathspec glob relative to the repo root, hosts) — see the task's mapping table.
 #: NEVER list `codebase-conventions.md` here (C10: ai-parrot's rulebook does not ship).
 ASSET_SOURCES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (".claude/commands/sdd-*.md", HOST_ORDER),                        # codex/google skills point at the command bodies
+    (".claude/commands/sdd-*.md", HOST_ORDER),  # codex/google skills point at the command bodies
+    (".claude/commands/remove-worktree.md", HOST_ORDER),  # FEAT-795 — calls `parrot sdd worktree`
     (".claude/agents/sdd-*.md", ("claude",)),
     (".claude/hooks/sdd-worker-format.sh", ("claude",)),
     (".claude/rules/worktree-management.md", ("claude",)),
-    (".claude/skills/second-opinion/SKILL.md", ("claude",)),          # C9 — claude only; no codex/google twin
+    (".claude/skills/second-opinion/SKILL.md", ("claude",)),  # C9 — claude only; no codex/google twin
     (".agents/skills/sdd-*/SKILL.md", ("codex", "google")),
+    (".agents/skills/remove-worktree/SKILL.md", ("codex", "google")),
     (".codex/agents/sdd-worker.toml", ("codex",)),
     (".agent/workflows/sdd-*.md", ("google",)),
+    (".agent/workflows/remove-worktree.md", ("google",)),
     (".agents/agents/sdd-*/agent.md", ("google",)),
     ("sdd/templates/*", HOST_ORDER),
     ("sdd/WORKFLOW.md", HOST_ORDER),
-    ("sdd/CONVENTIONS.md", HOST_ORDER),                               # C10 — seed, see SEED_TARGETS
+    ("sdd/CONVENTIONS.md", HOST_ORDER),  # C10 — seed, see SEED_TARGETS
 )
 #: Hand-maintained, repo-neutral assets that exist ONLY in the wheel (their repo-side originals name monorepo paths,
 #: so they cannot be copied): (install target, asset source under ``_assets/``, hosts). The asset file is the source of
@@ -74,6 +79,11 @@ MONOREPO_TEXT_RE = re.compile(r"tests/sdd_scripts/|\bfrom navconfig\b|PYTHONPATH
 MONOREPO_PATH_ALLOWLIST: frozenset[tuple[str, str]] = frozenset({
     (".claude/hooks/sdd-worker-format.sh", 'for candidate in "$CWD/.venv/bin" "${CLAUDE_PROJECT_DIR:-}/.venv/bin" \\'),
 })
+#: The guard-hook line exactly as it ships (same text as ``parrot.sdd.installer.GUARD_HOOK_LINE``). ``parrot sdd
+#: install`` without the global launcher on PATH bakes the installing venv's absolute ``parrot`` path into it; that
+#: machine-local form must never reach the package (the installer would then prefix the path a second time).
+GUARD_HOOK_LINE = "parrot sdd worktree guard --hook || exit 2"
+BAKED_GUARD_RE = re.compile(r"(?P<lead>command:\s*')(?P<exe>(?:[^'\n]|'')+?) sdd worktree guard --hook \|\| exit 2'")
 #: target prefix -> asset prefix. No dot-dirs (nested .claude/ discovery) and no `templates/` (.gitignore:273).
 PREFIX_MAP: tuple[tuple[str, str], ...] = (
     (".claude/", "claude/"),
@@ -149,6 +159,29 @@ def build_manifest(entries: list[AssetEntry]) -> str:
     return json.dumps(payload, indent=2) + "\n"
 
 
+def packaged_bytes(data: bytes) -> bytes:
+    """Return repo source bytes as they must ship: every baked guard-hook command restored to ``GUARD_HOOK_LINE``."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data
+    restored = BAKED_GUARD_RE.sub(lambda m: f"{m['lead']}{GUARD_HOOK_LINE}'", text)
+    return data if restored == text else restored.encode("utf-8")
+
+
+def baked_hook_problems(target: str, data: bytes) -> list[str]:
+    """One ``baked-hook: <target>:<line>: <text>`` per shipped guard-hook command that is not the bare form."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return []
+    return [
+        f"baked-hook: {target}:{number}: {line}"
+        for number, line in enumerate(text.splitlines(), start=1)
+        if (match := BAKED_GUARD_RE.search(line)) and match["exe"] != "parrot"
+    ]
+
+
 def monorepo_path_problems(target: str, data: bytes) -> list[str]:
     """C16 + C22: one ``monorepo-path: <target>:<line>: <text>`` per shipped line matching ``MONOREPO_PATH_RE``
     or ``MONOREPO_TEXT_RE``."""
@@ -171,7 +204,8 @@ def find_problems(root: Path, assets_dir: Path) -> list[str]:
     Problem kinds: ``missing`` (expected asset absent), ``diverged`` (bytes differ from the repo
     source), ``extra`` (file under ``assets_dir`` not in the expected set), ``manifest`` (committed
     ``manifest.json`` differs from ``build_manifest``), ``monorepo-path`` (C16/C22, a shipped source line
-    names a monorepo source path or other monorepo-specific text).
+    names a monorepo source path or other monorepo-specific text), ``baked-hook`` (an asset ships a guard hook
+    baked to one machine's venv). Sources are compared in their :func:`packaged_bytes` form.
     """
     problems: list[str] = []
     entries = expected_entries(root)
@@ -184,12 +218,16 @@ def find_problems(root: Path, assets_dir: Path) -> list[str]:
                 problems.append(f"missing: {entry.source} (packaged-only asset)")
             else:
                 problems.extend(monorepo_path_problems(entry.target, asset.read_bytes()))
+                problems.extend(baked_hook_problems(entry.target, asset.read_bytes()))
             continue
-        source_bytes = (root / entry.target).read_bytes()
+        source_bytes = packaged_bytes((root / entry.target).read_bytes())
         if not asset.is_file():
             problems.append(f"missing: {entry.source} (source {entry.target})")
-        elif asset.read_bytes() != source_bytes:
-            problems.append(f"diverged: {entry.source} differs from {entry.target}")
+        else:
+            asset_bytes = asset.read_bytes()
+            if asset_bytes != source_bytes:
+                problems.append(f"diverged: {entry.source} differs from {entry.target}")
+            problems.extend(baked_hook_problems(entry.target, asset_bytes))
         problems.extend(monorepo_path_problems(entry.target, source_bytes))
     if assets_dir.is_dir():
         for path in sorted(assets_dir.rglob("*")):
@@ -202,7 +240,7 @@ def find_problems(root: Path, assets_dir: Path) -> list[str]:
 
 
 def write_assets(root: Path, assets_dir: Path) -> list[AssetEntry]:
-    """Regenerate ``assets_dir`` from scratch (copy bytes + mode) and write ``manifest.json``."""
+    """Regenerate ``assets_dir`` from scratch (:func:`packaged_bytes` + mode) and write ``manifest.json``."""
     entries = expected_entries(root)
     expected = {assets_dir / e.source for e in entries}
     if assets_dir.is_dir():
@@ -216,7 +254,7 @@ def write_assets(root: Path, assets_dir: Path) -> list[AssetEntry]:
             continue
         dest = assets_dir / entry.source
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(root / entry.target, dest)
+        dest.write_bytes(packaged_bytes((root / entry.target).read_bytes()))
         shutil.copymode(root / entry.target, dest)
     assets_dir.mkdir(parents=True, exist_ok=True)
     (assets_dir / MANIFEST_NAME).write_text(build_manifest(entries), encoding="utf-8")
@@ -225,8 +263,8 @@ def write_assets(root: Path, assets_dir: Path) -> list[AssetEntry]:
 
 def check_wheel(wheel: Path) -> list[str]:
     """Verify ``wheel`` contains ``parrot/sdd/_assets/manifest.json`` and every entry it lists,
-    nothing under ``WHEEL_PREFIX`` that matches ``DENY_PATTERNS`` (C11d), and no monorepo source path
-    in any entry it ships (C16)."""
+    nothing under ``WHEEL_PREFIX`` that matches ``DENY_PATTERNS`` (C11d), no monorepo source path
+    in any entry it ships (C16), and no guard hook baked to one machine's venv."""
     problems: list[str] = []
     manifest_name = WHEEL_PREFIX + MANIFEST_NAME
     with zipfile.ZipFile(wheel) as zf:
@@ -250,6 +288,7 @@ def check_wheel(wheel: Path) -> list[str]:
             name = WHEEL_PREFIX + entry["source"]
             if name in names:
                 problems.extend(monorepo_path_problems(entry["target"], zf.read(name)))
+                problems.extend(baked_hook_problems(entry["target"], zf.read(name)))
     return problems
 
 

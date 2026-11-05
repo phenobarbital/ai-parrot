@@ -1,4 +1,4 @@
-# /sdd-done closeout hooks (FEAT-764) — copy to .parrot/sdd_hooks.toml. Docs: docs/sdd/closeout-hooks.md
+# /sdd-done closeout hooks (FEAT-764) — copy to .parrot/sdd_hooks.toml. Docs: wiki/sdd-tooling/sdd/closeout-hooks.md
 [[hooks.pre_pr]]
 name = "frontend-e2e"
 kind = "agent"

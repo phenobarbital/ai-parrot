@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-DOC = Path(__file__).resolve().parents[4] / "docs" / "hooba-toolkit.md"
+DOC = Path(__file__).resolve().parents[4] / "wiki" / "tools" / "hooba-toolkit.md"
 COMPOSITE = (
     "hooba_whoami",
     "hooba_find_contact",

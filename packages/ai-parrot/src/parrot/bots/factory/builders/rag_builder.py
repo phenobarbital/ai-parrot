@@ -26,7 +26,7 @@ Rules:
 - The `system_prompt` must describe the bot's persona, the corpus it can
   retrieve from, and explicit instructions to ground answers on retrieved
   context.
-- Default model: provider=`google`, model=`gemini-2.5-flash`,
+- Default model: provider=`google`, model=`gemini-3.8-flash`,
   temperature=0.2, max_tokens=4096 — override only if the user said so.
 - tools.toolkits stays empty unless the user mentioned an extra integration
   on top of retrieval.

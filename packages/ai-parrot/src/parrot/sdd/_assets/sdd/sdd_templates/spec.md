@@ -21,6 +21,10 @@ tags: []
 # e2e:
 #   policy: optional
 #   scenario_ids: []
+# docs:
+#   policy: required            # required | none ; absent = unset (never coerced)
+#   pages: []                   # wiki/<section>/<page>.md paths
+#   api_modules: []             # dotted module names for docstring completeness (informational)
 ---
 
 # Feature Specification: <Feature Name>
@@ -242,7 +246,7 @@ parrot e2e verify --plan <path-to-generated>/e2e-plan.md
 
 - [ ] All unit tests pass (`pytest tests/unit/ -v`)
 - [ ] All integration tests pass (`pytest tests/integration/ -v`)
-- [ ] Documentation updated in `docs/`
+- [ ] Documentation pages declared in §10 exist under `wiki/` (`parrot sdd techwiki check`)
 - [ ] No breaking changes to existing public API
 - [ ] Performance benchmark: <metric> within <threshold>
 - [ ] Criterion N
@@ -336,7 +340,7 @@ class ExistingClass(BaseClass):
 ## Decisions
 
 <!-- OPTIONAL, authored. Omit the whole section when the spec decides nothing architectural.
-     Grammar: docs/sdd/decision-audit.md. Each entry id becomes adr:spec:<document_id>#<id>. -->
+     Grammar: wiki/sdd-tooling/sdd/decision-audit.md. Each entry id becomes adr:spec:<document_id>#<id>. -->
 ```yaml
 schema_version: 1
 document_id: <feature-slug>
@@ -386,6 +390,19 @@ entries:
 | S3 | <title> (risk) | ESCALATE | <what the human must decide> | §8 Q<N> |
 
 Summary: **<C>** confirmed · **<R>** rejected · **<E>** escalated.
+
+---
+
+## 10. Documentation
+
+> Authored wiki pages this feature must deliver or update, the API modules whose docstrings
+> must be complete, and the docs policy.
+
+- **Policy**: `required` | `none` (hotfix/brief: always `none`)
+- **Pages** (one bullet per `wiki/<section>/<page>.md`, action: create | update):
+  - `wiki/<section>/<page>.md` — create: <purpose>
+- **API modules** (informational — docstring completeness expectation):
+  - `parrot.<module>`
 
 ---
 

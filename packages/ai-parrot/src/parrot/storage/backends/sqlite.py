@@ -5,7 +5,7 @@ async SQLite access.  Suitable for:
   - Data-analyst laptops without Docker or AWS credentials.
   - CI environments without external services.
 
-Limitations (see docs/storage-backends.md):
+Limitations (see wiki/stores/storage-backends.md):
   - Single-writer: SQLite serializes writes. Not suitable for multi-process
     deployments. For multi-worker local setups, use Postgres via Docker.
   - No built-in background TTL sweeper in v1. Expired rows are filtered on

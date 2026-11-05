@@ -24,7 +24,7 @@ This document describes the most important configuration values for AI-Parrot. A
 Configuration for Google's Generative AI (Gemini models).
 
 - **`GOOGLE_API_KEY`**: API key for Google GenAI services
-- **`CREW_AI_KEY`**: API key used by Google agents in crews built through the AgentCrew HTTP handlers, and by the crew's own default Google orchestration LLM. Unset falls back to `GOOGLE_API_KEY`. See `docs/crew_handler.md`.
+- **`CREW_AI_KEY`**: API key used by Google agents in crews built through the AgentCrew HTTP handlers, and by the crew's own default Google orchestration LLM. Unset falls back to `GOOGLE_API_KEY`. See `wiki/bots/crew_handler.md`.
 - **`VERTEX_PROJECT_ID`**: Google Cloud project ID for Vertex AI
 - **`VERTEX_REGION`**: Region for Vertex AI deployment
 
@@ -221,8 +221,7 @@ Additional Google services beyond GenAI.
 ## LLM Defaults
 
 ### Model Selection
-- **`DEFAULT_LLM_MODEL`**: Default model across the application (default: `gemini-2.5-flash`)
-- **`LLM_MODEL_NAME`**: Alias for model name (default: `gemini-2.5-pro`)
+- **`DEFAULT_LLM_MODEL`**: Default model across the application (default: `gemini-flash-latest`)
 - **`LLM_TEMPERATURE`**: Default temperature for generation (default: `0.1`)
 
 ### Model-Specific Defaults
@@ -328,7 +327,7 @@ MS_TEAMS_CLIENT_ID=your-client-id
 MS_TEAMS_CLIENT_SECRET=your-client-secret
 
 # LLM Defaults
-DEFAULT_LLM_MODEL=gemini-2.5-flash
+DEFAULT_LLM_MODEL=gemini-flash-latest
 LLM_TEMPERATURE=0.1
 
 # Embeddings

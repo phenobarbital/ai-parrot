@@ -1,0 +1,232 @@
+"""Tests for technical-wiki bundle assembly."""
+
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from parrot.sdd.scripts.techwiki_bundle import main
+from parrot.sdd.techwiki.bundle import assemble, write_bundle
+from parrot.sdd.techwiki.config import load_techwiki_config
+
+
+@pytest.fixture
+def techwiki_repo(tmp_path: Path) -> Path:
+    """Copy the fixture repository and initialize it for commit metadata tests."""
+    fixture = Path(__file__).parent / "fixtures" / "techwiki_repo"
+    root = tmp_path / "repository"
+    shutil.copytree(fixture, root)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.test",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        check=True,
+    )
+    return root
+
+
+class TestBundle:
+    """Bundle validation and output behaviour."""
+
+    def test_bundle_collision_and_dangling_exit_1(
+        self, techwiki_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Collision and dangling links return one while the report is still written."""
+        out = tmp_path / "out"
+        monkeypatch.setattr("parrot.sdd.techwiki.api.generate", lambda *args, **kwargs: ([], []))
+        assert main(["--root", str(techwiki_repo), "--out", str(out)]) == 1
+        report = json.loads((out / "techwiki-report.json").read_text(encoding="utf-8"))
+        assert report["collisions"]
+        assert report["dangling"] == [{"source": "wiki/b/two.md", "target": "missing.md"}]
+
+    def test_bundle_home_sidebar_from_index(self, techwiki_repo: Path, tmp_path: Path) -> None:
+        """Home and sidebar retain index order and include release, commit, and ADRs."""
+        cfg = load_techwiki_config(techwiki_repo)
+        pages, report = assemble(cfg, techwiki_repo, release="v1.2.3", commit="abc", with_api=False)
+        report.dangling.clear()
+        report.collisions.clear()
+        out = tmp_path / "out"
+        write_bundle(pages, report, cfg, out)
+        home = (out / "Home.md").read_text(encoding="utf-8")
+        sidebar = (out / "_Sidebar.md").read_text(encoding="utf-8")
+        assert "v1.2.3" in home and "abc" in home and "https://example.test/docs" in home
+        assert sidebar.index("## Alpha") < sidebar.index("## Beta") < sidebar.index("## Decisions")
+        assert "[[Decisions-Decision-One]]" in sidebar
+
+    def test_bundle_dry_run_writes_only_report(self, techwiki_repo: Path, tmp_path: Path) -> None:
+        """Dry-run writes the validation report but no wiki pages or navigation."""
+        out = tmp_path / "out"
+        assert main(["--root", str(techwiki_repo), "--out", str(out), "--dry-run", "--sidebar-only"]) == 1
+        assert {path.name for path in out.iterdir()} == {"techwiki-report.json"}
+
+    def test_sidebar_only_writes_navigation(self, techwiki_repo: Path, tmp_path: Path) -> None:
+        """Sidebar mode emits only the two requested navigation files."""
+        out = tmp_path / "out"
+        assert main(["--root", str(techwiki_repo), "--out", str(out), "--sidebar-only"]) == 1
+        assert {path.name for path in out.iterdir()} == {"Home.md", "_Sidebar.md"}
+
+    def test_bundle_manifest_resolves_links(self, techwiki_repo: Path, tmp_path: Path) -> None:
+        """Each rewritten authored link resolves to a page registered in the manifest."""
+        source = techwiki_repo / "wiki" / "b" / "two.md"
+        source.write_text("# Two\n", encoding="utf-8")
+        cfg = load_techwiki_config(techwiki_repo)
+        pages, report = assemble(cfg, techwiki_repo, with_api=False)
+        assert not report.dangling
+        out = tmp_path / "out"
+        write_bundle(pages, report, cfg, out)
+        manifest = json.loads((out / "techwiki-manifest.json").read_text(encoding="utf-8"))
+        names = {entry["name"] for entry in manifest["pages"]}
+        one = next(page for page in pages if page.source == Path("wiki/a/one.md"))
+        assert "[[Beta-Two]]" in one.body
+        assert "Beta-Two" in names
+
+
+def test_adr_title_with_hyphen_is_sanitized_not_fatal(techwiki_repo: Path) -> None:
+    """A hyphenated ADR title yields a hyphen-free page name instead of failing every ADR."""
+    adr = techwiki_repo / "docs" / "decisions" / "hyphen.md"
+    adr.write_text("# Clients are memory-less\n\nBody.\n", encoding="utf-8")
+    cfg = load_techwiki_config(techwiki_repo)
+    pages, report = assemble(cfg, techwiki_repo, with_api=False)
+    assert not [c for c in report.collisions if c.get("reason") == "invalid page name"]
+    assert any(p.title == "Clients are memory less" and "-" not in p.title for p in pages)
+    assert "Clients are memory-less" in adr.read_text(encoding="utf-8")
+
+
+def test_reserved_page_name_is_a_collision(techwiki_repo: Path) -> None:
+    """A top-level page titled Home must not silently be overwritten by the generated navigation."""
+    (techwiki_repo / "wiki" / "home.md").write_text("# Home\n\nBody.\n", encoding="utf-8")
+    cfg = load_techwiki_config(techwiki_repo)
+    _, report = assemble(cfg, techwiki_repo, with_api=False)
+    assert any(c.get("name") == "Home" and c.get("reason") == "reserved name" for c in report.collisions)
+    assert not report.ok()
+
+
+def test_report_lists_skipped_modules_first(techwiki_repo: Path, tmp_path: Path) -> None:
+    """AC-7b: the report and manifest put skipped modules before everything else."""
+    from parrot.sdd.techwiki.bundle import report_payload
+
+    cfg = load_techwiki_config(techwiki_repo)
+    pages, report = assemble(cfg, techwiki_repo, with_api=False)
+    report.skipped_modules = [{"module": "pkg.broken", "reason": "SyntaxError"}]
+    assert next(iter(report_payload(report))) == "skipped_modules"
+    out = tmp_path / "out"
+    write_bundle(pages, report, cfg, out)
+    assert next(iter(json.loads((out / "techwiki-report.json").read_text()))) == "skipped_modules"
+    manifest = json.loads((out / "techwiki-manifest.json").read_text())
+    assert next(iter(manifest)) == "skipped_modules"
+    assert manifest["skipped_modules"] == report.skipped_modules
+
+
+def test_empty_packages_is_reported_as_skipped(techwiki_repo: Path) -> None:
+    """With no packages configured the API reference is not silently empty: it is a skipped entry."""
+    from parrot.sdd.techwiki.api import generate
+
+    cfg = load_techwiki_config(techwiki_repo)
+    cfg = cfg.model_copy(update={"packages": []})
+    pages, skipped = generate(cfg, techwiki_repo)
+    assert pages == []
+    assert skipped and skipped[0]["reason"] == "no packages configured"
+
+
+def test_collision_with_generated_page_names_its_ref_id(techwiki_repo: Path) -> None:
+    """A collision with a generated page reports ref:<module>, not 'None'."""
+    from parrot.sdd.techwiki import bundle as bundle_module
+
+    class _Gen:
+        module, title, name, body, section, source = "x.y", "Reference: x.y", "Dup", "b", "API Reference", None
+
+    cfg = load_techwiki_config(techwiki_repo)
+    original = bundle_module._generated_pages
+    bundle_module._generated_pages = lambda c, r, rel: ([_Gen(), _Gen()], [])  # type: ignore[assignment]
+    try:
+        _, report = bundle_module.assemble(cfg, techwiki_repo)
+    finally:
+        bundle_module._generated_pages = original
+    sources = " ".join(c.get("sources", "") for c in report.collisions)
+    assert "None" not in sources
+
+
+# --- bundle + real generated API pages (needs the griffe extra) --------------------------------------------
+
+
+@pytest.fixture
+def api_repo(techwiki_repo: Path) -> Path:
+    """The bundle fixture repository extended with the static sample package as a configured distribution."""
+    import importlib.util
+    import os
+
+    if importlib.util.find_spec("griffe") is None:
+        if os.environ.get("TECHWIKI_REQUIRE_GRIFFE") == "1":
+            pytest.fail("TECHWIKI_REQUIRE_GRIFFE=1 but the griffe extra is not installed")
+        pytest.skip("griffe extra is not installed")
+    fixture = Path(__file__).parent / "fixtures" / "techwiki_pkg"
+    destination = techwiki_repo / "packages" / "sample" / "src"
+    shutil.copytree(fixture, destination)
+    config_path = techwiki_repo / "sdd" / "config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["techwiki"]["packages"] = [{"dist": "sample", "src": "packages/sample/src", "roots": ["samplepkg"]}]
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    (techwiki_repo / "wiki" / "b" / "two.md").write_text(
+        "# Two\n", encoding="utf-8"
+    )  # drop the deliberate dangling link
+    (techwiki_repo / "wiki" / "b" / "two-copy.md").unlink()  # and the deliberate authored name collision
+    return techwiki_repo
+
+
+def test_ref_links_resolve_to_generated_pages(api_repo: Path, tmp_path: Path) -> None:
+    """``ref:<module>`` links become wiki links to the generated reference page; an unknown module is dangling."""
+    one = api_repo / "wiki" / "a" / "one.md"
+    one.write_text(
+        "---\ntitle: One\n---\n\n# One\n\n[Core](ref:samplepkg.core) [Nope](ref:samplepkg.nope)\n", encoding="utf-8"
+    )
+    cfg = load_techwiki_config(api_repo)
+    pages, report = assemble(cfg, api_repo)
+    page = next(p for p in pages if p.source == Path("wiki/a/one.md"))
+    assert "[[API-Reference-Reference:-samplepkg.core]]" in page.body
+    assert "[Nope](ref:samplepkg.nope)" in page.body
+    assert report.dangling == [{"source": "wiki/a/one.md", "target": "ref:samplepkg.nope"}]
+
+
+def test_every_rewritten_link_resolves_in_the_manifest(api_repo: Path, tmp_path: Path) -> None:
+    """S9: every ``[[Page]]`` in every written page names a page registered in the manifest."""
+    import re
+
+    cfg = load_techwiki_config(api_repo)
+    pages, report = assemble(cfg, api_repo)
+    assert report.ok(), (report.collisions, report.dangling)
+    out = tmp_path / "out"
+    write_bundle(pages, report, cfg, out)
+    manifest = json.loads((out / "techwiki-manifest.json").read_text(encoding="utf-8"))
+    names = {entry["name"] for entry in manifest["pages"]}
+    assert any(name.startswith("API-Reference-") for name in names)
+    for written in out.glob("*.md"):
+        for target in re.findall(r"\[\[([^\]]+)\]\]", written.read_text(encoding="utf-8")):
+            assert target in names or target in {"Home", "_Sidebar"}, (written.name, target)
+
+
+def test_authored_page_colliding_with_a_generated_name(api_repo: Path) -> None:
+    """An authored page whose name equals a generated reference page's name is a reported collision (AC-5)."""
+    (api_repo / "wiki" / "_index.yaml").write_text(
+        "sections:\n  - id: ref\n    title: API Reference\n", encoding="utf-8"
+    )
+    (api_repo / "wiki" / "ref").mkdir()
+    (api_repo / "wiki" / "ref" / "core.md").write_text("# Reference: samplepkg.core\n\nClash.\n", encoding="utf-8")
+    cfg = load_techwiki_config(api_repo)
+    _, report = assemble(cfg, api_repo)
+    clash = [c for c in report.collisions if c.get("name") == "API-Reference-Reference:-samplepkg.core"]
+    assert clash and "ref:samplepkg.core" in clash[0]["sources"] and "wiki/ref/core.md" in clash[0]["sources"]

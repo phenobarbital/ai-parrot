@@ -47,7 +47,8 @@ invent a passage or present a catalog summary as a quotation.
   requires `bm25s`. If that dependency is missing, catalog search, cards,
   inventory, ToC, and section reads still work. Select sections from the ToC
   and disclose the narrower search when it affects the answer.
-- If MCP is disconnected, run `parrot codex install --no-build` in the target repository,
+- If MCP is disconnected, run `parrot codex install --no-build` from the primary checkout
+  (or pass `--path` to select the target deliberately),
   then restart Codex in that trusted project. CLI fallbacks are `bookstore search "topic" --catalog-only`,
   `bookstore list --json`, `bookstore show <book_id> --json`,
   `bookstore toc <book_id>`, and `bookstore search "question" --book <book_id>`.

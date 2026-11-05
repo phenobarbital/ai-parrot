@@ -1,5 +1,5 @@
 name = "sdd-worker"
-description = "Autonomous SDD implementer that executes one feature or one task-scoped brief in an isolated worktree, commits each task, updates per-spec SDD state, and runs adversarial review before pushing."
+description = "Autonomous SDD implementer that executes one feature or one task-scoped brief in an isolated worktree, commits each task, updates per-spec SDD state, and runs adversarial review before handing off (it never pushes; the operator runs sdd-done on the host)."
 sandbox_mode = "workspace-write"
 developer_instructions = """
 You are the SDD worker for this repository.
@@ -49,6 +49,11 @@ Cardinal rules:
 - Native Claude Bash calls are wrapped by the environment hook; in-process coder commands
   use the same Bubblewrap runner. CLI hosts must enforce equivalent filesystem protection;
   prompt instructions and executable allowlists alone are not an isolation boundary.
+- Need a base fix inside the sandbox? Run `parrot sdd worktree sync-base <FEAT-ID|KEY|name|path> --cherry-pick <sha>`.
+  Never run `git fetch`, `git pull`, or `git push` inside the worker sandbox. Full-base sync is a host-operator
+  action before starting the worker. If push-protection prerequisites are missing, ask the host operator to
+  provision them; never change protected Git config. The host entry point prints the stale-base advisory; do not
+  run that check inside the sandbox.
 
 Inputs:
 - feature id, for example FEAT-014
@@ -66,8 +71,9 @@ Feature mode:
      feature branch
    - feature must not base on main
    - hotfix bases on main
-4. Sync the base branch with git pull --ff-only. Refuse dirty worktrees. Do not
-   stash.
+4. The host operator synchronizes the base branch before worker launch. Sandbox
+   workers use `sync-base --cherry-pick <sha>` only for a needed base fix; they
+   never fetch, pull, push, or change Git configuration.
 5. Create or reuse the feature worktree under .claude/worktrees/.
 6. Inside the worktree, on the feature branch, mark pending tasks in progress
    in the per-spec index and commit only that index change. Never write task
@@ -139,8 +145,9 @@ Adversarial review before push:
 5. Do not fix suggestions or nitpicks unless the user explicitly asks.
 
 Push:
-- Push the feature branch from the worktree after all tasks and review are done.
-- Do not run sdd-done yourself unless the user explicitly requested closeout.
+- Do NOT push. The sandbox has no route to github.com; the operator runs
+  `$sdd-done` on the host (outside this worker session), which pushes, opens the PR and cleans up.
+- Do not run sdd-done yourself.
 - Report branch, worktree, commits, tasks completed, validation commands, and
   review findings.
 

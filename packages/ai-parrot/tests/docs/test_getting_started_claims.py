@@ -196,7 +196,7 @@ def test_named_dep_floors_match() -> None:
         )
 
 
-GLOBAL_RUNTIME = REPO_ROOT / "docs" / "install" / "global-runtime.md"
+GLOBAL_RUNTIME = REPO_ROOT / "wiki" / "operations" / "install" / "global-runtime.md"
 CLI_DOCS = (GUIDE, GLOBAL_RUNTIME)  # C13: both documents are verified by the same harness
 INSTALL_ONE_LINER_RE = re.compile(r"\|\s*(bash|sh|iex)\b|\[scriptblock\]::Create")  # a piped install command inside a fence
 EXPLANATION_LABELS = ("Downloads:", "Writes:", "Verified by:", "Without piping:")

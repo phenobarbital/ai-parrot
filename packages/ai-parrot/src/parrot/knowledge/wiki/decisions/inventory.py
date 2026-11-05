@@ -92,19 +92,34 @@ class InventorySnapshot:
         """Take a two-phase snapshot, failing when its pages change mid-read."""
         diagnostics: list[DecisionDiagnostic] = []
         approved, marker_states = await cls._approved_batches(approvals, adapter, store, root, diagnostics)
-        records = await repo.inventory()
+        pairs = await repo.inventory_with_hashes()
+        records = [record for record, _content_hash in pairs]
         diagnostics.extend(repo.last_diagnostics)
-        hashes = {record.decision_id: record_hash(record) for record in records}
+        # Stored hashes, not re-encoded ones: a page written by an older codec re-encodes
+        # differently although it did not change (issue:5918ff019737). A page with no stored
+        # hash cannot be compared at all, so the snapshot refuses it before any further work
+        # (issue:c7f16ecf903e, issue:643e2720e52d).
+        stored = {record.decision_id: content_hash for record, content_hash in pairs}
+        unverifiable = sorted(decision_id for decision_id, content_hash in stored.items() if content_hash is None)
+        if unverifiable:
+            raise DecisionError(
+                SNAPSHOT_UNSTABLE,
+                "decision pages have no stored content hash, so a mid-read change cannot be detected: "
+                + ", ".join(unverifiable),
+            )
         candidates = [record for record in records if is_eligible(record, approved_batches=approved)]
         eligible, heads = cls._validate_supersession(candidates, records, diagnostics)
 
-        if await store.page_hashes(sorted(hashes)) != hashes:
+        if await store.page_hashes(sorted(stored)) != stored:
             raise DecisionError(SNAPSHOT_UNSTABLE, "decision inventory changed while reading")
         if await cls._marker_states(store, marker_states) != marker_states:
             raise DecisionError(SNAPSHOT_UNSTABLE, "batch visibility markers changed while reading")
 
         manifest = SnapshotManifest(
-            inventory=hashes,
+            # The manifest describes the decisions, not the envelope they are stored in: a legacy and a
+            # canonical page of the same record hash alike, so the FEAT-808 rewrite does not stale a
+            # rendered spec (issue:d219d0707031). The stability check above still uses stored hashes.
+            inventory={record.decision_id: record_hash(record) for record, _content_hash in pairs},
             taxonomy_digest=taxonomy.digest(),
             approvals_digest=approvals.digest(),
             structural_revision=structural_revision,

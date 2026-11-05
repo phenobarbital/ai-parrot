@@ -1,0 +1,35 @@
+Decided with the user during discovery (Rounds 0–2):
+
+- **Flow**: `type: feature`, base `dev`. Reaches `main` with the next release.
+- **Two surfaces, strict roles**: GitHub Pages = informative (what/why/guides, written on
+  demand by a human or an agent, outside the SDD flow). GitHub Wiki = technical reference
+  (classes, arguments, parameters, return values, semantics, examples, gotchas).
+- **The wiki reflects `main` only** — what is released on PyPI. Features merged to `dev`
+  but not yet released do not appear until the release lands on `main`.
+- **Source of truth is the monorepo.** The wiki repository is a publish target, never
+  edited from the GitHub web UI. A workflow regenerates and pushes it.
+- **Authored technical pages are organised by subsystem/component**, not per feature.
+  A spec's Documentation chapter names which subsystem page(s) it creates or updates.
+- **Generated API reference pages are produced only in CI** (not committed); the
+  repository holds only authored pages.
+- **Scope of generated reference**: public API (no underscore-prefixed names) of every
+  Python distribution in the workspace.
+- **Language**: English. Spanish pages that migrate are translated.
+- **Migration moves, never copies**: technical documents leave `docs/` (and the mkdocs
+  nav) when they enter the wiki source. One source of truth per topic.
+- **Backfill**: one task writes subsystem pages for the main subsystems that have no
+  technical doc today (bots/agents, clients, tools, memory, flows, skills, stores,
+  loaders, MCP, server).
+- **`/sdd-done` gate = warning only**, never blocking. Discipline stays with the reviewer.
+  `type: hotfix` and `/sdd-brief` lanes are exempt entirely.
+- **The SDD assets ship to other repositories** (`parrot sdd install` deploys
+  `.claude/commands/sdd-*.md`, `sdd/templates/*`, twins under `.agents/skills/` and
+  `.agent/workflows/`; `scripts/sdd/check_asset_sync.py` keeps `parrot/sdd/_assets/`
+  byte-identical and CI enforces it). Every change to the template, the commands or the
+  gate must be repo-neutral and must update all twins plus `_assets/`.
+- **Never a moment without a published API reference.** `mkdocstrings` leaves the Pages
+  site only in the final cut-over task, after the wiki sync has run green on `main`.
+- Standard repo rules: aiohttp only, no `requests`/`httpx`, `uv` for dependencies,
+  Google docstrings, 120 columns, tests next to the distribution.
+
+---

@@ -1,7 +1,7 @@
 """Pluggable ConversationBackend factory and re-exports.
 
 Use ``build_conversation_backend()`` to get the backend specified by
-``PARROT_STORAGE_BACKEND``. See docs/storage-backends.md for the full
+``PARROT_STORAGE_BACKEND``. See wiki/stores/storage-backends.md for the full
 backend selection matrix and environment variable reference.
 
 FEAT-116: dynamodb-fallback-redis — Module 7 (factory + config wiring).

@@ -163,7 +163,7 @@ ONTOLOGY_CACHE_TTL = config.getint("ONTOLOGY_CACHE_TTL", fallback=86400)
 ONTOLOGY_MAX_TRAVERSAL_DEPTH = config.getint("ONTOLOGY_MAX_TRAVERSAL_DEPTH", fallback=4)
 
 # LLM model for dynamic AQL generation and intent detection.
-ONTOLOGY_AQL_MODEL = config.get("ONTOLOGY_AQL_MODEL", fallback="gemini-2.5-flash")
+ONTOLOGY_AQL_MODEL = config.get("ONTOLOGY_AQL_MODEL", fallback="gemini-3.8-flash")
 
 # Directory for review queue JSON files (ambiguous relation matches).
 # Defaults to {ONTOLOGY_DIR}/review/ at runtime when None.
@@ -245,7 +245,9 @@ if not AGENTS_BOTS_PROMPT_DIR.exists():
     AGENTS_BOTS_PROMPT_DIR.mkdir(parents=True, exist_ok=True)
 
 # LLM Model
-DEFAULT_LLM_MODEL_NAME = config.get("LLM_MODEL_NAME", fallback="gemini-2.5-pro")
+# Opt-in global default for per-component LLM selection (FEAT-796), "provider:model".
+# Unset -> each component keeps its builtin default. Independent of LLM_MODEL below.
+DEFAULT_LLM: str | None = config.get("DEFAULT_LLM", fallback=None)
 
 
 ## MILVUS DB ##:
@@ -882,7 +884,7 @@ VECTOR_HANDLER_MAX_FILE_SIZE = config.getint("VECTOR_HANDLER_MAX_FILE_SIZE", fal
 ## POST /api/v1/agents/infographic/render (data-splice/jinja HTML sources —
 ## NOT the block-spec metadata registry `parrot.helpers.infographics` uses
 ## for the pre-render 404 check; the two are intentionally separate
-## registries, see docs/api/infographic_render.md's Known Limitation).
+## registries, see wiki/server/api/infographic_render.md's Known Limitation).
 ## Comma-separated list of directories; empty by default — the render
 ## route logs a loud warning and every render request fails with
 ## TEMPLATE_ENGINE_UNSET until this is configured for a deployment.

@@ -22,6 +22,7 @@ dependencies = [
     "ai-parrot-advisors",
     "ai-parrot-squawk",
     "navrules",
+    "google-genai==2.34.0",
 ]
 
 [project.optional-dependencies]
@@ -61,10 +62,10 @@ members = ["packages/*"]
 [dependency-groups]
 dev = [
     "pytest>=7.2.2",
-    "pytest-asyncio==1.4.0",
+    "pytest-asyncio==1.4.1",
     "pytest-xdist==3.3.1",
     "pytest-assume==2.4.3",
-    "pytest-mock==3.15.1",
+    "pytest-mock==3.17.0",
     "black",
     "pylint",
     "mypy",
@@ -293,6 +294,12 @@ disable = ["C0330", "C0326", "W1203"]
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
+
+[tool.parrot.sdd]
+# sdd-worker native sandbox: GitHub only through `gh` (api.github.com), never git/SSH to github.com.
+# Read from the PRIMARY checkout only. See wiki/sdd-tooling/dev_loop/claude-native-sandbox.md.
+sandbox_allowed_domains = ["api.github.com"]
+gh_token = true
 
 [tool.parrot.worktree]
 # Native build artifacts a fresh `git worktree add` cannot carry, because every

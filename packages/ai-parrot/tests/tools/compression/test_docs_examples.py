@@ -1,7 +1,7 @@
 """Doc-example validation test (TASK-1962).
 
 Ensures the copy-pasteable `.parrot/compressors.toml` example in
-`docs/tools/compression.md` actually parses and validates against the
+`wiki/tools/compression.md` actually parses and validates against the
 shipped `CompressorConfig` schema — a stale doc example is worse than no
 example.
 """
@@ -16,7 +16,7 @@ from parrot.tools.compression.config import CompressorConfig
 def _docs_root() -> Path:
     # packages/ai-parrot/tests/tools/compression/test_docs_examples.py
     # -> repo root is 5 levels up (compression, tools, tests, ai-parrot, packages)
-    return Path(__file__).resolve().parents[5] / "docs"
+    return Path(__file__).resolve().parents[5] / "wiki"
 
 
 def test_doc_toml_example_validates():

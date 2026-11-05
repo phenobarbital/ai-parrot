@@ -234,7 +234,7 @@ def _count_nodes(root: Any) -> tuple[int, int]:
     pathological corpus cases produce parse trees far deeper than Python's
     default recursion limit — a naive recursive walk raised
     ``RecursionError`` during measurement, which is itself evidence for the
-    policy (see docs/design/luau-parser-resource-policy.md): any downstream
+    policy (see wiki/knowledge/design/luau-parser-resource-policy.md): any downstream
     tree-walking code (enrichment, outline rendering) must avoid recursive
     descent over untrusted-depth Luau trees.
     """

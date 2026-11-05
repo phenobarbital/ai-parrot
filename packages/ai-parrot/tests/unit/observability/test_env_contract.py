@@ -135,7 +135,7 @@ _STALE_PHRASES = (
 )
 _FEAT_705_DOCS = (
     "packages/ai-parrot/src/parrot/observability/README.md",
-    "docs/architecture/10-observability.md",
+    "wiki/architecture/10-observability.md",
     "env/.env.observability.example",
     "docker/grafana/README.md",
 )

@@ -38,8 +38,8 @@ async def test_legacy_audit_counts() -> None:
 def test_connections_docs_exist() -> None:
     """Document the AC-15 ownership and migration contract."""
     root = Path(__file__).resolve().parents[5]
-    connections = (root / "docs/auth/connections.md").read_text()
-    ownership = (root / "docs/auth/jira-credential-ownership.md").read_text()
+    connections = (root / "wiki/security/auth/connections.md").read_text()
+    ownership = (root / "wiki/integrations/auth/jira-credential-ownership.md").read_text()
 
     assert "OAUTH2_LEGACY_KEYS_UNTIL" in connections
     assert "integration:connect" in connections

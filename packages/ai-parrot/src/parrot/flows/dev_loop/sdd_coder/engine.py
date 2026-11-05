@@ -174,6 +174,9 @@ class CoderFailure(Exception):
 #: never reports a timeout at the very instant its children were about to settle (issue:3edabb9b953e).
 _GATE_WAIT_MARGIN_S = 5
 
+#: Highest sub-worktree attempt number `_free_attempt` hands out for one task+execution.
+_MAX_ATTEMPT_NUMBER = 20
+
 
 async def _git(*args: str, cwd: str) -> Tuple[int, str, str]:
     """Run git in `cwd`; returns (rc, stdout, stderr). Shape copied from worktree_manager.py:113.
@@ -516,7 +519,7 @@ class SddCoderEngine:
         # Telemetry setup (FEAT-554). `conf.DEV_LOOP_CODER_TELEMETRY` is the
         # master switch — mirrors the same conf-fallback pattern `redis_url`/
         # `worktree_base_path` already use above, so the documented env-var
-        # workflow (docs/dev_loop/sdd-coder-orchestrator.md) actually enables
+        # workflow (wiki/sdd-tooling/dev_loop/sdd-coder-orchestrator.md) actually enables
         # the sink, not just the observational ledger in llm.py. An explicit
         # `telemetry_dir` constructor kwarg (e.g. from a test, or a future
         # toolkit YAML override) still wins over conf either way.
@@ -1004,17 +1007,16 @@ class SddCoderEngine:
             # never a synthetic settlement.
             await self._assert_no_pending_validations(execution_id)
             # Check admitted attempts
+            # A native reservation is admitted through the pool too, so this one
+            # gate covers MCP attempts and native reservations alike.
             snapshot = pool.snapshot()
             if snapshot.admitted_attempts:
+                in_flight = self._in_flight_attempts(execution_id, pool, snapshot.admitted_attempts)
                 raise CoderFailure(
                     "execution_busy",
-                    f"execution {execution_id} has {len(snapshot.admitted_attempts)} admitted attempts still in flight",
-                )
-            # Check native reservations
-            if snapshot.native_reservations:
-                raise CoderFailure(
-                    "execution_busy",
-                    f"execution {execution_id} has {len(snapshot.native_reservations)} native reservations still in flight",
+                    f"execution {execution_id} has {len(in_flight)} admitted attempt(s) still in flight: "
+                    + "; ".join(self._describe_in_flight(row) for row in in_flight),
+                    in_flight=in_flight,
                 )
             # Check outstanding jobs -- from the JobTable, since the pool never tracks MCP jobs
             running_jobs = self._outstanding_job_ids(execution_id, pool.worktree_path)
@@ -1071,6 +1073,44 @@ class SddCoderEngine:
 
         await self._release_usage_sink_if_idle()
         return pool.view()
+
+    def _in_flight_attempts(
+        self, execution_id: str, pool: ExecutionPool, admitted: Dict[str, str]
+    ) -> List[Dict[str, str]]:
+        """Describe every reservation still admitted to *pool*, for an ``execution_busy`` report.
+
+        Args:
+            execution_id: The execution being closed.
+            pool: Its execution pool.
+            admitted: ``attempt_uid -> task_id``, as `ExecutionPool.snapshot()` reports it.
+
+        Returns:
+            One row per reservation, ordered by task id: ``task_id``, ``attempt_uid``,
+            ``backend``, ``model`` and ``kind`` (``native_reservation`` or ``mcp_attempt``).
+        """
+        native_uids = {uid for (owner, _task), uid in self._native_reservations.items() if owner == execution_id}
+        rows: List[Dict[str, str]] = []
+        for attempt_uid, task_id in sorted(admitted.items(), key=lambda item: (item[1], item[0])):
+            admission = pool.resolve_admission(attempt_uid)
+            key = admission[1] if admission is not None else None
+            rows.append(
+                {
+                    "task_id": task_id,
+                    "attempt_uid": attempt_uid,
+                    "backend": key.backend if key is not None else "",
+                    "model": key.model if key is not None else "",
+                    "kind": "native_reservation" if attempt_uid in native_uids else "mcp_attempt",
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _describe_in_flight(row: Dict[str, str]) -> str:
+        """One ``execution_busy`` clause naming a reservation and the call that settles it."""
+        seat = f"{row['backend']}/{row['model']}"
+        if row["kind"] == "native_reservation":
+            return f"{row['task_id']} (native reservation on {seat}; settle it with coder_merge)"
+        return f"{row['task_id']} (MCP attempt on {seat}; wait for its job with coder_wait)"
 
     async def _assert_no_pending_validations(self, execution_id: str) -> None:
         """Refuse while any admitted validation for *execution_id* has not settled (spec R8).
@@ -2210,6 +2250,51 @@ class SddCoderEngine:
             Path(self._base_path) / f"{ctx.feature_branch}--pool" / SubWorktreeManager._branch_suffix(worker_id)
         )  # noqa: SLF001
 
+    async def _free_attempt(self, ctx: _FeatureCtx, task_id: str, requested: int, execution_id: Optional[str]) -> int:
+        """First attempt number >= *requested* whose branch and sub-worktree are both free.
+
+        A failed attempt keeps its branch and sub-worktree (the orchestrator may inspect or
+        repair from it) and `_run_task` restarts numbering at 1, so re-dispatching a task in the
+        same execution used to collide on `git worktree add` (issue:3b913ffd77cd). When the
+        requested slot is taken the result is also above every slot already used, so numbers
+        stay monotonic per task+execution. Names come from `_branch_for`/`_path_for` (exact
+        matches, so `-a1` never matches `-a10`). Returns *requested* unchanged when nothing up
+        to `_MAX_ATTEMPT_NUMBER` is free -- the attempt then fails exactly as it did before.
+
+        Args:
+            ctx: The resolved feature context.
+            task_id: The task being dispatched.
+            requested: The attempt number the caller asked for.
+            execution_id: The calling execution, if any.
+
+        Returns:
+            The attempt number to use.
+        """
+        prefix = f"{ctx.feature_branch}--{task_id}-a"
+        rc, out, _err = await _git("branch", "--list", f"{prefix}*", "--format=%(refname:short)", cwd=ctx.worktree)
+        # Only what would make `git worktree add -b` fail counts: a live branch or directory.
+        # `_branch_attempts` is deliberately ignored -- it still lists merged attempts whose
+        # branch and sub-worktree were already reclaimed, and reusing those slots is safe.
+        existing = {line.strip() for line in out.splitlines()} if rc == 0 else set()
+
+        async def taken(n: int) -> bool:
+            if self._branch_for(ctx, task_id, n, execution_id) in existing:
+                return True
+            return await asyncio.to_thread(os.path.isdir, self._path_for(ctx, task_id, n, execution_id))
+
+        if requested > _MAX_ATTEMPT_NUMBER or not await taken(requested):
+            return requested
+        # `requested` is taken, so `used` is never empty.
+        used = [n for n in range(1, _MAX_ATTEMPT_NUMBER + 1) if await taken(n)]
+        free = max(used) + 1
+        if free <= _MAX_ATTEMPT_NUMBER:
+            self.logger.info(
+                "attempt %d of %s is still held by a kept sub-worktree; using attempt %d", requested, task_id, free
+            )
+            return free
+        self.logger.warning("no free attempt slot up to %d for %s", _MAX_ATTEMPT_NUMBER, task_id)
+        return requested
+
     async def _merged_attempt_branch(
         self, ctx: _FeatureCtx, task_id: str, execution_id: Optional[str]
     ) -> Optional[str]:
@@ -2447,15 +2532,24 @@ class SddCoderEngine:
             worker_id = self._worker_id(task.task_id, attempt, execution_id)
             manager = self._manager_for(ctx, task.task_id, attempt, execution_id)
             path = self._path_for(ctx, task.task_id, attempt, execution_id)
-            if reused_reservation and await asyncio.to_thread(os.path.isdir, path):
-                # Duplicate `prepare_native` for a task that already holds its reservation:
-                # the sub-worktree (and its branch) exist from the first call, so a second
-                # `git worktree add -b` would fail on the existing branch. Reuse them.
-                self.logger.info("prepare_native: reusing existing sub-worktree %s for %s", path, task.task_id)
-            elif repair_from:
-                path = await manager.create(worker_id, base=repair_from)
-            else:
-                path = await manager.create(worker_id)
+            try:
+                if reused_reservation and await asyncio.to_thread(os.path.isdir, path):
+                    # Duplicate `prepare_native` for a task that already holds its reservation:
+                    # the sub-worktree (and its branch) exist from the first call, so a second
+                    # `git worktree add -b` would fail on the existing branch. Reuse them.
+                    self.logger.info("prepare_native: reusing existing sub-worktree %s for %s", path, task.task_id)
+                elif repair_from:
+                    path = await manager.create(worker_id, base=repair_from)
+                else:
+                    path = await manager.create(worker_id)
+            except BaseException:
+                # No sub-worktree means no coder was handed anything, so no later
+                # `coder_merge` can settle a reservation admitted just above: give
+                # the seat back now instead of holding the execution open forever.
+                if pool is not None and not reused_reservation:
+                    self._native_reservations.pop(reservation_key, None)
+                    await pool.release(attempt_uid)
+                raise
             await self._write_attempt_scope(path, task.task_id, task.task_file, ctx.feature_branch)
             self._native_inflight.add(worker_id)
             branch = self._branch_for(ctx, task.task_id, attempt, execution_id)
@@ -3522,6 +3616,7 @@ class SddCoderEngine:
         returns immediately with a not_dispatched error without creating a worktree.
         """
         assert seat.backend is not None, "_run_attempt is only called for mcp seats; native tasks use prepare_native"
+        attempt = await self._free_attempt(ctx, task.task_id, attempt, execution_id)
         manager = self._manager_for(ctx, task.task_id, attempt, execution_id)
         # `_branch_for`/`_path_for` derive from the SAME `_worker_id` passed to
         # `manager.create()` below (spec: "centralize derived names; remove

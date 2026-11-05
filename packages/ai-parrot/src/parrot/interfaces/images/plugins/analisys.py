@@ -13,7 +13,7 @@ class AnalysisPlugin(ImagePlugin):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._model_name: str = kwargs.get("model_name", "gemini-2.5-flash")
+        self._model_name: str = kwargs.get("model_name", "gemini-3.8-flash")
         self.prompt_path = kwargs.get("prompt_path", Path.cwd() / "prompts")
         self.prompt_file: Union[str, Path] = kwargs.get("prompt_file", "default_analysis_prompt.json")
         self._structured_outputs: Dict[str, BaseModel] = kwargs.get("structured_outputs", {})
