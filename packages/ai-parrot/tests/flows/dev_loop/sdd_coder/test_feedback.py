@@ -556,3 +556,48 @@ async def test_record_review_and_feedback_accept_model_or_mapping(
     await toolkit.coder_record_feedback("demo", "/abs", feedback_arg, "3f2b8c1e-5d4a-4e7b-9a6c-1d2e3f4a5b6c")
     assert isinstance(seen["review"], CoderReview) and seen["review"].task_id == "TASK-0001"
     assert isinstance(seen["feedback"], CoderFeedback) and seen["feedback"].pattern == "fail-open-authorization"
+
+
+async def test_record_tools_store_a_valid_payload_through_mcp_adapter(
+    git_sandbox_feature: tuple, noop_probe: object
+) -> None:
+    """A valid review/feedback sent over MCP is recorded, not rejected by its own schema.
+
+    The advertised arg schema validates the nested payload into a model before the
+    toolkit method runs, so the method receives ``CoderReview``/``CoderFeedback``
+    instances rather than the raw dict a direct caller passes.
+    """
+    from parrot.flows.dev_loop.sdd_coder.toolkit import SddCoderToolkit
+    from parrot.mcp.adapter import MCPToolAdapter
+
+    worktree, _branch, base_path, _index = git_sandbox_feature
+    roster = RosterConfig(seats=[RosterSeat(label="h", kind="native")], feedback={"enabled": False})
+    toolkit = SddCoderToolkit(roster=roster, worktree_base_path=str(base_path))
+    toolkit._engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path))
+    execution_id = "550e0000-0000-4000-8000-000000000071"
+    await toolkit._engine.begin_execution("demo", str(worktree), execution_id)
+    prep = await toolkit._engine.prepare_native("demo", str(worktree), "TASK-0001", execution_id)
+    tools = {tool.name: tool for tool in toolkit.get_tools()}
+    scope = {"feature": "demo", "worktree": str(worktree), "execution_id": execution_id}
+
+    review = {
+        "task_id": prep.task_id,
+        "attempt_uid": prep.attempt_uid,
+        "backend": "native",
+        "model": prep.model,
+        "fix_commits": [],
+        "review_evidence": "Orchestrator read the diff; task tests passed.",
+    }
+    result = await MCPToolAdapter(tools["coder_record_review"]).execute({**scope, "review": review})
+    payload = json.loads(result["content"][0]["text"])
+    assert payload["status"] == "ok", payload
+
+    lesson = feedback(
+        task_id=prep.task_id, attempt_uid=prep.attempt_uid, backend="native", model=prep.model
+    ).model_dump(mode="json")
+    result = await MCPToolAdapter(tools["coder_record_feedback"]).execute({**scope, "feedback": lesson})
+    payload = json.loads(result["content"][0]["text"])
+    assert payload["status"] == "ok", payload
+
+    report = await toolkit._engine.feedback_report("demo", str(worktree))
+    assert report.rows[0].reviewed_tasks == 1

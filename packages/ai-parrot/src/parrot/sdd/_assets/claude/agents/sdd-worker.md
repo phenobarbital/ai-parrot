@@ -149,9 +149,12 @@ multi-task Execution Loop described below, unchanged.
 
 ### 0. Sync the Base Branch (FEAT-145)
 
-Read the spec's frontmatter to discover the base branch, then detect whether
-you were launched inside a linked worktree (the documented launch mode) or in
-the primary checkout:
+The trusted host launcher performs the stale-base advisory before the sandbox
+starts. Full-base synchronization is a host operator action; this worker never
+runs a second stale-base check.
+
+Read the spec metadata and retain the existing linked-worktree detection used
+by the remaining startup steps, without fetching or integrating here:
 
 ```bash
 META=$(parrot sdd docs parse "<spec-path>")
@@ -159,23 +162,17 @@ TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 
 if [ "$(git rev-parse --absolute-git-dir)" != "$(cd "$(git rev-parse --git-common-dir)" && pwd)" ]; then
-  IN_WORKTREE=1                      # linked worktree: primary checkout is read-only
-  git fetch origin "$BASE_BRANCH"    # updates shared refs only — never touches the primary tree
+  IN_WORKTREE=1
 else
   IN_WORKTREE=0
-  git checkout "$BASE_BRANCH"
-  git pull --ff-only origin "$BASE_BRANCH"
 fi
 ```
 
-**Inside a linked worktree, NEVER `cd` into the primary checkout, and never run
-`git pull`, `checkout`, `merge`, `reset`, `stash` or `commit` against it (also not
-via `git -C <primary>`).** The Bash sandbox binds only the current checkout and
-the common `.git` directory writable; the primary checkout's working tree is
-mounted read-only, so those commands fail with `Read-only file system` — and a
-half-applied pull there would also clobber other sessions. `git fetch` works
-because it only writes the shared `.git`. Compare against `origin/$BASE_BRANCH`
-instead of the local `$BASE_BRANCH`.
+Need a base fix inside the sandbox? Run
+`parrot sdd worktree sync-base <FEAT-ID|KEY|name|path> --cherry-pick <sha>`.
+Never run `git fetch`, `git pull` or `git push` inside the worker sandbox. If
+push-protection prerequisites are missing, ask the host operator to provision
+them; never change protected Git config. Never request widened network access.
 
 `base_branch` defaults to `dev` for `type: feature` and is fixed to `main`
 for `type: hotfix`. `staging` is also a valid `base_branch` for `type: feature`
@@ -282,11 +279,11 @@ If the command exits non-zero, STOP and report its message. Do not implement on
 
 Already enforced: §3 passed `--spec` and `--index`, and the CLI refuses to hand
 back a worktree in which either is missing. If you reached this point, both are
-present. A failure here means the base branch does not carry the task artifacts
-yet — fetch and re-run §3 rather than working around it. With `IN_WORKTREE=1`,
-§3 reuses the current worktree and will not refresh it: bring the artifacts in
-with `git merge origin/$BASE_BRANCH` *inside this worktree* (stop and report on
-a conflict), never by pulling in the primary checkout.
+present. If a required artifact landed on the base after this worktree was
+created, bring its commit in with
+`parrot sdd worktree sync-base <FEAT-ID|KEY|name|path> --cherry-pick <sha>`.
+For a full-base refresh, stop and ask the host operator to run sync-base before
+restarting the worker.
 
 ### 4.5. Mark Tasks as In-Progress (on the feature branch)
 
@@ -582,7 +579,7 @@ If ANY check fails, fix or STOP.
   bounded at 120 s and this sweep is routinely longer
   (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).
 - To tell whether a failure already happens on `<base_branch>`, rely on the baseline verdict the merge-tier
-  sweep above already computes. Never improvise a baseline tree (`git archive`, `git worktree add --detach`,
+  sweep above already computes. Never improvise a baseline tree (`git archive`, a hand-built detached worktree,
   `git show` into a scratch dir): it carries no gitignored compiled `.so` files, so `import parrot` fails on
   `parrot.utils.types`, and never hand-copy `.so` files into one. If you need a baseline tree for anything else,
   get it with `parrot sdd worktree baseline create --base origin/<base_branch>` (prints its path, native

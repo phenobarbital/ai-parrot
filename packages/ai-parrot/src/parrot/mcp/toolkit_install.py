@@ -142,21 +142,28 @@ def inventory(root: Path, hosts: Sequence[HostKind] | None = None) -> list[Toolk
     return rows
 
 
-def _reconcile_all(root: Path, hosts: Sequence[HostKind], report: ActionReport) -> None:
-    """Reconcile every host, collecting per-host failures instead of raising."""
+def _reconcile_all(
+    root: Path, hosts: Sequence[HostKind], report: ActionReport, *, portable: bool | None = None
+) -> None:
+    """Collect reconciler results with explicit command form and existing failure isolation."""
     for kind in hosts:
         adapter = get_adapter(kind)
         try:
-            actions, warnings = adapter.reconcile(root)
+            actions, warnings = adapter.reconcile(root, portable=portable)
         except (OSError, ValueError) as exc:
             report.failed_hosts[kind] = str(exc)
             continue
-        report.actions.extend(actions)
+        for action in actions:
+            is_fallback_note = action.startswith("note: host config baked to absolute paths ")
+            if not (is_fallback_note and action in report.actions):
+                report.actions.append(action)
         report.warnings.extend(warnings)
 
 
-def install_toolkits(root: Path, names: Sequence[str], hosts: Sequence[HostKind]) -> ActionReport:
-    """Seed `names` and register them with each host.
+def install_toolkits(
+    root: Path, names: Sequence[str], hosts: Sequence[HostKind], *, portable: bool | None = None
+) -> ActionReport:
+    """Seed and register toolkits with the caller's explicit or inferred form.
 
     Order: preflight -> seed -> reconcile -> approvals. Preflight raises BEFORE any
     write, so an unknown name leaves the config byte-identical (AC8).
@@ -174,7 +181,7 @@ def install_toolkits(root: Path, names: Sequence[str], hosts: Sequence[HostKind]
     report.warnings.extend(f"{name} — template drift: {', '.join(keys)}" for name, keys in seed_result.drift.items())
 
     resolved_hosts = list(hosts)
-    _reconcile_all(root, resolved_hosts, report)
+    _reconcile_all(root, resolved_hosts, report, portable=portable)
 
     if HostKind.CLAUDE in resolved_hosts:
         message = get_adapter(HostKind.CLAUDE).sync_approvals(root)
@@ -219,8 +226,10 @@ def uninstall_toolkits(root: Path, names: Sequence[str], hosts: Sequence[HostKin
     return report
 
 
-def set_toolkits_enabled(root: Path, names: Sequence[str], enabled: bool, hosts: Sequence[HostKind]) -> ActionReport:
-    """Flip `enabled:` for `names` and reconcile; the section and its kwargs survive."""
+def set_toolkits_enabled(
+    root: Path, names: Sequence[str], enabled: bool, hosts: Sequence[HostKind], *, portable: bool | None = None
+) -> ActionReport:
+    """Toggle sections and reconcile while retaining all existing approval semantics."""
     root = Path(root)
     report = ActionReport()
     resolved_hosts = list(hosts)
@@ -241,7 +250,7 @@ def set_toolkits_enabled(root: Path, names: Sequence[str], enabled: bool, hosts:
         else:
             report.warnings.append(f"{name} — not installed")
 
-    _reconcile_all(root, resolved_hosts, report)
+    _reconcile_all(root, resolved_hosts, report, portable=portable)
 
     if HostKind.CLAUDE in resolved_hosts:
         if enabled:

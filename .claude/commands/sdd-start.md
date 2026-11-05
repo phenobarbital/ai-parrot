@@ -71,7 +71,14 @@ WT=$(parrot sdd worktree ensure \
        --spec "<spec-path>" \
        --index "sdd/tasks/index/<feature-slug>.json")
 cd "$WT"
+# Host-only, advisory: surface the output verbatim and continue (never blocks startup).
+parrot sdd worktree sync-base "$WT" --dry-run || true
 ```
+
+If the dry run reports base commits missing, suggest running
+`parrot sdd worktree sync-base "$WT"` from the host before the worker starts.
+Never run this full-base check inside a sandboxed worker: it cannot fetch there
+and would only produce a refusal.
 
 For a hotfix (`type: hotfix` in the index header) pass `--jira-key <KEY>`
 instead of `--feature-id`; the CLI applies the FEAT-466 naming and branches

@@ -1,6 +1,6 @@
 ---
 id: F007
-query_id: [Q026, Q043], [Q033, Q050]
+query_id: [Q026, Q043, Q033, Q050]
 type: read
 intent: "PBAC / policy gate: existing enforcement points keyed by tool or capability; where decisions are made relative to the LLM."
 executed_at: 2026-10-25T22:46:15Z

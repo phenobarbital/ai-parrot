@@ -569,11 +569,20 @@ def _markdown_summary(content: str) -> str:
     return ""
 
 
-def _document_attrs(content: str) -> dict[str, str]:
-    """Normalize leading document frontmatter without altering the source body."""
+def _document_attrs(content: str, rel_path: str) -> dict[str, str]:
+    """Normalize leading document frontmatter without altering the source body.
+
+    Args:
+        content: Full document text.
+        rel_path: Repository-relative path, named in the warning logged when
+            the frontmatter block is not valid YAML.
+
+    Returns:
+        Normalized attribute rows, or ``{}`` when there is no usable frontmatter.
+    """
     from parrot.knowledge.wiki.entities import normalize_frontmatter, parse_leading_yaml
 
-    frontmatter = parse_leading_yaml(content)
+    frontmatter = parse_leading_yaml(content, path=rel_path)
     if frontmatter is None:
         return {}
     return normalize_frontmatter(frontmatter, source="markdown").to_rows()
@@ -670,7 +679,7 @@ def build_file_slice(
         content_hash=content_hash,
     )
     if suffix in DOC_SUFFIXES:
-        record.attrs = _document_attrs(content)
+        record.attrs = _document_attrs(content, rel_path)
     return FileSlice(
         rel_path=rel_path,
         record=record,

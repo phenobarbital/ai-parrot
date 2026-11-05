@@ -11,8 +11,14 @@ from typing import Any, Iterator
 import pytest
 from click.testing import CliRunner
 from parrot.knowledge.wiki.codex import assets, bookstore
+from parrot.knowledge.wiki.codex.cli import codex
 from parrot.knowledge.wiki.codex.installer import install_codex_integration, reconcile_toolkit_tables
-from parrot.knowledge.wiki.project import WikiRemoteConfig  # [rev 0.5] C24 / D7
+from parrot.knowledge.wiki.project import (
+    WikiProjectConfig,
+    WikiRemoteConfig,
+    save_project_config,
+)
+from parrot.mcp import portability
 from parrot.mcp.local_cli import mcp_local
 
 
@@ -44,6 +50,18 @@ def _servers(root: Path) -> dict:
     return tomllib.loads((root / ".codex" / "config.toml").read_text())["mcp_servers"]
 
 
+def _linked_checkout(tmp_path: Path) -> tuple[Path, Path]:
+    """Create launcher-compatible primary and linked-worktree markers."""
+    primary = tmp_path / "primary"
+    worktree = tmp_path / "worktree"
+    git_dir = primary / ".git" / "worktrees" / "codex"
+    git_dir.mkdir(parents=True)
+    worktree.mkdir()
+    (git_dir / "commondir").write_text("../..\n")
+    (worktree / ".git").write_text(f"gitdir: {git_dir}\n")
+    return primary, worktree
+
+
 def test_portable_entries_no_abs_paths(root: Path) -> None:
     install_codex_integration(root, gitignore=False, bookstore=False, portable=True)
     for text in _strings(_servers(root)):
@@ -54,11 +72,154 @@ def test_portable_entries_no_abs_paths(root: Path) -> None:
     assert str(root) not in (root / assets.RULES_PATH).read_text()
 
 
-def test_default_emission_unchanged(root: Path) -> None:
-    install_codex_integration(root, gitignore=False, bookstore=False)
+def test_default_emission_unchanged(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(portability, "managed_launcher_on_path", lambda: False)
+    actions = install_codex_integration(root, gitignore=False, bookstore=False)
     servers = _servers(root)
     assert servers["wikitoolkit"]["command"] == str(root / ".venv" / "bin" / "wikitoolkit")
     assert servers["parrot-memory"]["args"][-1] == str(root / ".parrot" / "mcp-toolkits.yaml")
+    assert sum(action.startswith("note: host config baked") for action in actions) == 1
+
+
+def test_fresh_install_uses_managed_launcher_default(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A fresh host emits portable commands when the managed launcher is available."""
+    monkeypatch.setattr(portability, "managed_launcher_on_path", lambda: True)
+    actions = install_codex_integration(root, gitignore=False, bookstore=False)
+    assert _servers(root)["wikitoolkit"]["command"] == "wikitoolkit"
+    assert _servers(root)["parrot-memory"]["args"][-1] == assets.PORTABLE_TOOLKIT_CONFIG
+    assert not any(action.startswith("note: host config baked") for action in actions)
+
+
+def test_fresh_reconcile_reports_one_baked_fallback_note(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Toolkit-only reconciliation applies the shared default and reports one fallback note."""
+    monkeypatch.setattr(portability, "managed_launcher_on_path", lambda: False)
+    actions, warnings = reconcile_toolkit_tables(root)
+    assert warnings == []
+    assert sum(action.startswith("note: host config baked") for action in actions) == 1
+    assert _servers(root)["parrot-memory"]["args"][-1] == str(root / ".parrot" / "mcp-toolkits.yaml")
+
+
+def test_host_cli_worktree_preserves_shared_config_and_build_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Codex CLI preserves primary state while writing explicit worktree host assets."""
+    home = tmp_path / "home"
+    bin_dir = tmp_path / "bin"
+    home.mkdir()
+    bin_dir.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("PATH", str(bin_dir))
+    primary, worktree = _linked_checkout(tmp_path)
+    remote = WikiRemoteConfig(url="https://wiki.example/mcp/shared", token_env="SHARED_WIKI_TOKEN")
+    save_project_config(
+        primary,
+        WikiProjectConfig(
+            wiki_name="primary-wiki",
+            storage_dir=".shared/wiki",
+            body_max_chars=23_000,
+            remote=remote,
+        ),
+    )
+    primary_config = (primary / ".parrot" / "wiki.json").read_bytes()
+    build_roots: list[Path] = []
+
+    from parrot.knowledge.wiki import cli as wiki_cli
+
+    def fake_build(**kwargs: Any) -> None:
+        """Capture the build target without starting a provider or writing wiki state."""
+        build_roots.append(Path(kwargs["path_"]))
+
+    monkeypatch.setattr(wiki_cli.build, "callback", fake_build)
+    result = CliRunner().invoke(
+        codex,
+        [
+            "install",
+            "--path",
+            str(worktree),
+            "--remote",
+            "--portable",
+            "--no-bookstore",
+            "--no-gitignore",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert build_roots == [primary]
+    assert not (worktree / ".parrot" / "wiki.json").exists()
+    assert (primary / ".parrot" / "wiki.json").read_bytes() == primary_config
+    assert _servers(worktree)["wikitoolkit"] == {
+        "url": "https://wiki.example/mcp/shared",
+        "bearer_token_env_var": "SHARED_WIKI_TOKEN",
+        "default_tools_approval_mode": "approve",
+    }
+
+    build_roots.clear()
+    suppressed = CliRunner().invoke(
+        codex,
+        [
+            "install",
+            "--path",
+            str(worktree),
+            "--remote",
+            "--portable",
+            "--no-bookstore",
+            "--no-gitignore",
+            "--no-build",
+        ],
+    )
+    assert suppressed.exit_code == 0, suppressed.output
+    assert build_roots == []
+
+
+def test_cli_refuses_implicit_worktree_writes_but_allows_status_and_explicit_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Implicit linked-worktree writes fail before mutation while reads and explicit writes proceed."""
+    home = tmp_path / "home"
+    bin_dir = tmp_path / "bin"
+    home.mkdir()
+    bin_dir.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("PATH", str(bin_dir))
+    primary, worktree = _linked_checkout(tmp_path)
+    save_project_config(primary, WikiProjectConfig(wiki_name="primary-wiki"))
+    nested = worktree / "src" / "pkg"
+    nested.mkdir(parents=True)
+    monkeypatch.chdir(nested)
+
+    install_result = CliRunner().invoke(
+        codex,
+        ["install", "--portable", "--no-build", "--no-bookstore", "--no-gitignore"],
+    )
+    assert install_result.exit_code == 1
+    assert str(worktree) in install_result.output
+    assert str(primary) in install_result.output
+    assert "--path" in install_result.output
+    assert not (worktree / ".codex").exists()
+    assert not (worktree / "AGENTS.md").exists()
+
+    uninstall_result = CliRunner().invoke(codex, ["uninstall"])
+    assert uninstall_result.exit_code == 1
+    assert "--path" in uninstall_result.output
+
+    status_result = CliRunner().invoke(codex, ["status", "--json"])
+    assert status_result.exit_code == 0, status_result.output
+    assert not (worktree / ".parrot" / "wiki.json").exists()
+
+    explicit_result = CliRunner().invoke(
+        codex,
+        [
+            "install",
+            "--path",
+            str(worktree),
+            "--portable",
+            "--no-build",
+            "--no-bookstore",
+            "--no-gitignore",
+        ],
+    )
+    assert explicit_result.exit_code == 0, explicit_result.output
+    assert (worktree / ".codex" / "config.toml").exists()
+    assert not (worktree / ".parrot" / "wiki.json").exists()
 
 
 def test_portable_transitions_both_ways(root: Path) -> None:
@@ -97,6 +258,7 @@ def test_mcp_local_parrot_project_root(root: Path, tmp_path: Path, monkeypatch: 
     """Spec rev 0.5 C24 (local_cli.py in scope): `parrot mcp-local` takes its root from PARROT_PROJECT."""
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
+    (elsewhere / ".git").mkdir()
     monkeypatch.chdir(elsewhere)
     monkeypatch.setenv("PARROT_PROJECT", str(root))
     result = CliRunner().invoke(mcp_local, ["--list"])

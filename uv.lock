@@ -2482,6 +2482,7 @@ dependencies = [
     { name = "ai-parrot-squawk" },
     { name = "ai-parrot-tools" },
     { name = "ai-parrot-visualizations" },
+    { name = "google-genai" },
     { name = "navrules" },
 ]
 
@@ -2565,6 +2566,7 @@ requires-dist = [
     { name = "ai-parrot-squawk", editable = "packages/ai-parrot-squawk" },
     { name = "ai-parrot-tools", editable = "packages/ai-parrot-tools" },
     { name = "ai-parrot-visualizations", editable = "packages/ai-parrot-visualizations" },
+    { name = "google-genai", specifier = "==2.34.0" },
     { name = "navrules", editable = "packages/navrules" },
 ]
 provides-extras = ["google", "openai", "anthropic", "claude-agent", "codex-agent", "groq", "xai", "zai", "llms", "embeddings", "pipelines", "wiki"]

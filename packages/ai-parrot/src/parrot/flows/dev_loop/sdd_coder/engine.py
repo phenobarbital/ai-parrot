@@ -1004,17 +1004,16 @@ class SddCoderEngine:
             # never a synthetic settlement.
             await self._assert_no_pending_validations(execution_id)
             # Check admitted attempts
+            # A native reservation is admitted through the pool too, so this one
+            # gate covers MCP attempts and native reservations alike.
             snapshot = pool.snapshot()
             if snapshot.admitted_attempts:
+                in_flight = self._in_flight_attempts(execution_id, pool, snapshot.admitted_attempts)
                 raise CoderFailure(
                     "execution_busy",
-                    f"execution {execution_id} has {len(snapshot.admitted_attempts)} admitted attempts still in flight",
-                )
-            # Check native reservations
-            if snapshot.native_reservations:
-                raise CoderFailure(
-                    "execution_busy",
-                    f"execution {execution_id} has {len(snapshot.native_reservations)} native reservations still in flight",
+                    f"execution {execution_id} has {len(in_flight)} admitted attempt(s) still in flight: "
+                    + "; ".join(self._describe_in_flight(row) for row in in_flight),
+                    in_flight=in_flight,
                 )
             # Check outstanding jobs -- from the JobTable, since the pool never tracks MCP jobs
             running_jobs = self._outstanding_job_ids(execution_id, pool.worktree_path)
@@ -1071,6 +1070,44 @@ class SddCoderEngine:
 
         await self._release_usage_sink_if_idle()
         return pool.view()
+
+    def _in_flight_attempts(
+        self, execution_id: str, pool: ExecutionPool, admitted: Dict[str, str]
+    ) -> List[Dict[str, str]]:
+        """Describe every reservation still admitted to *pool*, for an ``execution_busy`` report.
+
+        Args:
+            execution_id: The execution being closed.
+            pool: Its execution pool.
+            admitted: ``attempt_uid -> task_id``, as `ExecutionPool.snapshot()` reports it.
+
+        Returns:
+            One row per reservation, ordered by task id: ``task_id``, ``attempt_uid``,
+            ``backend``, ``model`` and ``kind`` (``native_reservation`` or ``mcp_attempt``).
+        """
+        native_uids = {uid for (owner, _task), uid in self._native_reservations.items() if owner == execution_id}
+        rows: List[Dict[str, str]] = []
+        for attempt_uid, task_id in sorted(admitted.items(), key=lambda item: (item[1], item[0])):
+            admission = pool.resolve_admission(attempt_uid)
+            key = admission[1] if admission is not None else None
+            rows.append(
+                {
+                    "task_id": task_id,
+                    "attempt_uid": attempt_uid,
+                    "backend": key.backend if key is not None else "",
+                    "model": key.model if key is not None else "",
+                    "kind": "native_reservation" if attempt_uid in native_uids else "mcp_attempt",
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _describe_in_flight(row: Dict[str, str]) -> str:
+        """One ``execution_busy`` clause naming a reservation and the call that settles it."""
+        seat = f"{row['backend']}/{row['model']}"
+        if row["kind"] == "native_reservation":
+            return f"{row['task_id']} (native reservation on {seat}; settle it with coder_merge)"
+        return f"{row['task_id']} (MCP attempt on {seat}; wait for its job with coder_wait)"
 
     async def _assert_no_pending_validations(self, execution_id: str) -> None:
         """Refuse while any admitted validation for *execution_id* has not settled (spec R8).
@@ -2447,15 +2484,24 @@ class SddCoderEngine:
             worker_id = self._worker_id(task.task_id, attempt, execution_id)
             manager = self._manager_for(ctx, task.task_id, attempt, execution_id)
             path = self._path_for(ctx, task.task_id, attempt, execution_id)
-            if reused_reservation and await asyncio.to_thread(os.path.isdir, path):
-                # Duplicate `prepare_native` for a task that already holds its reservation:
-                # the sub-worktree (and its branch) exist from the first call, so a second
-                # `git worktree add -b` would fail on the existing branch. Reuse them.
-                self.logger.info("prepare_native: reusing existing sub-worktree %s for %s", path, task.task_id)
-            elif repair_from:
-                path = await manager.create(worker_id, base=repair_from)
-            else:
-                path = await manager.create(worker_id)
+            try:
+                if reused_reservation and await asyncio.to_thread(os.path.isdir, path):
+                    # Duplicate `prepare_native` for a task that already holds its reservation:
+                    # the sub-worktree (and its branch) exist from the first call, so a second
+                    # `git worktree add -b` would fail on the existing branch. Reuse them.
+                    self.logger.info("prepare_native: reusing existing sub-worktree %s for %s", path, task.task_id)
+                elif repair_from:
+                    path = await manager.create(worker_id, base=repair_from)
+                else:
+                    path = await manager.create(worker_id)
+            except BaseException:
+                # No sub-worktree means no coder was handed anything, so no later
+                # `coder_merge` can settle a reservation admitted just above: give
+                # the seat back now instead of holding the execution open forever.
+                if pool is not None and not reused_reservation:
+                    self._native_reservations.pop(reservation_key, None)
+                    await pool.release(attempt_uid)
+                raise
             await self._write_attempt_scope(path, task.task_id, task.task_file, ctx.feature_branch)
             self._native_inflight.add(worker_id)
             branch = self._branch_for(ctx, task.task_id, attempt, execution_id)

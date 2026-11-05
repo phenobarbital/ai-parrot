@@ -350,6 +350,11 @@ wiki = [
     "ai-parrot-loaders[documents]>=0.4.1",
 ]
 
+# TechWiki — GitHub Wiki technical reference pipeline (FEAT-801).
+# griffe powers the API-reference generator, jinja2 renders its page templates.
+# Kept opt-in (`parrot sdd techwiki bundle`, .github/workflows/techwiki.yml).
+techwiki = ["griffe>=2.4,<3", "jinja2>=3.1"]
+
 # Bookstore — personal indexed book library (`bookstore` CLI + MCP server).
 # bm25s powers the no-LLM lexical in-book search; pymupdf/pymupdf4llm power
 # native PDF ingestion via PageIndex.
@@ -377,7 +382,6 @@ scheduler = ["apscheduler==3.11.2"]
 
 # Server layer — all server infrastructure via satellite (FEAT-203)
 wikitoolkit-server = ["ai-parrot-server"]
-techwiki = ["griffe>=2.4,<3", "jinja2>=3.1"]
 server = [
     "ai-parrot-server[all]",
 ]

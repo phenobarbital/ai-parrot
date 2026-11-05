@@ -12,7 +12,8 @@ from parrot.knowledge.wiki.codex.installer import (
     integration_status,
     uninstall_codex_integration,
 )
-from parrot.knowledge.wiki.project import WikiConfigError, find_project_root, load_effective_config
+from parrot.knowledge.wiki.project import WikiConfigError, load_effective_config
+from parrot.launcher import LinkedWorktreeError, install_root, require_primary_checkout, shared_state_root
 
 path_option = click.option(
     "--path",
@@ -22,16 +23,20 @@ path_option = click.option(
 )
 
 
-def _resolve_root(path: Optional[str]) -> Path:
+def _resolve_root(path: Optional[str], *, write: bool = True) -> Path:
+    """Resolve the install target, rejecting implicit worktree writes before side effects."""
+    explicit: Path | None = None
     if path:
-        root = Path(path).resolve()
-        if not root.is_dir():
-            raise click.ClickException(f"Not a directory: {root}")
-        return root
-    found = find_project_root()
-    if found is None:
-        raise click.ClickException("No repository found upwards from here — run inside a git repo or pass --path.")
-    return found
+        explicit = Path(path).resolve()
+        if not explicit.is_dir():
+            raise click.ClickException(f"Not a directory: {explicit}")
+    try:
+        resolved = install_root(Path.cwd(), explicit=explicit)
+        if write:
+            require_primary_checkout(resolved)
+    except LinkedWorktreeError as exc:
+        raise click.ClickException(str(exc)) from exc
+    return resolved.root
 
 
 @click.group(name="codex")
@@ -87,7 +92,7 @@ def codex() -> None:
     "--portable/--no-portable",
     default=None,
     help="Emit bare launcher commands with no absolute paths (committable .codex/config.toml). "
-    "Default: keep the current form (baked absolute paths on a fresh install).",
+    "Default: keep the current form; a fresh install follows the managed launcher.",
 )
 def install(
     path_: Optional[str],
@@ -103,7 +108,8 @@ def install(
     """Install WikiToolkit and Bookstore MCP servers and skills for Codex."""
     root = _resolve_root(path_)
     try:
-        config = load_effective_config(root).config
+        state_root = shared_state_root(root)
+        config = load_effective_config(state_root).config
         remote = None
         if use_remote:
             from parrot.knowledge.wiki.project import WikiRemoteConfig
@@ -137,12 +143,12 @@ def install(
         except RuntimeError as exc:
             raise click.ClickException(str(exc)) from exc
 
-    if build_now and not config.is_built(root):
+    if build_now and not config.is_built(state_root):
         click.echo("Building the wiki plane (first run)...")
         from parrot.knowledge.wiki.cli import build as wiki_build
 
         context = click.Context(wiki_build)
-        context.invoke(wiki_build, path_=str(root), quiet=True)
+        context.invoke(wiki_build, path_=str(state_root), quiet=True)
 
     click.secho(
         "Codex integration installed. Restart Codex in this trusted repository "
@@ -180,7 +186,7 @@ def uninstall(path_: Optional[str]) -> None:
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def status(path_: Optional[str], as_json: bool) -> None:
     """Show which Codex integration pieces are installed."""
-    root = _resolve_root(path_)
+    root = _resolve_root(path_, write=False)
     try:
         info = integration_status(root)
     except (RuntimeError, WikiConfigError) as exc:

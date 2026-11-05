@@ -11,7 +11,7 @@ tags: [sdd, worktree, installer, doctor, portability]
 **Date**: 2026-11-04
 **Author**: Jesus Lara (with Claude)
 **Status**: approved
-**Target version**: 2.1.0
+**Target version**: 2.0.1
 
 ---
 
@@ -420,6 +420,8 @@ tests:
 - packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py
 - packages/ai-parrot/tests/self_/test_doctor_sdd.py
 - packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py
+- packages/ai-parrot/tests/test_conf.py
+- packages/ai-parrot/tests/sdd/test_dangerous_actions.py
 - tests/sdd_scripts/test_worktree_plan.py
 - tests/sdd_scripts/test_ensure_worktree.py
 - tests/sdd_scripts/test_brief_meta.py
@@ -762,7 +764,7 @@ Coverage:
 - [x] Migration: dual-root lookup or hard cut? — *Resolved by user*: hard cut; `doctor` and `sdd install` refuse and print `mv` + `git worktree repair`.
 - [x] Block or warn in `parrot doctor` / `parrot sdd install`? — *Resolved by user*: block ("sí, correcto" to the refuse-and-print design).
 - [x] Should `ensure_worktree` refuse while legacy worktrees exist? — *Resolved by review fix*: no repository-wide gate for ensure; reject the requested branch when registered anywhere other than its exact resolved target, including the legacy root. Unrelated legacy branches remain the responsibility of the install/doctor gate.
-- [ ] Target version 2.1.0 vs the next patch: this is a behavioural cut for every installed repo — *Owner: Jesus*.
+- [x] Target version 2.1.0 vs the next patch — *Resolved by Jesus Lara, 2026-11-04*: the next patch (2.0.1). The hard cut ships as soon as possible; the release notes must lead with the `.claude/worktrees` → `.parrot/worktrees` migration recipe that `doctor` / `sdd install` print.
 
 ---
 
@@ -807,3 +809,5 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-11-04 | Jesus Lara / Claude | Initial draft from the 2026-11-04 brainstorm (unify roots, `.parrot/worktrees/`, hard cut) |
 | 0.2 | 2026-11-04 | Codex | Review fixes: explicit repair destinations, hierarchy-preserving collision-checked migration, exact-target reuse, resolver CLI for workflow twins, custom-root ignore handling and regression contracts |
+| 0.3 | 2026-11-04 | Jesus Lara / Claude | §8 closed: target version set to the next patch (2.0.1); no open questions remain |
+| 0.4 | 2026-11-05 | Jesus Lara / Claude | /sdd-task: Validation Contract gains `test_conf.py` (conf default changes) and `test_dangerous_actions.py` (two-root rm guard); both are modified by the feature |

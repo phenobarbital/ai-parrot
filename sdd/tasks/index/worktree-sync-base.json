@@ -1,0 +1,182 @@
+{
+  "feature": "worktree-sync-base",
+  "feature_id": "FEAT-806",
+  "spec": "sdd/specs/worktree-sync-base.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-05T00:26:23.917380+00:00",
+  "completed_at": "2026-11-05T01:36:10+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "tests/sdd_scripts/test_worktree_sync.py",
+          "packages/ai-parrot/tests/sdd/test_sdd_cli.py",
+          "packages/ai-parrot/tests/sdd/test_sdd_launch.py",
+          "tests/sdd_scripts/test_sync_process_exclusions.py",
+          "tests/sdd_scripts/test_check_asset_sync.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_worker_prompt_orchestrator.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:348ca111a1bbd84a61b3503a20016fd6456a813c6631f61c2c366fcb9da658f2"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5206",
+      "slug": "sync-process-exclusions",
+      "title": "Add explicit PID exclusions to worktree process detection",
+      "feature_id": "FEAT-806",
+      "feature": "worktree-sync-base",
+      "spec": "sdd/specs/worktree-sync-base.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent M2: edits only remove_worktree.py and its new focused tests; no shared external resources.",
+      "assigned_to": null,
+      "started_at": "2026-11-05T00:36:23+00:00",
+      "completed_at": "2026-11-05T00:59:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5206-sync-process-exclusions.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5207",
+      "slug": "worktree-host-sync",
+      "title": "Implement guarded host sync and advisory API",
+      "feature_id": "FEAT-806",
+      "feature": "worktree-sync-base",
+      "spec": "sdd/specs/worktree-sync-base.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5206"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes TASK-5206 live_processes_in(exclude_pids) in remove_worktree.py. TASK-5208 later extends the same core and tests; no dependency on future CLI registration is needed for direct module tests.",
+      "assigned_to": null,
+      "started_at": "2026-11-05T00:36:23+00:00",
+      "completed_at": "2026-11-05T01:07:32+00:00",
+      "file": "sdd/tasks/completed/TASK-5207-worktree-host-sync.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5208",
+      "slug": "worktree-sandbox-patch-sync",
+      "title": "Add atomic gh-only sandbox patch transport",
+      "feature_id": "FEAT-806",
+      "feature": "worktree-sync-base",
+      "spec": "sdd/specs/worktree-sync-base.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5207"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Extends TASK-5207 worktree_sync.sync/SyncResult and its real-Git test file; serializes both overlapping writers after TASK-5207.",
+      "assigned_to": null,
+      "started_at": "2026-11-05T00:36:23+00:00",
+      "completed_at": "2026-11-05T01:14:42+00:00",
+      "file": "sdd/tasks/completed/TASK-5208-worktree-sandbox-patch-sync.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5209",
+      "slug": "worktree-sync-cli",
+      "title": "Register the sync-base CLI verb",
+      "feature_id": "FEAT-806",
+      "feature": "worktree-sync-base",
+      "spec": "sdd/specs/worktree-sync-base.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5207"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes TASK-5207 worktree_sync.main through lazy registry dispatch; sandbox transport TASK-5208 is not required for registration/help tests.",
+      "assigned_to": null,
+      "started_at": "2026-11-05T00:36:23+00:00",
+      "completed_at": "2026-11-05T01:14:43+00:00",
+      "file": "sdd/tasks/completed/TASK-5209-worktree-sync-cli.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5210",
+      "slug": "worktree-sync-documentation",
+      "title": "Document sync safety and update worker prompt twins",
+      "feature_id": "FEAT-806",
+      "feature": "worktree-sync-base",
+      "spec": "sdd/specs/worktree-sync-base.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent M4: authors the approved command contract, not runtime behavior. No edge to TASK-5207 or TASK-5209: command examples do not consume their new files. All repo/package prompt writers are owned by this task.",
+      "assigned_to": null,
+      "started_at": "2026-11-05T00:36:23+00:00",
+      "completed_at": "2026-11-05T01:36:10+00:00",
+      "file": "sdd/tasks/completed/TASK-5210-worktree-sync-documentation.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5211",
+      "slug": "worktree-stale-base-advisory",
+      "title": "Wire host-only stale-base advisories into startup",
+      "feature_id": "FEAT-806",
+      "feature": "worktree-sync-base",
+      "spec": "sdd/specs/worktree-sync-base.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5207"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes TASK-5207 stale_base_summary in worktree_sync.py. No edge to TASK-5209: docs mention the CLI but launcher calls the API directly; CLI registration is verified by its own task. TASK-5210 edits different worker/rule documents.",
+      "assigned_to": null,
+      "started_at": "2026-11-05T00:36:23+00:00",
+      "completed_at": "2026-11-05T01:12:45+00:00",
+      "file": "sdd/tasks/completed/TASK-5211-worktree-stale-base-advisory.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5212",
+      "slug": "worktree-sync-native-qualification",
+      "title": "Qualify patch sync under the real native filesystem policy",
+      "feature_id": "FEAT-806",
+      "feature": "worktree-sync-base",
+      "spec": "sdd/specs/worktree-sync-base.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5208"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes TASK-5208 sandbox transport and modifies its test_worktree_sync.py after TASK-5208; TASK-5207 is transitively required. Uses only disposable repositories and per-test sandbox resources, not shared configuration.",
+      "assigned_to": null,
+      "started_at": "2026-11-05T00:36:23+00:00",
+      "completed_at": "2026-11-05T01:21:19+00:00",
+      "file": "sdd/tasks/completed/TASK-5212-worktree-sync-native-qualification.md",
+      "verification": "partial"
+    }
+  ]
+}
