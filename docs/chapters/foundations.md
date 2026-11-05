@@ -1,38 +1,19 @@
 # Foundations
 
-The foundations layer holds the core abstractions every other module in
-AI-Parrot is built on: the hook/event bus, the data models shared between
-clients, bots and tools, and the architectural decisions that keep the
-framework vendor-agnostic and fully async.
+The foundations layer holds the core abstractions every other module in AI-Parrot is built on: the hook/event bus, the data models shared between clients, bots and tools, and the architectural decisions that keep the framework vendor-agnostic and fully async. This layer provides the essential building blocks that enable the rest of the framework to function correctly, ensuring that all components can communicate and interact in a consistent manner.
 
-## What lives here
+## Key Concepts
 
-- **Core hooks & event bus** — the cross-cutting infrastructure agents
-  use to publish lifecycle events, attach observers and compose
-  middleware. Source: `parrot.core.hooks`.
-- **Pydantic data models** — `AIMessage`, `SourceDocument`,
-  `MessageResponse`, `ToolCall` and friends. These are the lingua franca
-  between clients, bots and integrations. Source: `parrot.models`.
-- **Helpers & utils** — small reusable building blocks (string
-  normalisation, async runners, retry decorators).
+- **Event bus** — a cross-cutting infrastructure that agents use to publish lifecycle events, attach observers and compose middleware. This allows different parts of the system to react to important events without tight coupling.
+- **Pydantic data models** — `AIMessage`, `SourceDocument`, `MessageResponse`, `ToolCall` and friends serve as the lingua franca between clients, bots and integrations. These models ensure type safety and validation across the entire framework.
+- **Async-first design** — the entire framework is built around async/await patterns, ensuring non-blocking I/O and efficient concurrency. This design choice is critical for handling multiple LLM calls, network operations, and background tasks simultaneously.
 
-## Read next
+## What You Can Build
 
-For the long-form architectural reasoning behind these pieces, see the
-nine-part architecture series in this section's sidebar:
+- Build a custom event-driven agent that reacts to lifecycle events (startup, shutdown, tool execution) to implement custom behavior at key moments.
+- Create reusable data models for your own tools and integrations that integrate seamlessly with the existing framework, ensuring consistency across your application.
+- Design middleware that can intercept and modify messages before they reach the LLM, enabling features like logging, validation, or transformation.
 
-- [Architecture — MCP Server](https://github.com/phenobarbital/ai-parrot/wiki/Architecture-1.-MCP-Server-%E2%80%94-exposing-tools-as-a-service)
-- [Architecture — A2A](https://github.com/phenobarbital/ai-parrot/wiki/Architecture-2.-A2A-%E2%80%94-exposing-agents-and-orchestrators-as-services)
-- [Architecture — Toolkits](https://github.com/phenobarbital/ai-parrot/wiki/Architecture-3.-Toolkits-for-third-party-services-and-Cloud-Security-composition)
-- [Architecture — Interaction Surface](https://github.com/phenobarbital/ai-parrot/wiki/Architecture-4.-Interaction-surface-%E2%80%94-WebSockets%2C-audio%2C-integrations)
-- [Architecture — Hardening](https://github.com/phenobarbital/ai-parrot/wiki/Architecture-5.-Hardening-%E2%80%94-anti-prompt-injection%2C-PBAC-and-tool-gating)
-- [Architecture — Cross-cutting Concerns](https://github.com/phenobarbital/ai-parrot/wiki/Architecture-6.-Cross-cutting-concerns-and-reference-deployment)
-- [Architecture — AgentCrew](https://github.com/phenobarbital/ai-parrot/wiki/Architecture-7.-AgentCrew-%E2%80%94-Sequential%2C-Parallel%2C-Flow-and-Loop-execution)
-- [Architecture — AgentsFlow DAG](https://github.com/phenobarbital/ai-parrot/wiki/Architecture-8.-AgentsFlow-%E2%80%94-DAG-first-orchestration-with-per-node-FSM)
-- [Architecture — Ontologic RAG](https://github.com/phenobarbital/ai-parrot/wiki/Architecture-9.-Ontologic-RAG-%E2%80%94-graph-first-retrieval%2C-intent-routing-%26-multi-tenant-knowledge)
+## Deep Dive
 
-## API reference
-
-The auto-generated API for these modules is in
-[API Reference → Clients](../api-reference/clients.md) and the per-module
-pages that follow it.
+For API reference, class signatures, and implementation details, see the [Architecture section in the Wiki](https://github.com/phenobarbital/ai-parrot/wiki/Architecture).
