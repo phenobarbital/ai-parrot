@@ -37,14 +37,14 @@
       "feature_id": "FEAT-819",
       "feature": "fixgroup-c95c1c7e8e5b",
       "spec": "sdd/specs/fixgroup-c95c1c7e8e5b.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Only task in the feature; touches api.py and test_techwiki_api.py exclusively, no shared state outside its declared files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T17:24:21.090007+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5233-unlink-pageless-alias-refs.md"
     }
