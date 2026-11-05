@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block extrahead %}
+  <meta property="og:image" content="https://phenobarbital.github.io/ai-parrot/docs/branding/social-card.png">
+  <meta property="og:title" content="{{ page.title ~ ' — ' if page.title }}{{ config.site_name }}">
+  <meta name="twitter:card" content="summary_large_image">
+{% endblock %}

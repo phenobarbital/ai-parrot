@@ -646,9 +646,9 @@ kill -SIGTERM <pid>                              # signal
 
 - [agentd API Reference](https://github.com/phenobarbital/ai-parrot/wiki/Bots-%26-Agents-Agent-CLI-Daemon-%28agentd%29) — full protocol, error codes,
   wire format
-- [Agent CLI Daemon Spec](../../sdd/specs/agent-cli-daemon.spec.md) —
+- [Agent CLI Daemon Spec](https://github.com/phenobarbital/ai-parrot/blob/main/sdd/specs/agent-cli-daemon.spec.md) —
   original design specification
-- [Fireflies → Obsidian example](../../examples/agents/fireflies_obsidian_daemon.py) —
+- [Fireflies → Obsidian example](https://github.com/phenobarbital/ai-parrot/blob/main/examples/agents/fireflies_obsidian_daemon.py) —
   programmatic daemon launch
-- [Fireflies daemon YAML](../../examples/agents/fireflies_daemon.yaml) —
+- [Fireflies daemon YAML](https://github.com/phenobarbital/ai-parrot/blob/main/examples/agents/fireflies_daemon.yaml) —
   ready-to-use config

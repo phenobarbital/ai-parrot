@@ -1,50 +1,52 @@
 # Memory & Knowledge
 
-AI-Parrot separates two concerns that often get confused: **memory**
-(conversation state for a given session) and **knowledge** (long-lived
-facts, documents, embeddings used by RAG).
+AI-Parrot separates two concerns that often get confused in AI systems:
+**memory** for conversation state within a session, and **knowledge** for
+long-lived facts, documents, and embeddings used by retrieval-augmented
+generation. Understanding this distinction helps you build agents that
+remember what was said in the current conversation while also maintaining
+access to persistent information across sessions.
 
-## What lives here
+## Key Concepts
 
-### Memory
+- **Conversation Memory**: Per-session history that tracks what the user
+  said and what the agent responded. AI-Parrot provides several backends:
+  `InMemoryConversation` for process-local storage ideal for testing,
+  and `RedisConversation` for production-grade, multi-process safe storage
+  with configurable TTL (time-to-live) for automatic cleanup.
+- **Episodic Memory**: Long-term memory that persists across sessions using
+  FAISS vector storage. This enables agents to recall past interactions,
+  learn from previous decisions, and build on accumulated experience.
+- **Answer Memory**: A caching layer that stores question-answer pairs,
+  allowing agents to avoid recomputing identical queries and respond
+  instantly to repeat questions.
+- **Vector Stores**: Semantic retrieval over documents using backends like
+  PgVector (recommended default), Faiss, Milvus, Arango, and BigQuery.
+  These form the foundation for RAG pipelines that retrieve relevant
+  context based on meaning rather than exact matches.
+- **Knowledge Assembly**: The `parrot.knowledge` module retrieves, ranks,
+  deduplicates, and formats context chunks with citations for LLM
+  consumption, ensuring the agent receives the most relevant information.
 
-- **`ConversationMemory`** — abstract base for per-session histories.
-- **`InMemoryConversation`** — process-local store, ideal for tests.
-- **`RedisConversation`** — production-grade, multi-process safe,
-  TTL-aware.
-- **`EpisodicMemoryStore`** — FAISS-backed long-term episodic memory
-  for agents that need to remember across sessions.
-- **`AnswerMemory`** — cache of (question → answer) pairs for repeat
-  queries.
+## What You Can Build
 
-### Knowledge
+- **Session-aware chatbots** that remember the last N turns using
+  `RedisConversation` with configurable TTL, providing continuity within
+  a conversation while respecting privacy through automatic expiration.
+- **Cross-session agents** that build on `EpisodicMemoryStore` to learn
+  from past interactions, enabling increasingly personalized responses
+  as the agent accumulates experience with a user.
+- **Semantic search over document collections** by combining vector stores
+  with the knowledge assembly pipeline, delivering accurate, cited answers
+  drawn from your entire knowledge base.
+- **Answer caching systems** with `AnswerMemory` that dramatically reduce
+  response latency for frequently asked questions while reducing compute
+  costs by avoiding redundant LLM calls.
 
-- **Vector stores** — `AbstractStore` plus concrete back-ends:
-  `PgVectorStore`, `FaissStore`, `MilvusStore`, `ArangoStore`,
-  `BigQueryStore`. PgVector is the recommended default.
-- **`parrot.knowledge`** — context assembly: takes a user query and
-  returns ranked, deduplicated, citation-ready chunks.
+## Deep Dive
 
-## Decision matrix
-
-| Use case | Component |
-|---|---|
-| Track the last N user turns | `RedisConversation` |
-| Remember a user across sessions | `EpisodicMemoryStore` |
-| Avoid recomputing identical queries | `AnswerMemory` |
-| Semantic retrieval over documents | `PgVectorStore` + `knowledge` |
-
-## Read next
-
-- [Knowledge Graph & LLM Wiki chapter](knowledge-graph.md) — PageIndex,
-  GraphIndex and the agent-maintained wiki built on top of them.
-- [LLM Wiki — an agent-maintained knowledge repository](https://github.com/phenobarbital/ai-parrot/wiki/LLM-Wiki-LLM-Wiki-%E2%80%94-an-agent-maintained-knowledge-repository)
-- [Execution Memory](https://github.com/phenobarbital/ai-parrot/wiki/Memory-ExecutionMemory-Integration-Guide)
-- [Local Knowledge Base](https://github.com/phenobarbital/ai-parrot/wiki/Knowledge-Local-Kb)
-- [Parent-Child Retrieval](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Parent-Child-Retrieval-%28Small-to-Big%29)
-- [DocumentDB](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Async-context-manager-para-cleanup-autom%C3%A1tico), [Storage Backends](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Storage-Backends-Guide)
-
-## API reference
-
-- [API Reference → Memory](../api-reference/memory.md)
-- [API Reference → Stores](../api-reference/stores.md)
+For implementation details, configuration options, and API reference,
+see the [Memory section](https://github.com/phenobarbital/ai-parrot/wiki/Home),
+[Knowledge section](https://github.com/phenobarbital/ai-parrot/wiki/Home),
+and [Stores & Loaders](https://github.com/phenobarbital/ai-parrot/wiki/Home)
+in the Wiki.
