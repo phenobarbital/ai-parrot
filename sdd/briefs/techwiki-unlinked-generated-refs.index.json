@@ -1,0 +1,31 @@
+{
+  "feature": "techwiki-unlinked-generated-refs",
+  "feature_id": "BRIEF-93f079cc8e3f",
+  "spec": "sdd/briefs/techwiki-unlinked-generated-refs.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-11-05",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-93f079cc8e3f-1",
+      "slug": "techwiki-unlinked-generated-refs",
+      "title": "Unlink generated ref: links to modules without a page; never rewrite the index",
+      "feature_id": "BRIEF-93f079cc8e3f",
+      "feature": "techwiki-unlinked-generated-refs",
+      "spec": "sdd/briefs/techwiki-unlinked-generated-refs.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Single task; edits naming.py, bundle.py and their tests.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/techwiki-unlinked-generated-refs/tasks/HOTFIX-93f079cc8e3f-1-techwiki-unlinked-generated-refs.md"
+    }
+  ]
+}
