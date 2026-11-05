@@ -350,6 +350,15 @@ wiki = [
     "ai-parrot-loaders[documents]>=0.4.1",
 ]
 
+# TechWiki — GitHub Wiki technical reference pipeline (FEAT-801).
+# griffe powers the API-reference generator; mkdocs-material validates the
+# legacy mkdocs.yml after migration.  Both are heavy, so kept opt-in.
+techwiki = [
+    "griffe>=1.7",
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.6",
+]
+
 # Bookstore — personal indexed book library (`bookstore` CLI + MCP server).
 # bm25s powers the no-LLM lexical in-book search; pymupdf/pymupdf4llm power
 # native PDF ingestion via PageIndex.
