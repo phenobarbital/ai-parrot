@@ -185,10 +185,31 @@ class TestInventory:
         assert all(content_hash == stored[record.decision_id] for record, content_hash in pairs)
         assert all(content_hash for _, content_hash in pairs)
 
-    async def test_inventory_delegates_to_inventory_with_hashes(self, store, record):
-        """``inventory()`` returns exactly the records of ``inventory_with_hashes()``."""
+    async def test_inventory_delegates_to_inventory_with_hashes(self, store):
+        """``inventory()`` preserves ``inventory_with_hashes()`` ordering and diagnostics."""
         repo = DecisionRepository(store)
-        await repo.save(record, None)
+        for i in range(3):
+            await repo.save(
+                DecisionRecord(decision_id=f"adr:doc:{i}", decision=f"decision {i}", origin="documented"), None
+            )
+        await store.upsert_pages(
+            [
+                WikiPageRecord(
+                    concept_id="adr:doc:garbage",
+                    title="garbage",
+                    category=ADR_CATEGORY,
+                    body="not a valid envelope at all",
+                )
+            ]
+        )
+
         pairs = await repo.inventory_with_hashes()
-        assert await repo.inventory() == [paired for paired, _ in pairs]
-        assert repo.last_diagnostics == []
+        paired_diagnostics = list(repo.last_diagnostics)
+        records = await repo.inventory()
+
+        assert records == [paired for paired, _ in pairs]
+        assert [record.decision_id for record in records] == ["adr:doc:0", "adr:doc:1", "adr:doc:2"]
+        assert [diagnostic.code for diagnostic in repo.last_diagnostics] == [
+            diagnostic.code for diagnostic in paired_diagnostics
+        ]
+        assert [diagnostic.code for diagnostic in repo.last_diagnostics] == ["ADR_SCHEMA_UNSUPPORTED"]

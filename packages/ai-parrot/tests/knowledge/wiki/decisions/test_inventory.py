@@ -159,6 +159,39 @@ def _legacy_page(record: DecisionRecord) -> WikiPageRecord:
     return page.model_copy(update={"body": f"{marker}\n{legacy}\n{rest}", "content_hash": content_hash})
 
 
+def _hashless_page(record: DecisionRecord) -> WikiPageRecord:
+    """Return a canonical envelope whose out-of-band row stores no content hash."""
+    return decision_to_page(record).model_copy(update={"content_hash": None})
+
+
+async def test_snapshot_unstable_when_a_page_has_no_stored_hash(adr_store, tmp_path) -> None:
+    """A page the store holds no hash for cannot be verified, so the snapshot refuses it."""
+    record = _record("adr:doc:hashless")
+    await adr_store.upsert_pages([_hashless_page(record)])
+
+    with pytest.raises(DecisionError) as exc:
+        await _snapshot(adr_store, tmp_path)
+
+    assert exc.value.code == SNAPSHOT_UNSTABLE
+    assert "adr:doc:hashless" in str(exc.value)
+
+
+async def test_snapshot_unstable_when_a_hashless_page_disappears_mid_read(adr_store, tmp_path, monkeypatch) -> None:
+    """The hashless phase-one value cannot pass as unchanged after deletion."""
+    record = _record("adr:doc:hashless")
+    await adr_store.upsert_pages([_hashless_page(record)])
+
+    async def gone(ids: list[str]) -> dict[str, str | None]:
+        """Return the absent-page value phase two would observe after deletion."""
+        return dict.fromkeys(ids)
+
+    monkeypatch.setattr(adr_store, "page_hashes", gone)
+    with pytest.raises(DecisionError) as exc:
+        await _snapshot(adr_store, tmp_path)
+
+    assert exc.value.code == SNAPSHOT_UNSTABLE
+
+
 async def test_snapshot_stable_with_legacy_envelope(adr_store, tmp_path) -> None:
     """An unchanged page written by an older codec is not reported as changed (issue:5918ff019737)."""
     record = _record("adr:doc:legacy")
@@ -169,7 +202,8 @@ async def test_snapshot_stable_with_legacy_envelope(adr_store, tmp_path) -> None
     snapshot = await _snapshot(adr_store, tmp_path)
 
     assert [eligible.decision_id for eligible in snapshot.eligible] == ["adr:doc:legacy"]
-    assert snapshot.manifest.inventory == {"adr:doc:legacy": legacy.content_hash}
+    assert snapshot.manifest.inventory == {"adr:doc:legacy": record_hash(record)}
+    assert snapshot.manifest.inventory["adr:doc:legacy"] != legacy.content_hash  # issue:d219d0707031
 
 
 async def test_snapshot_manifest_unchanged_for_canonical_pages(adr_store, tmp_path) -> None:
@@ -182,6 +216,23 @@ async def test_snapshot_manifest_unchanged_for_canonical_pages(adr_store, tmp_pa
     snapshot = await _snapshot(adr_store, tmp_path, repo)
 
     assert snapshot.manifest.inventory == {record.decision_id: record_hash(record) for record in records}
+
+
+async def test_snapshot_manifest_is_independent_of_the_stored_envelope(adr_store, tmp_path) -> None:
+    """The same decision hashes alike whether its page is legacy or canonical (issue:d219d0707031)."""
+    record = _record("adr:doc:same")
+    legacy = _legacy_page(record)
+
+    await adr_store.upsert_pages([legacy])
+    legacy_manifest = (await _snapshot(adr_store, tmp_path)).manifest.inventory
+
+    await DecisionRepository(adr_store).save(record, legacy.content_hash)
+    canonical_page = await adr_store.get_page(record.decision_id, include_body=True)
+    assert canonical_page is not None
+    assert canonical_page["content_hash"] == record_hash(record)
+    canonical_manifest = (await _snapshot(adr_store, tmp_path)).manifest.inventory
+
+    assert legacy_manifest == canonical_manifest == {"adr:doc:same": record_hash(record)}
 
 
 async def test_inventory_overflow_raises(adr_store, tmp_path) -> None:

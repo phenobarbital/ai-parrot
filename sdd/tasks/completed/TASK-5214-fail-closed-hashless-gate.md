@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-810 — A hashless ADR page fails the snapshot closed, and the manifest no longer depends on the stored envelope shape
 **Spec**: `sdd/specs/decisions-inventory-fixes-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -388,10 +388,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 244.5s · Tokens: n/a
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker orchestrator (coder seat gpt-5.6-terra, attempt d7e52284019a4e71b5c03f5135e6af3e)
+**Date**: 2026-11-05
+**Notes**: Hashless-page gate added to `InventorySnapshot` (inventory.py) before the `page_hashes` compare; raises `SNAPSHOT_UNSTABLE` naming the unverifiable ids. Tests added in test_inventory.py / test_repository.py. Merge-tier validation green (54 passed, handle 560c78fa-...:TASK-5214:merge). Orchestrator reviewed the diff against the blueprint: no deviations, fidelity_ok. `coder_record_review` failed server-side (`CoderReview() argument after ** must be a mapping`), so review was NOT recorded in the feedback plane and no feedback was filed (no defects found).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

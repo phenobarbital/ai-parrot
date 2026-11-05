@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-810 — A hashless ADR page fails the snapshot closed, and the manifest no longer depends on the stored envelope shape
 **Spec**: `sdd/specs/decisions-inventory-fixes-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5214
@@ -314,10 +314,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 187.9s · Tokens: n/a
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker orchestrator (coder seat gpt-5.6-terra, attempt f430233e69a0404088810b69ba54424f)
+**Date**: 2026-11-05
+**Notes**: `SnapshotManifest.inventory` now uses `record_hash(record)` for every decision (envelope-independent); the stability check still compares stored hashes. Test added in test_inventory.py. Merge-tier validation green (24 passed). Orchestrator reviewed the diff against the blueprint: no deviations, fidelity_ok. `coder_record_review` is failing server-side (`CoderReview() argument after ** must be a mapping`), so the review was NOT recorded; no defects found, no feedback filed.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
