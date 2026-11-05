@@ -13,7 +13,7 @@ from parrot.knowledge.wiki.google.installer import (
     uninstall_google_integration,
 )
 from parrot.knowledge.wiki.project import WikiConfigError, load_effective_config
-from parrot.launcher import LinkedWorktreeError, install_root, require_primary_checkout
+from parrot.launcher import LinkedWorktreeError, install_root, require_primary_checkout, shared_state_root
 
 path_option = click.option(
     "--path",
@@ -94,7 +94,7 @@ def install(
     root = _resolve_root(path_)
     # Wiki state lives at the shared root (the primary checkout of a linked worktree): load it there so
     # worktree defaults never overwrite the primary configuration; host assets still go to `root`.
-    state_root = install_root(root, explicit=root).shared_root
+    state_root = shared_state_root(root)
     try:
         config = load_effective_config(state_root).config
         actions = install_google_integration(

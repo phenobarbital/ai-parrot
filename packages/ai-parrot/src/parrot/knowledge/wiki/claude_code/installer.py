@@ -32,7 +32,7 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
 
-from parrot.launcher import install_root
+from parrot.launcher import shared_state_root
 from parrot.knowledge.wiki.claude_code import assets
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
@@ -1268,7 +1268,7 @@ def install_claude_integration(
         only reconciles whatever the toolkit config already declares.
     """
     root = root.resolve()
-    state_root = install_root(root, explicit=root).shared_root
+    state_root = shared_state_root(root)
     config = config or load_effective_config(state_root).config
     existed = config_path(state_root).exists()
     # Migrate an older config's nudge tools to include ``Bash`` so shell

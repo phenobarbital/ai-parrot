@@ -12,7 +12,7 @@ from typing import Any, Optional
 from parrot.knowledge.wiki.google import assets
 from parrot.knowledge.wiki.google.bookstore import bookstore_status, install_bookstore, uninstall_bookstore
 from parrot.knowledge.wiki.project import WikiProjectConfig, config_path, load_effective_config, save_project_config
-from parrot.launcher import install_root
+from parrot.launcher import shared_state_root
 from parrot.mcp.portability import resolve_portable_mode
 
 logger = logging.getLogger(__name__)
@@ -444,7 +444,7 @@ def install_google_integration(
         linked worktree.
     """
     root = root.resolve()
-    state_root = install_root(root, explicit=root).shared_root
+    state_root = shared_state_root(root)
     config = config or load_effective_config(state_root).config
     existed = config_path(state_root).exists()
     save_project_config(state_root, config)
@@ -564,7 +564,7 @@ def integration_status(
     Wiki state (config, built plane) is read at the shared state root; host assets at ``root``.
     """
     root = root.resolve()
-    state_root = install_root(root, explicit=root).shared_root
+    state_root = shared_state_root(root)
     config = load_effective_config(state_root).config
     gemini_path = root / assets.GEMINI_PATH
     target_mcp = mcp_config_path or assets.default_mcp_config_path()

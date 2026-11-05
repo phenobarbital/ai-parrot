@@ -163,6 +163,11 @@ def install_root(cwd: Path, *, explicit: Path | None = None) -> InstallRoot:
         return InstallRoot(root, root, False, explicit is not None)
 
 
+def shared_state_root(root: Path) -> Path:
+    """Shorthand for the shared wiki-state directory derived from ``root``."""
+    return install_root(root, explicit=root).shared_root
+
+
 def require_primary_checkout(resolved: InstallRoot) -> InstallRoot:
     """Refuse implicit linked-worktree writes; retain deliberate explicit overrides."""
     if resolved.linked and not resolved.explicit:

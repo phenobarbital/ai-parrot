@@ -13,7 +13,7 @@ from parrot.knowledge.wiki.codex.installer import (
     uninstall_codex_integration,
 )
 from parrot.knowledge.wiki.project import WikiConfigError, load_effective_config
-from parrot.launcher import LinkedWorktreeError, install_root, require_primary_checkout
+from parrot.launcher import LinkedWorktreeError, install_root, require_primary_checkout, shared_state_root
 
 path_option = click.option(
     "--path",
@@ -108,7 +108,7 @@ def install(
     """Install WikiToolkit and Bookstore MCP servers and skills for Codex."""
     root = _resolve_root(path_)
     try:
-        state_root = install_root(root, explicit=root).shared_root
+        state_root = shared_state_root(root)
         config = load_effective_config(state_root).config
         remote = None
         if use_remote:

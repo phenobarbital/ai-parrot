@@ -18,7 +18,7 @@ from typing import Optional
 
 import click
 
-from parrot.launcher import LinkedWorktreeError, install_root, require_primary_checkout
+from parrot.launcher import LinkedWorktreeError, install_root, require_primary_checkout, shared_state_root
 from parrot.knowledge.wiki.claude_code.installer import (
     install_claude_integration,
     integration_status,
@@ -170,7 +170,7 @@ def install(
     A post-install wizard can configure the SDD sandbox mode.
     """
     root = _resolve_root(path_)
-    state_root = install_root(root, explicit=root).shared_root
+    state_root = shared_state_root(root)
     try:
         config = load_effective_config(state_root).config
         remote = None

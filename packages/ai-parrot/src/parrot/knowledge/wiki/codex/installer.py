@@ -16,7 +16,7 @@ from parrot.knowledge.wiki.project import (
     load_effective_config,
     save_project_config,
 )
-from parrot.launcher import install_root
+from parrot.launcher import shared_state_root
 from parrot.mcp.portability import resolve_portable_mode
 
 _TABLE_HEADER = re.compile(r"^\s*\[([^]]+)]\s*(?:#.*)?$")
@@ -455,7 +455,7 @@ def install_codex_integration(
         only reconciles whatever the toolkit config already declares.
     """
     root = root.resolve()
-    state_root = install_root(root, explicit=root).shared_root
+    state_root = shared_state_root(root)
     config = config or load_effective_config(state_root).config
     existed = config_path(state_root).exists()
     save_project_config(state_root, config)
