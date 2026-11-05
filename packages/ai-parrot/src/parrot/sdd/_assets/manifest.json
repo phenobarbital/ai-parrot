@@ -668,6 +668,15 @@
       ]
     },
     {
+      "source": "sdd/sdd_templates/techwiki-page.md",
+      "target": "sdd/templates/techwiki-page.md",
+      "hosts": [
+        "claude",
+        "codex",
+        "google"
+      ]
+    },
+    {
       "source": "claude/agents/code-reviewer.md",
       "target": ".claude/agents/code-reviewer.md",
       "hosts": [
