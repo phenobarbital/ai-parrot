@@ -13,7 +13,7 @@ from typing import Any
 import yaml
 
 from parrot.sdd.techwiki.config import TechwikiConfig
-from parrot.sdd.techwiki.naming import PageNameError, page_name, page_title, rewrite_links
+from parrot.sdd.techwiki.naming import PageNameError, page_href, page_link, page_name, page_title, rewrite_links
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +184,10 @@ def _reference_index_page(cfg: TechwikiConfig, generated: list[BundlePage]) -> B
     ]
     for root_name in sorted(by_root):
         lines.extend(["", f"## {root_name}", ""])
-        lines.extend(f"- [[{page.name}]]" for page in sorted(by_root[root_name], key=lambda item: str(item.module)))
+        lines.extend(
+            f"- {page_link(page.name, str(page.module))}"
+            for page in sorted(by_root[root_name], key=lambda item: str(item.module))
+        )
     return BundlePage(
         source=None,
         section=cfg.reference_section,
@@ -322,9 +325,10 @@ def _template(name: str) -> Any:
 def write_navigation(pages: list[BundlePage], report: BundleReport, cfg: TechwikiConfig, out: Path) -> None:
     """Write only the Home and Sidebar navigation files.
 
-    Home counts every page of every section. The sidebar lists every authored and decision page, but for the
-    reference section only the index page (``module is None``): GitHub renders the sidebar on every wiki
-    page, so the thousands of module pages must not appear there.
+    Both list every authored and decision page as a plain Markdown link (never ``[[Page]]``, which GitHub
+    cannot render by the hundreds in a wiki this size). For the reference section they link only the index
+    page (``module is None``), since the thousands of module pages belong on the index; Home also shows the
+    full page count of every section.
 
     Args:
         pages: Assembled pages used to construct navigation.
@@ -336,18 +340,21 @@ def write_navigation(pages: list[BundlePage], report: BundleReport, cfg: Techwik
     sections: dict[str, list[BundlePage]] = {}
     for page in pages:
         sections.setdefault(page.section, []).append(page)
-    home_rows = [{"name": name, "pages": items} for name, items in sections.items()]
-    sidebar_rows = [
+    rows = [
         {
             "name": name,
-            "pages": [p for p in items if p.module is None] if name == cfg.reference_section else items,
+            "count": len(items),
+            "pages": [
+                {"title": p.title, "href": page_href(p.name)}
+                for p in (items if name != cfg.reference_section else [p for p in items if p.module is None])
+            ],
         }
         for name, items in sections.items()
     ]
     (out / "Home.md").write_text(
-        _template("home.md.j2").render(report=report, site_url=cfg.site_url, sections=home_rows), encoding="utf-8"
+        _template("home.md.j2").render(report=report, site_url=cfg.site_url, sections=rows), encoding="utf-8"
     )
-    (out / "_Sidebar.md").write_text(_template("sidebar.md.j2").render(sections=sidebar_rows), encoding="utf-8")
+    (out / "_Sidebar.md").write_text(_template("sidebar.md.j2").render(sections=rows), encoding="utf-8")
 
 
 def write_bundle(pages: list[BundlePage], report: BundleReport, cfg: TechwikiConfig, out: Path) -> None:

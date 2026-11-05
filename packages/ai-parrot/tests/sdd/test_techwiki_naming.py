@@ -6,7 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from parrot.sdd.techwiki.naming import FORBIDDEN_NAME_CHARS, PageNameError, page_name, page_title, rewrite_links
+from parrot.sdd.techwiki.naming import (
+    FORBIDDEN_NAME_CHARS,
+    PageNameError,
+    page_href,
+    page_link,
+    page_name,
+    page_title,
+    rewrite_links,
+)
 
 
 class TestPageName:
@@ -68,18 +76,36 @@ class TestRewriteLinks:
     """Tests for authored-page and generated-reference links."""
 
     def test_relative_md_link(self) -> None:
-        """A resolved relative Markdown target becomes a wiki link."""
-        assert rewrite_links("[Memory](memory.md)", lambda target: {"memory.md": "Memory"}.get(target)) == "[[Memory]]"
+        """A resolved relative Markdown target becomes a Markdown link to the page, keeping the author's text."""
+        assert (
+            rewrite_links("[Memory](memory.md)", lambda target: {"memory.md": "Memory"}.get(target)) == "[Memory](Memory)"
+        )
+        assert (
+            rewrite_links("[the memory page](memory.md)", lambda target: {"memory.md": "Memory-Page"}.get(target))
+            == "[the memory page](Memory-Page)"
+        )
 
     def test_ref_link(self) -> None:
-        """A resolved generated-reference target becomes a wiki link."""
+        """A resolved generated-reference target becomes a Markdown link to the reference page."""
         assert (
             rewrite_links(
                 "[Compaction](ref:parrot.memory.compaction)",
                 lambda target: {"ref:parrot.memory.compaction": "Reference-parrot.memory.compaction"}.get(target),
             )
-            == "[[Reference-parrot.memory.compaction]]"
+            == "[Compaction](Reference-parrot.memory.compaction)"
         )
+
+    def test_never_emits_wiki_link_syntax(self) -> None:
+        """GitHub cannot render hundreds of ``[[Page]]`` links per page in a large wiki, so none is ever emitted."""
+        out = rewrite_links("[A](a.md) [B](ref:b)", lambda target: "Some-Page")
+        assert "[[" not in out and out == "[A](Some-Page) [B](Some-Page)"
+
+    def test_href_is_percent_encoded(self) -> None:
+        """A page name with an em dash, a comma or an ampersand links the way GitHub's own page list does."""
+        assert page_href("A-—-B,-C-&-D") == "A-%E2%80%94-B%2C-C-%26-D"
+        assert page_href("API-Reference-parrot.memory.compaction") == "API-Reference-parrot.memory.compaction"
+        assert page_link("A-—-B", "A — B") == "[A — B](A-%E2%80%94-B)"
+        assert rewrite_links("[x](x.md)", lambda target: "Bots-&-Agents-Hierarchy") == "[x](Bots-%26-Agents-Hierarchy)"
 
     def test_unknown_target_collected(self) -> None:
         """An unresolved target is left in authored Markdown unchanged."""
@@ -90,7 +116,7 @@ def test_rewrite_links_skips_external_urls() -> None:
     """External URLs ending in .md are never treated as wiki-page references."""
     text = "[Spec](https://github.com/o/r/blob/main/spec.md) and [Local](local.md)"
     out = rewrite_links(text, lambda target: {"local.md": "Local"}.get(target))
-    assert out == "[Spec](https://github.com/o/r/blob/main/spec.md) and [[Local]]"
+    assert out == "[Spec](https://github.com/o/r/blob/main/spec.md) and [Local](Local)"
 
 
 def test_rewrite_links_resolves_fragment_links_and_flags_missing() -> None:
@@ -125,4 +151,4 @@ def test_rewrite_links_leaves_fenced_code_untouched() -> None:
     """Links inside fenced code blocks are examples, not page references."""
     text = "[A](local.md)\n```md\n[B](local.md)\n```\n~~~\n[C](local.md)\n~~~\n[D](local.md)"
     out = rewrite_links(text, lambda target: "Local")
-    assert out == "[[Local]]\n```md\n[B](local.md)\n```\n~~~\n[C](local.md)\n~~~\n[[Local]]"
+    assert out == "[A](Local)\n```md\n[B](local.md)\n```\n~~~\n[C](local.md)\n~~~\n[D](Local)"
