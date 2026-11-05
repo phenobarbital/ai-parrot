@@ -163,7 +163,7 @@
       "feature_id": "FEAT-806",
       "feature": "worktree-sync-base",
       "spec": "sdd/specs/worktree-sync-base.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -173,8 +173,9 @@
       "parallelism_notes": "Consumes TASK-5208 sandbox transport and modifies its test_worktree_sync.py after TASK-5208; TASK-5207 is transitively required. Uses only disposable repositories and per-test sandbox resources, not shared configuration.",
       "assigned_to": null,
       "started_at": "2026-11-05T00:36:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5212-worktree-sync-native-qualification.md"
+      "completed_at": "2026-11-05T01:21:19+00:00",
+      "file": "sdd/tasks/completed/TASK-5212-worktree-sync-native-qualification.md",
+      "verification": "partial"
     }
   ]
 }
