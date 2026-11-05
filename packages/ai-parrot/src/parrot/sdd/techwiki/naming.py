@@ -112,12 +112,19 @@ def page_link(name: str, text: str) -> str:
     return f"[{text}]({page_href(name)})"
 
 
-def rewrite_links(text: str, resolver: Callable[[str], str | None]) -> str:
+# Resolver result meaning "drop the link, keep its text": the target names something that legitimately
+# has no wiki page (a re-export from a module without a public API), so neither a link nor a dangling
+# report is right.
+UNLINK: object = object()
+
+
+def rewrite_links(text: str, resolver: Callable[[str], str | None | object]) -> str:
     """Rewrite resolved relative Markdown and ``ref:`` links to links to the wiki page.
 
     Args:
         text: Markdown content.
-        resolver: Maps a relative path or ``ref:<module>`` to a wiki page name.
+        resolver: Maps a relative path or ``ref:<module>`` to a wiki page name. ``None`` leaves the link
+            untouched (the caller reports it); :data:`UNLINK` replaces the link by its text alone.
 
     Returns:
         Markdown content with every resolved link converted to ``[original text](page-href)``; the
@@ -135,6 +142,10 @@ def rewrite_links(text: str, resolver: Callable[[str], str | None]) -> str:
         page = resolver(base)
         if page is None:
             return match.group(0)
+        if page is UNLINK:
+            return match.group(1)
+        if not isinstance(page, str):
+            raise TypeError(f"resolver must return a page name, None or UNLINK, got {page!r}")
         if fragment:
             return f"[{match.group(1)}]({page_href(page)}#{fragment})"
         return page_link(page, match.group(1))

@@ -332,28 +332,77 @@ def test_generated_page_ref_links_are_rewritten(api_repo: Path) -> None:
     assert report.ok(), (report.collisions, report.dangling)
 
 
-def test_unresolvable_links_in_a_generated_page_are_dangling(
+def _fake_generated_page(cfg, module: str, body: str):  # type: ignore[no-untyped-def]
+    """Build one generated-looking page for monkeypatching ``_generated_pages``."""
+    from parrot.sdd.techwiki import bundle as bundle_module
+
+    return bundle_module.BundlePage(
+        source=None,
+        section=cfg.reference_section,
+        title=module,
+        name=f"API-Reference-{module}",
+        body=body,
+        module=module,
+    )
+
+
+def test_unresolvable_links_in_a_generated_page_are_unlinked_or_dangling(
     techwiki_repo: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A generated page's unresolvable ``ref:`` and relative targets are reported, not crashed on."""
+    """A generated page's ``ref:`` to a module without a page is unlinked (text kept, informational row);
+    a relative target on a generated page stays dangling (FEAT-818 AC-3) — neither crashes."""
     from parrot.sdd.techwiki import bundle as bundle_module
 
     def fake_generated(cfg, root, release):  # type: ignore[no-untyped-def]
-        page = bundle_module.BundlePage(
-            source=None,
-            section=cfg.reference_section,
-            title="samplepkg.fake",
-            name="API-Reference-samplepkg.fake",
-            body="# fake\n\n[Gone](ref:samplepkg.gone) [Rel](../other.md)\n",
-            module="samplepkg.fake",
-        )
-        return [page], []
+        body = "# fake\n\nRe-exported from [`samplepkg.gone.Thing`](ref:samplepkg.gone). [Rel](../other.md)\n"
+        return [_fake_generated_page(cfg, "samplepkg.fake", body)], []
 
     monkeypatch.setattr(bundle_module, "_generated_pages", fake_generated)
     cfg = load_techwiki_config(techwiki_repo)
-    _, report = assemble(cfg, techwiki_repo)
-    generated_rows = [row for row in report.dangling if row["source"] == "ref:samplepkg.fake"]
-    # The ref: row proves generated pages are validated at all (AC-2); the relative row proves the
-    # no-source branch returns instead of dereferencing page.source (AC-3).
-    assert {row["target"] for row in generated_rows} == {"ref:samplepkg.gone", "../other.md"}
+    pages, report = assemble(cfg, techwiki_repo)
+    fake = next(p for p in pages if p.module == "samplepkg.fake")
+    assert "Re-exported from `samplepkg.gone.Thing`." in fake.body
+    assert "](ref:" not in fake.body
+    assert [row for row in report.unlinked if row["source"] == "ref:samplepkg.fake"] == [
+        {"source": "ref:samplepkg.fake", "target": "ref:samplepkg.gone"}
+    ]
+    generated_dangling = [row for row in report.dangling if row["source"] == "ref:samplepkg.fake"]
+    assert {row["target"] for row in generated_dangling} == {"../other.md"}
     assert not report.ok()
+
+
+def test_reference_index_page_is_never_rewritten(techwiki_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The index page's hrefs are final: a module literally named ``md`` must not be read as a relative link."""
+    from parrot.sdd.techwiki import bundle as bundle_module
+
+    def fake_generated(cfg, root, release):  # type: ignore[no-untyped-def]
+        return [_fake_generated_page(cfg, "samplepkg.md", "# samplepkg.md\n\nA module named md.\n")], []
+
+    monkeypatch.setattr(bundle_module, "_generated_pages", fake_generated)
+    cfg = load_techwiki_config(techwiki_repo)
+    (techwiki_repo / "wiki" / "b" / "two.md").write_text("# Two\n", encoding="utf-8")  # drop the fixture's dangling link
+    pages, report = assemble(cfg, techwiki_repo)
+    index = next(p for p in pages if p.source is None and p.module is None)
+    assert "- [samplepkg.md](API-Reference-samplepkg.md)\n" in index.body
+    assert report.dangling == [] and report.unlinked == []
+
+
+def test_unlinked_rows_reach_the_report_payload(techwiki_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``unlinked`` is serialised next to ``dangling`` so operators can see dropped links; it never fails strict mode."""
+    from parrot.sdd.techwiki import bundle as bundle_module
+    from parrot.sdd.techwiki.bundle import report_payload
+
+    def fake_generated(cfg, root, release):  # type: ignore[no-untyped-def]
+        return [_fake_generated_page(cfg, "samplepkg.fake", "# fake\n\n[Gone](ref:samplepkg.gone)\n")], []
+
+    monkeypatch.setattr(bundle_module, "_generated_pages", fake_generated)
+    cfg = load_techwiki_config(techwiki_repo)
+    (techwiki_repo / "wiki" / "b" / "two.md").write_text("# Two\n", encoding="utf-8")  # fixture's dangling link
+    (techwiki_repo / "wiki" / "b" / "two-copy.md").unlink()  # fixture's deliberate name collision
+    pages, report = assemble(cfg, techwiki_repo)
+    assert report.ok() and report.unlinked
+    assert report_payload(report)["unlinked"] == report.unlinked
+    out = tmp_path / "out"
+    write_bundle(pages, report, cfg, out)
+    written = json.loads((out / "techwiki-report.json").read_text(encoding="utf-8"))
+    assert written["unlinked"] == report.unlinked and written["dangling"] == []
