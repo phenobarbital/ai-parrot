@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-801 — GitHub Wiki as the Technical Reference
 **Spec**: `sdd/specs/github-wiki-technical-reference.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

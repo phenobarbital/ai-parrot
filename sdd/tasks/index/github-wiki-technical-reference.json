@@ -110,7 +110,7 @@
       "feature_id": "FEAT-801",
       "feature": "github-wiki-technical-reference",
       "spec": "sdd/specs/github-wiki-technical-reference.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -118,8 +118,9 @@
       "parallelism_notes": "no code dependency on M1–M3; edits disjoint files (sdd/templates/*, sdd-spec twins)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5169-techwiki-spec-template-docs-chapter.md"
+      "completed_at": "2026-11-05T00:26:36+00:00",
+      "file": "sdd/tasks/completed/TASK-5169-techwiki-spec-template-docs-chapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5170",
