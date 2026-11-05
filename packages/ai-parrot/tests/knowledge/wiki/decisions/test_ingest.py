@@ -14,6 +14,7 @@ from parrot.knowledge.wiki.decisions.models import ADR_REVISION_CONFLICT, Decisi
 from parrot.knowledge.wiki.decisions.repository import DecisionRepository
 from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord
 
+
 class TestDiscovery:
     def test_only_configured_globs_are_discovered(self, adr_repo, adr_config):
         found = discover_adr_sources(adr_repo, adr_config)
