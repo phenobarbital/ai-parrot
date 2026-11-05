@@ -208,7 +208,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
      `(NOT closed: shared ledger is read-only)`); never fails `$sdd-done`
 9. Push feature branch:
    - First run `wikitoolkit ledger outbox status --repo-root <worktree> --json`; on exit 4 report the
-     `contaminated_paths` and point to `docs/sdd/ledger-outbox.md` § Legacy feature diff — do not restore or
+     `contaminated_paths` and point to `wiki/sdd-tooling/sdd/ledger-outbox.md` § Legacy feature diff — do not restore or
      drop them and do not block the code PR
    - `git -C <worktree> push origin <branch>`
 10. Check merge blockers (feature flows only):

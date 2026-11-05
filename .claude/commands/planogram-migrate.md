@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, Edit
 
 # /planogram-migrate — Planogram configuration migration (FEAT-574, FEAT-612)
 
-Run the deployment sequence of `docs/pipelines/planogram-cycle-migration.md`
+Run the deployment sequence of `wiki/flows/pipelines/planogram-cycle-migration.md`
 against the live `troc.planograms_configurations` table: apply the ALTER
 script, export every active row, convert each one into a candidate, review
 the unresolved items **with the user**, and — only after an explicit yes —
@@ -240,4 +240,4 @@ columns can stay.
 | `/planogram-migrate` | Whole-table migration (THIS) |
 | `python -m parrot_pipelines.planogram.migration convert <file>` | Convert one config file offline |
 | `python -m parrot_pipelines.planogram.migration preflight --dsn …` | Read-only readiness report |
-| `docs/pipelines/planogram-cycle-migration.md` | The runbook this command executes |
+| `wiki/flows/pipelines/planogram-cycle-migration.md` | The runbook this command executes |

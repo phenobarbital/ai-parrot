@@ -556,7 +556,7 @@ wikitoolkit ledger outbox status --repo-root "<worktree-path>" --json
 STATUS_RC=$?
 if (( STATUS_RC == 4 )); then
     echo "⚠️  Legacy ledger contamination detected. Report contaminated_paths from the status output."
-    echo "See docs/sdd/ledger-outbox.md § Legacy feature diff; do not restore or drop these paths."
+    echo "See wiki/sdd-tooling/sdd/ledger-outbox.md § Legacy feature diff; do not restore or drop these paths."
 fi
 # Contamination is reported, not repaired here, and does not block the code PR.
 git -C <worktree-path> push origin "$BRANCH"
@@ -601,7 +601,7 @@ fi
 Ledger events never travel in the feature PR. Deliver every pending local event to the ledger branch (`ledger_branch` in `sdd/config.json`, else its `base_branch`) through the
 durable outbox — for **every** flow type, hotfixes included (ledger data never goes to the `hotfix_base`). The integrator
 works in its own temporary checkout of the ledger branch, retries a rejected push on a fresh base (max 3), never
-force-pushes and never rotates logs. See `docs/sdd/ledger-outbox.md`.
+force-pushes and never rotates logs. See `wiki/sdd-tooling/sdd/ledger-outbox.md`.
 
 ```bash
 LEDGER_DELIVERY_PENDING=0
