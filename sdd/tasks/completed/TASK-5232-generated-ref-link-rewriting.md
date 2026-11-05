@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-818 — Rewrite and validate generated API reference links
 **Spec**: `sdd/specs/fixgroup-cdf36c115545.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -405,4 +405,74 @@ already re-exports `PublicModel` from `.core`, which is what makes the first tes
 
 ## Completion Note
 
-*(filled in when the task is closed)*
+**Closed**: 2026-11-05 · verification=verified · commit `8fad66bc49`
+
+### What changed
+
+`assemble()` (`bundle.py`) no longer skips `source is None` pages in its rewrite loop.
+The `resolve()` closure is now source-aware:
+
+- `ref:` / `index:` targets key the manifest verbatim (the `startswith` widened to the tuple
+  so `_ref_id`'s `index:<name>` form is accepted — that key is already registered in `manifest`).
+- A relative target on a page with no source has nothing to resolve against: it is recorded
+  dangling and returns `None`, instead of dereferencing `page.source.parent`.
+- `origin` is computed once per page — `_source_id(...)` for authored/ADR pages,
+  `_ref_id(page)` for generated ones — so both dangling sites agree on the label.
+
+Two regression tests appended at **end of file** in `test_techwiki_bundle.py`.
+
+### Evidence
+
+- **AC-4 (both halves)**: with the `bundle.py` change reverted, both new tests **fail**
+  (`2 failed, 18 deselected`); with it restored, the full file is **`20 passed`**.
+- **AC-5**: `20 passed`, **0 skipped** — griffe is installed here, so the `api_repo`-gated
+  test genuinely ran (R3 satisfied without `TECHWIKI_REQUIRE_GRIFFE=1`).
+- Siblings green: `test_techwiki_naming.py`, `test_techwiki_api.py`, `test_techwiki_check.py`
+  → `57 passed`.
+- **AC-6**: `ruff check` → "All checks passed!"; `black --check` → "2 files would be left unchanged".
+- **AC-7**: `naming.py`, `module.md.j2`, the manifest schema and `assemble()`'s signature untouched.
+
+### AC-8 / R5 — deliberate deviation from the spec's first draft
+
+The spec originally placed the tests after `test_every_rewritten_link_resolves_in_the_manifest`
+(`:233`). That was changed before implementation: the unmerged branch
+`fix-1f9d9ff0ec07-techwiki-markdown-links` (brief `1f9d9ff0ec07`, pushed, awaiting `/sdd-done`)
+rewrites lines 66–290 of that same file and changes `rewrite_links` to emit
+`[text](percent-encoded-name)` instead of `[[Page]]`.
+
+Two mitigations, both verified in the committed code:
+1. The tests are **appended after the file's last function**, outside that branch's diff — so
+   the two lanes do not conflict textually.
+2. No assertion depends on link **syntax**. The first test asserts the resolved page *name*
+   is present and `](ref:` is absent, which holds under both `[[Page]]` and `[text](Page)`.
+
+That branch does **not** touch `assemble()`'s rewrite loop, so the `bundle.py` edit is
+conflict-free; and its own strengthened guard still cannot catch this bug (it skips `ref:`
+targets as external URLs via `^[A-Za-z][A-Za-z0-9+.-]*:`), which is why `issue:0891861cb3c1`
+survived it.
+
+### R1 realized — new ledger issue, NOT suppressed
+
+Validating generated pages for the first time surfaced real pre-existing breakage. Full bundle
+of this repo on this branch: 3372 pages, 3077 generated, **`report.dangling` = 300 rows, all
+from generated pages** (0 from authored), across **49 distinct targets**; `report.ok()` is now
+`False`, so `parrot sdd techwiki bundle` exits non-zero.
+
+These links were already dead on the published 2.1.0 wiki — the skipped validation was hiding
+them, not preventing them. Cause: `module.md.j2` emits a `ref:` link for every re-export alias,
+including aliases whose target module is outside `techwiki.packages[].roots` (`parrot.mcp`,
+`parrot.manager`, `parrot.handlers`, `parrot.scheduler`, `parrot.integrations.*`,
+`parrot.tools.excel|gvoice|msword`, `parrot_tools.*`, `parrot_pipelines.*`), plus some
+in-root misses that look like a separate roots/exclude bug (`parrot.utils.types`,
+`parrot.knowledge.wiki.*`).
+
+Per this task's R1 this was **not** fixed here and the validation was **not** weakened to keep
+the exit code green. Filed as **`issue:3ecba9ea5ffc`** (bug/major) with both candidate fixes
+recorded.
+
+**Heads-up for the next release**: the techwiki bundle gate will fail until
+`issue:3ecba9ea5ffc` is resolved. That is the gate doing its job for the first time.
+
+### Deviations from the blueprint
+
+None beyond AC-8/R5 above, which was folded into the task file before implementation.

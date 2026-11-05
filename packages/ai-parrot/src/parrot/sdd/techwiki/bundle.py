@@ -278,17 +278,29 @@ def assemble(
             manifest[_source_id(root, page.source)] = page.name
 
     for page in pages:
-        if page.source is None:
-            continue
 
         def resolve(target: str, page: BundlePage = page) -> str | None:
-            if target.startswith("ref:"):
+            """Return the wiki page name a link target names, recording unresolved targets as dangling.
+
+            Args:
+                target: The raw Markdown link target (``ref:<module>``, ``index:<name>`` or a relative path).
+                page: The page the link appears on, bound at definition time.
+
+            Returns:
+                The resolved page name, or ``None`` when the target is not in the manifest.
+            """
+            origin = _source_id(root, page.source) if page.source is not None else _ref_id(page)
+            if target.startswith(("ref:", "index:")):
                 key = target
+            elif page.source is None:
+                # A generated page has no location in the source tree to resolve a relative link against.
+                report.dangling.append({"source": origin, "target": target})
+                return None
             else:
                 key = posixpath.normpath(str(PurePosixPath(_source_id(root, page.source)).parent / target))
             resolved = manifest.get(key)
             if resolved is None:
-                report.dangling.append({"source": _source_id(root, page.source), "target": target})
+                report.dangling.append({"source": origin, "target": target})
             return resolved
 
         page.body = rewrite_links(page.body, resolve)
