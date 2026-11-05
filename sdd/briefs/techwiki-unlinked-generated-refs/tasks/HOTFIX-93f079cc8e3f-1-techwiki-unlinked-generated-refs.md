@@ -2,7 +2,7 @@
 
 **Feature**: techwiki-unlinked-generated-refs (BRIEF-93f079cc8e3f)
 **Spec**: sdd/briefs/techwiki-unlinked-generated-refs.brief.md
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none
@@ -91,4 +91,12 @@ gap; the `techwiki check` command.
 - `PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/sdd/test_techwiki_naming.py packages/ai-parrot/tests/sdd/test_techwiki_bundle.py packages/ai-parrot/tests/sdd/test_techwiki_api.py packages/ai-parrot/tests/sdd/test_techwiki_check.py -q`
 
 ## Completion Note
-(pending)
+Implemented. `naming.UNLINK` sentinel (resolver may return a page name, `None` or `UNLINK`; anything else
+raises `TypeError`); `rewrite_links` replaces an `UNLINK`ed link by its text. `BundleReport.unlinked` added
+(informational, outside `ok()`). `assemble` skips the index page (`source is None and module is None`) and,
+for a generated page, turns an unresolved `ref:` into `UNLINK` + an `unlinked` row; relative targets on
+generated pages stay dangling. FEAT-818's test was renamed to
+`test_unresolvable_links_in_a_generated_page_are_unlinked_or_dangling` with the new split; two tests added
+(`test_reference_index_page_is_never_rewritten`, `test_unlinked_rows_reach_the_report_payload`) plus a naming
+test. Tests: 82 passed in the four techwiki files; ruff clean. Strict full bundle from the branch: exit 0,
+dangling 0, unlinked 300, collisions 0, no `](ref:` left in any page. Seat: native (main session).

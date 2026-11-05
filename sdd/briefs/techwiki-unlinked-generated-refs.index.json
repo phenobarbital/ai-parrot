@@ -5,7 +5,7 @@
   "type": "brief",
   "base_branch": "dev",
   "created_at": "2026-11-05",
-  "completed_at": null,
+  "completed_at": "2026-11-05T17:23:29+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "BRIEF-93f079cc8e3f",
       "feature": "techwiki-unlinked-generated-refs",
       "spec": "sdd/briefs/techwiki-unlinked-generated-refs.brief.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,7 +24,7 @@
       "parallelism_notes": "Single task; edits naming.py, bundle.py and their tests.",
       "assigned_to": null,
       "started_at": "2026-11-05T17:21:52+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-05T17:23:29+00:00",
       "file": "sdd/briefs/techwiki-unlinked-generated-refs/tasks/HOTFIX-93f079cc8e3f-1-techwiki-unlinked-generated-refs.md"
     }
   ]
