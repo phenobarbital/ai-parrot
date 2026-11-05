@@ -39,14 +39,14 @@
       "feature_id": "FEAT-810",
       "feature": "decisions-inventory-fixes-2",
       "spec": "sdd/specs/decisions-inventory-fixes-2.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies. Modifies decisions/inventory.py, test_inventory.py and test_repository.py; TASK-5215 depends on it because both edit InventorySnapshot.take in decisions/inventory.py and both edit test_inventory.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T01:07:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5214-fail-closed-hashless-gate.md"
     },
@@ -57,7 +57,7 @@
       "feature_id": "FEAT-810",
       "feature": "decisions-inventory-fixes-2",
       "spec": "sdd/specs/decisions-inventory-fixes-2.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -66,7 +66,7 @@
       "parallel": true,
       "parallelism_notes": "Modifies the same file as TASK-5214 (decisions/inventory.py, inside InventorySnapshot.take, and test_inventory.py) — serialized after it; TASK-5214's insertion above inventory.py:104 shifts the manifest block this task edits.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T01:07:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5215-envelope-independent-manifest.md"
     }
