@@ -12,7 +12,7 @@
       "id": "TASK-5220",
       "slug": "sync-base-refusal-and-transport-hardening",
       "title": "sync-base refusal classification and transport hardening",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -23,7 +23,7 @@
       "feature": "scripts-worktree-sync-tech-debt-2",
       "spec": "sdd/specs/scripts-worktree-sync-tech-debt-2.spec.md",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T03:06:52+00:00",
       "completed_at": null
     },
     {
