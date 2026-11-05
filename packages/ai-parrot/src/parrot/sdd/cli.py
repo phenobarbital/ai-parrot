@@ -245,6 +245,7 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
             "Create/remove a runnable baseline checkout of a base ref, compiled .so files included.",
         ),
         "list": ("remove_worktree", ("list",), "List worktrees and orphan dirs: dirty, unpushed, PR, live processes."),
+        "sync-base": ("worktree_sync", (), "Bring origin/<base_branch> (or chosen commits) into a worktree; never pushes."),
         "remove": (
             "remove_worktree",
             ("remove",),
@@ -304,7 +305,8 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
 }
 #: Packaged modules with a main() that are deliberately NOT mounted (C22: /sdd-insight does not ship).
 # `native_claude_sandbox.main()` serves the `launch-worker` script entry; its CLI is `parrot sdd launch worker`.
-_UNMOUNTED: frozenset[str] = frozenset({"native_claude_sandbox"})
+# `worker_notification.main()` is invoked as a host lifecycle hook, not as an operator-facing SDD command.
+_UNMOUNTED: frozenset[str] = frozenset({"native_claude_sandbox", "worker_notification"})
 _PASSTHROUGH = {"ignore_unknown_options": True, "allow_interspersed_args": False}
 
 

@@ -213,6 +213,29 @@ def test_sdd_cli_mounts_every_helper() -> None:
     assert CliRunner().invoke(cli, ["sdd", "run", "reserve_ids", "--help"]).exit_code == 2  # no alias (C30)
 
 
+def test_worktree_sync_base_help() -> None:
+    """The installed CLI dispatches sync-base help to its helper."""
+    result = CliRunner().invoke(cli, ["sdd", "worktree", "sync-base", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "--cherry-pick" in result.output
+    assert "--dry-run" in result.output
+
+
+def test_worktree_sync_base_refusal_exit_and_json(tmp_path: Path) -> None:
+    """A missing target retains the helper refusal code and JSON result contract."""
+    target = tmp_path / "missing-worktree"
+
+    result = CliRunner().invoke(cli, ["sdd", "worktree", "sync-base", str(target), "--json"])
+
+    assert result.exit_code == 2, result.output
+    report = json.loads(result.output)
+    assert report["worktree"] == str(target)
+    assert report["status"] == "refused"
+    assert report["exit_code"] == 2
+    assert "target must resolve to one worktree" in report["message"]
+
+
 def test_verb_propagates_helper_exit_code() -> None:
     """A helper that argparse-rejects exits 2 - the code must pass through, not be flattened to 1."""
     result = CliRunner().invoke(cli, ["sdd", "ids", "reserve", "--kind", "bogus"])
