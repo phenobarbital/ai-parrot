@@ -38,6 +38,7 @@ Safety gates (each overridable only with an explicit flag):
 from __future__ import annotations
 
 import argparse
+from collections.abc import Collection
 import os
 import subprocess
 import sys
@@ -160,13 +161,12 @@ def _proc_cmdline(pid: int) -> str:
         return ""
 
 
-def live_processes_in(path: Path) -> list[tuple[int, str]]:
-    """Return ``(pid, cmdline)`` for every process running inside ``path``.
+def live_processes_in(path: Path, exclude_pids: Collection[int] = ()) -> list[tuple[int, str]]:
+    """Return live cwd matches, skipping own PID and explicitly excluded PIDs.
 
     A process counts as "inside" when its resolved cwd is the worktree or a
-    descendant of it. Own PID and this script's parents are skipped so a
-    ``/remove-worktree`` run from inside the target does not flag itself
-    without cause — it is still caught by the primary-worktree guard.
+    descendant of it. Callers that need to exclude their ancestry must supply
+    those PIDs explicitly.
     """
     found: list[tuple[int, str]] = []
     try:
@@ -178,7 +178,7 @@ def live_processes_in(path: Path) -> list[tuple[int, str]]:
         if not entry.name.isdigit():
             continue
         pid = int(entry.name)
-        if pid == self_pid:
+        if pid == self_pid or pid in exclude_pids:
             continue
         cwd = _proc_cwd(pid)
         if cwd is None:
