@@ -98,8 +98,8 @@ FEAT-007 — Ontological RAG
 
 FEAT-008 — MCP Security Layer
   🔵 No worktree — create one:
-     git worktree add -b feat-008-mcp-security .claude/worktrees/feat-008-mcp-security HEAD
-     cd .claude/worktrees/feat-008-mcp-security
+     parrot sdd worktree ensure --slug mcp-security --feature-id FEAT-008
+     cd "$WORKTREES_DIR/feat-008-mcp-security"
   2. TASK-010 — SecurityLayer base   [high / M]
      Depends-on: none
      → /sdd-start TASK-010
@@ -107,11 +107,11 @@ FEAT-008 — MCP Security Layer
 FEAT-009 — Security Toolkits
   ⚡ Parallel tasks (can run in separate worktrees):
   3. TASK-042 — Prowler Toolkit      [medium / S]
-     git worktree add -b task-042-prowler .claude/worktrees/task-042-prowler HEAD
-     → cd .claude/worktrees/task-042-prowler && /sdd-start TASK-042
+     parrot sdd worktree ensure --slug prowler --feature-id TASK-042
+     → cd "$WORKTREES_DIR/task-042-prowler" && /sdd-start TASK-042
   4. TASK-043 — Trivy Toolkit        [medium / S]
-     git worktree add -b task-043-trivy .claude/worktrees/task-043-trivy HEAD
-     → cd .claude/worktrees/task-043-trivy && /sdd-start TASK-043
+     parrot sdd worktree ensure --slug trivy --feature-id TASK-043
+     → cd "$WORKTREES_DIR/task-043-trivy" && /sdd-start TASK-043
 ```
 
 If no tasks are unblocked:

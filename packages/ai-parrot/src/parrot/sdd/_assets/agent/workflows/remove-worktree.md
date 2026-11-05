@@ -4,7 +4,7 @@ description: Inspect and safely remove stalled or finished SDD worktrees, refusi
 
 # /remove-worktree — Safe Worktree Cleanup
 
-Remove leftover worktrees under `.claude/worktrees/` without destroying work
+Remove leftover worktrees under the worktree root without destroying work
 a running `sdd-worker` still owns.
 
 Backed by `parrot sdd worktree list|remove`. **Always run `list` first** and show
@@ -89,7 +89,7 @@ If the script refuses on **dirty** or **unpushed** state, relay the reason and
 first:
 
 ```bash
-git -C .claude/worktrees/<name> push -u origin <branch>
+git -C "$WORKTREES_DIR/<name>" push -u origin <branch>
 ```
 
 ## Safety gates (all enforced by the script)

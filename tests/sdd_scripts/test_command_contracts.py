@@ -6,7 +6,7 @@ dispatch in one run (`sdd-planner`, `sdd-research`, `sdd-autopilot`). Planning
 alone (`/sdd-task`) creates none. All of them go through
 `parrot sdd worktree ensure`, so exactly one naming rule exists.
 
-These tests keep that true. `.claude/worktrees/` is never inspected: those are
+Live worktrees (under the resolved worktree root, and legacy ones under `.claude/worktrees/`) are never inspected: those are
 separate checkouts of older branches and legitimately hold the old text.
 """
 
@@ -97,6 +97,43 @@ def test_no_legacy_naming_template_remains() -> None:
             offenders.append(md_file.relative_to(_REPO_ROOT))
 
     assert not offenders, f"Legacy template `{_LEGACY_TEMPLATE}` found in: " + ", ".join(str(p) for p in offenders)
+
+_LEGACY_ROOT = ".claude/worktrees"
+_GUARD_DIRS = (".claude", ".agent", ".agents", "packages/ai-parrot/src/parrot/sdd/_assets")
+_GUARD_SUFFIXES = {".md", ".toml", ".sh"}
+
+
+def test_no_legacy_worktree_root_remains() -> None:
+    """No .md/.toml/.sh under .claude/, .agent/, .agents/, parrot/sdd/_assets/ and CLAUDE.md names
+    `.claude/worktrees` except lines that also contain `git worktree repair` (the migration recipe).
+    Files under a live worktree are skipped exactly as the sibling test does."""
+    if not (_REPO_ROOT / ".claude").is_dir():
+        pytest.skip(".claude/ directory not found at this checkout")
+    offenders: list[str] = []
+    candidates: list[Path] = []
+    for guard_dir in _GUARD_DIRS:
+        dir_path = _REPO_ROOT / guard_dir
+        if dir_path.is_dir():
+            candidates.extend(p for p in dir_path.rglob("*") if p.is_file() and p.suffix in _GUARD_SUFFIXES)
+    claude_md = _REPO_ROOT / "CLAUDE.md"
+    if claude_md.is_file():
+        candidates.append(claude_md)
+
+    for path in candidates:
+        if "worktrees" in path.parts or path.name == "settings.local.json":
+            continue
+        try:
+            content = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        for lineno, line in enumerate(content.splitlines(), start=1):
+            if _LEGACY_ROOT in line:
+                if "git worktree repair" in line or "(claude|parrot)" in line:
+                    continue
+                rel = path.relative_to(_REPO_ROOT)
+                offenders.append(f"{rel}:{lineno}")
+
+    assert not offenders, "Legacy worktree root still named in: " + ", ".join(offenders)
 
 
 _SHIPPED_WITH_INLINE_PYTHON_BAN = (
