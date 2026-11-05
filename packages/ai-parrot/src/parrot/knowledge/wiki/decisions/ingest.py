@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
 from pathlib import Path
 
 from parrot.knowledge.graphindex.cli import discover_python_files
@@ -17,6 +18,7 @@ from parrot.knowledge.wiki.decisions.codec import content_fingerprint, decision_
 from parrot.knowledge.wiki.decisions.evidence import build_evidence, extract_python_citations
 from parrot.knowledge.wiki.decisions.models import (
     ADR_REFERENCE_AMBIGUOUS,
+    ADR_READ_ONLY,
     ADR_REFERENCE_MISSING,
     ADR_SOURCE_UNAVAILABLE,
     DecisionConfig,
@@ -260,7 +262,10 @@ async def _persist_if_changed(repo: DecisionRepository, record: DecisionRecord, 
     """Save ``record`` when it differs from the stored version; update ``result`` counters.
 
     A stored record with the same content but a non-canonical envelope (written by an
-    older codec) is re-encoded in place and counted as ``updated``.
+    older codec) is re-encoded in place and counted as ``updated``. That re-encode is a
+    best-effort heal: on a read-only plane it is skipped and the record counts as
+    ``unchanged`` (no diagnostic), so a read-only sync of unchanged content keeps
+    succeeding; a writable session heals the page later (issue:84c5f270394d).
     """
     existing = await repo.get(record.decision_id)
     expected_hash = existing[1] if existing is not None else None
@@ -275,7 +280,18 @@ async def _persist_if_changed(repo: DecisionRepository, record: DecisionRecord, 
                 return
             await repo.save(stored_record, stored_hash)
         except DecisionError as exc:
+            if exc.code == ADR_READ_ONLY:
+                logger.debug("skipping canonical re-encode of %s on a read-only plane", record.decision_id)
+                result.unchanged += 1
+                return
             result.diagnostics.append(DecisionDiagnostic(code=exc.code, message=str(exc), decision_id=exc.decision_id))
+            return
+        except sqlite3.OperationalError as exc:
+            # A read-only database file surfaces as a raw sqlite error, not ADR_READ_ONLY.
+            if "readonly" not in str(exc):
+                raise
+            logger.debug("skipping canonical re-encode of %s on a read-only database: %s", record.decision_id, exc)
+            result.unchanged += 1
             return
         result.updated += 1
         return
