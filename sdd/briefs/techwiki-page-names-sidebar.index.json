@@ -1,0 +1,51 @@
+{
+  "feature": "techwiki-page-names-sidebar",
+  "feature_id": "BRIEF-5baa3dae9606",
+  "spec": "sdd/briefs/techwiki-page-names-sidebar.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-11-05",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-5baa3dae9606-1",
+      "slug": "techwiki-page-name-sanitization",
+      "title": "Sanitize artifact-forbidden characters out of techwiki page names",
+      "feature_id": "BRIEF-5baa3dae9606",
+      "feature": "techwiki-page-names-sidebar",
+      "spec": "sdd/briefs/techwiki-page-names-sidebar.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Edits bundle.py and test_techwiki_bundle.py, which HOTFIX-5baa3dae9606-2 edits too; run first.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/techwiki-page-names-sidebar/tasks/HOTFIX-5baa3dae9606-1-techwiki-page-name-sanitization.md"
+    },
+    {
+      "id": "HOTFIX-5baa3dae9606-2",
+      "slug": "techwiki-sidebar-reference-index",
+      "title": "Replace the per-module sidebar listing with one API Reference index page",
+      "feature_id": "BRIEF-5baa3dae9606",
+      "feature": "techwiki-page-names-sidebar",
+      "spec": "sdd/briefs/techwiki-page-names-sidebar.brief.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "HOTFIX-5baa3dae9606-1"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits bundle.py and test_techwiki_bundle.py after HOTFIX-5baa3dae9606-1; depends on BundlePage.module.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/techwiki-page-names-sidebar/tasks/HOTFIX-5baa3dae9606-2-techwiki-sidebar-reference-index.md"
+    }
+  ]
+}
