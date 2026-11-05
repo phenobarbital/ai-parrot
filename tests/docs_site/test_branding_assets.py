@@ -3,7 +3,6 @@
 from pathlib import Path
 import struct
 
-
 ROOT = Path(__file__).resolve().parents[2]
 BRANDING = ROOT / "docs" / "branding"
 PRESERVED = [
