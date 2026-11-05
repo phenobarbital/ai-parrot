@@ -3,7 +3,7 @@
 **Feature**: FEAT-816 a2ui-kpi-empty-snapshot-fixes
 **Spec**: `sdd/specs/a2ui-kpi-empty-snapshot-fixes.spec.md`
 **Discovered-from**: `issue:819e882f4064`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none
@@ -44,4 +44,4 @@ ruff check packages/ai-parrot/src/parrot/outputs/a2ui/builders.py
 ```
 
 ## Completion Note
-(pending)
+Added `_mark_row_scalars_optional` in builders.py; `build_linked_surface` appends `/<key>/rows/<n>/...` top-level bindings to component `parrot_optional` (merged). 3 regression tests (no-snapshot, empty result, snapshot+existing optional). Regenerated goldens linked_dashboard_derived.json and linked_epson_dashboard.json (KPI components gain parrot_optional). 30 failures in a2ui/recipes, test_dsl_relational non-utf8, test_lazy_imports pre-exist on base.

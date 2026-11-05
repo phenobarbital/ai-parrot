@@ -155,3 +155,53 @@ def test_build_linked_surface_no_snapshot_golden(activity_frame, linked_source) 
         snapshot=False,
     )
     assert _dump(envelope) == (ENVELOPES / "linked_no_snapshot.json").read_bytes()
+
+
+def _kpi(metadata: dict[str, object] | None = None) -> list[dict[str, object]]:
+    """Return a linked KPICard bound to a row-zero scalar."""
+    component: dict[str, object] = {
+        "id": "root",
+        "component": "KPICard",
+        "label": "Visits",
+        "value": {"path": "/activity/rows/0/visits"},
+    }
+    if metadata is not None:
+        component["metadata"] = metadata
+    return [component]
+
+
+def test_kpi_no_snapshot_bakes(linked_source, activity_frame) -> None:
+    """A row-scalar KPI binding with no snapshot rows bakes (value omitted) instead of raising."""
+    envelope = build_linked_surface(
+        _kpi(), _sources(linked_source), {"activity": activity_frame}, surface_id="kpi-nosnap", snapshot=False
+    )
+    baked = bake_envelope(envelope)
+    root = next(c for c in baked if c["id"] == "root")
+    assert "value" not in root
+    assert envelope.components[0].metadata.extensions.root["parrot_optional"] == ["/activity/rows/0/visits"]
+
+
+def test_kpi_empty_result_bakes(linked_source, activity_frame) -> None:
+    """A genuinely empty (zero-row) result still bakes a KPI bound to row zero."""
+    empty = activity_frame.iloc[0:0]
+    envelope = build_linked_surface(
+        _kpi(), _sources(linked_source, snapshot_at=FIXED_AT), {"activity": empty}, surface_id="kpi-empty"
+    )
+    root = next(c for c in bake_envelope(envelope) if c["id"] == "root")
+    assert "value" not in root
+
+
+def test_kpi_snapshot_bakes_value_and_keeps_existing_optional(linked_source, activity_frame) -> None:
+    """With rows the value bakes as before; author-supplied parrot_optional entries are preserved."""
+    envelope = build_linked_surface(
+        _kpi({"extensions": {"parrot_optional": ["/other"]}}),
+        _sources(linked_source, snapshot_at=FIXED_AT),
+        {"activity": activity_frame},
+        surface_id="kpi-snap",
+    )
+    root = next(c for c in bake_envelope(envelope) if c["id"] == "root")
+    assert root["value"] == activity_frame["visits"].iloc[0]
+    assert envelope.components[0].metadata.extensions.root["parrot_optional"] == [
+        "/other",
+        "/activity/rows/0/visits",
+    ]
