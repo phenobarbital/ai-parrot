@@ -31,7 +31,7 @@
       "id": "TASK-5221",
       "slug": "runnable-native-sync-gate",
       "title": "Make the native sync-base gate runnable, run it, re-stamp TASK-5212",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -44,7 +44,7 @@
       "feature": "scripts-worktree-sync-tech-debt-2",
       "spec": "sdd/specs/scripts-worktree-sync-tech-debt-2.spec.md",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T03:11:07+00:00",
       "completed_at": null
     }
   ]
