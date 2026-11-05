@@ -524,7 +524,7 @@ class TestNoThirdPartyContact:
 # Opt-in: every test below requires a real Linux Obscura v0.2.2 binary
 # (`real_obscura_driver` fixture) and is skipped cleanly without one —
 # these prove nothing is assumed from CDP protocol naming alone (spec
-# Known Risks/Gotchas). See docs/obscura-headless-browser.md for the
+# Known Risks/Gotchas). See wiki/tools/obscura-headless-browser.md for the
 # full compatibility matrix these exercise a representative slice of.
 
 

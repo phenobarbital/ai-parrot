@@ -302,7 +302,7 @@ def _run_treesitter_outline(parser: Any, source_bytes: bytes) -> dict[str, Any]:
     """Parse + extract using an already-loaded, cached ``Parser``.
 
     Runs synchronously, in-process — per
-    ``docs/design/luau-parser-resource-policy.md`` §1/§3, per-file
+    ``wiki/knowledge/design/luau-parser-resource-policy.md`` §1/§3, per-file
     subprocess isolation is reserved for the offline benchmark/CI
     regression path (:mod:`scripts.benchmarks.luau_parser_limits`,
     ``test_resource_corpus.py``), never the production ``outline()`` hot

@@ -85,5 +85,6 @@
   "sdd/templates/task.md",
   ".claude/agents/code-reviewer.md",
   ".claude/agents/qa-runner.md",
-  "docs/sdd/CODEX.md"
+  "docs/sdd/CODEX.md",
+  "sdd/templates/techwiki-page.md"
 ]

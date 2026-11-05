@@ -116,7 +116,7 @@ separate signal pipelines, point `OTEL_EXPORTER_OTLP_ENDPOINT` at it, leave
 `OTLP_TARGETS` unset, and set both signal switches to `true` with nonzero
 sampling. Listing Prometheus and OpenLIT together is not equivalent because
 Prometheus rejects `/v1/traces`; see
-[`Migrating split routing`](../../../../../docs/architecture/10-observability.md#migrating-split-routing-feat-705)
+[`Migrating split routing`](https://github.com/phenobarbital/ai-parrot/wiki/Architecture-10.-Observability-%E2%80%94-OpenLIT-%2B-OpenTelemetry#migrating-split-routing-feat-705)
 for the routing table.
 
 For a **cost-only** OpenLIT dashboard without the full trace pipeline (e.g.

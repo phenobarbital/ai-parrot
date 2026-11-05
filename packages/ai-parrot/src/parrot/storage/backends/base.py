@@ -5,7 +5,7 @@ ABC. The shared contract test suite in tests/storage/test_backend_contract.py
 validates that all backends exhibit identical observable behavior.
 
 FEAT-116: dynamodb-fallback-redis — Module 1 (ConversationBackend ABC).
-See docs/storage-backends.md for the backend selection matrix.
+See wiki/stores/storage-backends.md for the backend selection matrix.
 """
 
 from abc import ABC, abstractmethod

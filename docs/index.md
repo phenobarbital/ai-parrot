@@ -16,6 +16,12 @@ through a single async interface.
 [Get started →](INSTALL.md){ .md-button .md-button--primary }
 [Browse the API →](api-reference/index.md){ .md-button }
 
+!!! note "Technical reference moved to the Wiki"
+    The detailed technical reference (architecture, clients, agents, tools, memory, integrations,
+    operations, migration notes and the generated API reference) now lives in the
+    [project Wiki](https://github.com/phenobarbital/ai-parrot/wiki). This site keeps the
+    getting-started material, chapters, guides and decisions.
+
 ---
 
 ## Documentation by chapter
@@ -103,26 +109,26 @@ through a single async interface.
     1. Read [Bots & Agents](chapters/bots-agents.md) and pick the
        right execution mode (sequential / parallel / DAG).
     2. For cross-host or cross-process agents, jump to
-       [A2A Communication](a2a_communication.md).
+       [A2A Communication](https://github.com/phenobarbital/ai-parrot/wiki/MCP-%26-A2A-A2A-Secure-Communication-Demo).
     3. Production patterns live in the
-       [AgentsFlow User Guide](orchestration/agentsflow.md).
+       [AgentsFlow User Guide](https://github.com/phenobarbital/ai-parrot/wiki/Bots-%26-Agents-AgentsFlow-User-Guide).
 
 === "RAG over your documents"
 
     1. Pick a vector store —
-       [Storage Backends](storage-backends.md).
+       [Storage Backends](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Storage-Backends-Guide).
     2. Wire loaders →
-       [Local Knowledge Base](local_kb.md),
-       [Loaders Metadata](loaders-metadata.md).
+       [Local Knowledge Base](https://github.com/phenobarbital/ai-parrot/wiki/Knowledge-Local-Kb),
+       [Loaders Metadata](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Loader-Metadata-Standard).
     3. Tune retrieval with
-       [Parent-Child Retrieval](parent-child-retrieval.md).
+       [Parent-Child Retrieval](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders-Parent-Child-Retrieval-%28Small-to-Big%29).
 
 === "Expose an agent as a service"
 
     1. Decide the surface — REST? MCP? Messaging?
-    2. REST: [API Endpoints](API_ENDPOINTS.md).
-    3. MCP: [MCP Sessions](mcp_session.md) and
-       [Simple MCP Server](simple_mcp_server.md).
+    2. REST: [API Endpoints](https://github.com/phenobarbital/ai-parrot/wiki/Server-%26-APIs-API-Endpoints-Reference).
+    3. MCP: [MCP Sessions](https://github.com/phenobarbital/ai-parrot/wiki/MCP-%26-A2A-Create-and-configure-agent) and
+       [Simple MCP Server](https://github.com/phenobarbital/ai-parrot/wiki/MCP-%26-A2A-Simple-Mcp-Server).
     4. Telegram / Teams / WhatsApp: see the
        [Integrations chapter](chapters/integrations.md).
 

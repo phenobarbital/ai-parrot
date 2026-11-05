@@ -164,7 +164,7 @@ def is_rust_available() -> bool:
             # `debug`, not `warning`: the extension is a separate maturin
             # sub-project that never ships in the `ai-parrot` wheel, so its
             # absence is the DEFAULT state, not a misconfiguration. Level
-            # matches this function's docstring and docs/tools/compression.md.
+            # matches this function's docstring and wiki/tools/compression.md.
             logger.debug(
                 "parrot_codec Rust extension not available; large payloads "
                 "over the size threshold will pass through uncompressed (G9)."

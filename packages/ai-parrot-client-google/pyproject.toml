@@ -19,7 +19,7 @@ dependencies = [
     # aio.operations.get, aio.files.download, aio.interactions.create,
     # aio.live.music.connect, aio.aclose) were actually verified against, by
     # direct introspection of the installed SDK (2.23.0; see
-    # docs/migration/video-reel-omni-veo-reliability.md "Tested SDK
+    # wiki/migration/video-reel-omni-veo-reliability.md "Tested SDK
     # versions"). 2.18.1 was never tested for these surfaces and is not
     # claimed to work; a higher, untested version (e.g. this workspace's
     # uv.lock currently resolves 2.24.0) is likewise not claimed — only what

@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
-GUIDE = REPO / "docs" / "experts" / "cve-experts.md"
+GUIDE = REPO / "wiki" / "bots" / "experts" / "cve-experts.md"
 HEADINGS = [
     "Prerequisites",
     "From Python",

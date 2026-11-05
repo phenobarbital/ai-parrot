@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "ae110fac-d100-43db-8bca-99afbf86a981",
     "name": "ai-parrot A2UI — AgentDashboard surfaces (FEAT-469/470/473/491/492/493)",
-    "description": "All routes used by the navigator-frontend-next AgentDashboard service: AgentTalk chat (A2UI envelopes), A2UIHandler RPC/SSE, persistent ui_surfaces (JSON + interactive HTML via the FEAT-493 renderer), deep links, recipes, artifacts and the legacy infographic lane.\n\nSet collection variables: baseUrl, token (bearer), agentId (default flex_dashboard), sessionId (any uuid you own). Pin requests capture surfaceId / dashboardSurfaceId / refreshableSurfaceId / shareToken automatically.\n\nReference: docs/frontend/agentdashboard-a2ui-reference.md",
+    "description": "All routes used by the navigator-frontend-next AgentDashboard service: AgentTalk chat (A2UI envelopes), A2UIHandler RPC/SSE, persistent ui_surfaces (JSON + interactive HTML via the FEAT-493 renderer), deep links, recipes, artifacts and the legacy infographic lane.\n\nSet collection variables: baseUrl, token (bearer), agentId (default flex_dashboard), sessionId (any uuid you own). Pin requests capture surfaceId / dashboardSurfaceId / refreshableSurfaceId / shareToken automatically.\n\nReference: wiki/bots/frontend/agentdashboard-a2ui-reference.md",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {

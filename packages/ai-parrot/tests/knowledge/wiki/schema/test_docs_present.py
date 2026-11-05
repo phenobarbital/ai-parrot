@@ -11,8 +11,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[6]
 
 
 def test_guide_mentions_verbs_and_tools():
-    """Verify that docs/wiki/schema-plane.md exists and documents the six verbs and four tools."""
-    text = (_REPO_ROOT / "docs" / "wiki" / "schema-plane.md").read_text()
+    """Verify that wiki/wiki/schema-plane.md exists and documents the six verbs and four tools."""
+    text = (_REPO_ROOT / "wiki" / "wiki" / "schema-plane.md").read_text()
 
     # Test for the six CLI verbs (from FEAT-600 spec AC15)
     verbs = ("sources", "add-source", "sync", "ingest-ddl", "diff", "lookup")

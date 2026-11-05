@@ -80,9 +80,19 @@ def _source_id(root: Path, source: Path) -> str:
     return source.relative_to(root).as_posix() if source.is_absolute() else source.as_posix()
 
 
-def _new_page(source: Path, section: str, text: str) -> BundlePage:
-    """Create an unvalidated page from Markdown source text."""
+def _new_page(source: Path, section: str, text: str, *, sanitize_title: bool = False) -> BundlePage:
+    """Create an unvalidated page from Markdown source text.
+
+    Args:
+        source: Markdown source path.
+        section: Wiki section display name.
+        text: Complete markdown text.
+        sanitize_title: Replace literal hyphens in the title with spaces. Used for sources that
+            must not be edited (decision records), whose titles GitHub would otherwise rewrite.
+    """
     title = page_title(source, text)
+    if sanitize_title:
+        title = " ".join(title.replace("-", " ").split())
     return BundlePage(source=source, section=section, title=title, name=page_name(section, title), body=text)
 
 
@@ -130,7 +140,7 @@ def collect_adrs(cfg: TechwikiConfig, root: Path) -> list[BundlePage]:
     sources = {path for pattern in cfg.include_adrs for path in root.glob(pattern) if path.is_file()}
     pages = []
     for source in sorted(sources):
-        page = _new_page(source, cfg.adr_section, source.read_text(encoding="utf-8"))
+        page = _new_page(source, cfg.adr_section, source.read_text(encoding="utf-8"), sanitize_title=True)
         page.source = source.relative_to(root)
         pages.append(page)
     return pages
@@ -220,7 +230,7 @@ def assemble(
         if page.source is None:
             continue
 
-        def resolve(target: str) -> str | None:
+        def resolve(target: str, page: BundlePage = page) -> str | None:
             if target.startswith("ref:"):
                 key = target
             else:

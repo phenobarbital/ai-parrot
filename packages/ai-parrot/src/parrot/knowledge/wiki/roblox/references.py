@@ -203,7 +203,7 @@ def _extract_candidates_worker(parser: Any, source_bytes: bytes) -> dict[str, An
     """Parse + extract using an already-loaded, cached ``Parser``.
 
     Runs synchronously, in-process — per
-    ``docs/design/luau-parser-resource-policy.md`` §1/§3, per-file
+    ``wiki/knowledge/design/luau-parser-resource-policy.md`` §1/§3, per-file
     subprocess isolation is reserved for the offline benchmark/CI
     regression path, never a per-file production hot path (this function
     runs once per enrichment-eligible Luau file, mirroring

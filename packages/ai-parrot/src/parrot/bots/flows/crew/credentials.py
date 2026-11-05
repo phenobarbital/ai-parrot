@@ -31,7 +31,7 @@ def has_explicit_google_credential(kwargs: Mapping[str, Any]) -> bool:
     """Report whether ``kwargs`` carries an explicit Google credential signal.
 
     True when any of ``api_key``/``credentials_file``/``credentials`` is truthy,
-    or ``vertexai`` is truthy (see ``docs/crew_handler.md`` "Precedence").
+    or ``vertexai`` is truthy (see ``wiki/bots/crew_handler.md`` "Precedence").
 
     Args:
         kwargs: Client / LLM keyword arguments to inspect (never mutated).

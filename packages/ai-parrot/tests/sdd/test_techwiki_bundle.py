@@ -94,3 +94,14 @@ class TestBundle:
         one = next(page for page in pages if page.source == Path("wiki/a/one.md"))
         assert "[[Beta-Two]]" in one.body
         assert "Beta-Two" in names
+
+
+def test_adr_title_with_hyphen_is_sanitized_not_fatal(techwiki_repo: Path) -> None:
+    """A hyphenated ADR title yields a hyphen-free page name instead of failing every ADR."""
+    adr = techwiki_repo / "docs" / "decisions" / "hyphen.md"
+    adr.write_text("# Clients are memory-less\n\nBody.\n", encoding="utf-8")
+    cfg = load_techwiki_config(techwiki_repo)
+    pages, report = assemble(cfg, techwiki_repo, with_api=False)
+    assert not [c for c in report.collisions if c.get("reason") == "invalid page name"]
+    assert any(p.title == "Clients are memory less" and "-" not in p.title for p in pages)
+    assert "Clients are memory-less" in adr.read_text(encoding="utf-8")

@@ -46,13 +46,13 @@ threads. This is what your frontend talks to.
 
 ## Read next
 
-- [A2A Communication](../a2a_communication.md)
-- [MCP Sessions](../mcp_session.md),
-  [Simple MCP Server](../simple_mcp_server.md)
-- [Telegram](../telegram_integration.md), [MS Teams](../msteams.md),
-  [WhatsApp Orchestrator](../WHATSAPP_AUTONOMOUS_ORCHESTRATOR.md)
-- [Office 365 OAuth](../integrations/office365-oauth2.md)
-- [M365 Copilot Semantic UI Model → Adaptive Cards](../integrations/msagentsdk-semantic-cards.md)
+- [A2A Communication](https://github.com/phenobarbital/ai-parrot/wiki/MCP-%26-A2A-A2A-Secure-Communication-Demo)
+- [MCP Sessions](https://github.com/phenobarbital/ai-parrot/wiki/MCP-%26-A2A-Create-and-configure-agent),
+  [Simple MCP Server](https://github.com/phenobarbital/ai-parrot/wiki/MCP-%26-A2A-Simple-Mcp-Server)
+- [Telegram](https://github.com/phenobarbital/ai-parrot/wiki/Integrations-Telegram-Bot-Integration-Guide), [MS Teams](https://github.com/phenobarbital/ai-parrot/wiki/Integrations-MS-Teams-Toolkit-for-AI-Parrot),
+  [WhatsApp Orchestrator](https://github.com/phenobarbital/ai-parrot/wiki/Integrations-WhatsApp-%2B-AutonomousOrchestrator-Integration)
+- [Office 365 OAuth](https://github.com/phenobarbital/ai-parrot/wiki/Integrations-Office-365-OAuth-2.0-%28Delegated%29-%E2%80%94-AI-Parrot-Integration)
+- [M365 Copilot Semantic UI Model → Adaptive Cards](https://github.com/phenobarbital/ai-parrot/wiki/Bots-%26-Agents-Semantic-UI-Model-%E2%86%92-Adaptive-Cards-%28FEAT-303%29)
 
 ## API reference
 

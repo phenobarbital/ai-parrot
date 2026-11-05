@@ -296,7 +296,7 @@ warn_unused_configs = true
 
 [tool.parrot.sdd]
 # sdd-worker native sandbox: GitHub only through `gh` (api.github.com), never git/SSH to github.com.
-# Read from the PRIMARY checkout only. See docs/dev_loop/claude-native-sandbox.md.
+# Read from the PRIMARY checkout only. See wiki/sdd-tooling/dev_loop/claude-native-sandbox.md.
 sandbox_allowed_domains = ["api.github.com"]
 gh_token = true
 

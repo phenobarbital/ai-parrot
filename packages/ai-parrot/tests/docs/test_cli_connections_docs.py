@@ -10,11 +10,11 @@ ROOT = Path(__file__).resolve().parents[4]
 @pytest.mark.parametrize(
     "rel,heading",
     [
-        ("docs/cli/parrot-login-and-connections.md", "## Deployment prerequisites"),
-        ("docs/cli/parrot-login-and-connections.md", "## agentd"),
-        ("docs/mcp-local-toolkits.md", "## Credentials and identity"),
-        ("docs/auth/connections.md", "## CLI consumers"),
-        ("docs/cli/parrot-agent.md", "## Identity"),
+        ("wiki/operations/cli/parrot-login-and-connections.md", "## Deployment prerequisites"),
+        ("wiki/operations/cli/parrot-login-and-connections.md", "## agentd"),
+        ("wiki/tools/mcp-local-toolkits.md", "## Credentials and identity"),
+        ("wiki/security/auth/connections.md", "## CLI consumers"),
+        ("wiki/bots/cli/parrot-agent.md", "## Identity"),
     ],
 )
 def test_cli_connections_docs_sections(rel: str, heading: str) -> None:

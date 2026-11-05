@@ -1,0 +1,212 @@
+# WikiToolkit as Claude Code infrastructure
+
+> Install the LLM-Wiki knowledge graph (FEAT-260) as coding-assistant
+> infrastructure for the current repository — graphify-style. One
+> command builds a machine-first KB graph of the codebase; another
+> wires Claude Code to consult it before grepping raw files.
+
+## TL;DR
+
+```bash
+# 1. Generate the KB graph from the current repository (offline, no LLM)
+wikitoolkit build
+
+# 2. Install the Claude Code integration
+parrot claude install
+
+# 3. Ask scoped questions (what the assistant now does automatically)
+wikitoolkit query "where is the ingest pipeline implemented?"
+```
+
+## The retrieval plane
+
+`wikitoolkit build` scans the repository deterministically — no LLM,
+no embeddings, no network — and writes the FEAT-260 machine plane
+(SQLite FTS5/BM25 + typed edges) under `.parrot/wiki/`:
+
+- one **`file:<path>` page** per source file: extracted summary
+  (module docstring / first heading), a Python **API outline**
+  (classes, functions, docstrings via `ast`), and the content head
+  for lexical search;
+- one **`dir:<path>` overview page** per directory, listing children;
+- **`contains` edges** (directory → file) and **`references` edges**
+  between Python files derived from their imports (src-layouts
+  resolve correctly, e.g. `packages/x/src/pkg/mod.py` ⇒ `pkg.mod`).
+
+File discovery respects `.gitignore` (via `git ls-files`), skips
+binaries, lockfiles, and oversized files. Re-builds are incremental:
+sources are tracked with SHA-1 + mtime in the same SQLite plane, so
+unchanged files are skipped and deleted files are pruned.
+
+## CLI reference (`wikitoolkit` = `parrot wiki`)
+
+| Command | Purpose |
+| ------- | ------- |
+| `wikitoolkit build` | Generate/refresh the KB graph from the repo (`--force`, `--backend sqlite\|memory`, `--name`). |
+| `wikitoolkit query "<question>"` | Scoped question → ranked, token-budgeted page stubs (`--top-k`, `--budget`, `--json`). |
+| `wikitoolkit page <id>` | Read one page in full (`--max-tokens`). |
+| `wikitoolkit related <id>` | Follow typed edges (`--rel`, `--direction`). |
+| `wikitoolkit upsert [paths...] [--changed]` | Incrementally re-ingest files (used by the git hook). |
+| `wikitoolkit status` | Plane statistics + source staleness. |
+| `wikitoolkit export -o docs/wiki` | Export a human-readable markdown wiki (OKF bundle + index). |
+| `wikitoolkit ns list\|add\|remove` | Manage federated namespaces — other wikis this one can read (FEAT-450). |
+| `wikitoolkit symbols lookup <query>` | Find a symbol (function/class/method) by name or qualname (`--kind`, `--language`, `--path-prefix`, `--limit`, `--json`). |
+| `wikitoolkit symbols outline <target>` | Symbol outline of a file — `file:<rel>`, `sym:<rel>#<q>`, or a relative path (`--depth`, `--source`, `--json`). |
+| `wikitoolkit symbols blast <symbol>` | Every symbol that transitively calls/extends/implements `<symbol>` (`--rel`, `--depth`, `--no-inferred`, `--no-tests`, `--json`). |
+
+The repo config lives at `.parrot/wiki.json`
+(`parrot.knowledge.wiki.project.WikiProjectConfig`): wiki name,
+backend, include/exclude filters, body caps, the Claude hook
+settings, and any federated `namespaces`.
+
+### Namespaces
+
+When namespaces are registered, `query` searches all of them by default
+and foreign page ids come back **prefixed** — `asyncdb::file:pool.py`,
+`notes::file:Retro.md`. Local ids stay bare. Pass a qualified id
+verbatim to `page` / `related`; narrow any read with
+`--ns <name>|all|local`.
+
+The MCP tools mirror this: `wiki_query`, `wiki_page` and `wiki_related`
+take an optional `namespace` argument, and `wiki_status` reports
+`namespaces` and `skipped`. `wikitoolkit mcp` resolves the project's
+namespaces at startup, so an assistant gets them with no extra
+configuration. Foreign planes are always opened read-only.
+
+See [Namespaces — Multi-Wiki Federation](https://phenobarbital.github.io/ai-parrot/docs/guides/llm-wiki-guide/#namespaces-multi-wiki-federation)
+for the registries, the four namespace kinds, and write routing. The full
+command-by-command reference lives in
+[`documentation/parrot-wiki-cli.md`](https://github.com/phenobarbital/ai-parrot/blob/main/documentation/parrot-wiki-cli.md).
+
+### Symbols — the structural plane (FEAT-498)
+
+`wikitoolkit build`/`upsert` also extract a **symbol** for every
+class/function/method (Python via the stdlib `ast`; TypeScript/PHP/
+Rust/Perl via an optional `ast-grep-py` seam, falling back to the
+existing tree-sitter/heuristic scanners when the extra isn't
+installed — install `ai-parrot[wiki-structural]` to enable it).
+Each symbol becomes a `sym:<rel>#<qualname>` page with `defines`/
+`contains`/`calls`/`extends`/`implements` edges, queryable three ways:
+
+- `wikitoolkit symbols lookup|outline|blast` (CLI, above);
+- `wiki_symbol_lookup` / `wiki_code_outline` / `wiki_blast_radius`
+  (MCP tools — prefer these over `wiki_query` when you already know
+  the symbol's name, or need its outline/blast radius specifically;
+  `wiki_query` itself hides `sym:` stubs by default, pass
+  `include_symbols=true` to mix them back in);
+- `code_symbol_lookup` / `code_outline` / `code_blast_radius`
+  (`CodeStructuralToolkit`, for building agents that need the symbol
+  plane as a first-class tool set rather than going through MCP).
+
+**Migration note**: nothing changes for a repo that never installs the
+`wiki-structural` extra beyond Python `sym:` pages (always extracted,
+no extra needed) and the new `content_hash` field on every page (used
+for read-repair). The first `wikitoolkit build` after upgrading
+populates symbols for every scanned file; existing `file:`/`dir:`
+pages are untouched.
+
+## `parrot claude install`
+
+Wires the wiki into Claude Code for this repository. Every artifact
+is marker-based, idempotent, and reversible with
+`parrot claude uninstall`:
+
+1. **`.parrot/wiki.json`** — project config (created if missing).
+2. **`CLAUDE.md` managed section** — tells the assistant to prefer
+   scoped `wikitoolkit query "<question>"` calls over reading whole
+   reports or grepping raw files (delimited by
+   `<!-- parrot:wiki:begin/end -->`).
+3. **PreToolUse hook** in `.claude/settings.json` — before
+   search-style tool calls (`Grep|Glob|Read`), Claude Code runs
+   `wikitoolkit claude-hook`, which injects a non-blocking
+   `additionalContext` nudge toward the graph path. It never touches
+   the permission flow, throttles itself (default: one nudge per
+   300 s, `claude.nudge_cooldown_seconds`), only fires when a built
+   plane exists, and always exits 0 — a broken hook can never block a
+   session.
+4. **`/parrotwiki` slash command** (`.claude/commands/parrotwiki.md`)
+   — `query <question>`, `page <id>`, `related <id>`, `status`,
+   `build`, and `--wiki [dir]` to build a markdown wiki from the
+   graph (wraps `wikitoolkit export`).
+5. **git `post-commit` hook** — auto-upserts the wiki after every
+   commit (`wikitoolkit upsert --changed --quiet`). Chains politely
+   into an existing post-commit hook and is removed cleanly on
+   uninstall. Skip with `--no-git-hook`.
+6. **`.gitignore`** — adds `.parrot/` (skip with `--no-gitignore`).
+7. **fast-jev-compaction plugin** — enables
+   [tamaratran/fast-jev-compaction](https://github.com/tamaratran/fast-jev-compaction),
+   a Claude Code function-hook plugin that replaces the built-in
+   compaction *summary* with a *verbatim* history: TypeSafe's Jev model
+   scores every tool call and tool result in one fast request, stale
+   ones are dropped or truncated, and everything kept stays word for
+   word (user and assistant text is never rewritten). Skip with
+   `--no-compaction`; see below for what is written.
+
+By default `install` also builds the plane on first run
+(`--no-build` to skip). `parrot claude status` shows what is
+installed.
+
+### fast-jev-compaction
+
+The plugin is wired the way Claude Code documents team plugins, so every
+team member gets it once they trust the folder. `.claude/settings.json`
+receives three managed entries:
+
+```json
+{
+  "env": { "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1" },
+  "extraKnownMarketplaces": {
+    "fast-jev-compaction": { "source": { "source": "github", "repo": "tamaratran/fast-jev-compaction" } }
+  },
+  "enabledPlugins": { "fast-jev-compaction@fast-jev-compaction": true }
+}
+```
+
+- Function hooks are an early-access Claude Code surface (>= 2.1.274);
+  the `env` flag switches them on for sessions in this project.
+- When the `claude` CLI is on `PATH`, the installer also runs
+  `claude plugin marketplace add tamaratran/fast-jev-compaction` and
+  `claude plugin install fast-jev-compaction@fast-jev-compaction --scope project -y`
+  non-interactively so the plugin is live in the next session. Failures
+  are reported, never fatal (`--no-plugin-cli` skips this step).
+- The TypeSafe API key is **never** written to the shared
+  `settings.json`. Export `TYPESAFE_API_KEY` in your shell, or pass
+  `--typesafe-api-key <key>` to store it in the git-ignored
+  `.claude/settings.local.json`. Without a key the plugin logs a
+  fallback and Claude Code's built-in summary is used.
+- Restart Claude Code (or `/reload-plugins`). From then on `/compact`
+  and auto-compaction go through Jev; the toast reads
+  `fast-jev-compaction: kept N/M messages, no summary (…)`.
+
+`parrot claude uninstall` removes the plugin entry, the marketplace entry
+(only when it is the one we wrote) and the function-hooks flag (only when
+no other plugin remains enabled); the API key in `settings.local.json`
+is left for you to remove. The same Jev model is available to agents
+through `parrot.clients.jev.JevClient` — see `wiki/clients/jev.md`.
+
+## How an assistant session flows
+
+1. You ask Claude Code: *"how does the wiki ingest pipeline work?"*
+2. Claude reaches for Grep → the PreToolUse hook injects the nudge.
+3. Claude runs `wikitoolkit query "wiki ingest pipeline"` and gets
+   ranked stubs (`file:...ingest.py`, `dir:...wiki`, ...) for a few
+   hundred tokens instead of several full files.
+4. `wikitoolkit page file:...ingest.py` gives the API outline and
+   content; `wikitoolkit related` walks imports.
+5. On `git commit`, the post-commit hook upserts changed files, so
+   the graph is already fresh for the next question.
+
+## Testing
+
+```bash
+pytest tests/knowledge/wiki/test_repo_scan.py \
+       tests/knowledge/wiki/test_cli.py \
+       tests/knowledge/wiki/test_claude_code.py -v
+```
+
+## Read next
+
+- [LLM Wiki](llm-wiki.md) — the 3-layer architecture and agent-side
+  `LLMWikiToolkit`.
+- [PageIndex](../knowledge/pageindex.md) — the writable page tree used by the
+  LLM ingest path.

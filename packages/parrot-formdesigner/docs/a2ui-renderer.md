@@ -12,7 +12,7 @@ surface's own submit `Button` points back at the form's existing
 field_id-keyed JSON body and a v1.0 renderer→agent `action` envelope, and
 replies in kind.
 
-[a2ui-v1]: ../../../docs/outputs/a2ui-v1.md
+[a2ui-v1]: https://github.com/phenobarbital/ai-parrot/wiki/Outputs-%26-A2UI-A2UI-v1.0-Wire-%28FEAT-470%29
 
 ## Installing
 
@@ -261,7 +261,7 @@ functions: `required` → `required`; `pattern` → `regex` (message from
 
 ## See also
 
-- [`docs/outputs/a2ui-v1.md`](../../../docs/outputs/a2ui-v1.md) — the A2UI
+- [`wiki/outputs/a2ui-v1.md`](https://github.com/phenobarbital/ai-parrot/wiki/Outputs-%26-A2UI-A2UI-v1.0-Wire-%28FEAT-470%29) — the A2UI
   v1.0 wire reference (envelopes, catalogs, validation, degradation),
   including the "Forms from FormDesigner" section this doc expands on.
 - [`lifecycle-events.md`](lifecycle-events.md) — the five lifecycle hooks

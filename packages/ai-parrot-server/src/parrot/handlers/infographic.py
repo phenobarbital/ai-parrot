@@ -516,7 +516,7 @@ class InfographicTalk(AgentTalk):
                     "template_dirs configured (app['infographic_render_template_dirs'] "
                     "and parrot.conf.INFOGRAPHIC_RENDER_TEMPLATE_DIRS are both empty). "
                     "EVERY render request will fail with TEMPLATE_ENGINE_UNSET until "
-                    "one is set. See docs/api/infographic_render.md."
+                    "one is set. See wiki/server/api/infographic_render.md."
                 )
             # artifact_store may legitimately be None here (not yet configured);
             # the render flow never reads toolkit._artifact_store — persistence

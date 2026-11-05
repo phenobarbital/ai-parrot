@@ -3,7 +3,7 @@
 Regression: these methods went straight to ``self.client.aio``, so a caller that never entered the
 client's async context manager — e.g. ``PlanogramCompliance``, which builds its client through
 ``LLMFactory`` — failed with ``'NoneType' object has no attribute 'aio'``. The per-loop cache
-contract (``docs/clients/per-loop-cache.md``) says a public method calls ``_ensure_client()``
+contract (``wiki/clients/per-loop-cache.md``) says a public method calls ``_ensure_client()``
 instead of guarding on ``self.client``; ``AnthropicClient.ask_to_image`` has always done so.
 """
 

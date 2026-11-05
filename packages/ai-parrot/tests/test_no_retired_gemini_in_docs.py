@@ -7,7 +7,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SCANNED = ("docs", "examples", "plugins")
 SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".example", ".toml"}
 # The migration guide names the retired ids on purpose.
-EXCLUDED = {"docs/migration/gemini-2-5-retirement.md"}
+EXCLUDED = {"wiki/migration/gemini-2-5-retirement.md"}
 RETIRED = re.compile(
     r"gemini-2\.5-(?:pro|flash)(?![-\w])|gemini-2\.5-flash-native-audio|gemini-2\.5-(?:flash|pro)-preview-tts"
 )

@@ -80,6 +80,8 @@ def rewrite_links(text: str, resolver: Callable[[str], str | None]) -> str:
 
     def replace(match: re.Match[str]) -> str:
         target = match.group(2)
+        if not target.startswith("ref:") and re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", target):
+            return match.group(0)  # external URL: never a wiki-page reference
         if not (target.startswith("ref:") or target.endswith(".md")):
             return match.group(0)
         page = resolver(target)

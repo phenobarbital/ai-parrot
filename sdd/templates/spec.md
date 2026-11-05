@@ -340,7 +340,7 @@ class ExistingClass(BaseClass):
 ## Decisions
 
 <!-- OPTIONAL, authored. Omit the whole section when the spec decides nothing architectural.
-     Grammar: docs/sdd/decision-audit.md. Each entry id becomes adr:spec:<document_id>#<id>. -->
+     Grammar: wiki/sdd-tooling/sdd/decision-audit.md. Each entry id becomes adr:spec:<document_id>#<id>. -->
 ```yaml
 schema_version: 1
 document_id: <feature-slug>

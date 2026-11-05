@@ -109,7 +109,7 @@ exclusive speaking floor to anyone else. Ordinary single-user Gemini/Nova
 testing is untouched — broadcast mode is a third handler on the same page.
 
 > **Live-vendor status.** The real-vendor gate for this feature has **NOT** been
-> run: see `docs/testing/voicebot-multiroom-live-gate.md` (0 of 12 scenarios).
+> run: see `wiki/integrations/testing/voicebot-multiroom-live-gate.md` (0 of 12 scenarios).
 > Everything below is verified against deterministic tests and local Redis;
 > LiveAvatar/LiveKit/Nova behaviour is documented intent, not measured fact.
 
@@ -174,7 +174,7 @@ curl -X POST localhost:8080/__demo__/broadcasts/<bid>/inject \
 | `avatar_track_lost` | Same, with reason `avatar_track_lost`. |
 | `owner_death` | Media stops; another worker fences the dead owner and cleans the room within ~30 s (`ended`/`failed` with `owner_lost`). The terminal state stays readable for 5 minutes. |
 
-**Full operations guide:** [`docs/voice/voicebot-multiroom-heygen-avatar.md`](../../../docs/voice/voicebot-multiroom-heygen-avatar.md).
+**Full operations guide:** [`wiki/integrations/voice/voicebot-multiroom-heygen-avatar.md`](https://github.com/phenobarbital/ai-parrot/wiki/Integrations-Nova-VoiceBot-avatar-broadcast-for-multiple-browsers-%28FEAT-537%29).
 
 ## Run it
 
@@ -266,9 +266,9 @@ once filed) — link results there rather than duplicating them here.
 - `examples/clients/nova/audio.py` — the raw-client, single-provider Nova example
 - `packages/ai-parrot/tests/voice/test_provider_conformance.py` — the
   automated drop-in parity suite this example demonstrates by hand
-- `docs/voice/voicebot-multiroom-heygen-avatar.md` — FEAT-537 broadcast
+- `wiki/integrations/voice/voicebot-multiroom-heygen-avatar.md` — FEAT-537 broadcast
   architecture and operations guide
-- `docs/testing/voicebot-multiroom-live-gate.md` — FEAT-537 real-vendor gate
+- `wiki/integrations/testing/voicebot-multiroom-live-gate.md` — FEAT-537 real-vendor gate
   (currently **NOT RUN**)
-- `docs/testing/voicebot-liveavatar-acceptance.md` — FEAT-536's acceptance
+- `wiki/integrations/testing/voicebot-liveavatar-acceptance.md` — FEAT-536's acceptance
   matrix (also NOT RUN)

@@ -1,6 +1,6 @@
 """Structural contract: no async method may touch ``self.client`` before awaiting ``_ensure_client()``.
 
-``docs/clients/per-loop-cache.md`` makes this a rule for subclass authors — the per-loop cache only
+``wiki/clients/per-loop-cache.md`` makes this a rule for subclass authors — the per-loop cache only
 builds an SDK client when a method asks it to, so any method that reaches for ``self.client`` first
 crashes with ``'NoneType' object has no attribute 'aio'`` for a caller that never opened the client.
 

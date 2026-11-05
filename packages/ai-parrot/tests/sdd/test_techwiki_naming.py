@@ -68,3 +68,10 @@ class TestRewriteLinks:
     def test_unknown_target_collected(self) -> None:
         """An unresolved target is left in authored Markdown unchanged."""
         assert rewrite_links("[Missing](missing.md)", lambda target: None) == "[Missing](missing.md)"
+
+
+def test_rewrite_links_skips_external_urls() -> None:
+    """External URLs ending in .md are never treated as wiki-page references."""
+    text = "[Spec](https://github.com/o/r/blob/main/spec.md) and [Local](local.md)"
+    out = rewrite_links(text, lambda target: {"local.md": "Local"}.get(target))
+    assert out == "[Spec](https://github.com/o/r/blob/main/spec.md) and [[Local]]"

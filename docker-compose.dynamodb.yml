@@ -18,7 +18,7 @@
 # Admin UI:  http://localhost:8001
 # Endpoint:  http://localhost:8000
 #
-# See docs/dynamodb-local.md for the full walk-through.
+# See wiki/stores/dynamodb-local.md for the full walk-through.
 
 services:
   dynamodb-local:
