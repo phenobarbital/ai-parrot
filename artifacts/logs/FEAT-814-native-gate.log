@@ -233,3 +233,25 @@ DIAG_STATUS_BEGIN
 DIAG_STATUS_END
 SYNC_EXIT=3
 # test 2: primary/.git/worktrees/feature/config.worktree left behind as a 0-byte file (native denyWrite mount placeholder; native_claude_sandbox.py:230 lists admin_dir/config.worktree).
+
+# ==== RUN 2 (after TASK-5229 tracked-only sandbox guard) ====
+# date: 2026-11-05T03:17:04Z
+# commit: c52602539718865b8982e7ad6783726dcc911a68 (+ uncommitted TASK-5229 changes)
+tests/sdd_scripts/test_worktree_sync.py::test_native_policy_sync_with_protected_config FAILED [ 50%]
+tests/sdd_scripts/test_worktree_sync.py::test_native_policy_missing_protection_refuses PASSED [100%]
+================= 1 failed, 1 passed, 43 deselected in 12.09s ==================
+exit=1
+# run 2 diagnosis: test_native_policy_missing_protection_refuses PASSED; test_native_policy_sync_with_protected_config: SYNC_EXIT=0 (patch applied, protected config writes still refused),
+#   but its _refs(primary) snapshot included refs/heads/feat-FEAT-999-sync, the target branch the sync must move (reflog: 'am: native gh patch'); dev/sibling/origin unchanged. Assertion fixed to exclude the target ref and assert it advanced with the trailer.
+
+# ==== RUN 3 (after target-ref assertion fix) ====
+# date: 2026-11-05T03:18:16Z
+# commit: c52602539718865b8982e7ad6783726dcc911a68 (+ uncommitted TASK-5229 changes)
+tests/sdd_scripts/test_worktree_sync.py::test_native_policy_sync_with_protected_config PASSED [ 50%]
+tests/sdd_scripts/test_worktree_sync.py::test_native_policy_missing_protection_refuses PASSED [100%]
+====================== 2 passed, 43 deselected in 14.88s =======================
+exit=0
+# ==== RUN 4 (stability re-run, same tree) 2026-11-05T03:18:43Z ====
+tests/sdd_scripts/test_worktree_sync.py::test_native_policy_sync_with_protected_config PASSED [ 50%]
+tests/sdd_scripts/test_worktree_sync.py::test_native_policy_missing_protection_refuses PASSED [100%]
+====================== 2 passed, 43 deselected in 10.47s =======================

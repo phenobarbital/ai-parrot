@@ -216,10 +216,24 @@ def resolve_base_branch(wt: Path, override: str | None) -> str:
 
 
 def check_guards(wt: Path) -> None:
-    """Reject detached heads, dirty trees and foreign live processes using stable refusal codes."""
+    """Reject detached heads, dirty trees and foreign live processes using stable refusal codes.
+
+    On the host any porcelain entry, untracked files included, makes the tree dirty. Inside the sandbox
+    only tracked changes count: Claude Code's native sandbox runtime places mount placeholders for its
+    protected paths (``.bashrc``, ``.claude/…``, ``.mcp.json``, ``.gitconfig``, …) in the working
+    directory, so untracked entries there are not the operator's work. Ignoring them is safe because
+    ``git am -3`` refuses to overwrite an untracked file, and that refusal is reported as ``refused``
+    (exit 6) without any abort.
+    """
     if _branch(wt) is None:
         raise SyncError(EXIT_TARGET, "target worktree has a detached HEAD; check out its feature branch first")
-    dirty = _status(wt)
+    if in_sandbox():
+        tracked = _git(wt, "status", "--porcelain", "--untracked-files=no")
+        if tracked.returncode != 0:
+            raise SyncError(EXIT_TARGET, f"cannot inspect target worktree: {tracked.stderr.strip()}")
+        dirty = [line for line in tracked.stdout.splitlines() if line]
+    else:
+        dirty = _status(wt)
     if dirty:
         raise SyncError(EXIT_DIRTY, "target worktree is dirty:\n" + "\n".join(dirty))
     live = live_processes_in(wt, exclude_pids=own_ancestry())

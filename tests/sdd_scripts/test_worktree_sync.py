@@ -169,6 +169,11 @@ def _install_sync_runner(feature: Path, sha: str) -> None:
     _run(feature, "commit", "-m", "native qualification runner")
 
 
+def _refs_except(path: Path, excluded: str) -> str:
+    """Snapshot every reference except ``excluded`` (the branch a sync is expected to move)."""
+    return "\n".join(line for line in _refs(path).splitlines() if line.split(" ", 1)[0] != excluded)
+
+
 def _git_control_paths(feature: Path) -> tuple[Path, Path]:
     """Return the disposable repository's protected common and worktree configs."""
     common = Path(_run(feature, "rev-parse", "--path-format=absolute", "--git-common-dir")) / "config"
@@ -275,7 +280,15 @@ def test_native_policy_sync_with_protected_config(tmp_path: Path, monkeypatch: p
     common_config, worktree_config = _git_control_paths(feature)
     common_before = common_config.read_bytes()
     worktree_before = worktree_config.read_bytes()
-    primary_before = (_run(primary, "rev-parse", "HEAD"), _run(primary, "status", "--porcelain"), _refs(primary))
+    # The repository's refs are shared by every worktree; the target branch is the one ref the sync
+    # must move, so it is excluded from the "nothing else changed" snapshot and checked on its own.
+    target_ref = "refs/heads/feat-FEAT-999-sync"
+    target_before = _run(feature, "rev-parse", target_ref)
+    primary_before = (
+        _run(primary, "rev-parse", "HEAD"),
+        _run(primary, "status", "--porcelain"),
+        _refs_except(primary, target_ref),
+    )
     sibling_before = (_run(sibling, "rev-parse", "HEAD"), _run(sibling, "status", "--porcelain"))
     remote_before = _refs(origin)
     source = Path(__file__).resolve().parents[2] / "packages" / "ai-parrot" / "src"
@@ -298,8 +311,10 @@ def test_native_policy_sync_with_protected_config(tmp_path: Path, monkeypatch: p
     assert (
         _run(primary, "rev-parse", "HEAD"),
         _run(primary, "status", "--porcelain"),
-        _refs(primary),
+        _refs_except(primary, target_ref),
     ) == primary_before
+    assert _run(feature, "rev-parse", f"{target_ref}^") == target_before
+    assert f"(cherry picked from commit {sha})" in _run(feature, "log", "-1", "--format=%B", target_ref)
     assert (_run(sibling, "rev-parse", "HEAD"), _run(sibling, "status", "--porcelain")) == sibling_before
     assert _refs(origin) == remote_before
     assert _run(feature, "status", "--porcelain") == ""
@@ -342,7 +357,9 @@ def test_native_policy_missing_protection_refuses(tmp_path: Path, monkeypatch: p
     assert not gh_called.exists()
     assert not (feature / "patch.txt").exists()
     assert common_config.read_bytes() == common_before
-    assert not worktree_config.exists()
+    # The native runtime mounts over denied paths; for an absent config.worktree it leaves an empty
+    # placeholder. An empty config sets nothing — what matters is that no key was written.
+    assert not worktree_config.exists() or worktree_config.read_bytes() == b""
     assert (
         _run(feature, "rev-parse", "HEAD"),
         _run(feature, "status", "--porcelain"),
@@ -765,3 +782,52 @@ def test_short_sha_refused_before_gh(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     assert raised.value.exit_code == worktree_sync.EXIT_TARGET
     assert not gh_called.exists()
+
+
+# --- FEAT-814 / TASK-5229: sandbox dirty guard counts tracked changes only ---------------------------
+
+
+def test_sandbox_guard_ignores_untracked_placeholders(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Native-runtime mount placeholders (untracked) do not block a sandboxed patch sync."""
+    primary, feature, sha = _sandbox_commit(tmp_path)
+    _install_gh_stub(tmp_path, monkeypatch, {sha: _patch_response(primary, sha)})
+    monkeypatch.setenv(worktree_sync.BACKEND_ENV, "native")
+    (feature / ".bashrc").write_text("", encoding="utf-8")
+    (feature / ".claude" / "agents").mkdir(parents=True)
+    (feature / ".claude" / "agents" / ".keep").write_text("", encoding="utf-8")
+
+    result = worktree_sync.sync(feature, "dev", cherry_picks=[sha])
+
+    assert result.status == "synced"
+    assert (feature / "patch.txt").read_text(encoding="utf-8") == "from gh\n"
+
+
+def test_sandbox_guard_still_refuses_tracked_change(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A tracked modification still makes a sandboxed sync refuse with exit 3."""
+    primary, feature, sha = _sandbox_commit(tmp_path)
+    _install_gh_stub(tmp_path, monkeypatch, {sha: _patch_response(primary, sha)})
+    monkeypatch.setenv(worktree_sync.BACKEND_ENV, "native")
+    (feature / "shared.txt").write_text("edited\n", encoding="utf-8")
+
+    with pytest.raises(worktree_sync.SyncError) as raised:
+        worktree_sync.sync(feature, "dev", cherry_picks=[sha])
+
+    assert raised.value.exit_code == worktree_sync.EXIT_DIRTY
+    assert not (feature / "patch.txt").exists()
+
+
+def test_host_guard_still_refuses_untracked_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """On the host an untracked file still counts as dirty (exit 3)."""
+    _origin, primary, feature = _repository(tmp_path)
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    (primary / "base.txt").write_text("from base\n", encoding="utf-8")
+    _run(primary, "add", "base.txt")
+    _run(primary, "commit", "-m", "base update")
+    _run(primary, "push")
+    (feature / "scratch.txt").write_text("operator work\n", encoding="utf-8")
+
+    with pytest.raises(worktree_sync.SyncError) as raised:
+        worktree_sync.sync(feature, "dev")
+
+    assert raised.value.exit_code == worktree_sync.EXIT_DIRTY
+    assert not (feature / "base.txt").exists()

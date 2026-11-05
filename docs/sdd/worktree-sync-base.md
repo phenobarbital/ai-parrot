@@ -90,7 +90,10 @@ host setup instructions.
 The command rejects an unresolved, ambiguous, primary, orphaned, or
 Git-top-level-mismatched target before it fetches, writes configuration, or
 integrates. A normal run also refuses dirty worktrees and foreign live
-processes. There is no live-process override.
+processes. There is no live-process override. Inside the sandbox only tracked
+changes make a worktree dirty: Claude Code's native sandbox places untracked
+mount placeholders (`.bashrc`, `.claude/...`, `.mcp.json`, ...) in the working
+directory, and `git am` refuses to overwrite an untracked file anyway.
 
 `--dry-run` changes nothing and skips dirty and live-process guards, but a
 sandbox dry run still validates push protection. It reports the commits that
