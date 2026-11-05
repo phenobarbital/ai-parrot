@@ -2968,3 +2968,4 @@
 {"event_id":"138eef47d14c","kind":"issue.closed","subject":"issue:8ca6be34e853","actor":"agent:cli","ts":"2026-11-05T03:37:03.521179+00:00","payload":{"reason":"Fixed in FEAT-803 review-fix commit","closed_by":"agent:cli","resolved_by":"d62bd36093"}}
 {"event_id":"29fa03c30ac4","kind":"issue.closed","subject":"issue:addf13e056e0","actor":"agent:cli","ts":"2026-11-05T03:37:04.212156+00:00","payload":{"reason":"Fixed in FEAT-803 review-fix commit","closed_by":"agent:cli","resolved_by":"d62bd36093"}}
 {"event_id":"f0dfdcc097c3","kind":"issue.closed","subject":"issue:f9507a472d0f","actor":"agent:cli","ts":"2026-11-05T03:37:04.897177+00:00","payload":{"reason":"Fixed in FEAT-803 review-fix commit","closed_by":"agent:cli","resolved_by":"d62bd36093"}}
+{"event_id":"904d1f7c3d45","kind":"issue.claimed","subject":"issue:0891861cb3c1","actor":"agent:sdd-fix:ef333dc5","ts":"2026-11-05T16:11:27.514221+00:00","payload":{"claimed_by":"agent:sdd-fix:ef333dc5"}}
