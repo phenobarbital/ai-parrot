@@ -173,3 +173,22 @@ class TestInventory:
         assert len(records) == 1
         assert records[0].decision_id == record.decision_id
         assert repo.last_diagnostics == []
+
+    async def test_inventory_with_hashes_pairs_stored_hash(self, store):
+        """Each record comes with the hash the store holds for its page."""
+        repo = DecisionRepository(store)
+        for i in range(2):
+            await repo.save(DecisionRecord(decision_id=f"adr:doc:{i}", decision=f"d{i}", origin="documented"), None)
+        pairs = await repo.inventory_with_hashes()
+        assert {record.decision_id for record, _ in pairs} == {"adr:doc:0", "adr:doc:1"}
+        stored = await store.page_hashes([record.decision_id for record, _ in pairs])
+        assert all(content_hash == stored[record.decision_id] for record, content_hash in pairs)
+        assert all(content_hash for _, content_hash in pairs)
+
+    async def test_inventory_delegates_to_inventory_with_hashes(self, store, record):
+        """``inventory()`` returns exactly the records of ``inventory_with_hashes()``."""
+        repo = DecisionRepository(store)
+        await repo.save(record, None)
+        pairs = await repo.inventory_with_hashes()
+        assert await repo.inventory() == [paired for paired, _ in pairs]
+        assert repo.last_diagnostics == []

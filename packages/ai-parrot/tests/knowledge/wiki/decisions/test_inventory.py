@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -9,7 +10,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from parrot.knowledge.wiki.decisions.approvals import ApprovalEntry, ApprovalManifest
-from parrot.knowledge.wiki.decisions.inventory import InventorySnapshot, batch_marker_id, is_eligible
+from parrot.knowledge.wiki.decisions.codec import decision_to_page
+from parrot.knowledge.wiki.decisions.inventory import InventorySnapshot, batch_marker_id, is_eligible, record_hash
 from parrot.knowledge.wiki.decisions.models import (
     ADR_INVENTORY_LIMIT,
     SNAPSHOT_UNSTABLE,
@@ -128,6 +130,58 @@ async def test_snapshot_unstable_is_incomplete(adr_store, tmp_path, monkeypatch)
     with pytest.raises(DecisionError) as exc:
         await _snapshot(adr_store, tmp_path, repo)
     assert exc.value.code == SNAPSHOT_UNSTABLE
+
+
+_SCHEMA_2_KEYS = (
+    "about",
+    "batch_id",
+    "contradicts",
+    "document_id",
+    "entry_id",
+    "lifecycle",
+    "normative",
+    "rationale",
+    "rejected_alternatives",
+    "supersedes_refs",
+    "targets",
+)
+
+
+def _legacy_page(record: DecisionRecord) -> WikiPageRecord:
+    """The page an older codec wrote: no schema-2 keys in the envelope, hash of that envelope."""
+    page = decision_to_page(record)
+    marker, envelope, rest = page.body.split("\n", 2)
+    payload = json.loads(envelope)
+    for key in _SCHEMA_2_KEYS:
+        payload.pop(key, None)
+    legacy = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    content_hash = hashlib.sha1(legacy.encode("utf-8")).hexdigest()  # noqa: S324 — identity, not security
+    return page.model_copy(update={"body": f"{marker}\n{legacy}\n{rest}", "content_hash": content_hash})
+
+
+async def test_snapshot_stable_with_legacy_envelope(adr_store, tmp_path) -> None:
+    """An unchanged page written by an older codec is not reported as changed (issue:5918ff019737)."""
+    record = _record("adr:doc:legacy")
+    legacy = _legacy_page(record)
+    assert legacy.content_hash != record_hash(record)  # the precondition this bug needs
+    await adr_store.upsert_pages([legacy])
+
+    snapshot = await _snapshot(adr_store, tmp_path)
+
+    assert [eligible.decision_id for eligible in snapshot.eligible] == ["adr:doc:legacy"]
+    assert snapshot.manifest.inventory == {"adr:doc:legacy": legacy.content_hash}
+
+
+async def test_snapshot_manifest_unchanged_for_canonical_pages(adr_store, tmp_path) -> None:
+    """For pages saved by the current codec the manifest is byte-identical to before (spec G3)."""
+    repo = DecisionRepository(adr_store)
+    records = [_record("adr:doc:one"), _record("adr:doc:two")]
+    for record in records:
+        await repo.save(record, None)
+
+    snapshot = await _snapshot(adr_store, tmp_path, repo)
+
+    assert snapshot.manifest.inventory == {record.decision_id: record_hash(record) for record in records}
 
 
 async def test_inventory_overflow_raises(adr_store, tmp_path) -> None:
