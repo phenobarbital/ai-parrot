@@ -320,7 +320,7 @@ CLI only: `parrot sdd worktree sync-base`. Module API in §3.
 ### Integration Tests
 | Test | Description |
 |---|---|
-| `tests/sdd_scripts/test_sdd_cli.py` (extended) | `parrot sdd worktree sync-base --help` dispatches to `worktree_sync.main` |
+| `packages/ai-parrot/tests/sdd/test_sdd_cli.py` (extended) | `parrot sdd worktree sync-base --help` dispatches to `worktree_sync.main` |
 | `packages/ai-parrot/tests/sdd/test_sdd_launch.py` (extended) | `launch()` prints the stale-base advisory after `prepare_upstream`; a "skipped" result still launches; `--no-upstream` skips it |
 | `tests/sdd_scripts/test_worktree_sync.py` (native sandbox integration) | launch under actual native filesystem policy with host-provisioned protection and stubbed gh; sync succeeds without config writes; common config and own config.worktree remain protected; missing protection refuses unchanged. An unavailable native backend must be reported as an unvalidated gate, not a passing substitute using only the environment variable. |
 
@@ -328,7 +328,7 @@ CLI only: `parrot sdd worktree sync-base`. Module API in §3.
 
 tests:
 - tests/sdd_scripts/test_worktree_sync.py
-- tests/sdd_scripts/test_sdd_cli.py
+- packages/ai-parrot/tests/sdd/test_sdd_cli.py
 - packages/ai-parrot/tests/sdd/test_sdd_launch.py
 markers: none
 
@@ -394,7 +394,7 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]]  # line 237; workt
 | `packages/ai-parrot/src/parrot/sdd/scripts/remove_worktree.py` | MODIFY | `def live_processes_in(path: Path) -> list[tuple[int, str]]:` | `remove_worktree.py:163` | 1 |
 | `packages/ai-parrot/src/parrot/sdd/cli.py` | MODIFY | `"remove": (` (inside `"worktree": {`) | `cli.py:249` | 1 |
 | `tests/sdd_scripts/test_worktree_sync.py` | CREATE | — | — | — |
-| `tests/sdd_scripts/test_sdd_cli.py` | MODIFY | (unverified — check before use) | — | — |
+| `packages/ai-parrot/tests/sdd/test_sdd_cli.py` | MODIFY | (unverified — check before use) | — | — |
 | `.claude/rules/worktree-management.md` + twins | MODIFY | `## 4. Work inside` | — | 1 |
 | `.claude/agents/sdd-worker.md` + twins | MODIFY | (unverified — locate the push/sync paragraph) | — | — |
 | `docs/sdd/worktree-sync-base.md` | CREATE | — | — | — |
