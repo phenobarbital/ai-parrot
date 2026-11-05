@@ -90,7 +90,10 @@ host setup instructions.
 The command rejects an unresolved, ambiguous, primary, orphaned, or
 Git-top-level-mismatched target before it fetches, writes configuration, or
 integrates. A normal run also refuses dirty worktrees and foreign live
-processes. There is no live-process override.
+processes. There is no live-process override. Inside the sandbox only tracked
+changes make a worktree dirty: Claude Code's native sandbox places untracked
+mount placeholders (`.bashrc`, `.claude/...`, `.mcp.json`, ...) in the working
+directory, and `git am` refuses to overwrite an untracked file anyway.
 
 `--dry-run` changes nothing and skips dirty and live-process guards, but a
 sandbox dry run still validates push protection. It reports the commits that
@@ -111,7 +114,7 @@ destructive reset as a substitute. No mode pushes or rebases.
 | 3 | `refused` | Worktree has uncommitted changes. |
 | 4 | `refused` | A foreign live process is using the worktree. |
 | 5 | `error` | Transport or sandbox push-protection prerequisite is unavailable. |
-| 6 | `conflict` or `error` | Integration conflicted after verified restoration, or restoration failed. |
+| 6 | `refused`, `conflict` or `error` | Git refused the integration before changing anything (HEAD, tracked files and Git operation state untouched — e.g. a diverged `--ff-only`, an untracked file in the way, a merge SHA cherry-picked without `-m`), it conflicted after verified restoration, or restoration failed. |
 
 Exit code 2 is also argparse's usage-error code. A usage error prints no
 `--json` body, so a missing or unparsable body with exit 2 means the command
@@ -119,7 +122,17 @@ line was rejected, not the target. A missing `git` or `gh` binary is a
 `refused` result with exit 5.
 
 With `--json`, `status` distinguishes a verified conflict from an unrecovered
-error even when both originate during integration. The JSON result also records
+error even when both originate during integration. A `refused` result at exit 6 means no abort was
+attempted because nothing had started.
+
+Without `--json`, the message of any non-zero result is printed on stderr; commit
+lines stay on stdout. A mutating sync of a detached HEAD is refused with exit 2 (check
+out the feature branch first); `--dry-run` still reports.
+
+Network calls (`git fetch` on the host, `gh api` in the sandbox) are bounded by
+`PARROT_SDD_SYNC_TIMEOUT` (positive integer seconds, default 120) and never prompt
+for credentials (`GIT_TERMINAL_PROMPT=0`, `GH_PROMPT_DISABLED=1`); a timeout is an exit-5
+refusal. Local merge, cherry-pick and `am` are never interrupted. The JSON result also records
 the pre- and post-sync SHAs, selected transport and mode, commits, and message.
 
 ## Advisory at startup

@@ -26,6 +26,27 @@ EXIT_OK, EXIT_TARGET, EXIT_DIRTY, EXIT_LIVE, EXIT_TRANSPORT, EXIT_CONFLICT = 0, 
 _REACHABLE_COMPARE_STATUSES = frozenset({"behind", "identical"})
 logger = logging.getLogger(__name__)
 
+#: Environment knob (positive integer seconds) bounding network calls: ``git fetch`` and ``gh api``.
+TIMEOUT_ENV = "PARROT_SDD_SYNC_TIMEOUT"
+_DEFAULT_NETWORK_TIMEOUT = 120
+#: Git state left behind by an integration that actually started (see ``git rev-parse --git-path``).
+_IN_PROGRESS_PATHS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-apply", "rebase-merge")
+
+
+def network_timeout() -> int:
+    """Return the network-call timeout in seconds, honouring ``PARROT_SDD_SYNC_TIMEOUT``.
+
+    Returns:
+        The configured positive number of seconds, or the 120-second default when the variable is
+        unset or not a positive integer.
+    """
+    raw = os.environ.get(TIMEOUT_ENV, "").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_NETWORK_TIMEOUT
+    return value if value > 0 else _DEFAULT_NETWORK_TIMEOUT
+
 
 class SyncError(Exception):
     """Operator-facing refusal with a stable exit code."""
@@ -53,9 +74,22 @@ class SyncResult(BaseModel):
     conflicts: list[str] = Field(default_factory=list)
 
 
-def _git(wt: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    """Run Git for exactly one target worktree without shell interpolation."""
-    return subprocess.run(["git", "-C", str(wt), *args], text=True, capture_output=True)
+def _git(wt: Path, *args: str, timeout: int | None = None) -> subprocess.CompletedProcess[str]:
+    """Run Git for exactly one target worktree without shell interpolation or credential prompts.
+
+    Args:
+        wt: Target worktree.
+        *args: Git arguments.
+        timeout: Seconds before the call is killed. Pass it only for network operations; a local
+            mutating command (merge, cherry-pick, am) killed mid-way would leave in-progress state.
+
+    Raises:
+        subprocess.TimeoutExpired: When ``timeout`` elapses.
+    """
+    environment = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    return subprocess.run(
+        ["git", "-C", str(wt), *args], text=True, capture_output=True, env=environment, timeout=timeout
+    )
 
 
 def _head(wt: Path) -> str:
@@ -182,8 +216,24 @@ def resolve_base_branch(wt: Path, override: str | None) -> str:
 
 
 def check_guards(wt: Path) -> None:
-    """Reject dirty trees and foreign live processes using stable refusal codes."""
-    dirty = _status(wt)
+    """Reject detached heads, dirty trees and foreign live processes using stable refusal codes.
+
+    On the host any porcelain entry, untracked files included, makes the tree dirty. Inside the sandbox
+    only tracked changes count: Claude Code's native sandbox runtime places mount placeholders for its
+    protected paths (``.bashrc``, ``.claude/…``, ``.mcp.json``, ``.gitconfig``, …) in the working
+    directory, so untracked entries there are not the operator's work. Ignoring them is safe because
+    ``git am -3`` refuses to overwrite an untracked file, and that refusal is reported as ``refused``
+    (exit 6) without any abort.
+    """
+    if _branch(wt) is None:
+        raise SyncError(EXIT_TARGET, "target worktree has a detached HEAD; check out its feature branch first")
+    if in_sandbox():
+        tracked = _git(wt, "status", "--porcelain", "--untracked-files=no")
+        if tracked.returncode != 0:
+            raise SyncError(EXIT_TARGET, f"cannot inspect target worktree: {tracked.stderr.strip()}")
+        dirty = [line for line in tracked.stdout.splitlines() if line]
+    else:
+        dirty = _status(wt)
     if dirty:
         raise SyncError(EXIT_DIRTY, "target worktree is dirty:\n" + "\n".join(dirty))
     live = live_processes_in(wt, exclude_pids=own_ancestry())
@@ -250,12 +300,41 @@ def _result(
     )
 
 
+def _operation_in_progress(wt: Path) -> bool:
+    """Return whether Git holds merge, cherry-pick, revert, am or rebase state for ``wt``.
+
+    An unreadable Git path counts as in progress, so a caller never mistakes it for a clean refusal.
+    """
+    for name in _IN_PROGRESS_PATHS:
+        proc = _git(wt, "rev-parse", "--path-format=absolute", "--git-path", name)
+        if proc.returncode != 0 or Path(proc.stdout.strip()).exists():
+            return True
+    return False
+
+
+def _unchanged(wt: Path, before: str) -> bool:
+    """Return whether a failed integration never started: same HEAD, no tracked change, no Git operation state.
+
+    The guards required a clean tree before integrating, so the pre-state is ``before`` with no tracked
+    change. Untracked files are ignored here: Git refuses a merge precisely because an untracked file is
+    in the way, and that file is not something the integration wrote.
+    """
+    tracked = _git(wt, "status", "--porcelain", "--untracked-files=no")
+    if tracked.returncode != 0 or tracked.stdout.strip():
+        return False
+    return _head(wt) == before and not _operation_in_progress(wt)
+
+
 def _rollback(wt: Path, before: str, command: str) -> tuple[bool, list[str], str]:
-    """Abort an integration and prove that HEAD and the worktree were restored."""
+    """Abort an integration and prove that HEAD and the worktree were restored; never raise."""
     conflicts = [line for line in _git(wt, "diff", "--name-only", "--diff-filter=U").stdout.splitlines() if line]
     aborted = _git(wt, command, "--abort")
-    restored = aborted.returncode == 0 and _head(wt) == before and not _status(wt)
     detail = aborted.stderr.strip() or aborted.stdout.strip()
+    try:
+        clean = not _status(wt)
+    except SyncError as exc:
+        return False, conflicts, f"{detail} {exc}".strip()
+    restored = aborted.returncode == 0 and _head(wt) == before and clean
     return restored, conflicts, detail
 
 
@@ -266,8 +345,9 @@ def _integration_failure(
     before: str,
     commits: list[str],
     abort_command: str,
+    git_error: str = "",
 ) -> SyncResult:
-    """Abort a failed integration and report a verified conflict or an unrecovered error.
+    """Classify a failed integration by its real state: refused, verified conflict, or unrecovered error.
 
     Args:
         wt: Target worktree.
@@ -276,10 +356,22 @@ def _integration_failure(
         before: HEAD before the integration started.
         commits: Commit summaries that were being integrated.
         abort_command: Git command whose ``--abort`` undoes the integration (``am``, ``merge``, ``cherry-pick``).
+        git_error: Stderr of the failed integration command, quoted in a refusal message.
 
     Returns:
-        ``conflict`` when HEAD and the worktree were restored, otherwise ``error`` with recovery guidance.
+        ``refused`` when Git rejected the integration before changing anything (no abort is attempted),
+        ``conflict`` when HEAD and the worktree were restored after an abort, otherwise ``error`` with
+        recovery guidance. All three use exit code 6.
     """
+    if _unchanged(wt, before):
+        if mode == "ff-only":
+            message = "fast-forward not possible; worktree unchanged"
+        else:
+            reason = next((line.strip() for line in git_error.splitlines() if line.strip()), "")
+            message = "integration refused before starting; worktree unchanged"
+            if reason:
+                message = f"{message}: {reason}"
+        return _result(wt, base, mode, False, before, commits, "refused", EXIT_CONFLICT, message)
     restored, conflicts, detail = _rollback(wt, before, abort_command)
     if restored:
         return _result(
@@ -332,27 +424,53 @@ def _gh(wt: Path, endpoint: str, *, patch: bool = False) -> str:
     command = ["gh", "api", endpoint]
     if patch:
         command.extend(["-H", "Accept: application/vnd.github.patch"])
-    proc = subprocess.run(command, text=True, capture_output=True, cwd=wt)
+    environment = {**os.environ, "GH_PROMPT_DISABLED": "1"}
+    seconds = network_timeout()
+    try:
+        proc = subprocess.run(command, text=True, capture_output=True, cwd=wt, env=environment, timeout=seconds)
+    except subprocess.TimeoutExpired as exc:
+        raise SyncError(EXIT_TRANSPORT, _sandbox_hint(f"gh api timed out after {seconds}s")) from exc
     if proc.returncode != 0:
         raise SyncError(EXIT_TRANSPORT, _sandbox_hint(proc.stderr.strip() or "gh patch download failed"))
     return proc.stdout
 
 
+def _is_patch_break(line: str) -> bool:
+    """Return whether ``git mailinfo`` ends the commit message at ``line`` (its ``patchbreak()`` rules).
+
+    A break is a line starting with ``diff -`` or ``Index: ``, a ``---`` followed by a space and a
+    non-space character (``--- a/file``), or a ``---`` followed only by whitespace. Scissors lines are
+    not considered, because ``git am`` is run without ``--scissors``.
+    """
+    text = line.rstrip("\r\n")
+    if text.startswith(("diff -", "Index: ")):
+        return True
+    if not text.startswith("---"):
+        return False
+    rest = text[3:]
+    if rest.startswith(" ") and len(rest) > 1 and not rest[1].isspace():
+        return True
+    return not rest.strip()
+
+
 def _patch_with_trailer(patch: str, source_sha: str) -> str:
-    """Insert a cherry-pick provenance trailer before git-mailinfo's first body separator."""
+    """Insert a cherry-pick provenance trailer before git-mailinfo's first patch break in the body."""
     lines = patch.splitlines(keepends=True)
     subject_index = next((index for index, line in enumerate(lines) if line.startswith("Subject:")), None)
-    separator_index = next(
-        (
-            index
-            for index, line in enumerate(lines[subject_index + 1 if subject_index is not None else 0 :])
-            if line.startswith("---")
-        ),
+    if subject_index is None or not patch.startswith("From "):
+        raise SyncError(EXIT_TRANSPORT, "downloaded gh patch is not a usable mailbox patch")
+    # The body starts after the first blank line that ends the header block (Subject may be folded).
+    body_start = next(
+        (index + 1 for index in range(subject_index + 1, len(lines)) if not lines[index].strip()),
         None,
     )
-    if subject_index is None or separator_index is None or not patch.startswith("From "):
+    separator_index = (
+        next((index for index in range(body_start, len(lines)) if _is_patch_break(lines[index])), None)
+        if body_start is not None
+        else None
+    )
+    if separator_index is None:
         raise SyncError(EXIT_TRANSPORT, "downloaded gh patch is not a usable mailbox patch")
-    separator_index += subject_index + 1
     trailer = f"\n(cherry picked from commit {source_sha})\n"
     return "".join([*lines[:separator_index], trailer, *lines[separator_index:]])
 
@@ -455,10 +573,14 @@ def sync(
             proc = _git(wt, "am", "-3", *patch_paths)
         if proc.returncode == 0:
             return _result(wt, base, mode, False, before, commits, "synced", EXIT_OK, "synchronized")
-        return _integration_failure(wt, base, mode, before, commits, "am")
+        return _integration_failure(wt, base, mode, before, commits, "am", proc.stderr)
     if not dry_run:
         check_guards(wt)
-    fetched = _git(wt, "fetch", "origin", base)
+    seconds = network_timeout()
+    try:
+        fetched = _git(wt, "fetch", "origin", base, timeout=seconds)
+    except subprocess.TimeoutExpired as exc:
+        raise SyncError(EXIT_TRANSPORT, f"git fetch origin {base} timed out after {seconds}s") from exc
     if fetched.returncode != 0:
         raise SyncError(EXIT_TRANSPORT, fetched.stderr.strip() or f"cannot fetch origin/{base}")
     remote = f"origin/{base}"
@@ -488,19 +610,7 @@ def sync(
         abort = "merge"
     if proc.returncode == 0:
         return _result(wt, base, mode, False, before, commits, "synced", EXIT_OK, "synchronized")
-    if ff_only and not cherry_picks and _head(wt) == before and not _status(wt):
-        return _result(
-            wt,
-            base,
-            mode,
-            False,
-            before,
-            commits,
-            "error",
-            EXIT_CONFLICT,
-            "fast-forward not possible; worktree unchanged",
-        )
-    return _integration_failure(wt, base, mode, before, commits, abort)
+    return _integration_failure(wt, base, mode, before, commits, abort, proc.stderr)
 
 
 def stale_base_summary(wt: Path, base: str | None = None) -> str:
@@ -559,7 +669,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.json:
         print(result.model_dump_json())
     else:
-        print(result.message)
+        print(result.message, file=sys.stdout if result.exit_code == EXIT_OK else sys.stderr)
         for commit in result.commits:
             print(commit)
         for conflict in result.conflicts:

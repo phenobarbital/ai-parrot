@@ -148,3 +148,11 @@ report "UNVALIDATED REQUIRED GATE: set PARROT_TEST_REAL_LLM=1 to exercise the re
 sandbox boundary was therefore NOT exercised in this run; closed as `partial`, not `verified`. A host operator must
 run those two tests with `PARROT_TEST_REAL_LLM=1` before the feature is accepted. `coder_record_review` also fails
 server-side, so no review EvidenceRef; closed via `parrot sdd task close`.
+
+**Addendum (2026-11-05, FEAT-814 / TASK-5221 + TASK-5229):** the two required-gate tests had never run:
+`_native_cli()` searched `PATH` after `_install_gh_stub` narrowed it, so they always skipped. Once made
+runnable they exposed a real gap (the native sandbox's untracked mount placeholders made `check_guards()`
+refuse every sandboxed sync with exit 3) plus two over-strict assertions. After TASK-5229, both
+`test_native_policy_sync_with_protected_config` and `test_native_policy_missing_protection_refuses` pass
+with `PARROT_TEST_REAL_LLM=1` on the host (Claude Code 2.1.318, native sandbox), on two consecutive runs —
+evidence `artifacts/logs/FEAT-814-native-gate.log`. Verification re-stamped `partial` → `verified`.

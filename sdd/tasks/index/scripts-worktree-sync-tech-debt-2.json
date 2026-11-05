@@ -5,46 +5,70 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-05T03:06:10+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-05T03:23:15+00:00",
   "parallel_semantics": "exclusive",
   "tasks": [
     {
       "id": "TASK-5220",
       "slug": "sync-base-refusal-and-transport-hardening",
       "title": "sync-base refusal classification and transport hardening",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Edits worktree_sync.py + test_worktree_sync.py (shared with TASK-5221).",
-      "file": "sdd/tasks/active/TASK-5220-sync-base-refusal-and-transport-hardening.md",
+      "file": "sdd/tasks/completed/TASK-5220-sync-base-refusal-and-transport-hardening.md",
       "feature_id": "FEAT-814",
       "feature": "scripts-worktree-sync-tech-debt-2",
       "spec": "sdd/specs/scripts-worktree-sync-tech-debt-2.spec.md",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-11-05T03:06:52+00:00",
+      "completed_at": "2026-11-05T03:10:47+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5221",
       "slug": "runnable-native-sync-gate",
       "title": "Make the native sync-base gate runnable, run it, re-stamp TASK-5212",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5220",
+        "TASK-5229"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-5220 (same test file).",
+      "file": "sdd/tasks/completed/TASK-5221-runnable-native-sync-gate.md",
+      "feature_id": "FEAT-814",
+      "feature": "scripts-worktree-sync-tech-debt-2",
+      "spec": "sdd/specs/scripts-worktree-sync-tech-debt-2.spec.md",
+      "assigned_to": null,
+      "started_at": "2026-11-05T03:11:07+00:00",
+      "completed_at": "2026-11-05T03:19:37+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5229",
+      "slug": "sandbox-tracked-only-dirty-guard",
+      "title": "Sandbox dirty guard checks tracked changes only",
+      "status": "done",
+      "priority": "high",
       "effort": "S",
       "depends_on": [
         "TASK-5220"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on TASK-5220 (same test file).",
-      "file": "sdd/tasks/active/TASK-5221-runnable-native-sync-gate.md",
+      "parallelism_notes": "Edits worktree_sync.py + test_worktree_sync.py; found by TASK-5221's real gate run.",
+      "file": "sdd/tasks/completed/TASK-5229-sandbox-tracked-only-dirty-guard.md",
       "feature_id": "FEAT-814",
       "feature": "scripts-worktree-sync-tech-debt-2",
       "spec": "sdd/specs/scripts-worktree-sync-tech-debt-2.spec.md",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-11-05T03:16:08+00:00",
+      "completed_at": "2026-11-05T03:19:23+00:00",
+      "verification": "verified"
     }
   ]
 }

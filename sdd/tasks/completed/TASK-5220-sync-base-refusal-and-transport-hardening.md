@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-814 — sync-base refusal classification, transport hardening, and a runnable native gate
 **Spec**: `sdd/specs/scripts-worktree-sync-tech-debt-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: none
@@ -63,7 +63,9 @@ See spec §6 (all verified on origin/dev b3b854ea85): `_git` :52, `_head` :57 (n
 `_gh` :278, `_patch_with_trailer` :289, `sync` :335 (ff-only special case :437-448), `main` :505.
 
 ### Does NOT Exist
-- `_integration_failure`, `_require_reachable` (FEAT-813 branch only).
+- ~~`_integration_failure`, `_require_reachable` (FEAT-813 branch only).~~ Stale: FEAT-813 merged to dev
+  (PR #1973) before this worktree was cut, so both exist; the classification was added inside
+  `_integration_failure` instead of the old duplicated failure tails.
 
 ---
 
@@ -111,4 +113,20 @@ Implement exactly the scope above inside the FEAT-814 worktree; run the validati
 
 ## Completion Note
 
-_(filled at close)_
+Implemented in e78852763e (worktree_sync.py, test_worktree_sync.py, docs/sdd/worktree-sync-base.md).
+
+- Contract drift: FEAT-813 (PR #1973) had already merged, so `_integration_failure()` existed and the
+  sandbox reachability sub-item of `issue:163389368ca6` was already on dev (`_require_reachable`). The
+  refusal classification (`_unchanged` + `_operation_in_progress`) lives at the top of
+  `_integration_failure`, which also replaces the old ff-only special case.
+- `_unchanged` ignores untracked files on purpose (`status --untracked-files=no`): Git refuses a merge
+  because an untracked file is in the way, and that file is not integration output. Verified empirically
+  that neither a refused merge-SHA cherry-pick nor an untracked-overwrite merge leaves Git state.
+- The first draft of `test_trailer_survives_pasted_diff_body` used a body with a real `diff --git`
+  header; git am cannot apply such a commit at all, so it now uses `Index: notes`.
+- Mutation check: run against the origin/dev `worktree_sync.py`, 5 of the new tests fail
+  (ff-only refused, untracked-overwrite refused, merge-SHA refused, rollback status error, pasted-body
+  trailer); all pass with the change.
+- Validation: `pytest tests/sdd_scripts/test_worktree_sync.py` 40 passed / 2 skipped (native gate,
+  TASK-5221); with push-protection, process-exclusion, sdd launch and sdd cli suites 136 passed.
+  `ruff check` clean, `black --check` clean.
