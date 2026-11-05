@@ -31,7 +31,7 @@
       "id": "TASK-5219",
       "slug": "worktree-push-protection",
       "title": "Host-provisioned sandbox push protection (parrot sdd worktree push-protection)",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -44,7 +44,7 @@
       "feature": "scripts-worktree-sync-tech-debt",
       "spec": "sdd/specs/scripts-worktree-sync-tech-debt.spec.md",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-05T02:32:27+00:00",
       "completed_at": null
     }
   ]
