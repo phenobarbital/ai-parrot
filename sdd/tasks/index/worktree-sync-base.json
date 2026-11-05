@@ -42,7 +42,7 @@
       "feature_id": "FEAT-806",
       "feature": "worktree-sync-base",
       "spec": "sdd/specs/worktree-sync-base.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -50,8 +50,9 @@
       "parallelism_notes": "Independent M2: edits only remove_worktree.py and its new focused tests; no shared external resources.",
       "assigned_to": null,
       "started_at": "2026-11-05T00:36:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5206-sync-process-exclusions.md"
+      "completed_at": "2026-11-05T00:59:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5206-sync-process-exclusions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5207",

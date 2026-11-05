@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-806 — Worktree Sync Base
 **Spec**: `sdd/specs/worktree-sync-base.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -150,4 +150,10 @@ Cover default empty exclusions, multiple excluded PIDs, descendant cwd, similarl
 
 ## Completion Note
 
-Pending; populated by the finalization tool after implementation and validation.
+Implemented by seat gpt-5.6-terra (codex, attempt 1, 117s). Added `exclude_pids: Collection[int] = ()` to
+`live_processes_in` in `remove_worktree.py` (own-PID exclusion and cwd/descendant matching preserved, misleading
+parent-skipping docstring corrected; `discover()` unchanged) and `tests/sdd_scripts/test_sync_process_exclusions.py`.
+Merge-tier validation green (only baseline red: `test_sdd_cli_mounts_every_helper`, pre-existing). Orchestrator
+reviewed the diff against the task spec: no fixes needed. Closed through `parrot sdd task close` because
+`coder_record_review` failed server-side (`CoderReview() argument after ** must be a mapping`), so no review
+EvidenceRef existed for `parrot sdd task finalize`.
