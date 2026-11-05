@@ -8,6 +8,21 @@ edit_uri: edit/main/docs/
 docs_dir: docs
 site_dir: site/docs
 
+exclude_docs: |
+  # Legacy material migrated to the GitHub Wiki (FEAT-801); not part of the Pages site.
+  /decisions/
+  /superpowers/
+  /execution_plan/
+  /product-analysis/
+  /examples/
+  /parrot_roadmap_2026.md
+  /web-hitl-frontend-brainstorm.md
+  /guides/jira-*.md
+  /guides/llm-wiki-*.md
+  /guides/wiki-adr-decisions.md
+  /sdd/CODEX.md
+  /sdd/worktree-sync-base.md
+
 validation:
   omitted_files: warn
   absolute_links: warn
@@ -53,25 +68,6 @@ theme:
 plugins:
   - search
   - glightbox
-  - mkdocstrings:
-      default_handler: python
-      handlers:
-        python:
-          paths:
-            - packages/ai-parrot/src
-          options:
-            show_source: true
-            show_root_heading: true
-            show_root_full_path: false
-            show_signature_annotations: true
-            separate_signature: true
-            merge_init_into_class: true
-            docstring_style: google
-            docstring_section_style: spacy
-            members_order: source
-            filters:
-              - "!^_"
-            heading_level: 2
 
 markdown_extensions:
   - abbr
@@ -136,6 +132,7 @@ nav:
       - Your First Tool: tutorials/first-tool.md
       - Deployment: tutorials/deployment.md
   - Guides:
+      - Tools Quick Reference: tools_quick.md
       - CLI Agent Daemon: guides/cli-agent-daemon.md
   - About:
       - Style Guide: STYLE_GUIDE.md

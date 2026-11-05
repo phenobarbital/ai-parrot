@@ -169,4 +169,4 @@ When you run this code, you should see the agent automatically determine when to
 ## What's Next
 
 - [Your First Chatbot](first-chatbot.md) - Learn how to create a simple chatbot
-- [Wiki: Tools & RAG](https://github.com/phenobarbital/ai-parrot/wiki/Tools-&-RAG) - Deep dive into tools and retrieval-augmented generation
+- [Wiki: Tools & RAG](https://github.com/phenobarbital/ai-parrot/wiki/Home) - Deep dive into tools and retrieval-augmented generation

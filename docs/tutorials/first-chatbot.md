@@ -167,7 +167,7 @@ async def safe_chat_with_bot(chatbot, question):
 ## What's Next
 
 - [Your First Agent](first-agent.md) - Learn how to create an agent that can use tools
-- [Wiki: Bots & Agents](https://github.com/phenobarbital/ai-parrot/wiki/Bots-&-Agents) - Deep dive into the bot and agent architecture
+- [Wiki: Bots & Agents](https://github.com/phenobarbital/ai-parrot/wiki/Home) - Deep dive into the bot and agent architecture
 
 ## Troubleshooting
 

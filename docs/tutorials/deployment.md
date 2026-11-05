@@ -242,5 +242,5 @@ For a real deployment, you'll want to:
 ## What's Next
 
 - [Your First Chatbot](first-chatbot.md) — Learn how to create a chatbot instead of an agent
-- [Wiki: Server & APIs](https://github.com/phenobarbital/ai-parrot/wiki/Server-&--APIs) — Deep dive into HTTP servers and API design
-- [Wiki: Integrations](https://github.com/phenobarbital/ai-parrot/wiki/Integrations) — Learn about integrations with other systems
+- [Wiki: Server & APIs](https://github.com/phenobarbital/ai-parrot/wiki/Home) — Deep dive into HTTP servers and API design
+- [Wiki: Integrations](https://github.com/phenobarbital/ai-parrot/wiki/Home) — Learn about integrations with other systems

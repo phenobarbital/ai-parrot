@@ -16,4 +16,4 @@ AI-Parrot talks to every LLM provider through a single `AbstractClient` interfac
 
 ## Deep Dive
 
-For API reference, class signatures, and implementation details, see the [Clients section in the Wiki](https://github.com/phenobarbital/ai-parrot/wiki/Clients).
+For API reference, class signatures, and implementation details, see the [Clients section in the Wiki](https://github.com/phenobarbital/ai-parrot/wiki/Home).

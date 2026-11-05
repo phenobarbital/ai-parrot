@@ -44,5 +44,5 @@ repository into a living knowledge base that grows smarter over time.
 ## Deep Dive
 
 For API reference, implementation details, and configuration options, see
-the [Knowledge section](https://github.com/phenobarbital/ai-parrot/wiki/Knowledge)
-and [LLM Wiki](https://github.com/phenobarbital/ai-parrot/wiki/Wiki) in the Wiki.
+the [Knowledge section](https://github.com/phenobarbital/ai-parrot/wiki/Home)
+and [LLM Wiki](https://github.com/phenobarbital/ai-parrot/wiki/Home) in the Wiki.

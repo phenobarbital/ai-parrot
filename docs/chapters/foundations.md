@@ -16,4 +16,4 @@ The foundations layer holds the core abstractions every other module in AI-Parro
 
 ## Deep Dive
 
-For API reference, class signatures, and implementation details, see the [Architecture section in the Wiki](https://github.com/phenobarbital/ai-parrot/wiki/Architecture).
+For API reference, class signatures, and implementation details, see the [Architecture section in the Wiki](https://github.com/phenobarbital/ai-parrot/wiki/Home).

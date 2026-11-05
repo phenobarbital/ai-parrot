@@ -48,6 +48,6 @@ and type-safe.
 ## Deep Dive
 
 For implementation details, available toolkits, and configuration options,
-see the [Tools & Toolkits](https://github.com/phenobarbital/ai-parrot/wiki/Tools-%26-Toolkits)
-and [Stores & Loaders](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders)
+see the [Tools & Toolkits](https://github.com/phenobarbital/ai-parrot/wiki/Home)
+and [Stores & Loaders](https://github.com/phenobarbital/ai-parrot/wiki/Home)
 sections in the Wiki.

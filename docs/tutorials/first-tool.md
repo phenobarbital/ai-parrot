@@ -149,5 +149,5 @@ This is the core pattern for building agents: create an agent, attach tools, and
 
 - [Your First Agent](first-agent.md) — Learn how to create an agent with more complex behavior
 - [Deploy Your Agent](deployment.md) — Learn how to serve your agent as a production HTTP service
-- [Wiki: Bots & Agents](https://github.com/phenobarbital/ai-parrot/wiki/Bots-&--Agents) — Deep dive into agents and tools
-- [Wiki: Tools & RAG](https://github.com/phenobarbital/ai-parrot/wiki/Tools-&--RAG) — Learn about tools, toolkits, and RAG pipelines
+- [Wiki: Bots & Agents](https://github.com/phenobarbital/ai-parrot/wiki/Home) — Deep dive into agents and tools
+- [Wiki: Tools & RAG](https://github.com/phenobarbital/ai-parrot/wiki/Home) — Learn about tools, toolkits, and RAG pipelines

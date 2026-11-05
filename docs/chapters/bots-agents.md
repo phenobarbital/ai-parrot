@@ -17,4 +17,4 @@ A **bot** in AI-Parrot is a stateful conversational entity wrapped around an `Ab
 
 ## Deep Dive
 
-For API reference, class signatures, and implementation details, see the [Bots & Agents section in the Wiki](https://github.com/phenobarbital/ai-parrot/wiki/Bots-%26-Agents).
+For API reference, class signatures, and implementation details, see the [Bots & Agents section in the Wiki](https://github.com/phenobarbital/ai-parrot/wiki/Home).

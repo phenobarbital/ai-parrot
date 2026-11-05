@@ -46,7 +46,7 @@ access to persistent information across sessions.
 ## Deep Dive
 
 For implementation details, configuration options, and API reference,
-see the [Memory section](https://github.com/phenobarbital/ai-parrot/wiki/Memory),
-[Knowledge section](https://github.com/phenobarbital/ai-parrot/wiki/Knowledge),
-and [Stores & Loaders](https://github.com/phenobarbital/ai-parrot/wiki/Stores-%26-Loaders)
+see the [Memory section](https://github.com/phenobarbital/ai-parrot/wiki/Home),
+[Knowledge section](https://github.com/phenobarbital/ai-parrot/wiki/Home),
+and [Stores & Loaders](https://github.com/phenobarbital/ai-parrot/wiki/Home)
 in the Wiki.

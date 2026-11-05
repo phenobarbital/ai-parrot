@@ -5,7 +5,7 @@ Fast lookup for key AI-parrot tools with minimal examples.
 ---
 
 
-## 🧮 MathTool
+## MathTool
 
 **Purpose:** Basic arithmetic operations
 
@@ -29,7 +29,7 @@ await tool.execute(a=7, operation="multiply", b=6)    # 7 × 6 = 42
 ---
 
 
-## 🌦️ OpenWeatherTool
+## OpenWeatherTool
 
 **Purpose:** Current weather and forecasts
 
@@ -64,7 +64,7 @@ await tool.execute(latitude=35.6762, longitude=139.6503,
 ---
 
 
-## 🗄️ DatabaseTool
+## DatabaseTool
 
 **Purpose:** Natural language to SQL, query execution
 
@@ -122,7 +122,7 @@ await tool.execute(
 ---
 
 
-## 🌐 WebScrapingTool
+## WebScrapingTool
 
 **Purpose:** Browser automation and web scraping
 
@@ -187,7 +187,7 @@ await tool.execute(
 # Form login
 await tool.execute(
     steps=[
-        {"action": "navigate", "url": "https://site.com/login"},
+        {"action": "navigate", "url": "https://example.com/login"},
         {"action": "fill", "selector": "#username", "value": "user"},
         {"action": "fill", "selector": "#password", "value": "pass"},
         {"action": "click", "selector": "button[type='submit']"}
@@ -203,4 +203,4 @@ mobile_tool = WebScrapingTool(mobile=True, mobile_device='iPhone 14')
 
 ## Full Catalog
 
-The complete tool catalog lives in the [Wiki](https://github.com/phenobarbital/ai-parrot/wiki/Tools-Catalog).
+The complete tool catalog lives in the [Wiki](https://github.com/phenobarbital/ai-parrot/wiki/Home).

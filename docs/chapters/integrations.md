@@ -35,7 +35,7 @@ and the outside world: MCP (Model Context Protocol) and A2A (Agent-to-Agent).
 ## Deep Dive
 
 For implementation details, configuration options, and platform-specific
-guides, see the [Integrations](https://github.com/phenobarbital/ai-parrot/wiki/Integrations),
-[MCP & A2A](https://github.com/phenobarbital/ai-parrot/wiki/MCP-%26-A2A), and
-[Server & APIs](https://github.com/phenobarbital/ai-parrot/wiki/Server-%26-APIs)
+guides, see the [Integrations](https://github.com/phenobarbital/ai-parrot/wiki/Home),
+[MCP & A2A](https://github.com/phenobarbital/ai-parrot/wiki/Home), and
+[Server & APIs](https://github.com/phenobarbital/ai-parrot/wiki/Home)
 sections in the Wiki.

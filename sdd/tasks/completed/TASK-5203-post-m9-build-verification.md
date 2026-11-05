@@ -155,4 +155,4 @@ def test_dependency_minimums_not_lowered() -> None:
 
 **Deviations from spec**: none
 
-**Review caveat (sdd-worker)**: done-with-issues — M9 gate not met: mkdocs --strict fails and test_no_mkdocstrings_after_m9 asserts the pre-M9 state. See ledger issue:8ca6be34e853, issue:addf13e056e0.
+**Review follow-up (sdd-worker)**: review findings fixed — M9 cut-over applied on this branch (mkdocstrings plugin/dependency/editable install and docs/api-reference removed, CI `mkdocs build --strict`, legacy pages excluded, tools_quick in nav), Wiki links repointed to existing pages/Home, test inverted. `mkdocs build --strict` passes; tests/docs_site 37 passed.
