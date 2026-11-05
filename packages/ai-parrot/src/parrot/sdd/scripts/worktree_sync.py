@@ -196,7 +196,7 @@ def owner_repo(wt: Path) -> str:
         raise SyncError(EXIT_TRANSPORT, "origin remote is unavailable")
     if remote.startswith("git@") and ":" in remote:
         path = remote.split(":", 1)[1]
-    elif remote.startswith("ssh://") or remote.startswith("https://") or remote.startswith("http://"):
+    elif remote.startswith(("ssh://", "https://", "http://")):
         path = remote.split("://", 1)[1].split("/", 1)[1] if "/" in remote.split("://", 1)[1] else ""
     else:
         raise SyncError(EXIT_TRANSPORT, f"unsupported origin URL: {remote}")
