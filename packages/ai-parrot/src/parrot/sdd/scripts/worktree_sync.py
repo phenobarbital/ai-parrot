@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Literal, Sequence
 
@@ -246,6 +248,83 @@ def _rollback(wt: Path, before: str, command: str) -> tuple[bool, list[str], str
     return restored, conflicts, detail
 
 
+def _sandbox_hint(detail: str) -> str:
+    """Return a transport refusal with the required host recovery guidance."""
+    return f"{detail} — run 'parrot sdd worktree sync-base <target>' from the host"
+
+
+def _check_sandbox_push_protection(wt: Path) -> None:
+    """Require host-provisioned worktree config and the sole no-push URL without writing configuration."""
+    extension = _git(wt, "config", "--bool", "extensions.worktreeConfig")
+    push_urls = _git(wt, "config", "--get-all", "remote.origin.pushurl")
+    urls = [line for line in push_urls.stdout.splitlines() if line]
+    if extension.returncode != 0 or extension.stdout.strip().lower() != "true" or urls != ["no_push"]:
+        raise SyncError(
+            EXIT_TRANSPORT,
+            _sandbox_hint(
+                "sandbox patch sync requires host-provisioned extensions.worktreeConfig=true and exactly "
+                "one effective remote.origin.pushurl=no_push"
+            ),
+        )
+
+
+def _gh(wt: Path, endpoint: str, *, patch: bool = False) -> str:
+    """Download one GitHub API response through gh, the sandbox's only remote transport."""
+    command = ["gh", "api", endpoint]
+    if patch:
+        command.extend(["-H", "Accept: application/vnd.github.patch"])
+    proc = subprocess.run(command, text=True, capture_output=True, cwd=wt)
+    if proc.returncode != 0:
+        raise SyncError(EXIT_TRANSPORT, _sandbox_hint(proc.stderr.strip() or "gh patch download failed"))
+    return proc.stdout
+
+
+def _patch_with_trailer(patch: str, source_sha: str) -> str:
+    """Insert a cherry-pick provenance trailer before git-mailinfo's first body separator."""
+    lines = patch.splitlines(keepends=True)
+    subject_index = next((index for index, line in enumerate(lines) if line.startswith("Subject:")), None)
+    separator_index = next(
+        (
+            index
+            for index, line in enumerate(lines[subject_index + 1 if subject_index is not None else 0 :])
+            if line.startswith("---")
+        ),
+        None,
+    )
+    if subject_index is None or separator_index is None or not patch.startswith("From "):
+        raise SyncError(EXIT_TRANSPORT, "downloaded gh patch is not a usable mailbox patch")
+    separator_index += subject_index + 1
+    trailer = f"\n(cherry picked from commit {source_sha})\n"
+    return "".join([*lines[:separator_index], trailer, *lines[separator_index:]])
+
+
+def _sandbox_patches(wt: Path, cherry_picks: Sequence[str]) -> list[tuple[str, str]]:
+    """Download and validate all requested non-merge commits before any worktree mutation."""
+    repository = owner_repo(wt)
+    patches: list[tuple[str, str]] = []
+    for requested in cherry_picks:
+        endpoint = f"repos/{repository}/commits/{requested}"
+        try:
+            metadata = json.loads(_gh(wt, endpoint))
+        except json.JSONDecodeError as exc:
+            raise SyncError(EXIT_TRANSPORT, _sandbox_hint("gh commit metadata was invalid JSON")) from exc
+        source_sha = metadata.get("sha")
+        parents = metadata.get("parents")
+        message = metadata.get("commit", {}).get("message")
+        canonical_sha = (
+            isinstance(source_sha, str)
+            and len(source_sha) == 40
+            and all(character in "0123456789abcdefABCDEF" for character in source_sha)
+        )
+        if not canonical_sha or not source_sha.lower().startswith(requested.lower()) or len(parents or []) != 1:
+            raise SyncError(EXIT_TRANSPORT, _sandbox_hint("merge commits need the host transport"))
+        if not isinstance(message, str) or not message:
+            raise SyncError(EXIT_TRANSPORT, _sandbox_hint("gh commit metadata is incomplete"))
+        patch = _patch_with_trailer(_gh(wt, endpoint, patch=True), source_sha)
+        patches.append((f"{source_sha} {message.splitlines()[0]}", patch))
+    return patches
+
+
 def sync(
     wt: Path,
     base: str,
@@ -267,10 +346,55 @@ def sync(
     if not before:
         raise SyncError(EXIT_TARGET, "target has no readable HEAD")
     if in_sandbox():
-        raise SyncError(
-            EXIT_TRANSPORT,
-            "full base sync needs git objects — run 'parrot sdd worktree sync-base <target>' from the host",
-        )
+        if not cherry_picks:
+            raise SyncError(
+                EXIT_TRANSPORT,
+                "full base sync needs git objects — run 'parrot sdd worktree sync-base <target>' from the host",
+            )
+        _check_sandbox_push_protection(wt)
+        if not dry_run:
+            check_guards(wt)
+        patches = _sandbox_patches(wt, cherry_picks)
+        commits = [summary for summary, _patch in patches]
+        if dry_run:
+            return _result(
+                wt,
+                base,
+                mode,
+                True,
+                before,
+                commits,
+                "up-to-date" if not commits else "synced",
+                EXIT_OK,
+                "up to date" if not commits else f"{len(commits)} commit(s) would be integrated",
+            )
+        with tempfile.TemporaryDirectory(prefix="parrot-sdd-patches-") as directory:
+            patch_paths: list[str] = []
+            for index, (_summary, patch) in enumerate(patches):
+                path = Path(directory) / f"{index:04d}.patch"
+                path.write_text(patch, encoding="utf-8")
+                patch_paths.append(str(path))
+            proc = _git(wt, "am", "-3", *patch_paths)
+        if proc.returncode == 0:
+            return _result(wt, base, mode, False, before, commits, "synced", EXIT_OK, "synchronized")
+        restored, conflicts, detail = _rollback(wt, before, "am")
+        if restored:
+            return _result(
+                wt,
+                base,
+                mode,
+                False,
+                before,
+                commits,
+                "conflict",
+                EXIT_CONFLICT,
+                "integration conflicted and was aborted",
+                conflicts,
+            )
+        recovery = "integration failed; automatic rollback was not verified. Inspect the worktree and run Git recovery manually."
+        if detail:
+            recovery = f"{recovery} {detail}"
+        return _result(wt, base, mode, False, before, commits, "error", EXIT_CONFLICT, recovery, conflicts)
     if not dry_run:
         check_guards(wt)
     fetched = _git(wt, "fetch", "origin", base)
