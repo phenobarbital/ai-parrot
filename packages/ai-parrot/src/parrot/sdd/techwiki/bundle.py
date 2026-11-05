@@ -217,7 +217,7 @@ def assemble(
     for name, matching in sorted(by_name.items()):
         if len(matching) > 1:
             report.collisions.append(
-                {"name": name, "sources": ", ".join(str(page.source or f"ref:{page.title}") for page in matching)}
+                {"name": name, "sources": ", ".join(str(page.source or _ref_id(page)) for page in matching)}
             )
 
     for reserved in sorted(_RESERVED_NAMES & set(by_name)):
@@ -225,14 +225,14 @@ def assemble(
             {
                 "name": reserved,
                 "reason": "reserved name",
-                "sources": ", ".join(str(page.source or f"ref:{page.title}") for page in by_name[reserved]),
+                "sources": ", ".join(str(page.source or _ref_id(page)) for page in by_name[reserved]),
             }
         )
 
     manifest: dict[str, str] = {}
     for page in pages:
         if page.source is None:
-            manifest[f"ref:{page.title.removeprefix('Reference: ')}"] = page.name
+            manifest[_ref_id(page)] = page.name
         else:
             manifest[_source_id(root, page.source)] = page.name
 
@@ -252,6 +252,11 @@ def assemble(
 
         page.body = rewrite_links(page.body, resolve)
     return pages, report
+
+
+def _ref_id(page: BundlePage) -> str:
+    """Return the ``ref:<module>`` identifier of a generated page (the key links use)."""
+    return f"ref:{page.title.removeprefix('Reference: ')}"
 
 
 def report_payload(report: BundleReport) -> dict[str, Any]:
@@ -316,8 +321,6 @@ def write_bundle(pages: list[BundlePage], report: BundleReport, cfg: TechwikiCon
             raise PageNameError(f"Page name {page.name!r} would be written outside the output directory")
         target.write_text(page.body, encoding="utf-8")
     write_navigation(pages, report, cfg, out)
-    (out / "techwiki-report.json").write_text(
-        json.dumps(report_payload(report), indent=2) + "\n", encoding="utf-8"
-    )
+    (out / "techwiki-report.json").write_text(json.dumps(report_payload(report), indent=2) + "\n", encoding="utf-8")
     manifest = {"skipped_modules": report.skipped_modules, "pages": _manifest_entries(pages)}
     (out / "techwiki-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

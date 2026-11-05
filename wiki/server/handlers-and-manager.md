@@ -31,16 +31,16 @@ an `AbstractBot`.
 
 ## Public API
 
-- [`parrot.manager`](ref:parrot.manager) — package facade. Lazily exports `BotManager`, `EphemeralRegistry` and `EphemeralAgentStatus` (raises an install hint if `ai-parrot-server` is missing).
+- `parrot.manager` — package facade. Lazily exports `BotManager`, `EphemeralRegistry` and `EphemeralAgentStatus` (raises an install hint if `ai-parrot-server` is missing).
 - [`parrot.manager.manager`](ref:parrot.manager.manager) — defines `BotManager`, `ReloadResult`, `AgentNotFoundError` and `AgentReloadError`.
-- [`parrot.handlers`](ref:parrot.handlers) — package with lazy exports such as `ChatbotHandler`, `BotConfigHandler`, `DatasetManagerHandler`, `VectorStoreHandler`.
+- `parrot.handlers` — package with lazy exports such as `ChatbotHandler`, `BotConfigHandler`, `DatasetManagerHandler`, `VectorStoreHandler`.
 - [`parrot.handlers.chat`](ref:parrot.handlers.chat) — `ChatHandler` (chat with a named chatbot), `BotHandler`, `BotManagement`.
 - [`parrot.handlers.agent`](ref:parrot.handlers.agent) — `AgentTalk`, the universal agent conversation handler (POST chat, PATCH tool configuration).
 - [`parrot.handlers.infographic`](ref:parrot.handlers.infographic) — `InfographicTalk(AgentTalk)`: infographic generation, templates, themes, render jobs.
 - [`parrot.handlers.crew`](ref:parrot.handlers.crew) — `CrewHandler`, `CrewExecutionHandler`, `CrewExecutionHistoryHandler`, `CrewToolCatalogHandler`, `CrewSpecialNodeCatalogHandler`.
 - [`parrot.handlers.studio`](ref:parrot.handlers.studio) — Agent Studio route registration: `setup_studio_routes`, `STUDIO_PREFIX`.
 - [`parrot.handlers.scope`](ref:parrot.handlers.scope) — `RequestScope`, `ScopeResolver`, `SessionScopeResolver`, `get_scope_resolver`, `resolve_request_tenant`.
-- [`parrot.server`](ref:parrot.server) — distribution metadata only (`__version__`).
+- `parrot.server` — distribution metadata only (`__version__`).
 
 Key `BotManager` methods (all verified in `manager/manager.py`):
 

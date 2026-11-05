@@ -159,3 +159,74 @@ def test_collision_with_generated_page_names_its_ref_id(techwiki_repo: Path) -> 
         bundle_module._generated_pages = original
     sources = " ".join(c.get("sources", "") for c in report.collisions)
     assert "None" not in sources
+
+
+# --- bundle + real generated API pages (needs the griffe extra) --------------------------------------------
+
+
+@pytest.fixture
+def api_repo(techwiki_repo: Path) -> Path:
+    """The bundle fixture repository extended with the static sample package as a configured distribution."""
+    import importlib.util
+    import os
+
+    if importlib.util.find_spec("griffe") is None:
+        if os.environ.get("TECHWIKI_REQUIRE_GRIFFE") == "1":
+            pytest.fail("TECHWIKI_REQUIRE_GRIFFE=1 but the griffe extra is not installed")
+        pytest.skip("griffe extra is not installed")
+    fixture = Path(__file__).parent / "fixtures" / "techwiki_pkg"
+    destination = techwiki_repo / "packages" / "sample" / "src"
+    shutil.copytree(fixture, destination)
+    config_path = techwiki_repo / "sdd" / "config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["techwiki"]["packages"] = [{"dist": "sample", "src": "packages/sample/src", "roots": ["samplepkg"]}]
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    (techwiki_repo / "wiki" / "b" / "two.md").write_text(
+        "# Two\n", encoding="utf-8"
+    )  # drop the deliberate dangling link
+    (techwiki_repo / "wiki" / "b" / "two-copy.md").unlink()  # and the deliberate authored name collision
+    return techwiki_repo
+
+
+def test_ref_links_resolve_to_generated_pages(api_repo: Path, tmp_path: Path) -> None:
+    """``ref:<module>`` links become wiki links to the generated reference page; an unknown module is dangling."""
+    one = api_repo / "wiki" / "a" / "one.md"
+    one.write_text(
+        "---\ntitle: One\n---\n\n# One\n\n[Core](ref:samplepkg.core) [Nope](ref:samplepkg.nope)\n", encoding="utf-8"
+    )
+    cfg = load_techwiki_config(api_repo)
+    pages, report = assemble(cfg, api_repo)
+    page = next(p for p in pages if p.source == Path("wiki/a/one.md"))
+    assert "[[API-Reference-Reference:-samplepkg.core]]" in page.body
+    assert "[Nope](ref:samplepkg.nope)" in page.body
+    assert report.dangling == [{"source": "wiki/a/one.md", "target": "ref:samplepkg.nope"}]
+
+
+def test_every_rewritten_link_resolves_in_the_manifest(api_repo: Path, tmp_path: Path) -> None:
+    """S9: every ``[[Page]]`` in every written page names a page registered in the manifest."""
+    import re
+
+    cfg = load_techwiki_config(api_repo)
+    pages, report = assemble(cfg, api_repo)
+    assert report.ok(), (report.collisions, report.dangling)
+    out = tmp_path / "out"
+    write_bundle(pages, report, cfg, out)
+    manifest = json.loads((out / "techwiki-manifest.json").read_text(encoding="utf-8"))
+    names = {entry["name"] for entry in manifest["pages"]}
+    assert any(name.startswith("API-Reference-") for name in names)
+    for written in out.glob("*.md"):
+        for target in re.findall(r"\[\[([^\]]+)\]\]", written.read_text(encoding="utf-8")):
+            assert target in names or target in {"Home", "_Sidebar"}, (written.name, target)
+
+
+def test_authored_page_colliding_with_a_generated_name(api_repo: Path) -> None:
+    """An authored page whose name equals a generated reference page's name is a reported collision (AC-5)."""
+    (api_repo / "wiki" / "_index.yaml").write_text(
+        "sections:\n  - id: ref\n    title: API Reference\n", encoding="utf-8"
+    )
+    (api_repo / "wiki" / "ref").mkdir()
+    (api_repo / "wiki" / "ref" / "core.md").write_text("# Reference: samplepkg.core\n\nClash.\n", encoding="utf-8")
+    cfg = load_techwiki_config(api_repo)
+    _, report = assemble(cfg, api_repo)
+    clash = [c for c in report.collisions if c.get("name") == "API-Reference-Reference:-samplepkg.core"]
+    assert clash and "ref:samplepkg.core" in clash[0]["sources"] and "wiki/ref/core.md" in clash[0]["sources"]
