@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-806 — Worktree Sync Base
 **Spec**: `sdd/specs/worktree-sync-base.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5207
@@ -159,4 +159,6 @@ Implement all sandbox rows in spec §4, including trailer insertion, failure of 
 
 ## Completion Note
 
-Pending; populated by the finalization tool after implementation and validation.
+Implemented by seat gpt-5.6-terra codex, attempt 1, 329s. engine lint commit 0d31031166; merge-tier validation green (60 + 7 passed). Merged by the engine; no fidelity violations. Closed via `parrot sdd task close`
+because `coder_record_review` fails server-side (no review EvidenceRef for `parrot sdd task finalize`). Delivery
+checked only through the engine gate and tests, not a line-by-line review.

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-806 — Worktree Sync Base
 **Spec**: `sdd/specs/worktree-sync-base.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5208
@@ -142,4 +142,9 @@ Keep a strict distinction between deterministic unit tests and native integratio
 
 ## Completion Note
 
-Pending; populated by the finalization tool after implementation and validation.
+Implemented by seat gpt-5.6-sol (codex, attempt 1, 309s); engine lint commit 87d638accd. Merge-tier run: 7 passed,
+**2 skipped** — `test_native_policy_sync_with_protected_config` and `test_native_policy_missing_protection_refuses`
+report "UNVALIDATED REQUIRED GATE: set PARROT_TEST_REAL_LLM=1 to exercise the real native boundary". The real native
+sandbox boundary was therefore NOT exercised in this run; closed as `partial`, not `verified`. A host operator must
+run those two tests with `PARROT_TEST_REAL_LLM=1` before the feature is accepted. `coder_record_review` also fails
+server-side, so no review EvidenceRef; closed via `parrot sdd task close`.
