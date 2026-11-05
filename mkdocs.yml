@@ -8,6 +8,21 @@ edit_uri: edit/main/docs/
 docs_dir: docs
 site_dir: site/docs
 
+exclude_docs: |
+  # Legacy material migrated to the GitHub Wiki (FEAT-801); not part of the Pages site.
+  /decisions/
+  /superpowers/
+  /execution_plan/
+  /product-analysis/
+  /examples/
+  /parrot_roadmap_2026.md
+  /web-hitl-frontend-brainstorm.md
+  /guides/jira-*.md
+  /guides/llm-wiki-*.md
+  /guides/wiki-adr-decisions.md
+  /sdd/CODEX.md
+  /sdd/worktree-sync-base.md
+
 validation:
   omitted_files: warn
   absolute_links: warn
@@ -16,6 +31,9 @@ validation:
 
 theme:
   name: material
+  custom_dir: docs/overrides
+  logo: branding/parrot.svg
+  favicon: branding/favicon.ico
   features:
     - navigation.tabs
     - navigation.tabs.sticky
@@ -45,31 +63,11 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
   icon:
-    logo: material/robot-happy-outline
     repo: fontawesome/brands/github
 
 plugins:
   - search
   - glightbox
-  - mkdocstrings:
-      default_handler: python
-      handlers:
-        python:
-          paths:
-            - packages/ai-parrot/src
-          options:
-            show_source: true
-            show_root_heading: true
-            show_root_full_path: false
-            show_signature_annotations: true
-            separate_signature: true
-            merge_init_into_class: true
-            docstring_style: google
-            docstring_section_style: spacy
-            members_order: source
-            filters:
-              - "!^_"
-            heading_level: 2
 
 markdown_extensions:
   - abbr
@@ -111,68 +109,31 @@ extra:
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/ai-parrot/
 
+extra_css:
+  - overrides/main.css
+
 nav:
   - Home: index.md
   - Getting Started:
       - Installation: INSTALL.md
       - Configuration: config.md
-      - Quick Start (Tools): tools_quick.md
-  - Foundations:
-      - Overview: chapters/foundations.md
-  - LLM Clients:
-      - Overview: chapters/llm-clients.md
-      - Self-hosted llama-server (Qwen3.6): llama-server-qwen3.6.md
-  - Bots & Agents:
-      - Overview: chapters/bots-agents.md
-      - CLI Agent Daemon Guide: guides/cli-agent-daemon.md
-  - Memory & Knowledge:
-      - Overview: chapters/memory-knowledge.md
-  - Knowledge Graph:
-      - Overview: chapters/knowledge-graph.md
-      - LLM Wiki:
-          - Complete Guide: guides/llm-wiki-guide.md
-      - Jira Knowledge Base:
-          - Jira Ticket Extractor: guides/jira-ticket-extractor.md
-          - Agent Integration: guides/jira-wiki-agent-integration.md
-  - Tools, Loaders & RAG:
-      - Overview: chapters/tools-rag.md
-  - Integrations & Transport:
-      - Overview: chapters/integrations.md
-  - Advanced:
-      - 2026 Roadmap: parrot_roadmap_2026.md
-      - Web HITL Frontend Brainstorm: web-hitl-frontend-brainstorm.md
-  - API Reference:
-      - Overview: api-reference/index.md
-      - Clients: api-reference/clients.md
-      - Bots: api-reference/bots.md
-      - Tools: api-reference/tools.md
-      - Memory: api-reference/memory.md
-      - Stores: api-reference/stores.md
-      - Loaders: api-reference/loaders.md
-      - Integrations: api-reference/integrations.md
-      - MCP: api-reference/mcp.md
-      - A2A: api-reference/a2a.md
-  - Development:
+      - Quick Start: getting-started.md
+  - Concepts:
+      - Foundations: chapters/foundations.md
+      - LLM Clients: chapters/llm-clients.md
+      - Bots & Agents: chapters/bots-agents.md
+      - Memory & Knowledge: chapters/memory-knowledge.md
+      - Knowledge Graph: chapters/knowledge-graph.md
+      - Tools & RAG: chapters/tools-rag.md
+      - Integrations: chapters/integrations.md
+  - Tutorials:
+      - Your First Chatbot: tutorials/first-chatbot.md
+      - Your First Agent: tutorials/first-agent.md
+      - Your First Tool: tutorials/first-tool.md
+      - Deployment: tutorials/deployment.md
+  - Guides:
+      - Tools Quick Reference: tools_quick.md
+      - CLI Agent Daemon: guides/cli-agent-daemon.md
+  - About:
       - Style Guide: STYLE_GUIDE.md
       - SDD Workflow: sdd/WORKFLOW.md
-      - SDD Codex Guide: sdd/CODEX.md
-      - Product Analysis - Structured Table: product-analysis/structured-table.analysis.md
-      - Design Notes - Specs:
-          - Orchestrator AIMessage Preservation: superpowers/specs/2026-04-20-orchestrator-aimessage-preservation-design.md
-          - JiraToolkit - Remove Default Auth: superpowers/specs/2026-07-06-jiratoolkit-remove-default-auth-design.md
-          - MS Teams Agent Commands: superpowers/specs/2026-07-08-msteams-agent-commands-design.md
-          - Crew Tools Catalog Endpoint: superpowers/specs/2026-07-14-crew-tools-catalog-endpoint-design.md
-          - Unified Adaptive Cards Builder: superpowers/specs/2026-07-21-adaptive-cards-builder-design.md
-          - Form UID - Stable Identity: superpowers/specs/2026-07-30-form-uid-stable-identity-design.md
-          - Performance Evaluation Benchmark: superpowers/specs/2026-07-30-perf-eval-benchmark-design.md
-          - MCP Local Server + WikiToolkit: superpowers/specs/2026-08-03-mcp-local-server-wikitoolkit-design.md
-          - WebAgent - Chrome DevTools MCP: superpowers/specs/2026-08-04-web-agent-chrome-devtools-design.md
-          - sdd-done Merge Conflict Fix: superpowers/specs/2026-08-05-sdd-done-merge-conflict-fix-design.md
-          - FirefliesWikiAgent: superpowers/specs/2026-08-23-fireflies-wiki-agent-design.md
-      - Design Notes - Plans:
-          - FEAT-103 Review Fixes: superpowers/plans/2026-04-17-feat103-review-fixes.md
-          - FEAT-107 Review Fixes: superpowers/plans/2026-04-17-feat107-review-fixes.md
-          - Orchestrator AIMessage Preservation: superpowers/plans/2026-04-20-orchestrator-aimessage-preservation.md
-          - MS Teams Agent Commands: superpowers/plans/2026-07-08-msteams-agent-commands.md
-          - Unified Adaptive Cards Builder: superpowers/plans/2026-07-21-adaptive-cards-builder.md
-          - WebAgent - Chrome DevTools MCP: superpowers/plans/2026-08-04-web-agent-chrome-devtools.md

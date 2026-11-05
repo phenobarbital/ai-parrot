@@ -1,6 +1,6 @@
 # Installation Guide
 
-[Back to README](../README.md)
+[Back to README](https://github.com/phenobarbital/ai-parrot/blob/main/README.md)
 
 This guide explains how to install and run ai-parrot from source and using uv.
 

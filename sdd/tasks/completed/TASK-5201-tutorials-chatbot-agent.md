@@ -1,8 +1,8 @@
-# TASK-5202: Tutorials: first tool and deployment
+# TASK-5201: Tutorials: first chatbot and first agent
 
 **Feature**: FEAT-803 — GitHub Pages Informative Site Redesign
 **Spec**: `sdd/specs/github-pages-informative-site.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M
 **Depends-on**: TASK-5197
@@ -12,7 +12,7 @@
 
 ## Context
 
-Beginner tutorials 3–4 (spec G4, M6, AC4). Deployment uses aiohttp + gunicorn only — never FastAPI/uvicorn (codebase conventions). Implements spec §3 Module 6 (Beginner Tutorials).
+Beginner tutorials 1–2 (spec G4, M6, AC4). Implements spec §3 Module 6 (Beginner Tutorials).
 
 **Merge gate**: FEAT-801 (all 8 tasks) and its M9 mkdocstrings cut-over have NOT landed on dev yet (verified at `0b8c3a1fa2`: `mkdocs.yml:54` still has `- mkdocstrings:`, `requirements-docs.txt` still lists `mkdocstrings[python]>=1.0.8`, `.github/workflows/docs.yml:38` still has the editable install). This task may be developed now but the feature must not merge until that gate is clear. Never remove mkdocstrings yourself — M9 owns it.
 
@@ -20,9 +20,9 @@ Beginner tutorials 3–4 (spec G4, M6, AC4). Deployment uses aiohttp + gunicorn 
 
 ## Scope
 
-- Create `docs/tutorials/first-tool.md` — write a @tool function and attach it to an Agent.
-- Create `docs/tutorials/deployment.md` — serve an agent as an aiohttp service with production config (spec §8 Q1).
-- Write `tests/docs_site/test_tutorials_advanced.py`.
+- Create `docs/tutorials/first-chatbot.md` — build and query a Chatbot.
+- Create `docs/tutorials/first-agent.md` — an Agent that uses a built-in tool.
+- Write `tests/docs_site/test_tutorials_intro.py`.
 
 **NOT in scope**: Other tutorials; mkdocs.yml (TASK-5197 already lists these paths).
 
@@ -32,9 +32,9 @@ Beginner tutorials 3–4 (spec G4, M6, AC4). Deployment uses aiohttp + gunicorn 
 
 | File | Action | Description |
 |---|---|---|
-| `docs/tutorials/first-tool.md` | CREATE | write a @tool function and attach it to an Agent |
-| `docs/tutorials/deployment.md` | CREATE | serve an agent as an aiohttp service with production config (spec §8 Q1) |
-| `tests/docs_site/test_tutorials_advanced.py` | CREATE | structure checks |
+| `docs/tutorials/first-chatbot.md` | CREATE | build and query a Chatbot |
+| `docs/tutorials/first-agent.md` | CREATE | an Agent that uses a built-in tool |
+| `tests/docs_site/test_tutorials_intro.py` | CREATE | structure checks |
 
 ---
 
@@ -72,15 +72,15 @@ Constructor kwargs (`name`, `llm="provider:model"`, `tools=`, `system_prompt=`�
   "schema_version": 1,
   "targets": [
     {
-      "path": "docs/tutorials/first-tool.md",
+      "path": "docs/tutorials/first-chatbot.md",
       "action": "CREATE"
     },
     {
-      "path": "docs/tutorials/deployment.md",
+      "path": "docs/tutorials/first-agent.md",
       "action": "CREATE"
     },
     {
-      "path": "tests/docs_site/test_tutorials_advanced.py",
+      "path": "tests/docs_site/test_tutorials_intro.py",
       "action": "CREATE"
     }
   ],
@@ -128,7 +128,7 @@ Constructor kwargs (`name`, `llm="provider:model"`, `tools=`, `system_prompt=`�
 ```
 <!-- FILL IN: body per step — bounded by verified imports above -->
 
-### `tests/docs_site/test_tutorials_advanced.py` (CREATE)
+### `tests/docs_site/test_tutorials_intro.py` (CREATE)
 ```python
 """FEAT-803 AC4: tutorials follow the beginner pattern."""
 from pathlib import Path
@@ -138,7 +138,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.mark.parametrize("name", ["first-tool", "deployment"])
+@pytest.mark.parametrize("name", ["first-chatbot", "first-agent"])
 def test_tutorial_pattern(name: str) -> None:
     text = (ROOT / "docs" / "tutorials" / f"{name}.md").read_text(encoding="utf-8")
     for heading in ("## What You'll Build", "## Step 1", "## What's Next"):
@@ -157,11 +157,11 @@ def test_tutorial_pattern(name: str) -> None:
 
 - [ ] Tutorials exist and follow the pattern (AC4)
 - [ ] All shown imports verified against the codebase
-- [ ] `pytest tests/docs_site/test_tutorials_advanced.py -q` passes
+- [ ] `pytest tests/docs_site/test_tutorials_intro.py -q` passes
 
 ## Validation Commands
 
-- `pytest tests/docs_site/test_tutorials_advanced.py -q`
+- `pytest tests/docs_site/test_tutorials_intro.py -q`
 
 ---
 
@@ -172,16 +172,14 @@ def test_tutorial_pattern(name: str) -> None:
 3. Verify the Codebase Contract; fix stale entries first.
 4. Implement from the blueprint, completing every FILL IN.
 5. Run the Validation Commands; commit only listed files.
-6. `parrot sdd task close TASK-5202 github-pages-informative-site verified`, fill the Completion Note, commit SDD state.
+6. `parrot sdd task close TASK-5201 github-pages-informative-site verified`, fill the Completion Note, commit SDD state.
 
 ---
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestrator; implemented by seat qwen (nova qwen3-coder-480b)
+**Date**: 2026-11-05
+**Notes**: Merged by the engine; merge-tier validation green (tests/docs_site: 8 passed). Per-task semantic review deferred to the feature-level code review.
 
 **Deviations from spec**: none

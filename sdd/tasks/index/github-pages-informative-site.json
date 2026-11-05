@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-04T23:27:07+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-05T03:45:58+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: creates docs/branding/favicon.ico + social-card.png that TASK-5196 and TASK-5197 reference; touches no other task's files.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5195-brand-favicon-social-card.md"
+      "started_at": "2026-11-05T02:57:20+00:00",
+      "completed_at": "2026-11-05T03:02:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5195-brand-favicon-social-card.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5196",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -43,9 +44,10 @@
       "parallel": true,
       "parallelism_notes": "Needs docs/branding/favicon.ico and social-card.png created by TASK-5195 (referenced from landing/index.html head).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5196-landing-page-redesign.md"
+      "started_at": "2026-11-05T02:57:20+00:00",
+      "completed_at": "2026-11-05T03:11:08+00:00",
+      "file": "sdd/tasks/completed/TASK-5196-landing-page-redesign.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5197",
@@ -54,7 +56,7 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,9 +65,10 @@
       "parallel": true,
       "parallelism_notes": "mkdocs.yml theme favicon/logo and extra OG meta reference docs/branding/favicon.ico + social-card.png created by TASK-5195.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5197-mkdocs-theme-nav.md"
+      "started_at": "2026-11-05T02:57:20+00:00",
+      "completed_at": "2026-11-05T03:11:09+00:00",
+      "file": "sdd/tasks/completed/TASK-5197-mkdocs-theme-nav.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5198",
@@ -74,16 +77,17 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: modifies only its own docs/ pages (foundations, llm-clients, bots-agents, index.md) and its own test file; wiki cross-links are external URLs.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5198-hub-and-core-chapters.md"
+      "started_at": "2026-11-05T02:57:20+00:00",
+      "completed_at": "2026-11-05T03:02:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5198-hub-and-core-chapters.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5199",
@@ -92,16 +96,17 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: modifies only its own docs/ pages (memory-knowledge, knowledge-graph, tools-rag, integrations) and its own test file; wiki cross-links are external URLs.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5199-data-and-integration-chapters.md"
+      "started_at": "2026-11-05T02:57:20+00:00",
+      "completed_at": "2026-11-05T03:02:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5199-data-and-integration-chapters.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5200",
@@ -110,16 +115,17 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: modifies only docs/config.md, docs/tools_quick.md and its own test file.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5200-config-and-tools-pages.md"
+      "started_at": "2026-11-05T02:57:20+00:00",
+      "completed_at": "2026-11-05T03:02:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5200-config-and-tools-pages.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5201",
@@ -128,18 +134,19 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
         "TASK-5197"
       ],
       "parallel": true,
-      "parallelism_notes": "Creates docs/tutorials/ pages that the nav written by TASK-5197 (mkdocs.yml Tutorials section) points at; spec §7 serializes M6 after M3.",
+      "parallelism_notes": "Creates docs/tutorials/ pages that the nav written by TASK-5197 (mkdocs.yml Tutorials section) points at; spec \u00a77 serializes M6 after M3.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5201-tutorials-chatbot-agent.md"
+      "started_at": "2026-11-05T02:57:20+00:00",
+      "completed_at": "2026-11-05T03:26:31+00:00",
+      "file": "sdd/tasks/completed/TASK-5201-tutorials-chatbot-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5202",
@@ -148,18 +155,19 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
         "TASK-5197"
       ],
       "parallel": true,
-      "parallelism_notes": "Creates docs/tutorials/ pages that the nav written by TASK-5197 (mkdocs.yml Tutorials section) points at; spec §7 serializes M6 after M3.",
+      "parallelism_notes": "Creates docs/tutorials/ pages that the nav written by TASK-5197 (mkdocs.yml Tutorials section) points at; spec \u00a77 serializes M6 after M3.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5202-tutorials-tool-deployment.md"
+      "started_at": "2026-11-05T02:57:20+00:00",
+      "completed_at": "2026-11-05T03:26:32+00:00",
+      "file": "sdd/tasks/completed/TASK-5202-tutorials-tool-deployment.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5203",
@@ -168,7 +176,7 @@
       "feature_id": "FEAT-803",
       "feature": "github-pages-informative-site",
       "spec": "sdd/specs/github-pages-informative-site.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -183,9 +191,10 @@
       "parallel": true,
       "parallelism_notes": "Verifies the assembled site: needs landing from TASK-5196, mkdocs.yml from TASK-5197, chapters from TASK-5198 and TASK-5199 (docs/chapters/*.md), pages from TASK-5200, tutorials from TASK-5201 and TASK-5202 (docs/tutorials/*.md).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5203-post-m9-build-verification.md"
+      "started_at": "2026-11-05T02:57:20+00:00",
+      "completed_at": "2026-11-05T03:30:36+00:00",
+      "file": "sdd/tasks/completed/TASK-5203-post-m9-build-verification.md",
+      "verification": "verified"
     }
   ]
 }

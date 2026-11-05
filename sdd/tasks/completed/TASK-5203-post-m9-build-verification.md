@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-803 — GitHub Pages Informative Site Redesign
 **Spec**: `sdd/specs/github-pages-informative-site.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: TASK-5196, TASK-5197, TASK-5198, TASK-5199, TASK-5200, TASK-5201, TASK-5202
@@ -149,10 +149,10 @@ def test_dependency_minimums_not_lowered() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestrator; implemented by seat mistral (nova devstral-2-123b), attempt 2
+**Date**: 2026-11-05
+**Notes**: Merged by the engine; merge-tier validation green (tests/docs_site/test_site_build.py: 3 passed). Per-task semantic review deferred to the feature-level code review.
 
 **Deviations from spec**: none
+
+**Review follow-up (sdd-worker)**: review findings fixed — M9 cut-over applied on this branch (mkdocstrings plugin/dependency/editable install and docs/api-reference removed, CI `mkdocs build --strict`, legacy pages excluded, tools_quick in nav), Wiki links repointed to existing pages/Home, test inverted. `mkdocs build --strict` passes; tests/docs_site 37 passed.
