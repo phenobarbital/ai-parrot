@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-814 — sync-base refusal classification, transport hardening, and a runnable native gate
 **Spec**: `sdd/specs/scripts-worktree-sync-tech-debt-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: TASK-5220
@@ -91,4 +91,17 @@ Implement in the FEAT-814 worktree; TASK-5221 re-runs the real gate afterwards.
 
 ## Completion Note
 
-_(filled at close)_
+Implemented in 7c04cfa1bc. `check_guards()` uses `status --porcelain --untracked-files=no` when
+`in_sandbox()`; the host keeps `_status()`. Root cause was read from the session transcript of the first
+real gate run (an in-sandbox `git status --porcelain --ignored` listed `.bashrc`, `.profile`, `.zshrc`,
+`.gitconfig`, `.gitmodules`, `.mcp.json`, `.idea`, `.vscode`, `.claude/{agents,commands,hooks,skills,...}`
+as untracked — none exist on the host after the session).
+
+The commit also carries TASK-5221's two gate-assertion corrections (same file): the empty
+`config.worktree` placeholder is accepted, and the protected-config test no longer counts the target
+branch's own advance as a foreign ref change (verified in the leftover repo: the only moved ref was
+`refs/heads/feat-FEAT-999-sync`, reflog `am: native gh patch`).
+
+Validation: 3 new unit tests; `test_worktree_sync.py` + push-protection + process-exclusion + sdd launch +
+sdd cli suites 139 passed / 2 skipped (gate, needs PARROT_TEST_REAL_LLM); real gate 2/2 passed twice.
+ruff + black clean.

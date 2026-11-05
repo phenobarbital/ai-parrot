@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-05T03:06:10+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-05T03:19:37+00:00",
   "parallel_semantics": "exclusive",
   "tasks": [
     {
@@ -31,7 +31,7 @@
       "id": "TASK-5221",
       "slug": "runnable-native-sync-gate",
       "title": "Make the native sync-base gate runnable, run it, re-stamp TASK-5212",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -40,19 +40,20 @@
       ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-5220 (same test file).",
-      "file": "sdd/tasks/active/TASK-5221-runnable-native-sync-gate.md",
+      "file": "sdd/tasks/completed/TASK-5221-runnable-native-sync-gate.md",
       "feature_id": "FEAT-814",
       "feature": "scripts-worktree-sync-tech-debt-2",
       "spec": "sdd/specs/scripts-worktree-sync-tech-debt-2.spec.md",
       "assigned_to": null,
       "started_at": "2026-11-05T03:11:07+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-05T03:19:37+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5229",
       "slug": "sandbox-tracked-only-dirty-guard",
       "title": "Sandbox dirty guard checks tracked changes only",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -60,13 +61,14 @@
       ],
       "parallel": false,
       "parallelism_notes": "Edits worktree_sync.py + test_worktree_sync.py; found by TASK-5221's real gate run.",
-      "file": "sdd/tasks/active/TASK-5229-sandbox-tracked-only-dirty-guard.md",
+      "file": "sdd/tasks/completed/TASK-5229-sandbox-tracked-only-dirty-guard.md",
       "feature_id": "FEAT-814",
       "feature": "scripts-worktree-sync-tech-debt-2",
       "spec": "sdd/specs/scripts-worktree-sync-tech-debt-2.spec.md",
       "assigned_to": null,
       "started_at": "2026-11-05T03:16:08+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-05T03:19:23+00:00",
+      "verification": "verified"
     }
   ]
 }

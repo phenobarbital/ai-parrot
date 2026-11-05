@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-814 — sync-base refusal classification, transport hardening, and a runnable native gate
 **Spec**: `sdd/specs/scripts-worktree-sync-tech-debt-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: TASK-5220, TASK-5229
@@ -83,4 +83,19 @@ The second command spends real model usage (Haiku, ≤ $0.20 per test); run it o
 
 ## Completion Note
 
-_(filled at close)_
+Harness fix in ec2839ad01: `_native_cli()` resolves `claude` with `shutil.which` against the host
+`PATH` captured at import (`_install_gh_stub` had narrowed `PATH` to `<tmp>:/usr/bin`, so the gate always
+skipped), and the in-sandbox runner uses `sys.executable` instead of a bare `python`.
+
+Gate runs (`artifacts/logs/FEAT-814-native-gate.log`, Claude Code 2.1.318, native sandbox, Haiku):
+1. Both FAILED — sync exit 3 (dirty) inside the sandbox; 0-byte `config.worktree` left behind. Root
+   cause: native-runtime mount placeholders. Operator chose the tracked-only sandbox guard → TASK-5229
+   (filed on this branch; this task then depended on it).
+2. After TASK-5229: missing-protection PASSED; protected-config sync succeeded (`SYNC_EXIT=0`) but its
+   ref snapshot wrongly included the target branch. Assertion corrected (committed in 7c04cfa1bc).
+3. Both PASSED. 4. Stability re-run: both PASSED.
+
+Scope note: the task said not to change gate assertions unless a failure proved one wrong. Two did
+(both proven against the leftover repositories, see TASK-5229's note); no assertion was weakened beyond
+the proven artifact (empty placeholder file; the target branch's own expected advance, now asserted
+positively). TASK-5212 (FEAT-806) re-stamped `verified` with a dated addendum.
