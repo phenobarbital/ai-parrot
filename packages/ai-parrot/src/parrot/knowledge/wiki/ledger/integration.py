@@ -41,6 +41,12 @@ class MergePlan(BaseModel):
     new_events: list[LedgerEvent] = Field(default_factory=list)
     duplicates: int = 0
     redundant_closes: list[str] = Field(default_factory=list)
+    redundant_unclaims: list[str] = Field(default_factory=list)
+
+    @property
+    def skipped_event_ids(self) -> list[str]:
+        """Return every event deliberately set aside: redundant closes, then redundant unclaims."""
+        return [*self.redundant_closes, *self.redundant_unclaims]
 
 
 def _canonical(event: LedgerEvent) -> str:
@@ -119,13 +125,20 @@ def find_transition_conflicts(
 
 
 def drop_redundant_closes(remote: Sequence[LedgerEvent], plan: MergePlan) -> MergePlan:
-    """Set aside ``issue.closed`` events whose issue is already terminal.
+    """Set aside ``issue.closed`` and ``issue.unclaimed`` events whose issue is already terminal.
 
     The first close on the destination wins: closing a closed (or superseded)
     issue changes no state, and appending it would let the reducer overwrite
     the recorded resolution. Such events are listed in ``redundant_closes``
     instead of being appended, so they never reach the conflict check. A
     second close of the same issue within ``plan`` is redundant too.
+
+    An unclaim of a terminal issue is equally a no-op — the reducer ignores it —
+    and it is routine: a session working from a stale local ledger claims an
+    issue another session already closed, then releases it. Left in the plan it
+    is an ``unclaim-terminal`` conflict that blocks the whole batch, so it is
+    listed in ``redundant_unclaims`` instead. The matching claim is kept, as
+    before: it is not a conflict and the reducer ignores it too.
 
     Args:
         remote: Events already on the destination log, in log order.
@@ -140,9 +153,13 @@ def drop_redundant_closes(remote: Sequence[LedgerEvent], plan: MergePlan) -> Mer
     kept = MergePlan(duplicates=plan.duplicates)
     for raw_line, event in zip(plan.new_lines, plan.new_events, strict=True):
         current = state.get(event.subject)
-        if event.kind == "issue.closed" and current is not None and current["status"] in TERMINAL:
-            kept.redundant_closes.append(event.event_id)
-            continue
+        if current is not None and current["status"] in TERMINAL:
+            if event.kind == "issue.closed":
+                kept.redundant_closes.append(event.event_id)
+                continue
+            if event.kind == "issue.unclaimed":
+                kept.redundant_unclaims.append(event.event_id)
+                continue
         kept.new_lines.append(raw_line)
         kept.new_events.append(event)
         _apply(state, event)
@@ -409,6 +426,8 @@ class LedgerIntegrator:
             plan = drop_redundant_closes(remote_events, plan)
             for event_id in plan.redundant_closes:
                 self.logger.info("ledger delivery skipped redundant close %s (issue already terminal)", event_id)
+            for event_id in plan.redundant_unclaims:
+                self.logger.info("ledger delivery skipped redundant unclaim %s (issue already terminal)", event_id)
             conflicts = find_transition_conflicts(remote_events, plan.new_events)
             if conflicts:
                 recovery = await self._remove_if_clean(tmp)
@@ -560,8 +579,8 @@ class LedgerIntegrator:
                     recovery_path=str(tmp),
                 )
             verified_by_id = {event.event_id: _canonical(event) for _, event in verified_log}
-            # Redundant closes were deliberately not appended; verify only the rest.
-            skipped = set(plan.redundant_closes)
+            # Redundant closes and unclaims were deliberately not appended; verify only the rest.
+            skipped = set(plan.skipped_event_ids)
             delivered_events = [event for event in sealed.events if event.event_id not in skipped]
             expected = {event.event_id: _canonical(event) for event in delivered_events}
             if any(verified_by_id.get(event_id) != canonical for event_id, canonical in expected.items()):
@@ -585,7 +604,7 @@ class LedgerIntegrator:
                 batch,
                 remote_head=remote_head,
                 verified_digest=verified_digest,
-                skipped_event_ids=plan.redundant_closes,
+                skipped_event_ids=plan.skipped_event_ids,
             )
             remaining_status = await self.outbox.status(known_ids=set(verified_by_id))
             # The receipt above already removed this batch from ``pending_events``.
@@ -600,7 +619,7 @@ class LedgerIntegrator:
                 commit_sha=commit_sha,
                 added=len(plan.new_lines),
                 remaining=remaining,
-                skipped=list(plan.redundant_closes),
+                skipped=plan.skipped_event_ids,
                 recovery_path=recovery,
             )
         except StrictLedgerReadError:
