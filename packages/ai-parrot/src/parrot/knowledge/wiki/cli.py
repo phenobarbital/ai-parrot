@@ -148,6 +148,9 @@ logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 # normal operation.  Default to INFO; --verbose restores DEBUG.
 logging.getLogger("parrot.knowledge.wiki.store").setLevel(logging.INFO)
 logging.getLogger("parrot.knowledge.wiki.sources").setLevel(logging.INFO)
+# Frontmatter parsing reports malformed YAML as a one-line WARNING naming
+# the file; keep its DEBUG chatter out of build output too.
+logging.getLogger("parrot.knowledge.wiki.entities").setLevel(logging.INFO)
 
 #: How long a `ns add`/`ns remove` waits for the global registry lock.
 REGISTRY_LOCK_WAIT_SECONDS = 5.0
