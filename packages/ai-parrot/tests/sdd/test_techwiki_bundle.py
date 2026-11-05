@@ -297,3 +297,47 @@ def test_authored_page_colliding_with_a_generated_name(api_repo: Path) -> None:
     _, report = assemble(cfg, api_repo)
     clash = [c for c in report.collisions if c.get("name") == "API-Reference-samplepkg.core"]
     assert clash and "ref:samplepkg.core" in clash[0]["sources"] and "wiki/ref/core.md" in clash[0]["sources"]
+
+
+def test_generated_page_ref_links_are_rewritten(api_repo: Path) -> None:
+    """issue:0891861cb3c1 — a generated page's ``ref:`` links are rewritten, not published verbatim."""
+    cfg = load_techwiki_config(api_repo)
+    pages, report = assemble(cfg, api_repo)
+    init = next(p for p in pages if p.module == "samplepkg")
+    # samplepkg/__init__.py re-exports PublicModel from .core, so module.md.j2 renders a
+    # ref:samplepkg.core link into this page's body. Assert on the resolved PAGE NAME, never on
+    # the link syntax: "[[Page]]" today, "[text](Page)" once the Markdown-links branch lands.
+    assert "API-Reference-samplepkg.core" in init.body
+    assert "](ref:" not in init.body
+    # No generated page anywhere may keep a literal ref: target (AC-1).
+    for page in pages:
+        if page.source is None:
+            assert "](ref:" not in page.body, (page.name, page.body)
+    assert report.ok(), (report.collisions, report.dangling)
+
+
+def test_unresolvable_links_in_a_generated_page_are_dangling(
+    techwiki_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A generated page's unresolvable ``ref:`` and relative targets are reported, not crashed on."""
+    from parrot.sdd.techwiki import bundle as bundle_module
+
+    def fake_generated(cfg, root, release):  # type: ignore[no-untyped-def]
+        page = bundle_module.BundlePage(
+            source=None,
+            section=cfg.reference_section,
+            title="samplepkg.fake",
+            name="API-Reference-samplepkg.fake",
+            body="# fake\n\n[Gone](ref:samplepkg.gone) [Rel](../other.md)\n",
+            module="samplepkg.fake",
+        )
+        return [page], []
+
+    monkeypatch.setattr(bundle_module, "_generated_pages", fake_generated)
+    cfg = load_techwiki_config(techwiki_repo)
+    _, report = assemble(cfg, techwiki_repo)
+    generated_rows = [row for row in report.dangling if row["source"] == "ref:samplepkg.fake"]
+    # The ref: row proves generated pages are validated at all (AC-2); the relative row proves the
+    # no-source branch returns instead of dereferencing page.source (AC-3).
+    assert {row["target"] for row in generated_rows} == {"ref:samplepkg.gone", "../other.md"}
+    assert not report.ok()
