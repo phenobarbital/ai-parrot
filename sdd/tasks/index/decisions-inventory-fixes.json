@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-05T00:15:45+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-05T00:18:28+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -38,7 +38,7 @@
       "feature_id": "FEAT-807",
       "feature": "decisions-inventory-fixes",
       "spec": "sdd/specs/decisions-inventory-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -46,8 +46,9 @@
       "parallelism_notes": "single task of FEAT-807; edits decisions/repository.py and decisions/inventory.py with their tests; no dependency and no shared resource",
       "assigned_to": null,
       "started_at": "2026-11-05T00:16:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5204-stored-hash-snapshot.md"
+      "completed_at": "2026-11-05T00:18:28+00:00",
+      "file": "sdd/tasks/completed/TASK-5204-stored-hash-snapshot.md",
+      "verification": "verified"
     }
   ]
 }

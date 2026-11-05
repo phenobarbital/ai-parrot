@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-807 — Decision snapshot compares stored hashes, so a legacy ADR envelope no longer blocks the gate
 **Spec**: `sdd/specs/decisions-inventory-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -378,8 +378,16 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude (session /sdd-fix, actor agent:sdd-fix:824da58f)
+**Date**: 2026-11-05
+**Notes**: `DecisionRepository.inventory_with_hashes()` returns each record with the `content_hash` of the
+page it was decoded from; `inventory()` delegates to it. `InventorySnapshot.take` builds its phase-one map
+from those stored hashes and compares it with `store.page_hashes()`; the manifest records the stored hash
+and falls back to `record_hash(record)` only for a page without one. Four tests added. Evidence:
+`test_snapshot_stable_with_legacy_envelope` fails on the unfixed sources with
+`SNAPSHOT_UNSTABLE: decision inventory changed while reading` and passes on this branch; the Validation
+Contract (`test_inventory.py`, `test_repository.py`, `test_consequences.py`) gives 47 passed; `ruff check`
+is clean on the four files.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. The blueprint's FILL IN in the legacy test was completed with an exact
+match on `snapshot.eligible` and `snapshot.manifest.inventory`.
