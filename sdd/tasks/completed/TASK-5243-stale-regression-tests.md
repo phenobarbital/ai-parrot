@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-823 — Close the `--stale` work-loss holes in `remove_worktree`
 **Spec**: `sdd/specs/scripts-remove-worktree-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5242
@@ -415,9 +415,54 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-Include the per-defect reasoning required by AC3 above.
+**Completed by**: Claude Opus 5.5 (/sdd-fix, actor agent:sdd-fix:118971f4)
+**Date**: 2026-11-06
+**Notes**: Five tests and three helpers added to
+`packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py` (+153, one file).
+`pytest ... -q` → **34 passed** (29 pre-existing + 5 new). `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+All three `FILL IN` markers resolved, two of them differently from the
+blueprint's guess because TASK-5242's smoke fixtures showed the blueprint was
+wrong about the mechanics:
+
+1. **git-record assertion** — added `_registered_paths()` (parses
+   `git worktree list --porcelain`) and assert the child's resolved path is
+   still in it, so the test fails if git's record is dropped even when the
+   directory survives.
+2. **`dirty:` / `unpushed:` tokens** — asserted as tokens, not counts: a fresh
+   `git worktree add` has 0 of each, so matching numbers would pin the wrong
+   thing.
+3. **Deregistration mechanics — the blueprint's approach did not work.**
+   Renaming `.git/worktrees/wt` *inside* `.git/worktrees/` (what I first tried
+   while verifying TASK-5242) does **not** deregister anything: git simply sees
+   the worktree under the new admin name, `--stale` finds no orphan, and the
+   test would have passed vacuously against the bug. `_deregister_keeping_dir`
+   moves the admin dir **out** of `.git/worktrees/` entirely and then prunes,
+   and the test asserts both halves of the fixture (`not in _registered_paths`
+   AND `.git` still present) before exercising the gate — a fixture that
+   silently fails to reproduce the shape is worse than no test.
+
+**AC3 evidence (per-defect failure against pre-fix code)**
+
+Reverted `remove_worktree.py` to `origin/dev`, ran `pytest -k stale`:
+**4 failed, 1 passed.**
+
+| Test | Defect | Pre-fix result |
+|---|---|---|
+| `test_stale_refuses_orphan_holding_registered_worktree` | D1 | FAILED |
+| `test_stale_force_reports_nested_registrations` | D1 disclosure | FAILED |
+| `test_stale_refuses_dirty_orphan_checkout` | D2 | FAILED |
+| `test_stale_skips_symlinked_orphan` | D3 | FAILED |
+| `test_stale_still_removes_plain_container` | — (AC7) | passed |
+
+The plain-container test passing pre-fix is correct and intended: the old code
+also swept plain containers. It exists to prove the fix did not simply disable
+`--stale`. The source was restored to `HEAD` afterwards and verified clean.
+
+**Note on `black`**: this file is **already** not black-clean on `origin/dev`
+(the module docstring's missing blank line and the `SDD_META_NAMES` tuple). I
+did not reformat it — that is out of scope and would bury a 153-line test
+addition in unrelated churn. `ruff check`, the repository's stated lint gate,
+passes, and none of my added lines exceed 120 characters.
+
+**Deviations from spec**: none. Five tests as the spec's §4 table specifies.

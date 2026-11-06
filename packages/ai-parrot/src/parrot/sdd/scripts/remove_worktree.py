@@ -82,6 +82,9 @@ class Worktree:
         branch: Branch name, or None for a detached / orphan checkout.
         registered: True when git still tracks it in ``git worktree list``.
         primary: True for the main repository checkout.
+        nested_registered: Registered worktree paths that live BELOW ``path``.
+            Only ever non-empty for an orphan directory — a coder pool dir is
+            not itself registered, but its ``TASK-*`` children are.
     """
 
     path: Path
@@ -89,16 +92,30 @@ class Worktree:
     registered: bool
     primary: bool = False
     live_processes: list[tuple[int, str]] = field(default_factory=list)
+    nested_registered: list[Path] = field(default_factory=list)
 
     @property
     def name(self) -> str:
         return self.path.name
 
+    def _is_checkout(self) -> bool:
+        """True when this path is a git working tree, registered or not.
+
+        A registered worktree always is. An orphan directory is only a checkout
+        when it still carries a ``.git`` file or directory: a deregistered
+        worktree does, a plain container (an emptied coder pool dir) does not.
+        """
+        return self.registered or (self.path / ".git").exists()
+
     def dirty_files(self) -> list[str]:
         """Return porcelain status lines, empty when clean."""
-        if not self.registered or not self.path.exists():
+        if not self.path.exists() or not self._is_checkout():
             return []
         proc = run(["git", "status", "--porcelain"], cwd=self.path)
+        if proc.returncode != 0 and not self.registered:
+            # Fail closed: an orphan checkout whose state cannot be read must
+            # not be discarded without --force.
+            return ["?? (git status failed - state unknown)"]
         return [ln for ln in proc.stdout.splitlines() if ln.strip()]
 
     def unpushed(self) -> list[str]:
@@ -108,7 +125,7 @@ class Worktree:
         upstream configured — a worker branch that was never pushed has no
         ``@{u}``, and that is exactly the case worth warning about.
         """
-        if not self.registered or not self.path.exists():
+        if not self.path.exists() or not self._is_checkout():
             return []
         upstream = run(
             ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
@@ -220,11 +237,22 @@ def discover() -> list[Worktree]:
     worktree_dir = _root() / ".claude" / "worktrees"
     if worktree_dir.is_dir():
         for child in sorted(worktree_dir.iterdir()):
+            if child.is_symlink():
+                # is_dir() follows symlinks and rmtree refuses one, so an
+                # enrolled symlink aborts a whole --stale sweep mid-way.
+                print(
+                    f"warning: skipping symlinked entry {child.name} under "
+                    ".claude/worktrees/ (rmtree refuses a symlink).",
+                    file=sys.stderr,
+                )
+                continue
             if not child.is_dir():
                 continue
-            if child.resolve() in registered_paths:
+            resolved = child.resolve()
+            if resolved in registered_paths:
                 continue
-            worktrees.append(Worktree(path=child, branch=None, registered=False))
+            nested = sorted(p for p in registered_paths if p != resolved and p.is_relative_to(resolved))
+            worktrees.append(Worktree(path=child, branch=None, registered=False, nested_registered=nested))
 
     for wt in worktrees:
         if not wt.primary:
@@ -244,6 +272,8 @@ def cmd_list(args: argparse.Namespace) -> int:
         flags = []
         if not wt.registered:
             flags.append("ORPHAN-DIR")
+            if wt.nested_registered:
+                flags.append(f"holds:{len(wt.nested_registered)}")
         if wt.live_processes:
             flags.append(f"LIVE({len(wt.live_processes)})")
         dirty = wt.dirty_files()
@@ -293,7 +323,11 @@ def _remove_one(wt: Worktree, args: argparse.Namespace) -> int:
     """Apply the safety gates and remove one worktree. Returns an exit code."""
     print(f"\n=== {wt.name}")
     print(f"  path:   {wt.path}")
-    print(f"  branch: {wt.branch or '(orphan directory, no git record)'}")
+    if wt.nested_registered:
+        orphan_desc = f"(orphan directory, holds {len(wt.nested_registered)} registered worktree(s))"
+    else:
+        orphan_desc = "(orphan directory, no git record)"
+    print(f"  branch: {wt.branch or orphan_desc}")
     sys.stdout.flush()  # keep the header ahead of any stderr refusal below
 
     if wt.primary:
@@ -312,6 +346,22 @@ def _remove_one(wt: Worktree, args: argparse.Namespace) -> int:
         )
         print(f"    kill {wt.live_processes[0][0]}    # or detach the tmux " "session running it", file=sys.stderr)
         return 1
+
+    if wt.nested_registered:
+        label = "WARNING" if args.force else "REFUSED"
+        print(f"  {label}: holds {len(wt.nested_registered)} registered worktree(s).", file=sys.stderr)
+        for nested in wt.nested_registered:
+            child = Worktree(path=nested, branch=None, registered=True)
+            print(
+                f"    {nested}  (dirty:{len(child.dirty_files())} unpushed:{len(child.unpushed())})",
+                file=sys.stderr,
+            )
+        if not args.force:
+            print(
+                "  Remove them individually first - they get their own dirty/unpushed gates - then re-run --stale.",
+                file=sys.stderr,
+            )
+            return 1
 
     dirty = wt.dirty_files()
     if dirty and not args.force:
@@ -334,6 +384,8 @@ def _remove_one(wt: Worktree, args: argparse.Namespace) -> int:
 
     if args.dry_run:
         print("  [dry-run] would remove this worktree" + (" and delete its branch" if args.delete_branch else ""))
+        for nested in wt.nested_registered:
+            print(f"    [dry-run] contains registered worktree: {nested}")
         return 0
 
     if wt.registered:
