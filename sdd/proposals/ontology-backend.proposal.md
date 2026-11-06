@@ -412,6 +412,9 @@ and ArangoDB leaves the whole workspace.
 | C18 | Tenancy is one graph database and one pgvector schema per tenant, `arango_db` required | F007 | high | model and templates read directly |
 | C19 | Removing ArangoDB reverses recorded non-goals of FEAT-540 and FEAT-670 | F030, F031 | high | both non-goal sections read |
 | C20 | asyncdb has no SurrealDB driver; `surrealdb`, `rdflib`, `pyshacl` are declared nowhere | F017, F012 | high | driver directory listed; all pyproject files grepped |
+| C21 | HelixDB does not fit the write model: it has a single writer process (many readers, no concurrent writers), unlike SQLite WAL where several processes can write, serialised; and its Python client `helix-py` is GPL-3.0. Both support superseding FEAT-670 | F032, F031 | medium | single-writer stated by the user and by the research note ("single writer process", no documented multi-process access); GPL-3.0 stated in the note with a link; neither re-verified here |
+| C22 | The engine choice is governed by four criteria: open-source non-enterprise, no paid SaaS, deployable on the AWS services in use (no AGE on RDS), simpler platform | F032 | medium | stated by the user; the note backs the JanusGraph and NebulaGraph exclusions, the AGE-on-RDS exclusion is user-stated |
+| C23 | The research note ranks PostgreSQL + AGE first, FalkorDB second, SurrealDB server third, and recommends keeping ArangoDB as an optional adapter | F032 | high | read directly in the note |
 
 Distribution: **15** high, **8** medium, **0** low.
 
@@ -442,6 +445,13 @@ Distribution: **15** high, **8** medium, **0** low.
   *Resolved*: "KnowledgeStore completo" — the full design of the draft.
   *Resolves claims*: C8, C9, C10
 
+- [x] **What evidence backs the licence and engine premises, and why not Apache AGE?** —
+  *Resolved*: the research note `sdd/proposals/Grafos open source para ai-parrot.md`; "se
+  descartó Apache AGE porque no se puede instalar en Amazon AWS y cualquier servicio SaaS de
+  pago, solo servicios open-source no-enterprise y que a su vez descomplejize la plataforma
+  (Janus por ejemplo, requiere no solo Cassandra sino a su vez Elasticsearch)".
+  *Resolves claims*: C14, C15, C22
+
 ### Unresolved (defer to spec / implementation)
 
 - [ ] **Where do the per-tenant instance graph and its machinery go** (YAML entities/relations,
@@ -449,9 +459,6 @@ Distribution: **15** high, **8** medium, **0** low.
   legal/BOE, contracts and manuals packs, `hierarchy.py`)? — *Owner*: tbd
   *Blocks claims*: C17, C4, C16
   *Plausible answers*: a) SurrealDB `entity` / `related` behind `OntologyTraversalStore`, with
-| C21 | HelixDB's Python client `helix-py` is GPL-3.0 and its embedded mode documents no multi-process access, which supports superseding FEAT-670 | F032, F031 | medium | stated in the research note with a link; not re-verified |
-| C22 | The engine choice is governed by four criteria: open-source non-enterprise, no paid SaaS, deployable on the AWS services in use (no AGE on RDS), simpler platform | F032 | medium | stated by the user; the note backs the JanusGraph and NebulaGraph exclusions, the AGE-on-RDS exclusion is user-stated |
-| C23 | The research note ranks PostgreSQL + AGE first, FalkorDB second, SurrealDB server third, and recommends keeping ArangoDB as an optional adapter | F032 | high | read directly in the note |
   patterns re-templated in a `surrealql` dialect · b) re-model each consumer on the two-step flow
   (`OntologyStore.expand` then `KnowledgeStore.search`) and retire traversal patterns and dynamic
   queries · c) Postgres edge tables with recursive CTEs for the instance graph, SurrealDB only
@@ -482,13 +489,6 @@ SurrealDB is untested in this repository and U5 is open.
   umbrella and the spike its first deliverable.
 - **Manual review** — if spike G1 fails, the engine choice reopens and this proposal must be
   revised before any spec.
-- [x] **What evidence backs the licence and engine premises, and why not Apache AGE?** —
-  *Resolved*: the research note `sdd/proposals/Grafos open source para ai-parrot.md`; "se
-  descartó Apache AGE porque no se puede instalar en Amazon AWS y cualquier servicio SaaS de
-  pago, solo servicios open-source no-enterprise y que a su vez descomplejize la plataforma
-  (Janus por ejemplo, requiere no solo Cassandra sino a su vez Elasticsearch)".
-  *Resolves claims*: C14, C15, C22
-
 
 ---
 

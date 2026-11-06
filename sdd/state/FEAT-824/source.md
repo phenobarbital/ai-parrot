@@ -503,3 +503,8 @@ Orden sugerido: T0 ∥ T1 → T2, T3 → T4 → T5 → T6 → T8 → T7, T9 → 
 > ejemplo, requiere no solo Cassandra sino a su vez Elasticsearch)
 
 The research note is digested in `findings/F032-graph-database-research-note-licences-and-engine-comparison.md`.
+
+## Addendum 2 — user statement (2026-11-06, verbatim)
+
+> pero ademas HelixDB es mono-thread, no funciona como SQLite que permite multiples escrituras,
+> sirve para multiples lecturas, pero no escrituras

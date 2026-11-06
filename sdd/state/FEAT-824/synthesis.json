@@ -1113,13 +1113,13 @@
     },
     {
       "id": "C21",
-      "statement": "HelixDB's Python client `helix-py` is GPL-3.0 and its embedded mode documents no multi-process access, which supports superseding FEAT-670.",
+      "statement": "HelixDB does not fit the write model: it has a single writer process (many readers, no concurrent writers), unlike SQLite WAL where several processes can write, serialised; and its Python client `helix-py` is GPL-3.0. Both support superseding FEAT-670.",
       "evidence": [
         "F032",
         "F031"
       ],
       "confidence": "medium",
-      "reasoning": "stated in the research note with a link to the helix-py repository; not re-verified here."
+      "reasoning": "single-writer stated by the user (2026-11-06) and by the research note (\"single writer process\", no documented multi-process access); GPL-3.0 stated in the note with a link; neither re-verified here."
     },
     {
       "id": "C22",
@@ -1269,6 +1269,6 @@
       "F032"
     ],
     "findings_unused": [],
-    "notes": "Follow-ups left for the spec (answerable by more research, not by the user): DDL/migration location of the `ontology_concept*` tables; roles of `stores/arango.py`, `interfaces/hierarchy.py`, `parrot_tools/wiki/toolkit.py`, formdesigner `asyncdb_store.py` and `registry/routing/rules.py`; whether `test_ontology_graph_store.py` mocks AsyncDB; how Postgres-backed tests obtain a database in CI; which wiki namespaces are configured with backend=arangodb; the stance of the FEAT-541 spec on backends; status of FEAT-255's unmerged branch. Wall-clock budget was exceeded (lanes took 163 s, 412 s and 501 s against an advisory 255 s) without dropping any planned query. User correction after the review gate (2026-11-06): the draft's design is adopted in full (U1 supersede FEAT-670, U2 whole workspace, U3 RDF OntologyStore, U4 full KnowledgeStore); the enrichment block was re-derived accordingly and U5 was added as the one unresolved question. User correction (2026-11-06, after the first commit): the licence and engine premises are documented in `sdd/proposals/Grafos open source para ai-parrot.md` (F032); C14 and C15 raised from low to medium, C21–C23 added, and the user's engine selection criteria recorded as a constraint."
+    "notes": "Follow-ups left for the spec (answerable by more research, not by the user): DDL/migration location of the `ontology_concept*` tables; roles of `stores/arango.py`, `interfaces/hierarchy.py`, `parrot_tools/wiki/toolkit.py`, formdesigner `asyncdb_store.py` and `registry/routing/rules.py`; whether `test_ontology_graph_store.py` mocks AsyncDB; how Postgres-backed tests obtain a database in CI; which wiki namespaces are configured with backend=arangodb; the stance of the FEAT-541 spec on backends; status of FEAT-255's unmerged branch. Wall-clock budget was exceeded (lanes took 163 s, 412 s and 501 s against an advisory 255 s) without dropping any planned query. User correction after the review gate (2026-11-06): the draft's design is adopted in full (U1 supersede FEAT-670, U2 whole workspace, U3 RDF OntologyStore, U4 full KnowledgeStore); the enrichment block was re-derived accordingly and U5 was added as the one unresolved question. User correction (2026-11-06, after the first commit): the licence and engine premises are documented in `sdd/proposals/Grafos open source para ai-parrot.md` (F032); C14 and C15 raised from low to medium, C21–C23 added, and the user's engine selection criteria recorded as a constraint. User statement (2026-11-06): HelixDB is single-writer — it serves multiple readers but not multiple writers, unlike SQLite — recorded in C21."
   }
 }

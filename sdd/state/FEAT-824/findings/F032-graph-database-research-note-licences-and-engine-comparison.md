@@ -81,3 +81,4 @@ depth: 1
 - The note recommends keeping ArangoDB as an optional legacy adapter ("barato y razonable"); the draft §9.5 keeps it only until parity; the user chose removal from the whole workspace (U2).
 - SDK status in the note: `surrealdb` 3.0.0b10 on PyPI — a beta; the draft's spike G1 is the gate for it.
 - The file was untracked (`??`) when read, so the citation resolves only in a checkout that has it.
+- User statement of 2026-11-06, consistent with lines 36-42 of the note: HelixDB is single-writer — it serves multiple readers but not multiple writers, whereas SQLite (WAL) lets several processes write, serialised. This is the reason HelixDB was discarded, in addition to the `helix-py` licence.
