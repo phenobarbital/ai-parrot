@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-833 test-scope-select-fixes
 **Spec**: `sdd/specs/test-scope-select-fixes.spec.md`
-**Status**: in-progress
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: none (external: FEAT-829 / PR #2009 merged into the worktree first)
@@ -82,4 +82,23 @@ Run from the worktree root with `PYTHONPATH=$PWD/packages/ai-parrot/src`.
 Merge `origin/feat-FEAT-829-test-scope-planner-fixes` into the worktree before editing. Lint the changed files with `ruff check`. Stage only the four files listed above.
 
 ## Completion Note
-<!-- Filled in when the task is closed. -->
+
+**Completed by**: Claude Code `/sdd-fix` session (`agent:sdd-fix:b0aaa6fe`)
+**Date**: 2026-11-07
+**Notes**: Implemented M1–M3 in `6070680528`, on top of `origin/feat-FEAT-829-test-scope-planner-fixes`
+(merged into the worktree as `2a6af38c7c`; PR #2009 not yet on `dev` at the time).
+- M1: `_plan_operand(argv)` parses `--plan <path>` / `--plan=<path>`; `operands()` returns `[plan]`, `[]`
+  without `--plan`, `None` when not matching. `distribution_of()` uses the target when non-empty;
+  `invocation()` uses the first non-empty `target.path`, else `_plan_setting(settings)`.
+- M2: `_declared_targets()` notes `declared command has no operands, dropped: <argv>` for a matched
+  command whose `operands()` is an empty list.
+- M3: three adapter tests (AC-1..AC-3) and three `plan_tests` tests (AC-4..AC-6).
+
+Validation (worktree `PYTHONPATH`): `test_runner_parrot_e2e.py` + `test_planner.py` 39 passed;
+`test_select.py` + `test_select_contract_mode.py` 13 passed; `ruff check` and `black --check -l 120` clean on
+the four files. CLI repro: a task file declaring `parrot e2e run --plan sdd/state/FEAT-581/e2e-plan.md` —
+`parrot sdd tests select --tier merge --base origin/dev --task-file … --no-baseline` plans only pytest on
+`dev` code and plans `parrot e2e run --plan sdd/state/FEAT-581/e2e-plan.md --owner-id sdd-coder` on this
+branch; `parrot e2e run` alone yields the M2 note.
+
+**Deviations from spec**: none.
