@@ -6,6 +6,8 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
 from parrot.flows.dev_loop.test_scope.runners.parrot_e2e import ADAPTER, parse_e2e_verdict
 
 FIXTURE = Path(__file__).parent / "fixtures" / "e2e-verdict.json"
@@ -59,6 +61,17 @@ def test_tiers_and_settings(tmp_path: Path) -> None:
         "task tier forbidden" in p
         for p in ADAPTER.validate_settings({"plan": "plan.json", "tiers": "task,merge"}, worktree=tmp_path)
     )
+
+
+@pytest.mark.parametrize("settings", [{}, {"plan": ""}])
+def test_missing_plan_is_value_error(settings: dict[str, str]) -> None:
+    """An absent or empty plan is a readable ValueError, never a KeyError (issue:a3aebc40ef48)."""
+    with pytest.raises(ValueError, match=r"'plan'.*test_runners\.toml"):
+        ADAPTER.distribution_of("", settings=settings)
+    with pytest.raises(ValueError, match=r"'plan'.*test_runners\.toml"):
+        ADAPTER.invocation(
+            [], distribution="d", worktree=Path("."), settings=settings, policy=None, report_path="r"
+        )  # type: ignore[arg-type]
 
 
 def test_matches_and_argv() -> None:
