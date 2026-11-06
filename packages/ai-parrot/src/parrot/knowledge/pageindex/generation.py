@@ -186,9 +186,7 @@ class WriteTransaction:
                     or self.base_generation is None
                     or current_generation != self.base_generation.id
                 ):
-                    raise StaleGenerationError(
-                        f"tree {self.tree_name!r} changed since transaction construction"
-                    )
+                    raise StaleGenerationError(f"tree {self.tree_name!r} changed since transaction construction")
 
             ensure_concept_ids(self.tree)
             for node in structure_to_list(self.tree.get("structure", [])):
@@ -199,9 +197,10 @@ class WriteTransaction:
                     body_ref = BodyRef.parse(raw_ref)
                 except (TypeError, ValueError) as exc:
                     raise ValueError(f"invalid body_ref for node {node.get('node_id', '<unknown>')!r}") from exc
-                if body_ref.key not in self._staged and not self._content.body_path(
-                    self.tree_name, body_ref.key
-                ).is_file():
+                if (
+                    body_ref.key not in self._staged
+                    and not self._content.body_path(self.tree_name, body_ref.key).is_file()
+                ):
                     raise ValueError(f"missing body for node {node.get('node_id', '<unknown>')!r}")
 
             staged_keys = [key for key in self._staged if not self._content.body_path(self.tree_name, key).is_file()]

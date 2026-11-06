@@ -133,7 +133,9 @@ async def test_publish_replace_failure_keeps_old_generation(tmp_path, monkeypatc
 
 @pytest.mark.asyncio
 async def test_publish_rejects_missing_body_and_second_publish(tmp_path):
-    txn = _txn(tmp_path, "t", {"doc_name": "t", "structure": [{"node_id": "1", "body_ref": "x.0123456789abcdef"}]}, None)
+    txn = _txn(
+        tmp_path, "t", {"doc_name": "t", "structure": [{"node_id": "1", "body_ref": "x.0123456789abcdef"}]}, None
+    )
     with pytest.raises(ValueError, match="node '1'"):
         await txn.publish()
 
