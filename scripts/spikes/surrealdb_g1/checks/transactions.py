@@ -5,7 +5,6 @@ from __future__ import annotations
 from checks._common import connect, execute, g1_check
 from harness import CheckResult, SpikeContext
 
-
 _SETUP = """
 DEFINE TABLE mutation SCHEMAFULL;
 DEFINE FIELD request_id ON mutation TYPE string;
@@ -47,9 +46,13 @@ async def check_g1_08_transaction(ctx: SpikeContext) -> CheckResult:
     async with connect(ctx, "g1", "g1_08") as db:
         await execute(db, _SETUP)
         await _replay(db, "atomic")
-        rows = await db.query("SELECT * FROM mutation; SELECT * FROM outbox; SELECT value FROM stream_counter:main;").execute()
+        rows = await db.query(
+            "SELECT * FROM mutation; SELECT * FROM outbox; SELECT value FROM stream_counter:main;"
+        ).execute()
     assert len(rows[0]) == len(rows[1]) == 1 and rows[2][0]["value"] == 1, rows
-    return CheckResult("G1-08", check_g1_08_transaction.title, True, "pass", f"BEGIN/COMMIT mutation+outbox+counter rows={rows!r}")
+    return CheckResult(
+        "G1-08", check_g1_08_transaction.title, True, "pass", f"BEGIN/COMMIT mutation+outbox+counter rows={rows!r}"
+    )
 
 
 @g1_check("G1-10", "Injected failure replay converges", blocking=True)
@@ -72,7 +75,9 @@ async def check_g1_10_failure_injection(ctx: SpikeContext) -> CheckResult:
             try:
                 await _replay(db, "replay")
             except Exception:
-                await execute(db, "DELETE mutation:replay; DELETE outbox:replay; UPDATE stream_counter:main SET value = 0;")
+                await execute(
+                    db, "DELETE mutation:replay; DELETE outbox:replay; UPDATE stream_counter:main SET value = 0;"
+                )
                 await _replay(db, "replay")
             outcomes[failure] = await db.query("SELECT * FROM mutation; SELECT * FROM outbox;").execute()
     assert all(len(result[0]) == len(result[1]) == 1 for result in outcomes.values()), outcomes

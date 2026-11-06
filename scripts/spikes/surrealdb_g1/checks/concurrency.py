@@ -12,6 +12,7 @@ from harness import CheckResult, SpikeContext
 
 def _writer(ctx_data: dict[str, str], index: int, queue: Any) -> None:
     """Write one independently identified mutation from a spawned process."""
+
     async def write() -> None:
         from surrealdb import AsyncSurreal
 
@@ -65,7 +66,14 @@ async def check_g1_09_writers(ctx: SpikeContext) -> CheckResult:
     async with connect(ctx, "g1", "g1_09") as db:
         rows = await db.query("SELECT * FROM mutation ORDER BY seq;").first()
     assert len(rows) == 8 and len({row["request_id"] for row in rows}) == 8, rows
-    return CheckResult("G1-09", check_g1_09_writers.title, True, "pass", f"spawn eight writers messages={messages!r} rows={rows!r}", {"writers": 8.0, "mutations": float(len(rows))})
+    return CheckResult(
+        "G1-09",
+        check_g1_09_writers.title,
+        True,
+        "pass",
+        f"spawn eight writers messages={messages!r} rows={rows!r}",
+        {"writers": 8.0, "mutations": float(len(rows))},
+    )
 
 
 @g1_check("G1-13", "SDK licence, image digest, and multi-process server sharing", blocking=False)
