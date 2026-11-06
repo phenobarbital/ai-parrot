@@ -111,7 +111,7 @@ else's edit. This spec builds that path once, for every write.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:5d1f9e6def03e11e3cafa5368473a2878618a3f39a81e4414e0c068690798570 evaluation_digest=sha256:af04202ec87ca620a4ff90974b1105ddc23171c43e5a820f19f826db79b8a1f0 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:1923ea50ebfdd00791a84e7bdad926f64586a659a5d9a9d11064e3c30d0553ae evaluation_digest=sha256:588dce988af6088c9309ac560e4c9e7089c646030837997c2b9a3afb4a495923 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -580,6 +580,9 @@ tests:
 - packages/ai-parrot/tests/knowledge/bookstore/test_mcp_server.py
 - packages/ai-parrot/tests/knowledge/pageindex/test_generation.py
 - packages/ai-parrot/tests/knowledge/pageindex/test_locks.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_embedding_store.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_generation_integration.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_generation_docs.py
 markers: none
 
 ### Test Data / Fixtures
@@ -919,7 +922,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:5d1f9e6def03e11e3cafa5368473a2878618a3f39a81e4414e0c068690798570 evaluation_digest=sha256:af04202ec87ca620a4ff90974b1105ddc23171c43e5a820f19f826db79b8a1f0 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:1923ea50ebfdd00791a84e7bdad926f64586a659a5d9a9d11064e3c30d0553ae evaluation_digest=sha256:588dce988af6088c9309ac560e4c9e7089c646030837997c2b9a3afb4a495923 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -965,10 +968,10 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:af04202ec87ca620a4ff90974b1105ddc23171c43e5a820f19f826db79b8a1f0",
+  "evaluation_digest": "sha256:588dce988af6088c9309ac560e4c9e7089c646030837997c2b9a3afb4a495923",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:5d1f9e6def03e11e3cafa5368473a2878618a3f39a81e4414e0c068690798570",
+  "input_digest": "sha256:1923ea50ebfdd00791a84e7bdad926f64586a659a5d9a9d11064e3c30d0553ae",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
