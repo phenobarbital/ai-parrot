@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-834 — runner registry loads from a trusted ref; runner cwd stays in the worktree
 **Spec**: `sdd/specs/runners-registry-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -230,4 +230,10 @@ Git in tests: set `GIT_AUTHOR_*`/`GIT_COMMITTER_*` env or `-c user.name=t -c use
 
 ## Completion Note
 
-_(fill in on completion)_
+**Completed**: 2026-11-07 — commit a5d34546f1 (resolves `issue:29e8e7ad138f` together with TASK-5293).
+
+`load_registry(worktree, *, ref=None)`: with `ref`, the TOML is read via `git show <ref>:.parrot/test_runners.toml`
+(empty/`-`-prefixed/unresolvable ref → `ValueError`, absent file → built-ins); one parse path for both sources.
+`_check_cwd` rejects absolute or escaping runner `cwd` at load time; `VitestAdapter._contained_cwd` (resolves
+symlinks) guards `mirror_targets`, `invocation` and reports in `validate_settings`. 42 tests passed
+(registry, vitest, stdlib-only); ruff + black clean.

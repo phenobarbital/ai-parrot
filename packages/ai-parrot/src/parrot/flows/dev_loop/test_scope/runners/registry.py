@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib
+import posixpath
+import subprocess
 import tomllib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -130,14 +132,61 @@ def _extension_adapter(kind: str, target: object) -> RunnerAdapter:
     return adapter
 
 
-def load_registry(worktree: Path) -> RunnerRegistry:
-    """Load TOML settings and extensions, failing closed for every invalid input."""
-    path = Path(worktree) / CONFIG_PATH
-    if not path.is_file():
-        return RunnerRegistry({}, {})
+def _read_config_at_ref(worktree: Path, ref: str) -> str | None:
+    """Return the TOML text committed at ``ref``, or None when the file is absent there.
+
+    Raises:
+        ValueError: ``ref`` is empty, looks like an option, or does not resolve to a commit.
+    """
+    if not ref or ref.startswith("-"):
+        raise ValueError(f"{CONFIG_PATH}: invalid trusted ref {ref!r}")
+
+    def _git(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["git", *args], cwd=worktree, capture_output=True, text=True, check=False)
+
+    if _git("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").returncode != 0:
+        raise ValueError(f"{CONFIG_PATH}: trusted ref {ref!r} does not resolve to a commit")
+    if _git("cat-file", "-e", f"{ref}:{CONFIG_PATH}").returncode != 0:
+        return None
+    shown = _git("show", f"{ref}:{CONFIG_PATH}")
+    if shown.returncode != 0:
+        raise ValueError(f"{CONFIG_PATH}: unable to read at {ref!r}: {shown.stderr.strip()}")
+    return shown.stdout
+
+
+def _check_cwd(kind: str, cwd: str) -> None:
+    """Reject a runner ``cwd`` that is absolute or leaves the worktree."""
+    normalized = posixpath.normpath(cwd.replace("\\", "/"))
+    if posixpath.isabs(normalized) or Path(cwd).is_absolute() or normalized == ".." or normalized.startswith("../"):
+        raise ValueError(f"{CONFIG_PATH}: runner {kind!r} cwd must stay inside the worktree")
+
+
+def load_registry(worktree: Path, *, ref: str | None = None) -> RunnerRegistry:
+    """Load TOML settings and extensions, failing closed for every invalid input.
+
+    Args:
+        worktree: Checkout the registry belongs to.
+        ref: When set, read the TOML committed at this git ref instead of the working tree. Callers in the
+            engine process pass the attempt base, so a file a coder seat wrote is never read or imported.
+
+    Raises:
+        ValueError: invalid configuration, or an unusable ``ref`` (never a fallback to the working tree).
+    """
+    if ref is not None:
+        text = _read_config_at_ref(Path(worktree), ref)
+        if text is None:
+            return RunnerRegistry({}, {})
+    else:
+        path = Path(worktree) / CONFIG_PATH
+        if not path.is_file():
+            return RunnerRegistry({}, {})
+        try:
+            text = path.read_text()
+        except (OSError, UnicodeError) as exc:
+            raise ValueError(f"{CONFIG_PATH}: invalid TOML: {exc}") from exc
     try:
-        data = tomllib.loads(path.read_text())
-    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
         raise ValueError(f"{CONFIG_PATH}: invalid TOML: {exc}") from exc
     if not isinstance(data, dict) or set(data) - {"runners", "extensions"}:
         raise ValueError(f"{CONFIG_PATH}: only [runners] and [extensions] are allowed")
@@ -160,6 +209,9 @@ def load_registry(worktree: Path) -> RunnerRegistry:
         if not isinstance(raw_settings, dict):
             raise ValueError(f"{CONFIG_PATH}: [runners.{kind}] must be a table")
         setting = _settings_from_toml(raw_settings)
+        cwd = setting.get("cwd")
+        if cwd is not None:
+            _check_cwd(kind, cwd)
         tiers = setting.get("tiers")
         if tiers is not None:
             invalid = {tier.strip() for tier in tiers.split(",") if tier.strip()} - set(TIERS)
