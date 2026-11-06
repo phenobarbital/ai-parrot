@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-820 — Close the FEAT-806 §4 Test Gaps in `test_worktree_sync.py`
 **Spec**: `sdd/specs/fixgroup-d188effba3ca.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5235
@@ -368,8 +368,14 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: ai-parrot-85 (agent:sdd-fix:b5e88ee1)
+**Date**: 2026-11-06
+**Notes**: Added the four tests plus two small helpers — `_await_cwd` (bounded `/proc/<pid>/cwd`
+poll, `pytest.fail` on timeout) and `_advance_base` (commit + push a base file, return its sha).
+`test_never_pushes` re-snapshots the origin refs only after each deliberate `git push` and
+compares after every sync; the sandbox leg runs last because `_configure_sandbox` rewrites the
+shared origin URL and `_install_gh_stub` narrows PATH. `worktree_sync.py` untouched.
+52 passed, 2 skipped (native gates) across test_worktree_sync.py and
+test_sync_process_exclusions.py; `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
