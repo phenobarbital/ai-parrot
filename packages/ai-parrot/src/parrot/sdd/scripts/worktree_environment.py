@@ -174,12 +174,32 @@ def worktree_admin_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
     primary = git_dir.parent
     if primary == root:
         return ()
-    from parrot.sdd.config import worktree_root  # lazy: the hook path stays stdlib-only until needed
-
-    admin_dir = worktree_root(primary).resolve()
+    admin_dir = _worktree_root(primary).resolve()
     if not admin_dir.is_dir() or admin_dir.is_relative_to(root):
         return ()
     return (admin_dir,)
+
+
+def _worktree_root(primary: Path) -> Path:
+    """Resolve the primary checkout's worktree root, importing no third-party package.
+
+    The tmux worker launcher runs this module under ``python -S``, where
+    ``parrot.sdd.config`` (pydantic) cannot be imported. Prefer it when it is
+    importable; otherwise mirror its ``WORKTREE_BASE_PATH`` resolution.
+
+    Args:
+        primary: The primary checkout root.
+
+    Returns:
+        The absolute, normalized worktree root.
+    """
+    try:
+        from parrot.sdd.config import worktree_root
+    except ImportError:
+        value = (os.environ.get("WORKTREE_BASE_PATH") or "").strip() or ".parrot/worktrees"
+        root = Path(value) if os.path.isabs(value) else primary / value
+        return Path(os.path.normpath(root.absolute()))
+    return worktree_root(primary)
 
 
 def shared_ledger_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
