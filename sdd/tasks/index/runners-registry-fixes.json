@@ -44,11 +44,11 @@
       "feature_id": "FEAT-834",
       "feature": "runners-registry-fixes",
       "spec": "sdd/specs/runners-registry-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:48:45+00:00",
       "completed_at": null
     },
     {
