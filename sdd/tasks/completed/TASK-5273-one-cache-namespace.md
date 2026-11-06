@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-830 — test-scope report fixes
 **Spec**: `sdd/specs/test-scope-report-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -302,4 +302,8 @@ See the Blueprint test blocks above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 (/sdd-fix session, actor agent:sdd-fix:c0b83d30)
+**Date**: 2026-11-07
+**Notes**: Added `green_cache.namespace_for` (`""` digest without a contract); `select_tests` and the supervisor's merge-tier site use it, the run-validation site keeps `_index_runtime_metadata`'s digest (pinned equal by a new test). `select_tests._default_base_ref` falls back to `origin/dev` for a missing/null/blank `base_branch`. Validation Commands pass (41 tests incl. test_test_command_fallback.py), ruff clean.
+
+**Deviations from spec**: none

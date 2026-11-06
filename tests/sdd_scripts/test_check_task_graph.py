@@ -463,3 +463,15 @@ def test_feat699_index_lints_clean_of_contract_errors():
         f for f in check_graph(index, root).findings if f.code.startswith("test-contract-") and f.level == "error"
     ]
     assert errors == []
+
+
+def test_directory_contract_operand_is_malformed(tmp_path):
+    """A cached contract naming a directory lints as test-contract-malformed (FEAT-830)."""
+    (tmp_path / "tests/flows").mkdir(parents=True)
+    header = _test_contract_header(["tests/flows/test_x.py"])
+    header["test_contract"]["runners"][0]["targets"] = ["tests/flows"]
+    index = _repo(tmp_path, [{"id": "TASK-1", "files": {"tests/flows/test_x.py": "CREATE"}}], header=header)
+    malformed = [f for f in check_graph(index, tmp_path).findings if f.code == "test-contract-malformed"]
+    assert len(malformed) == 1
+    assert malformed[0].level == "error"
+    assert "tests/flows" in malformed[0].message

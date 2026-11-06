@@ -120,6 +120,9 @@ def _declared_targets(
             notes.append(f"declared command has no operands, dropped: {' '.join(argv)}")
             continue
         for operand in operands or ():
+            if adapter.kind == "pytest" and (worktree / operand.split("::", 1)[0]).is_dir():
+                notes.append(f"declared path is a directory, dropped: {operand}")
+                continue
             try:
                 distribution = adapter.distribution_of(
                     operand.split("::", 1)[0], settings=registry.settings_for(adapter.kind)
