@@ -67,14 +67,14 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency: standalone spike harness under scripts/spikes (stdlib + pydantic only)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5248-g1-harness-core.md"
     },
@@ -85,7 +85,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -94,7 +94,7 @@
       "parallel": true,
       "parallelism_notes": "imports CheckResult/SpikeContext/Check from TASK-5248 (scripts/spikes/surrealdb_g1/harness.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5249-g1-checks.md"
     },
@@ -105,7 +105,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -114,7 +114,7 @@
       "parallel": false,
       "parallelism_notes": "exclusive: needs Docker + network on the host (image pull, SDK via uv run); runs ALL_CHECKS from TASK-5249 (checks/__init__.py)",
       "assigned_to": "host operator",
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5250-g1-host-run-report.md"
     },
@@ -125,14 +125,14 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no code dependency; ADR is parametrised by test_seed_rules.py; precondition: research note tracked in git (owner action, spec §8)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5251-licence-adr-feat670-supersession.md"
     },
@@ -143,14 +143,14 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: edits packages/ai-parrot/pyproject.toml and possibly uv.lock (shared manifests); triggers host install of rdflib/pyshacl",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5252-ontology-store-extra.md"
     },
@@ -161,14 +161,14 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency: creates vocabulary/contracts.py + exceptions.py over existing OntologyError",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5253-vocabulary-contracts-exceptions.md"
     },
@@ -179,7 +179,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -188,7 +188,7 @@
       "parallel": true,
       "parallelism_notes": "imports OntologyStore from TASK-5253 (vocabulary/contracts.py) in backends.py; names postgres_store.py/publisher.py/snapshot.py only as lazy-import strings (not a use — never imported at module level, tests never resolve them)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5254-vocabulary-settings-registry-root.md"
     },
@@ -199,7 +199,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -208,7 +208,7 @@
       "parallel": true,
       "parallelism_notes": "conftest.py lives in the test package whose __init__.py TASK-5253 creates (tests/.../vocabulary/__init__.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5255-vocabulary-test-fixtures.md"
     },
@@ -219,7 +219,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -229,7 +229,7 @@
       "parallel": true,
       "parallelism_notes": "imports resolve_ontology_settings from TASK-5254 (vocabulary/settings.py); tests use pg_pool/pg_schema_name from TASK-5255 (conftest.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5256-vocabulary-pg-schema.md"
     },
@@ -240,7 +240,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -249,7 +249,7 @@
       "parallel": true,
       "parallelism_notes": "imports ParsedRelation/ClosureRow from TASK-5253 (vocabulary/contracts.py); references the vocabulary package path only — imports its own submodules, which resolve as a PEP 420 namespace before TASK-5254 adds __init__.py (not a use of TASK-5254)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5257-vocabulary-closure.md"
     },
@@ -260,7 +260,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -271,7 +271,7 @@
       "parallel": true,
       "parallelism_notes": "imports PARROT_NS/SKOS/OWL from TASK-5257 (closure.py); tests use golden_v1 from TASK-5255 (conftest.py); needs rdflib declared by TASK-5252 (pyproject extra); references the vocabulary package path only — imports its own submodules, which resolve as a PEP 420 namespace before TASK-5254 adds __init__.py (not a use of TASK-5254)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5258-vocabulary-turtle-parse-serialize.md"
     },
@@ -282,7 +282,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -292,7 +292,7 @@
       "parallel": true,
       "parallelism_notes": "modifies turtle.py created by TASK-5258 (same file) and calls _to_graph; imports find_cycle/FAMILY_PREDICATES from TASK-5257 (closure.py); references the vocabulary package path only — imports its own submodules, which resolve as a PEP 420 namespace before TASK-5254 adds __init__.py (not a use of TASK-5254)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5259-vocabulary-validation-diff.md"
     },
@@ -303,7 +303,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -313,7 +313,7 @@
       "parallel": true,
       "parallelism_notes": "imports ensure_schema/validate_schema_name from TASK-5256 (pg_schema.py) and validate_content/diff_content from TASK-5259 (turtle.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5260-vocabulary-publisher.md"
     },
@@ -324,7 +324,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -333,7 +333,7 @@
       "parallel": true,
       "parallelism_notes": "imports read_content from TASK-5260 (vocabulary/_rows.py); tests publish fixtures with PostgresOntologyPublisher (publisher.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5261-vocabulary-postgres-store.md"
     },
@@ -344,7 +344,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -353,7 +353,7 @@
       "parallel": true,
       "parallelism_notes": "tests build VersionContent with parse_turtle/content_checksum from TASK-5258 (turtle.py); references the vocabulary package path only — imports its own submodules, which resolve as a PEP 420 namespace before TASK-5254 adds __init__.py (not a use of TASK-5254)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5262-vocabulary-snapshot-build.md"
     },
@@ -364,7 +364,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -374,7 +374,7 @@
       "parallel": true,
       "parallelism_notes": "modifies snapshot.py created by TASK-5262 (same file); imports resolve_ontology_settings from TASK-5254 (vocabulary/settings.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5263-vocabulary-snapshot-store.md"
     },
@@ -385,7 +385,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -395,7 +395,7 @@
       "parallel": true,
       "parallelism_notes": "tests PostgresOntologyStore.load_version from TASK-5261 (postgres_store.py) and SnapshotOntologyStore from TASK-5263 (snapshot.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5264-vocabulary-conformance-temporal.md"
     },
@@ -406,7 +406,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -415,7 +415,7 @@
       "parallel": true,
       "parallelism_notes": "calls PostgresOntologyPublisher.ensure_ontology/publish_content(carry_forward_missing) from TASK-5260 (publisher.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5265-vocabulary-catalog-bridge.md"
     },
@@ -426,7 +426,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -435,7 +435,7 @@
       "parallel": true,
       "parallelism_notes": "annotates/calls CatalogVocabularyPublisher.publish_tenant from TASK-5265 (catalog_bridge.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5266-catalog-worker-vocabulary-hook.md"
     },
@@ -446,7 +446,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -458,7 +458,7 @@
       "parallel": true,
       "parallelism_notes": "wraps ensure_schema (TASK-5256 pg_schema.py), PostgresOntologyStore (TASK-5261 postgres_store.py), build_snapshot (TASK-5262 snapshot.py), CatalogVocabularyPublisher (TASK-5265 catalog_bridge.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5267-vocabulary-cli.md"
     },
@@ -469,7 +469,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -479,7 +479,7 @@
       "parallel": true,
       "parallelism_notes": "calls PostgresOntologyStore.load_version/export from TASK-5261 (postgres_store.py) and build_snapshot from TASK-5262 (snapshot.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5268-vocabulary-http-routes.md"
     },
@@ -490,7 +490,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -504,7 +504,7 @@
       "parallel": true,
       "parallelism_notes": "documents the G1 verdict (TASK-5250 report.md), the ADR (TASK-5251) and the symbols delivered by TASK-5264/5266/5267/5268 — last in the graph",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:24:12+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5269-documentation-ontology-pages.md"
     }
