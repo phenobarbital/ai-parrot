@@ -44,6 +44,22 @@ if TYPE_CHECKING:
 WakeCallback = Callable[[RoostMessage, Dispatch], Awaitable[Optional[RoostMessage]]]
 
 
+def _is_wire_identifier(value: object) -> bool:
+    """Return whether *value* is safe as a caller-supplied identifier on the wire and in audit entries.
+
+    Args:
+        value: Candidate identifier (a trace id or a conversation id).
+
+    Returns:
+        ``True`` for a non-empty string without whitespace or Unicode control/format characters.
+    """
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and not any(character.isspace() or unicodedata.category(character) in {"Cc", "Cf"} for character in value)
+    )
+
+
 class RoostFailure(Exception):
     """A request completed with a typed Roost failure."""
 
@@ -550,6 +566,7 @@ class RoostEndpoint:
         expected_schema: Optional[dict] = None,
         hops: int = 0,
         trace_id: str | None = None,
+        conversation_id: Optional[str] = None,
     ) -> Any:
         """Execute a Query conversation without an agreement phase.
 
@@ -560,20 +577,23 @@ class RoostEndpoint:
             expected_schema: Optional JSON Schema the answer must satisfy (``FailureCode.SCHEMA`` otherwise).
             hops: Chain depth of the caller seeding the hop budget.
             trace_id: Exact application trace identifier to retain in LocalEnvelope audit entries.
+            conversation_id: Identifier to open the conversation under, so the caller can correlate the
+                outcome (success or failure) with audit entries. A fresh one is minted when omitted.
 
         Raises:
             GrantDenied: *receiver* is outside the caller's grant.
-            ValueError: *trace_id* is empty, non-string, whitespace, or contains control/format characters.
+            ValueError: *trace_id* or *conversation_id* is empty, non-string, whitespace, or contains
+                control/format characters.
+            ConversationExistsError: *conversation_id* already names a conversation on this endpoint's
+                engine; nothing is sent and that conversation is left untouched.
         """
-        if trace_id is not None and (
-            not isinstance(trace_id, str)
-            or not trace_id
-            or any(character.isspace() or unicodedata.category(character) in {"Cc", "Cf"} for character in trace_id)
-        ):
+        if trace_id is not None and not _is_wire_identifier(trace_id):
             raise ValueError("trace_id must be a non-empty string without whitespace or control characters")
+        if conversation_id is not None and not _is_wire_identifier(conversation_id):
+            raise ValueError("conversation_id must be a non-empty string without whitespace or control characters")
         if not self.grant.allows(self.config, receiver.name):
             raise GrantDenied(receiver.name)
-        conversation_id = uuid.uuid4().hex
+        conversation_id = conversation_id or uuid.uuid4().hex
         trace = TraceContext(trace_id=trace_id, span_id=secrets.token_hex(8)) if trace_id is not None else None
         envelope = squawk_bridge.new_envelope(
             correlation_id=conversation_id,
