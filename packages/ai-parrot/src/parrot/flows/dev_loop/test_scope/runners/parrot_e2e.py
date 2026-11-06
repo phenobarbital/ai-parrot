@@ -119,6 +119,17 @@ def _plan_setting(settings: Mapping[str, str]) -> str:
     return plan
 
 
+def _plan_operand(argv: Sequence[str]) -> str | None:
+    """Return the ``--plan`` value of a ``parrot e2e run|verify`` argv, or None when it carries none."""
+    rest = list(argv[3:])
+    for index, token in enumerate(rest):
+        if token.startswith("--plan="):
+            return token[len("--plan=") :] or None
+        if token == "--plan" and index + 1 < len(rest):
+            return rest[index + 1] or None
+    return None
+
+
 class ParrotE2EAdapter:
     """Adapter for ``parrot e2e run`` reading ``e2e-verdict.json`` from disk."""
 
@@ -132,8 +143,15 @@ class ParrotE2EAdapter:
         return len(argv) >= 3 and Path(argv[0]).name == "parrot" and argv[1] == "e2e" and argv[2] in {"run", "verify"}
 
     def operands(self, argv: Sequence[str]) -> list[str] | None:
-        """Return no operands for a matching argv, None otherwise."""
-        return [] if self.matches(argv) else None
+        """Return the declared plan as the single operand of a matching argv, None otherwise.
+
+        A ``parrot e2e run --plan <path>`` Validation Command plans that path (issue:3ae0b2ae0ef4);
+        a matching argv without ``--plan`` has no operand and the selector reports it as dropped.
+        """
+        if not self.matches(argv):
+            return None
+        plan = _plan_operand(argv)
+        return [plan] if plan else []
 
     def is_broad(self, argv: Sequence[str], *, worktree: Path | None) -> bool:
         """E2E runs are never classed as broad."""
@@ -144,8 +162,8 @@ class ParrotE2EAdapter:
         return []
 
     def distribution_of(self, target: str, *, settings: Mapping[str, str]) -> str:
-        """Name the distribution after the plan's parent directory."""
-        return Path(_plan_setting(settings)).parent.name or "e2e"
+        """Name the distribution after the plan's parent directory (the target when given, else the setting)."""
+        return Path(target or _plan_setting(settings)).parent.name or "e2e"
 
     def invocation(
         self,
@@ -159,7 +177,10 @@ class ParrotE2EAdapter:
     ) -> Invocation:
         """Build the ``parrot e2e run`` invocation."""
         owner = settings.get("owner_id", "sdd-coder")
-        argv = ("parrot", "e2e", "run", "--plan", _plan_setting(settings), "--owner-id", owner)
+        # A declared target IS the plan (every target of one group names the same plan, since the
+        # distribution is its parent directory); the ``plan`` setting serves target-less contract groups.
+        plan = next((target.path for target in targets if target.path), None) or _plan_setting(settings)
+        argv = ("parrot", "e2e", "run", "--plan", plan, "--owner-id", owner)
         return Invocation(
             distribution=distribution,
             argv=argv,

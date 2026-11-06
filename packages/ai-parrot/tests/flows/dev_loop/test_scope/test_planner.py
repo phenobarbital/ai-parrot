@@ -371,6 +371,57 @@ def test_fallback_mode_uses_registry_settings(tmp_path: Path):
         assert e2e.argv[4] == "sdd/state/FEAT-581/e2e-plan.md"
 
 
+def test_declared_e2e_command_is_planned_at_merge_tier(tmp_path: Path):
+    """A task-declared `parrot e2e run --plan …` is planned at merge tier, reported at task tier (issue:3ae0b2ae0ef4)."""
+    declared = (("parrot", "e2e", "run", "--plan", "sdd/state/FEAT-581/e2e-plan.md"),)
+    registry = RunnerRegistry({}, {})
+
+    plan = plan_tests(worktree=tmp_path, changed_files=[], tier="merge", declared=declared, registry=registry)
+
+    (e2e,) = _e2e_invocations(plan)
+    assert e2e.argv == ("parrot", "e2e", "run", "--plan", "sdd/state/FEAT-581/e2e-plan.md", "--owner-id", "sdd-coder")
+    assert e2e.distribution == "FEAT-581"
+    assert e2e.targets == (TestTarget("sdd/state/FEAT-581/e2e-plan.md", "FEAT-581", "declared", runner="parrot-e2e"),)
+
+    task_plan = plan_tests(worktree=tmp_path, changed_files=[], tier="task", declared=declared, registry=registry)
+
+    assert _e2e_invocations(task_plan) == []
+    assert "parrot-e2e: not eligible for tier task" in task_plan.notes
+
+
+def test_declared_e2e_without_plan_is_reported(tmp_path: Path):
+    """An operand-less declared command is dropped with a note, never silently."""
+    plan = plan_tests(
+        worktree=tmp_path,
+        changed_files=[],
+        tier="merge",
+        declared=(("parrot", "e2e", "run"),),
+        registry=RunnerRegistry({}, {}),
+    )
+
+    assert _e2e_invocations(plan) == []
+    assert "declared command has no operands, dropped: parrot e2e run" in plan.notes
+
+
+def test_declared_plan_and_contract_plan_keep_their_own_invocation(tmp_path: Path):
+    """A declared plan and a contract block's plan are two groups, each run with its own --plan."""
+    contract = TestContract(schema=2, runners=(_e2e_block("sdd/state/FEAT-581/e2e-plan.md"),), digest="sha256:test")
+
+    plan = plan_tests(
+        worktree=tmp_path,
+        changed_files=[],
+        tier="merge",
+        declared=(("parrot", "e2e", "run", "--plan", "sdd/state/FEAT-815/e2e-plan.md"),),
+        contract=contract,
+        registry=RunnerRegistry({}, {}),
+    )
+
+    assert sorted((invocation.distribution, invocation.argv[4]) for invocation in _e2e_invocations(plan)) == [
+        ("FEAT-581", "sdd/state/FEAT-581/e2e-plan.md"),
+        ("FEAT-815", "sdd/state/FEAT-815/e2e-plan.md"),
+    ]
+
+
 def test_declared_only_with_marked_contract_adds_no_sweep(tmp_path: Path):
     """The contract marker sweep still requires a contract target in the distribution."""
     contract = TestContract(
