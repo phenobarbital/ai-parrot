@@ -136,7 +136,7 @@ Every other piece is then defined on segments instead of pages or node ids:
   sources as well as PDFs.
 - Addresses do not depend on `node_id`, which `reindex_node_ids` renumbers tree-wide on
   every splice. Citations survive edits and re-optimization.
-- Leaves partition the document (each segment belongs to exactly one leaf), which
+- Node-owned segment ranges partition the document (each segment has exactly one body owner), which
   removes duplicated bodies from the BM25 corpus.
 - Shrinks the LLM surface: structure comes from layout, summaries skip small nodes.
 
@@ -247,7 +247,7 @@ segment carries its address so it can be cited.
 bounded loop that reads pages and paragraphs, and returns an evidence bundle: the
 segments it relied on, the citations, token usage, and optionally a drafted answer.
 
-**Citations.** Each citation is `{document, page, paragraph, excerpt}` and renders as
+**Citations.** Each citation includes `{document, revision, page, paragraph, start, end, excerpt}` and renders as
 `[Report.pdf, p. 12 ¶3]`. Citations that fail validation are removed and listed.
 
 **Bookstore and multistoresearch** inherit the read tools and citations.
@@ -258,7 +258,9 @@ segments it relied on, the citations, token usage, and optionally a drafted answ
    already computes is persisted per document and split deterministically into
    segments (blank-line blocks; tables and fenced blocks stay whole). Each document
    root node gets a stable `doc_id`. Sources without pages get segments addressed by
-   ordinal only.
+   ordinal only. Each immutable document revision records a content hash; segment
+   addresses and read continuations include that revision. Nodes distinguish their
+   subtree span from their own, possibly disjoint, segment ranges.
 2. **Layout structure builder.** Sources of structure, tried in order and scored for
    confidence: embedded bookmarks (`Document.get_toc()`, rejected when non-monotonic or
    a per-page enumeration); font and layout statistics (heading levels by size and
@@ -268,9 +270,12 @@ segments it relied on, the citations, token usage, and optionally a drafted answ
    the existing title-appearance check.
 3. **Optimizer.** Deterministic passes, then LLM passes:
    - *normalize* — siblings covering the identical segment span collapse into one node;
-     leaves under a minimum size fold into the parent, their titles kept as `key_items`;
-   - *intro nodes* — a parent's own leading segments become an explicit intro leaf, and
-     parent ranges widen to cover the whole subtree;
+     small leaves remain unless a contiguous merge preserves all segment ownership,
+     anchors and applicable identity constraints; size alone never removes a leaf;
+   - *assign ownership* — parent subtree spans widen to cover their descendants, but
+     their own ranges contain only segments not owned by children, including leading,
+     interstitial and trailing text. An intro leaf is allowed only for a printed
+     heading; otherwise that text stays owned by the parent. No synthetic headings;
    - *expand headings* — a leaf over the target size is split at printed headings
      inside its span (first from the layout pass, then proposed by the model and
      accepted only when the title matches a heading segment);
@@ -278,9 +283,13 @@ segments it relied on, the citations, token usage, and optionally a drafted answ
      each anchored to an existing paragraph;
    - *decide* — expand when one routing step plus the largest child costs less than
      scanning the node, in tokens; the trigger is a token target, not a page count.
+     Before publication, verify that owned ranges partition each affected document
+     exactly once, with no gaps or overlaps, and that all anchors still resolve.
+     A subtree optimization must also preserve ownership outside its selected scope.
 4. **Bottom-up summaries.** Leaves are summarized from their own segments; a leaf
    shorter than the summary limit uses its text with no LLM call; parents are composed
-   from child summaries and `key_items`. Calls run deepest first under the existing
+   from child summaries, their own segments and `key_items`. Node body sidecars contain
+   only owned segments, never copies of descendant bodies. Calls run deepest first under the existing
    concurrency semaphore. Summary word limit is lowered.
 5. **Indexing of key_items.** `key_items` join the BM25 text and the embedded text, and
    appear in the tree the LLM walk sees.
@@ -290,12 +299,30 @@ segments it relied on, the citations, token usage, and optionally a drafted answ
    output — is framed as data, with the instruction in the system prompt. Model output
    that names pages or headings is validated against the segments it was shown.
 7. **Agentic stage.** The loop runs on `AbstractClient` with only the read tools,
-   bounded by turns and by a read budget. A read ledger records every segment returned.
-8. **Citation validation.** A citation is kept only if its segment is in the read
-   ledger and its excerpt occurs verbatim (whitespace-normalized) in that segment.
-9. **Optimize on existing trees.** Runs inside the toolkit's batch context: restructure,
-   re-key content sidecars by object identity (the pattern `import_pdf` already uses),
-   invalidate embeddings, mark BM25 dirty, re-project OKF sidecars, write the report.
+   bounded by turns and by a read budget. A request-local read ledger records the
+   document revision, segment address and exact half-open character ranges returned,
+   measured in the stored segment text before whitespace normalization. Continuations
+   retain the same revision. Readers pin one published generation for the request.
+8. **Citation validation.** A citation is kept only if its revision and segment match
+   the request's read ledger, its entire character range is covered by returned ranges,
+   and its excerpt equals that stored slice after whitespace normalization. Adjacent
+   reads may jointly cover an excerpt; unread gaps may not. Matching elsewhere in the
+   segment does not suffice. Missing or mismatched revisions fail validation.
+9. **Optimize on existing trees.** Build a candidate generation from a pinned snapshot,
+   without mutating the live tree or its sidecars. Stage the tree, segment references,
+   rebuilt body sidecars, OKF projection and report together; remap unchanged bodies
+   tree-wide after ID renumbering, including nodes outside the selected subtree, and
+   rebuild changed bodies from owned segments. Validate ownership and anchors first.
+   Publication uses a per-tree writer lock shared with edit operations and checks the
+   source generation is unchanged; reject a stale candidate rather than overwrite edits.
+   Atomically switch one generation manifest only after all required files are durable.
+   Readers see either the complete old generation or the complete new one. Search and
+   embedding caches are generation-scoped so old vectors or BM25 entries cannot serve
+   new IDs. Retain the old generation while readers pin it. A pre-publication failure
+   leaves the old generation active; crash recovery follows the committed manifest.
+   `_batch` only defers writes and persists in `finally`; it is not a transaction.
+   The existing best-effort `_project_okf_sidecars` also swallows errors: staging needs
+   a strict projection path whose failure aborts publication. Dry runs never publish.
 
 ### Edge Cases & Error Handling
 
@@ -305,7 +332,12 @@ segments it relied on, the citations, token usage, and optionally a drafted answ
 - **Running headers mistaken for headings**: text recurring at the same position across
   pages is excluded before heading detection.
 - **Segment larger than a read budget** (a long table): returned truncated with a
-  continuation marker and the next offset.
+  continuation marker, revision and the next character offset. Only returned text
+  ranges enter the ledger; markers and unread remainders are not citable evidence.
+- **Migration failure or concurrent edit**: leave the active generation unchanged;
+  report the failure or stale snapshot and require a fresh plan before retrying.
+- **Unowned or multiply owned segments**: reject the candidate before publication;
+  retaining a small leaf is preferable to dropping or duplicating source text.
 - **Legacy tree without a segment store**: read tools fall back to node markdown;
   citations are node-level; optimize offers only the deterministic passes or asks for
   the source file.
@@ -319,6 +351,21 @@ segments it relied on, the citations, token usage, and optionally a drafted answ
 - **Injection engine unavailable**: the regex detector is the floor; import proceeds
   and records which engine scored it.
 
+### Required Validation Scenarios
+
+- Inject failures during body writes, OKF projection and manifest publication; after
+  reopening, the tree and every sidecar must resolve through one complete generation.
+  A dry run leaves the active generation unchanged. Exercise readers during publication
+  and an edit between planning and publication; stale candidates must not overwrite it.
+- Optimize a subtree that renumbers later, untouched nodes; verify their bodies still
+  match their identities. Rebuild split or merged bodies from their new owned ranges.
+- Cover leading, middle and trailing parent text, tiny siblings and duplicate spans.
+  Assert exact source-segment coverage once, preserved anchors, parent residual text
+  in indexing and summaries, and no change on a second optimization with the same inputs.
+- Read only the prefix of an oversized segment: a matching excerpt from its unread
+  suffix must fail. Test adjacent continuation reads, an unread gap, repeated excerpts,
+  whitespace normalization, and a citation or continuation from another revision.
+
 ---
 
 ## Capabilities
@@ -328,18 +375,18 @@ Proposed as four specs, in dependency order:
 
 - `pageindex-segment-store`: per-document page and paragraph store with stable
   addresses, `doc_id` on document roots, the three read tools, per-segment injection
-  flags and prompt framing helpers.
+  flags, immutable revisions, exact read-range metadata and prompt framing helpers.
 - `pageindex-layout-structure`: PyMuPDF structure builder (bookmarks, font/layout
   statistics, confidence, LLM fallback) and the `structure_source` field.
-- `pageindex-tree-optimizer`: normalize, intro nodes, heading expansion, concept
+- `pageindex-tree-optimizer`: normalize, segment ownership, heading expansion, concept
   `key_items`, token cost model, bottom-up summaries, the explicit optimize command
-  with sidecar migration and report.
+  with validated ownership, atomic generation publication, sidecar migration and report.
 - `pageindex-agentic-retrieval`: the bounded stage-2 loop, the evidence bundle, the
-  citation model and its validator.
+  revision-pinned read ledger, citation model and exact-range validator.
 
 ### Modified Capabilities
-- `pageindex-content-store-and-llm-wiki-foundations`: parent nodes stop owning a body
-  once intro leaves exist.
+- `pageindex-content-store-and-llm-wiki-foundations`: bodies contain only owned ranges;
+  parents retain any text not owned by children. Readers pin published generations.
 - `pageindex-embedding-router`: embedded text and cache key include `key_items`.
 - `bookstore-indexed-library`: new read tools; TOC entries rebuilt after optimize.
 - `bookstore-reindex-atomic-swap`: optimize runs on the staging tree before the swap.
@@ -352,7 +399,7 @@ Proposed as four specs, in dependency order:
 |---|---|---|
 | `knowledge/pageindex/builder.py` | modifies | Layout builder becomes the default path; LLM pipeline kept as fallback; prompts framed |
 | `knowledge/pageindex/toolkit.py` | extends | Read tools, optimize, agentic retrieve; `import_pdf` persists segments and `doc_id` |
-| `knowledge/pageindex/hybrid_search.py` | modifies | `_flatten_corpus` adds `key_items`; parents contribute title and summary only |
+| `knowledge/pageindex/hybrid_search.py` | modifies | `_flatten_corpus` adds `key_items`; bodies use owned segments only, including parent residual text; caches follow generations |
 | `knowledge/pageindex/embedding_store.py` | modifies | `content_key` input changes; existing vectors are recomputed once |
 | `knowledge/pageindex/schemas.py` | extends | `key_items`, `doc_id`, `structure_source`, segment span on nodes (model already allows extras) |
 | `knowledge/pageindex/tree_ops.py` | extends | Restructuring operations that keep `concept_id` stable |
@@ -360,7 +407,7 @@ Proposed as four specs, in dependency order:
 | `knowledge/bookstore/` | extends | Read tools exposed; reindex integrates optimize |
 | `parrot_tools/multistoresearch/origins/pageindex.py` | extends | Results may carry citations |
 | `security/prompt_injection.py`, `bots/guardrails/builtin/prompt_injection.py` | depends on | Needs a public way to obtain the ML scoring engine |
-| Storage layout | extends | New per-document segment files beside node sidecars; no change to existing files |
+| Storage layout | extends | Revisioned segment files and staged generations published through an atomic manifest; legacy files remain readable until explicit migration |
 | Dependencies | none | Everything needed is already pinned |
 
 No breaking change for existing trees: every new field is optional and old trees take
