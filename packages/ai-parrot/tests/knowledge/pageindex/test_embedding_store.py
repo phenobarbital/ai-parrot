@@ -1,4 +1,5 @@
 """Tests for generation-keyed PageIndex embedding matrices."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -32,9 +33,7 @@ def test_build_and_load_per_generation(tmp_path):
 
     assert store.load_tree_matrix("t", generation_id=2) is not None
     assert store.load_tree_matrix("t") is None
-    assert list(store._matrix_path("t", 2).parent.glob("*.npy")) == [
-        store._matrix_path("t", 2)
-    ]
+    assert list(store._matrix_path("t", 2).parent.glob("*.npy")) == [store._matrix_path("t", 2)]
 
 
 def test_invalidate_and_prune(tmp_path):

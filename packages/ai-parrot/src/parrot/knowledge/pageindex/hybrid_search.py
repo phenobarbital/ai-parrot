@@ -239,9 +239,7 @@ class HybridPageIndexSearch:
             return []
 
         # Lazy rebuild if the per-tree matrix was invalidated.
-        result = self._embedding_store.load_tree_matrix(
-            tree_name, generation_id=self._generation_id
-        )
+        result = self._embedding_store.load_tree_matrix(tree_name, generation_id=self._generation_id)
         if result is None:
             nodes = get_nodes(self._structure())
             if not nodes:

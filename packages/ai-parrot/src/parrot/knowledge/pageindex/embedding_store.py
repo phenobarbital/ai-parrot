@@ -356,9 +356,7 @@ class NodeEmbeddingStore:
 
         return matrix, node_id_order
 
-    def load_tree_matrix(
-        self, tree_name: str, *, generation_id: int = 0
-    ) -> Optional[tuple[np.ndarray, list[str]]]:
+    def load_tree_matrix(self, tree_name: str, *, generation_id: int = 0) -> Optional[tuple[np.ndarray, list[str]]]:
         """Load the materialized per-tree matrix (memory-mapped read-only).
 
         Args:
