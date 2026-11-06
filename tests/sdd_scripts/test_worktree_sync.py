@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -936,3 +937,121 @@ def test_base_branch_from_index_and_brief(tmp_path: Path, monkeypatch: pytest.Mo
 
     assert worktree_sync._slug_candidates(brief_worktree) == ["1-widget", "widget"]
     assert worktree_sync.resolve_base_branch(brief_worktree, None) == "main"
+
+
+# --- FEAT-820 / TASK-5236: live-process guards, never-pushes, up-to-date advisory ------------------
+
+
+def _await_cwd(pid: int, expected: Path, timeout: float = 10.0) -> None:
+    """Block until ``pid``'s cwd resolves to ``expected``, failing the test on timeout."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            if Path(f"/proc/{pid}/cwd").resolve() == expected.resolve():
+                return
+        except OSError:
+            pass
+        time.sleep(0.02)
+    pytest.fail(f"pid {pid} never reported a cwd of {expected}")
+
+
+def _advance_base(primary: Path, name: str) -> str:
+    """Commit a new file on the base branch, publish it and return its sha."""
+    (primary / name).write_text(f"{name}\n", encoding="utf-8")
+    _run(primary, "add", name)
+    _run(primary, "commit", "-m", f"base {name}")
+    _run(primary, "push")
+    return _run(primary, "rev-parse", "HEAD")
+
+
+def test_live_process_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A foreign process whose cwd is inside the worktree refuses the sync with exit 4."""
+    _origin, primary, feature = _repository(tmp_path)
+    _advance_base(primary, "base.txt")
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    before = _run(feature, "rev-parse", "HEAD")
+
+    child = subprocess.Popen(["sleep", "30"], cwd=feature)
+    try:
+        _await_cwd(child.pid, feature)
+        with pytest.raises(worktree_sync.SyncError) as raised:
+            worktree_sync.sync(feature, "dev")
+
+        assert raised.value.exit_code == worktree_sync.EXIT_LIVE
+        assert f"pid {child.pid}" in str(raised.value)
+        assert "live process(es) inside target worktree" in str(raised.value)
+    finally:
+        child.terminate()
+        child.wait(timeout=10)
+
+    assert _run(feature, "rev-parse", "HEAD") == before
+    assert _run(feature, "status", "--porcelain") == ""
+    assert not (feature / "base.txt").exists()
+
+
+def test_own_ancestry_not_flagged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A caller running inside the worktree is excluded from the live-process guard and syncs."""
+    _origin, primary, feature = _repository(tmp_path)
+    _advance_base(primary, "base.txt")
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    monkeypatch.chdir(feature)
+
+    assert os.getpid() in worktree_sync.own_ancestry()
+    assert remove_worktree.live_processes_in(feature, exclude_pids=worktree_sync.own_ancestry()) == []
+    worktree_sync.check_guards(feature)
+
+    result = worktree_sync.sync(feature, "dev")
+
+    assert result.status == "synced"
+    assert result.exit_code == worktree_sync.EXIT_OK
+    assert (feature / "base.txt").read_text(encoding="utf-8") == "base.txt\n"
+
+
+def test_never_pushes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The bare origin's refs are byte-identical after every host mode and after a sandbox patch."""
+    origin, primary, feature = _repository(tmp_path)
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+
+    _advance_base(primary, "merged.txt")
+    remote_before = _refs(origin)
+    assert worktree_sync.sync(feature, "dev").status == "synced"
+    assert _refs(origin) == remote_before
+
+    _advance_base(primary, "forwarded.txt")
+    remote_before = _refs(origin)
+    assert worktree_sync.sync(feature, "dev", ff_only=True).status == "synced"
+    assert _refs(origin) == remote_before
+
+    picked = _advance_base(primary, "picked.txt")
+    remote_before = _refs(origin)
+    assert worktree_sync.sync(feature, "dev", cherry_picks=[picked]).status == "synced"
+    assert _refs(origin) == remote_before
+
+    remote_before = _refs(origin)
+    assert worktree_sync.sync(feature, "dev", dry_run=True).dry_run is True
+    assert _refs(origin) == remote_before
+
+    # Sandbox leg LAST: _install_gh_stub narrows PATH for the rest of the test, and
+    # _configure_sandbox rewrites the shared origin URL.
+    patched = _advance_base(primary, "patched.txt")
+    remote_before = _refs(origin)
+    response = _patch_response(primary, patched)
+    _configure_sandbox(feature)
+    _install_gh_stub(tmp_path, monkeypatch, {patched: response})
+    monkeypatch.setenv(worktree_sync.BACKEND_ENV, "native")
+
+    assert worktree_sync.sync(feature, "dev", cherry_picks=[patched]).status == "synced"
+    assert _refs(origin) == remote_before
+
+
+def test_stale_base_summary_up_to_date(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no new base commits the advisory reads 'up to date' and changes nothing."""
+    _origin, _primary, feature = _repository(tmp_path)
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    before = _run(feature, "rev-parse", "HEAD")
+
+    summary = worktree_sync.stale_base_summary(feature, "dev")
+
+    assert summary == "base dev: up to date"
+    assert _run(feature, "rev-parse", "HEAD") == before
+    assert _run(feature, "status", "--porcelain") == ""
