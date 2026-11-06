@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -166,10 +166,12 @@ def test_ontology_store_extra() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 164s.
+Merge-tier validation green (only baseline red: test_taxonomy_loads). Lockfile: `uv.lock` left untouched (host operator relocks if desired).
+Host operator: `source .venv/bin/activate && uv pip install 'rdflib>=7.0' 'pyshacl>=0.26'` — rdflib/pyshacl already importable in the shared venv as of this run.
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: gpt-5.6-terra)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: the extra moved from Module 11's task to this first-wave task so the
