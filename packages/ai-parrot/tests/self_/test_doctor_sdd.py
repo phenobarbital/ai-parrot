@@ -329,6 +329,11 @@ def test_worktree_tests_check_is_informational(ready_repo: Path) -> None:
 # --- bwrap sandbox checks (OS-level, tested with mocks) ---------------------------------------------------
 
 
+def _proc_flag_count(argv: list[str]) -> int:
+    """Number of adjacent ``--proc /proc`` pairs in a bwrap argv."""
+    return sum(1 for i, arg in enumerate(argv[:-1]) if arg == "--proc" and argv[i + 1] == "/proc")
+
+
 class TestBwrapSandbox:
     """Unit tests for _check_bwrap_sandbox — always mocked, never runs real bwrap."""
 
@@ -372,6 +377,34 @@ class TestBwrapSandbox:
         assert by_name["sdd: bwrap"].ok
         nested = by_name["sdd: bwrap nested userns"]
         assert not nested.ok and "sandbox-setup.md" in nested.fix
+
+    def test_probe_gives_each_level_a_writable_proc(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Every probe level must pass ``--proc /proc``.
+
+        With only ``--ro-bind / /`` the outer sandbox hands the inner bwrap the host
+        ``/proc`` as a read-only bind; the inner bwrap then cannot write its ``uid_map``
+        and the nested probe fails with "setting up uid map: Read-only file system" on a
+        host that is configured correctly.  Mocked ``subprocess.run`` can never surface
+        that, so the argv itself is the assertion — and it must mirror the real wrapper
+        in :mod:`parrot.sdd.scripts.worktree_environment`, which passes ``--proc`` too.
+        """
+        monkeypatch.setattr(doctor.sys, "platform", "linux")
+        monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/bwrap")
+        seen: list[list[str]] = []
+
+        def fake_run(cmd, **kw):
+            seen.append(list(cmd))
+            return subprocess.CompletedProcess(cmd, 0, "ok\n", "")
+
+        monkeypatch.setattr(doctor.subprocess, "run", fake_run)
+        doctor._check_bwrap_sandbox()
+
+        assert len(seen) == 2, "expected a single-level and a nested probe"
+        single, nested = seen
+        assert _proc_flag_count(single) == 1
+        # The nested probe spawns bwrap twice; each level needs its own fresh procfs.
+        assert nested.count("/usr/bin/bwrap") == 2
+        assert _proc_flag_count(nested) == 2
 
     def test_all_ok(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(doctor.sys, "platform", "linux")
