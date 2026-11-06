@@ -40,16 +40,17 @@
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: creates load_registry(ref=) and VitestAdapter._contained_cwd in runners/registry.py and runners/vitest.py",
-      "file": "sdd/tasks/active/TASK-5292-registry-trusted-ref-cwd-containment.md",
+      "file": "sdd/tasks/completed/TASK-5292-registry-trusted-ref-cwd-containment.md",
       "feature_id": "FEAT-834",
       "feature": "runners-registry-fixes",
       "spec": "sdd/specs/runners-registry-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "assigned_to": null,
       "started_at": "2026-11-06T23:48:45+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-06T23:50:01+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5293",
