@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-823 — Close the `--stale` work-loss holes in `remove_worktree`
 **Spec**: `sdd/specs/scripts-remove-worktree-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5242
@@ -377,9 +377,45 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-Record the `check_asset_sync.py --check` exit code here.
+**Completed by**: Claude Opus 5.5 (/sdd-fix, actor agent:sdd-fix:118971f4)
+**Date**: 2026-11-06
+**Notes**: Three sources hand-edited, three shipped copies regenerated
+(+82/-8 across 6 files).
 
-**Deviations from spec**: none | describe if any
+`python scripts/sdd/check_asset_sync.py --check` → **exit 0** (measured
+directly, not through a pipe: `tail` was masking the real status). Before
+`--write` it reported all three copies `diverged`, which confirms the
+regeneration was actually needed and actually ran.
+
+The `FILL IN` (the section heading) resolved as a retitle: **"Two kinds of
+leftovers" → "Kinds of leftovers"**, applied identically to both long twins and
+verified with a `diff` of the changed region — the section still opens with the
+two-row registered/orphan table, so the original distinction is intact, but it
+no longer claims to describe only two things when four orphan shapes follow.
+
+Content written from the **implemented** strings, not the blueprint's intent —
+`grep`-ed out of the final `remove_worktree.py` after TASK-5242 closed. That is
+why the deregistered-checkout row documents the unknown-state refusal: TASK-5242's
+fail-closed decision means a checkout whose `git status` cannot run is refused
+rather than read as clean, and an operator needs to know that is deliberate.
+
+**Deviation from this task's own file table**: it listed
+`packages/ai-parrot/src/parrot/sdd/_assets/manifest.json` as MODIFY, and it was
+**not** modified. `--write` regenerates all 88 assets plus the manifest, but the
+manifest records asset names and paths, and this change adds and removes none —
+so it came out byte-identical. Six files changed, not seven. The Complexity
+Contract's `targets` still matches the table as authored; the over-declaration
+is recorded here rather than silently dropped.
+
+**Verification evidence**
+
+- `pytest packages/ai-parrot/tests/sdd/test_no_repo_script_refs.py
+  packages/ai-parrot/tests/sdd/test_installer.py -q` → **78 passed**.
+- `git status --porcelain` after `--write` showed exactly the 3 sources and
+  their 3 generated copies — no unrelated asset drift swept in, which was the
+  blueprint's stated stop condition.
+- No file under `_assets/` was opened for editing; all three changed solely via
+  `--write`.
+
+**Deviations from spec**: none. Spec §3 Module 5's source/generated split was
+followed exactly.

@@ -103,7 +103,11 @@ POST body ──→├─ translate_form ───────┤──→ read_
                                                └─ json.loads → dict
 ```
 
-### AMENDMENT (2026-11-06, after TASK-5239) — the call-site seam is wrong
+### AMENDMENT 1 (2026-11-06, after TASK-5239) — the call-site seam is wrong
+
+> **Its diagnosis stands; its recommendation is SUPERSEDED by AMENDMENT 2
+> below. Do not implement the `client_max_size` design described here — it
+> cannot work. Read AMENDMENT 2 first.**
 
 Implementing TASK-5240 against this design produced **180 failures across 26
 test files** in `packages/parrot-formdesigner/tests` (baseline on the same tree:
@@ -138,6 +142,83 @@ TASK-5239 (the `a2ui_wire` primitives) is unaffected and is merged on this
 branch: `OverSizedBody`, `read_capped_body`, `read_capped_json`,
 `oversized_json_response`, `oversized_a2ui_response`, `is_a2ui_content_type`
 and `A2UI_MAX_SCHEMA_DEPTH` are what either design needs.
+
+
+### AMENDMENT 2 (2026-11-06, implementing TASK-5240/5241) — the seam that works
+
+AMENDMENT 1's diagnosis of the call-site seam is correct and stands. Its
+*recommendation* — bound the body via the application's `client_max_size`, set
+from `api/routes.py` — was implemented against and **does not work**:
+
+- `client_max_size` is a constructor-only kwarg of `web.Application`, and a
+  **sub-application's value is ignored entirely**: only the root app's counts,
+  because the request object is built by the root app's `_make_request` before
+  routing. Probed directly: root app at its default cap, subapp built with
+  `client_max_size=10`, a 500-byte body (plain *and* chunked) → `200`, not
+  `413`.
+- `setup_form_api()` is handed an app it does not own, so the only way to make
+  that kwarg bite would be mutating the host navigator app's limit globally —
+  which would also cap unrelated routes, including the 25 MB session-file
+  uploads (FEAT-643).
+
+**The seam that does work is the same mechanism, one level down: the
+*per-request* cap.** `aiohttp.web_request.BaseRequest._client_max_size` is
+
+- a plain per-request attribute, listed in `BaseRequest.ATTRS`, so aiohttp's
+  own `__setattr__` guard permits assigning it;
+- read by `BaseRequest.read()` on **every** call, which accumulates the body
+  and raises `web.HTTPRequestEntityTooLarge` as soon as the bytes read so far
+  exceed it — *before* any parsing, and counting actual bytes rather than
+  trusting `Content-Length`, so a chunked body is covered. `.text()` and
+  `.json()` both go through `read()`, so they inherit the cap.
+
+Verified against aiohttp 3.14.5 end to end, through a real `TestServer`: under
+cap → 200; over cap with `Content-Length` → 413; over cap chunked, with the
+server asserting it saw `content_length is None` → 413.
+
+**Implemented design** (supersedes §2's call-site migration and §3 Module 1):
+
+- `a2ui_wire.apply_body_cap(request, *, limit=None) -> int` assigns the
+  per-request cap and returns the cap in force. It only ever *lowers* the
+  limit, so a host app configured stricter than us keeps its value, and the
+  returned number is what the 413 echoes as `max_bytes`.
+- Each of the six sites keeps `await request.json()` verbatim and adds
+  `except web.HTTPRequestEntityTooLarge:` ahead of its existing
+  `JSONDecodeError` branch. **No call site changes shape**, so none of the ~30
+  `MagicMock(spec=web.Request)` builders that defeated the first attempt is
+  touched.
+- `a2ui_wire.oversized_response(request, *, limit, surface_id=None, message=…)`
+  picks the 413 shape from the request headers alone (`is_a2ui_content_type`),
+  since the body does not exist at that point, and falls back to the plain
+  shape when the optional `parrot.outputs.a2ui` extra is absent, so it never
+  raises.
+- A middleware scoped to the six routes was considered and rejected: the A2UI
+  envelope needs `form.form_uid`, which only the handler has, and matching
+  `request.match_info.route.resource` against the resources registered in
+  `setup_form_api` is a coupling that silently stops capping when a route is
+  renamed.
+
+**Pre-handler reads were checked**, because `read()` caches into `_read_bytes`
+and enforces the cap only on the *first* read — anything reading the body
+before the handler would make `apply_body_cap` a silent no-op. Neither
+decorator wrapping these routes does: navigator-auth's `is_authenticated`
+(`decorators.py:179`) works from headers/session, and `user_session`
+(`decorators.py:117`) only calls `get_session()`. The body reads in
+navigator-auth are all inside its own login/OAuth/SAML handlers, not in our
+path.
+
+**TASK-5239 fallout.** `OverSizedBody`, `read_capped_body` and
+`read_capped_json` were built for the abandoned stream-reading seam and no
+handler calls them, so TASK-5240 removes them rather than shipping dead public
+API (repo convention: hard cuts for internal API with no external consumers).
+The rest of TASK-5239 — `oversized_json_response`, `oversized_a2ui_response`,
+`is_a2ui_content_type`, `A2UI_MAX_SCHEMA_DEPTH` — is what the final design
+uses.
+
+**AC3 reads differently under this design** and is satisfied in substance: the
+handlers still call `request.json()`, but never before their cap is bound, and
+the cap now fires *during* the read rather than after it. AC1, AC2 and AC4–AC9
+are unchanged and met.
 
 ### Integration Points
 
