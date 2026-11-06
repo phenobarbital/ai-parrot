@@ -145,7 +145,9 @@ A sibling defect — a task-declared `parrot e2e run` Validation Command yields 
 - **Shared files**: `packages/ai-parrot/tests/flows/dev_loop/test_scope/test_planner.py` (M1, M3).
 - **Exclusive resources**: none.
 
-## Validation Contract
+## Validation
+
+### Validation Contract
 
 tests:
 - packages/ai-parrot/tests/flows/dev_loop/test_scope/test_planner.py
@@ -186,11 +188,11 @@ Verified against `origin/dev` @ `fa06da14ad`.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:bdf3de25cd174414b03bbc54d4cf90ae1c6c240240a94691c81ccaab65d15c16 evaluation_digest=sha256:36245027c0390e7a2290beed5e481df26dc563661751cfc0c568956c6d931f00 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:aeb469de39f8eca7d8f569073c4160e72ef620a0d38676fb1acc17e9d7689027 evaluation_digest=sha256:1c66d2c8a36a5b5c15beb72bc557ac66f181544df68411574d1afac12cff05a6 rules_version=1 status=pass -->
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:bdf3de25cd174414b03bbc54d4cf90ae1c6c240240a94691c81ccaab65d15c16 evaluation_digest=sha256:36245027c0390e7a2290beed5e481df26dc563661751cfc0c568956c6d931f00 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:aeb469de39f8eca7d8f569073c4160e72ef620a0d38676fb1acc17e9d7689027 evaluation_digest=sha256:1c66d2c8a36a5b5c15beb72bc557ac66f181544df68411574d1afac12cff05a6 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -247,10 +249,10 @@ Coverage:
       "path": "/tmp/claude-1000/-home-jesuslara-proyectos-ai-parrot/e372b12e-453e-40d3-b10e-8ad15a64607e/scratchpad/dev-clone/sdd/specs/test-scope-planner-fixes.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:36245027c0390e7a2290beed5e481df26dc563661751cfc0c568956c6d931f00",
+  "evaluation_digest": "sha256:1c66d2c8a36a5b5c15beb72bc557ac66f181544df68411574d1afac12cff05a6",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:bdf3de25cd174414b03bbc54d4cf90ae1c6c240240a94691c81ccaab65d15c16",
+  "input_digest": "sha256:aeb469de39f8eca7d8f569073c4160e72ef620a0d38676fb1acc17e9d7689027",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
