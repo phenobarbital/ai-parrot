@@ -100,7 +100,7 @@
       "feature_id": "FEAT-820",
       "feature": "fixgroup-d188effba3ca",
       "spec": "sdd/specs/fixgroup-d188effba3ca.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -109,7 +109,7 @@
       "parallel": true,
       "parallelism_notes": "Modifies the same file as TASK-5237 (tests/sdd_scripts/test_worktree_sync.py); also calls _as_primary from TASK-5235, reached transitively through TASK-5236.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T02:04:08.061217+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5238-abort-failure-cli-exit-mapping-tests.md"
     }
