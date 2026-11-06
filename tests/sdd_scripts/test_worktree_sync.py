@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from parrot.sdd.scripts import native_claude_sandbox, worktree_sync
+from parrot.sdd.scripts import native_claude_sandbox, remove_worktree, worktree_sync
 
 #: The host PATH captured at import, before any test's gh stub narrows PATH to ``<tmp>:/usr/bin``.
 _HOST_PATH = os.environ.get("PATH", "")
@@ -831,3 +831,108 @@ def test_host_guard_still_refuses_untracked_file(tmp_path: Path, monkeypatch: py
 
     assert raised.value.exit_code == worktree_sync.EXIT_DIRTY
     assert not (feature / "base.txt").exists()
+
+
+# --- FEAT-820 / TASK-5235: target and base-branch resolution ---------------------------------------
+
+
+def _as_primary(monkeypatch: pytest.MonkeyPatch, primary: Path) -> None:
+    """Point worktree discovery at a disposable clone instead of the real repository.
+
+    ``discover()`` runs ``git worktree list`` with ``cwd=_root()`` and scans
+    ``_root()/.claude/worktrees`` for orphans, and ``_root()`` memoises into the module
+    global ``remove_worktree._ROOT``. Both are redirected so ``resolve_target`` can only
+    ever see ``primary``'s own worktrees.
+    """
+    monkeypatch.setattr(remove_worktree, "_ROOT", primary)
+    monkeypatch.chdir(primary)
+
+
+def test_resolve_target_feat_id_and_ambiguity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """One match resolves; an ambiguous substring and the primary checkout both exit 2."""
+    _origin, primary, feature = _repository(tmp_path)
+    second = tmp_path / "second"
+    _run(primary, "worktree", "add", "-b", "feat-FEAT-998-sync-extra", str(second), "dev")
+    _as_primary(monkeypatch, primary)
+
+    assert worktree_sync.resolve_target("feat-FEAT-999-sync") == feature.resolve()
+
+    with pytest.raises(worktree_sync.SyncError) as ambiguous:
+        worktree_sync.resolve_target("sync")
+
+    assert ambiguous.value.exit_code == worktree_sync.EXIT_TARGET
+    assert "target must resolve to one worktree" in str(ambiguous.value)
+    assert str(feature) in str(ambiguous.value)
+    assert str(second) in str(ambiguous.value)
+
+    with pytest.raises(worktree_sync.SyncError) as primary_refused:
+        worktree_sync.resolve_target("dev")
+
+    assert primary_refused.value.exit_code == worktree_sync.EXIT_TARGET
+    assert "registered non-primary linked worktree" in str(primary_refused.value)
+
+
+def test_orphan_and_mismatched_git_root_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An orphan directory and a Git-top-level mismatch exit 2 with the primary untouched."""
+    _origin, primary, _feature = _repository(tmp_path)
+    orphan = primary / ".claude" / "worktrees" / "orphan-dir"
+    orphan.mkdir(parents=True)
+    # A registered worktree that is really a subdirectory of an unrelated repository: its own
+    # .git link is gone, so `rev-parse --show-toplevel` resolves to `outer`, not to the
+    # registered path.
+    outer = tmp_path / "outer"
+    outer.mkdir()
+    subprocess.run(["git", "init", "-q", str(outer)], check=True, capture_output=True, text=True)
+    foreign = outer / "foreign"
+    _run(primary, "worktree", "add", "-b", "feat-FEAT-997-foreign", str(foreign), "dev")
+    (foreign / ".git").unlink()
+    _as_primary(monkeypatch, primary)
+    before = (
+        _run(primary, "rev-parse", "HEAD"),
+        _run(primary, "status", "--porcelain"),
+        _refs(primary),
+        _run(primary, "config", "--list"),
+    )
+
+    with pytest.raises(worktree_sync.SyncError) as orphan_refused:
+        worktree_sync.resolve_target("orphan-dir")
+
+    assert orphan_refused.value.exit_code == worktree_sync.EXIT_TARGET
+    assert "registered non-primary linked worktree" in str(orphan_refused.value)
+
+    with pytest.raises(worktree_sync.SyncError) as mismatched:
+        worktree_sync.resolve_target("feat-FEAT-997-foreign")
+
+    assert mismatched.value.exit_code == worktree_sync.EXIT_TARGET
+    assert "Git top-level does not match" in str(mismatched.value)
+
+    assert (
+        _run(primary, "rev-parse", "HEAD"),
+        _run(primary, "status", "--porcelain"),
+        _refs(primary),
+        _run(primary, "config", "--list"),
+    ) == before
+
+
+def test_base_branch_from_index_and_brief(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The per-spec index, a brief's frontmatter and the --base override resolve in precedence order."""
+    _origin, primary, feature = _repository(tmp_path)
+    index = feature / "sdd" / "tasks" / "index"
+    index.mkdir(parents=True)
+    (index / "sync.json").write_text(
+        json.dumps({"feature": "sync", "base_branch": "staging", "tasks": []}), encoding="utf-8"
+    )
+
+    assert worktree_sync.resolve_base_branch(feature, None) == "staging"
+    assert worktree_sync.resolve_base_branch(feature, "dev") == "dev"
+
+    brief_worktree = tmp_path / "widget"
+    _run(primary, "worktree", "add", "-b", "fix-ABC-1-widget", str(brief_worktree), "dev")
+    briefs = brief_worktree / "sdd" / "briefs"
+    briefs.mkdir(parents=True)
+    (briefs / "widget.brief.md").write_text(
+        "---\ntype: hotfix\nbase_branch: main\n---\n\n# Brief\n", encoding="utf-8"
+    )
+
+    assert worktree_sync._slug_candidates(brief_worktree) == ["1-widget", "widget"]
+    assert worktree_sync.resolve_base_branch(brief_worktree, None) == "main"
