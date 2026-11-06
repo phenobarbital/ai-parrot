@@ -1,4 +1,5 @@
 """Shared fixtures for the vocabulary-store tests (FEAT-824)."""
+
 from __future__ import annotations
 
 import os

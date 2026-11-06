@@ -1,4 +1,5 @@
 """Golden Turtle sanity checks — no rdflib required (FEAT-824 TASK-5255)."""
+
 from __future__ import annotations
 
 import re
