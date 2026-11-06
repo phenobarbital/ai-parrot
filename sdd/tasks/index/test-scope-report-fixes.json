@@ -47,7 +47,7 @@
       "feature_id": "FEAT-830",
       "feature": "test-scope-report-fixes",
       "spec": "sdd/specs/test-scope-report-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -55,8 +55,9 @@
       "parallelism_notes": "no dependency: owns contract.py + select.py and their tests exclusively; no shared files with TASK-5273/5274",
       "assigned_to": "claude-session-sdd-fix-c0b83d30",
       "started_at": "2026-11-06T23:19:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5272-directory-operands.md"
+      "completed_at": "2026-11-06T23:21:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5272-directory-operands.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5273",
@@ -65,7 +66,7 @@
       "feature_id": "FEAT-830",
       "feature": "test-scope-report-fixes",
       "spec": "sdd/specs/test-scope-report-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -73,8 +74,9 @@
       "parallelism_notes": "no dependency: owns green_cache.py, select_tests.py, background.py and their tests; creates namespace_for used by TASK-5275's docs",
       "assigned_to": "claude-session-sdd-fix-c0b83d30",
       "started_at": "2026-11-06T23:19:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5273-one-cache-namespace.md"
+      "completed_at": "2026-11-06T23:21:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5273-one-cache-namespace.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5274",
@@ -83,7 +85,7 @@
       "feature_id": "FEAT-830",
       "feature": "test-scope-report-fixes",
       "spec": "sdd/specs/test-scope-report-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -91,13 +93,14 @@
       "parallelism_notes": "no dependency: owns report.py, baseline.py and their tests; independent of the namespace and operand changes",
       "assigned_to": "claude-session-sdd-fix-c0b83d30",
       "started_at": "2026-11-06T23:19:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5274-cached-count-baseline.md"
+      "completed_at": "2026-11-06T23:21:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5274-cached-count-baseline.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5275",
       "slug": "docs-green-cache",
-      "title": "Documentation \u2014 green cache depth-1 limit, namespace and file name",
+      "title": "Documentation — green cache depth-1 limit, namespace and file name",
       "feature_id": "FEAT-830",
       "feature": "test-scope-report-fixes",
       "spec": "sdd/specs/test-scope-report-fixes.spec.md",
