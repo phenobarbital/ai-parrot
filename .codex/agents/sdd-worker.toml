@@ -74,7 +74,7 @@ Feature mode:
 4. The host operator synchronizes the base branch before worker launch. Sandbox
    workers use `sync-base --cherry-pick <sha>` only for a needed base fix; they
    never fetch, pull, push, or change Git configuration.
-5. Create or reuse the feature worktree under .claude/worktrees/.
+5. Create or reuse the feature worktree under the worktree root (default .parrot/worktrees/).
 6. Inside the worktree, on the feature branch, mark pending tasks in progress
    in the per-spec index and commit only that index change. Never write task
    state on the base branch: an abandoned run would strand the tasks

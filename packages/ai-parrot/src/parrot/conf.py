@@ -930,13 +930,12 @@ FLOW_MAX_CONCURRENT_RUNS: int = config.getint("FLOW_MAX_CONCURRENT_RUNS", fallba
 # comments / attachments / transitions. Empty string by default; downstream
 # code MUST tolerate the empty default (no error at import time).
 FLOW_BOT_JIRA_ACCOUNT_ID: str = config.get("FLOW_BOT_JIRA_ACCOUNT_ID", fallback="")
-# Absolute path under which feature worktrees are created.
-# Defaults to BASE_DIR/.claude/worktrees so the location is deterministic
-# regardless of the process's launch directory (FEAT-253 G1).
-# A relative value from the environment is joined onto BASE_DIR;
-# an absolute value is honored verbatim (R1 backward-compat).
-_wt: str = config.get("WORKTREE_BASE_PATH", fallback=str(BASE_DIR / ".claude/worktrees"))
-WORKTREE_BASE_PATH: str = os.path.normpath(_wt) if os.path.isabs(_wt) else os.path.normpath(str(BASE_DIR / _wt))
+# Absolute path under which feature worktrees are created (FEAT-802: one resolver,
+# parrot.sdd.config.worktree_root). Default BASE_DIR/.parrot/worktrees; a relative
+# WORKTREE_BASE_PATH joins BASE_DIR, an absolute one is honored verbatim (FEAT-253 G1).
+from parrot.sdd.config import worktree_root as _worktree_root  # noqa: E402 -- pydantic-only module, no cycle
+
+WORKTREE_BASE_PATH: str = str(_worktree_root(BASE_DIR, override=config.get("WORKTREE_BASE_PATH", fallback=None)))
 # FEAT-554: sdd-coder token telemetry. Master switch: False means no budget
 # scope is bound, no rows are written and no new payload is produced.
 DEV_LOOP_CODER_TELEMETRY: bool = config.getboolean("DEV_LOOP_CODER_TELEMETRY", fallback=False)
@@ -972,14 +971,10 @@ DEV_LOOP_PLAN_LLM: str = config.get("DEV_LOOP_PLAN_LLM", fallback="")
 # must not import dev_loop). Each entry may be an "owner/name" slug or a JSON
 # object string; an empty list disables repo provisioning.
 DEV_LOOP_REPOS: list[str] = config.getlist("DEV_LOOP_REPOS", fallback=[]) or []
-# Absolute path for dev-loop clones (FEAT-253 G1).
-# Defaults to BASE_DIR/.claude/worktrees/repos (under WORKTREE_BASE_PATH) so
-# the dispatcher's cwd-safety guard (_enforce_cwd_under_worktree_base) passes.
+# Absolute path for dev-loop clones (FEAT-253 G1). Defaults to <WORKTREE_BASE_PATH>/repos so the
+# dispatcher's cwd-safety guard (_enforce_cwd_under_worktree_base) passes.
 # Same relative→join / absolute→verbatim rule as WORKTREE_BASE_PATH.
-_repos: str = config.get(
-    "DEV_LOOP_REPO_BASE_PATH",
-    fallback=str(BASE_DIR / ".claude/worktrees/repos"),
-)
+_repos: str = config.get("DEV_LOOP_REPO_BASE_PATH", fallback=f"{WORKTREE_BASE_PATH}/repos")
 DEV_LOOP_REPO_BASE_PATH: str = (
     os.path.normpath(_repos) if os.path.isabs(_repos) else os.path.normpath(str(BASE_DIR / _repos))
 )

@@ -179,8 +179,8 @@ into atomic, testable, assignable tasks. Must run on the spec's `base_branch`
    `**Feature**: FEAT-<NNN> — <Title>`) and create/update the per-spec index
    `sdd/tasks/index/<feature>.json`.
 6. Commit task files + index to `base_branch`.
-7. Create the feature worktree:
-   `git worktree add -b feat-<FEAT-ID>-<slug> .claude/worktrees/feat-<FEAT-ID>-<slug> HEAD`.
+7. Ensure the feature worktree:
+   `parrot sdd worktree ensure --slug <slug> --feature-id FEAT-<FEAT-ID>`.
 
 **Per-spec index schema** (header cached from spec frontmatter; `tasks[]` local
 to the feature):
@@ -344,7 +344,7 @@ approved. The agents under `.claude/agents/`:
 └──────────────────────────────────────┬───────────────────────────────────┘
                                         │ spec approved + tasks committed
 ┌─ EXECUTE (in worktree) ───────────────▼───────────────────────────────────┐
-│ cd .claude/worktrees/feat-071-<slug>                                      │
+│ cd "$WORKTREES_DIR/feat-071-<slug>"                                       │
 │ /sdd-start TASK-001  → implement → commit  (repeat per task, deps honored) │
 │        … or: parrot sdd launch worker FEAT-071 --tmux (unattended)     │
 │        … or: claude --agent sdd-autopilot (worker→review→QA→done→pr-review)│
@@ -374,7 +374,7 @@ Concrete sequence:
 3. **`/sdd-tojira FEAT-071 --with-subtasks`** *(optional)* — pushes the spec to
    Jira and writes the `jira:` key back so `/sdd-done` can resolve it later.
 4. **`/sdd-task …spec.md`** — decomposes into tasks on `dev`, commits the
-   index + task files, creates `.claude/worktrees/feat-071-<slug>`.
+   index + task files, creates the feature worktree under the worktree root (default `.parrot/worktrees/`, or `WORKTREE_BASE_PATH`).
 5. **Implement** — inside the worktree, `/sdd-start TASK-001 … TASK-00N` (or
    `sdd-worker` / `sdd-autopilot`). Each task verifies its contract, writes
    code, tests, commits.

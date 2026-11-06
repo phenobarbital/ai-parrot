@@ -240,6 +240,7 @@ def status(path_: Path | None, as_json: bool) -> None:
 VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
     "worktree": {
         "ensure": ("ensure_worktree", (), "Create or reuse the feature/hotfix worktree (idempotent)."),
+        "root": ("worktree_root", (), "Print the resolved worktree root."),
         "status": ("worktree_status", (), "Discover SDD worktrees and report task state and health."),
         "guard": ("worktree_environment", (), "Serve the PreToolUse shared-environment guard (--hook)."),
         "baseline": (

@@ -74,8 +74,10 @@ def test_edited_file_overwritten_by_default_kept_with_keep_edits(empty_repo: Pat
     install_sdd_integration(empty_repo)
     target = empty_repo / _claude_targets()[0]
     target.write_text("user edit\n")
-    assert any(a.startswith("warning:") and str(_claude_targets()[0]) in a
-               for a in install_sdd_integration(empty_repo, keep_edits=True))
+    assert any(
+        a.startswith("warning:") and str(_claude_targets()[0]) in a
+        for a in install_sdd_integration(empty_repo, keep_edits=True)
+    )
     assert target.read_text() == "user edit\n"
     uninstall_sdd_integration(empty_repo, keep_edits=True)
     assert target.read_text() == "user edit\n"
@@ -327,7 +329,9 @@ def _hook_of(repo: Path, rel: str = WORKER) -> str:
 
     def walk(node: object) -> None:
         if isinstance(node, dict):
-            if isinstance(node.get("command"), str) and ("worktree guard" in node["command"] or "worktree_environment" in node["command"]):
+            if isinstance(node.get("command"), str) and (
+                "worktree guard" in node["command"] or "worktree_environment" in node["command"]
+            ):
                 found.append(node["command"])
             for value in node.values():
                 walk(value)
@@ -516,12 +520,13 @@ def _ignored(repo: Path, rel: str) -> bool:
     return subprocess.run(["git", "check-ignore", "-q", rel], cwd=repo).returncode == 0
 
 
-def test_gitignore_block_ignores_worktrees_and_parrot_state(empty_repo: Path) -> None:
+def test_gitignore_block_ignores_worktrees_and_parrot_state(empty_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """rev 0.8 C29: `parrot sdd run` creates .parrot/ (ledger index); the managed block ignores it, like the
     claude/codex/google installers do, so a repo using only the SDD flow keeps a clean primary checkout."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
     install_sdd_integration(empty_repo)
     assert _ignored(empty_repo, ".parrot/ledger/index.db")
-    assert _ignored(empty_repo, ".claude/worktrees/feat-x/README.md")
+    assert _ignored(empty_repo, ".parrot/worktrees/feat-x/README.md")
     assert not _ignored(empty_repo, "sdd/config.json")
 
 
@@ -600,6 +605,131 @@ def test_sdd_uninstall_strips_only_receipt_ledger_events(empty_repo: Path) -> No
     for event in recorded:
         hook = empty_repo / ".git/hooks" / event
         assert not hook.exists() or "# >>> parrot-ledger >>>" not in hook.read_text()
+
+
+# --- FEAT-802 TASK-5179: resolved-root ignore rule + legacy-worktree refusal ----------------------------------
+
+
+def test_gitignore_literal_escapes_metacharacters() -> None:
+    from parrot.sdd.installer import _gitignore_literal
+
+    assert _gitignore_literal("a\\b*c?d[e]") == "a\\\\b\\*c\\?d\\[e]"
+    assert _gitignore_literal("!wt") == "\\!wt"
+    assert _gitignore_literal("#wt") == "\\#wt"
+    assert _gitignore_literal("wt  ") == "wt\\ \\ "
+    assert _gitignore_literal(".parrot/worktrees") == ".parrot/worktrees"
+
+
+def test_gitignore_block_resolved_root(
+    empty_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """AC7: anchored literal rule for in-repo roots (overrides included), none for external roots, an error for
+    the repository root itself; unrelated managed rules always survive."""
+    from parrot.sdd.config import SddConfigError
+    from parrot.sdd.installer import GITIGNORE_BLOCK, gitignore_block
+
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    gitignore = empty_repo / ".gitignore"
+
+    def unrelated_rules_present(text: str) -> bool:
+        return all(rule in text for rule in ("\n.parrot/\n", "\n/logs/\n", "\n/outputs/\n", "\nenv/**/.env\n"))
+
+    # default root
+    install_sdd_integration(empty_repo)
+    text = gitignore.read_text()
+    assert "\n/.parrot/worktrees/\n" in text and unrelated_rules_present(text)
+
+    # relative override with a space and gitignore metacharacters
+    monkeypatch.setenv("WORKTREE_BASE_PATH", "wt dir/[x]")
+    install_sdd_integration(empty_repo)
+    text = gitignore.read_text()
+    assert "\n/wt dir/\\[x]/\n" in text and unrelated_rules_present(text)
+    assert text.count(GITIGNORE_BEGIN) == 1
+    (empty_repo / "wt dir/[x]/feat").mkdir(parents=True)
+    (empty_repo / "wt dir/[x]/feat/a.txt").write_text("x")
+    (empty_repo / "wt dir/x/feat").mkdir(parents=True)
+    (empty_repo / "wt dir/x/feat/a.txt").write_text("x")
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"], cwd=empty_repo, capture_output=True, text=True
+    ).stdout
+    assert "[x]/feat/a.txt" not in status and "wt dir/x/feat/a.txt" in status
+
+    # absolute in-repository override → still a repository-relative rule, never an absolute path
+    monkeypatch.setenv("WORKTREE_BASE_PATH", str(empty_repo / "abs-wt"))
+    install_sdd_integration(empty_repo)
+    text = gitignore.read_text()
+    assert "\n/abs-wt/\n" in text and str(empty_repo) not in text and unrelated_rules_present(text)
+    assert _ignored(empty_repo, "abs-wt/feat-x/README.md")
+
+    # external root → no worktree rule at all
+    outside = tmp_path_factory.mktemp("outside-wt")
+    monkeypatch.setenv("WORKTREE_BASE_PATH", str(outside))
+    assert gitignore_block(empty_repo) == GITIGNORE_BLOCK
+    install_sdd_integration(empty_repo)
+    text = gitignore.read_text()
+    assert "SDD feature worktrees" not in text and str(outside) not in text and unrelated_rules_present(text)
+
+    # repository root itself → configuration error, nothing written
+    before = text
+    for value in (".", str(empty_repo)):
+        monkeypatch.setenv("WORKTREE_BASE_PATH", value)
+        with pytest.raises(SddConfigError):
+            gitignore_block(empty_repo)
+        with pytest.raises(SddConfigError):
+            install_sdd_integration(empty_repo)
+    assert gitignore.read_text() == before
+
+
+def _legacy_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A real repository with one worktree registered under .claude/worktrees/."""
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@x"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    (repo / "README.md").write_text("# legacy\n")
+    subprocess.run([*git, "add", "README.md"], check=True)
+    subprocess.run([*git, "commit", "-qm", "seed"], check=True)
+    subprocess.run([*git, "worktree", "add", "-q", "-b", "feat-1", ".claude/worktrees/feat-FEAT-1-x"], check=True)
+    return repo
+
+
+def test_install_refuses_legacy_worktrees(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """AC5: dry-run and real install both refuse with the recipe; nothing is written."""
+    from parrot.sdd.config import LegacyWorktreesError
+
+    repo = _legacy_repo(tmp_path, monkeypatch)
+    for dry_run in (True, False):
+        with pytest.raises(LegacyWorktreesError) as excinfo:
+            install_sdd_integration(repo, dry_run=dry_run)
+        message = str(excinfo.value)
+        assert message.startswith("error: SDD worktrees still live under .claude/worktrees/")
+        assert f"git -C {repo.resolve()} worktree repair" in message and "mv " in message
+    assert not (repo / ".gitignore").exists() and not (repo / "sdd").exists()
+
+    # an occupied destination → diagnostic without runnable moves, still LegacyWorktreesError
+    (repo / ".parrot/worktrees/feat-FEAT-1-x").mkdir(parents=True)
+    with pytest.raises(LegacyWorktreesError) as excinfo:
+        install_sdd_integration(repo)
+    message = str(excinfo.value)
+    assert "cannot generate a safe migration recipe" in message and "mv " not in message
+    assert not (repo / ".gitignore").exists() and not (repo / "sdd").exists()
+
+
+def test_install_cli_exit_1_on_legacy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """AC5: `parrot sdd install` (any host, --dry-run included) exits 1 and prints the recipe."""
+    from click.testing import CliRunner
+
+    from parrot.sdd.cli import sdd
+
+    repo = _legacy_repo(tmp_path, monkeypatch)
+    for extra in ([], ["--dry-run"], ["--host", "codex"]):
+        result = CliRunner().invoke(sdd, ["install", "--path", str(repo), *extra])
+        assert result.exit_code == 1, result.output
+        assert "worktree repair" in result.output
+    assert not (repo / ".gitignore").exists() and not (repo / "sdd").exists()
 
 
 # --- TASK-5118 (issue:80c5e6e510b2): worktree tests importing the main checkout -----------------------------

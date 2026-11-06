@@ -90,7 +90,7 @@ assistant turn (no markdown fences, no prose around it).
   "spec_path": "sdd/specs/<slug>.spec.md",
   "feat_id": "FEAT-130",
   "branch_name": "feat-130-<slug>",
-  "worktree_path": "/abs/.claude/worktrees/feat-130-<slug>",
+  "worktree_path": "<MAIN_ROOT>/.parrot/worktrees/feat-130-<slug>",
   "log_excerpts": ["...", "..."]
 }
 ```
@@ -104,7 +104,7 @@ shape and every run-labelling consumer falls back to ``jira_issue_key``):
   "spec_path": "sdd/specs/<slug>.spec.md",
   "feat_id": "",
   "branch_name": "hotfix-OPS-1234-<slug>",
-  "worktree_path": "/abs/.claude/worktrees/hotfix-OPS-1234-<slug>",
+  "worktree_path": "<MAIN_ROOT>/.parrot/worktrees/hotfix-OPS-1234-<slug>",
   "log_excerpts": ["...", "..."]
 }
 ```

@@ -260,7 +260,7 @@ After spec approval, automatically runs task decomposition.
 
 ```bash
 git worktree add -b feat-<FEAT-ID>-<slug> \
-  .claude/worktrees/feat-<FEAT-ID>-<slug> HEAD
+  .parrot/worktrees/feat-<FEAT-ID>-<slug> HEAD
 ```
 
 #### 7. Output & Handoff
@@ -271,16 +271,16 @@ git worktree add -b feat-<FEAT-ID>-<slug> \
    Jira: PROJ-123 — "Add OAuth 2.0 support for JiraToolkit"
    Spec: sdd/specs/jira-oauth.spec.md (committed to dev)
    Tasks: 4 tasks generated (committed to dev)
-   Worktree: .claude/worktrees/feat-071-jira-oauth
+   Worktree: .parrot/worktrees/feat-071-jira-oauth
 
    AC Coverage: 3/3 criteria mapped to tasks
 
    To execute autonomously:
-     cd .claude/worktrees/feat-071-jira-oauth
+     cd "$WORKTREES_DIR/feat-071-jira-oauth"
      claude --agent sdd-autopilot --verbose
 
    Or manually:
-     cd .claude/worktrees/feat-071-jira-oauth
+     cd "$WORKTREES_DIR/feat-071-jira-oauth"
      parrot sdd launch worker <FEAT-ID>
 ```
 
@@ -712,7 +712,7 @@ async def test_oauth_callback_invalid_state():
 /sdd-fromjira PROJ-123
 
 # Then walk away
-cd .claude/worktrees/feat-071-jira-oauth
+cd "$WORKTREES_DIR/feat-071-jira-oauth"
 claude --agent sdd-autopilot --verbose
 # ... coffee ...
 # Come back to a ready-to-review PR
@@ -725,7 +725,7 @@ claude --agent sdd-autopilot --verbose
 /sdd-fromjira PROJ-123
 
 # Run worker + reviewer only
-cd .claude/worktrees/feat-071-jira-oauth
+cd "$WORKTREES_DIR/feat-071-jira-oauth"
 parrot sdd launch worker <FEAT-ID>
 claude --agent code-reviewer -p "Review feat-071"
 
@@ -737,7 +737,7 @@ claude --agent code-reviewer -p "Review feat-071"
 ### Background Execution (tmux)
 
 ```bash
-cd .claude/worktrees/feat-071-jira-oauth
+cd "$WORKTREES_DIR/feat-071-jira-oauth"
 tmux new -s feat-071 \
   "claude --agent sdd-autopilot --verbose 2>&1 | tee .autopilot/full.log"
 # Ctrl+B, D to detach

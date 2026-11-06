@@ -103,16 +103,17 @@ def test_ledger_requires_dev() -> None:
     assert _meta(base_branch="dev", source={"type": "ledger", "ref": "ISSUE-1"}).base_branch == "dev"
 
 
-def test_worktree_naming_main_and_dev() -> None:
+def test_worktree_naming_main_and_dev(monkeypatch: pytest.MonkeyPatch) -> None:
     """Brief worktrees use branch-sensitive names and origin base refs."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
     main_plan = plan_brief_worktree(_meta())
     dev_plan = brief_worktree_plan(slug="fix-path-injection", key="cs-224", base_branch="dev")
 
     assert main_plan.name == "hotfix-cs-224-fix-path-injection"
-    assert main_plan.path == ".claude/worktrees/hotfix-cs-224-fix-path-injection"
+    assert main_plan.path == ".parrot/worktrees/hotfix-cs-224-fix-path-injection"
     assert main_plan.base_ref == "origin/main"
     assert dev_plan.name == "fix-cs-224-fix-path-injection"
-    assert dev_plan.path == ".claude/worktrees/fix-cs-224-fix-path-injection"
+    assert dev_plan.path == ".parrot/worktrees/fix-cs-224-fix-path-injection"
     assert dev_plan.base_ref == "origin/dev"
 
 

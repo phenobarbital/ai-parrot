@@ -6,7 +6,7 @@ description: |
   orchestrator (native haiku seat) or by the parrot-sdd-coder MCP server (nova / google-compat / codex seats).
 
   Examples:
-  Context: sdd-worker prepared .claude/worktrees/feat-FEAT-549-x--pool/TASK-3115-a1 for TASK-3115.
+  Context: sdd-worker prepared .parrot/worktrees/feat-FEAT-549-x--pool/TASK-3115-a1 for TASK-3115.
   user: "Implement sdd/tasks/active/TASK-3115-sdd-coder-models.md in this worktree."
   assistant: "I read the task, verify its Codebase Contract, write the blueprint files, run its tests, commit only the listed files, and emit the DevelopmentOutput JSON."
 model: haiku

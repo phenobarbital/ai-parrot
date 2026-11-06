@@ -48,7 +48,6 @@ GITIGNORE_BEGIN = "# >>> parrot sdd (managed) >>>"
 GITIGNORE_END = "# <<< parrot sdd (managed) <<<"
 GITIGNORE_BLOCK = (
     f"{GITIGNORE_BEGIN}\n"
-    "# SDD feature worktrees (parrot sdd worktree ensure)\n.claude/worktrees/\n"
     "# parrot's local state (ledger index, wiki store), ignored as parrot claude|codex|google install do\n.parrot/\n"
     "# Claude Code per-user settings (personal permissions written by parrot claude install)\n"
     ".claude/settings.local.json\n"
@@ -58,6 +57,71 @@ GITIGNORE_BLOCK = (
     "# parrot runtime output (OUTPUT_DIR at the project root: generated charts, files)\n/outputs/\n"
     f"{GITIGNORE_END}"
 )
+_WORKTREE_IGNORE_COMMENT = "# SDD feature worktrees (parrot sdd worktree ensure)"
+
+
+def worktree_root_scope(root: Path) -> tuple[str, str | None]:
+    """Classify ``worktree_root(root)``: ``("inside", rel)``, ``("external", None)`` or ``("repo-root", None)``.
+
+    Canonical paths are compared, so relative ``../`` overrides and symlinks classify like absolute paths.
+
+    Args:
+        root: Primary repository root.
+
+    Returns:
+        The scope and, for ``"inside"``, the repository-relative POSIX path of the resolved root.
+    """
+    from parrot.sdd.config import worktree_root
+
+    resolved, repo = worktree_root(root).resolve(), Path(root).resolve()
+    if resolved == repo:
+        return "repo-root", None
+    try:
+        rel = resolved.relative_to(repo)
+    except ValueError:
+        return "external", None
+    return "inside", rel.as_posix()
+
+
+def _gitignore_literal(rel: str) -> str:
+    """Escape gitignore metacharacters so ``/<rel>/`` matches only the literal directory.
+
+    Args:
+        rel: Repository-relative POSIX path.
+
+    Returns:
+        ``rel`` with ``\\``, ``*``, ``?``, ``[``, a leading ``!``/``#`` and trailing spaces backslash-escaped.
+    """
+    escaped = "".join(f"\\{ch}" if ch in "\\*?[" else ch for ch in rel)
+    if escaped[:1] in ("!", "#"):
+        escaped = f"\\{escaped}"
+    stripped = escaped.rstrip(" ")
+    return stripped + "\\ " * (len(escaped) - len(stripped))
+
+
+def gitignore_block(root: Path) -> str:
+    """The managed block for ``root``: the fixed rules plus the resolved in-repository worktree rule.
+
+    Args:
+        root: Primary repository root.
+
+    Returns:
+        The managed ``.gitignore`` block; an external worktree root gets no worktree rule.
+
+    Raises:
+        SddConfigError: the resolved worktree root is the repository itself.
+    """
+    from parrot.sdd.config import SddConfigError
+
+    scope, rel = worktree_root_scope(root)
+    if scope == "repo-root":
+        raise SddConfigError("WORKTREE_BASE_PATH resolves to the repository root itself; point it at a subdirectory")
+    if scope == "external" or rel is None:
+        return GITIGNORE_BLOCK
+    rule = f"{_WORKTREE_IGNORE_COMMENT}\n/{_gitignore_literal(rel)}/\n"
+    return GITIGNORE_BLOCK.replace(f"{GITIGNORE_BEGIN}\n", f"{GITIGNORE_BEGIN}\n{rule}", 1)
+
+
 #: rev 0.5 C23 — the shared ledger's union merge (FEAT-694), same marker pair as the .gitignore block.
 GITATTRIBUTES_BLOCK = (
     f"{GITIGNORE_BEGIN}\n"
@@ -615,7 +679,9 @@ def _host_installed(
     (a host installed before the receipt existed, or by hand, still shares the common assets).
     """
     return any(
-        e["hosts"] == [host] and (not recorded_only or e["target"] in receipt["files"]) and (root / e["target"]).is_file()
+        e["hosts"] == [host]
+        and (not recorded_only or e["target"] in receipt["files"])
+        and (root / e["target"]).is_file()
         for e in entries
     )
 
@@ -671,7 +737,9 @@ def plan_uninstall(root: Path, hosts: Sequence[str], *, keep_edits: bool = False
         elif set(entry["hosts"]) & set(remaining_hosts):
             plan.append(PlannedAction(action="keep-shared", target=target, note="still needed by another host"))
         else:
-            note = {"edited": "edited since parrot wrote it"}.get(state, "" if recorded else "not recorded in the receipt")
+            note = {"edited": "edited since parrot wrote it"}.get(
+                state, "" if recorded else "not recorded in the receipt"
+            )
             plan.append(PlannedAction(action="remove", target=target, note=note))
             removed.add(target)
     if "claude" in selected_hosts and "dangerous-actions" in receipt.get("settings_hooks", []):
@@ -800,14 +868,19 @@ def _seed_config(root: Path, seed: "SddConfig | None" = None) -> str:
 
 
 def _install_gitignore(root: Path) -> str:
-    """Upsert the managed ``GITIGNORE_BLOCK`` into ``<root>/.gitignore``, creating the file when it is missing.
+    """Upsert the managed ``gitignore_block(root)`` into ``<root>/.gitignore``, creating the file when it is missing.
 
-    The block covers SDD worktrees, parrot's local state, Claude Code's per-user settings, navconfig's
-    credential files and log directory, and parrot's runtime output. User lines around the block are kept.
+    The block covers the resolved SDD worktree root (when inside the repo), parrot's local state, Claude Code's
+    per-user settings, navconfig's credential files and log directory, and parrot's runtime output. User lines
+    around the block are kept.
+
+    Raises:
+        SddConfigError: the resolved worktree root is the repository itself.
     """
+    block = gitignore_block(root)
     path = root / ".gitignore"
     text = path.read_text(encoding="utf-8") if path.exists() else ""
-    updated = _upsert_marker_block(text, GITIGNORE_BLOCK, GITIGNORE_BEGIN, GITIGNORE_END)
+    updated = _upsert_marker_block(text, block, GITIGNORE_BEGIN, GITIGNORE_END)
     if updated == text:
         return ".gitignore — managed block up to date"
     path.write_text(updated, encoding="utf-8")
@@ -934,7 +1007,7 @@ def _editable_from_root(root: Path) -> list[str]:
 
 
 def worktree_test_isolation(root: Path, test_command: str | None) -> str | None:
-    """Why tests run inside ``.claude/worktrees/<feature>/`` may not exercise the worktree's own code, else None.
+    """Why tests run inside a feature worktree (``<worktree root>/<feature>/``) may not exercise the worktree's own code, else None.
 
     SDD runs each task's tests in a worktree, but the shared ``.venv`` usually has the project installed
     editable from the MAIN checkout, so pytest silently imports that copy; a virtual project
@@ -964,16 +1037,20 @@ def worktree_test_isolation(root: Path, test_command: str | None) -> str | None:
         logger.debug("worktree test isolation check skipped: %s", exc)
         return None
     if editable:
-        cause = (f"{', '.join(editable)} is installed editable from {root} in .venv, so pytest in a worktree "
-                 "imports the main checkout's code instead of the branch under test")
+        cause = (
+            f"{', '.join(editable)} is installed editable from {root} in .venv, so pytest in a worktree "
+            "imports the main checkout's code instead of the branch under test"
+        )
     elif virtual:
         cause = "this is a virtual project ([tool.uv] package = false), so pytest cannot import its own modules"
     else:
         cause = "pytest has no `pythonpath` setting, so tests in a worktree may import the main checkout's code"
     layout = "src" if (root / "src").is_dir() else "."
-    return (f"{cause}; add `pythonpath = [\"{layout}\"]` under [tool.pytest.ini_options] in pyproject.toml "
-            "(rootdir-relative, so each worktree tests its own code), or set sdd/config.json test_command to a "
-            "command that sets PYTHONPATH")
+    return (
+        f'{cause}; add `pythonpath = ["{layout}"]` under [tool.pytest.ini_options] in pyproject.toml '
+        "(rootdir-relative, so each worktree tests its own code), or set sdd/config.json test_command to a "
+        "command that sets PYTHONPATH"
+    )
 
 
 def _seed_id_ledger(root: Path) -> str | None:
@@ -1098,7 +1175,19 @@ def install_sdd_integration(
         ValueError: unknown host; ``SddConfigError`` (a ``ValueError``) for a malformed existing
             ``sdd/config.json``, raised before anything is written.
         RuntimeError: packaged manifest missing/unsupported.
+        LegacyWorktreesError: worktrees are still registered under .claude/worktrees/ (nothing is written).
     """
+    from parrot.sdd.config import LegacyWorktreesError, legacy_migration_recipe, legacy_worktrees
+
+    legacy = legacy_worktrees(root)
+    if legacy:
+        header = "error: SDD worktrees still live under .claude/worktrees/ — move them first:"
+        try:
+            lines = legacy_migration_recipe(root, legacy)
+        except ValueError as exc:
+            lines = [f"cannot generate a safe migration recipe: {exc}"]
+        raise LegacyWorktreesError("\n".join([header, *lines]))
+    gitignore_block(root)  # a repo-root WORKTREE_BASE_PATH raises SddConfigError before anything is written
     # PR #1746 review (C21): validate an existing sdd/config.json BEFORE planning or writing anything — a
     # malformed file raises SddConfigError (a ValueError; the CLI turns it into exit 1) and the target repo
     # is left untouched, in --dry-run too. Absent → defaults (no error).
