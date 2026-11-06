@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-822 — Enforce A2UI request body-size limits before parsing
 **Spec**: `sdd/specs/fixgroup-adbf411ace18.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5239
@@ -392,4 +392,73 @@ match a bare anchor. Do not touch the 15 out-of-scope `request.json()` sites.
 
 ## Completion Note
 
-<!-- filled at close -->
+**Status: done (verified).** Implemented 2026-11-06, commit `ca76b5eca2`.
+
+**Deviation from the blueprint — the seam changed twice.** This task's
+blueprint (replace each `await request.json()` with a stream-reading
+`read_capped_json`) was attempted first and reverted: it broke 180 tests
+across 26 files, because ~30 builders in this package construct requests as
+`MagicMock(spec=web.Request)` with `request.json` mocked and no usable
+`request.content`. Spec AMENDMENT 1 then recommended aiohttp's
+`client_max_size`; that was implemented against and **also does not work** —
+it is a constructor-only kwarg of `web.Application`, a sub-application's value
+is ignored (only the root app's counts), and `setup_form_api()` is handed an
+app it does not own. Probed directly: root app at its default cap, subapp
+built with `client_max_size=10`, 500-byte body plain *and* chunked → 200.
+
+**What shipped** is the same mechanism one level down, the *per-request* cap.
+`a2ui_wire.apply_body_cap(request)` lowers
+`BaseRequest._client_max_size` — a per-request attribute listed in
+`BaseRequest.ATTRS`, which `read()` enforces cumulatively as bytes arrive,
+raising `web.HTTPRequestEntityTooLarge` before any parse. `.json()` goes
+through `read()`, so every call site keeps `await request.json()` unchanged
+and only gains an `except` branch. Nothing reads the body before the handlers:
+navigator-auth's `is_authenticated` and `user_session` decorators work from
+headers/session only — checked, because `read()` caches into `_read_bytes` and
+enforces the cap on the *first* read alone, so an earlier read would have made
+the cap a silent no-op. Spec AMENDMENT 2 records all of this.
+
+**Files:** `api/a2ui_wire.py` (+`apply_body_cap`, `+oversized_response`,
+`+exceeds_json_depth`), `api/handlers.py` (six sites), and four test files.
+
+**TASK-5239 fallout:** `OverSizedBody`, `read_capped_body` and
+`read_capped_json` were shipped by TASK-5239 for the stream-reading seam this
+task abandoned. No handler calls them, so this task **removes** them rather
+than leaving dead public API behind. That is a deliberate hard cut, not a
+mistaken revert of a verified task; TASK-5239's other helpers
+(`oversized_json_response`, `oversized_a2ui_response`, `is_a2ui_content_type`,
+`A2UI_MAX_SCHEMA_DEPTH`) are exactly what the final design uses.
+
+**Committed together with TASK-5241** — both rewrite the same `translate_form`
+block (5240 the cap, 5241 the validation on top of it), so splitting the edit
+retroactively would have produced two commits that neither builds nor tests
+independently.
+
+**A middleware was considered and rejected:** the A2UI 413 envelope needs
+`form.form_uid`, which only the handler has, and matching
+`request.match_info.route.resource` against `setup_form_api`'s resources is a
+coupling that silently stops capping when a route is renamed.
+
+**Acceptance criteria:** AC1, AC2, AC4, AC5, AC6, AC8, AC9 met as written.
+AC3 ("no handler calls `request.json()` before its size cap") is met in
+substance under the new seam but not by its literal grep: the handlers do
+still call `request.json()`, never before the cap is bound, and the cap now
+fires *during* that read rather than after it. Flagged rather than quietly
+reinterpreted.
+
+**Validation:**
+- `pytest packages/parrot-formdesigner/tests/unit/api/test_a2ui_body_limits.py
+  test_translate_forms.py test_import_a2ui.py test_submit_a2ui.py -q` →
+  **60 passed**.
+- Full package suite → **4265 passed, 2 failed, 47 skipped**. Both failures
+  (`test_init_imports_metadata_only.py::test_metadata_attributes_exposed`,
+  `test_version_and_docs.py::test_version_bumped`) assert version `1.2.4`
+  against a package at `2.1.1`; identical on the base tree, not caused here.
+- `ruff check --fix` clean on all six changed files.
+
+**Evidence the bug is actually closed:** the chunked case is proved against a
+real aiohttp `TestServer`, and the test asserts the server saw
+`request.content_length is None` on that request — so it cannot pass for the
+wrong reason. The three legacy tests that drove 413 through `content_length=`
+were testing a fiction (a mocked request never reads a body) and now drive it
+through the exception aiohttp really raises.
