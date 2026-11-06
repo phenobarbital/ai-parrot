@@ -79,7 +79,7 @@ Each was re-checked against `origin/dev` @ `aa91d76896` (2026-11-07):
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:e392d392b792a9a0f13b774100fa39ac0a6e5c0b2e147589ee527db2763d6976 evaluation_digest=sha256:0fa74d052eec8c44b85ccb4f0afb7638ea9ae2d0b2951dbba6bed63d462b36cd rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:010017e79e7039af1bea7cff3aad45b76dc50998626371fca55e3f421487034d evaluation_digest=sha256:34ffe39755e762f892ef06eb99e1ae726f3ad75c7ac15eff603baea00c7cd86f rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -88,12 +88,13 @@ Each was re-checked against `origin/dev` @ `aa91d76896` (2026-11-07):
 Five independent, local corrections; no new subsystem.
 
 - **M1 directory operands.** `_normalize_pytest` raises `ValueError` when an operand's file part does not
-  end in `.py` (pure check, no filesystem). `check_task_graph` adds the error
-  `test-contract-directory-operand` when `(root / file_part).is_dir()`, checked before the existing
-  `test-contract-operand-missing` branch. `_declared_targets` drops a pytest operand whose file part is a
-  directory in the worktree, appending `"declared path is a directory, dropped: <operand>"`. The
-  `plan_tests` contract loop distinguishes a directory (`"contract operand is a directory, skipped: …"`)
-  from a missing file (existing note kept) — a defence for contracts cached before M1.
+  end in `.py` (pure check, no filesystem). Every contract reader goes through it —
+  `parse_spec_contract` (so `cache_test_contract` refuses to cache), `contract_from_index_header` (re-normalizes
+  each pytest block before the digest check) and `lift_schema1` — so `check_task_graph` already reports such a
+  header as `test-contract-malformed` with the operand in the message, and `plan_tests` never receives a
+  directory from a contract. No new lint code and no `plan_tests` change: both would be unreachable (rev 0.2).
+  `_declared_targets` drops a pytest operand whose file part is a directory in the worktree, appending
+  `"declared path is a directory, dropped: <operand>"`.
 - **M2 one namespace.** New `green_cache.namespace_for(*, feature_id, base_ref, contract)` returns
   `cache_namespace(feature_id=…, base_ref=…, contract_digest=contract.digest if contract is not None else "")`.
   `select_tests` and both supervisor sites call it, so "no contract" is `""` everywhere (the supervisor's
@@ -112,7 +113,7 @@ Five independent, local corrections; no new subsystem.
 select_tests.py ──┐                       ┌─→ green_cache.namespace_for ─→ cache_namespace
 background.py ────┴─→ plan_tests (select) ┤
                                           └─→ contract._normalize_pytest (operands)
-check_task_graph ──→ contract operand lint
+check_task_graph ──→ contract_from_index_header ─→ _normalize_pytest (test-contract-malformed)
 background.py ──→ report.append_cached ─→ report.render_markdown (union count)
 baseline.classify_failures ─→ _classify_group (PYTHONPATH) ; remove_baseline_checkout (no prune)
 ```
@@ -122,8 +123,8 @@ baseline.classify_failures ─→ _classify_group (PYTHONPATH) ; remove_baseline
 | Existing Component | Integration Type | Notes |
 |---|---|---|
 | `contract._normalize_pytest` | modifies | new `.py` rule beside the existing unsafe-operand checks |
-| `check_task_graph` contract lint | modifies | new finding code, before `test-contract-operand-missing` |
-| `select._declared_targets` / `plan_tests` | modifies | directory drop note; directory vs missing note |
+| `check_task_graph` contract lint | uses (unchanged) | surfaces the new `ValueError` as `test-contract-malformed` |
+| `select._declared_targets` | modifies | directory drop note (pytest only) |
 | `green_cache` | extends | `namespace_for` wraps `cache_namespace` |
 | `select_tests.main` / `BackgroundRunner` | uses | three call sites switch to `namespace_for` |
 | `report.render_markdown` | modifies | union count |
@@ -147,15 +148,14 @@ def namespace_for(*, feature_id: str, base_ref: str, contract: TestContract | No
 
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
-| M1: directory operands | yes | `.py` suffix rule; finding code `test-contract-directory-operand` (level error); note strings fixed in §2 | — |
+| M1: directory operands | yes | `.py` suffix rule + error message; declared-directory note string fixed in §2 | — |
 | M2: one cache namespace | yes | `namespace_for` signature in §2; `""` for no contract | — |
 | M3: cached union count | yes | one-line change, existing test asserts the string | — |
 | M4: baseline + base ref | yes | PYTHONPATH order and prune removal fixed in §2; `_default_base_ref(header) -> str` | — |
 | M5: doc | yes | two bullets in an existing section | — |
 
 ### Module 1: Directory operands
-- **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/contract.py`, `.../test_scope/select.py`,
-  `packages/ai-parrot/src/parrot/sdd/scripts/check_task_graph.py`
+- **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/contract.py`, `.../test_scope/select.py`
 - **Responsibility**: reject/flag/drop directory operands end to end.
 - **Depends on**: existing code only.
 - **Interface Skeleton**:
@@ -169,8 +169,6 @@ def namespace_for(*, feature_id: str, base_ref: str, contract: TestContract | No
               file part is not a ``.py`` file (a directory or suite is never a contract operand).
       """
   # modifies select.py:115 (inside _declared_targets) — no signature change
-  # modifies select.py:185 (inside plan_tests) — no signature change
-  # modifies check_task_graph.py:512 — new Finding(level="error", code="test-contract-directory-operand", ...)
   ```
 
 ### Module 2: One green-cache namespace
@@ -202,6 +200,10 @@ def namespace_for(*, feature_id: str, base_ref: str, contract: TestContract | No
   # select_tests.py (new helper; replaces the expression at select_tests.py:378)
   def _default_base_ref(index_header: Mapping[str, object]) -> str:
       """``origin/<base_branch>``; a missing, null or blank base_branch falls back to ``origin/dev``."""
+
+  # baseline.py (new private helper used by _classify_group, verified: baseline.py:140)
+  def _baseline_pythonpath(checkout: Path, src_dist: str) -> str:
+      """``checkout/packages/<src_dist>/src`` first, then every other existing ``packages/*/src``, sorted."""
   ```
 
 ### Module 5: Documentation
@@ -216,9 +218,8 @@ def namespace_for(*, feature_id: str, base_ref: str, contract: TestContract | No
 | Test | Module | Description |
 |---|---|---|
 | `test_contract.py` — directory operand rejected | M1 | `_normalize_pytest(["packages/ai-parrot/tests/flows"], [])` raises `ValueError` |
-| `test_check_task_graph.py` — directory contract operand | M1 | lint emits `test-contract-directory-operand` (error) for an existing directory |
+| `test_check_task_graph.py` — directory contract operand | M1 | a header whose pytest target is a directory lints as `test-contract-malformed` naming the operand |
 | `test_select.py` — declared directory dropped | M1 | `pytest <dir>` Validation Command yields no target and the note |
-| `test_select_contract_mode.py` — directory note | M1 | cached contract with a directory → "is a directory, skipped" note |
 | `test_green_cache.py` — `namespace_for` | M2 | equals `cache_namespace(..., contract_digest="")` for None and `contract.digest` otherwise |
 | `test_background_contract.py` — same namespace | M2 | supervisor namespace == `namespace_for` for a contract-less index |
 | `test_report.py` — union count | M3 | two tasks with the same two cached targets render "2 target(s)" |
@@ -232,6 +233,8 @@ None beyond the files above.
 
 tests:
 - packages/ai-parrot/tests/flows/dev_loop/test_scope/test_contract.py
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_spec_contract.py
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_contract_schema2.py
 - packages/ai-parrot/tests/flows/dev_loop/test_scope/test_select.py
 - packages/ai-parrot/tests/flows/dev_loop/test_scope/test_select_contract_mode.py
 - packages/ai-parrot/tests/flows/dev_loop/test_scope/test_green_cache.py
@@ -242,14 +245,18 @@ tests:
 - tests/sdd_scripts/test_check_task_graph.py
 markers: none
 
+### Test Data / Fixtures
+
+None — each test builds its own `tmp_path` repo or index.
+
 ---
 
 ## 5. Acceptance Criteria
 
 - [ ] AC-1 `_normalize_pytest` raises `ValueError` for an operand whose file part does not end in `.py`; `.py` files and `file.py::node` are accepted unchanged.
-- [ ] AC-2 `check_task_graph` reports `test-contract-directory-operand` (level `error`) for a contract operand that is an existing directory.
-- [ ] AC-3 A declared `pytest <directory>` yields no target and the note `declared path is a directory, dropped: <operand>`; `plan_tests` notes a cached directory operand as `contract operand is a directory, skipped: <operand>`.
-- [ ] AC-4 `namespace_for(feature_id=f, base_ref=b, contract=None) == cache_namespace(feature_id=f, base_ref=b, contract_digest="")`, and select_tests plus both background.py sites use it (no `"none"` digest remains: `grep -n '"none"' select_tests.py` finds no namespace use).
+- [ ] AC-2 `check_task_graph` reports `test-contract-malformed` (level `error`), message naming the operand, for an index header whose pytest target is a directory; `check_task_graph.py` itself is unchanged.
+- [ ] AC-3 A declared `pytest <directory>` yields no target and the note `declared path is a directory, dropped: <operand>`.
+- [ ] AC-4 `namespace_for(feature_id=f, base_ref=b, contract=None) == cache_namespace(feature_id=f, base_ref=b, contract_digest="")`; select_tests and the merge-tier site in background.py (`_plan_selection`) call it; the run-validation site keeps `_index_runtime_metadata`'s digest, which is already `contract.digest` or `""`, and a test pins that it equals `namespace_for` for a contract-less index. No `"none"` digest remains in select_tests.
 - [ ] AC-5 `render_markdown` with two task records sharing the same two cached targets prints `cached (skipped, unchanged since green): 2 target(s)`.
 - [ ] AC-6 `_classify_group`'s `PYTHONPATH` begins with `checkout/packages/<dist>/src` and contains every other existing `checkout/packages/*/src`; `remove_baseline_checkout` never runs `git worktree prune`.
 - [ ] AC-7 `_default_base_ref` returns `origin/dev` for a missing, null or blank `base_branch`.
@@ -316,9 +323,7 @@ Verified against: `aa91d76896`
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
 | `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/contract.py` | MODIFY | `            or is_broad_pytest(["pytest", operand])` | `contract.py:225` | 1 |
-| `packages/ai-parrot/src/parrot/sdd/scripts/check_task_graph.py` | MODIFY | `        elif not (root / file_part).exists() and file_part not in declared:` | `check_task_graph.py:512` | 1 |
 | `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/select.py` | MODIFY | `        for operand in adapter.operands(argv) or ():` | `select.py:115` | 1 |
-| `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/select.py` | MODIFY | `                if operand_path and not (worktree / operand_path).is_file():` | `select.py:185` | 1 |
 | `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/green_cache.py` | MODIFY | `def cache_namespace(*, feature_id: str, base_ref: str, contract_digest: str) -> str:` | `green_cache.py:38` | 1 |
 | `packages/ai-parrot/src/parrot/sdd/scripts/select_tests.py` | MODIFY | `        namespace = green_cache.cache_namespace(` | `select_tests.py:413` | 1 |
 | `packages/ai-parrot/src/parrot/sdd/scripts/select_tests.py` | MODIFY | `    base_ref = args.base or f"origin/{index_header.get('base_branch', 'dev')}"` | `select_tests.py:378` | 1 |
@@ -340,7 +345,7 @@ Verified against: `aa91d76896`
 
 ### Known Risks / Gotchas
 - **Parallel FEAT-829** (`test-scope-planner-fixes`, `issue:a3aebc40ef48` + `issue:3ae0b2ae0ef4`) edits
-  `select.py` (`_declared_targets`, the contract loop) and the parrot-e2e adapter at the same time. M1's
+  `select.py` (`_declared_targets`) and the parrot-e2e adapter at the same time. M1's
   `select.py` edits are confined to the pytest branch (a directory check on an operand) and the
   missing-on-disk note; whichever feature lands second rebases on the other.
 - `issue:55ad6c71c101` (claimed elsewhere) concerns a `conftest.py` contract operand — `conftest.py`
@@ -356,7 +361,7 @@ None.
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:e392d392b792a9a0f13b774100fa39ac0a6e5c0b2e147589ee527db2763d6976 evaluation_digest=sha256:0fa74d052eec8c44b85ccb4f0afb7638ea9ae2d0b2951dbba6bed63d462b36cd rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:010017e79e7039af1bea7cff3aad45b76dc50998626371fca55e3f421487034d evaluation_digest=sha256:34ffe39755e762f892ef06eb99e1ae726f3ad75c7ac15eff603baea00c7cd86f rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -410,10 +415,10 @@ Coverage:
       "path": "/tmp/claude-1000/-home-jesuslara-proyectos-ai-parrot/971bcae5-141d-4da7-b937-120d4aeea422/scratchpad/dev-clone/sdd/specs/test-scope-report-fixes.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:0fa74d052eec8c44b85ccb4f0afb7638ea9ae2d0b2951dbba6bed63d462b36cd",
+  "evaluation_digest": "sha256:34ffe39755e762f892ef06eb99e1ae726f3ad75c7ac15eff603baea00c7cd86f",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:e392d392b792a9a0f13b774100fa39ac0a6e5c0b2e147589ee527db2763d6976",
+  "input_digest": "sha256:010017e79e7039af1bea7cff3aad45b76dc50998626371fca55e3f421487034d",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -466,7 +471,7 @@ Status: skipped (no accepted exploration document — spec authored by /sdd-fix 
 One feature worktree `feat-FEAT-830-test-scope-report-fixes` off `origin/dev`.
 
 - Module graph: no edges — M1–M5 are independent and may run concurrently.
-- Shared files: `select_tests.py` (M2 + M4) and `select.py` (M1 only, two sites) — M2 and M4 tasks are
+- Shared files: `select_tests.py` (M2 + M4); `select.py` is M1 only — M2 and M4 tasks are
   serialized or merged into one task.
 - Exclusive resources: none.
 - Cross-feature: FEAT-829 touches `select.py`; no merge order required.
@@ -476,3 +481,4 @@ One feature worktree `feat-FEAT-830-test-scope-report-fixes` off `origin/dev`.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-07 | Jesus Lara | Created by /sdd-fix from `issue:bfb29d4ffe49` (fixgroup:c35e7383e48a); `issue:3ae0b2ae0ef4` handed to FEAT-829 |
+| 0.2 | 2026-11-07 | Jesus Lara | /sdd-task: dropped the new lint code and the `plan_tests` directory note — every contract reader re-normalizes, so a directory surfaces as `test-contract-malformed`; both would be dead code |
