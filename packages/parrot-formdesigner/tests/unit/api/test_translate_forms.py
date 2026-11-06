@@ -142,11 +142,14 @@ async def test_400_413_415(client: _HandlerClient, monkeypatch: pytest.MonkeyPat
         "/api/v1/navigator/forms/translate",
         json_error=json.JSONDecodeError("bad", "", 0),
     )
+    # FEAT-822: the cap is enforced inside aiohttp's read, so an over-cap body
+    # surfaces as HTTPRequestEntityTooLarge rather than as a Content-Length the
+    # handler inspects. Driving it by content_length tested nothing — a mocked
+    # request never reads a body — and chunked traffic set it to None anyway.
     monkeypatch.setattr(a2ui_wire, "A2UI_MAX_BODY_BYTES", 10)
     oversized = await client.post(
         "/api/v1/navigator/forms/translate",
-        json_body={"schema": SCHEMA},
-        content_length=11,
+        json_error=web.HTTPRequestEntityTooLarge(10, actual_size=11),
     )
     _RENDERERS.pop("a2ui", None)
     unavailable = await client.post("/api/v1/navigator/forms/translate", json_body={"schema": SCHEMA})
@@ -181,3 +184,61 @@ async def test_real_renderer_validates() -> None:
     finally:
         _RENDERERS.clear()
         _RENDERERS.update(snapshot)
+
+
+# ---------------------------------------------------------------------------
+# FEAT-822 / issue:bf978b6bae8a item S3 — caller-controlled input validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("field", ["locale", "form_id", "title"])
+@pytest.mark.parametrize("value", [5, {"a": 1}, ["x"], True])
+async def test_non_string_metadata_is_rejected(client: _HandlerClient, field: str, value: Any) -> None:
+    """``locale``/``form_id``/``title`` reach the translator — they must be strings."""
+    response = await client.post(
+        "/api/v1/navigator/forms/translate",
+        json_body={"schema": SCHEMA, field: value},
+    )
+
+    assert response.status == 400
+    assert (await response.json())["error"] == f"{field} must be a string"
+
+
+@pytest.mark.parametrize("field", ["locale", "form_id", "title"])
+async def test_absent_metadata_is_still_accepted(client: _HandlerClient, field: str) -> None:
+    """An explicit ``None`` is 'absent', not a type error — ``locale`` keeps its default."""
+    response = await client.post(
+        "/api/v1/navigator/forms/translate",
+        json_body={"schema": SCHEMA, field: None},
+    )
+
+    assert response.status == 200
+
+
+async def test_deeply_nested_schema_is_rejected(client: _HandlerClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A schema past the depth cap is refused before translation walks it."""
+    monkeypatch.setattr(a2ui_wire, "A2UI_MAX_SCHEMA_DEPTH", 4)
+    deep: dict[str, Any] = {"type": "object"}
+    node = deep
+    for _ in range(10):
+        node["properties"] = {"nested": {"type": "object"}}
+        node = node["properties"]["nested"]
+
+    response = await client.post("/api/v1/navigator/forms/translate", json_body={"schema": deep})
+
+    assert response.status == 400
+    assert await response.json() == {"error": "schema too deeply nested", "max_depth": 4}
+
+
+async def test_depth_check_survives_a_hostile_schema(client: _HandlerClient) -> None:
+    """A 10 000-deep schema returns 400 rather than raising ``RecursionError``."""
+    deep: dict[str, Any] = {"type": "object"}
+    node = deep
+    for _ in range(10_000):
+        node["properties"] = {"nested": {"type": "object"}}
+        node = node["properties"]["nested"]
+
+    response = await client.post("/api/v1/navigator/forms/translate", json_body={"schema": deep})
+
+    assert response.status == 400
+    assert (await response.json())["error"] == "schema too deeply nested"
