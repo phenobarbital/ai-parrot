@@ -191,7 +191,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -203,8 +203,9 @@
       "parallelism_notes": "WriteTransaction from TASK-5282 (generation.py); HybridPageIndexSearch tree_name/generation_id and NodeEmbeddingStore.prune_tree_matrices from TASK-5280; load_node-based strict projection from TASK-5281.",
       "assigned_to": null,
       "started_at": "2026-11-06T23:32:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5283-toolkit-write-core.md"
+      "completed_at": "2026-11-06T23:56:49+00:00",
+      "file": "sdd/tasks/completed/TASK-5283-toolkit-write-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5284",
