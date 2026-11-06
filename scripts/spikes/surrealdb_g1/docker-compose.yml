@@ -1,0 +1,12 @@
+version: "3.8"
+
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:v3.3.0
+    # FILL IN: digest
+    ports:
+      - "8000:8000"
+    environment:
+      - SURREAL_USER=root
+      - SURREAL_PASS=root
+    command: start --log trace --user root --pass root memory
