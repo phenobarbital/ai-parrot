@@ -1,0 +1,52 @@
+{
+  "feature": "scripts-worktree-environment-fixes",
+  "feature_id": "FEAT-832",
+  "spec": "sdd/specs/scripts-worktree-environment-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-06T23:32:33+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:0a56a85b240c48907b3bd18fe01721082b11d1984c030ce694696ee67293cf8e"
+  },
+  "discovered_from": "issue:ca2e26e666cd",
+  "tasks": [
+    {
+      "id": "TASK-5290",
+      "slug": "entry-point-test-launcher-markers",
+      "title": "Export launcher markers in the native-mode hook entry-point test",
+      "feature_id": "FEAT-832",
+      "feature": "scripts-worktree-environment-fixes",
+      "spec": "sdd/specs/scripts-worktree-environment-fixes.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5290-entry-point-test-launcher-markers.md"
+    }
+  ]
+}
