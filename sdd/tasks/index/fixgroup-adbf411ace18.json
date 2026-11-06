@@ -1,0 +1,95 @@
+{
+  "feature": "fixgroup-adbf411ace18",
+  "feature_id": "FEAT-822",
+  "spec": "sdd/specs/fixgroup-adbf411ace18.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-06T03:20:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/parrot-formdesigner/tests/unit/api/test_a2ui_body_limits.py",
+          "packages/parrot-formdesigner/tests/unit/api/test_import_a2ui.py",
+          "packages/parrot-formdesigner/tests/unit/api/test_translate_forms.py",
+          "packages/parrot-formdesigner/tests/unit/api/test_submit_a2ui.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:886d25979248afd1a0ff2e343ed8ef2ffa5bae3a32f6b322a27f0fb3bd415091"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5239",
+      "slug": "capped-body-reader",
+      "title": "Capped body reader and 413 response helpers in a2ui_wire",
+      "feature_id": "FEAT-822",
+      "feature": "fixgroup-adbf411ace18",
+      "spec": "sdd/specs/fixgroup-adbf411ace18.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies; owns a2ui_wire.py and creates tests/unit/api/test_a2ui_body_limits.py exclusively.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5239-capped-body-reader.md"
+    },
+    {
+      "id": "TASK-5240",
+      "slug": "migrate-handler-call-sites",
+      "title": "Migrate the six A2UI POST handlers to the capped body reader",
+      "feature_id": "FEAT-822",
+      "feature": "fixgroup-adbf411ace18",
+      "spec": "sdd/specs/fixgroup-adbf411ace18.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5239"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports OverSizedBody, read_capped_json, oversized_json_response, oversized_a2ui_response and is_a2ui_content_type created by TASK-5239 (api/a2ui_wire.py); also modifies tests/unit/api/test_a2ui_body_limits.py which TASK-5239 creates.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5240-migrate-handler-call-sites.md"
+    },
+    {
+      "id": "TASK-5241",
+      "slug": "translate-form-input-validation",
+      "title": "Validate translate_form scalars and cap JSON-Schema depth",
+      "feature_id": "FEAT-822",
+      "feature": "fixgroup-adbf411ace18",
+      "spec": "sdd/specs/fixgroup-adbf411ace18.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5239",
+        "TASK-5240"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Reads A2UI_MAX_SCHEMA_DEPTH created by TASK-5239 (api/a2ui_wire.py); also modifies api/handlers.py and tests/unit/api/test_a2ui_body_limits.py, both of which TASK-5240 modifies, so it must follow TASK-5240 on the same files.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5241-translate-form-input-validation.md"
+    }
+  ]
+}
