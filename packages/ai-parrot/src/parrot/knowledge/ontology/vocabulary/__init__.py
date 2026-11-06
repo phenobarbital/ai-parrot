@@ -4,9 +4,8 @@ from typing import Any
 
 _P = "parrot.knowledge.ontology.vocabulary"
 _LAZY_ATTRS: dict[str, str] = {
-    **{
-        name: f"{_P}.contracts"
-        for name in (
+    **dict.fromkeys(
+        (
             "OntologyStore",
             "OntologyPublisher",
             "ConceptRef",
@@ -18,27 +17,23 @@ _LAZY_ATTRS: dict[str, str] = {
             "PublishDiff",
             "ValidationIssue",
             "ClosureRow",
-        )
-    },
-    **{
-        name: f"{_P}.exceptions"
-        for name in (
+        ),
+        f"{_P}.contracts",
+    ),
+    **dict.fromkeys(
+        (
             "VocabularyError",
             "OntologyNotFound",
             "OntologyVersionNotFound",
             "OntologyValidationError",
             "PublishConflict",
-        )
-    },
-    **{
-        name: f"{_P}.backends"
-        for name in (
-            "create_ontology_store",
-            "register_vocabulary_backend",
-            "VocabularyBackendSpec",
-            "vocabulary_backend_names",
-        )
-    },
+        ),
+        f"{_P}.exceptions",
+    ),
+    **dict.fromkeys(
+        ("create_ontology_store", "register_vocabulary_backend", "VocabularyBackendSpec", "vocabulary_backend_names"),
+        f"{_P}.backends",
+    ),
     "OntologyStoreSettings": f"{_P}.settings",
     "resolve_ontology_settings": f"{_P}.settings",
     "PostgresOntologyStore": f"{_P}.postgres_store",
