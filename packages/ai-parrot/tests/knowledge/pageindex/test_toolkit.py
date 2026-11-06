@@ -13,7 +13,6 @@ from parrot.knowledge.pageindex.schemas import TreeSearchResult
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, _REPLACED_MARKER
 from parrot.knowledge.okf.utils import flatten_concept_id_for_filename
 
-
 def _adapter() -> MagicMock:
     # The toolkit instantiates a real PageIndexLLMAdapter for the lightweight
     # model using ``adapter.client``; that adapter calls ``client.ask`` so the
