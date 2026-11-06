@@ -37,14 +37,14 @@
       "feature_id": "FEAT-832",
       "feature": "scripts-worktree-environment-fixes",
       "spec": "sdd/specs/scripts-worktree-environment-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:33:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5290-entry-point-test-launcher-markers.md"
     }
