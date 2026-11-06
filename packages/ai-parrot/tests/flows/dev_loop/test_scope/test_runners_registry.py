@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -137,3 +138,92 @@ def test_load_registry_fails_closed_for_invalid_configuration(tmp_path, config):
     path.write_text(config)
     with pytest.raises(ValueError, match=r"\.parrot/test_runners\.toml"):
         load_registry(tmp_path)
+
+
+def _git(repo: Path, *args: str) -> None:
+    """Run git in ``repo`` with a fixed identity so commits work on any CI host."""
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+
+def _repo_with_commit(tmp_path: Path, config: str | None) -> Path:
+    """Create a git repo whose single commit holds ``config`` as the runners TOML (or no TOML)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    (repo / "README").write_text("x\n")
+    if config is not None:
+        (repo / ".parrot").mkdir()
+        (repo / ".parrot" / "test_runners.toml").write_text(config)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "init")
+    return repo
+
+
+def _plant_extension(tmp_path: Path, monkeypatch, repo: Path) -> Path:
+    """Write a working-tree-only TOML naming an extension whose import leaves a marker file."""
+    marker = tmp_path / "imported.marker"
+    module_dir = tmp_path / "planted"
+    module_dir.mkdir()
+    (module_dir / "planted_runner_ext.py").write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('imported')\nclass Adapter:\n    pass\n"
+    )
+    monkeypatch.syspath_prepend(str(module_dir))
+    monkeypatch.delitem(sys.modules, "planted_runner_ext", raising=False)
+    (repo / ".parrot").mkdir(exist_ok=True)
+    (repo / ".parrot" / "test_runners.toml").write_text("[extensions]\nplanted = 'planted_runner_ext:Adapter'\n")
+    return marker
+
+
+def test_load_registry_from_ref_ignores_working_tree_toml(tmp_path, monkeypatch):
+    """With ``ref``, the committed TOML is used and a working-tree-only extension is never imported."""
+    repo = _repo_with_commit(tmp_path, "[runners.pytest]\ntimeout_s = 7\n")
+    marker = _plant_extension(tmp_path, monkeypatch, repo)
+
+    registry = load_registry(repo, ref="HEAD")
+
+    assert registry.timeout_for("pytest") == 7
+    assert not marker.exists()
+    assert "planted_runner_ext" not in sys.modules
+
+
+def test_load_registry_from_ref_without_config_is_empty(tmp_path, monkeypatch):
+    """A ref without the TOML yields built-ins only, even when the working tree has one."""
+    repo = _repo_with_commit(tmp_path, None)
+    marker = _plant_extension(tmp_path, monkeypatch, repo)
+
+    registry = load_registry(repo, ref="HEAD")
+
+    assert registry.settings_for("pytest") == {}
+    assert registry.adapter_for_argv(["pytest", "a.py"]) is not None
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("ref", ["nope", "--output=x", ""])
+def test_load_registry_rejects_bad_ref(tmp_path, ref):
+    """An unresolvable, empty or option-looking ref fails closed instead of reading the working tree."""
+    repo = _repo_with_commit(tmp_path, None)
+    with pytest.raises(ValueError):
+        load_registry(repo, ref=ref)
+
+
+@pytest.mark.parametrize("cwd", ["/etc", "../x", "a/../../x", ".."])
+def test_load_registry_rejects_escaping_cwd(tmp_path, cwd):
+    """A runner cwd that is absolute or leaves the worktree is rejected at load time."""
+    config = tmp_path / ".parrot" / "test_runners.toml"
+    config.parent.mkdir()
+    config.write_text(f"[runners.vitest]\ncwd = {cwd!r}\n")
+    with pytest.raises(ValueError, match="cwd must stay inside the worktree"):
+        load_registry(tmp_path)
+
+
+def test_load_registry_accepts_nested_cwd(tmp_path):
+    """A relative cwd inside the worktree (even with a harmless ``..``) still loads."""
+    config = tmp_path / ".parrot" / "test_runners.toml"
+    config.parent.mkdir()
+    config.write_text("[runners.vitest]\ncwd = 'packages/x/../ui'\n")
+    assert load_registry(tmp_path).settings_for("vitest")["cwd"] == "packages/x/../ui"
