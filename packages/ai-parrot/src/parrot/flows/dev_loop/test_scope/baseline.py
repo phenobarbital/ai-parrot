@@ -128,13 +128,28 @@ def remove_baseline_checkout(worktree: Path, path: Path) -> None:
         proc = _git(worktree, "worktree", "remove", "--force", str(path))
         if proc.returncode != 0:
             logger.warning("could not remove baseline checkout %s: %s", path, proc.stderr.strip())
-        _git(worktree, "worktree", "prune")
     except Exception:  # noqa: BLE001 - cleanup must never raise
         logger.warning("baseline checkout cleanup failed for %s", path, exc_info=True)
 
 
 def _file_part(nodeid: str) -> str:
     return nodeid.split("::", 1)[0]
+
+
+def _baseline_pythonpath(checkout: Path, src_dist: str) -> str:
+    """Return a PYTHONPATH that imports every distribution from ``checkout``.
+
+    Args:
+        checkout: Root of the baseline checkout.
+        src_dist: Distribution whose tests run (its ``src`` goes first).
+
+    Returns:
+        ``checkout/packages/<src_dist>/src`` followed by every other existing ``checkout/packages/*/src``
+        (sorted), joined with ``os.pathsep``.
+    """
+    first = checkout / "packages" / src_dist / "src"
+    others = sorted(path for path in (checkout / "packages").glob("*/src") if path.is_dir() and path != first)
+    return os.pathsep.join(str(path) for path in (first, *others))
 
 
 def _classify_group(
@@ -162,7 +177,7 @@ def _classify_group(
         *nodeids,
     ]
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(checkout / "packages" / src_dist / "src")
+    env["PYTHONPATH"] = _baseline_pythonpath(checkout, src_dist)
     timed_out = False
     exit_code = -1
     try:

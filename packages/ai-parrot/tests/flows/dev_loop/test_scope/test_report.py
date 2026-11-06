@@ -467,3 +467,14 @@ def test_unsafe_ids_are_not_recorded(tmp_path) -> None:
     result = report.SuiteResult("root", 1, 1, 0, 0, 0, 0.1, 0, ("pytest",), "ok")
     assert report.append_suite("../..", "TASK-1", result, head_sha="a", base_ref="b", tier="merge", source="t") is None
     assert report.load_records("../..")[0] == {}
+
+
+def test_render_cached_count_is_a_union_across_tasks():
+    """The same cached targets appended to several task records count once (FEAT-830)."""
+    result = _result()
+    cached = ("tests/test_one.py", "tests/test_two.py")
+    records = {"TASK-1": _record("TASK-1", result, cached=cached), "TASK-2": _record("TASK-2", result, cached=cached)}
+    output = report.render_markdown(
+        records, ["TASK-1", "TASK-2"], final_head="final", rerun=None, rerun_skip_reason=None
+    )
+    assert "cached (skipped, unchanged since green): 2 target(s)" in output
