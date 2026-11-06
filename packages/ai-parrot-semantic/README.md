@@ -20,5 +20,5 @@ The current native compiler supports declared metrics, dimensions, time grains,
 declared one-to-many joins with fan-out rejection, filtered measures, and
 derived metrics. The `duckdb` extra provides the local execution backend; the
 `bigquery` extra provides BigQuery integration. See
-[`docs/tools/semantic-layer.md`](../../docs/tools/semantic-layer.md) for the
+[`wiki/tools/semantic-layer.md`](https://github.com/phenobarbital/ai-parrot/wiki/Tools-%26-Toolkits-Governed-semantic-layer) for the
 user-facing semantic-layer documentation.

@@ -1,0 +1,257 @@
+# FEAT-814 / TASK-5221 native sync-base gate
+# date: 2026-11-05T03:11:24Z
+# commit: 5d06fc241d4023b25b00b84e383c18024c6d3dbc (+ uncommitted TASK-5221 test fix)
+# claude: 2.1.318 (Claude Code)
+# cmd: PARROT_TEST_REAL_LLM=1 PYTHONPATH=packages/ai-parrot/src pytest tests/sdd_scripts/test_worktree_sync.py -k native_policy -rs -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.7.0 -- /home/jesuslara/proyectos/ai-parrot/.venv/bin/python3
+hypothesis profile 'default'
+benchmark: 5.3.0 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-814-scripts-worktree-sync-tech-debt-2
+configfile: pytest.ini
+plugins: assume-2.4.3, hypothesis-6.170.0, asyncio-1.4.0, mock-3.15.1, timeout-2.4.0, xdist-3.3.1, aiohttp-1.1.1, Faker-40.43.0, benchmark-5.3.0, anyio-4.15.1, platformdirs-4.13.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 42 items / 40 deselected / 2 selected
+
+tests/sdd_scripts/test_worktree_sync.py::test_native_policy_sync_with_protected_config FAILED [ 50%]
+tests/sdd_scripts/test_worktree_sync.py::test_native_policy_missing_protection_refuses FAILED [100%]
+
+=================================== FAILURES ===================================
+________________ test_native_policy_sync_with_protected_config _________________
+
+tmp_path = PosixPath('/tmp/pytest-of-jesuslara/pytest-92/test_native_policy_sync_with_p0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d76a5a79940>
+
+    def test_native_policy_sync_with_protected_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A real native sandbox applies patches without writing protected config."""
+        origin, primary, feature = _repository(tmp_path)
+        sibling = tmp_path / "sibling"
+        _run(primary, "worktree", "add", "-b", "sibling", str(sibling), "dev")
+        _configure_sandbox(feature)
+        (primary / "patch.txt").write_text("from native gh\n", encoding="utf-8")
+        _run(primary, "add", "patch.txt")
+        _run(primary, "commit", "-m", "native gh patch")
+        sha = _run(primary, "rev-parse", "HEAD")
+        _install_gh_stub(tmp_path, monkeypatch, {sha: _patch_response(primary, sha)})
+        _install_sync_runner(feature, sha)
+    
+        common_config, worktree_config = _git_control_paths(feature)
+        common_before = common_config.read_bytes()
+        worktree_before = worktree_config.read_bytes()
+        primary_before = (_run(primary, "rev-parse", "HEAD"), _run(primary, "status", "--porcelain"), _refs(primary))
+        sibling_before = (_run(sibling, "rev-parse", "HEAD"), _run(sibling, "status", "--porcelain"))
+        remote_before = _refs(origin)
+        source = Path(__file__).resolve().parents[2] / "packages" / "ai-parrot" / "src"
+        command = (
+            f"printf BAD > {json.dumps(str(common_config))}; echo COMMON_WRITE=$?; "
+            f"printf BAD > {json.dumps(str(worktree_config))}; echo WORKTREE_WRITE=$?; "
+            f"PYTHONPATH={json.dumps(str(source))} {json.dumps(sys.executable)} native_sync_runner.py; echo SYNC_EXIT=$?"
+        )
+    
+        session = _native_session(feature, command)
+        evidence = f"{session.stdout}\n{session.stderr}"
+    
+        assert session.returncode == 0, evidence[-2000:]
+        assert "COMMON_WRITE=" in evidence and "COMMON_WRITE=0" not in evidence
+        assert "WORKTREE_WRITE=" in evidence and "WORKTREE_WRITE=0" not in evidence
+>       assert "SYNC_EXIT=0" in evidence
+E       assert 'SYNC_EXIT=0' in '{"type":"system","subtype":"init","cwd":"/tmp/pytest-of-jesuslara/pytest-92/test_native_policy_sync_with_p0/feature","session_id":"093c3e0a-30a5-4774-8853-00e9c75c0270","tools":["Bash"],"mcp_servers":[],"model":"claude-haiku-5-5","permissionMode":"bypassPermissions","slash_commands":["deep-research","design","design-sync","dataviz","update-config","verify","debug","code-review","simplify","batch","fewer-permission-prompts","doctor","loop","claude-api","workflow-authoring","run","run-skill-generator","plugin-authoring","advisor","agents","auto-mode-setup","autocompact","clear","color","compact","config","output-style","context","effort","fast","focus","heapdump","init","mcp","import","model","__remote-workflow","workflow-launch-exec","reload-plugins","reload-skills","rename","security-review","usage","insights","recap","skill-doctor","goal","design-consent","design-revoke","list-agents","team-onboarding"],"terminal_slash_commands":["doctor","color","focus","reload-plugins"],"apiKeySource":"ANTHROPIC_API_KEY","claude_code_version":"2.1.318","output_style":"default","agents":["claude","Explore","general-purpose","Plan","statusline-setup"],"skills":["deep-research","design","design-...hivos de solo lectura\\nWORKTREE_WRITE=1\\nSYNC_EXIT=3\\n```\\n\\nBoth writes failed with \\"Sistema de archivos de solo lectura\\" (\\"read-only file system\\"), so nothing was written to either config file. The sync runner exited with code 3. I did not investigate the runner\'s output or the cause of the read-only error, since you asked for one command only.","ttft_ms":2748,"type":"result","duration_ms":6265,"uuid":"493c80a8-1ea2-4906-95f6-f8d5a05799ae","ttft_stream_ms":1186,"time_to_request_ms":552,"first_content_frame_ms":1186,"queued_turn_count":0,"result_index":0,"model_usage_since_last_result":{"claude-haiku-5-5":{"inputTokens":4,"outputTokens":1117,"cacheReadInputTokens":10974,"cacheCreationInputTokens":6784,"webSearchRequests":0,"costUSD":0.00151664,"contextWindow":1000000,"maxOutputTokens":128000,"thinkingTokens":452,"cacheCreationEphemeral5mInputTokens":6784,"cacheCreationEphemeral1hInputTokens":0,"canonicalModel":"claude-haiku-5-5","provider":"firstParty","costBasis":"list"}}}\n\n⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization\'s connectors\n'
+
+/home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-814-scripts-worktree-sync-tech-debt-2/tests/sdd_scripts/test_worktree_sync.py:294: AssertionError
+---------------------------- Captured stdout setup -----------------------------
+[32m[DEBUG] 2026-11-05 04:11:27,662 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.address`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,663 faker.factory(factory.py:95) :: Provider `faker.providers.address` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,664 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.automotive`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,665 faker.factory(factory.py:95) :: Provider `faker.providers.automotive` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,666 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.bank`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,666 faker.factory(factory.py:86) :: Specified locale `en_US` is not available for provider `faker.providers.bank`. Locale reset to `en_GB` for this provider.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,667 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.barcode`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,667 faker.factory(factory.py:95) :: Provider `faker.providers.barcode` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,668 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.color`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,668 faker.factory(factory.py:95) :: Provider `faker.providers.color` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,669 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.company`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,669 faker.factory(factory.py:95) :: Provider `faker.providers.company` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,670 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.credit_card`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,670 faker.factory(factory.py:95) :: Provider `faker.providers.credit_card` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,670 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.currency`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,671 faker.factory(factory.py:95) :: Provider `faker.providers.currency` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,671 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.date_time`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,672 faker.factory(factory.py:95) :: Provider `faker.providers.date_time` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,672 faker.factory(factory.py:106) :: Provider `faker.providers.doi` does not feature localization. Specified locale `en_US` is not used for this provider.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,672 faker.factory(factory.py:106) :: Provider `faker.providers.emoji` does not feature localization. Specified locale `en_US` is not used for this provider.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,672 faker.factory(factory.py:106) :: Provider `faker.providers.file` does not feature localization. Specified locale `en_US` is not used for this provider.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,673 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.geo`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,673 faker.factory(factory.py:95) :: Provider `faker.providers.geo` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,673 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.internet`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,674 faker.factory(factory.py:95) :: Provider `faker.providers.internet` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,674 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.isbn`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,675 faker.factory(factory.py:95) :: Provider `faker.providers.isbn` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,675 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.job`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,676 faker.factory(factory.py:95) :: Provider `faker.providers.job` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,676 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.lorem`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,677 faker.factory(factory.py:95) :: Provider `faker.providers.lorem` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,677 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.misc`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,677 faker.factory(factory.py:95) :: Provider `faker.providers.misc` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,677 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.passport`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,677 faker.factory(factory.py:95) :: Provider `faker.providers.passport` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,678 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.person`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,679 faker.factory(factory.py:95) :: Provider `faker.providers.person` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,683 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.phone_number`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,683 faker.factory(factory.py:95) :: Provider `faker.providers.phone_number` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,684 faker.factory(factory.py:106) :: Provider `faker.providers.profile` does not feature localization. Specified locale `en_US` is not used for this provider.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,684 faker.factory(factory.py:106) :: Provider `faker.providers.python` does not feature localization. Specified locale `en_US` is not used for this provider.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,684 faker.factory(factory.py:106) :: Provider `faker.providers.sbn` does not feature localization. Specified locale `en_US` is not used for this provider.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,684 faker.factory(factory.py:76) :: Looking for locale `en_US` in provider `faker.providers.ssn`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,685 faker.factory(factory.py:95) :: Provider `faker.providers.ssn` has been localized to `en_US`.[0m
+[32m[DEBUG] 2026-11-05 04:11:27,686 faker.factory(factory.py:106) :: Provider `faker.providers.user_agent` does not feature localization. Specified locale `en_US` is not used for this provider.[0m
+------------------------------ Captured log setup ------------------------------
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.address`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.address` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.automotive`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.automotive` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.bank`.
+DEBUG    faker.factory:factory.py:86 Specified locale `en_US` is not available for provider `faker.providers.bank`. Locale reset to `en_GB` for this provider.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.barcode`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.barcode` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.color`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.color` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.company`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.company` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.credit_card`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.credit_card` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.currency`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.currency` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.date_time`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.date_time` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:106 Provider `faker.providers.doi` does not feature localization. Specified locale `en_US` is not used for this provider.
+DEBUG    faker.factory:factory.py:106 Provider `faker.providers.emoji` does not feature localization. Specified locale `en_US` is not used for this provider.
+DEBUG    faker.factory:factory.py:106 Provider `faker.providers.file` does not feature localization. Specified locale `en_US` is not used for this provider.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.geo`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.geo` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.internet`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.internet` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.isbn`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.isbn` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.job`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.job` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.lorem`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.lorem` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.misc`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.misc` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.passport`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.passport` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.person`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.person` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.phone_number`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.phone_number` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:106 Provider `faker.providers.profile` does not feature localization. Specified locale `en_US` is not used for this provider.
+DEBUG    faker.factory:factory.py:106 Provider `faker.providers.python` does not feature localization. Specified locale `en_US` is not used for this provider.
+DEBUG    faker.factory:factory.py:106 Provider `faker.providers.sbn` does not feature localization. Specified locale `en_US` is not used for this provider.
+DEBUG    faker.factory:factory.py:76 Looking for locale `en_US` in provider `faker.providers.ssn`.
+DEBUG    faker.factory:factory.py:95 Provider `faker.providers.ssn` has been localized to `en_US`.
+DEBUG    faker.factory:factory.py:106 Provider `faker.providers.user_agent` does not feature localization. Specified locale `en_US` is not used for this provider.
+________________ test_native_policy_missing_protection_refuses _________________
+
+tmp_path = PosixPath('/tmp/pytest-of-jesuslara/pytest-92/test_native_policy_missing_pro0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d76a5a35f10>
+
+    def test_native_policy_missing_protection_refuses(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Missing host protection is refused without attempted config repair."""
+        origin, primary, feature = _repository(tmp_path)
+        sibling = tmp_path / "sibling"
+        _run(primary, "worktree", "add", "-b", "sibling", str(sibling), "dev")
+        (primary / "patch.txt").write_text("must not apply\n", encoding="utf-8")
+        _run(primary, "add", "patch.txt")
+        _run(primary, "commit", "-m", "refused native patch")
+        sha = _run(primary, "rev-parse", "HEAD")
+        _install_gh_stub(tmp_path, monkeypatch, {sha: _patch_response(primary, sha)})
+        gh_called = feature / "gh-was-called"
+        gh_stub = tmp_path / "gh"
+        gh_stub.write_text(
+            gh_stub.read_text(encoding="utf-8").replace("#!/bin/sh\n", '#!/bin/sh\n: > "$GH_CALLED"\n', 1),
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("GH_CALLED", str(gh_called))
+        _install_sync_runner(feature, sha)
+    
+        common_config, worktree_config = _git_control_paths(feature)
+        assert not worktree_config.exists()
+        common_before = common_config.read_bytes()
+        feature_before = (_run(feature, "rev-parse", "HEAD"), _run(feature, "status", "--porcelain"), _refs(feature))
+        primary_before = (_run(primary, "rev-parse", "HEAD"), _run(primary, "status", "--porcelain"))
+        sibling_before = (_run(sibling, "rev-parse", "HEAD"), _run(sibling, "status", "--porcelain"))
+        remote_before = _refs(origin)
+        source = Path(__file__).resolve().parents[2] / "packages" / "ai-parrot" / "src"
+        command = f"PYTHONPATH={json.dumps(str(source))} {json.dumps(sys.executable)} native_sync_runner.py; echo SYNC_EXIT=$?"
+    
+        session = _native_session(feature, command)
+        evidence = f"{session.stdout}\n{session.stderr}"
+    
+        assert session.returncode == 0, evidence[-2000:]
+        assert "SYNC_EXIT=5" in evidence
+        assert not gh_called.exists()
+        assert not (feature / "patch.txt").exists()
+        assert common_config.read_bytes() == common_before
+>       assert not worktree_config.exists()
+E       AssertionError: assert not True
+E        +  where True = exists()
+E        +    where exists = PosixPath('/tmp/pytest-of-jesuslara/pytest-92/test_native_policy_missing_pro0/primary/.git/worktrees/feature/config.worktree').exists
+
+/home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-814-scripts-worktree-sync-tech-debt-2/tests/sdd_scripts/test_worktree_sync.py:345: AssertionError
+====================== 2 failed, 40 deselected in 12.89s =======================
+exit=1
+
+# ---- in-sandbox diagnosis (session transcript 391df726-54af-4a90-ad1e-3172c785fc1a, extra 'git status --porcelain --ignored' before the runner; diagnostic edit not committed) ----
+/bin/bash: línea 1: /tmp/pytest-of-jesuslara/pytest-93/test_native_policy_sync_with_p0/primary/.git/config: Sistema de archivos de solo lectura
+COMMON_WRITE=1
+/bin/bash: línea 1: /tmp/pytest-of-jesuslara/pytest-93/test_native_policy_sync_with_p0/primary/.git/worktrees/feature/config.worktree: Sistema de archivos de solo lectura
+WORKTREE_WRITE=1
+DIAG_STATUS_BEGIN
+?? .bash_profile
+?? .bashrc
+?? .claude/agents
+?? .claude/commands
+?? .claude/hooks
+?? .claude/launch.json
+?? .claude/loop.md
+?? .claude/output-styles
+?? .claude/routines
+?? .claude/scheduled_tasks.json
+?? .claude/settings.json
+?? .claude/skills
+?? .claude/workflows
+?? .gitconfig
+?? .gitmodules
+?? .idea
+?? .mcp.json
+?? .profile
+?? .ripgreprc
+?? .vscode
+?? .zprofile
+?? .zshrc
+!! .claude/settings.local.json
+DIAG_STATUS_END
+SYNC_EXIT=3
+# test 2: primary/.git/worktrees/feature/config.worktree left behind as a 0-byte file (native denyWrite mount placeholder; native_claude_sandbox.py:230 lists admin_dir/config.worktree).
+
+# ==== RUN 2 (after TASK-5229 tracked-only sandbox guard) ====
+# date: 2026-11-05T03:17:04Z
+# commit: c52602539718865b8982e7ad6783726dcc911a68 (+ uncommitted TASK-5229 changes)
+tests/sdd_scripts/test_worktree_sync.py::test_native_policy_sync_with_protected_config FAILED [ 50%]
+tests/sdd_scripts/test_worktree_sync.py::test_native_policy_missing_protection_refuses PASSED [100%]
+================= 1 failed, 1 passed, 43 deselected in 12.09s ==================
+exit=1
+# run 2 diagnosis: test_native_policy_missing_protection_refuses PASSED; test_native_policy_sync_with_protected_config: SYNC_EXIT=0 (patch applied, protected config writes still refused),
+#   but its _refs(primary) snapshot included refs/heads/feat-FEAT-999-sync, the target branch the sync must move (reflog: 'am: native gh patch'); dev/sibling/origin unchanged. Assertion fixed to exclude the target ref and assert it advanced with the trailer.
+
+# ==== RUN 3 (after target-ref assertion fix) ====
+# date: 2026-11-05T03:18:16Z
+# commit: c52602539718865b8982e7ad6783726dcc911a68 (+ uncommitted TASK-5229 changes)
+tests/sdd_scripts/test_worktree_sync.py::test_native_policy_sync_with_protected_config PASSED [ 50%]
+tests/sdd_scripts/test_worktree_sync.py::test_native_policy_missing_protection_refuses PASSED [100%]
+====================== 2 passed, 43 deselected in 14.88s =======================
+exit=0
+# ==== RUN 4 (stability re-run, same tree) 2026-11-05T03:18:43Z ====
+tests/sdd_scripts/test_worktree_sync.py::test_native_policy_sync_with_protected_config PASSED [ 50%]
+tests/sdd_scripts/test_worktree_sync.py::test_native_policy_missing_protection_refuses PASSED [100%]
+====================== 2 passed, 43 deselected in 10.47s =======================

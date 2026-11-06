@@ -261,7 +261,8 @@ def page_title(path: Path, text: str) -> str:
     """Frontmatter `title`, else the first H1, else the file stem in Title Case."""
 
 def rewrite_links(text: str, resolver: Callable[[str], str | None]) -> str:
-    """Rewrite relative `.md` links and `ref:<module>` links to `[[Page Name]]`; unknown targets
+    """Rewrite relative `.md` links and `ref:<module>` links to `[text](Page-Name)` Markdown links
+    (brief 1f9d9ff0ec07: GitHub cannot render hundreds of `[[Page Name]]` wiki links per page); unknown targets
     are returned by the resolver as None and collected by the caller as dangling."""
 
 # parrot/sdd/cli.py                                        # verified: packages/ai-parrot/src/parrot/sdd/cli.py:237
@@ -304,7 +305,7 @@ listing their paths is not evidence that namespace merging loaded them.
 class RenderedPage:
     module: str            # "parrot.memory.compaction"
     section: str           # reference_section
-    title: str             # "Reference: parrot.memory.compaction"
+    title: str             # "parrot.memory.compaction" (bare module name: no ":" in a page name)
     body: str
 
 class GriffeUnavailable(RuntimeError):
@@ -590,7 +591,7 @@ Completion Note must cite the green `techwiki` **release** run URL before it is 
 | `test_workspace_python_distribution_coverage` | M1 | configured distributions and search paths cover every Python-bearing workspace member, including provider clients and Python wrappers; an omitted member fails |
 | `test_generate_satellite_coverage` | M2 | representative modules from configured client and other satellite source trees actually render, including shared `parrot` namespace contributions |
 | `test_page_name_rules` | M1 | spaces → `-`, section prefix, literal hyphen → `PageNameError`, empty title → error |
-| `test_rewrite_links_relative_and_ref` | M1 | relative `.md` and `ref:` links → `[[Name]]`; unknown → collected as dangling |
+| `test_rewrite_links_relative_and_ref` | M1 | relative `.md` and `ref:` links → `[text](Name)` (brief 1f9d9ff0ec07; never `[[Name]]`); unknown → collected as dangling |
 | `test_generate_static_no_import` | M2 | fixture package renders without being importable (sys.modules untouched) |
 | `test_generate_is_deterministic` | M2 | two runs → identical bytes |
 | `test_public_filter` | M2 | `_private`, `__all__` honoured |

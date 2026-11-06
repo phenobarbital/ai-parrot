@@ -1,4 +1,4 @@
-"""Keep docs/audio-form-voice-modes.md and the navigator-svelte handoff in sync with audio/events.py (FEAT-649)."""
+"""Keep wiki/integrations/audio-form-voice-modes.md and the navigator-svelte handoff in sync with audio/events.py (FEAT-649)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 from parrot_formdesigner.audio import events
 
 REPO = Path(__file__).resolve().parents[4]
-DOC = REPO / "docs" / "audio-form-voice-modes.md"
+DOC = REPO / "wiki" / "integrations" / "audio-form-voice-modes.md"
 HANDOFF = REPO / "sdd" / "proposals" / "audio-form-interaction-workflow.handoff-navigator-svelte.md"
 SRC = REPO / "packages" / "parrot-formdesigner" / "src" / "parrot_formdesigner"
 IO_REQUESTS = {

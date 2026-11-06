@@ -36,7 +36,6 @@ from .models import (  # noqa: E402
     ConnectInitRequest,
     ConnectInitResponse,
     DisconnectResponse,
-    EnableResponse,
     IntegrationDescriptor,
     UsersIntegrationRow,
 )
@@ -69,7 +68,6 @@ __all__ = [
     "ConnectInitRequest",
     "ConnectInitResponse",
     "DisconnectResponse",
-    "EnableResponse",
     "IntegrationDescriptor",
     "UsersIntegrationRow",
     # persistence

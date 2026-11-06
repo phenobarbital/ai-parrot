@@ -5,7 +5,7 @@
 # policy engine itself errors while evaluating this tool, the call passes
 # through instead of being blocked with `policy_engine_unavailable`.
 #
-# IMPORTANT (see docs/security/pbac-guardrails.md): the currently-pinned
+# IMPORTANT (see wiki/security/pbac-guardrails.md): the currently-pinned
 # navigator-auth `PolicyLoader` does not forward the `enforcement:` key from
 # YAML into `ResourcePolicy.attributes` — this file documents the intended
 # syntax and is safe/inert to load (no wildcard resource, see the note in

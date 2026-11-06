@@ -119,7 +119,7 @@ class PlanogramConfig(BaseModel):
         default=None,
         description=(
             "Shelves/slots/zones definition (dict or JSON file path). Required at runtime; convert legacy rows as "
-            "described in docs/pipelines/planogram-cycle-migration.md"
+            "described in wiki/flows/pipelines/planogram-cycle-migration.md"
         ),
     )
 

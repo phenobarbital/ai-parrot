@@ -106,7 +106,7 @@ def test_completion_command_is_guarded() -> None:
 
 def test_operator_notification_documentation() -> None:
     """Document feature completion, same-host delivery and CLI lifetime accurately."""
-    doc_content = (ROOT / "docs/dev_loop/claude-native-sandbox.md").read_text(encoding="utf-8")
+    doc_content = (ROOT / "wiki/sdd-tooling/dev_loop/claude-native-sandbox.md").read_text(encoding="utf-8")
 
     # Check for required concepts (using partial matches to be more robust)
     required_concepts = [

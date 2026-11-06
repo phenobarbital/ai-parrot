@@ -1,6 +1,7 @@
 """C34 — ``parrot sdd install`` registers the sdd-coder and bounded-source MCP toolkits."""
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from parrot.sdd.installer import (
     sdd_status,
     uninstall_sdd_integration,
 )
+from parrot.self_.doctor import run_doctor
 
 CONFIG = Path(".parrot/mcp-toolkits.yaml")
 
@@ -126,6 +128,73 @@ def test_cli_flag_and_dry_run(repo: Path) -> None:
     assert not (repo / CONFIG).exists()
     off = runner.invoke(sdd_cli, ["install", "--path", str(repo), "--dry-run", "--no-sdd-coder"])
     assert "plan: toolkits" not in off.output
+
+
+def test_fresh_repo_end_to_end_portable(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Host then SDD installation emits portable host config, hooks, and doctor form checks."""
+    managed_bin = repo / "parrot-home" / "bin"
+    managed_bin.mkdir(parents=True)
+    launcher = managed_bin / "parrot"
+    launcher.write_text("#!/bin/sh\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    monkeypatch.setenv("PARROT_HOME", str(repo / "parrot-home"))
+    monkeypatch.setenv("PATH", f"{managed_bin}{os.pathsep}{os.environ['PATH']}")
+
+    actions = install_sdd_integration(repo, hosts=("claude",), portable=None)
+    servers = json.loads((repo / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]
+    for name in ("parrot-sdd-coder", "parrot-bounded-source"):
+        assert servers[name]["command"] == "parrot"
+        assert servers[name]["args"][-1] == ".parrot/mcp-toolkits.yaml"
+        assert "cwd" not in servers[name]
+    settings = json.loads((repo / ".claude/settings.json").read_text(encoding="utf-8"))
+    assert "parrot" in str(settings)
+    assert not any(action.startswith("note: host config baked") for action in actions)
+    forms = [check for check in run_doctor(repo) if check.name.endswith(" form")]
+    assert any(check.name == "host config: claude .mcp.json form" and check.detail == "portable" for check in forms)
+
+
+def test_fresh_repo_end_to_end_baked_with_note(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without a launcher, SDD reports each baked fallback once and doctor stays informational."""
+    empty_bin = repo / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", f"{empty_bin}{os.pathsep}{os.defpath}")
+
+    actions = install_sdd_integration(repo, hosts=("claude",), portable=None)
+    host_notes = [action for action in actions if action.startswith("note: host config baked to absolute paths")]
+    guard_notes = [action for action in actions if action.startswith("note: guard hook baked")]
+    assert len(host_notes) == 1
+    assert len(guard_notes) == 1
+    forms = [check for check in run_doctor(repo) if check.name.endswith(" form")]
+    form = next(check for check in forms if check.name == "host config: claude .mcp.json form")
+    assert form.informational and form.detail == "baked absolute paths"
+
+
+@pytest.mark.parametrize("portable", [None, True, False])
+def test_sdd_install_portable_reaches_toolkits(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, portable: bool | None
+) -> None:
+    """Selected hosts receive the explicit form, including False, and retain owned toolkit receipts."""
+    monkeypatch.setattr("parrot.mcp.portability.managed_launcher_on_path", lambda: True)
+    args = ["install", "--path", str(repo), "--host", "claude", "--host", "codex"]
+    if portable is True:
+        args.append("--portable")
+    elif portable is False:
+        args.append("--no-portable")
+    result = CliRunner().invoke(sdd_cli, args)
+    assert result.exit_code == 0, result.output
+
+    claude = json.loads((repo / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]
+    codex = (repo / ".codex/config.toml").read_text(encoding="utf-8")
+    for name in ("sdd-coder", "bounded-source"):
+        entry = claude[f"parrot-{name}"]
+        if portable is False:
+            assert entry["args"][-1] == str(repo / ".parrot/mcp-toolkits.yaml")
+            assert entry["cwd"] == str(repo)
+            assert str(repo / ".parrot/mcp-toolkits.yaml") in codex
+        else:
+            assert entry["command"] == "parrot" and entry["args"][-1] == ".parrot/mcp-toolkits.yaml"
+            assert "cwd" not in entry and 'command = "parrot"' in codex
+    assert load_receipt(repo)["toolkits"] == ["bounded-source", "sdd-coder"]
 
 
 def test_malformed_toolkit_config_is_a_warning(repo: Path) -> None:

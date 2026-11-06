@@ -601,7 +601,69 @@ def native_command_environment(cwd: Path, environ: Mapping[str, str] | None = No
         cache_root = scratch_root / "parrot-sdd-cache" / f"shared-{_user_tag()}"
     env["XDG_CACHE_HOME"] = str(cache_root / "xdg")
     env["UV_CACHE_DIR"] = str(cache_root / "uv")
+    env["TIKTOKEN_CACHE_DIR"] = str(tiktoken_cache_dir())
     return env
+
+
+def tiktoken_cache_dir() -> Path:
+    """Return the persistent, per-user tiktoken cache shared by native sessions.
+
+    tiktoken defaults to ``$TMPDIR/data-gym-cache``, which is private and empty inside the sandbox, so every
+    sandboxed process tried to download its encoding from ``openaipublic.blob.core.windows.net`` and was
+    denied. This directory lives under the scratch root (bound into the sandbox) but outside the per-session
+    caches the launcher reaps, so the launcher can seed it once on the host.
+
+    Returns:
+        The cache directory path (not created).
+    """
+    return _we.claude_scratch_root() / "parrot-sdd-cache" / f"shared-{_user_tag()}" / "tiktoken"
+
+
+_TIKTOKEN_CACHE_NAME = re.compile(r"[0-9a-f]{40}")
+_TIKTOKEN_WARM_TIMEOUT_S = 15
+
+
+def warm_tiktoken_cache(target: Path, environ: Mapping[str, str]) -> None:
+    """Seed the sandbox tiktoken cache on the host, where the network is reachable.
+
+    Copies cached encodings from the host's tiktoken cache directories. When none are found, downloads
+    ``cl100k_base`` in a short-lived subprocess. Best effort: tiktoken missing, offline or slow only
+    leaves the cache empty, and in-sandbox callers fall back to their own token estimate.
+
+    Args:
+        target: Cache directory exported to the sandbox as ``TIKTOKEN_CACHE_DIR``.
+        environ: Host environment, used to find the host's own cache directories.
+    """
+    try:
+        target.mkdir(mode=0o700, parents=True, exist_ok=True)
+        sources = [environ.get("TIKTOKEN_CACHE_DIR"), environ.get("DATA_GYM_CACHE_DIR")]
+        sources.append(str(Path(environ.get("TMPDIR") or "/tmp") / "data-gym-cache"))
+        for source in sources:
+            if not source or not Path(source).is_dir() or _canonical(Path(source)) == _canonical(target):
+                continue
+            for entry in Path(source).iterdir():
+                destination = target / entry.name
+                if (
+                    _TIKTOKEN_CACHE_NAME.fullmatch(entry.name)
+                    and entry.is_file()
+                    and not entry.is_symlink()
+                    and not destination.exists()
+                ):
+                    shutil.copyfile(entry, destination)
+        if any(_TIKTOKEN_CACHE_NAME.fullmatch(entry.name) for entry in target.iterdir()):
+            return
+        if importlib.util.find_spec("tiktoken") is None:
+            return
+        subprocess.run(
+            [sys.executable, "-c", "import tiktoken; tiktoken.get_encoding('cl100k_base')"],
+            env={**environ, "TIKTOKEN_CACHE_DIR": str(target)},
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=_TIKTOKEN_WARM_TIMEOUT_S,
+            check=False,
+        )
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        logger.debug("tiktoken cache warm-up skipped: %s", exc)
 
 
 _REJECTED_OPTIONS = (
@@ -886,7 +948,7 @@ def launch_worker(
         if sandbox_platform() == "macos":
             print(
                 "launch_worker: NOTICE macOS Seatbelt backend is implemented but not certified "
-                "(see docs/dev_loop/claude-native-sandbox.md)",
+                "(see wiki/sdd-tooling/dev_loop/claude-native-sandbox.md)",
                 file=sys.stderr,
             )
     if gh_token and not no_gh_token and not env.get("GH_TOKEN"):
@@ -904,6 +966,7 @@ def launch_worker(
     if mode != "legacy":
         # Session-fixed variables ride in the launch environment, so the hook need not prefix every command.
         env.update(native_command_environment(cwd, env))
+        warm_tiktoken_cache(Path(env["TIKTOKEN_CACHE_DIR"]), base_env if base_env is not None else os.environ)
     env.pop("PARROT_SDD_NOTIFY_PYTHON", None)
     env.pop("PARROT_SDD_NOTIFY_HELPER", None)
     notification_metadata = (

@@ -1,0 +1,113 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-805",
+  "feature_slug": "sdd-non-python-repos",
+  "started_at": "2026-11-04T22:05:00Z",
+  "updated_at": "2026-11-04T23:40:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-805/source.md",
+    "fetched_at": "2026-11-04T22:05:00Z",
+    "summary_oneline": "Make the SDD flow (commands, agents, scripts, installer, config) work in non-Python repositories such as TypeScript + SvelteKit"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-11-04T22:05:00Z",
+      "completed_at": "2026-11-04T22:05:00Z",
+      "duration_seconds": 0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": null,
+      "completed_at": "2026-11-04T23:05:00Z",
+      "duration_seconds": null,
+      "queries_total": 17,
+      "approved_by_user": false,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-805/research_plan.json",
+      "note": "Recorded after the fact from the queries actually executed; no plan gate was presented."
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-11-04T22:05:00Z",
+      "completed_at": "2026-11-04T22:55:00Z",
+      "duration_seconds": 3000,
+      "queries_executed": 17,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 95,
+      "grep_calls": 70,
+      "git_calls": 9,
+      "truncated": false,
+      "truncation_reason": null,
+      "parallel": {
+        "enabled": false,
+        "fallback_reason": "research ran before /sdd-proposal was invoked: two read-only audit agents plus direct verification, not the skill's fork lanes"
+      },
+      "note": "Counters are estimates; the run was not metered against a budget profile."
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-11-04T23:05:00Z",
+      "completed_at": "2026-11-04T23:25:00Z",
+      "duration_seconds": 1200,
+      "synthesis_path": "sdd/state/FEAT-805/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 19,
+      "claims_high_conf": 16,
+      "claims_medium_conf": 2,
+      "claims_low_conf": 1,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-11-04T22:58:00Z",
+      "completed_at": "2026-11-04T23:02:00Z",
+      "duration_seconds": 240,
+      "questions_total": 5,
+      "questions_answered": 4,
+      "skipped_reason": null,
+      "note": "U1-U4 answered by the user in the session; U5 (four bounded design choices) deferred to the spec."
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-11-04T23:25:00Z",
+      "completed_at": "2026-11-04T23:40:00Z",
+      "duration_seconds": 900,
+      "proposal_path": "sdd/proposals/sdd-non-python-repos.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "localization is high-confidence for phases 1 and 2 and the four scope decisions are taken; the remaining choices are bounded and belong to the spec's own Q&A",
+      "note": "commit_sha is not recorded here: the state file is part of the commit it would name; see `git log -- sdd/proposals/sdd-non-python-repos.proposal.md`."
+    }
+  },
+  "budget": {
+    "profile": "custom",
+    "max_files_read": 150,
+    "max_grep_calls": 120,
+    "max_git_calls": 20,
+    "max_depth": 3,
+    "max_wall_seconds": 3600
+  },
+  "consumed": {
+    "files_read": 95,
+    "grep_calls": 70,
+    "git_calls": 9,
+    "wall_seconds": 3000
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "/sdd-spec FEAT-805"
+  }
+}

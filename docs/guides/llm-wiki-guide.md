@@ -964,7 +964,7 @@ paths marked):
 0 7 * * 1-5 cd /path/to/project && /path/to/venv/bin/wikitoolkit standup --period day --language en --out /var/log/standups/$(date +\%Y-\%m-\%d).md >> /var/log/standup.log 2>&1
 ```
 
-Consult the [wiki standup runbook](../runbooks/wiki-standup.md) for identity configuration,
+Consult the [wiki standup runbook](https://github.com/phenobarbital/ai-parrot/wiki/Operations-Wiki-standup-briefs-%E2%80%94-runbook) for identity configuration,
 failure recovery and back-fill recipes.
 
 ---
@@ -1090,7 +1090,7 @@ The processor never commits. Review `git status` afterwards. Exit codes:
 
 The full reference covers pipeline stages, triage outcomes, the `inbox`
 config block, the taxonomy, the pages and edges written, archive naming and
-the JSON report: [docs/wiki/inbox.md](../wiki/inbox.md).
+the JSON report: [wiki/wiki/inbox.md](https://github.com/phenobarbital/ai-parrot/wiki/LLM-Wiki-wikitoolkit-inbox).
 
 ### Jira Ticket Extraction (wikitoolkit ingest-jira)
 
@@ -1716,12 +1716,12 @@ Data flow:
 
 - [Remote MCP server (serve, proxy, install)](llm-wiki-remote.md) — share a wiki over HTTPS without exposing ArangoDB (FEAT-569)
 
-- [LLM Wiki architecture (3-layer)](../llm-wiki.md) — PageIndex + GraphIndex
+- [LLM Wiki architecture (3-layer)](https://github.com/phenobarbital/ai-parrot/wiki/LLM-Wiki-LLM-Wiki-%E2%80%94-an-agent-maintained-knowledge-repository) — PageIndex + GraphIndex
   + Ontology composition
-- [WikiToolkit as Claude Code infrastructure](../wiki-claude-code.md) —
+- [WikiToolkit as Claude Code infrastructure](https://github.com/phenobarbital/ai-parrot/wiki/LLM-Wiki-WikiToolkit-as-Claude-Code-infrastructure) —
   focused guide on the Claude Code integration
 - [Jira Ticket Extractor](./jira-ticket-extractor.md) — setup guide for
   the `issues` namespace
 - [Jira Wiki Agent Integration](./jira-wiki-agent-integration.md) — adding
   the issues namespace to an existing agent
-- [PageIndex](../pageindex.md) — tree-based RAG for structured documents
+- [PageIndex](https://github.com/phenobarbital/ai-parrot/wiki/Knowledge-PageIndex-%E2%80%94-Tree-Based-RAG-for-Document-Retrieval) — tree-based RAG for structured documents

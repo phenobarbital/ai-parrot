@@ -19,7 +19,7 @@ class StorageMetrics(Protocol):
     AI-Parrot ships a no-op default and an ``InstrumentedBackend`` wrapper that
     calls these methods around every backend operation.
 
-    Example Prometheus adapter — see docs/storage-backends.md §Observability.
+    Example Prometheus adapter — see wiki/stores/storage-backends.md §Observability.
     """
 
     def record_latency(

@@ -22,8 +22,8 @@ def test_swarm_example_loads(monkeypatch):
 
 
 def test_docs_exist():
-    for f in ("docs/integrations/matrix/CLIENTS.md", "docs/integrations/matrix/BRIDGES.md"):
+    for f in ("wiki/integrations/matrix/CLIENTS.md", "wiki/integrations/matrix/BRIDGES.md"):
         text = (ROOT / f).read_text().lower()
         assert text
-    assert "notificationmixin" in (ROOT / "docs/integrations/matrix/BRIDGES.md").read_text()
-    assert "element x" in (ROOT / "docs/integrations/matrix/CLIENTS.md").read_text().lower()
+    assert "notificationmixin" in (ROOT / "wiki/integrations/matrix/BRIDGES.md").read_text()
+    assert "element x" in (ROOT / "wiki/integrations/matrix/CLIENTS.md").read_text().lower()

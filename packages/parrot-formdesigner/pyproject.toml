@@ -52,12 +52,12 @@ dependencies = [
 
 [project.optional-dependencies]
 ai-parrot = [
-    "ai-parrot>=2.0.0",
+    "ai-parrot>=2.1.1",
 ]
 # FEAT-544: alias for the "a2ui" render format — same pin as `ai-parrot`,
 # named for discoverability (`pip install parrot-formdesigner[a2ui]`).
 a2ui = [
-    "ai-parrot>=2.0.0",
+    "ai-parrot>=2.1.1",
 ]
 redis = [
     "redis>=4.5",
@@ -66,7 +66,7 @@ gsheet = [
     "google-api-python-client>=2.151.0",
 ]
 test = [
-    "pypdf>=6.0",
+    "pypdf>=6.21.4",
     "jsonschema>=4.0",
     "pytest>=7.0",
     "pytest-asyncio>=0.23",

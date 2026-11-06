@@ -1000,3 +1000,57 @@ async def test_engine_never_stages_protected_sdd_state_even_if_declared(git_sand
     assert "engine-committed coder deliverable" not in log
     _rc, log, _err = await _git("log", "--oneline", feature_branch, cwd=worktree)
     assert "engine-committed coder deliverable" not in log
+
+
+async def test_failed_native_prepare_does_not_hold_the_execution(git_sandbox_feature, noop_probe):
+    """A `prepare_native` that cannot create its sub-worktree leaves nothing admitted.
+
+    Nothing was handed to a coder, so there is nothing a later `coder_merge` could
+    settle: the seat must be free again and the execution must still be closable.
+    """
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    roster = RosterConfig(seats=[RosterSeat(label="h", kind="native")])
+    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path))
+    execution_id = "550e0000-0000-0000-0000-000000000071"
+    await engine.begin_execution("demo", str(worktree), execution_id)
+
+    # A leftover branch with the attempt's name makes `git worktree add -b` fail.
+    stale = f"{feature_branch}--{engine._worker_id('TASK-0001', 1, execution_id).replace('.', '-')}"
+    proc = await asyncio.create_subprocess_exec("git", "branch", stale, cwd=str(worktree))
+    assert await proc.wait() == 0
+
+    with pytest.raises(Exception, match="git worktree add failed"):
+        await engine.prepare_native("demo", str(worktree), "TASK-0001", execution_id)
+
+    pool = engine._executions[execution_id]
+    assert pool.snapshot().admitted_attempts == {}
+    assert (execution_id, "TASK-0001") not in engine._native_reservations
+    view = await engine.end_execution(execution_id)
+    assert view.status == "closed"
+
+
+async def test_execution_busy_names_what_is_still_in_flight(git_sandbox_feature, noop_probe):
+    """`execution_busy` says which task holds the execution and how to settle it."""
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    roster = RosterConfig(seats=[RosterSeat(label="h", kind="native")])
+    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path))
+    execution_id = "550e0000-0000-0000-0000-000000000072"
+    await engine.begin_execution("demo", str(worktree), execution_id)
+    prep = await engine.prepare_native("demo", str(worktree), "TASK-0001", execution_id)
+
+    with pytest.raises(CoderFailure) as excinfo:
+        await engine.end_execution(execution_id)
+
+    failure = excinfo.value
+    assert failure.code == "execution_busy"
+    assert "TASK-0001" in failure.message
+    assert "coder_merge" in failure.message
+    assert failure.details["in_flight"] == [
+        {
+            "task_id": "TASK-0001",
+            "attempt_uid": prep.attempt_uid,
+            "backend": "native",
+            "model": prep.model,
+            "kind": "native_reservation",
+        }
+    ]

@@ -19,6 +19,7 @@ from parrot.knowledge.wiki.ledger.integration import (
 )
 from parrot.knowledge.wiki.ledger.outbox import LedgerOutbox, StrictLedgerReadError
 
+
 def _ev(kind: str, subject: str, payload: dict[str, object], n: int) -> LedgerEvent:
     """Build a deterministic event with a unique timestamp-derived identity."""
     return LedgerEvent(
@@ -429,6 +430,76 @@ async def test_all_redundant_is_already_delivered_without_commit(two_clones: tup
     receipt = await outbox.receipt_for(batch.batch_id)
     assert receipt is not None
     assert receipt.skipped_event_ids == [redundant.event_id]
+
+
+# issue:124a6ffbbf48 — an unclaim of an already-terminal issue never blocks delivery.
+
+
+def test_drop_redundant_unclaim_of_closed_issue() -> None:
+    """A stale-ledger claim + unclaim on a closed issue: the claim is kept, the unclaim is set aside."""
+    subject = "issue:stale"
+    remote = [_opened(subject, 1), _ev("issue.closed", subject, {"closed_by": "agent:one", "reason": "done"}, 2)]
+    claim = _ev("issue.claimed", subject, {"claimed_by": "agent:two"}, 3)
+    unclaim = _ev("issue.unclaimed", subject, {"actor": "agent:two", "reason": "already fixed"}, 4)
+
+    plan = drop_redundant_closes(remote, merge_batch([], [(_line(e), e) for e in (claim, unclaim)]))
+
+    assert plan.new_events == [claim]
+    assert plan.redundant_unclaims == [unclaim.event_id]
+    assert plan.redundant_closes == []
+    assert plan.skipped_event_ids == [unclaim.event_id]
+    assert find_transition_conflicts(remote, plan.new_events) == []
+
+
+def test_drop_redundant_unclaim_after_in_batch_close() -> None:
+    """An unclaim following a close earlier in the same batch is redundant too."""
+    subject = "issue:inbatch"
+    claim = _ev("issue.claimed", subject, {"claimed_by": "agent:two"}, 2)
+    close = _ev("issue.closed", subject, {"closed_by": "agent:two", "reason": "done"}, 3)
+    unclaim = _ev("issue.unclaimed", subject, {"actor": "agent:two", "reason": "late"}, 4)
+
+    plan = drop_redundant_closes(
+        [_opened(subject, 1)], merge_batch([], [(_line(e), e) for e in (claim, close, unclaim)])
+    )
+
+    assert plan.new_events == [claim, close]
+    assert plan.redundant_unclaims == [unclaim.event_id]
+
+
+def test_unclaim_of_claimed_issue_is_kept() -> None:
+    """A normal unclaim of a claimed (non-terminal) issue still lands."""
+    subject = "issue:live"
+    remote = [_opened(subject, 1), _ev("issue.claimed", subject, {"claimed_by": "agent:two"}, 2)]
+    unclaim = _ev("issue.unclaimed", subject, {"actor": "agent:two", "reason": "handing off"}, 3)
+
+    plan = drop_redundant_closes(remote, merge_batch([], [(_line(unclaim), unclaim)]))
+
+    assert plan.new_events == [unclaim]
+    assert plan.skipped_event_ids == []
+
+
+async def test_redundant_unclaim_delivers_rest_and_records_skipped(two_clones: tuple[Path, Path, Path]) -> None:
+    """The reported shape: a batch blocked only by an unclaim of a closed issue now delivers the rest."""
+    _, first, second = two_clones
+    await _close_on_dev(second, "issue:stale")
+    claim = _ev("issue.claimed", "issue:stale", {"claimed_by": "agent:two"}, 22)
+    unclaim = _ev("issue.unclaimed", "issue:stale", {"actor": "agent:two", "reason": "already fixed"}, 23)
+    fresh = _opened("issue:fresh", 24)
+    outbox, batch = await _batch_of(first, _opened("issue:stale", 20), claim, unclaim, fresh)
+    integrator = LedgerIntegrator(first, outbox)
+
+    report = await integrator.integrate(batch)
+
+    assert report.status == "delivered", report
+    assert report.skipped == [unclaim.event_id]
+    receipt = await outbox.receipt_for(batch.batch_id)
+    assert receipt is not None
+    assert receipt.skipped_event_ids == [unclaim.event_id]
+    remote_ids = await integrator.remote_event_ids()
+    assert {claim.event_id, fresh.event_id} <= remote_ids
+    assert unclaim.event_id not in remote_ids
+    head = _run_git(first, "rev-parse", "HEAD")
+    assert await outbox.prepare(repo_root=first, source_ref="HEAD", source_head=head, known_ids=remote_ids) is None
 
 
 # FEAT-771 / TASK-4896 — no leaked temp worktree or scratch directory.

@@ -22,6 +22,15 @@ def scratch_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return root
 
 
+_REAL_WARM_TIKTOKEN_CACHE = native.warm_tiktoken_cache
+
+
+@pytest.fixture(autouse=True)
+def no_tiktoken_warmup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep launcher tests off the network; the warm-up has its own tests below."""
+    monkeypatch.setattr(native, "warm_tiktoken_cache", lambda target, environ: None)
+
+
 @pytest.fixture
 def linked(tmp_path: Path) -> tuple[Path, Path]:
     """Return a linked feature worktree and its primary checkout."""
@@ -728,6 +737,7 @@ def test_environment_does_not_mutate_os_environ(
     assert environment["PYTHONPATH"].split(os.pathsep)[0] == str(feature / "packages" / "x" / "src")
     assert Path(environment["XDG_CACHE_HOME"]).is_relative_to(scratch_root)
     assert Path(environment["UV_CACHE_DIR"]).is_relative_to(scratch_root)
+    assert Path(environment["TIKTOKEN_CACHE_DIR"]).is_relative_to(scratch_root)
     assert os.environ[native.CACHE_DIR_ENV] == str(scratch_root / "configured")
     assert {key: value for key, value in os.environ.items() if key != native.CACHE_DIR_ENV} == {
         key: value for key, value in before.items() if key != native.CACHE_DIR_ENV
@@ -796,3 +806,65 @@ def test_script_mode_sibling_import_resolves_inside_sdd_scripts(tmp_path: Path) 
         check=False,
     )
     assert result.stdout.strip() == "ok", result.stderr
+
+
+def test_tiktoken_cache_is_shared_not_per_session(
+    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    """The tiktoken cache survives the launcher reaping per-session caches."""
+    feature, _main = linked
+    session = scratch_root / "parrot-sdd-cache" / "8c1b7f0e-6a4e-4d8a-9b1e-2f6c5d4a3b21"
+    monkeypatch.setenv(native.CACHE_DIR_ENV, str(session))
+    environment = native.native_command_environment(feature)
+    cache = Path(environment["TIKTOKEN_CACHE_DIR"])
+    assert cache == native.tiktoken_cache_dir()
+    assert not cache.is_relative_to(session)
+    assert cache.parent.name.startswith("shared-")
+
+
+def test_warm_tiktoken_cache_copies_host_cache_without_download(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Encodings already cached on the host are copied; nothing is downloaded."""
+    host_tmp = tmp_path / "host-tmp"
+    host_cache = host_tmp / "data-gym-cache"
+    host_cache.mkdir(parents=True)
+    encoding = "9b5ad71b2ce5302211f9c61530b329a4922fc6a4"
+    (host_cache / encoding).write_bytes(b"encoding")
+    (host_cache / "notes.txt").write_text("not an encoding", encoding="utf-8")
+    (host_cache / ("a" * 40)).symlink_to(host_cache / "notes.txt")
+
+    def no_download(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("must not download when the host cache is seeded")
+
+    monkeypatch.setattr(native.subprocess, "run", no_download)
+    target = tmp_path / "sandbox-cache"
+    _REAL_WARM_TIKTOKEN_CACHE(target, {"TMPDIR": str(host_tmp)})
+    assert sorted(entry.name for entry in target.iterdir()) == [encoding]
+    assert (target / encoding).read_bytes() == b"encoding"
+
+
+def test_warm_tiktoken_cache_downloads_into_target_when_host_cache_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no host cache, the host downloads straight into the sandbox cache, bounded by a timeout."""
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(native.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(native.subprocess, "run", lambda argv, **kwargs: calls.append({"argv": argv, **kwargs}))
+    target = tmp_path / "sandbox-cache"
+    _REAL_WARM_TIKTOKEN_CACHE(target, {"TMPDIR": str(tmp_path / "empty-tmp")})
+    assert len(calls) == 1
+    assert calls[0]["env"]["TIKTOKEN_CACHE_DIR"] == str(target)  # type: ignore[index]
+    assert calls[0]["timeout"] == native._TIKTOKEN_WARM_TIMEOUT_S
+    assert "cl100k_base" in calls[0]["argv"][-1]  # type: ignore[index]
+
+
+def test_warm_tiktoken_cache_never_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A slow or failing download leaves the cache empty instead of failing the launch."""
+
+    def timeout(*_args: object, **_kwargs: object) -> None:
+        raise subprocess.TimeoutExpired(cmd="tiktoken", timeout=1)
+
+    monkeypatch.setattr(native.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(native.subprocess, "run", timeout)
+    _REAL_WARM_TIKTOKEN_CACHE(tmp_path / "sandbox-cache", {"TMPDIR": str(tmp_path / "empty-tmp")})

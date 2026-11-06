@@ -1,0 +1,9 @@
+### Unresolved (defer to spec / implementation)
+
+- [ ] **How does the contract probe become language-aware?** — *Owner*: tbd (phase 3, not in the first
+  spec)
+  *Blocks claims*: C14, C19
+  *Plausible answers*: a) a command table keyed by file extension inside the probe prompt ·
+  b) delegate `symbol` / `outline` to `wikitoolkit symbols`, which already scans JS / TS / Svelte
+
+---

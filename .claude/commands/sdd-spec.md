@@ -586,6 +586,12 @@ absent `e2e` key defaults the later-generated plan's policy to `optional`
   frozen — the spec declares policy/scenario intent only, never fabricated
   node IDs.
 
+**Documentation chapter hint (FEAT-801):**
+For `type: feature` specs, write the `docs:` frontmatter (`policy: required`, `pages: [wiki/...]`,
+optional `api_modules`) and `## 10. Documentation` listing the wiki pages this feature must deliver.
+For `type: hotfix` and `/sdd-brief`, set `policy: none` (or omit the key). The chapter is informational
+and never blocks closeout.
+
 ### 5b. Consequence Gate
 
 Render, then check (read-only):
@@ -681,7 +687,7 @@ If the pull or the push fails, do not force anything. Stop and print:
    (intake mode only; after the output, run `/sdd-tojira` when Jira = create)
 
    To create a worktree for this feature after task decomposition:
-     parrot sdd worktree ensure --slug <feature-name> --feature-id FEAT-<FEAT-ID>
+     parrot sdd worktree ensure --slug <feature-name> --feature-id <FEAT-ID>
 
 Next:
   1. Review the spec — check Acceptance Criteria and Architectural Design.

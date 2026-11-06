@@ -34,7 +34,7 @@ Given the input brief (``document_path``, ``document_kind``, optional
    already exists and is complete, validate it instead of regenerating.
 4. **Create the worktree** at the worktree root
    using
-   ``parrot sdd worktree ensure --slug <slug> --feature-id FEAT-<id>``
+   ``parrot sdd worktree ensure --slug <slug> --feature-id FEAT-<NNN>``
    from the base branch (``dev``, unless the spec's frontmatter says
    otherwise).
 

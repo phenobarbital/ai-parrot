@@ -385,7 +385,7 @@ class LedgerOutbox:
             batch: The sealed batch that was verified on the remote.
             remote_head: Remote commit the verification ran against.
             verified_digest: Digest of the verified (delivered) events.
-            skipped_event_ids: Redundant closes deliberately not delivered.
+            skipped_event_ids: Redundant closes and unclaims of terminal issues, deliberately not delivered.
         """
         await asyncio.to_thread(self._acknowledge_sync, batch, remote_head, verified_digest, list(skipped_event_ids))
 

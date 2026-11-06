@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 from unittest import mock
 
@@ -53,7 +55,12 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _git(repo, "commit", "-qm", "seed")
     _git(repo, "push", "-q", "-u", "origin", "dev")
     _install_ledger_hooks(repo)  # after the seed commit, so the pre-commit ledger hook never fires here
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: f"/usr/bin/{name}")  # gh, jq, claude present
+    real_which = shutil.which
+    monkeypatch.setattr(
+        doctor.shutil,
+        "which",
+        lambda name, path=None: real_which(name, path=path) if path is not None else f"/usr/bin/{name}",
+    )  # gh, jq, claude present; launcher probes honour their explicit PATH
     monkeypatch.setattr(doctor.subprocess, "run", _gh_ok(doctor.subprocess.run))
     monkeypatch.setattr(doctor, "_check_bwrap_sandbox", list)  # OS-level check, tested separately
     return repo
@@ -73,6 +80,55 @@ def _gh_ok(real_run):
 def test_ready_repo_has_no_sdd_failures(ready_repo: Path) -> None:
     checks = doctor._check_sdd(ready_repo)
     assert checks and not doctor.failed(checks), [c.model_dump() for c in doctor.failed(checks)]
+
+
+def test_doctor_cli_pin_provenance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only actual argv/env pins allow a linked checkout check to pass."""
+    main = tmp_path / "main"
+    admin = main / ".git" / "worktrees" / "worktree"
+    admin.mkdir(parents=True)
+    (admin / "commondir").write_text("../..\n", encoding="utf-8")
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    (worktree / ".git").write_text(f"gitdir: {admin}\n", encoding="utf-8")
+    monkeypatch.chdir(worktree)
+    monkeypatch.delenv("PARROT_PROJECT", raising=False)
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+
+    ok_check = doctor.DoctorCheck(name="isolated runtime", ok=True)
+    for name in (
+        "_check_uv",
+        "_check_python",
+        "_check_entrypoints",
+        "_check_path",
+        "_check_tools_wiki",
+        "_check_runtime_lockstep",
+    ):
+        monkeypatch.setattr(doctor, name, lambda: ok_check)
+    monkeypatch.setattr(doctor, "_check_host_configs", lambda root: [])
+    monkeypatch.setattr(doctor, "_check_toolkits", lambda root: [])
+
+    monkeypatch.setattr(sys, "argv", ["parrot", "self", "doctor"])
+    unpinned = CliRunner().invoke(cli, ["self", "doctor"])
+    assert unpinned.exit_code == 1
+    assert "repo: checkout" in unpinned.output and str(main.resolve()) in unpinned.output
+
+    monkeypatch.setattr(sys, "argv", ["parrot", "--project", str(worktree), "self", "doctor"])
+    argv_pinned = CliRunner().invoke(cli, ["self", "doctor"])
+    assert argv_pinned.exit_code == 0
+    assert "explicitly selected linked worktree" in argv_pinned.output
+
+    monkeypatch.setattr(sys, "argv", ["parrot", "self", "doctor"])
+    for variable in ("PARROT_PROJECT", "CLAUDE_PROJECT_DIR"):
+        monkeypatch.setenv(variable, str(worktree))
+        env_pinned = CliRunner().invoke(cli, ["self", "doctor"])
+        assert env_pinned.exit_code == 0
+        assert "explicitly selected linked worktree" in env_pinned.output
+        monkeypatch.delenv(variable)
+
+    runtime_only = CliRunner().invoke(cli, ["self", "doctor", "--runtime-only"])
+    assert runtime_only.exit_code == 0
+    assert "repo: checkout" not in runtime_only.output
 
 
 @pytest.mark.parametrize(
@@ -385,6 +441,11 @@ def test_doctor_custom_root_scope(ready_repo: Path, tmp_path: Path, monkeypatch:
 # --- bwrap sandbox checks (OS-level, tested with mocks) ---------------------------------------------------
 
 
+def _proc_flag_count(argv: list[str]) -> int:
+    """Number of adjacent ``--proc /proc`` pairs in a bwrap argv."""
+    return sum(1 for i, arg in enumerate(argv[:-1]) if arg == "--proc" and argv[i + 1] == "/proc")
+
+
 class TestBwrapSandbox:
     """Unit tests for _check_bwrap_sandbox — always mocked, never runs real bwrap."""
 
@@ -428,6 +489,34 @@ class TestBwrapSandbox:
         assert by_name["sdd: bwrap"].ok
         nested = by_name["sdd: bwrap nested userns"]
         assert not nested.ok and "sandbox-setup.md" in nested.fix
+
+    def test_probe_gives_each_level_a_writable_proc(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Every probe level must pass ``--proc /proc``.
+
+        With only ``--ro-bind / /`` the outer sandbox hands the inner bwrap the host
+        ``/proc`` as a read-only bind; the inner bwrap then cannot write its ``uid_map``
+        and the nested probe fails with "setting up uid map: Read-only file system" on a
+        host that is configured correctly.  Mocked ``subprocess.run`` can never surface
+        that, so the argv itself is the assertion — and it must mirror the real wrapper
+        in :mod:`parrot.sdd.scripts.worktree_environment`, which passes ``--proc`` too.
+        """
+        monkeypatch.setattr(doctor.sys, "platform", "linux")
+        monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/bwrap")
+        seen: list[list[str]] = []
+
+        def fake_run(cmd, **kw):
+            seen.append(list(cmd))
+            return subprocess.CompletedProcess(cmd, 0, "ok\n", "")
+
+        monkeypatch.setattr(doctor.subprocess, "run", fake_run)
+        doctor._check_bwrap_sandbox()
+
+        assert len(seen) == 2, "expected a single-level and a nested probe"
+        single, nested = seen
+        assert _proc_flag_count(single) == 1
+        # The nested probe spawns bwrap twice; each level needs its own fresh procfs.
+        assert nested.count("/usr/bin/bwrap") == 2
+        assert _proc_flag_count(nested) == 2
 
     def test_all_ok(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(doctor.sys, "platform", "linux")

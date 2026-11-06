@@ -17,7 +17,7 @@ Server infrastructure for the [AI-Parrot](https://github.com/phenobarbital/ai-pa
 | `parrot.autonomous` | AutonomousOrchestrator, transport layer (parrot-fs), deploy tools |
 | `parrot.mcp` (server) | MCPServer, MCPToolAdapter, MCPServerConfig, transports, CLI |
 | `parrot.a2a` (server) | A2AServer, A2AEnabledMixin, A2ASecurityMiddleware |
-| `parrot.server.ui` | Embedded Admin UI (`setup_admin_ui()`, `/admin`) — login, status dashboard, read-only agent inventory. See [`docs/admin-ui.md`](../../docs/admin-ui.md). |
+| `parrot.server.ui` | Embedded Admin UI (`setup_admin_ui()`, `/admin`) — login, status dashboard, read-only agent inventory. See [`wiki/server/admin-ui.md`](https://github.com/phenobarbital/ai-parrot/wiki/Server-%26-APIs-Admin-UI-%28FEAT-468%29). |
 
 ## Installation
 
@@ -48,4 +48,4 @@ The host `parrot.*` `__init__.py` files use `pkgutil.extend_path` and lazy `__ge
 
 ## Migration
 
-See [`docs/migration/feat-203-ai-parrot-server.md`](../../docs/migration/feat-203-ai-parrot-server.md) for the full migration guide.
+See [`wiki/migration/feat-203-ai-parrot-server.md`](https://github.com/phenobarbital/ai-parrot/wiki/Migration-Migration-%E2%80%94-FEAT-203%3A-ai-parrot-server) for the full migration guide.

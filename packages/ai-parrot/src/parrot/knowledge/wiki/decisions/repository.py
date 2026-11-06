@@ -60,11 +60,13 @@ class DecisionRepository:
             return None
         return decision_from_page(page), page.get("content_hash")
 
-    async def inventory(self) -> list[DecisionRecord]:
-        """Load the complete bounded ADR inventory.
+    async def inventory_with_hashes(self) -> list[tuple[DecisionRecord, str | None]]:
+        """Load the complete bounded ADR inventory with each page's stored ``content_hash``.
 
         Reads ``limit=max_records + 1`` so an overflow is detectable rather
-        than silently truncated into a wrong "no decisions" answer.
+        than silently truncated into a wrong "no decisions" answer. The hash
+        is the one the store holds for the page the record was decoded from —
+        compare against it, never against a re-encoded record.
 
         Raises:
             DecisionError: ``ADR_INVENTORY_LIMIT`` when the plane holds more
@@ -77,7 +79,7 @@ class DecisionRepository:
                 ADR_INVENTORY_LIMIT,
                 f"ADR inventory exceeds max_records={self._max_records}; raise the bound or prune records",
             )
-        records: list[DecisionRecord] = []
+        pairs: list[tuple[DecisionRecord, str | None]] = []
         for stub in stubs:
             concept_id = stub.get("concept_id")
             page = await self._store.get_page(concept_id, include_body=True)
@@ -86,12 +88,21 @@ class DecisionRepository:
                 # inventory-level error, just skip it.
                 continue
             try:
-                records.append(decision_from_page(page))
+                pairs.append((decision_from_page(page), page.get("content_hash")))
             except DecisionError as exc:
                 self.last_diagnostics.append(
                     DecisionDiagnostic(code=exc.code, message=str(exc), decision_id=exc.decision_id or concept_id)
                 )
-        return records
+        return pairs
+
+    async def inventory(self) -> list[DecisionRecord]:
+        """Load the complete bounded ADR inventory.
+
+        Raises:
+            DecisionError: ``ADR_INVENTORY_LIMIT`` when the plane holds more
+                than ``max_records`` ADR pages.
+        """
+        return [record for record, _content_hash in await self.inventory_with_hashes()]
 
     async def save(self, record: DecisionRecord, expected_content_hash: str | None) -> DecisionRecord:
         """CAS one full record and its audit history.

@@ -107,10 +107,10 @@ FEAT-008 — MCP Security Layer
 FEAT-009 — Security Toolkits
   ⚡ Parallel tasks (can run in separate worktrees):
   3. TASK-042 — Prowler Toolkit      [medium / S]
-     parrot sdd worktree ensure --slug prowler --feature-id TASK-042
+     parrot sdd worktree ensure --slug prowler --feature-id FEAT-042
      → cd "$WORKTREES_DIR/task-042-prowler" && /sdd-start TASK-042
   4. TASK-043 — Trivy Toolkit        [medium / S]
-     parrot sdd worktree ensure --slug trivy --feature-id TASK-043
+     parrot sdd worktree ensure --slug trivy --feature-id FEAT-043
      → cd "$WORKTREES_DIR/task-043-trivy" && /sdd-start TASK-043
 ```
 

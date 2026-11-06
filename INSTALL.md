@@ -158,7 +158,7 @@ brew services start postgresql@15
 
 The install and first-use guide is [docs/getting-started.md](docs/getting-started.md) — project
 venv or the machine-wide managed runtime (`--global`), providers, verification. Reference detail for
-the managed runtime, `parrot self ...` and the SDD flow: [docs/install/global-runtime.md](docs/install/global-runtime.md).
+the managed runtime, `parrot self ...` and the SDD flow: [wiki/operations/install/global-runtime.md](https://github.com/phenobarbital/ai-parrot/wiki/Operations-Global-install%3A-the-parrot-managed-runtime-%28reference%29).
 
 ---
 
@@ -179,7 +179,7 @@ This command creates:
 - `logs/` and `templates/`
 
 The global install (`install-parrot.sh --global`) does not need this step: it creates `~/.parrot/env/.env` and
-`~/.parrot/etc/config.ini` for the managed runtime (see [docs/install/global-runtime.md](docs/install/global-runtime.md)).
+`~/.parrot/etc/config.ini` for the managed runtime (see [wiki/operations/install/global-runtime.md](https://github.com/phenobarbital/ai-parrot/wiki/Operations-Global-install%3A-the-parrot-managed-runtime-%28reference%29)).
 
 ### Directory Structure
 

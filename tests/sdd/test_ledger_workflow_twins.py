@@ -141,7 +141,7 @@ class TestDoneTwins:
         for path in (self.CLAUDE, self.ANTIGRAVITY, self.CODEX):
             content = read_workflow_file(path)
             assert "ledger outbox status" in content, path
-            assert "docs/sdd/ledger-outbox.md" in content, path
+            assert "wiki/sdd-tooling/sdd/ledger-outbox.md" in content, path
 
     def test_closes_issues_resolved_by_verified_tasks(self):
         """The /sdd-fix SDD lane hands issue closure to /sdd-done; every twin must run it."""

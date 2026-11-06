@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[4]  # packages/ai-parrot/tests/cli/ → repo root
-DOC = REPO_ROOT / "docs" / "cli" / "parrot-agent.md"
+DOC = REPO_ROOT / "wiki" / "bots" / "cli" / "parrot-agent.md"
 
 
 def test_guide_exists() -> None:
@@ -28,4 +28,4 @@ def test_guide_documents_newline_key() -> None:
 
 
 def test_agentd_doc_mentions_post_turn_hook() -> None:
-    assert "add_post_turn_hook" in (REPO_ROOT / "docs" / "agentd.md").read_text(encoding="utf-8")
+    assert "add_post_turn_hook" in (REPO_ROOT / "wiki" / "bots" / "agentd.md").read_text(encoding="utf-8")

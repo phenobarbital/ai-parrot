@@ -18,6 +18,7 @@ from typing import Optional
 
 import click
 
+from parrot.launcher import LinkedWorktreeError, install_root, require_primary_checkout, shared_state_root
 from parrot.knowledge.wiki.claude_code.installer import (
     install_claude_integration,
     integration_status,
@@ -25,7 +26,6 @@ from parrot.knowledge.wiki.claude_code.installer import (
 )
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
-    find_project_root,
     load_effective_config,
 )
 
@@ -33,17 +33,19 @@ from parrot.knowledge.wiki.project import (
 path_option = click.option("--path", "path_", default=None, help="Repo root (default: auto-detect).")
 
 
-def _resolve_root(path: Optional[str]) -> Path:
-    """Resolve the target repository root or abort with guidance."""
+def _resolve_root(path: Optional[str], *, write: bool = True) -> Path:
+    """Resolve an install target, rejecting implicit linked-worktree writes."""
     if path:
         root = Path(path).resolve()
         if not root.is_dir():
             raise click.ClickException(f"Not a directory: {root}")
-        return root
-    found = find_project_root()
-    if found is None:
-        raise click.ClickException("No repository found upwards from here — run inside a git " "repo or pass --path.")
-    return found
+    try:
+        resolved = install_root(Path.cwd(), explicit=Path(path) if path else None)
+        if write:
+            require_primary_checkout(resolved)
+    except LinkedWorktreeError as exc:
+        raise click.ClickException(str(exc)) from exc
+    return resolved.root
 
 
 @click.group(name="claude")
@@ -168,8 +170,9 @@ def install(
     A post-install wizard can configure the SDD sandbox mode.
     """
     root = _resolve_root(path_)
+    state_root = shared_state_root(root)
     try:
-        config = load_effective_config(root).config
+        config = load_effective_config(state_root).config
         remote = None
         if use_remote:
             from parrot.knowledge.wiki.project import WikiRemoteConfig
@@ -216,12 +219,12 @@ def install(
         except RuntimeError as exc:
             raise click.ClickException(str(exc)) from exc
 
-    if build_now and not config.is_built(root):
+    if build_now and not config.is_built(state_root):
         click.echo("Building the wiki plane (first run)...")
         from parrot.knowledge.wiki.cli import build as wiki_build
 
         ctx = click.Context(wiki_build)
-        ctx.invoke(wiki_build, path_=str(root), quiet=True)
+        ctx.invoke(wiki_build, path_=str(state_root), quiet=True)
 
     click.secho(
         "Claude Code integration installed. Try: " '`wikitoolkit query "<question>"` or /parrotwiki in Claude Code.',
@@ -275,7 +278,7 @@ def uninstall(path_: Optional[str]) -> None:
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def status(path_: Optional[str], as_json: bool) -> None:
     """Show which integration pieces are installed."""
-    root = _resolve_root(path_)
+    root = _resolve_root(path_, write=False)
     info = integration_status(root)
 
     try:

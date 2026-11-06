@@ -1,5 +1,31 @@
 # AI-Parrot Configuration Guide
 
+## Minimal Configuration
+
+To run your first chatbot, you only need a few environment variables in your `env/.env` file:
+
+- **`OPENAI_API_KEY`** or **`GOOGLE_API_KEY`** or **`ANTHROPIC_API_KEY`**: One LLM API key for basic chat functionality
+- **`CACHE_HOST`** and **`CACHE_PORT`**: Redis connection for conversation history (defaults to localhost:6379)
+- **`DBHOST`**, **`DBUSER`**, **`DBPWD`**, **`DBNAME`**: PostgreSQL connection for structured data (can use defaults for local development)
+
+Example minimal `.env` file:
+```env
+# Choose one LLM provider
+OPENAI_API_KEY=your_openai_api_key_here
+# GOOGLE_API_KEY=your_google_api_key_here
+# ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# Redis for conversation history
+CACHE_HOST=localhost
+CACHE_PORT=6379
+
+# PostgreSQL for structured data
+DBHOST=localhost
+DBUSER=parrot_user
+DBPWD=secure_password
+DBNAME=parrot_db
+```
+
 This document describes the most important configuration values for AI-Parrot. All configuration values are loaded from `.env` files in the `env/` folder using `navconfig`.
 
 ## Table of Contents
@@ -24,7 +50,7 @@ This document describes the most important configuration values for AI-Parrot. A
 Configuration for Google's Generative AI (Gemini models).
 
 - **`GOOGLE_API_KEY`**: API key for Google GenAI services
-- **`CREW_AI_KEY`**: API key used by Google agents in crews built through the AgentCrew HTTP handlers, and by the crew's own default Google orchestration LLM. Unset falls back to `GOOGLE_API_KEY`. See `docs/crew_handler.md`.
+- **`CREW_AI_KEY`**: API key used by Google agents in crews built through the AgentCrew HTTP handlers, and by the crew's own default Google orchestration LLM. Unset falls back to `GOOGLE_API_KEY`. See `wiki/bots/crew_handler.md`.
 - **`VERTEX_PROJECT_ID`**: Google Cloud project ID for Vertex AI
 - **`VERTEX_REGION`**: Region for Vertex AI deployment
 

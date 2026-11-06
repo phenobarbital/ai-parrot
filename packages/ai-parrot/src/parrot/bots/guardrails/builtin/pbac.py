@@ -107,7 +107,7 @@ class PBACToolCallGuardrail(Guardrail):
         are enriched for forward-compatibility (a documented navigator-auth
         limitation: `job_code`/`department_code`/`programs` are not
         currently forwarded to the Rust engine, see
-        ``docs/security/pbac-guardrails.md``).
+        ``wiki/security/pbac-guardrails.md``).
 
         Args:
             eval_ctx: The ``EvalContext`` to enrich in place.

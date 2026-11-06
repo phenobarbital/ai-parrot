@@ -1,0 +1,73 @@
+{
+  "feature": "ledger-coder-reviews-fixes",
+  "feature_id": "FEAT-812",
+  "spec": "sdd/specs/ledger-coder-reviews-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-05T02:40:00+00:00",
+  "completed_at": "2026-11-05T02:43:21+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_toolkit.py",
+          "packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_feedback.py",
+          "packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_dispatch.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:d807a3319809e6b1269087b6ed093d5f5c516d76fad926891ba837202d479365"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5216",
+      "slug": "record-tools-accept-models",
+      "title": "coder_record_review/coder_record_feedback accept validated models",
+      "feature_id": "FEAT-812",
+      "feature": "ledger-coder-reviews-fixes",
+      "spec": "sdd/specs/ledger-coder-reviews-fixes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies; modifies only sdd_coder/toolkit.py and test_feedback.py, which TASK-5217 does not touch.",
+      "assigned_to": null,
+      "started_at": "2026-11-05T02:27:19+00:00",
+      "completed_at": "2026-11-05T02:43:21+00:00",
+      "file": "sdd/tasks/completed/TASK-5216-record-tools-accept-models.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5217",
+      "slug": "monotonic-attempt-slot",
+      "title": "Re-dispatched attempts take the next free attempt slot",
+      "feature_id": "FEAT-812",
+      "feature": "ledger-coder-reviews-fixes",
+      "spec": "sdd/specs/ledger-coder-reviews-fixes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies; modifies sdd_coder/engine.py, models.py, telemetry.py and test_engine_dispatch.py, disjoint from TASK-5216's files.",
+      "assigned_to": null,
+      "started_at": "2026-11-05T02:27:19+00:00",
+      "completed_at": "2026-11-05T02:43:21+00:00",
+      "file": "sdd/tasks/completed/TASK-5217-monotonic-attempt-slot.md",
+      "verification": "verified"
+    }
+  ]
+}

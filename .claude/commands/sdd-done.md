@@ -287,6 +287,22 @@ re-derive it here: **the exit code is the contract**, and the gate takes no
 
 Carry `GATE_JSON` into Step 5's report and Step 12's output as an `E2E:` line.
 
+### 4.6b. Documentation Check (FEAT-801)
+
+Run the documentation check. This step never blocks closeout; `--force` has nothing to bypass.
+
+```bash
+DOCS_JSON=$(parrot sdd techwiki check --spec "$SPEC_PATH" --root "$WORKTREE_PATH" --json 2>/dev/null) || true
+```
+
+Record the result:
+- Exit 0 with JSON → `Docs: <policy> — <status>[ (missing: <pages>)]`
+- Exit 2 → `Docs: invalid — <reason_codes>` (malformed `docs:` block or usage error) — continue
+- Any other failure → `Docs: check failed (exit $?) — see output` — continue
+
+Carry the `Docs:` line into Step 5's report, the PR body Evidence section and Step 12's output.
+No exit code of `techwiki check` aborts closeout.
+
 ### 4.7. Test Report (FEAT-695)
 
 When `test_command` in `sdd/config.json` is set (non-blank), skip `select_tests` and `test_report` and run that command once from the repository root instead: record the command, its exit code and the tail of its output, and treat a non-zero exit as a merge blocker. When it is null, the FEAT-699 steps below run unchanged. If the run executed zero tests (no `pytest` invocation, or 0 collected), report "⚠️ not run — no tests selected", never ✅ — even when `test_report render` prints its ✅ gate line.
@@ -540,9 +556,12 @@ wikitoolkit ledger outbox status --repo-root "<worktree-path>" --json
 STATUS_RC=$?
 if (( STATUS_RC == 4 )); then
     echo "⚠️  Legacy ledger contamination detected. Report contaminated_paths from the status output."
-    echo "See docs/sdd/ledger-outbox.md § Legacy feature diff; do not restore or drop these paths."
+    echo "See wiki/sdd-tooling/sdd/ledger-outbox.md § Legacy feature diff; do not restore or drop these paths."
 fi
 # Contamination is reported, not repaired here, and does not block the code PR.
+# FEAT-813: a sandboxed worker left `remote.origin.pushurl=no_push` on this worktree; drop it
+# (idempotent, a no-op when never enabled) so the host push below can reach origin.
+parrot sdd worktree push-protection disable "<worktree-path>" || echo "⚠️  push-protection disable failed; push may be refused"
 git -C <worktree-path> push origin "$BRANCH"
 ```
 
@@ -585,7 +604,7 @@ fi
 Ledger events never travel in the feature PR. Deliver every pending local event to the ledger branch (`ledger_branch` in `sdd/config.json`, else its `base_branch`) through the
 durable outbox — for **every** flow type, hotfixes included (ledger data never goes to the `hotfix_base`). The integrator
 works in its own temporary checkout of the ledger branch, retries a rejected push on a fresh base (max 3), never
-force-pushes and never rotates logs. See `docs/sdd/ledger-outbox.md`.
+force-pushes and never rotates logs. See `wiki/sdd-tooling/sdd/ledger-outbox.md`.
 
 ```bash
 LEDGER_DELIVERY_PENDING=0

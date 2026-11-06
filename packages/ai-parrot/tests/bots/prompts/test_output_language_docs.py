@@ -4,9 +4,9 @@ from pathlib import Path
 
 # Minimal imports to avoid Cython compilation issues
 REPO = Path(__file__).resolve().parents[5]
-GUIDE = REPO / "docs" / "prompts" / "output-language.md"
-JIRA_LAYERS_DOC = REPO / "docs" / "jira-specialist-prompt-layers.md"
-REFERENCE = REPO / "docs" / "prompts" / "layers-reference.md"
+GUIDE = REPO / "wiki" / "prompts" / "output-language.md"
+JIRA_LAYERS_DOC = REPO / "wiki" / "integrations" / "jira-specialist-prompt-layers.md"
+REFERENCE = REPO / "wiki" / "prompts" / "layers-reference.md"
 
 
 def test_guide_exists_and_has_contribution_section():

@@ -1,0 +1,52 @@
+{
+  "feature": "scripts-worktree-sync-tech-debt",
+  "feature_id": "FEAT-813",
+  "spec": "sdd/specs/scripts-worktree-sync-tech-debt.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-05T02:29:17.849210+00:00",
+  "completed_at": "2026-11-05T03:01:15+00:00",
+  "parallel_semantics": "exclusive",
+  "tasks": [
+    {
+      "id": "TASK-5218",
+      "slug": "sync-base-sandbox-reachability",
+      "title": "sync-base sandbox reachability check, clean OSError refusal, rollback-result helper",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Edits worktree_sync.py, also edited by TASK-5219.",
+      "file": "sdd/tasks/completed/TASK-5218-sync-base-sandbox-reachability.md",
+      "feature_id": "FEAT-813",
+      "feature": "scripts-worktree-sync-tech-debt",
+      "spec": "sdd/specs/scripts-worktree-sync-tech-debt.spec.md",
+      "assigned_to": null,
+      "started_at": "2026-11-05T02:30:01+00:00",
+      "completed_at": "2026-11-05T02:32:03+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5219",
+      "slug": "worktree-push-protection",
+      "title": "Host-provisioned sandbox push protection (parrot sdd worktree push-protection)",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5218"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-5218 (shared worktree_sync.py).",
+      "file": "sdd/tasks/completed/TASK-5219-worktree-push-protection.md",
+      "feature_id": "FEAT-813",
+      "feature": "scripts-worktree-sync-tech-debt",
+      "spec": "sdd/specs/scripts-worktree-sync-tech-debt.spec.md",
+      "assigned_to": null,
+      "started_at": "2026-11-05T02:32:27+00:00",
+      "completed_at": "2026-11-05T02:36:12+00:00",
+      "verification": "verified"
+    }
+  ]
+}

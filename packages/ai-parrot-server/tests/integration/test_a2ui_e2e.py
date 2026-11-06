@@ -142,7 +142,7 @@ class TestE2E:
         error{code:'FORBIDDEN'} and never executes (FEAT-474 / FEAT-469 AC-G7).
 
         `build_principal_context` (a2ui.py handler) defaults `roles` to an
-        empty frozenset (docs/outputs/a2ui-agent-functions.md §4 "deny by
+        empty frozenset (wiki/bots/outputs/a2ui-agent-functions.md §4 "deny by
         default"), so a `DefaultPermissionResolver` with no hierarchy denies
         any tool declaring `required_permissions` for this anonymous-role
         user — no custom resolver/PBAC config needed to build the deny.

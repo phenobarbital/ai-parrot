@@ -36,7 +36,7 @@ _LEGACY_REVOKED_KEY = "oauth2:o365:legacy_revoked:{user_id}"
 _LEGACY_REVOKED_TTL_SECONDS = 400 * 24 * 60 * 60  # outlives any OAUTH2_LEGACY_KEYS_UNTIL window
 
 
-# Default delegated scopes — see docs/integrations/office365-oauth2.md
+# Default delegated scopes — see wiki/integrations/office365-oauth2.md
 # for the per-tool mapping.
 DEFAULT_O365_SCOPES: List[str] = [
     "openid",

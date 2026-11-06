@@ -441,6 +441,20 @@ def _tmux_environment(env: Mapping[str, str]) -> list[str]:
     return [f"{name}={env[name]}" for name in names]
 
 
+def _enable_push_protection(worktree: Path) -> str:
+    """Provision the sandbox ``no_push`` guard on the host; a refusal is reported, never fatal.
+
+    ``/sdd-done`` disables it again before pushing the branch.
+    """
+    # Host-only; imported here because the tmux child runs under python -S.
+    from parrot.sdd.scripts import worktree_push_protection
+
+    try:
+        return f"launch-worker: {worktree_push_protection.enable(worktree)}"
+    except (worktree_push_protection.SyncError, OSError, subprocess.SubprocessError) as exc:
+        return f"launch-worker: push protection skipped: {exc}"
+
+
 def launch(
     key: str,
     *,
@@ -505,6 +519,11 @@ def launch(
     _preflight_sandbox(worktree, effective_domains)
     if not no_upstream:
         print(prepare_upstream(worktree), file=sys.stderr)
+        # Host-only advisory; imported here because the tmux child runs under python -S.
+        from parrot.sdd.scripts.worktree_sync import stale_base_summary
+
+        print(stale_base_summary(worktree), file=sys.stderr)
+    print(_enable_push_protection(worktree), file=sys.stderr)
     domain_args = [item for domain in allowed_domains for item in ("--sandbox-allow-domain", domain)]
     token_args = [] if gh_token else ["--no-gh-token"]
     if not tmux:

@@ -1,0 +1,127 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-805",
+  "mode": "enrichment",
+  "summary_oneline": "Make the packaged SDD flow work in non-Python repositories: config out of pyproject.toml, reachable test runners, auto-detected toolchain profiles, worktree setup, language-neutral prompts",
+  "localization": [
+    {"path": "packages/ai-parrot/src/parrot/sdd/config.py", "symbol": "SddConfig", "lines": "19-35", "role": "committed team config (extra=forbid); gains the sandbox, worktree and runner settings", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/config.py", "symbol": "load_sdd_config", "lines": "106-125", "role": "the loader every new consumer goes through", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/scripts/native_claude_sandbox.py", "symbol": "resolve_sandbox_mode", "lines": "246-290", "role": "reads [tool.parrot.sdd] sandbox from pyproject.toml only", "evidence": ["F001"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/scripts/native_claude_sandbox.py", "symbol": "load_launch_config", "lines": "637-675", "role": "reads sandbox_allowed_domains / gh_token from the primary checkout's pyproject.toml only", "evidence": ["F002"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/launch_cli.py", "symbol": null, "lines": "21-24", "role": "per-launch flags, the only alternative today", "evidence": ["F002"]},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/native_artifacts.py", "symbol": "load_manifest", "lines": "103-126", "role": "reads [tool.parrot.worktree] from pyproject.toml only", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/native_artifacts.py", "symbol": "NativeGroup", "lines": "49-71", "role": "the manifest model to reuse unchanged under the new home", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/welcome.py", "symbol": "_set_pyproject_sandbox", "lines": "148-180", "role": "the only writer of [tool.parrot.sdd]", "evidence": ["F005"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/scripts/ensure_worktree.py", "symbol": "main", "lines": "442-451", "role": "the post-create hook point: native sync today, setup command tomorrow", "evidence": ["F003", "F011"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/installer.py", "symbol": "GITIGNORE_BLOCK", "lines": "49-54", "role": "git-ignores all of .parrot/, including the runner settings file", "evidence": ["F006"]},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/runners/registry.py", "symbol": "BUILTIN_MODULES", "lines": "14-20", "role": "runner registry and its .parrot/test_runners.toml config path", "evidence": ["F006"]},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/runners/vitest.py", "symbol": "ADAPTER", "lines": "13-86", "role": "vitest adapter: mandatory TOML cwd, pnpm-only, admin-ui default", "evidence": ["F007"]},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/planner.py", "symbol": null, "lines": "99-106", "role": "feeds TOML settings to non-pytest adapters", "evidence": ["F007"]},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/guard.py", "symbol": "VERDICT_ARGV", "lines": "21-21", "role": "rewrite target that only exists in the ai-parrot monorepo", "evidence": ["F008"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/scripts/select_tests.py", "symbol": "main", "lines": "497-521", "role": "--run path ignores invocation.cwd and appends a pytest flag", "evidence": ["F009"]},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/lint.py", "symbol": "detect_formatter", "lines": "69-90", "role": "engine lint pass: formatter detection from pyproject.toml", "evidence": ["F010"]},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/lint.py", "symbol": "_existing_python_files", "lines": "119-121", "role": "engine lint pass: .py-only file filter", "evidence": ["F010"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/audit.py", "symbol": "EXTERNAL_TOOLS", "lines": "27-27", "role": "tool audit lists black/pylint regardless of the repository", "evidence": ["F017"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-qa.md", "symbol": null, "lines": "57-60", "role": "unconditional ruff + mypy gate", "evidence": ["F012"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-contract-probe.md", "symbol": null, "lines": "61-66", "role": "Python-only probe commands", "evidence": ["F013"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/sdd-done.md", "symbol": null, "lines": "165-182", "role": "full lint pass, ruff-only", "evidence": ["F014"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/qa-runner.md", "symbol": null, "lines": "84-89", "role": "lint/type-check step, ruff/mypy-only (guarded)", "evidence": ["F014"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/_assets/claude/hooks/sdd-worker-format.sh", "symbol": null, "lines": "69-93", "role": "format hook, .py + black/pylint only", "evidence": ["F014"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/_assets/sdd/sdd_templates/task.md", "symbol": null, "lines": "53-281", "role": "Python-shaped task template", "evidence": ["F014"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/_assets/sdd/sdd_templates/brief.md", "symbol": null, "lines": "37-37", "role": "pytest-only validation guidance", "evidence": ["F014"]},
+    {"path": "packages/ai-parrot/src/parrot/sdd/_assets/sdd/sdd_templates/design_research.prompt.md", "symbol": null, "lines": "15-16", "role": "hard-coded ai-parrot identity", "evidence": ["F014"]}
+  ],
+  "constraints": [
+    {"statement": "Security-sensitive settings are read from the PRIMARY checkout only, and sandbox modes off/legacy are never settable from a file", "evidence": ["F001", "F002"], "implication": "the sdd/config.json reader for sandbox policy, runner settings and the worktree setup command must resolve the primary checkout, not the worktree copy; a command that runs on the host must never come from a branch the sandboxed session can write"},
+    {"statement": "SddConfig uses extra=forbid and ensure_worktree loads native_artifacts.py by file path with stdlib + pydantic only", "evidence": ["F004", "F003"], "implication": "new keys are a model change (older parrot versions reject a config that carries them), and the shared reader must stay importable without importing the parrot package"},
+    {"statement": "ai-parrot itself declares both tables in pyproject.toml and tracks .parrot/test_runners.toml", "evidence": ["F002", "F003", "F006"], "implication": "pyproject.toml and the TOML file stay as fallbacks; ai-parrot needs no migration to keep working"},
+    {"statement": ".parrot/ is git-ignored in target repositories and becomes the worktree root under FEAT-802", "evidence": ["F006", "F016"], "implication": "committed configuration cannot live under .parrot/; runner settings need a committed home"},
+    {"statement": "A sandboxed session cannot reach a package registry or write a user-level package store", "evidence": ["F002", "F011"], "implication": "dependency setup has to run on the host at worktree creation, before the sandboxed session starts"},
+    {"statement": "Formatting and auto-fixable lint are engine-owned by design, not coder-turn work", "evidence": ["F010"], "implication": "a toolchain profile must plug into the engine lint pass, not only into prompt text"},
+    {"statement": "FEAT-802 and FEAT-804 are approved and touch the installer, the worktree root and the install-root resolver", "evidence": ["F016"], "implication": "this work sequences after them; the installer and ensure_worktree edits must be rebased on their result"},
+    {"statement": "Every shipped prompt has host twins (claude, agent, agents, codex)", "evidence": ["F012", "F014"], "implication": "each prompt change lands in all copies and is covered by the existing asset-sync checks"}
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      {"name": "Repository settings in sdd/config.json", "role": "sandbox (mode, allowed domains, gh_token), worktree (native groups, setup command) and runner settings, with pyproject.toml / .parrot/test_runners.toml as fallbacks", "evidence": ["F001", "F002", "F003", "F004", "F006"]},
+      {"name": "Toolchain profile detection", "role": "one module that maps marker files (pyproject.toml, package.json, Cargo.toml) to the format / lint / type-check / test commands and file suffixes of a repository, exposed to scripts and, through one CLI verb, to prompts", "evidence": ["F010", "F014", "F015", "F017"]},
+      {"name": "Worktree setup command", "role": "a declared command ensure_worktree runs on the host after creating a worktree", "evidence": ["F003", "F011"]},
+      {"name": "Foreign-repository end-to-end fixture", "role": "a minimal Node + vitest repository exercised from install to select_tests, guard and worktree creation", "evidence": ["F017"]}
+    ],
+    "modified": [
+      {"path": "packages/ai-parrot/src/parrot/sdd/config.py", "symbol": "SddConfig", "change": "new optional blocks; unchanged defaults", "evidence": ["F004"]},
+      {"path": "packages/ai-parrot/src/parrot/sdd/scripts/native_claude_sandbox.py", "symbol": "resolve_sandbox_mode", "change": "resolve env -> sdd/config.json -> pyproject.toml -> default", "evidence": ["F001"]},
+      {"path": "packages/ai-parrot/src/parrot/sdd/scripts/native_claude_sandbox.py", "symbol": "load_launch_config", "change": "same precedence, primary checkout only", "evidence": ["F002"]},
+      {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/native_artifacts.py", "symbol": "load_manifest", "change": "same precedence; model unchanged", "evidence": ["F003"]},
+      {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/welcome.py", "symbol": "_set_pyproject_sandbox", "change": "write sdd/config.json when the repository has no pyproject.toml table", "evidence": ["F005"]},
+      {"path": "packages/ai-parrot/src/parrot/sdd/scripts/ensure_worktree.py", "symbol": "main", "change": "run the setup command after the native sync; report it in the JSON output", "evidence": ["F003", "F011"]},
+      {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/runners/vitest.py", "symbol": "ADAPTER", "change": "default cwd, package manager from the profile, no ai-parrot default label, wider source suffixes", "evidence": ["F007"]},
+      {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/guard.py", "symbol": "VERDICT_ARGV", "change": "rewrite to the packaged entry point", "evidence": ["F008"]},
+      {"path": "packages/ai-parrot/src/parrot/sdd/scripts/select_tests.py", "symbol": "main", "change": "honour invocation.cwd in --run; append --timeout only for pytest", "evidence": ["F009"]},
+      {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/lint.py", "symbol": "detect_formatter", "change": "profile-driven fix/format over the changed files of the profile's suffixes", "evidence": ["F010"]},
+      {"path": "packages/ai-parrot/src/parrot/sdd/audit.py", "symbol": "EXTERNAL_TOOLS", "change": "tool list per detected profile", "evidence": ["F017"]},
+      {"path": "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-qa.md", "symbol": null, "change": "lint gate from the profile; no gate when nothing is configured", "evidence": ["F012"]},
+      {"path": "packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/sdd-contract-probe.md", "symbol": null, "change": "language-aware probe commands", "evidence": ["F013"]},
+      {"path": "packages/ai-parrot/src/parrot/sdd/_assets/sdd/sdd_templates/task.md", "symbol": null, "change": "language-neutral contract and test sections", "evidence": ["F014"]}
+    ],
+    "untouched": [
+      "The parrot tooling stays Python: a target repository still needs python3, jq and the parrot CLI on the host",
+      "Baseline classification and the green cache stay pytest-scoped (documented degradation)",
+      "FEAT-802 (worktree root) and FEAT-804 (portable rule, install root) scopes",
+      "New test-runner kinds beyond pytest, vitest, cargo and parrot-e2e",
+      "Profiles for languages other than Python, Node (JS/TS/Svelte) and Rust"
+    ],
+    "patterns": [
+      {"statement": "Guarded, self-skipping steps with a one-line report (\"lint: ruff not configured\")", "evidence": ["F014"]},
+      {"statement": "Fallback-to-default loader with a typed error for a malformed file", "evidence": ["F004"]},
+      {"statement": "Primary-checkout-only reads for anything a sandboxed session could tamper with", "evidence": ["F002"]},
+      {"statement": "Per-launch CLI flags override file configuration", "evidence": ["F002"]}
+    ],
+    "risks": [
+      {"statement": "A config written by a newer parrot is rejected by an older one (extra=forbid)", "evidence": ["F004"]},
+      {"statement": "A host-side setup command is arbitrary code execution if it is read from an untrusted ref", "evidence": ["F002", "F011"]},
+      {"statement": "Auto-detection is ambiguous in mixed-language repositories; ai-parrot itself is Python plus a Svelte UI", "evidence": ["F015", "F010"]},
+      {"statement": "The reference repository has a live worktree under .claude/worktrees, which FEAT-802 makes the installer refuse", "evidence": ["F015", "F016"]},
+      {"statement": "The prompt inventory beyond the spot-checked lines is second-hand", "evidence": ["F014"]}
+    ]
+  },
+  "confidence_map": [
+    {"id": "C1", "statement": "The sandbox mode can be persisted only in pyproject.toml [tool.parrot.sdd]", "evidence": ["F001"], "confidence": "high", "reasoning": "function read directly; docs agree"},
+    {"id": "C2", "statement": "sandbox_allowed_domains and gh_token can be persisted only in the primary checkout's pyproject.toml; without it the result is ([], False)", "evidence": ["F002"], "confidence": "high", "reasoning": "function read directly"},
+    {"id": "C3", "statement": "[tool.parrot.worktree] is read only from pyproject.toml and an absent file yields an empty manifest", "evidence": ["F003"], "confidence": "high", "reasoning": "function read directly"},
+    {"id": "C4", "statement": "Exactly three modules reference tool.parrot.*: two readers and the welcome-wizard writer", "evidence": ["F005"], "confidence": "high", "reasoning": "grep over packages/*/src"},
+    {"id": "C5", "statement": "sdd/config.json is the committed, language-neutral home and no Python code executes test_command", "evidence": ["F004"], "confidence": "high", "reasoning": "model read; full-tree grep of test_command consumers"},
+    {"id": "C6", "statement": "Runner settings are read from a file the installer git-ignores and never seeds", "evidence": ["F006"], "confidence": "high", "reasoning": "CONFIG_PATH and GITIGNORE_BLOCK read; zero mentions in manifest and installer"},
+    {"id": "C7", "statement": "The vitest adapter needs a TOML cwd, runs pnpm exec, and labels the distribution admin-ui by default", "evidence": ["F007"], "confidence": "high", "reasoning": "lines read directly"},
+    {"id": "C8", "statement": "A vitest runner without the TOML fails with error: 'cwd', exit 2", "evidence": ["F007"], "confidence": "medium", "reasoning": "follows from the unguarded index; the failure path was reported by the audit lane, not executed"},
+    {"id": "C9", "statement": "The broad-test guard rewrites to a path that exists only in ai-parrot", "evidence": ["F008"], "confidence": "high", "reasoning": "constant read; path present at the monorepo root, absent from the manifest"},
+    {"id": "C10", "statement": "select_tests --run ignores invocation.cwd and appends --timeout to every runner", "evidence": ["F009"], "confidence": "high", "reasoning": "both code paths read"},
+    {"id": "C11", "statement": "The engine lint pass and the green cache act only on .py files", "evidence": ["F010"], "confidence": "high", "reasoning": "filters read directly"},
+    {"id": "C12", "statement": "No SDD or dev-loop code installs dependencies into a worktree", "evidence": ["F011"], "confidence": "high", "reasoning": "grep over both trees; ensure_worktree call site read"},
+    {"id": "C13", "statement": "sdd-qa fails every run in a repository without ruff and mypy", "evidence": ["F012"], "confidence": "high", "reasoning": "prompt text read; the gate is an AND of both exit codes"},
+    {"id": "C14", "statement": "sdd-contract-probe reports every TypeScript symbol as missing or absent", "evidence": ["F013"], "confidence": "high", "reasoning": "the four fixed commands read"},
+    {"id": "C15", "statement": "Lint, format and type-check have no indirection in the shipped prompts, and the remaining Python-shaped text is as inventoried", "evidence": ["F014"], "confidence": "medium", "reasoning": "six locations re-read; the rest of the inventory comes from the audit lane"},
+    {"id": "C16", "statement": "navigator-frontend-next runs a hand-ported fork whose ledger and index files are schema-compatible, and the installer plans a clean overwrite", "evidence": ["F015"], "confidence": "high", "reasoning": "files compared; dry-run executed"},
+    {"id": "C17", "statement": "No other spec, proposal or branch covers this, and FEAT-802 / FEAT-804 defer it explicitly", "evidence": ["F016"], "confidence": "high", "reasoning": "non-goals read on origin/dev; proposals, specs and remote branches listed"},
+    {"id": "C18", "statement": "The installer already succeeds on a non-Python repository and detects no toolchain", "evidence": ["F017"], "confidence": "high", "reasoning": "dry-run against the reference repository; code and fixture read"},
+    {"id": "C19", "statement": "wikitoolkit's JS/TS/Svelte scanner can back a language-aware contract probe", "evidence": ["F013"], "confidence": "low", "reasoning": "the scanner exists; substituting it for the grep commands was not tested"}
+  ],
+  "unknowns": [
+    {"id": "U1", "question": "Where must the configuration that today lives only in pyproject.toml live for a repository without one?", "blocks_claims": ["C1", "C2", "C3"], "plausible_answers": ["a) sdd/config.json", "b) parrot.toml at the repository root", "c) .parrot/config.toml"], "user_answer": "sdd/config.json (extend SddConfig; pyproject.toml stays as a fallback)"},
+    {"id": "U2", "question": "What scope should the proposal cover?", "blocks_claims": ["C15", "C16"], "plausible_answers": ["a) everything, in phases", "b) config and blockers only", "c) config only"], "user_answer": "Everything, in phases: config and runners; lint/format and worktree dependencies; neutral prompts, templates and contract-probe; migrate navigator-frontend-next as the acceptance test"},
+    {"id": "U3", "question": "How does a non-Python repository declare lint, format and type-check?", "blocks_claims": ["C11", "C15"], "plausible_answers": ["a) commands in sdd/config.json", "b) sdd/CONVENTIONS.md only", "c) auto-detected profiles"], "user_answer": "Auto-detected profiles (detect package.json, Cargo.toml, ... and pick the tools)"},
+    {"id": "U4", "question": "How does a new worktree get its dependencies?", "blocks_claims": ["C12"], "plausible_answers": ["a) a declared setup command run by ensure_worktree on the host", "b) a link to the main checkout's node_modules", "c) out of scope"], "user_answer": "A declared setup command that ensure_worktree runs on the host when it creates the worktree"},
+    {"id": "U5", "question": "Open design choices left for the spec: (1) runner settings as a block in sdd/config.json or an un-ignored .parrot/test_runners.toml; (2) contract probe as an extension-keyed command table or wikitoolkit symbols; (3) whether a detected profile can be overridden or scoped by path in sdd/config.json; (4) when the setup command re-runs and whether its failure blocks", "blocks_claims": ["C6", "C19", "C11", "C12"], "plausible_answers": ["see proposal §5 Unresolved"], "user_answer": null}
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "localization is high-confidence for phases 1 and 2 and the four scope decisions are taken; the remaining choices are bounded and belong to the spec's own Q&A. The spec should cut the phases into separately shippable features."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": ["F001", "F002", "F003", "F004", "F005", "F006", "F007", "F008", "F009", "F010", "F011", "F012", "F013", "F014", "F015", "F016", "F017"],
+    "findings_unused": [],
+    "notes": "overall_confidence is medium, not high: the prompt inventory (C15) is partly second-hand, C8 was not executed, and C19 is untested. Research ran before the skill was invoked and was not budget-metered; consumed counters are estimates."
+  }
+}

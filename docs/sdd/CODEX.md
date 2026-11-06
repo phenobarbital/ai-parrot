@@ -359,7 +359,7 @@ the main repository:
 $sdd-done FEAT-NNN
 $sdd-done FEAT-NNN --dry-run
 $sdd-done FEAT-NNN --force
-# Configure the jira.transition post_pr hook; see docs/sdd/closeout-hooks.md
+# Configure the jira.transition post_pr hook; see wiki/sdd-tooling/sdd/closeout-hooks.md
 ```
 
 `$sdd-done` verifies:
@@ -427,7 +427,7 @@ cd "$(parrot sdd worktree root --root "$MAIN_ROOT")/feat-<FEAT-ID>-nav-8036-<slu
 $sdd-start TASK-NNN
 # repeat tasks
 cd ../../..
-# Configure jira.transition in .parrot/sdd_hooks.toml; see docs/sdd/closeout-hooks.md
+# Configure jira.transition in .parrot/sdd_hooks.toml; see wiki/sdd-tooling/sdd/closeout-hooks.md
 ```
 
 Greenfield feature:
@@ -453,8 +453,8 @@ $sdd-done NAV-9001
 ## Related Documentation
 
 - [SDD Workflow](./WORKFLOW.md)
-- [SDD Guide](./GUIDE.md)
-- [SDD Platform](./PLATFORM.md)
+- [SDD Guide](https://github.com/phenobarbital/ai-parrot/wiki/SDD-Tooling-Gu%C3%ADa-de-uso-de-los-comandos-%60%2Fsdd-%2A%60)
+- [SDD Platform](https://github.com/phenobarbital/ai-parrot/wiki/SDD-Tooling-AI-Parrot-Spec-Driven-Development-%28SDD%29-Platform)
 - `AGENTS.md`
 - `.agents/skills/sdd-*/SKILL.md`
 - `.codex/agents/sdd-worker.toml`

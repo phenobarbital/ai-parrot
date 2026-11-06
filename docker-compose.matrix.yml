@@ -3,7 +3,7 @@
 # Dev-only stack: no TLS, no Synapse workers (single-process homeserver).
 # Synapse, Element Web, and the mautrix bridges below are AGPL-3.0-licensed
 # and run as separate containers — they are never imported by the
-# MIT-licensed ai-parrot Python code. See docs/integrations/matrix/BRIDGES.md.
+# MIT-licensed ai-parrot Python code. See wiki/integrations/matrix/BRIDGES.md.
 #
 # The parrot AppService itself runs on the HOST (not in this compose file),
 # listening on `appservice_port: 8449` (MatrixCrewConfig default) — Synapse

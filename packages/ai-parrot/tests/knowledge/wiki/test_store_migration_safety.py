@@ -273,3 +273,80 @@ async def test_unstamped_plane_missing_a_column_is_still_backed_up(tmp_path: Pat
     assert list(tmp_path.glob("wiki.db.bak-*"))
     with sqlite3.connect(db) as conn:
         assert "content_hash" in {row[1] for row in conn.execute("PRAGMA table_info(pages)")}
+
+
+async def test_successful_migration_prunes_old_backups(tmp_path: Path) -> None:
+    """issue:092b311c2ad1 — a successful migration keeps only MIGRATION_BACKUP_KEEP sidecars."""
+    db = await _stale_plane(tmp_path)
+    # five sidecars left behind by earlier upgrades, oldest first
+    older = [tmp_path / f"wiki.db.bak-2020010{n}T000000000000Z" for n in range(1, 6)]
+    for path in older:
+        path.write_bytes(b"old backup")
+
+    await SQLiteWikiStore(db, "t").get_meta("k")  # migrates, then prunes
+
+    kept = sorted(p.name for p in tmp_path.glob("wiki.db.bak-*"))
+    assert len(kept) == store_mod.MIGRATION_BACKUP_KEEP, kept
+    # the newest sidecar is this run's own backup; every hand-placed 2020 stamp is gone but the last
+    assert kept[0] == older[-1].name
+    assert not any(p.exists() for p in older[:-1])
+
+
+async def test_failed_migration_keeps_its_backup_unpruned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """issue:092b311c2ad1 — pruning runs only on success, so a recovery snapshot survives."""
+    db = await _stale_plane(tmp_path)
+    stale_sidecars = [tmp_path / f"wiki.db.bak-2020010{n}T000000000000Z" for n in range(1, 4)]
+    for path in stale_sidecars:
+        path.write_bytes(b"old backup")
+
+    async def boom(self, conn):  # noqa: ANN001
+        raise RuntimeError("migration failed")
+
+    monkeypatch.setattr(SQLiteWikiStore, "_migrate", boom)
+    with pytest.raises(RuntimeError, match="migration failed"):
+        await SQLiteWikiStore(db, "t").get_meta("k")
+
+    # nothing pruned: the 3 pre-existing sidecars plus this run's own backup are all still there
+    assert len(list(tmp_path.glob("wiki.db.bak-*"))) == len(stale_sidecars) + 1
+    assert all(path.exists() for path in stale_sidecars)
+
+
+async def test_prune_backups_survives_an_undeletable_sidecar(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A sidecar that cannot be unlinked is logged and skipped, never raised."""
+    db = tmp_path / "wiki.db"
+    await SQLiteWikiStore(db, "t").set_meta("k", "v")
+    sidecars = [tmp_path / f"wiki.db.bak-2020010{n}T000000000000Z" for n in range(1, 4)]
+    for path in sidecars:
+        path.write_bytes(b"old backup")
+
+    real_unlink = Path.unlink
+
+    def flaky_unlink(self, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        if self == sidecars[0]:
+            raise PermissionError("read-only sidecar")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", flaky_unlink)
+    removed = SQLiteWikiStore(db, "t")._prune_backups(keep=1)
+
+    # keep=1 makes sidecars[0] and sidecars[1] stale; the first refuses to go, the second still does
+    assert removed == [sidecars[1]]
+    assert sidecars[0].exists() and sidecars[2].exists()
+    assert not sidecars[1].exists()
+
+
+async def test_prune_backups_ignores_wal_and_shm_sidecars(tmp_path: Path) -> None:
+    """A backup's own -wal/-shm must not be counted as a backup and push a real one out."""
+    db = tmp_path / "wiki.db"
+    await SQLiteWikiStore(db, "t").set_meta("k", "v")
+    newest = tmp_path / "wiki.db.bak-20991231T000000000000Z"
+    newest.write_bytes(b"newest backup")
+    (tmp_path / "wiki.db.bak-20991231T000000000000Z-wal").write_bytes(b"")
+    (tmp_path / "wiki.db.bak-20991231T000000000000Z-shm").write_bytes(b"")
+    older = tmp_path / "wiki.db.bak-20200101T000000000000Z"
+    older.write_bytes(b"old backup")
+
+    removed = SQLiteWikiStore(db, "t")._prune_backups(keep=1)
+
+    assert removed == [older]
+    assert newest.exists()

@@ -87,7 +87,7 @@ def build_guard(*, rls_registry: RlsRegistry, policy_dir: str) -> DataPlanePolic
 def write_toolkit_config(directory: Path, *, models: Path, policy_dir: Path, factory: str) -> Path:
     """Write the documented ``.parrot/mcp-toolkits.yaml`` equivalent for a local run.
 
-    Reproduces the block in ``docs/tools/semantic-layer.md`` with only the host-owned
+    Reproduces the block in ``wiki/tools/semantic-layer.md`` with only the host-owned
     paths and the factory name substituted.
 
     Args:

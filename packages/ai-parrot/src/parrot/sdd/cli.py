@@ -10,6 +10,7 @@ from pathlib import Path
 
 import click
 
+from parrot.launcher import LinkedWorktreeError, install_root, require_primary_checkout
 from parrot.sdd.installer import (
     SUPPORTED_HOSTS,
     install_sdd_integration,
@@ -45,12 +46,16 @@ _host_option = click.option(
 )
 
 
-def _root(path_: Path | None) -> Path:
-    """Resolve ``--path`` (default cwd) or abort when it is not a directory."""
-    root = (path_ or Path.cwd()).resolve()
-    if not root.is_dir():
-        raise click.ClickException(f"Not a directory: {root}")
-    return root
+def _root(path_: Path | None, *, write: bool = True) -> Path:
+    """Resolve an install target and reject implicit linked-worktree writes."""
+    candidate = path_ or Path.cwd()
+    if not candidate.is_dir():
+        raise click.ClickException(f"Not a directory: {candidate.resolve()}")
+    resolved = install_root(Path.cwd(), explicit=path_)
+    try:
+        return (require_primary_checkout(resolved) if write else resolved).root
+    except LinkedWorktreeError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 def _echo_actions(actions: list[str]) -> None:
@@ -74,12 +79,10 @@ def sdd() -> None:
 @_keep_edits_option
 @click.option("--force", is_flag=True, hidden=True, help="Deprecated no-op: overwriting is now the default.")
 @click.option(
-    "--portable",
-    is_flag=True,
-    help=(
-        "Write the bare guard-hook command (needs the global launcher on PATH); default bakes the "
-        "installing venv's `parrot` when the launcher is not on PATH."
-    ),
+    "--portable/--no-portable",
+    "portable",
+    default=None,
+    help=("Bare launcher commands or baked paths; default keeps each host's form then follows the launcher."),
 )
 @click.option("--base-branch", "base_branch", default=None, help="SDD base branch to seed and prepare (default: dev).")
 @click.option("--push-base", is_flag=True, help="Also `git push -u origin <base-branch>` when origin lacks it.")
@@ -105,7 +108,7 @@ def install(
     hosts: tuple[str, ...],
     keep_edits: bool,
     force: bool,
-    portable: bool,
+    portable: bool | None,
     base_branch: str | None,
     push_base: bool,
     hotfix_base: str | None,
@@ -119,7 +122,7 @@ def install(
     try:
         _echo_actions(
             install_sdd_integration(
-                _root(path_),
+                _root(path_, write=True),
                 hosts or ("claude",),
                 keep_edits=keep_edits,
                 dry_run=dry_run,
@@ -174,7 +177,7 @@ def uninstall(
         raise click.UsageError("--stalled cannot be combined with --keep-edits")
     if keep and not stalled:
         raise click.UsageError("--keep requires --stalled")
-    root = _root(path_)
+    root = _root(path_, write=True)
     if stalled:
         selected = hosts or ("claude",)
         refused: str | None = None
@@ -205,7 +208,7 @@ def uninstall(
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
 def status(path_: Path | None, as_json: bool) -> None:
     """Show each SDD asset as current, outdated, edited, foreign or missing per host, plus seeds and state."""
-    report = sdd_status(_root(path_))
+    report = sdd_status(_root(path_, write=False))
     if as_json:
         click.echo(json.dumps(report, indent=2))
         return
@@ -246,6 +249,16 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
             "Create/remove a runnable baseline checkout of a base ref, compiled .so files included.",
         ),
         "list": ("remove_worktree", ("list",), "List worktrees and orphan dirs: dirty, unpushed, PR, live processes."),
+        "sync-base": (
+            "worktree_sync",
+            (),
+            "Bring origin/<base_branch> (or chosen commits) into a worktree; never pushes.",
+        ),
+        "push-protection": (
+            "worktree_push_protection",
+            (),
+            "Enable/disable/inspect the host-provisioned no_push guard sandboxed sync-base needs.",
+        ),
         "remove": (
             "remove_worktree",
             ("remove",),
@@ -298,6 +311,12 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
         "run": ("run_closeout_hooks", (), "Dispatch /sdd-done closeout hooks."),
         "resolve-issues": ("close_resolved_issues", (), "Close the ledger issues a finished feature fixed."),
     },
+    "techwiki": {
+        "api": ("techwiki_api", (), "Generate the markdown API reference for the configured packages."),
+        "bundle": ("techwiki_bundle", (), "Assemble the publishable GitHub-wiki bundle (authored + API + ADRs)."),
+        "check": ("techwiki_check", (), "Report a spec's declared documentation pages (never blocking)."),
+        "sidebar": ("techwiki_bundle", ("--sidebar-only",), "Render Home.md and _Sidebar.md only."),
+    },
     "hooks": {
         "install": ("install_hooks", (), "Install the SDD git hooks."),
         "dangerous-actions": ("dangerous_actions", (), "Serve the PreToolUse dangerous-actions guard (--hook)."),
@@ -305,7 +324,8 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
 }
 #: Packaged modules with a main() that are deliberately NOT mounted (C22: /sdd-insight does not ship).
 # `native_claude_sandbox.main()` serves the `launch-worker` script entry; its CLI is `parrot sdd launch worker`.
-_UNMOUNTED: frozenset[str] = frozenset({"native_claude_sandbox"})
+# `worker_notification.main()` is invoked as a host lifecycle hook, not as an operator-facing SDD command.
+_UNMOUNTED: frozenset[str] = frozenset({"native_claude_sandbox", "worker_notification"})
 _PASSTHROUGH = {"ignore_unknown_options": True, "allow_interspersed_args": False}
 
 

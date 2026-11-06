@@ -5,7 +5,7 @@ from pathlib import Path
 from parrot_formdesigner.api.handlers import READ_FORM_AUDIT
 from parrot_formdesigner.core.audit_trail import CheckId, SkipReason
 
-PAGE = Path(__file__).parents[4] / "docs" / "formdesigner-validation-audit-trail.md"
+PAGE = Path(__file__).parents[4] / "wiki" / "outputs" / "formdesigner-validation-audit-trail.md"
 
 
 def test_page_exists() -> None:

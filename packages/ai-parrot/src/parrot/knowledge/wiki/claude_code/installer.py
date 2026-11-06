@@ -32,6 +32,7 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable, Optional, Sequence
 
+from parrot.launcher import shared_state_root
 from parrot.knowledge.wiki.claude_code import assets
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
@@ -41,6 +42,7 @@ from parrot.knowledge.wiki.project import (
     load_effective_config,
     save_project_config,
 )
+from parrot.mcp.portability import resolve_portable_mode
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +138,7 @@ def _portable_from_servers(servers: dict[str, Any], root: Path) -> bool:
     return any(_is_portable_toolkit_entry(entry) for entry in _managed_toolkit_entries(servers, root))
 
 
-def _current_portable_mode(root: Path) -> bool:
+def _current_portable_mode(root: Path) -> bool | None:
     """Infer the host's current mode (FEAT-633, sticky).
 
     A managed stdio ``wikitoolkit`` entry in the baked (absolute) form gives ``False``. Its bare form is
@@ -145,21 +147,22 @@ def _current_portable_mode(root: Path) -> bool:
     ``--config``) break the tie, and with none of them the bare entry means portable — the same rule as
     ``codex.installer._current_portable_mode``. When the ``wikitoolkit`` entry is http, url-only, absent
     or foreign (``--remote`` decides only that key), the mode is inferred from the managed ``parrot-*``
-    entries. A missing ``.mcp.json`` or unparsable JSON mean ``False``.
+    entries. A missing ``.mcp.json``, unparsable JSON, or no managed entry
+    means ``None`` so the shared launcher rule can choose a fresh-host form.
 
     Args:
         root: Repository root.
 
     Returns:
-        True when the current configuration is in the portable form.
+        The current portable form, or ``None`` when no managed form exists.
     """
     try:
         data = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return False
+        return None
     servers = data.get("mcpServers") if isinstance(data, dict) else None
     if not isinstance(servers, dict):
-        return False
+        return None
     wiki = servers.get("wikitoolkit")
     if isinstance(wiki, dict) and "type" not in wiki and "url" not in wiki and _is_wikitoolkit_entry(wiki):
         if not _is_portable_wikitoolkit_entry(wiki):
@@ -167,7 +170,9 @@ def _current_portable_mode(root: Path) -> bool:
         if _managed_toolkit_entries(servers, root):
             return _portable_from_servers(servers, root)
         return True
-    return _portable_from_servers(servers, root)
+    if _managed_toolkit_entries(servers, root):
+        return _portable_from_servers(servers, root)
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -733,8 +738,8 @@ def reconcile_toolkit_entries(root: Path, *, portable: Optional[bool] = None) ->
     if not isinstance(servers, dict):
         servers = data["mcpServers"] = {}
 
-    if portable is None:
-        portable = _current_portable_mode(root)  # reads .mcp.json before this function writes it
+    decision = resolve_portable_mode(portable, current=_current_portable_mode(root))
+    portable = decision.portable
 
     from parrot.mcp.toolkit_config import load_toolkits_config
 
@@ -746,6 +751,9 @@ def reconcile_toolkit_entries(root: Path, *, portable: Optional[bool] = None) ->
     updated: list[str] = []
     removed: list[str] = []
     warnings: list[str] = []
+    actions: list[str] = []
+    if decision.note:
+        actions.append(decision.note)
 
     for name in sorted(enabled_names):
         key = f"parrot-{name}"
@@ -777,7 +785,6 @@ def reconcile_toolkit_entries(root: Path, *, portable: Optional[bool] = None) ->
     if changed:
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
-    actions: list[str] = []
     if added:
         actions.append(f"{len(added)} toolkit entry(s) added ({', '.join(added)})")
     if updated:
@@ -1261,8 +1268,9 @@ def install_claude_integration(
         only reconciles whatever the toolkit config already declares.
     """
     root = root.resolve()
-    config = config or load_effective_config(root).config
-    existed = config_path(root).exists()
+    state_root = shared_state_root(root)
+    config = config or load_effective_config(state_root).config
+    existed = config_path(state_root).exists()
     # Migrate an older config's nudge tools to include ``Bash`` so shell
     # searches are nudged after an upgrade — but only from the exact old
     # default, never overriding a user's customised list.
@@ -1276,9 +1284,11 @@ def install_claude_integration(
         actions = [".parrot/wiki.json — nudge tools upgraded (added Bash)"]
     else:
         actions = [".parrot/wiki.json — config already present"]
-    save_project_config(root, config)
-    if portable is None:
-        portable = _current_portable_mode(root)
+    save_project_config(state_root, config)
+    decision = resolve_portable_mode(portable, current=_current_portable_mode(root))
+    portable = decision.portable
+    if decision.note:
+        actions.append(decision.note)
     logger.debug("claude install: portable=%s", portable)
 
     actions.append(_install_claude_md(root))
