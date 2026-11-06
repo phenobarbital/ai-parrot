@@ -36,4 +36,3 @@ def test_ensure_concept_ids_preserves_existing():
 
 def test_flatten_matches_okf():
     assert flatten_concept_id("a/b") == "a--b"
-
