@@ -8,8 +8,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from parrot.knowledge.pageindex.ingest import IngestedMarkdown
+from parrot.knowledge.pageindex.locks import lock_path
 from parrot.knowledge.pageindex.schemas import TreeSearchResult
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, _REPLACED_MARKER
+from parrot.knowledge.okf.utils import flatten_concept_id_for_filename
 
 
 def _adapter() -> MagicMock:
@@ -73,6 +75,7 @@ def test_tool_discovery_exposes_expected_names(toolkit: PageIndexToolkit):
         "pageindex_list_trees",
         "pageindex_create_tree",
         "pageindex_delete_tree",
+        "pageindex_get_generation",
         "pageindex_get_tree",
         "pageindex_search",
         "pageindex_search_documents_scoped",
@@ -81,6 +84,7 @@ def test_tool_discovery_exposes_expected_names(toolkit: PageIndexToolkit):
         "pageindex_add_node",
         "pageindex_update_node",
         "pageindex_update_node_content",
+        "pageindex_vacuum_tree",
         "pageindex_insert_markdown",
         "pageindex_insert_content",
         "pageindex_import_file",
@@ -98,6 +102,131 @@ async def test_create_tree_persists_to_disk(toolkit: PageIndexToolkit, tmp_path:
     assert (tmp_path / "docs.json").is_file()
     listed = await toolkit.list_trees()
     assert "docs" in listed
+
+
+@pytest.mark.asyncio
+async def test_create_tree_publishes_generation_one(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("g")
+
+    assert (await toolkit.get_generation("g"))["id"] == 1
+
+
+@pytest.mark.asyncio
+async def test_write_nested_joins(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("g")
+
+    async with toolkit._write("g"):
+        async with toolkit._write("g"):
+            pass
+
+    assert (await toolkit.get_generation("g"))["id"] == 2
+
+
+@pytest.mark.asyncio
+async def test_mutate_retries_stale_generation(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("g")
+    calls = 0
+
+    async def apply(txn):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            externally_written = toolkit._store.load("g")
+            externally_written["doc_name"] = "external writer"
+            externally_written["generation"]["id"] += 1
+            toolkit._store.save("g", externally_written)
+        txn.tree["doc_name"] = "mutated"
+        return calls
+
+    assert await toolkit._mutate("g", apply) == 2
+    assert (await toolkit.get_tree("g"))["doc_name"] == "mutated"
+
+
+@pytest.mark.asyncio
+async def test_reader_keeps_generation(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("g")
+
+    async def add_first(txn):
+        node = {"node_id": "0000", "title": "Entry", "nodes": []}
+        txn.tree["structure"].append(node)
+        txn.set_body(node, "first body")
+
+    await toolkit._mutate("g", add_first)
+    old_tree = await toolkit.get_tree("g")
+    old_loader = toolkit._content_store.loader_for("g", old_tree)
+
+    async def replace_body(txn):
+        txn.set_body(txn.tree["structure"][0], "second body")
+
+    await toolkit._mutate("g", replace_body)
+
+    assert old_tree["structure"][0]["body_ref"] != (await toolkit.get_tree("g"))["structure"][0]["body_ref"]
+    assert old_loader("0000") == "first body"
+
+
+@pytest.mark.asyncio
+async def test_first_write_migrates_legacy_bodies(toolkit: PageIndexToolkit):
+    legacy_tree = {
+        "doc_name": "legacy",
+        "structure": [
+            {
+                "node_id": "0001",
+                "concept_id": "legacy/entry",
+                "title": "Legacy entry",
+                "nodes": [],
+            }
+        ],
+    }
+    toolkit._store.save("legacy", legacy_tree)
+    toolkit._content_store.save(
+        "legacy",
+        flatten_concept_id_for_filename("legacy/entry"),
+        "---\nconcept_id: legacy/entry\n---\nlegacy body",
+    )
+
+    async def noop(txn):
+        return None
+
+    await toolkit._mutate("legacy", noop)
+    node = (await toolkit.get_tree("legacy"))["structure"][0]
+
+    assert node["body_ref"]
+    assert toolkit._content_store.load_node("legacy", node) == "legacy body"
+
+
+@pytest.mark.asyncio
+async def test_search_engine_is_pinned_per_generation(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("g")
+    old_engine = toolkit._search_for("g")
+    old_tree = old_engine._tree
+
+    async def noop(txn):
+        return None
+
+    await toolkit._mutate("g", noop)
+    new_engine = toolkit._search_for("g")
+
+    assert new_engine is not old_engine
+    assert old_engine._tree is old_tree
+
+
+@pytest.mark.asyncio
+async def test_delete_tree_removes_bodies_and_lock(toolkit: PageIndexToolkit, tmp_path: Path):
+    await toolkit.create_tree("g")
+    toolkit._content_store.save("g", "0000", "body")
+    embeddings = tmp_path / "g" / "embeddings"
+    embeddings.mkdir()
+    (embeddings / "g.g1.matrix.npy").write_bytes(b"matrix")
+    lock = lock_path(tmp_path, "g")
+    lock.parent.mkdir(exist_ok=True)
+    lock.touch()
+
+    await toolkit.delete_tree("g")
+
+    assert not (tmp_path / "g.json").exists()
+    assert not (tmp_path / "g" / "bodies").exists()
+    assert not embeddings.exists()
+    assert not lock.exists()
 
 
 @pytest.mark.asyncio
