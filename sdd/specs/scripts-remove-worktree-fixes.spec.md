@@ -209,7 +209,7 @@ existing construction site stays valid.
 | M2: nested + orphan-checkout gates | yes | gate order, refusal wording, exit code 1, `--force` override | — |
 | M3: list / dry-run disclosure | yes | STATE token and header line format fixed below | — |
 | M4: tests | yes | existing `_git_repo` harness, one test per defect | — |
-| M5: doc sync | yes | 6 known paths, byte-identical where they already are | — |
+| M5: doc sync | yes | 3 hand-edited sources + `check_asset_sync.py --write` to regenerate the shipped tree | — |
 
 M1 → M2 → M3 all edit the **same file** and must land in that order; they are
 not parallelisable. M4 depends on M1-M3. M5 is independent of the code.
@@ -310,17 +310,24 @@ not parallelisable. M4 depends on M1-M3. M5 is independent of the code.
   ```
 
 ### Module 5: Documentation sync
-- **Path**: `.claude/commands/remove-worktree.md`,
-  `.agent/workflows/remove-worktree.md`,
-  `.agents/skills/remove-worktree/SKILL.md`,
-  `packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/remove-worktree.md`,
-  `packages/ai-parrot/src/parrot/sdd/_assets/agent/workflows/remove-worktree.md`,
-  `packages/ai-parrot/src/parrot/sdd/_assets/agents/skills/remove-worktree/SKILL.md`
+- **Edited by hand** (the three repo-root sources, registered in
+  `scripts/sdd/check_asset_sync.py` `ASSET_SOURCES` at L34/L40/L43):
+  - `.claude/commands/remove-worktree.md` (all hosts)
+  - `.agents/skills/remove-worktree/SKILL.md` (codex, google)
+  - `.agent/workflows/remove-worktree.md` (google)
+- **Generated, never hand-edited** — produced by
+  `python scripts/sdd/check_asset_sync.py --write`:
+  - `packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/remove-worktree.md`
+  - `packages/ai-parrot/src/parrot/sdd/_assets/agents/skills/remove-worktree/SKILL.md`
+  - `packages/ai-parrot/src/parrot/sdd/_assets/agent/workflows/remove-worktree.md`
+  - `packages/ai-parrot/src/parrot/sdd/_assets/manifest.json`
 - **Responsibility**: Document the orphan taxonomy from §2 and the new
-  refusal. The `_assets/` copies are what `parrot sdd install` ships, so they
-  must be updated in the same commit or an installed repo keeps the old
-  promise.
+  refusal in the three sources, then regenerate the shipped copies. The
+  `_assets/` tree is what `parrot sdd install` ships, so skipping the
+  regeneration leaves an installed repo promising the old gate semantics.
 - **Depends on**: Module 2 (wording follows the implemented refusal)
+- **Verified**: `check_asset_sync.py --check` exits 0 on the base commit, so
+  any `_assets/` drift this feature introduces is its own.
 
 ---
 
@@ -396,9 +403,11 @@ subprocess.run(["git", "worktree", "add", "-q", str(child), "-b", "t1"], cwd=pri
 - [ ] AC8 — Gate behaviour for registered worktrees is byte-for-byte
   unchanged; `test_remove_worktree_refuses_dirty` and
   `test_remove_worktree_list_and_dry_run` pass untouched.
-- [ ] AC9 — All six `/remove-worktree` doc copies describe the orphan
-  taxonomy and the new refusal; the three `_assets/` copies stay in sync with
-  their non-asset twins (G5).
+- [ ] AC9 — The three repo-root `/remove-worktree` docs describe the orphan
+  taxonomy and the new refusal, the shipped `_assets/` copies are regenerated
+  with `python scripts/sdd/check_asset_sync.py --write`, and
+  `python scripts/sdd/check_asset_sync.py --check` exits 0 (G5). The
+  `_assets/` copies are never hand-edited.
 - [ ] AC10 — `pytest packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py`
   passes, and `ruff check` is clean on every changed file.
 
@@ -510,7 +519,7 @@ Verified against base commit `da42a5fe34` (dev, 2026-11-06).
 | `packages/ai-parrot/src/parrot/sdd/scripts/remove_worktree.py` | `print(f"  branch: {wt.branch or '(orphan directory, no git record)'}")` | M3 |
 | `packages/ai-parrot/src/parrot/sdd/scripts/remove_worktree.py` | `flags.append("ORPHAN-DIR")` | M3 (the `cmd_list` STATE column, L245) |
 | `packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py` | `def test_remove_worktree_shim_aliases() -> None:` | M4 (insert the new tests above it) |
-| `.claude/commands/remove-worktree.md` + 5 twins | the orphan/gate description | M5 |
+| `.claude/commands/remove-worktree.md`, `.agents/skills/remove-worktree/SKILL.md`, `.agent/workflows/remove-worktree.md` | the orphan/gate description (sources only — `_assets/` is regenerated, never edited) | M5 |
 
 > **Ambiguous anchor warning.** `dirty = wt.dirty_files()` occurs **twice** —
 > L249 inside `cmd_list`'s flag loop (8-space indent) and L316 inside
