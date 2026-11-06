@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-833 test-scope-select-fixes
 **Spec**: `sdd/specs/test-scope-select-fixes.spec.md`
-**Status**: pending
+**Status**: in-progress
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: none (external: FEAT-829 / PR #2009 merged into the worktree first)

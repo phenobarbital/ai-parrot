@@ -35,19 +35,19 @@
     {
       "id": "TASK-5291",
       "slug": "test-scope-select-fixes",
-      "title": "Test-scope selector — plan a task-declared parrot e2e run, report an operand-less command",
+      "title": "Test-scope selector \u2014 plan a task-declared parrot e2e run, report an operand-less command",
       "feature_id": "FEAT-833",
       "feature": "test-scope-select-fixes",
       "spec": "sdd/specs/test-scope-select-fixes.spec.md",
       "file": "sdd/tasks/active/TASK-5291-test-scope-select-fixes.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task; no exclusive resource; worktree must include FEAT-829 (PR #2009)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:35:08+00:00",
       "completed_at": null,
       "discovered_from": "issue:3ae0b2ae0ef4"
     }
