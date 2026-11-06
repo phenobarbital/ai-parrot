@@ -2,6 +2,7 @@
 
 Pure types: no driver imports, so importing this module is cheap and the models are picklable.
 """
+
 from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Literal, Protocol, Sequence, runtime_checkable

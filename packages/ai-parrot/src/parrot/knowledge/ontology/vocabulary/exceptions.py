@@ -1,4 +1,5 @@
 """Typed errors of the ontology vocabulary store (FEAT-824)."""
+
 from __future__ import annotations
 
 from typing import Sequence

@@ -1,4 +1,5 @@
 """Models and Protocols of the vocabulary store (FEAT-824 TASK-5253)."""
+
 from __future__ import annotations
 
 import pickle
