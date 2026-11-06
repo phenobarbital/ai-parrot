@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-834 — runner registry loads from a trusted ref; runner cwd stays in the worktree
 **Spec**: `sdd/specs/runners-registry-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5292
@@ -199,4 +199,16 @@ FILL IN: confirm `Optional` is imported in engine.py (else use `str | None`); up
 
 ## Completion Note
 
-_(fill in on completion)_
+**Completed**: 2026-11-07 — commit afebb6ef95 (resolves `issue:29e8e7ad138f` with TASK-5292).
+
+`guard._runner_for`/`_task_plan` load the registry at `ctx.base_ref` (no context → built-ins, no TOML read;
+`plan_tests` gets the pre-built `registry=`). `ValidationSupervisor.start` loads at `base_ref` for the task tier.
+`_profile_with_runner_binaries(..., *, ref=None)`; the attempt call site passes `ctx.feature_branch`.
+
+Scope note: `tests/flows/dev_loop/sdd_coder/test_background_task_tier.py::test_supervisor_verdict_persisted` was
+not in the task's file list but had to change: it passed a fake `base_ref="abc123"` in a non-git temp dir and
+read its `timeout_s` from the working-tree TOML, which the fail-closed ref load now rejects. It now stubs
+`background.load_registry`, asserts the call receives `ref="abc123"`, and keeps its timeout behaviour.
+
+Validation: test_scope suite + test_engine_capability + test_background_* + test_engine_validation_gate:
+365 passed; test_llm_code_dispatcher + test_worktree_environment: 192 passed. ruff + black clean.
