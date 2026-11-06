@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import os
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -204,3 +207,135 @@ def test_content_store_rename_tree_preserves_source_on_replace_failure(store: No
 
     assert (tmp_path / "source" / "0000.md").read_text(encoding="utf-8") == "source markdown"
     assert not (tmp_path / "destination").exists()
+
+
+# ---- immutable body blobs (FEAT-831 / TASK-5279) ----
+
+KEY = "intro.0123456789abcdef"
+
+
+def _write_tree(tmp_path: Path, name: str, structure: list) -> None:
+    (tmp_path / f"{name}.json").write_text(json.dumps({"structure": structure}))
+
+
+def test_save_body_is_idempotent(tmp_path: Path):
+    store = NodeContentStore(tmp_path)
+    store.save_body("t", KEY, "a")
+    store.save_body("t", KEY, "b")  # immutable
+    assert store.load_body("t", KEY) == "a"
+    assert store.load_body("t", "other.0123456789abcdef") is None
+
+
+def test_save_body_rejects_bad_key_and_leaves_no_temp(tmp_path: Path):
+    store = NodeContentStore(tmp_path)
+    with pytest.raises(ValueError):
+        store.save_body("t", "../x.0123456789abcdef", "a")
+    with pytest.raises(ValueError):
+        store.save_body("t", "intro", "a")
+    with patch("parrot.knowledge.pageindex.content_store.os.replace", side_effect=OSError("boom")):
+        with pytest.raises(OSError, match="boom"):
+            store.save_body("t", KEY, "a")
+    assert list((tmp_path / "t" / "bodies").iterdir()) == []
+
+
+def test_load_resolves_through_live_json(tmp_path: Path):
+    store = NodeContentStore(tmp_path)
+    store.save_body("t", KEY, "body")
+    assert store.load("t", "0001") is None
+    _write_tree(tmp_path, "t", [{"node_id": "0001", "concept_id": "intro", "body_ref": KEY}])
+    assert store.load("t", "0001") == "body"
+    assert store.has("t", "0001")
+    assert store.load("t", "intro") == "body"
+
+
+def test_live_index_rebuilds_on_signature_change(tmp_path: Path):
+    store = NodeContentStore(tmp_path)
+    other = "other.fedcba9876543210"
+    store.save_body("t", KEY, "one")
+    store.save_body("t", other, "two")
+    _write_tree(tmp_path, "t", [{"node_id": "0001", "body_ref": KEY}])
+    assert store.load("t", "0001") == "one"
+    _write_tree(tmp_path, "t", [{"node_id": "0001", "body_ref": other}])
+    os.utime(tmp_path / "t.json", ns=(1, 1))  # force a new signature
+    assert store.load("t", "0001") == "two"
+
+
+def test_live_index_missing_or_corrupt_json_is_empty(tmp_path: Path):
+    store = NodeContentStore(tmp_path)
+    assert store._live_index("t") == {}
+    (tmp_path / "t.json").write_text("{not json")
+    assert store._live_index("t") == {}
+
+
+def test_node_id_wins_over_flat_id_on_collision(tmp_path: Path):
+    store = NodeContentStore(tmp_path)
+    a, b = "intro.aaaaaaaaaaaaaaaa", "other.bbbbbbbbbbbbbbbb"
+    _write_tree(
+        tmp_path,
+        "t",
+        [
+            {"node_id": "0001", "concept_id": "0002", "body_ref": a},
+            {"node_id": "0002", "concept_id": "zzz", "body_ref": b},
+        ],
+    )
+    assert store._live_index("t")["0002"] == b
+
+
+def test_loader_for_pinned_tree_ignores_changed_json(tmp_path: Path):
+    store = NodeContentStore(tmp_path)
+    other = "other.fedcba9876543210"
+    store.save_body("t", KEY, "old")
+    store.save_body("t", other, "new")
+    pinned = {"structure": [{"node_id": "0001", "concept_id": "intro", "body_ref": KEY}]}
+    _write_tree(tmp_path, "t", [{"node_id": "0001", "concept_id": "intro", "body_ref": other}])
+    loader = store.loader_for("t", pinned)
+    assert loader("0001") == "old"
+    assert loader("intro") == "old"
+    assert loader("9999") is None
+
+
+def test_load_node_fallback_order(tmp_path: Path):
+    store = NodeContentStore(tmp_path)
+    node = {"node_id": "0001", "concept_id": "intro", "body_ref": KEY}
+    store.save("t", "0001", "by-node-id")
+    assert store.load_node("t", node) == "by-node-id"
+    store.save("t", "intro", "by-flat")
+    assert store.load_node("t", node) == "by-flat"
+    store.save_body("t", KEY, "by-ref")
+    assert store.load_node("t", node) == "by-ref"
+
+
+def test_sweep_respects_grace_and_sidecars(tmp_path: Path):
+    store = NodeContentStore(tmp_path)
+    live, old_orphan, fresh_orphan = KEY, "old.aaaaaaaaaaaaaaaa", "new.bbbbbbbbbbbbbbbb"
+    for key in (live, old_orphan, fresh_orphan):
+        store.save_body("t", key, key)
+    store.save("t", "0001", "superseded")
+    store.save("t", "intro", "sidecar")
+    (tmp_path / "t" / "notes.txt").write_text("keep")
+    past = time.time() - 7200
+    for path in (
+        store.body_path("t", live),
+        store.body_path("t", old_orphan),
+        tmp_path / "t" / "0001.md",
+        tmp_path / "t" / "intro.md",
+    ):
+        os.utime(path, (past, past))
+    tree = {"structure": [{"node_id": "0001", "concept_id": "intro", "body_ref": live}]}
+
+    assert store.sweep_unreferenced("t", tree, max_age_s=3600) == 2
+    assert not store.body_path("t", old_orphan).exists()
+    assert not (tmp_path / "t" / "0001.md").exists()
+    assert store.body_path("t", live).exists()
+    assert store.body_path("t", fresh_orphan).exists()
+    assert (tmp_path / "t" / "intro.md").exists()
+    assert (tmp_path / "t" / "notes.txt").exists()
+
+
+def test_delete_tree_removes_bodies_and_embeddings(tmp_path: Path):
+    store = NodeContentStore(tmp_path)
+    store.save_body("t", KEY, "x")
+    (tmp_path / "t" / "embeddings").mkdir()
+    (tmp_path / "t" / "embeddings" / "v.bin").write_bytes(b"1")
+    store.delete_tree("t")
+    assert not (tmp_path / "t").exists()
