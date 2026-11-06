@@ -214,6 +214,7 @@ class MatrixCarrier(Carrier):
             content_ref=content_ref,
             envelope=MatrixCarrier._envelope_fields(msg.envelope),
             failure=msg.failure.model_dump(mode="json") if msg.failure else None,
+            hops=msg.hops,
         )
 
     @staticmethod
@@ -244,4 +245,5 @@ class MatrixCarrier(Carrier):
             body=parsed.body,
             envelope=envelope,
             failure=FailureInfo(**parsed.failure) if parsed.failure else None,
+            hops=parsed.hops,
         )
