@@ -108,6 +108,17 @@ def _resolve_via_pointer(report_path: Path) -> Path | None:
     return None
 
 
+def _plan_setting(settings: Mapping[str, str]) -> str:
+    """Return the ``plan`` setting, or raise a readable ``ValueError`` when it is absent or empty."""
+    plan = settings.get("plan", "")
+    if not plan:
+        raise ValueError(
+            "parrot-e2e runner has no 'plan' setting — declare plan: in the spec's runner block "
+            "or under [runners.parrot-e2e] in .parrot/test_runners.toml"
+        )
+    return plan
+
+
 class ParrotE2EAdapter:
     """Adapter for ``parrot e2e run`` reading ``e2e-verdict.json`` from disk."""
 
@@ -134,7 +145,7 @@ class ParrotE2EAdapter:
 
     def distribution_of(self, target: str, *, settings: Mapping[str, str]) -> str:
         """Name the distribution after the plan's parent directory."""
-        return Path(settings["plan"]).parent.name or "e2e"
+        return Path(_plan_setting(settings)).parent.name or "e2e"
 
     def invocation(
         self,
@@ -148,7 +159,7 @@ class ParrotE2EAdapter:
     ) -> Invocation:
         """Build the ``parrot e2e run`` invocation."""
         owner = settings.get("owner_id", "sdd-coder")
-        argv = ("parrot", "e2e", "run", "--plan", settings["plan"], "--owner-id", owner)
+        argv = ("parrot", "e2e", "run", "--plan", _plan_setting(settings), "--owner-id", owner)
         return Invocation(
             distribution=distribution,
             argv=argv,

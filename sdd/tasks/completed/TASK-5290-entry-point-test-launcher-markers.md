@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-832 — native-mode hook entry-point test sets launcher markers
 **Spec**: `sdd/specs/scripts-worktree-environment-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -127,4 +127,10 @@ The modified test is the specification.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed**: 2026-11-07 — commit d580e84e68 (resolves `issue:ca2e26e666cd`).
+
+The entry-point test now exports both launcher markers (`PARROT_SDD_SANDBOX_ROOTS` with the real
+feature / main/.git / main roots, `PARROT_SDD_CACHE_DIR`) and strips inherited `PARROT_SDD_*` vars, so the
+hook takes the trusted native path and denies the `.claude/settings.local.json` Write via the native policy.
+`test_worktree_environment.py`: 110 passed; ruff clean. No source change (the auto fallback from a7cec86e23
+is intentional and keeps its own test).

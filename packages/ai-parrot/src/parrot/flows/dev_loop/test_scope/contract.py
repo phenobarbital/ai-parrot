@@ -210,7 +210,8 @@ def _normalize_pytest(tests: Sequence[object], markers: Sequence[object]) -> Run
     """Validate pytest operands and markers and return a normalized runner block.
 
     Raises:
-        ValueError: If an operand or marker cannot safely be used by pytest.
+        ValueError: If an operand or marker cannot safely be used by pytest, or an operand's file part
+            is not a ``.py`` file (a directory or suite is never a contract operand).
     """
     normalized_tests: list[str] = []
     seen_tests: set[str] = set()
@@ -225,6 +226,8 @@ def _normalize_pytest(tests: Sequence[object], markers: Sequence[object]) -> Run
             or is_broad_pytest(["pytest", operand])
         ):
             raise ValueError(f"unsafe test contract operand: {operand!r}")
+        if not path.endswith(".py"):
+            raise ValueError(f"test contract operand must be a .py file or node, not a directory or suite: {operand!r}")
         if operand not in seen_tests:
             normalized_tests.append(operand)
             seen_tests.add(operand)

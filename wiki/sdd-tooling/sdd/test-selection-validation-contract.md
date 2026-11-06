@@ -9,6 +9,9 @@ title: "Test selection in the SDD flow — the Validation Contract (FEAT 699)"
 The Validation Contract is authored directly in each feature specification document (`sdd/specs/<slug>.spec.md`) under Section 4 (`### Validation Contract`).
 
 ### Format
+Contract operands are `.py` files or `file.py::node` ids; a directory or suite is rejected when the contract is
+parsed or loaded, and `check_task_graph` reports it as `test-contract-malformed`.
+
 The section defines explicit test paths and optional markers:
 
 ```markdown
@@ -42,7 +45,14 @@ markers: none
 
 ## Green cache and baseline verdict
 
-- **Cached targets**: Test execution results for passing test suites are recorded in `.sdd_test_cache.json`.
+- **Cached targets**: green results are recorded per worktree in `parrot-test-scope-green.json`
+  (`green_cache.CACHE_FILENAME`), only for `.py` files and node ids.
+- **Namespace**: one store namespace per feature id + base ref + contract digest (`green_cache.namespace_for`;
+  a feature without a contract digests as `""`). `select_tests` and the MCP supervisor compute the same value,
+  so neither clears the other's entries; any change to the three inputs invalidates the whole store.
+- **Depth-1 key**: a cache key digests the test file, its `conftest.py` chain, the root and distribution
+  `pyproject.toml`, and the source modules the test imports **directly**. A change two imports away does not
+  invalidate the entry — the feature tier runs fresh and the nightly sweep is the backstop.
 - **Invalidation inputs**: Cache entries are invalidated when source files, test files, or dependent module digests change.
 - **Baseline verdict**:
   - **New red**: Test failed in the current branch diff.

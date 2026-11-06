@@ -1438,13 +1438,21 @@ def test_handwritten_bwrap_denied_in_native_mode_only(
 
 def test_packaged_hook_entry_point_denies_in_native_mode_without_import_error(tmp_path: Path) -> None:
     """``python -m parrot.sdd.scripts.worktree_environment --hook`` loads the sibling native module (TASK-5093)."""
-    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    feature, _task, main = _native_hook_worktrees(tmp_path)
     payload = {
         "cwd": str(feature),
         "tool_name": "Write",
         "tool_input": {"file_path": str(feature / ".claude" / "settings.local.json")},
     }
-    env = {**os.environ, "PARROT_SDD_SANDBOX_BACKEND": "claude-native"}
+    # `claude-native` is trusted only beside both launcher markers; without them the hook falls back to `auto`.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PARROT_SDD_")}
+    env.update(
+        {
+            "PARROT_SDD_SANDBOX_BACKEND": "claude-native",
+            "PARROT_SDD_SANDBOX_ROOTS": os.pathsep.join((str(feature), str(main / ".git"), str(main))),
+            "PARROT_SDD_CACHE_DIR": str(tmp_path / "cache"),
+        }
+    )
     result = subprocess.run(
         [sys.executable, "-m", "parrot.sdd.scripts.worktree_environment", "--hook"],
         input=json.dumps(payload),

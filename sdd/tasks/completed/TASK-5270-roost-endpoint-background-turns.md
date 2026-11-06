@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-828 fixgroup-51dc704c698c
 **Spec**: `sdd/specs/fixgroup-51dc704c698c.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: none
@@ -98,4 +98,21 @@ files listed above.
 
 ## Completion Note
 
-_To be filled by the implementing agent._
+**Completed by**: Claude Code `/sdd-fix` session (`agent:sdd-fix:b73eac7f`)
+**Date**: 2026-11-07
+**Notes**: Implemented M1, M2 and M4 in `eda917b658`.
+- `RoostEndpoint._spawn_turn` (tracked task, `turns_started` metric, failure log with `exc_info`),
+  `_serve_wake` (the former `WAKE_LLM` body, moved verbatim), `turns_in_flight` property; `_on_message`
+  spawns the `WAKE_LLM` and `RUN_TOOL` turns and keeps every other branch inline. `stop()` cancels and
+  awaits in-flight turns before the sweeper / unsubscribe / pending steps.
+- No carrier file changed. `WakeCallback`, `Dispatch`, engine and dispatcher untouched.
+- `wiki/mcp/roost/carriers.md`: "Delivery model (FEAT-828)" section.
+
+Validation (worktree on `PYTHONPATH`): the new module 5 passed (AC-1..AC-5, each with a 1 s bound — the
+nested A→B→C query and the A↔B hop-limit chain finish in well under 100 ms); `packages/ai-parrot/tests/roost/`
+158 passed (gate L-S1 included); `test_matrix_roost_ask_agent` + `test_matrix_roost_wake` 31 passed.
+`ruff check` and `black --check -l 120` clean. Mutation check: putting both turns back inline
+(`await self._serve_wake(...)` / `await self._run_tool(...)`) fails all five new tests.
+
+**Deviations from spec**: none. The AC-5 test marks the served agent `backing="deterministic"` — the
+dispatcher only yields `RUN_TOOL` for that backing (gating.py:125-127), which the contract did not state.

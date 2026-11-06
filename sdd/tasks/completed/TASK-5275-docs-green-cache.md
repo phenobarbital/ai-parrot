@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-830 — test-scope report fixes
 **Spec**: `sdd/specs/test-scope-report-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5272, TASK-5273
@@ -154,4 +154,8 @@ Documentation only — no tests.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 (/sdd-fix session, actor agent:sdd-fix:c0b83d30)
+**Date**: 2026-11-07
+**Notes**: Updated the wiki page: real cache file name, shared namespace bullet, depth-1 key bullet (confirmed in `green_cache._manifest`: test file, conftest chain, root/dist pyproject, directly imported source modules only), and the `.py`-only operand rule under Format. `parrot sdd techwiki check` → ok; test_green_cache.py passes.
+
+**Deviations from spec**: none

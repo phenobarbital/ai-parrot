@@ -80,3 +80,20 @@ def test_absolute_path_without_a_known_worktree_is_unchanged_narrow_default():
     """Callers with no worktree in scope (worktree=None, the default) keep the pre-fix behavior:
     an absolute operand is never treated as broad."""
     assert is_broad_pytest(["pytest", "/abs/repo/packages/ai-parrot/tests"]) is False
+
+
+@pytest.mark.parametrize("operand", ["packages/ai-parrot/tests/flows", "tests/sdd_scripts", "tests/x.txt"])
+def test_normalize_pytest_rejects_non_py_operands(operand: str) -> None:
+    """A directory or suite is never a contract operand (FEAT-830)."""
+    from parrot.flows.dev_loop.test_scope.contract import _normalize_pytest
+
+    with pytest.raises(ValueError, match=r"must be a \.py file"):
+        _normalize_pytest([operand], [])
+
+
+@pytest.mark.parametrize("operand", ["tests/test_a.py", "tests/test_a.py::test_b", "tests/test_a.py::C::test_d"])
+def test_normalize_pytest_accepts_py_files_and_nodes(operand: str) -> None:
+    """Files and node ids keep passing normalization unchanged."""
+    from parrot.flows.dev_loop.test_scope.contract import _normalize_pytest
+
+    assert operand in _normalize_pytest([operand], []).targets

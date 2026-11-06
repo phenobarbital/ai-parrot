@@ -185,3 +185,21 @@ def test_concurrent_record_green(git_repo):
         proc.join()
     cached = gc.filter_cached(git_repo, _plan(git_repo, *paths), namespace=NS).cached
     assert set(cached) == set(paths)
+
+
+def test_namespace_for_without_contract_matches_empty_digest():
+    """No contract digests as "" — the value both drivers share (FEAT-830)."""
+    assert gc.namespace_for(feature_id="FEAT-1", base_ref="origin/dev", contract=None) == gc.cache_namespace(
+        feature_id="FEAT-1", base_ref="origin/dev", contract_digest=""
+    )
+
+
+def test_namespace_for_uses_contract_digest():
+    """A declared contract contributes its digest."""
+    from parrot.flows.dev_loop.test_scope.contract import parse_spec_contract
+
+    contract = parse_spec_contract("### Validation Contract\n\ntests:\n- tests/test_a.py\nmarkers: none\n")
+    assert contract is not None
+    assert gc.namespace_for(feature_id="FEAT-1", base_ref="origin/dev", contract=contract) == gc.cache_namespace(
+        feature_id="FEAT-1", base_ref="origin/dev", contract_digest=contract.digest
+    )
