@@ -147,7 +147,7 @@ def test_ensure_rejects_legacy_registration(tmp_git_repo: Path) -> None:
         message = str(exc_info.value)
         assert str(legacy_path.resolve()) in message
         assert str(target_path) in message
-        assert "parrot doctor" in message
+        assert "parrot self doctor" in message
     assert not target_path.exists()
 
 
