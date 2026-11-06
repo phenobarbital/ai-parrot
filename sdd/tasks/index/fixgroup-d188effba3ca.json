@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-06T03:20:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-06T02:06:57+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -39,16 +39,17 @@
       "feature_id": "FEAT-820",
       "feature": "fixgroup-d188effba3ca",
       "spec": "sdd/specs/fixgroup-d188effba3ca.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "First writer of tests/sdd_scripts/test_worktree_sync.py in this feature; creates the _as_primary helper and the remove_worktree import that TASK-5236 and TASK-5238 consume.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5235-target-base-resolution-tests.md"
+      "started_at": "2026-11-06T01:59:15.751107+00:00",
+      "completed_at": "2026-11-06T02:00:56+00:00",
+      "file": "sdd/tasks/completed/TASK-5235-target-base-resolution-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5236",
@@ -57,7 +58,7 @@
       "feature_id": "FEAT-820",
       "feature": "fixgroup-d188effba3ca",
       "spec": "sdd/specs/fixgroup-d188effba3ca.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -66,9 +67,10 @@
       "parallel": true,
       "parallelism_notes": "Uses _as_primary from TASK-5235 (tests/sdd_scripts/test_worktree_sync.py) and modifies that same file, so it must follow TASK-5235.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5236-guards-never-pushes-advisory-tests.md"
+      "started_at": "2026-11-06T02:01:22.394402+00:00",
+      "completed_at": "2026-11-06T02:02:44+00:00",
+      "file": "sdd/tasks/completed/TASK-5236-guards-never-pushes-advisory-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5237",
@@ -77,7 +79,7 @@
       "feature_id": "FEAT-820",
       "feature": "fixgroup-d188effba3ca",
       "spec": "sdd/specs/fixgroup-d188effba3ca.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -86,9 +88,10 @@
       "parallel": true,
       "parallelism_notes": "Modifies the same file as TASK-5236 (tests/sdd_scripts/test_worktree_sync.py) and appends after its section, so the two are serialized.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5237-sandbox-push-protection-gh-failure-tests.md"
+      "started_at": "2026-11-06T02:03:02.137420+00:00",
+      "completed_at": "2026-11-06T02:03:50+00:00",
+      "file": "sdd/tasks/completed/TASK-5237-sandbox-push-protection-gh-failure-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5238",
@@ -97,7 +100,7 @@
       "feature_id": "FEAT-820",
       "feature": "fixgroup-d188effba3ca",
       "spec": "sdd/specs/fixgroup-d188effba3ca.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -106,9 +109,10 @@
       "parallel": true,
       "parallelism_notes": "Modifies the same file as TASK-5237 (tests/sdd_scripts/test_worktree_sync.py); also calls _as_primary from TASK-5235, reached transitively through TASK-5236.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5238-abort-failure-cli-exit-mapping-tests.md"
+      "started_at": "2026-11-06T02:04:08.061217+00:00",
+      "completed_at": "2026-11-06T02:05:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5238-abort-failure-cli-exit-mapping-tests.md",
+      "verification": "verified"
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-820 — Close the FEAT-806 §4 Test Gaps in `test_worktree_sync.py`
 **Spec**: `sdd/specs/fixgroup-d188effba3ca.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5237
@@ -353,8 +353,15 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: ai-parrot-85 (agent:sdd-fix:b5e88ee1)
+**Date**: 2026-11-06
+**Notes**: Added `_conflicting_base` plus the two tests. The `_git` wrapper captures the original
+into a local before `monkeypatch.setattr` (otherwise it recurses), intercepts only
+`("merge", "--abort")`, and records every call so the test can assert no `reset` was ever issued —
+the assertion that makes this worth more than the existing isolated `_rollback` test. No cleanup is
+added after the faked-failing abort: the worktree is genuinely left mid-merge, which is the
+behaviour under test. `worktree_sync.py` untouched (`git diff origin/dev...HEAD` lists only the
+test file and SDD state). Full validation contract: 146 passed, 2 skipped (native gates);
+`ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

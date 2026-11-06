@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-820 — Close the FEAT-806 §4 Test Gaps in `test_worktree_sync.py`
 **Spec**: `sdd/specs/fixgroup-d188effba3ca.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5236
@@ -371,8 +371,12 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: ai-parrot-85 (agent:sdd-fix:b5e88ee1)
+**Date**: 2026-11-06
+**Notes**: Added `_install_failing_gh_stub`, the `_apply_protection_variant` helper and the three
+tests. Each variant test asserts `push_protection_ok` is already False as a precondition, then
+proves the refusal carries "host-provisioned" and NOT the failing stub's stderr — which is what
+shows `gh` was never reached — and compares both git config files byte-for-byte. `worktree_sync.py`
+untouched. 58 passed, 2 skipped (native gates); `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

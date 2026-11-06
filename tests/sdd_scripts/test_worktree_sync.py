@@ -7,11 +7,12 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
-from parrot.sdd.scripts import native_claude_sandbox, worktree_sync
+from parrot.sdd.scripts import native_claude_sandbox, remove_worktree, worktree_sync
 
 #: The host PATH captured at import, before any test's gh stub narrows PATH to ``<tmp>:/usr/bin``.
 _HOST_PATH = os.environ.get("PATH", "")
@@ -831,3 +832,395 @@ def test_host_guard_still_refuses_untracked_file(tmp_path: Path, monkeypatch: py
 
     assert raised.value.exit_code == worktree_sync.EXIT_DIRTY
     assert not (feature / "base.txt").exists()
+
+
+# --- FEAT-820 / TASK-5235: target and base-branch resolution ---------------------------------------
+
+
+def _as_primary(monkeypatch: pytest.MonkeyPatch, primary: Path) -> None:
+    """Point worktree discovery at a disposable clone instead of the real repository.
+
+    ``discover()`` runs ``git worktree list`` with ``cwd=_root()`` and scans
+    ``_root()/.claude/worktrees`` for orphans, and ``_root()`` memoises into the module
+    global ``remove_worktree._ROOT``. Both are redirected so ``resolve_target`` can only
+    ever see ``primary``'s own worktrees.
+    """
+    monkeypatch.setattr(remove_worktree, "_ROOT", primary)
+    monkeypatch.chdir(primary)
+
+
+def test_resolve_target_feat_id_and_ambiguity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """One match resolves; an ambiguous substring and the primary checkout both exit 2."""
+    _origin, primary, feature = _repository(tmp_path)
+    second = tmp_path / "second"
+    _run(primary, "worktree", "add", "-b", "feat-FEAT-998-sync-extra", str(second), "dev")
+    _as_primary(monkeypatch, primary)
+
+    assert worktree_sync.resolve_target("feat-FEAT-999-sync") == feature.resolve()
+
+    with pytest.raises(worktree_sync.SyncError) as ambiguous:
+        worktree_sync.resolve_target("sync")
+
+    assert ambiguous.value.exit_code == worktree_sync.EXIT_TARGET
+    assert "target must resolve to one worktree" in str(ambiguous.value)
+    assert str(feature) in str(ambiguous.value)
+    assert str(second) in str(ambiguous.value)
+
+    with pytest.raises(worktree_sync.SyncError) as primary_refused:
+        worktree_sync.resolve_target("dev")
+
+    assert primary_refused.value.exit_code == worktree_sync.EXIT_TARGET
+    assert "registered non-primary linked worktree" in str(primary_refused.value)
+
+
+def test_orphan_and_mismatched_git_root_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An orphan directory and a Git-top-level mismatch exit 2 with the primary untouched."""
+    _origin, primary, _feature = _repository(tmp_path)
+    orphan = primary / ".claude" / "worktrees" / "orphan-dir"
+    orphan.mkdir(parents=True)
+    # A registered worktree that is really a subdirectory of an unrelated repository: its own
+    # .git link is gone, so `rev-parse --show-toplevel` resolves to `outer`, not to the
+    # registered path.
+    outer = tmp_path / "outer"
+    outer.mkdir()
+    subprocess.run(["git", "init", "-q", str(outer)], check=True, capture_output=True, text=True)
+    foreign = outer / "foreign"
+    _run(primary, "worktree", "add", "-b", "feat-FEAT-997-foreign", str(foreign), "dev")
+    (foreign / ".git").unlink()
+    _as_primary(monkeypatch, primary)
+    before = (
+        _run(primary, "rev-parse", "HEAD"),
+        _run(primary, "status", "--porcelain"),
+        _refs(primary),
+        _run(primary, "config", "--list"),
+    )
+
+    with pytest.raises(worktree_sync.SyncError) as orphan_refused:
+        worktree_sync.resolve_target("orphan-dir")
+
+    assert orphan_refused.value.exit_code == worktree_sync.EXIT_TARGET
+    assert "registered non-primary linked worktree" in str(orphan_refused.value)
+
+    with pytest.raises(worktree_sync.SyncError) as mismatched:
+        worktree_sync.resolve_target("feat-FEAT-997-foreign")
+
+    assert mismatched.value.exit_code == worktree_sync.EXIT_TARGET
+    assert "Git top-level does not match" in str(mismatched.value)
+
+    assert (
+        _run(primary, "rev-parse", "HEAD"),
+        _run(primary, "status", "--porcelain"),
+        _refs(primary),
+        _run(primary, "config", "--list"),
+    ) == before
+
+
+def test_base_branch_from_index_and_brief(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The per-spec index, a brief's frontmatter and the --base override resolve in precedence order."""
+    _origin, primary, feature = _repository(tmp_path)
+    index = feature / "sdd" / "tasks" / "index"
+    index.mkdir(parents=True)
+    (index / "sync.json").write_text(
+        json.dumps({"feature": "sync", "base_branch": "staging", "tasks": []}), encoding="utf-8"
+    )
+
+    assert worktree_sync.resolve_base_branch(feature, None) == "staging"
+    assert worktree_sync.resolve_base_branch(feature, "dev") == "dev"
+
+    brief_worktree = tmp_path / "widget"
+    _run(primary, "worktree", "add", "-b", "fix-ABC-1-widget", str(brief_worktree), "dev")
+    briefs = brief_worktree / "sdd" / "briefs"
+    briefs.mkdir(parents=True)
+    (briefs / "widget.brief.md").write_text("---\ntype: hotfix\nbase_branch: main\n---\n\n# Brief\n", encoding="utf-8")
+
+    assert worktree_sync._slug_candidates(brief_worktree) == ["1-widget", "widget"]
+    assert worktree_sync.resolve_base_branch(brief_worktree, None) == "main"
+
+
+# --- FEAT-820 / TASK-5236: live-process guards, never-pushes, up-to-date advisory ------------------
+
+
+def _await_cwd(pid: int, expected: Path, timeout: float = 10.0) -> None:
+    """Block until ``pid``'s cwd resolves to ``expected``, failing the test on timeout."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            if Path(f"/proc/{pid}/cwd").resolve() == expected.resolve():
+                return
+        except OSError:
+            pass
+        time.sleep(0.02)
+    pytest.fail(f"pid {pid} never reported a cwd of {expected}")
+
+
+def _advance_base(primary: Path, name: str) -> str:
+    """Commit a new file on the base branch, publish it and return its sha."""
+    (primary / name).write_text(f"{name}\n", encoding="utf-8")
+    _run(primary, "add", name)
+    _run(primary, "commit", "-m", f"base {name}")
+    _run(primary, "push")
+    return _run(primary, "rev-parse", "HEAD")
+
+
+def test_live_process_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A foreign process whose cwd is inside the worktree refuses the sync with exit 4."""
+    _origin, primary, feature = _repository(tmp_path)
+    _advance_base(primary, "base.txt")
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    before = _run(feature, "rev-parse", "HEAD")
+
+    child = subprocess.Popen(["sleep", "30"], cwd=feature)
+    try:
+        _await_cwd(child.pid, feature)
+        with pytest.raises(worktree_sync.SyncError) as raised:
+            worktree_sync.sync(feature, "dev")
+
+        assert raised.value.exit_code == worktree_sync.EXIT_LIVE
+        assert f"pid {child.pid}" in str(raised.value)
+        assert "live process(es) inside target worktree" in str(raised.value)
+    finally:
+        child.terminate()
+        child.wait(timeout=10)
+
+    assert _run(feature, "rev-parse", "HEAD") == before
+    assert _run(feature, "status", "--porcelain") == ""
+    assert not (feature / "base.txt").exists()
+
+
+def test_own_ancestry_not_flagged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A caller running inside the worktree is excluded from the live-process guard and syncs."""
+    _origin, primary, feature = _repository(tmp_path)
+    _advance_base(primary, "base.txt")
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    monkeypatch.chdir(feature)
+
+    assert os.getpid() in worktree_sync.own_ancestry()
+    assert remove_worktree.live_processes_in(feature, exclude_pids=worktree_sync.own_ancestry()) == []
+    worktree_sync.check_guards(feature)
+
+    result = worktree_sync.sync(feature, "dev")
+
+    assert result.status == "synced"
+    assert result.exit_code == worktree_sync.EXIT_OK
+    assert (feature / "base.txt").read_text(encoding="utf-8") == "base.txt\n"
+
+
+def test_never_pushes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The bare origin's refs are byte-identical after every host mode and after a sandbox patch."""
+    origin, primary, feature = _repository(tmp_path)
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+
+    _advance_base(primary, "merged.txt")
+    remote_before = _refs(origin)
+    assert worktree_sync.sync(feature, "dev").status == "synced"
+    assert _refs(origin) == remote_before
+
+    _advance_base(primary, "forwarded.txt")
+    remote_before = _refs(origin)
+    assert worktree_sync.sync(feature, "dev", ff_only=True).status == "synced"
+    assert _refs(origin) == remote_before
+
+    picked = _advance_base(primary, "picked.txt")
+    remote_before = _refs(origin)
+    assert worktree_sync.sync(feature, "dev", cherry_picks=[picked]).status == "synced"
+    assert _refs(origin) == remote_before
+
+    remote_before = _refs(origin)
+    assert worktree_sync.sync(feature, "dev", dry_run=True).dry_run is True
+    assert _refs(origin) == remote_before
+
+    # Sandbox leg LAST: _install_gh_stub narrows PATH for the rest of the test, and
+    # _configure_sandbox rewrites the shared origin URL.
+    patched = _advance_base(primary, "patched.txt")
+    remote_before = _refs(origin)
+    response = _patch_response(primary, patched)
+    _configure_sandbox(feature)
+    _install_gh_stub(tmp_path, monkeypatch, {patched: response})
+    monkeypatch.setenv(worktree_sync.BACKEND_ENV, "native")
+
+    assert worktree_sync.sync(feature, "dev", cherry_picks=[patched]).status == "synced"
+    assert _refs(origin) == remote_before
+
+
+def test_stale_base_summary_up_to_date(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no new base commits the advisory reads 'up to date' and changes nothing."""
+    _origin, _primary, feature = _repository(tmp_path)
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    before = _run(feature, "rev-parse", "HEAD")
+
+    summary = worktree_sync.stale_base_summary(feature, "dev")
+
+    assert summary == "base dev: up to date"
+    assert _run(feature, "rev-parse", "HEAD") == before
+    assert _run(feature, "status", "--porcelain") == ""
+
+
+# --- FEAT-820 / TASK-5237: push-protection truth table and gh failure -----------------------------
+
+
+def _install_failing_gh_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, message: str) -> None:
+    """Put a gh on PATH that writes ``message`` to stderr and exits 1 for every invocation."""
+    executable = tmp_path / "gh"
+    executable.write_text(f"#!/bin/sh\necho {message!r} >&2\nexit 1\n", encoding="utf-8")
+    executable.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}:{Path('/usr/bin')}")
+
+
+def _apply_protection_variant(feature: Path, variant: str) -> None:
+    """Configure one incomplete push-protection shape using only git config writes."""
+    _run(feature, "remote", "set-url", "origin", "git@github.com:example/sync.git")
+    if variant == "missing-extension":
+        # Looks protected — a no_push URL is present — but the worktree-config extension is off.
+        _run(feature, "config", "remote.origin.pushurl", "no_push")
+        return
+    _run(feature, "config", "extensions.worktreeConfig", "true")
+    if variant == "missing-pushurl":
+        return
+    _run(feature, "config", "--worktree", "remote.origin.pushurl", "no_push")
+    _run(feature, "config", "--worktree", "--add", "remote.origin.pushurl", "git@github.com:example/sync.git")
+
+
+def test_push_protection_ok_truth_table(tmp_path: Path) -> None:
+    """Protection holds only for extensions.worktreeConfig=true plus exactly one no_push URL."""
+    _origin, _primary, feature = _repository(tmp_path)
+
+    assert worktree_sync.push_protection_ok(feature) is False
+
+    _run(feature, "config", "remote.origin.pushurl", "no_push")
+    assert worktree_sync.push_protection_ok(feature) is False
+
+    _run(feature, "config", "--unset-all", "remote.origin.pushurl")
+    _run(feature, "config", "extensions.worktreeConfig", "true")
+    assert worktree_sync.push_protection_ok(feature) is False
+
+    _run(feature, "config", "--worktree", "remote.origin.pushurl", "no_push")
+    assert worktree_sync.push_protection_ok(feature) is True
+
+    _run(feature, "config", "--worktree", "--add", "remote.origin.pushurl", "git@github.com:example/sync.git")
+    assert worktree_sync.push_protection_ok(feature) is False
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.parametrize("variant", ["missing-extension", "missing-pushurl", "extra-pushurl"])
+def test_sandbox_push_protection_required(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variant: str, dry_run: bool
+) -> None:
+    """Every incomplete protection shape exits 5 before gh, dry-run included, writing no config."""
+    _origin, _primary, feature = _repository(tmp_path)
+    _apply_protection_variant(feature, variant)
+    assert worktree_sync.push_protection_ok(feature) is False
+
+    common, worktree_config = _git_control_paths(feature)
+    before = tuple(path.read_bytes() if path.is_file() else None for path in (common, worktree_config))
+    _install_failing_gh_stub(tmp_path, monkeypatch, "gh must not be reached")
+    monkeypatch.setenv(worktree_sync.BACKEND_ENV, "native")
+
+    with pytest.raises(worktree_sync.SyncError) as raised:
+        worktree_sync.sync(feature, "dev", cherry_picks=["a" * 40], dry_run=dry_run)
+
+    assert raised.value.exit_code == worktree_sync.EXIT_TRANSPORT
+    assert "host-provisioned" in str(raised.value)
+    assert "gh must not be reached" not in str(raised.value)
+    assert tuple(path.read_bytes() if path.is_file() else None for path in (common, worktree_config)) == before
+
+
+def test_sandbox_gh_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A gh stub exiting 1 becomes a transport refusal carrying its stderr and the host hint."""
+    _origin, primary, feature = _repository(tmp_path)
+    _configure_sandbox(feature)
+    (primary / "patch.txt").write_text("from gh\n", encoding="utf-8")
+    _run(primary, "add", "patch.txt")
+    _run(primary, "commit", "-m", "gh patch")
+    sha = _run(primary, "rev-parse", "HEAD")
+    before = (_run(feature, "rev-parse", "HEAD"), _run(feature, "status", "--porcelain"), _refs(feature))
+    _install_failing_gh_stub(tmp_path, monkeypatch, "gh: HTTP 403")
+    monkeypatch.setenv(worktree_sync.BACKEND_ENV, "native")
+
+    with pytest.raises(worktree_sync.SyncError) as raised:
+        worktree_sync.sync(feature, "dev", cherry_picks=[sha])
+
+    assert raised.value.exit_code == worktree_sync.EXIT_TRANSPORT
+    assert "403" in str(raised.value)
+    assert "run 'parrot sdd worktree sync-base <target>' from the host" in str(raised.value)
+    assert (_run(feature, "rev-parse", "HEAD"), _run(feature, "status", "--porcelain"), _refs(feature)) == before
+    assert not (feature / "patch.txt").exists()
+
+
+# --- FEAT-820 / TASK-5238: unrecovered abort and CLI exit-code mapping ----------------------------
+
+
+def _conflicting_base(primary: Path, feature: Path) -> str:
+    """Give ``feature`` and the base branch incompatible edits to shared.txt; return feature's HEAD."""
+    (feature / "shared.txt").write_text("feature\n", encoding="utf-8")
+    _run(feature, "add", "shared.txt")
+    _run(feature, "commit", "-m", "feature change")
+    before = _run(feature, "rev-parse", "HEAD")
+    (primary / "shared.txt").write_text("base change\n", encoding="utf-8")
+    _run(primary, "add", "shared.txt")
+    _run(primary, "commit", "-m", "base change")
+    _run(primary, "push")
+    return before
+
+
+def test_abort_failure_is_not_reported_as_restored(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failing merge --abort yields status 'error' with recovery guidance, never 'conflict'."""
+    _origin, primary, feature = _repository(tmp_path)
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    before = _conflicting_base(primary, feature)
+
+    original_git = worktree_sync._git
+    calls: list[tuple[str, ...]] = []
+
+    def recording_git(wt: Path, *args: str, timeout: int | None = None) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        if args == ("merge", "--abort"):
+            return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="abort refused")
+        return original_git(wt, *args, timeout=timeout)
+
+    monkeypatch.setattr(worktree_sync, "_git", recording_git)
+
+    result = worktree_sync.sync(feature, "dev")
+
+    assert result.status == "error"
+    assert result.exit_code == worktree_sync.EXIT_CONFLICT
+    assert "automatic rollback was not verified" in result.message
+    assert "abort refused" in result.message
+    assert result.before == before
+    assert ("merge", "--abort") in calls
+    assert not any(args and args[0] == "reset" for args in calls)
+
+
+def test_main_exit_code_mapping(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """main() maps synced to 0 and conflict to 6, in human and --json form, honouring --dry-run."""
+    _origin, primary, feature = _repository(tmp_path)
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    _as_primary(monkeypatch, primary)
+    _advance_base(primary, "base.txt")
+
+    dry = worktree_sync.main(["feat-FEAT-999-sync", "--base", "dev", "--dry-run", "--json"])
+    body = json.loads(capsys.readouterr().out)
+
+    assert dry == worktree_sync.EXIT_OK
+    assert body["dry_run"] is True
+    assert body["commits"]
+    assert not (feature / "base.txt").exists()
+
+    code = worktree_sync.main(["feat-FEAT-999-sync", "--base", "dev"])
+    captured = capsys.readouterr()
+
+    assert code == worktree_sync.EXIT_OK
+    assert "synchronized" in captured.out
+    assert captured.err == ""
+    assert (feature / "base.txt").read_text(encoding="utf-8") == "base.txt\n"
+
+    _conflicting_base(primary, feature)
+
+    conflicted = worktree_sync.main(["feat-FEAT-999-sync", "--base", "dev", "--json"])
+    conflict_body = json.loads(capsys.readouterr().out)
+
+    assert conflicted == worktree_sync.EXIT_CONFLICT
+    assert conflict_body["status"] == "conflict"
+    assert conflict_body["exit_code"] == worktree_sync.EXIT_CONFLICT
+    assert conflict_body["conflicts"] == ["shared.txt"]
