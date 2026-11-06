@@ -252,14 +252,19 @@ commit since 2026-10-15 (F018).
 
 ## 3. Probable Scope
 
-The scope below follows the user's four decisions (§5): the draft's design is adopted in full
-and ArangoDB leaves the whole workspace.
+The scope below follows the user's four decisions (§5): the draft's design is adopted with
+the review corrections below, and ArangoDB leaves the whole workspace after validated migration
+and cutover. The original source preserved in `sdd/state/FEAT-824/source.md` remains an audit
+snapshot; the working draft and this proposal carry the corrections.
 
 ### What's New
 
 - **PostgreSQL OntologyStore (draft §4)** — RDF-faithful concept vocabulary, Turtle publication
   pipeline (rdflib + pyshacl), read-only SQLite snapshot, `resolve` / `expand` / `canonical`
   contract. Entirely greenfield. *Evidence*: F006, F005, F012
+  **Review requirement**: stable concept identities plus versioned concept, label, relation
+  and statement rows; retain closure per publication. Half-open validity intervals and
+  serialized publication must preserve historical `get`/`export` and version-specific snapshots.
 - **Reconciliation with the existing concept catalog** — map the reviewed, tenant-scoped
   `ontology_concept*` tables and pgvector `ontology.concepts` onto the IRI/versioned model, and
   pick a schema name that does not collide. *Evidence*: F008
@@ -276,6 +281,11 @@ and ArangoDB leaves the whole workspace.
   (open question U5). *Evidence*: F004, F005, F016, F027
 - **SurrealDB dependency, extra and local daemon** — `surrealdb` SDK, `parrot knowledge daemon`,
   with the draft's spike G1 as the go/no-go gate. *Evidence*: F012, F017
+- **Transactional synchronization** — local mutations, stream counters and durable outbox
+  records commit together. Central mutations, deduplication receipts and download changes also
+  commit together; ACKs follow commit. Stable request/operation identities make uncertain commits
+  and retries recoverable. JSONL is an export format, not an independently written outbox.
+  **Review requirement**: draft §7.4; G1 must prove these transaction guarantees under concurrency.
 - **Conformance suites** for the ontology and knowledge stores, on the
   `persistence_conformance.py` pattern. *Evidence*: F015, F010
 - **Licence ADR and FEAT-670 supersession** — the ADR cites the research note and the four
@@ -285,6 +295,9 @@ and ArangoDB leaves the whole workspace.
   planes and Arango vector collections. *Evidence*: F019, F025, F026, F014
 
 ### What Changes
+
+All removals below belong to the final retirement phase, after migration, parity checks and
+cutover. Keep the legacy implementations and dependencies operational through the rollback window.
 
 - **`parrot/knowledge/ontology/contracts.py`::`create_ontology_graph_store`** — new built-in,
   `arangodb` lazy import removed, `UpsertResult` hosted here. *Evidence*: F001, F002
@@ -383,8 +396,31 @@ and ArangoDB leaves the whole workspace.
 3. SurrealDB KnowledgeStore behind the wiki seams, then Bookstore and L1.
 4. Destination for the instance-graph pipeline and port of its consumers (legal/BOE, contracts,
    manuals, `hierarchy.py`).
-5. Workspace-wide removal: Arango backends, vector store, tool, sinks, extras, docker, tests.
-6. Data migration and the draft's §10 benchmarks.
+5. Rehearse resumable data migration for every tenant and plane, including GraphIndex and vector
+   collections; preserve wiki data not reconstructible from git. Run contract/parity checks,
+   authorization checks and the draft's §10 benchmarks while ArangoDB remains operational.
+6. Freeze source writes, apply the final delta, verify parity and switch readers with recorded
+   checkpoints. Keep writes paused during the rollback window; rehearse restoration before
+   accepting cutover and reopening writes. Any later rollback must reconcile new destination
+   writes under a new freeze using a tested procedure.
+7. Workspace-wide removal in a later delivery, only after every tenant/plane is migrated and the
+   rollback window is closed: Arango backends, vector store, tool, sinks, extras, docker, tests.
+   Retain verified exports and restoration evidence under the retention policy.
+
+### Review acceptance gates
+
+- **Temporal fidelity**: publish v1, change labels/attributes/relations in v2, and reintroduce
+  a relation in v3. Historical reads and Turtle exports must still reproduce v1; each snapshot
+  retains its publication's closure. Reject unavailable versions and prevent overlapping
+  intervals or mixed-version reads during concurrent publication.
+- **Crash-safe sync**: with eight writer processes, verify unique stream sequences and request
+  identities. Inject failures before local commit, after local commit before dispatch, after
+  central commit before ACK, and after ACK before local persistence. Replay must converge with
+  no lost committed mutations or duplicate effects, including uncertain commit responses and
+  disconnected download consumers. G1 is no-go if the selected engine/SDK cannot provide this.
+- **Retirement gate**: require per-tenant/per-plane migration checkpoints, data and query parity,
+  permission parity, benchmark results and a demonstrated rollback before removing legacy code
+  or infrastructure. New writes after cutover must never be silently discarded by rollback.
 
 ---
 

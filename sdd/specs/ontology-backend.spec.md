@@ -18,7 +18,7 @@ docs:
 **Feature ID**: FEAT-824
 **Date**: 2026-11-06
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 2.2.0
 **Source proposal**: `sdd/proposals/ontology-backend.proposal.md` (status `discussion`; 5 resolved
 questions; read from the working tree, including review corrections not yet committed there)

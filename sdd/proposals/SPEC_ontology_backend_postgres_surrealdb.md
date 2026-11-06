@@ -89,6 +89,13 @@ CREATE TABLE ontology.version (
   PRIMARY KEY (ontology_id, version)
 );
 
+-- Identidad estable, independiente de los atributos versionados.
+CREATE TABLE ontology.concept_identity (
+  ontology_id   text NOT NULL REFERENCES ontology.ontology,
+  iri           text NOT NULL,
+  PRIMARY KEY (ontology_id, iri)
+);
+
 CREATE TABLE ontology.concept (
   ontology_id   text NOT NULL,
   iri           text NOT NULL,
@@ -101,7 +108,11 @@ CREATE TABLE ontology.concept (
   until_version int,                         -- NULL = vigente
   embedding     vector(1024),                -- del texto "pref_label + definition + altLabels"
   extra         jsonb NOT NULL DEFAULT '{}', -- anotaciones RDF no modeladas (rdfs:seeAlso, dc:source...)
-  PRIMARY KEY (ontology_id, iri)
+  PRIMARY KEY (ontology_id, iri, since_version),
+  FOREIGN KEY (ontology_id, iri) REFERENCES ontology.concept_identity,
+  FOREIGN KEY (ontology_id, since_version) REFERENCES ontology.version,
+  FOREIGN KEY (ontology_id, until_version) REFERENCES ontology.version,
+  CHECK (until_version IS NULL OR until_version > since_version)
 );
 
 CREATE TABLE ontology.label (
@@ -110,7 +121,13 @@ CREATE TABLE ontology.label (
   lang          text NOT NULL DEFAULT 'es',
   kind          text NOT NULL CHECK (kind IN ('pref','alt','hidden')),   -- SKOS
   text          text NOT NULL,
-  FOREIGN KEY (ontology_id, iri) REFERENCES ontology.concept
+  since_version int NOT NULL,
+  until_version int,
+  PRIMARY KEY (ontology_id, iri, lang, kind, text, since_version),
+  FOREIGN KEY (ontology_id, iri) REFERENCES ontology.concept_identity,
+  FOREIGN KEY (ontology_id, since_version) REFERENCES ontology.version,
+  FOREIGN KEY (ontology_id, until_version) REFERENCES ontology.version,
+  CHECK (until_version IS NULL OR until_version > since_version)
 );
 
 CREATE TABLE ontology.relation (
@@ -120,17 +137,22 @@ CREATE TABLE ontology.relation (
   object_iri    text NOT NULL,
   since_version int NOT NULL,
   until_version int,
-  PRIMARY KEY (ontology_id, subject_iri, predicate, object_iri)
+  PRIMARY KEY (ontology_id, subject_iri, predicate, object_iri, since_version),
+  FOREIGN KEY (ontology_id, since_version) REFERENCES ontology.version,
+  FOREIGN KEY (ontology_id, until_version) REFERENCES ontology.version,
+  CHECK (until_version IS NULL OR until_version > since_version)
 );
 
 -- Clausura transitiva materializada por familia de predicado
 CREATE TABLE ontology.closure (
   ontology_id    text NOT NULL,
+  version        int NOT NULL,
   family         text NOT NULL,  -- 'subclass' | 'subproperty' | 'broader' | 'partof'
   ancestor_iri   text NOT NULL,
   descendant_iri text NOT NULL,
   depth          int  NOT NULL,  -- 0 = reflexivo
-  PRIMARY KEY (ontology_id, family, descendant_iri, ancestor_iri)
+  PRIMARY KEY (ontology_id, version, family, descendant_iri, ancestor_iri),
+  FOREIGN KEY (ontology_id, version) REFERENCES ontology.version
 );
 
 -- Triples con literal u objetos no modelados (fidelidad RDF)
@@ -140,20 +162,31 @@ CREATE TABLE ontology.statement (
   predicate     text NOT NULL,
   object        jsonb NOT NULL,  -- {"value":..., "datatype":..., "lang":...} | {"iri":...}
   since_version int NOT NULL,
-  until_version int
+  until_version int,
+  FOREIGN KEY (ontology_id, since_version) REFERENCES ontology.version,
+  FOREIGN KEY (ontology_id, until_version) REFERENCES ontology.version,
+  CHECK (until_version IS NULL OR until_version > since_version)
 );
 
+CREATE UNIQUE INDEX concept_current ON ontology.concept (ontology_id, iri)
+  WHERE until_version IS NULL;
+CREATE UNIQUE INDEX label_current ON ontology.label (ontology_id, iri, lang, kind, text)
+  WHERE until_version IS NULL;
+CREATE UNIQUE INDEX relation_current ON ontology.relation (ontology_id, subject_iri, predicate, object_iri)
+  WHERE until_version IS NULL;
 CREATE INDEX ON ontology.label USING gin (text gin_trgm_ops);
 CREATE INDEX ON ontology.concept USING gin (pref_label gin_trgm_ops);
 CREATE INDEX ON ontology.concept USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX ON ontology.relation (ontology_id, predicate, subject_iri);
 CREATE INDEX ON ontology.relation (ontology_id, predicate, object_iri);
-CREATE INDEX ON ontology.closure (ontology_id, family, ancestor_iri);
+CREATE INDEX ON ontology.closure (ontology_id, version, family, ancestor_iri);
 ```
 
 Notas:
-- `since_version/until_version` dan **lectura temporal** (`AS OF version`) sin tablas de historia; una fila vigente tiene `until_version IS NULL`.
-- La clausura se recalcula íntegra en cada publicación (ontologías ≤ 10⁵ conceptos; coste trivial). Incluye el reflexivo (`depth 0`) para que `expand` devuelva siempre el propio IRI.
+- Los intervalos son semiabiertos: una fila es visible en `v` si `since_version <= v AND (until_version IS NULL OR v < until_version)`. Conceptos, etiquetas, relaciones y statements conservan sus filas históricas. Cambiar atributos cierra la fila vigente e inserta otra; nunca sobrescribe su contenido. Una relación eliminada y reintroducida recibe otro `since_version`.
+- El publicador es el único escritor y serializa por ontología con `SELECT ... FOR UPDATE` sobre `ontology.ontology`. Valida intervalos no solapados por identidad lógica; los índices parciales impiden duplicar filas vigentes. La identidad de un statement incluye sujeto, predicado y objeto RDF completo (tipo, idioma y valor).
+- La clausura se calcula y conserva por versión; no se reemplazan versiones anteriores. Incluye el reflexivo (`depth 0`). Medir coste de construcción y retención en los benchmarks.
+- Cada operación captura una versión publicada para todas sus lecturas, incluidas etiquetas y clausura. `get`/`export(as_of=v)` rechazan versiones inexistentes; sin `as_of` usan la versión capturada. Un snapshot de `v` contiene solo las filas visibles en `v` y su clausura, declara esa versión y rechaza otro `as_of`.
 - Los inversos (`owl:inverseOf`) se materializan como relaciones adicionales en publicación, no en consulta.
 - `ltree` queda como optimización opcional para jerarquías estrictamente arbóreas; la clausura cubre DAGs con herencia múltiple.
 
@@ -161,13 +194,15 @@ Notas:
 
 ```
 Turtle (git, PR)  →  parse (rdflib)  →  validate (pyshacl + reglas parrot)  →  diff vs versión vigente
-                  →  TX: insert/close filas, deprecations, rebuild closure, embeddings → bump version
+                  →  preparar embeddings y clausura de la versión candidata
+                  →  TX: bloquear ontología, verificar versión base, insertar version,
+                         cerrar/insertar filas, insertar clausura(version), actualizar current_version
                   →  export Turtle canónico → S3 → emitir evento OntologyPublished(ontology_id, version, diff)
 ```
 
 Reglas de validación propias (además de SHACL): IRIs dentro de `base_iri`; ningún IRI desaparece (solo `owl:deprecated true` + `dcterms:isReplacedBy`); sin ciclos en `subClassOf`/`broader`; toda clase con al menos un `skos:prefLabel`.
 
-El diff publicado alimenta la propagación al KnowledgeStore (§7.3).
+Si la versión base cambió durante la preparación, se recalcula el candidato antes de publicar. El diff publicado alimenta la propagación al KnowledgeStore (§7.3).
 
 ### 4.3 Snapshot local
 
@@ -376,11 +411,14 @@ Garantías: el paso 2 es determinista dado `(ontology_id, version)`; la respuest
 ### 7.3 Propagación de cambios de ontología
 Al evento `OntologyPublished(diff)`: job asíncrono que, por cada `replaced_by` nuevo, ejecuta en Surreal `UPDATE entity SET concept_iri = $new, ontology_version = $v WHERE concept_iri = $old` y reescribe `chunk.concept_iris`. Idempotente; registra en `ontology.propagation_log(ontology_id, version, ns, db, applied_at)`.
 
-### 7.4 Log de deltas (datos no derivados de git)
-- Formato: JSONL, una operación por línea: `{seq, ns, db, op: 'upsert_entity'|'relate'|'put_synth'|'tombstone'|..., key: {...}, payload: {...}, ts, origin}`; `seq` monótono por `origin` (máquina+usuario).
-- Local: la consola escribe en Surreal local **y** en el log (`~/.parrot/knowledge/outbox/{ns}.{db}.jsonl`). Un worker lo envía a `POST /knowledge/{ns}/{db}/deltas` (API ai-parrot, nunca al Surreal central directo). El central aplica con `apply_delta` (idempotente por clave natural, LWW por `ts` o por `content_hash` donde exista).
-- Central → local: `subscribe()` (LIVE SELECT) para sesiones conectadas; `GET /knowledge/.../deltas?since=` para rehidratar; `EXPORT` completo para portátil nuevo.
-- Conflictos: no hay merge de páginas (git); para entidades LWW; para `related` unión de evidencias.
+### 7.4 Outbox transaccional (datos no derivados de git)
+- Cada mutación local confirma en **una transacción SurrealDB** los datos, una operación inmutable en `sync_outbox` y el incremento del contador de su stream. No se escribe un fichero como segunda fuente de verdad. JSONL queda como formato de exportación/importación del outbox confirmado.
+- Identidad de operación: `(origin, ns, db, seq)`. `origin` identifica la instalación persistente; `seq` es monótono por `(origin, ns, db)`. Todas las consolas comparten el contador en la base local; conflictos transaccionales se reintentan con límite. Cada petición conserva un `request_id` único durante reintentos y reconexiones: un commit de resultado incierto se consulta por esa clave antes de volver a mutar. Su unicidad se exige en la base y su recibo se conserva durante todo el periodo de reintentos admitido, incluso si se compacta el payload del outbox.
+- El registro contiene `{origin, ns, db, seq, request_id, op, key, payload, ts}`. Datos, contador y outbox se confirman juntos o ninguno. G1 debe demostrar esta atomicidad y la unicidad bajo concurrencia con el motor/SDK elegidos; si no puede, la sincronización queda bloqueada.
+- Un worker envía operaciones confirmadas, en orden por stream, a `POST /knowledge/{ns}/{db}/deltas`. El central confirma en una transacción la mutación, su recibo único por identidad de operación y el registro de cambios para descarga. Un reenvío devuelve el recibo previo sin repetir efectos; una identidad repetida con otro payload se rechaza. El ACK solo sale después del commit.
+- El worker marca el ACK local después de recibirlo. Si cae antes de guardarlo, reenvía la misma operación. No se purgan operaciones sin ACK; la retención de recibos debe cubrir todos los reintentos admitidos. Un stream con huecos no avanza su cursor contiguo hasta recuperar las operaciones pendientes.
+- Central → local: `subscribe()` (LIVE SELECT) notifica novedades; el registro durable y `GET /knowledge/.../deltas?since=` permiten recuperar desconexiones. Aplicar un lote y avanzar su cursor local es atómico, con deduplicación y sin generar otra operación saliente. Un cursor expirado requiere snapshot completo con su cursor de corte y replay posterior.
+- Conflictos: no hay merge de páginas (git); entidades usan LWW con desempate determinista `(ts, origin, seq)`; síntesis se identifican también por `content_hash`; `related` une evidencias. Deduplicación de transporte y resolución de conflictos son reglas distintas.
 
 ---
 
@@ -417,10 +455,12 @@ KNOWLEDGE_SYNC_ENDPOINT=https://api.../knowledge
 ## 9. Migración
 
 1. **Ontología** (ArangoDB → Postgres): exportar colecciones de conceptos/aristas a Turtle con un script one-shot (mapeo de etiquetas Arango → clases, aristas → `subClassOf`/`broader`/propiedades); publicar como v1 por el pipeline normal. El Turtle pasa a vivir en git.
-2. **Wiki OKF**: sin migración de datos. Reingesta desde git a Surreal central (CI) y local (hook).
+2. **Wiki OKF**: reingesta desde git a Surreal central (CI) y local (hook) para contenido reconstruible; exportación/importación explícita de páginas y metadatos existentes que no estén en git, con identidades preservadas.
 3. **Entidades/síntesis existentes** (SQLite per-repo, ArangoDB): script `parrot knowledge import --from sqlite|arango` que emite el log de deltas y lo aplica; entidades reetiquetadas por `canonical()` contra la ontología v1.
 4. **Bookstore**: reingesta desde los ficheros fuente (S3/local); ids estables por `sha256`.
-5. ArangoDB se mantiene como adaptador opcional heredado hasta validar paridad; se retira en la siguiente minor.
+5. **Ensayo de migración y paridad**: mantener adaptadores, dependencias, configuración y entorno ArangoDB operativos. Inventariar todos los tenants y planos (incluidos GraphIndex y vectores), asignar destino, exportar/copiar de forma reanudable y verificar recuentos, identidades, relaciones, permisos y consultas. Exportar también páginas y metadatos wiki que no sean reconstruibles desde git. La migración del grafo de instancias depende de resolver su destino en FEAT-824; no se convierte implícitamente todo a RDF.
+6. **Cutover reversible**: congelar escrituras en origen, aplicar el delta final, verificar paridad y cambiar lectores con un checkpoint registrado. Durante la ventana de rollback mantener escrituras pausadas; ante fallo volver al origen sin cambios. Reabrir escrituras en destino solo tras aceptar el cutover y un ensayo de restauración. Un rollback posterior requiere congelar destino y reconciliar sus nuevas escrituras mediante un procedimiento probado; nunca basta cambiar la configuración.
+7. **Retirada posterior**: solo después de migrar todos los tenants/planos, pasar §10 y cerrar la ventana de rollback, retirar backends, extras, herramientas, Docker y pruebas ArangoDB en una entrega posterior. Conservar exportaciones verificadas y evidencia de restauración según la política de retención.
 
 ---
 
@@ -428,7 +468,10 @@ KNOWLEDGE_SYNC_ENDPOINT=https://api.../knowledge
 
 - **Suite de contrato** compartida: `OntologyStore` contra Postgres (testcontainers) y Snapshot; `KnowledgeStore` contra Surreal (testcontainers, imagen fijada). Mismos casos, mismos resultados.
 - **Golden Turtle**: fixtures por dominio; propiedades: `expand` es cerrado y reflexivo, publicar dos veces el mismo Turtle no cambia `version`, deprecar propaga a Surreal.
-- **Concurrencia local**: 8 procesos escribiendo entidades y síntesis sobre el mismo Surreal local; sin pérdida ni duplicados por claves únicas.
+- **Historia temporal**: publicar v1, cambiar etiquetas/atributos/relaciones en v2 y reintroducir una relación en v3; `get` y Turtle `as_of=v1` conservan el contenido original, cada snapshot conserva su clausura y versiones inexistentes fallan explícitamente. Publicaciones concurrentes no generan intervalos solapados ni mezclan versiones.
+- **Concurrencia local**: 8 procesos escribiendo entidades y síntesis; verificar unicidad de `request_id` y `(origin, ns, db, seq)`, orden por stream y correspondencia exacta entre mutaciones confirmadas y outbox.
+- **Recuperación de sync**: inyectar caída antes del commit local, después del commit antes del envío, después del commit central antes del ACK y después del ACK antes de guardarlo. Reiniciar y reenviar debe converger sin pérdida ni efectos duplicados; comprobar también respuesta de commit incierta, huecos y reconexión de descargas.
+- **Migración y rollback**: ensayo por cada plano/tenant con checksums/recuentos y equivalencia de consultas/permisos, migración reanudable, delta final bajo pausa de escrituras y restauración al origen. Ninguna retirada antes de aprobar paridad, benchmarks y cutover.
 - **Retrieval**: conjunto de consultas del wiki jurídico y de `parrot_code` con juicios de relevancia; criterio de aceptación: recall@10 del híbrido con filtro ontológico ≥ SQLite FTS5 actual + 15 puntos, latencia p95 < 300 ms en central.
 - **Offline**: suite completa de lectura con red deshabilitada usando snapshot y Surreal local.
 
@@ -438,13 +481,13 @@ KNOWLEDGE_SYNC_ENDPOINT=https://api.../knowledge
 
 | Riesgo | Mitigación / decisión pendiente |
 |---|---|
-| SDK Python `surrealdb` 3.x aún en beta; 4.0 en beta | **Spike (gate G1):** validar `AsyncSurreal` 3.x contra servidor 3.3.x: BM25 + HNSW + `CONTAINSANY`, LIVE SELECT, transacciones WS, reconexión. Si falla, SDK 2.0.0 estable o cliente HTTP propio sobre `/sql`. |
+| SDK Python `surrealdb` 3.x aún en beta; 4.0 en beta | **Spike (gate G1):** validar `AsyncSurreal` 3.x contra servidor 3.3.x: BM25 + HNSW + `CONTAINSANY`, LIVE SELECT, transacciones WS, reconexión y atomicidad del outbox/contador/recibos con 8 procesos (§7.4). Si falla, evaluar SDK 2.0.0 estable o cliente HTTP propio sobre `/sql`; cualquier alternativa debe pasar los mismos gates antes de continuar. |
 | Disponibilidad y firma de `search::rrf` / analizador `snowball(spanish)` en 3.3.x | Verificar en G1; RRF en cliente es obligatorio de todos modos. |
 | Rendimiento de Surreal con `CONTAINSANY` sobre arrays grandes de IRIs | Limitar expansión a ≤ 200 IRIs; si se supera, filtrar por `kind`/`repo` y post-filtrar en cliente. Medir en G1. |
 | Licencia BSL 1.1 de SurrealDB para usuarios que lo ofrezcan como servicio | Documentar en README del adaptador; SDK Apache/MIT; ai-parrot no redistribuye el binario. |
 | Deriva entre `concept_iri` y ontología vigente | `canonical()` en lectura + job de propagación + métrica de entidades con `ontology_version < current`. |
 | Tamaño de embeddings (1024 dims) en RDS y Surreal | Parametrizable; evaluar 768/512 con Matryoshka si el coste de HNSW en Surreal es alto. |
-| Lecturas de larga duración en Postgres durante publicación | Publicación en una TX corta; clausura en tabla sombra + `ALTER TABLE ... RENAME`. |
+| Lecturas de larga duración en Postgres durante publicación | Preparar embeddings y clausura fuera de la TX; validar versión base bajo bloqueo e insertar la clausura con su versión, sin sustituir historia. |
 | ¿L0 de GraphIndex central va a Postgres o se difiere? | Fuera de alcance aquí; spec aparte. Este diseño no lo bloquea. |
 
 ---
@@ -464,10 +507,12 @@ KNOWLEDGE_SYNC_ENDPOINT=https://api.../knowledge
 | T8 | Búsqueda híbrida + RRF cliente + filtro ontológico; integración en L2 (QueryClassifier) | T3, T5 | `search()` |
 | T9 | Caché L1 (`synth`) y uso desde GraphIndex | T5 | adaptador L1 |
 | T10 | Daemon local `parrot knowledge daemon` (lock, puerto, servicio de usuario) | T0 | CLI |
-| T11 | Log de deltas: outbox local, endpoint central, `apply_delta`, rehidratación, LIVE | T5, T10 | sync v1 |
+| T11 | Outbox transaccional, contadores, recibos idempotentes, recuperación y rehidratación (§7.4) | T5, T10 | sync v1 + pruebas de caída |
 | T12 | Job de propagación de deprecaciones ontología → Surreal | T2, T5 | worker |
 | T13 | Scripts de migración (Arango → Turtle; SQLite/Arango → deltas) | T2, T11 | CLI |
-| T14 | Benchmarks de retrieval y concurrencia; criterios de aceptación §10 | T8, T10 | informe |
+| T14 | Benchmarks, historia temporal, concurrencia, recuperación y paridad de migración (§10) | T2, T4, T7, T8, T9, T11, T12, T13 | informe de aceptación |
 | T15 | Despliegue central (RDS roles, ECS Surreal, backups) + docs de operación | T5 | IaC en el repo de infraestructura |
+| T16 | Cutover y ensayo de rollback por tenant/plano (§9), tras portar todos los consumidores de FEAT-824 | T14, T15 | checkpoints y evidencia de restauración |
+| T17 | Retirada ArangoDB tras cierre de ventana de rollback, en entrega posterior | T16 | eliminación de backends, extras y entorno heredado |
 
-Orden sugerido: T0 ∥ T1 → T2, T3 → T4 → T5 → T6 → T8 → T7, T9 → T10 → T11 → T12 → T13 → T14 → T15.
+Orden sugerido: T0 ∥ T1 → T2, T3 → T4 → T5 → T6 → T8 → T7, T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17. T16 también exige resolver y migrar el grafo de instancias y todos los consumidores inventariados en FEAT-824; las tareas del borrador no sustituyen ese port.
