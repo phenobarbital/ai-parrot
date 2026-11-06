@@ -1,0 +1,55 @@
+{
+  "feature": "test-scope-select-fixes",
+  "feature_id": "FEAT-833",
+  "spec": "sdd/specs/test-scope-select-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-07T01:00:00Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_runner_parrot_e2e.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_planner.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_select.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_select_contract_mode.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:fd73f4a26ae31adb728259c1339039fc51ae91cf6d316e366f73f38826623bf9"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5291",
+      "slug": "test-scope-select-fixes",
+      "title": "Test-scope selector — plan a task-declared parrot e2e run, report an operand-less command",
+      "feature_id": "FEAT-833",
+      "feature": "test-scope-select-fixes",
+      "spec": "sdd/specs/test-scope-select-fixes.spec.md",
+      "file": "sdd/tasks/active/TASK-5291-test-scope-select-fixes.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task; no exclusive resource; worktree must include FEAT-829 (PR #2009)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "discovered_from": "issue:3ae0b2ae0ef4"
+    }
+  ]
+}

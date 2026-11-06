@@ -18,7 +18,7 @@ docs:
 **Feature ID**: FEAT-824
 **Date**: 2026-11-06
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 2.2.0
 **Source proposal**: `sdd/proposals/ontology-backend.proposal.md` (status `discussion`; 5 resolved
 questions; read from the working tree, including review corrections not yet committed there)
@@ -1061,11 +1061,33 @@ tests:
 - packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py
 - packages/ai-parrot/tests/knowledge/test_lazy_package_roots.py
 - packages/ai-parrot/tests/knowledge/test_import_ceilings.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_vocabulary_import.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_validation.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_publisher.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_postgres_store.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_snapshot_store.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_temporal_fidelity.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_catalog_bridge.py
+- packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_worker_vocabulary.py
+- packages/ai-parrot/tests/knowledge/ontology/test_ontology_store_extra.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_vocabulary_contracts.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_vocabulary_settings.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_vocabulary_backends.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_fixtures.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_pg_schema.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_closure.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_turtle.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_postgres_reads.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_snapshot_build.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_snapshot_offline.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_vocabulary_cli.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_vocabulary_http.py
+- packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_vocabulary_docs.py
+- packages/ai-parrot/tests/knowledge/wiki/decisions/test_seed_rules.py
+- tests/spikes/test_surrealdb_g1_harness.py
+- tests/spikes/test_surrealdb_g1_checks.py
+- tests/spikes/test_surrealdb_g1_report.py
 markers: none
-
-The new files under `packages/ai-parrot/tests/knowledge/ontology/vocabulary/` and
-`tests/spikes/test_surrealdb_g1_harness.py` are added to this list by `/sdd-task` once the tasks
-that create them are fixed.
 
 ### Test Data / Fixtures
 
