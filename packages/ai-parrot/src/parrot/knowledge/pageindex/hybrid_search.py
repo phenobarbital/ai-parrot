@@ -82,6 +82,9 @@ class HybridPageIndexSearch:
         embed_fn: Optional[Callable[[list[str]], "np.ndarray"]] = None,
         use_vec_rank: bool = False,
         use_embedding_walk: bool = False,
+        *,
+        tree_name: Optional[str] = None,
+        generation_id: int = 0,
     ):
         self._tree = tree
         self._adapter = adapter
@@ -93,10 +96,26 @@ class HybridPageIndexSearch:
         self._embed_fn = embed_fn
         self._use_vec_rank = use_vec_rank
         self._use_embedding_walk = use_embedding_walk
+        self._tree_name = tree_name
+        self._generation_id = generation_id
 
         self._bm25_index = None
         self._corpus_node_ids: list[str] = []
         self._dirty = True
+
+    @property
+    def tree_name(self) -> Optional[str]:
+        """Tree name the indexes are keyed by, if explicitly supplied."""
+        return self._tree_name
+
+    @property
+    def generation_id(self) -> int:
+        """Generation for which this engine was built."""
+        return self._generation_id
+
+    def _index_name(self) -> str:
+        """Return the explicit tree name or the legacy document-name key."""
+        return self._tree_name or self._tree.get("doc_name") or ""
 
     def set_content_loader(
         self,
@@ -126,7 +145,7 @@ class HybridPageIndexSearch:
         """
         self._dirty = True
         if self._embedding_store is not None:
-            tree_name = self._tree.get("doc_name") or ""
+            tree_name = self._index_name()
             if tree_name:
                 self._embedding_store.invalidate_tree(tree_name)
 
@@ -214,20 +233,22 @@ class HybridPageIndexSearch:
         if self._embedding_store is None or self._embed_fn is None:
             return []
 
-        tree_name = self._tree.get("doc_name") or ""
+        tree_name = self._index_name()
         if not tree_name:
             logger.warning("_vec_rank: tree has no doc_name; skipping")
             return []
 
         # Lazy rebuild if the per-tree matrix was invalidated.
-        result = self._embedding_store.load_tree_matrix(tree_name)
+        result = self._embedding_store.load_tree_matrix(
+            tree_name, generation_id=self._generation_id
+        )
         if result is None:
             nodes = get_nodes(self._structure())
             if not nodes:
                 return []
             try:
                 result = self._embedding_store.build_tree_matrix(
-                    tree_name, nodes, self._embed_fn
+                    tree_name, nodes, self._embed_fn, generation_id=self._generation_id
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("build_tree_matrix failed: %s", exc)
