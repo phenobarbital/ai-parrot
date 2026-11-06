@@ -1055,3 +1055,94 @@ def test_stale_base_summary_up_to_date(tmp_path: Path, monkeypatch: pytest.Monke
     assert summary == "base dev: up to date"
     assert _run(feature, "rev-parse", "HEAD") == before
     assert _run(feature, "status", "--porcelain") == ""
+
+
+# --- FEAT-820 / TASK-5237: push-protection truth table and gh failure -----------------------------
+
+
+def _install_failing_gh_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, message: str) -> None:
+    """Put a gh on PATH that writes ``message`` to stderr and exits 1 for every invocation."""
+    executable = tmp_path / "gh"
+    executable.write_text(f"#!/bin/sh\necho {message!r} >&2\nexit 1\n", encoding="utf-8")
+    executable.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}:{Path('/usr/bin')}")
+
+
+def _apply_protection_variant(feature: Path, variant: str) -> None:
+    """Configure one incomplete push-protection shape using only git config writes."""
+    _run(feature, "remote", "set-url", "origin", "git@github.com:example/sync.git")
+    if variant == "missing-extension":
+        # Looks protected — a no_push URL is present — but the worktree-config extension is off.
+        _run(feature, "config", "remote.origin.pushurl", "no_push")
+        return
+    _run(feature, "config", "extensions.worktreeConfig", "true")
+    if variant == "missing-pushurl":
+        return
+    _run(feature, "config", "--worktree", "remote.origin.pushurl", "no_push")
+    _run(feature, "config", "--worktree", "--add", "remote.origin.pushurl", "git@github.com:example/sync.git")
+
+
+def test_push_protection_ok_truth_table(tmp_path: Path) -> None:
+    """Protection holds only for extensions.worktreeConfig=true plus exactly one no_push URL."""
+    _origin, _primary, feature = _repository(tmp_path)
+
+    assert worktree_sync.push_protection_ok(feature) is False
+
+    _run(feature, "config", "remote.origin.pushurl", "no_push")
+    assert worktree_sync.push_protection_ok(feature) is False
+
+    _run(feature, "config", "--unset-all", "remote.origin.pushurl")
+    _run(feature, "config", "extensions.worktreeConfig", "true")
+    assert worktree_sync.push_protection_ok(feature) is False
+
+    _run(feature, "config", "--worktree", "remote.origin.pushurl", "no_push")
+    assert worktree_sync.push_protection_ok(feature) is True
+
+    _run(feature, "config", "--worktree", "--add", "remote.origin.pushurl", "git@github.com:example/sync.git")
+    assert worktree_sync.push_protection_ok(feature) is False
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.parametrize("variant", ["missing-extension", "missing-pushurl", "extra-pushurl"])
+def test_sandbox_push_protection_required(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variant: str, dry_run: bool
+) -> None:
+    """Every incomplete protection shape exits 5 before gh, dry-run included, writing no config."""
+    _origin, _primary, feature = _repository(tmp_path)
+    _apply_protection_variant(feature, variant)
+    assert worktree_sync.push_protection_ok(feature) is False
+
+    common, worktree_config = _git_control_paths(feature)
+    before = tuple(path.read_bytes() if path.is_file() else None for path in (common, worktree_config))
+    _install_failing_gh_stub(tmp_path, monkeypatch, "gh must not be reached")
+    monkeypatch.setenv(worktree_sync.BACKEND_ENV, "native")
+
+    with pytest.raises(worktree_sync.SyncError) as raised:
+        worktree_sync.sync(feature, "dev", cherry_picks=["a" * 40], dry_run=dry_run)
+
+    assert raised.value.exit_code == worktree_sync.EXIT_TRANSPORT
+    assert "host-provisioned" in str(raised.value)
+    assert "gh must not be reached" not in str(raised.value)
+    assert tuple(path.read_bytes() if path.is_file() else None for path in (common, worktree_config)) == before
+
+
+def test_sandbox_gh_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A gh stub exiting 1 becomes a transport refusal carrying its stderr and the host hint."""
+    _origin, primary, feature = _repository(tmp_path)
+    _configure_sandbox(feature)
+    (primary / "patch.txt").write_text("from gh\n", encoding="utf-8")
+    _run(primary, "add", "patch.txt")
+    _run(primary, "commit", "-m", "gh patch")
+    sha = _run(primary, "rev-parse", "HEAD")
+    before = (_run(feature, "rev-parse", "HEAD"), _run(feature, "status", "--porcelain"), _refs(feature))
+    _install_failing_gh_stub(tmp_path, monkeypatch, "gh: HTTP 403")
+    monkeypatch.setenv(worktree_sync.BACKEND_ENV, "native")
+
+    with pytest.raises(worktree_sync.SyncError) as raised:
+        worktree_sync.sync(feature, "dev", cherry_picks=[sha])
+
+    assert raised.value.exit_code == worktree_sync.EXIT_TRANSPORT
+    assert "403" in str(raised.value)
+    assert "run 'parrot sdd worktree sync-base <target>' from the host" in str(raised.value)
+    assert (_run(feature, "rev-parse", "HEAD"), _run(feature, "status", "--porcelain"), _refs(feature)) == before
+    assert not (feature / "patch.txt").exists()
