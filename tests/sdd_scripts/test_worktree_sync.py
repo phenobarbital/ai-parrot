@@ -931,9 +931,7 @@ def test_base_branch_from_index_and_brief(tmp_path: Path, monkeypatch: pytest.Mo
     _run(primary, "worktree", "add", "-b", "fix-ABC-1-widget", str(brief_worktree), "dev")
     briefs = brief_worktree / "sdd" / "briefs"
     briefs.mkdir(parents=True)
-    (briefs / "widget.brief.md").write_text(
-        "---\ntype: hotfix\nbase_branch: main\n---\n\n# Brief\n", encoding="utf-8"
-    )
+    (briefs / "widget.brief.md").write_text("---\ntype: hotfix\nbase_branch: main\n---\n\n# Brief\n", encoding="utf-8")
 
     assert worktree_sync._slug_candidates(brief_worktree) == ["1-widget", "widget"]
     assert worktree_sync.resolve_base_branch(brief_worktree, None) == "main"
