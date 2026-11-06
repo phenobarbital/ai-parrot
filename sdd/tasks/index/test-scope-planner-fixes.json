@@ -1,0 +1,55 @@
+{
+  "feature": "test-scope-planner-fixes",
+  "feature_id": "FEAT-829",
+  "spec": "sdd/specs/test-scope-planner-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-07T00:20:00Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_planner.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_runner_parrot_e2e.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_select_contract_mode.py",
+          "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_select.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:6ef4e7febb26fdb00244b79fcba45558f7f2de85db666d3c88062ce869224c74"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5271",
+      "slug": "test-scope-planner-fixes",
+      "title": "Test-scope planner — contract runner settings reach the invocation",
+      "feature_id": "FEAT-829",
+      "feature": "test-scope-planner-fixes",
+      "spec": "sdd/specs/test-scope-planner-fixes.spec.md",
+      "file": "sdd/tasks/active/TASK-5271-test-scope-planner-fixes.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task; no exclusive resource",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "discovered_from": "issue:a3aebc40ef48"
+    }
+  ]
+}
