@@ -16,11 +16,9 @@ Design notes (from spec §2.2, D1, D8):
   compatibility, because ``_NODE_ID_RE`` only allows ``[A-Za-z0-9_-]{1,64}``.
 - Body content is preserved verbatim; only the frontmatter header is
   prepended/replaced.
-- Old ``<node_id>.md`` sidecars are cleaned up when a concept_id sidecar is
-  written.
+- Legacy ``<node_id>.md`` sidecars are retained here and removed later by the
+  content-store sweep after the generation grace period.
 """
-
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -37,7 +35,7 @@ class ProjectionReport(BaseModel):
         tree_name: Name of the tree that was projected.
         nodes_projected: Number of nodes written.
         files_written: Concept_id-keyed filenames written.
-        old_files_removed: Legacy node_id-keyed filenames removed.
+        old_files_removed: Reserved compatibility field; projection leaves it empty.
     """
 
     tree_name: str
@@ -103,9 +101,11 @@ def project_sidecars(
 
     For each node in the tree:
     1. Derive the flat concept_id filename.
-    2. Load the existing body (try concept_id key first, then node_id).
+    2. Load the existing body (body_ref blob, then concept_id, then node_id).
     3. Combine frontmatter + body and write via ``content_store.save()``.
-    4. Remove the old ``<node_id>.md`` file if a different key was used.
+
+    Legacy ``<node_id>.md`` files are retained for readers of older generations;
+    ``NodeContentStore.sweep_unreferenced`` removes them after the grace period.
 
     This function is byte-deterministic: two runs on the same tree JSON
     produce identical file contents.
@@ -117,26 +117,20 @@ def project_sidecars(
         content_store: NodeContentStore instance for reading/writing sidecars.
 
     Returns:
-        ``ProjectionReport`` with counts and filenames of written/removed files.
+        ``ProjectionReport`` with counts and filenames of written files.
     """
     report = ProjectionReport(tree_name=tree_name)
     nodes = structure_to_list(tree.get("structure", []))
 
     for node in nodes:
         concept_id = node.get("concept_id")
-        node_id = str(node.get("node_id", ""))
         if not concept_id:
             continue
 
         flat_id = flatten_concept_id_for_filename(concept_id)
 
-        # Load existing body — try flat concept_id first, then node_id
-        existing = content_store.load(tree_name, flat_id)
-        old_key: Optional[str] = None
-        if existing is None and node_id:
-            existing = content_store.load(tree_name, node_id)
-            if existing is not None:
-                old_key = node_id
+        # Load the body: body_ref blob → flat sidecar → node_id file (FEAT-831).
+        existing = content_store.load_node(tree_name, node)
 
         body = _strip_frontmatter(existing or "")
 
@@ -145,12 +139,6 @@ def project_sidecars(
         content_store.save(tree_name, flat_id, sidecar_content)
         report.files_written.append(flat_id)
         report.nodes_projected += 1
-
-        # Clean up old node_id.md if a different file was used
-        if old_key and old_key != flat_id:
-            removed = content_store.delete_node(tree_name, old_key)
-            if removed:
-                report.old_files_removed.append(old_key)
 
     return report
 
