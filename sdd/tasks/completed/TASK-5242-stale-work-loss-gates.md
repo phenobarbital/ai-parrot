@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-823 — Close the `--stale` work-loss holes in `remove_worktree`
 **Spec**: `sdd/specs/scripts-remove-worktree-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -491,8 +491,55 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude Opus 5.5 (/sdd-fix, actor agent:sdd-fix:118971f4)
+**Date**: 2026-11-06
+**Notes**: All five blueprint changes applied to
+`packages/ai-parrot/src/parrot/sdd/scripts/remove_worktree.py` (+57/-5, one
+file). Every anchor was re-grepped in the worktree before editing and all
+counts matched the task's recorded values at `237cff8aaa`.
 
-**Deviations from spec**: none | describe if any
+All three `FILL IN` markers resolved:
+
+1. **Doubled guard anchor** (`:99` / `:111`) — disambiguated by replacing each
+   method's whole body prefix rather than the bare line; both now read
+   `if not self.path.exists() or not self._is_checkout():`.
+2. **Fail-closed `git status`** — resolved as fail-closed, and this turned out
+   to be load-bearing rather than defensive. In the D2 fixture (a worktree
+   deregistered by moving its `.git/worktrees/<name>` admin dir out, leaving
+   the directory and its now-dangling `.git` file) `git status` **fails**, so
+   stdout is empty. Without the sentinel, `dirty_files()` would have returned
+   `[]`, the gate would have passed, and the uncommitted file would have been
+   deleted — the exact bug, just reached by a different route. The refusal now
+   prints `?? (git status failed - state unknown)`.
+3. **`--dry-run` disclosure** — prints one indented
+   `[dry-run] contains registered worktree: <path>` line per nested
+   registration. Note it only appears under `--force`: without it the new gate
+   returns 1 before the dry-run branch, which is the correct precedence (a
+   refusal supersedes a preview).
+
+**Verification evidence**
+
+- `pytest packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py -q` →
+  **29 passed** (with `PYTHONPATH=<wt>/packages/ai-parrot/src`; the warning
+  paths in the output confirm the worktree's code was imported, not the main
+  checkout's). This covers AC8: `test_remove_worktree_refuses_dirty` and
+  `test_remove_worktree_list_and_dry_run` pass untouched.
+- `ruff check` clean; `black --check --line-length 120` clean. The one
+  122-char line (`:442`) is pre-existing — identical on `origin/dev` at `:390`,
+  left alone for a minimal diff.
+- Manual fixtures (a pool dir holding a registered dirty child, a plain
+  container, a symlink, and a deregistered checkout) confirmed:
+  - `list` → `ORPHAN-DIR, holds:1`; the symlink is absent from the listing.
+  - `--stale` → `REFUSED: holds 1 registered worktree(s).` naming the child as
+    `(dirty:1 unpushed:0)`; exit 1; the child's `draft.py` survived (AC1, AC2).
+  - `--stale --force --dry-run` → `WARNING` instead of `REFUSED`, still names
+    the child, then lists it under the dry-run line (AC3).
+  - `warning: skipping symlinked entry aaa-link ...` emitted and the sweep
+    continued to the next orphan — the D3 abort is gone (AC5).
+  - the plain container still reported `would remove this worktree` (AC7).
+  - the deregistered dirty checkout was refused and its file survived (AC4).
+
+**Deviations from spec**: none. The spec's §2 gate table is implemented as
+written. One wording choice not fixed by the spec: ASCII hyphens are used in the
+new operator-facing strings instead of em-dashes, matching the surrounding
+`print` calls in this file.

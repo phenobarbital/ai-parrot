@@ -38,7 +38,7 @@
       "feature_id": "FEAT-823",
       "feature": "scripts-remove-worktree-fixes",
       "spec": "sdd/specs/scripts-remove-worktree-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -46,8 +46,9 @@
       "parallelism_notes": "no dependencies; sole writer of packages/ai-parrot/src/parrot/sdd/scripts/remove_worktree.py in this feature",
       "assigned_to": null,
       "started_at": "2026-11-06T02:41:01.955362+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5242-stale-work-loss-gates.md"
+      "completed_at": "2026-11-06T02:44:33+00:00",
+      "file": "sdd/tasks/completed/TASK-5242-stale-work-loss-gates.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5243",
