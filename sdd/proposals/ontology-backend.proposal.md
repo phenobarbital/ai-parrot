@@ -45,6 +45,14 @@ publication, read-only SQLite snapshot for local use) and a **KnowledgeStore** o
 server mode (OKF wiki, Bookstore, extracted entities, GraphIndex L1 synthesis cache), joined by
 IRIs stored as strings and a two-step retrieval (expand in the ontology, filter in SurrealDB).
 
+The licence and engine reasoning behind the draft is in the research note
+`sdd/proposals/Grafos open source para ai-parrot.md`, which the user pointed to after the first
+version of this proposal, together with the engine selection criteria:
+
+> […] se descartó Apache AGE porque no se puede instalar en Amazon AWS y cualquier servicio SaaS
+> de pago, solo servicios open-source no-enterprise y que a su vez descomplejize la plataforma
+> (Janus por ejemplo, requiere no solo Cassandra sino a su vez Elasticsearch)
+
 **Initial signals** (extracted, not interpreted):
 - Verbs: "reemplazo", "debe ser removido", "definir" → new capability plus a removal.
 - Named entities: ArangoDB, SurrealDB, PostgreSQL (RDS), wikitoolkit, Bookstore, GraphIndex L1, Turtle/SHACL/SKOS.
@@ -64,7 +72,9 @@ Postgres backends for GraphIndex and the wiki (`PostgresPersistence`, `PostgresW
 the concept vocabulary is already authoritative in Postgres (`ConceptCatalogService`). What only
 ArangoDB does today is host the per-tenant ontology *instance graph* through
 `ArangoOntologyGraphStore`, with AQL embedded in the ontology YAML (`traversal_patterns`), in
-LLM-generated queries and in `validate_aql` — a pipeline the draft does not mention. The user
+LLM-generated queries and in `validate_aql` — a pipeline the draft does not mention. The licence
+and engine premises are documented in the research note
+`sdd/proposals/Grafos open source para ai-parrot.md`. The user
 confirmed the draft's direction in full: supersede FEAT-670 (HelixDB), remove ArangoDB from the
 whole workspace, adopt the RDF OntologyStore, and build the complete KnowledgeStore. The
 recommendation is to take that design to `/sdd-spec` as a phased programme that starts with the
@@ -124,6 +134,7 @@ their full path.
 | 36 | `packages/ai-parrot/tests/knowledge/graphindex/persistence_conformance.py` | `case_apply_and_revert` | 1-45 | house pattern for a backend-agnostic conformance suite | F010, F015 |
 | 37 | `sdd/specs/helixdb-provider.spec.md` | §1 Non-Goals | — | approved FEAT-670: HelixDB as a peer on the same planes, ArangoDB not retired | F031 |
 | 38 | `sdd/specs/graphindex-core-seams.spec.md` | §1 Non-Goals | — | FEAT-540 positions the removal reverses | F030 |
+| 39 | `sdd/proposals/Grafos open source para ai-parrot.md` | "Arquitectura recomendada" | 54-62 | research note behind the draft: ArangoDB licence terms, ten-engine comparison, ranking | F032 |
 
 Outside the knowledge planes, 43 more source files in four distributions reference ArangoDB
 (F014). The heaviest are `packages/ai-parrot-embeddings/src/parrot/stores/arango.py`,
@@ -194,10 +205,19 @@ were not opened.
   *Implication*: the new backend must keep that behaviour.
   *Evidence*: F016
 
-- **Nothing records the licence decision.** No commit, ADR or decision page; FEAT-540 and
-  FEAT-670 both state ArangoDB stays.
-  *Implication*: the feature needs an ADR that supersedes those positions.
-  *Evidence*: F021, F024, F030, F031
+- **Engine selection criteria.** Stated by the user and backed by the research note:
+  open-source, non-enterprise editions only; no paid SaaS; deployable on the AWS services in use
+  (Apache AGE is not installable on Amazon RDS); and a simpler platform, which rules out
+  multi-service stacks such as JanusGraph (Cassandra plus Elasticsearch).
+  *Implication*: any backend the spec proposes is checked against these four criteria; they also
+  explain why the note's own first choice (PostgreSQL + AGE) is not the one adopted.
+  *Evidence*: F032
+
+- **The licence decision is reasoned but not recorded.** The research note documents the
+  ArangoDB licence terms and the engine comparison, but it is an untracked file; no commit, ADR
+  or decision page records the decision, and FEAT-540 and FEAT-670 both state ArangoDB stays.
+  *Implication*: the feature needs an ADR that cites the note and supersedes those positions.
+  *Evidence*: F021, F024, F030, F031, F032
 
 - **Bookstore, PageIndex and L1 are not ArangoDB data.** Bookstore is SQLite plus PageIndex
   files, FEAT-670 had decided projection-only for it, and the L1 cache has no persistence.
@@ -258,7 +278,9 @@ and ArangoDB leaves the whole workspace.
   with the draft's spike G1 as the go/no-go gate. *Evidence*: F012, F017
 - **Conformance suites** for the ontology and knowledge stores, on the
   `persistence_conformance.py` pattern. *Evidence*: F015, F010
-- **Licence ADR and FEAT-670 supersession.** *Evidence*: F024, F030, F031
+- **Licence ADR and FEAT-670 supersession** — the ADR cites the research note and the four
+  selection criteria, and says why PostgreSQL + AGE and FalkorDB were passed over.
+  *Evidence*: F024, F030, F031, F032
 - **Data move** for ontology tenants, wiki namespaces with `backend=arangodb`, GraphIndex Arango
   planes and Arango vector collections. *Evidence*: F019, F025, F026, F014
 
@@ -325,9 +347,16 @@ and ArangoDB leaves the whole workspace.
 - **Size.** The four decisions make this a multi-feature programme: new ontology model, new
   knowledge store, port of every consumer, workspace-wide removal, data migration. One spec and
   one worktree will not hold it; see the suggested phasing below. *Evidence*: F014, F003, F009, F030
-- **Unverified engine.** Every SurrealDB claim (BM25, HNSW, LIVE, WebSocket transactions, SDK
-  maturity) is external to the repository. Spike G1 must run first. SurrealDB is BSL 1.1, where
-  the superseded FEAT-670 engine was Apache-2.0. *Evidence*: F017, F021, F031
+- **Engine documented but untested here.** The research note records BM25, HNSW, RRF and
+  multi-process server mode for SurrealDB, and also that the Python SDK 3.x is beta and
+  transactions exist only over WebSocket. Spike G1 must run first. SurrealDB is BSL 1.1
+  (source-available, not OSI): unlike ArangoDB it has no restrictive binary licence, but users
+  who offer it as a service carry that obligation. *Evidence*: F032, F017, F021
+- **Third choice of the research.** The note ranks PostgreSQL + AGE first and FalkorDB second;
+  AGE is excluded by Amazon RDS, FalkorDB by SSPL, per-graph write serialisation and no BM25.
+  The note also recommends keeping ArangoDB as an optional legacy adapter, while the decision
+  here is removal from the whole workspace — the removal should be the last phase, after parity.
+  *Evidence*: F032
 - **The pipeline the draft omits.** With ArangoDB gone everywhere, the instance graph, traversal
   patterns, dynamic queries, refresh and authorization reachability need a destination in the
   same programme (U5). *Evidence*: F004, F005, F016, F027, F003
@@ -376,19 +405,20 @@ and ArangoDB leaves the whole workspace.
 | C11 | 43 files outside ontology/wiki/GraphIndex reference ArangoDB, among them a vector store, a tool, the hierarchy interface and a formdesigner sink | F014, F030 | medium | the count is exact; five roles are inferred, not read |
 | C12 | FEAT-670 is approved with 26 tasks pending, no code on dev, no remote branch, and declares ArangoDB not retired | F031, F017 | high | spec read through its wiki page; absence checked by grep and `git branch -r` |
 | C13 | No commit, ADR or decision page records the licence decision or any SurrealDB work | F021, F024 | medium | negative result of targeted searches |
-| C14 | ArangoDB's licence change makes it unusable for ai-parrot's commercial distribution | F021 | low | stated by the draft only; no evidence in the repository |
-| C15 | SurrealDB 3.3.x server mode provides what the draft relies on | F017, F021 | low | external claim; no SurrealDB code, dependency or driver exists here |
+| C14 | ArangoDB's licensing makes it unsafe as a default backend for an MIT project distributed commercially: source under BUSL-1.1, binaries and Docker images under a Community License with no commercial-use rights and a 100 GiB cap | F032, F021 | medium | documented in the research note with links to ArangoDB's licence pages; the links were not re-fetched |
+| C15 | SurrealDB 3.3.x server mode provides what the draft relies on (BM25 + HNSW + RRF, unlimited namespaces, multi-process), with known gaps: BSL 1.1, SDK 3.x beta, WebSocket-only transactions | F032, F017, F021 | medium | documented in the note's engine matrix; nothing is exercised in the repository yet |
 | C16 | A coherent replacement registers into the FEAT-540 seams rather than adding parallel Protocols | F001, F009, F010, F030 | medium | design judgement inferred from the shipped seams |
 | C17 | The draft's OntologyStore does not cover the instance graph, traversal patterns, authorization reachability and refresh | F005, F016, F027 | high | both the draft contract and the coded pipeline were read |
 | C18 | Tenancy is one graph database and one pgvector schema per tenant, `arango_db` required | F007 | high | model and templates read directly |
 | C19 | Removing ArangoDB reverses recorded non-goals of FEAT-540 and FEAT-670 | F030, F031 | high | both non-goal sections read |
 | C20 | asyncdb has no SurrealDB driver; `surrealdb`, `rdflib`, `pyshacl` are declared nowhere | F017, F012 | high | driver directory listed; all pyproject files grepped |
 
-Distribution: **14** high, **4** medium, **2** low.
+Distribution: **15** high, **8** medium, **0** low.
 
-> The two low claims (C14, C15) are the premises of the whole feature. They are user-supplied
-> facts, not codebase findings, which is why the overall confidence is medium and why the spike
-> comes first.
+> C14 and C15 are the premises of the whole feature. They rest on the research note, not on
+> anything exercised in the repository, and its external links were not re-fetched here. That,
+> the open question U5 and the size of the programme keep the overall confidence at medium, and
+> are why the spike comes first.
 
 ---
 
@@ -419,6 +449,9 @@ Distribution: **14** high, **4** medium, **2** low.
   legal/BOE, contracts and manuals packs, `hierarchy.py`)? — *Owner*: tbd
   *Blocks claims*: C17, C4, C16
   *Plausible answers*: a) SurrealDB `entity` / `related` behind `OntologyTraversalStore`, with
+| C21 | HelixDB's Python client `helix-py` is GPL-3.0 and its embedded mode documents no multi-process access, which supports superseding FEAT-670 | F032, F031 | medium | stated in the research note with a link; not re-verified |
+| C22 | The engine choice is governed by four criteria: open-source non-enterprise, no paid SaaS, deployable on the AWS services in use (no AGE on RDS), simpler platform | F032 | medium | stated by the user; the note backs the JanusGraph and NebulaGraph exclusions, the AGE-on-RDS exclusion is user-stated |
+| C23 | The research note ranks PostgreSQL + AGE first, FalkorDB second, SurrealDB server third, and recommends keeping ArangoDB as an optional adapter | F032 | high | read directly in the note |
   patterns re-templated in a `surrealql` dialect · b) re-model each consumer on the two-step flow
   (`OntologyStore.expand` then `KnowledgeStore.search`) and retire traversal patterns and dynamic
   queries · c) Postgres edge tables with recursive CTEs for the instance graph, SurrealDB only
@@ -437,8 +470,9 @@ state of the `feat-255-ontology-rag-kb` branch.
 
 **`/sdd-spec FEAT-824`** — *Rationale*: the user closed the four architectural forks in favour
 of the draft and the localization is high-confidence (C1–C9). The spec must phase the programme,
-put spike G1 first, and settle the one open question (instance-graph destination). Overall
-confidence stays medium because the SurrealDB and licence premises (C14, C15) are unverified.
+put spike G1 first, and settle the one open question (instance-graph destination). The licence
+and engine premises are now documented (C14, C15, F032); overall confidence stays medium because
+SurrealDB is untested in this repository and U5 is open.
 
 ### Alternatives
 
@@ -448,6 +482,13 @@ confidence stays medium because the SurrealDB and licence premises (C14, C15) ar
   umbrella and the spike its first deliverable.
 - **Manual review** — if spike G1 fails, the engine choice reopens and this proposal must be
   revised before any spec.
+- [x] **What evidence backs the licence and engine premises, and why not Apache AGE?** —
+  *Resolved*: the research note `sdd/proposals/Grafos open source para ai-parrot.md`; "se
+  descartó Apache AGE porque no se puede instalar en Amazon AWS y cualquier servicio SaaS de
+  pago, solo servicios open-source no-enterprise y que a su vez descomplejize la plataforma
+  (Janus por ejemplo, requiere no solo Cassandra sino a su vez Elasticsearch)".
+  *Resolves claims*: C14, C15, C22
+
 
 ---
 
@@ -458,12 +499,12 @@ confidence stays medium because the SurrealDB and licence premises (C14, C15) ar
 | State checkpoints | `sdd/state/FEAT-824/state.json` |
 | Source (raw) | `sdd/state/FEAT-824/source.md` |
 | Research plan | `sdd/state/FEAT-824/research_plan.json` |
-| Findings (digests) | `sdd/state/FEAT-824/findings/F001-*.md` … `F031-*.md` |
+| Findings (digests) | `sdd/state/FEAT-824/findings/F001-*.md` … `F032-*.md` |
 | Lane originals | `sdd/state/FEAT-824/findings/.audit/` (FC-*, FG-*, FW-*) |
 | Synthesis (JSON) | `sdd/state/FEAT-824/synthesis.json` |
 
 **Budget consumed** (profile `default`):
-- Files read: 26 / 40
+- Files read: 27 / 40
 - Grep calls: 25 / 25
 - Git calls: 10 / 10
 - Wall time: about 2400 s / 300 s — the wall limit was exceeded and not enforced
@@ -471,7 +512,8 @@ confidence stays medium because the SurrealDB and licence premises (C14, C15) ar
   recorded in finding Notes were not executed
 
 **Research mode**: three parallel lanes (codebase 16 findings, git 6, wiki 11) plus one parent
-follow-up, merged into 31 canonical findings. Citations were verified by an inline script
+follow-up, merged into 31 canonical findings; F032 (the research note, read after the user
+pointed to it) was added in a second revision. Citations of F001–F031 were verified by an inline script
 instead of probe agents: all 145 cited repository paths exist and every cited line range is
 inside its file (two further citations are wiki memory ids, not paths).
 

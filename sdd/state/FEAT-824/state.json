@@ -3,7 +3,7 @@
   "feat_id": "FEAT-824",
   "feature_slug": "ontology-backend",
   "started_at": "2026-11-06T13:24:56Z",
-  "updated_at": "2026-11-06T14:50:00Z",
+  "updated_at": "2026-11-06T15:40:00Z",
   "source": {
     "kind": "file",
     "jira_key": null,
@@ -39,15 +39,15 @@
       "started_at": "2026-11-06T13:30:00Z",
       "completed_at": "2026-11-06T14:10:00Z",
       "duration_seconds": 2400,
-      "queries_executed": 31,
+      "queries_executed": 32,
       "queries_skipped": 0,
       "depth_reached": 2,
-      "files_read": 26,
+      "files_read": 27,
       "grep_calls": 25,
       "git_calls": 10,
       "truncated": false,
       "truncation_reason": null,
-      "note": "All 30 planned queries ran, plus one parent follow-up (Q017 → F017). The advisory per-lane wall limit (255 s) was exceeded by two lanes and was not enforced: no lane was failed or re-run. 30+ cross-lane follow-ups recorded in finding Notes were not executed (budget); the material ones are listed in synthesis.meta.notes.",
+      "note": "All 30 planned queries ran, plus one parent follow-up (Q017 → F017). The advisory per-lane wall limit (255 s) was exceeded by two lanes and was not enforced: no lane was failed or re-run. 30+ cross-lane follow-ups recorded in finding Notes were not executed (budget); the material ones are listed in synthesis.meta.notes. After the first commit the user pointed to the research note `sdd/proposals/Grafos open source para ai-parrot.md`; it was read in full and recorded as F032 (Q032).",
       "parallel": {
         "enabled": true,
         "fallback_reason": null,
@@ -119,14 +119,14 @@
       "synthesis_path": "sdd/state/FEAT-824/synthesis.json",
       "thinking_path": null,
       "overall_confidence": "medium",
-      "claims_total": 20,
-      "claims_high_conf": 14,
-      "claims_medium_conf": 4,
-      "claims_low_conf": 2,
+      "claims_total": 23,
+      "claims_high_conf": 15,
+      "claims_medium_conf": 8,
+      "claims_low_conf": 0,
       "unknowns_count": 5,
       "lint_passed": true,
-      "lint_iterations": 2,
-      "note": "Re-derived after the review gate: the user's four answers adopt the draft in full, so the enrichment block was rewritten and U5 added; lint re-run and passed."
+      "lint_iterations": 3,
+      "note": "Re-derived after the review gate: the user's four answers adopt the draft in full, so the enrichment block was rewritten and U5 added; lint re-run and passed. Second revision: F032 added, C14/C15 raised to medium, C21–C23 added; lint passed."
     },
     "review": {
       "status": "completed",
@@ -165,7 +165,7 @@
     "max_wall_seconds": 300
   },
   "consumed": {
-    "files_read": 26,
+    "files_read": 27,
     "grep_calls": 25,
     "git_calls": 10,
     "wall_seconds": 2400

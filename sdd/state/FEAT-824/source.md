@@ -490,3 +490,16 @@ KNOWLEDGE_SYNC_ENDPOINT=https://api.../knowledge
 | T15 | Despliegue central (RDS roles, ECS Surreal, backups) + docs de operación | T5 | IaC en el repo de infraestructura |
 
 Orden sugerido: T0 ∥ T1 → T2, T3 → T4 → T5 → T6 → T8 → T7, T9 → T10 → T11 → T12 → T13 → T14 → T15.
+
+---
+
+## Addendum — user statement after the first proposal commit (2026-11-06, verbatim)
+
+> Con respecto a la afirmación sin evidencia, se hizo un research que está disponible en:
+> `sdd/proposals/Grafos open source para ai-parrot.md` que permiten definir términos de
+> licenciamiento, y las comparativas con otros backend de graph-based databases, se descartó
+> Apache AGE porque no se puede instalar en Amazon AWS y cualquier servicio SaaS de pago, solo
+> servicios open-source no-enterprise y que a su vez descomplejize la plataforma (Janus por
+> ejemplo, requiere no solo Cassandra sino a su vez Elasticsearch)
+
+The research note is digested in `findings/F032-graph-database-research-note-licences-and-engine-comparison.md`.
