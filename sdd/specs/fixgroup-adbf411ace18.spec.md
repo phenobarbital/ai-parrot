@@ -103,6 +103,42 @@ POST body ──→├─ translate_form ───────┤──→ read_
                                                └─ json.loads → dict
 ```
 
+### AMENDMENT (2026-11-06, after TASK-5239) — the call-site seam is wrong
+
+Implementing TASK-5240 against this design produced **180 failures across 26
+test files** in `packages/parrot-formdesigner/tests` (baseline on the same tree:
+2 failures, both pre-existing `assert '2.1.1' == '1.2.4'` version asserts).
+
+Cause: ~30 test builders in this package construct requests as
+`MagicMock(spec=web.Request)` with `request.json = AsyncMock(return_value=body)`
+and no usable `request.content` stream. Replacing `await request.json()` with a
+helper that reads `request.content` therefore breaks every one of them. The
+blast radius is not incidental test debt — it is evidence that **the six call
+sites are the wrong seam**.
+
+**Recommended revised design** (supersedes §2's call-site migration for
+TASK-5240 / TASK-5241):
+
+- Bound the body inside aiohttp's own read path via the application's
+  `client_max_size`, which raises `web.HTTPRequestEntityTooLarge` *during*
+  `request.read()`/`.json()` and therefore covers chunked bodies too.
+- At each of the six sites, keep `await request.json()` and add
+  `except web.HTTPRequestEntityTooLarge:` returning that route's correct 413
+  shape via the `oversized_*` helpers TASK-5239 already landed.
+- Every existing mock keeps working, because a `MagicMock` `request.json`
+  never raises that exception; only real over-cap traffic takes the new branch.
+
+Open question for whoever picks this up: parrot-formdesigner mounts its routes
+onto a host (navigator) application, so confirm `client_max_size` is actually
+settable from `api/routes.py` before committing to this seam. If it is not,
+the fallback is the original design **plus** a dedicated preceding task that
+migrates the package's ~30 request builders to supply a real body stream.
+
+TASK-5239 (the `a2ui_wire` primitives) is unaffected and is merged on this
+branch: `OverSizedBody`, `read_capped_body`, `read_capped_json`,
+`oversized_json_response`, `oversized_a2ui_response`, `is_a2ui_content_type`
+and `A2UI_MAX_SCHEMA_DEPTH` are what either design needs.
+
 ### Integration Points
 
 | Existing Component | Integration Type | Notes |

@@ -18,6 +18,7 @@ NEVER raise: it returns ``False`` (the legacy JSON path) whenever
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
@@ -37,6 +38,11 @@ A2UI_CANCEL_ACTION = "form.cancel"
 #: form receiver applies it to inbound A2UI request bodies (spec §7 "Known
 #: Risks" — enforcement lives in the handlers that call this module).
 A2UI_MAX_BODY_BYTES = int(os.environ.get("A2UI_MAX_DATA_MODEL_BYTES", str(1024 * 1024)))
+
+#: Maximum nesting depth accepted for an inbound JSON Schema in
+#: ``translate_form`` (FEAT-822 / issue:bf978b6bae8a S3). Checked iteratively,
+#: so a hostile schema cannot exhaust the Python stack while being validated.
+A2UI_MAX_SCHEMA_DEPTH = int(os.environ.get("A2UI_MAX_SCHEMA_DEPTH", "32"))
 
 
 class A2UIActionSubmission(BaseModel):
@@ -309,3 +315,121 @@ def a2ui_response(envelopes: list[dict[str, Any]], *, status: int) -> web.Respon
         m = _a2ui_ns()
         return web.json_response(envelopes[0], status=status, content_type=m.A2UI_MEDIA_TYPE)
     return web.json_response({"messages": envelopes}, status=status)
+
+
+class OverSizedBody(Exception):
+    """Raised when a request body exceeds the configured byte cap.
+
+    Attributes:
+        limit: The cap, in bytes, that the body exceeded.
+    """
+
+    def __init__(self, *, limit: int) -> None:
+        super().__init__(f"request body exceeds {limit} bytes")
+        self.limit = limit
+
+
+def is_a2ui_content_type(request: web.Request) -> bool:
+    """Return whether the request declares the A2UI media type.
+
+    Headers-only counterpart to :func:`is_a2ui_request`, for the oversize
+    branch, which must choose an error shape BEFORE the body is parsed.
+    Deliberately has no ``parrot.*`` import so it works without the optional
+    A2UI extra installed. Never raises.
+
+    Args:
+        request: The incoming aiohttp request.
+
+    Returns:
+        ``True`` when the request's media type is ``application/a2ui+json``.
+    """
+    return request.content_type == "application/a2ui+json"
+
+
+async def read_capped_body(request: web.Request, *, limit: int | None = None) -> bytes:
+    """Read the request body, refusing to buffer more than ``limit`` bytes.
+
+    Reads at most ``limit + 1`` bytes from ``request.content``; the extra byte
+    is what proves the body is over the cap without trusting the client's
+    ``Content-Length``. This works identically for a chunked body, where
+    ``request.content_length`` is ``None`` -- the bypass this helper exists to
+    close (FEAT-822 / issue:bf978b6bae8a).
+
+    Args:
+        request: The incoming aiohttp request.
+        limit: Byte cap; ``None`` resolves to :data:`A2UI_MAX_BODY_BYTES` at
+            call time, so the module attribute stays monkeypatchable.
+
+    Returns:
+        The body bytes (at most ``limit`` of them).
+
+    Raises:
+        OverSizedBody: when the body exceeds ``limit``.
+    """
+    cap = A2UI_MAX_BODY_BYTES if limit is None else limit
+    chunks: list[bytes] = []
+    size = 0
+    while size <= cap:
+        # Never ask for more than one byte past the cap: that single extra byte
+        # is all the evidence needed to reject, and it bounds the allocation.
+        chunk = await request.content.read(cap + 1 - size)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        size += len(chunk)
+    if size > cap:
+        raise OverSizedBody(limit=cap)
+    return b"".join(chunks)
+
+
+async def read_capped_json(request: web.Request, *, limit: int | None = None) -> Any:
+    """Read and JSON-decode a request body under a hard size cap.
+
+    The cap is enforced before any parsing, so an over-cap body raises
+    :class:`OverSizedBody` even when its bytes are not valid JSON.
+
+    Args:
+        request: The incoming aiohttp request.
+        limit: Byte cap; ``None`` resolves to :data:`A2UI_MAX_BODY_BYTES`.
+
+    Returns:
+        The decoded JSON value.
+
+    Raises:
+        OverSizedBody: when the body exceeds ``limit``.
+        json.JSONDecodeError: when the capped bytes are not valid JSON. An
+            empty body raises this too, so call sites keep reporting it
+            through their existing "Invalid JSON body" 400 branch.
+    """
+    raw = await read_capped_body(request, limit=limit)
+    return json.loads(raw)
+
+
+def oversized_json_response(limit: int) -> web.Response:
+    """Return the plain-JSON 413 used by non-A2UI routes.
+
+    Args:
+        limit: The cap that was exceeded, echoed as ``max_bytes``.
+
+    Returns:
+        A 413 ``web.Response`` whose shape matches the guards this replaces.
+    """
+    return web.json_response({"error": "body too large", "max_bytes": limit}, status=413)
+
+
+def oversized_a2ui_response(surface_id: str, message: str = "body too large") -> web.Response:
+    """Return the A2UI-enveloped 413 used by A2UI routes.
+
+    Args:
+        surface_id: The surface the error belongs to.
+        message: The human-readable error message.
+
+    Returns:
+        A 413 ``web.Response`` carrying a single A2UI error envelope.
+    """
+    from parrot.outputs.a2ui.runtime.models import A2UIErrorCode, error_envelope
+
+    return a2ui_response(
+        [error_envelope(A2UIErrorCode.INTERNAL, message, surface_id=surface_id)],
+        status=413,
+    )

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-822 — Enforce A2UI request body-size limits before parsing
 **Spec**: `sdd/specs/fixgroup-adbf411ace18.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -457,4 +457,23 @@ TASK-5240 and TASK-5241, which run after this task.
 
 ## Completion Note
 
-<!-- filled at close -->
+Implemented as specified. `a2ui_wire.py` gains `A2UI_MAX_SCHEMA_DEPTH`,
+`OverSizedBody`, `is_a2ui_content_type`, `read_capped_body`,
+`read_capped_json`, `oversized_json_response` and `oversized_a2ui_response`;
+`import json` added. No module-level `parrot.*` import was introduced — the
+error-envelope import stays local to `oversized_a2ui_response`.
+
+`read_capped_body` reads at most `limit + 1` bytes in a loop that tolerates
+short reads, so the cap holds for a chunked body (`content_length is None`)
+and fires before any parsing. The cap resolves from the module attribute at
+call time, which keeps it monkeypatchable.
+
+Validation: `pytest packages/parrot-formdesigner/tests/unit/api/test_a2ui_body_limits.py -q`
+→ **14 passed**. `ruff check` clean on both files. Full package suite on this
+branch: 4237 passed, 2 failed — both pre-existing
+(`assert '2.1.1' == '1.2.4'` in `test_init_imports_metadata_only.py` and
+`test_version_and_docs.py`, from the 2.1.1 release bump, unrelated to this task).
+
+Note for the feature: TASK-5240 was attempted and reverted — see the
+AMENDMENT in the spec. These helpers are landed and are required by either
+seam, but no handler calls them yet, so the ledger issue stays open.
