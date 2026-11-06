@@ -13,7 +13,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger("parrot.knowledge.pageindex.store")
 
@@ -60,8 +60,8 @@ class JSONTreeStore:
         with path.open("r", encoding="utf-8") as f:
             return json.load(f)
 
-    def save(self, tree_name: str, tree: dict[str, Any]) -> None:
-        """Atomically persist a tree to disk.
+    def save(self, tree_name: str, tree: dict[str, Any]) -> tuple[int, int]:
+        """Atomically persist a tree to disk and return its signature.
 
         Strips reserved keys like ``_node_markdown`` before serialising —
         per-node markdown lives in :class:`NodeContentStore`, not inside
@@ -78,6 +78,8 @@ class JSONTreeStore:
         try:
             with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
                 json.dump(tree, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(tmp_path, path)
         except Exception:
             try:
@@ -85,6 +87,42 @@ class JSONTreeStore:
             except OSError:
                 pass
             raise
+
+        try:
+            dir_fd = os.open(self._dir, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            logger.debug("Failed to fsync PageIndex tree directory %s", self._dir, exc_info=True)
+
+        signature = self.signature(tree_name)
+        assert signature is not None  # just written
+        return signature
+
+    def signature(self, tree_name: str) -> tuple[int, int] | None:
+        """Return ``(st_mtime_ns, st_size)`` of the tree JSON, or ``None`` when it is missing."""
+        try:
+            st = self._path_for(tree_name).stat()
+        except FileNotFoundError:
+            return None
+        return (st.st_mtime_ns, st.st_size)
+
+    def read_generation(self, tree_name: str) -> Optional[int]:
+        """Return ``tree["generation"]["id"]``, or ``None`` for a missing, legacy or malformed tree."""
+        try:
+            tree = self.load(tree_name)
+        except FileNotFoundError:
+            return None
+
+        generation = tree.get("generation")
+        if not isinstance(generation, dict):
+            return None
+        generation_id = generation.get("id")
+        if type(generation_id) is not int or generation_id < 1:
+            return None
+        return generation_id
 
     def delete(self, tree_name: str) -> bool:
         path = self._path_for(tree_name)
