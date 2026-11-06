@@ -212,3 +212,30 @@ def test_baseline_resolves_native_artifacts_lazily(monkeypatch, hermetic_repo, t
     target = baseline.prepare_baseline_checkout(worktree=repo, base_ref=base, scratch=scratch)
     assert calls == [(Path("/sentinel-main"), False)], "baseline must pass the resolved main root and autobuild=False"
     baseline.remove_baseline_checkout(repo, target)
+
+
+def test_baseline_pythonpath_lists_every_checkout_src(tmp_path):
+    """The baseline imports every distribution from its own checkout, target dist first (FEAT-830)."""
+    import os
+
+    for dist in ("ai-parrot", "ai-parrot-tools", "ai-parrot-server"):
+        (tmp_path / "packages" / dist / "src").mkdir(parents=True)
+    parts = baseline._baseline_pythonpath(tmp_path, "ai-parrot-tools").split(os.pathsep)
+    assert parts == [
+        str(tmp_path / "packages/ai-parrot-tools/src"),
+        str(tmp_path / "packages/ai-parrot/src"),
+        str(tmp_path / "packages/ai-parrot-server/src"),
+    ]
+
+
+def test_remove_baseline_checkout_never_prunes(monkeypatch, tmp_path):
+    """Cleanup removes only its own worktree; it never runs a repository-global prune (FEAT-830)."""
+    calls = []
+
+    def fake_git(cwd, *args):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 1, "", "boom")
+
+    monkeypatch.setattr(baseline, "_git", fake_git)
+    baseline.remove_baseline_checkout(tmp_path, tmp_path / "baseline-x")
+    assert calls == [("worktree", "remove", "--force", str(tmp_path / "baseline-x"))]

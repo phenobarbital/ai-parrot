@@ -553,7 +553,7 @@ def render_markdown(
         marker = " ❌" if any(_is_failure(result) for result in rerun.suites) else ""
         row += f" | {rerun_passed}/{rerun_tests}{marker}"
     rows.append(row + " |")
-    cached = sum(len(record.cached) for record in records.values())
+    cached = len(set().union(*(record.cached for record in records.values())))
     rows.extend(["", f"cached (skipped, unchanged since green): {cached} target(s)"])
     gate_results = (
         rerun.suites if rerun is not None else tuple(result for record in records.values() for result in record.suites)

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-830 — test-scope report fixes
 **Spec**: `sdd/specs/test-scope-report-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -238,4 +238,8 @@ See the Blueprint test blocks above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 (/sdd-fix session, actor agent:sdd-fix:c0b83d30)
+**Date**: 2026-11-07
+**Notes**: `_normalize_pytest` rejects any operand whose file part is not `.py` (message names the operand); `_declared_targets` drops a pytest directory operand with the note `declared path is a directory, dropped: <operand>`. Tests: 6 parametrized normalization cases, a declared-directory plan test, and a lint test proving a directory header surfaces as `test-contract-malformed`. All five Validation Commands pass (93 tests), ruff clean.
+
+**Deviations from spec**: none
