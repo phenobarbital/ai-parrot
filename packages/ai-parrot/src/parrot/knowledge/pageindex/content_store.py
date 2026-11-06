@@ -416,9 +416,7 @@ class NodeContentStore:
 
     # ---- loader closure ----------------------------------------------
 
-    def loader_for(
-        self, tree_name: str, tree: Optional[dict[str, Any]] = None
-    ) -> Callable[[str], Optional[str]]:
+    def loader_for(self, tree_name: str, tree: Optional[dict[str, Any]] = None) -> Callable[[str], Optional[str]]:
         """Return a closure ``node_id -> Optional[str]`` for ``tree_name``.
 
         Hand this to :class:`HybridPageIndexSearch` (via the new
