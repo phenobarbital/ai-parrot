@@ -154,7 +154,7 @@ def _seed_worktree(clone: Path) -> None:
     """``_seed_feature`` plus the feature worktree (a plain `git worktree add`, as ensure_worktree would make)."""
     _seed_feature(clone)
     _git(clone, "fetch", "-q", "origin")
-    _git(clone, "worktree", "add", "-q", f".claude/worktrees/feat-{FEAT}-{SLUG}", "-b", f"feat-{FEAT}-{SLUG}", "origin/dev")
+    _git(clone, "worktree", "add", "-q", f".parrot/worktrees/feat-{FEAT}-{SLUG}", "-b", f"feat-{FEAT}-{SLUG}", "origin/dev")
 
 
 def _seed_base_fix(clone: Path) -> None:
@@ -174,7 +174,7 @@ def _seed_hook_context(clone: Path) -> None:
         "spec_path": f"sdd/specs/{SLUG}.spec.md",
         "branch": f"feat-{FEAT}-{SLUG}",
         "base_branch": "dev",
-        "worktree": str(clone / f".claude/worktrees/feat-{FEAT}-{SLUG}"),
+        "worktree": str(clone / f".parrot/worktrees/feat-{FEAT}-{SLUG}"),
     }))
 
 
@@ -320,17 +320,17 @@ COMMON: dict[str, str] = {
     "<index>": f"sdd/tasks/index/{SLUG}.json",
     "$IDX": f"sdd/tasks/index/{SLUG}.json",
     "$INDEX": f"sdd/tasks/index/{SLUG}.json",
-    "<wt>": f"<repo>/.claude/worktrees/feat-{FEAT}-{SLUG}",
-    "<worktree>": f"<repo>/.claude/worktrees/feat-{FEAT}-{SLUG}",
-    "<this worktree>": f"<repo>/.claude/worktrees/feat-{FEAT}-{SLUG}",
-    "$WORKTREE_PATH": f"<repo>/.claude/worktrees/feat-{FEAT}-{SLUG}",
-    "$WT": f"<repo>/.claude/worktrees/feat-{FEAT}-{SLUG}",
+    "<wt>": f"<repo>/.parrot/worktrees/feat-{FEAT}-{SLUG}",
+    "<worktree>": f"<repo>/.parrot/worktrees/feat-{FEAT}-{SLUG}",
+    "<this worktree>": f"<repo>/.parrot/worktrees/feat-{FEAT}-{SLUG}",
+    "$WORKTREE_PATH": f"<repo>/.parrot/worktrees/feat-{FEAT}-{SLUG}",
+    "$WT": f"<repo>/.parrot/worktrees/feat-{FEAT}-{SLUG}",
     "$TEST_REPORT_MD": "<repo>/test-report.md",
     "<full HEAD SHA>": "<head>",
     "<post-merge HEAD>": "<head>",
     "<uuid>": "11111111-1111-4111-8111-111111111111",
     "--evidence <path>": "--evidence <repo>/evidence.json",
-    "--worktree <path>": f"--worktree <repo>/.claude/worktrees/feat-{FEAT}-{SLUG}",
+    "--worktree <path>": f"--worktree <repo>/.parrot/worktrees/feat-{FEAT}-{SLUG}",
     "<p>": "demo",
     "<t>": "demo",
     "$(printf -- '--task-file %s ' <every task file of the index>)": "--task-file sdd/tasks/active/TASK-001-demo-task.md",
@@ -435,6 +435,8 @@ SCENARIOS: dict[str, Scenario] = {
         expect_stdout='"permissionDecision": "deny"',
     ),
     "worktree_status": Scenario(prepare=_seed_worktree),
+    # FEAT-802: `worktree root` prints the resolved root for the main checkout handed in as --root
+    "worktree_root": Scenario(prepare=_seed_feature, placeholders={"$MAIN_ROOT": "<repo>", "<MAIN_ROOT>": "<repo>"}),
     # `worktree list|remove`: removing the seeded feature worktree (or refusing it) is fine, a traceback is not
     "remove_worktree": Scenario(
         prepare=_seed_worktree, expect_exit=_ANY_CLEAN, placeholders={"<target>": f"feat-{FEAT}-{SLUG}"}),
@@ -442,10 +444,10 @@ SCENARIOS: dict[str, Scenario] = {
     "techwiki_check": Scenario(
         prepare=_seed_worktree, expect_exit=_ANY_CLEAN, placeholders={"$SPEC_PATH": f"sdd/specs/{SLUG}.spec.md"}),
     "worktree_baseline": Scenario(
-        prepare=_seed_feature, expect_exit=_ANY_CLEAN, placeholders={"<path>": "<repo>/.claude/worktrees/baseline-demo"}),
+        prepare=_seed_feature, expect_exit=_ANY_CLEAN, placeholders={"<path>": "<repo>/.parrot/worktrees/baseline-demo"}),
     "worktree_push_protection": Scenario(
         prepare=_seed_worktree, expect_exit=_ANY_CLEAN,
-        placeholders={"<worktree-path>": f"<repo>/.claude/worktrees/feat-{FEAT}-{SLUG}"}),
+        placeholders={"<worktree-path>": f"<repo>/.parrot/worktrees/feat-{FEAT}-{SLUG}"}),
     # <head> is the base fix on origin/dev that the seeded worktree lacks: a clean cherry-pick must succeed
     "worktree_sync": Scenario(
         prepare=_seed_base_fix, placeholders={"<FEAT-ID|KEY|name|path>": FEAT, "<sha>": "<head>"}),

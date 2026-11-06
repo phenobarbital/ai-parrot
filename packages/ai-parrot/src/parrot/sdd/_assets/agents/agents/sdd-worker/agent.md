@@ -362,7 +362,7 @@ After all tasks are done:
      🟠 Important: <N> (<M> fixed, <K> noted)
      🟡 Suggestions: <N> (noted for PR)
 
-   Worktree: .claude/worktrees/<worktree-name>
+   Worktree: .parrot/worktrees/<worktree-name>
    Branch: <branch-name>
    Commits: <N>
 

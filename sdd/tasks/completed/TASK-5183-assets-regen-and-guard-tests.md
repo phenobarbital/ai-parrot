@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-802 — Worktree Root Under `.parrot/`
 **Spec**: `sdd/specs/worktree-root-under-parrot.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5176, TASK-5177, TASK-5178, TASK-5179, TASK-5180, TASK-5181, TASK-5182
@@ -215,10 +215,10 @@ def test_twins_resolve_worktree_root(tmp_path, monkeypatch) -> None: ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Coder gemini-3.8-flash delivered the guard test (branch ...TASK-5183-a1-...; 1483135da5) but the engine rejected it as fidelity_violation: 21 regenerated `_assets/**` files are not in the task's file table although its text says to stage them. With user authorization (attempt 3 by orchestrator): took the guard test file from the branch, ran `check_asset_sync.py --write`, `--check` rc=0, committed the regenerated assets.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (orchestrator, attempt 3, user-authorized) / gemini-3.8-flash
+**Date**: 2026-11-05
+**Notes**: Ran test_command_contracts + test_ledger_workflow_twins + test_wheel_only_foreign_repo: 58 passed, 1 failed (pre-existing sdd-worker.md 'git worktree add', red on origin/dev), 6 errors in test_wheel_only_foreign_repo = sandbox denies pypi.org (NOT RUN, not green). test_ledger_workflow_twins.py and test_wheel_only_foreign_repo.py were listed MODIFY but the coder changed neither; unverified that they need changes. Task file's Files table should list `_assets/**`.
 
 **Deviations from spec**:

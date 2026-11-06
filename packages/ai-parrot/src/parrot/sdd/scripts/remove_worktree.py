@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Inspect and safely remove ai-parrot git worktrees.
 
-Two kinds of leftovers accumulate under ``.claude/worktrees/``:
+Two kinds of leftovers accumulate under the resolved worktree root (default ``.parrot/worktrees/``):
 
 * **registered** worktrees — present in ``git worktree list``, holding a real
   feature branch;
@@ -45,6 +45,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
+
+from parrot.sdd.config import worktree_root
 
 _ROOT: Path | None = None
 PROTECTED_BRANCHES = {"main", "dev", "staging", "master"}
@@ -234,7 +236,7 @@ def discover() -> list[Worktree]:
         current[key] = value
 
     registered_paths = {w.path.resolve() for w in worktrees}
-    worktree_dir = _root() / ".claude" / "worktrees"
+    worktree_dir = worktree_root(_root())
     if worktree_dir.is_dir():
         for child in sorted(worktree_dir.iterdir()):
             if child.is_symlink():
@@ -423,7 +425,7 @@ def cmd_remove(args: argparse.Namespace) -> int:
     if args.stale:
         targets = [w for w in worktrees if not w.registered]
         if not targets:
-            print("No orphan directories under .claude/worktrees/.")
+            print(f"No orphan directories under {worktree_root(_root())}/.")
             return 0
         print(f"Orphan directories to remove: {len(targets)}")
     elif args.target:

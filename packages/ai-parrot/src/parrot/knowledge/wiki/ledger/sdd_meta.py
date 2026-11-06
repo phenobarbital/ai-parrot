@@ -20,7 +20,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
-from parrot.sdd.config import SddConfig, find_repo_root, load_sdd_config
+from parrot.sdd.config import SddConfig, find_repo_root, load_sdd_config, worktree_root_setting
 
 logger = logging.getLogger(__name__)
 
@@ -375,9 +375,6 @@ def resolve_flow(
     return FlowMeta(type=final_type, base_branch=final_base, hotfix_base=cfg.hotfix_base)
 
 
-#: Every SDD worktree lives directly under this repo-relative directory.
-WORKTREE_ROOT: str = ".claude/worktrees"
-
 #: A reserved feature id, e.g. ``FEAT-552``. Bare numbers are rejected.
 _FEATURE_ID_RE = re.compile(r"^FEAT-\d+$")
 
@@ -418,7 +415,8 @@ def plan_worktree(
         jira_key: Jira issue key; required when ``meta.type == "hotfix"``.
 
     Returns:
-        A ``WorktreePlan`` whose ``path`` is repo-relative.
+        A ``WorktreePlan`` whose ``path`` is built from
+        :func:`worktree_root_setting`.
 
     Raises:
         ValueError: When ``slug`` is empty or blank; when a feature run has no
@@ -441,7 +439,8 @@ def plan_worktree(
     else:
         raise ValueError(f"Unsupported flow type: {meta.type}")
 
-    path = f"{WORKTREE_ROOT}/{name}"
+    # FEAT-802: repo-relative unless WORKTREE_BASE_PATH is absolute.
+    path = f"{worktree_root_setting()}/{name}"
     base_ref = f"origin/{meta.base_branch}"
 
     return WorktreePlan(name=name, path=path, base_ref=base_ref)

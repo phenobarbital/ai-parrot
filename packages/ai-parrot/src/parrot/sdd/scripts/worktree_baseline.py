@@ -24,6 +24,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Sequence
 
+from parrot.sdd.config import worktree_root
+
 _KERNEL_PARENT = Path(__file__).resolve().parents[2] / "flows" / "dev_loop"
 
 
@@ -51,13 +53,14 @@ def _repo_root(cwd: Path) -> Path:
 
 
 def _default_scratch(worktree: Path, baseline_mod: ModuleType) -> Path:
-    """``<main checkout>/.claude/worktrees`` — writable from inside the SDD sandbox and persistent.
+    """``<main checkout>/<worktree root>`` (default ``.parrot/worktrees``) — writable from inside
+    the SDD sandbox and persistent.
 
     ``/tmp`` is private per command under Bubblewrap, so a baseline created there
     would vanish while its git worktree registration stayed behind.
     """
     main_root = baseline_mod._native_artifacts().main_checkout_root(worktree) or worktree
-    return main_root / ".claude" / "worktrees"
+    return worktree_root(main_root)
 
 
 def _create(args: argparse.Namespace) -> int:
@@ -98,7 +101,7 @@ def _build_parser() -> argparse.ArgumentParser:
     create.add_argument("--base", required=True, help="Base ref, e.g. origin/dev.")
     create.add_argument("--worktree", default=".", help="Any checkout of the repository (default: cwd).")
     create.add_argument(
-        "--scratch", default=None, help="Parent directory for the checkout (default: <main>/.claude/worktrees)."
+        "--scratch", default=None, help="Parent directory for the checkout (default: the resolved worktree root)."
     )
     create.add_argument("--json", action="store_true", help="Machine-readable output.")
     create.set_defaults(func=_create)

@@ -254,7 +254,8 @@ pytest tests/e2e/test_meta_live.py -v   # credential-gated; skips cleanly withou
 ### Worktree gotcha
 
 Running a smoke script (or any live check) directly from inside
-`.claude/worktrees/<feature>/` will silently import the **main**
+a worktree checkout (under the worktree root, default `.parrot/worktrees/`)
+will silently import the **main**
 checkout's compiled code — the editable-install `.pth` entries point
 there, and Cython-compiled `.so` files are not automatically present in a
 fresh worktree. Prepend the worktree's `src` dirs via `PYTHONPATH` and

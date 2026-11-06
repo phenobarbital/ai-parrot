@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-802 — Worktree Root Under `.parrot/`
 **Spec**: `sdd/specs/worktree-root-under-parrot.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5175
@@ -191,10 +191,10 @@ rule that fits (an R1 line inside a fenced shell block is R2).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by seat qwen (nova) — terminal 'salvaged' at 101 turns, engine-committed, 1 attempt, merged cleanly.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (orchestrator)
+**Date**: 2026-11-05
+**Notes**: Merge-tier: 171 passed, 1 pre-existing failure (test_no_command_hand_rolls_a_worktree[sdd-worker.md], also red on origin/dev). Closed via `parrot sdd task close`; finalize unavailable (coder_record_review tool error). Final cross-check of residual `.claude/worktrees` references is TASK-5183's guard test. feedback NOT recorded.
 
 **Deviations from spec**:

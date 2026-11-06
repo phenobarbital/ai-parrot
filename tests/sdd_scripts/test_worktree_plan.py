@@ -4,17 +4,25 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.sdd.sdd_meta import WORKTREE_ROOT, FlowMeta, WorktreePlan, plan_worktree
+from scripts.sdd.sdd_meta import FlowMeta, WorktreePlan, plan_worktree
 
 SLUG = "worktree-creation-ownership"
 
 
-def test_plan_feature_name_keeps_feat_prefix() -> None:
+def test_plan_feature_name_keeps_feat_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
     """A feature keeps the doubled `feat-FEAT-` prefix — /sdd-done greps it."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
     plan = plan_worktree(FlowMeta(type="feature", base_branch="dev"), slug=SLUG, feature_id="FEAT-552")
     assert isinstance(plan, WorktreePlan)
     assert plan.name == f"feat-FEAT-552-{SLUG}"
-    assert plan.path == f"{WORKTREE_ROOT}/feat-FEAT-552-{SLUG}"
+    assert plan.path == f".parrot/worktrees/feat-FEAT-552-{SLUG}"
+
+
+def test_plan_uses_absolute_worktree_root(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """An absolute configured worktree root remains absolute in the plan."""
+    monkeypatch.setenv("WORKTREE_BASE_PATH", str(tmp_path / "worktrees"))
+    plan = plan_worktree(FlowMeta(type="feature", base_branch="dev"), slug=SLUG, feature_id="FEAT-552")
+    assert plan.path == f"{tmp_path / 'worktrees'}/feat-FEAT-552-{SLUG}"
 
 
 @pytest.mark.parametrize("branch", ["dev", "staging"])

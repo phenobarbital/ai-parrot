@@ -345,8 +345,8 @@ python examples/clients/smoke/smoke_nvidia.py
 ```
 
 **Worktree note**: if you run a smoke script directly (not via `pytest`)
-from inside a `.claude/worktrees/<feature>/` checkout, `cd`-ing there is not
-enough — this repo's editable install `.pth` entries point at the *main*
+from inside a worktree checkout (under the worktree root, default `.parrot/worktrees/`),
+`cd`-ing there is not enough — this repo's editable install `.pth` entries point at the *main*
 checkout's `packages/*/src`, so a bare `python script.py` will silently
 import the main checkout's code. Prepend the worktree's own `src` dirs via
 `PYTHONPATH`, and make sure the compiled Cython extensions

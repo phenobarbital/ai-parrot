@@ -1,5 +1,6 @@
 # packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py
 """FEAT-633 move A: ledger/worktree helpers live in parrot.sdd.scripts; scripts/sdd shims alias them."""
+
 from __future__ import annotations
 
 import importlib
@@ -19,9 +20,20 @@ MOVED_HOOK = SRC / "parrot" / "sdd" / "scripts" / "worktree_environment.py"  # r
 OLD_HOOK = SRC / "parrot" / "flows" / "dev_loop" / "worktree_environment.py"  # rev 0.5 C19 shim
 MOVED_LIBS = ("brief_meta",)  # rev 0.4 C17: library module, no main() until TASK-4299 adds the CLI
 SDD_META_NAMES = (
-    "KNOWN_BRANCHES", "KNOWN_PROJECTS", "PROJECT_ALIASES", "WORK_KIND_FLOW", "WORKTREE_ROOT", "DocTaxonomy",
-    "FlowMeta", "WorktreePlan", "emit", "normalize_project", "normalize_tag", "parse", "parse_taxonomy",
-    "plan_worktree", "resolve_flow",
+    "KNOWN_BRANCHES",
+    "KNOWN_PROJECTS",
+    "PROJECT_ALIASES",
+    "WORK_KIND_FLOW",
+    "DocTaxonomy",
+    "FlowMeta",
+    "WorktreePlan",
+    "emit",
+    "normalize_project",
+    "normalize_tag",
+    "parse",
+    "parse_taxonomy",
+    "plan_worktree",
+    "resolve_flow",
 )
 
 
@@ -52,9 +64,15 @@ def test_shim_aliases_package_module(name: str) -> None:
 
 @pytest.mark.parametrize("name", ("reserve_ids", "ensure_worktree"))
 def test_live_cli_help_and_usage_error_unchanged(name: str) -> None:
-    shim, pkg = _run(f"scripts.sdd.{name}", "--help", cwd=REPO_ROOT), _run(f"parrot.sdd.scripts.{name}", "--help", cwd=REPO_ROOT)
+    shim, pkg = _run(f"scripts.sdd.{name}", "--help", cwd=REPO_ROOT), _run(
+        f"parrot.sdd.scripts.{name}", "--help", cwd=REPO_ROOT
+    )
     assert (shim.returncode, shim.stdout) == (pkg.returncode, pkg.stdout)
-    assert _run(f"scripts.sdd.{name}", cwd=REPO_ROOT).returncode == _run(f"parrot.sdd.scripts.{name}", cwd=REPO_ROOT).returncode == 2
+    assert (
+        _run(f"scripts.sdd.{name}", cwd=REPO_ROOT).returncode
+        == _run(f"parrot.sdd.scripts.{name}", cwd=REPO_ROOT).returncode
+        == 2
+    )
 
 
 def test_sdd_meta_reexport_identity() -> None:
@@ -62,6 +80,16 @@ def test_sdd_meta_reexport_identity() -> None:
     src = importlib.import_module("parrot.knowledge.wiki.ledger.sdd_meta")
     for name in SDD_META_NAMES:
         assert getattr(pkg, name) is getattr(src, name), name
+
+
+def test_sdd_meta_worktree_root_removed() -> None:
+    """The removed constant has no compatibility alias in either module."""
+    pkg = importlib.import_module("parrot.sdd.scripts.sdd_meta")
+    src = importlib.import_module("parrot.knowledge.wiki.ledger.sdd_meta")
+    with pytest.raises(AttributeError):
+        _ = pkg.WORKTREE_ROOT
+    with pytest.raises(AttributeError):
+        _ = src.WORKTREE_ROOT
 
 
 def test_worktree_environment_shim_reexports_moved_module() -> None:  # rev 0.3 C16 / AC-8
@@ -87,7 +115,11 @@ def test_hook_answers_with_bare_interpreter(hook: Path, tmp_path: Path) -> None:
     # -I -S: stdlib only (no site-packages, no PYTHONPATH, no script dir on sys.path).
     proc = subprocess.run(
         [sys.executable, "-I", "-S", str(hook), "--hook"],
-        input="{}", cwd=tmp_path, capture_output=True, text=True, timeout=10,
+        input="{}",
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     assert proc.returncode == 0, proc.stderr
     assert json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
@@ -146,7 +178,7 @@ def test_remove_worktree_root_is_primary_checkout(tmp_path: Path, monkeypatch: p
     from parrot.sdd.scripts import remove_worktree
 
     primary = _git_repo(tmp_path / "repo")
-    worktree = primary / ".claude" / "worktrees" / "wt"
+    worktree = primary / ".parrot" / "worktrees" / "wt"
     worktree.parent.mkdir(parents=True)
     subprocess.run(["git", "worktree", "add", "-q", str(worktree), "-b", "wt"], cwd=primary, check=True)
     monkeypatch.chdir(worktree)
@@ -163,7 +195,7 @@ def test_remove_worktree_list_and_dry_run(tmp_path: Path, monkeypatch: pytest.Mo
     remove_worktree._ROOT = None
     assert remove_worktree.main(["list"]) == 0
 
-    worktree = primary / ".claude" / "worktrees" / "wt"
+    worktree = primary / ".parrot" / "worktrees" / "wt"
     worktree.parent.mkdir(parents=True)
     subprocess.run(["git", "worktree", "add", "-q", str(worktree), "-b", "wt"], cwd=primary, check=True)
     assert remove_worktree.main(["remove", "wt", "--dry-run"]) == 0
@@ -174,7 +206,7 @@ def test_remove_worktree_refuses_dirty(tmp_path: Path, monkeypatch: pytest.Monke
     from parrot.sdd.scripts import remove_worktree
 
     primary = _git_repo(tmp_path / "repo")
-    worktree = primary / ".claude" / "worktrees" / "wt"
+    worktree = primary / ".parrot" / "worktrees" / "wt"
     worktree.parent.mkdir(parents=True)
     subprocess.run(["git", "worktree", "add", "-q", str(worktree), "-b", "wt"], cwd=primary, check=True)
     (worktree / "dirty.txt").write_text("uncommitted\n")
@@ -193,7 +225,7 @@ def _pool_with_registered_child(
     Returns ``(pool, child)``. This is the FEAT-823 D1 shape: the pool itself is
     never a git worktree, only the ``TASK-*`` child inside it is.
     """
-    pool = primary / ".claude" / "worktrees" / pool_name
+    pool = primary / ".parrot" / "worktrees" / pool_name
     pool.mkdir(parents=True)
     child = pool / "TASK-1-a1"
     subprocess.run(
@@ -272,7 +304,7 @@ def test_stale_refuses_dirty_orphan_checkout(
     from parrot.sdd.scripts import remove_worktree
 
     primary = _git_repo(tmp_path / "repo")
-    orphan = primary / ".claude" / "worktrees" / "wt"
+    orphan = primary / ".parrot" / "worktrees" / "wt"
     orphan.parent.mkdir(parents=True)
     subprocess.run(["git", "worktree", "add", "-q", str(orphan), "-b", "wt"], cwd=primary, check=True)
     (orphan / "dirty.txt").write_text("precious uncommitted work\n")
@@ -300,7 +332,7 @@ def test_stale_skips_symlinked_orphan(
     from parrot.sdd.scripts import remove_worktree
 
     primary = _git_repo(tmp_path / "repo")
-    worktrees = primary / ".claude" / "worktrees"
+    worktrees = primary / ".parrot" / "worktrees"
     worktrees.mkdir(parents=True)
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
@@ -328,7 +360,7 @@ def test_stale_still_removes_plain_container(
     from parrot.sdd.scripts import remove_worktree
 
     primary = _git_repo(tmp_path / "repo")
-    pool = primary / ".claude" / "worktrees" / "feat-FEAT-998-y--pool"
+    pool = primary / ".parrot" / "worktrees" / "feat-FEAT-998-y--pool"
     pool.mkdir(parents=True)
     (pool / "leftover.log").write_text("scratch\n")
     monkeypatch.chdir(primary)

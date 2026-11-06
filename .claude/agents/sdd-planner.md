@@ -85,7 +85,7 @@ assistant turn (no markdown fences, no prose around it):
   "task_index_path": "sdd/tasks/index/<slug>.json",
   "feat_id": "FEAT-379",
   "branch_name": "feat-379-<slug>",
-  "worktree_path": "/abs/.claude/worktrees/feat-379-<slug>",
+  "worktree_path": "/abs/.parrot/worktrees/feat-379-<slug>",
   "repo_path": "",
   "jira_issue_key": null
 }

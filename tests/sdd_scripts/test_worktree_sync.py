@@ -841,7 +841,7 @@ def _as_primary(monkeypatch: pytest.MonkeyPatch, primary: Path) -> None:
     """Point worktree discovery at a disposable clone instead of the real repository.
 
     ``discover()`` runs ``git worktree list`` with ``cwd=_root()`` and scans
-    ``_root()/.claude/worktrees`` for orphans, and ``_root()`` memoises into the module
+    ``_root()/.parrot/worktrees`` for orphans, and ``_root()`` memoises into the module
     global ``remove_worktree._ROOT``. Both are redirected so ``resolve_target`` can only
     ever see ``primary``'s own worktrees.
     """
@@ -876,7 +876,7 @@ def test_resolve_target_feat_id_and_ambiguity(tmp_path: Path, monkeypatch: pytes
 def test_orphan_and_mismatched_git_root_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An orphan directory and a Git-top-level mismatch exit 2 with the primary untouched."""
     _origin, primary, _feature = _repository(tmp_path)
-    orphan = primary / ".claude" / "worktrees" / "orphan-dir"
+    orphan = primary / ".parrot" / "worktrees" / "orphan-dir"
     orphan.mkdir(parents=True)
     # A registered worktree that is really a subdirectory of an unrelated repository: its own
     # .git link is gone, so `rev-parse --show-toplevel` resolves to `outer`, not to the

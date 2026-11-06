@@ -78,7 +78,7 @@ CURRENT_BRANCH=$(git branch --show-current)
 # (the sdd-worker agent runs it from its own worktree). Resolve the primary
 # checkout once and address it ONLY through these variables afterwards.
 MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
-WORKTREES_DIR="$MAIN_ROOT/.claude/worktrees"
+WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
 IN_WORKTREE=0
 if [[ "$(git rev-parse --path-format=absolute --git-dir)" != "$(git rev-parse --path-format=absolute --git-common-dir)" ]]; then
     IN_WORKTREE=1
@@ -403,7 +403,7 @@ Present the report:
 ```
 📋 Verification Report: FEAT-<ID> — <title>
 
-Worktree: .claude/worktrees/feat-<ID>-<slug>
+Worktree: .parrot/worktrees/feat-<ID>-<slug>
 Branch: feat-<ID>-<slug>
 Commits found: <N>
 Tasks: <total> total, <verified> verified, <partial> partial, <missing> missing
@@ -948,7 +948,7 @@ PR opened: feat-<ID>-<slug> → <BASE_BRANCH>  <PR-URL>
 E2E: <policy> — <status>
 Hooks: pre_pr <n pass / m fail>, post_pr <n pass / m fail, or skipped (--dry-run)>
 Hook evidence: <absolute artifact paths from §4.8 evidence_md, or none>
-Worktree removed: .claude/worktrees/feat-<ID>-<slug>
+Worktree removed: .parrot/worktrees/feat-<ID>-<slug>
 Local branch deleted: feat-<ID>-<slug>
 ```
 
@@ -966,7 +966,7 @@ Merged into <BASE_BRANCH>: feat-<ID>-<slug> ✅
 E2E: <policy> — <status>
 Hooks: pre_pr <n pass / m fail>, post_pr <n pass / m fail, or skipped (--dry-run)>
 Hook evidence: <absolute artifact paths from §4.8 evidence_md, or none>
-Worktree removed: .claude/worktrees/feat-<ID>-<slug>
+Worktree removed: .parrot/worktrees/feat-<ID>-<slug>
 Local branch deleted: feat-<ID>-<slug>
 ```
 

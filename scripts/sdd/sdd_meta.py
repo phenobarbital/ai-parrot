@@ -14,7 +14,6 @@ from parrot.knowledge.wiki.ledger.sdd_meta import (  # noqa: F401
     KNOWN_PROJECTS,
     PROJECT_ALIASES,
     WORK_KIND_FLOW,
-    WORKTREE_ROOT,
     DocTaxonomy,
     FlowMeta,
     WorktreePlan,

@@ -87,7 +87,7 @@ If `CURRENT_BRANCH != BASE_BRANCH`, abort:
    Switch: git checkout <BASE_BRANCH>
 ```
 
-If currently inside a worktree (path contains `.claude/worktrees/`), abort:
+If `git rev-parse --git-dir` differs from `--git-common-dir` (a linked worktree), abort:
 ```
 ⚠️  /sdd-done must run from the main repo, not inside a worktree.
    cd back to the main repo and re-run.
@@ -292,7 +292,7 @@ Present the report:
 ```
 📋 Verification Report: FEAT-<ID> — <title>
 
-Worktree: .claude/worktrees/feat-<ID>-<slug>
+Worktree: .parrot/worktrees/feat-<ID>-<slug>
 Branch: feat-<ID>-<slug>
 Commits found: <N>
 Tasks: <total> total, <verified> verified, <partial> partial, <missing> missing
@@ -350,7 +350,7 @@ the feature-level `completed_at`.
 > original `completed_at` is preserved.
 
 ```bash
-WORKTREE_PATH=".claude/worktrees/feat-<FEAT-ID>-<slug>"
+WORKTREE_PATH="$WORKTREES_DIR/feat-<FEAT-ID>-<slug>"
 INDEX="sdd/tasks/index/${FEATURE_SLUG}.json"
 NOW="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
 
@@ -852,7 +852,7 @@ if (( FINAL_PREP_RC != 0 || FINAL_INTEG_RC != 0 || ${LEDGER_DELIVERY_PENDING:-0}
     # Retain the worktree and batch; do not run the removal block below.
 else
     echo "Ledger delivery complete; removing the worktree."
-    WT=".claude/worktrees/feat-<FEAT-ID>-<slug>"
+    WT="$WORKTREES_DIR/feat-<FEAT-ID>-<slug>"
     # Untracked leftovers (logs or scratch files a tool left behind) are not uncommitted work, but
     # `git worktree remove` refuses them unless the path is gitignored (issue:4a534ef4f3ee). Park them
     # under the FEAT-764 hook-artifact root instead of reaching for --force.
@@ -899,7 +899,7 @@ Index updated and committed.
 Branch pushed: feat-<ID>-<slug>
 PR opened: feat-<ID>-<slug> → <BASE_BRANCH>  <PR-URL>
 E2E: <policy> — <status>
-Worktree removed: .claude/worktrees/feat-<ID>-<slug>
+Worktree removed: .parrot/worktrees/feat-<ID>-<slug>
 Local branch deleted: feat-<ID>-<slug>
 ```
 
@@ -915,7 +915,7 @@ Index updated and committed.
 Branch pushed: feat-<ID>-<slug>
 Merged into <BASE_BRANCH>: feat-<ID>-<slug> ✅
 E2E: <policy> — <status>
-Worktree removed: .claude/worktrees/feat-<ID>-<slug>
+Worktree removed: .parrot/worktrees/feat-<ID>-<slug>
 Local branch deleted: feat-<ID>-<slug>
 ```
 

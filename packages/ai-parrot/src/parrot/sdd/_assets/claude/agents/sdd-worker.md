@@ -61,7 +61,7 @@ directory switching, no shared mutable state across features.
   read-only. Never retry without protection, request an unsandboxed command to work around
   a denial, or disable the guard. If isolation is unavailable, stop and report the blocker.
 - Under the supported launchers the Claude native sandbox enforces the filesystem/network boundary and the hook keeps the test-scope guard, RTK rewrite and file-tool checks; nested bwrap is not used; never request dangerouslyDisableSandbox.
-- The primary checkout's `.claude/worktrees/` and `.parrot/ledger/` are the only writable
+- The primary checkout's worktree root and `.parrot/ledger/` are the only writable
   exceptions outside your worktree: the first exists for worktree administration (it does NOT
   mean `/sdd-done` runs from here — see "Completion"), the second so you can file deferred
   findings in the shared SDD ledger. Everything else in the primary checkout — `sdd/ledger/`,
@@ -762,7 +762,7 @@ After all tasks are done, at the development-to-review boundary:
    `haiku(native)` row yourself for the tasks you ran natively — the engine
    never sees those attempts.
 
-   Worktree: .claude/worktrees/<worktree-name>
+   Worktree: .parrot/worktrees/<worktree-name>
    Branch: <branch-name>
    Commits: <N>
 

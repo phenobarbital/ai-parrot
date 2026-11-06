@@ -13,7 +13,7 @@ how-to.
 
 ## 1. Where they live, how they are named
 
-- Always under `.claude/worktrees/` (git-ignored). Never `.worktrees/`, never a global directory.
+- Always under the worktree root (default `.parrot/worktrees/`, override with an exported `WORKTREE_BASE_PATH`).
 - Names come from `parrot.sdd.scripts.sdd_meta.plan_worktree`, never invented:
   - feature → `feat-<FEAT-ID>-<slug>` (the doubled `feat-FEAT-` prefix is intentional — `/sdd-done` greps on it)
   - hotfix → `hotfix-<JIRA-KEY>-<slug>`
@@ -64,15 +64,18 @@ inside `<path>`* — never in the primary checkout.
 
 ```bash
 /remove-worktree                          # list first; refuses worktrees with a live sdd-worker
-git worktree remove .claude/worktrees/<name>
+git worktree remove "$WORKTREES_DIR/<name>"
 git worktree prune                        # drop stale admin data
 ```
 
 Never remove a worktree with uncommitted changes, never `--force` unless the
 user explicitly asks, and look for orphan directories under
-`.claude/worktrees/` that `git worktree list` no longer knows about —
+the worktree root that `git worktree list` no longer knows about —
 `/remove-worktree` handles those; `prune` does not.
 
+If you still have worktrees under the legacy location, run the migration recipe
+`parrot doctor` prints (it moves them to the new worktree root and ends with
+`git worktree repair`) and update your workflows.
 
 Untracked leftovers (logs or scratch files a tool left behind) are not uncommitted
 changes, but `git worktree remove` refuses them too unless the path is gitignored. Park

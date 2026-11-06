@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-802 — Worktree Root Under `.parrot/`
 **Spec**: `sdd/specs/worktree-root-under-parrot.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5174
@@ -224,10 +224,10 @@ def test_dangerous_rm_both_roots(cmd: str, tmp_path: Path) -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by seat gpt-5.6-sol (codex), 1 attempt, merged cleanly.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (orchestrator)
+**Date**: 2026-11-05
+**Notes**: Merge-tier: 167 passed, 1 pre-existing failure (test_no_command_hand_rolls_a_worktree[sdd-worker.md], also red on origin/dev). Closed via `parrot sdd task close`; finalize unavailable (coder_record_review tool error). feedback NOT recorded.
 
 **Deviations from spec**:
