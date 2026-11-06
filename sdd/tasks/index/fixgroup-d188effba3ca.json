@@ -79,7 +79,7 @@
       "feature_id": "FEAT-820",
       "feature": "fixgroup-d188effba3ca",
       "spec": "sdd/specs/fixgroup-d188effba3ca.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -88,7 +88,7 @@
       "parallel": true,
       "parallelism_notes": "Modifies the same file as TASK-5236 (tests/sdd_scripts/test_worktree_sync.py) and appends after its section, so the two are serialized.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T02:03:02.137420+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5237-sandbox-push-protection-gh-failure-tests.md"
     },
