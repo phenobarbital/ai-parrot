@@ -111,7 +111,7 @@ else's edit. This spec builds that path once, for every write.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:dacc0ee5063525de7121adf395a7effbcc541d85c165b3c01f93e335ba082521 evaluation_digest=sha256:6fa2d899bb4e2d422aa69be4e3e28a39b44b18f59d266648e0908c78dde51c5e rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:5d1f9e6def03e11e3cafa5368473a2878618a3f39a81e4414e0c068690798570 evaluation_digest=sha256:af04202ec87ca620a4ff90974b1105ddc23171c43e5a820f19f826db79b8a1f0 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -919,7 +919,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:dacc0ee5063525de7121adf395a7effbcc541d85c165b3c01f93e335ba082521 evaluation_digest=sha256:6fa2d899bb4e2d422aa69be4e3e28a39b44b18f59d266648e0908c78dde51c5e rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:5d1f9e6def03e11e3cafa5368473a2878618a3f39a81e4414e0c068690798570 evaluation_digest=sha256:af04202ec87ca620a4ff90974b1105ddc23171c43e5a820f19f826db79b8a1f0 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -965,10 +965,10 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:6fa2d899bb4e2d422aa69be4e3e28a39b44b18f59d266648e0908c78dde51c5e",
+  "evaluation_digest": "sha256:af04202ec87ca620a4ff90974b1105ddc23171c43e5a820f19f826db79b8a1f0",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:dacc0ee5063525de7121adf395a7effbcc541d85c165b3c01f93e335ba082521",
+  "input_digest": "sha256:5d1f9e6def03e11e3cafa5368473a2878618a3f39a81e4414e0c068690798570",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
