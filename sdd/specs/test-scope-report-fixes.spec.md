@@ -79,7 +79,7 @@ Each was re-checked against `origin/dev` @ `aa91d76896` (2026-11-07):
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:d2aaf18cbefa8fa6b9fea4da52519fcddd365eefb2c12d281d81816b975c333c evaluation_digest=sha256:26055617434993522b7317996c7b8f9ee69f6282e488cdff3d2a60258fd1dad4 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:010017e79e7039af1bea7cff3aad45b76dc50998626371fca55e3f421487034d evaluation_digest=sha256:34ffe39755e762f892ef06eb99e1ae726f3ad75c7ac15eff603baea00c7cd86f rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -233,6 +233,8 @@ None beyond the files above.
 
 tests:
 - packages/ai-parrot/tests/flows/dev_loop/test_scope/test_contract.py
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_spec_contract.py
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_contract_schema2.py
 - packages/ai-parrot/tests/flows/dev_loop/test_scope/test_select.py
 - packages/ai-parrot/tests/flows/dev_loop/test_scope/test_select_contract_mode.py
 - packages/ai-parrot/tests/flows/dev_loop/test_scope/test_green_cache.py
@@ -242,6 +244,10 @@ tests:
 - packages/ai-parrot/tests/sdd/test_select_tests_base_ref.py
 - tests/sdd_scripts/test_check_task_graph.py
 markers: none
+
+### Test Data / Fixtures
+
+None — each test builds its own `tmp_path` repo or index.
 
 ---
 
@@ -355,7 +361,7 @@ None.
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:d2aaf18cbefa8fa6b9fea4da52519fcddd365eefb2c12d281d81816b975c333c evaluation_digest=sha256:26055617434993522b7317996c7b8f9ee69f6282e488cdff3d2a60258fd1dad4 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:010017e79e7039af1bea7cff3aad45b76dc50998626371fca55e3f421487034d evaluation_digest=sha256:34ffe39755e762f892ef06eb99e1ae726f3ad75c7ac15eff603baea00c7cd86f rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -409,10 +415,10 @@ Coverage:
       "path": "/tmp/claude-1000/-home-jesuslara-proyectos-ai-parrot/971bcae5-141d-4da7-b937-120d4aeea422/scratchpad/dev-clone/sdd/specs/test-scope-report-fixes.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:26055617434993522b7317996c7b8f9ee69f6282e488cdff3d2a60258fd1dad4",
+  "evaluation_digest": "sha256:34ffe39755e762f892ef06eb99e1ae726f3ad75c7ac15eff603baea00c7cd86f",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:d2aaf18cbefa8fa6b9fea4da52519fcddd365eefb2c12d281d81816b975c333c",
+  "input_digest": "sha256:010017e79e7039af1bea7cff3aad45b76dc50998626371fca55e3f421487034d",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
