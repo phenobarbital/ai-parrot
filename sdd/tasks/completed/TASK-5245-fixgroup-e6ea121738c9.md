@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-825 fixgroup-e6ea121738c9
 **Spec**: `sdd/specs/fixgroup-e6ea121738c9.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none
@@ -94,4 +94,20 @@ editable-installed against the main checkout).
 Lint the changed files with `ruff check` before committing. Stage only the four files listed above.
 
 ## Completion Note
-*(filled in on completion)*
+
+**Completed by**: Claude Code `/sdd-fix` session (`agent:sdd-fix:b73eac7f`)
+**Date**: 2026-11-06
+**Notes**: Implemented M1–M3 in `9d92c40a61`.
+- M1: `RoostEndpoint.query(conversation_id=...)`; the `trace_id` predicate moved into the module-level
+  `_is_wire_identifier()` helper and is shared by both identifiers (the `trace_id` error message is unchanged).
+- M2: `_ask_via_roost` mints the id and reports it in the success `metadata` and in `RoostFailure` status dicts.
+- M3: toolkit tests for `hops` / `expected_schema` forwarding plus a two-real-endpoint test (`ok` at 0 hops with
+  `msg.hops == 1` on the wire and a matching conversation id; `hop_limit` at 8 hops, nothing served).
+
+Validation: `packages/ai-parrot/tests/roost` 153 passed; the task's two validation commands 65 passed;
+`ruff check` and `black --check -l 120` clean on the four files. Mutation-checked: dropping `hops=` from the
+toolkit call (2 failures), dropping `conversation_id=` from it (4), ignoring the supplied id in `query()` (4) and
+skipping its validation (9) each fail the new tests.
+
+**Deviations from spec**: none. The hop-budget and `expected_schema` limbs of `issue:0f5ee739eca8` were already on
+`dev` (`8ffec9c103`, FEAT-788); this task only adds the regression tests for them.
