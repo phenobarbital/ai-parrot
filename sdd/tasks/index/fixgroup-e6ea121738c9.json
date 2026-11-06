@@ -17,14 +17,14 @@
       "feature": "fixgroup-e6ea121738c9",
       "spec": "sdd/specs/fixgroup-e6ea121738c9.spec.md",
       "file": "sdd/tasks/active/TASK-5245-fixgroup-e6ea121738c9.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task; no exclusive resource",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T15:58:48+00:00",
       "completed_at": null,
       "discovered_from": "issue:0f5ee739eca8"
     }
