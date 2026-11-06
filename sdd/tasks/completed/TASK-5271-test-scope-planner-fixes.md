@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-829 test-scope-planner-fixes
 **Spec**: `sdd/specs/test-scope-planner-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none
@@ -95,4 +95,25 @@ editable-installed against the main checkout).
 Lint the changed files with `ruff check` before committing. Stage only the four files listed above.
 
 ## Completion Note
-<!-- Filled in when the task is closed. -->
+
+**Completed by**: Claude Code `/sdd-fix` session (`agent:sdd-fix:b0aaa6fe`)
+**Date**: 2026-11-07
+**Notes**: Implemented M1–M3 in `51e6ac10ca`.
+- M1: `planner._runner_settings()` merges the matching contract block's settings over
+  `registry.settings_for(runner)` (block chosen by `adapter.distribution_of("", …) == distribution`, else
+  the first of its kind; no contract / no block → registry settings unchanged); `build_plan` calls it once
+  per `(runner, distribution)` group. `RunnerAdapter` is imported under `TYPE_CHECKING` only.
+- M2: `parrot_e2e._plan_setting()` raises a `ValueError` naming `'plan'` and `test_runners.toml` for an
+  absent/empty plan; `distribution_of` and `invocation` use it. Argv with a plan present is unchanged.
+- M3: four planner tests (AC-1..AC-4) drive the real `parrot-e2e` adapter through `plan_tests` /
+  `build_plan`; one parametrized adapter test (AC-5).
+
+Validation (worktree `PYTHONPATH`): `test_planner.py` + `test_runner_parrot_e2e.py` 28 passed;
+`test_select_contract_mode.py` + `test_select.py` 13 passed; `ruff check` and `black --check -l 120`
+clean on the four files. CLI repro: an index whose `test_contract` holds a `parrot-e2e` block with
+`plan: sdd/state/FEAT-581/e2e-plan.md` — `parrot sdd tests select --tier merge --base origin/dev`
+exits 2 with `error: 'plan'` on `dev` code and plans `parrot e2e run --plan sdd/state/FEAT-581/e2e-plan.md
+--owner-id sdd-coder` next to the pytest invocation (exit 0) on this branch.
+
+**Deviations from spec**: none. `issue:3ae0b2ae0ef4` (task-declared `parrot e2e run` dropped by
+`_declared_targets`) remains open and out of scope.
