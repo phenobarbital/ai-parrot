@@ -1436,16 +1436,22 @@ class SddCoderEngine:
             return profile
         return profile.model_copy(update={"max_turns": scaled})
 
-    def _profile_with_runner_binaries(self, profile: Any, path: str) -> Any:
+    def _profile_with_runner_binaries(self, profile: Any, path: str, *, ref: Optional[str] = None) -> Any:
         """Extend the attempt profile's ``allowed_commands`` with the registry's runner binaries (FEAT-709).
 
         A registry that cannot be loaded leaves the profile unchanged.
+
+        Args:
+            profile: The attempt dispatch profile.
+            path: The attempt sub-worktree.
+            ref: Git ref the runner TOML is read from (the attempt base). The working tree is
+                seat-writable, so the engine never reads it there (issue:29e8e7ad138f).
         """
         allowed = getattr(profile, "allowed_commands", None)
         if allowed is None:
             return profile
         try:
-            binaries = load_registry(Path(path)).binaries
+            binaries = load_registry(Path(path), ref=ref).binaries
         except Exception:  # noqa: BLE001 -- a broken runners TOML must not fail the attempt
             self.logger.warning("runner registry unavailable for %s; allowed_commands unchanged", path, exc_info=True)
             return profile
@@ -3762,7 +3768,7 @@ class SddCoderEngine:
                 self.logger.info(
                     "seat %r backend %r effort=%r source=%s", seat.label, seat.backend, effort, effort_source
                 )
-            profile = self._profile_with_runner_binaries(profile, path)
+            profile = self._profile_with_runner_binaries(profile, path, ref=ctx.feature_branch)
             profile = self._profile_with_scaled_turns(
                 profile, collector.declared_files if collector.declared_files_known else None
             )
