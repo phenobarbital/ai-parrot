@@ -1146,3 +1146,83 @@ def test_sandbox_gh_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     assert "run 'parrot sdd worktree sync-base <target>' from the host" in str(raised.value)
     assert (_run(feature, "rev-parse", "HEAD"), _run(feature, "status", "--porcelain"), _refs(feature)) == before
     assert not (feature / "patch.txt").exists()
+
+
+# --- FEAT-820 / TASK-5238: unrecovered abort and CLI exit-code mapping ----------------------------
+
+
+def _conflicting_base(primary: Path, feature: Path) -> str:
+    """Give ``feature`` and the base branch incompatible edits to shared.txt; return feature's HEAD."""
+    (feature / "shared.txt").write_text("feature\n", encoding="utf-8")
+    _run(feature, "add", "shared.txt")
+    _run(feature, "commit", "-m", "feature change")
+    before = _run(feature, "rev-parse", "HEAD")
+    (primary / "shared.txt").write_text("base change\n", encoding="utf-8")
+    _run(primary, "add", "shared.txt")
+    _run(primary, "commit", "-m", "base change")
+    _run(primary, "push")
+    return before
+
+
+def test_abort_failure_is_not_reported_as_restored(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failing merge --abort yields status 'error' with recovery guidance, never 'conflict'."""
+    _origin, primary, feature = _repository(tmp_path)
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    before = _conflicting_base(primary, feature)
+
+    original_git = worktree_sync._git
+    calls: list[tuple[str, ...]] = []
+
+    def recording_git(wt: Path, *args: str, timeout: int | None = None) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        if args == ("merge", "--abort"):
+            return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="abort refused")
+        return original_git(wt, *args, timeout=timeout)
+
+    monkeypatch.setattr(worktree_sync, "_git", recording_git)
+
+    result = worktree_sync.sync(feature, "dev")
+
+    assert result.status == "error"
+    assert result.exit_code == worktree_sync.EXIT_CONFLICT
+    assert "automatic rollback was not verified" in result.message
+    assert "abort refused" in result.message
+    assert result.before == before
+    assert ("merge", "--abort") in calls
+    assert not any(args and args[0] == "reset" for args in calls)
+
+
+def test_main_exit_code_mapping(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """main() maps synced to 0 and conflict to 6, in human and --json form, honouring --dry-run."""
+    _origin, primary, feature = _repository(tmp_path)
+    monkeypatch.delenv(worktree_sync.BACKEND_ENV, raising=False)
+    _as_primary(monkeypatch, primary)
+    _advance_base(primary, "base.txt")
+
+    dry = worktree_sync.main(["feat-FEAT-999-sync", "--base", "dev", "--dry-run", "--json"])
+    body = json.loads(capsys.readouterr().out)
+
+    assert dry == worktree_sync.EXIT_OK
+    assert body["dry_run"] is True
+    assert body["commits"]
+    assert not (feature / "base.txt").exists()
+
+    code = worktree_sync.main(["feat-FEAT-999-sync", "--base", "dev"])
+    captured = capsys.readouterr()
+
+    assert code == worktree_sync.EXIT_OK
+    assert "synchronized" in captured.out
+    assert captured.err == ""
+    assert (feature / "base.txt").read_text(encoding="utf-8") == "base.txt\n"
+
+    _conflicting_base(primary, feature)
+
+    conflicted = worktree_sync.main(["feat-FEAT-999-sync", "--base", "dev", "--json"])
+    conflict_body = json.loads(capsys.readouterr().out)
+
+    assert conflicted == worktree_sync.EXIT_CONFLICT
+    assert conflict_body["status"] == "conflict"
+    assert conflict_body["exit_code"] == worktree_sync.EXIT_CONFLICT
+    assert conflict_body["conflicts"] == ["shared.txt"]
