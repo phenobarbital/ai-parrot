@@ -125,9 +125,15 @@ async def test_invalid_surface_returns_422_and_oversize_returns_413(
     assert invalid_response.status == 422
     assert json.loads(invalid_response.body)["error"] == "invalid surface"
 
+    # FEAT-822: an over-cap body now aborts inside aiohttp's read (chunked
+    # included); the handler sees HTTPRequestEntityTooLarge, not a header.
     monkeypatch.setattr(a2ui_wire, "A2UI_MAX_BODY_BYTES", 10)
-    oversized = await handler.create_form(_request(surface, content_length=11))
+    request = _request(surface)
+    request.content_type = "application/a2ui+json"
+    request.json = AsyncMock(side_effect=web.HTTPRequestEntityTooLarge(10, actual_size=11))
+    oversized = await handler.create_form(request)
     assert oversized.status == 413
+    assert "form-import" in oversized.body.decode()
 
 
 async def test_prompt_body_still_requires_llm_client(handler: FormAPIHandler) -> None:

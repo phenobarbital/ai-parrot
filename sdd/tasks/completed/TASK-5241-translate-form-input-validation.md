@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-822 — Enforce A2UI request body-size limits before parsing
 **Spec**: `sdd/specs/fixgroup-adbf411ace18.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5239, TASK-5240
@@ -313,4 +313,38 @@ the new module-level helper.
 
 ## Completion Note
 
-<!-- filled at close -->
+**Status: done (verified).** Implemented 2026-11-06, commit `ca76b5eca2`,
+together with TASK-5240 — both tasks rewrite the same `translate_form` block,
+so splitting the edit would have produced commits that neither build nor test
+independently. See TASK-5240's note for the seam change that preceded this.
+
+**What shipped** in `translate_form`, after the capped read and the existing
+`schema (object) is required` guard:
+
+- `locale`, `form_id` and `title` must each be a `str` or absent. Anything
+  else → `400 {"error": "<field> must be a string"}`. An explicit `None` is
+  treated as absent, so `locale` keeps its `"en"` default and no existing
+  caller changes behaviour.
+- The schema is rejected with
+  `400 {"error": "schema too deeply nested", "max_depth": N}` when it nests
+  past `a2ui_wire.A2UI_MAX_SCHEMA_DEPTH`.
+
+The depth walk is `a2ui_wire.exceeds_json_depth`, a new module-level helper:
+an explicit stack, never recursion, short-circuiting on the first container
+past the cap. Depth counts container nesting levels, so a flat object is
+depth 1.
+
+**Why it matters:** all three scalars flow into
+`translate_jsonschema_to_a2ui`, and the schema itself is walked recursively
+there — a hostile payload could previously reach that walk unbounded.
+
+**Validation:**
+- `pytest packages/parrot-formdesigner/tests/unit/api/test_translate_forms.py -q`
+  → passes, including a 10 000-deep schema that returns 400 rather than
+  raising `RecursionError`, and the `exceeds_json_depth` unit table in
+  `test_a2ui_body_limits.py`.
+- Full package suite → 4265 passed, 2 failed (both pre-existing version
+  asserts, identical on the base tree).
+- `ruff check --fix` clean.
+
+**AC7 met.**
