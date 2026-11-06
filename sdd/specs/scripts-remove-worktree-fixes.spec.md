@@ -356,8 +356,16 @@ tests above, which use real `git worktree add`.
 
 ### Validation Contract
 
+> The last two operands gate Module 5: the `_assets/` tree is generated, so a
+> doc edit that skips `check_asset_sync.py --write` — or a regeneration that
+> sweeps in unrelated drift — shows up only in those two suites. They belong in
+> the contract because the contract REPLACES heuristic breadth at the merge and
+> feature tiers.
+
 tests:
 - packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py
+- packages/ai-parrot/tests/sdd/test_no_repo_script_refs.py
+- packages/ai-parrot/tests/sdd/test_installer.py
 markers: none
 
 ### Test Data / Fixtures
