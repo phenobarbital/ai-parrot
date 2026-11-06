@@ -127,7 +127,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -135,8 +135,9 @@
       "parallelism_notes": "No dependencies: the engine receives a content_loader callable; no symbol from another task is imported.",
       "assigned_to": null,
       "started_at": "2026-11-06T23:32:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5280-per-generation-search.md"
+      "completed_at": "2026-11-06T23:47:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5280-per-generation-search.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5281",
@@ -145,7 +146,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -155,8 +156,9 @@
       "parallelism_notes": "Needs NodeContentStore.load_node from TASK-5279 (content_store.py).",
       "assigned_to": null,
       "started_at": "2026-11-06T23:32:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5281-strict-okf-projection.md"
+      "completed_at": "2026-11-06T23:47:49+00:00",
+      "file": "sdd/tasks/completed/TASK-5281-strict-okf-projection.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5282",
@@ -165,7 +167,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -178,8 +180,9 @@
       "parallelism_notes": "Imports tree_lock/TreeLockTimeout from TASK-5276 (locks.py); JSONTreeStore.signature/read_generation from TASK-5277 (store.py); extends generation.py and test_generation.py created by TASK-5278; NodeContentStore.save_body/sweep_unreferenced from TASK-5279.",
       "assigned_to": null,
       "started_at": "2026-11-06T23:32:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5282-write-transaction.md"
+      "completed_at": "2026-11-06T23:47:49+00:00",
+      "file": "sdd/tasks/completed/TASK-5282-write-transaction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5283",
