@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-06T17:10:00Z",
-  "completed_at": null,
+  "completed_at": "2026-11-06T17:17:55+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -36,8 +36,8 @@
       "feature_id": "FEAT-827",
       "feature": "fixgroup-742a9ada6cba",
       "spec": "sdd/specs/fixgroup-742a9ada6cba.spec.md",
-      "file": "sdd/tasks/active/TASK-5247-matrix-crew-roost-wake-adapter.md",
-      "status": "in-progress",
+      "file": "sdd/tasks/completed/TASK-5247-matrix-crew-roost-wake-adapter.md",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -45,8 +45,9 @@
       "parallelism_notes": "touches crew/crew_wrapper.py, crew/transport.py, two new test modules and the carriers wiki page; no file shared with TASK-5246",
       "assigned_to": null,
       "started_at": "2026-11-06T17:10:20+00:00",
-      "completed_at": null,
-      "discovered_from": "issue:2c7a156eb239"
+      "completed_at": "2026-11-06T17:17:55+00:00",
+      "discovered_from": "issue:2c7a156eb239",
+      "verification": "verified"
     }
   ]
 }

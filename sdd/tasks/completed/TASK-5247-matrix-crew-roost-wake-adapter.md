@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-827 fixgroup-742a9ada6cba
 **Spec**: `sdd/specs/fixgroup-742a9ada6cba.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M
 **Depends-on**: none
@@ -98,4 +98,25 @@ Run from the worktree root with
 Lint the changed files with `ruff check` before committing. Stage only the five files listed above.
 
 ## Completion Note
-*(filled in on completion)*
+
+**Completed by**: Claude Code `/sdd-fix` session (`agent:sdd-fix:b73eac7f`)
+**Date**: 2026-11-06
+**Notes**: Implemented M2–M4 in `903985339e`.
+- `MatrixCrewAgentWrapper.handle_roost_wake` (+ `_response_text`, `_response_tokens`, `_ROOST_WAKE_TIMEOUT`).
+- `MatrixCrewTransport(roost_endpoint_factory=...)`, `from_yaml(..., roost_endpoint_factory=...)`,
+  `_start_roost_endpoint`, `_stop_roost_endpoints`. The toolkit attachment loop moved verbatim from `start()` into
+  `_attach_swarm_toolkits()` so the endpoint hand-off is unit-testable; its only behavioural change is `endpoint=`.
+- `wiki/mcp/roost/carriers.md`: "Matrix crew wiring (FEAT-827)".
+
+Validation: the two new modules 23 passed; `test_matrix_handle_task`, `test_matrix_transport_swarm`,
+`test_matrix_roost_ask_agent` green; all `-k matrix` integration tests 299 passed, 2 skipped, 6 failed — the six
+are `test_matrix_hook.py` (`'MatrixHook' object has no attribute '_on_room_message'`), a module this task does
+not touch and that imports `navigator_eventbus`. `ruff check` / `black --check -l 120` clean on the four Python
+files. Mutation-checked (no hop seeding, leaked exception text, serving non-queries, toolkit without endpoint,
+`stop()` skipping endpoints, swallowed factory error): each fails the new tests.
+
+**Deviations from spec**: AC-4 was revised on this branch (spec § Revision). The original AC required a full
+A→B→A chain over real endpoints to end in `hop_limit`; a probe showed that an agent woken by a query cannot
+receive the reply to its own onward query (always `TIMEOUT`) — a core Roost defect filed as
+`issue:a409d14b8130`, outside this task. The chain is pinned as: onward `query()` carries the inbound depth
+(toolkit seam) + one real hop serves at depth `d + 1` and refuses at the hop limit.
