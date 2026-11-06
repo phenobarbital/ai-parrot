@@ -55,7 +55,7 @@ endpoint refuses a message past its hop limit. Two gaps remain on the *serving* 
 - [ ] AC-1 A `RoostMessage` with `hops=3` survives `MatrixCarrier.to_content` → `from_content` with `hops == 3`; content without a `hops` key parses with `hops == 0`; a negative `hops` is rejected by `RoostEventContent`.
 - [ ] AC-2 During `handle_roost_wake` for a `QUERY` with `hops=4`, the bot's `ask` observes `ctx.current_hops.get() == 4`; after it returns (success or failure) `ctx.current_hops` is back to its previous value.
 - [ ] AC-3 `handle_roost_wake` returns an `INFORM` reply carrying the answer text and `tokens` from `usage.total_tokens` (0 when the response has no usage); a bot error returns `FAILURE`/`INTERNAL`, a timeout `FAILURE`/`TIMEOUT`, a missing bot `FAILURE`/`INTERNAL`; it never raises; a non-`QUERY` message returns `None` without calling the bot.
-- [ ] AC-4 Over two real in-process endpoints whose wakes are `handle_roost_wake` and whose bots re-ask the peer through their own `AgentSwarmToolkit`, an A→B→A→… chain ends with `status == "hop_limit"` after a bounded number of wakes (≤ the engine hop limit).
+- [ ] AC-4 *(revised 2026-11-06, see Revision)* The chain is pinned in two halves: (a) inside a turn served by `handle_roost_wake` with inbound `hops=3`, the agent's own `AgentSwarmToolkit.ask_agent` calls `query()` with `hops=3`; (b) over two real in-process endpoints, a caller at depth `d` is served at depth `d + 1`, and a caller at the engine hop limit gets `status == "hop_limit"` without the served bot running.
 - [ ] AC-5 With `roost_endpoint_factory`, the transport calls it once per attached agent with `(agent_name, wrapper.handle_roost_wake)`, awaits `endpoint.start()`, hands the endpoint to that agent's `AgentSwarmToolkit`, and stops every endpoint in `stop()`; a factory error propagates; without a factory no endpoint is built and the toolkit has none.
 - [ ] AC-6 Existing `packages/ai-parrot-integrations/tests/test_matrix_*.py` stay green; `ruff check` clean on the changed files.
 
@@ -66,6 +66,16 @@ endpoint refuses a message past its hop limit. Two gaps remain on the *serving* 
   validates on the caller only — the served agent is not told the schema).
 - Carrying `tokens`, `permission_context` or `auth_token` across the Matrix carrier.
 - `ctx.current_session` on the Roost path (a `RoostMessage` has no originating-session field).
+- Nested Roost calls from a woken agent (`issue:a409d14b8130`): they time out today; fixing the endpoint /
+  carrier delivery model is a core Roost change.
+
+## Revision
+- **2026-11-06 (during TASK-5247)** — AC-4 originally required a full A→B→A chain over real endpoints to end in
+  `hop_limit`. That cannot be exercised today: an agent woken by a query cannot receive the reply to its own
+  onward query — the in-process carrier serves one message per address at a time and `RoostEndpoint` awaits the
+  wake inline — so the onward call always ends in `TIMEOUT` (repro in `issue:a409d14b8130`, a core Roost
+  defect outside this feature). AC-4 now pins the two halves of the chain separately; the end-to-end chain
+  test belongs to the fix of that issue.
 
 ## Worktree Strategy
 - **Isolation**: one feature worktree, `feat-FEAT-827-fixgroup-742a9ada6cba`, off `origin/dev`.
@@ -76,11 +86,11 @@ endpoint refuses a message past its hop limit. Two gaps remain on the *serving* 
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:c55f606882c4aaf8d7deb0436baddb6307f61a8fc5072780e8114f7b2e3fdac4 evaluation_digest=sha256:2bfd6a449631d05373884a0e3d35ac969c71b6dea96b3635988e057673f73c45 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:548277c3a782e8251a5cc49bcf76d6f7845a6cffc5ab12a263a19c36dd4091b0 evaluation_digest=sha256:fb03f869da4c75ef9eb13ed2e74c174cd0a71b7174b6bcd97b3b100d0093f95f rules_version=1 status=pass -->
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:c55f606882c4aaf8d7deb0436baddb6307f61a8fc5072780e8114f7b2e3fdac4 evaluation_digest=sha256:2bfd6a449631d05373884a0e3d35ac969c71b6dea96b3635988e057673f73c45 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:548277c3a782e8251a5cc49bcf76d6f7845a6cffc5ab12a263a19c36dd4091b0 evaluation_digest=sha256:fb03f869da4c75ef9eb13ed2e74c174cd0a71b7174b6bcd97b3b100d0093f95f rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -88,7 +98,7 @@ Findings:
 - none
 
 Diagnostics:
-- `SPEC_BLOCK_MISSING`; path: /tmp/claude-1000/-home-jesuslara-proyectos-ai-parrot/06287cc5-6f01-421d-93f4-d0cfabd1030e/scratchpad/dev-clone/sdd/specs/fixgroup-742a9ada6cba.spec.md; message: no fenced yaml block under '## Decisions'
+- `SPEC_BLOCK_MISSING`; path: /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-827-fixgroup-742a9ada6cba/sdd/specs/fixgroup-742a9ada6cba.spec.md; message: no fenced yaml block under '## Decisions'
 
 Coverage:
 - Subsystems: integrations
@@ -121,13 +131,13 @@ Coverage:
       "code": "SPEC_BLOCK_MISSING",
       "decision_id": null,
       "message": "no fenced yaml block under '## Decisions'",
-      "path": "/tmp/claude-1000/-home-jesuslara-proyectos-ai-parrot/06287cc5-6f01-421d-93f4-d0cfabd1030e/scratchpad/dev-clone/sdd/specs/fixgroup-742a9ada6cba.spec.md"
+      "path": "/home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-827-fixgroup-742a9ada6cba/sdd/specs/fixgroup-742a9ada6cba.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:2bfd6a449631d05373884a0e3d35ac969c71b6dea96b3635988e057673f73c45",
+  "evaluation_digest": "sha256:fb03f869da4c75ef9eb13ed2e74c174cd0a71b7174b6bcd97b3b100d0093f95f",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:c55f606882c4aaf8d7deb0436baddb6307f61a8fc5072780e8114f7b2e3fdac4",
+  "input_digest": "sha256:548277c3a782e8251a5cc49bcf76d6f7845a6cffc5ab12a263a19c36dd4091b0",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",

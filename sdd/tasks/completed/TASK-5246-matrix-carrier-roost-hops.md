@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-827 fixgroup-742a9ada6cba
 **Spec**: `sdd/specs/fixgroup-742a9ada6cba.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: none
@@ -63,4 +63,12 @@ Run from the worktree root with
 Lint the changed files with `ruff check` before committing. Stage only the three files listed above.
 
 ## Completion Note
-*(filled in on completion)*
+
+**Completed by**: Claude Code `/sdd-fix` session (`agent:sdd-fix:b73eac7f`)
+**Date**: 2026-11-06
+**Notes**: Implemented in `b82ec0fe5f`. `RoostEventContent.hops` (default 0, `ge=0`); `MatrixCarrier.to_content`
+writes it and `from_content` reads it. `test_matrix_roost_carrier.py` + `test_matrix_swarm_events.py`: 16 passed;
+`black --check` clean. `ruff check` reports one pre-existing F401 in `events.py` (`SerializableAttrs` in the
+mautrix availability probe, line 15) — untouched here, left to the feature lint pass.
+
+**Deviations from spec**: none.

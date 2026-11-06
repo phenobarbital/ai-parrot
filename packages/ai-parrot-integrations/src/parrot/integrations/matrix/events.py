@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, ValidationError
 
 try:
-    from mautrix.types import EventType, SerializableAttrs
+    from mautrix.types import EventType
 
     HAS_MAUTRIX = True
 except ImportError:
@@ -298,6 +298,8 @@ class RoostEventContent(BaseModel):
     content_ref: Optional[str] = None
     envelope: Dict[str, Any] = Field(default_factory=dict)
     failure: Optional[Dict[str, Any]] = None
+    #: Chain depth of the message (``RoostMessage.hops``); absent on events written before FEAT-827.
+    hops: int = Field(default=0, ge=0)
 
 
 class BlackboardStateContent(BaseModel):
