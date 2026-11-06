@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5253
@@ -193,10 +193,10 @@ def test_inverse_materialised_once(): ...        # p inverseOf q; s p o → o q 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: sonnet · Backend: native · Attempts: 1 · Duration: n/a (coder could not run Bash; orchestrator ran ruff/black, committed, validated via coder_run_validation). Merge-tier validation green.
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: sonnet)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: `PARROT_NS` is defined in `closure.py` and re-exported by `turtle.py`

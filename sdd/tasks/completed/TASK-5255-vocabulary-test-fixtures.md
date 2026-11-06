@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5253
@@ -248,10 +248,10 @@ async def test_pg_schema_fixture(pg_pool, pg_schema_name) -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-luna · Backend: codex · Attempts: 2 · Duration: 475s (1 retry). Merge-tier validation green.
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: gpt-5.6-luna)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: none

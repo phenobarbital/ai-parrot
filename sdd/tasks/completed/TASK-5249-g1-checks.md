@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5248
@@ -287,10 +287,10 @@ def test_all_checks_complete_and_flagged() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 426s. Merge-tier validation green.
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: gpt-5.6-terra)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: none

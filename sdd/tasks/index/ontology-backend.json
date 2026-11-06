@@ -86,7 +86,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -96,8 +96,9 @@
       "parallelism_notes": "imports CheckResult/SpikeContext/Check from TASK-5248 (scripts/spikes/surrealdb_g1/harness.py)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5249-g1-checks.md"
+      "completed_at": "2026-11-06T23:46:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5249-g1-checks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5250",
@@ -183,7 +184,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -193,8 +194,9 @@
       "parallelism_notes": "imports OntologyStore from TASK-5253 (vocabulary/contracts.py) in backends.py; names postgres_store.py/publisher.py/snapshot.py only as lazy-import strings (not a use — never imported at module level, tests never resolve them)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5254-vocabulary-settings-registry-root.md"
+      "completed_at": "2026-11-06T23:46:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5254-vocabulary-settings-registry-root.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5255",
@@ -203,7 +205,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -213,8 +215,9 @@
       "parallelism_notes": "conftest.py lives in the test package whose __init__.py TASK-5253 creates (tests/.../vocabulary/__init__.py)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5255-vocabulary-test-fixtures.md"
+      "completed_at": "2026-11-06T23:46:28+00:00",
+      "file": "sdd/tasks/completed/TASK-5255-vocabulary-test-fixtures.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5256",
@@ -244,7 +247,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -254,8 +257,9 @@
       "parallelism_notes": "imports ParsedRelation/ClosureRow from TASK-5253 (vocabulary/contracts.py); references the vocabulary package path only — imports its own submodules, which resolve as a PEP 420 namespace before TASK-5254 adds __init__.py (not a use of TASK-5254)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5257-vocabulary-closure.md"
+      "completed_at": "2026-11-06T23:46:28+00:00",
+      "file": "sdd/tasks/completed/TASK-5257-vocabulary-closure.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5258",
