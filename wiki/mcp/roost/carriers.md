@@ -10,6 +10,24 @@ Roost has four carriers (`CarrierKind`): `in_process`, `same_host`, `network` an
 | network (event bus) | agents on the same network | handle or serialized typed object, never JSON text in `body` |
 | matrix | human-visible rooms | typed envelope plus a mandatory readable `body` |
 
+## Delivery model (FEAT-828)
+
+Every carrier delivers inbound messages **serially per address**: `InProcessCarrier` runs one consumer task
+per subscription, `SharedMemoryCarrier` wraps that consumer, the `EventBusCarrier` handler and
+`MatrixCarrier._on_event` await the endpoint callback inline. That ordering is what keeps protocol replies
+(`failure(HOP_LIMIT)`, `REFUSE`, Contract Net decisions) in sequence with the openers they answer, and it must
+stay.
+
+What does **not** run on the consumer is the agent turn. `RoostEndpoint._on_message` does the protocol work
+inline — audit, gating, routing of emitted failures, `CLOSED` / `STORE` resolution — and hands the two
+execution branches (`WAKE_LLM`, `RUN_TOOL`) to `_spawn_turn`, a tracked background task. A woken agent can
+therefore open its own onward conversation (`ask_agent` → `endpoint.query()`) and receive the reply on the
+consumer it no longer holds; before FEAT-828 that reply deadlocked behind the wake and every nested call
+ended in `TIMEOUT` (`issue:a409d14b8130`). `stop()` cancels in-flight turns before releasing the carriers,
+`metrics["turns_started"]` counts them and `turns_in_flight` exposes the live count. Two turns for the same
+agent may now run concurrently — the same concurrency the HTTP handlers already impose on `AbstractBot.ask`;
+no per-endpoint cap is applied.
+
 ## Network bus configuration
 
 The bus carrier uses a **dedicated** `navigator_eventbus.EventBus` (Streams transport), distinct from the telemetry
