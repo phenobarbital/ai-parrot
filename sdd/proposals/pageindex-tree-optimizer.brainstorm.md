@@ -15,12 +15,15 @@ tags: [pageindex, tree-optimizer, pdf-structure, agentic-retrieval, citations, p
 **Date**: 2026-11-06
 **Author**: Jesus Lara (with Claude)
 **Status**: exploration
+**Revision**: 2 (see *Revision History*)
 **Recommended Option**: B
 
 > Umbrella brainstorm. The user chose one document for the whole index-and-retrieval
 > upgrade; the recommendation splits it into four specs (see *Capabilities*).
-> Code references were verified at `dev` @ `20480877f9`. The upstream comparison is
-> against `VectifyAI/PageIndex` @ `2ac8694` (2026-11-05, v0.2.10, MIT), read only.
+> Code references were verified at `dev` @ `20480877f9` and the revision 2 additions at
+> `159b1993dd`; nothing under `knowledge/pageindex/` changed between the two. The
+> upstream comparison is against `VectifyAI/PageIndex` @ `2ac8694` (2026-11-05, v0.2.10,
+> MIT), read only.
 
 ---
 
@@ -145,6 +148,8 @@ Every other piece is then defined on segments instead of pages or node ids:
 - Segment boundaries come from `pymupdf4llm` markdown, so its paragraph and table
   detection quality becomes ours.
 - Scoring every segment for injection costs CPU on large books.
+- Revision 2 adds a publication layer on top of the store (generations, a writer lock,
+  crash recovery). Its scope is still open and it is the largest unknown in the effort.
 
 📊 **Effort:** High
 
@@ -249,10 +254,20 @@ segments it relied on, the citations, token usage, and optionally a drafted answ
 
 **Citations.** Each citation includes `{document, revision, page, paragraph, start, end, excerpt}` and renders as
 `[Report.pdf, p. 12 ¶3]`. Citations that fail validation are removed and listed.
+The model supplies the address (which carries the revision) and the excerpt; `start`
+and `end` are filled in by the validator.
 
 **Bookstore and multistoresearch** inherit the read tools and citations.
 
 ### Internal Behavior
+
+Two version terms are used below and are not interchangeable:
+
+- **revision** — the immutable segment content of one imported document, identified by
+  a content hash. Only a re-import creates a new revision. Optimizing never does, so a
+  citation stays valid across optimization.
+- **generation** — one published snapshot of a tree together with its node bodies, OKF
+  projection and id-keyed indexes. Optimizing creates a new generation.
 
 1. **Segment store.** At import the per-page markdown that `_extract_node_markdown`
    already computes is persisted per document and split deterministically into
@@ -303,11 +318,17 @@ segments it relied on, the citations, token usage, and optionally a drafted answ
    document revision, segment address and exact half-open character ranges returned,
    measured in the stored segment text before whitespace normalization. Continuations
    retain the same revision. Readers pin one published generation for the request.
+   The ledger and citation validation depend on the revision only; the generation pin
+   matters for outline and node reads.
 8. **Citation validation.** A citation is kept only if its revision and segment match
    the request's read ledger, its entire character range is covered by returned ranges,
    and its excerpt equals that stored slice after whitespace normalization. Adjacent
    reads may jointly cover an excerpt; unread gaps may not. Matching elsewhere in the
    segment does not suffice. Missing or mismatched revisions fail validation.
+   The character range is computed by the validator, not requested from the model
+   (models do not count characters reliably): it searches for the excerpt inside the
+   covered ranges of the cited segment and records the first full match as `start` and
+   `end`. An occurrence that lies only outside the covered ranges does not count.
 9. **Optimize on existing trees.** Build a candidate generation from a pinned snapshot,
    without mutating the live tree or its sidecars. Stage the tree, segment references,
    rebuilt body sidecars, OKF projection and report together; remap unchanged bodies
@@ -323,6 +344,24 @@ segments it relied on, the citations, token usage, and optionally a drafted answ
    `_batch` only defers writes and persists in `finally`; it is not a transaction.
    The existing best-effort `_project_okf_sidecars` also swallows errors: staging needs
    a strict projection path whose failure aborts publication. Dry runs never publish.
+
+   What the code does today (checked for revision 2), which bounds this step:
+   - Nothing locks a tree. `_persist` saves without comparing the on-disk signature, so
+     the last writer wins, and `_batch` persists in `finally` even after an exception.
+   - `_load_tree` hands every caller the same cached, mutable dict, and edit operations
+     mutate it in place. Readers are isolated only if edits stop doing that.
+   - Trees are also written by other processes; `_load_tree` reloads when the file's
+     `(mtime, size)` changes. The writer lock and the stale check therefore have to work
+     across processes. `knowledge/wiki/repo_cache.py::repo_lock` is an existing `fcntl`
+     lock with shared and exclusive modes.
+   - Per-node vectors are content-addressed and survive renumbering. Only the id-keyed
+     artifacts need to follow a generation: the BM25 corpus, the tree matrix and its
+     `node_order.json`. Scoping the vectors themselves would re-embed the whole tree on
+     every optimize.
+   - Bookstore already publishes a re-index through a staging tree and
+     `rename_tree(overwrite=True)`, with a backup name, rollback and a startup sweep
+     that restores interrupted swaps. Whether generations extend that or replace it is
+     an open question.
 
 ### Edge Cases & Error Handling
 
@@ -398,10 +437,10 @@ Proposed as four specs, in dependency order:
 | Affected Component | Impact Type | Notes |
 |---|---|---|
 | `knowledge/pageindex/builder.py` | modifies | Layout builder becomes the default path; LLM pipeline kept as fallback; prompts framed |
-| `knowledge/pageindex/toolkit.py` | extends | Read tools, optimize, agentic retrieve; `import_pdf` persists segments and `doc_id` |
+| `knowledge/pageindex/toolkit.py` | extends | Read tools, optimize, agentic retrieve; `import_pdf` persists segments and `doc_id`; writer lock and stale check on publish |
 | `knowledge/pageindex/hybrid_search.py` | modifies | `_flatten_corpus` adds `key_items`; bodies use owned segments only, including parent residual text; caches follow generations |
-| `knowledge/pageindex/embedding_store.py` | modifies | `content_key` input changes; existing vectors are recomputed once |
-| `knowledge/pageindex/schemas.py` | extends | `key_items`, `doc_id`, `structure_source`, segment span on nodes (model already allows extras) |
+| `knowledge/pageindex/embedding_store.py` | modifies | `content_key` input changes; existing vectors are recomputed once; the matrix and node order follow the generation |
+| `knowledge/pageindex/schemas.py` | extends | `key_items`, `doc_id`, `structure_source`, subtree span and owned segment ranges on nodes (model already allows extras) |
 | `knowledge/pageindex/tree_ops.py` | extends | Restructuring operations that keep `concept_id` stable |
 | `knowledge/pageindex/okf/` | depends on | Sidecars re-projected; `cite` can return paragraph addresses |
 | `knowledge/bookstore/` | extends | Read tools exposed; reindex integrates optimize |
@@ -496,12 +535,27 @@ class PageIndexToolkit(AbstractToolkit):                       # line 54
                          with_summaries=True, with_doc_description=False) -> dict  # line 930
     def _save_node_markdown(self, tree_name, original_id_to_node, node_markdown) -> None  # line 980
 def _capture_node_id_object_map(subtree) -> dict[str, dict]    # line 1331
+    # added for revision 2 (persistence and publication):
+    def _tree_signature(self, tree_name) -> tuple[int, int] | None  # line 182 ((st_mtime_ns, st_size) of the tree JSON)
+    def _load_tree(self, tree_name) -> dict[str, Any]          # line 198 (reloads on a changed signature; returns the cached, mutable dict)
+    def _persist(self, tree_name) -> None                      # line 237 (save, mark BM25 dirty, project OKF; no signature check)
+    async def rename_tree(self, src, dst, *, overwrite=False) -> dict[str, Any]  # line 443 (backup name + rollback)
+    # line 1002: self._content_store.save(...) runs immediately inside a batch, not deferred
+
+# knowledge/pageindex/store.py
+class JSONTreeStore:                                           # line 23
+    def save(self, tree_name, tree) -> None                    # line 63 (temp file + os.replace, line 81)
+    def rename(self, src, dst) -> None                         # line 97
 
 # knowledge/pageindex/content_store.py
 class NodeContentStore:                                        # line 38
     def _node_path(self, tree_name, node_id) -> Path           # line 81  -> <dir>/<tree_name>/<node_id>.md
-    def save(self, tree_name, node_id, markdown) -> None       # line 111
+    def save(self, tree_name, node_id, markdown) -> None       # line 111 (plain write_text, not atomic)
     def load(self, tree_name, node_id) -> Optional[str]        # line 118
+    def rename_tree(self, src, dst) -> bool                    # line 175 (os.replace of the tree directory)
+
+# knowledge/wiki/repo_cache.py
+async def repo_lock(lock_path: Path, *, timeout: float, shared: bool = False)  # line 53 (fcntl file lock, async context manager)
 
 # knowledge/pageindex/embedding_store.py
 class NodeEmbeddingStore:                                      # line 42
@@ -536,6 +590,9 @@ class PromptInjectionGuardrail(Guardrail):                     # line 544
     def _wrap_flagged_input(text, threats) -> str              # line 770 (<potentially_unsafe_input> wrapper)
 
 # knowledge/bookstore/library.py
+_STAGING_MARKER = "--staging-"                                 # line 68
+    def _staging_tree_name(self, slug: str) -> str             # line 269
+    async def _sweep_reserved_trees(self, scope: str) -> None  # line 291 (restores interrupted swaps, sweeps old staging trees)
     def get_toc(self, book_id: str) -> dict[str, Any]          # line 341
     def read_section(self, book_id: str, node_id: str) -> dict[str, Any]  # line 367
 
@@ -583,6 +640,13 @@ Checked by searching every `.py` under `knowledge/pageindex/`:
 - ~~a public accessor for the ML injection engine~~ — the one found, `_resolve_injection_engine`, is module-private
 - ~~`pageindex` (upstream wheel), `pageindex.flash`~~ — not a dependency and not to be added
 
+Added for revision 2, checked recursively over `knowledge/pageindex/`:
+- ~~a lock around tree writes~~ — no `asyncio.Lock`, thread lock or file lock on trees;
+  the only lock is `NodeEmbeddingStore._cache_lock`, which guards an in-memory cache
+- ~~a generation manifest, document revisions, reader pinning~~ — a tree is one JSON
+  file plus `<tree>/<node_id>.md`
+- ~~a stale-write check~~ — `_persist` does not compare the on-disk signature before saving
+
 ---
 
 ## Parallelism Assessment
@@ -592,6 +656,12 @@ Checked by searching every `.py` under `knowledge/pageindex/`:
   `pageindex-agentic-retrieval` then depend only on it and can run in parallel.
   `pageindex-tree-optimizer` needs the segment store and benefits from the layout
   builder's heading candidates, so it goes after or alongside layout.
+  Revision 2 puts one condition on this: generation publication and the writer lock
+  are listed under `pageindex-tree-optimizer`, the last spec, while reader pinning is
+  asked of `pageindex-agentic-retrieval` and of the content store. The order above
+  holds only if agentic retrieval depends on revisions alone (they ship with the
+  segment store). If it must pin generations, that mechanism has to move into the
+  first spec or into a spec of its own (open question).
 - **Cross-feature independence**: `toolkit.py` (1,418 lines) is touched by three of the
   four specs and `builder.py` by two; these are the merge hot spots. No unmerged remote
   branch for pageindex or bookstore existed when this was written.
@@ -622,3 +692,23 @@ Checked by searching every `.py` under `knowledge/pageindex/`:
 - [ ] Default sizes (target leaf tokens, minimum leaf, summary word limit) and the evaluation corpus and metrics used to set them — *Owner: Jesus Lara*
 - [ ] May `key_items` labels be abstractive, or must each be a phrase found in its anchor paragraph? — *Owner: Jesus Lara*
 - [ ] Bookstore: re-optimize the existing library automatically on upgrade, or opt in per book? — *Owner: Jesus Lara*
+
+Raised by the review of revision 2:
+
+- [ ] Which spec owns generation publication, the writer lock and reader pinning: `pageindex-segment-store`, `pageindex-tree-optimizer`, or a fifth spec? — *Owner: Jesus Lara*
+- [ ] Do edit operations (splice, delete, node updates) also publish a generation, or only optimize? Today they mutate the cached tree in place, so reader isolation holds only if they change too. — *Owner: Jesus Lara*
+- [ ] Generations as a new manifest, or as an extension of the staging tree plus `rename_tree` swap that Bookstore already uses? — *Owner: Jesus Lara*
+- [ ] Retention of old generations: a pin is not visible to other processes, so "retain while pinned" needs a count- or age-based rule. Which? — *Owner: Jesus Lara*
+- [ ] Old document revisions after a re-import: how many are kept, given that a stored citation to a deleted revision can no longer be checked? — *Owner: Jesus Lara*
+- [ ] "No change on a second optimization" with LLM passes: record a per-node stamp (input hash and settings) so finished nodes are skipped, or limit the guarantee to the deterministic passes? — *Owner: Jesus Lara*
+- [ ] What triggers a merge now that size alone never removes a leaf: only duplicate or empty spans? Is "minimum leaf" still a setting, as a floor for expansion? — *Owner: Jesus Lara*
+- [ ] How a parent's disjoint own ranges are rendered as one body (order, gap markers) for `retrieve`, summaries and BM25. — *Owner: Jesus Lara*
+
+---
+
+## Revision History
+
+| Rev | Date | Commit | Summary |
+|---|---|---|---|
+| 1 | 2026-11-06 | `e29f046315` | Initial brainstorm. |
+| 2 | 2026-11-06 | `159b1993dd`, then the review commit | Segment ownership replaces intro leaves and size-based folding. Document revisions and range-exact citation validation. Optimize publishes a staged generation instead of mutating in place. Required validation scenarios. The review then defined revision and generation, made citation offsets validator-computed, limited generation scoping to id-keyed indexes, recorded what the persistence code does today, corrected the spec-order note and added eight open questions. |
