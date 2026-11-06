@@ -193,7 +193,9 @@ is cached per tree and rebuilt when the JSON's `(st_mtime_ns, st_size)` changes.
 therefore keep exactly today's semantics (they read the live generation). Callers that must
 stay on the generation they loaded — the toolkit's `retrieve` and `search_documents_scoped`
 (`toolkit.py:651`, `:742`), the search engine and Bookstore's `read_section`
-(`bookstore/library.py:374`) — use `load_node(tree_name, node)` with the node they hold. The search engine is created per generation
+(`bookstore/library.py:374`) — use `load_node(tree_name, node)` with the node they hold.
+
+The search engine is created per generation
 (`_search_for`), with the BM25 corpus and the embedding matrix keyed by `tree_name` and
 generation id; this also fixes `mark_dirty` invalidating embeddings by `doc_name`
 (`hybrid_search.py:129`) instead of the tree name.
