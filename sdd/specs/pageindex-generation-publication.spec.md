@@ -178,7 +178,22 @@ returns an object that is never mutated afterwards: a reader keeps the generatio
 for as long as it holds the dict. Bodies are resolved from the node the reader holds
 (`body_ref`), so a reader on generation N reads generation N's blobs even after N+1 is
 published. `get_tree` returns the cached dict unchanged (`:552`); its docstring states that
-callers must not mutate it. The search engine is created per generation
+callers must not mutate it.
+
+**Readers that key bodies by `node_id`** (revision 0.2). Besides the toolkit and
+Bookstore, eleven call sites read bodies through `NodeContentStore.load(tree_name, key)`,
+`has()` or `loader_for(tree_name)` with a `node_id` or flat concept id: `pageindex/loader.py:285`,
+`pageindex/okf/bundle.py:324`, `pageindex/okf/migrate.py:285-287`, `pageindex/okf/tools.py:201`,
+`graphindex/projection.py:230`, `wiki/ingest.py:627,877`, `contracts/library.py:1027`,
+`manuals/library.py:364`, `lint/packs/okf.py:98`. They are not edited. Instead, when the
+legacy file for a key is absent, `load`/`has`/`loader_for(tree_name)` resolve the key through
+the **live** tree JSON (`<storage_dir>/<tree_name>.json`, the same directory the content store
+already owns): `node_id` or flat concept id → node → `body_ref` → blob. The resolution index
+is cached per tree and rebuilt when the JSON's `(st_mtime_ns, st_size)` changes. These callers
+therefore keep exactly today's semantics (they read the live generation). Callers that must
+stay on the generation they loaded — the toolkit's `retrieve` and `search_documents_scoped`
+(`toolkit.py:651`, `:742`), the search engine and Bookstore's `read_section`
+(`bookstore/library.py:374`) — use `load_node(tree_name, node)` with the node they hold. The search engine is created per generation
 (`_search_for`), with the BM25 corpus and the embedding matrix keyed by `tree_name` and
 generation id; this also fixes `mark_dirty` invalidating embeddings by `doc_name`
 (`hybrid_search.py:129`) instead of the tree name.
@@ -393,10 +408,15 @@ class PageIndexToolkit:
       def load_body(self, tree_name: str, key: str) -> Optional[str]:                 # new, cached
       def load_node(self, tree_name: str, node: dict[str, Any]) -> Optional[str]:     # new
           """``body_ref`` → ``<flat_concept_id>.md`` → ``<node_id>.md``; first hit wins."""
-      def sweep_unreferenced(self, tree_name: str, live_keys: set[str], *, max_age_s: int) -> int:  # new
-          """Delete blobs not in ``live_keys`` and legacy ``<node_id>.md`` files, both older than ``max_age_s``."""
-      def loader_for(self, tree_name: str, tree: Optional[dict[str, Any]] = None) -> Callable[[str], Optional[str]]:  # modifies :211
-          """With ``tree``: node_id → node → ``load_node``; without: legacy behaviour."""
+      def sweep_unreferenced(self, tree_name: str, tree: dict[str, Any], *, max_age_s: int) -> int:  # new
+          """Delete, when older than ``max_age_s``: blobs under ``bodies/`` that no node of ``tree``
+          references, and ``<node_id>.md`` files whose node in ``tree`` has a ``body_ref`` and whose
+          stem is not that node's flat concept id. Never touches OKF sidecars or non-node files."""
+      def load(self, tree_name: str, node_id: str) -> Optional[str]:                  # modifies :118
+          """Legacy file first; when absent, resolve ``node_id``/flat concept id through the live tree JSON."""
+      def has(self, tree_name: str, node_id: str) -> bool:                            # modifies :135 — same resolution
+      def loader_for(self, tree_name: str, tree: Optional[dict[str, Any]] = None) -> Callable[[str], Optional[str]]:  # modifies :212
+          """With ``tree``: node_id → node of that tree → ``load_node`` (pinned). Without: ``load`` (live resolution)."""
       def delete_tree(self, tree_name: str) -> int:                                   # modifies :151 — also removes bodies/ and embeddings/
       def save(self, tree_name: str, node_id: str, markdown: str) -> None:            # modifies :111 — atomic write; kept for OKF sidecars
   ```
@@ -841,7 +861,14 @@ Verified against: `8b73aa8c88`
   `test_import_folder_persists_once` (`test_folder_import.py:101`) encode the old mechanism
   and are replaced by the tests in §4, not deleted silently.
 - **Bookstore's separate `NodeContentStore`** (`library.py:244-247`) reads bodies by
-  `node_id`; every such read must go through `load_node` or it will miss `body_ref` bodies.
+  `node_id` (`:374`); it moves to `load_node` so a reindex never serves another node's body.
+- **Eleven other body readers** (listed in §2 "Readers that key bodies by `node_id`") rely on
+  the live-JSON resolution in `load`/`has`/`loader_for`. A deliberate consequence: they read
+  the live generation, as today, not a pinned one. Changing them is out of scope.
+- **`concept_id` collisions.** `derive_concept_id(title, parent_path)` is deterministic, so two
+  siblings with the same title share a flat id. Blob keys still differ by content hash, and
+  identical bodies share one immutable blob, which is harmless. The live-JSON resolution must map
+  `node_id` first and fall back to the flat id only when the node id is unknown.
 - **Sweep and the grace period.** A reader that holds a generation longer than
   `generation_grace_s` can lose its blobs; one hour matches the staging sweep and the
   longest request this code serves. The grace is configurable for operators who need more.
@@ -1011,3 +1038,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-06 | Jesus Lara (with Claude) | Initial draft from brainstorm revision 4 |
+| 0.2 | 2026-11-07 | Jesus Lara (with Claude) | Found at `/sdd-task`: eleven more body readers keyed by `node_id`. `load`/`has`/`loader_for(tree_name)` resolve through the live tree JSON so those callers stay untouched; `sweep_unreferenced` takes the tree and never removes OKF sidecars or non-node files. |
