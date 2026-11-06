@@ -14,7 +14,7 @@ import shlex
 import subprocess
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
 
@@ -78,6 +78,21 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     return parser
+
+
+def _default_base_ref(index_header: Mapping[str, object]) -> str:
+    """Return ``origin/<base_branch>`` from an index header.
+
+    Args:
+        index_header: The per-spec index header (may be empty).
+
+    Returns:
+        ``origin/<base_branch>``; a missing, null or blank ``base_branch`` falls back to ``origin/dev``.
+    """
+    base_branch = index_header.get("base_branch")
+    if isinstance(base_branch, str) and base_branch.strip():
+        return f"origin/{base_branch.strip()}"
+    return "origin/dev"
 
 
 def _resolve_index(args: argparse.Namespace, worktree: Path, kernel: ModuleType) -> tuple[dict, list[str]]:
@@ -375,7 +390,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)  # noqa: T201 - CLI output
         return 2
-    base_ref = args.base or f"origin/{index_header.get('base_branch', 'dev')}"
+    base_ref = args.base or _default_base_ref(index_header)
 
     declared: list[list[str]] = []
     for task_file in args.task_file:
@@ -410,11 +425,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.feature:
         import test_scope.green_cache as green_cache  # noqa: PLC0415 — path-dependent import
 
-        namespace = green_cache.cache_namespace(
-            feature_id=args.feature,
-            base_ref=base_ref,
-            contract_digest=contract.digest if contract else "none",
-        )
+        namespace = green_cache.namespace_for(feature_id=args.feature, base_ref=base_ref, contract=contract)
         if use_cache:
             plan = green_cache.filter_cached(worktree, plan, namespace=namespace, contract=contract)
 

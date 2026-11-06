@@ -865,10 +865,10 @@ class ValidationSupervisor:
         )
         if tier == "merge":
             namespace = await asyncio.to_thread(
-                green_cache.cache_namespace,
+                green_cache.namespace_for,
                 feature_id=feature_id,
                 base_ref=baseline_ref,
-                contract_digest=contract.digest if contract is not None else "",
+                contract=contract,
             )
             plan = await asyncio.to_thread(
                 green_cache.filter_cached,
