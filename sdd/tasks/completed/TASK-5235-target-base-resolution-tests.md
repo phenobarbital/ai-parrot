@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-820 — Close the FEAT-806 §4 Test Gaps in `test_worktree_sync.py`
 **Spec**: `sdd/specs/fixgroup-d188effba3ca.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -378,8 +378,18 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: ai-parrot-85 (agent:sdd-fix:b5e88ee1)
+**Date**: 2026-11-06
+**Notes**: Added `_as_primary` (rebinds `remove_worktree._ROOT` + cwd via monkeypatch) and the
+three resolution tests, all against real temp git repositories. `worktree_sync.py` untouched.
+46 passed, 2 skipped (the `test_native_policy_*` gates skip without `PARROT_TEST_REAL_LLM=1`,
+as designed); `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: one. The blueprint left the Git-top-level mismatch as a `FILL IN`
+("plant an independent repo"). Planting a nested repo inside the registered worktree does NOT
+produce a mismatch — `rev-parse --show-toplevel` run with cwd at the registered path still
+returns that path. The genuine mismatch used instead: register the worktree at
+`<outer>/foreign` where `outer` is an unrelated `git init` repo, then delete `foreign/.git`;
+`--show-toplevel` then resolves to `outer` while the registered path is `outer/foreign`.
+An earlier draft monkeypatched `worktree_sync._match` to fake this and was discarded — the
+task's AC forbids faking resolution.

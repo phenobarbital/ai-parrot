@@ -39,7 +39,7 @@
       "feature_id": "FEAT-820",
       "feature": "fixgroup-d188effba3ca",
       "spec": "sdd/specs/fixgroup-d188effba3ca.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -47,8 +47,9 @@
       "parallelism_notes": "First writer of tests/sdd_scripts/test_worktree_sync.py in this feature; creates the _as_primary helper and the remove_worktree import that TASK-5236 and TASK-5238 consume.",
       "assigned_to": null,
       "started_at": "2026-11-06T01:59:15.751107+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5235-target-base-resolution-tests.md"
+      "completed_at": "2026-11-06T02:00:56+00:00",
+      "file": "sdd/tasks/completed/TASK-5235-target-base-resolution-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5236",
