@@ -136,6 +136,7 @@ tests:
 - packages/ai-parrot/tests/flows/dev_loop/test_scope/test_runner_vitest.py
 - packages/ai-parrot/tests/flows/dev_loop/test_scope/test_guard.py
 - packages/ai-parrot/tests/flows/dev_loop/test_scope/test_stdlib_only.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_capability.py
 markers: none
 
 ### Test Data / Fixtures
