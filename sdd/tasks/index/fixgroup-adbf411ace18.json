@@ -58,7 +58,7 @@
       "feature_id": "FEAT-822",
       "feature": "fixgroup-adbf411ace18",
       "spec": "sdd/specs/fixgroup-adbf411ace18.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -67,7 +67,7 @@
       "parallel": true,
       "parallelism_notes": "Imports OverSizedBody, read_capped_json, oversized_json_response, oversized_a2ui_response and is_a2ui_content_type created by TASK-5239 (api/a2ui_wire.py); also modifies tests/unit/api/test_a2ui_body_limits.py which TASK-5239 creates.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T02:27:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5240-migrate-handler-call-sites.md"
     },
@@ -78,7 +78,7 @@
       "feature_id": "FEAT-822",
       "feature": "fixgroup-adbf411ace18",
       "spec": "sdd/specs/fixgroup-adbf411ace18.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -88,7 +88,7 @@
       "parallel": true,
       "parallelism_notes": "Reads A2UI_MAX_SCHEMA_DEPTH created by TASK-5239 (api/a2ui_wire.py); also modifies api/handlers.py and tests/unit/api/test_a2ui_body_limits.py, both of which TASK-5240 modifies, so it must follow TASK-5240 on the same files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T02:27:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5241-translate-form-input-validation.md"
     }
