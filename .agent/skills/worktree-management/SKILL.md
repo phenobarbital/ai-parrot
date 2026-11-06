@@ -74,7 +74,7 @@ the worktree root that `git worktree list` no longer knows about —
 `/remove-worktree` handles those; `prune` does not.
 
 If you still have worktrees under the legacy location, run the migration recipe
-`parrot doctor` prints (it moves them to the new worktree root and ends with
+`parrot self doctor` prints (it moves them to the new worktree root and ends with
 `git worktree repair`) and update your workflows.
 
 Untracked leftovers (logs or scratch files a tool left behind) are not uncommitted
