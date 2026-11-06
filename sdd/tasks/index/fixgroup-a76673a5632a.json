@@ -1,0 +1,52 @@
+{
+  "feature": "fixgroup-a76673a5632a",
+  "feature_id": "FEAT-835",
+  "spec": "sdd/specs/fixgroup-a76673a5632a.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-07T00:00:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "tests/sdd_scripts/test_ensure_worktree.py",
+          "tests/sdd_scripts/test_command_contracts.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:8140e171bd354da77ab47db7280606194ab7282b66e66589fe5da2c7ceea440d"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5294",
+      "slug": "parrot-self-doctor-command-name",
+      "title": "Correct `parrot doctor` -> `parrot self doctor` in all live FEAT-802 text",
+      "feature_id": "FEAT-835",
+      "feature": "fixgroup-a76673a5632a",
+      "spec": "sdd/specs/fixgroup-a76673a5632a.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Sole task of the feature; touches only its seven declared files and mutates no shared state outside them.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5294-parrot-self-doctor-command-name.md"
+    }
+  ]
+}
