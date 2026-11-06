@@ -24,31 +24,40 @@ import logging
 import secrets
 import shutil
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional, TypeVar
 
 from parrot.tools.toolkit import AbstractToolkit
 from .builder import build_page_index
 from .content_store import NodeContentStore
 from .embedding_store import NodeEmbeddingStore
+from .generation import StaleGenerationError, WriteTransaction, generation_of
 from .hybrid_search import HybridPageIndexSearch
 from .ingest import IngestedMarkdown, TwoStepIngester
 from .llm_adapter import PageIndexLLMAdapter
 from .md_builder import md_to_tree
 from .retriever import PageIndexRetriever
+from .locks import lock_path, tree_lock
 from .store import JSONTreeStore
 from .tree_ops import (
     delete_node as _delete_node,
     make_folder_node,
     splice_subtree,
 )
-from .utils import find_node_by_id
+from .utils import find_node_by_id, structure_to_list
+from parrot.knowledge.okf.utils import flatten_concept_id_for_filename
+from parrot.knowledge.pageindex.okf.projection import _strip_frontmatter
 
 logger = logging.getLogger("parrot.knowledge.pageindex.toolkit")
 
 _MAX_TREES_HARD_CAP = 10
 REPLACED_MARKER = "--replaced-"
 _REPLACED_MARKER = REPLACED_MARKER  # backwards-compatible alias
+T = TypeVar("T")
+_OPEN_TXNS: ContextVar[Optional[dict[tuple[int, str], WriteTransaction]]] = ContextVar(
+    "pageindex_open_txns", default=None
+)
 
 
 class PageIndexToolkit(AbstractToolkit):
@@ -104,10 +113,15 @@ class PageIndexToolkit(AbstractToolkit):
         embedding_backend: Optional[str] = None,
         use_vec_rank: bool = False,
         use_embedding_walk: bool = False,
+        generation_grace_s: int = 3600,
+        lock_timeout_s: float = 30.0,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
         self._adapter = adapter
+        self._storage_dir = Path(storage_dir)
+        self._generation_grace_s = generation_grace_s
+        self._lock_timeout_s = lock_timeout_s
         self._light_adapter: Optional[PageIndexLLMAdapter] = (
             PageIndexLLMAdapter(client=adapter.client, model=lightweight_model) if lightweight_model else None
         )
@@ -173,6 +187,97 @@ class PageIndexToolkit(AbstractToolkit):
 
     # ---- internal helpers ----------------------------------------------
 
+    @asynccontextmanager
+    async def _write(self, tree_name: str) -> AsyncIterator[WriteTransaction]:
+        """Open (or join) the copy-on-write transaction for ``tree_name``; publish on clean outermost exit."""
+        open_txns = _OPEN_TXNS.get() or {}
+        key = (id(self), tree_name)
+        if key in open_txns:
+            yield open_txns[key]
+            return
+        base = self._load_tree(tree_name)
+        txn = WriteTransaction(
+            tree_name=tree_name,
+            base_tree=base,
+            base_signature=self._tree_sigs.get(tree_name),
+            store=self._store,
+            content_store=self._content_store,
+            storage_dir=self._storage_dir,
+            lock_timeout_s=self._lock_timeout_s,
+            grace_s=self._generation_grace_s,
+            projector=self._project_okf_sidecars_for,
+        )
+        if generation_of(base) is None:
+            self._migrate_legacy_bodies(tree_name, txn)
+        token = _OPEN_TXNS.set({**open_txns, key: txn})
+        try:
+            yield txn
+        finally:
+            _OPEN_TXNS.reset(token)
+        await txn.publish()
+        self._after_publish(tree_name, txn)
+
+    def _after_publish(self, tree_name: str, txn: WriteTransaction) -> None:
+        """Swap in-process state to the generation ``txn`` just published (spec §2 step 7)."""
+        generation = generation_of(txn.tree)
+        if generation is None:
+            raise RuntimeError("published tree is missing generation metadata")
+        self._trees[tree_name] = txn.tree
+        self._tree_sigs[tree_name] = txn.published_signature
+        self._search.pop(tree_name, None)
+        self._content_store._cache_evict_tree(tree_name)
+        self._okf_toolkits.pop(tree_name, None)
+        if self._embedding_store is not None:
+            keep = {generation.id}
+            if txn.base_generation is not None:
+                keep.add(txn.base_generation.id)
+            self._embedding_store.prune_tree_matrices(tree_name, keep=keep)
+
+    async def _mutate(
+        self,
+        tree_name: str,
+        apply: Callable[[WriteTransaction], Awaitable[T]],
+        *,
+        attempts: int = 3,
+    ) -> T:
+        """Run ``apply`` in a transaction; retry on StaleGenerationError when not joined."""
+        key = (id(self), tree_name)
+        if key in (_OPEN_TXNS.get() or {}):
+            async with self._write(tree_name) as txn:
+                return await apply(txn)
+
+        for attempt in range(max(1, attempts)):
+            try:
+                async with self._write(tree_name) as txn:
+                    result = await apply(txn)
+                return result
+            except StaleGenerationError:
+                self._trees.pop(tree_name, None)
+                self._tree_sigs.pop(tree_name, None)
+                self._search.pop(tree_name, None)
+                self._content_store._cache_evict_tree(tree_name)
+                self._okf_toolkits.pop(tree_name, None)
+                if attempt + 1 >= max(1, attempts):
+                    raise
+        raise RuntimeError("unreachable")
+
+    def _migrate_legacy_bodies(self, tree_name: str, txn: WriteTransaction) -> None:
+        """Stage every legacy body of a pre-FEAT-831 tree so its first publish assigns ``body_ref``."""
+        for node in structure_to_list(txn.tree.get("structure", [])):
+            if node.get("body_ref"):
+                continue
+            node_id = node.get("node_id")
+            body = self._content_store.load(tree_name, node_id) if isinstance(node_id, str) else None
+            if body is None:
+                concept_id = node.get("concept_id")
+                if isinstance(concept_id, str) and concept_id:
+                    flat_id = flatten_concept_id_for_filename(concept_id)
+                    flat_body = self._content_store.load(tree_name, flat_id)
+                    if flat_body is not None:
+                        body = _strip_frontmatter(flat_body)
+            if body is not None:
+                txn.set_body(node, body)
+
     def _ingester(self) -> TwoStepIngester:
         return TwoStepIngester(
             adapter=self._adapter,
@@ -218,18 +323,21 @@ class PageIndexToolkit(AbstractToolkit):
     def _search_for(self, tree_name: str) -> HybridPageIndexSearch:
         tree = self._load_tree(tree_name)
         engine = self._search.get(tree_name)
-        if engine is None:
+        generation_id = (tree.get("generation") or {}).get("id", 0)
+        if engine is None or engine.generation_id != generation_id:
             engine = HybridPageIndexSearch(
                 tree=tree,
                 adapter=self._adapter,
                 reranker=self._reranker,
                 model=self._model,
                 default_bm25_k=self._default_bm25_k,
-                content_loader=self._content_store.loader_for(tree_name),
+                content_loader=self._content_store.loader_for(tree_name, tree),
                 embedding_store=self._embedding_store,
                 embed_fn=self._embed_fn,
                 use_vec_rank=self._use_vec_rank,
                 use_embedding_walk=self._use_embedding_walk,
+                tree_name=tree_name,
+                generation_id=generation_id,
             )
             self._search[tree_name] = engine
         return engine
@@ -249,9 +357,12 @@ class PageIndexToolkit(AbstractToolkit):
         # OKF projection (FEAT-238): regenerate sidecars when the tree has
         # OKF-enriched nodes.  The check is cheap (first node in structure).
         # project_sidecars() is idempotent and a no-op for non-enriched trees.
-        self._project_okf_sidecars(tree_name, tree)
+        try:
+            self._project_okf_sidecars(tree_name, tree)
+        except Exception:
+            logger.exception("OKF sidecar projection failed for tree %r — skipping", tree_name)
 
-    def _project_okf_sidecars(self, tree_name: str, tree: dict[str, Any]) -> None:
+    def _project_okf_sidecars(self, tree_name: str, tree: dict[str, Any]) -> bool:
         """Trigger OKF sidecar projection if the tree is OKF-enriched.
 
         A tree is considered OKF-enriched when at least one node carries
@@ -261,33 +372,28 @@ class PageIndexToolkit(AbstractToolkit):
         ``splice_subtree``) but no ``type`` are NOT projected so that
         pre-migration trees keep their plain ``node_id.md`` sidecar layout.
 
-        This is a best-effort call — errors are logged but never propagated
-        so projection failures cannot break ingest or update operations.
-
         Args:
             tree_name: PageIndex tree name.
             tree: The current in-memory tree dict.
         """
         structure = tree.get("structure")
         if not structure:
-            return
-        try:
-            from parrot.knowledge.pageindex.utils import structure_to_list
-        except ImportError:
-            return
+            return False
         nodes = structure_to_list(structure)
         # Require at least one node with BOTH concept_id AND type to trigger
         # projection.  This preserves backward compatibility for trees that
         # received auto-assigned concept_ids from splice_subtree but were not
         # run through okf_migrate / T3 classification.
         if not any(n.get("concept_id") and n.get("type") for n in nodes):
-            return
-        try:
-            from parrot.knowledge.pageindex.okf.projection import project_sidecars
+            return False
+        from parrot.knowledge.pageindex.okf.projection import project_sidecars
 
-            project_sidecars(tree, tree_name, self._content_store)
-        except Exception:
-            logger.exception("OKF sidecar projection failed for tree %r — skipping", tree_name)
+        project_sidecars(tree, tree_name, self._content_store)
+        return True
+
+    def _project_okf_sidecars_for(self, tree: dict[str, Any], tree_name: str) -> bool:
+        """Adapt the transaction projector contract to the toolkit helper."""
+        return self._project_okf_sidecars(tree_name, tree)
 
     async def _run_t3_classification(
         self,
@@ -422,18 +528,34 @@ class PageIndexToolkit(AbstractToolkit):
         # same name would silently feed wrong sidecars into retrieval.
         self._content_store.delete_tree(tree_name)
         tree = {"doc_name": doc_name or tree_name, "structure": []}
-        self._trees[tree_name] = tree
-        self._store.save(tree_name, tree)
-        self._remember_tree_signature(tree_name)
+        txn = WriteTransaction(
+            tree_name=tree_name,
+            base_tree=tree,
+            base_signature=None,
+            store=self._store,
+            content_store=self._content_store,
+            storage_dir=self._storage_dir,
+            lock_timeout_s=self._lock_timeout_s,
+            grace_s=self._generation_grace_s,
+            projector=self._project_okf_sidecars_for,
+        )
+        await txn.publish()
+        self._after_publish(tree_name, txn)
         return {"tree_name": tree_name, "doc_name": tree["doc_name"]}
 
     async def delete_tree(self, tree_name: str) -> dict[str, Any]:
         """Delete a tree JSON and every sidecar markdown file for it."""
-        tree_removed = self._store.delete(tree_name)
-        sidecars_removed = self._content_store.delete_tree(tree_name)
+        async with tree_lock(self._storage_dir, tree_name, timeout=self._lock_timeout_s):
+            tree_removed = self._store.delete(tree_name)
+            sidecars_removed = self._content_store.delete_tree(tree_name)
+            if self._embedding_store is not None:
+                self._embedding_store.invalidate_tree(tree_name)
         self._trees.pop(tree_name, None)
         self._search.pop(tree_name, None)
         self._tree_sigs.pop(tree_name, None)
+        self._content_store._cache_evict_tree(tree_name)
+        self._okf_toolkits.pop(tree_name, None)
+        lock_path(self._storage_dir, tree_name).unlink(missing_ok=True)
         return {
             "tree_name": tree_name,
             "tree_removed": tree_removed,
@@ -551,6 +673,34 @@ class PageIndexToolkit(AbstractToolkit):
         """Return the full tree dict for ``tree_name``."""
         return self._load_tree(tree_name)
 
+    async def get_generation(self, tree_name: str) -> dict[str, Any]:
+        """Return the live generation: tree name, id, publish time, and parent generation."""
+        generation = generation_of(self._load_tree(tree_name))
+        return {
+            "tree_name": tree_name,
+            "id": generation.id if generation else None,
+            "published_at": generation.published_at if generation else None,
+            "parent": generation.parent if generation else None,
+        }
+
+    async def vacuum_tree(self, tree_name: str, max_age_s: Optional[int] = None) -> dict[str, Any]:
+        """Remove old files unreferenced by the live generation of a tree.
+
+        Only files older than the generation grace period are removed unless
+        ``max_age_s`` supplies a different age.
+        """
+        async with tree_lock(self._storage_dir, tree_name, timeout=self._lock_timeout_s):
+            tree = self._store.load(tree_name)
+            removed = self._content_store.sweep_unreferenced(
+                tree_name,
+                tree,
+                max_age_s=self._generation_grace_s if max_age_s is None else max_age_s,
+            )
+            if self._embedding_store is not None:
+                generation = generation_of(tree)
+                self._embedding_store.prune_tree_matrices(tree_name, keep={generation.id} if generation else set())
+        return {"tree_name": tree_name, "removed": removed}
+
     async def search(
         self,
         tree_name: str,
@@ -648,7 +798,7 @@ class PageIndexToolkit(AbstractToolkit):
             if not node:
                 continue
             title = node.get("title") or "Section"
-            body = self._content_store.load(tree_name, cand["node_id"])
+            body = self._content_store.load_node(tree_name, node)
             if not body:
                 body = node.get("text") or node.get("summary") or node.get("prefix_summary") or ""
             if body:
@@ -739,7 +889,7 @@ class PageIndexToolkit(AbstractToolkit):
                 if not node:
                     continue
                 title = node.get("title") or "Section"
-                body = self._content_store.load(tree_name, node_id)
+                body = self._content_store.load_node(tree_name, node)
                 if not body:
                     body = node.get("summary") or node.get("prefix_summary") or ""
                 if body:
