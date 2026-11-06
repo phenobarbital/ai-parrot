@@ -227,9 +227,7 @@ def _normalize_pytest(tests: Sequence[object], markers: Sequence[object]) -> Run
         ):
             raise ValueError(f"unsafe test contract operand: {operand!r}")
         if not path.endswith(".py"):
-            raise ValueError(
-                f"test contract operand must be a .py file or node, not a directory or suite: {operand!r}"
-            )
+            raise ValueError(f"test contract operand must be a .py file or node, not a directory or suite: {operand!r}")
         if operand not in seen_tests:
             normalized_tests.append(operand)
             seen_tests.add(operand)
