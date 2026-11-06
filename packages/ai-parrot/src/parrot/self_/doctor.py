@@ -218,6 +218,16 @@ def _sdd_base_branch(root: Path) -> tuple[str, DoctorCheck | None]:
                                   fix="fix sdd/config.json (parrot sdd install --dry-run shows the seed shape)")
 
 
+#: Mount flags for the ``bwrap`` userns probes below.  ``--proc /proc`` is **required**:
+#: with only ``--ro-bind / /`` the sandbox inherits the host ``/proc`` as a read-only
+#: bind, so a nested ``bwrap`` cannot write its ``uid_map`` and dies with
+#: "setting up uid map: Read-only file system" even on a correctly configured host —
+#: a false negative that reads like a missing AppArmor ``userns`` permission.  The real
+#: wrapper (:mod:`parrot.sdd.scripts.worktree_environment`) passes ``--proc`` too, so the
+#: probe must mirror it or it does not test what the sandbox actually does.
+_BWRAP_PROBE_FLAGS: tuple[str, ...] = ("--ro-bind", "/", "/", "--proc", "/proc", "--dev", "/dev")
+
+
 def check_bwrap_sandbox() -> list[DoctorCheck]:
     """Linux-only: verify that Bubblewrap can create nested user namespaces.
 
@@ -241,7 +251,7 @@ def check_bwrap_sandbox() -> list[DoctorCheck]:
     # Single-level bwrap
     try:
         single = subprocess.run(
-            [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--", "echo", "ok"],
+            [bwrap, *_BWRAP_PROBE_FLAGS, "--", "echo", "ok"],
             capture_output=True, text=True, check=False, timeout=10)
     except (OSError, subprocess.TimeoutExpired) as exc:
         checks.append(DoctorCheck(
@@ -263,8 +273,8 @@ def check_bwrap_sandbox() -> list[DoctorCheck]:
     # Nested bwrap (what Claude Code native sandbox + SDD sandbox requires)
     try:
         nested = subprocess.run(
-            [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--",
-             bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--", "echo", "ok"],
+            [bwrap, *_BWRAP_PROBE_FLAGS, "--",
+             bwrap, *_BWRAP_PROBE_FLAGS, "--", "echo", "ok"],
             capture_output=True, text=True, check=False, timeout=10)
     except (OSError, subprocess.TimeoutExpired) as exc:
         checks.append(DoctorCheck(
