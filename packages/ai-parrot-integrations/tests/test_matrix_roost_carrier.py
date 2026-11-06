@@ -65,6 +65,25 @@ def test_round_trip_keeps_fields():
     assert out.envelope.token_budget == 7 and out.envelope.idempotency_key == "k"
 
 
+def test_round_trip_keeps_hops():
+    """FEAT-827: the chain depth crosses the Matrix room, so the receiver's hop limit can trip."""
+    content = MatrixCarrier.to_content(_msg(hops=3), body="hello").model_dump(mode="json")
+    assert content["hops"] == 3
+    assert MatrixCarrier.from_content(content, event_id="$e").hops == 3
+
+
+def test_legacy_content_without_hops_defaults_to_zero():
+    content = MatrixCarrier.to_content(_msg(hops=3), body="hello").model_dump(mode="json")
+    del content["hops"]
+    assert MatrixCarrier.from_content(content, event_id="$e").hops == 0
+
+
+def test_negative_hops_rejected():
+    content = MatrixCarrier.to_content(_msg(), body="hello").model_dump(mode="json")
+    with pytest.raises(ValidationError):
+        RoostEventContent.model_validate({**content, "hops": -1})
+
+
 def test_unencodable_content_raises():
     with pytest.raises(ValueError):
         MatrixCarrier.to_content(_msg(content=object()), body="b")

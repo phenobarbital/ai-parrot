@@ -1,5 +1,6 @@
 """Tests for AgentSwarmToolkit.ask_agent routed over Roost — FEAT-747 TASK-4728."""
 
+import re
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -155,3 +156,124 @@ async def test_toolkit_tool_path_binds_the_tool_manager_context():
     await tool.execute(agent="peer", question="q", _permission_context=pctx)
     assert seen == [pctx]
     assert _pctx_var.get() is None
+
+
+# --- FEAT-825: conversation id carriage, hop / expected_schema forwarding -----------------------
+
+
+@pytest.mark.asyncio
+async def test_success_metadata_carries_the_conversation_id():
+    ep = MagicMock()
+    ep.query = AsyncMock(return_value="42")
+    tk, _ = _toolkit(ep)
+    out = await tk.ask_agent("peer", "q")
+    sent = ep.query.await_args.kwargs["conversation_id"]
+    assert re.fullmatch(r"[0-9a-f]{32}", sent)
+    assert out["metadata"] == {"via": "roost", "status": "ok", "conversation_id": sent}
+
+
+@pytest.mark.asyncio
+async def test_each_call_gets_its_own_conversation_id():
+    ep = MagicMock()
+    ep.query = AsyncMock(return_value="42")
+    tk, _ = _toolkit(ep)
+    first = await tk.ask_agent("peer", "q1")
+    second = await tk.ask_agent("peer", "q2")
+    assert first["metadata"]["conversation_id"] != second["metadata"]["conversation_id"]
+
+
+@pytest.mark.asyncio
+async def test_failure_carries_the_conversation_id():
+    ep = MagicMock()
+    ep.query = AsyncMock(side_effect=RoostFailure(FailureInfo(code=FailureCode.TIMEOUT, detail="query timed out")))
+    tk, _ = _toolkit(ep)
+    out = await tk.ask_agent("peer", "q")
+    sent = ep.query.await_args.kwargs["conversation_id"]
+    assert out == {"status": "timeout", "detail": "query timed out", "conversation_id": sent}
+
+
+@pytest.mark.asyncio
+async def test_forwards_hops_and_expected_schema():
+    from parrot.integrations.matrix.crew import context as ctx
+
+    ep = MagicMock()
+    ep.query = AsyncMock(return_value={"n": 1})
+    tk, _ = _toolkit(ep)
+    schema = {"type": "object", "required": ["n"]}
+    token = ctx.current_hops.set(3)
+    try:
+        await tk.ask_agent("peer", "q", expected_schema=schema, timeout=7)
+    finally:
+        ctx.current_hops.reset(token)
+    kwargs = ep.query.await_args.kwargs
+    assert kwargs["hops"] == 3
+    assert kwargs["expected_schema"] is schema
+    assert kwargs["timeout"] == 7
+
+
+def _real_endpoint(name, carrier, *, config, wake=None):
+    """A real ``RoostEndpoint`` over the in-process carrier (same wiring as the core Roost tests)."""
+    from parrot.roost.endpoint import RoostEndpoint
+    from parrot.roost.gating import GatingDispatcher, HandlerRegistry
+    from parrot.roost.grant import GrantPolicy
+    from parrot.roost.performatives import CarrierKind
+    from parrot.roost.protocols import ProtocolEngine
+
+    engine = ProtocolEngine()
+    dispatcher = GatingDispatcher(
+        self_name=name, config=config, engine=engine, handlers=HandlerRegistry(), grant=GrantPolicy()
+    )
+    tool_manager = MagicMock()
+    tool_manager.execute_tool = AsyncMock()
+    return RoostEndpoint(
+        agent_name=name,
+        config=config,
+        engine=engine,
+        dispatcher=dispatcher,
+        carriers={CarrierKind.IN_PROCESS: carrier},
+        tool_manager=tool_manager,
+        wake=wake,
+        permission_context=object(),
+        sweep_interval=0,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hops,expected_status", [(0, "ok"), (8, "hop_limit")])
+async def test_hop_budget_is_enforced_over_real_endpoints(hops, expected_status):
+    """``ctx.current_hops`` reaches the wire: at the engine's hop limit (8) the ask fails with ``hop_limit``."""
+    from parrot.integrations.matrix.crew import context as ctx
+    from parrot.roost.carriers.inprocess import InProcessCarrier
+    from parrot.roost.directory import InterAgentGrant, RoostAgentConfig
+    from parrot.roost.performatives import Performative
+
+    carrier = InProcessCarrier()
+    served = []
+
+    async def wake(msg, dispatch):
+        served.append(msg)
+        return msg.reply(Performative.INFORM, content="pong")
+
+    peer = _real_endpoint("peer", carrier, config=RoostAgentConfig(capabilities=["s.x"]), wake=wake)
+    analyst = _real_endpoint("analyst", carrier, config=RoostAgentConfig(grant=InterAgentGrant(scopes=["*"])))
+    await peer.start()
+    await analyst.start()
+    tk, tunnel = _toolkit(analyst)
+    token = ctx.current_hops.set(hops)
+    try:
+        out = await tk.ask_agent("peer", "ping", timeout=2)
+    finally:
+        ctx.current_hops.reset(token)
+        await analyst.stop()
+        await peer.stop()
+
+    tunnel.ask.assert_not_called()
+    if expected_status == "ok":
+        assert out["answer"] == "pong"
+        assert out["metadata"]["status"] == "ok"
+        assert [msg.conversation_id for msg in served] == [out["metadata"]["conversation_id"]]
+        assert [msg.hops for msg in served] == [1]
+    else:
+        assert out["status"] == "hop_limit"
+        assert served == []
+        assert analyst.engine.state(out["conversation_id"]) is not None
