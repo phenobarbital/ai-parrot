@@ -1,0 +1,93 @@
+{
+  "feature": "scripts-remove-worktree-fixes",
+  "feature_id": "FEAT-823",
+  "spec": "sdd/specs/scripts-remove-worktree-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-06T02:39:11.626904+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py",
+          "packages/ai-parrot/tests/sdd/test_no_repo_script_refs.py",
+          "packages/ai-parrot/tests/sdd/test_installer.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:f1c38935fcca5415a04e3755339623de86fb4764ee024ef67f0360c8f028f807"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5242",
+      "slug": "stale-work-loss-gates",
+      "title": "Close the three --stale work-loss holes in remove_worktree",
+      "feature_id": "FEAT-823",
+      "feature": "scripts-remove-worktree-fixes",
+      "spec": "sdd/specs/scripts-remove-worktree-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependencies; sole writer of packages/ai-parrot/src/parrot/sdd/scripts/remove_worktree.py in this feature",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5242-stale-work-loss-gates.md"
+    },
+    {
+      "id": "TASK-5243",
+      "slug": "stale-regression-tests",
+      "title": "Regression tests for the three --stale work-loss defects",
+      "feature_id": "FEAT-823",
+      "feature": "scripts-remove-worktree-fixes",
+      "spec": "sdd/specs/scripts-remove-worktree-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5242"
+      ],
+      "parallel": true,
+      "parallelism_notes": "tests Worktree.nested_registered and _is_checkout created by TASK-5242 (packages/ai-parrot/src/parrot/sdd/scripts/remove_worktree.py); writes only packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5243-stale-regression-tests.md"
+    },
+    {
+      "id": "TASK-5244",
+      "slug": "document-orphan-taxonomy",
+      "title": "Document the orphan taxonomy and regenerate the shipped assets",
+      "feature_id": "FEAT-823",
+      "feature": "scripts-remove-worktree-fixes",
+      "spec": "sdd/specs/scripts-remove-worktree-fixes.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5242"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents the refusal text implemented by TASK-5242 (packages/ai-parrot/src/parrot/sdd/scripts/remove_worktree.py); writes only the three doc sources plus the generated _assets tree",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5244-document-orphan-taxonomy.md"
+    }
+  ]
+}
