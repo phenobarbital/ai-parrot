@@ -86,25 +86,6 @@ async def test_post_connect_permission_denial_is_403() -> None:
 
 
 @pytest.mark.asyncio
-async def test_confirm_enable_removed_enable_route_noop() -> None:
-    """POST /enable returns status and performs no enablement write."""
-    request = handler_request("POST", "enable")
-    descriptor = IntegrationDescriptor(provider="jira", display_name="Jira", status="connected")
-    with (
-        patch("navigator_auth.decorators.get_session", AsyncMock(return_value=None)),
-        patch("parrot.handlers.integrations.IntegrationsService") as service_class,
-    ):
-        service_class.return_value.status = AsyncMock(return_value=descriptor)
-        from parrot.handlers.integrations import IntegrationsHandler
-
-        response = await IntegrationsHandler(request)._post_enable()
-
-    assert response.status == 200
-    service_class.return_value.status.assert_awaited_once_with("42", "jira", request=request)
-    assert json.loads(response.body)["integration"]["status"] == "connected"
-
-
-@pytest.mark.asyncio
 async def test_delete_uses_principal_service_signature() -> None:
     """DELETE forwards the authenticated request for PBAC evaluation."""
     request = handler_request("DELETE", "")

@@ -12,7 +12,6 @@ from parrot.auth.oauth2.models import (
     ConnectInitRequest,
     ConnectInitResponse,
     DisconnectResponse,
-    EnableResponse,
     IntegrationDescriptor,
     UsersIntegrationRow,
 )
@@ -144,19 +143,6 @@ class TestDisconnectResponse:
         data = resp.model_dump()
         assert data["provider"] == "jira"
         assert data["disconnected"] is True
-
-
-class TestEnableResponse:
-    """Tests for EnableResponse."""
-
-    def test_wraps_descriptor(self) -> None:
-        desc = IntegrationDescriptor(
-            provider="jira",
-            display_name="Jira",
-            connected=True,
-        )
-        resp = EnableResponse(integration=desc)
-        assert resp.integration.provider == "jira"
 
 
 class TestUsersIntegrationRow:
