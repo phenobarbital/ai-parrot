@@ -47,7 +47,10 @@ async def pg_pool() -> AsyncIterator[asyncpg.Pool]:
     if not PG_DSN:
         pytest.skip("needs live Postgres (ONTOLOGY_PG_DSN or parrot.conf.default_dsn)")
 
-    pool = await asyncpg.create_pool(PG_DSN, min_size=1, max_size=4)
+    try:
+        pool = await asyncpg.create_pool(PG_DSN, min_size=1, max_size=4)
+    except (OSError, asyncpg.PostgresError) as exc:
+        pytest.skip(f"needs live Postgres (could not connect: {exc})")
     try:
         yield pool
     finally:

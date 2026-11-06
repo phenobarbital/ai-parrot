@@ -40,13 +40,12 @@ ex:MunicipalAuthority a owl:Class ;
 ex:Contract a owl:Class ;
     rdfs:subClassOf ex:LegalEntity ;
     skos:prefLabel "Contrato"@es ;
-    skos:altLabel "Acuerdo"@es .
-
-ex:LegacyContract a owl:Class ;
-    skos:prefLabel "Contrato histórico"@es ;
+    skos:altLabel "Acuerdo"@es ;
+    # v2 change retained: this v1 class is deprecated and replaced by a new class.
     owl:deprecated true ;
     dcterms:isReplacedBy ex:ModernContract .
 
+# v2 change retained: replacement class added for deprecated ex:Contract.
 ex:ModernContract a owl:Class ;
     rdfs:subClassOf ex:Contract ;
     skos:prefLabel "Contrato moderno"@es .
@@ -63,9 +62,14 @@ ex:signatureDate a owl:DatatypeProperty ;
     rdfs:domain ex:Contract ;
     rdfs:range xsd:date .
 
+# v2 change retained: relation predicate and relation to the contract individual added.
+ex:governedBy a owl:ObjectProperty ;
+    rdfs:domain ex:Contract ;
+    rdfs:range ex:PublicAuthority .
+
 ex:contract-2026-001 a owl:NamedIndividual, ex:Contract ;
     ex:hasParty ex:MunicipalAuthority ;
-    ex:isPartyTo ex:MunicipalAuthority ;
+    ex:governedBy ex:PublicAuthority ;
     ex:signatureDate "2026-01-01"^^xsd:date ;
     rdfs:comment "Contrato de servicios municipales de ejemplo."@es ;
     dcterms:created "2026-01-01"^^xsd:date .
