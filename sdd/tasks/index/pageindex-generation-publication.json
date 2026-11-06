@@ -51,14 +51,14 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: creates the new module locks.py and its own test file.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:32:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5276-tree-lock.md"
     },
@@ -69,14 +69,14 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: touches only store.py and test_store.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:32:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5277-json-store-durable-save.md"
     },
@@ -87,14 +87,14 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: creates generation.py (extended later by TASK-5282) and test_generation.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:32:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5278-generation-primitives.md"
     },
@@ -105,14 +105,14 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: generation.py (TASK-5278) is mentioned only to FORBID importing it (import cycle); the body key format is validated locally.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:32:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5279-content-store-bodies.md"
     },
@@ -123,14 +123,14 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: the engine receives a content_loader callable; no symbol from another task is imported.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:32:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5280-per-generation-search.md"
     },
@@ -141,7 +141,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -150,7 +150,7 @@
       "parallel": true,
       "parallelism_notes": "Needs NodeContentStore.load_node from TASK-5279 (content_store.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:32:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5281-strict-okf-projection.md"
     },
@@ -161,7 +161,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -173,7 +173,7 @@
       "parallel": true,
       "parallelism_notes": "Imports tree_lock/TreeLockTimeout from TASK-5276 (locks.py); JSONTreeStore.signature/read_generation from TASK-5277 (store.py); extends generation.py and test_generation.py created by TASK-5278; NodeContentStore.save_body/sweep_unreferenced from TASK-5279.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:32:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5282-write-transaction.md"
     },
@@ -184,7 +184,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -195,7 +195,7 @@
       "parallel": true,
       "parallelism_notes": "WriteTransaction from TASK-5282 (generation.py); HybridPageIndexSearch tree_name/generation_id and NodeEmbeddingStore.prune_tree_matrices from TASK-5280; load_node-based strict projection from TASK-5281.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:32:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5283-toolkit-write-core.md"
     },
@@ -206,7 +206,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -215,7 +215,7 @@
       "parallel": true,
       "parallelism_notes": "Uses _mutate/_write/_OPEN_TXNS from TASK-5283; serialized on toolkit.py and test_toolkit.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:32:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5284-port-import-mutators.md"
     },
@@ -226,7 +226,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -235,7 +235,7 @@
       "parallel": true,
       "parallelism_notes": "Removes _persist/_batch only after TASK-5284 ported their import-tool users; serialized on toolkit.py, test_toolkit.py and test_tree_freshness.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:32:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5285-port-node-mutators.md"
     },
@@ -246,7 +246,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -255,7 +255,7 @@
       "parallel": true,
       "parallelism_notes": "Guard uses _OPEN_TXNS once TASK-5285 removed _batch_depth; serialized on toolkit.py and test_toolkit.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:32:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5286-rename-tree-publication.md"
     },
@@ -266,7 +266,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -275,7 +275,7 @@
       "parallel": true,
       "parallelism_notes": "Needs rename_tree without backup from TASK-5286 and vacuum_tree from TASK-5283 (via TASK-5286).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:32:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5287-bookstore-integration.md"
     },
@@ -286,7 +286,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -295,7 +295,7 @@
       "parallel": true,
       "parallelism_notes": "Exercises the Bookstore grace/sweep from TASK-5287 on top of the full toolkit write path.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:32:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5288-generation-integration-tests.md"
     },
@@ -306,7 +306,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -315,9 +315,10 @@
       "parallel": true,
       "parallelism_notes": "Documents get_generation/vacuum_tree (TASK-5283), rename semantics (TASK-5286) and the Bookstore grace period (TASK-5287).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:32:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5289-documentation.md"
     }
   ]
 }
+
