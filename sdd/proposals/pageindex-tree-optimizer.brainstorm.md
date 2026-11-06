@@ -7,7 +7,7 @@ base_branch: dev
 # projects: parts of the codebase this doc concerns.
 projects: [ai-parrot, ai-parrot-tools]
 # tags: free-form kebab-case keywords for organizing specs.
-tags: [pageindex, tree-optimizer, pdf-structure, agentic-retrieval, citations, prompt-injection]
+tags: [pageindex, tree-optimizer, pdf-structure, agentic-retrieval, citations, prompt-injection, mcp]
 ---
 
 # Brainstorm: PageIndex Tree Optimizer, Layout Structure Builder, Agentic Retrieval and Citations
@@ -15,13 +15,14 @@ tags: [pageindex, tree-optimizer, pdf-structure, agentic-retrieval, citations, p
 **Date**: 2026-11-06
 **Author**: Jesus Lara (with Claude)
 **Status**: exploration
-**Revision**: 2 (see *Revision History*)
+**Revision**: 3 (see *Revision History*)
 **Recommended Option**: B
 
 > Umbrella brainstorm. The user chose one document for the whole index-and-retrieval
-> upgrade; the recommendation splits it into four specs (see *Capabilities*).
-> Code references were verified at `dev` @ `20480877f9` and the revision 2 additions at
-> `159b1993dd`; nothing under `knowledge/pageindex/` changed between the two. The
+> upgrade; the recommendation splits it into five specs (see *Capabilities*).
+> Code references were verified at `dev` @ `20480877f9`, the revision 2 additions at
+> `159b1993dd` and the revision 3 additions at `c8bd9cfa2d`; nothing under
+> `knowledge/pageindex/` changed between them. The
 > upstream comparison is against `VectifyAI/PageIndex` @ `2ac8694` (2026-11-05, v0.2.10,
 > MIT), read only.
 
@@ -80,6 +81,12 @@ Affected: agents that use `PageIndexToolkit`, Bookstore (built on it), the
 - Hardening reuses `parrot.security.prompt_injection` and the guardrail scoring engine,
   not upstream's regex list.
 - Existing trees must keep working unchanged until someone optimizes them.
+- Every write to a tree publishes a generation (revision 3): edits, imports and
+  optimize alike. Publication extends the staging-tree swap that already exists; no
+  separate manifest.
+- PageIndex is also served as a local stdio MCP server for Claude Code, Codex and
+  Antigravity (`agy`), through the existing `parrot mcp-local` and `parrot toolkits`
+  machinery rather than a hand-built server.
 
 ---
 
@@ -148,8 +155,9 @@ Every other piece is then defined on segments instead of pages or node ids:
 - Segment boundaries come from `pymupdf4llm` markdown, so its paragraph and table
   detection quality becomes ours.
 - Scoring every segment for injection costs CPU on large books.
-- Revision 2 adds a publication layer on top of the store (generations, a writer lock,
-  crash recovery). Its scope is still open and it is the largest unknown in the effort.
+- Revisions 2 and 3 add a publication layer on top of the store (generations, a
+  cross-process writer lock, crash recovery) that every write operation goes through.
+  It makes the first spec the largest of the five.
 
 📊 **Effort:** High
 
@@ -259,6 +267,14 @@ and `end` are filled in by the validator.
 
 **Bookstore and multistoresearch** inherit the read tools and citations.
 
+**Local MCP server.** `parrot toolkits` installs a `pageindex` entry for Claude Code,
+Codex and Antigravity, and `parrot mcp-local pageindex` serves it over stdio. The
+default surface is the read side: search, outline, page and segment readers, each
+result carrying citable addresses. In these hosts the host model does the stage 2
+navigation itself, so the internal agentic loop is optional there. Write tools
+(import, edit, optimize) are opt-in. With no LLM configured the server still serves
+the deterministic tools.
+
 ### Internal Behavior
 
 Two version terms are used below and are not interchangeable:
@@ -333,35 +349,62 @@ Two version terms are used below and are not interchangeable:
    without mutating the live tree or its sidecars. Stage the tree, segment references,
    rebuilt body sidecars, OKF projection and report together; remap unchanged bodies
    tree-wide after ID renumbering, including nodes outside the selected subtree, and
-   rebuild changed bodies from owned segments. Validate ownership and anchors first.
-   Publication uses a per-tree writer lock shared with edit operations and checks the
-   source generation is unchanged; reject a stale candidate rather than overwrite edits.
-   Atomically switch one generation manifest only after all required files are durable.
-   Readers see either the complete old generation or the complete new one. Search and
-   embedding caches are generation-scoped so old vectors or BM25 entries cannot serve
-   new IDs. Retain the old generation while readers pin it. A pre-publication failure
-   leaves the old generation active; crash recovery follows the committed manifest.
-   `_batch` only defers writes and persists in `finally`; it is not a transaction.
-   The existing best-effort `_project_okf_sidecars` also swallows errors: staging needs
-   a strict projection path whose failure aborts publication. Dry runs never publish.
+   rebuild changed bodies from owned segments. Validate ownership and anchors first,
+   then publish as described under *Generation Publication*. Dry runs never publish.
+10. **Local MCP server.** A packaged `pageindex` template makes the toolkit installable
+    with `parrot toolkits` and servable with `parrot mcp-local`. `PageIndexToolkit`
+    becomes constructible from a YAML section: it accepts the `llm_client` the runner
+    passes, builds its own adapter, and declares which tools need an LLM so the rest
+    are served without one. The server is a second long-lived process on the same
+    storage directory, which is the concrete case the cross-process lock exists for.
 
-   What the code does today (checked for revision 2), which bounds this step:
-   - Nothing locks a tree. `_persist` saves without comparing the on-disk signature, so
-     the last writer wins, and `_batch` persists in `finally` even after an exception.
-   - `_load_tree` hands every caller the same cached, mutable dict, and edit operations
-     mutate it in place. Readers are isolated only if edits stop doing that.
-   - Trees are also written by other processes; `_load_tree` reloads when the file's
-     `(mtime, size)` changes. The writer lock and the stale check therefore have to work
-     across processes. `knowledge/wiki/repo_cache.py::repo_lock` is an existing `fcntl`
-     lock with shared and exclusive modes.
-   - Per-node vectors are content-addressed and survive renumbering. Only the id-keyed
-     artifacts need to follow a generation: the BM25 corpus, the tree matrix and its
-     `node_order.json`. Scoping the vectors themselves would re-embed the whole tree on
-     every optimize.
-   - Bookstore already publishes a re-index through a staging tree and
-     `rename_tree(overwrite=True)`, with a backup name, rollback and a startup sweep
-     that restores interrupted swaps. Whether generations extend that or replace it is
-     an open question.
+### Generation Publication (every write)
+
+Decided in revision 3. It is owned by `pageindex-segment-store`, it is used by every
+write (imports, splice, delete, node and body updates, optimize), and it extends the
+staging-tree swap that exists instead of adding a manifest.
+
+- A writer works on a copy of the tree, never on the dict readers hold, so a reader
+  keeps the generation it loaded for the whole request.
+- Publication takes a per-tree writer lock that works across processes, checks that
+  the source generation is unchanged, and rejects a stale candidate rather than
+  overwrite someone else's edit.
+- The swap happens only after every required file is durable. Readers see either the
+  complete old generation or the complete new one.
+- Id-keyed indexes follow the generation, so old BM25 entries or matrix rows cannot
+  serve new ids. Per-node vectors are content-addressed and stay shared.
+- The replaced generation is retained for a grace period and removed by the age-based
+  sweep, instead of being deleted at once, so a reader that pinned it can finish.
+- A failure before publication leaves the old generation active. Crash recovery is the
+  startup sweep that already restores interrupted swaps.
+- OKF projection for a candidate uses a strict path whose failure aborts publication.
+
+What the code does today, which bounds this (checked for revisions 2 and 3):
+
+- Nothing locks a tree. `_persist` saves without comparing the on-disk signature, so
+  the last writer wins, and `_batch` persists in `finally` even after an exception; it
+  is not a transaction.
+- `_load_tree` hands every caller the same cached, mutable dict, and edit operations
+  mutate it in place.
+- Trees are also written by other processes; `_load_tree` reloads when the file's
+  `(mtime, size)` changes. `knowledge/wiki/repo_cache.py::repo_lock` is an existing
+  `fcntl` lock with shared and exclusive modes.
+- Per-node vectors are content-addressed and survive renumbering. Only the BM25
+  corpus, the tree matrix and its `node_order.json` are keyed by node id.
+- Bookstore publishes a re-index through a staging tree and
+  `rename_tree(overwrite=True)`, with a backup name, rollback and a startup sweep.
+
+What that swap lacks for this purpose:
+
+- It moves the live JSON to a backup name before moving the staged one in. For a
+  moment the live name has no tree, and another process loading it gets "does not
+  exist".
+- It deletes the backup as soon as the swap succeeds, so nothing is retained for a
+  reader that pinned the old generation.
+- Its OKF projection runs after the swap and is best-effort.
+- It moves the whole tree directory. Used as is for a one-node edit, it would copy
+  every body file of the tree. Bodies need a stable address for per-edit generations
+  to be cheap (open question).
 
 ### Edge Cases & Error Handling
 
@@ -392,7 +435,14 @@ Two version terms are used below and are not interchangeable:
 
 ### Required Validation Scenarios
 
-- Inject failures during body writes, OKF projection and manifest publication; after
+- Run two processes on one storage directory (the MCP server and a second writer):
+  concurrent edits to one tree serialize through the lock, a stale candidate is
+  rejected, and a reader never observes a missing or half-moved tree during a swap.
+- An ordinary edit (splice, delete, body update) publishes a generation: a reader that
+  loaded the tree before the edit finishes its request on the old generation.
+- Serve the toolkit from a YAML section with and without `llm`: without it, only the
+  tools that need no LLM are listed, and they work.
+- Inject failures during body writes, OKF projection and the publication swap; after
   reopening, the tree and every sidecar must resolve through one complete generation.
   A dry run leaves the active generation unchanged. Exercise readers during publication
   and an edit between planning and publication; stale candidates must not overwrite it.
@@ -410,25 +460,35 @@ Two version terms are used below and are not interchangeable:
 ## Capabilities
 
 ### New Capabilities
-Proposed as four specs, in dependency order:
+Proposed as five specs, in dependency order:
 
 - `pageindex-segment-store`: per-document page and paragraph store with stable
   addresses, `doc_id` on document roots, the three read tools, per-segment injection
   flags, immutable revisions, exact read-range metadata and prompt framing helpers.
+  Also generation publication for every write: copy-on-write trees, the cross-process
+  writer lock, the stale check, the extended swap and the retention sweep.
 - `pageindex-layout-structure`: PyMuPDF structure builder (bookmarks, font/layout
   statistics, confidence, LLM fallback) and the `structure_source` field.
 - `pageindex-tree-optimizer`: normalize, segment ownership, heading expansion, concept
   `key_items`, token cost model, bottom-up summaries, the explicit optimize command
-  with validated ownership, atomic generation publication, sidecar migration and report.
+  with validated ownership, sidecar migration and report. It publishes through the
+  segment store's generation path.
 - `pageindex-agentic-retrieval`: the bounded stage-2 loop, the evidence bundle, the
   revision-pinned read ledger, citation model and exact-range validator.
+- `pageindex-local-mcp-toolkit`: a packaged `pageindex` template for
+  `parrot toolkits` / `parrot mcp-local`, `PageIndexToolkit` constructible from a YAML
+  section (accepts `llm_client`, declares `llm_dependent_tools`), a read-first default
+  tool surface with write tools opt-in, and results sized for a coding agent.
 
 ### Modified Capabilities
 - `pageindex-content-store-and-llm-wiki-foundations`: bodies contain only owned ranges;
   parents retain any text not owned by children. Readers pin published generations.
 - `pageindex-embedding-router`: embedded text and cache key include `key_items`.
 - `bookstore-indexed-library`: new read tools; TOC entries rebuilt after optimize.
-- `bookstore-reindex-atomic-swap`: optimize runs on the staging tree before the swap.
+- `bookstore-reindex-atomic-swap`: its swap becomes the shared publication path (lock,
+  stale check, retained backup, no window without a live tree); optimize runs on the
+  staging tree before the swap.
+- `expose-toolkits-as-local-mcp`: one more packaged template.
 
 ---
 
@@ -437,16 +497,17 @@ Proposed as four specs, in dependency order:
 | Affected Component | Impact Type | Notes |
 |---|---|---|
 | `knowledge/pageindex/builder.py` | modifies | Layout builder becomes the default path; LLM pipeline kept as fallback; prompts framed |
-| `knowledge/pageindex/toolkit.py` | extends | Read tools, optimize, agentic retrieve; `import_pdf` persists segments and `doc_id`; writer lock and stale check on publish |
+| `knowledge/pageindex/toolkit.py` | extends | Read tools, optimize, agentic retrieve; `import_pdf` persists segments and `doc_id`; every write operation becomes copy-on-write and publishes a generation; constructor accepts `llm_client` |
 | `knowledge/pageindex/hybrid_search.py` | modifies | `_flatten_corpus` adds `key_items`; bodies use owned segments only, including parent residual text; caches follow generations |
 | `knowledge/pageindex/embedding_store.py` | modifies | `content_key` input changes; existing vectors are recomputed once; the matrix and node order follow the generation |
 | `knowledge/pageindex/schemas.py` | extends | `key_items`, `doc_id`, `structure_source`, subtree span and owned segment ranges on nodes (model already allows extras) |
 | `knowledge/pageindex/tree_ops.py` | extends | Restructuring operations that keep `concept_id` stable |
 | `knowledge/pageindex/okf/` | depends on | Sidecars re-projected; `cite` can return paragraph addresses |
-| `knowledge/bookstore/` | extends | Read tools exposed; reindex integrates optimize |
+| `knowledge/bookstore/` | extends | Read tools exposed; reindex integrates optimize; its swap and sweep are shared with PageIndex publication |
+| `mcp/_toolkit_templates/` | extends | New `pageindex.yaml` template; no change to the runner, the installer or the host adapters |
 | `parrot_tools/multistoresearch/origins/pageindex.py` | extends | Results may carry citations |
 | `security/prompt_injection.py`, `bots/guardrails/builtin/prompt_injection.py` | depends on | Needs a public way to obtain the ML scoring engine |
-| Storage layout | extends | Revisioned segment files and staged generations published through an atomic manifest; legacy files remain readable until explicit migration |
+| Storage layout | extends | Revisioned segment files and staged generations published through the extended swap; legacy files remain readable until explicit migration |
 | Dependencies | none | Everything needed is already pinned |
 
 No breaking change for existing trees: every new field is optional and old trees take
@@ -557,6 +618,37 @@ class NodeContentStore:                                        # line 38
 # knowledge/wiki/repo_cache.py
 async def repo_lock(lock_path: Path, *, timeout: float, shared: bool = False)  # line 53 (fcntl file lock, async context manager)
 
+# added for revision 3 (local MCP serving); paths relative to packages/ai-parrot/src/parrot/
+# mcp/local_cli.py
+def mcp_local(...)                                             # line 214 ("Serve NAME as a local stdio MCP server")
+# mcp/local_server.py
+class StdioMCPServer(LocalMCPServerBase):                      # line 54
+# mcp/toolkit_config.py
+class ToolkitSection(BaseModel):                               # line 20
+    class_path (alias "class"); enabled; kwargs; include; exclude; llm; llm_kwargs; env
+# mcp/toolkit_server.py
+def create_toolkit_mcp_server(...)                             # line 258
+    # line 341: kwargs["llm_client"] = llm_client  (how the configured LLM reaches the toolkit)
+    # with no `llm`, tools named in the class's llm_dependent_tools are dropped
+# mcp/toolkit_seed.py
+def available_templates() -> ...                               # line 53 (packaged templates in mcp/_toolkit_templates/)
+# mcp/toolkit_install.py
+def install_toolkits(...)                                      # line 163 (seed the section and register it with hosts)
+# mcp/hosts.py
+class ClaudeAdapter(HostAdapter):                              # line 58  (repo .mcp.json)
+class CodexAdapter(HostAdapter):                               # line 121 (repo .codex/config.toml)
+class GoogleAdapter(HostAdapter):                              # line 178 (Antigravity: user-global ~/.gemini/config/mcp_config.json + repo plugin file)
+# tools/toolkit.py
+    llm_dependent_tools: frozenset = frozenset()               # line 313 (AbstractToolkit default)
+# knowledge/pageindex/toolkit.py
+    def __init__(self, adapter: PageIndexLLMAdapter, storage_dir, reranker=None, ..., **kwargs)  # line 92 (adapter is required)
+# knowledge/bookstore/mcp_server.py
+    server = StdioMCPServer(...)                               # line 101 (Bookstore builds its own stdio server by hand)
+# knowledge/bookstore/cli.py
+def mcp(...)                                                   # line 588
+# knowledge/bookstore/toolkit.py
+class BookstoreToolkit(AbstractToolkit):                       # line 29
+
 # knowledge/pageindex/embedding_store.py
 class NodeEmbeddingStore:                                      # line 42
     @staticmethod
@@ -647,6 +739,14 @@ Added for revision 2, checked recursively over `knowledge/pageindex/`:
   file plus `<tree>/<node_id>.md`
 - ~~a stale-write check~~ — `_persist` does not compare the on-disk signature before saving
 
+Added for revision 3:
+- ~~a `pageindex` template in `mcp/_toolkit_templates/`~~ — the nine packaged templates
+  are bounded-source, browsing, database-query, lsp, memory, querysource, scraping,
+  sdd-coder and targeted-writer
+- ~~`llm_client` support in `PageIndexToolkit`~~ — nothing in `knowledge/pageindex/`
+  reads `llm_client`, `adapter` is a required argument, and the class declares no
+  `llm_dependent_tools`, so it cannot be served from a YAML section today
+
 ---
 
 ## Parallelism Assessment
@@ -656,14 +756,14 @@ Added for revision 2, checked recursively over `knowledge/pageindex/`:
   `pageindex-agentic-retrieval` then depend only on it and can run in parallel.
   `pageindex-tree-optimizer` needs the segment store and benefits from the layout
   builder's heading candidates, so it goes after or alongside layout.
-  Revision 2 puts one condition on this: generation publication and the writer lock
-  are listed under `pageindex-tree-optimizer`, the last spec, while reader pinning is
-  asked of `pageindex-agentic-retrieval` and of the content store. The order above
-  holds only if agentic retrieval depends on revisions alone (they ship with the
-  segment store). If it must pin generations, that mechanism has to move into the
-  first spec or into a spec of its own (open question).
-- **Cross-feature independence**: `toolkit.py` (1,418 lines) is touched by three of the
-  four specs and `builder.py` by two; these are the merge hot spots. No unmerged remote
+  Revision 3 settles the condition revision 2 raised: generation publication, the
+  writer lock and reader pinning belong to `pageindex-segment-store`, so every later
+  spec can rely on them. `pageindex-local-mcp-toolkit` also depends only on the first
+  spec and runs in parallel with the other three; it gains tools as they land.
+  The cost is that the first spec now rewrites every write operation in `toolkit.py`.
+  The other four should branch after it merges, not alongside it.
+- **Cross-feature independence**: `toolkit.py` (1,418 lines) is touched by four of the
+  five specs and `builder.py` by two; these are the merge hot spots. No unmerged remote
   branch for pageindex or bookstore existed when this was written.
 - **Recommended isolation**: `per-spec` — one worktree per spec, tasks sequential inside.
 - **Rationale**: The specs are separable by module, but within each one the tasks share
@@ -681,7 +781,7 @@ Added for revision 2, checked recursively over `knowledge/pageindex/`:
 - [x] Where stage 2 lives — *Owner: Jesus Lara*: both read tools on the toolkit and a bounded internal loop.
 - [x] Citation guarantee — *Owner: Jesus Lara*: reference plus verbatim excerpt, validated.
 - [x] How to get layout-based structure — *Owner: Jesus Lara*: our own extractor on PyMuPDF; no vendored Flash, no `pageindex` dependency.
-- [ ] Confirm the four-spec split and its order, or merge/split differently — *Owner: Jesus Lara*
+- [ ] Confirm the five-spec split and its order, or merge/split differently (the first spec has grown: segments, read tools, hardening and generation publication) — *Owner: Jesus Lara*
 - [ ] Addressing for sources without pages (markdown, ebook, free text): ordinal-only segments, or virtual pages per chapter? — *Owner: Jesus Lara*
 - [ ] Legacy trees with no source file on record: deterministic passes over node markdown only, or require re-import? — *Owner: Jesus Lara*
 - [ ] Is "came from a document import" the right rule for what the optimizer may touch, or do curated trees need an explicit lock flag? — *Owner: Jesus Lara*
@@ -695,14 +795,24 @@ Added for revision 2, checked recursively over `knowledge/pageindex/`:
 
 Raised by the review of revision 2:
 
-- [ ] Which spec owns generation publication, the writer lock and reader pinning: `pageindex-segment-store`, `pageindex-tree-optimizer`, or a fifth spec? — *Owner: Jesus Lara*
-- [ ] Do edit operations (splice, delete, node updates) also publish a generation, or only optimize? Today they mutate the cached tree in place, so reader isolation holds only if they change too. — *Owner: Jesus Lara*
-- [ ] Generations as a new manifest, or as an extension of the staging tree plus `rename_tree` swap that Bookstore already uses? — *Owner: Jesus Lara*
-- [ ] Retention of old generations: a pin is not visible to other processes, so "retain while pinned" needs a count- or age-based rule. Which? — *Owner: Jesus Lara*
+- [x] Which spec owns generation publication, the writer lock and reader pinning — *Owner: Jesus Lara*: `pageindex-segment-store`.
+- [x] Do edit operations also publish a generation, or only optimize — *Owner: Jesus Lara*: every write publishes a generation.
+- [x] Generations as a new manifest, or as an extension of the existing swap — *Owner: Jesus Lara*: extend the staging tree plus `rename_tree` swap.
+- [ ] Retention of old generations follows the existing age-based sweep. Which age, and is it the same as for staging trees (one hour today)? — *Owner: Jesus Lara*
 - [ ] Old document revisions after a re-import: how many are kept, given that a stored citation to a deleted revision can no longer be checked? — *Owner: Jesus Lara*
 - [ ] "No change on a second optimization" with LLM passes: record a per-node stamp (input hash and settings) so finished nodes are skipped, or limit the guarantee to the deterministic passes? — *Owner: Jesus Lara*
 - [ ] What triggers a merge now that size alone never removes a leaf: only duplicate or empty spans? Is "minimum leaf" still a setting, as a floor for expansion? — *Owner: Jesus Lara*
 - [ ] How a parent's disjoint own ranges are rendered as one body (order, gap markers) for `retrieve`, summaries and BM25. — *Owner: Jesus Lara*
+
+Raised by revision 3:
+
+- [x] A local MCP server for PageIndex — *Owner: Jesus Lara*: yes, as its own related spec, stdio, for Claude Code, Codex and `agy`.
+- [ ] Body storage once every edit publishes a generation: keep `<tree>/<node_id>.md` and copy the directory per generation, or give bodies a stable address (owned segment ranges for imported nodes, `concept_id` for hand-authored ones) so a generation is one atomic JSON replace and nothing is remapped after renumbering? Proposed: the stable address. — *Owner: Jesus Lara*
+- [ ] MCP storage location: one directory per repository (under `.parrot/`), or a user-level library shared across repositories as Bookstore's scopes do? — *Owner: Jesus Lara*
+- [ ] MCP default tool surface: read-only with write tools opt-in (proposed), or import and optimize enabled from the start? — *Owner: Jesus Lara*
+- [ ] Is the internal agentic loop exposed over MCP at all, given that the host model already navigates with the read tools? — *Owner: Jesus Lara*
+- [ ] Does the Bookstore stdio server stay separate, or move onto the same template mechanism later? — *Owner: Jesus Lara*
+- [ ] Is a server with no `llm` configured (BM25 and read tools only) a supported default? PDF import needs an LLM until the layout builder lands. — *Owner: Jesus Lara*
 
 ---
 
@@ -711,4 +821,5 @@ Raised by the review of revision 2:
 | Rev | Date | Commit | Summary |
 |---|---|---|---|
 | 1 | 2026-11-06 | `e29f046315` | Initial brainstorm. |
-| 2 | 2026-11-06 | `159b1993dd`, then the review commit | Segment ownership replaces intro leaves and size-based folding. Document revisions and range-exact citation validation. Optimize publishes a staged generation instead of mutating in place. Required validation scenarios. The review then defined revision and generation, made citation offsets validator-computed, limited generation scoping to id-keyed indexes, recorded what the persistence code does today, corrected the spec-order note and added eight open questions. |
+| 2 | 2026-11-06 | `159b1993dd`, review in `c8bd9cfa2d` | Segment ownership replaces intro leaves and size-based folding. Document revisions and range-exact citation validation. Optimize publishes a staged generation instead of mutating in place. Required validation scenarios. The review then defined revision and generation, made citation offsets validator-computed, limited generation scoping to id-keyed indexes, recorded what the persistence code does today, corrected the spec-order note and added eight open questions. |
+| 3 | 2026-11-06 | this commit | Decisions: `pageindex-segment-store` owns generation publication; every write publishes a generation; publication extends the existing staging swap instead of a manifest. New fifth spec `pageindex-local-mcp-toolkit` (stdio, for Claude Code, Codex and `agy`) on the existing `parrot mcp-local` machinery. Recorded what the swap lacks, the MCP code references and seven open questions. |
