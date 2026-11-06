@@ -67,7 +67,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -75,8 +75,9 @@
       "parallelism_notes": "no dependency: standalone spike harness under scripts/spikes (stdlib + pydantic only)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5248-g1-harness-core.md"
+      "completed_at": "2026-11-06T23:35:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5248-g1-harness-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5249",
@@ -125,7 +126,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -133,8 +134,9 @@
       "parallelism_notes": "no code dependency; ADR is parametrised by test_seed_rules.py; precondition: research note tracked in git (owner action, spec §8)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5251-licence-adr-feat670-supersession.md"
+      "completed_at": "2026-11-06T23:35:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5251-licence-adr-feat670-supersession.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5252",
@@ -162,7 +164,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -170,8 +172,9 @@
       "parallelism_notes": "no dependency: creates vocabulary/contracts.py + exceptions.py over existing OntologyError",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5253-vocabulary-contracts-exceptions.md"
+      "completed_at": "2026-11-06T23:35:28+00:00",
+      "file": "sdd/tasks/completed/TASK-5253-vocabulary-contracts-exceptions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5254",

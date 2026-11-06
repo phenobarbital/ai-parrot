@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -285,10 +285,10 @@ def test_run_records_crashing_check_as_fail() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: mistral.devstral-2-123b · Backend: nova · Attempts: 1 · Duration: 111s. Merge-tier validation green.
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: mistral.devstral-2-123b)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: none

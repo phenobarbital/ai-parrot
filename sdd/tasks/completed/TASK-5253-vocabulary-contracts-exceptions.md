@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -263,10 +263,10 @@ def test_protocols_are_runtime_checkable() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 237s. Merge-tier validation green. Orchestrator fix: `Literal` import in test (ruff F821), commit add313f543.
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: gpt-5.6-terra)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: none

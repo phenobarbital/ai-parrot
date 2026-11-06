@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -198,10 +198,10 @@ entries:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: qwen3-coder-480b · Backend: nova · Attempts: 1 · Duration: 285s. Merge-tier validation green.
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: qwen3-coder-480b)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: none
