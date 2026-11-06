@@ -39,7 +39,7 @@
       "feature_id": "FEAT-822",
       "feature": "fixgroup-adbf411ace18",
       "spec": "sdd/specs/fixgroup-adbf411ace18.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -47,8 +47,9 @@
       "parallelism_notes": "No dependencies; owns a2ui_wire.py and creates tests/unit/api/test_a2ui_body_limits.py exclusively.",
       "assigned_to": null,
       "started_at": "2026-11-06T02:02:27.291782+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5239-capped-body-reader.md"
+      "completed_at": "2026-11-06T02:11:56+00:00",
+      "file": "sdd/tasks/completed/TASK-5239-capped-body-reader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5240",

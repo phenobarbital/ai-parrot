@@ -13,6 +13,20 @@
 
 ## Context
 
+> **BLOCKED (2026-11-06) — re-plan before implementing.** This task was
+> attempted as written and reverted. Replacing `await request.json()` at the
+> six call sites broke **180 tests across 26 files** in this package, because
+> ~30 test builders use `MagicMock(spec=web.Request)` with
+> `request.json = AsyncMock(...)` and no usable `request.content` stream
+> (baseline on the same tree: 2 failures, both pre-existing version asserts).
+> See the AMENDMENT section in the spec: the recommended seam is aiohttp's
+> `client_max_size` plus `except web.HTTPRequestEntityTooLarge` at each site,
+> which leaves every existing mock working. Confirm `client_max_size` is
+> settable from `api/routes.py` first; if it is not, this task needs a
+> preceding task that migrates the package's request builders.
+> TASK-5239's helpers are landed and are needed by either design.
+
+
 With TASK-5239's `read_capped_json` in place, replace every advisory
 `content_length` guard in `handlers.py` with a read that is bounded before the
 body is parsed, and give `export_forms` the cap it never had.
