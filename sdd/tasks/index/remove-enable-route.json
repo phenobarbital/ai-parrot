@@ -12,7 +12,7 @@
       "feature_id": "FEAT-821",
       "feature": "remove-enable-route",
       "title": "Remove /enable route, handler, and EnableResponse model",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "small",
       "depends_on": [],
@@ -21,7 +21,8 @@
         "packages/ai-parrot-server/src/parrot/handlers/integrations.py",
         "packages/ai-parrot/src/parrot/auth/oauth2/models.py",
         "packages/ai-parrot/src/parrot/auth/oauth2/__init__.py"
-      ]
+      ],
+      "started_at": "2026-11-06T01:52:00+00:00"
     }
   ]
 }
