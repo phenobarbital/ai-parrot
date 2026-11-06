@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-835 — Correct the `parrot doctor` Command Name in FEAT-802 Text
 **Spec**: `sdd/specs/fixgroup-a76673a5632a.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -429,10 +429,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code session ai-parrot-a0 (agent:sdd-fix:63c65311)
+**Date**: 2026-11-07
+**Notes**: Applied the seven single-token substitutions exactly as blueprinted.
+All seven anchors re-verified at `grep -c` == 1 immediately before editing — no
+drift from the spec's §6 Edit Sites table. Result is `7 files changed, 7
+insertions(+), 7 deletions(-)`, one line per file, with every edited line
+otherwise byte-identical.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Verified:
+- `pytest tests/sdd_scripts/test_ensure_worktree.py::test_ensure_rejects_legacy_registration -q` — passed
+- `pytest tests/sdd_scripts/test_command_contracts.py::test_no_legacy_worktree_root_remains -q` — passed
+- Full file run: `test_ensure_worktree.py` + `test_command_contracts.py` — 64 passed in 6.16s
+- `ruff check` on the two changed Python files — All checks passed
+- Asset/twin parity: line 79 of the packaged asset and of `.claude/rules/worktree-management.md` are byte-identical
+- `grep -rn "parrot doctor" packages/ .claude/ .agent/ .agents/ docs/ wiki/ tests/ CLAUDE.md` — no hits
 
-**Deviations from spec**: none | describe if any
+Notes for the reviewer:
+- `.claude/rules/worktree-management.md` and `.agent/skills/worktree-management/SKILL.md`
+  are gitignored and required `git add -f`, as the task's Implementation Notes
+  anticipated.
+- `wiki/operations/install/global-runtime.md:257` contains `parrot self doctor --sdd`
+  earlier in the same sentence. Because `"parrot doctor"` is not a substring of
+  `"parrot self doctor"`, the substitution hit only the stale reference; the
+  `--sdd` one is unchanged. Confirmed in the diff.
+- Historical SDD artifacts under `sdd/specs/`, `sdd/proposals/` and
+  `sdd/tasks/completed/` still mention `parrot doctor` and were deliberately left
+  alone per scope — notably `sdd/specs/parrot-installer.spec.md:1586`, where the
+  name appears inside a struck-through "does not exist" list.
+
+**Deviations from spec**: none
