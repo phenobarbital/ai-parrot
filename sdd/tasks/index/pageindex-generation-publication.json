@@ -51,7 +51,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -59,8 +59,9 @@
       "parallelism_notes": "No dependencies: creates the new module locks.py and its own test file.",
       "assigned_to": null,
       "started_at": "2026-11-06T23:32:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5276-tree-lock.md"
+      "completed_at": "2026-11-06T23:40:32+00:00",
+      "file": "sdd/tasks/completed/TASK-5276-tree-lock.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5277",
@@ -69,7 +70,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -77,8 +78,9 @@
       "parallelism_notes": "No dependencies: touches only store.py and test_store.py.",
       "assigned_to": null,
       "started_at": "2026-11-06T23:32:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5277-json-store-durable-save.md"
+      "completed_at": "2026-11-06T23:40:32+00:00",
+      "file": "sdd/tasks/completed/TASK-5277-json-store-durable-save.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5278",
@@ -87,7 +89,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -95,8 +97,9 @@
       "parallelism_notes": "No dependencies: creates generation.py (extended later by TASK-5282) and test_generation.py.",
       "assigned_to": null,
       "started_at": "2026-11-06T23:32:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5278-generation-primitives.md"
+      "completed_at": "2026-11-06T23:40:33+00:00",
+      "file": "sdd/tasks/completed/TASK-5278-generation-primitives.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5279",
@@ -105,7 +108,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -113,8 +116,9 @@
       "parallelism_notes": "No dependencies: generation.py (TASK-5278) is mentioned only to FORBID importing it (import cycle); the body key format is validated locally.",
       "assigned_to": null,
       "started_at": "2026-11-06T23:32:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5279-content-store-bodies.md"
+      "completed_at": "2026-11-06T23:40:33+00:00",
+      "file": "sdd/tasks/completed/TASK-5279-content-store-bodies.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5280",
@@ -321,4 +325,3 @@
     }
   ]
 }
-
