@@ -75,4 +75,11 @@ PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src pytest packages/
 
 ## Completion Note
 
-_(filled on close)_
+Removed all traces of the `/enable` compatibility route:
+- Deleted route registration in manager.py (4 lines)
+- Removed `_post_enable` method + dispatch branch in integrations.py (31 lines)
+- Deleted `EnableResponse` model class (8 lines)
+- Cleaned up re-exports in `__init__.py`
+- Updated docstrings (route count, dispatch docs)
+- All 4 changed files pass ruff; test_ts_codegen passes (4/4)
+- grep confirms zero remaining references to EnableResponse or /enable route
