@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pickle
+from typing import Literal
 
 from parrot.knowledge.ontology.exceptions import OntologyError
 from parrot.knowledge.ontology.vocabulary import contracts as c
@@ -117,7 +118,7 @@ def test_protocols_are_runtime_checkable() -> None:
             iris: c.Sequence[str],
             *,
             family: c.ClosureFamily = "subclass",
-            direction: c.Literal["down", "up", "both"] = "down",
+            direction: Literal["down", "up", "both"] = "down",
             max_depth: int | None = None,
             include_deprecated: bool = False,
             as_of: int | None = None,
@@ -140,7 +141,7 @@ def test_protocols_are_runtime_checkable() -> None:
         async def export(
             self,
             ontology_id: str,
-            fmt: c.Literal["turtle", "jsonld"] = "turtle",
+            fmt: Literal["turtle", "jsonld"] = "turtle",
             *,
             as_of: int | None = None,
         ) -> bytes:
