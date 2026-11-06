@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-06T23:17:53+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-06T23:22:04+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -100,11 +100,11 @@
     {
       "id": "TASK-5275",
       "slug": "docs-green-cache",
-      "title": "Documentation \u2014 green cache depth-1 limit, namespace and file name",
+      "title": "Documentation — green cache depth-1 limit, namespace and file name",
       "feature_id": "FEAT-830",
       "feature": "test-scope-report-fixes",
       "spec": "sdd/specs/test-scope-report-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -115,8 +115,9 @@
       "parallelism_notes": "documents namespace_for created by TASK-5273 (green_cache.py) and the .py operand rule created by TASK-5272 (contract.py)",
       "assigned_to": "claude-session-sdd-fix-c0b83d30",
       "started_at": "2026-11-06T23:21:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5275-docs-green-cache.md"
+      "completed_at": "2026-11-06T23:22:04+00:00",
+      "file": "sdd/tasks/completed/TASK-5275-docs-green-cache.md",
+      "verification": "verified"
     }
   ]
 }
