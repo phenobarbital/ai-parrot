@@ -2485,10 +2485,6 @@ class BotManager:
             IntegrationsHandler,
         )
         router.add_view(
-            "/api/v1/agents/integrations/{agent_id}/{provider}/enable",
-            IntegrationsHandler,
-        )
-        router.add_view(
             "/api/v1/agents/integrations/{agent_id}/{provider}",
             IntegrationsHandler,
         )
