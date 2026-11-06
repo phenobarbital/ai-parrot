@@ -37,14 +37,14 @@
       "feature_id": "FEAT-835",
       "feature": "fixgroup-a76673a5632a",
       "spec": "sdd/specs/fixgroup-a76673a5632a.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Sole task of the feature; touches only its seven declared files and mutates no shared state outside them.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:54:29.564024+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5294-parrot-self-doctor-command-name.md"
     }
