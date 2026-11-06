@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import numpy as np
 import pytest
 
 from parrot.knowledge.pageindex.hybrid_search import HybridPageIndexSearch
@@ -122,6 +123,53 @@ def test_mark_dirty_triggers_rebuild():
     assert engine._dirty is False
     engine.mark_dirty()
     assert engine._dirty is True
+
+
+def test_mark_dirty_uses_tree_name_not_doc_name():
+    """An explicit tree name owns the generation-specific embedding matrix."""
+    embedding_store = MagicMock()
+    engine = HybridPageIndexSearch(
+        tree=_fixture_tree(),
+        adapter=_adapter(),
+        embedding_store=embedding_store,
+        tree_name="tree-key",
+        generation_id=4,
+    )
+
+    engine.mark_dirty()
+
+    assert engine.tree_name == "tree-key"
+    assert engine.generation_id == 4
+    embedding_store.invalidate_tree.assert_called_once_with("tree-key")
+
+
+def test_vec_rank_builds_using_tree_name_and_generation():
+    """Dense ranking rebuilds its matrix under the explicit generation key."""
+    embedding_store = MagicMock()
+    embedding_store.load_tree_matrix.return_value = None
+    embedding_store.build_tree_matrix.return_value = (
+        np.ones((5, 4), dtype=np.float32),
+        ["0000", "0001", "0002", "0003", "0004"],
+    )
+
+    def embed(texts: list[str]) -> np.ndarray:
+        return np.ones((len(texts), 4), dtype=np.float32)
+
+    engine = HybridPageIndexSearch(
+        tree=_fixture_tree(),
+        adapter=_adapter(),
+        embedding_store=embedding_store,
+        embed_fn=embed,
+        tree_name="tree-key",
+        generation_id=4,
+    )
+
+    engine._vec_rank("query", top_k=2)
+
+    embedding_store.load_tree_matrix.assert_called_once_with("tree-key", generation_id=4)
+    build_args, build_kwargs = embedding_store.build_tree_matrix.call_args
+    assert build_args[0] == "tree-key"
+    assert build_kwargs == {"generation_id": 4}
 
 
 @pytest.mark.asyncio
