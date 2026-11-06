@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-828 fixgroup-51dc704c698c
 **Spec**: `sdd/specs/fixgroup-51dc704c698c.spec.md`
-**Status**: pending
+**Status**: in-progress
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: none

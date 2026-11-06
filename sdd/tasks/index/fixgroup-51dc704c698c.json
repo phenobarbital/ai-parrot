@@ -12,19 +12,19 @@
     {
       "id": "TASK-5270",
       "slug": "roost-endpoint-background-turns",
-      "title": "RoostEndpoint — run WAKE_LLM / RUN_TOOL turns in tracked background tasks",
+      "title": "RoostEndpoint \u2014 run WAKE_LLM / RUN_TOOL turns in tracked background tasks",
       "feature_id": "FEAT-828",
       "feature": "fixgroup-51dc704c698c",
       "spec": "sdd/specs/fixgroup-51dc704c698c.spec.md",
       "file": "sdd/tasks/active/TASK-5270-roost-endpoint-background-turns.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "single task; touches endpoint.py, one new test module and the carriers wiki page",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:03:15+00:00",
       "completed_at": null,
       "discovered_from": "issue:a409d14b8130"
     }
