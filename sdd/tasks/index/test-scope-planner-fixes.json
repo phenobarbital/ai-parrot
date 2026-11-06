@@ -35,19 +35,19 @@
     {
       "id": "TASK-5271",
       "slug": "test-scope-planner-fixes",
-      "title": "Test-scope planner — contract runner settings reach the invocation",
+      "title": "Test-scope planner \u2014 contract runner settings reach the invocation",
       "feature_id": "FEAT-829",
       "feature": "test-scope-planner-fixes",
       "spec": "sdd/specs/test-scope-planner-fixes.spec.md",
       "file": "sdd/tasks/active/TASK-5271-test-scope-planner-fixes.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task; no exclusive resource",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T23:02:48+00:00",
       "completed_at": null,
       "discovered_from": "issue:a3aebc40ef48"
     }

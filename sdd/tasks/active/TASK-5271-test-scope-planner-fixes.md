@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-829 test-scope-planner-fixes
 **Spec**: `sdd/specs/test-scope-planner-fixes.spec.md`
-**Status**: pending
+**Status**: in-progress
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none
