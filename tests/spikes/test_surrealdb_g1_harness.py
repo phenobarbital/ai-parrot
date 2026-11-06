@@ -1,4 +1,5 @@
 """Unit tests for the G1 harness (FEAT-824 TASK-5248). No server, no SDK."""
+
 from __future__ import annotations
 
 import asyncio

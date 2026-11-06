@@ -3,6 +3,7 @@
 Runs the G1 check list against a pinned SurrealDB server and SDK and writes a Markdown report
 with a GO / NO-GO verdict. Not shipped in any wheel.
 """
+
 from __future__ import annotations
 
 import argparse
