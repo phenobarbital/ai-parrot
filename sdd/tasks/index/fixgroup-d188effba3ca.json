@@ -58,7 +58,7 @@
       "feature_id": "FEAT-820",
       "feature": "fixgroup-d188effba3ca",
       "spec": "sdd/specs/fixgroup-d188effba3ca.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -67,7 +67,7 @@
       "parallel": true,
       "parallelism_notes": "Uses _as_primary from TASK-5235 (tests/sdd_scripts/test_worktree_sync.py) and modifies that same file, so it must follow TASK-5235.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-06T02:01:22.394402+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5236-guards-never-pushes-advisory-tests.md"
     },
