@@ -172,6 +172,7 @@ cli._lazy_commands = {
     "conf": "parrot.install.conf",
     "install": "parrot.install.cli",
     "wiki": "parrot.knowledge.wiki.cli",
+    "ontology": "parrot.knowledge.ontology.vocabulary.cli",
     "bookstore": "parrot.knowledge.bookstore.cli",
     "mcp": "parrot.mcp.cli",
     "mcp-local": "parrot.mcp.local_cli",
@@ -225,6 +226,7 @@ cli._lazy_extras = {
     "manuals": "ai-parrot-tools: pip install ai-parrot-tools ai-parrot[manuals]",
     "formdesigner": "parrot-formdesigner: pip install parrot-formdesigner[ai-parrot]",
     "jiratoolkit": "ai-parrot-tools: pip install ai-parrot-tools",
+    "ontology": "ai-parrot[ontology-store]: pip install ai-parrot[ontology-store]",
 }
 
 if __name__ == "__main__":
