@@ -16,14 +16,14 @@
       "feature_id": "BRIEF-NAV-7762",
       "feature": "ecotank-endcap-rows-new-cycle",
       "spec": "sdd/briefs/ecotank-endcap-rows-new-cycle.brief.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Single task; creates two fixtures, one SQL file and one test.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-07T00:14:37+00:00",
       "completed_at": null,
       "file": "sdd/briefs/ecotank-endcap-rows-new-cycle/tasks/HOTFIX-NAV-7762-1-ecotank-endcap-rows.md"
     }
