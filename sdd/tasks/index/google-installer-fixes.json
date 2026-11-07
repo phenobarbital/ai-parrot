@@ -38,14 +38,14 @@
       "feature_id": "FEAT-838",
       "feature": "google-installer-fixes",
       "spec": "sdd/specs/google-installer-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task; touches only google/installer.py and its new test file",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "claude-sdd-fix",
+      "started_at": "2026-11-07T00:32:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5298-global-command-prefers-installed-launcher.md"
     }
