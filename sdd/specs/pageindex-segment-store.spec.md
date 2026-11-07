@@ -799,6 +799,10 @@ tests:
 - packages/ai-parrot/tests/knowledge/bookstore/test_mcp_server.py
 - packages/ai-parrot/tests/unit/test_guardrails_prompt_injection.py
 - packages/ai-parrot/tests/unit/test_security_injection_engine_accessor.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_builder_pages.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_segment_import.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_segment_migration.py
+- packages/ai-parrot/tests/knowledge/bookstore/test_segment_reads.py
 markers: none
 
 ### Test Data / Fixtures
