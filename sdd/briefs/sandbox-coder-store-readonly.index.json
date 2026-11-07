@@ -1,0 +1,49 @@
+{
+  "feature": "sandbox-coder-store-readonly",
+  "feature_id": "BRIEF-c61e28722cca",
+  "spec": "sdd/briefs/sandbox-coder-store-readonly.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-11-07",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-c61e28722cca-1",
+      "slug": "bind-coder-evidence-dir",
+      "title": "Bind the sdd-coder durable store writable from a linked worktree",
+      "feature_id": "BRIEF-c61e28722cca",
+      "feature": "sandbox-coder-store-readonly",
+      "spec": "sdd/briefs/sandbox-coder-store-readonly.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/sandbox-coder-store-readonly/tasks/HOTFIX-c61e28722cca-1-bind-coder-evidence-dir.md"
+    },
+    {
+      "id": "HOTFIX-c61e28722cca-2",
+      "slug": "checkpoint-failure-label",
+      "title": "Give the engine-path checkpoint failure its own label",
+      "feature_id": "BRIEF-c61e28722cca",
+      "feature": "sandbox-coder-store-readonly",
+      "spec": "sdd/briefs/sandbox-coder-store-readonly.brief.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/sandbox-coder-store-readonly/tasks/HOTFIX-c61e28722cca-2-checkpoint-failure-label.md"
+    }
+  ]
+}
