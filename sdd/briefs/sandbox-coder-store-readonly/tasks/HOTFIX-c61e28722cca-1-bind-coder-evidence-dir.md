@@ -2,7 +2,7 @@
 
 **Feature**: brief `sandbox-coder-store-readonly` (ledger `issue:c61e28722cca`)
 **Spec**: `sdd/briefs/sandbox-coder-store-readonly.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -462,10 +462,8 @@ def test_native_allow_write_includes_coder_evidence_dir(tmp_path: Path) -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (host session, `/sdd-start`)
+**Date**: 2026-11-07
+**Notes**: Added `CODER_EVIDENCE_DIR` and `coder_evidence_dirs()`, bound it in `protected_argv` and in `native_sandbox_settings`, and documented it in both `worktree-management.md` twins (identical). Tests: 189 passed across `test_worktree_environment.py` and `test_native_claude_sandbox.py`, including the real-Bubblewrap write test and the drift guard against `resolve_durable_root`. `ruff check` clean. Code commit `b8ad291e65`. This task cannot run under a sandboxed `sdd-worker`: it edits the sandbox's own protected control files, so it had to be done from a host session.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from brief**: none | describe if any
+**Deviations from brief**: `test_linked_checkout_without_admin_dir_binds_nothing_extra` asserted the exact bind list for a linked checkout; its expectation now includes the evidence store, which is the intended new behaviour. Branch NOT pushed: the worktree's push URL is `no_push`.
