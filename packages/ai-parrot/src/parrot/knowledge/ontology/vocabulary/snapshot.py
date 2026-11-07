@@ -11,7 +11,7 @@ import re
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, ClassVar, Mapping, Protocol, runtime_checkable
+from typing import Any, ClassVar, Mapping, Protocol, Sequence, runtime_checkable
 
 import aiohttp
 import aiosqlite
