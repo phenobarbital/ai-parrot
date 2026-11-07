@@ -443,7 +443,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -453,8 +453,9 @@
       "parallelism_notes": "annotates/calls CatalogVocabularyPublisher.publish_tenant from TASK-5265 (catalog_bridge.py)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5266-catalog-worker-vocabulary-hook.md"
+      "completed_at": "2026-11-07T01:45:40+00:00",
+      "file": "sdd/tasks/completed/TASK-5266-catalog-worker-vocabulary-hook.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5267",
@@ -463,7 +464,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -476,8 +477,9 @@
       "parallelism_notes": "wraps ensure_schema (TASK-5256 pg_schema.py), PostgresOntologyStore (TASK-5261 postgres_store.py), build_snapshot (TASK-5262 snapshot.py), CatalogVocabularyPublisher (TASK-5265 catalog_bridge.py)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5267-vocabulary-cli.md"
+      "completed_at": "2026-11-07T01:45:40+00:00",
+      "file": "sdd/tasks/completed/TASK-5267-vocabulary-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5268",
@@ -486,7 +488,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -497,8 +499,9 @@
       "parallelism_notes": "calls PostgresOntologyStore.load_version/export from TASK-5261 (postgres_store.py) and build_snapshot from TASK-5262 (snapshot.py)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5268-vocabulary-http-routes.md"
+      "completed_at": "2026-11-07T01:45:41+00:00",
+      "file": "sdd/tasks/completed/TASK-5268-vocabulary-http-routes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5269",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5256, TASK-5261, TASK-5262, TASK-5265
@@ -212,10 +212,10 @@ Note: CLI commands call `asyncio.run`, so the integration test must invoke `CliR
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-sol · Backend: codex · Attempts: 1 · Duration: 353s. Merge-tier validation exit 0 (19 passed, 1 skipped: a CLI test needing live Postgres).
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: gpt-5.6-sol)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: `publish-catalog` gains `--catalog-dsn` (default `parrot.conf.default_dsn`)

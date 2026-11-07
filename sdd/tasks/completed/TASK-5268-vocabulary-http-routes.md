@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5261, TASK-5262
@@ -194,10 +194,10 @@ async def test_unknown_ontology_404(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: zai.glm-5 · Backend: nova · Attempts: 1 · Duration: 111s. Merge-tier validation exit 0 (19 passed, 1 skipped: a CLI test needing live Postgres).
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: zai.glm-5)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: none
