@@ -238,6 +238,7 @@ class Bookstore:
                 adapter=self.adapter if self.adapter is not None else _NullAdapter(),
                 storage_dir=loc.trees_dir,
                 lightweight_model=self.lightweight_model,
+                generation_grace_s=_STAGING_MAX_AGE_S,
             )
         return self._toolkits[scope]
 
@@ -309,6 +310,18 @@ class Bookstore:
                         await toolkit.delete_tree(tree_name)
             except Exception:  # noqa: BLE001 — crash recovery is best-effort
                 logger.warning("Failed to sweep reserved tree %r", tree_name, exc_info=True)
+
+        live_names = {
+            tree_name.split(REPLACED_MARKER if REPLACED_MARKER in tree_name else _STAGING_MARKER, maxsplit=1)[0]
+            for tree_name, _, _ in reserved
+        }
+        for live_name in live_names:
+            if not toolkit._store.exists(live_name):
+                continue
+            try:
+                await toolkit.vacuum_tree(live_name)
+            except Exception:  # noqa: BLE001 — vacuum is best-effort during recovery
+                logger.warning("Failed to vacuum live tree %r during reserved-tree sweep", live_name, exc_info=True)
 
     # ------------------------------------------------------------------
     # Read surface

@@ -49,6 +49,11 @@ def store_no_llm(locations) -> Bookstore:
     return Bookstore(locations)
 
 
+def test_toolkit_receives_grace(store: Bookstore) -> None:
+    """Use the staging retention window for generation garbage collection."""
+    assert store._toolkit("project")._generation_grace_s == _STAGING_MAX_AGE_S
+
+
 @pytest.mark.asyncio
 async def test_add_book_markdown_with_llm(store, book_md, locations):
     card, status = await store.add_book(book_md)
@@ -270,6 +275,19 @@ async def test_read_surface_toc_search_and_section(store, book_md):
     assert section["content"]
     hits = await store.search_book(card.book_id, "vector search")
     assert hits and {"node_id", "title", "score"} <= set(hits[0])
+
+
+@pytest.mark.asyncio
+async def test_read_section_reads_body_ref(store: Bookstore, book_md: Path) -> None:
+    """Resolve a catalog node id through the live tree's immutable body reference."""
+    card, _ = await store.add_book(book_md)
+    tree = await store._toolkit("project").get_tree(card.tree_name)
+    node = next(node for node in tree["structure"] if node.get("body_ref"))
+
+    section = store.read_section(card.book_id, node["node_id"])
+
+    assert section["content"]
+    assert "synthetic handbook" in section["content"].lower()
 
 
 @pytest.mark.asyncio
@@ -703,6 +721,22 @@ async def test_reindex_success_swaps_tree_same_book_id(store: Bookstore, book_md
 
 
 @pytest.mark.asyncio
+async def test_reindex_leaves_no_replaced_tree(store: Bookstore, book_md: Path) -> None:
+    """Publication replaces the live generation without creating a backup tree."""
+    card, _ = await store.add_book(book_md)
+    book_md.write_text(
+        SAMPLE_MARKDOWN + "\n## Updated Chapter\n\n"
+        "The updated chapter contains enough descriptive text to remain visible to the markdown parser.\n",
+        encoding="utf-8",
+    )
+
+    _, status = await store.add_book(book_md)
+
+    assert status == "updated"
+    assert not list(store._location("project").trees_dir.glob(f"*{REPLACED_MARKER}*.json"))
+
+
+@pytest.mark.asyncio
 async def test_add_failed_ingest_leaves_no_tree(store: Bookstore, book_md: Path) -> None:
     """Leave no staging or card after a first-add failure."""
 
@@ -778,6 +812,26 @@ async def test_sweep_deletes_stale_staging_keeps_fresh(store: Bookstore, book_md
 
     assert not stale_path.exists()
     assert (store._location("project").trees_dir / f"{fresh}.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_sweep_vacuums_live_reserved_target(store: Bookstore, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Vacuum surviving live trees without letting a cleanup failure stop recovery."""
+    toolkit = store._toolkit("project")
+    live_name = "live"
+    await toolkit.create_tree(live_name)
+    await toolkit.create_tree(f"{live_name}{_STAGING_MARKER}deadbeef")
+    vacuumed: list[str] = []
+
+    async def failing_vacuum(tree_name: str) -> None:
+        vacuumed.append(tree_name)
+        raise RuntimeError("vacuum failed")
+
+    monkeypatch.setattr(toolkit, "vacuum_tree", failing_vacuum)
+
+    await store._sweep_reserved_trees("project")
+
+    assert vacuumed == [live_name]
 
 
 @pytest.mark.asyncio
