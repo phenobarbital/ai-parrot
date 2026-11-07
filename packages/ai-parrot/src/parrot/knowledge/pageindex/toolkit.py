@@ -554,6 +554,7 @@ class PageIndexToolkit(AbstractToolkit):
         """Delete a tree JSON and every sidecar markdown file for it."""
         async with tree_lock(self._storage_dir, tree_name, timeout=self._lock_timeout_s):
             tree_removed = self._store.delete(tree_name)
+            self._segment_store.delete_tree(tree_name)
             sidecars_removed = self._content_store.delete_tree(tree_name)
             if self._embedding_store is not None:
                 self._embedding_store.invalidate_tree(tree_name)
@@ -632,6 +633,12 @@ class PageIndexToolkit(AbstractToolkit):
                         body = self._legacy_body(src, node)
                     if body is not None:
                         txn.set_body(node, body)
+                for doc_id, rev_id in sorted(SegmentStore.live_revisions(src_tree)):
+                    revision = self._segment_store.load_revision(src, doc_id, rev_id)
+                    if revision is None:
+                        logger.warning("rename_tree: revision %s@%s of %r is missing; not carried", doc_id, rev_id, src)
+                        continue
+                    txn.set_revision(revision)
                 try:
                     report = await txn.publish()
                     break
@@ -649,6 +656,7 @@ class PageIndexToolkit(AbstractToolkit):
             self._search.pop(src, None)
             self._tree_sigs.pop(src, None)
             self._content_store._cache_evict_tree(src)
+            self._segment_store.delete_tree(src)
             self._okf_toolkits.pop(src, None)
             lock_path(self._storage_dir, src).unlink(missing_ok=True)
 
@@ -902,6 +910,86 @@ class PageIndexToolkit(AbstractToolkit):
             seqs = list(range(lo, hi))
         result = self._read(tree_name, tree, revision, seqs, max_chars=max_chars, cursor=cursor)
         return result.model_dump()
+
+    async def index_segments(self, tree_name: str, node_id: Optional[str] = None) -> dict[str, Any]:
+        """Create segments for documents imported before segment support, from their stored bodies.
+
+        Run it once per legacy tree to enable ``pageindex_read_segments`` and citations on it.
+        Addresses are section paths (no page numbers). A legacy PDF parent's body includes its
+        children's text, so that text appears twice in the revision; re-import the PDF to avoid it.
+
+        Returns ``{tree_name, documents: [{doc_id, revision, segments, nodes}], generation}``.
+        """
+        tree = self._load_tree(tree_name)
+        structure = tree.get("structure", [])
+        if node_id:
+            root = find_node_by_id(structure, node_id)
+            if root is None:
+                raise KeyError(f"Node {node_id!r} not found in tree {tree_name!r}")
+            if not any(root is candidate for candidate in structure):
+                raise ValueError(f"node {node_id!r} is not a root-level node")
+            if root.get("doc_id"):
+                raise ValueError(f"node {node_id!r} already has segments")
+            roots = [root]
+        else:
+            roots = [candidate for candidate in structure if not candidate.get("doc_id")]
+
+        prepared: list[tuple[str, str, list, dict[str, tuple[int, int]], Optional[ScanReport]]] = []
+        for root in roots:
+            texts: dict[str, str] = {}
+            for node in structure_to_list([root]):
+                nid = node.get("node_id")
+                if nid:
+                    texts[str(nid)] = await asyncio.to_thread(self._content_store.load_node, tree_name, node) or ""
+            segments, ranges = _section_segments([root], texts)
+            if not segments:
+                continue
+            report = await self._scan(segments)
+            prepared.append((str(root.get("node_id")), str(root.get("title", "")), segments, ranges, report))
+
+        documents: list[dict[str, Any]] = []
+
+        async def apply(txn: WriteTransaction) -> None:
+            documents.clear()
+            taken = self._doc_ids_in(tree_name, txn.tree)
+            for root_id, title, segments, ranges, report in prepared:
+                root = next(
+                    (n for n in txn.tree.get("structure", []) if n.get("node_id") == root_id), None
+                )
+                if root is None or root.get("doc_id") or str(root.get("title", "")) != title:
+                    continue
+                source = SourceInfo(name=title, kind="legacy", sha256=_texts_sha256(segments))
+                revision = self._new_revision(
+                    derive_doc_id(title, taken=taken, source_sha256=source.sha256), segments, source, report
+                )
+                taken[revision.doc_id] = source.sha256
+                subtree_nodes = structure_to_list([root])
+                by_node = {
+                    id(n): ranges[str(n["node_id"])]
+                    for n in subtree_nodes
+                    if n.get("node_id") and str(n["node_id"]) in ranges
+                }
+                attach_section_document([root], revision, by_node)
+                self._stage_document(txn, revision, [root])
+                documents.append(
+                    {
+                        "doc_id": revision.doc_id,
+                        "revision": revision.revision,
+                        "segments": len(segments),
+                        "nodes": len(subtree_nodes),
+                    }
+                )
+            if not documents:
+                txn.noop = True
+
+        if prepared:
+            await self._mutate(tree_name, apply)
+        generation = generation_of(self._load_tree(tree_name))
+        return {
+            "tree_name": tree_name,
+            "documents": list(documents),
+            "generation": generation.id if generation else None,
+        }
 
     async def vacuum_tree(self, tree_name: str, max_age_s: Optional[int] = None) -> dict[str, Any]:
         """Remove old files unreferenced by the live generation of a tree.
