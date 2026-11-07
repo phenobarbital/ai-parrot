@@ -232,7 +232,7 @@ When you pick up this task:
 **Notes**: Mutators ported to the copy-on-write transaction; merge-tier validation green.
 
 **Deviations from spec**: `packages/ai-parrot/tests/knowledge/pageindex/test_okf_integration.py` is named in the
-spec test contract but no task owned it. The new `delete_node` retains body blobs for the generation sweep, so
-`test_delete_node_removes_concept_id_sidecar` (old behaviour: sidecar unlinked on delete) went red. The orchestrator
-updated that one test (commits 6171304 and 3a81665) to assert the body is retained and the node leaves the published
-tree (matched by title, because ids are renumbered on delete). No source change.
+spec test contract but no task owned it. `test_delete_node_removes_concept_id_sidecar` was adapted so it also asserts
+the node leaves the published tree (matched by title, because ids are renumbered on delete). The code-review fix
+commit later restored `delete_node`'s removal of OKF flat-concept sidecars (they are never swept), so the original
+"sidecar is gone" assertion still holds; `body_ref` blobs are what is retained for the sweep.

@@ -313,11 +313,10 @@ class TestToolkitDeleteNodeConceptIdCleanup:
         result = await toolkit.delete_node("guide", "0000")
         assert result["removed"] is True
 
-        # FEAT-831: bodies are immutable and retained for the generation sweep so
-        # readers holding an earlier tree generation stay valid. The node leaves
-        # the published tree; the concept_id-keyed body is removed only by
-        # NodeContentStore.sweep_unreferenced once past its grace period.
-        assert toolkit._content_store.load("guide", "safeguards--hipaa-164") == "safeguard body"
+        # FEAT-831: OKF flat-concept sidecars are not generation-versioned and are
+        # never swept, so delete_node removes those of the deleted subtree itself.
+        # (Immutable ``body_ref`` blobs, in contrast, are kept for the sweep.)
+        assert toolkit._content_store.load("guide", "safeguards--hipaa-164") is None
         published = JSONTreeStore(store_dir).load("guide")
         titles = {n["title"] for n in structure_to_list(published["structure"])}
         assert "HIPAA §164" not in titles  # ids are renumbered on delete, so match by title

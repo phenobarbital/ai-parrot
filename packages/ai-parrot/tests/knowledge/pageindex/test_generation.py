@@ -204,7 +204,7 @@ async def test_first_write_keeps_legacy_files_for_grace(tmp_path):
 
 def test_set_body_rejects_unusable_concept_id(tmp_path):
     txn = _txn(tmp_path, "t", {"doc_name": "t", "structure": []}, None)
-    node = {"node_id": "0001", "title": "Too long", "concept_id": "x" * 200}
+    node = {"node_id": "0001", "title": "Odd id", "concept_id": "has.dot and space"}
     with pytest.raises(ValueError, match="cannot be used as a body reference"):
         txn.set_body(node, "body")
 
