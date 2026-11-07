@@ -22,12 +22,23 @@ from parrot.knowledge.ontology.vocabulary.turtle import content_checksum, serial
 _VISIBLE = "since_version <= $2 AND (until_version IS NULL OR $2 < until_version)"
 
 
+def _visible(alias: str) -> str:
+    """Version-visibility predicate for a table alias; the version is always bound as ``$2``."""
+    return f"{alias}.since_version <= $2 AND ({alias}.until_version IS NULL OR $2 < {alias}.until_version)"
+
+
+def _vector_literal(embedding: Sequence[float]) -> str:
+    """pgvector text form (``[1,2,3]``), usable with ``$n::vector`` on a pool without the vector codec."""
+    return "[" + ",".join(repr(float(value)) for value in embedding) + "]"
+
+
 class PostgresOntologyStore:
     """OntologyStore over PostgreSQL. Each call captures one version and reads only at it."""
 
     backend_name: ClassVar[str] = "postgres"
     TRGM_THRESHOLD: ClassVar[float] = 0.45
     RRF_K: ClassVar[int] = 60
+    MAX_HOPS: ClassVar[int] = 16
 
     def __init__(self, pool: Any, *, schema: str | None = None, dsn: str | None = None) -> None:
         settings = resolve_ontology_settings(schema=schema, dsn=dsn)
@@ -90,23 +101,17 @@ class PostgresOntologyStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             version = await self._version_for(conn, ontology_id, as_of)
-
-            # If version is 0, return None (no published versions)
             if version == 0:
                 return None
-
-            # Get the concept visible at the specified version
             row = await conn.fetchrow(
                 f"SELECT iri, kind, pref_label, definition, deprecated, replaced_by "
-                f"FROM {self._schema}.concept WHERE ontology_id = $1 AND iri = $2 AND {_VISIBLE}",
+                f"FROM {self._schema}.concept WHERE ontology_id = $1 AND {_VISIBLE} AND iri = $3",
                 ontology_id,
-                iri,
                 version,
+                iri,
             )
-
             if row is None:
                 return None
-
             return ConceptRef(
                 iri=row["iri"],
                 ontology_id=ontology_id,
@@ -128,110 +133,87 @@ class PostgresOntologyStore:
         kinds: Sequence[str] | None = None,
         embedding: Sequence[float] | None = None,
     ) -> list[Resolution]:
-        """Hybrid lookup at the current version with at most `k` live results."""
+        """Hybrid lookup (exact, trigram, vector) fused with RRF; deprecated concepts are excluded."""
+        term = term.strip()
+        if not term or k <= 0:
+            return []
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            version = await self._version_for(conn, ontology_id, None)  # Current version
-
-            # If version is 0, return empty list (no published versions)
+            version = await self._version_for(conn, ontology_id, None)
             if version == 0:
                 return []
+            schema = self._schema
 
-            # Build conditions for filtering
-            conditions = ["ontology_id = $1"]
-            params = [ontology_id, version]
-            param_index = 3  # Starting from $3 since $1=ontology_id, $2=version
-
+            # $1 ontology_id, $2 version, $3 term, then optional lang / kinds.
+            args: list[Any] = [ontology_id, version, term]
+            filters = ""
             if lang is not None:
-                conditions.append(f"label.lang = ${param_index}")
-                params.append(lang)
-                param_index += 1
-
+                args.append(lang)
+                filters += f" AND l.lang = ${len(args)}"
             if kinds:
-                placeholders = ", ".join(f"${i}" for i in range(param_index, param_index + len(kinds)))
-                conditions.append(f"concept.kind IN ({placeholders})")
-                params.extend(kinds)
-                param_index += len(kinds)
+                args.append(list(kinds))
+                filters += f" AND c.kind = ANY(${len(args)}::text[])"
+            label_rows = await conn.fetch(
+                f"""SELECT c.iri, c.kind, c.pref_label, c.definition, c.replaced_by,
+                           bool_or(lower(l.text) = lower($3)) AS is_exact,
+                           max(similarity(l.text, $3)) AS sim
+                    FROM {schema}.label l
+                    JOIN {schema}.concept c ON c.ontology_id = l.ontology_id AND c.iri = l.iri
+                    WHERE l.ontology_id = $1 AND {_visible('l')} AND {_visible('c')}
+                      AND NOT c.deprecated{filters}
+                      AND (lower(l.text) = lower($3) OR similarity(l.text, $3) > {self.TRGM_THRESHOLD})
+                    GROUP BY c.iri, c.kind, c.pref_label, c.definition, c.replaced_by""",
+                *args,
+            )
 
-            # Exclude deprecated concepts
-            conditions.append("concept.deprecated = FALSE")
+            rows_by_iri: dict[str, Any] = {row["iri"]: row for row in label_rows}
+            exact = sorted(row["iri"] for row in label_rows if row["is_exact"])
+            trgm_rows = [row for row in label_rows if row["sim"] is not None and row["sim"] > self.TRGM_THRESHOLD]
+            trgm = [row["iri"] for row in sorted(trgm_rows, key=lambda r: (-r["sim"], r["iri"]))]
 
-            where_clause = " AND ".join(conditions)
-
-            # Collect results from different sources
-            results = []
-
-            # 1. Exact case-insensitive match on any label
-            exact_query = f"""
-                SELECT concept.iri, concept.kind, concept.pref_label, concept.definition, 
-                       concept.deprecated, concept.replaced_by,
-                       1.0 as score, 'exact' as matched_by
-                FROM {self._schema}.concept concept
-                JOIN {self._schema}.label label ON concept.ontology_id = label.ontology_id 
-                    AND concept.iri = label.iri AND concept.since_version <= $2 
-                    AND (concept.until_version IS NULL OR $2 < concept.until_version)
-                WHERE {where_clause} AND LOWER(label.text) = LOWER($2)
-            """
-            exact_params = params + [term]
-            exact_rows = await conn.fetch(exact_query, *exact_params)
-            results.extend(exact_rows)
-
-            # 2. Trigram similarity
-            trgm_query = f"""
-                SELECT concept.iri, concept.kind, concept.pref_label, concept.definition, 
-                       concept.deprecated, concept.replaced_by,
-                       similarity(label.text, $2) as score, 'trgm' as matched_by
-                FROM {self._schema}.concept concept
-                JOIN {self._schema}.label label ON concept.ontology_id = label.ontology_id 
-                    AND concept.iri = label.iri AND concept.since_version <= $2 
-                    AND (concept.until_version IS NULL OR $2 < concept.until_version)
-                WHERE {where_clause} AND similarity(label.text, $2) > {self.TRGM_THRESHOLD}
-            """
-            trgm_rows = await conn.fetch(trgm_query, *(params + [term]))
-            results.extend(trgm_rows)
-
-            # 3. Vector cosine on concept.embedding when embedding is given
+            vector: list[str] = []
             if embedding is not None:
-                vector_query = f"""
-                    SELECT concept.iri, concept.kind, concept.pref_label, concept.definition, 
-                           concept.deprecated, concept.replaced_by,
-                           1 - (concept.embedding <=> $2) as score, 'vector' as matched_by
-                    FROM {self._schema}.concept concept
-                    WHERE {where_clause} AND concept.embedding IS NOT NULL
-                """
-                vector_params = params + [embedding]
-                vector_rows = await conn.fetch(vector_query, *vector_params)
-                results.extend(vector_rows)
+                vec_args: list[Any] = [ontology_id, version, _vector_literal(embedding)]
+                vec_filter = ""
+                if kinds:
+                    vec_args.append(list(kinds))
+                    vec_filter = f" AND c.kind = ANY(${len(vec_args)}::text[])"
+                vec_args.append(max(k * 5, 50))
+                vector_rows = await conn.fetch(
+                    f"""SELECT c.iri, c.kind, c.pref_label, c.definition, c.replaced_by
+                        FROM {schema}.concept c
+                        WHERE c.ontology_id = $1 AND {_visible('c')} AND NOT c.deprecated
+                          AND c.embedding IS NOT NULL{vec_filter}
+                        ORDER BY c.embedding <=> $3::vector, c.iri
+                        LIMIT ${len(vec_args)}""",
+                    *vec_args,
+                )
+                for row in vector_rows:
+                    rows_by_iri.setdefault(row["iri"], row)
+                    vector.append(row["iri"])
 
-            # Deduplicate results by IRI, keeping the highest scoring match
-            concept_scores = {}
-            for row in results:
-                iri = row["iri"]
-                score = row["score"]
-                if iri not in concept_scores or score > concept_scores[iri]["score"]:
-                    concept_scores[iri] = row
+            fused: dict[str, float] = {}
+            matched_by: dict[str, Literal["exact", "trgm", "vector"]] = {}
+            for name, ranking in (("exact", exact), ("trgm", trgm), ("vector", vector)):
+                for rank, iri in enumerate(ranking, start=1):
+                    fused[iri] = fused.get(iri, 0.0) + 1.0 / (self.RRF_K + rank)
+                    matched_by.setdefault(iri, name)  # type: ignore[arg-type]
 
-            # Apply RRF scoring
-            scored_concepts = []
-            for i, (_iri, row) in enumerate(concept_scores.items()):
-                # Simple ranking-based scoring for now
-                rrf_score = 1.0 / (self.RRF_K + i + 1) if i < len(concept_scores) else 0
-                concept_ref = ConceptRef(
-                    iri=row["iri"],
+            results: list[Resolution] = []
+            for iri in sorted(fused, key=lambda item: (-fused[item], item))[:k]:
+                row = rows_by_iri[iri]
+                ref = ConceptRef(
+                    iri=iri,
                     ontology_id=ontology_id,
                     kind=row["kind"],
                     pref_label=row["pref_label"],
                     definition=row["definition"],
-                    deprecated=row["deprecated"],
+                    deprecated=False,
                     replaced_by=row["replaced_by"],
                     version=version,
                 )
-                resolution = Resolution(concept=concept_ref, score=rrf_score, matched_by=row["matched_by"])
-                scored_concepts.append(resolution)
-
-            # Sort by score descending and limit to k results
-            scored_concepts.sort(key=lambda x: x.score, reverse=True)
-            return scored_concepts[:k]
+                results.append(Resolution(concept=ref, score=fused[iri], matched_by=matched_by[iri]))
+            return results
 
     async def expand(
         self,
@@ -251,62 +233,33 @@ class PostgresOntologyStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             version = await self._version_for(conn, ontology_id, as_of)
-
-            # If version is 0, return only the input IRIs
             if version == 0:
                 return set(iris)
 
-            # Build the query based on direction
-            if direction == "down":
-                # Descendants
-                query = f"""
-                    SELECT DISTINCT descendant_iri 
-                    FROM {self._schema}.closure 
-                    WHERE ontology_id = $1 AND version = $2 AND family = $3 
-                    AND ancestor_iri = ANY($4)
-                """
-                params = [ontology_id, version, family, list(iris)]
-            elif direction == "up":
-                # Ancestors
-                query = f"""
-                    SELECT DISTINCT ancestor_iri 
-                    FROM {self._schema}.closure 
-                    WHERE ontology_id = $1 AND version = $2 AND family = $3 
-                    AND descendant_iri = ANY($4)
-                """
-                params = [ontology_id, version, family, list(iris)]
-            else:  # both
-                # Union of ancestors and descendants
-                query = f"""
-                    SELECT DISTINCT iri FROM (
-                        SELECT descendant_iri as iri
-                        FROM {self._schema}.closure 
-                        WHERE ontology_id = $1 AND version = $2 AND family = $3 
-                        AND ancestor_iri = ANY($4)
-                        UNION
-                        SELECT ancestor_iri as iri
-                        FROM {self._schema}.closure 
-                        WHERE ontology_id = $1 AND version = $2 AND family = $3 
-                        AND descendant_iri = ANY($4)
-                    ) combined
-                """
-                params = [ontology_id, version, family, list(iris)]
-
-            # Add depth filter if specified
+            # $1 ontology_id, $2 version, $3 family, $4 iris, optional $5 max_depth.
+            args: list[Any] = [ontology_id, version, family, list(iris)]
+            depth_sql = ""
             if max_depth is not None:
-                query = query.replace("FROM", f"FROM {self._schema}.closure WHERE depth <= {max_depth} AND ")
+                args.append(int(max_depth))
+                depth_sql = f" AND depth <= ${len(args)}"
+            base = f"FROM {self._schema}.closure WHERE ontology_id = $1 AND version = $2 AND family = $3{depth_sql}"
+            down = f"SELECT descendant_iri AS iri {base} AND ancestor_iri = ANY($4::text[])"
+            up = f"SELECT ancestor_iri AS iri {base} AND descendant_iri = ANY($4::text[])"
+            query = {"down": down, "up": up}.get(direction, f"{down} UNION {up}")
 
-            # Exclude deprecated concepts unless asked
-            if not include_deprecated:
-                query += f" AND iri NOT IN (SELECT iri FROM {self._schema}.concept WHERE ontology_id = $1 AND deprecated = TRUE)"
+            found = {row["iri"] for row in await conn.fetch(query, *args)}
 
-            rows = await conn.fetch(query, *params)
-            result_iris = {row["iri"] for row in rows}
+            if not include_deprecated and found:
+                deprecated = await conn.fetch(
+                    f"SELECT iri FROM {self._schema}.concept "
+                    f"WHERE ontology_id = $1 AND {_VISIBLE} AND deprecated AND iri = ANY($3::text[])",
+                    ontology_id,
+                    version,
+                    list(found),
+                )
+                found.difference_update(row["iri"] for row in deprecated)
 
-            # Always include input IRIs
-            result_iris.update(iris)
-
-            return result_iris
+            return found | set(iris)
 
     async def neighbors(
         self,
@@ -320,63 +273,50 @@ class PostgresOntologyStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             version = await self._version_for(conn, ontology_id, as_of)
-
-            # If version is 0, return empty list
             if version == 0:
                 return []
 
-            # Build query
-            query = f"""
-                SELECT predicate, object_iri 
-                FROM {self._schema}.relation 
-                WHERE ontology_id = $1 AND subject_iri = $2 AND {_VISIBLE}
-            """
-            params = [ontology_id, iri, version]
-
+            query = (
+                f"SELECT predicate, object_iri FROM {self._schema}.relation "
+                f"WHERE ontology_id = $1 AND {_VISIBLE} AND subject_iri = $3"
+            )
+            args: list[Any] = [ontology_id, version, iri]
             if predicate is not None:
-                query += " AND predicate = $4"
-                params.append(predicate)
-
-            query += " ORDER BY predicate, object_iri"
-
-            rows = await conn.fetch(query, *params)
+                args.append(predicate)
+                query += f" AND predicate = ${len(args)}"
+            rows = await conn.fetch(query + " ORDER BY predicate, object_iri", *args)
             return [(row["predicate"], row["object_iri"]) for row in rows]
 
     async def canonical(self, ontology_id: str, iris: Sequence[str]) -> dict[str, str]:
-        """Map each IRI to its live replacement, following replacements safely."""
+        """Map each IRI to its live replacement (cycle-safe, at most 16 hops); unchanged IRIs are omitted."""
         if not iris:
             return {}
 
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            version = await self._version_for(conn, ontology_id, None)  # Current version
-
-            # If version is 0, return empty dict
+            version = await self._version_for(conn, ontology_id, None)
             if version == 0:
                 return {}
 
-            # Get current concepts to check replacements
-            query = f"""
-                SELECT iri, replaced_by 
-                FROM {self._schema}.concept 
-                WHERE ontology_id = $1 AND iri = ANY($2) AND {_VISIBLE} AND replaced_by IS NOT NULL
-            """
-            rows = await conn.fetch(query, ontology_id, list(iris), version)
-
-            # Build replacement map
+            rows = await conn.fetch(
+                f"SELECT iri, replaced_by FROM {self._schema}.concept "
+                f"WHERE ontology_id = $1 AND {_VISIBLE} AND replaced_by IS NOT NULL",
+                ontology_id,
+                version,
+            )
             replacements = {row["iri"]: row["replaced_by"] for row in rows}
 
-            # Follow replacements safely (cycle-safe, ≤ 16 hops)
-            result = {}
+            result: dict[str, str] = {}
             for iri in iris:
-                current = iri
-                hops = 0
-                while current in replacements and hops < 16:
-                    current = replacements[current]
-                    hops += 1
+                current, seen = iri, {iri}
+                for _ in range(self.MAX_HOPS):
+                    following = replacements.get(current)
+                    if following is None or following in seen:
+                        break
+                    current = following
+                    seen.add(current)
                 if current != iri:
                     result[iri] = current
-
             return result
 
     async def export(
