@@ -1,4 +1,5 @@
 """Tests for ConceptCatalogSyncWorker vocabulary publication (TASK-5266)."""
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
