@@ -42,7 +42,8 @@ DEFINE FIELD concept_iri ON entity TYPE option<string>;
 DEFINE FIELD ontology_version ON entity TYPE option<int>;
 DEFINE FIELD embedding ON entity TYPE array<float>;
 DEFINE FIELD aliases ON entity TYPE array<string>;
-DEFINE INDEX entity_fts ON entity FIELDS name, aliases FULLTEXT ANALYZER es_text BM25;
+DEFINE INDEX entity_name_fts ON entity FIELDS name FULLTEXT ANALYZER es_text BM25;
+DEFINE INDEX entity_aliases_fts ON entity FIELDS aliases FULLTEXT ANALYZER es_text BM25;
 DEFINE INDEX entity_vec ON entity FIELDS embedding HNSW DIMENSION 1024 DIST COSINE;
 DEFINE INDEX entity_iri ON entity FIELDS concept_iri;
 

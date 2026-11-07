@@ -28,11 +28,11 @@ RELATE node:a->linked->node:b; RELATE node:b->linked->node:c;
         mutation = "DELETE node:a;"
         assert not mutation.strip().upper().startswith("SELECT ")
     return CheckResult(
-        "G1-11",
-        check_g1_11_traversal.title,
-        True,
-        "pass",
-        f"{traversal} rows={rows!r}; allow-list permitted {dynamic} rows={dynamic_rows!r} and rejected {mutation}",
+        check_id="G1-11",
+        title=check_g1_11_traversal.title,
+        blocking=True,
+        status="pass",
+        evidence=f"{traversal} rows={rows!r}; allow-list permitted {dynamic} rows={dynamic_rows!r} and rejected {mutation}",
     )
 
 
@@ -53,12 +53,20 @@ UPDATE runtime_document:one SET deleted_at = time::now();
         await execute(db, setup, {"key": "shared"})
         visible = await db.query(filter_query, {"key": "shared"}).first()
     async with connect(ctx, "g1_tenant_b", "documents") as db:
-        cross_tenant = await db.query("SELECT * FROM runtime_document WHERE key = $key;", {"key": "shared"}).first()
-    assert visible == [] and cross_tenant == [], (visible, cross_tenant)
+        try:
+            cross_tenant: object = await db.query(
+                "SELECT * FROM runtime_document WHERE key = $key;", {"key": "shared"}
+            ).first()
+        except Exception as exc:  # SurrealDB 3 errors on a table that tenant b never defined
+            if "does not exist" not in str(exc):
+                raise
+            cross_tenant = f"table absent in tenant b ({type(exc).__name__})"
+    assert visible == [], visible
+    assert cross_tenant == [] or str(cross_tenant).startswith("table absent"), cross_tenant
     return CheckResult(
-        "G1-12",
-        check_g1_12_document_store.title,
-        True,
-        "pass",
-        f"{setup} {filter_query} soft-delete={visible!r}; tenant-b cross-read={cross_tenant!r}",
+        check_id="G1-12",
+        title=check_g1_12_document_store.title,
+        blocking=True,
+        status="pass",
+        evidence=f"{setup} {filter_query} soft-delete={visible!r}; tenant-b cross-read={cross_tenant!r}",
     )

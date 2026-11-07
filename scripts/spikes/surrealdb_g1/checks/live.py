@@ -2,8 +2,25 @@
 
 from __future__ import annotations
 
+import asyncio
+from typing import Any
+
 from checks._common import connect, execute, g1_check
 from harness import CheckResult, SpikeContext
+
+_TIMEOUT_S = 10.0
+
+
+async def _next_notification(subscription: Any) -> Any:
+    """Return the next notification of an SDK live subscription (async-iterable) within a timeout."""
+    iterator = subscription.__aiter__()
+    return await asyncio.wait_for(iterator.__anext__(), timeout=_TIMEOUT_S)
+
+
+def _value(notification: Any) -> Any:
+    """Extract the ``value`` field from a notification (dict with ``result`` or an object with ``result``)."""
+    result = notification["result"] if isinstance(notification, dict) else getattr(notification, "result", notification)
+    return result["value"] if isinstance(result, dict) else getattr(result, "value", None)
 
 
 @g1_check("G1-07", "LIVE SELECT delivers changes after reconnect", blocking=True)
@@ -14,16 +31,16 @@ async def check_g1_07_live(ctx: SpikeContext) -> CheckResult:
         await execute(db, create_table)
         subscription = await db.live("live_event")
         await execute(db, "CREATE live_event:first SET value = 'first';")
-        first = await subscription.__anext__()
+        first = await _next_notification(subscription)
     async with connect(ctx, "g1", "g1_07") as db:
         subscription = await db.live("live_event")
         await execute(db, "CREATE live_event:second SET value = 'second';")
-        second = await subscription.__anext__()
-    assert first["result"]["value"] == "first" and second["result"]["value"] == "second"
+        second = await _next_notification(subscription)
+    assert _value(first) == "first" and _value(second) == "second", (first, second)
     return CheckResult(
-        "G1-07",
-        check_g1_07_live.title,
-        True,
-        "pass",
-        f"LIVE SELECT live_event; CREATE first/second; first={first!r}; reconnect={second!r}",
+        check_id="G1-07",
+        title=check_g1_07_live.title,
+        blocking=True,
+        status="pass",
+        evidence=f"LIVE SELECT live_event; CREATE first/second; first={first!r}; reconnect={second!r}",
     )

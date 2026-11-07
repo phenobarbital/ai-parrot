@@ -9,7 +9,7 @@ from harness import CheckResult, SpikeContext
 @g1_check("G1-02", "Draft KnowledgeStore schema applies", blocking=True)
 async def check_g1_02_schema(ctx: SpikeContext) -> CheckResult:
     """Apply the schema and prove strict, flexible, and relation tables exist."""
-    query = "INFO FOR DB; CREATE bundle:test SET repo = 'r', path = 'p', commit = 'c', frontmatter = {extra: true};"
+    query = "INFO FOR DB; CREATE bundle:test SET repo = 'r', path = 'p', commit = 'c', frontmatter = {extra: true}, updated_at = time::now();"
     async with connect(ctx, "g1", "g1_02") as db:
         await apply_schema(db)
         info, bundle = await execute(db, query)

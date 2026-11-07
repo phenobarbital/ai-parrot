@@ -23,8 +23,8 @@ async def _replay(db: object, request_id: str, fail_at: str | None = None) -> li
         raise RuntimeError("injected before local commit")
     query = """
 BEGIN TRANSACTION;
-CREATE mutation:$request_id SET request_id = $request_id;
-CREATE outbox:$request_id SET request_id = $request_id;
+CREATE type::record('mutation', $request_id) SET request_id = $request_id;
+CREATE type::record('outbox', $request_id) SET request_id = $request_id;
 UPDATE stream_counter:main SET value += 1;
 COMMIT TRANSACTION;
 """
@@ -51,7 +51,11 @@ async def check_g1_08_transaction(ctx: SpikeContext) -> CheckResult:
         ).execute()
     assert len(rows[0]) == len(rows[1]) == 1 and rows[2][0]["value"] == 1, rows
     return CheckResult(
-        "G1-08", check_g1_08_transaction.title, True, "pass", f"BEGIN/COMMIT mutation+outbox+counter rows={rows!r}"
+        check_id="G1-08",
+        title=check_g1_08_transaction.title,
+        blocking=True,
+        status="pass",
+        evidence=f"BEGIN/COMMIT mutation+outbox+counter rows={rows!r}",
     )
 
 
@@ -81,4 +85,10 @@ async def check_g1_10_failure_injection(ctx: SpikeContext) -> CheckResult:
                 await _replay(db, "replay")
             outcomes[failure] = await db.query("SELECT * FROM mutation; SELECT * FROM outbox;").execute()
     assert all(len(result[0]) == len(result[1]) == 1 for result in outcomes.values()), outcomes
-    return CheckResult("G1-10", check_g1_10_failure_injection.title, True, "pass", f"replay outcomes={outcomes!r}")
+    return CheckResult(
+        check_id="G1-10",
+        title=check_g1_10_failure_injection.title,
+        blocking=True,
+        status="pass",
+        evidence=f"replay outcomes={outcomes!r}",
+    )

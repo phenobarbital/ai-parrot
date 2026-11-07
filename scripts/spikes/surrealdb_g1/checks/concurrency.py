@@ -23,7 +23,7 @@ def _writer(ctx_data: dict[str, str], index: int, queue: Any) -> None:
             await db.signin({"username": ctx_data["username"], "password": ctx_data["password"]})
             await db.use("g1", "g1_09")
             await db.query(
-                "CREATE mutation:$request_id SET origin = 'writer', ns = 'g1', db = 'g1_09', seq = $seq, request_id = $request_id;",
+                "CREATE type::record('mutation', $request_id) SET origin = 'writer', ns = 'g1', db = 'g1_09', seq = $seq, request_id = $request_id;",
                 {"request_id": f"writer-{index}", "seq": index},
             ).execute()
             queue.put({"index": index, "ok": True})
@@ -67,12 +67,12 @@ async def check_g1_09_writers(ctx: SpikeContext) -> CheckResult:
         rows = await db.query("SELECT * FROM mutation ORDER BY seq;").first()
     assert len(rows) == 8 and len({row["request_id"] for row in rows}) == 8, rows
     return CheckResult(
-        "G1-09",
-        check_g1_09_writers.title,
-        True,
-        "pass",
-        f"spawn eight writers messages={messages!r} rows={rows!r}",
-        {"writers": 8.0, "mutations": float(len(rows))},
+        check_id="G1-09",
+        title=check_g1_09_writers.title,
+        blocking=True,
+        status="pass",
+        evidence=f"spawn eight writers messages={messages!r} rows={rows!r}",
+        measurements={"writers": 8.0, "mutations": float(len(rows))},
     )
 
 
@@ -81,9 +81,9 @@ async def check_g1_13_info(ctx: SpikeContext) -> CheckResult:
     """Record the immutable runtime pins and that G1-09 shares one server."""
     digest_present = "@sha256:" in ctx.server_image
     return CheckResult(
-        "G1-13",
-        check_g1_13_info.title,
-        False,
-        "pass" if digest_present else "skipped",
-        f"sdk={ctx.sdk_version}; image={ctx.server_image}; G1-09 uses eight spawned clients against one server",
+        check_id="G1-13",
+        title=check_g1_13_info.title,
+        blocking=False,
+        status="pass" if digest_present else "skipped",
+        evidence=f"sdk={ctx.sdk_version}; image={ctx.server_image}; G1-09 uses eight spawned clients against one server",
     )
