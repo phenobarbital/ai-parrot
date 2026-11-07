@@ -60,7 +60,9 @@ async def test_publish_twice_same_version(
     first = await instance.publish("same", golden_v1)
     second = await instance.publish("same", golden_v1)
     async with pg_pool.acquire() as conn:
-        versions = await conn.fetchval(f"SELECT count(*) FROM {instance._schema}.version WHERE ontology_id = $1", "same")
+        versions = await conn.fetchval(
+            f"SELECT count(*) FROM {instance._schema}.version WHERE ontology_id = $1", "same"
+        )
     assert first.version == second.version == 1
     assert second.changed is False
     assert versions == 1
@@ -101,7 +103,11 @@ async def test_rejection_writes_nothing(
     tables = ("version", "concept", "label", "relation", "statement", "closure", "publication_outbox")
     async with pg_pool.acquire() as conn:
         before = {table: await conn.fetchval(f"SELECT count(*) FROM {instance._schema}.{table}") for table in tables}
-    invalid = parse_turtle(b"@prefix owl: <http://www.w3.org/2002/07/owl#>. <bad> a owl:Class .", base_iri=golden_base_iri, default_lang="es")
+    invalid = parse_turtle(
+        b"@prefix owl: <http://www.w3.org/2002/07/owl#>. <bad> a owl:Class .",
+        base_iri=golden_base_iri,
+        default_lang="es",
+    )
     with pytest.raises(OntologyValidationError):
         await instance.publish_content("atomic", invalid)
     async with pg_pool.acquire() as conn:
@@ -134,7 +140,11 @@ async def test_concurrent_publish_serialised(
 
 @pytest.mark.asyncio
 async def test_attribute_change_closes_row(
-    publisher: PostgresOntologyPublisher, pg_pool: asyncpg.Pool, golden_v1: bytes, golden_v2: bytes, golden_base_iri: str
+    publisher: PostgresOntologyPublisher,
+    pg_pool: asyncpg.Pool,
+    golden_v1: bytes,
+    golden_v2: bytes,
+    golden_base_iri: str,
 ) -> None:
     """A changed concept appends a replacement row and closes its old validity interval."""
     instance = await _registered_publisher(publisher, "changed", golden_base_iri)
@@ -152,9 +162,7 @@ async def test_attribute_change_closes_row(
 
 
 @pytest.mark.asyncio
-async def test_ensure_ontology_conflicting_base(
-    publisher: PostgresOntologyPublisher, golden_base_iri: str
-) -> None:
+async def test_ensure_ontology_conflicting_base(publisher: PostgresOntologyPublisher, golden_base_iri: str) -> None:
     """Registration cannot change an ontology's immutable base IRI."""
     await publisher.ensure_ontology("conflict", base_iri=golden_base_iri)
     with pytest.raises(ValueError):

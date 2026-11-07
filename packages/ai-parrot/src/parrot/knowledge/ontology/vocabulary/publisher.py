@@ -16,7 +16,6 @@ from parrot.knowledge.ontology.vocabulary.closure import build_closure, material
 from parrot.knowledge.ontology.vocabulary.contracts import (
     EmbedFn,
     OntologyContent,
-    ParsedConcept,
     ParsedLabel,
     ParsedRelation,
     ParsedStatement,
@@ -36,7 +35,9 @@ from parrot.knowledge.ontology.vocabulary.turtle import (
 )
 
 
-def _prepare(content: OntologyContent, base: OntologyContent | None) -> tuple[OntologyContent, PublishDiff, list[Any], str, str]:
+def _prepare(
+    content: OntologyContent, base: OntologyContent | None
+) -> tuple[OntologyContent, PublishDiff, list[Any], str, str]:
     """Materialize inferred rows and deterministic publication material off the event loop."""
     inferred = materialise_inverses(content.relations)
     prepared = content.model_copy(update={"relations": [*content.relations, *inferred]})
@@ -49,11 +50,7 @@ def _prepare(content: OntologyContent, base: OntologyContent | None) -> tuple[On
 def _has_changes(diff: PublishDiff) -> bool:
     """Return whether a content diff requires a new immutable version."""
     return bool(
-        diff.added_iris
-        or diff.changed_iris
-        or diff.deprecated
-        or diff.relations_added
-        or diff.relations_closed
+        diff.added_iris or diff.changed_iris or diff.deprecated or diff.relations_added or diff.relations_closed
     )
 
 
@@ -125,7 +122,9 @@ class PostgresOntologyPublisher:
         self, ontology_id: str, content: OntologyContent, *, notes: str = "", carry_forward_missing: bool = False
     ) -> PublishResult:
         """Validate, diff against the current version, and append a new version when changed."""
-        return await self._publish(ontology_id, content, notes=notes, carry_forward_missing=carry_forward_missing, shapes=None)
+        return await self._publish(
+            ontology_id, content, notes=notes, carry_forward_missing=carry_forward_missing, shapes=None
+        )
 
     async def _publish(
         self,
@@ -149,7 +148,9 @@ class PostgresOntologyPublisher:
                 if content.base_iri != ontology["base_iri"]:
                     raise OntologyValidationError([])
                 base, _, _ = await read_content(conn, self._schema, ontology_id, version) if version else (None, [], {})
-                candidate = self._carry_forward(content, base) if carry_forward_missing and base is not None else content
+                candidate = (
+                    self._carry_forward(content, base) if carry_forward_missing and base is not None else content
+                )
                 previous_iris = await visible_iris(conn, self._schema, ontology_id, version) if version else frozenset()
 
             issues = await loop.run_in_executor(
@@ -162,13 +163,16 @@ class PostgresOntologyPublisher:
                 self._pool_executor(), _prepare, candidate, base
             )
             if not _has_changes(diff):
-                return PublishResult(ontology_id=ontology_id, version=version, changed=False, checksum=checksum, diff=diff)
+                return PublishResult(
+                    ontology_id=ontology_id, version=version, changed=False, checksum=checksum, diff=diff
+                )
             embeddings = await self._embeddings(prepared, diff)
             try:
                 async with self._pool.acquire() as conn:
                     async with conn.transaction():
                         locked = await conn.fetchrow(
-                            f"SELECT current_version FROM {self._schema}.ontology WHERE ontology_id = $1 FOR UPDATE", ontology_id
+                            f"SELECT current_version FROM {self._schema}.ontology WHERE ontology_id = $1 FOR UPDATE",
+                            ontology_id,
                         )
                         if locked is None:
                             raise OntologyNotFound(f"Ontology {ontology_id!r} is not registered")
@@ -191,8 +195,12 @@ class PostgresOntologyPublisher:
             except _RetryPublication:
                 continue
             self.logger.info("published ontology %s version %d", ontology_id, new_version)
-            return PublishResult(ontology_id=ontology_id, version=new_version, changed=True, checksum=checksum, diff=diff)
-        raise PublishConflict(f"Ontology {ontology_id!r} changed during {self.MAX_PUBLISH_RETRIES} publication attempts")
+            return PublishResult(
+                ontology_id=ontology_id, version=new_version, changed=True, checksum=checksum, diff=diff
+            )
+        raise PublishConflict(
+            f"Ontology {ontology_id!r} changed during {self.MAX_PUBLISH_RETRIES} publication attempts"
+        )
 
     def _carry_forward(self, content: OntologyContent, base: OntologyContent) -> OntologyContent:
         """Keep missing base concepts as deprecated candidates with their labels."""
@@ -283,7 +291,9 @@ class PostgresOntologyPublisher:
             )
         await self._reconcile_labels(conn, ontology_id, version, content.labels, base.labels if base else [])
         await self._reconcile_relations(conn, ontology_id, version, content.relations, base.relations if base else [])
-        await self._reconcile_statements(conn, ontology_id, version, content.statements, base.statements if base else [])
+        await self._reconcile_statements(
+            conn, ontology_id, version, content.statements, base.statements if base else []
+        )
         for row in closure:
             await conn.execute(
                 f"INSERT INTO {self._schema}.closure "
@@ -306,7 +316,12 @@ class PostgresOntologyPublisher:
         )
 
     async def _reconcile_labels(
-        self, conn: asyncpg.Connection[Any], ontology_id: str, version: int, current: list[ParsedLabel], base: list[ParsedLabel]
+        self,
+        conn: asyncpg.Connection[Any],
+        ontology_id: str,
+        version: int,
+        current: list[ParsedLabel],
+        base: list[ParsedLabel],
     ) -> None:
         """Close removed label rows and append added label rows."""
         old = {(row.iri, row.lang, row.kind, row.text) for row in base}
@@ -335,7 +350,12 @@ class PostgresOntologyPublisher:
             )
 
     async def _reconcile_relations(
-        self, conn: asyncpg.Connection[Any], ontology_id: str, version: int, current: list[ParsedRelation], base: list[ParsedRelation]
+        self,
+        conn: asyncpg.Connection[Any],
+        ontology_id: str,
+        version: int,
+        current: list[ParsedRelation],
+        base: list[ParsedRelation],
     ) -> None:
         """Close removed asserted or inferred relation rows and append new rows."""
         old = {(row.subject_iri, row.predicate, row.object_iri, row.inferred) for row in base}
@@ -364,7 +384,12 @@ class PostgresOntologyPublisher:
             )
 
     async def _reconcile_statements(
-        self, conn: asyncpg.Connection[Any], ontology_id: str, version: int, current: list[ParsedStatement], base: list[ParsedStatement]
+        self,
+        conn: asyncpg.Connection[Any],
+        ontology_id: str,
+        version: int,
+        current: list[ParsedStatement],
+        base: list[ParsedStatement],
     ) -> None:
         """Close removed statement rows and append new rows keyed by canonical object hash."""
         old = {(row.subject_iri, row.predicate, statement_object_hash(row.object)) for row in base}

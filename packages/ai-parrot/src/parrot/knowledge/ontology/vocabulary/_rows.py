@@ -105,9 +105,7 @@ async def read_content(
     )
 
 
-async def visible_iris(
-    conn: asyncpg.Connection[Any], schema: str, ontology_id: str, version: int
-) -> frozenset[str]:
+async def visible_iris(conn: asyncpg.Connection[Any], schema: str, ontology_id: str, version: int) -> frozenset[str]:
     """Return concept IRIs visible at one published version."""
     rows = await conn.fetch(
         f"SELECT iri FROM {schema}.concept WHERE ontology_id = $1 "
