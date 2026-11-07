@@ -1,0 +1,80 @@
+@prefix ex: <https://ontology.parrot.dev/legal_es/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+ex:LegalEntity a owl:Class ;
+    skos:prefLabel "Entidad jurídica"@es ;
+    skos:prefLabel "Legal entity"@en ;
+    skos:altLabel "Sujeto jurídico"@es ;
+    skos:definition "Entidad reconocida por el ordenamiento jurídico."@es .
+
+ex:Person a owl:Class ;
+    rdfs:subClassOf ex:LegalEntity ;
+    skos:prefLabel "Persona"@es ;
+    skos:prefLabel "Person"@en ;
+    skos:altLabel "Sujeto"@es .
+
+ex:Organization a owl:Class ;
+    rdfs:subClassOf ex:LegalEntity ;
+    skos:prefLabel "Organización"@es ;
+    skos:prefLabel "Organization"@en .
+
+ex:PublicBody a owl:Class ;
+    rdfs:subClassOf ex:Organization ;
+    skos:prefLabel "Organismo público"@es .
+
+ex:PublicAuthority a owl:Class ;
+    rdfs:subClassOf ex:Organization, ex:PublicBody ;
+    skos:prefLabel "Autoridad pública"@es .
+
+ex:MunicipalAuthority a owl:Class ;
+    rdfs:subClassOf ex:PublicAuthority ;
+    skos:prefLabel "Autoridad municipal"@es .
+
+ex:Contract a owl:Class ;
+    rdfs:subClassOf ex:LegalEntity ;
+    skos:prefLabel "Contrato"@es ;
+    skos:altLabel "Acuerdo"@es .
+
+ex:hasParty a owl:ObjectProperty ;
+    rdfs:domain ex:Contract ;
+    rdfs:range ex:LegalEntity ;
+    owl:inverseOf ex:isPartyTo .
+
+ex:isPartyTo a owl:ObjectProperty ;
+    owl:inverseOf ex:hasParty .
+
+ex:signatureDate a owl:DatatypeProperty ;
+    rdfs:domain ex:Contract ;
+    rdfs:range xsd:date .
+
+ex:LegalScheme a skos:ConceptScheme ;
+    skos:prefLabel "Esquema jurídico"@es .
+
+ex:PublicLaw a skos:Concept ;
+    skos:inScheme ex:LegalScheme ;
+    skos:prefLabel "Derecho público"@es .
+
+ex:AdministrativeLaw a skos:Concept ;
+    skos:inScheme ex:LegalScheme ;
+    skos:broader ex:PublicLaw ;
+    skos:prefLabel "Derecho administrativo"@es .
+
+ex:MunicipalLaw a skos:Concept ;
+    skos:inScheme ex:LegalScheme ;
+    skos:broader ex:AdministrativeLaw ;
+    skos:prefLabel "Derecho municipal"@es .
+
+ex:ProcurementLaw a skos:Concept ;
+    skos:inScheme ex:LegalScheme ;
+    skos:broader ex:PublicLaw ;
+    skos:prefLabel "Contratación pública"@es .
+
+ex:contract-2026-001 a owl:NamedIndividual, ex:Contract ;
+    ex:hasParty ex:MunicipalAuthority ;
+    ex:signatureDate "2026-01-01"^^xsd:date ;
+    rdfs:comment "Contrato de servicios municipales de ejemplo."@es ;
+    dcterms:created "2026-01-01"^^xsd:date .
