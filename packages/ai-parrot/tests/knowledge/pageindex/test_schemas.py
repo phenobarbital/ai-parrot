@@ -147,3 +147,12 @@ class TestDocDescription:
     def test_valid(self):
         d = DocDescription(description="Annual report for 2023 fiscal year")
         assert "Annual" in d.description
+
+
+def test_page_index_node_segment_fields():
+    node = PageIndexNode(title="t", doc_id="d", revision="0" * 16, span=[0, 3], owned=[[0, 1]])
+    dumped = node.model_dump()
+    assert dumped["span"] == [0, 3] and dumped["owned"] == [[0, 1]]
+    assert dumped["doc_id"] == "d" and dumped["revision"] == "0" * 16
+    bare = PageIndexNode(title="t").model_dump()
+    assert bare["span"] is None and bare["owned"] is None
