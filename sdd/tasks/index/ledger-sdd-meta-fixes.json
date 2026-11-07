@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-07T00:17:28+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-07T00:20:12+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -38,16 +38,17 @@
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single root task: modifies parse() in knowledge/wiki/ledger/sdd_meta.py and creates tests/sdd/test_brief_flow_meta.py",
-      "file": "sdd/tasks/active/TASK-5295-brief-aware-flowmeta-parse.md",
+      "file": "sdd/tasks/completed/TASK-5295-brief-aware-flowmeta-parse.md",
       "feature_id": "FEAT-836",
       "feature": "ledger-sdd-meta-fixes",
       "spec": "sdd/specs/ledger-sdd-meta-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-11-07T00:17:57+00:00",
+      "completed_at": "2026-11-07T00:18:47+00:00",
+      "verification": "verified"
     }
   ]
 }

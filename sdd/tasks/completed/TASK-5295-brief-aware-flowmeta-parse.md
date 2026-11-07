@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-836 — `sdd_meta.parse()` accepts brief frontmatter
 **Spec**: `sdd/specs/ledger-sdd-meta-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -199,4 +199,10 @@ def _brief(path: Path, body: str) -> Path:
 
 ## Completion Note
 
-_(fill in on completion)_
+**Completed**: 2026-11-07 — commit 4ec570ec8f (resolves `issue:d713bb1cf575`).
+
+`parse()` now gives `kind: brief` frontmatter without `type` the type `"hotfix"` when `base_branch` equals the
+configured `hotfix_base`, otherwise `"feature"`; an explicit `type` is kept and a brief without `base_branch` still
+raises `ValidationError`. `worktree_sync.resolve_base_branch` needed no change and now resolves brief worktrees, so
+the stale-base advisory runs again. 26 tests passed (new `test_brief_flow_meta.py` + `tests/sdd_scripts/test_sdd_meta*.py`);
+ruff + black clean.
