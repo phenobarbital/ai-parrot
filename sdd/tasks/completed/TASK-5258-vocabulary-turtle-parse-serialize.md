@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5252, TASK-5255, TASK-5257
@@ -221,10 +221,10 @@ def test_inferred_relations_not_in_canonical(golden_base_iri): ...  # add an inf
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-sol · Backend: codex · Attempts: 1 · Duration: 263s. Merge-tier validation green. Orchestrator lint fix: rdflib TYPE_CHECKING import (F821) in turtle.py.
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: gpt-5.6-sol)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: none

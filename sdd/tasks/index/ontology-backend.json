@@ -227,7 +227,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -238,8 +238,9 @@
       "parallelism_notes": "imports resolve_ontology_settings from TASK-5254 (vocabulary/settings.py); tests use pg_pool/pg_schema_name from TASK-5255 (conftest.py)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5256-vocabulary-pg-schema.md"
+      "completed_at": "2026-11-07T00:50:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5256-vocabulary-pg-schema.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5257",
@@ -269,7 +270,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -281,8 +282,9 @@
       "parallelism_notes": "imports PARROT_NS/SKOS/OWL from TASK-5257 (closure.py); tests use golden_v1 from TASK-5255 (conftest.py); needs rdflib declared by TASK-5252 (pyproject extra); references the vocabulary package path only — imports its own submodules, which resolve as a PEP 420 namespace before TASK-5254 adds __init__.py (not a use of TASK-5254)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5258-vocabulary-turtle-parse-serialize.md"
+      "completed_at": "2026-11-07T00:50:21+00:00",
+      "file": "sdd/tasks/completed/TASK-5258-vocabulary-turtle-parse-serialize.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5259",

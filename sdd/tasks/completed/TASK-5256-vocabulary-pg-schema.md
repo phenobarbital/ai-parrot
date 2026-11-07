@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5254, TASK-5255
@@ -222,10 +222,10 @@ async def test_ensure_schema_twice(pg_pool, pg_schema_name): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 277s. Merge-tier validation green.
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: gpt-5.6-terra)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: none
