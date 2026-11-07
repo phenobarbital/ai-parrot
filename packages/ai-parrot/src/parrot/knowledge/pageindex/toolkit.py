@@ -552,9 +552,7 @@ class PageIndexToolkit(AbstractToolkit):
         async with tree_lock(self._storage_dir, src, timeout=self._lock_timeout_s):
             src_tree = self._store.load(src)
             dst_base = (
-                self._store.load(dst)
-                if replaced
-                else {"doc_name": src_tree.get("doc_name", dst), "structure": []}
+                self._store.load(dst) if replaced else {"doc_name": src_tree.get("doc_name", dst), "structure": []}
             )
             txn = WriteTransaction(
                 tree_name=dst,

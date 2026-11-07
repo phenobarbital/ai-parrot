@@ -1425,6 +1425,7 @@ async def test_rename_tree_projection_failure_keeps_both(monkeypatch, toolkit: P
     """A strict destination projection failure leaves both JSON trees unchanged."""
     await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
     await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
+
     async def enrich(txn) -> None:
         txn.tree["structure"][0]["type"] = "Section"
 
