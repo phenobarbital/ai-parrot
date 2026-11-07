@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 REPO = Path(__file__).resolve().parents[5]
 PAGE = REPO / "wiki" / "knowledge" / "pageindex-generation-publication.md"
 
