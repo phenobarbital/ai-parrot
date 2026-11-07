@@ -928,11 +928,15 @@ class PageIndexToolkit(AbstractToolkit):
                 raise KeyError(f"Node {node_id!r} not found in tree {tree_name!r}")
             if not any(root is candidate for candidate in structure):
                 raise ValueError(f"node {node_id!r} is not a root-level node")
-            if root.get("doc_id"):
+            if any(n.get("doc_id") for n in structure_to_list([root])):
                 raise ValueError(f"node {node_id!r} already has segments")
             roots = [root]
         else:
-            roots = [candidate for candidate in structure if not candidate.get("doc_id")]
+            roots = [
+                candidate
+                for candidate in structure
+                if not any(n.get("doc_id") for n in structure_to_list([candidate]))
+            ]
 
         prepared: list[tuple[str, str, list, dict[str, tuple[int, int]], Optional[ScanReport]]] = []
         for root in roots:
@@ -941,7 +945,7 @@ class PageIndexToolkit(AbstractToolkit):
                 nid = node.get("node_id")
                 if nid:
                     texts[str(nid)] = await asyncio.to_thread(self._content_store.load_node, tree_name, node) or ""
-            segments, ranges = _section_segments([root], texts)
+            segments, ranges = await asyncio.to_thread(_section_segments, [root], texts)
             if not segments:
                 continue
             report = await self._scan(segments)
@@ -956,7 +960,11 @@ class PageIndexToolkit(AbstractToolkit):
                 root = next(
                     (n for n in txn.tree.get("structure", []) if n.get("node_id") == root_id), None
                 )
-                if root is None or root.get("doc_id") or str(root.get("title", "")) != title:
+                if (
+                    root is None
+                    or any(n.get("doc_id") for n in structure_to_list([root]))
+                    or str(root.get("title", "")) != title
+                ):
                     continue
                 source = SourceInfo(name=title, kind="legacy", sha256=_texts_sha256(segments))
                 revision = self._new_revision(
@@ -1306,7 +1314,9 @@ class PageIndexToolkit(AbstractToolkit):
         # Build-time scratch fields that should never reach disk.
         node_markdown = _pop_node_field(subtree, "text")
         _strip_keys_in_place(subtree, ("token_count", "line_num"))
-        segments, own_by_id = _section_segments(subtree.get("structure", []), node_markdown)
+        segments, own_by_id = await asyncio.to_thread(
+            _section_segments, subtree.get("structure", []), node_markdown
+        )
         report = await self._scan(segments)
         source = SourceInfo(name=doc_name or "ingested.md", kind="markdown", sha256=_texts_sha256(segments))
         imported: dict[str, Optional[str]] = {"doc_id": None, "revision": None}
@@ -1359,7 +1369,9 @@ class PageIndexToolkit(AbstractToolkit):
         records = [EbookSection.model_validate(section) for section in sections]
         subtree = ebook_tree(records)
         node_markdown = _pop_node_field(subtree, "text")
-        segments, own_by_id = _section_segments(subtree.get("structure", []), node_markdown)
+        segments, own_by_id = await asyncio.to_thread(
+            _section_segments, subtree.get("structure", []), node_markdown
+        )
         report = await self._scan(segments)
         source = SourceInfo(
             name=(records[0].source_uri or records[0].title) if records else "ebook",
@@ -1534,10 +1546,14 @@ class PageIndexToolkit(AbstractToolkit):
         """Score ``segments`` in place for prompt injection; ``None`` when scanning is disabled."""
         if not self._scan_injection or not segments:
             return None
-        engine = await asyncio.to_thread(get_injection_scoring_engine)
-        return await scan_segments(
-            segments, detector=self._detector, engine=engine, threshold=self._injection_threshold
-        )
+        try:
+            engine = await asyncio.to_thread(get_injection_scoring_engine)
+            return await scan_segments(
+                segments, detector=self._detector, engine=engine, threshold=self._injection_threshold
+            )
+        except Exception as exc:  # noqa: BLE001 - scanning must never abort an import
+            logger.warning("injection scan failed; importing without flags: %s", exc)
+            return None
 
     def _doc_ids_in(self, tree_name: str, tree: dict[str, Any]) -> dict[str, Optional[str]]:
         """``doc_id`` -> source sha256 (or None) for every imported document already in ``tree``."""
