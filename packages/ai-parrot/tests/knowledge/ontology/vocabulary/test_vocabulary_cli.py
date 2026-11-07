@@ -116,9 +116,7 @@ async def test_publish_and_version(
 
     common = ["--dsn", dsn, "--schema", pg_schema_name]
     initialized = await invoke(["ontology", "init-schema", *common])
-    registered = await invoke(
-        ["ontology", "register", "legal_es", "--base-iri", golden_base_iri, *common]
-    )
+    registered = await invoke(["ontology", "register", "legal_es", "--base-iri", golden_base_iri, *common])
     published = await invoke(["ontology", "publish", "legal_es", str(turtle_file), *common])
     current = await invoke(["ontology", "version", "legal_es", *common])
 

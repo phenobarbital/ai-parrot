@@ -11,12 +11,10 @@ import click
 
 def _database_options(command: Any) -> Any:
     """Add the common ontology PostgreSQL options to a Click command."""
-    command = click.option("--schema", default=None, help="Schema name (default: ONTOLOGY_PG_SCHEMA or ontology_store).")(
-        command
-    )
-    return click.option("--dsn", default=None, help="asyncpg DSN (default: ONTOLOGY_PG_DSN).")(
-        command
-    )
+    command = click.option(
+        "--schema", default=None, help="Schema name (default: ONTOLOGY_PG_SCHEMA or ontology_store)."
+    )(command)
+    return click.option("--dsn", default=None, help="asyncpg DSN (default: ONTOLOGY_PG_DSN).")(command)
 
 
 @click.group()
