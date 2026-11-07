@@ -166,7 +166,7 @@ async def _probe_pages_for_toc(
     results = await _limited_gather(coros, return_exceptions=True)
 
     detected: dict[int, str] = {}
-    for idx, result in zip(indices, results):
+    for idx, result in zip(indices, results, strict=False):
         if isinstance(result, Exception):
             logger.warning("TOC detector failed on page %d: %s", idx, result)
             detected[idx] = "no"
@@ -705,7 +705,7 @@ async def check_title_appearance_in_start_concurrent(
                 item["appear_start"] = "no"
 
     results = await _limited_gather(tasks, return_exceptions=True)
-    for item, result in zip(valid_items, results):
+    for item, result in zip(valid_items, results, strict=False):
         if isinstance(result, Exception):
             logger.error("Error checking start for %s: %s", item["title"], result)
             item["appear_start"] = "no"
@@ -1519,7 +1519,7 @@ async def generate_summaries_for_structure(
     logger.info("Generating summaries for %d nodes", len(tasks))
     summaries = await _limited_gather(tasks)
 
-    for node, summary in zip(nodes, summaries):
+    for node, summary in zip(nodes, summaries, strict=False):
         node["summary"] = summary
     return structure
 
