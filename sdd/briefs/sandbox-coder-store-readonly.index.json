@@ -5,7 +5,7 @@
   "type": "brief",
   "base_branch": "dev",
   "created_at": "2026-11-07",
-  "completed_at": null,
+  "completed_at": "2026-11-07T01:24:54+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -34,7 +34,7 @@
       "feature_id": "BRIEF-c61e28722cca",
       "feature": "sandbox-coder-store-readonly",
       "spec": "sdd/briefs/sandbox-coder-store-readonly.brief.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -42,7 +42,7 @@
       "parallelism_notes": "",
       "assigned_to": null,
       "started_at": "2026-11-07T01:24:20+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-07T01:24:54+00:00",
       "file": "sdd/briefs/sandbox-coder-store-readonly/tasks/HOTFIX-c61e28722cca-2-checkpoint-failure-label.md"
     }
   ]

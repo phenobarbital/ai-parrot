@@ -2,7 +2,7 @@
 
 **Feature**: brief `sandbox-coder-store-readonly` (ledger `issue:c61e28722cca`)
 **Spec**: `sdd/briefs/sandbox-coder-store-readonly.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -284,10 +284,8 @@ def test_sdd_worker_prompt_twins_are_identical():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (host session, `/sdd-start`)
+**Date**: 2026-11-07
+**Notes**: Added the engine-path `checkpoint: evidence_persistence_failed` bullet before the no-engine bullet in both `sdd-worker.md` twins, and appended the "never reuse for engine-path failures" sentence to the `unsupported_host` bullet. Twins are byte-identical (new test guards it). Tests: 20 passed across `test_worker_prompt_orchestrator.py` and `test_start_optimization_contract.py`; `ruff` clean. Code commit `6262de4ff1`. Like task 1 this edits `.claude/agents/`, which a sandboxed `sdd-worker` cannot write.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from brief**: none | describe if any
+**Deviations from brief**: none. Branch not pushed (worktree push URL is `no_push`).
