@@ -63,6 +63,14 @@ def test_native_settings_reject_widening_inputs(tmp_path: Path) -> None:
         native.validate_allowed_domains(["https://github.com"])
 
 
+def test_native_allow_write_includes_coder_evidence_dir(linked: tuple[Path, Path]) -> None:
+    """The native backend allows exactly what Bubblewrap binds, and nothing else under ``artifacts/``."""
+    feature, main = linked
+    allow = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["allowWrite"]
+    assert str((main / "artifacts" / "logs" / "sdd-coder-usage").resolve()) in allow
+    assert str((main / "artifacts").resolve()) not in allow
+
+
 def test_settings_are_strict_and_explicit(linked: tuple[Path, Path]) -> None:
     """All security keys are present with strict values."""
     feature, main = linked

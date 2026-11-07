@@ -140,6 +140,15 @@ def command_policy_error(cwd: Path, argv: Sequence[str]) -> str | None:
 # resolves to the primary checkout, so a worktree agent filing a finding with
 # ``wikitoolkit ledger open`` writes there, never into its own checkout.
 SHARED_LEDGER_DIR = Path(".parrot") / "ledger"
+# The sdd-coder durable evidence store. ``resolve_durable_root``
+# (parrot/flows/dev_loop/sdd_coder/telemetry.py) places it under the PRIMARY
+# checkout so the dataset outlives ``git worktree remove``, and
+# ``parrot sdd task review prepare`` / ``finalize`` write into it from inside a
+# worktree. Only this directory is bound: ``artifacts/`` also holds Python the
+# host executes (``artifacts/laya/``), which must stay read-only. This module is
+# stdlib-only by contract, so the path is duplicated here rather than imported;
+# ``test_coder_evidence_dir_matches_resolve_durable_root`` guards the drift.
+CODER_EVIDENCE_DIR = Path("artifacts") / "logs" / "sdd-coder-usage"
 # Claude Code keeps every session's scratchpad under this root
 # (``/tmp/claude-<uid>/<project-slug>/<session-id>/scratchpad``) and tells the
 # seat to use it for temporary files. The sandbox replaces ``/tmp`` with a
@@ -231,6 +240,45 @@ def shared_ledger_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
     return (ledger_dir,)
 
 
+def coder_evidence_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
+    """Return the primary checkout's sdd-coder evidence store for a linked worktree.
+
+    ``parrot sdd task review prepare`` and ``parrot sdd task finalize`` resolve
+    the store to ``<primary>/artifacts/logs/sdd-coder-usage`` and write the
+    review checkpoint and the task journal there. Only that directory is
+    returned: the rest of ``artifacts/`` holds Python the unsandboxed host
+    executes and stays read-only.
+
+    Unlike :func:`shared_ledger_dirs`, a missing directory is created rather
+    than skipped: the store does not exist before the first execution, and
+    Bubblewrap cannot bind a path that is not there.
+
+    Args:
+        root: The checkout root resolved for the command's working directory.
+        git_dir: The common Git directory, or ``None`` outside a repository.
+
+    Returns:
+        The evidence directory to bind writable, or an empty tuple for the
+        primary checkout (already writable) and when it cannot be created.
+    """
+    if git_dir is None:
+        return ()
+    primary = git_dir.parent
+    if primary == root:
+        return ()
+    evidence_dir = (primary / CODER_EVIDENCE_DIR).resolve()
+    if evidence_dir.is_relative_to(root):
+        return ()
+    try:
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # Never raise: protected_argv wraps every Bash call, so one raise denies
+        # the whole session. Degrade to "no bind" and let the CLI report its own
+        # write failure.
+        return ()
+    return (evidence_dir,)
+
+
 def claude_scratch_root() -> Path:
     """Return Claude Code's per-user scratchpad root, creating it when absent.
 
@@ -255,7 +303,9 @@ def protected_argv(cwd: Path, argv: Sequence[str], *, derive_pythonpath: bool = 
     worktree directory (the resolved worktree root, so a worktree agent can run
     ``git worktree add/remove`` for ``/sdd-done``), the primary checkout's
     shared SDD ledger (``.parrot/ledger``, so a worktree agent can file and
-    claim ledger issues), private temporary storage,
+    claim ledger issues), the sdd-coder evidence store
+    (``artifacts/logs/sdd-coder-usage``, so review checkpoints and task journals can be
+    written), private temporary storage,
     and Claude Code's scratchpad root (``/tmp/claude-<uid>``, bound back over the
     private ``/tmp`` so a seat's scratchpad survives between commands) are
     writable. The rest of the primary checkout and existing shared
@@ -307,6 +357,8 @@ def protected_argv(cwd: Path, argv: Sequence[str], *, derive_pythonpath: bool = 
         command.extend(["--bind", str(git_dir), str(git_dir)])
     for ledger_dir in shared_ledger_dirs(root, git_dir):
         command.extend(["--bind", str(ledger_dir), str(ledger_dir)])
+    for evidence_dir in coder_evidence_dirs(root, git_dir):
+        command.extend(["--bind", str(evidence_dir), str(evidence_dir)])
     for environment in shared_environments(cwd):
         command.extend(["--ro-bind", str(environment), str(environment)])
     # Caches are disposable and must not write into the shared host cache.
