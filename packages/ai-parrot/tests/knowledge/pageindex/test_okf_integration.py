@@ -313,9 +313,13 @@ class TestToolkitDeleteNodeConceptIdCleanup:
         result = await toolkit.delete_node("guide", "0000")
         assert result["removed"] is True
 
-        # The concept_id-keyed sidecar must be gone.
-        # Use the toolkit's own content_store to avoid cross-instance cache issues.
-        assert toolkit._content_store.load("guide", "safeguards--hipaa-164") is None
+        # FEAT-831: bodies are immutable and retained for the generation sweep so
+        # readers holding an earlier tree generation stay valid. The node leaves
+        # the published tree; the concept_id-keyed body is removed only by
+        # NodeContentStore.sweep_unreferenced once past its grace period.
+        assert toolkit._content_store.load("guide", "safeguards--hipaa-164") == "safeguard body"
+        published = JSONTreeStore(store_dir).load("guide")
+        assert "0000" not in {n["node_id"] for n in structure_to_list(published["structure"])}
 
 
 # ============================================================================
