@@ -2,8 +2,7 @@ version: "3.8"
 
 services:
   surrealdb:
-    image: surrealdb/surrealdb:v3.3.0
-    # FILL IN: digest
+    image: surrealdb/surrealdb@sha256:681c6c22c287421b5c7d99e0fde79b6e0d32c36c1ddeaab2762a1661cb04cd20  # v3.3.0
     ports:
       - "8000:8000"
     environment:
