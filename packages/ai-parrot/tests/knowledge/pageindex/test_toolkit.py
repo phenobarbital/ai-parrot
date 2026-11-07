@@ -683,10 +683,7 @@ async def test_insert_markdown_stores_blobs_and_strips_text(
 
     nodes = [node for node in structure_to_list(persisted["structure"]) if node.get("body_ref")]
     assert nodes, "expected nodes with body blobs"
-    assert any(
-        "UNIQUE_INSTALL_MARKER" in (toolkit._content_store.load_node("kb", node) or "")
-        for node in nodes
-    )
+    assert any("UNIQUE_INSTALL_MARKER" in (toolkit._content_store.load_node("kb", node) or "") for node in nodes)
     assert not list((tmp_path / "kb").glob("*.md"))
 
 

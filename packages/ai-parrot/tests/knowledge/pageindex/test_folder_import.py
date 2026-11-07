@@ -99,7 +99,8 @@ async def test_import_folder_mirrors_directory_layout(
 
 @pytest.mark.asyncio
 async def test_import_folder_publishes_once(
-    toolkit: PageIndexToolkit, sample_folder: Path,
+    toolkit: PageIndexToolkit,
+    sample_folder: Path,
 ):
     await toolkit.create_tree("kb")
     generation_before = (await toolkit.get_generation("kb"))["id"]
