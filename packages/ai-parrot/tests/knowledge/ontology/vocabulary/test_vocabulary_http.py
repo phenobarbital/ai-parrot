@@ -1,4 +1,5 @@
 """Tests for vocabulary HTTP routes (FEAT-824 TASK-5268)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -82,9 +83,7 @@ class FakeStore:
         if ontology_id not in self._ontologies:
             raise OntologyNotFound(f"Ontology {ontology_id!r} is not registered")
         if version is not None and version > self._versions[ontology_id]:
-            raise OntologyVersionNotFound(
-                f"Version {version} of ontology {ontology_id!r} was never published"
-            )
+            raise OntologyVersionNotFound(f"Version {version} of ontology {ontology_id!r} was never published")
         return self._ontologies[ontology_id]
 
     async def export(
@@ -98,9 +97,7 @@ class FakeStore:
         if ontology_id not in self._ontologies:
             raise OntologyNotFound(f"Ontology {ontology_id!r} is not registered")
         if as_of is not None and as_of > self._versions[ontology_id]:
-            raise OntologyVersionNotFound(
-                f"Version {as_of} of ontology {ontology_id!r} was never published"
-            )
+            raise OntologyVersionNotFound(f"Version {as_of} of ontology {ontology_id!r} was never published")
         if fmt == "turtle":
             return b"@prefix ex: <http://example.org/> .\nex:Concept1 a ex:Class ."
         elif fmt == "jsonld":

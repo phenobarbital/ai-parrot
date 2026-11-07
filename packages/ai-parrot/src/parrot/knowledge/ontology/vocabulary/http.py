@@ -1,4 +1,5 @@
 """Read-only HTTP routes of the ontology vocabulary store (FEAT-824)."""
+
 from __future__ import annotations
 
 import logging
@@ -45,19 +46,23 @@ async def get_version(request: web.Request) -> web.Response:
         version = await store.version(ontology_id)
         if version == 0:
             # Registered but never published - return version 0 with no checksum
-            return web.json_response({
-                "ontology_id": ontology_id,
-                "version": 0,
-                "checksum": None,
-            })
+            return web.json_response(
+                {
+                    "ontology_id": ontology_id,
+                    "version": 0,
+                    "checksum": None,
+                }
+            )
 
         # Load the version content to get checksum
         content = await store.load_version(ontology_id, version)
-        return web.json_response({
-            "ontology_id": ontology_id,
-            "version": content.version,
-            "checksum": content.checksum,
-        })
+        return web.json_response(
+            {
+                "ontology_id": ontology_id,
+                "version": content.version,
+                "checksum": content.checksum,
+            }
+        )
     except OntologyNotFound as exc:
         raise web.HTTPNotFound(reason=str(exc)) from exc
     except OntologyVersionNotFound as exc:
@@ -94,10 +99,13 @@ async def get_snapshot(request: web.Request) -> web.StreamResponse:
         path = await build_snapshot(content, snapshot_dir)
 
         # Stream the file
-        return web.FileResponse(path, headers={
-            "Content-Type": "application/vnd.sqlite3",
-            "Content-Disposition": f'attachment; filename="{ontology_id}-v{content.version}.sqlite"',
-        })
+        return web.FileResponse(
+            path,
+            headers={
+                "Content-Type": "application/vnd.sqlite3",
+                "Content-Disposition": f'attachment; filename="{ontology_id}-v{content.version}.sqlite"',
+            },
+        )
     except OntologyNotFound as exc:
         raise web.HTTPNotFound(reason=str(exc)) from exc
     except OntologyVersionNotFound as exc:
