@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5261, TASK-5263
@@ -195,10 +195,12 @@ async def test_conformance_postgres(case, published) -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: zai.glm-5 · Backend: nova · Attempts: 1 · Duration: 167s.
 
-**Completed by**:
-**Date**:
+VALIDATION GAP: the merge-tier run executed 0 tests — all 24 conformance tests (test_postgres_store, test_snapshot_store, test_temporal_fidelity) were SKIPPED because they need a live PostgreSQL (connection refused in the worker sandbox). The conformance suite is therefore NOT verified. Closed as 'partial'. Host step: run `pytest packages/ai-parrot/tests/knowledge/ontology/vocabulary/test_postgres_store.py test_snapshot_store.py test_temporal_fidelity.py` with ONTOLOGY_PG_DSN pointing at a PostgreSQL 17 with vector + pg_trgm before merging.
+
+**Completed by**: sdd-worker (coder: zai.glm-5)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: none

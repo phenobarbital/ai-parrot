@@ -401,7 +401,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -412,8 +412,9 @@
       "parallelism_notes": "tests PostgresOntologyStore.load_version from TASK-5261 (postgres_store.py) and SnapshotOntologyStore from TASK-5263 (snapshot.py)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5264-vocabulary-conformance-temporal.md"
+      "completed_at": "2026-11-07T01:50:03+00:00",
+      "file": "sdd/tasks/completed/TASK-5264-vocabulary-conformance-temporal.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5265",
