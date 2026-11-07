@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-837 — Brief Worktrees Survive the Worktree-Root Migration
 **Spec**: `sdd/specs/dev-loop-feature-launcher-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -255,4 +255,11 @@ Implement exactly the scope above inside the FEAT-837 worktree; run tests with
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (Opus 5.5) via /sdd-fix issue:1b8289182630 — 2026-11-07
+**Commit**: e5e65957fe
+
+- `_reattach_brief_branch()` added; `resolve_feature()` falls back to it when no worktree holds the brief.
+  A failed `for-each-ref` (non-git primary) returns `[]`, so the existing "nope" test still gets exit 2.
+- Local branch → `git worktree add <root>/<branch> <branch>`; origin-only → `--no-track -b`.
+- Tests: re-attach local, origin-only, and ambiguous / occupied / checked-out / no-match (exit 2, no add).
+  `test_sdd_launch.py`: 66 passed. ruff + black clean; `python -S` import still stdlib-only.

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-07T00:18:42.610339+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-07T00:21:19+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -38,7 +38,7 @@
       "feature_id": "FEAT-837",
       "feature": "dev-loop-feature-launcher-fixes",
       "spec": "sdd/specs/dev-loop-feature-launcher-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -46,8 +46,9 @@
       "parallelism_notes": "no edges: touches only sdd/config.py + tests/sdd/test_config.py, disjoint from TASK-5297",
       "assigned_to": "claude-sdd-fix",
       "started_at": "2026-11-07T00:19:28.205533+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5296-migration-recipe-live-guard.md"
+      "completed_at": "2026-11-07T00:21:19+00:00",
+      "file": "sdd/tasks/completed/TASK-5296-migration-recipe-live-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5297",
@@ -56,7 +57,7 @@
       "feature_id": "FEAT-837",
       "feature": "dev-loop-feature-launcher-fixes",
       "spec": "sdd/specs/dev-loop-feature-launcher-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -64,8 +65,9 @@
       "parallelism_notes": "no edges: touches only flows/dev_loop/feature_launcher.py + tests/sdd/test_sdd_launch.py; runs worktree_root out of process, imports nothing from TASK-5296",
       "assigned_to": "claude-sdd-fix",
       "started_at": "2026-11-07T00:19:28.205533+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5297-launcher-reattach-brief-branch.md"
+      "completed_at": "2026-11-07T00:21:19+00:00",
+      "file": "sdd/tasks/completed/TASK-5297-launcher-reattach-brief-branch.md",
+      "verification": "verified"
     }
   ]
 }
