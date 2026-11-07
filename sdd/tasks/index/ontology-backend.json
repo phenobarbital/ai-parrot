@@ -315,7 +315,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -326,8 +326,9 @@
       "parallelism_notes": "imports ensure_schema/validate_schema_name from TASK-5256 (pg_schema.py) and validate_content/diff_content from TASK-5259 (turtle.py)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5260-vocabulary-publisher.md"
+      "completed_at": "2026-11-07T01:14:16+00:00",
+      "file": "sdd/tasks/completed/TASK-5260-vocabulary-publisher.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5261",

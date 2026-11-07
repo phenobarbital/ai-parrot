@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: XL (> 8h)
 **Depends-on**: TASK-5256, TASK-5259
@@ -253,10 +253,10 @@ spawn under pytest — the production default stays a process pool.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 426s. Merge-tier validation exit 0, BUT the PostgreSQL-backed tests (test_publisher.py: 8 tests) were all SKIPPED (needs live Postgres, connection refused) — the publisher's behaviour is NOT exercised by this run; run them against a live DB (ONTOLOGY_PG_DSN) before relying on it.
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: gpt-5.6-terra)
+**Date**: 2026-11-07
 **Publication time (largest golden fixture)**:
 **Notes**:
 
