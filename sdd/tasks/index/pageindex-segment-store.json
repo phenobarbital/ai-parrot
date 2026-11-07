@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-07T01:29:29+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-07T02:00:51+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -333,7 +333,7 @@
       "feature_id": "FEAT-840",
       "feature": "pageindex-segment-store",
       "spec": "sdd/specs/pageindex-segment-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -349,8 +349,9 @@
       "parallelism_notes": "Last in the graph: documents symbols created by TASK-5301 (ownership/render_body), TASK-5302 (SegmentStore), TASK-5304 (get_injection_scoring_engine), TASK-5305 (scan_segments), TASK-5306 (framing), TASK-5310 (index_segments; read tools of TASK-5309 transitively) and TASK-5311 (bookstore_read_*).",
       "assigned_to": null,
       "started_at": "2026-11-07T01:32:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5313-documentation.md"
+      "completed_at": "2026-11-07T02:00:51+00:00",
+      "file": "sdd/tasks/completed/TASK-5313-documentation.md",
+      "verification": "verified"
     }
   ]
 }
