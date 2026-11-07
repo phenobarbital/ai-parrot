@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5250, TASK-5251, TASK-5264, TASK-5266, TASK-5267, TASK-5268
@@ -188,10 +188,12 @@ Also run (acceptance, not a registered test runner):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: haiku · Backend: native · Attempts: 1. The native coder could not run Bash (auto-mode hook), so the orchestrator ran ruff, committed the three declared files in the sub-worktree (5b1499e7b3) and validated: test_vocabulary_docs.py 2 passed (merge tier). NOT run: `parrot sdd techwiki check` and wikitoolkit resolution of the `ref:` Public API targets.
 
-**Completed by**:
-**Date**:
+The vocabulary page documents a Gotcha that the PostgreSQL read paths are unverified/defective (see ledger issue filed by the orchestrator); update the Gotcha when that is fixed.
+
+**Completed by**: sdd-worker (coder: haiku native)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: none
