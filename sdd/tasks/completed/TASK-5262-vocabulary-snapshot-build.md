@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5258
@@ -202,10 +202,10 @@ def test_trigram_similarity_reference_values(): ...   # abs(trigram_similarity(a
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-sol · Backend: codex · Attempts: 1 · Duration: 275s. Merge-tier validation green (28 passed).
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: gpt-5.6-sol)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: none

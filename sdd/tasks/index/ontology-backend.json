@@ -293,7 +293,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -304,8 +304,9 @@
       "parallelism_notes": "modifies turtle.py created by TASK-5258 (same file) and calls _to_graph; imports find_cycle/FAMILY_PREDICATES from TASK-5257 (closure.py); references the vocabulary package path only — imports its own submodules, which resolve as a PEP 420 namespace before TASK-5254 adds __init__.py (not a use of TASK-5254)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5259-vocabulary-validation-diff.md"
+      "completed_at": "2026-11-07T00:56:41+00:00",
+      "file": "sdd/tasks/completed/TASK-5259-vocabulary-validation-diff.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5260",
@@ -355,7 +356,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -365,8 +366,9 @@
       "parallelism_notes": "tests build VersionContent with parse_turtle/content_checksum from TASK-5258 (turtle.py); references the vocabulary package path only — imports its own submodules, which resolve as a PEP 420 namespace before TASK-5254 adds __init__.py (not a use of TASK-5254)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5262-vocabulary-snapshot-build.md"
+      "completed_at": "2026-11-07T00:56:41+00:00",
+      "file": "sdd/tasks/completed/TASK-5262-vocabulary-snapshot-build.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5263",
