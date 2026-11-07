@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Literal, Mapping
+from typing import TYPE_CHECKING, Any, Literal, Mapping
 
 from parrot.knowledge.ontology.vocabulary.closure import OWL, PARROT_NS, RDFS, SKOS  # noqa: F401
 from parrot.knowledge.ontology.vocabulary.contracts import (
@@ -19,6 +19,9 @@ from parrot.knowledge.ontology.vocabulary.contracts import (
     ValidationIssue,
 )
 from parrot.knowledge.ontology.vocabulary.exceptions import OntologyValidationError
+
+if TYPE_CHECKING:
+    import rdflib
 
 DCTERMS = "http://purl.org/dc/terms/"
 KIND_BY_TYPE: dict[str, str] = {
