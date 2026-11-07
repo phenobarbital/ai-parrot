@@ -401,6 +401,7 @@ def native_sandbox_settings(
     root, git_dir, _primary = _native_roots(cwd)
     allow_paths = [root, git_dir, _we.claude_scratch_root(), *_we.worktree_admin_dirs(root, git_dir)]
     allow_paths.extend(_we.shared_ledger_dirs(root, git_dir))
+    allow_paths.extend(_we.coder_evidence_dirs(root, git_dir))
     allow_write: list[str] = []
     for path in allow_paths:
         canonical = str(_canonical(path))

@@ -634,11 +634,20 @@ After all tasks are done, at the development-to-review boundary:
      It resolves HEAD/branch/base SHA/spec/index/convention hashes locally — never from a value you supply — and
      fails with `checkpoint_busy` if any child/reservation/validation has not durably settled. Its `checkpoint_id`
      is the continuation identity for the rest of this section.
+   - **Checkpoint could not be persisted (engine path).** The engine settled, but `review prepare` (or the
+     `validate` that follows) failed to write or reload the checkpoint — an unwritable or unreachable durable
+     evidence store, for example. This is NOT `unsupported_host`: a checkpoint was due and is missing, so the
+     review that follows is not covered by neutral evidence. Record `checkpoint: evidence_persistence_failed`
+     plus the verbatim error in your completion summary, say in that summary that the review ran without a
+     persisted checkpoint, and continue to code review. Do not retry in a loop and do not fabricate a
+     `checkpoint_id`.
    - **No-engine variant (Fallback loop, or the MCP server was never available).** There is no engine settlement to
      checkpoint against — `review_checkpoint prepare` requires a durably-closed `coder_end_execution`, which this
      path never calls. Do not invent a substitute settlement API. Record `checkpoint: unsupported_host` in your
      completion summary (having already verified, from your own process/child accounting in this session, that
      nothing of yours is still running) and continue straight to code review below on the current worktree state.
+     This label means "this host/path has no engine settlement to checkpoint", nothing else — never use it for
+     an engine-path failure to write or reload the checkpoint.
    - **Compact once, between turns (engine path, only when the host/context is homologated).** Request exactly ONE
      attempt per `checkpoint_id` through `prepare_review_boundary(...,
      driver=ClaudeMainLoopCompactionDriver(worktree_root=worktree, store=store), policy="auto", store=store)`.
