@@ -47,7 +47,7 @@ async def check_g1_08_transaction(ctx: SpikeContext) -> CheckResult:
         await execute(db, _SETUP)
         await _replay(db, "atomic")
         rows = await db.query(
-            "SELECT * FROM mutation; SELECT * FROM outbox; SELECT value FROM stream_counter:main;"
+            "SELECT * FROM mutation; SELECT * FROM outbox; SELECT * FROM stream_counter:main;"
         ).execute()
     assert len(rows[0]) == len(rows[1]) == 1 and rows[2][0]["value"] == 1, rows
     return CheckResult(

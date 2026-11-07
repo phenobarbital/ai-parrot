@@ -27,6 +27,8 @@ DEFINE FIELD ordinal ON chunk TYPE int;
 DEFINE FIELD text ON chunk TYPE string;
 DEFINE FIELD tokens ON chunk TYPE int;
 DEFINE FIELD span ON chunk TYPE object;
+DEFINE FIELD span.start ON chunk TYPE int;
+DEFINE FIELD span.end ON chunk TYPE int;
 DEFINE FIELD embedding ON chunk TYPE array<float>;
 DEFINE FIELD concept_iris ON chunk TYPE array<string>;
 
