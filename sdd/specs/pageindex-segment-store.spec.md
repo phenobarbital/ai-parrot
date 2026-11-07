@@ -17,7 +17,7 @@ docs:
 **Feature ID**: FEAT-840
 **Date**: 2026-11-07
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 2.2.0
 
 > Second of the six slices of `sdd/proposals/pageindex-tree-optimizer.brainstorm.md`
