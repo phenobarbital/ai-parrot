@@ -166,7 +166,7 @@ async def _probe_pages_for_toc(
     results = await _limited_gather(coros, return_exceptions=True)
 
     detected: dict[int, str] = {}
-    for idx, result in zip(indices, results):
+    for idx, result in zip(indices, results, strict=False):
         if isinstance(result, Exception):
             logger.warning("TOC detector failed on page %d: %s", idx, result)
             detected[idx] = "no"
@@ -705,7 +705,7 @@ async def check_title_appearance_in_start_concurrent(
                 item["appear_start"] = "no"
 
     results = await _limited_gather(tasks, return_exceptions=True)
-    for item, result in zip(valid_items, results):
+    for item, result in zip(valid_items, results, strict=False):
         if isinstance(result, Exception):
             logger.error("Error checking start for %s: %s", item["title"], result)
             item["appear_start"] = "no"
@@ -1519,7 +1519,7 @@ async def generate_summaries_for_structure(
     logger.info("Generating summaries for %d nodes", len(tasks))
     summaries = await _limited_gather(tasks)
 
-    for node, summary in zip(nodes, summaries):
+    for node, summary in zip(nodes, summaries, strict=False):
         node["summary"] = summary
     return structure
 
@@ -1593,7 +1593,7 @@ async def build_page_index(
             write_node_id(structure)
         if opt.if_add_node_text == "yes":
             add_node_text(structure, page_list)
-        node_markdown = _extract_node_markdown(doc, structure)
+        node_markdown, pages = _extract_node_markdown(doc, structure)
         if opt.if_add_node_summary == "yes":
             if opt.if_add_node_text == "no":
                 add_node_text(structure, page_list)
@@ -1608,12 +1608,14 @@ async def build_page_index(
                     "doc_description": doc_description,
                     "structure": structure,
                     "_node_markdown": node_markdown,
+                    "_pages": pages,
                 }
 
         return {
             "doc_name": get_pdf_name(doc),
             "structure": structure,
             "_node_markdown": node_markdown,
+            "_pages": pages,
         }
     finally:
         _LLM_SEMAPHORE.reset(sem_token)
@@ -1622,18 +1624,17 @@ async def build_page_index(
 def _extract_node_markdown(
     doc: str | BytesIO,
     structure: Any,
-) -> dict[str, str]:
-    """Extract per-node markdown from ``doc`` using ``pymupdf4llm``.
+) -> tuple[dict[str, str], list[tuple[int, str]]]:
+    """Extract per-node markdown and the per-page markdown it was sliced from.
 
-    Returns an empty mapping for non-path inputs (``BytesIO``) or when
-    extraction fails — callers persist whatever they get and the
-    toolkit transparently falls back to summaries on retrieval.
+    Returns ``({}, [])`` for non-path inputs (``BytesIO``) or when extraction fails — callers
+    persist whatever they get and fall back to summaries on retrieval.
     """
     if not isinstance(doc, str):
-        return {}
+        return {}, []
     try:
         pages = extract_markdown_per_page(doc)
     except (FileNotFoundError, ImportError, ValueError) as exc:
         logger.warning("extract_markdown_per_page failed for %s: %s", doc, exc)
-        return {}
-    return build_node_markdown_map(structure, pages)
+        return {}, []
+    return build_node_markdown_map(structure, pages), pages

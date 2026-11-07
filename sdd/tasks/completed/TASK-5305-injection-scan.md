@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-840 — PageIndex Segment Store
 **Spec**: `sdd/specs/pageindex-segment-store.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5300, TASK-5304
@@ -277,9 +277,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+scan_segments: regex pass in one thread, ML on suspects under a semaphore, engine failure falls back to the regex verdict, text never modified. 3 tests.
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (sequential fallback; parrot-sdd-coder MCP unavailable)
+**Date**: 2026-11-07
+**Notes**: tests run with a scratchpad-only shim for navconfig's read-only log dir (environment, not committed)
+**Deviations from spec**: none

@@ -1,7 +1,7 @@
 """
 Prompt Injection Detection and Protection.
 """
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Protocol, Tuple, runtime_checkable
 from enum import Enum
 import re
 from datetime import datetime, timezone
@@ -292,6 +292,37 @@ class PromptInjectionDetector:
             sanitized = pattern.sub(replacement, sanitized)
 
         return sanitized, threats
+
+
+@runtime_checkable
+class InjectionScoringEngine(Protocol):
+    """Public contract of a resolved ML prompt-injection scorer.
+
+    ``score`` returns an injection probability in ``[0, 1]``. Implementations are thread-safe
+    and must be called off the event loop (``asyncio.to_thread``).
+    """
+
+    engine_name: str
+    model_id: str
+
+    def score(self, text: str) -> float:
+        """Return the injection probability for ``text``."""
+        ...
+
+
+def get_injection_scoring_engine(force_reresolve: bool = False) -> Optional[InjectionScoringEngine]:
+    """Return the process-wide ML engine the PromptInjectionGuardrail uses, or ``None`` (regex only).
+
+    The resolution chain lives in ``parrot.bots.guardrails.builtin.prompt_injection``, which owns the
+    pytector/onnxruntime import boundary; it is imported lazily here so ``parrot.security`` never
+    imports ``parrot.bots`` at module import time. Never raises.
+    """
+    try:
+        from parrot.bots.guardrails.builtin.prompt_injection import _resolve_injection_engine
+        return _resolve_injection_engine(force_reresolve)
+    except Exception as exc:  # noqa: BLE001 - callers fall back to the regex detector
+        logger.warning("ML injection scoring engine unavailable: %s", exc)
+        return None
 
 
 class SecurityEventLogger:

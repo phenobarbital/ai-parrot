@@ -21,6 +21,9 @@ EXPECTED_TOOLS = {
     "bookstore_communities",
     "bookstore_get_community",
     "bookstore_search",
+    "bookstore_read_pages",
+    "bookstore_read_segments",
+    "bookstore_outline",
 }
 
 

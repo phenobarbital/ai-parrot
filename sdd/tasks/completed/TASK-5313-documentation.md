@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-840 — PageIndex Segment Store
 **Spec**: `sdd/specs/pageindex-segment-store.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5301, TASK-5302, TASK-5304, TASK-5305, TASK-5306, TASK-5310, TASK-5311
@@ -202,9 +202,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+New wiki page plus updates to pageindex.md and pageindex-generation-publication.md; doc test passes; 'parrot sdd techwiki check' reports 'Docs: required — ok'. Documented names verified against merged code.
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (sequential fallback; parrot-sdd-coder MCP unavailable)
+**Date**: 2026-11-07
+**Notes**: tests run with a scratchpad-only shim for navconfig's read-only log dir (environment, not committed)
+**Deviations from spec**: none

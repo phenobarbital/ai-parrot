@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-840 — PageIndex Segment Store
 **Spec**: `sdd/specs/pageindex-segment-store.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5302
@@ -245,9 +245,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+WriteTransaction gains segment_store kwarg, set_revision, live_revisions; publish validates live revisions, writes staged revisions + fsync before blobs, marks superseded and sweeps after the JSON switch. 3 new tests; 24 generation tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (sequential fallback; parrot-sdd-coder MCP unavailable)
+**Date**: 2026-11-07
+**Notes**: tests run with a scratchpad-only shim for navconfig's read-only log dir (environment, not committed)
+**Deviations from spec**: none

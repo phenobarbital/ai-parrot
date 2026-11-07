@@ -421,7 +421,7 @@ class NodeContentStore:
                     count += 1
                 except FileNotFoundError:
                     pass
-        for sub in ("bodies", "embeddings"):
+        for sub in ("bodies", "embeddings", "segments"):
             shutil.rmtree(tree_dir / sub, ignore_errors=True)
         try:
             tree_dir.rmdir()

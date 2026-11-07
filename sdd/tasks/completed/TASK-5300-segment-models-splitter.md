@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-840 — PageIndex Segment Store
 **Spec**: `sdd/specs/pageindex-segment-store.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -357,9 +357,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented models, `split_blocks`, `segment_pages`, `segment_text`, `revision_id`, `derive_doc_id`, `parse_page_spec`, `format_cursor`, `parse_cursor` in `segments.py`; 8 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (sequential fallback; parrot-sdd-coder MCP unavailable)
+**Date**: 2026-11-07
+**Notes**: `derive_doc_id` strips a trailing known extension (.pdf/.md/.epub/.txt/.html) before slugging. Tests need a scratchpad shim for navconfig (read-only /tmp/navigator/log in the sandbox) - environment only, nothing committed.
+**Deviations from spec**: none
