@@ -179,8 +179,6 @@ class PageIndexToolkit(AbstractToolkit):
         # so trees rewritten by another toolkit/process are reloaded on read.
         self._tree_sigs: dict[str, tuple[int, int]] = {}
         self._search: dict[str, HybridPageIndexSearch] = {}
-        self._batch_depth: dict[str, int] = {}
-        self._batch_dirty: dict[str, bool] = {}
 
         # OKF integration (FEAT-238) — optional per-tree OKF toolkits.
         # Populated via set_okf_toolkit() or lazily by _get_or_build_okf_toolkit().
@@ -285,28 +283,10 @@ class PageIndexToolkit(AbstractToolkit):
             lightweight_adapter=self._light_adapter,
         )
 
-    def _tree_signature(self, tree_name: str) -> tuple[int, int] | None:
-        """Return ``(st_mtime_ns, st_size)`` of the tree JSON, or ``None`` when it is missing."""
-        try:
-            st = self._store._path_for(tree_name).stat()
-        except OSError:
-            return None
-        return (st.st_mtime_ns, st.st_size)
-
-    def _remember_tree_signature(self, tree_name: str) -> None:
-        """Record the current on-disk signature of ``tree_name`` (after a load or own write)."""
-        sig = self._tree_signature(tree_name)
-        if sig is None:
-            self._tree_sigs.pop(tree_name, None)
-        else:
-            self._tree_sigs[tree_name] = sig
-
     def _load_tree(self, tree_name: str) -> dict[str, Any]:
         cached = self._trees.get(tree_name)
         if cached is not None:
-            if self._batch_depth.get(tree_name, 0) > 0:
-                return cached
-            if self._tree_signature(tree_name) == self._tree_sigs.get(tree_name):
+            if self._store.signature(tree_name) == self._tree_sigs.get(tree_name):
                 return cached
             logger.debug("PageIndex tree %r changed on disk; reloading", tree_name)
             self._trees.pop(tree_name, None)
@@ -318,7 +298,9 @@ class PageIndexToolkit(AbstractToolkit):
             raise KeyError(f"Tree {tree_name!r} does not exist")
         tree = self._store.load(tree_name)
         self._trees[tree_name] = tree
-        self._remember_tree_signature(tree_name)
+        signature = self._store.signature(tree_name)
+        if signature is not None:
+            self._tree_sigs[tree_name] = signature
         return tree
 
     def _search_for(self, tree_name: str) -> HybridPageIndexSearch:
@@ -342,26 +324,6 @@ class PageIndexToolkit(AbstractToolkit):
             )
             self._search[tree_name] = engine
         return engine
-
-    def _persist(self, tree_name: str) -> None:
-        tree = self._trees.get(tree_name)
-        if tree is None:
-            return
-        if self._batch_depth.get(tree_name, 0) > 0:
-            self._batch_dirty[tree_name] = True
-            return
-        self._store.save(tree_name, tree)
-        self._remember_tree_signature(tree_name)
-        engine = self._search.get(tree_name)
-        if engine is not None:
-            engine.mark_dirty()
-        # OKF projection (FEAT-238): regenerate sidecars when the tree has
-        # OKF-enriched nodes.  The check is cheap (first node in structure).
-        # project_sidecars() is idempotent and a no-op for non-enriched trees.
-        try:
-            self._project_okf_sidecars(tree_name, tree)
-        except Exception:
-            logger.exception("OKF sidecar projection failed for tree %r — skipping", tree_name)
 
     def _project_okf_sidecars(self, tree_name: str, tree: dict[str, Any]) -> bool:
         """Trigger OKF sidecar projection if the tree is OKF-enriched.
@@ -496,16 +458,6 @@ class PageIndexToolkit(AbstractToolkit):
                 logger.debug("Failed to collect OKF tools from toolkit %r", okf_tk)
         return base_tools + okf_tools
 
-    @asynccontextmanager
-    async def _batch(self, tree_name: str):
-        self._batch_depth[tree_name] = self._batch_depth.get(tree_name, 0) + 1
-        try:
-            yield
-        finally:
-            self._batch_depth[tree_name] -= 1
-            if self._batch_depth[tree_name] == 0 and self._batch_dirty.pop(tree_name, False):
-                self._persist(tree_name)
-
     # ---- tool methods --------------------------------------------------
 
     async def list_trees(self) -> list[str]:
@@ -589,8 +541,9 @@ class PageIndexToolkit(AbstractToolkit):
         self._store._validate_name(dst)
         if src == dst:
             raise ValueError("Source and destination tree names must differ")
-        if self._batch_depth.get(src, 0) > 0 or self._batch_depth.get(dst, 0) > 0:
-            raise ValueError("Cannot rename a tree participating in an open batch")
+        open_txns = _OPEN_TXNS.get() or {}
+        if (id(self), src) in open_txns or (id(self), dst) in open_txns:
+            raise ValueError("Cannot rename a tree participating in an open write")
         if not self._store.exists(src):
             raise KeyError(f"Tree {src!r} does not exist")
 
@@ -939,32 +892,30 @@ class PageIndexToolkit(AbstractToolkit):
             ``{tree_name, node_id, categories, metadata}`` with the
             post-merge values.
         """
-        tree = self._load_tree(tree_name)
-        node = find_node_by_id(tree.get("structure", []), node_id)
-        if node is None:
-            raise KeyError(f"node_id {node_id!r} not found in tree {tree_name!r}")
+        async def apply(txn: WriteTransaction) -> tuple[list[str], dict[str, Any]]:
+            node = find_node_by_id(txn.tree.get("structure", []), node_id)
+            if node is None:
+                raise KeyError(f"node_id {node_id!r} not found in tree {tree_name!r}")
+            if categories:
+                existing = set(node.get("categories") or [])
+                existing.update(str(category) for category in categories)
+                node["categories"] = sorted(existing)
+            if metadata:
+                existing_meta = dict(node.get("metadata") or {})
+                existing_meta.update(metadata)
+                node["metadata"] = existing_meta
+            if not node.get("categories"):
+                node.pop("categories", None)
+            if not node.get("metadata"):
+                node.pop("metadata", None)
+            return list(node.get("categories") or []), dict(node.get("metadata") or {})
 
-        if categories:
-            existing = set(node.get("categories") or [])
-            existing.update(str(c) for c in categories)
-            node["categories"] = sorted(existing)
-        if metadata:
-            existing_meta = dict(node.get("metadata") or {})
-            existing_meta.update(metadata)
-            node["metadata"] = existing_meta
-
-        # Drop empty containers so the persisted JSON stays lean.
-        if not node.get("categories"):
-            node.pop("categories", None)
-        if not node.get("metadata"):
-            node.pop("metadata", None)
-
-        self._persist(tree_name)
+        merged_categories, merged_metadata = await self._mutate(tree_name, apply)
         return {
             "tree_name": tree_name,
             "node_id": node_id,
-            "categories": list(node.get("categories") or []),
-            "metadata": dict(node.get("metadata") or {}),
+            "categories": merged_categories,
+            "metadata": merged_metadata,
         }
 
     async def insert_markdown(
@@ -1231,30 +1182,14 @@ class PageIndexToolkit(AbstractToolkit):
     ) -> dict[str, Any]:
         """Delete a node and all its descendants from the tree.
 
-        Also removes any sidecar markdown for the deleted subtree and
-        evicts the matching LRU cache entries so a later ``retrieve``
-        cannot see stale content.
-
-        OKF integration: if the node carries a ``concept_id``, the
-        flattened-concept_id sidecar (``<concept_id>.md``) is also removed
-        so no stale OKF sidecars accumulate after deletion.
+        Referenced body blobs are deliberately retained for the generation
+        sweep so readers holding an earlier tree generation remain valid.
         """
-        tree = self._load_tree(tree_name)
-        node = find_node_by_id(tree.get("structure", []), node_id)
-        descendant_ids: list[str] = []
-        # Collect both node_ids AND flattened concept_ids before deletion.
-        concept_id_keys: list[str] = []
-        if node is not None:
-            descendant_ids = _collect_node_ids(node)
-            concept_id_keys = _collect_concept_id_keys(node)
-        removed = _delete_node(tree, node_id)
-        if removed:
-            for nid in descendant_ids:
-                self._content_store.delete_node(tree_name, nid)
-            # Also clean up concept_id-keyed sidecars (OKF migration artefacts).
-            for cid_key in concept_id_keys:
-                self._content_store.delete_node(tree_name, cid_key)
-            self._persist(tree_name)
+
+        async def apply(txn: WriteTransaction) -> bool:
+            return _delete_node(txn.tree, node_id)
+
+        removed = await self._mutate(tree_name, apply)
         return {"tree_name": tree_name, "removed": removed}
 
     async def add_node(
@@ -1306,39 +1241,14 @@ class PageIndexToolkit(AbstractToolkit):
         if metadata:
             node["metadata"] = dict(metadata)
 
-        tree = self._load_tree(tree_name)
-        new_ids = splice_subtree(tree, node, parent_node_id=parent_node_id)
-        new_id = new_ids[0] if new_ids else node.get("node_id")
-        if new_id and body:
-            # For OKF-enriched trees, splice_subtree auto-assigns concept_id via
-            # _assign_okf_concept_ids.  Save under the flat concept_id key directly
-            # so project_sidecars (called from _persist below) avoids a redundant
-            # node_id → flat_id copy.
-            #
-            # Guard: only use flat_id when the tree is already OKF-enriched
-            # (has at least one node with BOTH concept_id AND type).  Non-OKF
-            # trees (and newly-created bare trees) keep the node_id key so that
-            # existing tests and callers that look up by node_id still work.
-            save_key = new_id
-            structure = tree.get("structure", [])
-            from parrot.knowledge.pageindex.utils import structure_to_list as _stl
+        async def apply(txn: WriteTransaction) -> str | None:
+            inserted_node = copy.deepcopy(node)
+            new_ids = splice_subtree(txn.tree, inserted_node, parent_node_id=parent_node_id)
+            new_id = new_ids[0] if new_ids else inserted_node.get("node_id")
+            txn.set_body(inserted_node, body)
+            return new_id
 
-            is_okf = any(n.get("concept_id") and n.get("type") for n in _stl(structure))
-            if is_okf:
-                inserted = find_node_by_id(structure, new_id)
-                if inserted is not None:
-                    cid = inserted.get("concept_id")
-                    if cid:
-                        try:
-                            from parrot.knowledge.pageindex.okf.projection import (
-                                flatten_concept_id_for_filename,
-                            )
-
-                            save_key = flatten_concept_id_for_filename(cid)
-                        except ImportError:
-                            pass
-            self._content_store.save(tree_name, save_key, body)
-        self._persist(tree_name)
+        new_id = await self._mutate(tree_name, apply)
         return {
             "tree_name": tree_name,
             "node_id": new_id,
@@ -1361,14 +1271,13 @@ class PageIndexToolkit(AbstractToolkit):
         Raises:
             KeyError: If ``node_id`` does not exist in the tree.
         """
-        tree = self._load_tree(tree_name)
-        node = find_node_by_id(tree.get("structure", []), node_id)
-        if node is None:
-            raise KeyError(f"node_id {node_id!r} not found in tree {tree_name!r}")
-        self._content_store.save(tree_name, node_id, body or "")
-        engine = self._search.get(tree_name)
-        if engine is not None:
-            engine.mark_dirty()
+        async def apply(txn: WriteTransaction) -> None:
+            node = find_node_by_id(txn.tree.get("structure", []), node_id)
+            if node is None:
+                raise KeyError(f"node_id {node_id!r} not found in tree {tree_name!r}")
+            txn.set_body(node, body or "")
+
+        await self._mutate(tree_name, apply)
         return {
             "tree_name": tree_name,
             "node_id": node_id,
@@ -1396,24 +1305,24 @@ class PageIndexToolkit(AbstractToolkit):
         if title is None and summary is None:
             raise ValueError("update_node needs at least one of title / summary")
 
-        tree = self._load_tree(tree_name)
-        node = find_node_by_id(tree.get("structure", []), node_id)
-        if node is None:
-            raise KeyError(f"node_id {node_id!r} not found in tree {tree_name!r}")
+        async def apply(txn: WriteTransaction) -> tuple[Any, Any]:
+            node = find_node_by_id(txn.tree.get("structure", []), node_id)
+            if node is None:
+                raise KeyError(f"node_id {node_id!r} not found in tree {tree_name!r}")
+            if title is not None:
+                if not isinstance(title, str) or not title.strip():
+                    raise ValueError("title must be a non-empty string")
+                node["title"] = title.strip()
+            if summary is not None:
+                node["summary"] = summary
+            return node.get("title"), node.get("summary")
 
-        if title is not None:
-            if not isinstance(title, str) or not title.strip():
-                raise ValueError("title must be a non-empty string")
-            node["title"] = title.strip()
-        if summary is not None:
-            node["summary"] = summary
-
-        self._persist(tree_name)
+        updated_title, updated_summary = await self._mutate(tree_name, apply)
         return {
             "tree_name": tree_name,
             "node_id": node_id,
-            "title": node.get("title"),
-            "summary": node.get("summary"),
+            "title": updated_title,
+            "summary": updated_summary,
         }
 
 
