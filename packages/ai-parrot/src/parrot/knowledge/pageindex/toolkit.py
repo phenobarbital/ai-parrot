@@ -889,6 +889,7 @@ class PageIndexToolkit(AbstractToolkit):
             ``{tree_name, node_id, categories, metadata}`` with the
             post-merge values.
         """
+
         async def apply(txn: WriteTransaction) -> tuple[list[str], dict[str, Any]]:
             node = find_node_by_id(txn.tree.get("structure", []), node_id)
             if node is None:
@@ -947,6 +948,7 @@ class PageIndexToolkit(AbstractToolkit):
         # Build-time scratch fields that should never reach disk.
         node_markdown = _pop_node_field(subtree, "text")
         _strip_keys_in_place(subtree, ("token_count", "line_num"))
+
         async def apply(txn: WriteTransaction) -> list[str]:
             fresh = copy.deepcopy(subtree)
             original_id_to_node = _capture_node_id_object_map(fresh)
@@ -975,6 +977,7 @@ class PageIndexToolkit(AbstractToolkit):
         records = [EbookSection.model_validate(section) for section in sections]
         subtree = ebook_tree(records)
         node_markdown = _pop_node_field(subtree, "text")
+
         async def apply(txn: WriteTransaction) -> list[str]:
             fresh = copy.deepcopy(subtree)
             original_id_to_node = _capture_node_id_object_map(fresh)
@@ -1024,7 +1027,7 @@ class PageIndexToolkit(AbstractToolkit):
         """Read a text file and ingest it via :meth:`insert_content`."""
         path = Path(file_path)
         try:
-            content = path.read_text(encoding="utf-8")
+            content = await asyncio.to_thread(path.read_text, encoding="utf-8")
         except UnicodeDecodeError as exc:
             raise ValueError(f"{file_path!r} is not a UTF-8 text file") from exc
         return await self.insert_content(
@@ -1055,7 +1058,7 @@ class PageIndexToolkit(AbstractToolkit):
         Returns:
             ``{tree_name, new_node_ids, doc_name, doc_description?, pages}``
         """
-        if not Path(pdf_path).is_file():
+        if not await asyncio.to_thread(Path(pdf_path).is_file):
             raise FileNotFoundError(f"PDF not found: {pdf_path}")
         subtree = await build_page_index(
             doc=pdf_path,
@@ -1072,6 +1075,7 @@ class PageIndexToolkit(AbstractToolkit):
         # capture object references BEFORE the splice to recover the
         # new ids afterwards.
         node_markdown = dict(subtree.pop("_node_markdown", {}) or {})
+
         async def apply(txn: WriteTransaction) -> list[str]:
             fresh = copy.deepcopy(subtree)
             original_id_to_node = _capture_node_id_object_map(fresh)
@@ -1116,7 +1120,7 @@ class PageIndexToolkit(AbstractToolkit):
         are skipped with a WARNING log line.
         """
         root = Path(folder_path)
-        if not root.is_dir():
+        if not await asyncio.to_thread(root.is_dir):
             raise NotADirectoryError(f"{folder_path!r} is not a directory")
 
         sem = asyncio.Semaphore(self._folder_concurrency)
@@ -1126,7 +1130,7 @@ class PageIndexToolkit(AbstractToolkit):
         async def _ingest_file(path: Path, parent_id: Optional[str]) -> None:
             async with sem:
                 try:
-                    content = path.read_text(encoding="utf-8")
+                    content = await asyncio.to_thread(path.read_text, encoding="utf-8")
                 except UnicodeDecodeError:
                     logger.warning("Skipping non-text file: %s", path)
                     skipped.append(str(path))
@@ -1143,21 +1147,23 @@ class PageIndexToolkit(AbstractToolkit):
                     logger.warning("Failed to ingest %s: %s", path, exc)
                     skipped.append(str(path))
 
+        def _list_dir(dir_path: Path) -> tuple[list[Path], list[Path]]:
+            """List matching files and (when recursive) visible subdirectories of ``dir_path``."""
+            entries = sorted(dir_path.iterdir())
+            files = [
+                p
+                for p in entries
+                if p.is_file() and not p.name.startswith(".") and fnmatch.fnmatch(p.name, glob_pattern)
+            ]
+            subdirs = [p for p in entries if p.is_dir() and not p.name.startswith(".")] if recursive else []
+            return files, subdirs
+
         async def _process_dir(
             txn: WriteTransaction,
             dir_path: Path,
             parent_id: Optional[str],
         ) -> None:
-            files = [
-                p
-                for p in sorted(dir_path.iterdir())
-                if p.is_file() and not p.name.startswith(".") and fnmatch.fnmatch(p.name, glob_pattern)
-            ]
-            subdirs = (
-                [p for p in sorted(dir_path.iterdir()) if p.is_dir() and not p.name.startswith(".")]
-                if recursive
-                else []
-            )
+            files, subdirs = await asyncio.to_thread(_list_dir, dir_path)
             if files:
                 await asyncio.gather(*[_ingest_file(f, parent_id) for f in files])
             for sub in subdirs:
@@ -1299,6 +1305,7 @@ class PageIndexToolkit(AbstractToolkit):
         Raises:
             KeyError: If ``node_id`` does not exist in the tree.
         """
+
         async def apply(txn: WriteTransaction) -> None:
             node = find_node_by_id(txn.tree.get("structure", []), node_id)
             if node is None:

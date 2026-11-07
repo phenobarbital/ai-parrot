@@ -1027,8 +1027,8 @@ class Bookstore:
                 or ``.txt`` without an LLM, or EPUB without
                 ``ai-parrot-loaders``.
         """
-        path = Path(file_path).expanduser().resolve()
-        if not path.is_file():
+        path = await asyncio.to_thread(lambda: Path(file_path).expanduser().resolve())
+        if not await asyncio.to_thread(path.is_file):
             raise BookstoreError(f"File not found: {path}")
         fmt = _FORMAT_BY_SUFFIX.get(path.suffix.lower())
         if fmt is None:
@@ -1339,8 +1339,9 @@ class Bookstore:
                 results.append({"file": str(path), "status": "failed", "error": str(exc)})
         if relate and any_succeeded:
             await self.relate_books(None, communities_only=True)
+        folder_resolved = await asyncio.to_thread(lambda: Path(folder).expanduser().resolve())
         return {
-            "folder": str(Path(folder).expanduser().resolve()),
+            "folder": str(folder_resolved),
             "results": results,
             "ignored": [str(p) for p in ignored],
         }
