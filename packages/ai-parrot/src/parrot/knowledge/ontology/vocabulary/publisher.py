@@ -137,7 +137,7 @@ class PostgresOntologyPublisher:
     ) -> PublishResult:
         """Run the bounded optimistic publication loop."""
         loop = asyncio.get_running_loop()
-        for attempt in range(self.MAX_PUBLISH_RETRIES):
+        for _attempt in range(self.MAX_PUBLISH_RETRIES):
             async with self._pool.acquire() as conn:
                 ontology = await conn.fetchrow(
                     f"SELECT base_iri, current_version FROM {self._schema}.ontology WHERE ontology_id = $1", ontology_id
