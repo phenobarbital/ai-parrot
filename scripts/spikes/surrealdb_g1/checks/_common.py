@@ -23,8 +23,12 @@ def g1_check(check_id: str, title: str, *, blocking: bool) -> Callable[[Check], 
 
 
 @asynccontextmanager
-async def connect(ctx: SpikeContext, namespace: str, database: str) -> AsyncIterator[Any]:
-    """Open an authenticated WebSocket client scoped to a namespace and database."""
+async def connect(ctx: SpikeContext, namespace: str, database: str, *, reset: bool = False) -> AsyncIterator[Any]:
+    """Open an authenticated WebSocket client scoped to a namespace and database.
+
+    With ``reset=True`` the database is dropped and recreated first, so a check is re-runnable
+    against a server that still holds state from a previous run.
+    """
     from surrealdb import AsyncSurreal
 
     url = ctx.url.replace("http://", "ws://", 1).replace("https://", "wss://", 1)
@@ -33,6 +37,8 @@ async def connect(ctx: SpikeContext, namespace: str, database: str) -> AsyncIter
     try:
         await db.signin({"username": ctx.username, "password": ctx.password})
         await db.use(namespace, database)
+        if reset:
+            await db.query(f"REMOVE DATABASE IF EXISTS {database}; DEFINE DATABASE {database};").execute()
         yield db
     finally:
         await db.close()

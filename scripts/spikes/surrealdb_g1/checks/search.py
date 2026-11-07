@@ -32,7 +32,7 @@ async def _seed_chunks(db: object) -> None:
 async def check_g1_03_bm25(ctx: SpikeContext) -> CheckResult:
     """Search an inflected Spanish term and require the stemmed chunk first."""
     query = "SELECT id, search::score(1) AS score FROM chunk WHERE text @1@ $term ORDER BY score DESC;"
-    async with connect(ctx, "g1", "g1_03") as db:
+    async with connect(ctx, "g1", "g1_03", reset=True) as db:
         await apply_schema(db)
         await _seed_chunks(db)
         rows = await db.query(query, {"term": "corriendo"}).first()
@@ -53,7 +53,7 @@ async def check_g1_04_hnsw(ctx: SpikeContext) -> CheckResult:
         "SELECT id, vector::distance::knn() AS distance FROM chunk "
         "WHERE embedding <|1, COSINE|> $vector ORDER BY distance;"
     )
-    async with connect(ctx, "g1", "g1_04") as db:
+    async with connect(ctx, "g1", "g1_04", reset=True) as db:
         await apply_schema(db)
         await _seed_chunks(db)
         rows = await db.query(query, {"vector": _vector(0)}).first()
@@ -73,7 +73,7 @@ async def check_g1_05_containsany(ctx: SpikeContext) -> CheckResult:
     iris = [f"iri:{number}" for number in range(1, 201)]
     bm25 = "SELECT id FROM chunk WHERE text @1@ $term AND concept_iris CONTAINSANY $iris;"
     knn = "SELECT id FROM chunk WHERE embedding <|1, COSINE|> $vector AND concept_iris CONTAINSANY $iris;"
-    async with connect(ctx, "g1", "g1_05") as db:
+    async with connect(ctx, "g1", "g1_05", reset=True) as db:
         await apply_schema(db)
         await _seed_chunks(db)
         with Timer() as bm25_timer:

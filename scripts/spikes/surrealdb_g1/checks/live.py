@@ -27,7 +27,7 @@ def _value(notification: Any) -> Any:
 async def check_g1_07_live(ctx: SpikeContext) -> CheckResult:
     """Subscribe, create data, reconnect, and verify a second subscription receives data."""
     create_table = "DEFINE TABLE live_event SCHEMAFULL; DEFINE FIELD value ON live_event TYPE string;"
-    async with connect(ctx, "g1", "g1_07") as db:
+    async with connect(ctx, "g1", "g1_07", reset=True) as db:
         await execute(db, create_table)
         subscription = await db.live("live_event")
         await execute(db, "CREATE live_event:first SET value = 'first';")

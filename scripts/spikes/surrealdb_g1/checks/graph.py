@@ -18,7 +18,7 @@ RELATE node:a->linked->node:b; RELATE node:b->linked->node:c;
 """
     traversal = "SELECT ->linked->node.name AS reachable FROM node:a;"
     dynamic = "SELECT name FROM node WHERE name = $name;"
-    async with connect(ctx, "g1", "g1_11") as db:
+    async with connect(ctx, "g1", "g1_11", reset=True) as db:
         await execute(db, setup)
         rows = await db.query(traversal).first()
         assert rows and rows[0]["reachable"] == ["b"], rows
@@ -49,7 +49,7 @@ UPSERT runtime_document:one SET key = $key, kind = 'note', deleted_at = NONE;
 UPDATE runtime_document:one SET deleted_at = time::now();
 """
     filter_query = "SELECT * FROM runtime_document WHERE key = $key AND deleted_at = NONE;"
-    async with connect(ctx, "g1_tenant_a", "documents") as db:
+    async with connect(ctx, "g1_tenant_a", "documents", reset=True) as db:
         await execute(db, setup, {"key": "shared"})
         visible = await db.query(filter_query, {"key": "shared"}).first()
     async with connect(ctx, "g1_tenant_b", "documents") as db:

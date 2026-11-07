@@ -10,7 +10,7 @@ from harness import CheckResult, SpikeContext
 async def check_g1_02_schema(ctx: SpikeContext) -> CheckResult:
     """Apply the schema and prove strict, flexible, and relation tables exist."""
     query = "INFO FOR DB; CREATE bundle:test SET repo = 'r', path = 'p', commit = 'c', frontmatter = {extra: true}, updated_at = time::now();"
-    async with connect(ctx, "g1", "g1_02") as db:
+    async with connect(ctx, "g1", "g1_02", reset=True) as db:
         await apply_schema(db)
         info, bundle = await execute(db, query)
     tables = info.get("tables", {}) if isinstance(info, dict) else {}

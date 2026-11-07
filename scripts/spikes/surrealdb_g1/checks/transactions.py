@@ -43,7 +43,7 @@ COMMIT TRANSACTION;
 @g1_check("G1-08", "Transaction commits mutation, outbox, and counter atomically", blocking=True)
 async def check_g1_08_transaction(ctx: SpikeContext) -> CheckResult:
     """Commit the three sync facts as one SurrealQL transaction."""
-    async with connect(ctx, "g1", "g1_08") as db:
+    async with connect(ctx, "g1", "g1_08", reset=True) as db:
         await execute(db, _SETUP)
         await _replay(db, "atomic")
         rows = await db.query(
@@ -70,7 +70,7 @@ async def check_g1_10_failure_injection(ctx: SpikeContext) -> CheckResult:
     )
     outcomes: dict[str, object] = {}
     for failure in failures:
-        async with connect(ctx, "g1", f"g1_10_{failure}") as db:
+        async with connect(ctx, "g1", f"g1_10_{failure}", reset=True) as db:
             await execute(db, _SETUP)
             try:
                 await _replay(db, "replay", failure)

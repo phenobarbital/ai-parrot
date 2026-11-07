@@ -38,7 +38,7 @@ def _writer(ctx_data: dict[str, str], index: int, queue: Any) -> None:
 @g1_check("G1-09", "Eight writers preserve unique mutation identities", blocking=True)
 async def check_g1_09_writers(ctx: SpikeContext) -> CheckResult:
     """Spawn eight clients and check no mutation identity was lost or duplicated."""
-    async with connect(ctx, "g1", "g1_09") as db:
+    async with connect(ctx, "g1", "g1_09", reset=True) as db:
         await execute(
             db,
             "DEFINE TABLE mutation SCHEMAFULL; DEFINE FIELD origin ON mutation TYPE string; DEFINE FIELD ns ON mutation TYPE string; "
