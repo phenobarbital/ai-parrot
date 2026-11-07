@@ -1,4 +1,5 @@
 """OntologyStore over PostgreSQL versioned rows (FEAT-824)."""
+
 from __future__ import annotations
 
 import logging
@@ -6,7 +7,12 @@ from typing import Any, ClassVar, Literal, Sequence
 
 from parrot.knowledge.ontology.vocabulary._rows import read_content
 from parrot.knowledge.ontology.vocabulary.contracts import (
-    ClosureFamily, ConceptRef, OntologyStore, Resolution, StoreStatus, VersionContent,
+    ClosureFamily,
+    ConceptRef,
+    OntologyStore,
+    Resolution,
+    StoreStatus,
+    VersionContent,
 )
 from parrot.knowledge.ontology.vocabulary.exceptions import OntologyNotFound, OntologyVersionNotFound
 from parrot.knowledge.ontology.vocabulary.pg_schema import create_ontology_pg_pool
@@ -39,26 +45,25 @@ class PostgresOntologyStore:
         """Current version (as_of=None) or as_of validated against 1..current_version."""
         # Get the current version of the ontology
         row = await conn.fetchrow(
-            f"SELECT current_version FROM {self._schema}.ontology WHERE ontology_id = $1",
-            ontology_id
+            f"SELECT current_version FROM {self._schema}.ontology WHERE ontology_id = $1", ontology_id
         )
-        
+
         if row is None:
             raise OntologyNotFound(f"Ontology {ontology_id!r} is not registered")
-            
+
         current_version = row["current_version"]
-        
+
         # If as_of is None, return the current version
         if as_of is None:
             return current_version
-            
+
         # Validate that as_of is within valid range
         if as_of < 1 or as_of > current_version:
             raise OntologyVersionNotFound(
                 f"Version {as_of} of ontology {ontology_id!r} was never published "
                 f"(valid range: 1..{current_version})"
             )
-            
+
         return as_of
 
     async def version(self, ontology_id: str) -> int:
@@ -66,8 +71,7 @@ class PostgresOntologyStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                f"SELECT current_version FROM {self._schema}.ontology WHERE ontology_id = $1",
-                ontology_id
+                f"SELECT current_version FROM {self._schema}.ontology WHERE ontology_id = $1", ontology_id
             )
             if row is None:
                 raise OntologyNotFound(f"Ontology {ontology_id!r} is not registered")
@@ -86,21 +90,23 @@ class PostgresOntologyStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             version = await self._version_for(conn, ontology_id, as_of)
-            
+
             # If version is 0, return None (no published versions)
             if version == 0:
                 return None
-                
+
             # Get the concept visible at the specified version
             row = await conn.fetchrow(
                 f"SELECT iri, kind, pref_label, definition, deprecated, replaced_by "
                 f"FROM {self._schema}.concept WHERE ontology_id = $1 AND iri = $2 AND {_VISIBLE}",
-                ontology_id, iri, version
+                ontology_id,
+                iri,
+                version,
             )
-            
+
             if row is None:
                 return None
-                
+
             return ConceptRef(
                 iri=row["iri"],
                 ontology_id=ontology_id,
@@ -109,7 +115,7 @@ class PostgresOntologyStore:
                 definition=row["definition"],
                 deprecated=row["deprecated"],
                 replaced_by=row["replaced_by"],
-                version=version
+                version=version,
             )
 
     async def resolve(
@@ -126,35 +132,35 @@ class PostgresOntologyStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             version = await self._version_for(conn, ontology_id, None)  # Current version
-            
+
             # If version is 0, return empty list (no published versions)
             if version == 0:
                 return []
-                
+
             # Build conditions for filtering
             conditions = ["ontology_id = $1"]
             params = [ontology_id, version]
             param_index = 3  # Starting from $3 since $1=ontology_id, $2=version
-            
+
             if lang is not None:
                 conditions.append(f"label.lang = ${param_index}")
                 params.append(lang)
                 param_index += 1
-                
+
             if kinds:
                 placeholders = ", ".join(f"${i}" for i in range(param_index, param_index + len(kinds)))
                 conditions.append(f"concept.kind IN ({placeholders})")
                 params.extend(kinds)
                 param_index += len(kinds)
-                
+
             # Exclude deprecated concepts
             conditions.append("concept.deprecated = FALSE")
-            
+
             where_clause = " AND ".join(conditions)
-            
+
             # Collect results from different sources
             results = []
-            
+
             # 1. Exact case-insensitive match on any label
             exact_query = f"""
                 SELECT concept.iri, concept.kind, concept.pref_label, concept.definition, 
@@ -169,7 +175,7 @@ class PostgresOntologyStore:
             exact_params = params + [term]
             exact_rows = await conn.fetch(exact_query, *exact_params)
             results.extend(exact_rows)
-            
+
             # 2. Trigram similarity
             trgm_query = f"""
                 SELECT concept.iri, concept.kind, concept.pref_label, concept.definition, 
@@ -183,7 +189,7 @@ class PostgresOntologyStore:
             """
             trgm_rows = await conn.fetch(trgm_query, *(params + [term]))
             results.extend(trgm_rows)
-            
+
             # 3. Vector cosine on concept.embedding when embedding is given
             if embedding is not None:
                 vector_query = f"""
@@ -196,7 +202,7 @@ class PostgresOntologyStore:
                 vector_params = params + [embedding]
                 vector_rows = await conn.fetch(vector_query, *vector_params)
                 results.extend(vector_rows)
-            
+
             # Deduplicate results by IRI, keeping the highest scoring match
             concept_scores = {}
             for row in results:
@@ -204,7 +210,7 @@ class PostgresOntologyStore:
                 score = row["score"]
                 if iri not in concept_scores or score > concept_scores[iri]["score"]:
                     concept_scores[iri] = row
-                    
+
             # Apply RRF scoring
             scored_concepts = []
             for i, (_iri, row) in enumerate(concept_scores.items()):
@@ -218,15 +224,11 @@ class PostgresOntologyStore:
                     definition=row["definition"],
                     deprecated=row["deprecated"],
                     replaced_by=row["replaced_by"],
-                    version=version
+                    version=version,
                 )
-                resolution = Resolution(
-                    concept=concept_ref,
-                    score=rrf_score,
-                    matched_by=row["matched_by"]
-                )
+                resolution = Resolution(concept=concept_ref, score=rrf_score, matched_by=row["matched_by"])
                 scored_concepts.append(resolution)
-                
+
             # Sort by score descending and limit to k results
             scored_concepts.sort(key=lambda x: x.score, reverse=True)
             return scored_concepts[:k]
@@ -245,15 +247,15 @@ class PostgresOntologyStore:
         """Closure of `iris` at one version; it always contains the input IRIs."""
         if not iris:
             return set()
-            
+
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             version = await self._version_for(conn, ontology_id, as_of)
-            
+
             # If version is 0, return only the input IRIs
             if version == 0:
                 return set(iris)
-                
+
             # Build the query based on direction
             if direction == "down":
                 # Descendants
@@ -289,21 +291,21 @@ class PostgresOntologyStore:
                     ) combined
                 """
                 params = [ontology_id, version, family, list(iris)]
-                
+
             # Add depth filter if specified
             if max_depth is not None:
                 query = query.replace("FROM", f"FROM {self._schema}.closure WHERE depth <= {max_depth} AND ")
-                
+
             # Exclude deprecated concepts unless asked
             if not include_deprecated:
                 query += f" AND iri NOT IN (SELECT iri FROM {self._schema}.concept WHERE ontology_id = $1 AND deprecated = TRUE)"
-                
+
             rows = await conn.fetch(query, *params)
             result_iris = {row["iri"] for row in rows}
-            
+
             # Always include input IRIs
             result_iris.update(iris)
-            
+
             return result_iris
 
     async def neighbors(
@@ -318,11 +320,11 @@ class PostgresOntologyStore:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             version = await self._version_for(conn, ontology_id, as_of)
-            
+
             # If version is 0, return empty list
             if version == 0:
                 return []
-                
+
             # Build query
             query = f"""
                 SELECT predicate, object_iri 
@@ -330,13 +332,13 @@ class PostgresOntologyStore:
                 WHERE ontology_id = $1 AND subject_iri = $2 AND {_VISIBLE}
             """
             params = [ontology_id, iri, version]
-            
+
             if predicate is not None:
                 query += " AND predicate = $4"
                 params.append(predicate)
-                
+
             query += " ORDER BY predicate, object_iri"
-                
+
             rows = await conn.fetch(query, *params)
             return [(row["predicate"], row["object_iri"]) for row in rows]
 
@@ -344,15 +346,15 @@ class PostgresOntologyStore:
         """Map each IRI to its live replacement, following replacements safely."""
         if not iris:
             return {}
-            
+
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             version = await self._version_for(conn, ontology_id, None)  # Current version
-            
+
             # If version is 0, return empty dict
             if version == 0:
                 return {}
-                
+
             # Get current concepts to check replacements
             query = f"""
                 SELECT iri, replaced_by 
@@ -360,10 +362,10 @@ class PostgresOntologyStore:
                 WHERE ontology_id = $1 AND iri = ANY($2) AND {_VISIBLE} AND replaced_by IS NOT NULL
             """
             rows = await conn.fetch(query, ontology_id, list(iris), version)
-            
+
             # Build replacement map
             replacements = {row["iri"]: row["replaced_by"] for row in rows}
-            
+
             # Follow replacements safely (cycle-safe, ≤ 16 hops)
             result = {}
             for iri in iris:
@@ -374,7 +376,7 @@ class PostgresOntologyStore:
                     hops += 1
                 if current != iri:
                     result[iri] = current
-                    
+
             return result
 
     async def export(
@@ -401,10 +403,10 @@ class PostgresOntologyStore:
         async with pool.acquire() as conn:
             # Determine the version to load
             target_version = await self._version_for(conn, ontology_id, version)
-            
+
             # Read content using the shared function
             content, closure, embeddings = await read_content(conn, self._schema, ontology_id, target_version)
-            
+
             # Create VersionContent
             version_content = VersionContent(
                 ontology_id=ontology_id,
@@ -412,13 +414,12 @@ class PostgresOntologyStore:
                 checksum=content_checksum(content),
                 content=content,
                 closure=closure,
-                embeddings=embeddings
+                embeddings=embeddings,
             )
-            
+
             return version_content
 
 
-def _create_postgres(*, dsn: str | None = None, schema: str | None = None, pool: Any = None,
-                     **_: Any) -> OntologyStore:
+def _create_postgres(*, dsn: str | None = None, schema: str | None = None, pool: Any = None, **_: Any) -> OntologyStore:
     """Registry factory for the 'postgres' backend."""
     return PostgresOntologyStore(pool, schema=schema, dsn=dsn)
