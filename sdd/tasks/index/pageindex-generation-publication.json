@@ -256,7 +256,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -266,8 +266,9 @@
       "parallelism_notes": "Guard uses _OPEN_TXNS once TASK-5285 removed _batch_depth; serialized on toolkit.py and test_toolkit.py.",
       "assigned_to": null,
       "started_at": "2026-11-06T23:32:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5286-rename-tree-publication.md"
+      "completed_at": "2026-11-07T00:24:44+00:00",
+      "file": "sdd/tasks/completed/TASK-5286-rename-tree-publication.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5287",
