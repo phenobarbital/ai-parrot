@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5260
@@ -216,10 +216,10 @@ async def test_factory_via_registry(...): ...         # create_ontology_store("p
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: qwen3-coder-480b · Backend: nova · Attempts: 1 · Duration: 197s. Merge-tier validation exit 0 (15 passed, 14 skipped: tests needing live Postgres were skipped — run them against ONTOLOGY_PG_DSN before relying on the Postgres paths).
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: qwen3-coder-480b)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: `__init__` gains keyword-only `dsn=None` so the sync registry factory can

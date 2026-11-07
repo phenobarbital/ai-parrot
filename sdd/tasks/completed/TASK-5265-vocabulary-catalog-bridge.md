@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5260
@@ -221,10 +221,10 @@ async def test_catalog_publish_tenant(pg_pool, pg_schema_name): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 323s. Merge-tier validation exit 0 (15 passed, 14 skipped: tests needing live Postgres were skipped — run them against ONTOLOGY_PG_DSN before relying on the Postgres paths).
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: gpt-5.6-terra)
+**Date**: 2026-11-07
 **Notes**:
 
 **Deviations from spec**: none

@@ -337,7 +337,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -347,8 +347,9 @@
       "parallelism_notes": "imports read_content from TASK-5260 (vocabulary/_rows.py); tests publish fixtures with PostgresOntologyPublisher (publisher.py)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5261-vocabulary-postgres-store.md"
+      "completed_at": "2026-11-07T01:37:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5261-vocabulary-postgres-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5262",
@@ -420,7 +421,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -430,8 +431,9 @@
       "parallelism_notes": "calls PostgresOntologyPublisher.ensure_ontology/publish_content(carry_forward_missing) from TASK-5260 (publisher.py)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5265-vocabulary-catalog-bridge.md"
+      "completed_at": "2026-11-07T01:37:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5265-vocabulary-catalog-bridge.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5266",
