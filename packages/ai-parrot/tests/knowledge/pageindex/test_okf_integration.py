@@ -319,7 +319,8 @@ class TestToolkitDeleteNodeConceptIdCleanup:
         # NodeContentStore.sweep_unreferenced once past its grace period.
         assert toolkit._content_store.load("guide", "safeguards--hipaa-164") == "safeguard body"
         published = JSONTreeStore(store_dir).load("guide")
-        assert "0000" not in {n["node_id"] for n in structure_to_list(published["structure"])}
+        titles = {n["title"] for n in structure_to_list(published["structure"])}
+        assert "HIPAA §164" not in titles  # ids are renumbered on delete, so match by title
 
 
 # ============================================================================
