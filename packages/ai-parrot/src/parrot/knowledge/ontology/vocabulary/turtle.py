@@ -349,9 +349,7 @@ def validate_content(
             )
 
     shacl_graph = rdflib.Graph()
-    bundled_shapes = resources.files("parrot.knowledge.ontology.vocabulary.shapes").joinpath(
-        "parrot-core.shacl.ttl"
-    )
+    bundled_shapes = resources.files("parrot.knowledge.ontology.vocabulary.shapes").joinpath("parrot-core.shacl.ttl")
     shacl_graph.parse(data=bundled_shapes.read_bytes(), format="turtle")
     if shapes is not None:
         shacl_graph.parse(data=shapes, format="turtle")

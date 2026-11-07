@@ -88,7 +88,7 @@ def test_rule_shacl_extra_shapes() -> None:
 
 def test_rules_report_every_issue() -> None:
     """Independent rule failures are accumulated instead of short-circuiting."""
-    codes = _codes('other:Outside a owl:Class .')
+    codes = _codes("other:Outside a owl:Class .")
 
     assert codes == {"IRI_OUTSIDE_BASE", "MISSING_PREF_LABEL"}
 
