@@ -214,7 +214,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -224,8 +224,9 @@
       "parallelism_notes": "Uses _mutate/_write/_OPEN_TXNS from TASK-5283; serialized on toolkit.py and test_toolkit.py.",
       "assigned_to": null,
       "started_at": "2026-11-06T23:32:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5284-port-import-mutators.md"
+      "completed_at": "2026-11-07T00:05:25+00:00",
+      "file": "sdd/tasks/completed/TASK-5284-port-import-mutators.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5285",
