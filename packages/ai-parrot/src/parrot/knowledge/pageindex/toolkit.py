@@ -22,8 +22,6 @@ import asyncio
 import copy
 import fnmatch
 import logging
-import secrets
-import shutil
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -534,13 +532,13 @@ class PageIndexToolkit(AbstractToolkit):
 
         Raises:
             KeyError: Source tree does not exist.
-            ValueError: Invalid names, identical names, an open batch, or a
+            ValueError: Invalid names, identical names, an open write, or a
                 destination collision without overwrite.
         """
         self._store._validate_name(src)
         self._store._validate_name(dst)
         if src == dst:
-            raise ValueError("Source and destination tree names must differ")
+            raise ValueError("src and dst must differ")
         open_txns = _OPEN_TXNS.get() or {}
         if (id(self), src) in open_txns or (id(self), dst) in open_txns:
             raise ValueError("Cannot rename a tree participating in an open write")
@@ -551,77 +549,56 @@ class PageIndexToolkit(AbstractToolkit):
         if replaced and not overwrite:
             raise ValueError(f"Tree {dst!r} already exists")
 
-        backup: str | None = None
-        if replaced:
-            backup_prefix = dst[: 128 - len(_REPLACED_MARKER) - 8]
-            for _ in range(32):
-                candidate = f"{backup_prefix}{_REPLACED_MARKER}{secrets.token_hex(4)}"
-                if candidate != src and not self._store.exists(candidate):
-                    backup = candidate
-                    break
-            if backup is None:
-                raise ValueError("Could not allocate a replacement backup name")
+        async with tree_lock(self._storage_dir, src, timeout=self._lock_timeout_s):
+            src_tree = self._store.load(src)
+            dst_base = (
+                self._store.load(dst)
+                if replaced
+                else {"doc_name": src_tree.get("doc_name", dst), "structure": []}
+            )
+            txn = WriteTransaction(
+                tree_name=dst,
+                base_tree=dst_base,
+                base_signature=self._store.signature(dst),
+                store=self._store,
+                content_store=self._content_store,
+                storage_dir=self._storage_dir,
+                lock_timeout_s=self._lock_timeout_s,
+                grace_s=self._generation_grace_s,
+                projector=self._project_okf_sidecars_for,
+            )
+            txn.tree = copy.deepcopy(src_tree)
+            for node in structure_to_list(txn.tree.get("structure", [])):
+                body_ref = node.get("body_ref")
+                if isinstance(body_ref, str) and body_ref:
+                    body = self._content_store.load_body(src, body_ref)
+                else:
+                    node_id = node.get("node_id")
+                    body = self._content_store.load(src, node_id) if isinstance(node_id, str) else None
+                    if body is None:
+                        concept_id = node.get("concept_id")
+                        if isinstance(concept_id, str) and concept_id:
+                            flat_id = flatten_concept_id_for_filename(concept_id)
+                            flat_body = self._content_store.load(src, flat_id)
+                            if flat_body is not None:
+                                body = _strip_frontmatter(flat_body)
+                if body is not None:
+                    txn.set_body(node, body)
+            report = await txn.publish()
+            self._after_publish(dst, txn)
 
-        moves: list[tuple[str, str, str]] = []
-
-        def move_json(old: str, new: str) -> None:
-            self._store.rename(old, new)
-            moves.append(("json", old, new))
-
-        def move_content(old: str, new: str) -> None:
-            if self._content_store.rename_tree(old, new):
-                moves.append(("content", old, new))
-
-        def rollback() -> None:
-            for artifact, old, new in reversed(moves):
-                try:
-                    if artifact == "json":
-                        self._store.rename(new, old)
-                    else:
-                        self._content_store.rename_tree(new, old)
-                except Exception:
-                    logger.exception("Failed to roll back %s move from %r to %r", artifact, new, old)
-
-        affected_names = {src, dst}
-        if backup is not None:
-            affected_names.add(backup)
-
-        try:
-            if backup is not None:
-                move_json(dst, backup)
-                move_content(dst, backup)
-
+            self._store.delete(src)
+            self._content_store.delete_tree(src)
             if self._embedding_store is not None:
                 self._embedding_store.invalidate_tree(src)
-            move_content(src, dst)
-            move_json(src, dst)
-        except Exception:
-            rollback()
-            raise
-        finally:
-            for tree_name in affected_names:
-                self._trees.pop(tree_name, None)
-                self._search.pop(tree_name, None)
-                self._tree_sigs.pop(tree_name, None)
-                self._content_store._cache_evict_tree(tree_name)
-                self._okf_toolkits.pop(tree_name, None)
+            self._trees.pop(src, None)
+            self._search.pop(src, None)
+            self._tree_sigs.pop(src, None)
+            self._content_store._cache_evict_tree(src)
+            self._okf_toolkits.pop(src, None)
+            lock_path(self._storage_dir, src).unlink(missing_ok=True)
 
-        if backup is not None:
-            try:
-                self._store.delete(backup)
-                self._content_store.delete_tree(backup)
-                # delete_tree only removes *.md sidecars; drop leftovers such as embeddings/.
-                shutil.rmtree(self._content_store._tree_dir(backup), ignore_errors=True)
-            except Exception:
-                logger.exception("Failed to delete replacement backup tree %r", backup)
-
-        # The swap is committed: a projection failure must not look like a failed rename.
-        try:
-            tree = self._load_tree(dst)
-            self._project_okf_sidecars(dst, tree)
-        except Exception:
-            logger.exception("Tree %r was renamed to %r but OKF sidecar projection failed", src, dst)
-        return {"src": src, "dst": dst, "replaced": replaced}
+        return {"src": src, "dst": dst, "replaced": replaced, "generation": report.generation}
 
     async def get_tree(self, tree_name: str) -> dict[str, Any]:
         """Return the full tree dict for ``tree_name``."""
