@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-839 — Dangerous-actions guard: whole-token protected-branch match
 **Spec**: `sdd/specs/scripts-dangerous-actions-fixes-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -84,4 +84,13 @@ Work in the `feat-FEAT-839-scripts-dangerous-actions-fixes-2` worktree; run test
 `parrot sdd task close TASK-5299 scripts-dangerous-actions-fixes-2 verified`.
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Completed by**: Claude Opus 5.5 (`/sdd-fix`, actor `agent:sdd-fix:6fbaeb1b`)
+**Date**: 2026-11-07
+**Notes**: Implementing commit `c95ebe6769`. `_branch_re()` now builds
+`(?<![\w./-])(?:refs/heads/)?(<names>)(?![\w./-])`; both callers unchanged. The bash hook defines
+`PROTECTED_TOKEN='(^|[^[:alnum:]_./-])(refs/heads/)?(main|dev|staging|master)($|[^[:alnum:]_./-])'` once and uses
+it in the flag force-push check and the branch-delete check. Added 4 DENIED, 6 ALLOWED and 9 PARITY cases.
+Validation: `test_dangerous_actions.py` + `test_installer_dangerous_guard.py` 136 passed, none skipped (29 PARITY
+cases ran against this worktree's bash hook); `ruff check` clean; `bash -n` ok.
+Note: the live hook in the main checkout keeps the old pattern until this lands on `dev`.
