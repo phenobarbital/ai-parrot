@@ -30,7 +30,10 @@ def test_parse_kinds_labels_relations(golden_v1: bytes, golden_base_iri: str) ->
     assert concepts[base + "PublicLaw"].kind == "skos_concept"
     assert concepts[base + "LegalEntity"].pref_label == "Entidad jurídica"
     assert any(
-        label.iri == base + "LegalEntity" and label.kind == "alt" and label.lang == "es" and label.text == "Sujeto jurídico"
+        label.iri == base + "LegalEntity"
+        and label.kind == "alt"
+        and label.lang == "es"
+        and label.text == "Sujeto jurídico"
         for label in content.labels
     )
     assert any(
@@ -48,8 +51,7 @@ def test_parse_kinds_labels_relations(golden_v1: bytes, golden_base_iri: str) ->
     assert any(
         statement.subject_iri == base + "contract-2026-001"
         and statement.predicate == base + "signatureDate"
-        and statement.object
-        == {"value": "2026-01-01", "datatype": "http://www.w3.org/2001/XMLSchema#date"}
+        and statement.object == {"value": "2026-01-01", "datatype": "http://www.w3.org/2001/XMLSchema#date"}
         for statement in content.statements
     )
 
@@ -99,9 +101,7 @@ def test_roundtrip_preserves_checksum(golden_v1: bytes, golden_base_iri: str) ->
 
 def test_statement_object_hash_distinguishes_lang() -> None:
     """Language is part of the canonical statement-object hash."""
-    assert statement_object_hash({"value": "a", "lang": "es"}) != statement_object_hash(
-        {"value": "a", "lang": "en"}
-    )
+    assert statement_object_hash({"value": "a", "lang": "es"}) != statement_object_hash({"value": "a", "lang": "en"})
 
 
 def test_inferred_relations_not_in_canonical(golden_base_iri: str) -> None:

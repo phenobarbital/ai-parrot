@@ -125,7 +125,9 @@ def parse_turtle(turtle: bytes, *, base_iri: str, default_lang: str) -> Ontology
 
         default_pref_labels = sorted(text for lang, text in pref_labels if lang == default_lang)
         all_pref_labels = sorted(text for _, text in pref_labels)
-        pref_label = default_pref_labels[0] if default_pref_labels else (all_pref_labels[0] if all_pref_labels else None)
+        pref_label = (
+            default_pref_labels[0] if default_pref_labels else (all_pref_labels[0] if all_pref_labels else None)
+        )
         definitions = sorted(str(obj) for obj in graph.objects(subject, rdflib.URIRef(SKOS + "definition")))
         replacements = sorted(str(obj) for obj in graph.objects(subject, rdflib.URIRef(DCTERMS + "isReplacedBy")))
         deprecated = any(
