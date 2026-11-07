@@ -162,6 +162,7 @@ async def test_no_local_and_unreachable_raises(
     tmp_snapshot_dir: Path, version_content: VersionContent, fake_source: SnapshotSource
 ) -> None:
     """No local file and unreachable source → OntologyNotFound."""
+
     # Create store with unreachable source
     class UnreachableSource(SnapshotSource):
         async def latest_version(self, ontology_id: str) -> int:
@@ -204,9 +205,7 @@ async def test_other_as_of_rejected(
 
 
 @pytest.mark.asyncio
-async def test_http_source_against_local_server(
-    tmp_snapshot_dir: Path, version_content: VersionContent
-) -> None:
+async def test_http_source_against_local_server(tmp_snapshot_dir: Path, version_content: VersionContent) -> None:
     """aiohttp.web app on 127.0.0.1:0 serving /vocabularies/x/version and /snapshot."""
     import aiohttp.web
 

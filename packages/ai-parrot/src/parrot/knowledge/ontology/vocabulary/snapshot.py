@@ -31,8 +31,6 @@ from parrot.knowledge.ontology.vocabulary.exceptions import (
 )
 from parrot.knowledge.ontology.vocabulary.settings import resolve_ontology_settings
 from parrot.knowledge.ontology.vocabulary.turtle import serialize
-from parrot.knowledge.ontology.vocabulary.settings import resolve_ontology_settings
-from parrot.knowledge.ontology.vocabulary.turtle import serialize
 
 logger = logging.getLogger("parrot.knowledge.ontology.vocabulary.snapshot")
 
@@ -117,7 +115,6 @@ async def build_snapshot(content: VersionContent, dest_root: Path) -> Path:
         ValueError: If the destination exists with a different checksum.
     """
     import aiosqlite
-    import numpy as np
 
     final = snapshot_path(dest_root, content.ontology_id, content.version)
     if final.exists():
@@ -332,9 +329,7 @@ class SnapshotOntologyStore:
 
     backend_name: ClassVar[str] = "snapshot"
 
-    def __init__(
-        self, snapshot_dir: Path | str | None = None, *, source: SnapshotSource | None = None
-    ) -> None:
+    def __init__(self, snapshot_dir: Path | str | None = None, *, source: SnapshotSource | None = None) -> None:
         settings = resolve_ontology_settings()
         self._root = Path(snapshot_dir or settings.snapshot_dir).expanduser()
         self._source = source
@@ -372,9 +367,7 @@ class SnapshotOntologyStore:
             # No local file and source unreachable
             raise OntologyNotFound(f"Ontology {ontology_id} not found")
 
-        versions = [
-            int(p.stem[1:]) for p in ontology_dir.glob("v*.sqlite") if p.stem.startswith("v")
-        ]
+        versions = [int(p.stem[1:]) for p in ontology_dir.glob("v*.sqlite") if p.stem.startswith("v")]
         if not versions:
             # No local file and source unreachable
             raise OntologyNotFound(f"Ontology {ontology_id} not found")
@@ -522,9 +515,7 @@ class SnapshotOntologyStore:
         # Filter by kind if specified
         if kinds is not None:
             cursor = await conn.execute(
-                "SELECT iri, kind FROM concept WHERE iri IN ({})".format(
-                    ",".join(["?"] * len(scores))
-                ),
+                "SELECT iri, kind FROM concept WHERE iri IN ({})".format(",".join(["?"] * len(scores))),
                 list(scores.keys()),
             )
             rows = await cursor.fetchall()
@@ -639,9 +630,7 @@ class SnapshotOntologyStore:
 
         return replacements
 
-    async def export(
-        self, ontology_id: str, fmt: str = "turtle", *, as_of: int | None = None
-    ) -> bytes:
+    async def export(self, ontology_id: str, fmt: str = "turtle", *, as_of: int | None = None) -> bytes:
         """Serialize the asserted graph visible at the given version."""
         if as_of is None:
             as_of = await self.version(ontology_id)
@@ -658,7 +647,9 @@ class SnapshotOntologyStore:
         )
 
         # Fetch concepts
-        cursor = await conn.execute("SELECT iri, kind, pref_label, definition, deprecated, replaced_by, extra FROM concept")
+        cursor = await conn.execute(
+            "SELECT iri, kind, pref_label, definition, deprecated, replaced_by, extra FROM concept"
+        )
         rows = await cursor.fetchall()
         await cursor.close()
         for row in rows:
@@ -690,7 +681,12 @@ class SnapshotOntologyStore:
         for row in rows:
             subject_iri, predicate, object_iri, inferred = row
             content.relations.append(
-                {"subject_iri": subject_iri, "predicate": predicate, "object_iri": object_iri, "inferred": bool(inferred)}
+                {
+                    "subject_iri": subject_iri,
+                    "predicate": predicate,
+                    "object_iri": object_iri,
+                    "inferred": bool(inferred),
+                }
             )
 
         # Fetch statements
