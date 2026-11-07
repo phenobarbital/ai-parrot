@@ -58,10 +58,12 @@ silently inherits whichever repository wrote the global file first. Observed 202
 
 ### `_global_parrot_command()` resolution order
 
-1. **Managed launcher installed** (new): the launcher shim `parrot_home()/"bin"/"parrot"`
+1. **Managed launcher on PATH** (unchanged): `shutil.which("parrot")` resolves under `parrot_home()`
+   → return `"parrot"`.
+1b. **Managed launcher installed** (new): the launcher shim `parrot_home()/"bin"/"parrot"`
    (`parrot.exe` on Windows) exists AND `script_path(parrot_home()/"venv", "parrot")` exists — the
-   same two-part rule `self_/doctor.py::_check_entrypoints` uses → return `"parrot"`. This subsumes the
-   old `shutil.which` check, which is removed.
+   same two-part rule `self_/doctor.py::_check_entrypoints` uses → return `"parrot"`, whatever the
+   `PATH` order. Rule 1 is kept because existing tests (and installs) put only the shim on `PATH`.
 2. Existing parrot-shaped `parrot-*` entry whose command is `"parrot"` or an existing file → reuse it
    (unchanged). If the reused command is an absolute path that is not inside `root` (resolved), log a
    `WARNING` on the module logger naming the entry, the command and the workaround
@@ -91,7 +93,7 @@ Filesystem errors (`OSError`) while probing rule 1 count as "not installed".
 | Test | Module | Description |
 |---|---|---|
 | `test_installed_launcher_shadowed_on_path_returns_bare_parrot` | M1 | shim + managed venv script exist under `PARROT_HOME`, `PATH` holds only a repo `.venv/bin/parrot`, existing global entry points at another repo's binary → `"parrot"` |
-| `test_launcher_shim_without_managed_venv_is_not_installed` | M1 | shim exists but managed venv script does not → falls through to rule 2/3 |
+| `test_launcher_shim_without_managed_venv_is_not_installed` | M1 | shim exists (not on `PATH`) but managed venv script does not → falls through to rule 2/3 |
 | `test_inherits_foreign_command_with_warning` | M1 | no launcher, existing entry points at an existing binary outside `root` → that command is returned and a WARNING naming it is logged |
 | `test_inherited_command_inside_root_no_warning` | M1 | no launcher, existing entry's command is inside `root` → returned, no warning |
 | `test_falls_back_to_repo_binary` | M1 | no launcher, no existing entries → `assets.resolve_binary(root, "parrot")` |
@@ -117,7 +119,7 @@ executable files; no real launcher is touched.
 - [ ] AC-1 With the managed launcher installed under `PARROT_HOME` (shim + managed venv script), the global
   toolkit command is bare `parrot` even when another `parrot` comes first on `PATH` and an existing entry
   points at another repository's binary.
-- [ ] AC-2 A shim without the managed venv script does not count as installed.
+- [ ] AC-2 A shim that is not on `PATH` and has no managed venv script does not count as installed.
 - [ ] AC-3 When rule 2 reuses an absolute command outside `root`, a WARNING naming that command is logged.
 - [ ] AC-4 Validation Contract tests pass; `ruff check` clean on the changed files.
 
