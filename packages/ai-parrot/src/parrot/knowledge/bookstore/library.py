@@ -238,6 +238,7 @@ class Bookstore:
                 adapter=self.adapter if self.adapter is not None else _NullAdapter(),
                 storage_dir=loc.trees_dir,
                 lightweight_model=self.lightweight_model,
+                generation_grace_s=_STAGING_MAX_AGE_S,
             )
         return self._toolkits[scope]
 
@@ -310,6 +311,18 @@ class Bookstore:
             except Exception:  # noqa: BLE001 — crash recovery is best-effort
                 logger.warning("Failed to sweep reserved tree %r", tree_name, exc_info=True)
 
+        live_names = {
+            tree_name.split(REPLACED_MARKER if REPLACED_MARKER in tree_name else _STAGING_MARKER, maxsplit=1)[0]
+            for tree_name, _, _ in reserved
+        }
+        for live_name in live_names:
+            if not toolkit._store.exists(live_name):
+                continue
+            try:
+                await toolkit.vacuum_tree(live_name)
+            except Exception:  # noqa: BLE001 — vacuum is best-effort during recovery
+                logger.warning("Failed to vacuum live tree %r during reserved-tree sweep", live_name, exc_info=True)
+
     # ------------------------------------------------------------------
     # Read surface
     # ------------------------------------------------------------------
@@ -371,7 +384,9 @@ class Bookstore:
         missing.
         """
         card, loc = self.resolve_book(book_id)
-        body = self._content_store(loc.scope).load(card.tree_name, node_id)
+        # Live generation first: a leftover legacy ``<node_id>.md`` must never be
+        # served for a node id that a reindexed/renamed tree has reused.
+        body = self._content_store(loc.scope).load_current(card.tree_name, node_id)
         entry = next((e for e in card.toc if e.node_id == node_id), None)
         if body is None and entry is None:
             raise BookstoreError(f"Unknown section {node_id!r} in book {book_id!r} — " "check bookstore_get_toc")

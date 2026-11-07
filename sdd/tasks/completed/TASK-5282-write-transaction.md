@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-831 — PageIndex Generation Publication
 **Spec**: `sdd/specs/pageindex-generation-publication.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5276, TASK-5277, TASK-5278, TASK-5279

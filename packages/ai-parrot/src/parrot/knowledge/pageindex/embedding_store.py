@@ -28,6 +28,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import tempfile
 import threading
 from collections import OrderedDict
 from pathlib import Path
@@ -118,13 +120,50 @@ class NodeEmbeddingStore:
         """Return the .npy path for a content-addressed vector."""
         return self._global_dir(tree_name) / f"{key}.npy"
 
-    def _matrix_path(self, tree_name: str) -> Path:
-        """Return the per-tree matrix .npy path."""
-        return self._storage_dir / tree_name / "embeddings" / f"{tree_name}.matrix.npy"
+    def _matrix_path(self, tree_name: str, generation_id: int = 0) -> Path:
+        """Return the per-tree matrix path for a generation.
 
-    def _order_path(self, tree_name: str) -> Path:
-        """Return the per-tree node_order JSON path."""
-        return self._storage_dir / tree_name / "embeddings" / f"{tree_name}.node_order.json"
+        Generation zero retains the legacy filename.
+        """
+        suffix = "" if generation_id == 0 else f".g{generation_id}"
+        return self._storage_dir / tree_name / "embeddings" / f"{tree_name}{suffix}.matrix.npy"
+
+    def _order_path(self, tree_name: str, generation_id: int = 0) -> Path:
+        """Return the per-tree node-order path for a generation.
+
+        Generation zero retains the legacy filename.
+        """
+        suffix = "" if generation_id == 0 else f".g{generation_id}"
+        return self._storage_dir / tree_name / "embeddings" / f"{tree_name}{suffix}.node_order.json"
+
+    def prune_tree_matrices(self, tree_name: str, keep: set[int]) -> int:
+        """Remove generation matrix files not represented by ``keep``.
+
+        Args:
+            tree_name: Name of the tree whose generated matrix files to prune.
+            keep: Generation identifiers whose files must remain.
+
+        Returns:
+            Number of matrix and order files removed.
+        """
+        embeddings_dir = self._matrix_path(tree_name).parent
+        removed = 0
+        prefixes_and_suffixes = (
+            (f"{tree_name}.g", ".matrix.npy"),
+            (f"{tree_name}.g", ".node_order.json"),
+        )
+        for prefix, suffix in prefixes_and_suffixes:
+            for path in embeddings_dir.glob(f"{prefix}*{suffix}"):
+                generation_text = path.name[len(prefix) : -len(suffix)]
+                if not generation_text.isdigit() or int(generation_text) in keep:
+                    continue
+                try:
+                    path.unlink()
+                    removed += 1
+                    logger.debug("Pruned %s", path)
+                except OSError as exc:
+                    logger.warning("Could not delete %s: %s", path, exc)
+        return removed
 
     # ---- LRU cache helpers ---------------------------------------------
 
@@ -206,6 +245,8 @@ class NodeEmbeddingStore:
         tree_name: str,
         nodes: list[dict],
         embed_fn: Callable[[list[str]], np.ndarray],
+        *,
+        generation_id: int = 0,
     ) -> tuple[np.ndarray, list[str]]:
         """Build (or rebuild) the per-tree ``(N, d)`` embedding matrix.
 
@@ -289,13 +330,25 @@ class NodeEmbeddingStore:
         matrix = np.ascontiguousarray(matrix, dtype=np.float32)
 
         # Persist per-tree matrix + node_order sidecar.
-        matrix_path = self._matrix_path(tree_name)
-        order_path = self._order_path(tree_name)
+        matrix_path = self._matrix_path(tree_name, generation_id)
+        order_path = self._order_path(tree_name, generation_id)
         matrix_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(str(matrix_path), matrix)
-        order_path.write_text(
-            json.dumps(node_id_order, ensure_ascii=False), encoding="utf-8"
-        )
+        matrix_fd, matrix_temp_name = tempfile.mkstemp(dir=matrix_path.parent, suffix=".npy")
+        order_fd, order_temp_name = tempfile.mkstemp(dir=order_path.parent, suffix=".json")
+        matrix_temp_path = Path(matrix_temp_name)
+        order_temp_path = Path(order_temp_name)
+        try:
+            with os.fdopen(matrix_fd, "wb") as matrix_file:
+                np.save(matrix_file, matrix)
+            with os.fdopen(order_fd, "w", encoding="utf-8") as order_file:
+                json.dump(node_id_order, order_file, ensure_ascii=False)
+            os.replace(matrix_temp_path, matrix_path)
+            os.replace(order_temp_path, order_path)
+        except Exception:
+            for temp_path in (matrix_temp_path, order_temp_path):
+                if temp_path.exists():
+                    temp_path.unlink()
+            raise
         logger.debug(
             "Built tree matrix for %r: shape=%s, n_embedded=%d",
             tree_name, matrix.shape, len(missing_indices),
@@ -303,9 +356,7 @@ class NodeEmbeddingStore:
 
         return matrix, node_id_order
 
-    def load_tree_matrix(
-        self, tree_name: str
-    ) -> Optional[tuple[np.ndarray, list[str]]]:
+    def load_tree_matrix(self, tree_name: str, *, generation_id: int = 0) -> Optional[tuple[np.ndarray, list[str]]]:
         """Load the materialized per-tree matrix (memory-mapped read-only).
 
         Args:
@@ -315,8 +366,8 @@ class NodeEmbeddingStore:
             Tuple of ``(matrix, node_id_order)`` if the matrix exists,
             or ``None`` if it has not yet been built or was invalidated.
         """
-        matrix_path = self._matrix_path(tree_name)
-        order_path = self._order_path(tree_name)
+        matrix_path = self._matrix_path(tree_name, generation_id)
+        order_path = self._order_path(tree_name, generation_id)
         if not matrix_path.exists() or not order_path.exists():
             return None
         try:
@@ -346,3 +397,4 @@ class NodeEmbeddingStore:
                     logger.debug("Invalidated %s", path)
                 except OSError as exc:
                     logger.warning("Could not delete %s: %s", path, exc)
+        self.prune_tree_matrices(tree_name, keep=set())

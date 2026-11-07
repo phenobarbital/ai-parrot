@@ -20,6 +20,8 @@ from .hybrid_search import HybridPageIndexSearch
 from .ingest import TwoStepIngester, IngestedMarkdown
 from .toolkit import PageIndexToolkit
 from .loader import PageIndexLoader
+from .generation import GenerationInfo, StaleGenerationError
+from .locks import TreeLockTimeout
 
 __all__ = [
     "build_page_index",
@@ -40,4 +42,7 @@ __all__ = [
     "IngestedMarkdown",
     "PageIndexToolkit",
     "PageIndexLoader",
+    "GenerationInfo",
+    "StaleGenerationError",
+    "TreeLockTimeout",
 ]
