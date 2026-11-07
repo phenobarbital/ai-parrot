@@ -2,6 +2,7 @@
 
 Call each case with a store that has golden legal_es v1 (then v2) published as ``ontology_id``.
 """
+
 from __future__ import annotations
 
 from typing import Awaitable, Callable
@@ -108,9 +109,9 @@ async def case_canonical_follows_replaced_by(store: OntologyStore, ontology_id: 
     replacements = await store.canonical(ontology_id, [CONTRACT_IRI])
     # Should map Contract -> ModernContract
     if CONTRACT_IRI in replacements:
-        assert replacements[CONTRACT_IRI] == MODERN_CONTRACT_IRI, (
-            f"Expected {CONTRACT_IRI} -> {MODERN_CONTRACT_IRI}, got {replacements}"
-        )
+        assert (
+            replacements[CONTRACT_IRI] == MODERN_CONTRACT_IRI
+        ), f"Expected {CONTRACT_IRI} -> {MODERN_CONTRACT_IRI}, got {replacements}"
 
 
 async def case_export_checksum_roundtrip(store: OntologyStore, ontology_id: str) -> None:
@@ -123,7 +124,7 @@ async def case_export_checksum_roundtrip(store: OntologyStore, ontology_id: str)
     # Export as JSON-LD
     jsonld_data = await store.export(ontology_id, fmt="jsonld")
     assert len(jsonld_data) > 0, "Expected non-empty JSON-LD export"
-    assert b'"@context"' in jsonld_data or b'@graph' in jsonld_data, "Expected JSON-LD structure"
+    assert b'"@context"' in jsonld_data or b"@graph" in jsonld_data, "Expected JSON-LD structure"
 
 
 async def case_unknown_version_rejected(store: OntologyStore, ontology_id: str) -> None:

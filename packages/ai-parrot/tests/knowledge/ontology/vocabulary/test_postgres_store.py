@@ -1,4 +1,5 @@
 """OntologyStore conformance — PostgreSQL backend (FEAT-824 TASK-5264)."""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator

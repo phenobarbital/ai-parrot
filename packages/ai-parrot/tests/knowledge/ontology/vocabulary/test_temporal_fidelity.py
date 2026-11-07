@@ -1,4 +1,5 @@
 """Temporal fidelity gate — version history and historical reads (FEAT-824 TASK-5264)."""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -84,8 +85,7 @@ async def test_temporal_fidelity_export_checksum(
         actual_checksum = content_checksum(content)
 
         assert actual_checksum == expected_checksum, (
-            f"Version {version_num}: export checksum {actual_checksum} != "
-            f"version checksum {expected_checksum}"
+            f"Version {version_num}: export checksum {actual_checksum} != " f"version checksum {expected_checksum}"
         )
 
 
@@ -99,16 +99,16 @@ async def test_temporal_fidelity_historical_get(
     # v1: Organization prefLabel is "Organización"
     org_v1 = await store.get(ontology_id, ORGANIZATION_IRI, as_of=1)
     assert org_v1 is not None
-    assert "Organización" in (org_v1.pref_label or ""), (
-        f"v1 Organization prefLabel should contain 'Organización', got {org_v1.pref_label}"
-    )
+    assert "Organización" in (
+        org_v1.pref_label or ""
+    ), f"v1 Organization prefLabel should contain 'Organización', got {org_v1.pref_label}"
 
     # v2: Organization prefLabel changed to "Entidad organizativa"
     org_v2 = await store.get(ontology_id, ORGANIZATION_IRI, as_of=2)
     assert org_v2 is not None
-    assert "organizativa" in (org_v2.pref_label or "").lower(), (
-        f"v2 Organization prefLabel should contain 'organizativa', got {org_v2.pref_label}"
-    )
+    assert (
+        "organizativa" in (org_v2.pref_label or "").lower()
+    ), f"v2 Organization prefLabel should contain 'organizativa', got {org_v2.pref_label}"
 
     # v3: Same as v2 (label change retained)
     org_v3 = await store.get(ontology_id, ORGANIZATION_IRI, as_of=3)
@@ -124,24 +124,16 @@ async def test_temporal_fidelity_historical_expand(
     store, _publisher, ontology_id, _ = temporal_store
 
     # v1: PublicAuthority is subclass of both Organization AND PublicBody
-    ancestors_v1 = await store.expand(
-        ontology_id, [PUBLIC_AUTHORITY_IRI], family="subclass", direction="up"
-    )
+    ancestors_v1 = await store.expand(ontology_id, [PUBLIC_AUTHORITY_IRI], family="subclass", direction="up")
     assert PUBLIC_BODY_IRI in ancestors_v1, f"v1: Expected {PUBLIC_BODY_IRI} in ancestors"
 
     # v2: PublicAuthority subclass link to PublicBody was removed
-    ancestors_v2 = await store.expand(
-        ontology_id, [PUBLIC_AUTHORITY_IRI], family="subclass", direction="up", as_of=2
-    )
-    assert PUBLIC_BODY_IRI not in ancestors_v2, (
-        f"v2: Expected {PUBLIC_BODY_IRI} NOT in ancestors (edge removed)"
-    )
+    ancestors_v2 = await store.expand(ontology_id, [PUBLIC_AUTHORITY_IRI], family="subclass", direction="up", as_of=2)
+    assert PUBLIC_BODY_IRI not in ancestors_v2, f"v2: Expected {PUBLIC_BODY_IRI} NOT in ancestors (edge removed)"
     assert ORGANIZATION_IRI in ancestors_v2, f"v2: Expected {ORGANIZATION_IRI} in ancestors"
 
     # v3: PublicBody subclass link reintroduced
-    ancestors_v3 = await store.expand(
-        ontology_id, [PUBLIC_AUTHORITY_IRI], family="subclass", direction="up", as_of=3
-    )
+    ancestors_v3 = await store.expand(ontology_id, [PUBLIC_AUTHORITY_IRI], family="subclass", direction="up", as_of=3)
     assert PUBLIC_BODY_IRI in ancestors_v3, f"v3: Expected {PUBLIC_BODY_IRI} in ancestors (edge restored)"
     assert ORGANIZATION_IRI in ancestors_v3, f"v3: Expected {ORGANIZATION_IRI} in ancestors"
 
@@ -181,14 +173,12 @@ async def test_temporal_fidelity_snapshot_holds_only_version(
     # v1: Organization has original label
     org = await snapshot_store.get(ontology_id, ORGANIZATION_IRI)
     assert org is not None
-    assert "Organización" in (org.pref_label or ""), (
-        f"v1 snapshot: Organization should have 'Organización', got {org.pref_label}"
-    )
+    assert "Organización" in (
+        org.pref_label or ""
+    ), f"v1 snapshot: Organization should have 'Organización', got {org.pref_label}"
 
     # v1: PublicAuthority has PublicBody in ancestors
-    ancestors = await snapshot_store.expand(
-        ontology_id, [PUBLIC_AUTHORITY_IRI], family="subclass", direction="up"
-    )
+    ancestors = await snapshot_store.expand(ontology_id, [PUBLIC_AUTHORITY_IRI], family="subclass", direction="up")
     assert PUBLIC_BODY_IRI in ancestors, "v1 snapshot: PublicBody should be in ancestors"
 
     # Snapshot rejects as_of != its own version
