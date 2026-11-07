@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5249
@@ -155,10 +155,12 @@ def test_report_shape() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Host step run by the operator (Docker + network). Server image `surrealdb/surrealdb@sha256:681c6c22c287421b5c7d99e0fde79b6e0d32c36c1ddeaab2762a1661cb04cd20` (v3.3.0), SDK `surrealdb==3.0.0`. Verdict: **GO** (all 13 checks pass; no fallback needed).
 
-**Completed by**:
-**Date**:
+Check bugs fixed in the TASK-5249 files after the live run: schema.surql (entity full-text split into one index per field; chunk.span.start/end declared); `CREATE mutation:$request_id` -> `type::record('mutation', $request_id)` (transactions.py, concurrency.py); `CheckResult` built with keyword args in every check; live.py consumes the subscription via `__aiter__/__anext__` with a timeout; G1-12 accepts 'table absent in tenant b'; seed rows satisfy SCHEMAFULL chunk/bundle; orthogonal KNN vectors; `SELECT *` instead of `SELECT value`; `connect(..., reset=True)` makes checks re-runnable. docker-compose.yml image now pinned by digest.
+
+**Completed by**: host operator + sdd-worker
+**Date**: 2026-11-07
 **Verdict**:
 **Notes**:
 

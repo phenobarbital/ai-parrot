@@ -107,7 +107,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -117,8 +117,9 @@
       "parallelism_notes": "exclusive: needs Docker + network on the host (image pull, SDK via uv run); runs ALL_CHECKS from TASK-5249 (checks/__init__.py)",
       "assigned_to": "host operator",
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5250-g1-host-run-report.md"
+      "completed_at": "2026-11-07T00:43:41+00:00",
+      "file": "sdd/tasks/completed/TASK-5250-g1-host-run-report.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5251",
@@ -518,4 +519,3 @@
     }
   ]
 }
-
