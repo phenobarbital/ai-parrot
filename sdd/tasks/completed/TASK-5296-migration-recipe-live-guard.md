@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-837 — Brief Worktrees Survive the Worktree-Root Migration
 **Spec**: `sdd/specs/dev-loop-feature-launcher-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -212,4 +212,11 @@ Implement exactly the scope above inside the FEAT-837 worktree; run tests with
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (Opus 5.5) via /sdd-fix issue:1b8289182630 — 2026-11-07
+**Commit**: 0c7c0e0e80
+
+- `legacy_migration_recipe()` now calls `remove_worktree.live_processes_in()` (lazy import, avoids the
+  config ↔ remove_worktree cycle) for each topmost legacy path and raises `ValueError` naming path + PIDs.
+- After `git worktree repair` the recipe runs `git -C <dest> rev-parse --git-dir` per destination.
+- Tests: `test_legacy_migration_refuses_live_process`, `test_legacy_migration_recipe_verifies_destinations`.
+  `test_config.py` + `test_doctor_sdd.py`: 78 passed. ruff clean.

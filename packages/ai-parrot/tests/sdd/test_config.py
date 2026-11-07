@@ -351,6 +351,45 @@ def test_legacy_migration_recipe_shape(tmp_path: Path, monkeypatch: pytest.Monke
     assert f"'{repo}'" in repair[0]
 
 
+def test_legacy_migration_refuses_live_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A live process inside a legacy worktree blocks the recipe and is named (issue:1b8289182630)."""
+    from parrot.sdd.scripts import remove_worktree
+
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    repo = _git_repo(tmp_path)
+    worktree = _add_worktree(repo, ".claude/worktrees/hotfix-NAV-1-x", "hotfix-NAV-1-x")
+    seen: list[Path] = []
+
+    def fake_live(path: Path, exclude_pids: object = ()) -> list[tuple[int, str]]:
+        seen.append(path)
+        return [(4242, "claude --agent sdd-worker")] if path == worktree.resolve() else []
+
+    monkeypatch.setattr(remove_worktree, "live_processes_in", fake_live)
+    with pytest.raises(ValueError, match="live process") as exc:
+        legacy_migration_recipe(repo, [worktree])
+    assert str(worktree.resolve()) in str(exc.value)
+    assert "4242" in str(exc.value)
+    assert seen == [worktree.resolve()]
+
+
+def test_legacy_migration_recipe_verifies_destinations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every destination is checked with ``rev-parse --git-dir`` after the repair line."""
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    repo = _git_repo(tmp_path)
+    feature = _add_worktree(repo, ".claude/worktrees/feat-FEAT-1-x", "feat-1")
+    hotfix = _add_worktree(repo, ".claude/worktrees/hotfix-NAV-1-x", "hotfix-NAV-1-x")
+    recipe = legacy_migration_recipe(repo, [feature, hotfix])
+    repair_at = next(i for i, line in enumerate(recipe) if " worktree repair " in line)
+    checks = [(i, line) for i, line in enumerate(recipe) if "rev-parse --git-dir" in line]
+    assert len(checks) == 2
+    assert all(i > repair_at for i, _ in checks)
+    for name in ("feat-FEAT-1-x", "hotfix-NAV-1-x"):
+        destination = str(repo / ".parrot/worktrees" / name)
+        assert any(f"git -C {destination} rev-parse" in line or f"git -C '{destination}' rev-parse" in line
+                   for _, line in checks)
+    assert recipe[-1] == ")"
+
+
 def test_legacy_migration_collisions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Generation and execution collision checks preserve the old worktree."""
     monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
