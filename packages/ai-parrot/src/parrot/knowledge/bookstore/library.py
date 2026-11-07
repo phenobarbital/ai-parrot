@@ -400,6 +400,74 @@ class Bookstore:
             "content": body or "",
         }
 
+    async def _document_of(self, card: Any, toolkit: PageIndexToolkit) -> dict[str, Any]:
+        """The single imported document of a book's tree."""
+        documents = await toolkit.list_documents(card.tree_name)
+        if not documents:
+            raise BookstoreError("book has no segments — reindex it or run pageindex_index_segments")
+        return documents[0]
+
+    @staticmethod
+    def _book_result(card: Any, result: dict[str, Any]) -> dict[str, Any]:
+        return {"book_id": card.book_id, "book_title": card.title, **result}
+
+    @staticmethod
+    def _message(exc: Exception) -> str:
+        return str(exc.args[0]) if isinstance(exc, KeyError) and exc.args else str(exc)
+
+    async def read_pages(
+        self, book_id: str, pages: str, max_chars: int = 12000, cursor: Optional[str] = None
+    ) -> dict[str, Any]:
+        """Read a page range of a book (``"5-7,12"``) with citable segment addresses."""
+        card, loc = self.resolve_book(book_id)
+        toolkit = self._toolkit(loc.scope)
+        doc = await self._document_of(card, toolkit)
+        try:
+            result = await toolkit.read_pages(
+                card.tree_name, doc["doc_id"], pages, max_chars=max_chars, cursor=cursor
+            )
+        except (KeyError, ValueError) as exc:
+            raise BookstoreError(self._message(exc)) from exc
+        return self._book_result(card, result)
+
+    async def read_segments(
+        self,
+        book_id: str,
+        start: Optional[int] = None,
+        end: Optional[int] = None,
+        node_id: Optional[str] = None,
+        max_chars: int = 12000,
+        cursor: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Read paragraphs of a book by position or a section's own text (``node_id``)."""
+        card, loc = self.resolve_book(book_id)
+        toolkit = self._toolkit(loc.scope)
+        doc = await self._document_of(card, toolkit)
+        try:
+            result = await toolkit.read_segments(
+                card.tree_name,
+                doc["doc_id"],
+                start=start,
+                end=end,
+                node_id=node_id,
+                max_chars=max_chars,
+                cursor=cursor,
+            )
+        except (KeyError, ValueError) as exc:
+            raise BookstoreError(self._message(exc)) from exc
+        return self._book_result(card, result)
+
+    async def outline(self, book_id: str, node_id: Optional[str] = None, max_depth: int = 3) -> dict[str, Any]:
+        """Compact outline of a book or one of its sections."""
+        card, loc = self.resolve_book(book_id)
+        toolkit = self._toolkit(loc.scope)
+        await self._document_of(card, toolkit)
+        try:
+            result = await toolkit.outline(card.tree_name, node_id=node_id, max_depth=max_depth)
+        except (KeyError, ValueError) as exc:
+            raise BookstoreError(self._message(exc)) from exc
+        return self._book_result(card, result)
+
     def _expand_with_related(self, cards: list[BookCard]) -> list[BookCard]:
         """Widen ``cards`` with depth-1 related books (no LLM call).
 
