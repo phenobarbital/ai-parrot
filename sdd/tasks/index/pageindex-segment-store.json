@@ -204,7 +204,7 @@
       "feature_id": "FEAT-840",
       "feature": "pageindex-segment-store",
       "spec": "sdd/specs/pageindex-segment-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -212,8 +212,9 @@
       "parallelism_notes": "No dependencies: edits builder.py (_extract_node_markdown and its two return dicts) and schemas.py (PageIndexNode), which no other FEAT-840 task touches.",
       "assigned_to": null,
       "started_at": "2026-11-07T01:32:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5307-builder-pages-and-node-schema.md"
+      "completed_at": "2026-11-07T01:40:58+00:00",
+      "file": "sdd/tasks/completed/TASK-5307-builder-pages-and-node-schema.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5308",
