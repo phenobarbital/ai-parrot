@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from importlib import resources
 from typing import TYPE_CHECKING, Any, Literal, Mapping
 
 from parrot.knowledge.ontology.vocabulary.closure import OWL, PARROT_NS, RDFS, SKOS  # noqa: F401
@@ -16,6 +17,7 @@ from parrot.knowledge.ontology.vocabulary.contracts import (
     ParsedLabel,
     ParsedRelation,
     ParsedStatement,
+    PublishDiff,
     ValidationIssue,
 )
 from parrot.knowledge.ontology.vocabulary.exceptions import OntologyValidationError
@@ -280,3 +282,160 @@ def _to_graph(content: OntologyContent) -> "rdflib.Graph":
             rdf_object = rdflib.Literal(str(obj["value"]), lang=obj.get("lang"), datatype=datatype)
         graph.add((rdflib.URIRef(statement.subject_iri), rdflib.URIRef(statement.predicate), rdf_object))
     return graph
+
+
+def validate_content(
+    content: OntologyContent,
+    *,
+    previous_iris: frozenset[str] = frozenset(),
+    shapes: bytes | None = None,
+) -> list[ValidationIssue]:
+    """Validate bundled SHACL shapes, optional shapes, and Parrot rules.
+
+    Args:
+        content: Candidate ontology content to validate.
+        previous_iris: Concept IRIs in the version being replaced.
+        shapes: Optional caller-provided SHACL Turtle shapes.
+
+    Returns:
+        Every validation issue, sorted by code and subject. An empty list means valid.
+    """
+    import pyshacl
+    import rdflib
+
+    from parrot.knowledge.ontology.vocabulary.closure import FAMILY_PREDICATES, find_cycle
+
+    issues: list[ValidationIssue] = []
+    concept_iris = {concept.iri for concept in content.concepts}
+    for concept in content.concepts:
+        if not concept.iri.startswith(content.base_iri):
+            issues.append(
+                ValidationIssue(
+                    code="IRI_OUTSIDE_BASE",
+                    message=f"Concept IRI {concept.iri} is outside base IRI {content.base_iri}",
+                    subject=concept.iri,
+                )
+            )
+
+    for iri in sorted(previous_iris - concept_iris):
+        issues.append(
+            ValidationIssue(
+                code="IRI_REMOVED",
+                message=f"Previously published IRI {iri} is absent from the candidate",
+                subject=iri,
+            )
+        )
+
+    for family in FAMILY_PREDICATES:
+        cycle = find_cycle(content.relations, family)
+        if cycle is not None:
+            issues.append(
+                ValidationIssue(
+                    code="HIERARCHY_CYCLE",
+                    message=f"{family} hierarchy cycle: {' -> '.join(cycle)}",
+                    subject=cycle[0],
+                )
+            )
+
+    pref_label_iris = {label.iri for label in content.labels if label.kind == "pref"}
+    for concept in content.concepts:
+        if concept.kind in {"class", "skos_concept"} and concept.iri not in pref_label_iris:
+            issues.append(
+                ValidationIssue(
+                    code="MISSING_PREF_LABEL",
+                    message=f"{concept.kind} {concept.iri} has no preferred label",
+                    subject=concept.iri,
+                )
+            )
+
+    shacl_graph = rdflib.Graph()
+    bundled_shapes = resources.files("parrot.knowledge.ontology.vocabulary.shapes").joinpath("parrot-core.shacl.ttl")
+    shacl_graph.parse(data=bundled_shapes.read_bytes(), format="turtle")
+    if shapes is not None:
+        shacl_graph.parse(data=shapes, format="turtle")
+    _, report_graph, _ = pyshacl.validate(_to_graph(content), shacl_graph=shacl_graph, inference="none")
+    sh_result = rdflib.URIRef("http://www.w3.org/ns/shacl#ValidationResult")
+    sh_focus_node = rdflib.URIRef("http://www.w3.org/ns/shacl#focusNode")
+    sh_result_message = rdflib.URIRef("http://www.w3.org/ns/shacl#resultMessage")
+    for result in report_graph.subjects(rdflib.RDF.type, sh_result):
+        focus_node = report_graph.value(result, sh_focus_node)
+        message = report_graph.value(result, sh_result_message)
+        issues.append(
+            ValidationIssue(
+                code="SHACL",
+                message=str(message) if message is not None else "SHACL validation failed",
+                subject=str(focus_node) if focus_node is not None else None,
+            )
+        )
+    return sorted(issues, key=lambda issue: (issue.code, issue.subject or ""))
+
+
+def diff_content(base: OntologyContent | None, candidate: OntologyContent) -> PublishDiff:
+    """Return the row-level difference from ``base`` to ``candidate``.
+
+    Args:
+        base: Existing published content, or ``None`` for the first publication.
+        candidate: Content proposed for publication.
+
+    Returns:
+        Added and changed concepts, new deprecations, and asserted relation counts.
+    """
+    candidate_concepts = {concept.iri: concept for concept in candidate.concepts}
+    candidate_labels = {}
+    candidate_statements = {}
+    for label in candidate.labels:
+        candidate_labels.setdefault(label.iri, set()).add((label.lang, label.kind, label.text))
+    for statement in candidate.statements:
+        candidate_statements.setdefault(statement.subject_iri, set()).add(
+            (statement.predicate, json.dumps(statement.object, sort_keys=True, separators=(",", ":")))
+        )
+    candidate_relations = {
+        (relation.subject_iri, relation.predicate, relation.object_iri)
+        for relation in candidate.relations
+        if not relation.inferred
+    }
+    if base is None:
+        return PublishDiff(
+            added_iris=sorted(candidate_concepts),
+            deprecated={
+                iri: concept.replaced_by for iri, concept in sorted(candidate_concepts.items()) if concept.deprecated
+            },
+            relations_added=len(candidate_relations),
+        )
+
+    base_concepts = {concept.iri: concept for concept in base.concepts}
+    base_labels = {}
+    base_statements = {}
+    for label in base.labels:
+        base_labels.setdefault(label.iri, set()).add((label.lang, label.kind, label.text))
+    for statement in base.statements:
+        base_statements.setdefault(statement.subject_iri, set()).add(
+            (statement.predicate, json.dumps(statement.object, sort_keys=True, separators=(",", ":")))
+        )
+    base_relations = {
+        (relation.subject_iri, relation.predicate, relation.object_iri)
+        for relation in base.relations
+        if not relation.inferred
+    }
+
+    added_iris = sorted(set(candidate_concepts) - set(base_concepts))
+    shared_iris = set(candidate_concepts) & set(base_concepts)
+    changed_iris = sorted(
+        iri
+        for iri in shared_iris
+        if candidate_concepts[iri] != base_concepts[iri]
+        or candidate_labels.get(iri, set()) != base_labels.get(iri, set())
+        or candidate_statements.get(iri, set()) != base_statements.get(iri, set())
+    )
+    deprecated = {
+        iri: concept.replaced_by
+        for iri, concept in sorted(candidate_concepts.items())
+        if concept.deprecated and (iri not in base_concepts or not base_concepts[iri].deprecated)
+    }
+    return PublishDiff(
+        added_iris=added_iris,
+        changed_iris=changed_iris,
+        deprecated=deprecated,
+        relations_added=len(candidate_relations - base_relations),
+        relations_closed=len(base_relations - candidate_relations),
+    )
