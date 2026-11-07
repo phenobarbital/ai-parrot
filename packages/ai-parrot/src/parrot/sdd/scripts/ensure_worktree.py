@@ -209,7 +209,7 @@ def _find_reusable_worktree(plan: WorktreePlan, target_path: Path, *, repo_root:
         if branch_name == plan.name:
             raise EnsureWorktreeError(
                 f"Branch {plan.name!r} is already checked out at {worktree_path}, not at the expected "
-                f"{target_path}; move it (see `parrot doctor` for the migration recipe) or remove it first."
+                f"{target_path}; move it (see `parrot self doctor` for the migration recipe) or remove it first."
             )
     return None
 
