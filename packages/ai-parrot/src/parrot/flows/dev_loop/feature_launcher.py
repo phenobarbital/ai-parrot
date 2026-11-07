@@ -34,7 +34,7 @@ class FeatureRef:
     slug: str
     spec: str
     index: str
-    worktree: str | None = None  # set for a brief: its already-provisioned worktree (never created here)
+    worktree: str | None = None  # set for a brief: its worktree (re-attached from its branch when missing)
 
     @property
     def is_brief(self) -> bool:
@@ -132,7 +132,7 @@ def resolve_feature(primary: Path, key: str) -> FeatureRef:
                 FeatureRef(feature_id=feature_id, slug=slug, spec=spec, index=str(index_path.relative_to(primary)))
             )
     if not matches:
-        matches = _resolve_briefs(primary, key)
+        matches = _resolve_briefs(primary, key) or _reattach_brief_branch(primary, key)
     if len(matches) != 1:
         raise LaunchError(2, f"could not uniquely resolve feature {key!r}")
     return matches[0]
@@ -169,7 +169,8 @@ def _resolve_briefs(primary: Path, key: str) -> list[FeatureRef]:
     """Find briefs whose slug, ``BRIEF-<slug>`` id or frontmatter key matches ``key`` (case-insensitive).
 
     A brief lives only in its own worktree (``sdd/briefs/<slug>.index.json`` on its ``fix-*``/``hotfix-*``
-    branch), so every worktree of the repository is searched. Each match carries that worktree.
+    branch), so every worktree of the repository is searched. Each match carries that worktree. When no
+    worktree holds it, ``_reattach_brief_branch`` may re-attach its surviving branch.
     """
     wanted = key.casefold()
     matches: list[FeatureRef] = []
@@ -201,6 +202,65 @@ def _resolve_briefs(primary: Path, key: str) -> list[FeatureRef]:
                     )
                 )
     return matches
+
+
+def _reattach_brief_branch(primary: Path, key: str) -> list[FeatureRef]:
+    """Re-attach a surviving ``hotfix-<key>-*`` / ``fix-<key>-*`` branch whose worktree is gone.
+
+    Only a branch no worktree has checked out qualifies; it is added under the resolved worktree root and the
+    brief is then resolved from it (issue:1b8289182630).
+
+    Args:
+        primary: The primary checkout.
+        key: The brief key the operator passed (e.g. a Jira key).
+
+    Returns:
+        The brief refs resolved from the re-attached worktree, or ``[]`` when no branch qualifies.
+
+    Raises:
+        LaunchError: exit 2 for ambiguous candidates or an occupied destination; exit 1 when git fails.
+    """
+    pattern = re.compile(rf"^(?:hotfix|fix)-{re.escape(key)}-.+$", re.IGNORECASE)
+    refs = _run(["git", "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes/origin"], cwd=primary)
+    if refs.returncode:
+        return []
+    local: set[str] = set()
+    remote: set[str] = set()
+    for line in refs.stdout.splitlines():
+        ref = line.strip()
+        if ref.startswith("refs/heads/"):
+            name, bucket = ref.removeprefix("refs/heads/"), local
+        elif ref.startswith("refs/remotes/origin/"):
+            name, bucket = ref.removeprefix("refs/remotes/origin/"), remote
+        else:
+            continue
+        if pattern.match(name):
+            bucket.add(name)
+    listing = _run(["git", "worktree", "list", "--porcelain"], cwd=primary)
+    checked_out = {
+        line.removeprefix("branch refs/heads/")
+        for line in (listing.stdout.splitlines() if not listing.returncode else [])
+        if line.startswith("branch refs/heads/")
+    }
+    candidates = sorted((local | remote) - checked_out)
+    if not candidates:
+        return []
+    if len(candidates) > 1:
+        raise LaunchError(2, f"ambiguous brief branches for {key!r}: {', '.join(candidates)}")
+    branch = candidates[0]
+    root = _require(
+        _run([sys.executable, "-m", "parrot.sdd.scripts.worktree_root", "--root", str(primary)], cwd=primary)
+    ).stdout.strip()
+    destination = Path(root) / branch
+    if os.path.lexists(destination):
+        raise LaunchError(2, f"cannot re-attach {branch}: {destination} already exists")
+    if branch in local:
+        argv = ["git", "worktree", "add", str(destination), branch]
+    else:
+        argv = ["git", "worktree", "add", "--no-track", "-b", branch, str(destination), f"origin/{branch}"]
+    _require(_run(argv, cwd=primary))
+    print(f"launch-worker: re-attached brief branch {branch} at {destination}", file=sys.stderr)
+    return _resolve_briefs(primary, key)
 
 
 def ensure_feature_worktree(primary: Path, ref: FeatureRef) -> Path:
