@@ -125,7 +125,9 @@ def content_from_catalog(
         base_iri=base_iri,
         concepts=sorted(parsed_concepts, key=lambda concept: concept.iri),
         labels=sorted(labels, key=lambda label: (label.iri, label.kind, label.lang, label.text)),
-        relations=sorted(relations, key=lambda relation: (relation.subject_iri, relation.predicate, relation.object_iri)),
+        relations=sorted(
+            relations, key=lambda relation: (relation.subject_iri, relation.predicate, relation.object_iri)
+        ),
         statements=sorted(statements, key=lambda statement: (statement.subject_iri, statement.predicate)),
     )
 
@@ -181,5 +183,7 @@ class CatalogVocabularyPublisher:
             carry_forward_missing=True,
             notes="concept catalog",
         )
-        self.logger.info("published catalog ontology %s version %d changed=%s", ontology_id, result.version, result.changed)
+        self.logger.info(
+            "published catalog ontology %s version %d changed=%s", ontology_id, result.version, result.changed
+        )
         return result

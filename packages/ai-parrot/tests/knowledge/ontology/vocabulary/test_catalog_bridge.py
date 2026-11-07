@@ -88,7 +88,9 @@ def test_content_from_catalog_mapping() -> None:
         (parent_iri, "pref", "en", "parent label"),
         (parent_iri, "alt", "en", "parent alias"),
     }
-    assert {(statement.subject_iri, statement.predicate, statement.object["value"]) for statement in content.statements} == {
+    assert {
+        (statement.subject_iri, statement.predicate, statement.object["value"]) for statement in content.statements
+    } == {
         (child_iri, "urn:parrot:core:domain", "finance"),
         (parent_iri, "urn:parrot:core:domain", "finance"),
     }
@@ -116,23 +118,19 @@ async def test_catalog_publish_tenant(pg_pool: asyncpg.Pool, pg_schema_name: str
     catalog_schema = f"catalog_t_{uuid4().hex[:8]}"
     async with pg_pool.acquire() as conn:
         await conn.execute(f'CREATE SCHEMA "{catalog_schema}"')
-        await conn.execute(
-            f'''CREATE TABLE "{catalog_schema}".ontology_concept (
+        await conn.execute(f"""CREATE TABLE "{catalog_schema}".ontology_concept (
                 id UUID PRIMARY KEY, tenant_id VARCHAR(64) NOT NULL, slug VARCHAR(128) NOT NULL,
                 label VARCHAR(256) NOT NULL, synonyms TEXT[] NOT NULL DEFAULT '{{}}', description TEXT,
                 domain VARCHAR(64), state VARCHAR(16) NOT NULL, asserted_by VARCHAR(96) NOT NULL,
                 reviewed_by VARCHAR(96), reviewed_at TIMESTAMPTZ, rationale TEXT,
                 effective_from TIMESTAMPTZ NOT NULL, effective_to TIMESTAMPTZ
-            )'''
-        )
-        await conn.execute(
-            f'''CREATE TABLE "{catalog_schema}".ontology_concept_isa (
+            )""")
+        await conn.execute(f"""CREATE TABLE "{catalog_schema}".ontology_concept_isa (
                 id UUID PRIMARY KEY, tenant_id VARCHAR(64) NOT NULL, child_id UUID NOT NULL,
                 parent_tier VARCHAR(16) NOT NULL, parent_ref VARCHAR(256) NOT NULL,
                 state VARCHAR(16) NOT NULL, asserted_by VARCHAR(96) NOT NULL,
                 reviewed_by VARCHAR(96), rationale TEXT
-            )'''
-        )
+            )""")
 
     catalog_pool = await asyncpg.create_pool(PG_DSN, server_settings={"search_path": catalog_schema})
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -145,14 +143,28 @@ async def test_catalog_publish_tenant(pg_pool: asyncpg.Pool, pg_schema_name: str
                     """INSERT INTO ontology_concept
                     (id, tenant_id, slug, label, synonyms, description, domain, state, asserted_by, effective_from)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)""",
-                    concept.id, concept.tenant_id, concept.slug, concept.label, concept.synonyms, concept.description,
-                    concept.domain, concept.state, concept.asserted_by, concept.effective_from,
+                    concept.id,
+                    concept.tenant_id,
+                    concept.slug,
+                    concept.label,
+                    concept.synonyms,
+                    concept.description,
+                    concept.domain,
+                    concept.state,
+                    concept.asserted_by,
+                    concept.effective_from,
                 )
             await conn.execute(
                 """INSERT INTO ontology_concept_isa
                 (id, tenant_id, child_id, parent_tier, parent_ref, state, asserted_by)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)""",
-                uuid4(), "acme", child_id, "tenant", str(parent_id), "approved", "curator@example.com",
+                uuid4(),
+                "acme",
+                child_id,
+                "tenant",
+                str(parent_id),
+                "approved",
+                "curator@example.com",
             )
 
         await ensure_schema(pg_pool, schema=pg_schema_name)
