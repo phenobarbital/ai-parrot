@@ -42,11 +42,11 @@
       "feature_id": "FEAT-836",
       "feature": "ledger-sdd-meta-fixes",
       "spec": "sdd/specs/ledger-sdd-meta-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-07T00:17:57+00:00",
       "completed_at": null
     }
   ]
