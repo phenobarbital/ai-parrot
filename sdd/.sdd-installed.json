@@ -70,7 +70,7 @@
     ".claude/commands/sdd-task.md": "920c99e882b4a7b45166c86b470fd45b25d541c3a0e4c1b97fdbf8bbb2180e01",
     ".claude/commands/sdd-tojira.md": "d01878325f29655142a7a6d4a34e1d0ed9eca93564266c460cf35e990955a5d3",
     ".claude/hooks/sdd-worker-format.sh": "a65c337a9193110e3f87fe88230dfdda478cc6e8d542f4e43656fe299a5c7166",
-    ".claude/rules/worktree-management.md": "6ec8ace84630920f892348790cbb3ad155f14d9c9c0a913f3f397185daede9ab",
+    ".claude/rules/worktree-management.md": "9a8d2c73797216b1222a275309435e700e8be85e21003ef2812decdca835115d",
     ".claude/skills/second-opinion/SKILL.md": "ec8cca2a76c361f145ab4d456edae7eebc6a8065697ce0184010d4b955b41888",
     ".codex/agents/sdd-worker.toml": "703eb48c080b5504a5ec7356806c47bb3dddfd30e785861b214dc81619718a63",
     "docs/sdd/CODEX.md": "3dd0b7f5c97a23c4ed3aefe9836444c09a3b519510006b770962c9d8f34ca0e8",
@@ -97,5 +97,5 @@
     "dangerous-actions"
   ],
   "toolkits": [],
-  "version": "2.1.1"
+  "version": "2.0.0"
 }
