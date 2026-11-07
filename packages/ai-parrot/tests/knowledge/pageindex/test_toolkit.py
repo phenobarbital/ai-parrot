@@ -797,8 +797,6 @@ async def test_add_node_creates_root_leaf_atomically(
     )
     assert result["node_id"]
     assert result["parent_node_id"] is None
-    new_id = result["node_id"]
-
     tree = await toolkit.get_tree("kb")
     titles = [n["title"] for n in tree["structure"]]
     assert "Finding 17" in titles
@@ -808,12 +806,13 @@ async def test_add_node_creates_root_leaf_atomically(
         persisted = json.load(f)
     for node in persisted["structure"]:
         assert "text" not in node
-    # Sidecar exists with the body.
-    sidecar = tmp_path / "kb" / f"{new_id}.md"
-    assert sidecar.is_file()
-    assert "UNIQUE_FINDING_BODY" in sidecar.read_text()
-    # Categories and metadata round-trip on the node.
+    # The immutable body blob is addressed by the inserted node's body_ref.
     node = next(n for n in persisted["structure"] if n["title"] == "Finding 17")
+    assert node["body_ref"]
+    body_path = tmp_path / "kb" / "bodies" / f"{node['body_ref']}.md"
+    assert body_path.is_file()
+    assert "UNIQUE_FINDING_BODY" in body_path.read_text()
+    # Categories and metadata round-trip on the node.
     assert node["categories"] == ["iam", "security"]
     assert node["metadata"] == {"severity": "high"}
 
@@ -851,9 +850,8 @@ async def test_add_node_under_existing_parent(
     assert child_titles == ["Finding A"]
     # Child has a node_id (possibly renumbered).
     child_id_in_tree = parent_node["nodes"][0]["node_id"]
-    sidecar = tmp_path / "kb" / f"{child_id_in_tree}.md"
-    assert sidecar.is_file()
-    assert sidecar.read_text() == "UNIQUE_CHILD_BODY"
+    child_node = parent_node["nodes"][0]
+    assert toolkit._content_store.load_node("kb", child_node) == "UNIQUE_CHILD_BODY"
     # Returned id matches what's in the tree.
     assert child["node_id"] == child_id_in_tree
 
@@ -889,7 +887,7 @@ async def test_add_node_rejects_empty_title(toolkit: PageIndexToolkit):
 
 
 @pytest.mark.asyncio
-async def test_update_node_content_overwrites_sidecar(
+async def test_update_node_content_publishes(
     monkeypatch,
     toolkit: PageIndexToolkit,
     tmp_path: Path,
@@ -905,13 +903,13 @@ async def test_update_node_content_overwrites_sidecar(
     res = await toolkit.add_node("kb", title="Finding", body="OLD_BODY")
     node_id = res["node_id"]
 
+    before_generation = (await toolkit.get_tree("kb"))["generation"]["id"]
     await toolkit.update_node_content("kb", node_id, "NEW_BODY content here")
 
-    sidecar = tmp_path / "kb" / f"{node_id}.md"
-    assert sidecar.read_text() == "NEW_BODY content here"
-    # Tree itself didn't change.
     tree = await toolkit.get_tree("kb")
+    assert tree["generation"]["id"] == before_generation + 1
     assert tree["structure"][0]["title"] == "Finding"
+    assert toolkit._content_store.load_node("kb", tree["structure"][0]) == "NEW_BODY content here"
 
 
 @pytest.mark.asyncio
@@ -932,10 +930,8 @@ async def test_update_node_content_marks_bm25_dirty(
     await toolkit.add_node("kb", title="Finding B", body="beta body")
     # Force BM25 build.
     await toolkit.search("kb", "alpha", top_k=3, use_llm_walk=False)
-    engine = toolkit._search["kb"]
-    assert engine._dirty is False
     await toolkit.update_node_content("kb", res["node_id"], "alpha_v2 token")
-    assert engine._dirty is True
+    assert "kb" not in toolkit._search
     # New token is now findable; old one is not.
     hits = await toolkit.search(
         "kb",
@@ -1351,7 +1347,7 @@ async def _seed_rename_tree(toolkit: PageIndexToolkit, name: str, body: str) -> 
 @pytest.mark.asyncio
 async def test_rename_tree_basic(toolkit: PageIndexToolkit, tmp_path: Path) -> None:
     """Move a tree and its sidecars to the new name."""
-    node_id = await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+    await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
 
     result = await toolkit.rename_tree("source", "destination")
 
@@ -1359,33 +1355,37 @@ async def test_rename_tree_basic(toolkit: PageIndexToolkit, tmp_path: Path) -> N
     assert not (tmp_path / "source.json").exists()
     assert not (tmp_path / "source").exists()
     assert (tmp_path / "destination.json").is_file()
-    assert (tmp_path / "destination" / f"{node_id}.md").read_text() == "SOURCE_BODY"
-    assert (await toolkit.get_tree("destination"))["structure"][0]["title"] == "source"
+    tree = await toolkit.get_tree("destination")
+    assert toolkit._content_store.load_node("destination", tree["structure"][0]) == "SOURCE_BODY"
+    assert tree["structure"][0]["title"] == "source"
 
 
 @pytest.mark.asyncio
 async def test_rename_tree_refuses_existing_dst_without_overwrite(toolkit: PageIndexToolkit, tmp_path: Path) -> None:
     """Reject collisions without mutating either tree."""
-    src_node = await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
-    dst_node = await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
+    await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+    await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
 
     with pytest.raises(ValueError, match="already exists"):
         await toolkit.rename_tree("source", "destination")
 
-    assert (tmp_path / "source" / f"{src_node}.md").read_text() == "SOURCE_BODY"
-    assert (tmp_path / "destination" / f"{dst_node}.md").read_text() == "DESTINATION_BODY"
+    source_tree = await toolkit.get_tree("source")
+    destination_tree = await toolkit.get_tree("destination")
+    assert toolkit._content_store.load_node("source", source_tree["structure"][0]) == "SOURCE_BODY"
+    assert toolkit._content_store.load_node("destination", destination_tree["structure"][0]) == "DESTINATION_BODY"
 
 
 @pytest.mark.asyncio
 async def test_rename_tree_overwrite_replaces_and_removes_backup(toolkit: PageIndexToolkit, tmp_path: Path) -> None:
     """Replace destination contents and remove its backup JSON."""
-    node_id = await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+    await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
     await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
 
     result = await toolkit.rename_tree("source", "destination", overwrite=True)
 
     assert result == {"src": "source", "dst": "destination", "replaced": True}
-    assert (tmp_path / "destination" / f"{node_id}.md").read_text() == "SOURCE_BODY"
+    tree = await toolkit.get_tree("destination")
+    assert toolkit._content_store.load_node("destination", tree["structure"][0]) == "SOURCE_BODY"
     assert not list(tmp_path.glob(f"destination{_REPLACED_MARKER}*.json"))
 
 
@@ -1411,7 +1411,7 @@ async def test_rename_tree_post_swap_reload_failure_is_not_a_rename_failure(
     monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path
 ) -> None:
     """A reload/projection error after the committed swap is logged, not raised."""
-    node_id = await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+    await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
 
     def boom(name: str):
         raise RuntimeError("injected reload failure")
@@ -1423,7 +1423,7 @@ async def test_rename_tree_post_swap_reload_failure_is_not_a_rename_failure(
     assert result == {"src": "source", "dst": "destination", "replaced": False}
     assert (tmp_path / "destination.json").exists()
     assert not (tmp_path / "source.json").exists()
-    assert (tmp_path / "destination" / f"{node_id}.md").read_text() == "SOURCE_BODY"
+    assert next((tmp_path / "destination" / "bodies").glob("*.md")).read_text() == "SOURCE_BODY"
 
 
 @pytest.mark.asyncio
@@ -1433,7 +1433,7 @@ async def test_rename_tree_overwrite_rolls_back_on_failure(
 ) -> None:
     """Restore the destination for failures at every individual move boundary."""
     await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
-    dst_node = await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
+    await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
     original_json_rename = toolkit._store.rename
     original_content_rename = toolkit._content_store.rename_tree
     json_calls = 0
@@ -1461,7 +1461,8 @@ async def test_rename_tree_overwrite_rolls_back_on_failure(
     with pytest.raises(OSError, match="injected"):
         await toolkit.rename_tree("source", "destination", overwrite=True)
 
-    assert (tmp_path / "destination" / f"{dst_node}.md").read_text() == "DESTINATION_BODY"
+    destination_tree = await toolkit.get_tree("destination")
+    assert toolkit._content_store.load_node("destination", destination_tree["structure"][0]) == "DESTINATION_BODY"
     assert (tmp_path / "source.json").is_file()
     assert (tmp_path / "destination.json").is_file()
     assert not list(tmp_path.glob(f"destination{_REPLACED_MARKER}*.json"))
@@ -1489,9 +1490,10 @@ async def test_rename_tree_invalidates_search_engine_cache(toolkit: PageIndexToo
 async def test_rename_tree_reprojects_okf_sidecars(toolkit: PageIndexToolkit) -> None:
     """Reproject an enriched tree after it has its destination URI."""
     await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
-    source_tree = toolkit._trees["source"]
-    source_tree["structure"][0].update({"concept_id": "source/node", "type": "Section"})
-    toolkit._persist("source")
+    async def enrich(txn) -> None:
+        txn.tree["structure"][0].update({"concept_id": "source/node", "type": "Section"})
+
+    await toolkit._mutate("source", enrich)
     projected: list[str] = []
 
     def project(tree_name: str, tree: dict) -> None:
@@ -1514,8 +1516,8 @@ def test_rename_tree_exposed_as_tool(toolkit: PageIndexToolkit) -> None:
 
 
 @pytest.mark.asyncio
-async def test_rename_tree_refuses_inside_batch(toolkit: PageIndexToolkit) -> None:
-    """Reject open source or destination batch participation and invalid input."""
+async def test_rename_tree_refuses_inside_write(toolkit: PageIndexToolkit) -> None:
+    """Reject open source or destination write participation and invalid input."""
     await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
     await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
 
@@ -1527,38 +1529,37 @@ async def test_rename_tree_refuses_inside_batch(toolkit: PageIndexToolkit) -> No
         await toolkit.rename_tree("missing", "new")
     with pytest.raises(KeyError):  # 128-char names are valid; the source is simply absent
         await toolkit.rename_tree("s" * 128, "d" * 128)
-    async with toolkit._batch("source"):
-        with pytest.raises(ValueError, match="open batch"):
+    async with toolkit._write("source"):
+        with pytest.raises(ValueError, match="open write"):
             await toolkit.rename_tree("source", "new")
-    async with toolkit._batch("destination"):
-        with pytest.raises(ValueError, match="open batch"):
+    async with toolkit._write("destination"):
+        with pytest.raises(ValueError, match="open write"):
             await toolkit.rename_tree("source", "destination", overwrite=True)
 
 
 @pytest.mark.asyncio
-async def test_delete_node_cleans_up_concept_id_sidecar(monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path):
-    """delete_node removes concept_id-keyed sidecar when node has concept_id."""
-    # Create a tree with an OKF-enriched node.
+async def test_delete_node_leaves_blobs_for_sweep(toolkit: PageIndexToolkit, tmp_path: Path):
+    """delete_node leaves immutable body blobs for the grace-period sweep."""
     await toolkit.create_tree("cleanup_test")
-    # Manually inject an enriched node into the tree.
-    tree = toolkit._trees["cleanup_test"]
-    tree["structure"] = [
-        {
-            "node_id": "0000",
-            "concept_id": "controls/c1",
-            "type": "Control",
-            "title": "Control 1",
-            "summary": "Test",
-            "nodes": [],
-        }
-    ]
-    # Write both node_id and concept_id keyed sidecars.
-    toolkit._content_store.save("cleanup_test", "0000", "legacy body")
-    toolkit._content_store.save("cleanup_test", "controls--c1", "okf body")
+    added = await toolkit.add_node("cleanup_test", "Control 1", "body")
+    tree = await toolkit.get_tree("cleanup_test")
+    body_ref = tree["structure"][0]["body_ref"]
+    body_path = tmp_path / "cleanup_test" / "bodies" / f"{body_ref}.md"
 
-    result = await toolkit.delete_node("cleanup_test", "0000")
+    result = await toolkit.delete_node("cleanup_test", added["node_id"])
     assert result["removed"] is True
+    assert body_path.is_file()
 
-    # Both sidecars must be gone.
-    assert toolkit._content_store.load("cleanup_test", "0000") is None
-    assert toolkit._content_store.load("cleanup_test", "controls--c1") is None
+
+@pytest.mark.asyncio
+async def test_add_node_body_ref(toolkit: PageIndexToolkit, tmp_path: Path):
+    """add_node stores its body in a content-addressed blob."""
+    await toolkit.create_tree("kb")
+    added = await toolkit.add_node("kb", "Finding", "body")
+    tree = await toolkit.get_tree("kb")
+    node = tree["structure"][0]
+
+    assert node["node_id"] == added["node_id"]
+    assert node["body_ref"]
+    assert not (tmp_path / "kb" / f"{node['node_id']}.md").exists()
+    assert toolkit._content_store.load_node("kb", node) == "body"
