@@ -225,3 +225,22 @@ def test_worker_prompt_frontmatter_lists_ledger_filing_tools():
     assert "mcp__wikitoolkit__ledger_open" in tools_line
     assert "mcp__wikitoolkit__ledger_context" in tools_line
     assert "mcp__wikitoolkit__ledger_open" in load_subagent_definition("sdd-worker")
+
+
+def test_worker_prompt_completion_labels_engine_checkpoint_failure():
+    """An engine-path store failure has its own label: ``unsupported_host`` means no engine settlement exists."""
+    body = load_subagent_definition("sdd-worker")
+    completion = _completion_section(body)
+    assert "evidence_persistence_failed" in completion
+    # Both labels coexist: the no-engine bullet keeps unsupported_host.
+    assert "unsupported_host" in completion
+    # The new branch belongs to the engine path, not the Fallback loop.
+    assert "evidence_persistence_failed" not in _fallback_loop(body)
+
+
+def test_sdd_worker_prompt_twins_are_identical():
+    """A prompt edit applied to one twin only drifts silently."""
+    root = Path(__file__).resolve().parents[5]
+    live = root / ".claude" / "agents" / "sdd-worker.md"
+    asset = root / "packages" / "ai-parrot" / "src" / "parrot" / "sdd" / "_assets" / "claude" / "agents" / "sdd-worker.md"
+    assert live.read_text(encoding="utf-8") == asset.read_text(encoding="utf-8")

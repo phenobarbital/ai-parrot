@@ -437,7 +437,12 @@ def test_linked_checkout_without_admin_dir_binds_nothing_extra(
     monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
     worktree, env = checkout
     binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
-    assert binds == [scratch_root.resolve(), worktree.resolve(), (env.parent / ".git").resolve()]
+    assert binds == [
+        scratch_root.resolve(),
+        worktree.resolve(),
+        (env.parent / ".git").resolve(),
+        (env.parent / "artifacts" / "logs" / "sdd-coder-usage").resolve(),
+    ]
 
 
 def test_real_feature_worktree_can_administer_worktrees_but_not_primary_checkout(tmp_path: Path) -> None:
@@ -536,6 +541,86 @@ def test_real_feature_worktree_can_write_shared_ledger_but_not_wiki_plane(tmp_pa
     )
     assert not (main / ".parrot" / "wiki.db").exists()
 
+
+
+def test_feature_worktree_binds_primary_coder_evidence_dir_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The evidence store is writable; the rest of ``artifacts/`` is not."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    (main / "artifacts" / "laya").mkdir(parents=True)
+    binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
+    assert (main / "artifacts" / "logs" / "sdd-coder-usage").resolve() in binds
+    assert (main / "artifacts").resolve() not in binds
+    assert (main / "artifacts" / "laya").resolve() not in binds
+    assert main.resolve() not in binds
+
+
+def test_coder_evidence_dir_is_created_when_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """First run: Bubblewrap cannot bind a missing path, so the helper creates it."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    assert not (main / "artifacts" / "logs" / "sdd-coder-usage").exists()
+    policy.protected_argv(worktree, ["true"])
+    assert (main / "artifacts" / "logs" / "sdd-coder-usage").is_dir()
+
+
+def test_primary_checkout_gets_no_evidence_bind_and_no_mkdir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    """The primary is already writable: no bind and no filesystem side effect."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main = tmp_path / "main"
+    (main / ".git").mkdir(parents=True)
+    assert _writable_binds(policy.protected_argv(main, ["true"])) == [scratch_root.resolve(), main.resolve()]
+    assert not (main / "artifacts").exists()
+
+
+def test_coder_evidence_dirs_degrades_when_mkdir_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A mkdir failure must not raise: ``protected_argv`` wraps every Bash call."""
+    main, worktree = _registered_feature_worktree(tmp_path)
+    git_dir = (main / ".git").resolve()
+
+    def _boom(*args: object, **kwargs: object) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(policy.Path, "mkdir", _boom)
+    assert policy.coder_evidence_dirs(worktree, git_dir) == ()
+
+
+def test_real_feature_worktree_can_write_evidence_store_but_not_laya(tmp_path: Path) -> None:
+    """Real Bubblewrap: the store is writable, the executable corner of ``artifacts/`` is not."""
+    _require_bubblewrap()
+    main = tmp_path / "main"
+    main.mkdir()
+    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
+    subprocess.run([*git, "commit", "--allow-empty", "-m", "initial"], cwd=main, capture_output=True, check=True)
+    (main / "artifacts" / "laya").mkdir(parents=True)
+    feature = main / ".parrot" / "worktrees" / "feat-x"
+    feature.parent.mkdir(parents=True)
+    subprocess.run(["git", "worktree", "add", "-b", "feat-x", str(feature)], cwd=main, capture_output=True, check=True)
+
+    store = main / "artifacts" / "logs" / "sdd-coder-usage"
+    result = subprocess.run(
+        policy.protected_argv(feature, ["touch", str(store / "probe")]), capture_output=True, text=True, timeout=20
+    )
+    assert result.returncode == 0, result.stderr
+    assert (store / "probe").is_file()
+
+    for forbidden in (main / "artifacts" / "laya" / "probe", main / "artifacts" / "probe"):
+        subprocess.run(policy.protected_argv(feature, ["touch", str(forbidden)]), capture_output=True, timeout=20)
+        assert not forbidden.exists(), forbidden
+
+
+def test_coder_evidence_dir_matches_resolve_durable_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drift guard: the stdlib-only policy module duplicates telemetry's default path."""
+    from parrot.flows.dev_loop.sdd_coder.telemetry import resolve_durable_root
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
+    resolved = resolve_durable_root(None, worktree_base_path=str(repo / ".parrot" / "worktrees"))
+    assert resolved == (repo / policy.CODER_EVIDENCE_DIR).resolve()
 
 # ---------------------------------------------------------------------------
 # Hung-command guard: a sandboxed process that never exits must not keep bwrap
