@@ -247,7 +247,7 @@
       "feature_id": "FEAT-840",
       "feature": "pageindex-segment-store",
       "spec": "sdd/specs/pageindex-segment-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -258,8 +258,9 @@
       "parallelism_notes": "Depends on TASK-5308 (same file toolkit.py; uses self._segment_store and self._read_max_chars it adds) and TASK-5306 (frame_segments from framing.py). SegmentStore (TASK-5302) is reached transitively through TASK-5308.",
       "assigned_to": null,
       "started_at": "2026-11-07T01:32:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5309-read-tools.md"
+      "completed_at": "2026-11-07T01:48:34+00:00",
+      "file": "sdd/tasks/completed/TASK-5309-read-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5310",
