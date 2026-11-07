@@ -290,3 +290,215 @@ def parse_cursor(cursor: str) -> tuple[str, str, int, int]:
     if match is None:
         raise ValueError(f"malformed cursor {cursor!r}")
     return match.group(1), match.group(2), int(match.group(3)), int(match.group(4))
+
+
+# ---------------------------------------------------------------------------
+# Ownership: spans, owned ranges, body views (TASK-5301)
+# ---------------------------------------------------------------------------
+
+_NUM_PREFIX_RE = re.compile(r"^\d+(?:\.\d+)*\.?\s*")
+_TRAILING_PUNCT = " \t.:;,-–—)"
+
+Range = tuple[int, int]
+
+
+def normalize_title(title: str) -> str:
+    """Casefold, collapse whitespace, strip leading numbering and trailing punctuation."""
+    text = " ".join((title or "").casefold().split())
+    text = _NUM_PREFIX_RE.sub("", text)
+    return text.rstrip(_TRAILING_PUNCT)
+
+
+def _titles_match(a: str, b: str) -> bool:
+    """Equality, or containment of the shorter in the longer when the shorter has >= 3 characters."""
+    na, nb = normalize_title(a), normalize_title(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    short, long_ = (na, nb) if len(na) <= len(nb) else (nb, na)
+    return len(short) >= 3 and short in long_
+
+
+def _subtract(span: Range, holes: Sequence[Range]) -> list[Range]:
+    """``span`` minus ``holes`` as sorted, maximal, non-empty half-open ranges."""
+    start, end = span
+    out: list[Range] = []
+    cursor = start
+    for h_start, h_end in sorted(holes):
+        h_start, h_end = max(h_start, start), min(h_end, end)
+        if h_end <= h_start:
+            continue
+        if h_start > cursor:
+            out.append((cursor, h_start))
+        cursor = max(cursor, h_end)
+    if cursor < end:
+        out.append((cursor, end))
+    return out
+
+
+def _heading_text(text: str) -> str:
+    match = _HEADER_RE.match(text.strip())
+    return match.group(2) if match else text
+
+
+def _stamp(node: dict, revision: DocumentRevision) -> None:
+    node["doc_id"] = revision.doc_id
+    node["revision"] = revision.revision
+
+
+def _clear_subtree(nodes: Sequence[dict], revision: DocumentRevision) -> None:
+    for node in nodes:
+        _stamp(node, revision)
+        node["span"] = None
+        node["owned"] = []
+        _clear_subtree(node.get("nodes") or [], revision)
+
+
+def attach_pdf_document(structure: list[dict], revision: DocumentRevision) -> None:
+    """Set ``doc_id``, ``revision``, ``span`` and ``owned`` on every node of ``structure`` (PDF source).
+
+    Span start is the first segment of ``start_index`` or the heading segment on that page matching the node
+    title; span end is ``min(first segment after end_index, next sibling's start)`` widened to the children's
+    ends. Top-level siblings additionally absorb the gap before the next one, the first starts at 0 and the last
+    ends at ``len(segments)``, so the owned ranges partition the revision. A node whose pages hold no segment
+    owns nothing.
+    """
+    from bisect import bisect_left, bisect_right
+
+    segments = revision.segments
+    total = len(segments)
+    pages = [s.page if s.page is not None else 0 for s in segments]
+
+    def start_of(node: dict) -> Optional[int]:
+        page = node.get("start_index")
+        if page is None:
+            return None
+        first = bisect_left(pages, page)
+        last = bisect_right(pages, page)
+        if first >= last:
+            return None
+        for seq in range(first, last):
+            seg = segments[seq]
+            if seg.kind == "heading" and _titles_match(_heading_text(seg.text), node.get("title", "")):
+                return seq
+        return first
+
+    def attach_level(nodes: Sequence[dict], lo: int, hi: int, top: bool) -> None:
+        starts: list[Optional[int]] = []
+        previous = lo
+        for node in nodes:
+            s = start_of(node)
+            if s is not None:
+                s = min(max(s, previous, lo), hi)
+                previous = s
+            starts.append(s)
+        valid = [i for i, s in enumerate(starts) if s is not None]
+        if top and valid:
+            starts[valid[0]] = lo
+        for pos, idx in enumerate(valid):
+            node = nodes[idx]
+            _stamp(node, revision)
+            s = starts[idx]
+            nxt = starts[valid[pos + 1]] if pos + 1 < len(valid) else None
+            bound = nxt if nxt is not None else hi
+            end_idx = node.get("end_index")
+            page_end = bisect_right(pages, end_idx) if end_idx is not None else bound
+            e_page = bound if top else min(page_end, bound)
+            children = node.get("nodes") or []
+            attach_level(children, s, bound, False)
+            child_spans = [tuple(c["span"]) for c in children if c.get("span")]
+            e = max([e_page] + [c_end for _, c_end in child_spans])
+            e = min(e, bound)
+            if e <= s:
+                node["span"] = None
+                node["owned"] = []
+                _clear_subtree(children, revision)
+                continue
+            node["span"] = [s, e]
+            node["owned"] = [list(r) for r in _subtract((s, e), child_spans)]
+        for idx, node in enumerate(nodes):
+            if starts[idx] is None:
+                _stamp(node, revision)
+                node["span"] = None
+                node["owned"] = []
+                _clear_subtree(node.get("nodes") or [], revision)
+
+    attach_level(structure, 0, total, True)
+
+
+def attach_section_document(structure: list[dict], revision: DocumentRevision,
+                            by_node: dict[int, tuple[int, int]]) -> None:
+    """Same fields for an unpaged source; ``by_node`` maps ``id(node)`` to its own ``[start, end)``."""
+
+    def visit(node: dict) -> Optional[Range]:
+        _stamp(node, revision)
+        own = by_node.get(id(node))
+        spans: list[Range] = []
+        owned: list[list[int]] = []
+        if own is not None and own[1] > own[0]:
+            spans.append((own[0], own[1]))
+            owned.append([own[0], own[1]])
+        for child in node.get("nodes") or []:
+            child_span = visit(child)
+            if child_span is not None:
+                spans.append(child_span)
+        node["owned"] = owned
+        if not spans:
+            node["span"] = None
+            return None
+        span = (min(s for s, _ in spans), max(e for _, e in spans))
+        node["span"] = [span[0], span[1]]
+        return span
+
+    for root in structure:
+        visit(root)
+
+
+def render_body(revision: DocumentRevision, node: dict, children: Sequence[dict]) -> str:
+    """Owned segments in document order with one gap marker per interrupting child."""
+    segments = revision.segments
+    events: list[tuple[int, int, str]] = []
+    for rng in node.get("owned") or []:
+        for seq in range(max(rng[0], 0), min(rng[1], len(segments))):
+            events.append((seq, 1, segments[seq].text))
+    for child in children:
+        span = child.get("span")
+        if span:
+            events.append((span[0], 0, f"<!-- continues in: {child.get('title', '')} -->"))
+    events.sort(key=lambda e: (e[0], e[1]))
+    return "\n\n".join(text for _, _, text in events)
+
+
+def validate_ownership(nodes: Sequence[dict], revision: DocumentRevision) -> list[str]:
+    """Problems with the owned ranges of ``nodes``; empty when they partition ``[0, n)`` exactly once."""
+    total = len(revision.segments)
+    owner: list[Optional[str]] = [None] * total
+    problems: list[str] = []
+    overlaps = 0
+    for node in nodes:
+        label = str(node.get("node_id") or node.get("title") or id(node))
+        for rng in node.get("owned") or []:
+            start, end = rng[0], rng[1]
+            if start < 0 or end > total or end <= start:
+                problems.append(f"out of range [{start}, {end}) owned by {label}")
+                continue
+            for seq in range(start, end):
+                if owner[seq] is None:
+                    owner[seq] = label
+                else:
+                    overlaps += 1
+                    if overlaps <= 20:
+                        problems.append(f"overlap seq {seq} owned by {owner[seq]} and {label}")
+    if overlaps > 20:
+        problems.append(f"... {overlaps - 20} more overlapping segments")
+    seq = 0
+    while seq < total:
+        if owner[seq] is None:
+            begin = seq
+            while seq < total and owner[seq] is None:
+                seq += 1
+            problems.append(f"gap [{begin}, {seq})")
+        else:
+            seq += 1
+    return problems

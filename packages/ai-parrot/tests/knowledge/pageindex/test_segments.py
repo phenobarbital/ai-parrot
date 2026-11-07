@@ -77,3 +77,94 @@ def test_address_labels():
     assert paged.label == "p. 12 ¶3"
     assert unpaged.label == "Setup > Install ¶2"
     assert paged.key == f"d@{'0' * 16}#4"
+
+
+# ---------------------------------------------------------------------------
+# Ownership (TASK-5301)
+# ---------------------------------------------------------------------------
+from parrot.knowledge.pageindex.segments import (  # noqa: E402
+    DocumentRevision, SourceInfo, attach_pdf_document, attach_section_document, render_body, validate_ownership,
+)
+from parrot.knowledge.pageindex.utils import structure_to_list  # noqa: E402
+
+
+def _rev(pages):
+    segs = segment_pages(pages)
+    return DocumentRevision(doc_id="d", revision=revision_id(segs), source=SourceInfo(name="d.pdf", kind="pdf"),
+                            created_at="2026-11-07T00:00:00Z", segments=segs)
+
+
+def test_attach_pdf_shared_page_partition():
+    rev = _rev([(1, "# Ch 1\n\nIntro.\n\n## 1.1 Scope\n\nScope text."), (2, "More scope.")])
+    tree = [{"title": "Ch 1", "start_index": 1, "end_index": 2,
+             "nodes": [{"title": "1.1 Scope", "start_index": 1, "end_index": 2}]}]
+    attach_pdf_document(tree, rev)
+    parent, child = tree[0], tree[0]["nodes"][0]
+    assert parent["owned"] == [[0, 2]] and child["span"] == [2, 5]
+    assert parent["doc_id"] == "d" and parent["revision"] == rev.revision
+    assert validate_ownership(structure_to_list(tree), rev) == []
+
+
+def test_attach_pdf_no_title_match():
+    rev = _rev([(1, "Alpha text.\n\nBeta text."), (2, "Gamma text.")])
+    tree = [{"title": "A", "start_index": 1, "end_index": 1},
+            {"title": "B", "start_index": 1, "end_index": 2}]
+    attach_pdf_document(tree, rev)
+    # B starts at the shared page's first segment; A (earlier sibling) ends there and owns nothing
+    assert tree[1]["span"] == [0, 3]
+    assert tree[0]["span"] is None and tree[0]["owned"] == []
+    assert validate_ownership(structure_to_list(tree), rev) == []
+
+
+def test_attach_pdf_parent_interstitial_text():
+    rev = _rev([(1, "# P\n\n## A\n\nA text."), (2, "Between children."), (3, "## B\n\nB text.")])
+    tree = [{"title": "P", "start_index": 1, "end_index": 3,
+             "nodes": [{"title": "A", "start_index": 1, "end_index": 1},
+                       {"title": "B", "start_index": 3, "end_index": 3}]}]
+    attach_pdf_document(tree, rev)
+    parent = tree[0]
+    assert parent["owned"] == [[0, 1], [3, 4]]
+    body = render_body(rev, parent, parent["nodes"])
+    assert body.count("<!-- continues in:") == 2
+    assert body.index("continues in: A") < body.index("Between children.") < body.index("continues in: B")
+    assert validate_ownership(structure_to_list(tree), rev) == []
+
+
+def test_attach_pdf_front_and_back_matter_owned():
+    rev = _rev([(1, "Cover."), (2, "# One\n\nBody."), (3, "Index.")])
+    tree = [{"title": "One", "start_index": 2, "end_index": 2}]
+    attach_pdf_document(tree, rev)
+    assert tree[0]["span"] == [0, 4]
+    assert validate_ownership(tree, rev) == []
+
+
+def test_attach_section_document_leaf_and_parent():
+    segs = segment_text("Own.", ["P"]) + segment_text("Leaf one.\n\nLeaf two.", ["P", "C"], seq_start=1)
+    rev = DocumentRevision(doc_id="d", revision=revision_id(segs), source=SourceInfo(name="d", kind="markdown"),
+                           created_at="2026-11-07T00:00:00Z", segments=segs)
+    child = {"title": "C"}
+    parent = {"title": "P", "nodes": [child]}
+    attach_section_document([parent], rev, {id(parent): (0, 1), id(child): (1, 3)})
+    assert parent["owned"] == [[0, 1]] and parent["span"] == [0, 3]
+    assert child["span"] == [1, 3] and child["owned"] == [[1, 3]]
+    assert validate_ownership([parent, child], rev) == []
+
+
+def test_render_body_deterministic():
+    rev = _rev([(1, "# P\n\nOwn.\n\n## C\n\nChild.")])
+    tree = [{"title": "P", "start_index": 1, "end_index": 1,
+             "nodes": [{"title": "C", "start_index": 1, "end_index": 1}]}]
+    attach_pdf_document(tree, rev)
+    first = render_body(rev, tree[0], tree[0]["nodes"])
+    assert first == render_body(rev, tree[0], tree[0]["nodes"])
+    assert first == "# P\n\nOwn.\n\n<!-- continues in: C -->"
+    assert render_body(rev, tree[0]["nodes"][0], []) == "## C\n\nChild."
+
+
+def test_validate_ownership_reports_gap_and_overlap():
+    rev = _rev([(1, "A.\n\nB.\n\nC.")])
+    nodes = [{"node_id": "1", "owned": [[0, 1]]}, {"node_id": "2", "owned": [[2, 3]]}]
+    assert validate_ownership(nodes, rev) == ["gap [1, 2)"]
+    nodes = [{"node_id": "1", "owned": [[0, 2]]}, {"node_id": "2", "owned": [[1, 3]]}]
+    assert validate_ownership(nodes, rev) == ["overlap seq 1 owned by 1 and 2"]
+    assert validate_ownership([{"node_id": "1", "owned": [[0, 9]]}], rev)[0].startswith("out of range")
