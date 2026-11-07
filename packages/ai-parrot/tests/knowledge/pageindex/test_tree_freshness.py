@@ -12,7 +12,6 @@ import pytest
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 from parrot.knowledge.pageindex.generation import StaleGenerationError
 
-
 def _adapter() -> MagicMock:
     a = MagicMock()
     a.model = "heavy"

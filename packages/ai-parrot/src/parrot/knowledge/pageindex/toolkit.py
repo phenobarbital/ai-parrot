@@ -1185,6 +1185,7 @@ class PageIndexToolkit(AbstractToolkit):
         Referenced body blobs are deliberately retained for the generation
         sweep so readers holding an earlier tree generation remain valid.
         """
+
         async def apply(txn: WriteTransaction) -> bool:
             return _delete_node(txn.tree, node_id)
 
