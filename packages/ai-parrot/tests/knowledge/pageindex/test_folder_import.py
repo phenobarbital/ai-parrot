@@ -98,13 +98,14 @@ async def test_import_folder_mirrors_directory_layout(
 
 
 @pytest.mark.asyncio
-async def test_import_folder_persists_once(
-    toolkit: PageIndexToolkit, sample_folder: Path, tmp_path: Path,
+async def test_import_folder_publishes_once(
+    toolkit: PageIndexToolkit, sample_folder: Path,
 ):
     await toolkit.create_tree("kb")
+    generation_before = (await toolkit.get_generation("kb"))["id"]
     await toolkit.import_folder("kb", str(sample_folder))
-    # tree file should exist after the import
-    assert (tmp_path / "store" / "kb.json").is_file()
+    generation_after = (await toolkit.get_generation("kb"))["id"]
+    assert generation_after == generation_before + 1
 
 
 @pytest.mark.asyncio

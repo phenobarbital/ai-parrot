@@ -19,6 +19,7 @@ a hierarchical index, with bodies fetched on demand by node_id.
 from __future__ import annotations
 
 import asyncio
+import copy
 import fnmatch
 import logging
 import secrets
@@ -987,7 +988,6 @@ class PageIndexToolkit(AbstractToolkit):
         ``ConceptType.SECTION`` when no LLM adapter is available, so it
         never blocks ingest.
         """
-        tree = self._load_tree(tree_name)
         subtree = await md_to_tree(
             md_text=markdown,
             adapter=self._adapter,
@@ -996,12 +996,15 @@ class PageIndexToolkit(AbstractToolkit):
         # Build-time scratch fields that should never reach disk.
         node_markdown = _pop_node_field(subtree, "text")
         _strip_keys_in_place(subtree, ("token_count", "line_num"))
-        original_id_to_node = _capture_node_id_object_map(subtree)
-        new_ids = splice_subtree(tree, subtree, parent_node_id=parent_node_id)
-        self._save_node_markdown(tree_name, original_id_to_node, node_markdown)
-        # T3 OKF classification step (FEAT-238): assign type to new nodes.
-        await self._run_t3_classification(tree, original_id_to_node)
-        self._persist(tree_name)
+        async def apply(txn: WriteTransaction) -> list[str]:
+            fresh = copy.deepcopy(subtree)
+            original_id_to_node = _capture_node_id_object_map(fresh)
+            new_ids = splice_subtree(txn.tree, fresh, parent_node_id=parent_node_id)
+            self._stage_node_markdown(txn, original_id_to_node, node_markdown)
+            await self._run_t3_classification(txn.tree, original_id_to_node)
+            return new_ids
+
+        new_ids = await self._mutate(tree_name, apply)
         return {"tree_name": tree_name, "new_node_ids": new_ids}
 
     async def insert_ebook(
@@ -1020,16 +1023,19 @@ class PageIndexToolkit(AbstractToolkit):
 
         records = [EbookSection.model_validate(section) for section in sections]
         subtree = ebook_tree(records)
-        tree = self._load_tree(tree_name)
         node_markdown = _pop_node_field(subtree, "text")
-        original_id_to_node = _capture_node_id_object_map(subtree)
-        splice_subtree(tree, subtree, parent_node_id=parent_node_id)
-        self._save_node_markdown(tree_name, original_id_to_node, node_markdown)
-        await self._run_t3_classification(tree, original_id_to_node)
-        self._persist(tree_name)
+        async def apply(txn: WriteTransaction) -> list[str]:
+            fresh = copy.deepcopy(subtree)
+            original_id_to_node = _capture_node_id_object_map(fresh)
+            new_ids = splice_subtree(txn.tree, fresh, parent_node_id=parent_node_id)
+            self._stage_node_markdown(txn, original_id_to_node, node_markdown)
+            await self._run_t3_classification(txn.tree, original_id_to_node)
+            return new_ids
+
+        new_ids = await self._mutate(tree_name, apply)
         return {
             "tree_name": tree_name,
-            "new_node_ids": [node["node_id"] for node in original_id_to_node.values()],
+            "new_node_ids": new_ids,
             "title": records[0].title if records else "",
             "summary": "",
         }
@@ -1100,7 +1106,6 @@ class PageIndexToolkit(AbstractToolkit):
         """
         if not Path(pdf_path).is_file():
             raise FileNotFoundError(f"PDF not found: {pdf_path}")
-        tree = self._load_tree(tree_name)
         subtree = await build_page_index(
             doc=pdf_path,
             adapter=self._adapter,
@@ -1116,10 +1121,15 @@ class PageIndexToolkit(AbstractToolkit):
         # capture object references BEFORE the splice to recover the
         # new ids afterwards.
         node_markdown = dict(subtree.pop("_node_markdown", {}) or {})
-        original_id_to_node = _capture_node_id_object_map(subtree)
-        new_ids = splice_subtree(tree, subtree, parent_node_id=parent_node_id)
-        self._save_node_markdown(tree_name, original_id_to_node, node_markdown)
-        self._persist(tree_name)
+        async def apply(txn: WriteTransaction) -> list[str]:
+            fresh = copy.deepcopy(subtree)
+            original_id_to_node = _capture_node_id_object_map(fresh)
+            new_ids = splice_subtree(txn.tree, fresh, parent_node_id=parent_node_id)
+            self._stage_node_markdown(txn, original_id_to_node, node_markdown)
+            await self._run_t3_classification(txn.tree, original_id_to_node)
+            return new_ids
+
+        new_ids = await self._mutate(tree_name, apply)
         return {
             "tree_name": tree_name,
             "new_node_ids": new_ids,
@@ -1127,29 +1137,17 @@ class PageIndexToolkit(AbstractToolkit):
             "doc_description": subtree.get("doc_description"),
         }
 
-    def _save_node_markdown(
+    def _stage_node_markdown(
         self,
-        tree_name: str,
+        txn: WriteTransaction,
         original_id_to_node: dict[str, dict[str, Any]],
         node_markdown: dict[str, str],
     ) -> None:
-        """Persist per-node markdown after a splice + reindex.
-
-        ``splice_subtree`` reuses the original node dict references and
-        :func:`reindex_node_ids` mutates ``node_id`` in place, so the
-        same dict objects we captured before the splice now carry the
-        post-splice ids — no path reconstruction needed.
-        """
-        if not node_markdown:
-            return
-        for original_id, markdown in node_markdown.items():
+        """Stage per-node markdown as immutable blobs after a splice into ``txn.tree``."""
+        for original_id, markdown in (node_markdown or {}).items():
             node = original_id_to_node.get(original_id)
-            if node is None:
-                continue
-            new_id = node.get("node_id")
-            if not new_id:
-                continue
-            self._content_store.save(tree_name, new_id, markdown or "")
+            if node is not None:
+                txn.set_body(node, markdown or "")
 
     async def import_folder(
         self,
@@ -1170,7 +1168,6 @@ class PageIndexToolkit(AbstractToolkit):
         if not root.is_dir():
             raise NotADirectoryError(f"{folder_path!r} is not a directory")
 
-        tree = self._load_tree(tree_name)
         sem = asyncio.Semaphore(self._folder_concurrency)
         imported: list[str] = []
         skipped: list[str] = []
@@ -1195,7 +1192,11 @@ class PageIndexToolkit(AbstractToolkit):
                     logger.warning("Failed to ingest %s: %s", path, exc)
                     skipped.append(str(path))
 
-        async def _process_dir(dir_path: Path, parent_id: Optional[str]) -> None:
+        async def _process_dir(
+            txn: WriteTransaction,
+            dir_path: Path,
+            parent_id: Optional[str],
+        ) -> None:
             files = [
                 p
                 for p in sorted(dir_path.iterdir())
@@ -1210,13 +1211,12 @@ class PageIndexToolkit(AbstractToolkit):
                 await asyncio.gather(*[_ingest_file(f, parent_id) for f in files])
             for sub in subdirs:
                 folder_node = make_folder_node(sub.name)
-                splice_subtree(tree, folder_node, parent_node_id=parent_id)
+                splice_subtree(txn.tree, folder_node, parent_node_id=parent_id)
                 new_parent_id = folder_node.get("node_id")
-                await _process_dir(sub, new_parent_id)
+                await _process_dir(txn, sub, new_parent_id)
 
-        async with self._batch(tree_name):
-            await _process_dir(root, parent_node_id)
-            self._batch_dirty[tree_name] = True
+        async with self._write(tree_name) as txn:
+            await _process_dir(txn, root, parent_node_id)
 
         return {
             "tree_name": tree_name,

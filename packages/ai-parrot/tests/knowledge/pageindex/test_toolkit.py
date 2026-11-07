@@ -11,6 +11,7 @@ from parrot.knowledge.pageindex.ingest import IngestedMarkdown
 from parrot.knowledge.pageindex.locks import lock_path
 from parrot.knowledge.pageindex.schemas import TreeSearchResult
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, _REPLACED_MARKER
+from parrot.knowledge.pageindex.utils import structure_to_list
 from parrot.knowledge.okf.utils import flatten_concept_id_for_filename
 
 def _adapter() -> MagicMock:
@@ -385,7 +386,7 @@ def _fake_build_pdf(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_toolkit_import_pdf_persists_sidecar(
+async def test_toolkit_import_pdf_stores_blobs(
     monkeypatch,
     toolkit: PageIndexToolkit,
     tmp_path: Path,
@@ -396,9 +397,10 @@ async def test_toolkit_import_pdf_persists_sidecar(
     await toolkit.create_tree("compliance")
     await toolkit.import_pdf("compliance", str(pdf))
 
-    content_dir = tmp_path / "compliance"
-    md_files = sorted(p.name for p in content_dir.iterdir() if p.suffix == ".md")
-    assert md_files == ["0000.md", "0001.md", "0002.md"]
+    tree = await toolkit.get_tree("compliance")
+    assert all(node.get("body_ref") for node in tree["structure"])
+    assert toolkit._content_store.load("compliance", "0000") == "# Article 1\nVERBATIM_BODY_OF_ARTICLE_1.\n"
+    assert not list((tmp_path / "compliance").glob("*.md"))
 
     # Persisted JSON tree must not carry inline text or _node_markdown.
     with (tmp_path / "compliance.json").open() as f:
@@ -453,8 +455,8 @@ async def test_toolkit_retrieve_falls_back_to_summary_when_no_content(
 
     await toolkit.create_tree("compliance")
     await toolkit.import_pdf("compliance", str(pdf))
-    # Manually wipe the sidecar; retrieve must still return summary text.
-    (tmp_path / "compliance" / "0000.md").unlink()
+    node = (await toolkit.get_tree("compliance"))["structure"][0]
+    toolkit._content_store.body_path("compliance", node["body_ref"]).unlink()
     toolkit._content_store._cache.clear()
 
     text = await toolkit.retrieve("compliance", "scope", top_k=1)
@@ -515,12 +517,13 @@ async def test_toolkit_delete_node_removes_sidecar(
     await toolkit.import_pdf("compliance", str(pdf))
 
     tree = await toolkit.get_tree("compliance")
-    target_id = tree["structure"][0]["node_id"]
-    sidecar = tmp_path / "compliance" / f"{target_id}.md"
-    assert sidecar.is_file()
+    target_node = tree["structure"][0]
+    target_id = target_node["node_id"]
+    assert target_node["body_ref"]
+    assert toolkit._content_store.load("compliance", target_id) == "# Article 1\nVERBATIM_BODY_OF_ARTICLE_1.\n"
 
     await toolkit.delete_node("compliance", target_id)
-    assert not sidecar.is_file()
+    assert all(node["title"] != "Article 1" for node in (await toolkit.get_tree("compliance"))["structure"])
     # And the LRU cache entry is gone.
     assert ("compliance", target_id) not in toolkit._content_store._cache
 
@@ -629,13 +632,13 @@ async def test_delete_tree_clears_sidecar_and_json(
 
     result = await toolkit.delete_tree("compliance")
     assert result["tree_removed"] is True
-    assert result["sidecars_removed"] >= 1
+    assert result["sidecars_removed"] == 0
     assert not (tmp_path / "compliance.json").is_file()
     assert not (tmp_path / "compliance").is_dir()
 
 
 @pytest.mark.asyncio
-async def test_insert_markdown_persists_sidecar_and_strips_text(
+async def test_insert_markdown_stores_blobs_and_strips_text(
     monkeypatch,
     toolkit: PageIndexToolkit,
     tmp_path: Path,
@@ -678,13 +681,13 @@ async def test_insert_markdown_persists_sidecar_and_strips_text(
 
     _walk(persisted["structure"])
 
-    # Sidecar directory exists and contains at least the leaf-node bodies.
-    content_dir = tmp_path / "kb"
-    assert content_dir.is_dir()
-    md_files = list(content_dir.glob("*.md"))
-    assert md_files, "expected at least one node sidecar"
-    bodies = [p.read_text(encoding="utf-8") for p in md_files]
-    assert any("UNIQUE_INSTALL_MARKER" in b for b in bodies)
+    nodes = [node for node in structure_to_list(persisted["structure"]) if node.get("body_ref")]
+    assert nodes, "expected nodes with body blobs"
+    assert any(
+        "UNIQUE_INSTALL_MARKER" in (toolkit._content_store.load_node("kb", node) or "")
+        for node in nodes
+    )
+    assert not list((tmp_path / "kb").glob("*.md"))
 
 
 @pytest.mark.asyncio
@@ -767,9 +770,10 @@ async def test_import_folder_persists_sidecars(
 
     _walk(persisted["structure"])
 
-    content_dir = tmp_path / "docs"
-    md_files = list(content_dir.glob("*.md"))
-    assert md_files, "expected node sidecars after folder import"
+    nodes = [node for node in structure_to_list(persisted["structure"]) if node.get("body_ref")]
+    assert nodes, "expected nodes with body blobs after folder import"
+    assert all(toolkit._content_store.load_node("docs", node) for node in nodes)
+    assert not list((tmp_path / "docs").glob("*.md"))
 
 
 @pytest.mark.asyncio
@@ -1248,8 +1252,8 @@ async def test_search_documents_scoped_falls_back_to_summary_when_no_sidecar(
     tmp_path: Path,
 ):
     await _seed_scoped_tree(monkeypatch, toolkit, tmp_path, "kb", "d.md", "BODY")
-    # Wipe the sidecar for node 0000 — retrieve must fall back to summary.
-    (tmp_path / "kb" / "0000.md").unlink()
+    node = (await toolkit.get_tree("kb"))["structure"][0]
+    toolkit._content_store.body_path("kb", node["body_ref"]).unlink()
     toolkit._content_store._cache.clear()
 
     async def fake_search(self, query):
