@@ -103,8 +103,7 @@ async def build_snapshot(content: VersionContent, dest_root: Path) -> Path:
         if existing_checksum == content.checksum:
             return final
         raise ValueError(
-            f"Snapshot {final} already exists with checksum {existing_checksum!r}, "
-            f"not {content.checksum!r}"
+            f"Snapshot {final} already exists with checksum {existing_checksum!r}, " f"not {content.checksum!r}"
         )
 
     final.parent.mkdir(parents=True, exist_ok=True)
@@ -137,9 +136,7 @@ async def build_snapshot(content: VersionContent, dest_root: Path) -> Path:
                     for concept in content.content.concepts
                 ],
             )
-            label_rows = [
-                (label.iri, label.lang, label.kind, label.text) for label in content.content.labels
-            ]
+            label_rows = [(label.iri, label.lang, label.kind, label.text) for label in content.content.labels]
             await database.executemany(
                 "INSERT INTO label (iri, lang, kind, text) VALUES (?, ?, ?, ?)",
                 label_rows,
@@ -172,10 +169,7 @@ async def build_snapshot(content: VersionContent, dest_root: Path) -> Path:
             await database.executemany(
                 """INSERT INTO closure
                    (family, ancestor_iri, descendant_iri, depth) VALUES (?, ?, ?, ?)""",
-                [
-                    (row.family, row.ancestor_iri, row.descendant_iri, row.depth)
-                    for row in content.closure
-                ],
+                [(row.family, row.ancestor_iri, row.descendant_iri, row.depth) for row in content.closure],
             )
             await database.executemany(
                 "INSERT INTO meta (key, value) VALUES (?, ?)",

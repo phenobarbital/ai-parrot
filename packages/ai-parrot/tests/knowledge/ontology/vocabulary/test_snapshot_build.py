@@ -90,9 +90,7 @@ async def test_build_is_atomic_and_idempotent(tmp_path: Path, golden_v1: bytes, 
 
 
 @pytest.mark.asyncio
-async def test_build_refuses_conflicting_checksum(
-    tmp_path: Path, golden_v1: bytes, golden_base_iri: str
-) -> None:
+async def test_build_refuses_conflicting_checksum(tmp_path: Path, golden_v1: bytes, golden_base_iri: str) -> None:
     """A destination for different content is preserved rather than overwritten."""
     original = _version_content(golden_v1, golden_base_iri)
     path = await build_snapshot(original, tmp_path)
