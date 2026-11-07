@@ -277,7 +277,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -287,8 +287,9 @@
       "parallelism_notes": "Needs rename_tree without backup from TASK-5286 and vacuum_tree from TASK-5283 (via TASK-5286).",
       "assigned_to": null,
       "started_at": "2026-11-06T23:32:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5287-bookstore-integration.md"
+      "completed_at": "2026-11-07T00:31:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5287-bookstore-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5288",
