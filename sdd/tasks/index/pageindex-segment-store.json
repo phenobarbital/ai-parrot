@@ -1,0 +1,343 @@
+{
+  "feature": "pageindex-segment-store",
+  "feature_id": "FEAT-840",
+  "spec": "sdd/specs/pageindex-segment-store.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-07T01:29:29+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/knowledge/pageindex/test_segments.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_segment_store.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_injection_scan.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_framing.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_read_tools.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_segment_integration.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_segment_docs.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_generation.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_generation_integration.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_toolkit.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_content_store.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_pdf_to_markdown.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_md_builder.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_schemas.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_folder_import.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_okf_integration.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_library.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_toolkit.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_mcp_server.py",
+          "packages/ai-parrot/tests/unit/test_guardrails_prompt_injection.py",
+          "packages/ai-parrot/tests/unit/test_security_injection_engine_accessor.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_builder_pages.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_segment_import.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_segment_migration.py",
+          "packages/ai-parrot/tests/knowledge/bookstore/test_segment_reads.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:6a7b06b0ccc215b7f345c9126a9478020c62db8c24b187b31eee61c46273816d"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5300",
+      "slug": "segment-models-splitter",
+      "title": "Segment models, block splitter and addresses",
+      "feature_id": "FEAT-840",
+      "feature": "pageindex-segment-store",
+      "spec": "sdd/specs/pageindex-segment-store.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: creates the new module knowledge/pageindex/segments.py and tests/knowledge/pageindex/test_segments.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5300-segment-models-splitter.md"
+    },
+    {
+      "id": "TASK-5301",
+      "slug": "segment-ownership-rendering",
+      "title": "Spans, owned ranges and body rendering",
+      "feature_id": "FEAT-840",
+      "feature": "pageindex-segment-store",
+      "spec": "sdd/specs/pageindex-segment-store.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5300"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-5300: extends segments.py (Segment, DocumentRevision) and test_segments.py, both created there — same files, so serialized.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5301-segment-ownership-rendering.md"
+    },
+    {
+      "id": "TASK-5302",
+      "slug": "segment-store",
+      "title": "Immutable revision store and package exports",
+      "feature_id": "FEAT-840",
+      "feature": "pageindex-segment-store",
+      "spec": "sdd/specs/pageindex-segment-store.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5300"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-5300: imports DocumentRevision from segments.py. Also the only task that edits knowledge/pageindex/__init__.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5302-segment-store.md"
+    },
+    {
+      "id": "TASK-5303",
+      "slug": "transaction-revisions",
+      "title": "Stage and publish revisions in WriteTransaction",
+      "feature_id": "FEAT-840",
+      "feature": "pageindex-segment-store",
+      "spec": "sdd/specs/pageindex-segment-store.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5302"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-5302: WriteTransaction imports SegmentStore (segment_store.py) and calls save_revision/mark_superseded/sweep_unreferenced.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5303-transaction-revisions.md"
+    },
+    {
+      "id": "TASK-5304",
+      "slug": "injection-engine-accessor",
+      "title": "Public injection scoring engine accessor",
+      "feature_id": "FEAT-840",
+      "feature": "pageindex-segment-store",
+      "spec": "sdd/specs/pageindex-segment-store.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: touches only security/prompt_injection.py, security/__init__.py and the guardrail's Protocol alias, which no other FEAT-840 task edits.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5304-injection-engine-accessor.md"
+    },
+    {
+      "id": "TASK-5305",
+      "slug": "injection-scan",
+      "title": "Regex-first injection scan of segments",
+      "feature_id": "FEAT-840",
+      "feature": "pageindex-segment-store",
+      "spec": "sdd/specs/pageindex-segment-store.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5300",
+        "TASK-5304"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-5300 (mutates Segment/InjectionMark from segments.py) and TASK-5304 (types the engine with InjectionScoringEngine from security/prompt_injection.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5305-injection-scan.md"
+    },
+    {
+      "id": "TASK-5306",
+      "slug": "framing-helpers",
+      "title": "Data-framing helpers for document text in prompts",
+      "feature_id": "FEAT-840",
+      "feature": "pageindex-segment-store",
+      "spec": "sdd/specs/pageindex-segment-store.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5300"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-5300: frames SegmentRead/SegmentAddress objects defined in segments.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5306-framing-helpers.md"
+    },
+    {
+      "id": "TASK-5307",
+      "slug": "builder-pages-and-node-schema",
+      "title": "Return per-page markdown from the builder; node schema fields",
+      "feature_id": "FEAT-840",
+      "feature": "pageindex-segment-store",
+      "spec": "sdd/specs/pageindex-segment-store.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: edits builder.py (_extract_node_markdown and its two return dicts) and schemas.py (PageIndexNode), which no other FEAT-840 task touches.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5307-builder-pages-and-node-schema.md"
+    },
+    {
+      "id": "TASK-5308",
+      "slug": "toolkit-import-segments",
+      "title": "Build, scan and stage document revisions on every import path",
+      "feature_id": "FEAT-840",
+      "feature": "pageindex-segment-store",
+      "spec": "sdd/specs/pageindex-segment-store.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5301",
+        "TASK-5303",
+        "TASK-5305",
+        "TASK-5307"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-5301 (attach_pdf_document/attach_section_document/render_body in segments.py), TASK-5303 (WriteTransaction.set_revision in generation.py), TASK-5305 (scan_segments in injection_scan.py) and TASK-5307 (the _pages key returned by builder.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5308-toolkit-import-segments.md"
+    },
+    {
+      "id": "TASK-5309",
+      "slug": "read-tools",
+      "title": "Read tools: list_documents, outline, read_pages, read_segments",
+      "feature_id": "FEAT-840",
+      "feature": "pageindex-segment-store",
+      "spec": "sdd/specs/pageindex-segment-store.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-5308",
+        "TASK-5306"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-5308 (same file toolkit.py; uses self._segment_store and self._read_max_chars it adds) and TASK-5306 (frame_segments from framing.py). SegmentStore (TASK-5302) is reached transitively through TASK-5308.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5309-read-tools.md"
+    },
+    {
+      "id": "TASK-5310",
+      "slug": "legacy-index-rename-delete",
+      "title": "index_segments for legacy trees; revisions follow rename and delete",
+      "feature_id": "FEAT-840",
+      "feature": "pageindex-segment-store",
+      "spec": "sdd/specs/pageindex-segment-store.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5309"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-5309: same file toolkit.py (serialized after the read tools); also uses _stage_document/_scan/_section_segments added by TASK-5308, reached through TASK-5309.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5310-legacy-index-rename-delete.md"
+    },
+    {
+      "id": "TASK-5311",
+      "slug": "bookstore-read-tools",
+      "title": "Bookstore read_pages, read_segments and outline per book",
+      "feature_id": "FEAT-840",
+      "feature": "pageindex-segment-store",
+      "spec": "sdd/specs/pageindex-segment-store.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5309"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-5309: Bookstore delegates to PageIndexToolkit.list_documents/read_pages/read_segments/outline created there (toolkit.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5311-bookstore-read-tools.md"
+    },
+    {
+      "id": "TASK-5312",
+      "slug": "segment-integration-tests",
+      "title": "Segment store integration tests",
+      "feature_id": "FEAT-840",
+      "feature": "pageindex-segment-store",
+      "spec": "sdd/specs/pageindex-segment-store.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5310",
+        "TASK-5311"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-5310 (index_segments and rename/delete behaviour in toolkit.py) and TASK-5311 (bookstore_read_* tools exercised through the Bookstore stdio server). Creates only its own test file.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5312-segment-integration-tests.md"
+    },
+    {
+      "id": "TASK-5313",
+      "slug": "documentation",
+      "title": "Documentation — wiki/knowledge/pageindex-segment-store.md",
+      "feature_id": "FEAT-840",
+      "feature": "pageindex-segment-store",
+      "spec": "sdd/specs/pageindex-segment-store.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5301",
+        "TASK-5302",
+        "TASK-5304",
+        "TASK-5305",
+        "TASK-5306",
+        "TASK-5310",
+        "TASK-5311"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Last in the graph: documents symbols created by TASK-5301 (ownership/render_body), TASK-5302 (SegmentStore), TASK-5304 (get_injection_scoring_engine), TASK-5305 (scan_segments), TASK-5306 (framing), TASK-5310 (index_segments; read tools of TASK-5309 transitively) and TASK-5311 (bookstore_read_*).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5313-documentation.md"
+    }
+  ]
+}
