@@ -182,7 +182,9 @@ def parse(doc_path: Path, *, config: SddConfig | None = None) -> FlowMeta:
     Returns:
         ``FlowMeta(type="feature", base_branch=<configured base>)`` when no
         frontmatter is present (backwards-compat for in-flight specs);
-        otherwise a fully-validated ``FlowMeta``.
+        otherwise a fully-validated ``FlowMeta``. A ``/sdd-brief`` block
+        (``kind: brief``) without ``type`` gets ``type="hotfix"`` when its
+        ``base_branch`` is the configured hotfix base, else ``"feature"``.
 
     Raises:
         pydantic.ValidationError: When frontmatter is present but
@@ -193,6 +195,9 @@ def parse(doc_path: Path, *, config: SddConfig | None = None) -> FlowMeta:
     if block is None:
         return FlowMeta(type="feature", base_branch=cfg.base_branch, hotfix_base=cfg.hotfix_base)
     block = {k: v for k, v in block.items() if k != "hotfix_base"}
+    if block.get("kind") == "brief" and "type" not in block:
+        # /sdd-brief frontmatter carries no `type`; a brief on the hotfix base is a hotfix.
+        block["type"] = "hotfix" if block.get("base_branch") == cfg.hotfix_base else "feature"
     return FlowMeta(**block, hotfix_base=cfg.hotfix_base)
 
 
