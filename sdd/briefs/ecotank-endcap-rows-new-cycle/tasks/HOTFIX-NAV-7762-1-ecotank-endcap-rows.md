@@ -2,7 +2,7 @@
 
 **Feature**: ecotank-endcap-rows-new-cycle (BRIEF-NAV-7762)
 **Spec**: sdd/briefs/ecotank-endcap-rows-new-cycle.brief.md
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none
@@ -464,4 +464,9 @@ def test_sql_is_keyed_by_config_name_and_matches_the_fixtures() -> None:
 
 ## Completion Note
 
-_To be filled in when the task is closed._
+**Status**: done (implemented sequentially; parrot-sdd-coder MCP server unavailable).
+
+- Generator run from the task blueprint (extracted verbatim, then deleted); all three SHA-256 digests matched.
+- Test file written verbatim from the Test Specification: 6 passed. `test_endcap_no_shelves_promotional.py`: 7 passed. `ruff check` clean.
+- Only the four listed files were committed (c321c1cf76). SQL not applied.
+- Env note: under the read-only sandbox pytest failed at conftest import (navconfig file handler writes to /tmp/navigator/log). Worked around with a throwaway `sitecustomize.py` in the scratchpad that redirects RotatingFileHandler into $TMPDIR; nothing in the repo changed.
