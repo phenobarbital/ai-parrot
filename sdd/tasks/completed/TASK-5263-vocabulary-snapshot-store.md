@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-824 — Ontology backend: PostgreSQL OntologyStore + SurrealDB programme
 **Spec**: `sdd/specs/ontology-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5262, TASK-5254
@@ -209,10 +209,14 @@ async def test_factory_via_registry(tmp_path): ...        # create_ontology_stor
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by the orchestrator (sdd-worker) as attempt 3+ after the coder ladder failed: attempt 1 (mistral) and 3 (minimax) timed out; attempt 2 (glm-4.7-flash) delivered code whose refresh() never scanned local files (4 behavioural test failures, rejected and reverted); attempt 4 (glm) was salvaged with a stray append_code.py and also dropped. Coder feedback recorded for glm (store-contract-semantics-not-implemented).
 
-**Completed by**:
-**Date**:
+Final code: SnapshotSource, HttpSnapshotSource (streamed temp file + os.replace), SnapshotOntologyStore (local discovery, once-per-ontology refresh, stale rule, OntologyNotFound, as_of==snapshot version only, exact/trgm/vector fused with RRF k=60, matched_by exact>trgm>vector, deprecated excluded, asserted-only export), _create_snapshot. Merge-tier validation: 38 passed. Not measured: resolve latency on the largest golden fixture (checklist item) — fixtures are tiny.
+
+Residual style lint left for /sdd-done: ASYNC240 (blocking Path ops in async fns, mostly TASK-5262's code).
+
+**Completed by**: sdd-worker orchestrator
+**Date**: 2026-11-07
 **Snapshot resolve latency (largest golden fixture)**:
 **Notes**:
 

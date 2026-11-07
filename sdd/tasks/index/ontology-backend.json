@@ -379,7 +379,7 @@
       "feature_id": "FEAT-824",
       "feature": "ontology-backend",
       "spec": "sdd/specs/ontology-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -390,8 +390,9 @@
       "parallelism_notes": "modifies snapshot.py created by TASK-5262 (same file); imports resolve_ontology_settings from TASK-5254 (vocabulary/settings.py)",
       "assigned_to": null,
       "started_at": "2026-11-06T23:24:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5263-vocabulary-snapshot-store.md"
+      "completed_at": "2026-11-07T01:41:33+00:00",
+      "file": "sdd/tasks/completed/TASK-5263-vocabulary-snapshot-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5264",
