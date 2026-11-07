@@ -1,0 +1,50 @@
+{
+  "feature": "scripts-dangerous-actions-fixes-2",
+  "feature_id": "FEAT-839",
+  "spec": "sdd/specs/scripts-dangerous-actions-fixes-2.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-07T00:50:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/sdd/test_dangerous_actions.py",
+          "packages/ai-parrot/tests/sdd/test_installer_dangerous_guard.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:f585f81e942d434798cb0ed0bd7ad7bcd6acd757855246552dbfcaf91fc5ea59"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5299",
+      "slug": "whole-token-protected-branch-match",
+      "title": "Match protected branches as whole tokens in the dangerous-actions guard",
+      "feature_id": "FEAT-839",
+      "feature": "scripts-dangerous-actions-fixes-2",
+      "spec": "sdd/specs/scripts-dangerous-actions-fixes-2.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "single task; owns dangerous_actions.py, the repo bash hook and its test file",
+      "assigned_to": "agent:sdd-fix:6fbaeb1b",
+      "file": "sdd/tasks/active/TASK-5299-whole-token-protected-branch-match.md"
+    }
+  ]
+}
