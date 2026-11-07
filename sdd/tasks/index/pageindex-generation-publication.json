@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-06T23:27:45Z",
-  "completed_at": null,
+  "completed_at": "2026-11-07T00:37:53+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -298,7 +298,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -308,8 +308,9 @@
       "parallelism_notes": "Exercises the Bookstore grace/sweep from TASK-5287 on top of the full toolkit write path.",
       "assigned_to": null,
       "started_at": "2026-11-06T23:32:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5288-generation-integration-tests.md"
+      "completed_at": "2026-11-07T00:37:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5288-generation-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5289",
@@ -318,7 +319,7 @@
       "feature_id": "FEAT-831",
       "feature": "pageindex-generation-publication",
       "spec": "sdd/specs/pageindex-generation-publication.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -328,8 +329,9 @@
       "parallelism_notes": "Documents get_generation/vacuum_tree (TASK-5283), rename semantics (TASK-5286) and the Bookstore grace period (TASK-5287).",
       "assigned_to": null,
       "started_at": "2026-11-06T23:32:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5289-documentation.md"
+      "completed_at": "2026-11-07T00:37:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5289-documentation.md",
+      "verification": "verified"
     }
   ]
 }
