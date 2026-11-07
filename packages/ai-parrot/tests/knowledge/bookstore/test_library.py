@@ -725,8 +725,7 @@ async def test_reindex_leaves_no_replaced_tree(store: Bookstore, book_md: Path) 
     """Publication replaces the live generation without creating a backup tree."""
     card, _ = await store.add_book(book_md)
     book_md.write_text(
-        SAMPLE_MARKDOWN
-        + "\n## Updated Chapter\n\n"
+        SAMPLE_MARKDOWN + "\n## Updated Chapter\n\n"
         "The updated chapter contains enough descriptive text to remain visible to the markdown parser.\n",
         encoding="utf-8",
     )
