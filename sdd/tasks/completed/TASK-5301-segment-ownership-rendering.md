@@ -289,9 +289,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added normalize_title, attach_pdf_document, attach_section_document, render_body, validate_ownership. Top-level gaps go to the preceding sibling so the partition is exact; nested gaps stay with the parent. structure_to_list import not added to segments.py (unused there).
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (sequential fallback; parrot-sdd-coder MCP unavailable)
+**Date**: 2026-11-07
+**Notes**: tests run with a scratchpad-only shim for navconfig's read-only log dir (environment, not committed)
+**Deviations from spec**: none
