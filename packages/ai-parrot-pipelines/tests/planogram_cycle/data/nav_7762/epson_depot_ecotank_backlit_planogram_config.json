@@ -1,0 +1,147 @@
+{
+  "config_name": "epson_depot_ecotank_backlit_planogram_config",
+  "planogram_type": "endcap_no_shelves_promotional",
+  "planogram_config": {
+    "brand": "Epson",
+    "category": "Printers",
+    "aisle": {
+      "name": "Epson EcoTank Endcap"
+    },
+    "layout_profile": {
+      "perception_mode": "llm_detector",
+      "roi_zone_labels": [
+        "backlit_header",
+        "comparison_panel",
+        "base_graphic"
+      ],
+      "zone_selectors": [
+        {
+          "zone_id": "zone-header-1",
+          "kind": "zone",
+          "band": [
+            0.0,
+            0.35
+          ]
+        },
+        {
+          "zone_id": "zone-comparison-1",
+          "kind": "zone",
+          "band": [
+            0.35,
+            0.65
+          ]
+        },
+        {
+          "zone_id": "zone-base-1",
+          "kind": "zone",
+          "band": [
+            0.65,
+            1.0
+          ]
+        }
+      ]
+    },
+    "rule_bindings": [
+      {
+        "rule_id": "zone_present:zone-header-1",
+        "kind": "zone_present",
+        "target_id": "zone-header-1",
+        "params": {},
+        "mandatory": true
+      },
+      {
+        "rule_id": "illumination:zone-header-1",
+        "kind": "illumination",
+        "target_id": "zone-header-1",
+        "params": {
+          "required": "on",
+          "penalty": 0.5
+        },
+        "mandatory": true
+      },
+      {
+        "rule_id": "text_requirements:zone-header-1",
+        "kind": "text_requirements",
+        "target_id": "zone-header-1",
+        "params": {
+          "requirements": [
+            {
+              "required_text": "EPSON",
+              "match_type": "contains",
+              "mandatory": true
+            },
+            {
+              "required_text": "Goodbye Cartridges",
+              "match_type": "contains",
+              "mandatory": true
+            },
+            {
+              "required_text": "Hello Savings",
+              "match_type": "contains",
+              "mandatory": true
+            }
+          ]
+        },
+        "mandatory": true
+      },
+      {
+        "rule_id": "visual_features:zone-header-1",
+        "kind": "visual_features",
+        "target_id": "zone-header-1",
+        "params": {
+          "expected": [
+            "EPSON logo",
+            "image of Shaquille O'Neal",
+            "EcoTank printer",
+            "Goodbye Cartridges Hello Savings"
+          ]
+        },
+        "mandatory": true
+      },
+      {
+        "rule_id": "zone_present:zone-comparison-1",
+        "kind": "zone_present",
+        "target_id": "zone-comparison-1",
+        "params": {},
+        "mandatory": true
+      },
+      {
+        "rule_id": "zone_present:zone-base-1",
+        "kind": "zone_present",
+        "target_id": "zone-base-1",
+        "params": {},
+        "mandatory": true
+      }
+    ]
+  },
+  "slots_definition": {
+    "version": "1",
+    "meta": {
+      "brand": "Epson",
+      "category": "Printers",
+      "planogram_type": "endcap_no_shelves_promotional"
+    },
+    "shelves": [],
+    "zones": [
+      {
+        "zone_id": "zone-header-1",
+        "kind": "backlit",
+        "shelf_id": null,
+        "required": true
+      },
+      {
+        "zone_id": "zone-comparison-1",
+        "kind": "graphic",
+        "shelf_id": null,
+        "required": true
+      },
+      {
+        "zone_id": "zone-base-1",
+        "kind": "graphic",
+        "shelf_id": null,
+        "required": true
+      }
+    ]
+  },
+  "roi_detection_prompt": "Analyze the {brand} promotional endcap (no shelves, no products) in this photo.\nReturn one detection per element below, with its label and a confidence. In 'content', transcribe verbatim\nevery text you can actually read on that element; never write text you cannot read, and leave it empty when\nnothing is legible.\n\nDETECTIONS:\n1. 'endcap': the whole endcap, from the top of its header lightbox down to the floor base it stands on. Exclude neighbouring aisles and shelves.\n2. 'backlit_header': the large lightbox at the very top of the endcap (brand logo, headline, a photo of a person and printers). Also add 'Light: ON' to 'content' when it emits its own glow, or 'Light: OFF' when it is matte print lit only by the store.\n3. 'comparison_panel': the panel right below the header, with the columns comparing printer models.\n4. 'base_graphic': the sign at the bottom of the endcap, resting on the floor base.\nOnly report elements of this endcap; skip any element that is not visible."
+}
