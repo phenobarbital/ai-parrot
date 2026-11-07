@@ -1542,3 +1542,50 @@ async def test_add_node_body_ref(toolkit: PageIndexToolkit, tmp_path: Path):
     assert node["body_ref"]
     assert not (tmp_path / "kb" / f"{node['node_id']}.md").exists()
     assert toolkit._content_store.load_node("kb", node) == "body"
+
+
+@pytest.mark.asyncio
+async def test_delete_node_removes_flat_sidecars_of_removed_subtree(toolkit: PageIndexToolkit):
+    """OKF flat-concept sidecars are never swept, so delete_node must remove them itself."""
+    await toolkit.create_tree("okf")
+    keep = await toolkit.add_node("okf", title="Keep", body="keep body")
+    drop = await toolkit.add_node("okf", title="Drop", body="drop body")
+    tree = await toolkit.get_tree("okf")
+    by_id = {n["node_id"]: n for n in structure_to_list(tree["structure"])}
+    keep_flat = flatten_concept_id_for_filename(by_id[keep["node_id"]]["concept_id"])
+    drop_flat = flatten_concept_id_for_filename(by_id[drop["node_id"]]["concept_id"])
+    toolkit._content_store.save("okf", keep_flat, "keep sidecar")
+    toolkit._content_store.save("okf", drop_flat, "drop sidecar")
+
+    result = await toolkit.delete_node("okf", drop["node_id"])
+
+    assert result["removed"] is True
+    assert not toolkit._content_store.has("okf", drop_flat)
+    assert toolkit._content_store.load("okf", keep_flat) == "keep sidecar"
+
+
+@pytest.mark.asyncio
+async def test_noop_mutations_do_not_mint_a_generation(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("n")
+    added = await toolkit.add_node("n", title="Tagged", body="b", categories=["a"])
+    before = (await toolkit.get_generation("n"))["id"]
+
+    assert (await toolkit.delete_node("n", "9999"))["removed"] is False
+    await toolkit.tag_node("n", added["node_id"], categories=["a"])  # already present
+
+    assert (await toolkit.get_generation("n"))["id"] == before
+    await toolkit.tag_node("n", added["node_id"], categories=["b"])  # a real change still publishes
+    assert (await toolkit.get_generation("n"))["id"] == before + 1
+
+
+@pytest.mark.asyncio
+async def test_create_tree_rejects_existing_without_wiping_bodies(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("c")
+    added = await toolkit.add_node("c", title="Entry", body="precious")
+    tree = await toolkit.get_tree("c")
+    node = next(n for n in structure_to_list(tree["structure"]) if n["node_id"] == added["node_id"])
+
+    with pytest.raises(ValueError, match="already exists"):
+        await toolkit.create_tree("c")
+
+    assert toolkit._content_store.load_node("c", node) == "precious"

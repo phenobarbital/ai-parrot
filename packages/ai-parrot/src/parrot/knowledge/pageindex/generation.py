@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
 import asyncio
 import copy
+import hashlib
 import os
 import re
 from datetime import datetime, timezone
@@ -140,6 +140,17 @@ class WriteTransaction:
         self._projector = projector
         self._staged: dict[str, str] = {}
         self._published = False
+        #: Set by a mutator that changed nothing; the outermost ``_write`` then skips publication.
+        self.noop = False
+        base_nodes = structure_to_list(base_tree.get("structure", []))
+        # Bodies the base generation served; restarted in the sweep clock when superseded.
+        self._base_body_keys: set[str] = {n["body_ref"] for n in base_nodes if isinstance(n.get("body_ref"), str)}
+        # Pre-FEAT-831 nodes still served from legacy ``<node_id>.md`` files.
+        self._base_legacy_ids: set[str] = {
+            n["node_id"]
+            for n in base_nodes
+            if not n.get("body_ref") and isinstance(n.get("node_id"), str) and n["node_id"]
+        }
 
     def set_body(self, node: dict[str, Any], markdown: str) -> BodyRef:
         """Stage ``markdown`` for ``node`` and set its immutable body reference."""
@@ -148,7 +159,10 @@ class WriteTransaction:
         concept_id = node.get("concept_id")
         if not isinstance(concept_id, str) or not concept_id:
             raise ValueError("node must have a concept_id before staging a body")
-        body_ref = BodyRef(flat_concept_id=flatten_concept_id(concept_id), sha16=body_sha16(markdown))
+        try:
+            body_ref = BodyRef.parse(f"{flatten_concept_id(concept_id)}.{body_sha16(markdown)}")
+        except ValueError as exc:
+            raise ValueError(f"concept_id {concept_id!r} cannot be used as a body reference") from exc
         self._staged[body_ref.key] = markdown or ""
         node["body_ref"] = body_ref.key
         return body_ref
@@ -178,51 +192,76 @@ class WriteTransaction:
             raise RuntimeError("transaction already published")
 
         async with tree_lock(self._storage_dir, self.tree_name, timeout=self._lock_timeout_s):
-            current_signature = self._store.signature(self.tree_name)
-            if current_signature != self.base_signature:
-                current_generation = self._store.read_generation(self.tree_name)
-                if (
-                    self.base_signature is None
-                    or self.base_generation is None
-                    or current_generation != self.base_generation.id
-                ):
-                    raise StaleGenerationError(f"tree {self.tree_name!r} changed since transaction construction")
+            return await self._publish_locked()
 
-            ensure_concept_ids(self.tree)
-            for node in structure_to_list(self.tree.get("structure", [])):
-                raw_ref = node.get("body_ref")
-                if not raw_ref:
-                    continue
-                try:
-                    body_ref = BodyRef.parse(raw_ref)
-                except (TypeError, ValueError) as exc:
-                    raise ValueError(f"invalid body_ref for node {node.get('node_id', '<unknown>')!r}") from exc
-                if (
-                    body_ref.key not in self._staged
-                    and not self._content.body_path(self.tree_name, body_ref.key).is_file()
-                ):
-                    raise ValueError(f"missing body for node {node.get('node_id', '<unknown>')!r}")
+    async def publish_locked(self) -> PublishReport:
+        """Publish when the caller already holds ``tree_lock`` for this tree.
 
-            staged_keys = [key for key in self._staged if not self._content.body_path(self.tree_name, key).is_file()]
-            await asyncio.gather(
-                *(
-                    asyncio.to_thread(self._content.save_body, self.tree_name, key, self._staged[key])
-                    for key in self._staged
-                )
+        Use this when an existence check or cleanup must be atomic with the
+        publication itself (``create_tree``); the lock is not re-entrant.
+        """
+        if self._published:
+            raise RuntimeError("transaction already published")
+        return await self._publish_locked()
+
+    async def _publish_locked(self) -> PublishReport:
+        """Steps 2-8 of publication; the tree lock is held by the caller."""
+        current_signature = self._store.signature(self.tree_name)
+        current_generation = self._store.read_generation(self.tree_name)
+        base_id = self.base_generation.id if self.base_generation else None
+        if current_signature != self.base_signature:
+            if self.base_signature is None or base_id is None or current_generation != base_id:
+                raise StaleGenerationError(f"tree {self.tree_name!r} changed since transaction construction")
+        elif base_id is not None and current_generation != base_id:
+            # Equal signatures can still hide a publish that landed between the
+            # snapshot's load and its stat; the generation id is authoritative.
+            raise StaleGenerationError(f"tree {self.tree_name!r} changed since transaction construction")
+
+        ensure_concept_ids(self.tree)
+        for node in structure_to_list(self.tree.get("structure", [])):
+            raw_ref = node.get("body_ref")
+            if not raw_ref:
+                continue
+            try:
+                body_ref = BodyRef.parse(raw_ref)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"invalid body_ref for node {node.get('node_id', '<unknown>')!r}") from exc
+            if (
+                body_ref.key not in self._staged
+                and not self._content.body_path(self.tree_name, body_ref.key).is_file()
+            ):
+                raise ValueError(f"missing body for node {node.get('node_id', '<unknown>')!r}")
+
+        staged_keys = [key for key in self._staged if not self._content.body_path(self.tree_name, key).is_file()]
+        await asyncio.gather(
+            *(
+                asyncio.to_thread(self._content.save_body, self.tree_name, key, self._staged[key])
+                for key in self._staged
             )
-            await asyncio.to_thread(self._fsync_bodies_dir, self._content.bodies_dir(self.tree_name))
+        )
+        await asyncio.to_thread(self._fsync_bodies_dir, self._content.bodies_dir(self.tree_name))
 
-            okf_projected = self._projector(self.tree, self.tree_name)
-            generation = next_generation(self.base_generation)
-            self.tree["generation"] = generation.model_dump()
-            self.published_signature = self._store.save(self.tree_name, self.tree)
-            self._published = True
-            bodies_swept = self._content.sweep_unreferenced(self.tree_name, self.tree, max_age_s=self._grace_s)
+        okf_projected = await asyncio.to_thread(self._projector, self.tree, self.tree_name)
+        generation = next_generation(self.base_generation)
+        self.tree["generation"] = generation.model_dump()
+        self.published_signature = self._store.save(self.tree_name, self.tree)
+        self._published = True
+        # Grace runs from supersession: restart the clock of everything this
+        # generation stopped referencing before the sweep ages files by mtime.
+        await asyncio.to_thread(
+            self._content.mark_superseded,
+            self.tree_name,
+            self._base_body_keys - self.live_body_keys(),
+            self._base_legacy_ids,
+        )
+        bodies_swept = await asyncio.to_thread(
+            self._content.sweep_unreferenced, self.tree_name, self.tree, max_age_s=self._grace_s
+        )
 
-            return PublishReport(
-                tree_name=self.tree_name,
-                generation=generation.id,
-                bodies_written=len(staged_keys),
-                bodies_swept=bodies_swept,
-                okf_projected=okf_projected,
-            )
+        return PublishReport(
+            tree_name=self.tree_name,
+            generation=generation.id,
+            bodies_written=len(staged_keys),
+            bodies_swept=bodies_swept,
+            okf_projected=okf_projected,
+        )

@@ -22,6 +22,7 @@ import asyncio
 import copy
 import fnmatch
 import logging
+import random
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -211,6 +212,8 @@ class PageIndexToolkit(AbstractToolkit):
             yield txn
         finally:
             _OPEN_TXNS.reset(token)
+        if txn.noop:
+            return
         await txn.publish()
         self._after_publish(tree_name, txn)
 
@@ -230,6 +233,14 @@ class PageIndexToolkit(AbstractToolkit):
                 keep.add(txn.base_generation.id)
             self._embedding_store.prune_tree_matrices(tree_name, keep=keep)
 
+    def _drop_cached(self, tree_name: str) -> None:
+        """Forget every in-process view of ``tree_name`` so the next write re-snapshots the live generation."""
+        self._trees.pop(tree_name, None)
+        self._tree_sigs.pop(tree_name, None)
+        self._search.pop(tree_name, None)
+        self._content_store._cache_evict_tree(tree_name)
+        self._okf_toolkits.pop(tree_name, None)
+
     async def _mutate(
         self,
         tree_name: str,
@@ -241,7 +252,11 @@ class PageIndexToolkit(AbstractToolkit):
         key = (id(self), tree_name)
         if key in (_OPEN_TXNS.get() or {}):
             async with self._write(tree_name) as txn:
-                return await apply(txn)
+                result = await apply(txn)
+                # A joined mutator is one step of a larger write: its "nothing changed"
+                # must never suppress the owner's publication.
+                txn.noop = False
+                return result
 
         for attempt in range(max(1, attempts)):
             try:
@@ -249,13 +264,11 @@ class PageIndexToolkit(AbstractToolkit):
                     result = await apply(txn)
                 return result
             except StaleGenerationError:
-                self._trees.pop(tree_name, None)
-                self._tree_sigs.pop(tree_name, None)
-                self._search.pop(tree_name, None)
-                self._content_store._cache_evict_tree(tree_name)
-                self._okf_toolkits.pop(tree_name, None)
+                self._drop_cached(tree_name)
                 if attempt + 1 >= max(1, attempts):
                     raise
+                # Jittered backoff so contending writers do not all re-snapshot in lockstep.
+                await asyncio.sleep(random.uniform(0.005, 0.03) * (attempt + 1))
         raise RuntimeError("unreachable")
 
     def _migrate_legacy_bodies(self, tree_name: str, txn: WriteTransaction) -> None:
@@ -263,17 +276,22 @@ class PageIndexToolkit(AbstractToolkit):
         for node in structure_to_list(txn.tree.get("structure", [])):
             if node.get("body_ref"):
                 continue
-            node_id = node.get("node_id")
-            body = self._content_store.load(tree_name, node_id) if isinstance(node_id, str) else None
-            if body is None:
-                concept_id = node.get("concept_id")
-                if isinstance(concept_id, str) and concept_id:
-                    flat_id = flatten_concept_id_for_filename(concept_id)
-                    flat_body = self._content_store.load(tree_name, flat_id)
-                    if flat_body is not None:
-                        body = _strip_frontmatter(flat_body)
+            body = self._legacy_body(tree_name, node)
             if body is not None:
                 txn.set_body(node, body)
+
+    def _legacy_body(self, tree_name: str, node: dict[str, Any]) -> Optional[str]:
+        """Return a pre-FEAT-831 node's body, in the same order ``NodeContentStore.load_node`` resolves it.
+
+        The OKF flat-concept sidecar wins (frontmatter stripped), then ``<node_id>.md``.
+        """
+        concept_id = node.get("concept_id")
+        if isinstance(concept_id, str) and concept_id:
+            flat_body = self._content_store.load(tree_name, flatten_concept_id_for_filename(concept_id))
+            if flat_body is not None:
+                return _strip_frontmatter(flat_body)
+        node_id = node.get("node_id")
+        return self._content_store.load(tree_name, node_id) if isinstance(node_id, str) and node_id else None
 
     def _ingester(self) -> TwoStepIngester:
         return TwoStepIngester(
@@ -473,11 +491,6 @@ class PageIndexToolkit(AbstractToolkit):
             tree_name: Unique name for the tree (filesystem-safe).
             doc_name: Optional display name for the tree's root document.
         """
-        if self._store.exists(tree_name):
-            raise ValueError(f"Tree {tree_name!r} already exists")
-        # Defensive: a stale content directory from a previous tree with the
-        # same name would silently feed wrong sidecars into retrieval.
-        self._content_store.delete_tree(tree_name)
         tree = {"doc_name": doc_name or tree_name, "structure": []}
         txn = WriteTransaction(
             tree_name=tree_name,
@@ -490,7 +503,16 @@ class PageIndexToolkit(AbstractToolkit):
             grace_s=self._generation_grace_s,
             projector=self._project_okf_sidecars_for,
         )
-        await txn.publish()
+        # The existence check and the stale-directory cleanup must be atomic with
+        # the publication: outside the lock a concurrent creator's bodies/ could be
+        # wiped between the check and the delete.
+        async with tree_lock(self._storage_dir, tree_name, timeout=self._lock_timeout_s):
+            if self._store.exists(tree_name):
+                raise ValueError(f"Tree {tree_name!r} already exists")
+            # Defensive: a stale content directory from a previous tree with the
+            # same name would silently feed wrong sidecars into retrieval.
+            self._content_store.delete_tree(tree_name)
+            await txn.publish_locked()
         self._after_publish(tree_name, txn)
         return {"tree_name": tree_name, "doc_name": tree["doc_name"]}
 
@@ -545,44 +567,44 @@ class PageIndexToolkit(AbstractToolkit):
         if not self._store.exists(src):
             raise KeyError(f"Tree {src!r} does not exist")
 
-        replaced = self._store.exists(dst)
-        if replaced and not overwrite:
-            raise ValueError(f"Tree {dst!r} already exists")
-
         async with tree_lock(self._storage_dir, src, timeout=self._lock_timeout_s):
             src_tree = self._store.load(src)
-            dst_base = (
-                self._store.load(dst) if replaced else {"doc_name": src_tree.get("doc_name", dst), "structure": []}
-            )
-            txn = WriteTransaction(
-                tree_name=dst,
-                base_tree=dst_base,
-                base_signature=self._store.signature(dst),
-                store=self._store,
-                content_store=self._content_store,
-                storage_dir=self._storage_dir,
-                lock_timeout_s=self._lock_timeout_s,
-                grace_s=self._generation_grace_s,
-                projector=self._project_okf_sidecars_for,
-            )
-            txn.tree = copy.deepcopy(src_tree)
-            for node in structure_to_list(txn.tree.get("structure", [])):
-                body_ref = node.get("body_ref")
-                if isinstance(body_ref, str) and body_ref:
-                    body = self._content_store.load_body(src, body_ref)
-                else:
-                    node_id = node.get("node_id")
-                    body = self._content_store.load(src, node_id) if isinstance(node_id, str) else None
-                    if body is None:
-                        concept_id = node.get("concept_id")
-                        if isinstance(concept_id, str) and concept_id:
-                            flat_id = flatten_concept_id_for_filename(concept_id)
-                            flat_body = self._content_store.load(src, flat_id)
-                            if flat_body is not None:
-                                body = _strip_frontmatter(flat_body)
-                if body is not None:
-                    txn.set_body(node, body)
-            report = await txn.publish()
+            for attempt in range(3):
+                # ``dst`` is not locked until publish: re-evaluate it on every attempt so
+                # a concurrent writer to ``dst`` is retried, not surfaced as a stale error.
+                replaced = self._store.exists(dst)
+                if replaced and not overwrite:
+                    raise ValueError(f"Tree {dst!r} already exists")
+                dst_base = (
+                    self._store.load(dst) if replaced else {"doc_name": src_tree.get("doc_name", dst), "structure": []}
+                )
+                txn = WriteTransaction(
+                    tree_name=dst,
+                    base_tree=dst_base,
+                    base_signature=self._store.signature(dst),
+                    store=self._store,
+                    content_store=self._content_store,
+                    storage_dir=self._storage_dir,
+                    lock_timeout_s=self._lock_timeout_s,
+                    grace_s=self._generation_grace_s,
+                    projector=self._project_okf_sidecars_for,
+                )
+                txn.tree = copy.deepcopy(src_tree)
+                for node in structure_to_list(txn.tree.get("structure", [])):
+                    body_ref = node.get("body_ref")
+                    if isinstance(body_ref, str) and body_ref:
+                        body = self._content_store.load_body(src, body_ref)
+                    else:
+                        body = self._legacy_body(src, node)
+                    if body is not None:
+                        txn.set_body(node, body)
+                try:
+                    report = await txn.publish()
+                    break
+                except StaleGenerationError:
+                    if attempt == 2:
+                        raise
+                    await asyncio.sleep(random.uniform(0.005, 0.03) * (attempt + 1))
             self._after_publish(dst, txn)
 
             self._store.delete(src)
@@ -871,6 +893,7 @@ class PageIndexToolkit(AbstractToolkit):
             node = find_node_by_id(txn.tree.get("structure", []), node_id)
             if node is None:
                 raise KeyError(f"node_id {node_id!r} not found in tree {tree_name!r}")
+            before = (node.get("categories"), node.get("metadata"))
             if categories:
                 existing = set(node.get("categories") or [])
                 existing.update(str(category) for category in categories)
@@ -883,6 +906,8 @@ class PageIndexToolkit(AbstractToolkit):
                 node.pop("categories", None)
             if not node.get("metadata"):
                 node.pop("metadata", None)
+            if (node.get("categories"), node.get("metadata")) == before:
+                txn.noop = True  # tags already present: do not mint an empty generation
             return list(node.get("categories") or []), dict(node.get("metadata") or {})
 
         merged_categories, merged_metadata = await self._mutate(tree_name, apply)
@@ -1141,8 +1166,22 @@ class PageIndexToolkit(AbstractToolkit):
                 new_parent_id = folder_node.get("node_id")
                 await _process_dir(txn, sub, new_parent_id)
 
-        async with self._write(tree_name) as txn:
-            await _process_dir(txn, root, parent_node_id)
+        # The whole import is one transaction (and one LLM bill). A concurrent
+        # publication makes it stale at the end, so re-run it a bounded number of
+        # times rather than silently discarding all the work.
+        attempts = 3
+        for attempt in range(attempts):
+            imported.clear()
+            skipped.clear()
+            try:
+                async with self._write(tree_name) as txn:
+                    await _process_dir(txn, root, parent_node_id)
+                break
+            except StaleGenerationError:
+                self._drop_cached(tree_name)
+                if attempt + 1 >= attempts:
+                    raise
+                await asyncio.sleep(random.uniform(0.005, 0.03) * (attempt + 1))
 
         return {
             "tree_name": tree_name,
@@ -1158,13 +1197,27 @@ class PageIndexToolkit(AbstractToolkit):
         """Delete a node and all its descendants from the tree.
 
         Referenced body blobs are deliberately retained for the generation
-        sweep so readers holding an earlier tree generation remain valid.
+        sweep so readers holding an earlier tree generation remain valid. OKF
+        flat-concept sidecars are not generation-versioned and are never swept,
+        so those of the removed subtree are deleted here, right after the
+        publication, under the tree lock.
         """
 
-        async def apply(txn: WriteTransaction) -> bool:
-            return _delete_node(txn.tree, node_id)
+        async def apply(txn: WriteTransaction) -> tuple[bool, list[str]]:
+            node = find_node_by_id(txn.tree.get("structure", []), node_id)
+            flat_keys = _collect_concept_id_keys(node) if node is not None else []
+            removed = _delete_node(txn.tree, node_id)
+            if not removed:
+                txn.noop = True  # nothing changed: do not mint an empty generation
+            return removed, flat_keys
 
-        removed = await self._mutate(tree_name, apply)
+        removed, flat_keys = await self._mutate(tree_name, apply)
+        if removed and flat_keys:
+            async with tree_lock(self._storage_dir, tree_name, timeout=self._lock_timeout_s):
+                live = set(_collect_concept_id_keys(self._store.load(tree_name).get("structure", [])))
+                for key in flat_keys:
+                    if key not in live:
+                        self._content_store.delete_node(tree_name, key)
         return {"tree_name": tree_name, "removed": removed}
 
     async def add_node(
@@ -1391,32 +1444,11 @@ def _capture_node_id_object_map(subtree: Any) -> dict[str, dict[str, Any]]:
     return out
 
 
-def _collect_node_ids(node: Any) -> list[str]:
-    """Return every ``node_id`` reachable from ``node`` (inclusive)."""
-    ids: list[str] = []
-
-    def _walk(n: Any) -> None:
-        if isinstance(n, dict):
-            nid = n.get("node_id")
-            if nid:
-                ids.append(str(nid))
-            children = n.get("nodes")
-            if isinstance(children, list):
-                for child in children:
-                    _walk(child)
-        elif isinstance(n, list):
-            for item in n:
-                _walk(item)
-
-    _walk(node)
-    return ids
-
-
 def _collect_concept_id_keys(node: Any) -> list[str]:
     """Return flattened concept_id keys for every node reachable from ``node``.
 
     Returns only nodes that carry a ``concept_id`` field; plain ``node_id``
-    values are handled by :func:`_collect_node_ids`.  The flattened form
+    values are not included.  The flattened form
     replaces ``/`` with ``--`` to match the :class:`NodeContentStore` key
     layout written by OKF sidecar projection.
 

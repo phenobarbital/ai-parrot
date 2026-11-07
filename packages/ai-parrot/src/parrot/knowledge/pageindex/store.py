@@ -98,7 +98,8 @@ class JSONTreeStore:
             logger.debug("Failed to fsync PageIndex tree directory %s", self._dir, exc_info=True)
 
         signature = self.signature(tree_name)
-        assert signature is not None  # just written
+        if signature is None:
+            raise FileNotFoundError(f"tree {tree_name!r} vanished right after being saved")
         return signature
 
     def signature(self, tree_name: str) -> tuple[int, int] | None:

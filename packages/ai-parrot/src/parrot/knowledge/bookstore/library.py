@@ -384,7 +384,9 @@ class Bookstore:
         missing.
         """
         card, loc = self.resolve_book(book_id)
-        body = self._content_store(loc.scope).load(card.tree_name, node_id)
+        # Live generation first: a leftover legacy ``<node_id>.md`` must never be
+        # served for a node id that a reindexed/renamed tree has reused.
+        body = self._content_store(loc.scope).load_current(card.tree_name, node_id)
         entry = next((e for e in card.toc if e.node_id == node_id), None)
         if body is None and entry is None:
             raise BookstoreError(f"Unknown section {node_id!r} in book {book_id!r} — " "check bookstore_get_toc")

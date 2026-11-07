@@ -1,3 +1,6 @@
+import os
+import time
+
 import pytest
 
 from parrot.knowledge.pageindex import TreeLockTimeout
@@ -143,6 +146,67 @@ async def test_publish_rejects_missing_body_and_second_publish(tmp_path):
     await clean.publish()
     with pytest.raises(RuntimeError, match="already published"):
         await clean.publish()
+
+
+@pytest.mark.asyncio
+async def test_publish_rejects_equal_signature_but_newer_generation(tmp_path):
+    """A publish landing between the snapshot's load and its stat must not be overwritten."""
+    store = JSONTreeStore(tmp_path)
+    await _txn(tmp_path, "t", {"doc_name": "t", "structure": []}, None).publish()
+    gen1 = store.load("t")
+    await _txn(tmp_path, "t", gen1, store.signature("t")).publish()  # generation 2 is now live
+    # Stale tree (generation 1) paired with the *current* signature: signatures match, ids do not.
+    stale = _txn(tmp_path, "t", gen1, store.signature("t"))
+    live = (tmp_path / "t.json").read_bytes()
+    with pytest.raises(StaleGenerationError):
+        await stale.publish()
+    assert (tmp_path / "t.json").read_bytes() == live
+
+
+@pytest.mark.asyncio
+async def test_grace_runs_from_supersession_not_creation(tmp_path):
+    """A long-lived body dropped by a new generation stays readable for the full grace period."""
+    store = JSONTreeStore(tmp_path)
+    content = NodeContentStore(tmp_path)
+    first = _txn(tmp_path, "t", {"doc_name": "t", "structure": []}, None)
+    node = {"node_id": "0001", "title": "Intro"}
+    first.tree["structure"].append(node)
+    ref = first.set_body(node, "old body")
+    await first.publish()
+    blob = content.body_path("t", ref.key)
+    ancient = time.time() - 10 * 3600
+    os.utime(blob, (ancient, ancient))  # created far longer ago than the 3600s grace
+
+    second = _txn(tmp_path, "t", store.load("t"), store.signature("t"))
+    second.drop_body(second.tree["structure"][0])
+    report = await second.publish()
+
+    assert report.bodies_swept == 0
+    assert blob.is_file(), "a just-superseded body must survive until grace elapses"
+
+
+@pytest.mark.asyncio
+async def test_first_write_keeps_legacy_files_for_grace(tmp_path):
+    """Migrating a pre-generation tree must not delete its legacy <node_id>.md at once."""
+    content = NodeContentStore(tmp_path)
+    content.save("t", "0001", "legacy body")
+    legacy = tmp_path / "t" / "0001.md"
+    ancient = time.time() - 10 * 3600
+    os.utime(legacy, (ancient, ancient))
+
+    txn = _txn(tmp_path, "t", {"doc_name": "t", "structure": [{"node_id": "0001", "title": "Intro"}]}, None)
+    txn.set_body(txn.tree["structure"][0], "legacy body")
+    await txn.publish()
+
+    assert legacy.is_file()
+    assert content.load("t", "0001") == "legacy body"
+
+
+def test_set_body_rejects_unusable_concept_id(tmp_path):
+    txn = _txn(tmp_path, "t", {"doc_name": "t", "structure": []}, None)
+    node = {"node_id": "0001", "title": "Too long", "concept_id": "x" * 200}
+    with pytest.raises(ValueError, match="cannot be used as a body reference"):
+        txn.set_body(node, "body")
 
 
 def test_public_exports():

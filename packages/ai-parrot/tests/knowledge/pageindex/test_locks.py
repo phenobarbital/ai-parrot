@@ -98,3 +98,17 @@ def test_lock_path_rejects_bad_name(tmp_path) -> None:
     """Reject an unsafe name before creating a lock-file path."""
     with pytest.raises(ValueError):
         lock_path(tmp_path, "../x")
+
+
+@pytest.mark.asyncio
+async def test_tree_lock_survives_lock_file_unlink_while_waiting(tmp_path) -> None:
+    """A waiter that opened a lock file which is then unlinked must re-open it, not lock an orphan."""
+    import os
+
+    from parrot.knowledge.pageindex.locks import lock_path, tree_lock
+
+    path = lock_path(tmp_path, "t")
+    async with tree_lock(tmp_path, "t", timeout=1.0):
+        path.unlink()  # delete_tree/rename_tree removes the file under the lock
+    async with tree_lock(tmp_path, "t", timeout=1.0):
+        assert os.stat(path).st_ino  # the lock file exists again and is the one we hold

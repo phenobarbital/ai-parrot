@@ -339,3 +339,40 @@ def test_delete_tree_removes_bodies_and_embeddings(tmp_path: Path):
     (tmp_path / "t" / "embeddings" / "v.bin").write_bytes(b"1")
     store.delete_tree("t")
     assert not (tmp_path / "t").exists()
+
+
+def test_load_current_prefers_live_body_over_stale_legacy_file(store: NodeContentStore, tmp_path: Path):
+    """A leftover <node_id>.md must not shadow the body of the live generation."""
+    store.save("t", "0001", "stale body of another book")
+    ref = "intro.0123456789abcdef"
+    store.save_body("t", ref, "live body")
+    (tmp_path / "t.json").write_text(
+        json.dumps({"structure": [{"node_id": "0001", "concept_id": "intro", "body_ref": ref}]}),
+        encoding="utf-8",
+    )
+
+    assert store.load("t", "0001") == "stale body of another book"  # legacy-first, by design
+    assert store.load_current("t", "0001") == "live body"
+
+
+def test_load_current_falls_back_to_legacy_without_live_ref(store: NodeContentStore):
+    store.save("t", "0001", "legacy only")
+    assert store.load_current("t", "0001") == "legacy only"
+    assert store.load_current("t", "9999") is None
+
+
+def test_mark_superseded_restarts_grace_clock(store: NodeContentStore):
+    ref = "intro.0123456789abcdef"
+    store.save_body("t", ref, "body")
+    store.save("t", "0001", "legacy")
+    ancient = time.time() - 10 * 3600
+    blob = store.body_path("t", ref)
+    legacy = blob.parent.parent / "0001.md"
+    os.utime(blob, (ancient, ancient))
+    os.utime(legacy, (ancient, ancient))
+
+    touched = store.mark_superseded("t", [ref, "bad key", "missing.ffffffffffffffff"], ["0001", "../x", "0002"])
+
+    assert touched == 2
+    assert blob.stat().st_mtime > ancient + 3600
+    assert legacy.stat().st_mtime > ancient + 3600

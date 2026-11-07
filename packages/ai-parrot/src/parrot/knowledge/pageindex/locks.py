@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 import weakref
 from contextlib import asynccontextmanager
@@ -76,11 +77,23 @@ async def tree_lock(storage_dir: Path, tree_name: str, *, timeout: float) -> Asy
         while True:
             try:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
             except OSError:
                 if time.monotonic() >= deadline:
-                    raise TreeLockTimeout(tree_name)
+                    raise TreeLockTimeout(tree_name) from None
                 await asyncio.sleep(_LOCK_POLL_SECONDS)
+                continue
+            # The lock file may have been unlinked (delete/rename) while we waited;
+            # holding a lock on an orphaned inode excludes nobody. Re-open and retry.
+            try:
+                same = os.fstat(handle.fileno()).st_ino == os.stat(path).st_ino
+            except FileNotFoundError:
+                same = False
+            if same:
+                break
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            handle.close()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            handle = open(path, "a+")  # noqa: SIM115,ASYNC230 - closed in finally
 
         yield
     finally:

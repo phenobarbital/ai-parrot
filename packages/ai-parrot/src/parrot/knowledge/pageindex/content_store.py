@@ -31,7 +31,7 @@ import tempfile
 import time
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 from parrot.knowledge.okf.utils import flatten_concept_id_for_filename
 from parrot.knowledge.pageindex.utils import structure_to_list
@@ -267,6 +267,57 @@ class NodeContentStore:
     def _live_body(self, tree_name: str, node_id: str) -> Optional[str]:
         ref = self._live_index(tree_name).get(node_id)
         return self.load_body(tree_name, ref) if ref else None
+
+    def load_current(self, tree_name: str, node_id: str) -> Optional[str]:
+        """Return ``node_id``'s body from the *live* generation, falling back to legacy files.
+
+        Unlike :meth:`load`, which prefers a legacy ``<node_id>.md`` for
+        backwards compatibility, this prefers the body the published tree
+        points at. Use it where a stale leftover file must never be served for
+        a node whose id was reused by a newer tree (reindex, rename over a
+        legacy destination).
+        """
+        try:
+            live = self._live_body(tree_name, node_id)
+        except ValueError:
+            live = None
+        return live if live is not None else self.load(tree_name, node_id)
+
+    def mark_superseded(self, tree_name: str, body_keys: Iterable[str], node_ids: Iterable[str]) -> int:
+        """Restart the grace clock of bodies a new generation just stopped referencing.
+
+        The sweep ages files by mtime, i.e. from creation. A body written long
+        ago and superseded only now must still stay readable for the full grace
+        period, so its mtime is reset to *now* at supersession time.
+
+        Args:
+            tree_name: Tree whose files are touched.
+            body_keys: ``body_ref`` blobs the previous generation referenced.
+            node_ids: Legacy ``<node_id>.md`` files the previous generation used.
+
+        Returns:
+            Number of files whose clock was restarted.
+        """
+        tree_dir = self._tree_dir(tree_name)
+        if not tree_dir.is_dir():
+            return 0
+        paths: list[Path] = []
+        for key in body_keys:
+            if isinstance(key, str) and _BODY_KEY_RE.match(key):
+                paths.append(self.bodies_dir(tree_name) / f"{key}.md")
+        for node_id in node_ids:
+            if isinstance(node_id, str) and _NODE_ID_RE.match(node_id):
+                paths.append(tree_dir / f"{node_id}.md")
+        touched = 0
+        for path in paths:
+            try:
+                os.utime(path, None)
+                touched += 1
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                logger.warning("could not mark %s superseded: %s", path, exc)
+        return touched
 
     def sweep_unreferenced(self, tree_name: str, tree: dict[str, Any], *, max_age_s: int) -> int:
         """Delete unreferenced blobs and superseded ``<node_id>.md`` files older than ``max_age_s``."""
