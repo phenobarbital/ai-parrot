@@ -21,10 +21,12 @@ from __future__ import annotations
 import asyncio
 import copy
 import fnmatch
+import hashlib
 import logging
 import random
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable, Optional, TypeVar
 
@@ -40,12 +42,26 @@ from .md_builder import md_to_tree
 from .retriever import PageIndexRetriever
 from .locks import lock_path, tree_lock
 from .store import JSONTreeStore
+from .segment_store import SegmentStore
+from .segments import (
+    DocumentRevision,
+    SourceInfo,
+    attach_pdf_document,
+    attach_section_document,
+    derive_doc_id,
+    render_body,
+    revision_id,
+    segment_pages,
+    segment_text,
+)
+from .injection_scan import ScanReport, scan_segments
+from parrot.security.prompt_injection import PromptInjectionDetector, get_injection_scoring_engine
 from .tree_ops import (
     delete_node as _delete_node,
     make_folder_node,
     splice_subtree,
 )
-from .utils import find_node_by_id, structure_to_list
+from .utils import find_node_by_id, get_pdf_name, structure_to_list
 from parrot.knowledge.okf.utils import flatten_concept_id_for_filename
 from parrot.knowledge.pageindex.okf.projection import _strip_frontmatter
 
@@ -115,6 +131,9 @@ class PageIndexToolkit(AbstractToolkit):
         use_embedding_walk: bool = False,
         generation_grace_s: int = 3600,
         lock_timeout_s: float = 30.0,
+        scan_injection: bool = True,
+        injection_probability_threshold: float = 0.98,
+        read_max_chars: int = 12000,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -122,11 +141,16 @@ class PageIndexToolkit(AbstractToolkit):
         self._storage_dir = Path(storage_dir)
         self._generation_grace_s = generation_grace_s
         self._lock_timeout_s = lock_timeout_s
+        self._scan_injection = scan_injection
+        self._injection_threshold = injection_probability_threshold
+        self._read_max_chars = max(500, int(read_max_chars))
         self._light_adapter: Optional[PageIndexLLMAdapter] = (
             PageIndexLLMAdapter(client=adapter.client, model=lightweight_model) if lightweight_model else None
         )
         self._store = JSONTreeStore(storage_dir)
         self._content_store = NodeContentStore(storage_dir, cache_size=content_cache_size)
+        self._segment_store = SegmentStore(storage_dir)
+        self._detector = PromptInjectionDetector()
         self._reranker = reranker
         self._model = model or adapter.model
         self._default_bm25_k = default_bm25_k
@@ -925,6 +949,7 @@ class PageIndexToolkit(AbstractToolkit):
         markdown: str,
         parent_node_id: Optional[str] = None,
         doc_name: Optional[str] = None,
+        doc_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Parse ``markdown`` into a PageIndex subtree and splice it in.
 
@@ -948,23 +973,47 @@ class PageIndexToolkit(AbstractToolkit):
         # Build-time scratch fields that should never reach disk.
         node_markdown = _pop_node_field(subtree, "text")
         _strip_keys_in_place(subtree, ("token_count", "line_num"))
+        segments, own_by_id = _section_segments(subtree.get("structure", []), node_markdown)
+        report = await self._scan(segments)
+        source = SourceInfo(name=doc_name or "ingested.md", kind="markdown", sha256=_texts_sha256(segments))
+        imported: dict[str, Optional[str]] = {"doc_id": None, "revision": None}
 
         async def apply(txn: WriteTransaction) -> list[str]:
             fresh = copy.deepcopy(subtree)
             original_id_to_node = _capture_node_id_object_map(fresh)
+            revision = None
+            if segments:
+                revision = self._new_revision(
+                    doc_id
+                    or derive_doc_id(
+                        source.name, taken=self._doc_ids_in(tree_name, txn.tree), source_sha256=source.sha256
+                    ),
+                    segments,
+                    source,
+                    report,
+                )
+                by_node = {
+                    id(original_id_to_node[bid]): rng for bid, rng in own_by_id.items() if bid in original_id_to_node
+                }
+                attach_section_document(fresh["structure"], revision, by_node)
             new_ids = splice_subtree(txn.tree, fresh, parent_node_id=parent_node_id)
-            self._stage_node_markdown(txn, original_id_to_node, node_markdown)
+            if revision is not None:
+                self._stage_document(txn, revision, fresh["structure"])
+                imported.update(doc_id=revision.doc_id, revision=revision.revision)
+            else:
+                self._stage_node_markdown(txn, original_id_to_node, node_markdown)
             await self._run_t3_classification(txn.tree, original_id_to_node)
             return new_ids
 
         new_ids = await self._mutate(tree_name, apply)
-        return {"tree_name": tree_name, "new_node_ids": new_ids}
+        return {"tree_name": tree_name, "new_node_ids": new_ids, **imported}
 
     async def insert_ebook(
         self,
         tree_name: str,
         sections: list[dict[str, Any]],
         parent_node_id: Optional[str] = None,
+        doc_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Persist source ebook sections with their exact TOC relationships.
 
@@ -977,12 +1026,39 @@ class PageIndexToolkit(AbstractToolkit):
         records = [EbookSection.model_validate(section) for section in sections]
         subtree = ebook_tree(records)
         node_markdown = _pop_node_field(subtree, "text")
+        segments, own_by_id = _section_segments(subtree.get("structure", []), node_markdown)
+        report = await self._scan(segments)
+        source = SourceInfo(
+            name=(records[0].source_uri or records[0].title) if records else "ebook",
+            kind="ebook",
+            sha256=_texts_sha256(segments),
+        )
+        imported: dict[str, Optional[str]] = {"doc_id": None, "revision": None}
 
         async def apply(txn: WriteTransaction) -> list[str]:
             fresh = copy.deepcopy(subtree)
             original_id_to_node = _capture_node_id_object_map(fresh)
+            revision = None
+            if segments:
+                revision = self._new_revision(
+                    doc_id
+                    or derive_doc_id(
+                        source.name, taken=self._doc_ids_in(tree_name, txn.tree), source_sha256=source.sha256
+                    ),
+                    segments,
+                    source,
+                    report,
+                )
+                by_node = {
+                    id(original_id_to_node[bid]): rng for bid, rng in own_by_id.items() if bid in original_id_to_node
+                }
+                attach_section_document(fresh["structure"], revision, by_node)
             new_ids = splice_subtree(txn.tree, fresh, parent_node_id=parent_node_id)
-            self._stage_node_markdown(txn, original_id_to_node, node_markdown)
+            if revision is not None:
+                self._stage_document(txn, revision, fresh["structure"])
+                imported.update(doc_id=revision.doc_id, revision=revision.revision)
+            else:
+                self._stage_node_markdown(txn, original_id_to_node, node_markdown)
             await self._run_t3_classification(txn.tree, original_id_to_node)
             return new_ids
 
@@ -992,6 +1068,7 @@ class PageIndexToolkit(AbstractToolkit):
             "new_node_ids": new_ids,
             "title": records[0].title if records else "",
             "summary": "",
+            **imported,
         }
 
     async def insert_content(
@@ -1044,6 +1121,7 @@ class PageIndexToolkit(AbstractToolkit):
         parent_node_id: Optional[str] = None,
         with_summaries: bool = True,
         with_doc_description: bool = False,
+        doc_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Build a PageIndex subtree from a PDF and splice it into ``tree_name``.
 
@@ -1075,12 +1153,38 @@ class PageIndexToolkit(AbstractToolkit):
         # capture object references BEFORE the splice to recover the
         # new ids afterwards.
         node_markdown = dict(subtree.pop("_node_markdown", {}) or {})
+        pages = list(subtree.pop("_pages", []) or [])
+        segments = await asyncio.to_thread(segment_pages, pages) if pages else []
+        report = await self._scan(segments)
+        source: Optional[SourceInfo] = None
+        if segments:
+            sha = await asyncio.to_thread(lambda: hashlib.sha256(Path(pdf_path).read_bytes()).hexdigest())
+            source = SourceInfo(
+                name=get_pdf_name(pdf_path), kind="pdf", path=str(pdf_path), sha256=sha, pages=len(pages)
+            )
+        imported: dict[str, Optional[str]] = {"doc_id": None, "revision": None}
 
         async def apply(txn: WriteTransaction) -> list[str]:
             fresh = copy.deepcopy(subtree)
             original_id_to_node = _capture_node_id_object_map(fresh)
+            revision = None
+            if segments and source is not None:
+                revision = self._new_revision(
+                    doc_id
+                    or derive_doc_id(
+                        source.name, taken=self._doc_ids_in(tree_name, txn.tree), source_sha256=source.sha256
+                    ),
+                    segments,
+                    source,
+                    report,
+                )
+                attach_pdf_document(fresh["structure"], revision)
             new_ids = splice_subtree(txn.tree, fresh, parent_node_id=parent_node_id)
-            self._stage_node_markdown(txn, original_id_to_node, node_markdown)
+            if revision is not None:
+                self._stage_document(txn, revision, fresh["structure"])
+                imported.update(doc_id=revision.doc_id, revision=revision.revision)
+            else:
+                self._stage_node_markdown(txn, original_id_to_node, node_markdown)
             await self._run_t3_classification(txn.tree, original_id_to_node)
             return new_ids
 
@@ -1090,7 +1194,55 @@ class PageIndexToolkit(AbstractToolkit):
             "new_node_ids": new_ids,
             "doc_name": subtree.get("doc_name"),
             "doc_description": subtree.get("doc_description"),
+            **imported,
         }
+
+    async def _scan(self, segments: list) -> Optional[ScanReport]:
+        """Score ``segments`` in place for prompt injection; ``None`` when scanning is disabled."""
+        if not self._scan_injection or not segments:
+            return None
+        engine = await asyncio.to_thread(get_injection_scoring_engine)
+        return await scan_segments(
+            segments, detector=self._detector, engine=engine, threshold=self._injection_threshold
+        )
+
+    def _doc_ids_in(self, tree_name: str, tree: dict[str, Any]) -> dict[str, Optional[str]]:
+        """``doc_id`` -> source sha256 (or None) for every imported document already in ``tree``."""
+        taken: dict[str, Optional[str]] = {}
+        for node in structure_to_list(tree.get("structure", [])):
+            doc_id, revision = node.get("doc_id"), node.get("revision")
+            if not isinstance(doc_id, str) or doc_id in taken:
+                continue
+            sha: Optional[str] = None
+            if isinstance(revision, str):
+                try:
+                    rev = self._segment_store.load_revision(tree_name, doc_id, revision)
+                except ValueError:
+                    rev = None
+                sha = rev.source.sha256 if rev is not None else None
+            taken[doc_id] = sha
+        return taken
+
+    def _stage_document(self, txn: WriteTransaction, revision: DocumentRevision, roots: list[dict[str, Any]]) -> None:
+        """Stage ``revision`` and one view body per node of the subtree rooted at ``roots``."""
+        txn.set_revision(revision)
+        for node in structure_to_list(roots):
+            body = render_body(revision, node, node.get("nodes") or [])
+            if body.strip():
+                txn.set_body(node, body)
+
+    @staticmethod
+    def _new_revision(
+        doc_id: str, segments: list, source: SourceInfo, report: Optional[ScanReport]
+    ) -> DocumentRevision:
+        return DocumentRevision(
+            doc_id=doc_id,
+            revision=revision_id(segments),
+            source=source,
+            scored_by=report.scored_by if report else None,
+            created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            segments=segments,
+        )
 
     def _stage_node_markdown(
         self,
@@ -1395,6 +1547,34 @@ def _pop_node_field(subtree: Any, field: str) -> dict[str, str]:
     else:
         _walk(subtree)
     return out
+
+
+def _texts_sha256(segments: list) -> Optional[str]:
+    """Hash of the joined segment texts (identity of an unpaged source), or ``None`` when empty."""
+    if not segments:
+        return None
+    return hashlib.sha256("\x1e".join(seg.text for seg in segments).encode("utf-8")).hexdigest()
+
+
+def _section_segments(
+    roots: list[dict[str, Any]], texts: dict[str, str]
+) -> tuple[list, dict[str, tuple[int, int]]]:
+    """Segments of an unpaged subtree in pre-order plus ``build_node_id -> (start, end)`` own ranges."""
+    acc: list = []
+    ranges: dict[str, tuple[int, int]] = {}
+
+    def walk(nodes: list[dict[str, Any]], path: list[str]) -> None:
+        for node in nodes:
+            here = path + [str(node.get("title", ""))]
+            node_id = node.get("node_id")
+            start = len(acc)
+            acc.extend(segment_text(texts.get(str(node_id), "") if node_id else "", here, seq_start=start))
+            if node_id:
+                ranges[str(node_id)] = (start, len(acc))
+            walk(node.get("nodes") or [], here)
+
+    walk(roots, [])
+    return acc, ranges
 
 
 def _strip_keys_in_place(subtree: Any, keys: tuple[str, ...]) -> None:
