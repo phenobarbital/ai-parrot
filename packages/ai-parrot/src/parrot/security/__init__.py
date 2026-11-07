@@ -11,7 +11,9 @@ from .prompt_injection import (
     ThreatLevel,
     THREAT_LEVEL_ORDER,
     max_threat_level,
-    PromptInjectionException
+    PromptInjectionException,
+    InjectionScoringEngine,
+    get_injection_scoring_engine,
 )
 from .query_validator import (
     QueryLanguage,

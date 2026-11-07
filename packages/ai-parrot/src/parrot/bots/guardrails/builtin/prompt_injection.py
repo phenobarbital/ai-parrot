@@ -43,9 +43,10 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Any, ClassVar, Protocol, runtime_checkable
+from typing import Any, ClassVar
 
 from parrot.security.prompt_injection import (
+    InjectionScoringEngine,
     PromptInjectionDetector,
     SecurityEventLogger,
     ThreatLevel,
@@ -163,20 +164,8 @@ def _env_int(name: str, default: int) -> int:
     return env_int(name, default)
 
 
-@runtime_checkable
-class _InjectionScoringEngine(Protocol):
-    """Uniform contract for a resolved ML scoring engine.
-
-    Module-private — NOT part of the public ``Guardrail`` contract (spec
-    §2 Data Models). The regex engine is deliberately NOT behind this
-    protocol; it keeps its existing ``(sanitized, threats)`` path.
-    """
-    engine_name: str  # "onnx" | "pytector"
-    model_id: str
-
-    def score(self, text: str) -> float:
-        """Return an injection probability in ``[0, 1]`` for *text*."""
-        ...
+#: Module-private alias kept for existing callers/tests; the contract is public since FEAT-840.
+_InjectionScoringEngine = InjectionScoringEngine
 
 
 class _OnnxInjectionEngine(ClassifierOnnxEngine):
