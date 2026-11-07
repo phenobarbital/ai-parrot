@@ -1279,7 +1279,7 @@ Coverage:
 - [x] Is the body a live view or a materialized blob? — *Resolved in this spec*: materialized (`render_body` → FEAT-831 blob). Rationale: the eleven `node_id`-keyed body readers, BM25, OKF projection and Bookstore keep reading blobs unchanged; rendering is deterministic so an unchanged node re-renders to the same `sha16`. The optimizer re-renders after a re-partition.
 - [x] How is `doc_id` derived? — *Resolved in this spec*: slug of the source name, stable across re-imports of the same file, suffixed only on a collision with a different source; overridable per call.
 - [ ] Should `update_node_content` on a segment-backed node detach it (`locked`) or re-render on the next optimize? — *Owner: Jesus Lara* (decide in `pageindex-tree-optimizer`; this slice keeps `owned` and documents the divergence)
-- [ ] Default `read_max_chars` (12000) and `outline` budget (6000) for coding-agent hosts — *Owner: Jesus Lara* (can be tuned in `pageindex-local-mcp-toolkit`)
+- [x] Default `read_max_chars` (12000) and `outline` budget (6000) for coding-agent hosts — *Resolved (Jesus Lara, 2026-11-07, in FEAT-842 §8)*: keep both defaults; the `pageindex` MCP template adds no knob for them.
 
 ---
 

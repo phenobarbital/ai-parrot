@@ -17,7 +17,7 @@ docs:
 **Feature ID**: FEAT-842
 **Date**: 2026-11-07
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 2.2.0
 
 > Sixth slice of `sdd/proposals/pageindex-tree-optimizer.brainstorm.md` (revision 4), the
@@ -112,7 +112,9 @@ Bookstore server stays separate.
 - No user-level or shared library; storage is per repository (brainstorm, resolved).
 - No LLM in the shipped template, and no default model name anywhere in the toolkit: the
   operator adds `llm:` to the section.
-- No bound on `get_tree` or `search` output in this slice (see §8).
+- No bound on `get_tree` or `search` output (see §8, resolved): `search` is already bounded
+  by `top_k` and returns summaries only; FEAT-840's bounded `outline` is the agent-facing
+  tree view, so `get_tree` stays as it is.
 - No OKF toolkit wiring for the MCP server beyond what `get_tools()` already does.
 
 ---
@@ -791,9 +793,10 @@ Coverage:
 - [x] Is a server with no `llm` a supported default — *Resolved in brainstorm*: yes, it is the default mode.
 - [x] How the opt-in is expressed with no runner change — *Resolved in this spec*: the template's `exclude: []` slot; `pageindex-agentic-retrieval` adds its tool name there when it lands.
 - [x] Which tools are LLM-dependent — *Resolved in this spec*: `insert_content`, `import_file`, `import_folder`, `import_pdf`, `search_documents_scoped`; `insert_markdown`, `insert_ebook`, `tag_node`, `search`, `retrieve` run without a model.
-- [ ] Should `get_tree` and `search` output also be bounded for stdio hosts (FEAT-840's `outline` may make a bounded `get_tree` unnecessary)? — *Owner: Jesus Lara*; decide in `pageindex-agentic-retrieval` or when FEAT-840 lands.
-- [ ] Hand-off: when `pageindex-layout-structure` makes PDF import deterministic, remove `pageindex_import_pdf` from `llm_dependent_tools` — *Owner: that spec*.
-- [ ] Hand-off: `pageindex-agentic-retrieval` adds its tool name to the template's `exclude:` list and to `llm_dependent_tools` — *Owner: that spec*.
+- [x] Should `get_tree` and `search` output also be bounded for stdio hosts? — *Resolved (Jesus Lara, 2026-11-07)*: no. `search` returns at most `top_k` candidates with summaries only, so it needs no bound. `get_tree` stays unbounded and served; once FEAT-840 lands its bounded `outline` (`max_chars=6000`) is the tool a coding agent uses to browse a tree, and `wiki/knowledge/pageindex-local-mcp.md` says so. `get_tree` is not added to `exclude:`.
+- [x] FEAT-840 read budgets for coding-agent hosts (`read_max_chars=12000`, `outline` `max_chars=6000`) — *Resolved (Jesus Lara, 2026-11-07)*: keep FEAT-840's defaults. Both sit under this template's `max_result_chars: 24000`; they are per-call parameters, so the template gets no knob for them.
+- [x] Hand-off (recorded, not a decision of this spec): when `pageindex-layout-structure` makes PDF import deterministic, it removes `pageindex_import_pdf` from `llm_dependent_tools` — *Owner: that spec*.
+- [x] Hand-off (recorded, not a decision of this spec): `pageindex-agentic-retrieval` adds its tool name to the template's `exclude:` list and to `llm_dependent_tools` — *Owner: that spec*.
 
 ---
 
@@ -810,7 +813,7 @@ Status: skipped (exploration doc `sdd/proposals/pageindex-tree-optimizer.brainst
 
 - **Policy**: `required`
 - **Pages**:
-  - `wiki/knowledge/pageindex-local-mcp.md` — create: install (`parrot toolkits install pageindex`), what is served with and without `llm:`, the five hidden tools, `storage_dir`/`max_result_chars`/`llm_client`, the `exclude:` opt-in slot, two-writer behaviour, troubleshooting (`bm25s` missing, drift message).
+  - `wiki/knowledge/pageindex-local-mcp.md` — create: install (`parrot toolkits install pageindex`), what is served with and without `llm:`, the five hidden tools, `storage_dir`/`max_result_chars`/`llm_client`, the `exclude:` opt-in slot, `outline` (FEAT-840) over `get_tree` for browsing large trees, two-writer behaviour, troubleshooting (`bm25s` missing, drift message).
   - `wiki/tools/mcp-local-toolkits.md` — update: `## \`pageindex\`` section before the `sdd-coder` section with the quickstart and a link to the page above.
   - `wiki/knowledge/pageindex.md` — update: link to `pageindex-local-mcp.md` from the Table of Contents.
 - **API modules**:
@@ -823,3 +826,4 @@ Status: skipped (exploration doc `sdd/proposals/pageindex-tree-optimizer.brainst
 | Rev | Date | Summary |
 |---|---|---|
 | 0.1 | 2026-11-07 | Initial spec from brainstorm revision 4 (slice 6). Anchors verified at `dev` @ `9c4c9390a0`. |
+| 0.2 | 2026-11-07 | Open questions resolved: no bound on `get_tree`/`search` (`outline` is the bounded tree view); FEAT-840 read budgets kept; hand-offs recorded. |
