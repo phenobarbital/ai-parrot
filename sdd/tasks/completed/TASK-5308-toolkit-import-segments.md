@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-840 — PageIndex Segment Store
 **Spec**: `sdd/specs/pageindex-segment-store.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5301, TASK-5303, TASK-5305, TASK-5307
@@ -380,9 +380,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+import_pdf/insert_markdown/insert_ebook build, scan and stage a DocumentRevision and render view bodies; no-pages PDFs keep the old path. Empty rendered bodies are not staged (summary fallback preserved). Markdown/ebook SourceInfo.sha256 = hash of joined segment texts so identical re-imports reuse doc_id and edited text gets a suffixed id. KNOWN INTERIM FAILURE: test_generation_integration::test_bookstore_reindex_keeps_book_readable fails until TASK-5310 (Bookstore stages via rename_tree, which does not yet copy revisions). Pre-existing unrelated failures in full pageindex run: test_adapter (2) and test_okf_ontology::test_all_values_count. test_toolkit + test_folder_import (71) and 5 new tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (sequential fallback; parrot-sdd-coder MCP unavailable)
+**Date**: 2026-11-07
+**Notes**: tests run with a scratchpad-only shim for navconfig's read-only log dir (environment, not committed)
+**Deviations from spec**: none (rename_tree revision copy deliberately left to TASK-5310)

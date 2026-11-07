@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-840 — PageIndex Segment Store
 **Spec**: `sdd/specs/pageindex-segment-store.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5309
@@ -269,9 +269,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Bookstore + BookstoreToolkit gain read_pages/read_segments/outline; errors mapped to BookstoreError. Also updated tests/knowledge/bookstore/test_mcp_server.py tool count 10->13 (it did assert an exact count, contrary to the task's contract). Full bookstore dir: 190 passed; 4 errors + test_no_llm_full_path fail with sqlite3 'unable to open database file' (sandbox environment, unrelated to this change).
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (sequential fallback; parrot-sdd-coder MCP unavailable)
+**Date**: 2026-11-07
+**Notes**: tests run with a scratchpad-only shim for navconfig's read-only log dir (environment, not committed)
+**Deviations from spec**: test_mcp_server.py touched (tool count) though not listed

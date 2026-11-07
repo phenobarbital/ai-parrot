@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-840 — PageIndex Segment Store
 **Spec**: `sdd/specs/pageindex-segment-store.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5309
@@ -265,9 +265,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added index_segments tool (root-level legacy subtrees, kind=legacy, noop when nothing to do), rename_tree carries live revisions and evicts src, delete_tree removes segments, NodeContentStore.delete_tree also removes segments/. This also resolves the interim Bookstore reindex failure noted in TASK-5308. 4 new tests; 108 tests pass across content_store/toolkit/generation_integration/migration.
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (sequential fallback; parrot-sdd-coder MCP unavailable)
+**Date**: 2026-11-07
+**Notes**: tests run with a scratchpad-only shim for navconfig's read-only log dir (environment, not committed)
+**Deviations from spec**: none

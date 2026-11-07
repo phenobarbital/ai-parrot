@@ -211,3 +211,79 @@ def test_set_body_rejects_unusable_concept_id(tmp_path):
 
 def test_public_exports():
     assert TreeLockTimeout is not None
+
+
+# ---------------------------------------------------------------------------
+# Revisions (FEAT-840 / TASK-5303)
+# ---------------------------------------------------------------------------
+def _revision(doc_id="d", text="Hello."):
+    from parrot.knowledge.pageindex.segments import DocumentRevision, SourceInfo, revision_id, segment_pages
+
+    segs = segment_pages([(1, text)])
+    return DocumentRevision(doc_id=doc_id, revision=revision_id(segs), source=SourceInfo(name="d.pdf", kind="pdf"),
+                            created_at="2026-11-07T00:00:00Z", segments=segs)
+
+
+@pytest.fixture
+def _stub_tokens(monkeypatch):
+    monkeypatch.setattr("parrot.knowledge.pageindex.utils.count_tokens", lambda t, model="gpt-4o": max(1, len(t)))
+
+
+@pytest.mark.asyncio
+async def test_publish_requires_live_revisions(tmp_path, _stub_tokens):
+    txn = _txn(tmp_path, "t", {"doc_name": "t", "structure": []}, None)
+    txn.tree["structure"].append({"node_id": "0001", "title": "A", "doc_id": "d", "revision": "0" * 16})
+    with pytest.raises(ValueError, match="missing revision"):
+        await txn.publish()
+    assert not (tmp_path / "t.json").exists()
+    assert txn.live_revisions() == {("d", "0" * 16)}
+
+
+@pytest.mark.asyncio
+async def test_publish_writes_revisions_before_json(tmp_path, monkeypatch, _stub_tokens):
+    rev = _revision()
+    txn = _txn(tmp_path, "t", {"doc_name": "t", "structure": []}, None)
+    node = {"node_id": "0001", "title": "A", "doc_id": rev.doc_id, "revision": rev.revision}
+    txn.tree["structure"].append(node)
+    txn.set_revision(rev)
+    txn.set_revision(rev)  # idempotent
+
+    import parrot.knowledge.pageindex.store as store_module
+
+    real_replace = store_module.os.replace
+
+    def boom(source, destination):
+        if str(destination).endswith("t.json"):
+            raise OSError("replace failed")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(store_module.os, "replace", boom)
+    with pytest.raises(OSError, match="replace failed"):
+        await txn.publish()
+    assert (tmp_path / "t" / "segments" / f"{rev.doc_id}.{rev.revision}.json").is_file()
+    assert not (tmp_path / "t.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_reimport_keeps_old_revision_for_grace(tmp_path, _stub_tokens):
+    store = JSONTreeStore(tmp_path)
+    r1, r2 = _revision(text="First."), _revision(text="Second.")
+    first = _txn(tmp_path, "t", {"doc_name": "t", "structure": []}, None)
+    first.tree["structure"].append({"node_id": "0001", "title": "A", "doc_id": "d", "revision": r1.revision})
+    first.set_revision(r1)
+    await first.publish()
+    path1 = tmp_path / "t" / "segments" / f"d.{r1.revision}.json"
+    ancient = time.time() - 10 * 3600
+    os.utime(path1, (ancient, ancient))
+
+    second = _txn(tmp_path, "t", store.load("t"), store.signature("t"))
+    second.tree["structure"][0]["revision"] = r2.revision
+    second.set_revision(r2)
+    await second.publish()
+    assert path1.is_file(), "superseded revision must survive the grace period"
+    path2 = tmp_path / "t" / "segments" / f"d.{r2.revision}.json"
+
+    os.utime(path1, (ancient, ancient))
+    third = _txn(tmp_path, "t", store.load("t"), store.signature("t"))
+    await third.publish()
+    assert not path1.exists() and path2.is_file()

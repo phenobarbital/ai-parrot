@@ -45,6 +45,7 @@ The on-disk layout is:
 ```text
 <storage_dir>/<tree>.json
 <storage_dir>/<tree>/bodies/<flat_concept_id>.<sha16>.md
+<storage_dir>/<tree>/segments/<doc_id>.<revision>.json
 <storage_dir>/.locks/<tree>.lock
 ```
 
@@ -55,10 +56,11 @@ characters of the markdown SHA-256 digest, so a body update creates a new
 blob rather than overwriting one used by an older generation.
 
 Publication takes the per-tree POSIX lock, rejects a stale candidate, validates
-the candidate, writes body blobs, runs strict OKF projection, and atomically
+the candidate (every document revision a node names must be staged or on disk),
+writes document revision files (`segments/`) and body blobs, runs strict OKF projection, and atomically
 replaces the tree JSON. A failed publication before that replacement leaves
 the previous generation live. `vacuum_tree` and the opportunistic sweep remove
-unreferenced blobs only after the grace period. Trees written before this
+unreferenced blobs and superseded revision files only after the grace period. Trees written before this
 feature remain readable; their first write migrates legacy node bodies to the
 identity-based layout.
 
@@ -94,4 +96,5 @@ contention failure.
 
 ## Related
 
+- [PageIndex Segment Store](pageindex-segment-store.md) — immutable document revisions published and swept with the generation
 - [PageIndex — Tree-Based RAG for Document Retrieval](pageindex.md) — tree construction, retrieval, and toolkit configuration
