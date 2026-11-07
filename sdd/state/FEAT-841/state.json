@@ -3,7 +3,7 @@
   "feat_id": "FEAT-841",
   "feature_slug": "monitor-agent",
   "started_at": "2026-11-07T01:13:33Z",
-  "updated_at": "2026-11-07T01:34:32Z",
+  "updated_at": "2026-11-07T01:59:05Z",
   "source": {
     "kind": "file",
     "jira_key": null,
@@ -121,20 +121,21 @@
       }
     },
     "qa": {
-      "status": "skipped",
+      "status": "completed",
       "started_at": "2026-11-07T01:32:11Z",
-      "completed_at": "2026-11-07T01:32:11Z",
+      "completed_at": "2026-11-07T01:59:05Z",
       "questions_total": 5,
-      "questions_answered": 0,
-      "skipped_reason": "unattended session: no operator to answer; U1-U5 carried as unresolved Open Questions in the proposal (status: discussion)"
+      "questions_answered": 5,
+      "skipped_reason": null,
+      "note": "answered interactively by the owner after the unattended research run"
     },
     "output": {
       "status": "completed",
       "started_at": "2026-11-07T01:34:32Z",
       "completed_at": "2026-11-07T01:34:32Z",
       "proposal_path": "sdd/proposals/monitor-agent.proposal.md",
-      "commit_sha": null,
-      "commit_note": "the commit that introduces this file on dev",
+      "commit_sha": "af145e5201",
+      "commit_note": "proposal introduced by af145e5201; Q&A resolution commit follows",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "brainstorm already settled the architecture; U1-U5 are policy decisions for the spec's Open Questions"
     }
@@ -156,7 +157,7 @@
   "errors": [],
   "resume_hint": {
     "next_phase": "committed",
-    "next_action": "git commit proposal + state"
+    "next_action": "commit Q&A resolution, then /sdd-spec FEAT-841"
   },
   "detected_mode": "enrichment"
 }

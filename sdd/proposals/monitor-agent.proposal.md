@@ -4,7 +4,7 @@ title: Release escrow for the SDD flow — hold the worktree until an external, 
 slug: monitor-agent
 type: feature
 mode: enrichment
-status: discussion
+status: review
 source:
   kind: file
   jira_key: null
@@ -283,48 +283,51 @@ Distribution: **15** high, **3** medium, **0** low.
 
 ## 5. Open Questions
 
-### Resolved (during proposal phase)
+### Resolved (during proposal phase — owner, 2026-11-07)
 
-_None — this run was unattended; the gates were auto-passed and Q&A skipped (see §7)._
+- [x] **U1 — Where does the held state live?** — *Resolved*: **ledger projection**. Held = a `work.completed` for
+  HEAD with no later `escrow.approved` for the same HEAD. Only `escrow: {enabled, policy, launch_id}` is written into the
+  per-spec index header at launch. Single source of truth, no dual write; `/sdd-status` derives its escrow line from the
+  ledger. *Resolves claims*: C10, C15
+- [x] **U2 — What must "signed" mean in v1?** — *Resolved*: **host-only launch secret**. The launcher creates a
+  per-launch secret outside the sandbox mounts; every verdict event carries an HMAC over
+  `feature_id | launch_id | head_sha | decision`; the gate recomputes it from the host-side secret. The worker physically
+  cannot forge a verdict; the actor string remains informational. *Resolves claims*: C6, C7, C8
+- [x] **U3 — Human override?** — *Resolved*: **human decision event only**. `/sdd-done` gets no flag. The only release
+  without a judge verdict is `parrot sdd escrow approve <FEAT-ID> --reason "…"`, which records a `human:`
+  `escrow.human_decision` for the current HEAD (signed with the same launch secret). `reject` records the negative
+  decision and may carry corrections → RESCHEDULE path. Keeps the FEAT-703/764 rule that an un-bypassable gate takes no
+  force parameter. *Resolves claims*: C3
+- [x] **U4 — Who produces the v1 verdict?** — *Resolved*: **host-launched read-only judge agent**, on top of the
+  deterministic gates. A `.claude/agents/sdd-escrow.md` judge (Read/Grep/Glob/Bash only, Codex twin) is launched on
+  the host after `work.completed`; gates run first and a hard gate failure yields RESCHEDULE without the judge. The judge
+  checks release readiness (completeness against spec/tasks, scope, head integrity), not a diff re-review.
+  **Launcher**: the worker's host-side Stop hook (`worker_notification.handle_stop`, which already consumes the
+  completion receipt) launches the judge session outside the sandbox — automatic, no operator action. Fallbacks:
+  `parrot sdd escrow run <FEAT-ID>` by hand. *Resolves claims*: C15, C17
+- [x] **U5 — When escrow is not enabled?** — *Resolved*: **always emit `work.completed`**. Every feature ends with the
+  event (uniform audit trail, cheap). `/sdd-done` enforces the verdict gate only when the launch recorded
+  `escrow.enabled`; otherwise today's flow continues unchanged. *Resolves claims*: C4
 
 ### Unresolved (defer to spec)
 
-- [ ] **U1 — Where does the held state live?** There is no worker `state.json` today (C10). — *Owner*: Jesus
-  *Blocks claims*: C10, C15
-  *Plausible answers*: a) **a projection of ledger events** (held = `work.completed` for HEAD without a later
-  `escrow.approved` for the same HEAD), with only `escrow: {enabled, policy, launch_id}` written into the per-spec index
-  header at launch — single source of truth, no dual write (recommended) · b) an `escrow` block in the index header
-  mirrored on every verdict (brainstorm) · c) a new `sdd/state/<FEAT-ID>/escrow.json`.
-- [ ] **U2 — What must "signed" mean in v1**, given no signatures exist and actors are self-declared (C6, C7)? —
-  *Owner*: Jesus · *Blocks claims*: C6, C7, C8
-  *Plausible answers*: a) process separation + a host-only launch secret folded into the verdict event (the sandbox
-  cannot read it; the gate recomputes it) · b) `GitCommitApprovalAdapter`-style: the verdict must be committed on the
-  ledger branch by a host process and the gate verifies the commit · c) actor-prefix convention only
-  (`escrow:` / `human:`), spoofing accepted and documented.
-- [ ] **U3 — Is there any human override of a missing or negative verdict in `/sdd-done`?** — *Owner*: Jesus
-  *Blocks claims*: C3
-  *Plausible answers*: a) no flag: the only release is a `human:` `escrow.human_decision=approve` recorded via
-  `parrot sdd escrow approve --reason` (keeps "the gate takes no force parameter") · b) `--override-escrow "<reason>"`
-  recording `escrow.overridden` (brainstorm) · c) no override at all; escalation resolves only through RESCHEDULE.
-- [ ] **U4 — Who produces the v1 verdict?** The owner's framing suggests gates over diff re-reading. — *Owner*: Jesus
-  *Blocks claims*: C15, C17
-  *Plausible answers*: a) deterministic gates only in v1 (tests, lint, scope-completeness, head integrity, review
-  checkpoint present); LLM experts are a policy opt-in · b) a read-only `.claude/agents/sdd-escrow.md` judge launched by
-  the host after `work.completed` (FEAT-764 agent-hook shape) · c) an in-process `AgentRegistry` bot (brainstorm's
-  `EscrowAgent`) — a different runtime from the SDD agents.
-- [ ] **U5 — When escrow is not enabled for a launch**, does the worker keep today's ending, or always emit
-  `work.completed` with `/sdd-done` enforcing only when enabled? — *Owner*: Jesus · *Blocks claims*: C4
-  *Plausible answers*: a) always emit `work.completed`; enforce only when enabled (recommended, uniform audit trail) ·
-  b) emit only when enabled; behaviour otherwise unchanged.
+- [ ] **Launch-secret storage and lifetime** — where the host keeps the per-launch secret (e.g. under the launch cache
+  outside the sandbox mounts, `0600`), when it is rotated/deleted (on `/sdd-done` cleanup), and how `/sdd-done` on a
+  second machine behaves (no secret ⇒ gate fails closed; document as same-host v1). — *Owner*: spec
+- [ ] **Judge session shape** — detached `tmux` window vs. `claude -p` headless run from the Stop hook, and its
+  permission mode (headless root agents deny all Bash by default — see the sdd-worker headless memory). — *Owner*: spec
+- [ ] **Policy YAML v1 gate list and `max_rounds` default** — carried from the brainstorm (tests, lint, scope,
+  secrets; `max_rounds: 2`). — *Owner*: spec
 
 ---
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-841`** — *Rationale*: localization is high-confidence (C1–C7, C9–C14) and the architectural fork was
-already explored in `sdd-escrow.brainstorm.md` (Option B chosen by the owner); U1–U5 are policy decisions the spec's
-Open Questions can settle, not alternatives needing another brainstorm. Overall confidence is medium only because the
-scope hinges on U1 and U2.
+**`/sdd-spec FEAT-841`** — *Rationale*: localization is high-confidence (C1–C7, C9–C14), the architectural fork was
+already explored in `sdd-escrow.brainstorm.md` (Option B chosen by the owner), and U1–U5 are now resolved: held state
+is a ledger projection, verdicts are HMAC-signed with a host-only launch secret, the only override is a `human:`
+decision event, the judge is a host-launched read-only agent started by the worker's Stop hook, and every feature emits
+`work.completed`. The three remaining items are implementation details for the spec.
 
 ### Alternatives
 
@@ -357,8 +360,9 @@ scope hinges on U1 and U2.
 
 **Mode determination**: `auto` → resolved to `enrichment` (additive verbs; no broken behaviour).
 
-**Gates**: the plan gate and the review gate were auto-passed because no operator was at the terminal; Phase 5 Q&A was
-skipped for the same reason, so `status: discussion` and U1–U5 are unresolved.
+**Gates**: the plan gate and the review gate were auto-passed because no operator was at the terminal during the
+research run; Phase 5 Q&A was then run interactively with the owner on 2026-11-07 (5 / 5 answered), hence
+`status: review`.
 
 ---
 
