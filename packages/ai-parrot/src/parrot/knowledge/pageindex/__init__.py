@@ -22,6 +22,8 @@ from .toolkit import PageIndexToolkit
 from .loader import PageIndexLoader
 from .generation import GenerationInfo, StaleGenerationError
 from .locks import TreeLockTimeout
+from .segments import DocumentRevision, ReadResult, Segment, SegmentAddress
+from .segment_store import SegmentStore
 
 __all__ = [
     "build_page_index",
@@ -45,4 +47,9 @@ __all__ = [
     "GenerationInfo",
     "StaleGenerationError",
     "TreeLockTimeout",
+    "Segment",
+    "DocumentRevision",
+    "SegmentAddress",
+    "ReadResult",
+    "SegmentStore",
 ]
