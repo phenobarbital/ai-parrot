@@ -8,11 +8,14 @@ publishes cache-invalidation messages to Redis pub/sub.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from parrot.knowledge.ontology.concept_catalog import _EMPTY_ONTOLOGY
 from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.schema import TenantContext
+
+if TYPE_CHECKING:
+    from parrot.knowledge.ontology.vocabulary.catalog_bridge import CatalogVocabularyPublisher
 
 
 class ConceptCatalogSyncWorker:
@@ -46,10 +49,13 @@ class ConceptCatalogSyncWorker:
         pg_pool: Any,
         graph_store: ArangoOntologyGraphStore,
         redis_client: Any,
+        *,
+        vocabulary_publisher: "CatalogVocabularyPublisher | None" = None,
     ) -> None:
         self._pool = pg_pool
         self._graph_store = graph_store
         self._redis = redis_client
+        self._vocabulary_publisher = vocabulary_publisher
         self.logger = logging.getLogger("Parrot.Ontology.ConceptCatalog.Worker")
 
     # ── Public API ───────────────────────────────────────────────────────────
@@ -128,7 +134,26 @@ class ConceptCatalogSyncWorker:
                             row["id"],
                         )
 
+        if self._vocabulary_publisher is not None:
+            await self._republish_tenants(rows)
+
         return len(rows)
+
+    async def _republish_tenants(self, rows: Any) -> None:
+        """Publish each distinct tenant of the batch to the vocabulary store; never raises."""
+        tenant_ids = sorted(
+            {
+                tenant_id
+                for row in rows
+                if (payload := dict(row["payload"]) if row["payload"] else {})
+                and (tenant_id := payload.get("tenant_id"))
+            }
+        )
+        for tenant_id in tenant_ids:
+            try:
+                await self._vocabulary_publisher.publish_tenant(tenant_id)
+            except Exception:
+                self.logger.exception("Vocabulary publication failed for tenant %s.", tenant_id)
 
     # ── Operation handlers ────────────────────────────────────────────────────
 
