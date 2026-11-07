@@ -452,7 +452,7 @@ tests:
 - packages/ai-parrot/tests/mcp/test_toolkit_matrix.py
 - packages/ai-parrot/tests/mcp/test_lsp_template.py
 - packages/ai-parrot/tests/docs/test_getting_started_claims.py
-markers: []
+markers: none
 
 ### Test Data / Fixtures
 
