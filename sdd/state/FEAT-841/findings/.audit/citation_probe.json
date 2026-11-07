@@ -1,0 +1,2366 @@
+{
+  "at": "2026-11-07T01:27:56Z",
+  "checks": 221,
+  "summary": {
+    "verified": 221,
+    "adjudicated_by_read": 9,
+    "stale": 0,
+    "missing": 0
+  },
+  "results": [
+    {
+      "finding": "F001",
+      "path": "sdd/proposals/sdd-escrow.brainstorm.md",
+      "symbol": "null",
+      "lines": [
+        280,
+        284
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F002",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "null",
+      "lines": [
+        39,
+        43
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F002",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "null",
+      "lines": [
+        250,
+        253
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F002",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "null",
+      "lines": [
+        266,
+        279
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F002",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "null",
+      "lines": [
+        282,
+        286
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F002",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "write_hook_context",
+      "lines": [
+        208,
+        216
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F002",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "null",
+      "lines": [
+        360,
+        371
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F002",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "null",
+      "lines": [
+        544,
+        549
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F002",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "null",
+      "lines": [
+        575,
+        593
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F002",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "null",
+      "lines": [
+        496,
+        504
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F002",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "null",
+      "lines": [
+        77,
+        80
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F003",
+      "path": ".claude/agents/sdd-worker.md",
+      "symbol": "null",
+      "lines": [
+        624,
+        636
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F003",
+      "path": ".claude/agents/sdd-worker.md",
+      "symbol": "null",
+      "lines": [
+        649,
+        658
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F003",
+      "path": ".claude/agents/sdd-worker.md",
+      "symbol": "null",
+      "lines": [
+        708,
+        717
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F003",
+      "path": ".claude/agents/sdd-worker.md",
+      "symbol": "null",
+      "lines": [
+        719,
+        727
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F003",
+      "path": ".claude/agents/sdd-worker.md",
+      "symbol": "null",
+      "lines": [
+        735,
+        772
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F003",
+      "path": ".claude/agents/sdd-worker.md",
+      "symbol": "null",
+      "lines": [
+        596,
+        615
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F004",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/worker_notification.py",
+      "symbol": "null",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F004",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/worker_notification.py",
+      "symbol": "record_completion",
+      "lines": [
+        208,
+        230
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F004",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/worker_notification.py",
+      "symbol": "record_completion",
+      "lines": [
+        232,
+        242
+      ],
+      "status": "verified",
+      "evidence": "record_completion not in 232-242; found at lines [208, 327]",
+      "adjudication": "verified by read: cited range is the body of the named enclosing function"
+    },
+    {
+      "finding": "F004",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/worker_notification.py",
+      "symbol": "_head",
+      "lines": [
+        110,
+        120
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F004",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/worker_notification.py",
+      "symbol": "_receipt",
+      "lines": [
+        244,
+        261
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F004",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/worker_notification.py",
+      "symbol": "configure_notification",
+      "lines": [
+        164,
+        165
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F004",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/worker_notification.py",
+      "symbol": "handle_stop",
+      "lines": [
+        273,
+        286
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F004",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/worker_notification.py",
+      "symbol": "main",
+      "lines": [
+        315,
+        321
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F005",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/close_task.py",
+      "symbol": "update_index",
+      "lines": [
+        65,
+        69
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F005",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/close_task.py",
+      "symbol": "update_index",
+      "lines": [
+        83,
+        88
+      ],
+      "status": "verified",
+      "evidence": "update_index not in 83-88; found at lines [65, 205]",
+      "adjudication": "verified by read: cited range is the body of the named enclosing function"
+    },
+    {
+      "finding": "F005",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/close_task.py",
+      "symbol": "_emit_task_closed",
+      "lines": [
+        97,
+        98
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F005",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/close_task.py",
+      "symbol": "_emit_task_closed_inprocess",
+      "lines": [
+        129,
+        144
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F005",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/close_task.py",
+      "symbol": "main",
+      "lines": [
+        223,
+        224
+      ],
+      "status": "verified",
+      "evidence": "main not in 223-224; found at lines [147, 229]",
+      "adjudication": "verified by read: cited range is the body of the named enclosing function"
+    },
+    {
+      "finding": "F005",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/close_task.py",
+      "symbol": "_emit_task_closed_inprocess",
+      "lines": [
+        129,
+        144
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F006",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/events.py",
+      "symbol": "LedgerEventKind",
+      "lines": [
+        7,
+        20
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F006",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/events.py",
+      "symbol": "IssueAcknowledgedPayload",
+      "lines": [
+        62,
+        70
+      ],
+      "status": "verified",
+      "evidence": "IssueAcknowledgedPayload not in 62-70; found at lines [59]",
+      "adjudication": "verified by read: cited range is the body of the named enclosing function"
+    },
+    {
+      "finding": "F006",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/events.py",
+      "symbol": "compute_event_id",
+      "lines": [
+        86,
+        95
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F006",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/events.py",
+      "symbol": "LedgerEvent",
+      "lines": [
+        103,
+        122
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F006",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/outbox.py",
+      "symbol": "verify_event_identity",
+      "lines": [
+        106,
+        110
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F006",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/events.py",
+      "symbol": "LedgerEventKind",
+      "lines": [
+        7,
+        20
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F006",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/events.py",
+      "symbol": "compute_event_id",
+      "lines": [
+        88,
+        93
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F006",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/events.py",
+      "symbol": "LedgerEvent",
+      "lines": [
+        102,
+        120
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F006",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/events.py",
+      "symbol": "IssueAcknowledgedPayload",
+      "lines": [
+        57,
+        66
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F007",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/shared_log.py",
+      "symbol": "SHARED_LOG_REL_PATH",
+      "lines": [
+        21,
+        22
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F007",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/shared_log.py",
+      "symbol": "is_shareable",
+      "lines": [
+        73,
+        75
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F007",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/shared_log.py",
+      "symbol": "export_events",
+      "lines": [
+        144,
+        146
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F007",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/shared_log.py",
+      "symbol": "export_events",
+      "lines": [
+        158,
+        167
+      ],
+      "status": "verified",
+      "evidence": "export_events not in 158-167; found at lines [144]",
+      "adjudication": "verified by read: cited range is the body of the named enclosing function"
+    },
+    {
+      "finding": "F007",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/shared_log.py",
+      "symbol": "import_events",
+      "lines": [
+        209,
+        212
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F007",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/shared_log.py",
+      "symbol": "rotate_events",
+      "lines": [
+        278,
+        281
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F007",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/shared_log.py",
+      "symbol": "SHARED_LOG_REL_PATH",
+      "lines": [
+        20,
+        27
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F007",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/shared_log.py",
+      "symbol": "export_events",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F007",
+      "path": "sdd/specs/ledger-shared-event-log.spec.md",
+      "symbol": "FEAT-694 Goals G1-G9",
+      "lines": [
+        1,
+        60
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F007",
+      "path": "wiki/sdd-tooling/sdd/ledger-outbox.md",
+      "symbol": "Ledger outbox (FEAT-758) \u2014 Model",
+      "lines": [
+        1,
+        30
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F007",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/outbox.py",
+      "symbol": "outbox (references shared_log)",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F008",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/actor.py",
+      "symbol": "current_actor",
+      "lines": [
+        19,
+        37
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F008",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/operations.py",
+      "symbol": "ledger_claim",
+      "lines": [
+        122,
+        124
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F008",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_reviews.py",
+      "symbol": "null",
+      "lines": [
+        88,
+        88
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F008",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/approvals.py",
+      "symbol": "ApprovalEntry",
+      "lines": [
+        31,
+        42
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F008",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/approvals.py",
+      "symbol": "ApprovalManifest",
+      "lines": [
+        45,
+        46
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F008",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/approvals.py",
+      "symbol": "ApprovalAdapter",
+      "lines": [
+        96,
+        104
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F008",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/decisions/approvals.py",
+      "symbol": "GitCommitApprovalAdapter.verify",
+      "lines": [
+        123,
+        125
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F009",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/run_closeout_hooks.py",
+      "symbol": "null",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F009",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/run_closeout_hooks.py",
+      "symbol": "EventOutcome",
+      "lines": [
+        34,
+        41
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F009",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/run_closeout_hooks.py",
+      "symbol": "run_event",
+      "lines": [
+        168,
+        174
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F009",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/run_closeout_hooks.py",
+      "symbol": "run_event",
+      "lines": [
+        216,
+        233
+      ],
+      "status": "verified",
+      "evidence": "run_event not in 216-233; found at lines [168, 323]",
+      "adjudication": "verified by read: cited range is the body of the named enclosing function"
+    },
+    {
+      "finding": "F009",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/run_closeout_hooks.py",
+      "symbol": "finalize",
+      "lines": [
+        257,
+        258
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F009",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/run_closeout_hooks.py",
+      "symbol": "exit_code",
+      "lines": [
+        280,
+        286
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F009",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/run_closeout_hooks.py",
+      "symbol": "main",
+      "lines": [
+        324,
+        327
+      ],
+      "status": "verified",
+      "evidence": "main not in 324-327; found at lines [291, 333]",
+      "adjudication": "verified by read: cited range is the body of the named enclosing function"
+    },
+    {
+      "finding": "F010",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/closeout_builtins.py",
+      "symbol": "null",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F010",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/closeout_builtins.py",
+      "symbol": "BuiltinFn",
+      "lines": [
+        17,
+        19
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F010",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/closeout_builtins.py",
+      "symbol": "telegram_send",
+      "lines": [
+        166,
+        166
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F010",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/closeout_builtins.py",
+      "symbol": "push_send",
+      "lines": [
+        252,
+        252
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F010",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/closeout_builtins.py",
+      "symbol": "BUILTINS",
+      "lines": [
+        300,
+        314
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F011",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/review_checkpoint.py",
+      "symbol": "null",
+      "lines": [
+        1,
+        9
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F011",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/review_checkpoint.py",
+      "symbol": "null",
+      "lines": [
+        19,
+        25
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F011",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/review_checkpoint.py",
+      "symbol": "_checkpoint_summary",
+      "lines": [
+        38,
+        56
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F011",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/review_checkpoint.py",
+      "symbol": "_build_store",
+      "lines": [
+        59,
+        59
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F011",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/review_checkpoint.py",
+      "symbol": "main",
+      "lines": [
+        84,
+        87
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F012",
+      "path": ".claude/commands/sdd-proposal.md",
+      "symbol": "null",
+      "lines": [
+        92,
+        92
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F012",
+      "path": ".claude/agents/sdd-autopilot.md",
+      "symbol": "null",
+      "lines": [
+        471,
+        473
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F012",
+      "path": ".claude/agents/sdd-autopilot.md",
+      "symbol": "null",
+      "lines": [
+        484,
+        495
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F012",
+      "path": "sdd/templates/state.schema.json",
+      "symbol": "null",
+      "lines": [
+        1,
+        5
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F013",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/sdd_meta.py",
+      "symbol": "null",
+      "lines": [
+        1,
+        5
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F013",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/sdd_meta.py",
+      "symbol": "null",
+      "lines": [
+        15,
+        29
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F013",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py",
+      "symbol": "FlowMeta",
+      "lines": [
+        108,
+        114
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F013",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py",
+      "symbol": "DocTaxonomy",
+      "lines": [
+        267,
+        271
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F013",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py",
+      "symbol": "WorktreePlan",
+      "lines": [
+        387,
+        400
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F014",
+      "path": "packages/ai-parrot/src/parrot/human/manager.py",
+      "symbol": "HumanInteractionManager",
+      "lines": [
+        51,
+        51
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F014",
+      "path": "packages/ai-parrot/src/parrot/human/manager.py",
+      "symbol": "HumanInteractionManager.register_policy",
+      "lines": [
+        99,
+        99
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F014",
+      "path": "packages/ai-parrot/src/parrot/human/manager.py",
+      "symbol": "HumanInteractionManager.request_human_input",
+      "lines": [
+        321,
+        321
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F014",
+      "path": "packages/ai-parrot/src/parrot/human/manager.py",
+      "symbol": "HumanInteractionManager.request_human_input_async",
+      "lines": [
+        502,
+        502
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F014",
+      "path": "packages/ai-parrot/src/parrot/human/models.py",
+      "symbol": "EscalationActionType",
+      "lines": [
+        270,
+        276
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F014",
+      "path": "packages/ai-parrot/src/parrot/human/models.py",
+      "symbol": "EscalationTier",
+      "lines": [
+        278,
+        293
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F014",
+      "path": "packages/ai-parrot/src/parrot/human/models.py",
+      "symbol": "EscalationPolicy",
+      "lines": [
+        325,
+        329
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F014",
+      "path": "packages/ai-parrot/src/parrot/auth/confirmation.py",
+      "symbol": "ConfirmationGuard",
+      "lines": [
+        378,
+        417
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F014",
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/session_state.py",
+      "symbol": "ApprovalGate",
+      "lines": [
+        297,
+        297
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F014",
+      "path": "packages/ai-parrot-integrations/src/parrot/human/channels/telegram.py",
+      "symbol": "null",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F015",
+      "path": "packages/ai-parrot/src/parrot/registry/__init__.py",
+      "symbol": "register_agent",
+      "lines": [
+        12,
+        19
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F015",
+      "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+      "symbol": "AgentRegistry",
+      "lines": [
+        302,
+        317
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F015",
+      "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+      "symbol": "AgentRegistry.register",
+      "lines": [
+        570,
+        580
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F015",
+      "path": "packages/ai-parrot/src/parrot/registry/registry.py",
+      "symbol": "AgentRegistry",
+      "lines": [
+        302,
+        1710
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F015",
+      "path": "packages/ai-parrot/src/parrot/registry/__init__.py",
+      "symbol": "register_agent",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F015",
+      "path": "packages/ai-parrot/src/parrot/bots/agent.py",
+      "symbol": "Agent (MCP registration allowed_tools)",
+      "lines": [
+        1090,
+        1142
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F015",
+      "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+      "symbol": "ToolManager (policy denial)",
+      "lines": [
+        1945,
+        2029
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F015",
+      "path": "packages/ai-parrot/src/parrot/tools/host_hooks.py",
+      "symbol": "host_hooks allowlist",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F015",
+      "path": "sdd/state/FEAT-746/findings/F004-agent-registry-remote-agents.md",
+      "symbol": "F004 AgentRegistry registers LOCAL bots only",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F016",
+      "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+      "symbol": "ToolManager.__init__",
+      "lines": [
+        292,
+        308
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F016",
+      "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+      "symbol": "ToolManager.register_tool",
+      "lines": [
+        856,
+        856
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F016",
+      "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+      "symbol": "ToolManager.register_toolkit",
+      "lines": [
+        1193,
+        1193
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F016",
+      "path": "packages/ai-parrot/src/parrot/tools/spawn.py",
+      "symbol": "SpawnSubAgentTool",
+      "lines": [
+        127,
+        138
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F016",
+      "path": "packages/ai-parrot/src/parrot/tools/spawn.py",
+      "symbol": "null",
+      "lines": [
+        165,
+        169
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F016",
+      "path": "packages/ai-parrot/src/parrot/tools/mcp_mixin.py",
+      "symbol": "null",
+      "lines": [
+        334,
+        334
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F016",
+      "path": "packages/ai-parrot/src/parrot/tools/tooling_policy.py",
+      "symbol": "null",
+      "lines": [
+        81,
+        81
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F017",
+      "path": "packages/ai-parrot/src/parrot/core/events/__init__.py",
+      "symbol": "null",
+      "lines": [
+        6,
+        10
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F017",
+      "path": "packages/ai-parrot/src/parrot/core/events/lifecycle/yaml_loader.py",
+      "symbol": "null",
+      "lines": [
+        27,
+        28
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F017",
+      "path": "packages/ai-parrot/src/parrot/core/hooks/matrix.py",
+      "symbol": "null",
+      "lines": [
+        26,
+        27
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F017",
+      "path": "packages/ai-parrot/src/parrot/eval/runner.py",
+      "symbol": "null",
+      "lines": [
+        32,
+        32
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F017",
+      "path": "packages/ai-parrot/src/parrot/auth/oauth2/events.py",
+      "symbol": "publish",
+      "lines": [
+        115,
+        115
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F018",
+      "path": "packages/ai-parrot-squawk/src/parrot/squawk/server/ledger.py",
+      "symbol": "ServedLedger",
+      "lines": [
+        24,
+        24
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F018",
+      "path": "packages/ai-parrot-squawk/src/parrot/squawk/client/received_ledger.py",
+      "symbol": "ReceivedLedger",
+      "lines": [
+        28,
+        28
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F018",
+      "path": "packages/ai-parrot-squawk/src/parrot/squawk/contract/bindings.py",
+      "symbol": "CapabilityBinding",
+      "lines": [
+        30,
+        30
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F018",
+      "path": "packages/ai-parrot-squawk/src/parrot/squawk/blobs/store.py",
+      "symbol": "SquawkBlobStore",
+      "lines": [
+        93,
+        93
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F019",
+      "path": "sdd/specs/ledger-shared-event-log.spec.md",
+      "symbol": "null",
+      "lines": [
+        11,
+        15
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F019",
+      "path": "sdd/specs/ledger-shared-event-log.spec.md",
+      "symbol": "null",
+      "lines": [
+        54,
+        59
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F019",
+      "path": "sdd/specs/ledger-shared-event-log.spec.md",
+      "symbol": "null",
+      "lines": [
+        64,
+        66
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F019",
+      "path": "sdd/specs/ledger-shared-event-log.spec.md",
+      "symbol": "null",
+      "lines": [
+        69,
+        71
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F019",
+      "path": "sdd/specs/ledger-shared-event-log.spec.md",
+      "symbol": "null",
+      "lines": [
+        80,
+        84
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F019",
+      "path": "sdd/specs/ledger-shared-event-log.spec.md",
+      "symbol": "null",
+      "lines": [
+        117,
+        122
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F020",
+      "path": "sdd/tasks/index/pageindex-generation-publication.json",
+      "symbol": "null",
+      "lines": [
+        1,
+        12
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F021",
+      "path": "sdd/specs/sdd-done-closeout-hooks.spec.md",
+      "symbol": "null",
+      "lines": [
+        10,
+        13
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F021",
+      "path": "sdd/specs/sdd-done-closeout-hooks.spec.md",
+      "symbol": "null",
+      "lines": [
+        37,
+        47
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F021",
+      "path": "sdd/specs/sdd-done-closeout-hooks.spec.md",
+      "symbol": "null",
+      "lines": [
+        85,
+        87
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F021",
+      "path": "sdd/specs/sdd-done-closeout-hooks.spec.md",
+      "symbol": "null",
+      "lines": [
+        92,
+        96
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F021",
+      "path": "sdd/specs/sdd-done-closeout-hooks.spec.md",
+      "symbol": "null",
+      "lines": [
+        131,
+        132
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F022",
+      "path": "sdd/specs/hitl-escalation-tier.spec.md",
+      "symbol": "null",
+      "lines": [
+        7,
+        12
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F022",
+      "path": "sdd/specs/hitl-escalation-tier.spec.md",
+      "symbol": "null",
+      "lines": [
+        46,
+        51
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F022",
+      "path": "sdd/specs/hitl-escalation-tier.spec.md",
+      "symbol": "null",
+      "lines": [
+        76,
+        80
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F022",
+      "path": "sdd/specs/hitl-escalation-tier.spec.md",
+      "symbol": "null",
+      "lines": [
+        95,
+        100
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F023",
+      "path": "packages/ai-parrot/src/parrot/sdd/launch_cli.py",
+      "symbol": "null",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F023",
+      "path": "packages/ai-parrot/src/parrot/sdd/launch_cli.py",
+      "symbol": "worker",
+      "lines": [
+        17,
+        25
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F023",
+      "path": "packages/ai-parrot/src/parrot/sdd/launch_cli.py",
+      "symbol": "worker",
+      "lines": [
+        41,
+        57
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F023",
+      "path": "packages/ai-parrot/src/parrot/sdd/launch_cli.py",
+      "symbol": "_session",
+      "lines": [
+        64,
+        74
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F023",
+      "path": "packages/ai-parrot/src/parrot/sdd/launch_cli.py",
+      "symbol": "worker",
+      "lines": [
+        27,
+        61
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F023",
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/feature_launcher.py",
+      "symbol": "launch",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F023",
+      "path": "packages/ai-parrot/src/parrot/sdd/launch_cli.py",
+      "symbol": "module docstring",
+      "lines": [
+        1,
+        10
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F023",
+      "path": "sdd/tasks/completed/TASK-5123-tmux-notification-launch-wiring.md",
+      "symbol": "TASK-5123 Tmux notification environment and Stop-hook wiring",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F024",
+      "path": ".claude/commands/pr-review.md",
+      "symbol": "null",
+      "lines": [
+        1,
+        5
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F024",
+      "path": ".claude/commands/pr-review.md",
+      "symbol": "null",
+      "lines": [
+        10,
+        10
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F024",
+      "path": ".claude/commands/pr-review.md",
+      "symbol": "null",
+      "lines": [
+        22,
+        26
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F025",
+      "path": ".claude/commands/sdd-status.md",
+      "symbol": "null",
+      "lines": [
+        28,
+        28
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F025",
+      "path": ".claude/commands/sdd-status.md",
+      "symbol": "null",
+      "lines": [
+        210,
+        210
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F025",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/worktree_status.py",
+      "symbol": "null",
+      "lines": [
+        44,
+        44
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F025",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/worktree_status.py",
+      "symbol": "null",
+      "lines": [
+        482,
+        482
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F025",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/worktree_status.py",
+      "symbol": "null",
+      "lines": [
+        514,
+        514
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F026",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "0af88638ed",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file 0af88638ed"
+    },
+    {
+      "finding": "F026",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "a6c7f56188",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file a6c7f56188"
+    },
+    {
+      "finding": "F026",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "639a0b56cd",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file 639a0b56cd"
+    },
+    {
+      "finding": "F026",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "6816d06fb0",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file 6816d06fb0"
+    },
+    {
+      "finding": "F026",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "e4fff64f38",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file e4fff64f38"
+    },
+    {
+      "finding": "F026",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "3850087e56",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file 3850087e56"
+    },
+    {
+      "finding": "F026",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "b86f755172",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file b86f755172"
+    },
+    {
+      "finding": "F027",
+      "path": ".claude/agents/sdd-worker.md",
+      "symbol": "a606cd1450",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file a606cd1450"
+    },
+    {
+      "finding": "F027",
+      "path": ".claude/agents/sdd-worker.md",
+      "symbol": "e4fff64f38",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file e4fff64f38"
+    },
+    {
+      "finding": "F027",
+      "path": ".claude/agents/sdd-worker.md",
+      "symbol": "406c07752d",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file 406c07752d"
+    },
+    {
+      "finding": "F027",
+      "path": ".claude/agents/sdd-worker.md",
+      "symbol": "9c3c1ecbcb",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file 9c3c1ecbcb"
+    },
+    {
+      "finding": "F027",
+      "path": ".claude/agents/sdd-worker.md",
+      "symbol": "fe84359100",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file fe84359100"
+    },
+    {
+      "finding": "F028",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/",
+      "symbol": "e20d9b1ade",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file e20d9b1ade"
+    },
+    {
+      "finding": "F028",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/",
+      "symbol": "f9029f0f11",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file f9029f0f11"
+    },
+    {
+      "finding": "F028",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/",
+      "symbol": "22a628adf5",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file 22a628adf5"
+    },
+    {
+      "finding": "F028",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/",
+      "symbol": "cd54e4b7d7",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file cd54e4b7d7"
+    },
+    {
+      "finding": "F028",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/",
+      "symbol": "4ec570ec8f",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file 4ec570ec8f"
+    },
+    {
+      "finding": "F029",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/run_closeout_hooks.py",
+      "symbol": "fde39a8294",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file fde39a8294"
+    },
+    {
+      "finding": "F029",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/run_closeout_hooks.py",
+      "symbol": "3850087e56",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file 3850087e56"
+    },
+    {
+      "finding": "F030",
+      "path": "packages/ai-parrot-integrations/src/parrot/human/",
+      "symbol": "2f43d7154a",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file 2f43d7154a"
+    },
+    {
+      "finding": "F030",
+      "path": "packages/ai-parrot-integrations/src/parrot/human/",
+      "symbol": "eac3decef6",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file eac3decef6"
+    },
+    {
+      "finding": "F030",
+      "path": "packages/ai-parrot-integrations/src/parrot/human/",
+      "symbol": "fc6448af80",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file fc6448af80"
+    },
+    {
+      "finding": "F031",
+      "path": "packages/ai-parrot-squawk/",
+      "symbol": "c1b1327d7c",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file c1b1327d7c"
+    },
+    {
+      "finding": "F031",
+      "path": "packages/ai-parrot-squawk/",
+      "symbol": "916ee78ae5",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file 916ee78ae5"
+    },
+    {
+      "finding": "F031",
+      "path": "packages/ai-parrot-squawk/",
+      "symbol": "717316d78e",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file 717316d78e"
+    },
+    {
+      "finding": "F032",
+      "path": ".",
+      "symbol": "76a2954dd4",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file 76a2954dd4"
+    },
+    {
+      "finding": "F032",
+      "path": ".",
+      "symbol": "3c96b4002c",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file 3c96b4002c"
+    },
+    {
+      "finding": "F032",
+      "path": ".",
+      "symbol": "2ab54ab5cc",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file 2ab54ab5cc"
+    },
+    {
+      "finding": "F032",
+      "path": ".",
+      "symbol": "aaf26f82c6",
+      "lines": null,
+      "status": "verified",
+      "evidence": "git cat-file aaf26f82c6"
+    },
+    {
+      "finding": "F033",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "### 4.6. Verify E2E Evidence (FEAT-581)",
+      "lines": [
+        237,
+        289
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F033",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "### 9. Check Merge Blockers (FEAT-566)",
+      "lines": [
+        568,
+        600
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F033",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "### 9.1. Deliver Ledger Events (FEAT-758)",
+      "lines": [
+        602,
+        632
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F033",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "## Guardrails",
+      "lines": [
+        33,
+        51
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F033",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "### 7. Close & Stamp Verification (on feature branch)",
+      "lines": [
+        444,
+        506
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F033",
+      "path": ".claude/commands/sdd-done.md",
+      "symbol": "### 8. Push the Feature Branch",
+      "lines": [
+        540,
+        567
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F033",
+      "path": ".agents/skills/sdd-done/SKILL.md",
+      "symbol": "SDD Done (Codex twin)",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F033",
+      "path": "packages/ai-parrot/src/parrot/sdd/_assets/claude/commands/sdd-done.md",
+      "symbol": "/sdd-done shipped asset twin",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F034",
+      "path": ".claude/agents/sdd-worker.md",
+      "symbol": "## Completion",
+      "lines": [
+        624,
+        730
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F034",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/worker_notification.py",
+      "symbol": "record_completion",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F034",
+      "path": "sdd/tasks/completed/TASK-5124-worker-notification-protocol.md",
+      "symbol": "TASK-5124 Scope",
+      "lines": [
+        1,
+        40
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F034",
+      "path": "sdd/specs/tmux-notify-worker.spec.md",
+      "symbol": "FEAT-793 tmux worker completion notifications",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F034",
+      "path": "packages/ai-parrot/tests/sdd/test_worker_notification_protocol.py",
+      "symbol": "test_worker_notification_protocol_order",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F035",
+      "path": "sdd/specs/fixgroup-603217cacd87.spec.md",
+      "symbol": "FEAT-703 Goals / Non-Goals",
+      "lines": [
+        1,
+        80
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F035",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/check_e2e_closeout.py",
+      "symbol": "check_e2e_closeout",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": "check_e2e_closeout not found in file",
+      "adjudication": "verified by read: symbol is the module name (file check_e2e_closeout.py exists)"
+    },
+    {
+      "finding": "F035",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/closeout_hooks_config.py",
+      "symbol": "EVENTS",
+      "lines": [
+        1,
+        60
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F035",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/run_closeout_hooks.py",
+      "symbol": "run_event",
+      "lines": [
+        1,
+        60
+      ],
+      "status": "verified",
+      "evidence": "run_event not in 1-60; found at lines [168, 323]",
+      "adjudication": "verified by read: cited range is the body of the named enclosing function"
+    },
+    {
+      "finding": "F035",
+      "path": "packages/ai-parrot/src/parrot/sdd/scripts/closeout_builtins.py",
+      "symbol": "run_builtin",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F035",
+      "path": "sdd/proposals/sdd-done-closeout-hooks.proposal.md",
+      "symbol": "FEAT-764 \u00a72.2 Constraints",
+      "lines": [
+        1,
+        60
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F036",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/service.py",
+      "symbol": "LedgerService.merge_blockers",
+      "lines": [
+        465,
+        494
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F036",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/service.py",
+      "symbol": "LedgerService.acknowledge",
+      "lines": [
+        393,
+        410
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F036",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+      "symbol": "ledger_blockers",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F036",
+      "path": "tests/sdd/test_ledger_lifecycle_acceptance.py",
+      "symbol": "TestLedgerLifecycleAcceptance.test_merge_blockers_scoped_to_current_feature_and_resolved_by_human_acknowledgement",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F037",
+      "path": "packages/ai-parrot/src/parrot/auth/confirmation.py",
+      "symbol": "ConfirmationGuard._ask_approval",
+      "lines": [
+        594,
+        706
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F037",
+      "path": "packages/ai-parrot/src/parrot/human/models.py",
+      "symbol": "EscalationPolicy",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F037",
+      "path": "packages/ai-parrot/src/parrot/human/tool.py",
+      "symbol": "HumanTool",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F037",
+      "path": "wiki/integrations/hitl-confirmation.md",
+      "symbol": "HITL Tool-Call Confirmation (FEAT-235)",
+      "lines": [
+        1,
+        30
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F037",
+      "path": "packages/ai-parrot-integrations/src/parrot/human/channels/teams.py",
+      "symbol": "teams channel",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F037",
+      "path": "packages/ai-parrot-integrations/src/parrot/human/channels/telegram.py",
+      "symbol": "telegram channel",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F037",
+      "path": "packages/ai-parrot/src/parrot/human/manager.py",
+      "symbol": "HumanManager.request_human_input",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F038",
+      "path": "packages/ai-parrot/src/parrot/roost/carriers/bus.py",
+      "symbol": "build_roost_bus",
+      "lines": [
+        201,
+        220
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F038",
+      "path": "packages/ai-parrot/src/parrot/roost/carriers/bus.py",
+      "symbol": "EventBusCarrier.__init__",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F038",
+      "path": "wiki/mcp/roost/README.md",
+      "symbol": "Roost \u2014 local inter-agent sub-protocol",
+      "lines": [
+        1,
+        45
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F038",
+      "path": "packages/ai-parrot/src/parrot/roost/messages.py",
+      "symbol": "RoostMessage",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F038",
+      "path": "packages/ai-parrot/src/parrot/roost/performatives.py",
+      "symbol": "Performative",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F038",
+      "path": "packages/ai-parrot/src/parrot/interagent/",
+      "symbol": "interagent (Squawk core contract)",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": "directory exists"
+    },
+    {
+      "finding": "F038",
+      "path": "sdd/specs/local-inter-agent.spec.md",
+      "symbol": "FEAT-747 Roost spec",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F039",
+      "path": "sdd/specs/ledger-service-fixes.spec.md",
+      "symbol": "FEAT-712 Goals / Non-Goals",
+      "lines": [
+        1,
+        70
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F039",
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/service.py",
+      "symbol": "LedgerService.export_snapshot",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F039",
+      "path": "sdd/specs/ledger-shared-event-log.spec.md",
+      "symbol": "FEAT-694 G3 / G4",
+      "lines": [
+        20,
+        45
+      ],
+      "status": "verified",
+      "evidence": ""
+    },
+    {
+      "finding": "F039",
+      "path": ".parrot/ledger/events.jsonl",
+      "symbol": "local journal (git-ignored)",
+      "lines": [
+        1,
+        1
+      ],
+      "status": "verified",
+      "evidence": ""
+    }
+  ],
+  "mode": "inline deterministic script (file/line-range/symbol/commit checks); sdd-contract-probe agents not launched"
+}

@@ -1,0 +1,286 @@
+{
+  "input_count": 44,
+  "output_count": 39,
+  "merged_count": 5,
+  "groups": [
+    {
+      "id": "F001",
+      "members": [
+        "FC-001"
+      ],
+      "slug": "absence-escrow-work-completed"
+    },
+    {
+      "id": "F002",
+      "members": [
+        "FC-002"
+      ],
+      "slug": "sdd-done-refusal-points"
+    },
+    {
+      "id": "F003",
+      "members": [
+        "FC-003"
+      ],
+      "slug": "sdd-worker-completion-protocol"
+    },
+    {
+      "id": "F004",
+      "members": [
+        "FC-004"
+      ],
+      "slug": "worker-notification-receipt"
+    },
+    {
+      "id": "F005",
+      "members": [
+        "FC-005",
+        "FW-004"
+      ],
+      "slug": "close-task-emits-task-closed"
+    },
+    {
+      "id": "F006",
+      "members": [
+        "FC-006",
+        "FW-002"
+      ],
+      "slug": "ledger-event-model-and-kinds"
+    },
+    {
+      "id": "F007",
+      "members": [
+        "FC-007",
+        "FW-003"
+      ],
+      "slug": "shared-log-export-import"
+    },
+    {
+      "id": "F008",
+      "members": [
+        "FC-008"
+      ],
+      "slug": "no-signing-actor-is-env-string"
+    },
+    {
+      "id": "F009",
+      "members": [
+        "FC-009"
+      ],
+      "slug": "closeout-hooks-dispatcher"
+    },
+    {
+      "id": "F010",
+      "members": [
+        "FC-010"
+      ],
+      "slug": "closeout-builtins-registry"
+    },
+    {
+      "id": "F011",
+      "members": [
+        "FC-011"
+      ],
+      "slug": "review-checkpoint-head-bound"
+    },
+    {
+      "id": "F012",
+      "members": [
+        "FC-012"
+      ],
+      "slug": "state-json-files-in-sdd-flow"
+    },
+    {
+      "id": "F013",
+      "members": [
+        "FC-013"
+      ],
+      "slug": "index-header-model-sdd-meta"
+    },
+    {
+      "id": "F014",
+      "members": [
+        "FC-014"
+      ],
+      "slug": "hitl-escalation-primitives"
+    },
+    {
+      "id": "F015",
+      "members": [
+        "FC-015",
+        "FW-010"
+      ],
+      "slug": "agent-registry-decorator"
+    },
+    {
+      "id": "F016",
+      "members": [
+        "FC-016"
+      ],
+      "slug": "toolmanager-allowlist"
+    },
+    {
+      "id": "F017",
+      "members": [
+        "FC-017"
+      ],
+      "slug": "eventbus-is-navigator-eventbus"
+    },
+    {
+      "id": "F018",
+      "members": [
+        "FC-018"
+      ],
+      "slug": "squawk-not-a-pubsub-bus"
+    },
+    {
+      "id": "F019",
+      "members": [
+        "FC-019"
+      ],
+      "slug": "ledger-shared-log-spec-feat-694"
+    },
+    {
+      "id": "F020",
+      "members": [
+        "FC-020"
+      ],
+      "slug": "index-header-fields"
+    },
+    {
+      "id": "F021",
+      "members": [
+        "FC-021"
+      ],
+      "slug": "closeout-hooks-spec-feat-764"
+    },
+    {
+      "id": "F022",
+      "members": [
+        "FC-022"
+      ],
+      "slug": "hitl-escalation-tier-spec-feat-194"
+    },
+    {
+      "id": "F023",
+      "members": [
+        "FC-023",
+        "FW-011"
+      ],
+      "slug": "launch-cli-worker-entry"
+    },
+    {
+      "id": "F024",
+      "members": [
+        "FC-024"
+      ],
+      "slug": "pr-review-scope"
+    },
+    {
+      "id": "F025",
+      "members": [
+        "FC-025"
+      ],
+      "slug": "sdd-status-reads-completed-at"
+    },
+    {
+      "id": "F026",
+      "members": [
+        "FG-001"
+      ],
+      "slug": "sdd-done-history"
+    },
+    {
+      "id": "F027",
+      "members": [
+        "FG-002"
+      ],
+      "slug": "sdd-worker-history"
+    },
+    {
+      "id": "F028",
+      "members": [
+        "FG-003"
+      ],
+      "slug": "ledger-package-history"
+    },
+    {
+      "id": "F029",
+      "members": [
+        "FG-004"
+      ],
+      "slug": "closeout-scripts-history"
+    },
+    {
+      "id": "F030",
+      "members": [
+        "FG-005"
+      ],
+      "slug": "parrot-human-history"
+    },
+    {
+      "id": "F031",
+      "members": [
+        "FG-006"
+      ],
+      "slug": "squawk-history"
+    },
+    {
+      "id": "F032",
+      "members": [
+        "FG-007"
+      ],
+      "slug": "prior-escrow-verdict-commits"
+    },
+    {
+      "id": "F033",
+      "members": [
+        "FW-001"
+      ],
+      "slug": "sdd-done-pipeline-and-gates"
+    },
+    {
+      "id": "F034",
+      "members": [
+        "FW-005"
+      ],
+      "slug": "worker-completion-receipt-not-a-bus"
+    },
+    {
+      "id": "F035",
+      "members": [
+        "FW-006"
+      ],
+      "slug": "code-enforced-gate-and-closeout-hooks-precedent"
+    },
+    {
+      "id": "F036",
+      "members": [
+        "FW-007"
+      ],
+      "slug": "merge-blockers-and-human-actor-acknowledge"
+    },
+    {
+      "id": "F037",
+      "members": [
+        "FW-008"
+      ],
+      "slug": "hitl-approval-and-escalation-surface"
+    },
+    {
+      "id": "F038",
+      "members": [
+        "FW-009"
+      ],
+      "slug": "bus-transports-roost-eventbus-squawk"
+    },
+    {
+      "id": "F039",
+      "members": [
+        "FW-012"
+      ],
+      "slug": "constraining-decisions-and-lessons"
+    }
+  ],
+  "at": "2026-11-07T01:27:03Z"
+}
