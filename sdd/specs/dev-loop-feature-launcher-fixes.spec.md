@@ -209,10 +209,15 @@ with the appended checks.
 
 ### Validation Contract
 
-```bash
-PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/sdd/test_config.py packages/ai-parrot/tests/sdd/test_sdd_launch.py packages/ai-parrot/tests/self_/test_doctor_sdd.py -q
-ruff check packages/ai-parrot/src/parrot/sdd/config.py packages/ai-parrot/src/parrot/flows/dev_loop/feature_launcher.py
-```
+tests:
+- packages/ai-parrot/tests/sdd/test_config.py
+- packages/ai-parrot/tests/sdd/test_sdd_launch.py
+- packages/ai-parrot/tests/self_/test_doctor_sdd.py
+markers: none
+
+### Lint
+
+`ruff check packages/ai-parrot/src/parrot/sdd/config.py packages/ai-parrot/src/parrot/flows/dev_loop/feature_launcher.py`.
 
 ### Test Data / Fixtures
 

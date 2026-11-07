@@ -1,0 +1,71 @@
+{
+  "feature": "dev-loop-feature-launcher-fixes",
+  "feature_id": "FEAT-837",
+  "spec": "sdd/specs/dev-loop-feature-launcher-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-07T00:18:42.610339+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/sdd/test_config.py",
+          "packages/ai-parrot/tests/sdd/test_sdd_launch.py",
+          "packages/ai-parrot/tests/self_/test_doctor_sdd.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:5882db03c57ad176d595f493c2417c48b772d65bc501551c5400410bbeed1421"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5296",
+      "slug": "migration-recipe-live-guard",
+      "title": "Live-process guard and post-move check in the legacy migration recipe",
+      "feature_id": "FEAT-837",
+      "feature": "dev-loop-feature-launcher-fixes",
+      "spec": "sdd/specs/dev-loop-feature-launcher-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no edges: touches only sdd/config.py + tests/sdd/test_config.py, disjoint from TASK-5297",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5296-migration-recipe-live-guard.md"
+    },
+    {
+      "id": "TASK-5297",
+      "slug": "launcher-reattach-brief-branch",
+      "title": "Re-attach an orphaned brief branch in the feature launcher",
+      "feature_id": "FEAT-837",
+      "feature": "dev-loop-feature-launcher-fixes",
+      "spec": "sdd/specs/dev-loop-feature-launcher-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no edges: touches only flows/dev_loop/feature_launcher.py + tests/sdd/test_sdd_launch.py; runs worktree_root out of process, imports nothing from TASK-5296",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5297-launcher-reattach-brief-branch.md"
+    }
+  ]
+}
