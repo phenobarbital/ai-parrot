@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-840 — PageIndex Segment Store
 **Spec**: `sdd/specs/pageindex-segment-store.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5300
