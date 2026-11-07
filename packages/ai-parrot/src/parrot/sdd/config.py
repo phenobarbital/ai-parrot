@@ -203,7 +203,8 @@ def legacy_migration_recipe(repo_root: Path, paths: Sequence[Path]) -> list[str]
         A fail-fast shell recipe, or an empty list when there are no paths.
 
     Raises:
-        ValueError: When a mapping is unsafe or a destination is already occupied.
+        ValueError: When a mapping is unsafe, a destination is already occupied, or a legacy worktree has a
+            live process inside it.
     """
     if not paths:
         return []
@@ -240,6 +241,17 @@ def legacy_migration_recipe(repo_root: Path, paths: Sequence[Path]) -> list[str]
         if os.path.lexists(destination):
             raise ValueError(f"migration destination already exists: {destination}")
 
+    from parrot.sdd.scripts import remove_worktree  # lazy: remove_worktree imports this module
+
+    for old_path, _ in topmost:
+        live = remove_worktree.live_processes_in(old_path)
+        if live:
+            pids = ", ".join(str(pid) for pid, _ in live)
+            raise ValueError(
+                f"legacy worktree has {len(live)} live process(es) inside, wait for them to exit: "
+                f"{old_path} (pids: {pids})"
+            )
+
     quote = shlex.quote
     lines = ["(", "set -e"]
     for _, destination in topmost:
@@ -254,6 +266,11 @@ def legacy_migration_recipe(repo_root: Path, paths: Sequence[Path]) -> list[str]
         lines.append(f"mv {quote(str(old_path))} {quote(str(destination))}")
     repaired_paths = " ".join(quote(str(destination)) for _, destination in mappings)
     lines.append(f"git -C {quote(str(root))} worktree repair {repaired_paths}")
+    for _, destination in mappings:
+        message = quote(f"error: migrated worktree is not a git checkout: {destination}")
+        lines.append(
+            f"git -C {quote(str(destination))} rev-parse --git-dir >/dev/null || {{ echo {message} >&2; exit 1; }}"
+        )
     lines.append(")")
     return lines
 
