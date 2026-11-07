@@ -141,7 +141,7 @@
       "feature_id": "FEAT-840",
       "feature": "pageindex-segment-store",
       "spec": "sdd/specs/pageindex-segment-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -149,8 +149,9 @@
       "parallelism_notes": "No dependencies: touches only security/prompt_injection.py, security/__init__.py and the guardrail's Protocol alias, which no other FEAT-840 task edits.",
       "assigned_to": null,
       "started_at": "2026-11-07T01:32:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5304-injection-engine-accessor.md"
+      "completed_at": "2026-11-07T01:38:21+00:00",
+      "file": "sdd/tasks/completed/TASK-5304-injection-engine-accessor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5305",
