@@ -161,7 +161,7 @@
       "feature_id": "FEAT-840",
       "feature": "pageindex-segment-store",
       "spec": "sdd/specs/pageindex-segment-store.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -172,8 +172,9 @@
       "parallelism_notes": "Depends on TASK-5300 (mutates Segment/InjectionMark from segments.py) and TASK-5304 (types the engine with InjectionScoringEngine from security/prompt_injection.py).",
       "assigned_to": null,
       "started_at": "2026-11-07T01:32:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5305-injection-scan.md"
+      "completed_at": "2026-11-07T01:39:54+00:00",
+      "file": "sdd/tasks/completed/TASK-5305-injection-scan.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5306",
