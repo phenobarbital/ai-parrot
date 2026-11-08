@@ -207,3 +207,7 @@ Validation: test_agy_permissions.py → 123 passed; test_sdd_cli.py + test_dange
 ruff clean, black applied. Live check (agy 1.4.12, interactive, `--settings` carrying `SDD_ALLOW_RULES`, the
 worktree hook in `.agents/hooks.json`): `find . -maxdepth 1 -name '*.txt' | head -n 5` ran with no prompt;
 `find . -maxdepth 1 -name 'zzz*.tmp' -delete` prompted with `Reason: \`find -delete\` runs or deletes`.
+
+Addendum (after the adversarial review, commits dbd7ea23a5, c66cf41957, c22113dbe0): the classifier was rewritten
+to positive allowlists for the high-risk commands, the tracked `.agents/hooks.json` now runs
+`scripts/sdd/agy_hook.sh`, and any failure answers `force_ask` (see HOTFIX-agy-permission-hook-2's note).

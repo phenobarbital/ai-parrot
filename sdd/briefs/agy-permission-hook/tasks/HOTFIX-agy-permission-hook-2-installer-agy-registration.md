@@ -2,7 +2,7 @@
 
 **Feature**: agy-permission-hook — make the SDD command surface usable from the Antigravity CLI
 **Spec**: `sdd/briefs/agy-permission-hook.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: HOTFIX-agy-permission-hook-1
@@ -144,4 +144,33 @@ Read the brief first. Touch only the listed files. Never touch the real `HOME` i
 
 ## Completion Note
 
-<!-- filled in when the task closes -->
+`installer.py`: `AGY_HOOK_LINE`/`AGY_HOOK_NAME`/`AGY_HOOKS_PATH`, `agy_hook_command` (bare/baked like C32),
+`agy_settings_paths`, `_install_agy_permissions` / `_remove_agy_permissions` / `_agy_permissions_report`, plan
+actions `agy-permissions` / `agy-permissions-remove` (google host), `--no-agy-permissions` on `parrot sdd install`,
+`sdd_status()["agy_permissions"]`. Docs: `wiki/operations/install/global-runtime.md` § Antigravity (agy).
+
+Deviations from the task text, each driven by the adversarial review (codex, two rounds, plus a Claude subagent;
+every claimed bypass was reproduced before fixing and is now a regression test):
+- Ownership is NOT in the committed receipt: a machine-local `parrot-sdd-rules.json` next to each agy
+  `settings.json` records the rules parrot added there and the repositories using them; uninstall removes them only
+  when no repository remains and never a rule the user already had (receipt-wide ownership deleted pre-existing user
+  rules across files and broke other repositories).
+- Rules are installed only when the hook is registered; `settings.json` is created only when agy's directory exists
+  (nothing in a HOME where agy never ran); writes are atomic (`mkstemp` + `os.replace`, permission bits and
+  non-ASCII kept); status checks the hook is active (`run_command`, `type: command`) and reports every settings file.
+- agy refuses a command whose hook fails (verified live). ai-parrot's tracked `.agents/hooks.json` therefore runs
+  `scripts/sdd/agy_hook.sh` (checkout source + main-checkout `.venv`, like `codex_hook.sh`), and every failure —
+  launcher or policy `main()` — answers `force_ask`, never neutral. Install keeps that launcher form.
+- Policy (task 1 module) rewritten after review: positive allowlists for git push/switch/merge/config/remote/
+  worktree, `parrot sdd` and `wikitoolkit`; short clusters and abbreviations; quote-aware heredocs; brace
+  expansion, globs, symlinks and trusted-substitution traversal; attached option values; redirects into control
+  dirs; pytest output/override options; PYTHONPATH values; bare `git push` resolved from `.git/config`.
+- Rejected review items (with reason): pytest running repository test code (decision 3); overwriting ordinary
+  workspace files (that is the agent's job); `parrot sdd ids reserve` / `tests select --run` (the SDD surface itself);
+  migrating a receipt `agy_rules` field (only ever existed in an unreleased commit of this branch).
+
+Validation: test_agy_permissions.py + test_installer_agy_permissions.py → 227 passed; with test_installer.py,
+test_installer_dangerous_guard.py, test_installer_toolkits.py, test_sdd_cli.py, test_dangerous_actions.py,
+test_no_repo_script_refs.py and the docs claims test → all green; ruff clean, black applied. Live (agy 1.4.12,
+interactive, in this worktree, tracked hook + launcher, managed rules via `--settings`): `find … | head`,
+`wikitoolkit status` and `git -C <wt> log` ran with no prompt; `git branch -Df …` prompted with the hook's reason.
