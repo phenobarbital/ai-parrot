@@ -164,3 +164,28 @@ async def test_load_does_not_cache_old_tree_with_new_signature(tmp_path: Path, m
     assert toolkit._load_tree("tree")["doc_name"] == "old"
     monkeypatch.setattr(toolkit._store, "load", original_load)
     assert toolkit._load_tree("tree")["doc_name"] == "replacement"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ('Here is the JSON:\n```json\n{"a": 1}\n```', {"a": 1}),
+        ('Sure:\n```json\n{"physical_index": None}\n```', {"physical_index": None}),
+        ('{"text": "line one\nline two"}', {"text": "line one\nline two"}),
+        ('{"text": "a\tb", }', {"text": "a\tb"}),
+        ('{"code": "```py\\nx\\n```", }', {"code": "```py\nx\n```"}),
+    ],
+)
+def test_json_accepts_prose_fences_and_raw_newlines(raw: str, expected: dict) -> None:
+    """Prose before a fence and raw newlines in strings are common LLM output."""
+    assert extract_json(raw) == expected
+
+
+@pytest.mark.asyncio
+async def test_markdown_preamble_is_sibling_of_level_two_sections(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Text before '##' headings must not become the parent of every section."""
+    monkeypatch.setattr("parrot.knowledge.pageindex.md_builder.count_tokens", lambda text: len(text))
+    tree = await md_to_tree("Intro.\n\n## Install\nRun it.\n\n## Usage\nCall it.")
+    assert [node["title"] for node in tree["structure"]] == ["Introduction", "Install", "Usage"]
+    assert all("nodes" not in node for node in tree["structure"])
+    assert tree["structure"][0]["text"] == "Intro."
