@@ -11,9 +11,21 @@ def test_page_has_frontmatter_api_and_reasons() -> None:
     assert text.startswith("---\ntitle: ")
     assert "\nsummary: " in text
     for name in (
-        "ReadLedger", "validate_citations", "EvidenceBundle", "agentic_retrieve", "clone_for_tools",
-        "bad_address", "revision_unread", "revision_unavailable", "segment_unread", "empty_excerpt",
-        "excerpt_not_found", "outside_covered_ranges", "no_tool_calls", "max_tool_calls", "parse_error",
+        "ReadLedger",
+        "validate_citations",
+        "EvidenceBundle",
+        "agentic_retrieve",
+        "clone_for_tools",
+        "bad_address",
+        "revision_unread",
+        "revision_unavailable",
+        "segment_unread",
+        "empty_excerpt",
+        "excerpt_not_found",
+        "outside_covered_ranges",
+        "no_tool_calls",
+        "max_tool_calls",
+        "parse_error",
     ):
         assert name in text
 
