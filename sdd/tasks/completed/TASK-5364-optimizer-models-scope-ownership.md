@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-846 — PageIndex Tree Optimizer
 **Spec**: `sdd/specs/pageindex-tree-optimizer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none
@@ -317,4 +317,9 @@ Spec §4 rows `test_owned_tokens_and_scope`, `test_repair_gaps_and_reject_overla
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed**: 2026-11-09 | **Implementation commit**: cee0097036
+
+Delivered via sdd-coder pool (merged). Scope: optimizer models, scope and ownership (optimizer.py).
+Validation: merge-tier run for wave 1 (TASK-5364/5368/5369) — 324 passed, exit 0.
+Deviations: none noted (TASK-5369 coder also made get_concept/cite return the absorber's concept_id for alias lookups, inside the listed file).
+

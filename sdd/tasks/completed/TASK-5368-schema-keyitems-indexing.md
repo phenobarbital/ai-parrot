@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-846 — PageIndex Tree Optimizer
 **Spec**: `sdd/specs/pageindex-tree-optimizer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -205,4 +205,9 @@ Spec §4 rows `test_schema_fields_roundtrip`, `test_bm25_and_embedding_see_key_i
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed**: 2026-11-09 | **Implementation commit**: 83ad05763d
+
+Delivered via sdd-coder pool (merged). Scope: key_items schema + indexing (schemas, embedding_store, hybrid_search).
+Validation: merge-tier run for wave 1 (TASK-5364/5368/5369) — 324 passed, exit 0.
+Deviations: none noted (TASK-5369 coder also made get_concept/cite return the absorber's concept_id for alias lookups, inside the listed file).
+
