@@ -595,7 +595,9 @@ tests:
 - packages/ai-parrot/tests/knowledge/pageindex/test_toolkit.py
 - packages/ai-parrot/tests/knowledge/pageindex/test_segment_integration.py
 - packages/ai-parrot/tests/knowledge/pageindex/test_generation_integration.py
-markers: []
+- packages/ai-parrot/tests/knowledge/pageindex/test_agentic_snapshot.py
+- packages/ai-parrot/tests/mcp/test_pageindex_template.py
+markers: none
 
 ### Test Data / Fixtures
 
