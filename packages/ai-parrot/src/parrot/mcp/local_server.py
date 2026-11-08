@@ -44,9 +44,7 @@ class LocalMCPServerBase(MCPServerBase):
     def __init__(self, config: LocalServerConfig):
         super().__init__(config)
         handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
-        )
+        handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
         self.logger.addHandler(handler)
         self.logger.propagate = False
 
@@ -241,24 +239,13 @@ class StdioMCPServer(LocalMCPServerBase):
                 raise RuntimeError(f"Unknown method: {method}")
 
             # Return success response
-            return {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": result
-            }
+            return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001
             self.logger.error("Error handling %s: %s", method, e)
-            return {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "error": {
-                    "code": -32603,
-                    "message": str(e)
-                }
-            }
+            return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32603, "message": str(e)}}
 
 
 __all__ = ["LocalMCPServerBase", "StdioMCPServer"]

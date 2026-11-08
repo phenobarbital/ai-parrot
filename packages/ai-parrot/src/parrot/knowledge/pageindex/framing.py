@@ -32,10 +32,7 @@ def _segment_block(key: str, label: str, text: str, flagged: bool) -> str:
 
 def frame_segments(reads: Sequence[SegmentRead], *, source: str) -> str:
     """Wrap ``reads`` in ``<document_text source=…>`` with one ``<segment …>`` per read."""
-    blocks = [
-        _segment_block(r.address.key, r.address.label, r.text, "injection" in r.flags)
-        for r in reads
-    ]
+    blocks = [_segment_block(r.address.key, r.address.label, r.text, "injection" in r.flags) for r in reads]
     return "\n".join([f'<document_text source="{_attr(source)}">', *blocks, "</document_text>"])
 
 

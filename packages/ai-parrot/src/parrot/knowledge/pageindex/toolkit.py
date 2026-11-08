@@ -979,9 +979,7 @@ class PageIndexToolkit(AbstractToolkit):
                 raise ValueError(f"node {node_id!r} belongs to document {node_doc!r}, not {doc_id!r}")
             revision = await asyncio.to_thread(self._revision_for, tree_name, tree, node_doc, node.get("revision"))
             total = len(revision.segments)
-            seqs = sorted(
-                {q for rng in (node.get("owned") or []) for q in range(max(rng[0], 0), min(rng[1], total))}
-            )
+            seqs = sorted({q for rng in (node.get("owned") or []) for q in range(max(rng[0], 0), min(rng[1], total))})
         else:
             if not doc_id:
                 raise ValueError("doc_id or node_id is required")
@@ -1016,9 +1014,7 @@ class PageIndexToolkit(AbstractToolkit):
             roots = [root]
         else:
             roots = [
-                candidate
-                for candidate in structure
-                if not any(n.get("doc_id") for n in structure_to_list([candidate]))
+                candidate for candidate in structure if not any(n.get("doc_id") for n in structure_to_list([candidate]))
             ]
 
         prepared: list[tuple[str, str, list, dict[str, tuple[int, int]], Optional[ScanReport]]] = []
@@ -1040,9 +1036,7 @@ class PageIndexToolkit(AbstractToolkit):
             documents.clear()
             taken = await self._doc_ids_in(tree_name, txn.tree)
             for root_id, title, segments, ranges, report in prepared:
-                root = next(
-                    (n for n in txn.tree.get("structure", []) if n.get("node_id") == root_id), None
-                )
+                root = next((n for n in txn.tree.get("structure", []) if n.get("node_id") == root_id), None)
                 if (
                     root is None
                     or any(n.get("doc_id") for n in structure_to_list([root]))
@@ -1408,9 +1402,7 @@ class PageIndexToolkit(AbstractToolkit):
         # Build-time scratch fields that should never reach disk.
         node_markdown = _pop_node_field(subtree, "text")
         _strip_keys_in_place(subtree, ("token_count", "line_num"))
-        segments, own_by_id = await asyncio.to_thread(
-            _section_segments, subtree.get("structure", []), node_markdown
-        )
+        segments, own_by_id = await asyncio.to_thread(_section_segments, subtree.get("structure", []), node_markdown)
         report = await self._scan(segments)
         source = SourceInfo(name=doc_name or "ingested.md", kind="markdown", sha256=_texts_sha256(segments))
         imported: dict[str, Optional[str]] = {"doc_id": None, "revision": None}
@@ -1463,9 +1455,7 @@ class PageIndexToolkit(AbstractToolkit):
         records = [EbookSection.model_validate(section) for section in sections]
         subtree = ebook_tree(records)
         node_markdown = _pop_node_field(subtree, "text")
-        segments, own_by_id = await asyncio.to_thread(
-            _section_segments, subtree.get("structure", []), node_markdown
-        )
+        segments, own_by_id = await asyncio.to_thread(_section_segments, subtree.get("structure", []), node_markdown)
         report = await self._scan(segments)
         source = SourceInfo(
             name=(records[0].source_uri or records[0].title) if records else "ebook",
@@ -2012,9 +2002,7 @@ def _texts_sha256(segments: list) -> Optional[str]:
     return hashlib.sha256("\x1e".join(seg.text for seg in segments).encode("utf-8")).hexdigest()
 
 
-def _section_segments(
-    roots: list[dict[str, Any]], texts: dict[str, str]
-) -> tuple[list, dict[str, tuple[int, int]]]:
+def _section_segments(roots: list[dict[str, Any]], texts: dict[str, str]) -> tuple[list, dict[str, tuple[int, int]]]:
     """Segments of an unpaged subtree in pre-order plus ``build_node_id -> (start, end)`` own ranges."""
     acc: list = []
     ranges: dict[str, tuple[int, int]] = {}

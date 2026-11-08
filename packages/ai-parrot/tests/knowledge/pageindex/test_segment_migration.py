@@ -1,4 +1,5 @@
 """index_segments for legacy trees; revisions follow rename and delete (FEAT-840 / TASK-5310)."""
+
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 

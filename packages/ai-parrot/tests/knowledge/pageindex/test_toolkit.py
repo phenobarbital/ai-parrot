@@ -17,6 +17,7 @@ from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, _REPLACED_MARKE
 from parrot.knowledge.pageindex.utils import structure_to_list
 from parrot.knowledge.okf.utils import flatten_concept_id_for_filename
 
+
 def _adapter() -> MagicMock:
     # The toolkit instantiates a real PageIndexLLMAdapter for the lightweight
     # model using ``adapter.client``; that adapter calls ``client.ask`` so the
@@ -1469,6 +1470,7 @@ async def test_rename_tree_invalidates_search_engine_cache(toolkit: PageIndexToo
 async def test_rename_tree_reprojects_okf_sidecars(toolkit: PageIndexToolkit) -> None:
     """Reproject an enriched tree after it has its destination URI."""
     await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+
     async def enrich(txn) -> None:
         txn.tree["structure"][0].update({"concept_id": "source/node", "type": "Section"})
 
