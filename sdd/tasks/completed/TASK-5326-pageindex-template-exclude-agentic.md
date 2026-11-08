@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-843 — PageIndex Agentic Retrieval and Citations
 **Spec**: `sdd/specs/pageindex-agentic-retrieval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5325
@@ -164,4 +164,6 @@ Spec AC-13.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 251s. Merged.
+
+Validation: test_pageindex_template.py + test_agentic_snapshot.py → 14 passed, 1 xfailed (stdio purity, issue:70f18da2a8d5 / FEAT-844) at HEAD cd144f1a8b.

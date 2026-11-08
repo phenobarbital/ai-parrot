@@ -12,7 +12,7 @@
     # without a model (structure from bookmarks / printed headings; no summaries).
     # llm: anthropic:claude-haiku-5-5
     # llm_kwargs: {}
-    # The internal agentic retrieval tool (pageindex-agentic-retrieval) is opt-in:
-    # remove it from this list to expose it.
-    exclude: []
+    # The internal agentic retrieval tool is opt-in: remove it from this list
+    # (and set llm:) to expose pageindex_agentic_retrieve.
+    exclude: [pageindex_agentic_retrieve]
     env: {}

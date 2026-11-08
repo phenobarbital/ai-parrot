@@ -1177,6 +1177,7 @@ class Bookstore:
                 doc_description=doc_description or tree.get("doc_description") or "",
                 toc_digest=toc_digest,
                 toc_entries=toc_entries,
+                tree=tree,
             )
             if not title:
                 taken_titles = {c.title.casefold() for c in self.list_books() if c.book_id != slug}
@@ -1250,10 +1251,14 @@ class Bookstore:
         doc_description: str,
         toc_digest: str,
         toc_entries: list,
+        tree: dict,
     ) -> CardDraft:
         if not self.has_llm:
             return fallback_card_fields(path, toc_entries)
-        loader = self._content_store(scope).loader_for(tree_name)
+        # Pinned to ``tree``: ids resolve via load_node (body_ref first), so a
+        # stale <node_id>.md left by an overwrite can never be sampled instead
+        # of the live body.
+        loader = self._content_store(scope).loader_for(tree_name, tree)
         node_ids = [e.node_id for e in toc_entries if e.node_id]
         samples = sample_sections(loader, node_ids)
         try:
@@ -1464,6 +1469,7 @@ class Bookstore:
             doc_description=tree.get("doc_description") or "",
             toc_digest=toc_digest,
             toc_entries=toc_entries,
+            tree=tree,
         )
         updated = card.model_copy(
             update={

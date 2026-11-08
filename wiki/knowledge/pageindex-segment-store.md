@@ -143,3 +143,4 @@ await toolkit.index_segments("legacy-tree")
 
 - [PageIndex — Tree-Based RAG for Document Retrieval](pageindex.md) — tree construction and retrieval
 - [PageIndex Generation Publication](pageindex-generation-publication.md) — generations, blobs and the sweep revisions share
+- [PageIndex Agentic Retrieval and Citations](pageindex-agentic-retrieval.md) — stage-2 loop and citations over these reads

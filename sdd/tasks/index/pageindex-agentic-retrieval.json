@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-08T01:25:42+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-08T02:31:07+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -48,16 +48,17 @@
       "feature_id": "FEAT-843",
       "feature": "pageindex-agentic-retrieval",
       "spec": "sdd/specs/pageindex-agentic-retrieval.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: pure-Python ledger over ReadResult/SegmentRead (segments.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5320-pageindex-read-ledger.md"
+      "started_at": "2026-11-08T01:29:57+00:00",
+      "completed_at": "2026-11-08T01:47:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5320-pageindex-read-ledger.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5321",
@@ -66,16 +67,17 @@
       "feature_id": "FEAT-843",
       "feature": "pageindex-agentic-retrieval",
       "spec": "sdd/specs/pageindex-agentic-retrieval.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: refactors existing toolkit.py read tools into *_on helpers; first toolkit.py editor",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5321-pageindex-snapshot-bound-readers.md"
+      "started_at": "2026-11-08T01:29:57+00:00",
+      "completed_at": "2026-11-08T01:47:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5321-pageindex-snapshot-bound-readers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5322",
@@ -84,7 +86,7 @@
       "feature_id": "FEAT-843",
       "feature": "pageindex-agentic-retrieval",
       "spec": "sdd/specs/pageindex-agentic-retrieval.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -93,9 +95,10 @@
       "parallel": true,
       "parallelism_notes": "imports ReadLedger, Range from TASK-5320 (read_ledger.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5322-pageindex-citations-validator.md"
+      "started_at": "2026-11-08T01:29:57+00:00",
+      "completed_at": "2026-11-08T01:52:55+00:00",
+      "file": "sdd/tasks/completed/TASK-5322-pageindex-citations-validator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5323",
@@ -104,7 +107,7 @@
       "feature_id": "FEAT-843",
       "feature": "pageindex-agentic-retrieval",
       "spec": "sdd/specs/pageindex-agentic-retrieval.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -114,9 +117,10 @@
       "parallel": true,
       "parallelism_notes": "imports LedgerEntry from TASK-5320 (read_ledger.py) and Citation/ProposedCitation/RejectedCitation from TASK-5322 (citations.py) for EvidenceBundle",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5323-pageindex-agentic-core.md"
+      "started_at": "2026-11-08T01:29:57+00:00",
+      "completed_at": "2026-11-08T01:58:50+00:00",
+      "file": "sdd/tasks/completed/TASK-5323-pageindex-agentic-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5324",
@@ -125,7 +129,7 @@
       "feature_id": "FEAT-843",
       "feature": "pageindex-agentic-retrieval",
       "spec": "sdd/specs/pageindex-agentic-retrieval.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -134,9 +138,10 @@
       "parallel": true,
       "parallelism_notes": "extends AgenticRetriever and uses clip_read_result/_ToolCallController from TASK-5323 (agentic.py); both modify agentic.py and test_agentic_retrieval.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5324-pageindex-agentic-run-loop.md"
+      "started_at": "2026-11-08T01:29:57+00:00",
+      "completed_at": "2026-11-08T02:07:57+00:00",
+      "file": "sdd/tasks/completed/TASK-5324-pageindex-agentic-run-loop.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5325",
@@ -145,7 +150,7 @@
       "feature_id": "FEAT-843",
       "feature": "pageindex-agentic-retrieval",
       "spec": "sdd/specs/pageindex-agentic-retrieval.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -155,9 +160,10 @@
       "parallel": true,
       "parallelism_notes": "calls _agentic_search/_agentic_read_tools/_outline_on from TASK-5321 (toolkit.py, same file) and AgenticRetriever.run from TASK-5324 (agentic.py); appends to test_agentic_retrieval.py after TASK-5324",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5325-pageindex-agentic-retrieve-tool.md"
+      "started_at": "2026-11-08T01:29:57+00:00",
+      "completed_at": "2026-11-08T02:15:42+00:00",
+      "file": "sdd/tasks/completed/TASK-5325-pageindex-agentic-retrieve-tool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5326",
@@ -166,7 +172,7 @@
       "feature_id": "FEAT-843",
       "feature": "pageindex-agentic-retrieval",
       "spec": "sdd/specs/pageindex-agentic-retrieval.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -175,9 +181,10 @@
       "parallel": true,
       "parallelism_notes": "tests serve/hide the pageindex_agentic_retrieve tool that TASK-5325 adds (toolkit.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5326-pageindex-template-exclude-agentic.md"
+      "started_at": "2026-11-08T01:29:57+00:00",
+      "completed_at": "2026-11-08T02:22:35+00:00",
+      "file": "sdd/tasks/completed/TASK-5326-pageindex-template-exclude-agentic.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5327",
@@ -186,7 +193,7 @@
       "feature_id": "FEAT-843",
       "feature": "pageindex-agentic-retrieval",
       "spec": "sdd/specs/pageindex-agentic-retrieval.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -196,9 +203,10 @@
       "parallel": true,
       "parallelism_notes": "documents agentic_retrieve and exports from TASK-5325 (toolkit.py, __init__.py) and the shipped exclude entry from TASK-5326 (pageindex.yaml)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5327-pageindex-agentic-retrieval-docs.md"
+      "started_at": "2026-11-08T01:29:57+00:00",
+      "completed_at": "2026-11-08T02:31:07+00:00",
+      "file": "sdd/tasks/completed/TASK-5327-pageindex-agentic-retrieval-docs.md",
+      "verification": "verified"
     }
   ]
 }

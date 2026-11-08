@@ -19,7 +19,14 @@ from parrot.knowledge.bookstore.library import (
     Bookstore,
     BookstoreError,
 )
-from parrot.knowledge.bookstore.models import BookCommunity, BookRelation, RelationJudgement, REL_WEIGHTS, TocEntry
+from parrot.knowledge.bookstore.models import (
+    BookCommunity,
+    BookRelation,
+    CardDraft,
+    RelationJudgement,
+    REL_WEIGHTS,
+    TocEntry,
+)
 
 from .conftest import SAMPLE_MARKDOWN
 
@@ -927,3 +934,34 @@ async def test_cancelled_ingest_cleans_up_staging_tree(monkeypatch, store: Books
 
     trees_dir = store._location("project").trees_dir
     assert not list(trees_dir.glob(f"*{_STAGING_MARKER}*.json"))
+
+
+@pytest.mark.asyncio
+async def test_draft_card_samples_live_bodies_not_stale_legacy(
+    store: Bookstore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Card the live generation: a stale ``<node_id>.md`` must never reach the LLM."""
+    book_path = tmp_path / "pinned-book.md"
+    book_path.write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    card, _ = await store.add_book(book_path)
+    tree = await store._toolkit("project").get_tree(card.tree_name)
+    node = next(n for n in tree["structure"] if n.get("body_ref"))
+    node_id = node["node_id"]
+
+    # A leftover legacy sidecar, as rename_tree(overwrite=True) over a legacy
+    # destination leaves behind. The unpinned loader prefers it over body_ref.
+    store._content_store("project").save(card.tree_name, node_id, "STALE LEGACY BODY from another book")
+
+    captured: list[list[str]] = []
+
+    async def _capture(adapter, *, filename, doc_description, toc_digest, samples):
+        captured.append(list(samples))
+        return CardDraft(title="Pinned Book", topics=["testing"])
+
+    monkeypatch.setattr("parrot.knowledge.bookstore.library.generate_card_fields", _capture)
+
+    await store.refresh_card(card.book_id)
+
+    assert captured, "generate_card_fields was never reached"
+    joined = "\n".join(captured[0])
+    assert "STALE LEGACY BODY" not in joined, "carding sampled a stale legacy sidecar instead of the live body"
