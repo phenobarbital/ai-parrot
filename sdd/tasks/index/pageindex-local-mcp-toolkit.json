@@ -105,7 +105,7 @@
       "feature_id": "FEAT-842",
       "feature": "pageindex-local-mcp-toolkit",
       "spec": "sdd/specs/pageindex-local-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -113,8 +113,9 @@
       "parallelism_notes": "No dependencies: creates mcp/_toolkit_templates/pageindex.yaml, examples/pageindex-mcp.yaml and tests/mcp/test_pageindex_template.py; metadata/seed tests never construct the toolkit.",
       "assigned_to": null,
       "started_at": "2026-11-07T23:56:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5317-pageindex-template-and-example.md"
+      "completed_at": "2026-11-08T00:03:11+00:00",
+      "file": "sdd/tasks/completed/TASK-5317-pageindex-template-and-example.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5318",
