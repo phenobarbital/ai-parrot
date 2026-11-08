@@ -11,7 +11,14 @@ from parrot.knowledge.pageindex.citations import (
     validate_citations,
 )
 from parrot.knowledge.pageindex.read_ledger import ReadLedger
-from parrot.knowledge.pageindex.segments import DocumentRevision, ReadResult, Segment, SegmentAddress, SegmentRead, SourceInfo
+from parrot.knowledge.pageindex.segments import (
+    DocumentRevision,
+    ReadResult,
+    Segment,
+    SegmentAddress,
+    SegmentRead,
+    SourceInfo,
+)
 
 REVISION = "a" * 16
 
@@ -40,9 +47,7 @@ def _revision(
     )
 
 
-def _ledger(
-    *ranges: tuple[int, int], revision: str = REVISION, ledger: ReadLedger | None = None
-) -> ReadLedger:
+def _ledger(*ranges: tuple[int, int], revision: str = REVISION, ledger: ReadLedger | None = None) -> ReadLedger:
     """Record ranges from the test revision's only segment."""
     ledger = ledger or ReadLedger(budget_chars=10_000, max_reads=20)
     address = SegmentAddress(doc_id="doc", revision=revision, seq=0, page=2, ordinal=0)

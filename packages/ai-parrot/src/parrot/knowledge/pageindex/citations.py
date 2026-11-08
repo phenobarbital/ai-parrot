@@ -146,7 +146,9 @@ def validate_citations(
         segment = revision.segments[seq]
         match = find_covered_match(segment.text, proposal.excerpt, covered)
         if match is None:
-            reason: RejectReason = "outside_covered_ranges" if find_any_match(segment.text, proposal.excerpt) else "excerpt_not_found"
+            reason: RejectReason = (
+                "outside_covered_ranges" if find_any_match(segment.text, proposal.excerpt) else "excerpt_not_found"
+            )
             rejected.append(RejectedCitation(proposed=proposal, reason=reason))
             continue
 
