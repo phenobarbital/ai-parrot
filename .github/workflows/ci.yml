@@ -35,6 +35,13 @@ jobs:
         with:
           version: "latest"
 
+      # A pyproject.toml change (new extra, new dependency, release version bump) must
+      # ship with a regenerated uv.lock. The sync below runs without --locked and would
+      # relock silently, so drift used to surface only in the nightly's
+      # `uv sync --locked`, failing every package suite at once.
+      - name: Check uv.lock is up to date
+        run: uv lock --check
+
       - name: Sync all workspace packages
         run: uv sync --all-packages
 
