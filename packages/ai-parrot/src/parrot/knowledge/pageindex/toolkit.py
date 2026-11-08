@@ -24,6 +24,7 @@ import fnmatch
 import hashlib
 import json
 import logging
+import math
 import random
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -34,6 +35,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Optional, TypeVar
 from parrot.clients.base import AbstractClient
 from parrot.tools.toolkit import AbstractToolkit, ToolkitTool
 from .builder import build_page_index
+from .agentic import AgenticRetriever, EvidenceBundle, clone_for_tools
 from .content_store import NodeContentStore
 from .embedding_store import NodeEmbeddingStore
 from .generation import StaleGenerationError, WriteTransaction, generation_of
@@ -139,6 +141,7 @@ class PageIndexToolkit(AbstractToolkit):
             "pageindex_import_folder",
             "pageindex_import_pdf",
             "pageindex_search_documents_scoped",
+            "pageindex_agentic_retrieve",
         }
     )
 
@@ -162,6 +165,11 @@ class PageIndexToolkit(AbstractToolkit):
         scan_injection: bool = True,
         injection_probability_threshold: float = 0.98,
         read_max_chars: int = 12000,
+        agentic_client: Optional[AbstractClient] = None,
+        agentic_budget_chars: int = 40000,
+        agentic_max_reads: int = 12,
+        agentic_max_tool_calls: int = 20,
+        agentic_timeout_s: float = 120.0,
         *,
         llm_client: Optional[AbstractClient] = None,
         max_result_chars: Optional[int] = None,
@@ -197,6 +205,13 @@ class PageIndexToolkit(AbstractToolkit):
         self._use_vec_rank = use_vec_rank
         self._use_embedding_walk = use_embedding_walk
         self._max_result_chars = max_result_chars
+        self._agentic_client_override = agentic_client
+        self._agentic_budget_chars = agentic_budget_chars
+        self._agentic_max_reads = agentic_max_reads
+        self._agentic_max_tool_calls = agentic_max_tool_calls
+        self._agentic_timeout_s = agentic_timeout_s
+        self._agentic_clone: Optional[AbstractClient] = None
+        self._agentic_lock = asyncio.Lock()
 
         # ---- Embedding store (FEAT-237) ---------------------------------
         # Constructed only when at least one embedding feature is enabled.
@@ -1109,6 +1124,129 @@ class PageIndexToolkit(AbstractToolkit):
                 ToolkitTool(name=f"{self.tool_prefix}_{public.__name__}", bound_method=fn, description=public.__doc__)
             )
         return tools
+
+    def _agentic_client(self) -> AbstractClient:
+        """Return the dedicated agentic client, cloning the adapter client when needed."""
+        if self._agentic_client_override is not None:
+            return self._agentic_client_override
+        if self._adapter is None:
+            raise ValueError("agentic retrieval requires an LLM; configure a model for this toolkit")
+        if self._agentic_clone is None:
+            self._agentic_clone = clone_for_tools(self._adapter.client)
+        return self._agentic_clone
+
+    async def agentic_retrieve(
+        self,
+        tree_name: str,
+        query: str,
+        top_k: int = 5,
+        draft_answer: bool = True,
+        budget_chars: Optional[int] = None,
+        max_reads: Optional[int] = None,
+        timeout_s: Optional[float] = None,
+    ) -> dict[str, Any]:
+        """Stage-1 search, then a bounded reading loop that returns cited evidence.
+
+        Returns an evidence bundle: candidates, the exact ranges read, validated citations
+        (``[Report.pdf, p. 12 ¶3]``), rejected ones with reasons, and optionally a drafted
+        answer. ``grounded`` is false when no citation survived validation. Requires an LLM.
+        """
+        resolved_budget = self._agentic_budget_chars if budget_chars is None else budget_chars
+        resolved_reads = self._agentic_max_reads if max_reads is None else max_reads
+        resolved_tool_calls = self._agentic_max_tool_calls
+        timeout = self._agentic_timeout_s if timeout_s is None else timeout_s
+        for value, name in (
+            (top_k, "top_k"),
+            (resolved_budget, "budget_chars"),
+            (resolved_reads, "max_reads"),
+            (resolved_tool_calls, "agentic_max_tool_calls"),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("timeout_s must be a positive finite number")
+
+        client = self._agentic_client()
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+
+        def timeout_bundle(
+            candidates: Optional[list[dict[str, Any]]] = None, generation: Optional[int] = None
+        ) -> dict[str, Any]:
+            return EvidenceBundle(
+                tree_name=tree_name,
+                query=query,
+                generation=generation,
+                candidates=candidates or [],
+                stopped="timeout",
+            ).model_dump()
+
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            return timeout_bundle()
+        acquired = False
+        try:
+            try:
+                await asyncio.wait_for(self._agentic_lock.acquire(), timeout=remaining)
+                acquired = True
+            except TimeoutError:
+                return timeout_bundle()
+
+            tree = copy.deepcopy(self._load_tree(tree_name))
+            generation = generation_of(tree)
+            generation_id = generation.id if generation else None
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return timeout_bundle(generation=generation_id)
+            try:
+                candidates = await asyncio.wait_for(
+                    self._agentic_search(tree_name, tree).search(
+                        query=query,
+                        top_k=top_k,
+                        use_bm25=True,
+                        use_llm_walk=self._adapter is not None,
+                        use_vec=self._use_vec_rank,
+                    ),
+                    timeout=remaining,
+                )
+            except TimeoutError:
+                return timeout_bundle(generation=generation_id)
+
+            node_id = candidates[0].get("node_id") if candidates else None
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return timeout_bundle(candidates, generation_id)
+            try:
+                outline = await asyncio.wait_for(
+                    self._outline_on(tree_name, tree, node_id=node_id), timeout=remaining
+                )
+            except TimeoutError:
+                return timeout_bundle(candidates, generation_id)
+
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return timeout_bundle(candidates, generation_id)
+            bundle = await AgenticRetriever(
+                client=client,
+                model=self._model,
+                read_tools=self._agentic_read_tools(tree_name, tree),
+                load_revision=lambda doc_id, revision: self._segment_store.load_revision(tree_name, doc_id, revision),
+            ).run(
+                tree_name=tree_name,
+                query=query,
+                candidates=candidates,
+                outline=outline,
+                generation=generation_id,
+                budget_chars=resolved_budget,
+                max_reads=resolved_reads,
+                max_tool_calls=resolved_tool_calls,
+                deadline=deadline,
+                draft_answer=draft_answer,
+            )
+            return bundle.model_dump()
+        finally:
+            if acquired:
+                self._agentic_lock.release()
 
     async def index_segments(self, tree_name: str, node_id: Optional[str] = None) -> dict[str, Any]:
         """Create segments for documents imported before segment support, from their stored bodies.
