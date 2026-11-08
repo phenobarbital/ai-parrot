@@ -1,4 +1,5 @@
 """PDF layout analysis for PageIndex structure (FEAT-845): body/heading sizes, running lines, bookmarks."""
+
 from __future__ import annotations
 
 import logging
@@ -132,9 +133,7 @@ def _read_bookmarks(raw_toc: list[list], page_count: int) -> tuple[list[Bookmark
 
     page_entries = Counter(bookmark.page for bookmark in usable)
     one_per_page = sum(count == 1 for count in page_entries.values()) >= 0.8 * page_count
-    enumeration_titles = sum(bool(_ENUM_TITLE_RE.fullmatch(bookmark.title)) for bookmark in usable) >= 0.8 * len(
-        usable
-    )
+    enumeration_titles = sum(bool(_ENUM_TITLE_RE.fullmatch(bookmark.title)) for bookmark in usable) >= 0.8 * len(usable)
     if (
         page_count >= 4
         and all(bookmark.level == 1 for bookmark in usable)
@@ -199,10 +198,7 @@ def analyze_layout(pdf_path: str) -> LayoutProfile:
     running_keys = {(line.band, line.key) for line in running}
 
     counted_spans = [
-        span
-        for line in lines
-        if (line["band"], line["key"]) not in running_keys
-        for span in line["spans"]
+        span for line in lines if (line["band"], line["key"]) not in running_keys for span in line["spans"]
     ]
     size_counts: Counter[int] = Counter()
     for span in counted_spans:
@@ -247,7 +243,9 @@ def analyze_layout(pdf_path: str) -> LayoutProfile:
             )
 
     bookmarks, rejection = _read_bookmarks(raw_toc, page_count)
-    logger.debug("analyze_layout %s: %d pages, %d bookmarks, rejection=%s", pdf_path, page_count, len(bookmarks), rejection)
+    logger.debug(
+        "analyze_layout %s: %d pages, %d bookmarks, rejection=%s", pdf_path, page_count, len(bookmarks), rejection
+    )
     return LayoutProfile(
         page_count=page_count,
         body_size=body_size,

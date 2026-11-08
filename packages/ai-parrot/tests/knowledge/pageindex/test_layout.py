@@ -1,4 +1,5 @@
 """Layout analysis of synthetic PDFs (FEAT-845 M1)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -104,9 +105,7 @@ def test_bold_standalone_lines(tmp_path: Path) -> None:
 
 def test_bookmarks_usable_and_levels_normalized() -> None:
     """Invalid bookmark entries are skipped and level jumps are normalized."""
-    bookmarks, rejection = _read_bookmarks(
-        [[1, "A", 1], [3, "B", 2], [1, "C", 9], [1, "  ", 2], [2, "D", 3]], 4
-    )
+    bookmarks, rejection = _read_bookmarks([[1, "A", 1], [3, "B", 2], [1, "C", 9], [1, "  ", 2], [2, "D", 3]], 4)
     assert [bookmark.title for bookmark in bookmarks] == ["A", "B", "D"]
     assert [bookmark.level for bookmark in bookmarks] == [1, 2, 2]
     assert [bookmark.page for bookmark in bookmarks] == [1, 2, 3]
