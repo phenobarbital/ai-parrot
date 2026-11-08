@@ -24,6 +24,8 @@ from .generation import GenerationInfo, StaleGenerationError
 from .locks import TreeLockTimeout
 from .segments import DocumentRevision, ReadResult, Segment, SegmentAddress
 from .segment_store import SegmentStore
+from .layout import LayoutProfile, NoTextLayerError, PDFStructureError, UnreadablePDFError, analyze_layout
+from .layout_structure import StructureReport
 
 __all__ = [
     "build_page_index",
@@ -52,4 +54,10 @@ __all__ = [
     "SegmentAddress",
     "ReadResult",
     "SegmentStore",
+    "LayoutProfile",
+    "NoTextLayerError",
+    "PDFStructureError",
+    "StructureReport",
+    "UnreadablePDFError",
+    "analyze_layout",
 ]

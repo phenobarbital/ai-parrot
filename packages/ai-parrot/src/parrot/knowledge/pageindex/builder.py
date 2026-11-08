@@ -8,12 +8,23 @@ import json
 import logging
 import re
 from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace as config
 from typing import Any, Awaitable, Iterable, Optional
 
 from .framing import DATA_FRAMING_INSTRUCTION, frame_text
 from .llm_adapter import PageIndexLLMAdapter
 from .pdf_to_markdown import build_node_markdown_map, extract_markdown_per_page
+from .layout import (
+    LayoutHeaders,
+    LayoutProfile,
+    NoTextLayerError,
+    PDFStructureError,
+    UnreadablePDFError,
+    analyze_layout,
+)
+from .layout_structure import StructureReport, build_structure, page_structure, score_bookmarks, score_layout
+from .segments import Segment, segment_pages
 from .schemas import (
     PageIndexDetection,
     PhysicalIndexFix,
@@ -39,6 +50,7 @@ from .utils import (
     post_processing,
     remove_page_number,
     remove_structure_text,
+    structure_to_list,
     validate_and_truncate_physical_indices,
     write_node_id,
     create_clean_structure_for_description,
@@ -1558,39 +1570,28 @@ async def generate_doc_description(
 
 async def build_page_index(
     doc: str | BytesIO,
-    adapter: PageIndexLLMAdapter,
+    adapter: Optional[PageIndexLLMAdapter] = None,
     options: dict | config | None = None,
     light_adapter: Optional[PageIndexLLMAdapter] = None,
     llm_concurrency: int = DEFAULT_LLM_CONCURRENCY,
 ) -> dict:
-    """Build a PageIndex tree from a PDF document.
-
-    Args:
-        doc: Path to a PDF file or BytesIO stream.
-        adapter: Heavy LLM adapter, used for hierarchical TOC/structure
-            generation where output quality matters.
-        options: Configuration dict or SimpleNamespace with keys like
-            model, toc_check_page_num, max_page_num_each_node, etc.
-        light_adapter: Optional cheaper/faster adapter used for the
-            independent, narrow-scope calls — TOC page detection, title
-            verification/repair, per-node summaries, and the final doc
-            description. Falls back to ``adapter`` when not provided.
-        llm_concurrency: Maximum number of in-flight LLM calls across the
-            direct fan-out helpers (TOC detection, title checks, fix loop,
-            summaries). Unbounded ``gather`` hits Gemini rate limits and
-            *slows* total wall-time once a doc has dozens of nodes.
-
-    Returns:
-        Dictionary with doc_name and structure (the tree).
-    """
+    """Build a PageIndex tree from a PDF using layout candidates before LLM fallback."""
     opt = ConfigLoader().load(options)
-    page_list = get_page_tokens(doc)
+    mode = getattr(opt, "structure_mode", "auto")
+    min_confidence = float(getattr(opt, "structure_min_confidence", 0.6))
+    if mode not in _STRUCTURE_MODES:
+        raise ValueError(f"Unknown structure_mode {mode!r}; expected one of {sorted(_STRUCTURE_MODES)}")
+    if mode == "llm" and adapter is None:
+        raise ValueError("structure_mode='llm' needs an LLM adapter")
+
+    page_list = await _read_page_tokens(doc)
     light = light_adapter or adapter
 
     logger.info(
-        "Total pages: %d, Total tokens: %d",
+        "Total pages: %d, Total tokens: %d, structure_mode=%s",
         len(page_list),
         sum(p[1] for p in page_list),
+        mode,
     )
     if light_adapter is not None and light_adapter is not adapter:
         logger.info(
@@ -1601,14 +1602,41 @@ async def build_page_index(
 
     sem_token = _LLM_SEMAPHORE.set(asyncio.Semaphore(max(1, llm_concurrency)))
     try:
-        structure = await tree_parser(page_list, opt, adapter, light_adapter=light)
+        profile: Optional[LayoutProfile] = None
+        pages: list[tuple[int, str]] = []
+        segments: list[Segment] = []
+        if isinstance(doc, str):
+            profile, pages, segments = await _layout_pages(doc)
+        structure, report = await _choose_structure(
+            doc,
+            page_list,
+            profile,
+            segments,
+            mode=mode,
+            min_confidence=min_confidence,
+            opt=opt,
+            adapter=adapter,
+            light=light,
+        )
 
         if opt.if_add_node_id == "yes":
             write_node_id(structure)
+        for node in structure_to_list(structure):
+            node["structure_source"] = report.source
         if opt.if_add_node_text == "yes":
             add_node_text(structure, page_list)
-        node_markdown, pages = _extract_node_markdown(doc, structure)
-        if opt.if_add_node_summary == "yes":
+        result: dict[str, Any] = {
+            "doc_name": get_pdf_name(doc),
+            "structure": structure,
+            "structure_source": report.source,
+            "structure_report": report.model_dump(),
+            "_node_markdown": build_node_markdown_map(structure, pages) if pages else {},
+            "_pages": pages,
+            "_segments": segments,
+        }
+        if adapter is None:
+            logger.info("No LLM adapter: skipping node summaries and the document description")
+        elif opt.if_add_node_summary == "yes":
             if opt.if_add_node_text == "no":
                 add_node_text(structure, page_list)
             await generate_summaries_for_structure(structure, light)
@@ -1616,39 +1644,102 @@ async def build_page_index(
                 remove_structure_text(structure)
             if opt.if_add_doc_description == "yes":
                 clean_struct = create_clean_structure_for_description(structure)
-                doc_description = await generate_doc_description(clean_struct, light)
-                return {
-                    "doc_name": get_pdf_name(doc),
-                    "doc_description": doc_description,
-                    "structure": structure,
-                    "_node_markdown": node_markdown,
-                    "_pages": pages,
-                }
-
-        return {
-            "doc_name": get_pdf_name(doc),
-            "structure": structure,
-            "_node_markdown": node_markdown,
-            "_pages": pages,
-        }
+                result["doc_description"] = await generate_doc_description(clean_struct, light)
+        return result
     finally:
         _LLM_SEMAPHORE.reset(sem_token)
 
 
-def _extract_node_markdown(
-    doc: str | BytesIO,
-    structure: Any,
-) -> tuple[dict[str, str], list[tuple[int, str]]]:
-    """Extract per-node markdown and the per-page markdown it was sliced from.
+_STRUCTURE_MODES = frozenset({"auto", "layout", "llm"})
 
-    Returns ``({}, [])`` for non-path inputs (``BytesIO``) or when extraction fails — callers
-    persist whatever they get and fall back to summaries on retrieval.
-    """
-    if not isinstance(doc, str):
-        return {}, []
+
+def _doc_label(doc: str | BytesIO) -> str:
+    """Return a safe document label without opening a stream."""
+    return Path(doc).name if isinstance(doc, str) else "PDF stream"
+
+
+async def _read_page_tokens(doc: str | BytesIO) -> list[tuple[str, int]]:
+    """Read page text in a worker thread and normalize PDF-open failures."""
+    name = _doc_label(doc)
     try:
-        pages = extract_markdown_per_page(doc)
-    except (FileNotFoundError, ImportError, ValueError) as exc:
-        logger.warning("extract_markdown_per_page failed for %s: %s", doc, exc)
-        return {}, []
-    return build_node_markdown_map(structure, pages), pages
+        page_list = await asyncio.to_thread(get_page_tokens, doc)
+    except (RuntimeError, ValueError) as exc:
+        raise UnreadablePDFError(f"Cannot open {name}: {exc}") from exc
+    if not any(text.strip() for text, _ in page_list):
+        raise NoTextLayerError(f"{name} has no text layer; OCR is not supported")
+    return page_list
+
+
+async def _layout_stage(stage: str, name: str, func: Any, *args: Any, **kwargs: Any) -> Any:
+    """Run one layout stage in a worker thread with the public error contract."""
+    try:
+        return await asyncio.to_thread(func, *args, **kwargs)
+    except PDFStructureError:
+        raise
+    except (ValueError, ImportError, FileNotFoundError) as exc:
+        raise PDFStructureError(f"PDF layout {stage} failed for {name}: {exc}") from exc
+
+
+async def _layout_pages(doc: str) -> tuple[LayoutProfile, list[tuple[int, str]], list[Segment]]:
+    """Analyze, extract, and segment a PDF without blocking the event loop."""
+    name = _doc_label(doc)
+    profile = await _layout_stage("analysis", name, analyze_layout, doc)
+    pages = await _layout_stage("extraction", name, extract_markdown_per_page, doc, hdr_info=LayoutHeaders(profile))
+    segments = await _layout_stage("segmentation", name, segment_pages, pages)
+    if not any(segment.text.strip() for segment in segments):
+        raise PDFStructureError(f"PDF layout extraction produced no text for {name}")
+    logger.info(
+        "Layout: body=%s heading_sizes=%s running=%d bookmarks=%d segments=%d",
+        profile.body_size,
+        profile.heading_sizes,
+        len(profile.running),
+        len(profile.bookmarks),
+        len(segments),
+    )
+    return profile, pages, segments
+
+
+def _candidate_scores(profile: Optional[LayoutProfile], segments: list[Segment], mode: str) -> list:
+    """Return deterministic scores retained when no candidate was selected."""
+    if profile is None or mode == "llm":
+        return []
+    return [score_bookmarks(profile, segments)[0], score_layout(profile, segments)[0]]
+
+
+async def _choose_structure(
+    doc: str | BytesIO,
+    page_list: list[tuple[str, int]],
+    profile: Optional[LayoutProfile],
+    segments: list[Segment],
+    *,
+    mode: str,
+    min_confidence: float,
+    opt: config,
+    adapter: Optional[PageIndexLLMAdapter],
+    light: Optional[PageIndexLLMAdapter],
+) -> tuple[list[dict], StructureReport]:
+    """Choose deterministic structure, then LLM fallback, then pages."""
+    if profile is not None and mode != "llm":
+        chosen = build_structure(profile, segments, mode=mode, min_confidence=min_confidence)
+        if chosen is not None:
+            return chosen.structure, chosen.report
+    report = StructureReport(
+        source="pages",
+        mode=mode,
+        min_confidence=min_confidence,
+        candidates=_candidate_scores(profile, segments, mode),
+        body_size=profile.body_size if profile is not None else None,
+        running_lines=len(profile.running) if profile is not None else 0,
+    )
+    if adapter is not None and mode in ("auto", "llm"):
+        report.llm_used = True
+        try:
+            structure = await tree_parser(page_list, opt, adapter, light_adapter=light)
+        except Exception as exc:
+            logger.warning("LLM structure pipeline failed for %s: %s", _doc_label(doc), exc)
+            report.llm_error = str(exc) or type(exc).__name__
+        else:
+            report.source = "llm"
+            return structure, report
+    page_count = profile.page_count if profile is not None else len(page_list)
+    return page_structure(page_count, get_pdf_name(doc)), report

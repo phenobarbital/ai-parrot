@@ -130,6 +130,7 @@ class PageIndexNode(BaseModel):
     revision: Optional[str] = None
     span: Optional[list[int]] = None
     owned: Optional[list[list[int]]] = None
+    structure_source: Optional[str] = None
     nodes: Optional[list[PageIndexNode]] = None
 
     model_config = {"extra": "allow"}

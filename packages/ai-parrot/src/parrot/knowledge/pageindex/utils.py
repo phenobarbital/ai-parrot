@@ -770,6 +770,8 @@ class ConfigLoader:
         "if_add_node_summary": "yes",
         "if_add_doc_description": "no",
         "if_add_node_text": "no",
+        "structure_mode": "auto",
+        "structure_min_confidence": 0.6,
     }
 
     def __init__(self, default_path: Optional[str] = None):
