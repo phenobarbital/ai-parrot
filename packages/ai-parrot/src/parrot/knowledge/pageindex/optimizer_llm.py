@@ -209,7 +209,9 @@ async def propose_key_items(
 
 def _summary_text(node: dict, revision: DocumentRevision) -> str:
     """Return the node's owned text as a whitespace-normalized string."""
-    return " ".join(segment.text.strip() for segment in _owned_segments(node, revision).values() if segment.text.strip())
+    return " ".join(
+        segment.text.strip() for segment in _owned_segments(node, revision).values() if segment.text.strip()
+    )
 
 
 def _trim_summary(text: str, max_words: int) -> str:
@@ -250,12 +252,16 @@ async def compose_parent(
     child_titles = [str(child.get("title", "")) for child in children if child.get("title")]
     child_summaries = [str(child.get("summary", "")) for child in children if child.get("summary")]
     own_text = _summary_text(node, revision)
-    key_items = [item.get("label", "") if isinstance(item, dict) else item.label for item in node.get("key_items") or []]
+    key_items = [
+        item.get("label", "") if isinstance(item, dict) else item.label for item in node.get("key_items") or []
+    ]
     if not adapter_is_live(adapter):
         summary = own_text
         if child_titles:
-            summary = f"{summary}. Subsections cover: {', '.join(child_titles)}" if summary else (
-                f"Subsections cover: {', '.join(child_titles)}"
+            summary = (
+                f"{summary}. Subsections cover: {', '.join(child_titles)}"
+                if summary
+                else (f"Subsections cover: {', '.join(child_titles)}")
             )
         return _trim_summary(summary, settings.summary_max_words), "composed"
 
@@ -308,9 +314,8 @@ def _is_completed(
 ) -> bool:
     """Return whether a persisted or pending record matches this exact pass input."""
     pending = plan.pending_stamps.get(id(node), {}).get(pass_name)
-    return (
-        (pending is not None and pending.input == input_hash and pending.execution == execution)
-        or is_stamped(node, settings, pass_name=pass_name, input_hash=input_hash, execution=execution)
+    return (pending is not None and pending.input == input_hash and pending.execution == execution) or is_stamped(
+        node, settings, pass_name=pass_name, input_hash=input_hash, execution=execution
     )
 
 
@@ -327,7 +332,9 @@ async def run_llm_passes(
     if _LLM_SEMAPHORE.get() is None:
         token = _LLM_SEMAPHORE.set(asyncio.Semaphore(16))
     live = settings.llm_passes and adapter_is_live(adapter)
-    plan.report.llm_passes = "ran" if live else ("skipped (disabled)" if not settings.llm_passes else "skipped (no model)")
+    plan.report.llm_passes = (
+        "ran" if live else ("skipped (disabled)" if not settings.llm_passes else "skipped (no model)")
+    )
 
     async def cached_call(key: str, call: Any) -> Any:
         if key not in plan.llm_cache:
@@ -360,7 +367,8 @@ async def run_llm_passes(
                     key = pass_cache_key("headings", input_hash, execution, settings)
                     try:
                         headings = await cached_call(
-                            key, lambda node=node: propose_headings(node, revision, adapter, settings, report=plan.report)
+                            key,
+                            lambda node=node: propose_headings(node, revision, adapter, settings, report=plan.report),
                         )
                         plan.report.llm_calls_made += 1
                         split_at(node, revision, headings, source="llm", settings=settings, report=plan.report)
@@ -379,7 +387,8 @@ async def run_llm_passes(
                     key = pass_cache_key("key_items", input_hash, execution, settings)
                     try:
                         items = await cached_call(
-                            key, lambda node=node: propose_key_items(node, revision, adapter, settings, report=plan.report)
+                            key,
+                            lambda node=node: propose_key_items(node, revision, adapter, settings, report=plan.report),
                         )
                         node["key_items"] = [item.model_dump() for item in items]
                         plan.report.key_items_added += len(items)
@@ -392,11 +401,14 @@ async def run_llm_passes(
                 continue
             levels = _nodes_by_depth(root)
             for depth in sorted(levels, reverse=True):
+
                 async def summarize(node: dict) -> None:
                     input_hash = pass_input(node, "summary")
                     is_leaf = not node.get("nodes")
-                    mode = "deterministic" if is_leaf and owned_tokens(node, revision) <= settings.inline_summary_tokens else (
-                        "live" if live else "deterministic"
+                    mode = (
+                        "deterministic"
+                        if is_leaf and owned_tokens(node, revision) <= settings.inline_summary_tokens
+                        else ("live" if live else "deterministic")
                     )
                     execution = execution_digest(adapter if live else None, mode=mode)
                     if _is_completed(plan, node, settings, "summary", input_hash, execution):

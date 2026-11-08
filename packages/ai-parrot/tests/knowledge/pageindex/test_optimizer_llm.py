@@ -113,7 +113,9 @@ async def test_summaries_inline_llm_composed(revision: DocumentRevision) -> None
     large_node = {"owned": [[0, 3]]}
     parent = {"owned": [], "nodes": [{"title": "Child", "summary": "child summary"}]}
 
-    inline, inline_kind = await summarize_leaf(inline_node, revision, adapter, OptimizerSettings(inline_summary_tokens=100))
+    inline, inline_kind = await summarize_leaf(
+        inline_node, revision, adapter, OptimizerSettings(inline_summary_tokens=100)
+    )
     summary, kind = await summarize_leaf(large_node, revision, adapter, OptimizerSettings(inline_summary_tokens=0))
     composed, composed_kind = await compose_parent(parent, revision, adapter, OptimizerSettings())
 
@@ -161,7 +163,9 @@ def _live_adapter() -> MagicMock:
 async def test_first_run_executes_before_stamping(revision: DocumentRevision) -> None:
     """Execute eligible work before placing successful pass records in the pending set."""
     settings = OptimizerSettings(target_leaf_tokens=0, inline_summary_tokens=0)
-    plan = plan_deterministic(_tree_for_revision(revision), {(revision.doc_id, revision.revision): revision}, settings, tree_name="x")
+    plan = plan_deterministic(
+        _tree_for_revision(revision), {(revision.doc_id, revision.revision): revision}, settings, tree_name="x"
+    )
     adapter = _live_adapter()
 
     await run_llm_passes(plan, {(revision.doc_id, revision.revision): revision}, adapter, settings)
@@ -176,7 +180,9 @@ async def test_first_run_executes_before_stamping(revision: DocumentRevision) ->
 async def test_stamp_capability_upgrade(revision: DocumentRevision) -> None:
     """Replace a deterministic large-leaf summary when a live model later becomes available."""
     settings = OptimizerSettings(target_leaf_tokens=100, inline_summary_tokens=0)
-    plan = plan_deterministic(_tree_for_revision(revision), {(revision.doc_id, revision.revision): revision}, settings, tree_name="x")
+    plan = plan_deterministic(
+        _tree_for_revision(revision), {(revision.doc_id, revision.revision): revision}, settings, tree_name="x"
+    )
     await run_llm_passes(plan, {(revision.doc_id, revision.revision): revision}, None, settings)
     node = plan.candidate["nodes"][0]
     deterministic = node["summary"]
@@ -195,7 +201,9 @@ async def test_stamp_capability_upgrade(revision: DocumentRevision) -> None:
 async def test_summaries_deferred_then_requested(revision: DocumentRevision) -> None:
     """Leave summary work pending until callers explicitly request it."""
     settings = OptimizerSettings(inline_summary_tokens=100)
-    plan = plan_deterministic(_tree_for_revision(revision), {(revision.doc_id, revision.revision): revision}, settings, tree_name="x")
+    plan = plan_deterministic(
+        _tree_for_revision(revision), {(revision.doc_id, revision.revision): revision}, settings, tree_name="x"
+    )
 
     await run_llm_passes(plan, {(revision.doc_id, revision.revision): revision}, None, settings, with_summaries=False)
     node = plan.candidate["nodes"][0]
