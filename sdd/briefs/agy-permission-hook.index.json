@@ -34,7 +34,7 @@
       "feature_id": "BRIEF-agy-permission-hook",
       "feature": "agy-permission-hook",
       "spec": "sdd/briefs/agy-permission-hook.brief.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": false,
       "parallelism_notes": "installer.py + cli.py install flag; cli.py also edited by task 1 (VERBS)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T21:54:30+00:00",
       "completed_at": null,
       "file": "sdd/briefs/agy-permission-hook/tasks/HOTFIX-agy-permission-hook-2-installer-agy-registration.md"
     }
