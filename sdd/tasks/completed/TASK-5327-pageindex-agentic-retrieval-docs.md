@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-843 — PageIndex Agentic Retrieval and Citations
 **Spec**: `sdd/specs/pageindex-agentic-retrieval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5325, TASK-5326
@@ -214,4 +214,8 @@ Spec §4 row `test_agentic_docs.py`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: haiku (native) · Attempts: 1 · attempt_uid 29eb5f7b265b4235bb52a567a3291d35. Merged (lint e07d1b197c).
+
+Validation: docs tests (agentic/local_mcp/segment) → 8 passed; `parrot sdd techwiki check` → Docs: required — ok, at HEAD e6be97372c.
+
+Coder notes: module-level ref: targets (symbol-level ones dangle in the bundle); pageindex-local-mcp.md now says six LLM-dependent tools; insert_markdown produces no segment revisions, so the agentic loop only sees segment-backed docs (import_pdf, insert_ebook) — documented as such.

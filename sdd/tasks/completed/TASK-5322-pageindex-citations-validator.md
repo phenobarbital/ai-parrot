@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-843 — PageIndex Agentic Retrieval and Citations
 **Spec**: `sdd/specs/pageindex-agentic-retrieval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5320
@@ -272,4 +272,6 @@ Spec §4 row `test_citations.py`; fixture "a a a" from §4 Test Data.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 244s. Merged (lint f73b48f1bb).
+
+Validation: direct run of test_citations.py + test_read_ledger.py → 14 passed at HEAD 1f6f105b4c (engine background validation capped at ~60s; see TASK-5320 note).

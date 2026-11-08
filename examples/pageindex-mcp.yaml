@@ -17,5 +17,5 @@ toolkits:
       max_result_chars: 24000
     llm: anthropic:claude-haiku-5-5
     llm_kwargs: {}
-    exclude: []
+    exclude: [pageindex_agentic_retrieve]
     env: {}

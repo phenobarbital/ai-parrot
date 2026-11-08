@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-843 — PageIndex Agentic Retrieval and Citations
 **Spec**: `sdd/specs/pageindex-agentic-retrieval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5320, TASK-5322
@@ -282,4 +282,6 @@ Spec §4 rows for `test_agentic_retrieval.py` (clone isolation, clipping fixture
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 288s. Merged (lint 56301b4a72).
+
+Validation: direct run of test_agentic_retrieval/test_citations/test_read_ledger/test_read_tools → 32 passed at HEAD a91c800be1.

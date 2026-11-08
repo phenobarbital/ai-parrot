@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-843 — PageIndex Agentic Retrieval and Citations
 **Spec**: `sdd/specs/pageindex-agentic-retrieval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -278,4 +278,6 @@ Blueprint stubs; spec §4 integration row "re-import after stage-1 pinning…" (
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-sol · Backend: codex · Attempts: 1 · Duration: 286s. Merged (lint 229e488def).
+
+Validation: chunk merge-tier run on the host (engine background validation is capped at ~60s and timed out three times): `parrot sdd tests select --tier merge --run` → 131 passed, 1 xfailed at HEAD 33b0e0fe86 (log: /tmp/claude-1000/sdd-logs/FEAT-843/merge-chunk1.log). `test_pageindex_serves_over_stdio` is xfail (non-strict) pending FEAT-844 / issue:70f18da2a8d5. Closed via `parrot sdd task close`, not `task finalize` (no engine validation ref).
