@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import threading
 import time
 from unittest.mock import AsyncMock, MagicMock
@@ -1589,3 +1590,45 @@ async def test_create_tree_rejects_existing_without_wiping_bodies(toolkit: PageI
         await toolkit.create_tree("c")
 
     assert toolkit._content_store.load_node("c", node) == "precious"
+
+
+@pytest.mark.asyncio
+async def test_vacuum_tree_floors_max_age_to_grace(toolkit: PageIndexToolkit, tmp_path: Path):
+    """FEAT-844 AC-4: max_age_s below the grace is raised to it; a fresh orphan blob survives."""
+    await toolkit.create_tree("vac")
+    added = await toolkit.add_node("vac", "Entry", body="kept for readers")
+    tree = await toolkit.get_tree("vac")
+    body_ref = tree["structure"][0]["body_ref"]
+    blob = tmp_path / "vac" / "bodies" / f"{body_ref}.md"
+    assert (await toolkit.delete_node("vac", added["node_id"]))["removed"] is True
+    assert blob.is_file()
+
+    report = await toolkit.vacuum_tree("vac", max_age_s=0)
+
+    assert report == {"tree_name": "vac", "removed": 0, "revisions_removed": 0, "max_age_s": 3600}
+    assert blob.is_file()
+
+
+@pytest.mark.asyncio
+async def test_vacuum_tree_sweeps_revisions(toolkit: PageIndexToolkit, tmp_path: Path):
+    """FEAT-844 AC-4: an aged orphan blob and an aged superseded revision file are both removed."""
+    await toolkit.create_tree("vac2")
+    added = await toolkit.add_node("vac2", "Guide", body="Guide intro paragraph.")
+    indexed = await toolkit.index_segments("vac2")
+    doc = indexed["documents"][0]
+    revision_path = toolkit._segment_store.revision_path("vac2", doc["doc_id"], doc["revision"])
+    tree = await toolkit.get_tree("vac2")
+    body_ref = tree["structure"][0]["body_ref"]
+    blob = tmp_path / "vac2" / "bodies" / f"{body_ref}.md"
+    assert revision_path.is_file() and blob.is_file()
+
+    assert (await toolkit.delete_node("vac2", added["node_id"]))["removed"] is True
+    ancient = time.time() - 10 * 3600
+    for path in (blob, revision_path):
+        os.utime(path, (ancient, ancient))
+
+    report = await toolkit.vacuum_tree("vac2")
+
+    assert report["max_age_s"] == 3600
+    assert report["removed"] >= 1 and not blob.exists()
+    assert report["revisions_removed"] >= 1 and not revision_path.exists()

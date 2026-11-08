@@ -705,8 +705,9 @@ class PageIndexToolkit(AbstractToolkit):
                 for doc_id, rev_id in sorted(SegmentStore.live_revisions(src_tree)):
                     revision = self._segment_store.load_revision(src, doc_id, rev_id)
                     if revision is None:
-                        logger.warning("rename_tree: revision %s@%s of %r is missing; not carried", doc_id, rev_id, src)
-                        continue
+                        # A missing live revision is corruption: refuse before dst is touched
+                        # instead of letting publish fail later with a less specific error.
+                        raise ValueError(f"rename_tree: revision {doc_id}@{rev_id} of {src!r} is missing")
                     txn.set_revision(revision)
                 try:
                     report = await txn.publish()
@@ -1069,22 +1070,30 @@ class PageIndexToolkit(AbstractToolkit):
         }
 
     async def vacuum_tree(self, tree_name: str, max_age_s: Optional[int] = None) -> dict[str, Any]:
-        """Remove old files unreferenced by the live generation of a tree.
+        """Remove files unreferenced by the live generation of a tree.
 
-        Only files older than the generation grace period are removed unless
-        ``max_age_s`` supplies a different age.
+        Sweeps body blobs and document revision files older than ``max_age_s`` seconds. The age is
+        never lower than the configured generation grace: a smaller ``max_age_s`` is raised to it,
+        so readers of the previous generation keep their bodies. Returns the effective ``max_age_s``.
         """
+        effective = self._generation_grace_s if max_age_s is None else max(int(max_age_s), self._generation_grace_s)
         async with tree_lock(self._storage_dir, tree_name, timeout=self._lock_timeout_s):
             tree = self._store.load(tree_name)
-            removed = self._content_store.sweep_unreferenced(
-                tree_name,
-                tree,
-                max_age_s=self._generation_grace_s if max_age_s is None else max_age_s,
+            removed = await asyncio.to_thread(
+                self._content_store.sweep_unreferenced, tree_name, tree, max_age_s=effective
+            )
+            revisions_removed = await asyncio.to_thread(
+                self._segment_store.sweep_unreferenced, tree_name, tree, max_age_s=effective
             )
             if self._embedding_store is not None:
                 generation = generation_of(tree)
                 self._embedding_store.prune_tree_matrices(tree_name, keep={generation.id} if generation else set())
-        return {"tree_name": tree_name, "removed": removed}
+        return {
+            "tree_name": tree_name,
+            "removed": removed,
+            "revisions_removed": revisions_removed,
+            "max_age_s": effective,
+        }
 
     async def search(
         self,

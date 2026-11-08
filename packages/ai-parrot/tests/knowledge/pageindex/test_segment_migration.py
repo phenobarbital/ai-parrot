@@ -122,3 +122,19 @@ async def test_delete_tree_removes_segments(toolkit, tmp_path):
     assert any((tmp_path / "old" / "segments").iterdir())
     await toolkit.delete_tree("old")
     assert not (tmp_path / "old" / "segments").exists()
+
+
+@pytest.mark.asyncio
+async def test_rename_tree_missing_revision_fails_fast(toolkit, tmp_path):
+    """FEAT-844 AC-5: a missing live revision of src raises before dst exists."""
+    await _legacy_tree(toolkit, "src")
+    indexed = await toolkit.index_segments("src")
+    doc = indexed["documents"][0]
+    toolkit._segment_store.revision_path("src", doc["doc_id"], doc["revision"]).unlink()
+
+    # A fresh instance over the same storage holds no cached revision.
+    fresh = PageIndexToolkit(adapter=_adapter(), storage_dir=tmp_path, lightweight_model="light")
+    with pytest.raises(ValueError, match="is missing"):
+        await fresh.rename_tree("src", "dst")
+    assert not fresh._store.exists("dst")
+    assert not (tmp_path / "dst.json").exists()
