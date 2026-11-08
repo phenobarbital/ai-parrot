@@ -66,10 +66,10 @@ LLM_TOOLS = {
     "pageindex_insert_content",
     "pageindex_import_file",
     "pageindex_import_folder",
-    "pageindex_import_pdf",
     "pageindex_search_documents_scoped",
 }
 CORE_TOOLS = {"pageindex_search", "pageindex_retrieve", "pageindex_insert_markdown", "pageindex_create_tree"}
+NO_MODEL_PDF_TOOL = "pageindex_import_pdf"
 _MARKER_TAIL = "lower top_k or narrow the query]"
 
 _FILLER = (
@@ -221,16 +221,17 @@ def _stub_tiktoken(monkeypatch):
 
 
 def test_factory_hides_llm_tools_without_llm(tmp_path: Path) -> None:
-    """AC-8: no llm -> none of the five LLM tools; the core tools are served."""
+    """AC-8: no llm -> none of the four LLM tools; the core tools are served."""
     seed_toolkit_sections(tmp_path, ["pageindex"])
     server = create_toolkit_mcp_server("pageindex", tmp_path)
     names = set(server.tools)
     assert not (names & LLM_TOOLS)
     assert CORE_TOOLS <= names
+    assert NO_MODEL_PDF_TOOL in names
 
 
 def test_factory_serves_llm_tools_with_llm(tmp_path: Path, monkeypatch) -> None:
-    """AC-8: with llm (factory monkeypatched) all five appear and the adapter wraps the fake client."""
+    """AC-8: with llm (factory monkeypatched) all four appear and the adapter wraps the fake client."""
     fake = MagicMock(spec=AbstractClient)
     monkeypatch.setattr("parrot.clients.factory.LLMFactory.create", lambda *a, **k: fake)
     _configure_section(tmp_path, llm="fake:model")
@@ -289,6 +290,7 @@ def test_pageindex_serves_over_stdio(tmp_path: Path) -> None:
         names = {t["name"] for t in listed["result"]["tools"]}
         assert CORE_TOOLS <= names
         assert not (names & LLM_TOOLS)
+        assert NO_MODEL_PDF_TOOL in names
 
         created = _tool(proc, stray, 3, "pageindex_create_tree", tree_name="guide")
         assert "error" not in created, created

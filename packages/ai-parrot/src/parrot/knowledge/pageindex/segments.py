@@ -362,15 +362,27 @@ def attach_pdf_document(structure: list[dict], revision: DocumentRevision) -> No
     title; span end is ``min(first segment after end_index, next sibling's start)`` widened to the children's
     ends. Top-level siblings additionally absorb the gap before the next one, the first starts at 0 and the last
     ends at ``len(segments)``, so the owned ranges partition the revision. A node whose pages hold no segment
-    owns nothing.
+    owns nothing. A node carrying ``anchor = {"page": p, "ordinal": o}`` starts at the segment with that page and
+    ordinal when one exists (before the title match); ``anchor`` is removed from every node visited, attached or not.
     """
     from bisect import bisect_left, bisect_right
 
     segments = revision.segments
     total = len(segments)
     pages = [s.page if s.page is not None else 0 for s in segments]
+    anchor_seq: dict[tuple[int, int], int] = {
+        (seg.page, seg.ordinal): idx for idx, seg in enumerate(segments) if seg.page is not None
+    }
 
     def start_of(node: dict) -> Optional[int]:
+        anchor = node.get("anchor")
+        if isinstance(anchor, dict):
+            try:
+                seq = anchor_seq.get((anchor.get("page"), anchor.get("ordinal")))
+            except TypeError:  # unhashable page/ordinal values: fall back to the title match
+                seq = None
+            if seq is not None:
+                return seq
         page = node.get("start_index")
         if page is None:
             return None
@@ -425,6 +437,11 @@ def attach_pdf_document(structure: list[dict], revision: DocumentRevision) -> No
                 _clear_subtree(node.get("nodes") or [], revision)
 
     attach_level(structure, 0, total, True)
+    pending = list(structure)
+    while pending:
+        node = pending.pop()
+        node.pop("anchor", None)
+        pending.extend(node.get("nodes") or [])
 
 
 def attach_section_document(structure: list[dict], revision: DocumentRevision,

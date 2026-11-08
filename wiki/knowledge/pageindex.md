@@ -22,6 +22,7 @@ PageIndex builds a **hierarchical semantic tree** from PDF and Markdown document
 - [Integration with Agents](#integration-with-agents)
 - [Configuration Options](#configuration-options)
 - [Generation Publication](pageindex-generation-publication.md)
+- [Layout Structure Builder](pageindex-layout-structure.md)
 - [Local MCP Toolkit](pageindex-local-mcp.md)
 - [Segment Store](pageindex-segment-store.md)
 - [Agentic Retrieval and Citations](pageindex-agentic-retrieval.md)
@@ -64,20 +65,20 @@ asyncio.run(main())
 
 ```
 ┌──────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│   PDF    │────▶│  TOC detect  │────▶│  Tree build  │────▶│  Summaries   │
-│ document │     │  & extract   │     │  & structure │     │  & metadata  │
+│   PDF    │────▶│  Layout      │────▶│  Structure   │────▶│  LLM         │
+│ document │     │  analysis    │     │  selection   │     │  fallback    │
 └──────────┘     └──────────────┘     └──────────────┘     └──────────────┘
                        │                     │                     │
                        ▼                     ▼                     ▼
-                    LLM calls          Hierarchical            LLM calls
-                 (any provider)        tree (JSON)          (any provider)
+                bookmarks &        bookmarks / layout /      (if no
+                font stats         hybrid candidates        structure)
 ```
 
 1. **Document Parsing** — Extract text from each page using PyMuPDF or PyPDF2.
-2. **TOC Detection** — LLM examines the first N pages to determine if a Table of Contents exists.
-3. **TOC Extraction** — If found, the TOC is extracted and mapped to physical page indices.
-4. **Tree Construction** — Sections are organized into a hierarchical tree with `start_index`/`end_index` page ranges.
-5. **Summarization** — Each node gets an LLM-generated summary for retrieval guidance.
+2. **Layout Analysis** — Measure body text, rank heading sizes, find running headers/footers, read bookmarks, collect standalone bold lines.
+3. **Structure Selection** — Score bookmarks and layout candidates; choose the best (or fall back to LLM or one node per page).
+4. **Tree Construction** — Build the hierarchical tree with `start_index`/`end_index` page ranges.
+5. **Summarization** — Each node gets an LLM-generated summary for retrieval guidance (only when an adapter is configured).
 6. **Retrieval** — At query time, the LLM reasons over the tree structure to identify relevant nodes.
 
 ### Tree Structure
@@ -197,6 +198,22 @@ tree = await build_page_index(
     },
 )
 ```
+
+### Without a Model
+
+When you don't have an LLM adapter, `build_page_index` uses the PDF's bookmarks and printed headings to build the tree deterministically:
+
+```python
+# No adapter: structure from bookmarks or layout (no LLM call)
+tree = await build_page_index("document.pdf")
+print(tree["structure_source"])  # "bookmarks", "layout", or "hybrid"
+print(tree["structure_report"]["confidence"])  # chosen candidate's score
+```
+
+The `structure_mode` option controls which structure source to use:
+- `"auto"` (default): try bookmarks, then layout, then LLM fallback
+- `"layout"`: use only layout (no LLM structure call)
+- `"llm"`: use only the LLM pipeline (requires an adapter)
 
 ### From BytesIO
 
@@ -456,6 +473,8 @@ Options passed to `build_page_index` or `md_to_tree`:
 | `if_add_node_summary` | `str` | `"yes"` | Generate LLM summaries per node |
 | `if_add_doc_description` | `str` | `"no"` | Generate a document-level description |
 | `if_add_node_text` | `str` | `"no"` | Include raw page text in each node |
+| `structure_mode` | `str` | `"auto"` | PDF structure source: `"auto"` (bookmarks/layout, LLM fallback), `"layout"` (no LLM structure call), `"llm"` |
+| `structure_min_confidence` | `float` | `0.6` | Confidence a bookmarks/layout candidate needs before the fallback |
 
 ---
 
@@ -475,17 +494,17 @@ from parrot.knowledge.pageindex import (
 )
 ```
 
-### `build_page_index(doc, adapter, options=None) → dict`
+### `build_page_index(doc, adapter=None, options=None) → dict`
 
 Build a PageIndex tree from a PDF.
 
 | Param | Type | Description |
 |-------|------|-------------|
 | `doc` | `str \| BytesIO` | Path to PDF file or BytesIO stream |
-| `adapter` | `PageIndexLLMAdapter` | LLM adapter for all LLM calls |
+| `adapter` | `PageIndexLLMAdapter \| None` | LLM adapter for all LLM calls; optional — without it structure is deterministic and summaries are skipped |
 | `options` | `dict \| SimpleNamespace \| None` | Configuration overrides |
 
-**Returns:** `dict` with keys `doc_name`, `structure`, and optionally `doc_description`.
+**Returns:** `dict` with keys `doc_name`, `structure`, `structure_source`, `structure_report`, `_segments`, and optionally `doc_description`. `structure_source` is `"bookmarks"`, `"layout"`, `"hybrid"`, `"llm"`, or `"pages"`. `structure_report` contains `candidates` (list of `CandidateScore`), `confidence` (chosen candidate's score), and other metadata.
 
 ### `md_to_tree(md_text, adapter, options=None, doc_name="document.md") → dict`
 
