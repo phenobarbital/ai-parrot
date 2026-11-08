@@ -83,8 +83,8 @@ class PageIndexToolkit(AbstractToolkit):
     })
     @property
     def has_llm(self) -> bool                                # :361
-    async def create_tree(self, tree_name, doc_name=None) -> dict   # :586
-    async def import_pdf(self, tree_name, pdf_path, ..., structure_mode="auto") -> dict  # :1534 (after TASK-5341)
+    async def create_tree(self, tree_name, doc_name=None) -> dict   # :592
+    async def import_pdf(self, tree_name, pdf_path, ..., structure_mode="auto") -> dict  # :1546 (after TASK-5341)
     self._store.load(tree_name) -> dict                      # JSONTreeStore (:189)
 # parrot/tools/toolkit.py:663  def list_tool_names(self) -> list[str]
 
@@ -107,7 +107,7 @@ def test_pageindex_serves_over_stdio(tmp_path)                # :251 (asserts :2
 # wiki/knowledge/pageindex-local-mcp.md
 #   :61 "Without `llm:` the server serves every tool except the five that need a model, which the factory hides through"
 #   :63-67 the five list items ("- `pageindex_import_pdf`" :67)
-#   :69-74 "Everything else works with no model: ... With `llm:` set, the five hidden tools appear and" (:73)
+#   :70-74 "Everything else works with no model: ... With `llm:` set, the five hidden tools appear and" (:73)
 
 # wiki/tools/mcp-local-toolkits.md  (## `pageindex` section, :268-280)
 #   :275 "The template ships **without** an `llm:`: search is BM25 and the five tools that need a model"  (count 1)
@@ -250,7 +250,7 @@ that say "five" (:224, :233) to "four". The with-`llm` test keeps `LLM_TOOLS <= 
 <!-- occurrences: 1 (verified: grep -c 'Without `llm:` the server serves every tool except the five that need a model, which the factory hides through' pageindex-local-mcp.md)
      REPLACE :61 "the five" -> "the four"; DELETE the list item :67 "- `pageindex_import_pdf`" (count 1) -->
 Without `llm:` the server serves every tool except the four that need a model, which the factory hides through
-<!-- in the "Everything else works with no model:" paragraph (:69-74): add `pageindex_import_pdf` (structure from the
+<!-- in the "Everything else works with no model:" paragraph (:70-74): add `pageindex_import_pdf` (structure from the
      PDF's bookmarks or printed headings, no summaries; see pageindex-layout-structure.md) to the list, and
      REPLACE "the five hidden tools appear" (:73, count 1) with "the four hidden tools appear" -->
 ```

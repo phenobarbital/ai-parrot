@@ -82,20 +82,20 @@ class PageIndexToolkit(AbstractToolkit):
     self._store = JSONTreeStore(storage_dir)                                    # :189
     self._segment_store = SegmentStore(storage_dir)                             # :191
     self._light_adapter: Optional[PageIndexLLMAdapter]                          # :184
-    async def create_tree(self, tree_name: str, doc_name: Optional[str] = None) -> dict[str, Any]  # :586
-    def _documents_of(self, tree: dict[str, Any]) -> dict[str, dict[str, Any]]  # :748; dict literal :754
-    async def list_documents(self, tree_name: str) -> list[dict[str, Any]]      # :842; row dict :852-861 ("scored_by" :859, "available" :860)
-    async def insert_markdown(self, tree_name, markdown, parent_node_id=None, doc_name=None, doc_id=None, ...)  # :1359
+    async def create_tree(self, tree_name: str, doc_name: Optional[str] = None) -> dict[str, Any]  # :592
+    def _documents_of(self, tree: dict[str, Any]) -> dict[str, dict[str, Any]]  # :755; dict literal :761
+    async def list_documents(self, tree_name: str) -> list[dict[str, Any]]      # :853; row dict :864-861 ("scored_by" :871, "available" :872)
+    async def insert_markdown(self, tree_name, markdown, parent_node_id=None, doc_name=None, doc_id=None, ...)  # :1375
     async def import_pdf(self, tree_name, pdf_path, parent_node_id=None, with_summaries=True,
-                         with_doc_description=False, doc_id=None) -> dict[str, Any]  # :1534
-        # :1543 docstring; :1556 is_file guard; :1557-1567 build_page_index(...) call ("if_add_node_id" :1564)
-        # :1572 node_markdown = dict(subtree.pop("_node_markdown", {}) or {})
-        # :1573 pages = list(subtree.pop("_pages", []) or [])
-        # :1574 segments = await asyncio.to_thread(segment_pages, pages) if pages else []
-        # :1598 attach_pdf_document(fresh["structure"], revision)   (inside `if segments and source is not None:`)
-        # :1599 new_ids = splice_subtree(txn.tree, fresh, parent_node_id=parent_node_id)
-        # :1609-1615 return {tree_name, new_node_ids, doc_name, doc_description (:1613), **imported (:1614)}
-    async def _scan(self, segments: list) -> Optional[ScanReport]               # :1617
+                         with_doc_description=False, doc_id=None) -> dict[str, Any]  # :1546
+        # :1555 docstring; :1568 is_file guard; :1569-1567 build_page_index(...) call ("if_add_node_id" :1576)
+        # :1584 node_markdown = dict(subtree.pop("_node_markdown", {}) or {})
+        # :1585 pages = list(subtree.pop("_pages", []) or [])
+        # :1586 segments = await asyncio.to_thread(segment_pages, pages) if pages else []
+        # :1610 attach_pdf_document(fresh["structure"], revision)   (inside `if segments and source is not None:`)
+        # :1611 new_ids = splice_subtree(txn.tree, fresh, parent_node_id=parent_node_id)
+        # :1621-1615 return {tree_name, new_node_ids, doc_name, doc_description (:1625), **imported (:1626)}
+    async def _scan(self, segments: list) -> Optional[ScanReport]               # :1629
 
 # packages/ai-parrot/src/parrot/knowledge/pageindex/tree_ops.py
 def _coerce_subtree(subtree) -> list[dict]   # :40 — splice uses only subtree["structure"]; extra keys are ignored
@@ -180,9 +180,9 @@ def _coerce_subtree(subtree) -> list[dict]   # :40 — splice uses only subtree[
 
 Block A — `import_pdf` and `_strip_anchors`:
 ```python
-# A1  occurrences: 1 (verified: grep -c '    async def import_pdf(' toolkit.py) — REPLACE toolkit.py:1534-1555
+# A1  occurrences: 1 (verified: grep -c '    async def import_pdf(' toolkit.py) — REPLACE toolkit.py:1546-1555
 #     (signature + docstring, down to and including the closing `"""` after
-#     ``{tree_name, new_node_ids, doc_name, doc_description?, pages}``  (:1554, count 1))
+#     ``{tree_name, new_node_ids, doc_name, doc_description?, pages}``  (:1566, count 1))
     async def import_pdf(
         self,
         tree_name: str,
@@ -213,10 +213,10 @@ Block A — `import_pdf` and `_strip_anchors`:
                   structure_source, structure_confidence, structure_report}
         """
 
-# A2  occurrences: 1 (verified: grep -c '                "if_add_node_id": "yes",' toolkit.py) — AFTER toolkit.py:1564
+# A2  occurrences: 1 (verified: grep -c '                "if_add_node_id": "yes",' toolkit.py) — AFTER toolkit.py:1576
                 "structure_mode": structure_mode,
 
-# A3  occurrences: 1 each (verified: grep -c on each line) — REPLACE toolkit.py:1572-1574
+# A3  occurrences: 1 each (verified: grep -c on each line) — REPLACE toolkit.py:1584-1574
         node_markdown = dict(subtree.pop("_node_markdown", {}) or {})
         pages = list(subtree.pop("_pages", []) or [])
         built_segments = subtree.pop("_segments", None)
@@ -228,18 +228,18 @@ Block A — `import_pdf` and `_strip_anchors`:
         segments = ...
 
 # A4  occurrences: 1 (verified: grep -c '                attach_pdf_document(fresh["structure"], revision)' toolkit.py)
-#     AFTER toolkit.py:1598 — closes the `if segments and source is not None:` block
+#     AFTER toolkit.py:1610 — closes the `if segments and source is not None:` block
             else:
                 self._strip_anchors(fresh["structure"])
 
 # A5  occurrences: 1 (verified: grep -c '            "doc_description": subtree.get("doc_description"),' toolkit.py)
-#     AFTER toolkit.py:1613 (before `**imported,` at :1614)
+#     AFTER toolkit.py:1625 (before `**imported,` at :1626)
             "structure_source": structure_source,
             "structure_confidence": (structure_report or {}).get("confidence"),
             "structure_report": structure_report,
 
 # A6  occurrences: 1 (verified: grep -c '    async def _scan(self, segments: list) -> Optional[ScanReport]:' toolkit.py)
-#     BEFORE toolkit.py:1617
+#     BEFORE toolkit.py:1629
     @staticmethod
     def _strip_anchors(nodes: list[dict[str, Any]]) -> None:
         """Remove the transient ``anchor`` key from every node (no-revision path)."""
@@ -257,7 +257,7 @@ survive (TASK-5338 handles the revision branch). `structure_to_list` walks neste
 Block B — `_documents_of`:
 ```python
 # occurrences: 1 (verified: grep -c '                docs[doc_id] = {"revision": revision, "root_node_id": node.get("node_id"), "name": node.get("title")}' toolkit.py)
-# REPLACE toolkit.py:754
+# REPLACE toolkit.py:761
                 docs[doc_id] = {
                     "revision": revision,
                     "root_node_id": node.get("node_id"),
@@ -271,11 +271,11 @@ carries `structure_source`, markdown/ebook/legacy nodes carry none → `None`.
 Block C — `list_documents` row:
 ```python
 # occurrences: 1 (verified: grep -c '                    "scored_by": rev.scored_by if rev else None,' toolkit.py)
-# AFTER toolkit.py:859
+# AFTER toolkit.py:871
                     "structure_source": info.get("structure_source"),
 ```
 **Why**: AC-9 — one more column; `info` is the `_documents_of` entry, so legacy trees read `None`.
-Update the `list_documents` docstring's field list (:843) to name `structure_source`.
+Update the `list_documents` docstring's field list (:854) to name `structure_source`.
 
 ### `packages/ai-parrot/tests/knowledge/pageindex/test_layout_import.py` (CREATE)
 ```python

@@ -73,15 +73,15 @@ from parrot.knowledge.pageindex.layout import PDFStructureError   # (ValueError)
 ```python
 # packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py
 PageIndexToolkit(adapter=None, storage_dir=..., ...)                            # :145 (adapter optional since FEAT-842)
-async def create_tree(self, tree_name, doc_name=None) -> dict                   # :586
-async def get_generation(self, tree_name) -> dict                               # :738
-async def list_documents(self, tree_name) -> list[dict]                         # :842
-async def read_pages(self, tree_name, doc_id, pages, max_chars=12000, cursor=None) -> dict  # :924
+async def create_tree(self, tree_name, doc_name=None) -> dict                   # :592
+async def get_generation(self, tree_name) -> dict                               # :745
+async def list_documents(self, tree_name) -> list[dict]                         # :853
+async def read_pages(self, tree_name, doc_id, pages, max_chars=12000, cursor=None) -> dict  # :937
     # returns ReadResult.model_dump(): {"segments": [{"seq", "text", "start", "end", "address": {"page", ...}, ...}], ...}
     # (see test_read_tools.py:78-96 for the shape in use)
 self._store.load(tree_name) -> dict                                             # :189 JSONTreeStore
-async def _run_t3_classification(...)                                           # :480 — only runs when the tree already has
-    # OKF-typed nodes (gate :520-521); a fresh tree has none, so a scripted adapter sees builder calls only
+async def _run_t3_classification(...)                                           # :486 — only runs when the tree already has
+    # OKF-typed nodes (gate :526-527); a fresh tree has none, so a scripted adapter sees builder calls only
 
 # packages/ai-parrot/src/parrot/knowledge/pageindex/builder.py — names monkeypatched by this test:
 #   extract_markdown_per_page (module global, imported at builder.py:15; called with hdr_info= after TASK-5340)
