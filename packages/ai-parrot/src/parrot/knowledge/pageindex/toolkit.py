@@ -137,7 +137,6 @@ class PageIndexToolkit(AbstractToolkit):
             "pageindex_insert_content",
             "pageindex_import_file",
             "pageindex_import_folder",
-            "pageindex_import_pdf",
             "pageindex_search_documents_scoped",
         }
     )
