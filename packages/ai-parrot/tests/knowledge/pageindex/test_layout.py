@@ -3,12 +3,23 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 pymupdf = pytest.importorskip("pymupdf")
+pymupdf4llm = pytest.importorskip("pymupdf4llm")
 
-from parrot.knowledge.pageindex.layout import UnreadablePDFError, _read_bookmarks, analyze_layout  # noqa: E402
+from parrot.knowledge.pageindex.layout import (  # noqa: E402
+    Bookmark,
+    BoldLine,
+    LayoutHeaders,
+    LayoutProfile,
+    RunningLine,
+    UnreadablePDFError,
+    _read_bookmarks,
+    analyze_layout,
+)
 
 FILLER = "body text line with plenty of ordinary words for the statistics"
 Item = tuple[float, float, str, float, str]
@@ -140,3 +151,102 @@ def test_unreadable_pdf(tmp_path: Path) -> None:
     with pytest.raises(UnreadablePDFError) as error:
         analyze_layout(str(path))
     assert isinstance(error.value, ValueError)
+
+
+def _span(text: str, size: float, bbox: tuple[float, float, float, float], bold: bool = False) -> dict:
+    """Build a span dict shaped like pymupdf4llm's output."""
+    return {
+        "text": text,
+        "size": size,
+        "flags": 16 if bold else 0,
+        "char_flags": 0,
+        "font": "Helvetica-Bold" if bold else "Helvetica",
+        "bbox": pymupdf.Rect(bbox),
+    }
+
+
+def _page(number: int) -> SimpleNamespace:
+    """Build a minimal PyMuPDF page-compatible object."""
+    return SimpleNamespace(number=number, rect=SimpleNamespace(height=842.0))
+
+
+def test_header_detector_rules() -> None:
+    """Apply header detector rules one through six to hand-built spans."""
+    profile = LayoutProfile(
+        page_count=2,
+        body_size=10,
+        heading_sizes=[16, 12],
+        running=[RunningLine(key="acme manual", band="top", pages=4)],
+        bold_lines={1: [BoldLine(text="important notes", bbox=(72.0, 89.3, 148.7, 103.1))]},
+        bookmarks=[Bookmark(level=1, title="2 Getting Started", page=2)],
+    )
+    headers = LayoutHeaders(profile)
+
+    assert headers.get_header_id(_span("  ", 16, (72, 100, 160, 116)), page=_page(0)) == ""
+    assert headers.get_header_id(_span("ACME Manual", 16, (72, 30, 160, 46), bold=True), page=_page(0)) == ""
+    assert headers.get_header_id(_span("Chapter", 16, (72, 100, 160, 116)), page=_page(0)) == "# "
+    assert headers.get_header_id(_span("Section", 12, (72, 120, 160, 136)), page=_page(0)) == "## "
+    assert headers.get_header_id(_span("Rounded", 15.6, (72, 140, 160, 156)), page=_page(0)) == "# "
+    assert headers.get_header_id(_span("Chapter", 16, (72, 100, 160, 116))) == "# "
+    assert (
+        headers.get_header_id(_span("Important Notes", 10, (72.0, 92.7, 148.7, 102.2), bold=True), page=_page(0))
+        == "### "
+    )
+    assert headers.get_header_id(_span("Important ", 10, (72.0, 132.7, 120.9, 142.2), bold=True), page=_page(0)) == ""
+    assert headers.get_header_id(_span("Important Notes", 10, (72.0, 92.7, 148.7, 102.2), bold=True)) == ""
+    assert headers.get_header_id(_span("Getting Started", 10, (72, 200, 200, 212), bold=True), page=_page(1)) == "### "
+    assert headers.get_header_id(_span("Getting Started is easy", 10, (72, 220, 250, 232)), page=_page(1)) == ""
+    rejected_headers = LayoutHeaders(profile.model_copy(update={"bookmark_rejection": "non-monotonic: page decreases"}))
+    assert (
+        rejected_headers.get_header_id(_span("Getting Started", 10, (72, 200, 200, 212), bold=True), page=_page(1))
+        == ""
+    )
+    assert headers.get_header_id(_span("ordinary body", 10, (72, 250, 160, 266)), page=_page(0)) == ""
+
+
+def test_bold_heading_occurrence_collision(tmp_path: Path) -> None:
+    """Promote only the standalone body-bold heading, never the bold run-in occurrence."""
+    path = tmp_path / "bold-collision.pdf"
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page()
+        page.insert_text((72, 100), "Important Notes", fontsize=10, fontname="hebo")
+        page.insert_text((72, 140), "Important ", fontsize=10, fontname="hebo")
+        offset = pymupdf.get_text_length("Important ", fontname="hebo", fontsize=10)
+        page.insert_text((72 + offset, 140), "remarks follow in regular text.", fontsize=10, fontname="helv")
+        for x, y, text, size, font in _body(200, 30):
+            page.insert_text((x, y), text, fontsize=size, fontname=font)
+        doc.save(str(path))
+    finally:
+        doc.close()
+
+    profile = analyze_layout(str(path))
+    assert len(profile.bold_lines[1]) == 1
+    chunks = pymupdf4llm.to_markdown(str(path), page_chunks=True, hdr_info=LayoutHeaders(profile))
+    heading_lines = [line for line in chunks[0]["text"].splitlines() if line.startswith("#")]
+    assert len(heading_lines) == 1
+    assert "Important Notes" in heading_lines[0]
+    assert not any("remarks" in line for line in heading_lines)
+
+
+def test_running_lines_never_headings(tmp_path: Path) -> None:
+    """Keep repeated headers and footers in text without promoting them to headings."""
+    pages = []
+    for number in range(1, 5):
+        pages.append(
+            [
+                (72, 40, "ACME Manual", 16, "hebo"),
+                (280, 815, f"Page {number}", 10, "helv"),
+                (72, 100, f"{number} Chapter {number}", 16, "helv"),
+                (72, 130, f"{number}.1 Section {number}", 12, "helv"),
+                *_body(160, 30),
+            ]
+        )
+    path = _write_pdf(tmp_path / "running-headings.pdf", pages)
+    chunks = pymupdf4llm.to_markdown(str(path), page_chunks=True, hdr_info=LayoutHeaders(analyze_layout(str(path))))
+    text_by_page = [chunk["text"] for chunk in chunks]
+    heading_lines = [line for text in text_by_page for line in text.splitlines() if line.startswith("#")]
+
+    assert not any("ACME Manual" in line or "Page " in line for line in heading_lines)
+    assert all("ACME Manual" in text for text in text_by_page)
+    assert any(line.startswith("# ") and "Chapter" in line for line in heading_lines)
