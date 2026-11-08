@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Literal, Optional, Sequence
 
@@ -190,3 +191,147 @@ def page_structure(page_count: int, doc_name: str) -> list[dict]:
     if children:
         root["nodes"] = children
     return [root]
+
+
+def _level_to_depth(anchored: Sequence[dict]) -> dict[int, int]:
+    """Map heading levels to their most common anchored bookmark depths."""
+    counts: dict[int, Counter] = {}
+    for item in anchored:
+        counts.setdefault(int(item["level"]), Counter())[int(item["depth"])] += 1
+    return {level: min(count, key=lambda depth: (-count[depth], depth)) for level, count in counts.items()}
+
+
+def _placed_depth(level: Optional[int], mapping: dict[int, int]) -> Optional[int]:
+    """Return the placement depth for an unbookmarked heading level."""
+    if level is None or not mapping:
+        return None
+    if level in mapping:
+        return mapping[level]
+    lower_levels = [mapped_level for mapped_level in mapping if mapped_level < level]
+    if not lower_levels:
+        return None
+    nearest_level = max(lower_levels)
+    return mapping[nearest_level] + (level - nearest_level)
+
+
+def _position_key(item: dict) -> tuple[int, int]:
+    """Return a document position, placing unanchored items first on their page."""
+    anchor = item.get("anchor")
+    return (int(item["page"]), int(anchor["ordinal"]) if anchor else -1)
+
+
+def insert_layout_headings(
+    bookmark_items: list[dict], profile: LayoutProfile, segments: Sequence[Segment]
+) -> tuple[list[dict], int]:
+    """Apply the hybrid rule by inserting compatible unbookmarked layout headings."""
+    anchored = [item for item in bookmark_items if item.get("anchor") is not None and item.get("level") is not None]
+    if not anchored:
+        return list(bookmark_items), 0
+    mapping = _level_to_depth(anchored)
+    taken = {(item["anchor"]["page"], item["anchor"]["ordinal"]) for item in anchored}
+    _, layout_items = score_layout(profile, segments)
+    inserted: list[dict] = []
+    for item in layout_items:
+        if (item["anchor"]["page"], item["anchor"]["ordinal"]) in taken:
+            continue
+        depth = _placed_depth(item["level"], mapping)
+        if depth is not None:
+            inserted.append({**item, "depth": depth})
+    merged = sorted([*bookmark_items, *inserted], key=_position_key)
+    logger.debug("hybrid: mapping=%s, %d headings inserted", mapping, len(inserted))
+    return merged, len(inserted)
+
+
+def _first_content_ordinals(segments: Sequence[Segment], profile: LayoutProfile) -> dict[int, int]:
+    """Return each page's first ordinal after skipping configured running lines."""
+    running = {line.key for line in profile.running}
+    first: dict[int, int] = {}
+    for page, page_segments in _segments_by_page(segments).items():
+        for segment in page_segments:
+            if running_key(heading_title(segment.text)) not in running:
+                first[page] = segment.ordinal
+                break
+    return first
+
+
+def items_to_tree(items: Sequence[dict], segments: Sequence[Segment], profile: LayoutProfile) -> list[dict]:
+    """Build a nested PageIndex tree with LLM-path page-range conventions."""
+    if not items:
+        return []
+    flat = list(items)
+    if int(flat[0]["page"]) > 1:
+        flat.insert(0, {"depth": 1, "title": "Preface", "page": 1, "anchor": None, "level": None})
+    first = _first_content_ordinals(segments, profile)
+    nodes: list[dict] = []
+    for index, item in enumerate(flat):
+        start = int(item["page"])
+        if index == len(flat) - 1:
+            end = profile.page_count
+        else:
+            next_item = flat[index + 1]
+            next_anchor = next_item.get("anchor")
+            next_page = int(next_item["page"])
+            appears_at_start = next_anchor is not None and next_anchor["ordinal"] == first.get(next_page)
+            end = next_page - 1 if appears_at_start else next_page
+        node: dict = {"title": item["title"], "start_index": start, "end_index": max(end, start)}
+        if item.get("anchor"):
+            node["anchor"] = dict(item["anchor"])
+        nodes.append(node)
+    roots: list[dict] = []
+    stack: list[tuple[int, dict]] = []
+    previous = 0
+    for item, node in zip(flat, nodes):
+        depth = max(1, min(int(item["depth"]), previous + 1))
+        while stack and stack[-1][0] >= depth:
+            stack.pop()
+        (stack[-1][1].setdefault("nodes", []) if stack else roots).append(node)
+        stack.append((depth, node))
+        previous = depth
+    return roots
+
+
+def build_structure(
+    profile: LayoutProfile,
+    segments: Sequence[Segment],
+    *,
+    mode: StructureMode = "auto",
+    min_confidence: float = 0.6,
+) -> Optional[StructureResult]:
+    """Return the selected deterministic structure or ``None`` when no candidate qualifies."""
+    if mode == "llm":
+        return None
+    bookmarks, bookmark_items = score_bookmarks(profile, segments)
+    layout, layout_items = score_layout(profile, segments)
+    inserted = 0
+    if bookmarks.confidence >= min_confidence:
+        source: StructureSource = "bookmarks"
+        items = bookmark_items
+        confidence = bookmarks.confidence
+        if layout.confidence >= min_confidence:
+            items, inserted = insert_layout_headings(bookmark_items, profile, segments)
+            if inserted:
+                source = "hybrid"
+                confidence = min(bookmarks.confidence, layout.confidence)
+    elif layout.confidence >= min_confidence:
+        source = "layout"
+        items = layout_items
+        confidence = layout.confidence
+    else:
+        logger.debug(
+            "no deterministic structure: bookmarks=%.3f, layout=%.3f, threshold=%.3f",
+            bookmarks.confidence,
+            layout.confidence,
+            min_confidence,
+        )
+        return None
+    report = StructureReport(
+        source=source,
+        mode=mode,
+        min_confidence=min_confidence,
+        confidence=confidence,
+        candidates=[bookmarks, layout],
+        inserted_headings=inserted,
+        body_size=profile.body_size,
+        running_lines=len(profile.running),
+    )
+    return StructureResult(source=source, structure=items_to_tree(items, segments, profile), report=report)
