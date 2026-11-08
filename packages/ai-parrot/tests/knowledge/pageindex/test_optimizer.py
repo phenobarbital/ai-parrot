@@ -16,7 +16,9 @@ from parrot.knowledge.pageindex.segments import DocumentRevision, render_body, r
 
 @pytest.fixture(autouse=True)
 def _stub_tokens(monkeypatch):
-    monkeypatch.setattr("parrot.knowledge.pageindex.utils.count_tokens", lambda text, model="gpt-4o": max(1, len(text) // 4))
+    monkeypatch.setattr(
+        "parrot.knowledge.pageindex.utils.count_tokens", lambda text, model="gpt-4o": max(1, len(text) // 4)
+    )
 
 
 @pytest.fixture
@@ -36,13 +38,28 @@ def test_owned_tokens_and_scope(revision: DocumentRevision) -> None:
         "node_id": "root",
         "nodes": [
             {"node_id": "missing", "doc_id": "missing", "revision": "none", "span": [0, 1], "owned": [[0, 1]]},
-            {"node_id": "doc", "doc_id": "doc", "revision": revision.revision, "span": [0, 5], "owned": [[0, 2], [3, 5]]},
-            {"node_id": "locked", "doc_id": "doc", "revision": revision.revision, "locked": True, "span": [0, 1], "owned": [[0, 1]]},
+            {
+                "node_id": "doc",
+                "doc_id": "doc",
+                "revision": revision.revision,
+                "span": [0, 5],
+                "owned": [[0, 2], [3, 5]],
+            },
+            {
+                "node_id": "locked",
+                "doc_id": "doc",
+                "revision": revision.revision,
+                "locked": True,
+                "span": [0, 1],
+                "owned": [[0, 1]],
+            },
         ],
     }
     scoped = optimizable_roots(root, {("doc", revision.revision): revision})
     assert scoped == [root["nodes"][1]]
-    assert owned_tokens(scoped[0], revision) == sum(segment.tokens for segment in revision.segments[:2] + revision.segments[3:5])
+    assert owned_tokens(scoped[0], revision) == sum(
+        segment.tokens for segment in revision.segments[:2] + revision.segments[3:5]
+    )
     assert optimizable_roots(root, {("doc", revision.revision): revision}, node_id="doc") == [root["nodes"][1]]
 
 

@@ -247,8 +247,9 @@ def repair_ownership(doc_nodes: list[dict], revision: DocumentRevision, report: 
     return []
 
 
-def _record_merge(absorbed: dict, absorber: dict, reason: Literal["duplicate_span", "empty", "under_minimum"],
-                  report: OptimizeReport) -> None:
+def _record_merge(
+    absorbed: dict, absorber: dict, reason: Literal["duplicate_span", "empty", "under_minimum"], report: OptimizeReport
+) -> None:
     """Preserve absorbed identity and title, then record a merge action."""
     report.merged.append(
         MergeAction(
@@ -261,8 +262,13 @@ def _record_merge(absorbed: dict, absorber: dict, reason: Literal["duplicate_spa
     )
 
 
-def _absorb(absorber: dict, absorbed: dict, reason: Literal["duplicate_span", "empty", "under_minimum"],
-            report: OptimizeReport, revision: DocumentRevision) -> None:
+def _absorb(
+    absorber: dict,
+    absorbed: dict,
+    reason: Literal["duplicate_span", "empty", "under_minimum"],
+    report: OptimizeReport,
+    revision: DocumentRevision,
+) -> None:
     """Merge a leaf into another leaf while retaining the absorbed title and alias."""
     absorber["owned"] = _merge_ranges(list(absorber.get("owned") or []) + list(absorbed.get("owned") or []))
     absorbed_id = absorbed.get("concept_id")
@@ -280,15 +286,17 @@ def _absorb(absorber: dict, absorbed: dict, reason: Literal["duplicate_span", "e
     if ranges:
         seq = int(ranges[0][0])
         segment = revision.segments[seq]
-        key_item = KeyItem(label=absorbed.get("title", ""), kind="literal", seq=seq,
-                           page=segment.page, ordinal=segment.ordinal)
+        key_item = KeyItem(
+            label=absorbed.get("title", ""), kind="literal", seq=seq, page=segment.page, ordinal=segment.ordinal
+        )
         absorber.setdefault("key_items", []).append(key_item.model_dump())
         report.key_items_added += 1
     _record_merge(absorbed, absorber, reason, report)
 
 
-def normalize(parent_children: list[dict], revision: DocumentRevision, settings: OptimizerSettings,
-              report: OptimizeReport) -> None:
+def normalize(
+    parent_children: list[dict], revision: DocumentRevision, settings: OptimizerSettings, report: OptimizeReport
+) -> None:
     """Collapse duplicate/empty leaves and contiguous undersized sibling leaves."""
     for child in parent_children:
         if not is_locked(child):
@@ -332,7 +340,9 @@ def normalize(parent_children: list[dict], revision: DocumentRevision, settings:
                 if 0 <= candidate < len(parent_children)
                 and not is_locked(parent_children[candidate])
                 and not parent_children[candidate].get("nodes")
-                and _ranges_contiguous(list(node.get("owned") or []) + list(parent_children[candidate].get("owned") or []))
+                and _ranges_contiguous(
+                    list(node.get("owned") or []) + list(parent_children[candidate].get("owned") or [])
+                )
             ),
             None,
         )
@@ -359,4 +369,6 @@ def assign_ownership(node: dict) -> None:
     start = min(span[0] for span in spans)
     end = max(span[1] for span in spans)
     node["span"] = [start, end]
-    node["owned"] = [list(rng) for rng in _subtract((start, end), [tuple(child["span"]) for child in children if child.get("span")])]
+    node["owned"] = [
+        list(rng) for rng in _subtract((start, end), [tuple(child["span"]) for child in children if child.get("span")])
+    ]
