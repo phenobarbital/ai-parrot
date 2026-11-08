@@ -266,6 +266,19 @@ MCP host's caller (the model) must pass `confirm: true` explicitly.
   need the full server's capabilities (auth, multi-agent routing), use
   that instead of `mcp-local`.
 
+## `pageindex` — per-repository document trees (FEAT-842)
+
+Serves PageIndex trees (search, retrieve, markdown/ebook ingest, node edits) to the coding agent, with storage under
+`.parrot/pageindex/` in the repository. Install it with `parrot toolkits install pageindex`; `parrot self add pageindex`
+installs the `ai-parrot[bookstore]` extra it needs (`bm25s`, `pymupdf`).
+
+The template ships **without** an `llm:`: search is BM25 and the five tools that need a model
+(`pageindex_insert_content`, `pageindex_import_file`, `pageindex_import_folder`, `pageindex_import_pdf`,
+`pageindex_search_documents_scoped`) are hidden. Add an `llm:` line to the section to expose them and enable the LLM
+tree walk. `retrieve` output is bounded by `max_result_chars` (24000 in the template). See
+[PageIndex Local MCP Toolkit](../knowledge/pageindex-local-mcp.md) for the options, the opt-in `exclude:` slot and
+troubleshooting.
+
 ## `sdd-coder` — orchestration kernel for the interactive sdd-worker (FEAT-549)
 
 `SddCoderToolkit` (`parrot.flows.dev_loop.sdd_coder.toolkit.SddCoderToolkit`)
