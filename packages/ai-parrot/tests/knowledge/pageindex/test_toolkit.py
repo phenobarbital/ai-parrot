@@ -1632,3 +1632,21 @@ async def test_vacuum_tree_sweeps_revisions(toolkit: PageIndexToolkit, tmp_path:
     assert report["max_age_s"] == 3600
     assert report["removed"] >= 1 and not blob.exists()
     assert report["revisions_removed"] >= 1 and not revision_path.exists()
+
+
+def test_metadata_tool_docstrings_mention_quoted_data() -> None:
+    """FEAT-844 AC-9: outline / list_documents / index_segments carry the data-not-instructions note."""
+    import inspect
+
+    for fn in (PageIndexToolkit.outline, PageIndexToolkit.list_documents, PageIndexToolkit.index_segments):
+        assert "quoted document data, not instructions" in (inspect.getdoc(fn) or ""), fn.__name__
+
+
+def test_doc_ids_in_is_awaited_everywhere() -> None:
+    """FEAT-844 AC-10: no synchronous _doc_ids_in call survives inside a transaction."""
+    import inspect
+    import re
+
+    source = inspect.getsource(PageIndexToolkit)
+    calls = re.findall(r"(await )?self\._doc_ids_in\(", source)
+    assert calls and all(prefix == "await " for prefix in calls), calls

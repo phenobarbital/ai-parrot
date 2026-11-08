@@ -138,3 +138,21 @@ async def test_rename_tree_missing_revision_fails_fast(toolkit, tmp_path):
         await fresh.rename_tree("src", "dst")
     assert not fresh._store.exists("dst")
     assert not (tmp_path / "dst.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_index_segments_drops_body_ref_for_empty_body(toolkit):
+    """FEAT-844 AC-8: a node whose rendered view is empty has no body_ref after index_segments."""
+    await toolkit.create_tree("e")
+    root = await toolkit.add_node("e", "Handbook", body="Handbook intro paragraph.")
+    child = await toolkit.add_node("e", "Blank", body="   ", parent_node_id=root["node_id"])
+    before = {n["node_id"]: n for n in structure_to_list((await toolkit.get_tree("e"))["structure"])}
+    assert before[child["node_id"]].get("body_ref")  # the ref a stale body would have survived behind
+
+    result = await toolkit.index_segments("e")
+
+    assert result["documents"]
+    after = {n["node_id"]: n for n in structure_to_list((await toolkit.get_tree("e"))["structure"])}
+    assert "body_ref" not in after[child["node_id"]]
+    assert after[root["node_id"]].get("body_ref")
+    assert (await toolkit.get_generation("e"))["id"] == result["generation"]

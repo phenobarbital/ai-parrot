@@ -136,6 +136,20 @@ async def test_read_segments_by_node_owned_ranges(paged_toolkit):
 
 
 @pytest.mark.asyncio
+async def test_cursor_outside_selection_rejected(paged_toolkit):
+    """FEAT-844 AC-7: a cursor whose seq is not in the requested pages raises instead of dropping its offset."""
+    tk = paged_toolkit
+    first = await tk.read_pages("t", "doc", "2", max_chars=600)
+    assert first["truncated"] and first["next_cursor"]
+    cursor = first["next_cursor"]
+    with pytest.raises(ValueError, match="not in the requested selection"):
+        await tk.read_pages("t", "doc", "1", cursor=cursor)
+    resumed = await tk.read_pages("t", "doc", "2", cursor=cursor)
+    assert resumed["segments"][0]["seq"] == first["segments"][-1]["seq"]
+    assert resumed["segments"][0]["start"] == first["segments"][-1]["end"]
+
+
+@pytest.mark.asyncio
 async def test_cursor_revision_mismatch(paged_toolkit):
     with pytest.raises(RevisionMismatchError):
         await paged_toolkit.read_pages("t", "doc", "1", cursor=f"doc@{'0' * 16}#0+0")
