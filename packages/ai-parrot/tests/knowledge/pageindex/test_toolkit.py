@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import os
 import threading
@@ -367,7 +368,6 @@ async def test_import_pdf_missing_file_raises(toolkit: PageIndexToolkit, tmp_pat
 # FEAT-189: content-store + LLM-Wiki extensions
 # ---------------------------------------------------------------------------
 
-import json
 
 
 def _fake_build_pdf(monkeypatch):
