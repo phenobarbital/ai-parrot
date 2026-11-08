@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-07T02:02:31+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-08T00:09:03+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -46,16 +46,17 @@
       "feature_id": "FEAT-842",
       "feature": "pageindex-local-mcp-toolkit",
       "spec": "sdd/specs/pageindex-local-mcp-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: modifies knowledge/pageindex/toolkit.py (constructor, search, retrieve) and creates tests/knowledge/pageindex/test_toolkit_no_llm.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5314-toolkit-constructor-without-llm.md"
+      "started_at": "2026-11-07T23:56:50+00:00",
+      "completed_at": "2026-11-08T00:01:05+00:00",
+      "file": "sdd/tasks/completed/TASK-5314-toolkit-constructor-without-llm.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5315",
@@ -64,16 +65,17 @@
       "feature_id": "FEAT-842",
       "feature": "pageindex-local-mcp-toolkit",
       "spec": "sdd/specs/pageindex-local-mcp-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: only knowledge/pageindex/hybrid_search.py and test_hybrid_search.py; the toolkit never reaches _llm_rank without an adapter, so TASK-5314 does not need it.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5315-hybrid-search-optional-adapter.md"
+      "started_at": "2026-11-07T23:56:50+00:00",
+      "completed_at": "2026-11-08T00:01:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5315-hybrid-search-optional-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5316",
@@ -82,7 +84,7 @@
       "feature_id": "FEAT-842",
       "feature": "pageindex-local-mcp-toolkit",
       "spec": "sdd/specs/pageindex-local-mcp-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -91,9 +93,10 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-5314: same file knowledge/pageindex/toolkit.py (anchors after its llm_client parameter and has_llm) and appends to test_toolkit_no_llm.py, which TASK-5314 creates.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5316-retrieve-result-bound.md"
+      "started_at": "2026-11-07T23:56:50+00:00",
+      "completed_at": "2026-11-08T00:02:44+00:00",
+      "file": "sdd/tasks/completed/TASK-5316-retrieve-result-bound.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5317",
@@ -102,16 +105,17 @@
       "feature_id": "FEAT-842",
       "feature": "pageindex-local-mcp-toolkit",
       "spec": "sdd/specs/pageindex-local-mcp-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: creates mcp/_toolkit_templates/pageindex.yaml, examples/pageindex-mcp.yaml and tests/mcp/test_pageindex_template.py; metadata/seed tests never construct the toolkit.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5317-pageindex-template-and-example.md"
+      "started_at": "2026-11-07T23:56:50+00:00",
+      "completed_at": "2026-11-08T00:03:11+00:00",
+      "file": "sdd/tasks/completed/TASK-5317-pageindex-template-and-example.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5318",
@@ -120,7 +124,7 @@
       "feature_id": "FEAT-842",
       "feature": "pageindex-local-mcp-toolkit",
       "spec": "sdd/specs/pageindex-local-mcp-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -131,9 +135,10 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-5314 (PageIndexToolkit(llm_client=...) / no-adapter construction the factory calls), TASK-5316 (max_result_chars + truncation marker asserted over stdio) and TASK-5317 (pageindex.yaml template seeded, and appends to test_pageindex_template.py it creates).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5318-pageindex-server-integration-tests.md"
+      "started_at": "2026-11-07T23:56:50+00:00",
+      "completed_at": "2026-11-08T00:08:05+00:00",
+      "file": "sdd/tasks/completed/TASK-5318-pageindex-server-integration-tests.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5319",
@@ -142,7 +147,7 @@
       "feature_id": "FEAT-842",
       "feature": "pageindex-local-mcp-toolkit",
       "spec": "sdd/specs/pageindex-local-mcp-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -153,9 +158,10 @@
       "parallel": true,
       "parallelism_notes": "Documents symbols created upstream: has_llm/llm_client/llm_dependent_tools (TASK-5314), max_result_chars + marker text (TASK-5316), the pageindex template and example (TASK-5317). Touches only wiki/ and test_local_mcp_docs.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5319-documentation.md"
+      "started_at": "2026-11-07T23:56:50+00:00",
+      "completed_at": "2026-11-08T00:09:03+00:00",
+      "file": "sdd/tasks/completed/TASK-5319-documentation.md",
+      "verification": "verified"
     }
   ]
 }

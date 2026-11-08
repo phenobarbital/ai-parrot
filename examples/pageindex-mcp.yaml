@@ -1,0 +1,21 @@
+# FEAT-842 — PageIndex as a local MCP toolkit, with an LLM configured.
+#
+# Full guidance: wiki/knowledge/pageindex-local-mcp.md.
+# Without `llm:` the server is deterministic (BM25 search, markdown/ebook ingest,
+# node edits, bounded retrieve); with it, the five LLM-dependent tools appear.
+#
+# `storage_dir` is relative to the server's working directory (the project root
+# when a host launches it); the seeded template uses an absolute path instead.
+#
+# Serve with:
+#     parrot mcp-local pageindex --config examples/pageindex-mcp.yaml
+toolkits:
+  pageindex:
+    class: parrot.knowledge.pageindex.toolkit.PageIndexToolkit
+    kwargs:
+      storage_dir: .parrot/pageindex
+      max_result_chars: 24000
+    llm: anthropic:claude-haiku-5-5
+    llm_kwargs: {}
+    exclude: []
+    env: {}
