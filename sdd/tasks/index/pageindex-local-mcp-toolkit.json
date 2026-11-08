@@ -84,7 +84,7 @@
       "feature_id": "FEAT-842",
       "feature": "pageindex-local-mcp-toolkit",
       "spec": "sdd/specs/pageindex-local-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -94,8 +94,9 @@
       "parallelism_notes": "Depends on TASK-5314: same file knowledge/pageindex/toolkit.py (anchors after its llm_client parameter and has_llm) and appends to test_toolkit_no_llm.py, which TASK-5314 creates.",
       "assigned_to": null,
       "started_at": "2026-11-07T23:56:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5316-retrieve-result-bound.md"
+      "completed_at": "2026-11-08T00:02:44+00:00",
+      "file": "sdd/tasks/completed/TASK-5316-retrieve-result-bound.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5317",

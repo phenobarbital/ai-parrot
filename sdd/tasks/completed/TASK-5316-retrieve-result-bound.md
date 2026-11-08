@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-842 — PageIndex Local MCP Toolkit
 **Spec**: `sdd/specs/pageindex-local-mcp-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5314
@@ -232,10 +232,8 @@ See the MODIFY block for `test_toolkit_no_llm.py` above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (fallback sequential loop)
+**Date**: 2026-11-08
+**Notes**: `max_result_chars` keyword + `_bound_text`; retrieve returns `self._bound_text(parts)`. Oversized first part is cut at the last paragraph break after its title line (title kept whole even for a tiny limit). 6 new tests; test_toolkit.py unchanged and passing; ruff clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
