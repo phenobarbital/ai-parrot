@@ -163,8 +163,7 @@ def score_layout(profile: LayoutProfile, segments: Sequence[Segment]) -> tuple[C
             items,
         )
     clean_count = sum(
-        len(heading_title(segment.text).split()) <= MAX_HEADING_WORDS
-        and not heading_title(segment.text).endswith(".")
+        len(heading_title(segment.text).split()) <= MAX_HEADING_WORDS and not heading_title(segment.text).endswith(".")
         for segment in headings
     )
     clean = clean_count / len(headings)
@@ -181,9 +180,7 @@ def score_layout(profile: LayoutProfile, segments: Sequence[Segment]) -> tuple[C
         start_factor,
         confidence,
     )
-    return CandidateScore(
-        source="layout", confidence=confidence, entries=len(headings), anchored=len(headings)
-    ), items
+    return CandidateScore(source="layout", confidence=confidence, entries=len(headings), anchored=len(headings)), items
 
 
 def page_structure(page_count: int, doc_name: str) -> list[dict]:
