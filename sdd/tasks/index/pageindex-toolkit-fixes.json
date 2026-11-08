@@ -86,7 +86,7 @@
       "feature_id": "FEAT-844",
       "feature": "pageindex-toolkit-fixes",
       "spec": "sdd/specs/pageindex-toolkit-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -96,8 +96,9 @@
       "parallelism_notes": "Modifies the same files as TASK-5329 (knowledge/pageindex/toolkit.py, tests/knowledge/pageindex/test_toolkit.py, test_segment_migration.py) — serialized behind it; adds framing.py, test_framing.py, test_read_tools.py which no other task declares.",
       "assigned_to": null,
       "started_at": "2026-11-08T01:34:58.111873+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5330-segment-store-follow-ups.md"
+      "completed_at": "2026-11-08T01:38:08+00:00",
+      "file": "sdd/tasks/completed/TASK-5330-segment-store-follow-ups.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5331",
@@ -106,7 +107,7 @@
       "feature_id": "FEAT-844",
       "feature": "pageindex-toolkit-fixes",
       "spec": "sdd/specs/pageindex-toolkit-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -115,7 +116,7 @@
       "parallel": true,
       "parallelism_notes": "Modifies knowledge/pageindex/toolkit.py after TASK-5330 (same file; transitive edge to TASK-5329 omitted); test_toolkit_no_llm.py is declared by no other task.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T01:38:08.858078+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5331-bound-text-marker-wording.md"
     },
