@@ -4,6 +4,7 @@ The toolkit (and its LLM adapter) are replaced with an in-memory fake so the
 loader's orchestration — tree creation, per-file import dispatch, and the
 tree → Document projection — is exercised without any real LLM calls.
 """
+
 from unittest.mock import MagicMock
 
 import pytest

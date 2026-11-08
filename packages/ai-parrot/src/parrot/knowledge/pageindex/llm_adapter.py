@@ -1,4 +1,5 @@
 """LLM adapter for PageIndex — wraps any AbstractClient for LLM-agnostic calls."""
+
 from __future__ import annotations
 
 import asyncio

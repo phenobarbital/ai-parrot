@@ -17,6 +17,7 @@ The BM25 index is rebuilt lazily — every mutation calls ``mark_dirty``,
 and the next ``search`` rebuilds before scoring.  The embedding matrix
 uses the same dirty / invalidate pattern via :class:`NodeEmbeddingStore`.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -40,8 +41,7 @@ logger = logging.getLogger("parrot.knowledge.pageindex.hybrid_search")
 # DEBUG/INFO/WARNING messages about TPU/CUDA backend probing and every
 # jit compilation. None of that is actionable for PageIndex users, so we
 # pin the ``jax`` logger tree to WARNING at import time.
-for _jax_logger in ("jax", "jax._src", "jax._src.xla_bridge",
-                    "jax._src.interpreters.pxla"):
+for _jax_logger in ("jax", "jax._src", "jax._src.xla_bridge", "jax._src.interpreters.pxla"):
     logging.getLogger(_jax_logger).setLevel(logging.WARNING)
 
 _RRF_K = 60
@@ -208,11 +208,7 @@ class HybridPageIndexSearch:
             row_iter = row.tolist()
         except AttributeError:
             row_iter = list(row)
-        return [
-            self._corpus_node_ids[int(i)]
-            for i in row_iter
-            if 0 <= int(i) < len(self._corpus_node_ids)
-        ]
+        return [self._corpus_node_ids[int(i)] for i in row_iter if 0 <= int(i) < len(self._corpus_node_ids)]
 
     # ---- Dense vector ranking ------------------------------------------
 
@@ -342,17 +338,10 @@ class HybridPageIndexSearch:
             ValueError: When all signals are disabled.
         """
         # Resolve Phase B flag: per-call override wins over constructor default.
-        _use_beam = (
-            use_embedding_walk
-            if use_embedding_walk is not None
-            else self._use_embedding_walk
-        )
+        _use_beam = use_embedding_walk if use_embedding_walk is not None else self._use_embedding_walk
 
         if not (use_bm25 or use_llm_walk or use_vec or _use_beam):
-            raise ValueError(
-                "At least one of use_bm25 / use_llm_walk / use_vec / use_embedding_walk"
-                " must be True"
-            )
+            raise ValueError("At least one of use_bm25 / use_llm_walk / use_vec / use_embedding_walk must be True")
 
         bm25_ranking: list[str] = []
         llm_ranking: list[str] = []
@@ -368,6 +357,7 @@ class HybridPageIndexSearch:
             vec_ranking = await asyncio.to_thread(self._vec_rank, query, top_k)
         if _use_beam and self._embedding_store is not None and self._embed_fn is not None:
             from .vector_walk import embedding_tree_walk
+
             try:
                 q_vecs = await asyncio.to_thread(self._embed_fn, [query])
                 q_vec = np.asarray(q_vecs[0], dtype=np.float32)
@@ -417,13 +407,15 @@ class HybridPageIndexSearch:
             node = find_node_by_id(structure, node_id)
             if not node:
                 continue
-            results.append({
-                "node_id": node_id,
-                "title": node.get("title", ""),
-                "summary": node.get("summary") or node.get("prefix_summary") or "",
-                "score": score,
-                "source": source,
-            })
+            results.append(
+                {
+                    "node_id": node_id,
+                    "title": node.get("title", ""),
+                    "summary": node.get("summary") or node.get("prefix_summary") or "",
+                    "score": score,
+                    "source": source,
+                }
+            )
 
         if rerank and self._reranker is not None and results:
             results = await self._apply_reranker(query, results, top_k)
@@ -452,15 +444,15 @@ class HybridPageIndexSearch:
                 body = self._load_body(cand["node_id"])[:_RERANK_TEXT_LIMIT]
             else:
                 body = (node.get("text") or "")[:_RERANK_TEXT_LIMIT]
-            content = "\n".join(
-                part for part in (cand.get("title"), cand.get("summary"), body) if part
+            content = "\n".join(part for part in (cand.get("title"), cand.get("summary"), body) if part)
+            docs.append(
+                SearchResult(
+                    id=cand["node_id"],
+                    content=content,
+                    metadata={"node_id": cand["node_id"]},
+                    score=float(cand["score"]),
+                )
             )
-            docs.append(SearchResult(
-                id=cand["node_id"],
-                content=content,
-                metadata={"node_id": cand["node_id"]},
-                score=float(cand["score"]),
-            ))
 
         try:
             reranked = await self._reranker.rerank(query, docs, top_n=top_k)

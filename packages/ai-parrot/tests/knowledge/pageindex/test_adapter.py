@@ -1,4 +1,5 @@
 """Tests for PageIndexLLMAdapter with mocked AbstractClient."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -28,7 +29,7 @@ class TestExtractJson:
         assert extract_json('```json\n{"key": "value"}\n```') == {"key": "value"}
 
     def test_array(self):
-        result = extract_json('[1, 2, 3]')
+        result = extract_json("[1, 2, 3]")
         assert result == [1, 2, 3]
 
     def test_trailing_comma(self):
@@ -122,9 +123,7 @@ class TestPageIndexLLMAdapter:
         success_response.output = "success"
         success_response.structured_output = None
 
-        client.ask = AsyncMock(
-            side_effect=[Exception("fail"), success_response]
-        )
+        client.ask = AsyncMock(side_effect=[Exception("fail"), success_response])
         adapter = PageIndexLLMAdapter(client, max_retries=2, retry_delay=0.01)
 
         result = await adapter.ask("test")

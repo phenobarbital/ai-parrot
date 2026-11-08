@@ -51,9 +51,7 @@ from parrot.knowledge.pageindex.utils import structure_to_list
 logger = logging.getLogger(__name__)
 
 # Pattern for pageindex:// URIs — captures tree name and concept_id
-_PAGEINDEX_URI_RE = re.compile(
-    r"pageindex://([^/\s\"'()]+)/([^\s\"'()]+)"
-)
+_PAGEINDEX_URI_RE = re.compile(r"pageindex://([^/\s\"'()]+)/([^\s\"'()]+)")
 
 
 # ---------------------------------------------------------------------------
@@ -206,8 +204,7 @@ def _export_frontmatter(node: dict, tree_name: str) -> str:
         "timestamp": str(node.get("timestamp", "")),
         "summary": node.get("summary", "") or "",
         "relates_to": [
-            {"concept": r.get("concept", ""), "rel": r.get("rel", "references")}
-            for r in (node.get("relates_to") or [])
+            {"concept": r.get("concept", ""), "rel": r.get("rel", "references")} for r in (node.get("relates_to") or [])
         ],
     }
     if node.get("source"):
@@ -245,7 +242,7 @@ def _strip_frontmatter(content: str) -> str:
         if content.endswith("\n---"):
             return ""  # frontmatter fills entire content; no body
         return content
-    return content[second + 5:].lstrip("\n")
+    return content[second + 5 :].lstrip("\n")
 
 
 # ---------------------------------------------------------------------------
@@ -308,9 +305,7 @@ def export_okf_bundle(
         # Guard against concept_ids that could escape output_dir (e.g. "..--evil")
         try:
             if not abs_path.resolve().is_relative_to(output_dir_resolved):
-                logger.warning(
-                    "Skipping concept_id %r: resolved path escapes output_dir", cid
-                )
+                logger.warning("Skipping concept_id %r: resolved path escapes output_dir", cid)
                 continue
         except ValueError:
             logger.warning("Skipping concept_id %r: could not verify path containment", cid)
@@ -516,12 +511,14 @@ def import_okf_bundle(
 
         # relates_to: from frontmatter YAML (first) + markdown links in body
         fm_relates: list[dict] = []
-        for r in (fm_data.get("relates_to") or []):
+        for r in fm_data.get("relates_to") or []:
             if isinstance(r, dict) and r.get("concept"):
-                fm_relates.append({
-                    "concept": str(r["concept"]),
-                    "rel": str(r.get("rel", RelationType.REFERENCES.value)),
-                })
+                fm_relates.append(
+                    {
+                        "concept": str(r["concept"]),
+                        "rel": str(r.get("rel", RelationType.REFERENCES.value)),
+                    }
+                )
 
         # Resolve markdown links from body → additional edges
         link_relates: list[dict] = []
@@ -535,10 +532,12 @@ def import_okf_bundle(
                 stem = link_path.stem if link_path.suffix.lower() == ".md" else link_path.name
                 target_cid = stem_to_cid.get(stem)
                 if target_cid and target_cid not in existing_targets:
-                    link_relates.append({
-                        "concept": target_cid,
-                        "rel": RelationType.REFERENCES.value,
-                    })
+                    link_relates.append(
+                        {
+                            "concept": target_cid,
+                            "rel": RelationType.REFERENCES.value,
+                        }
+                    )
                     existing_targets.add(target_cid)
 
         all_relates = fm_relates + link_relates

@@ -369,7 +369,6 @@ async def test_import_pdf_missing_file_raises(toolkit: PageIndexToolkit, tmp_pat
 # ---------------------------------------------------------------------------
 
 
-
 def _fake_build_pdf(monkeypatch):
     async def _build(doc, adapter, options=None, **kwargs):
         return {

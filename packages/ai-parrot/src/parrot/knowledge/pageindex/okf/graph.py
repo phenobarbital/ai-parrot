@@ -26,7 +26,6 @@ from parrot.knowledge.pageindex.okf.ontology import RelationType
 from parrot.knowledge.pageindex.okf.projection import flatten_concept_id_for_filename
 from parrot.knowledge.pageindex.utils import structure_to_list
 
-
 # Markdown link pattern: [text](target) where target is the link destination
 _MD_LINK_RE = re.compile(r"\[(?:[^\[\]]*)\]\(([^)]+)\)")
 # Fenced code block delimiter

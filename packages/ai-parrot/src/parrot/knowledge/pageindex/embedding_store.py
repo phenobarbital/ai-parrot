@@ -23,6 +23,7 @@ for fast BLAS matmul — rebuilt via ``build_tree_matrix()``, loaded
 An in-memory LRU cache fronts the global tier to avoid repeated disk I/O for
 hot nodes across multiple search calls.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -36,7 +37,6 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import numpy as np
-
 
 logger = logging.getLogger("parrot.knowledge.pageindex.embedding_store")
 
@@ -351,7 +351,9 @@ class NodeEmbeddingStore:
             raise
         logger.debug(
             "Built tree matrix for %r: shape=%s, n_embedded=%d",
-            tree_name, matrix.shape, len(missing_indices),
+            tree_name,
+            matrix.shape,
+            len(missing_indices),
         )
 
         return matrix, node_id_order

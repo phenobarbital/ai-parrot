@@ -97,8 +97,11 @@ class SegmentStore:
     @staticmethod
     def live_revisions(tree: dict[str, Any]) -> set[tuple[str, str]]:
         """Every ``(doc_id, revision)`` named by a node of ``tree``."""
-        return {(n["doc_id"], n["revision"]) for n in structure_to_list(tree.get("structure", []))
-                if isinstance(n.get("doc_id"), str) and isinstance(n.get("revision"), str)}
+        return {
+            (n["doc_id"], n["revision"])
+            for n in structure_to_list(tree.get("structure", []))
+            if isinstance(n.get("doc_id"), str) and isinstance(n.get("revision"), str)
+        }
 
     def mark_superseded(self, tree_name: str, pairs: Iterable[tuple[str, str]]) -> int:
         """Restart the grace clock (``os.utime``) of revisions a new generation stopped referencing."""

@@ -18,6 +18,7 @@ Usage example::
     candidates = await embedding_tree_walk(tree, query_vec, store, beam_width=3)
     # candidates is a list of node_id strings ordered by beam descent
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,7 +26,6 @@ import logging
 from typing import TYPE_CHECKING, Optional
 
 import numpy as np
-
 
 if TYPE_CHECKING:
     from .embedding_store import NodeEmbeddingStore
@@ -49,17 +49,13 @@ class FlatMatrixSearch:
 
     def __init__(self, matrix: np.ndarray, node_ids: list[str]) -> None:
         if len(node_ids) != matrix.shape[0]:
-            raise ValueError(
-                f"node_ids length {len(node_ids)} != matrix rows {matrix.shape[0]}"
-            )
+            raise ValueError(f"node_ids length {len(node_ids)} != matrix rows {matrix.shape[0]}")
         mat = np.asarray(matrix, dtype=np.float32)
         norms = np.linalg.norm(mat, axis=1, keepdims=True)
         self._matrix = mat / np.maximum(norms, 1e-10)
         self._node_ids = list(node_ids)
 
-    def search(
-        self, query_vec: np.ndarray, top_k: int
-    ) -> list[tuple[str, float]]:
+    def search(self, query_vec: np.ndarray, top_k: int) -> list[tuple[str, float]]:
         """Return the top ``top_k`` nodes by cosine similarity.
 
         Args:
