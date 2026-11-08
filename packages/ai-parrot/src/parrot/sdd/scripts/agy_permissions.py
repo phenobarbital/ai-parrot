@@ -1430,8 +1430,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         paths = payload.get("workspacePaths")
         first = paths[0] if isinstance(paths, list) and paths and isinstance(paths[0], str) else os.getcwd()
         result = _render(evaluate(payload, root=dangerous_actions.find_root(first)))
-    except Exception as exc:  # noqa: BLE001 — fail neutral: agy's own rules still decide
-        result = {"decision": "ask", "reason": f"agy-permissions: checks skipped ({type(exc).__name__}: {exc})"}
+    except Exception as exc:  # noqa: BLE001 — never neutral on failure: the broad agy rules would apply unnarrowed
+        result = {
+            "decision": "force_ask",
+            "reason": f"agy-permissions: checks failed ({type(exc).__name__}: {exc}); confirm this command",
+        }
     sys.stdout.write(json.dumps(result) + "\n")
 
 

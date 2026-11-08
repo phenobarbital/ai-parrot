@@ -292,7 +292,10 @@ every command:
   removes those rules only when no other repository still uses them, and never a rule you already had.
 
 `--no-agy-permissions` skips both; `parrot sdd status --json` reports the hook and how many managed rules are
-missing. The snap build of agy cannot run the SDD flow at all: its confinement hides the project venv's
+missing. agy refuses a command whose hook cannot run, so keep `parrot` on `PATH` for agy sessions (the managed
+launcher or an activated venv); if the policy itself fails it answers "confirm this command" rather than letting
+the broad rules apply unchecked. ai-parrot's own tracked hook runs `scripts/sdd/agy_hook.sh` instead, which
+evaluates the checkout's source with the main checkout's `.venv` and asks before every command when it cannot. The snap build of agy cannot run the SDD flow at all: its confinement hides the project venv's
 interpreter and cannot run `ssh`, so `parrot`, `wikitoolkit` and `git push` fail inside it. Install the official
 build instead: `curl -fsSL https://antigravity.google/cli/install.sh | bash` (it installs `~/.local/bin/agy`).
 

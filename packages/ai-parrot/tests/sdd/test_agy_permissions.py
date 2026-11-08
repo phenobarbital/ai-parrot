@@ -459,12 +459,13 @@ def test_main_omits_empty_reason(ws: Path) -> None:
 
 
 @pytest.mark.parametrize("stdin", ["not json", "[1, 2]", ""])
-def test_main_fails_neutral(stdin: str) -> None:
+def test_main_fails_to_force_ask(stdin: str) -> None:
+    """A failure must not answer neutral: the broad agy rules would then apply without narrowing."""
     proc = _run_hook(stdin)
     assert proc.returncode == 0
     out = json.loads(proc.stdout)
-    assert out["decision"] == "ask"
-    assert "checks skipped" in out["reason"]
+    assert out["decision"] == "force_ask"
+    assert "checks failed" in out["reason"]
 
 
 def test_cli_verb_serves_the_hook(ws: Path) -> None:
@@ -477,9 +478,47 @@ def test_cli_verb_serves_the_hook(ws: Path) -> None:
     assert json.loads(result.output.strip().splitlines()[-1])["decision"] == "force_ask"
 
 
-def test_tracked_hooks_json_uses_the_bare_command() -> None:
-    root = Path(__file__).resolve().parents[4]
-    data = json.loads((root / ".agents" / "hooks.json").read_text(encoding="utf-8"))
+REPO_ROOT = Path(__file__).resolve().parents[4]
+LAUNCHER = REPO_ROOT / "scripts" / "sdd" / "agy_hook.sh"
+
+
+def test_tracked_hooks_json_runs_the_repository_launcher() -> None:
+    data = json.loads((REPO_ROOT / ".agents" / "hooks.json").read_text(encoding="utf-8"))
     (entry,) = data["parrot-sdd-permissions"]["PreToolUse"]
     assert entry["matcher"] == "run_command"
-    assert entry["hooks"][0]["command"] == "parrot sdd hooks agy-permissions --hook"
+    # agy runs the command from the folder holding hooks.json
+    assert entry["hooks"][0]["command"] == "sh ../scripts/sdd/agy_hook.sh"
+    assert LAUNCHER.is_file()
+
+
+def test_launcher_serves_this_checkout(ws: Path) -> None:
+    if not (REPO_ROOT.parent / ".git").exists() and not (REPO_ROOT / ".git").exists():
+        pytest.skip("not running from a git checkout")
+    proc = subprocess.run(
+        ["sh", "../scripts/sdd/agy_hook.sh"],
+        cwd=REPO_ROOT / ".agents",
+        input=json.dumps(_payload("find . -name x -delete", ws)),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0
+    out = json.loads(proc.stdout)
+    if "unavailable" in out.get("reason", ""):
+        pytest.skip(f"main checkout has no usable .venv here: {out['reason']}")
+    assert out["decision"] == "force_ask"
+    assert "find -delete" in out["reason"]
+
+
+def test_launcher_outside_a_checkout_asks_for_every_command(tmp_path: Path) -> None:
+    script = tmp_path / "agy_hook.sh"
+    script.write_text(LAUNCHER.read_text(encoding="utf-8"), encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["GIT_CEILING_DIRECTORIES"] = str(tmp_path.parent)
+    proc = subprocess.run(
+        ["sh", str(script)], cwd=tmp_path, input="{}", capture_output=True, text=True, env=env, check=False
+    )
+    assert proc.returncode == 0
+    out = json.loads(proc.stdout)
+    assert out["decision"] == "force_ask"
+    assert "not a git checkout" in out["reason"]

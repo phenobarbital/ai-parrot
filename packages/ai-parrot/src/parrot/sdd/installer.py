@@ -499,6 +499,8 @@ AGY_HOOK_LINE = "parrot sdd hooks agy-permissions --hook"
 _AGY_SUFFIX = " sdd hooks agy-permissions --hook"
 AGY_HOOKS_PATH = Path(".agents/hooks.json")
 AGY_HOOK_NAME = "parrot-sdd-permissions"
+#: ai-parrot's own tracked hook runs this repository launcher (fails to force_ask); install keeps that form
+_AGY_LAUNCHER = "scripts/sdd/agy_hook.sh"
 #: agy settings files relative to the home directory: the official install, then the snap build.
 _AGY_SETTINGS = (
     Path(".gemini/antigravity-cli/settings.json"),
@@ -640,6 +642,9 @@ def _install_agy_hook(root: Path, receipt: dict[str, Any], *, portable: bool | N
         recorded.append("agy-permissions")
     if previous == entry:
         return True, [f"{AGY_HOOKS_PATH} — agy permission hook already registered"]
+    active = _agy_active_hook(data)
+    if active is not None and _AGY_LAUNCHER in active:
+        return True, [f"{AGY_HOOKS_PATH} — agy permission hook already registered (repository launcher kept)"]
     data[AGY_HOOK_NAME] = entry
     _write_json_object(path, data)
     verb = "updated" if previous is not None else "registered"
@@ -776,7 +781,9 @@ def _agy_active_hook(data: dict[str, Any]) -> str | None:
             if not isinstance(hook, dict) or hook.get("type", "command") != "command":
                 continue
             command = hook.get("command")
-            if isinstance(command, str) and command.rstrip().endswith(_AGY_SUFFIX.strip()):
+            if isinstance(command, str) and (
+                command.rstrip().endswith(_AGY_SUFFIX.strip()) or _AGY_LAUNCHER in command
+            ):
                 return command
     return None
 
@@ -790,8 +797,11 @@ def _agy_permissions_report(root: Path) -> dict[str, Any]:
     for path in agy_settings_paths():
         allow = _agy_allow_list(_read_json_object(path) or {}) or []
         settings.append({"path": str(path), "missing_rules": sum(rule not in allow for rule in SDD_ALLOW_RULES)})
+    form = None
+    if command is not None:
+        form = "launcher" if _AGY_LAUNCHER in command else ("bare" if command == AGY_HOOK_LINE else "baked")
     return {
-        "form": None if command is None else ("bare" if command == AGY_HOOK_LINE else "baked"),
+        "form": form,
         "command": command,
         "settings": settings,
         "missing_rules": max((s["missing_rules"] for s in settings), default=len(SDD_ALLOW_RULES)),

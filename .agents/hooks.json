@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "parrot sdd hooks agy-permissions --hook",
-            "timeout": 10
+            "command": "sh ../scripts/sdd/agy_hook.sh",
+            "timeout": 20
           }
         ]
       }

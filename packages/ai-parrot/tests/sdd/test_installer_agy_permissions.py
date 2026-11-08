@@ -274,6 +274,24 @@ def test_status_reports_hook_and_missing_rules(repo: Path, home: Path) -> None:
     assert after["settings"] == [{"path": str(home / SETTINGS), "missing_rules": 0}]
 
 
+def test_repository_launcher_form_is_kept(repo: Path, home: Path) -> None:
+    """ai-parrot's own tracked hook runs scripts/sdd/agy_hook.sh; install must not rewrite it."""
+    launcher = {
+        AGY_HOOK_NAME: {
+            "PreToolUse": [
+                {"matcher": "run_command", "hooks": [{"type": "command", "command": "sh ../scripts/sdd/agy_hook.sh"}]}
+            ]
+        }
+    }
+    _write(repo / HOOKS, launcher)
+    before = (repo / HOOKS).read_bytes()
+    actions = _install(repo)
+    assert (repo / HOOKS).read_bytes() == before
+    assert any("repository launcher kept" in a for a in actions)
+    assert sdd_status(repo)["agy_permissions"]["form"] == "launcher"
+    assert _allow(home / SETTINGS) == list(SDD_ALLOW_RULES)
+
+
 def test_status_ignores_an_inactive_hook(repo: Path, home: Path) -> None:
     _install(repo)
     hooks = _read(repo / HOOKS)
