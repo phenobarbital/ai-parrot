@@ -5,11 +5,21 @@ import pytest
 from parrot.knowledge.pageindex.optimizer import (
     OptimizeReport,
     OptimizerSettings,
+    OptimizePlan,
+    PassStamp,
     assign_ownership,
+    expand_at_headings,
+    finalize_stamps,
+    is_stamped,
     normalize,
     optimizable_roots,
     owned_tokens,
+    pass_input,
+    plan_deterministic,
     repair_ownership,
+    should_expand,
+    stamp_input,
+    validate_candidate,
 )
 from parrot.knowledge.pageindex.segments import DocumentRevision, render_body, revision_id, segment_text
 
@@ -111,3 +121,83 @@ def test_assign_ownership_residuals(revision: DocumentRevision) -> None:
     body = render_body(revision, parent, parent["nodes"])
     assert "<!-- continues in: First -->" in body
     assert "<!-- continues in: Second -->" in body
+
+
+def test_expand_at_headings_and_cost_model(revision: DocumentRevision) -> None:
+    root = {
+        "title": "Parent",
+        "doc_id": "doc",
+        "revision": revision.revision,
+        "span": [0, 5],
+        "owned": [[0, 5]],
+        "nodes": [],
+    }
+    settings = OptimizerSettings(target_leaf_tokens=1, min_leaf_tokens=1, routing_tokens_per_child=0)
+    report = OptimizeReport()
+    expand_at_headings(root, revision, settings, report, depth=0)
+    assert [node["title"] for node in root["nodes"]] == ["First", "Second"]
+    assert len(report.expanded) == 1
+    assert not should_expand(100, [10, 1], 1, OptimizerSettings(min_leaf_tokens=2))
+
+
+def test_stamp_idempotence(revision: DocumentRevision) -> None:
+    tree = {
+        "node_id": "doc",
+        "title": "Parent",
+        "doc_id": "doc",
+        "revision": revision.revision,
+        "span": [0, 5],
+        "owned": [[0, 5]],
+        "nodes": [],
+    }
+    settings = OptimizerSettings(target_leaf_tokens=9999)
+    plan = plan_deterministic(tree, {("doc", revision.revision): revision}, settings, tree_name="tree")
+    node = plan.candidate
+    assert "optimizer" not in node
+    input_hash = stamp_input(node)
+    plan.pending_stamps[id(node)] = {
+        "headings": {
+            "version": "v1",
+            "input": input_hash,
+            "settings": settings.settings_hash(),
+            "execution": "deterministic",
+            "at": "2026-01-01T00:00:00Z",
+        }
+    }
+    plan.pending_stamps[id(node)]["headings"] = PassStamp(**plan.pending_stamps[id(node)]["headings"])
+    finalize_stamps(plan)
+    assert is_stamped(node, settings, pass_name="headings", input_hash=input_hash, execution="deterministic")
+    assert node["optimizer"]["passes"]["headings"]["at"] == "2026-01-01T00:00:00Z"
+    assert not is_stamped({"optimizer": True}, settings, pass_name="headings", input_hash=input_hash, execution="deterministic")
+
+
+def test_stamp_summary_dependencies() -> None:
+    node = {
+        "doc_id": "doc",
+        "revision": "rev",
+        "title": "Parent",
+        "owned": [[0, 2]],
+        "key_items": [{"label": "Parent", "seq": 0}],
+        "nodes": [{"title": "Child", "span": [0, 2], "summary": "one", "key_items": []}],
+    }
+    original = pass_input(node, "summary")
+    node["nodes"][0]["summary"] = "two"
+    assert pass_input(node, "summary") != original
+    node["nodes"][0]["summary"] = "one"
+    node["key_items"].append({"label": "Again", "seq": 1})
+    assert pass_input(node, "summary") != original
+
+
+def test_validate_candidate(revision: DocumentRevision) -> None:
+    candidate = {
+        "node_id": "doc",
+        "title": "Parent",
+        "doc_id": "doc",
+        "revision": revision.revision,
+        "span": [0, 5],
+        "owned": [[0, 4]],
+        "key_items": [{"label": "bad", "seq": 4}],
+        "nodes": [],
+    }
+    plan = OptimizePlan(candidate, OptimizeReport())
+    assert len(validate_candidate(plan, {("doc", revision.revision): revision}, base_tree=candidate)) >= 2

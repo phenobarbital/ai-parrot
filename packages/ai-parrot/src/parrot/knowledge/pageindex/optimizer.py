@@ -4,12 +4,23 @@ from __future__ import annotations
 
 import hashlib
 import json
+import copy
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.pageindex import utils as _utils
-from parrot.knowledge.pageindex.segments import DocumentRevision, _subtract, validate_ownership
+from parrot.knowledge.pageindex.layout_structure import MAX_HEADING_WORDS, heading_title
+from parrot.knowledge.pageindex.segments import (
+    DocumentRevision,
+    Segment,
+    _heading_text,
+    _subtract,
+    _titles_match,
+    normalize_title,
+    validate_ownership,
+)
+from parrot.knowledge.pageindex.utils import structure_to_list
 
 OPTIMIZER_VERSION = "v1"
 Revisions = dict[tuple[str, str], DocumentRevision]
@@ -372,3 +383,295 @@ def assign_ownership(node: dict) -> None:
     node["owned"] = [
         list(rng) for rng in _subtract((start, end), [tuple(child["span"]) for child in children if child.get("span")])
     ]
+
+
+def heading_segments(node: dict, revision: DocumentRevision) -> list[Segment]:
+    """Return owned heading segments, excluding a matching first title heading."""
+    headings = [
+        segment
+        for start, end in node.get("owned") or []
+        for segment in revision.segments[max(int(start), 0) : min(int(end), len(revision.segments))]
+        if segment.kind == "heading"
+    ]
+    if headings and _titles_match(normalize_title(node.get("title", "")), normalize_title(_heading_text(headings[0].text))):
+        return headings[1:]
+    return headings
+
+
+def routing_cost(pieces: list[dict], revision: DocumentRevision, settings: OptimizerSettings) -> int:
+    """Return estimated routing tokens for proposed child pieces."""
+    cost = 0
+    for piece in pieces:
+        title_tokens = _utils.count_tokens(str(piece.get("title", "")))
+        summary = piece.get("summary")
+        cost += title_tokens + (
+            _utils.count_tokens(str(summary)) if summary is not None else settings.routing_tokens_per_child
+        )
+    return cost
+
+
+def should_expand(node_tokens: int, piece_tokens: list[int], cost: int, settings: OptimizerSettings) -> bool:
+    """Return whether a split reduces scanning cost without undersized pieces."""
+    if not piece_tokens:
+        return False
+    return cost + max(piece_tokens) < node_tokens and min(piece_tokens) >= settings.min_leaf_tokens
+
+
+def _owned_in_span(owned: list[list[int]], start: int, end: int) -> list[list[int]]:
+    """Return the intersection of owned ranges with one half-open span."""
+    return [[max(start, int(left)), min(end, int(right))] for left, right in owned if max(start, int(left)) < min(end, int(right))]
+
+
+def split_at(
+    node: dict,
+    revision: DocumentRevision,
+    seqs: list[int],
+    *,
+    source: str,
+    settings: OptimizerSettings,
+    report: OptimizeReport,
+) -> list[dict]:
+    """Create children at valid owned split sequences when the cost model permits it."""
+    owned = list(node.get("owned") or [])
+    valid_seqs = sorted(
+        {
+            int(seq)
+            for seq in seqs
+            if any(int(start) <= int(seq) < int(end) for start, end in owned)
+            and 0 <= int(seq) < len(revision.segments)
+        }
+    )
+    if not valid_seqs:
+        return []
+    final_end = max(int(end) for _, end in owned)
+    pieces: list[dict] = []
+    for index, seq in enumerate(valid_seqs):
+        end = valid_seqs[index + 1] if index + 1 < len(valid_seqs) else final_end
+        piece_owned = _owned_in_span(owned, seq, end)
+        if not piece_owned:
+            continue
+        pieces.append(
+            {
+                "doc_id": node.get("doc_id"),
+                "revision": node.get("revision"),
+                "span": [seq, end],
+                "owned": piece_owned,
+                "title": heading_title(revision.segments[seq].text),
+                "nodes": [],
+            }
+        )
+    piece_tokens = [owned_tokens(piece, revision) for piece in pieces]
+    if not should_expand(owned_tokens(node, revision), piece_tokens, routing_cost(pieces, revision, settings), settings):
+        return []
+    node["nodes"] = pieces
+    assign_ownership(node)
+    report.expanded.append(
+        ExpandAction(
+            parent_title=node.get("title", ""),
+            parent_concept_id=node.get("concept_id"),
+            pieces=[piece["title"] for piece in pieces],
+            source=source,
+        )
+    )
+    return pieces
+
+
+def expand_at_headings(
+    node: dict, revision: DocumentRevision, settings: OptimizerSettings, report: OptimizeReport, *, depth: int
+) -> None:
+    """Recursively expand oversized leaves at their shallowest owned heading level."""
+    if is_locked(node) or depth >= settings.max_depth:
+        return
+    children = node.get("nodes") or []
+    if children:
+        for child in children:
+            expand_at_headings(child, revision, settings, report, depth=depth + 1)
+        assign_ownership(node)
+        return
+    if owned_tokens(node, revision) <= settings.target_leaf_tokens:
+        return
+    headings = [
+        segment
+        for segment in heading_segments(node, revision)
+        if segment.level is not None and len(heading_title(segment.text).split()) <= MAX_HEADING_WORDS
+    ]
+    if not headings:
+        return
+    shallowest = min(segment.level for segment in headings if segment.level is not None)
+    pieces = split_at(
+        node,
+        revision,
+        [segment.seq for segment in headings if segment.level == shallowest],
+        source="layout",
+        settings=settings,
+        report=report,
+    )
+    for piece in pieces:
+        expand_at_headings(piece, revision, settings, report, depth=depth + 1)
+
+
+def _digest(payload: Any) -> str:
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
+def stamp_input(node: dict) -> str:
+    """Return the digest of structural inputs consumed by optimizer passes."""
+    kids = [(child.get("title"), child.get("span")) for child in node.get("nodes") or []]
+    return _digest([node.get("doc_id"), node.get("revision"), node.get("owned"), node.get("title"), kids])
+
+
+def pass_input(node: dict, pass_name: str) -> str:
+    """Return the digest of structural input and dependencies consumed by a pass."""
+    structural = stamp_input(node)
+    if pass_name in {"headings", "key_items"}:
+        return structural
+    if pass_name == "summary":
+        children = [
+            (child.get("title"), child.get("summary"), child.get("key_items"), child.get("span"))
+            for child in node.get("nodes") or []
+        ]
+        return _digest([structural, node.get("key_items"), children])
+    raise ValueError(f"Unknown optimizer pass: {pass_name}")
+
+
+def pass_cache_key(pass_name: str, input_hash: str, execution: str, settings: OptimizerSettings) -> str:
+    """Return the retry-cache key for one pass invocation."""
+    return _digest([pass_name, OPTIMIZER_VERSION, settings.settings_hash(), input_hash, execution])
+
+
+def is_stamped(node: dict, settings: OptimizerSettings, *, pass_name: str, input_hash: str, execution: str) -> bool:
+    """Return whether a matching completion record exists for this pass."""
+    optimizer = node.get("optimizer")
+    if not isinstance(optimizer, dict):
+        return False
+    record = optimizer.get("passes", {}).get(pass_name)
+    if not isinstance(record, dict):
+        return False
+    return (
+        record.get("version") == OPTIMIZER_VERSION
+        and record.get("settings") == settings.settings_hash()
+        and record.get("input") == input_hash
+        and record.get("execution") == execution
+    )
+
+
+def finalize_stamps(plan: OptimizePlan) -> None:
+    """Persist valid pending completion records for mutable candidate nodes only."""
+    for node in structure_to_list(plan.candidate):
+        if id(node) not in plan.mutable:
+            continue
+        pending = plan.pending_stamps.get(id(node), {})
+        if not pending:
+            continue
+        optimizer = node.get("optimizer")
+        if not isinstance(optimizer, dict):
+            optimizer = {}
+            node["optimizer"] = optimizer
+        passes = optimizer.setdefault("passes", {})
+        for pass_name, record in pending.items():
+            if record.input != pass_input(node, pass_name):
+                continue
+            if is_stamped(
+                node,
+                plan.report.settings,
+                pass_name=pass_name,
+                input_hash=record.input,
+                execution=record.execution,
+            ):
+                continue
+            passes[pass_name] = record.model_dump()
+
+
+def _document_nodes(root: dict, doc_id: str, revision: str) -> list[dict]:
+    """Return all nodes in a document subtree for one document revision."""
+    return [
+        node
+        for node in structure_to_list(root)
+        if node.get("doc_id") == doc_id and node.get("revision") == revision
+    ]
+
+
+def plan_deterministic(
+    tree: dict, revisions: Revisions, settings: OptimizerSettings, *, tree_name: str, node_id: Optional[str] = None
+) -> OptimizePlan:
+    """Build a deterministic candidate without writing completion stamps."""
+    candidate = copy.deepcopy(tree)
+    report = OptimizeReport(tree_name=tree_name, node_id=node_id, dry_run=True, settings=settings)
+    plan = OptimizePlan(candidate, report)
+    report.nodes_before = len(structure_to_list(candidate))
+    roots = optimizable_roots(candidate, revisions, node_id=node_id)
+    report.documents = sorted({str(root["doc_id"]) for root in roots})
+    for root in roots:
+        key = (root["doc_id"], root["revision"])
+        revision = revisions[key]
+        doc_nodes = _document_nodes(root, *key)
+        problems = repair_ownership(doc_nodes, revision, report)
+        if problems:
+            report.errors.extend(problems)
+            continue
+        normalize(root.get("nodes") or [], revision, settings, report)
+        assign_ownership(root)
+        expand_at_headings(root, revision, settings, report, depth=0)
+        assign_ownership(root)
+    def mark_mutable(node: dict, ancestor_locked: bool = False) -> None:
+        locked = ancestor_locked or is_locked(node)
+        if locked:
+            report.skipped_locked += 1
+        else:
+            plan.mutable.add(id(node))
+            plan.touched.add(id(node))
+        for child in node.get("nodes") or []:
+            mark_mutable(child, locked)
+
+    for root in roots:
+        mark_mutable(root)
+    report.nodes_after = len(structure_to_list(candidate))
+    before_roots = optimizable_roots(tree, revisions, node_id=node_id)
+    report.leaves_over_target_before = leaves_over_target(before_roots, revisions, settings)
+    report.leaves_over_target_after = leaves_over_target(roots, revisions, settings)
+    return plan
+
+
+def _node_fields(node: dict) -> dict:
+    """Return stable node fields used to compare protected nodes."""
+    return {key: value for key, value in node.items() if key not in {"node_id", "nodes"}}
+
+
+def validate_candidate(plan: OptimizePlan, revisions: Revisions, *, base_tree: dict) -> list[str]:
+    """Validate ownership, key-item anchors, and protected-node immutability."""
+    errors: list[str] = []
+    nodes = structure_to_list(plan.candidate)
+    for (doc_id, revision_id), revision in revisions.items():
+        document_nodes = [
+            node for node in nodes if node.get("doc_id") == doc_id and node.get("revision") == revision_id
+        ]
+        errors.extend(validate_ownership(document_nodes, revision))
+        for node in document_nodes:
+            for item in node.get("key_items") or []:
+                seq = item.get("seq") if isinstance(item, dict) else item.seq
+                if not any(int(start) <= seq < int(end) for start, end in node.get("owned") or []):
+                    errors.append(f"key_item anchor {seq} is outside owned ranges for {node.get('title', '')}")
+    candidate_by_id = {node.get("node_id"): node for node in nodes if node.get("node_id") is not None}
+    for base_node in structure_to_list(base_tree):
+        node_id = base_node.get("node_id")
+        if node_id is None:
+            continue
+        candidate_node = candidate_by_id.get(node_id)
+        if candidate_node is None:
+            errors.append(f"protected node {node_id} was removed")
+        elif id(candidate_node) not in plan.mutable and _node_fields(candidate_node) != _node_fields(base_node):
+            errors.append(f"protected node {node_id} changed")
+    return errors
+
+
+def leaves_over_target(nodes: list[dict], revisions: Revisions, settings: OptimizerSettings) -> int:
+    """Count oversized leaf nodes in the supplied document roots."""
+    count = 0
+    for root in nodes:
+        for node in structure_to_list(root):
+            if node.get("nodes"):
+                continue
+            revision = revisions.get((node.get("doc_id"), node.get("revision")))
+            if revision is not None and owned_tokens(node, revision) > settings.target_leaf_tokens:
+                count += 1
+    return count
