@@ -258,7 +258,7 @@ class AgenticRetriever:
             loaded = await asyncio.wait_for(
                 asyncio.gather(*(asyncio.to_thread(self._load_revision, *key) for key in ordered_keys)), timeout
             )
-            revisions = dict(zip(ordered_keys, loaded))
+            revisions = dict(zip(ordered_keys, loaded, strict=True))
         return validate_citations(ledger, lambda doc_id, revision: revisions.get((doc_id, revision)), proposed)
 
     async def run(
