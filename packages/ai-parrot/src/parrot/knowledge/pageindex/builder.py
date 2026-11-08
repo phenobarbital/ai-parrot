@@ -11,6 +11,7 @@ from io import BytesIO
 from types import SimpleNamespace as config
 from typing import Any, Awaitable, Iterable, Optional
 
+from .framing import DATA_FRAMING_INSTRUCTION, frame_text
 from .llm_adapter import PageIndexLLMAdapter
 from .pdf_to_markdown import build_node_markdown_map, extract_markdown_per_page
 from .schemas import (
@@ -44,6 +45,8 @@ from .utils import (
 )
 
 logger = logging.getLogger("parrot.knowledge.pageindex.builder")
+
+_FRAME_SOURCE = "document"  # ``source`` of every <document_text> frame in the LLM structure pipeline (FEAT-845)
 
 
 # ======================== Bounded LLM Concurrency ========================
@@ -118,7 +121,8 @@ async def toc_detector_single_page(
     prompt = f"""
     Your job is to detect if there is a table of content provided in the given text.
 
-    Given text: {content}
+    Given text:
+    {frame_text(content, source=_FRAME_SOURCE)}
 
     return the following JSON format:
     {{
@@ -129,7 +133,7 @@ async def toc_detector_single_page(
     Directly return the final JSON structure. Do not output anything else.
     Please note: abstract,summary, notation list, figure list, table list, etc. are not table of contents."""
 
-    result = await adapter.ask_structured(prompt, TocDetectionResult)
+    result = await adapter.ask_structured(prompt, TocDetectionResult, system_prompt=DATA_FRAMING_INSTRUCTION)
     if isinstance(result, TocDetectionResult):
         return result.toc_detected
     return "no"
@@ -282,7 +286,8 @@ async def detect_page_index(
 
     Your job is to detect if there are page numbers/indices given within the table of contents.
 
-    Given text: {toc_content}
+    Given text:
+    {frame_text(toc_content, source=_FRAME_SOURCE)}
 
     Reply format:
     {{
@@ -291,7 +296,7 @@ async def detect_page_index(
     }}
     Directly return the final JSON structure. Do not output anything else."""
 
-    result = await adapter.ask_structured(prompt, PageIndexDetection)
+    result = await adapter.ask_structured(prompt, PageIndexDetection, system_prompt=DATA_FRAMING_INSTRUCTION)
     if isinstance(result, PageIndexDetection):
         return result.page_index_given_in_toc
     return "no"
@@ -339,12 +344,12 @@ async def check_if_toc_extraction_is_complete(
     Directly return the final JSON structure. Do not output anything else.
 
     Document:
-    {content}
+    {frame_text(content, source=_FRAME_SOURCE)}
 
     Table of contents:
-    {toc}"""
+    {frame_text(toc, source=_FRAME_SOURCE)}"""
 
-    result = await adapter.ask_structured(prompt, TocCompletionCheck)
+    result = await adapter.ask_structured(prompt, TocCompletionCheck, system_prompt=DATA_FRAMING_INSTRUCTION)
     if isinstance(result, TocCompletionCheck):
         return result.completed
     return "no"
@@ -368,12 +373,12 @@ async def check_if_toc_transformation_is_complete(
     Directly return the final JSON structure. Do not output anything else.
 
     Raw Table of contents:
-    {content}
+    {frame_text(content, source=_FRAME_SOURCE)}
 
     Cleaned Table of contents:
-    {toc}"""
+    {frame_text(toc, source=_FRAME_SOURCE)}"""
 
-    result = await adapter.ask_structured(prompt, TocCompletionCheck)
+    result = await adapter.ask_structured(prompt, TocCompletionCheck, system_prompt=DATA_FRAMING_INSTRUCTION)
     if isinstance(result, TocCompletionCheck):
         return result.completed
     return "no"
@@ -387,11 +392,12 @@ async def extract_toc_content(
     prompt = f"""
     Your job is to extract the full table of contents from the given text, replace ... with :
 
-    Given text: {content}
+    Given text:
+    {frame_text(content, source=_FRAME_SOURCE)}
 
     Directly return the full table of contents content. Do not output anything else."""
 
-    response, finish_reason = await adapter.ask_with_finish_info(prompt)
+    response, finish_reason = await adapter.ask_with_finish_info(prompt, system_prompt=DATA_FRAMING_INSTRUCTION)
     if_complete = await check_if_toc_transformation_is_complete(
         content, response, adapter
     )
@@ -405,7 +411,7 @@ async def extract_toc_content(
     ]
     continuation_prompt = "please continue the generation of table of contents, directly output the remaining part of the structure"
     new_response, finish_reason = await adapter.ask_with_finish_info(
-        continuation_prompt, chat_history=chat_history
+        continuation_prompt, chat_history=chat_history, system_prompt=DATA_FRAMING_INSTRUCTION
     )
     response = response + new_response
     if_complete = await check_if_toc_transformation_is_complete(
@@ -419,7 +425,7 @@ async def extract_toc_content(
             {"role": "assistant", "content": response},
         ]
         new_response, finish_reason = await adapter.ask_with_finish_info(
-            continuation_prompt, chat_history=chat_history
+            continuation_prompt, chat_history=chat_history, system_prompt=DATA_FRAMING_INSTRUCTION
         )
         response = response + new_response
         if_complete = await check_if_toc_transformation_is_complete(
@@ -462,9 +468,9 @@ async def toc_transformer(
     Directly return the final JSON structure, do not output anything else.
 
     Given table of contents:
-    {toc_content}"""
+    {frame_text(toc_content, source=_FRAME_SOURCE)}"""
 
-    last_complete, finish_reason = await adapter.ask_with_finish_info(init_prompt)
+    last_complete, finish_reason = await adapter.ask_with_finish_info(init_prompt, system_prompt=DATA_FRAMING_INSTRUCTION)
     if_complete = await check_if_toc_transformation_is_complete(
         toc_content, last_complete, adapter
     )
@@ -484,14 +490,14 @@ async def toc_transformer(
         Your task is to continue the table of contents json structure, directly output the remaining part of the json structure.
 
         The raw table of contents json structure is:
-        {toc_content}
+        {frame_text(toc_content, source=_FRAME_SOURCE)}
 
         The incomplete transformed table of contents json structure is:
-        {last_complete}
+        {frame_text(last_complete, source=_FRAME_SOURCE)}
 
         Please continue the json structure, directly output the remaining part of the json structure."""
 
-        new_complete, finish_reason = await adapter.ask_with_finish_info(continuation)
+        new_complete, finish_reason = await adapter.ask_with_finish_info(continuation, system_prompt=DATA_FRAMING_INSTRUCTION)
 
         if new_complete.startswith("```json"):
             new_complete = get_json_content(new_complete)
@@ -539,12 +545,12 @@ async def toc_index_extractor(
     Directly return the final JSON structure. Do not output anything else.
 
     Table of contents:
-    {json.dumps(toc)}
+    {frame_text(json.dumps(toc), source=_FRAME_SOURCE)}
 
     Document pages:
-    {content}"""
+    {frame_text(content, source=_FRAME_SOURCE)}"""
 
-    return await adapter.ask_json(prompt)
+    return await adapter.ask_json(prompt, system_prompt=DATA_FRAMING_INSTRUCTION)
 
 
 # ======================== Page Number Mapping ========================
@@ -584,12 +590,12 @@ async def add_page_number_to_toc(
     Directly return the final JSON structure. Do not output anything else.
 
     Current Partial Document:
-    {part}
+    {frame_text(part, source=_FRAME_SOURCE)}
 
     Given Structure:
-    {json.dumps(structure, indent=2)}"""
+    {frame_text(json.dumps(structure, indent=2), source=_FRAME_SOURCE)}"""
 
-    json_result = await adapter.ask_json(prompt)
+    json_result = await adapter.ask_json(prompt, system_prompt=DATA_FRAMING_INSTRUCTION)
 
     if isinstance(json_result, list):
         for item in json_result:
@@ -633,8 +639,10 @@ async def check_title_appearance(
 
     Note: do fuzzy matching, ignore any space inconsistency in the page_text.
 
-    The given section title is {title}.
-    The given page_text is {page_text}.
+    The given section title is:
+    {frame_text(title, source=_FRAME_SOURCE)}
+    The given page_text is:
+    {frame_text(page_text, source=_FRAME_SOURCE)}
 
     Reply format:
     {{
@@ -643,7 +651,7 @@ async def check_title_appearance(
     }}
     Directly return the final JSON structure. Do not output anything else."""
 
-    result = await adapter.ask_structured(prompt, TitleAppearanceCheck)
+    result = await adapter.ask_structured(prompt, TitleAppearanceCheck, system_prompt=DATA_FRAMING_INSTRUCTION)
     answer = result.answer if isinstance(result, TitleAppearanceCheck) else "no"
     return {
         "list_index": item.get("list_index"),
@@ -666,8 +674,10 @@ async def check_title_appearance_in_start(
 
     Note: do fuzzy matching, ignore any space inconsistency in the page_text.
 
-    The given section title is {title}.
-    The given page_text is {page_text}.
+    The given section title is:
+    {frame_text(title, source=_FRAME_SOURCE)}
+    The given page_text is:
+    {frame_text(page_text, source=_FRAME_SOURCE)}
 
     reply format:
     {{
@@ -676,7 +686,7 @@ async def check_title_appearance_in_start(
     }}
     Directly return the final JSON structure. Do not output anything else."""
 
-    result = await adapter.ask_structured(prompt, TitleStartCheck)
+    result = await adapter.ask_structured(prompt, TitleStartCheck, system_prompt=DATA_FRAMING_INSTRUCTION)
     return result.start_begin if isinstance(result, TitleStartCheck) else "no"
 
 
@@ -737,12 +747,12 @@ async def single_toc_item_index_fixer(
     Directly return the final JSON structure. Do not output anything else.
 
     Section Title:
-    {section_title}
+    {frame_text(section_title, source=_FRAME_SOURCE)}
 
     Document pages:
-    {content}"""
+    {frame_text(content, source=_FRAME_SOURCE)}"""
 
-    result = await adapter.ask_structured(prompt, PhysicalIndexFix)
+    result = await adapter.ask_structured(prompt, PhysicalIndexFix, system_prompt=DATA_FRAMING_INSTRUCTION)
     if isinstance(result, PhysicalIndexFix):
         return convert_physical_index_to_int(result.physical_index)
     return None
@@ -968,9 +978,9 @@ async def generate_toc_init(
     Directly return the final JSON structure. Do not output anything else.
 
     Given text:
-    {part}"""
+    {frame_text(part, source=_FRAME_SOURCE)}"""
 
-    response, finish_reason = await adapter.ask_with_finish_info(prompt)
+    response, finish_reason = await adapter.ask_with_finish_info(prompt, system_prompt=DATA_FRAMING_INSTRUCTION)
     if finish_reason == "finished":
         return extract_json(response)
     raise RuntimeError(f"Unexpected finish reason: {finish_reason}")
@@ -1008,12 +1018,12 @@ async def generate_toc_continue(
     Directly return the additional part of the final JSON structure. Do not output anything else.
 
     Given text:
-    {part}
+    {frame_text(part, source=_FRAME_SOURCE)}
 
     Previous tree structure:
-    {json.dumps(toc_content, indent=2)}"""
+    {frame_text(json.dumps(toc_content, indent=2), source=_FRAME_SOURCE)}"""
 
-    response, finish_reason = await adapter.ask_with_finish_info(prompt)
+    response, finish_reason = await adapter.ask_with_finish_info(prompt, system_prompt=DATA_FRAMING_INSTRUCTION)
     if finish_reason == "finished":
         return extract_json(response)
     raise RuntimeError(f"Unexpected finish reason: {finish_reason}")
