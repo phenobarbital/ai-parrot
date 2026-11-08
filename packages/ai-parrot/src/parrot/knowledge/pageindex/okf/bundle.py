@@ -182,7 +182,7 @@ def _rewrite_pageindex_uris(
     return rewritten, count
 
 
-def _export_frontmatter(node: dict, tree_name: str) -> str:
+def _export_frontmatter(node: dict, tree_name: str, alias_to_concept: Optional[dict[str, str]] = None) -> str:
     """Produce OKF v0.1 compliant YAML frontmatter (strips node_id, resource).
 
     Only includes OKF-standard fields: ``type``, ``title``, ``id``, ``tags``,
@@ -191,10 +191,14 @@ def _export_frontmatter(node: dict, tree_name: str) -> str:
     Args:
         node: OKF-enriched PageIndex node dict.
         tree_name: Tree name (unused here — included for future extension).
+        alias_to_concept: Optional mapping of absorbed ``concept_id`` (alias)
+            to the absorbing ``concept_id``; ``relates_to`` targets naming an
+            alias are exported as the absorber's id.
 
     Returns:
         YAML frontmatter string delimited by ``---\\n``.
     """
+    aliases = alias_to_concept or {}
     d: dict = {
         "type": node.get("type", ConceptType.SECTION.value),
         "title": node.get("title", ""),
@@ -203,7 +207,11 @@ def _export_frontmatter(node: dict, tree_name: str) -> str:
         "timestamp": str(node.get("timestamp", "")),
         "summary": node.get("summary", "") or "",
         "relates_to": [
-            {"concept": r.get("concept", ""), "rel": r.get("rel", "references")} for r in (node.get("relates_to") or [])
+            {
+                "concept": aliases.get(r.get("concept", ""), r.get("concept", "")),
+                "rel": r.get("rel", "references"),
+            }
+            for r in (node.get("relates_to") or [])
         ],
     }
     if node.get("source"):
@@ -290,6 +298,16 @@ def export_okf_bundle(
         if cid:
             concept_file_map[cid] = _build_export_path(cid, concept_type_val)
 
+    # Aliases (concept_ids absorbed by a merge) map to the absorber's file and
+    # concept_id.  A live concept_id always wins over an equal alias.
+    alias_to_concept: dict[str, str] = {}
+    for node in nodes:
+        cid = node.get("concept_id", "")
+        for alias in node.get("aliases") or []:
+            if cid and alias and alias not in concept_file_map:
+                concept_file_map[alias] = concept_file_map[cid]
+                alias_to_concept[alias] = cid
+
     total_uris = 0
 
     for node in nodes:
@@ -322,7 +340,7 @@ def export_okf_bundle(
         total_uris += uri_count
 
         # Build OKF frontmatter (without node_id / resource)
-        frontmatter = _export_frontmatter(node, tree_name)
+        frontmatter = _export_frontmatter(node, tree_name, alias_to_concept)
 
         # Write the file
         abs_path.write_text(f"{frontmatter}\n{body}", encoding="utf-8")

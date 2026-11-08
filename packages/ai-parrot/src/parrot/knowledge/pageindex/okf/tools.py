@@ -83,6 +83,12 @@ class OKFToolkit:
             cid = node.get("concept_id")
             if cid:
                 self._by_concept_id[cid] = node
+        # Aliases (concept_ids absorbed by a merge) resolve to the absorbing
+        # node.  Second pass + setdefault: a live concept_id always wins.
+        for node in structure_to_list(tree.get("structure", [])):
+            for alias in node.get("aliases") or []:
+                if alias:
+                    self._by_concept_id.setdefault(alias, node)
 
     def get_tools(self) -> list:
         """Return all OKF tool callables.
@@ -197,11 +203,13 @@ class OKFToolkit:
             )
             raise KeyError(f"concept_id not found: {concept_id!r}")
 
-        flat_id = flatten_concept_id_for_filename(concept_id)
+        # An alias resolves to the absorbing node: report and load the absorber.
+        resolved_id = node.get("concept_id") or concept_id
+        flat_id = flatten_concept_id_for_filename(resolved_id)
         body = self._content_store.load(self._tree_name, flat_id) or ""
 
         return {
-            "concept_id": concept_id,
+            "concept_id": resolved_id,
             "title": node.get("title", ""),
             "summary": node.get("summary", ""),
             "type": node.get("type", ""),
@@ -277,7 +285,7 @@ class OKFToolkit:
 
         src = node.get("source") or {}
         return {
-            "concept_id": concept_id,
+            "concept_id": node.get("concept_id") or concept_id,
             "document": src.get("document", ""),
             "pages": src.get("pages"),
             "url": src.get("url"),
