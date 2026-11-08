@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable, Optional, TypeVar
 
+from parrot.clients.base import AbstractClient
 from parrot.tools.toolkit import AbstractToolkit
 from .builder import build_page_index
 from .content_store import NodeContentStore
@@ -92,6 +93,8 @@ class PageIndexToolkit(AbstractToolkit):
     Args:
         adapter: Heavy LLM adapter. Used for Step-2 markdown generation,
             tree-walk search, and node summarisation via :func:`md_to_tree`.
+            Optional: without one (and without ``llm_client``) the toolkit
+            runs deterministically (BM25 search, offline markdown ingest).
         storage_dir: Filesystem directory where each tree is persisted as
             ``<tree_name>.json``.
         reranker: Optional :class:`AbstractReranker` instance applied to
@@ -119,15 +122,28 @@ class PageIndexToolkit(AbstractToolkit):
             ``None`` (default torch).
         use_vec_rank: Enable Phase A dense cosine-similarity ranking signal.
         use_embedding_walk: Enable Phase B embedding-guided beam walk.
+        llm_client: An :class:`AbstractClient` (what ``parrot mcp-local``
+            passes); wrapped into ``PageIndexLLMAdapter(client=llm_client,
+            model=model)``. Mutually exclusive with ``adapter``.
     """
 
     name = "pageindex"
     tool_prefix = "pageindex"
+    #: Tools the local MCP factory hides when the section has no ``llm`` (names carry the prefix).
+    llm_dependent_tools: frozenset[str] = frozenset(
+        {
+            "pageindex_insert_content",
+            "pageindex_import_file",
+            "pageindex_import_folder",
+            "pageindex_import_pdf",
+            "pageindex_search_documents_scoped",
+        }
+    )
 
     def __init__(
         self,
-        adapter: PageIndexLLMAdapter,
-        storage_dir: str | Path,
+        adapter: Optional[PageIndexLLMAdapter] = None,
+        storage_dir: Optional[str | Path] = None,
         reranker: Optional[Any] = None,
         lightweight_model: Optional[str] = None,
         model: Optional[str] = None,
@@ -144,10 +160,18 @@ class PageIndexToolkit(AbstractToolkit):
         scan_injection: bool = True,
         injection_probability_threshold: float = 0.98,
         read_max_chars: int = 12000,
+        *,
+        llm_client: Optional[AbstractClient] = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
-        self._adapter = adapter
+        if adapter is not None and llm_client is not None:
+            raise ValueError("pass either adapter or llm_client, not both")
+        if storage_dir is None:
+            raise ValueError("PageIndexToolkit requires storage_dir")
+        if adapter is None and llm_client is not None:
+            adapter = PageIndexLLMAdapter(client=llm_client, model=model)
+        self._adapter: Optional[PageIndexLLMAdapter] = adapter
         self._storage_dir = Path(storage_dir)
         self._generation_grace_s = generation_grace_s
         self._lock_timeout_s = lock_timeout_s
@@ -155,14 +179,16 @@ class PageIndexToolkit(AbstractToolkit):
         self._injection_threshold = injection_probability_threshold
         self._read_max_chars = max(500, int(read_max_chars))
         self._light_adapter: Optional[PageIndexLLMAdapter] = (
-            PageIndexLLMAdapter(client=adapter.client, model=lightweight_model) if lightweight_model else None
+            PageIndexLLMAdapter(client=self._adapter.client, model=lightweight_model)
+            if self._adapter is not None and lightweight_model
+            else None
         )
         self._store = JSONTreeStore(storage_dir)
         self._content_store = NodeContentStore(storage_dir, cache_size=content_cache_size)
         self._segment_store = SegmentStore(storage_dir)
         self._detector = PromptInjectionDetector()
         self._reranker = reranker
-        self._model = model or adapter.model
+        self._model = model or (self._adapter.model if self._adapter is not None else None)
         self._default_bm25_k = default_bm25_k
         self._folder_concurrency = max(1, folder_concurrency)
         self._use_vec_rank = use_vec_rank
@@ -326,6 +352,11 @@ class PageIndexToolkit(AbstractToolkit):
                 return _strip_frontmatter(flat_body)
         node_id = node.get("node_id")
         return self._content_store.load(tree_name, node_id) if isinstance(node_id, str) and node_id else None
+
+    @property
+    def has_llm(self) -> bool:
+        """True when an LLM adapter is configured (LLM walk and ingest tools available)."""
+        return self._adapter is not None
 
     def _ingester(self) -> TwoStepIngester:
         return TwoStepIngester(
@@ -1042,6 +1073,9 @@ class PageIndexToolkit(AbstractToolkit):
                 in the dict are filtered out (equality-only).
         """
         engine = self._search_for(tree_name)
+        llm_walk = use_llm_walk and self._adapter is not None
+        if use_llm_walk and not llm_walk and not (use_bm25 or self._use_vec_rank or self._use_embedding_walk):
+            raise ValueError("LLM walk requested but no LLM is configured for this toolkit")
         # Over-fetch slightly when filtering so we still return ``top_k``
         # results after the post-filter where possible. The engine itself
         # caps to its own internal bm25 budget.
@@ -1052,7 +1086,7 @@ class PageIndexToolkit(AbstractToolkit):
             query=query,
             top_k=fetch_k,
             use_bm25=use_bm25,
-            use_llm_walk=use_llm_walk,
+            use_llm_walk=llm_walk,
             rerank=rerank,
             use_vec=self._use_vec_rank,
         )
@@ -1101,7 +1135,7 @@ class PageIndexToolkit(AbstractToolkit):
             query=query,
             top_k=top_k,
             use_bm25=True,
-            use_llm_walk=True,
+            use_llm_walk=self._adapter is not None,
             rerank=False,
         )
         if not candidates:
