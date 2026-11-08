@@ -230,7 +230,7 @@ async def test_hybrid_search_no_loader_matches_baseline():
     engine = HybridPageIndexSearch(tree=tree, adapter=_adapter())
     ids, texts = engine._flatten_corpus()
     # Pre-feature baseline: text reads node["text"].
-    for nid, text in zip(ids, texts):
+    for nid, text in zip(ids, texts, strict=True):
         from parrot.knowledge.pageindex.utils import find_node_by_id
         node = find_node_by_id(tree["structure"], nid)
         assert node is not None

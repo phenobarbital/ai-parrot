@@ -246,11 +246,8 @@ def _tool(proc: subprocess.Popen, stray: list[str], req_id: int, name: str, **ar
 
 # pytector (the prompt-injection scorer FEAT-840 runs on every ingest) prints a "Loading Hugging Face model"
 # banner to stdout on first use, at tool-call time, outside the factory's stdout redirect: a stdio host sees a
-# non-JSON line. Tracked in the SDD ledger (see the TASK-5318 Completion Note); strict, so a fix flips it to XPASS.
-@pytest.mark.xfail(
-    strict=True,
-    reason="stdout pollution by the injection scorer on first insert (FEAT-840 scan_injection) — see issue:70f18da2a8d5",
-)
+# non-JSON line. Tracked in the SDD ledger as issue:70f18da2a8d5 (see the TASK-5318 Completion Note). The banner
+# only appears when the scorer model loads, so this test can pass in environments where it is cached.
 def test_pageindex_serves_over_stdio(tmp_path: Path) -> None:
     """AC-9: handshake, tools/list, create, insert, BM25 hit, bounded retrieve, JSON-only stdout, exit 0."""
     pytest.importorskip("bm25s")
