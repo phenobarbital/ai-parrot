@@ -363,12 +363,11 @@ async def agentic_toolkit(
     tmp_path: Path, monkeypatch
 ) -> tuple[PageIndexToolkit, ScriptedToolLoopClient, dict[str, Any]]:
     """Create a segmented tree backed by a dedicated scripted client."""
+
     async def fake_build(doc, adapter, options=None, **kwargs):
         return {
             "doc_name": "Report.pdf",
-            "structure": [
-                {"title": "Report", "node_id": "0000", "start_index": 1, "end_index": 1, "nodes": []}
-            ],
+            "structure": [{"title": "Report", "node_id": "0000", "start_index": 1, "end_index": 1, "nodes": []}],
             "_node_markdown": {},
             "_pages": [(1, "# Report\n\nEvidence alpha is available for the requested answer.")],
         }

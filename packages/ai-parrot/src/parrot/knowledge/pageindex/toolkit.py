@@ -1163,7 +1163,12 @@ class PageIndexToolkit(AbstractToolkit):
         ):
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"{name} must be a positive integer")
-        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
             raise ValueError("timeout_s must be a positive finite number")
 
         client = self._agentic_client()
@@ -1217,9 +1222,7 @@ class PageIndexToolkit(AbstractToolkit):
             if remaining <= 0:
                 return timeout_bundle(candidates, generation_id)
             try:
-                outline = await asyncio.wait_for(
-                    self._outline_on(tree_name, tree, node_id=node_id), timeout=remaining
-                )
+                outline = await asyncio.wait_for(self._outline_on(tree_name, tree, node_id=node_id), timeout=remaining)
             except TimeoutError:
                 return timeout_bundle(candidates, generation_id)
 
