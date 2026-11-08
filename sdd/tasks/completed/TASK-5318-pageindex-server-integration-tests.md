@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-842 — PageIndex Local MCP Toolkit
 **Spec**: `sdd/specs/pageindex-local-mcp-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5314, TASK-5316, TASK-5317
@@ -281,10 +281,8 @@ See the MODIFY block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (fallback sequential loop)
+**Date**: 2026-11-08
+**Notes**: five integration tests added (factory with/without llm, stdio, two writers, install). AC-8, AC-10, AC-11 and AC-12 (no diff in the five mcp/ files) pass; ruff clean; test_toolkit_matrix unaffected.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: AC-9 is only partly met. `test_pageindex_serves_over_stdio` is a strict xfail. The handshake, tools/list, create, insert, BM25 hit and bounded retrieve (marker present) all pass, but the stdout-purity assertion fails: on the first `pageindex_insert_markdown`, the FEAT-840 injection scorer (`scan_injection` defaults True; `pytector`) prints `Loading Hugging Face model from: ...` to stdout at tool-call time, outside the factory's stdout redirect, so a non-JSON line reaches the stdio stream. It would also download an ML model on first ingest. Fixing it needs a change in `toolkit.py::_scan`, the constructor, or the template, which this test-only task and AC-12 do not allow, so it is filed as **issue:70f18da2a8d5** [major]. Once fixed, the strict xfail turns into XPASS and the marker must be removed. The two-writer test tolerates the stray line on purpose (it is not a purity test). Note for the owner: the MCP wrapper appends a `Metadata: {...}` trailer to every tool result, so the truncation marker is not the last characters of the text.

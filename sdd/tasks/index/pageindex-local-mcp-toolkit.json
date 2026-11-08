@@ -124,7 +124,7 @@
       "feature_id": "FEAT-842",
       "feature": "pageindex-local-mcp-toolkit",
       "spec": "sdd/specs/pageindex-local-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -136,8 +136,9 @@
       "parallelism_notes": "Depends on TASK-5314 (PageIndexToolkit(llm_client=...) / no-adapter construction the factory calls), TASK-5316 (max_result_chars + truncation marker asserted over stdio) and TASK-5317 (pageindex.yaml template seeded, and appends to test_pageindex_template.py it creates).",
       "assigned_to": null,
       "started_at": "2026-11-07T23:56:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5318-pageindex-server-integration-tests.md"
+      "completed_at": "2026-11-08T00:08:05+00:00",
+      "file": "sdd/tasks/completed/TASK-5318-pageindex-server-integration-tests.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5319",
