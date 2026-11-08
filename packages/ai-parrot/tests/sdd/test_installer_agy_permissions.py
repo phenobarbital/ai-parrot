@@ -173,6 +173,29 @@ def test_malformed_hooks_file_is_kept_and_rules_still_released(repo: Path, home:
     assert any("agy hook kept" in a for a in actions)
     assert (repo / HOOKS).read_text(encoding="utf-8") == "{broken"
     assert _read(home / SETTINGS) == {}  # the safe direction: no broad rules left behind
+    receipt = _read(repo / "sdd" / ".sdd-installed.json")  # kept, so a re-run after repairing can retry
+    assert "agy-permissions" in receipt["settings_hooks"]
+    (repo / HOOKS).write_text(json.dumps({AGY_HOOK_NAME: {}}), encoding="utf-8")
+    uninstall_sdd_integration(repo, ("google",))
+    assert not (repo / HOOKS).exists()
+
+
+def test_planted_temp_symlink_cannot_redirect_writes(repo: Path, home: Path, tmp_path: Path) -> None:
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep", encoding="utf-8")
+    (repo / ".agents").mkdir()
+    (repo / ".agents" / ".hooks.json.parrot-tmp").symlink_to(victim)
+    _install(repo)
+    assert victim.read_text(encoding="utf-8") == "keep"
+    assert not (repo / HOOKS).is_symlink()
+    assert AGY_HOOK_NAME in _read(repo / HOOKS)
+
+
+def test_settings_permission_bits_are_kept(repo: Path, home: Path) -> None:
+    _write(home / SETTINGS, {})
+    (home / SETTINGS).chmod(0o644)
+    _install(repo)
+    assert (home / SETTINGS).stat().st_mode & 0o777 == 0o644
 
 
 def test_symlinked_hooks_file_outside_the_repo_is_refused(repo: Path, home: Path, tmp_path: Path) -> None:
@@ -256,6 +279,8 @@ def test_status_ignores_an_inactive_hook(repo: Path, home: Path) -> None:
     hooks = _read(repo / HOOKS)
     hooks[AGY_HOOK_NAME]["PreToolUse"][0]["matcher"] = "wrong_tool"
     _write(repo / HOOKS, hooks)
+    assert sdd_status(repo)["agy_permissions"]["form"] is None
+    _write(repo / HOOKS, {AGY_HOOK_NAME: {"PreToolUse": [{"matcher": "run_command", "hooks": [None]}]}})
     assert sdd_status(repo)["agy_permissions"]["form"] is None
 
 

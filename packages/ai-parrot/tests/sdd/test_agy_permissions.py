@@ -270,6 +270,18 @@ FORCE_ASK = [
     ("GIT_PAGER='sh -c id' git log", "environment override GIT_PAGER"),
     ("parrot sdd docs migrate-index", "not on the SDD auto-approve list"),
     ("wikitoolkit export -o /tmp/x", "not on the SDD auto-approve list"),
+    # second review round
+    ("printf '{}' | sort -o.agents/hooks.json", "sort -o.agents/hooks.json"),
+    ("sort -oREADME.md AGENTS.md", "sort -oREADME.md"),
+    ("git commit -F/etc/passwd", "outside the workspace"),
+    ("git grep -f/etc/passwd", "outside the workspace"),
+    ("pytest -c/tmp/pytest.ini packages/a/test_a.py", "outside the workspace"),
+    ("pytest -olog_file=/tmp/x.log packages/a/test_a.py", "overrides the test configuration"),
+    ("pytest -oaddopts=--basetemp=/tmp/victim packages/a/test_a.py", "overrides the test configuration"),
+    ("git config --list", "add --local"),
+    ("git config -l", "add --local"),
+    ("git config --get-regexp url", "add --local"),
+    ("git fetch /tmp/other-repo", "fetches from a URL or path"),
 ]
 
 
@@ -300,6 +312,52 @@ def test_symlink_out_of_the_workspace_is_confirmed(ws: Path, tmp_path: Path) -> 
     decision = _decide("cat link/secret.txt", ws)
     assert decision.decision == "force_ask"
     assert "symlink" in decision.reason
+
+
+def test_bare_symlink_and_globs_are_followed(ws: Path, tmp_path: Path) -> None:
+    secret = tmp_path / "secret.txt"
+    secret.write_text("x", encoding="utf-8")
+    (ws / "outside").symlink_to(secret)
+    assert _decide("cat outside", ws).decision == "force_ask"
+    etc = tmp_path / "etc"
+    etc.mkdir()
+    (etc / "passwd").write_text("x", encoding="utf-8")
+    (ws / "etcdir").symlink_to(etc)
+    assert _decide("cat */passwd", ws).decision == "force_ask"
+    (ws / "notes.md").write_text("x", encoding="utf-8")
+    assert _decide("cat notes.md *.md", ws).decision == "ask"
+
+
+def test_config_scoped_listing_is_neutral(ws: Path) -> None:
+    assert _decide("git config --local --list", ws).decision == "ask"
+    assert _decide("git config --get user.email", ws).decision == "ask"
+
+
+def _git_config(ws: Path, *args: str) -> None:
+    subprocess.run(["git", "-C", str(ws), "config", *args], check=True)
+
+
+def test_bare_push_follows_the_configured_upstream(ws: Path) -> None:
+    _git_config(ws, "push.default", "upstream")
+    _git_config(ws, "branch.fix-x.remote", "origin")
+    _git_config(ws, "branch.fix-x.merge", "refs/heads/main")
+    assert _decide("git push", ws).decision == "deny"
+    _git_config(ws, "branch.fix-x.merge", "refs/heads/fix-x")
+    assert _decide("git push", ws).decision == "ask"
+
+
+def test_bare_push_with_configured_refspecs_is_confirmed(ws: Path) -> None:
+    _git_config(ws, "remote.origin.url", "https://example.com/x.git")
+    _git_config(ws, "remote.origin.push", "+HEAD:refs/heads/feature")
+    decision = _decide("git push origin", ws)
+    assert decision.decision == "force_ask"
+    assert "refspecs configured" in decision.reason
+    assert _decide("git push origin fix-x", ws).decision == "ask"
+
+
+def test_matching_push_default_is_confirmed(ws: Path) -> None:
+    _git_config(ws, "push.default", "matching")
+    assert _decide("git push", ws).decision == "force_ask"
 
 
 @pytest.mark.parametrize(("command", "why"), DENY)

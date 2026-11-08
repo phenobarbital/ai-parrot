@@ -22,6 +22,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from importlib import metadata, resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -561,11 +562,22 @@ def _read_json_object(path: Path) -> dict[str, Any] | None:
 
 
 def _write_json_object(path: Path, data: dict[str, Any]) -> None:
-    """Write atomically (temp file + ``os.replace``), keeping non-ASCII text as is."""
+    """Write atomically, keeping non-ASCII text and the file's permission bits.
+
+    The temporary file is created with ``mkstemp`` (random name, ``O_EXCL``), so a pre-planted symlink can
+    neither redirect the write nor be moved onto ``path``.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.parrot-tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".parrot-tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        if path.is_file():
+            os.chmod(tmp_name, path.stat().st_mode & 0o777)
+        os.replace(tmp_name, path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
 
 
 def _agy_hook_entry(command: str) -> dict[str, Any]:
@@ -761,12 +773,10 @@ def _agy_active_hook(data: dict[str, Any]) -> str | None:
         if not isinstance(group, dict) or group.get("matcher") != "run_command":
             continue
         for hook in group.get("hooks", []) if isinstance(group.get("hooks"), list) else []:
-            command = hook.get("command") if isinstance(hook, dict) else None
-            if (
-                hook.get("type", "command") == "command"
-                and isinstance(command, str)
-                and command.rstrip().endswith(_AGY_SUFFIX.strip())
-            ):
+            if not isinstance(hook, dict) or hook.get("type", "command") != "command":
+                continue
+            command = hook.get("command")
+            if isinstance(command, str) and command.rstrip().endswith(_AGY_SUFFIX.strip()):
                 return command
     return None
 
@@ -1835,6 +1845,9 @@ def uninstall_sdd_integration(
             drop_receipt = True
     if receipt.get("base_branch_created"):
         actions.append(f"note: base branch {receipt['base_branch_created']} was created by install; it is kept")
+    if drop_receipt and "agy-permissions" in receipt.get("settings_hooks", []):
+        drop_receipt = False  # the agy hook could not be removed: keep the marker so a re-run can retry
+        actions.append(f"warning: {RECEIPT_PATH} — kept so the agy hook removal can be retried")
     if drop_receipt:
         (root / RECEIPT_PATH).unlink(missing_ok=True)
         _prune_empty_parents(root, root / RECEIPT_PATH)

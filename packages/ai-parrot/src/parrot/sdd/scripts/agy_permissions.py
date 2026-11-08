@@ -27,6 +27,7 @@ one JSON object. Only the stdlib and the sibling ``dangerous_actions`` guard are
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import re
@@ -403,8 +404,12 @@ def _long_name(token: str) -> str:
 
 
 def _short_letters(token: str) -> str:
-    """The letters of a short-option token or cluster (``-Df`` → ``Df``), else ``""``."""
-    return token[1:] if re.fullmatch(r"-[A-Za-z0-9]+", token) else ""
+    """Everything after the dash of a short-option token or cluster (``-Df`` → ``Df``, ``-o.x`` → ``o.x``).
+
+    Attached values are included on purpose: a risky letter anywhere in the token counts, which over-matches
+    rather than letting ``-o.agents/hooks.json`` slip through.
+    """
+    return token[1:] if len(token) > 1 and token[0] == "-" and token[1] != "-" else ""
 
 
 def _risky_flag(
@@ -581,8 +586,16 @@ def _resolve(ctx: _Context, token: str) -> tuple[str | None, str | None]:
     return os.path.normpath(expanded), None
 
 
+_GLOB_CHARS = frozenset("*?[")
+_GLOB_LIMIT = 500
+
+
 def _path_problem(ctx: _Context, token: str) -> str | None:
-    """Why a path-like token may point outside the workspace, or None when it stays inside."""
+    """Why a path-like token may point outside the workspace, or None when it stays inside.
+
+    Symlinks are resolved, and a glob pattern is expanded so every match is checked (the shell, not the
+    command, sees the expanded names).
+    """
     norm, problem = _resolve(ctx, token)
     if problem or norm is None:
         return problem
@@ -590,19 +603,28 @@ def _path_problem(ctx: _Context, token: str) -> str | None:
         return None
     if not any(_under(norm, str(root)) for root in ctx.roots):
         return "is outside the workspace"
-    if not any(_under(os.path.realpath(norm), root) for root in ctx.real_roots):
-        return "resolves outside the workspace through a symlink"
+    candidates = [norm]
+    if _GLOB_CHARS & set(token):
+        candidates = glob.glob(norm)[: _GLOB_LIMIT + 1]
+        if len(candidates) > _GLOB_LIMIT:
+            return "matches too many paths to check"
+    for candidate in candidates:
+        if not any(_under(os.path.realpath(candidate), root) for root in ctx.real_roots):
+            return "resolves outside the workspace through a symlink"
     return None
 
 
-def _check_paths(ctx: _Context, tokens: Sequence[str], what: str, *, attached: bool = False) -> str | None:
-    """First path-like token (or option value) that may point outside the workspace.
+def _check_paths(
+    ctx: _Context, tokens: Sequence[str], what: str, *, attached: bool = False, bare: bool = False
+) -> str | None:
+    """First token (or option value) that may point outside the workspace.
 
     Args:
         ctx: Evaluation state.
         tokens: Arguments to inspect; ``--opt=value`` values are inspected too.
         what: Label for the reason.
         attached: Also inspect values attached to short options (``-f/etc/passwd``).
+        bare: Also inspect plain names (``outside``, ``*``) — they can be symlinks or globs leaving the workspace.
     """
     for token in tokens:
         if token == "--":
@@ -617,7 +639,7 @@ def _check_paths(ctx: _Context, tokens: Sequence[str], what: str, *, attached: b
             value = token[2:]
         else:
             value = token
-        if not _path_like(value):
+        if not value or not (_path_like(value) or bare):
             continue
         problem = _path_problem(ctx, value)
         if problem:
@@ -657,7 +679,7 @@ def _find(ctx: _Context, args: list[str]) -> str | None:
         starts.append(args[index])
         index += 1
     values = [args[i + 1] for i in range(len(args) - 1) if args[i] in _FIND_PATH_VALUED or args[i].startswith("-newer")]
-    return _check_paths(ctx, [*(starts or ["."]), *values], "find path")
+    return _check_paths(ctx, [*(starts or ["."]), *values], "find path", bare=True)
 
 
 def _sed(ctx: _Context, args: list[str]) -> str | None:
@@ -703,7 +725,7 @@ def _sed(ctx: _Context, args: list[str]) -> str | None:
         scripts.append(files.pop(0))
     if not scripts or any(not any(p.match(s) for p in _SED_PRINT) for s in scripts):
         return "the sed script is not print-only"
-    return _check_paths(ctx, files, "sed input")
+    return _check_paths(ctx, files, "sed input", bare=True)
 
 
 def _grep(ctx: _Context, name: str, args: list[str]) -> str | None:
@@ -726,7 +748,7 @@ def _grep(ctx: _Context, name: str, args: list[str]) -> str | None:
     files = positionals if explicit else positionals[1:]
     pattern_files = [args[i + 1] for i in range(len(args) - 1) if args[i] in {"-f", "--file"}]
     options = [t for t in args if t.startswith("-") and not is_pattern_option(t)]
-    return _check_paths(ctx, [*files, *pattern_files, *options], f"{name} path", attached=True)
+    return _check_paths(ctx, [*files, *pattern_files, *options], f"{name} path", attached=True, bare=True)
 
 
 def _jq(ctx: _Context, args: list[str]) -> str | None:
@@ -750,7 +772,7 @@ def _jq(ctx: _Context, args: list[str]) -> str | None:
             positionals.append(token)
         index += 1
     files = positionals if from_file else positionals[1:]
-    return _check_paths(ctx, [*files, *(t for t in args if t.startswith("--"))], "jq input")
+    return _check_paths(ctx, [*files, *(t for t in args if t.startswith("--"))], "jq input", bare=True)
 
 
 def _read_only(ctx: _Context, name: str, args: list[str]) -> str | None:
@@ -774,7 +796,7 @@ def _read_only(ctx: _Context, name: str, args: list[str]) -> str | None:
         return "`uniq IN OUT` writes a file"
     if name in _TEXT_ONLY:
         return None
-    return _check_paths(ctx, args, f"{name} path", attached=True)
+    return _check_paths(ctx, args, f"{name} path", attached=True, bare=True)
 
 
 # --------------------------------------------------------------------------
@@ -790,22 +812,59 @@ _BRANCH_NAME = re.compile(r"^[A-Za-z0-9._/-]+$")
 _REMOTE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
-def _current_branch(start: Path | None) -> str | None:
-    """The checked-out branch of the repository holding ``start``, read from ``HEAD`` (no subprocess)."""
+def _gitdir(start: Path | None) -> Path | None:
+    """The git directory of the repository holding ``start`` (a worktree's own gitdir), no subprocess."""
     root = dangerous_actions.find_root(start) if start is not None else None
     if root is None:
         return None
     git = root / ".git"
     try:
-        gitdir = git
         if git.is_file():
             gitdir = Path(git.read_text(encoding="utf-8").split(":", 1)[1].strip())
-            if not gitdir.is_absolute():
-                gitdir = root / gitdir
-        head = (gitdir / "HEAD").read_text(encoding="utf-8").strip()
+            return gitdir if gitdir.is_absolute() else root / gitdir
     except (OSError, IndexError):
         return None
+    return git if git.is_dir() else None
+
+
+def _current_branch(start: Path | None) -> str | None:
+    """The checked-out branch of the repository holding ``start``, read from ``HEAD``."""
+    gitdir = _gitdir(start)
+    try:
+        head = (gitdir / "HEAD").read_text(encoding="utf-8").strip() if gitdir else ""
+    except OSError:
+        return None
     return head.removeprefix("ref: refs/heads/") if head.startswith("ref: refs/heads/") else None
+
+
+_CONFIG_SECTION = re.compile(r'^\[([A-Za-z0-9.-]+)(?:\s+"(.*)")?\]$')
+
+
+def _git_config(start: Path | None) -> dict[str, list[str]]:
+    """``section[.subsection].key`` → values from the repository's shared ``config`` file (no subprocess)."""
+    gitdir = _gitdir(start)
+    if gitdir is None:
+        return {}
+    try:
+        common = gitdir
+        if (gitdir / "commondir").is_file():
+            common = (gitdir / (gitdir / "commondir").read_text(encoding="utf-8").strip()).resolve()
+        lines = (common / "config").read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return {}
+    out: dict[str, list[str]] = {}
+    section = ""
+    for raw in lines:
+        line = raw.strip()
+        if not line or line[0] in "#;":
+            continue
+        match = _CONFIG_SECTION.match(line)
+        if match:
+            section = match.group(1).lower() + (f".{match.group(2)}" if match.group(2) is not None else "")
+            continue
+        key, _, value = line.partition("=")
+        out.setdefault(f"{section}.{key.strip().lower()}", []).append(value.strip().strip('"'))
+    return out
 
 
 def _git_paths(ctx: _Context, args: list[str], cwd: Path | None) -> str | None:
@@ -826,7 +885,7 @@ def _git_paths(ctx: _Context, args: list[str], cwd: Path | None) -> str | None:
     outer = ctx.cwd
     ctx.cwd = cwd
     try:
-        return _check_paths(ctx, tokens, "git path")
+        return _check_paths(ctx, tokens, "git path", attached=True)
     finally:
         ctx.cwd = outer
 
@@ -845,8 +904,21 @@ def _push(ctx: _Context, args: list[str], cwd: Path | None) -> str | None:
     positionals = _positionals(args)
     if positionals and not _REMOTE_NAME.match(positionals[0]):
         return f"`git push {positionals[0]}` pushes to a URL or path, not a configured remote"
+    refspecs = positionals[1:]
+    if not refspecs:
+        # No refspec: git pushes what the repository configuration says — read it instead of assuming HEAD.
+        config = _git_config(cwd)
+        branch = _current_branch(cwd) or ""
+        remote = positionals[0] if positionals else (config.get(f"branch.{branch}.remote") or ["origin"])[-1]
+        if config.get(f"remote.{remote}.push"):
+            return f"`git push` would push the refspecs configured for remote {remote}"
+        mode = (config.get("push.default") or ["simple"])[-1].lower()
+        if mode == "matching":
+            return "`git push` with push.default=matching pushes every matching branch"
+        upstream = (config.get(f"branch.{branch}.merge") or [""])[-1]
+        refspecs = [f"HEAD:{upstream}"] if mode in {"upstream", "tracking"} and upstream else ["HEAD"]
     destinations: list[str] = []
-    for spec in positionals[1:] or ["HEAD"]:
+    for spec in refspecs:
         if spec.startswith(":"):
             return f"refspec {spec} deletes a branch"
         if spec.startswith("+"):
@@ -941,9 +1013,14 @@ def _git_sub(ctx: _Context, sub: str, args: list[str], cwd: Path | None) -> str 
                                     "--no-includes", "--local", "--worktree"}),
             valued_long=frozenset({"--type", "--default"}),
         )  # fmt: skip
-        reading = any(_long_name(a) in reads for a in args) or bool({"-l"} & set(args))
+        reading = any(_long_name(a) in reads for a in args) or any("l" in _short_letters(a) for a in args)
         if unknown or (not reading and len(_positionals(args)) != 1):
             return "`git config` writes configuration or reads outside the repository"
+        listing = any(_long_name(a) in {"--list", "--get-regexp"} for a in args) or any(
+            "l" in _short_letters(a) for a in args
+        )
+        if listing and not ({"--local", "--worktree"} & set(args)):
+            return "`git config --list` can print credentials from the global configuration (add --local)"
         return None
     if sub == "worktree":
         ok = args[:1] == ["list"] and not _unknown_flag(
@@ -956,7 +1033,10 @@ def _git_sub(ctx: _Context, sub: str, args: list[str], cwd: Path | None) -> str 
         )
         if hit:
             return f"`git fetch {hit}` can rewrite local refs"
-        if any(":" in p or p.startswith("+") for p in _positionals(args, frozenset({"--depth", "-j", "--jobs"}))[1:]):
+        positionals = _positionals(args, frozenset({"--depth", "-j", "--jobs"}))
+        if positionals and not _REMOTE_NAME.match(positionals[0]):
+            return f"`git fetch {positionals[0]}` fetches from a URL or path, not a configured remote"
+        if any(":" in p or p.startswith("+") for p in positionals[1:]):
             return "a `git fetch` refspec can rewrite a local branch"
         return None
     if sub == "add":
@@ -1111,12 +1191,14 @@ def _tests(ctx: _Context, args: list[str], name: str) -> str | None:
     hit = _risky_flag(args, long=_TEST_OUTPUTS)
     if hit:
         return f"`{name} {hit}` writes output files"
+    override = next((a for a in args if a.startswith("-o") or _long_name(a) == "--override-ini"), None)
+    if override is not None:
+        return f"`{name} {override}` overrides the test configuration"
     positionals = _positionals(args, _PYTEST_VALUED)
     paths = [p for p in positionals if "/" in p or p.endswith(".py") or "::" in p or p == "."]
     if not paths:
         return f"`{name}` without an explicit path runs on the whole repository"
-    overrides = [args[i + 1].split("=", 1)[-1] for i in range(len(args) - 1) if args[i] in {"-o", "--override-ini"}]
-    return _check_paths(ctx, [*args, *overrides], f"{name} path")
+    return _check_paths(ctx, args, f"{name} path", attached=True)
 
 
 # --------------------------------------------------------------------------
