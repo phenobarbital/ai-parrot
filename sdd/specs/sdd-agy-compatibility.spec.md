@@ -351,6 +351,10 @@ tests:
 - packages/ai-parrot/tests/sdd/test_installer.py
 - packages/ai-parrot/tests/sdd/test_sdd_launch.py
 - packages/ai-parrot/tests/flows/dev_loop/test_google_coding_dispatcher.py
+- packages/ai-parrot/tests/sdd/test_agy_agents.py
+- packages/ai-parrot/tests/sdd/test_agy_worker_prompt.py
+- packages/ai-parrot/tests/sdd/test_agy_compat_docs.py
+- tests/sdd_scripts/test_check_asset_sync.py
 markers: none
 
 ### Test Data / Fixtures
