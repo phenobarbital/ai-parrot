@@ -194,7 +194,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -207,8 +207,9 @@
       "parallelism_notes": "TASK-5334: LayoutHeaders (layout.py); TASK-5335: extract_markdown_per_page(hdr_info=) (pdf_to_markdown.py); TASK-5337: build_structure/page_structure/score_* (layout_structure.py); TASK-5339: same file builder.py, serialized after the framing edits",
       "assigned_to": null,
       "started_at": "2026-11-08T01:52:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5340-builder-orchestration.md"
+      "completed_at": "2026-11-08T09:22:30+00:00",
+      "file": "sdd/tasks/completed/TASK-5340-builder-orchestration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5341",
