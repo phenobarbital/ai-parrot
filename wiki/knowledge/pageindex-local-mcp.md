@@ -103,9 +103,14 @@ A typical agent flow, as tool calls:
   classified by a model. BM25 therefore indexes titles and bodies only. Setting `llm:` adds summaries on later ingests.
 - **`retrieve` truncation.** When the joined bodies exceed `max_result_chars`, whole sections are kept while they
   fit and the text ends with `[truncated: N more characters in K further sections — lower top_k or narrow the query]`.
+  When the first section itself is cut, the marker reads `[truncated: N more characters in this section and K further
+  sections — lower top_k or narrow the query]` (`in this section — …` when nothing else was dropped).
   The bound applies to the kept text: the marker (about 90 characters) is added on top, and a title line longer than
   the bound is kept whole. An oversized first section is cut at a paragraph break, never inside its `## title` line. The MCP wrapper appends
   its own `Metadata:` trailer after the tool text.
+- **`vacuum_tree` never sweeps below the grace.** A `max_age_s` smaller than the configured `generation_grace_s` is
+  raised to it, so a reader of the previous generation keeps its bodies; the result reports `removed` (body blobs),
+  `revisions_removed` (document revision files) and the effective `max_age_s`.
 - **`get_tree` is unbounded.** To browse a large tree use `pageindex_outline` (bounded to `max_chars=6000` by default)
   and read pages or segments from there.
 - **Two writers are safe.** Writes take a per-tree `flock` and readers reload on a generation signature change
@@ -115,9 +120,10 @@ A typical agent flow, as tool calls:
   (`parrot self add pageindex`). Without it `search` cannot run BM25.
 - **Template drift.** A section you already configured without the `exclude` key is reported as drift from the
   template. It is informational: it points at the opt-in slot above.
-- **Known issue — stdout noise on first ingest.** The prompt-injection scorer used by the segment store
-  (`scan_injection`, on by default) can print a model-loading banner to stdout the first time it runs inside the
-  server, which is not valid JSON-RPC for a strict stdio host. Tracked as `issue:70f18da2a8d5`.
+- **stdout stays pure while the scorer loads.** The prompt-injection scorer used by the segment store
+  (`scan_injection`, on by default) resolves its model with stdout redirected to stderr, so the model-loading banner it
+  prints on the first ingest never reaches the JSON-RPC channel; the server also binds its output stream when it
+  starts, so no later redirect can misroute a frame. (Formerly `issue:70f18da2a8d5`, fixed by FEAT-844.)
 
 ## Related
 

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-844 — PageIndex Toolkit Fixes
 **Spec**: `sdd/specs/pageindex-toolkit-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5330
@@ -207,10 +207,8 @@ See the MODIFY block for `test_toolkit_no_llm.py` above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 (/sdd-fix session agent:sdd-fix:507d6e6a)
+**Date**: 2026-11-08
+**Notes**: `_bound_text` gained a `first_cut` flag and a `where` clause: `in {k} further sections` (first part fits), `in this section and {k} further sections` (first part cut, k > 0), `in this section` (first part cut, k == 0); the kept-text algorithm and the tail are unchanged; docstring updated. Tests: `test_bound_text_cuts_first_part_after_title` now expects "in this section and 1 further sections", `test_bound_text_oversized_part_without_paragraph_break` asserts "in this section —" and no "0 further", new `test_bound_text_whole_sections_marker_unchanged`. Validation: 18 passed (test_toolkit_no_llm + test_pageindex_serves_over_stdio); ruff clean. Code commit: 27ad260ec5.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
