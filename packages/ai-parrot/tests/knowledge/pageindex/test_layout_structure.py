@@ -121,3 +121,117 @@ def test_page_structure():
             ],
         }
     ]
+
+
+from parrot.knowledge.pageindex.layout_structure import build_structure, insert_layout_headings, items_to_tree  # noqa: E402
+
+
+HYBRID_PAGES = (
+    "# Report Title\n\n## 1 Intro\n\nText.\n\n### 1.1 Scope\n\nText.",
+    "## 2 Usage\n\nText.\n\n## Appendix\n\nText.",
+)
+
+
+def test_hybrid_insertion():
+    """Hybrid insertion preserves siblings, nests deeper headings, and rejects shallower headings."""
+    segments = _segs(*HYBRID_PAGES)
+    profile = _profile(2, bookmarks=[(1, "1 Intro", 1), (1, "2 Usage", 2)])
+    _, bookmark_items = score_bookmarks(profile, segments)
+
+    items, inserted = insert_layout_headings(bookmark_items, profile, segments)
+
+    assert inserted == 2
+    assert [(item["title"], item["depth"]) for item in items] == [
+        ("1 Intro", 1),
+        ("1.1 Scope", 2),
+        ("2 Usage", 1),
+        ("Appendix", 1),
+    ]
+    assert "Report Title" not in [item["title"] for item in items]
+    assert [node["title"] for node in items_to_tree(items, segments, profile)] == ["1 Intro", "2 Usage", "Appendix"]
+    assert items_to_tree(items, segments, profile)[0]["nodes"][0]["title"] == "1.1 Scope"
+
+
+def test_hybrid_rejects_noisy_layout():
+    """Reliable bookmarks remain unchanged when an over-dense layout fails confidence."""
+    pages = tuple(
+        f"## Chapter {page}\n\n" + "\n\n".join(f"#### Note {number}" for number in range(100))
+        for page in range(1, 3)
+    )
+    profile = _profile(2, bookmarks=[(1, "Chapter 1", 1), (1, "Chapter 2", 2)])
+
+    result = build_structure(profile, _segs(*pages), min_confidence=0.6)
+
+    assert result is not None
+    assert result.source == "bookmarks"
+    assert result.report.inserted_headings == 0
+    assert [candidate.source for candidate in result.report.candidates] == ["bookmarks", "layout"]
+    assert result.report.candidates[1].confidence < 0.6
+
+
+def test_hybrid_confidence_and_empty_mapping():
+    """Hybrid confidence is the candidate minimum and unanchored bookmarks add no headings."""
+    segments = _segs(HYBRID_PAGES[0], HYBRID_PAGES[1] + "\n\n## Closing.")
+    profile = _profile(2, bookmarks=[(1, "1 Intro", 1), (1, "2 Usage", 2)])
+
+    result = build_structure(profile, segments)
+
+    assert result is not None
+    assert result.source == "hybrid"
+    assert result.report.confidence == min(candidate.confidence for candidate in result.report.candidates)
+
+    unanchored_segments = _segs("Alpha marker appears here.\n\n# First", "Beta marker appears here.\n\n## Second")
+    unanchored_profile = _profile(2, bookmarks=[(1, "Alpha marker", 1), (1, "Beta marker", 2)])
+    score, bookmark_items = score_bookmarks(unanchored_profile, unanchored_segments)
+    items, inserted = insert_layout_headings(bookmark_items, unanchored_profile, unanchored_segments)
+    unanchored_result = build_structure(unanchored_profile, unanchored_segments)
+
+    assert score.confidence == 1.0
+    assert inserted == 0
+    assert items == bookmark_items
+    assert unanchored_result is not None
+    assert unanchored_result.source == "bookmarks"
+    assert unanchored_result.report.confidence == score.confidence
+
+
+def test_items_to_tree_pages_and_preface():
+    """Tree page ranges honor first content segments, running lines, and a Preface node."""
+    segments = _segs("Front matter", "## Lead", "# Header\n\nText.\n\n## Middle", "# Header\n\n## End")
+    profile = _profile(4, running=("header",))
+    items = [
+        {"depth": 1, "title": "Lead", "page": 2, "anchor": {"page": 2, "ordinal": 0}, "level": 2},
+        {"depth": 1, "title": "Middle", "page": 3, "anchor": {"page": 3, "ordinal": 2}, "level": 2},
+        {"depth": 1, "title": "End", "page": 4, "anchor": {"page": 4, "ordinal": 1}, "level": 2},
+    ]
+
+    tree = items_to_tree(items, segments, profile)
+
+    assert [(node["title"], node["start_index"], node["end_index"]) for node in tree] == [
+        ("Preface", 1, 1),
+        ("Lead", 2, 3),
+        ("Middle", 3, 3),
+        ("End", 4, 4),
+    ]
+    assert all("nodes" not in node for node in tree)
+    assert tree[1]["anchor"] == items[0]["anchor"]
+    assert tree[1]["anchor"] is not items[0]["anchor"]
+
+
+def test_choice_order_and_modes():
+    """Choice prefers bookmarks, then layout, then no result; llm skips deterministic choices."""
+    segments = _segs("# One", "## Two")
+    layout_profile = _profile(2, rejection="non-monotonic pages")
+
+    layout_result = build_structure(layout_profile, segments)
+
+    assert layout_result is not None
+    assert layout_result.source == "layout"
+    assert layout_result.report.body_size == layout_profile.body_size
+    assert layout_result.report.running_lines == len(layout_profile.running)
+    mode_result = build_structure(layout_profile, segments, mode="layout")
+    assert mode_result is not None
+    assert mode_result.source == layout_result.source
+    assert mode_result.structure == layout_result.structure
+    assert mode_result.report.mode == "layout"
+    assert build_structure(_profile(2), _segs("# One", "## Two."), min_confidence=0.99) is None
+    assert build_structure(_profile(2, bookmarks=[(1, "One", 1), (1, "Two", 2)]), segments, mode="llm") is None
