@@ -43,7 +43,7 @@ def test_template_seeds_repo_scoped_storage(tmp_path: Path) -> None:
     section = load_toolkits_config(tmp_path).toolkits["pageindex"]
     assert section.class_path == _CLASS
     assert section.llm is None
-    assert not section.exclude
+    assert list(section.exclude) == ["pageindex_agentic_retrieve"]
     assert section.kwargs["storage_dir"] == f"{tmp_path}/.parrot/pageindex"
     assert section.kwargs["max_result_chars"] == 24000
     written = (tmp_path / ".parrot" / "mcp-toolkits.yaml").read_text(encoding="utf-8")
@@ -238,6 +238,28 @@ def test_factory_serves_llm_tools_with_llm(tmp_path: Path, monkeypatch) -> None:
     assert LLM_TOOLS <= set(server.tools)
     assert CORE_TOOLS <= set(server.tools)
     assert server._owned_toolkit._adapter.client is fake
+
+
+def test_agentic_tool_excluded_by_default(tmp_path: Path, monkeypatch) -> None:
+    """AC-13: the seeded template hides pageindex_agentic_retrieve even with an llm."""
+    fake = MagicMock(spec=AbstractClient)
+    monkeypatch.setattr("parrot.clients.factory.LLMFactory.create", lambda *a, **k: fake)
+    _configure_section(tmp_path, llm="fake:model")
+
+    server = create_toolkit_mcp_server("pageindex", tmp_path)
+
+    assert "pageindex_agentic_retrieve" not in server.tools
+
+
+def test_agentic_tool_served_when_opted_in(tmp_path: Path, monkeypatch) -> None:
+    """AC-13: removing it from exclude and setting llm serves it."""
+    fake = MagicMock(spec=AbstractClient)
+    monkeypatch.setattr("parrot.clients.factory.LLMFactory.create", lambda *a, **k: fake)
+    _configure_section(tmp_path, llm="fake:model", exclude=[])
+
+    server = create_toolkit_mcp_server("pageindex", tmp_path)
+
+    assert "pageindex_agentic_retrieve" in server.tools
 
 
 def _tool(proc: subprocess.Popen, stray: list[str], req_id: int, name: str, **arguments) -> dict:
