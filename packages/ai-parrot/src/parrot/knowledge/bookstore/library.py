@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
+from parrot.knowledge.pageindex.layout import PDFStructureError
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, REPLACED_MARKER
 
 from .carding import (
@@ -1127,18 +1128,16 @@ class Bookstore:
         try:
             await toolkit.create_tree(staging, doc_name=title or path.stem)
             if fmt == "pdf":
-                if not self.has_llm:
-                    raise BookstoreError(
-                        "PDF ingest needs an LLM to detect and structure "
-                        "the table of contents — configure one (--llm) "
-                        "or convert to markdown/text first"
+                try:
+                    result = await toolkit.import_pdf(
+                        tree_name=staging,
+                        pdf_path=str(path),
+                        with_summaries=self.has_llm,
+                        with_doc_description=self.has_llm,
+                        structure_mode="auto" if self.has_llm else "layout",
                     )
-                result = await toolkit.import_pdf(
-                    tree_name=staging,
-                    pdf_path=str(path),
-                    with_summaries=self.has_llm,
-                    with_doc_description=self.has_llm,
-                )
+                except PDFStructureError as exc:
+                    raise BookstoreError(f"Cannot index {path.name}: {exc}") from exc
                 doc_description = result.get("doc_description") or ""
             elif fmt == "md":
                 await toolkit.insert_markdown(
