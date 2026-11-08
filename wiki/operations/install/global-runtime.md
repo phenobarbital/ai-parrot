@@ -267,6 +267,31 @@ parrot sdd uninstall --stalled --dry-run    # stale files + stale MCP entries, c
 - `sdd/CONVENTIONS.md` is a seed with `## Repository layout` and `## Project areas`; created once, never
   overwritten. `/sdd-insight` is not installed.
 
+### Antigravity (agy): permission hook and rules
+
+<!-- verify: flag=sdd install:--no-agy-permissions -->
+<!-- verify: cli-verb=sdd hooks agy-permissions -->
+agy runs a shell command without asking only when a `permissions.allow` rule in the user's agy `settings.json`
+matches it; a hook can block or force a confirmation, but cannot approve. `parrot sdd install --host google`
+therefore does two things, so that `/sdd-spec`, `/sdd-task`, `/sdd-brief` and `/sdd-fix` run without a prompt on
+every command:
+
+- It adds the managed SDD rules (`command(find)`, `command(git -C)`, `command(parrot sdd)`, `command(pytest)`, …)
+  to `~/.gemini/antigravity-cli/settings.json`, and to the snap build's copy under
+  `~/snap/antigravity-cli/common/` when that file exists. Your own rules and settings are kept; the receipt records
+  only the rules the install added, and `parrot sdd uninstall --host google` removes exactly those.
+- It registers `parrot sdd hooks agy-permissions --hook` in the repository's `.agents/hooks.json` (named hook
+  `parrot-sdd-permissions`, matcher `run_command`; commit the file). The hook denies what the dangerous-actions
+  guard denies plus any push to `main`/`master`/`hotfix_base`, and asks for confirmation on risky variants the
+  broad rules would let through: `find -exec/-delete`, `sed -i`, reads or redirects outside the workspace,
+  `git push --force`, `git commit --amend`, a bare `pytest`, `parrot sdd install|launch`, and the like.
+  `PARROT_ALLOW_DANGEROUS=1` turns it off for a deliberate recovery.
+
+`--no-agy-permissions` skips both; `parrot sdd status --json` reports the hook and how many managed rules are
+missing. The snap build of agy cannot run the SDD flow at all: its confinement hides the project venv's
+interpreter and cannot run `ssh`, so `parrot`, `wikitoolkit` and `git push` fail inside it. Install the official
+build instead: `curl -fsSL https://antigravity.google/cli/install.sh | bash` (it installs `~/.local/bin/agy`).
+
 ### Cleaning up stale SDD files
 
 `parrot sdd uninstall --stalled` removes stale SDD files and stale MCP toolkit entries. It scans all three

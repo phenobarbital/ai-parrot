@@ -159,6 +159,8 @@ PlanAction = Literal[
     "base-branch",
     "dangerous-guard",
     "dangerous-guard-remove",
+    "agy-permissions",
+    "agy-permissions-remove",
     "toolkits",
     "toolkits-remove",
     "remove",
@@ -312,6 +314,9 @@ def load_receipt(root: Path) -> dict[str, Any]:
     toolkits = data.get("toolkits")
     if isinstance(toolkits, list):
         receipt["toolkits"] = [t for t in toolkits if isinstance(t, str)]  # C34
+    agy_rules = data.get("agy_rules")
+    if isinstance(agy_rules, list):
+        receipt["agy_rules"] = [r for r in agy_rules if isinstance(r, str)]  # brief agy-permission-hook
     return receipt
 
 
@@ -487,6 +492,190 @@ def _dangerous_guard_report(root: Path) -> dict[str, Any]:
     return {"form": None, "command": None}
 
 
+# --------------------------------------------------------------------------
+# brief agy-permission-hook — Antigravity (agy) permission hook and rules (google host)
+# --------------------------------------------------------------------------
+
+#: The agy PreToolUse hook command (bare form) and the named hook that owns it in ``.agents/hooks.json``.
+AGY_HOOK_LINE = "parrot sdd hooks agy-permissions --hook"
+_AGY_SUFFIX = " sdd hooks agy-permissions --hook"
+AGY_HOOKS_PATH = Path(".agents/hooks.json")
+AGY_HOOK_NAME = "parrot-sdd-permissions"
+#: agy settings files relative to the home directory: the official install, then the snap build.
+_AGY_SETTINGS = (
+    Path(".gemini/antigravity-cli/settings.json"),
+    Path("snap/antigravity-cli/common/.gemini/antigravity-cli/settings.json"),
+)
+
+
+def agy_hook_command(*, portable: bool | None) -> tuple[str, Literal["bare", "baked"]]:
+    """Return the agy hook command and its form; same bare/baked rule as :func:`guard_hook_command`."""
+    guard, form = guard_hook_command(portable=portable)
+    if form == "bare":
+        return AGY_HOOK_LINE, "bare"
+    return guard.removesuffix(_GUARD_HOOK_SUFFIX) + _AGY_SUFFIX, "baked"
+
+
+def agy_settings_paths() -> list[Path]:
+    """The user's agy ``settings.json`` files that exist; the official-install path when none does.
+
+    agy auto-approves a command only through ``permissions.allow`` rules in these files (a hook cannot), so
+    the managed SDD rules have to live here rather than in the repository.
+    """
+    candidates = [Path.home() / relative for relative in _AGY_SETTINGS]
+    existing = [path for path in candidates if path.is_file()]
+    return existing or candidates[:1]
+
+
+def _display_home(path: Path) -> str:
+    try:
+        return "~/" + path.relative_to(Path.home()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _read_json_object(path: Path) -> dict[str, Any] | None:
+    """``{}`` for a missing file, the object for a valid one, ``None`` for anything else (never clobbered)."""
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _write_json_object(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def _agy_hook_entry(command: str) -> dict[str, Any]:
+    return {
+        "PreToolUse": [{"matcher": "run_command", "hooks": [{"type": "command", "command": command, "timeout": 10}]}]
+    }
+
+
+def _agy_allow_list(settings: dict[str, Any]) -> list[Any] | None:
+    """``permissions.allow`` of an agy settings object; ``[]`` when absent, ``None`` when malformed."""
+    permissions = settings.get("permissions", {})
+    if not isinstance(permissions, dict):
+        return None
+    allow = permissions.get("allow", [])
+    return allow if isinstance(allow, list) else None
+
+
+def _install_agy_hook(root: Path, receipt: dict[str, Any], *, portable: bool | None) -> list[str]:
+    """Write the named agy hook into ``.agents/hooks.json``, keeping every other named hook."""
+    path = root / AGY_HOOKS_PATH
+    if path.is_symlink() or not _under(Path(os.path.realpath(path)), Path(os.path.realpath(root))):
+        return [f"warning: {AGY_HOOKS_PATH} — resolves outside the repository (symlink); agy hook skipped"]
+    data = _read_json_object(path)
+    if data is None:
+        return [f"warning: {AGY_HOOKS_PATH} — not a JSON object; agy hook skipped (fix the file and re-run)"]
+    command, form = agy_hook_command(portable=portable)
+    entry = _agy_hook_entry(command)
+    previous = data.get(AGY_HOOK_NAME)
+    recorded = receipt.setdefault("settings_hooks", [])
+    if "agy-permissions" not in recorded:
+        recorded.append("agy-permissions")
+    if previous == entry:
+        return [f"{AGY_HOOKS_PATH} — agy permission hook already registered"]
+    data[AGY_HOOK_NAME] = entry
+    _write_json_object(path, data)
+    return [f"{AGY_HOOKS_PATH} — agy permission hook {'updated' if previous is not None else 'registered'} ({form})"]
+
+
+def _install_agy_rules(receipt: dict[str, Any]) -> list[str]:
+    """Append the missing managed rules to every agy settings file; record only the rules this run added."""
+    from parrot.sdd.scripts.agy_permissions import SDD_ALLOW_RULES  # lazy: only for the google host
+
+    added: set[str] = set(receipt.get("agy_rules", []))
+    lines: list[str] = []
+    for path in agy_settings_paths():
+        shown = _display_home(path)
+        settings = _read_json_object(path)
+        allow = _agy_allow_list(settings) if settings is not None else None
+        if settings is None or allow is None:
+            lines.append(f"warning: {shown} — not a valid agy settings object; agy rules skipped")
+            continue
+        missing = [rule for rule in SDD_ALLOW_RULES if rule not in allow]
+        if not missing:
+            lines.append(f"{shown} — agy rules present")
+            continue
+        permissions = settings.setdefault("permissions", {})
+        permissions["allow"] = [*allow, *missing]
+        _write_json_object(path, settings)
+        added.update(missing)
+        lines.append(f"{shown} — {len(missing)} agy rule(s) added")
+    if added:
+        receipt["agy_rules"] = sorted(added)
+    return lines
+
+
+def _install_agy_permissions(root: Path, receipt: dict[str, Any], *, portable: bool | None) -> list[str]:
+    """Brief agy-permission-hook: register the agy hook in the repository and the rules in the user's settings."""
+    return [*_install_agy_hook(root, receipt, portable=portable), *_install_agy_rules(receipt)]
+
+
+def _remove_agy_permissions(root: Path, receipt: dict[str, Any]) -> list[str]:
+    """Drop the named agy hook and exactly the rules the receipt says this integration added."""
+    lines: list[str] = []
+    receipt["settings_hooks"] = [h for h in receipt.get("settings_hooks", []) if h != "agy-permissions"]
+    path = root / AGY_HOOKS_PATH
+    inside = not path.is_symlink() and _under(Path(os.path.realpath(path)), Path(os.path.realpath(root)))
+    data = _read_json_object(path) if path.is_file() and inside else None
+    if data is not None and AGY_HOOK_NAME in data:
+        data.pop(AGY_HOOK_NAME)
+        if data:
+            _write_json_object(path, data)
+        else:
+            path.unlink()
+            _prune_empty_parents(root, path)
+        lines.append(f"{AGY_HOOKS_PATH} — agy permission hook removed")
+    rules = set(receipt.pop("agy_rules", None) or [])
+    for settings_path in agy_settings_paths() if rules else []:
+        settings = _read_json_object(settings_path) if settings_path.is_file() else None
+        allow = _agy_allow_list(settings) if settings else None
+        if not settings or not allow:
+            continue
+        kept = [rule for rule in allow if rule not in rules]
+        if len(kept) == len(allow):
+            continue
+        permissions = settings["permissions"]
+        if kept:
+            permissions["allow"] = kept
+        else:
+            permissions.pop("allow")
+            if not permissions:
+                settings.pop("permissions")
+        _write_json_object(settings_path, settings)
+        lines.append(f"{_display_home(settings_path)} — {len(allow) - len(kept)} agy rule(s) removed")
+    return lines
+
+
+def _agy_permissions_report(root: Path) -> dict[str, Any]:
+    """Status: the hook's form/command in ``.agents/hooks.json`` and how many managed rules the user lacks."""
+    from parrot.sdd.scripts.agy_permissions import SDD_ALLOW_RULES
+
+    data = _read_json_object(root / AGY_HOOKS_PATH) or {}
+    try:
+        command = data[AGY_HOOK_NAME]["PreToolUse"][0]["hooks"][0]["command"]
+    except (KeyError, IndexError, TypeError):
+        command = None
+    if not isinstance(command, str) or not command.rstrip().endswith(_AGY_SUFFIX.strip()):
+        command = None
+    paths = agy_settings_paths()
+    settings = _read_json_object(paths[0]) or {}
+    allow = _agy_allow_list(settings) or []
+    return {
+        "form": None if command is None else ("bare" if command == AGY_HOOK_LINE else "baked"),
+        "command": command,
+        "settings": [str(p) for p in paths],
+        "missing_rules": sum(rule not in allow for rule in SDD_ALLOW_RULES),
+    }
+
+
 def _rendered_payload(entry: dict[str, Any], hook: str) -> bytes:
     """Packaged bytes of ``entry`` with the guard-hook line replaced by ``hook`` (YAML single-quote escaped)."""
     payload = (_assets_root() / entry["source"]).read_bytes()
@@ -529,6 +718,7 @@ def plan_install(
     base_branch: str | None = None,
     dangerous_guard: bool = True,
     sdd_coder: bool = True,
+    agy_permissions: bool = True,
 ) -> list[PlannedAction]:
     """Pure: the ordered plan for ``install`` (assets, seeds, gitignore, ledger, config). No I/O writes."""
     receipt = load_receipt(root)
@@ -567,6 +757,11 @@ def plan_install(
     plan.append(PlannedAction(action="base-branch", target=base, note=_base_branch_state(root, base)))  # C31
     if dangerous_guard and "claude" in _validate_hosts(hosts):
         plan.append(PlannedAction(action="dangerous-guard", target=SETTINGS_PATH.as_posix()))  # C32
+    if agy_permissions and "google" in _validate_hosts(hosts):  # brief agy-permission-hook
+        rules_in = ", ".join(_display_home(p) for p in agy_settings_paths())
+        plan.append(
+            PlannedAction(action="agy-permissions", target=AGY_HOOKS_PATH.as_posix(), note=f"+ rules in {rules_in}")
+        )
     if sdd_coder:
         plan.append(PlannedAction(action="toolkits", target=", ".join(SDD_TOOLKITS)))  # C34
     return plan
@@ -744,6 +939,8 @@ def plan_uninstall(root: Path, hosts: Sequence[str], *, keep_edits: bool = False
             removed.add(target)
     if "claude" in selected_hosts and "dangerous-actions" in receipt.get("settings_hooks", []):
         plan.append(PlannedAction(action="dangerous-guard-remove", target=SETTINGS_PATH.as_posix()))  # C32
+    if "google" in selected_hosts and "agy-permissions" in receipt.get("settings_hooks", []):
+        plan.append(PlannedAction(action="agy-permissions-remove", target=AGY_HOOKS_PATH.as_posix()))
     if receipt.get("toolkits"):
         plan.append(PlannedAction(action="toolkits-remove", target=", ".join(receipt["toolkits"])))  # C34
     if set(receipt["files"]) - removed:
@@ -1144,6 +1341,7 @@ def install_sdd_integration(
     hotfix_base: str | None = None,
     dangerous_guard: bool = True,
     sdd_coder: bool = True,
+    agy_permissions: bool = True,
 ) -> list[str]:
     """Deploy packaged SDD assets for ``hosts`` into ``root``, replacing older or hand-edited copies.
 
@@ -1163,6 +1361,9 @@ def install_sdd_integration(
             (claude host); ``False`` skips it.
         sdd_coder: C34 — register the ``sdd-coder`` and ``bounded-source`` MCP toolkits (``.parrot/mcp-toolkits.yaml``
             plus the host MCP config) and report the usable roster; ``False`` skips all of it.
+        agy_permissions: Brief agy-permission-hook (google host) — register the agy PreToolUse permission
+            hook in ``.agents/hooks.json`` and merge the managed ``permissions.allow`` rules into the user's agy
+            ``settings.json`` (additive; uninstall removes only the rules recorded here); ``False`` skips both.
         push_base: C31 — also ``git push -u origin <base_branch>`` when origin lacks it.
         hotfix_base: C31 — seed ``sdd/config.json`` with this hotfix branch (when absent). Needed when
             ``base_branch`` is ``main`` (the default hotfix branch): the two must differ.
@@ -1208,6 +1409,7 @@ def install_sdd_integration(
         base_branch=config.base_branch,
         dangerous_guard=dangerous_guard,
         sdd_coder=sdd_coder,
+        agy_permissions=agy_permissions,
     )
     if dry_run:
         return [str(step) for step in plan]
@@ -1231,6 +1433,8 @@ def install_sdd_integration(
             actions.extend(_base_branch_step(root, config, push=push_base, receipt=receipt))
         elif step.action == "dangerous-guard":
             actions.extend(_install_dangerous_guard(root, receipt, portable=portable))
+        elif step.action == "agy-permissions":
+            actions.extend(_install_agy_permissions(root, receipt, portable=portable))
         elif step.action == "toolkits":
             actions.extend(_install_toolkits_step(root, hosts, receipt, portable=portable))
     _save_receipt(root, receipt)
@@ -1511,6 +1715,8 @@ def uninstall_sdd_integration(
             actions.append(f"git ledger hooks — kept (keep-ledger-hooks: {step.note})")
         elif step.action == "dangerous-guard-remove":
             actions.extend(_remove_dangerous_guard(root, receipt))
+        elif step.action == "agy-permissions-remove":
+            actions.extend(_remove_agy_permissions(root, receipt))
         elif step.action == "toolkits-remove":
             actions.extend(_remove_toolkits(root, hosts, receipt))
         elif step.action == "receipt-remove":
@@ -1675,6 +1881,7 @@ def sdd_status(root: Path) -> dict[str, Any]:
         "ledger_hooks": _ledger_hooks_present(root),
         "guard_hook": guard,
         "dangerous_guard": _dangerous_guard_report(root),
+        "agy_permissions": _agy_permissions_report(root),
         "toolkits": _toolkits_report(root),
         "stale": _stale_report(root),
         "stale_mcp": _stale_mcp_report(root),
