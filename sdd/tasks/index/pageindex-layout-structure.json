@@ -135,7 +135,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -145,8 +145,9 @@
       "parallelism_notes": "TASK-5336: modifies layout_structure.py/test_layout_structure.py it creates; build_structure calls score_bookmarks/score_layout and fills CandidateScore/StructureReport",
       "assigned_to": null,
       "started_at": "2026-11-08T01:52:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5337-structure-tree-and-choice.md"
+      "completed_at": "2026-11-08T09:11:39+00:00",
+      "file": "sdd/tasks/completed/TASK-5337-structure-tree-and-choice.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5338",
