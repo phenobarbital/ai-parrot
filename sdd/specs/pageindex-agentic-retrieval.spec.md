@@ -17,7 +17,7 @@ docs:
 **Feature ID**: FEAT-843
 **Date**: 2026-11-08
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 2.2.0
 
 > Fourth slice of `sdd/proposals/pageindex-tree-optimizer.brainstorm.md` (revision 4). It
@@ -87,7 +87,7 @@ bundle is returned with an explicit ungrounded flag; the loop is opt-in over MCP
    (adjacent reads may jointly cover it; an unread gap may not; a match elsewhere in the
    segment does not count). The validator fills `start`/`end` from the first full match
    inside covered ranges. A missing or mismatched revision fails.
-4. An `AgenticRetriever` that runs stage 1 (`search`), then the client-level tool loop on a
+4. An `AgenticRetriever` that runs stage 1 (snapshot-bound hybrid search), then the client-level tool loop on a
    dedicated client holding only the read tools, bounded by a read budget (chars and read
    count) enforced inside the tools, a maximum number of tool calls, and a wall-clock
    timeout; it returns an `EvidenceBundle`: candidates, ledger entries, kept and rejected
@@ -107,8 +107,9 @@ bundle is returned with an explicit ungrounded flag; the loop is opt-in over MCP
 
 ### Non-Goals (explicitly out of scope)
 
-- No change to the read tools, cursors or `_read` (FEAT-840) beyond consuming their
-  `ReadResult`; the ledger is filled by wrappers around them, not inside them.
+- No change to the public read tools, cursors or `_read` (FEAT-840). Private snapshot-bound
+  helpers reuse their selection rules and `_read`; wrappers clip and record `ReadResult`
+  without putting ledger state inside the public readers.
 - No Bookstore `agentic_retrieve` and no `multistoresearch` citations in this slice. The
   brainstorm says both "inherit the read tools and citations": they inherit the model and
   validator (importable, revision-keyed); wiring them is a follow-up recorded in §8.
@@ -124,7 +125,7 @@ bundle is returned with an explicit ungrounded flag; the loop is opt-in over MCP
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:02a8bfdafa65b01ffb95da845b15f734a4619c39ebbd03750c2d1b83205dc130 evaluation_digest=sha256:57294153270118cbb5d0be1a36b94f6974aafdc04ea3d539cbc1fc64c3d8c665 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:d21de9a14ba50fe0704668b9c8c4bae762e279d9e86f01e80745ecce56b7dde2 evaluation_digest=sha256:66d3e6b3225f9d614939610de676f811e14dbb612216c292444f511c823de153 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -133,18 +134,35 @@ bundle is returned with an explicit ungrounded flag; the loop is opt-in over MCP
 ```
 agentic_retrieve(tree, query, …)
    │
-   ├─ stage 1: self.search(tree, query, top_k)                 ← existing hybrid search
-   ├─ pin: tree = self._load_tree(tree) ; generation_of(tree)   ← reader keeps this dict for the request
+   ├─ deadline = loop.time() + timeout_s                     ← includes lock wait, search and repair
+   ├─ pin: deepcopy(self._load_tree(tree_name))               ← before stage 1; request-local snapshot
+   ├─ stage 1: snapshot-bound HybridPageIndexSearch.search(query, top_k)
    ├─ ledger = ReadLedger(budget_chars, max_reads)
    ├─ tools  = ledger-wrapped read tools  (outline, read_pages, read_segments, list_documents)
    ├─ client = dedicated clone of adapter.client with a fresh ToolManager holding only `tools`
    ├─ client.ask(prompt=<task + framed candidates>, system_prompt=<DATA_FRAMING_INSTRUCTION + citing rules>,
-   │             tools=tools, use_tools=True, model=…)         ← provider's own loop runs the reads
-   ├─ parse AgenticAnswer from the final text (JSON block; one structured repair call on failure)
+   │             tools=tools, use_tools=True, model=…)         ← supervised task; cancel on call cap/deadline
+   ├─ parse AgenticAnswer (one repair call, using only the deadline's remaining time)
    ├─ kept, rejected = validate_citations(ledger, revisions, answer.citations)
    └─ EvidenceBundle(candidates, reads=ledger.entries(), citations=kept, rejected, answer, usage,
-                     tool_calls, grounded = bool(kept) or no citation was proposed and answer=None …)
+                     tool_calls, grounded = bool(kept))
 ```
+
+**Snapshot binding (M4).** Pin a request-local deep copy of the tree before stage 1.
+Build a request-local `HybridPageIndexSearch` with that tree and
+`content_loader=self._content_store.loader_for(tree_name, tree)`, copying the other
+constructor settings from `_search_for`; do not use the live `_search` cache. Call its
+`search` with the same defaults as public `search`, including `use_vec=self._use_vec_rank`.
+The four agentic tools are private snapshot-bound implementations, not the live methods
+returned by `self.get_tools()`: resolve documents, nodes, outlines and sequence selection
+from this same tree and load only its named revisions. Reuse `_documents_of`,
+`_revision_for(tree_name, tree, ...)`, `_read` and the existing selection rules; never
+reload the live tree or mutate shared caches to simulate pinning. Keep the existing public
+read tools unchanged. Bind `tree_name` in the closures and reject a different supplied
+tree name. Continuation cursors must name the snapshot's document revision; a re-import
+must neither switch revisions nor invalidate an old cursor while its revision is available.
+All returned generations, candidates and outlines belong to this snapshot. Add private
+snapshot search/read helpers within `toolkit.py`; these are part of M4's scope.
 
 **Dedicated client (M3).** Verified: `AbstractClient.ask(tools=…)` registers the passed
 tools on the client's own `ToolManager` for good (Anthropic `client.py:588-590` calls
@@ -165,10 +183,48 @@ and reused; its manager is cleared and re-registered per request (`clear_tools`
 paths). So the bounds live where every provider must pass: inside the tools and around the
 call. The ledger-wrapped tools refuse once `max_reads` calls or `budget_chars` returned
 characters are reached, returning a short `"read budget exhausted — answer from what you
-have read"` message instead of text; `asyncio.wait_for(client.ask(...), timeout_s)` bounds
-the wall clock; `max_tool_calls` is enforced by the wrapper counter (a refusal still counts
-as a call). A timeout yields a bundle with `stopped="timeout"` and whatever the ledger
-holds, never an exception to the caller.
+have read"` message instead of text. `BudgetExhausted` is caught inside the wrapper and
+is only a read-budget signal; ordinary tool exceptions do not stop provider loops.
+
+Run the provider call as an owned `asyncio.Task`. A request-local controller atomically
+admits at most `max_tool_calls` wrapper invocations across all four tools; refusals count.
+After the last admitted invocation finishes (including its ledger recording), set the
+controller's stop event. Later invocations perform no reads and wait for cancellation.
+The supervisor races the provider task against that event and the shared deadline; on
+the event it cancels and awaits the provider task, then returns `stopped="max_tool_calls"`
+with partial reads, no drafted answer and no repair call. This deliberately stops at the
+cap even if the model might otherwise produce a final answer in another round. It does
+not rely on an exception escaping the provider's `except Exception` handler. No read
+may record after return; cancel and await owned tasks before clearing or reusing the
+clone's manager. External caller cancellation propagates after cleanup, rather than
+being translated into a bundle. Test cancellation propagation through supported loops;
+a provider that suppresses cancellation is not supported by this bounded API.
+
+**Exact character budget (M1/M3).** `_read` floors `max_chars` at 500. Under one
+request-local read lock, perform `charge` → snapshot read → clip → record → expose;
+this prevents parallel tool execution from overspending the same allowance. Clip the
+returned `ReadResult` to the granted number of stored-text characters *before* recording
+or returning anything to the model. Drop later segments; shorten the last retained
+segment's text and `end`, preserving `start`; update its `truncated` flag. When content
+is omitted, set the result's `truncated=True` and `next_cursor` to the first omitted
+character (including a dropped segment's original start); otherwise preserve the original
+cursor. Regenerate `framed` from the clipped segments. Only those clipped ranges enter
+the ledger. `chars_read` counts delivered characters, including repeated reads, separately
+from each entry's unique covered characters. Positive allowances below 500 must work,
+including an initial budget of 100. Zero remaining allowance causes refusal without a
+read. Metadata-only calls count toward the tool-call cap, not the segment-character budget.
+
+**Deadline (M3/M4).** Compute one monotonic deadline at `agentic_retrieve` entry. Lock
+acquisition, stage-1 search, outline loading, the provider loop, the optional repair call,
+and asynchronous validation I/O share its remaining time; never restart `timeout_s` for
+a later phase. Check the deadline around local processing and offload blocking revision
+loads. On expiry cancel and await owned asynchronous work, return `stopped="timeout"`
+with completed reads and no answer/citations, and do not start repair. Before pinning,
+the partial bundle has `generation=None` and empty candidates/reads. Local cleanup and
+bundle serialization may add overhead; the timeout is a cooperative execution deadline,
+not a hard real-time bound. When several stop conditions are observed together, deadline
+expiry wins, then the call cap; a read-budget refusal otherwise produces `stopped="budget"`
+on a normally completed answer. Parse failure takes precedence over that soft refusal.
 
 **Provider support (M3).** Verified table in §6: Anthropic, Google, OpenAI (via
 `openai_base`), Bedrock, Gemma4, Groq, Grok and ZAI execute tools inside `ask()`; HF,
@@ -184,7 +240,9 @@ owned-segment counts from `outline`) as a framed block, and the instruction to r
 answering. The final answer is a fenced JSON object `{"answer": str | null,
 "citations": [{"address": "doc@rev#seq", "excerpt": str}]}` parsed into `AgenticAnswer`;
 if parsing fails, one repair call `client.ask(prompt=<the text>, structured_output=
-AgenticAnswer, use_tools=False)` with no document text. `draft_answer=False` asks for
+AgenticAnswer, use_tools=False)` within the same deadline. Treat its input as untrusted
+quoted data using `frame_text` and `DATA_FRAMING_INSTRUCTION`: model output can repeat
+document text. `draft_answer=False` asks for
 citations only (`answer` stays `None`).
 
 **Ledger (M1).** `ReadLedger.record(result: ReadResult)` merges each `SegmentRead`'s
@@ -200,8 +258,11 @@ behind `format_cursor` / `parse_cursor` (`segments.py:19`, without the `+offset`
 revision through the store (`SegmentStore.load_revision`, `segment_store.py:64`); reject
 `revision_unavailable` if gone; take `segment.text`; build a whitespace-tolerant pattern
 from the normalised excerpt (`" ".join(excerpt.split())`, tokens joined by `\s+`,
-`re.escape`d) and iterate matches in `segment.text`; the first match whose `[m.start(),
-m.end())` is inside one covered interval is accepted and gives `start`/`end`; otherwise
+`re.escape`d). For each merged covered interval `[lo, hi)` in ascending order, run
+`pattern.search(segment.text, lo, hi)`; the first match supplies the absolute `start`/`end`.
+Do not filter a whole-segment `finditer`: its non-overlapping matches can skip a covered
+occurrence overlapping an earlier uncovered one. If no covered match exists, run a
+whole-segment search solely to distinguish the rejection reason; otherwise
 reject `outside_covered_ranges` (if a match exists but is uncovered) or `excerpt_not_found`.
 Empty excerpts are `empty_excerpt`. `label` comes from `SegmentAddress.label`
 (`segments.py:82`), `document` from `revision.source.name`.
@@ -303,7 +364,7 @@ clone_for_tools(client) -> AbstractClient
 | M1: read ledger | yes | models and merge rule fixed in §2; pure Python | — |
 | M2: citations + validator | yes | reasons enum, match rule, renderer fixed in §2 | — |
 | M3: agentic retriever | no | — | prompt wording, parse/repair flow and clone details need judgement |
-| M4: toolkit tool + hand-offs | yes | tool signature and kwargs fixed; two one-line edits in FEAT-842 files | — |
+| M4: toolkit tool + snapshot binding + hand-offs | no | snapshot-bound search/read helpers and public tool signature fixed in §2/§3 | shared reader-selection logic and deadline integration need judgement |
 | M5: tests | no | — | fake-client tool-loop harness design |
 | M6: documentation | no | — | prose |
 
@@ -318,7 +379,7 @@ from parrot.knowledge.pageindex.segments import ReadResult, SegmentRead   # veri
 Range = tuple[int, int]
 
 class BudgetExhausted(RuntimeError):
-    """Raised by a ledger-wrapped read tool once the request's read budget is spent."""
+    """Internal read-budget signal, caught by the wrapper; never a provider-loop stop mechanism."""
 
 class LedgerEntry(BaseModel): ...
 
@@ -328,9 +389,13 @@ class ReadLedger:
         """Merge every ``SegmentRead.start/end`` of ``result`` into the entry of its ``(doc_id, revision, seq)``.
 
         Touching or overlapping ranges merge; a read from another revision is a separate entry.
-        Records ``result.generation`` on first use and counts ``chars`` and ``reads``."""
+        Records ``result.generation`` on first use and counts delivered ``chars`` and ``reads``.
+        Counts repeated characters again for budget accounting, independently of merged coverage."""
     def charge(self, requested_chars: int) -> int:
-        """Return the chars the next read may use; raise ``BudgetExhausted`` when ``reads >= max_reads`` or nothing is left."""
+        """Grant at most the remaining characters, including allowances below 500.
+
+        Raise ``BudgetExhausted`` when ``reads >= max_reads`` or nothing is left.
+        Caller holds the read lock through charge, read, clipping and record."""
     def covered(self, doc_id: str, revision: str, seq: int) -> list[Range]: ...
     def entries(self) -> list[LedgerEntry]: ...
     @property
@@ -361,7 +426,8 @@ def normalize_ws(text: str) -> str:
 def find_covered_match(segment_text: str, excerpt: str, covered: list[Range]) -> Optional[Range]:
     """First ``[start, end)`` in ``segment_text`` whose text equals ``excerpt`` after whitespace
     normalisation and lies inside ONE covered range (ranges are already merged, so adjacent
-    reads count as one). ``None`` when no occurrence lies inside; callers distinguish
+    reads count as one). Search each interval with explicit pos/endpos, so overlapping
+    occurrences outside coverage cannot hide a valid match. ``None`` when no occurrence lies inside; callers distinguish
     not-found from uncovered with ``find_any_match``."""
 
 def find_any_match(segment_text: str, excerpt: str) -> bool: ...
@@ -391,7 +457,8 @@ from parrot.tools.manager import ToolManager                   # verified: tools
 from parrot.tools.toolkit import AbstractTool                  # verified: tools/toolkit.py (tools returned by get_tools)
 from parrot.knowledge.pageindex.framing import DATA_FRAMING_INSTRUCTION, frame_text   # verified: framing.py:10, :39
 from parrot.knowledge.pageindex.read_ledger import ReadLedger, BudgetExhausted
-from parrot.knowledge.pageindex.citations import AgenticAnswer? (defined here), validate_citations, render_citations
+from parrot.knowledge.pageindex.citations import validate_citations, render_citations
+# AgenticAnswer is defined in this module, as specified in §2.
 
 SYSTEM_PROMPT: str      # DATA_FRAMING_INSTRUCTION + citing contract + JSON answer shape
 BUDGET_MESSAGE = "read budget exhausted — answer from what you have read"
@@ -406,20 +473,32 @@ class AgenticRetriever:
                  load_revision: Callable[[str, str], Optional[DocumentRevision]]) -> None: ...
     async def run(self, *, tree_name: str, query: str, candidates: list[dict[str, Any]],
                   outline: dict[str, Any], generation: Optional[int], budget_chars: int, max_reads: int,
-                  max_tool_calls: int, timeout_s: float, draft_answer: bool) -> EvidenceBundle:
+                  max_tool_calls: int, deadline: float, draft_answer: bool) -> EvidenceBundle:
         """Stage 2: wrap ``read_tools`` with a fresh ``ReadLedger``, register them on the dedicated client,
-        run ``client.ask(..., tools=wrapped, use_tools=True)`` under ``asyncio.wait_for``, parse the answer,
-        validate citations, build the bundle. Never raises for budget, timeout or parse failures."""
-    def _wrap(self, tool: AbstractTool, ledger: ReadLedger, counter: list[int], max_tool_calls: int) -> AbstractTool:
-        """Return a tool with the same name/schema whose execution charges the ledger, records the
-        ``ReadResult`` (read_pages / read_segments) and returns ``BUDGET_MESSAGE`` once exhausted."""
+        supervise the provider task under the entry-point deadline and call-cap stop event;
+        parse/repair using remaining time, validate citations, build the bundle.
+        Never raises for budget, timeout or parse failures; external cancellation propagates."""
+    def _wrap(self, tool: AbstractTool, ledger: ReadLedger, controller: ToolCallController,
+              read_lock: asyncio.Lock) -> AbstractTool:
+        """Admit a counted call, then serialize charge/read/clip/record for segment reads.
+
+        Return BUDGET_MESSAGE for read-budget refusal. Signal the supervisor when the last
+        admitted call finishes; do not raise BudgetExhausted to terminate the provider loop."""
     @staticmethod
     def parse_answer(text: str) -> Optional[AgenticAnswer]:
         """First fenced or bare JSON object in ``text`` as ``AgenticAnswer``; ``None`` when absent/invalid."""
 ```
 
+`ToolCallController` is a new private implementation type in `agentic.py`, owning
+the admitted-call count, stop event and admission lock. Its terminal state rejects
+further execution even when the provider dispatches tools in parallel. It is not a
+new public export. Validate positive finite timeout and positive integer budgets/caps
+at the entry point before launching work. The synchronous citation validator remains
+usable independently; the async retriever preloads revisions off the event loop under
+the deadline and supplies an in-memory `load_revision` callback to it.
+
 Prompt budget: the candidates block is `frame_text(...)`-wrapped; the `outline` of the
-top candidate's subtree (`toolkit.outline`, `toolkit.py:796`) is included so the model
+top candidate's subtree (snapshot-bound equivalent of `toolkit.outline`) is included so the model
 knows which pages/segments exist before its first read.
 
 ### Module 4: Toolkit tool and FEAT-842 hand-offs
@@ -449,8 +528,12 @@ class PageIndexToolkit(AbstractToolkit):                                  # veri
         Returns an evidence bundle: candidates, the exact ranges read, validated citations
         (``[Report.pdf, p. 12 ¶3]``), rejected ones with reasons, and optionally a drafted
         answer. ``grounded`` is false when no citation survived validation. Requires an LLM."""
-    def _agentic_read_tools(self) -> list[AbstractTool]:
-        """The four read tools (list_documents, outline, read_pages, read_segments) from ``self.get_tools()``."""
+    def _agentic_read_tools(self, tree_name: str, tree: dict[str, Any]) -> list[AbstractTool]:
+        """Build four request-local tools bound to this tree snapshot and its revisions.
+
+        Preserve public names/schema, reject another tree_name, never dispatch to live read methods."""
+    def _agentic_search(self, tree_name: str, tree: dict[str, Any]) -> HybridPageIndexSearch:
+        """Build a request-local engine with snapshot-bound content loading and existing search settings."""
     def _agentic_client(self) -> AbstractClient:
         """``agentic_client`` if given, else a cached ``clone_for_tools(self._adapter.client)``; ValueError with no adapter."""
 ```
@@ -495,7 +578,7 @@ pageindex.md` (link after the Segment Store entry, `:25`), `wiki/knowledge/pagei
 | Scenario | Test |
 |---|---|
 | import a fake two-page PDF (FEAT-840 `paged_toolkit` fixture pattern, `test_read_tools.py:67`), run `agentic_retrieve` with the scripted client reading p.1 then continuing p.2, cite from both, verify kept/rejected and rendered labels | `test_agentic_retrieval.py::test_end_to_end_cited_evidence` |
-| re-import changes the revision mid-request: the loop pinned the old generation; citations against the old revision are still valid within the grace period | `test_agentic_retrieval.py::test_citations_survive_reimport_within_grace` |
+| re-import after stage-1 pinning and between a prefix read and its continuation: candidates, outline, subsequent list/read calls and cursor continuation all retain the old generation/revision; new-revision cursor rejected; old citations validate within grace | `test_agentic_retrieval.py::test_citations_survive_reimport_within_grace` |
 | existing read-tool and segment tests unchanged | `test_read_tools.py`, `test_segments.py`, `test_segment_store.py`, `test_framing.py` |
 
 ### Validation Contract
@@ -518,14 +601,18 @@ markers: []
 
 - `_adapter()` and `_fake_build(pages)` / `paged_toolkit` from `tests/knowledge/pageindex/test_read_tools.py:20-75`; the `_stub_tiktoken` autouse fixture (`:33`).
 - A `ScriptedToolLoopClient(AbstractClient)` fixture: `ask()` runs a list of `(tool_name, kwargs)` through `self.tool_manager.execute_tool`, then returns `AIMessage(output=<scripted text>, usage=…, tool_calls=[…])`.
+- A provider-like fixture catches ordinary tool exceptions and requests another round indefinitely; cancellation must terminate it at the call cap. Include parallel tool dispatch and verify no late ledger writes or surviving provider task.
+- A malformed-answer fixture whose repair call stalls, plus a delayed initial call, proves repair receives only the remaining deadline. Cover timeout during clone-lock wait and stage-1 search as well.
 - Pages with a segment longer than the test `budget_chars` to force a prefix read + cursor continuation.
+- Initial allowance 100, a final allowance below 500, and a clipping boundary exactly between segments; assert returned text, framing, offsets, cursor, ledger and cumulative delivered-character count agree. Repeated and parallel reads must not overspend.
+- Stored text `"a a a"`, excerpt `"a a"`, covered range `[2,5)`; expected citation offsets `[2,5)` despite the earlier overlapping uncovered match.
 
 ---
 
 ## 5. Acceptance Criteria
 
 - [ ] AC-1 `ReadLedger.record` merges `[0,500)` + `[500,900)` into `[0,900)`, keeps `[0,500)` + `[600,900)` separate, and files a read from another revision under its own key.
-- [ ] AC-2 `charge` raises `BudgetExhausted` at `max_reads` or when `chars_read >= budget_chars`; a wrapped tool then returns `BUDGET_MESSAGE` and the bundle says `stopped="budget"`.
+- [ ] AC-2 `charge` raises `BudgetExhausted` at `max_reads` or when `chars_read >= budget_chars`; a wrapped tool catches it and returns `BUDGET_MESSAGE`. A normally parsed completion then says `stopped="budget"`, unless timeout or the call cap stopped execution first (§2 precedence).
 - [ ] AC-3 A segment of 1,200 chars read as prefix `[0,500)`: an excerpt from `[700,760)` is rejected `outside_covered_ranges`; after the continuation `[500,1200)` the same excerpt is kept with `start=700, end=760`.
 - [ ] AC-4 Reads `[0,500)` and `[600,900)`: an excerpt spanning `[480,620)` is rejected; an excerpt repeated at `[100,140)` and `[550,590)` resolves to `start=100`.
 - [ ] AC-5 Excerpt `"two  words\nhere"` matches stored `"two words here"`; `start`/`end` index the stored text.
@@ -539,6 +626,11 @@ markers: []
 - [ ] AC-13 The FEAT-842 template lists `pageindex_agentic_retrieve` under `exclude:`; `create_toolkit_mcp_server("pageindex", root)` from the seeded section does not serve it; removing it from `exclude:` and setting `llm:` serves it.
 - [ ] AC-14 No file under `clients/`, `bots/`, `mcp/` (other than the template line) is modified.
 - [ ] AC-15 Wiki page per §10 exists and is linked; `parrot sdd techwiki check --spec sdd/specs/pageindex-agentic-retrieval.spec.md --root .` passes.
+- [ ] AC-16 Pin before stage 1; re-import between reads does not change candidates, outline, documents, generation or revision, and an old cursor continues within grace. Cross-tree arguments and a cursor naming the new revision are rejected. Shared toolkit caches are not replaced for pinning.
+- [ ] AC-17 With a provider-like loop that catches ordinary tool exceptions, at most `max_tool_calls` invocations are admitted (including refusals and metadata tools); the supervisor cancels/awaits the provider task at the cap and returns `stopped="max_tool_calls"` with partial reads and no repair. Parallel dispatch cannot exceed admission; no task or ledger write survives return. External cancellation propagates after cleanup.
+- [ ] AC-18 With an initial budget of 100 or 100 remaining after earlier reads, at most 100 more stored-text characters reach the model/ledger despite `_read`'s 500-character floor. Clipped text, offsets, truncation flags, regenerated framing and continuation cursor agree, including clipping between segments. Repeated reads consume budget again; parallel reads cannot overspend.
+- [ ] AC-19 Lock wait, search, tool loop and repair consume one deadline. A stalled repair is cancelled/awaited and returns `stopped="timeout"` with partial reads and no answer/citations; no repair starts after expiry. Check deadline and call-cap stop precedence and absence of surviving tasks.
+- [ ] AC-20 For `segment_text="a a a"`, excerpt `"a a"` and covered `[2,5)`, validation keeps `[2,5)`; the earlier uncovered `[0,3)` match cannot hide it. Existing gap and adjacent-range cases still pass.
 
 ---
 
@@ -679,8 +771,9 @@ counts after it merges.
   (`toolkit.py:745-748`). Normalise only for comparison, never for indexing.
 - Merge ledger ranges on record, not on query, so `covered()` is a sorted disjoint list and
   "adjacent reads jointly cover" is a containment test against one interval.
-- The ledger is filled by tool wrappers, which see the `ReadResult` dict the tool returns
-  (`result.model_dump()`); re-validate it with `ReadResult.model_validate` before recording.
+- The ledger is filled by wrappers around snapshot-bound private readers. Validate their
+  `ReadResult`, clip to the granted allowance, regenerate framing, then record and expose
+  exactly that clipped result under the read lock. Do not record the pre-clipping result.
 - Register the wrapped tools on the **clone** only; never call `register_tools` on
   `self._adapter.client`.
 - Everything the model sees from documents goes through `frame_segments`/`frame_text`
@@ -695,24 +788,30 @@ counts after it merges.
 - **Providers without a tool loop** (hf, meta, local, vllm, moonshot, nvidia, jev): the
   bundle comes back `stopped="no_tool_calls"`, `grounded=False`. Documented; capability
   flag escalated in §8.
-- **No turn cap in `ask()`**: a provider loop that keeps calling tools after the budget is
-  spent gets `BUDGET_MESSAGE` every time; `max_tool_calls` makes the wrapper raise
-  `BudgetExhausted` past that point so the client's own error handling ends the loop, and
-  `timeout_s` is the last resort.
+- **No turn cap in `ask()`**: ordinary tool exceptions are caught and converted to tool
+  results by providers such as Anthropic. Use the supervisor's stop event and task
+  cancellation at the admitted-call cap; `BudgetExhausted` only produces a read refusal.
+  Verify cancellation with an exception-catching provider-like loop, not only a straight
+  scripted client. All owned work must settle before the clone is reused.
 - **Shallow clone shares `_clients_by_loop`**: intended (same SDK client), but a provider
   that stores per-instance request state outside the tool manager could interleave; the
   per-toolkit lock serializes agentic calls on one clone.
-- **Segment larger than a read budget**: returned truncated with a cursor (FEAT-840);
-  only the returned prefix enters the ledger — the brainstorm's "markers and unread
-  remainders are not citable evidence".
-- **Re-import during a request**: the reader keeps its tree dict and its revision; a
+- **Read budget below 500**: `_read` has a 500-character floor. Clip before exposing or
+  recording the result and rebuild framing/cursors; account for repeated delivery, not
+  just unique ledger coverage. Serialize charge through record to handle parallel tools.
+- **Re-import during a request**: all four private tools and stage-1 search use the
+  snapshot pinned before search; live public readers reload the tree and cannot be used
+  to implement this guarantee. A
   citation to the old revision validates until the grace sweep removes the file, then
   `revision_unavailable`.
 - **Models mis-copy addresses**: `bad_address` is a rejection reason, not an exception; the
   system prompt shows the exact key format and tells the model to copy it from the
   `<segment address=…>` tag.
-- **Parse/repair**: the repair call carries only the model's own text, never document text,
-  so it cannot be used to launder an injection; if it also fails → `stopped="parse_error"`.
+- **Parse/repair**: model output can repeat untrusted document text, so frame it as data.
+  Repair shares the entry-point deadline; if parsing still fails → `stopped="parse_error"`,
+  while deadline expiry yields `stopped="timeout"` without another call.
+- **Overlapping excerpts**: search within each covered interval; whole-segment
+  non-overlapping iteration can miss a covered occurrence after an uncovered one.
 - **FEAT-842 ordering**: the `llm_dependent_tools` and template edits assume FEAT-842 has
   merged; until then the attribute does not exist and the template file is absent. The
   tasks touching them must verify and stop if not.
@@ -730,7 +829,7 @@ schema_version: 1
 document_id: pageindex-agentic-retrieval
 entries:
   - id: citations-are-ledger-validated-exact-ranges
-    statement: A citation is kept only when its revision and segment appear in the request's read ledger and its excerpt equals, after whitespace normalisation, a stored slice that lies entirely inside the character ranges the read tools actually returned; start and end are computed by the validator from that match, never supplied by the model.
+    statement: A citation is kept only when its revision and segment appear in the request's read ledger and its excerpt equals, after whitespace normalisation, a stored slice that lies entirely inside the character ranges the read tools actually returned; search each merged covered interval independently so overlapping occurrences are not skipped, and compute start and end from the first covered match, never from model offsets.
     relation: requires
     about: [knowledge-pageindex]
     targets: ["file:packages/ai-parrot/src/parrot/knowledge/pageindex/segments.py"]
@@ -739,7 +838,7 @@ entries:
     rationale: Models do not count characters reliably and will quote text they were never shown; the only evidence that survives is text a reader can re-check against an immutable revision at a known offset.
     rejected_alternatives: ["Trust model-supplied offsets", "Accept any occurrence in the segment", "Node-level citations only (OKFToolkit.cite)"]
   - id: stage2-runs-on-client-tool-loop-with-isolated-registry
-    statement: The agentic stage runs through AbstractClient.ask(tools=..., use_tools=True) on a dedicated client clone with its own ToolManager holding only the ledger-wrapped read tools, with no dependency on parrot.bots; bounds (read budget, max tool calls, wall clock) are enforced inside the tools and around the call because the clients expose no turn cap and register per-call tools permanently.
+    statement: The agentic stage runs through AbstractClient.ask(tools=..., use_tools=True) on a dedicated client clone with an isolated ToolManager and no dependency on parrot.bots. Search and private read tools bind to one snapshot pinned before stage 1. Wrappers serialize charge/read/clip/record for exact character limits, and a supervisor cancels and awaits the provider task at the admitted-call cap. One monotonic deadline covers lock wait, search, reads, repair and validation; ordinary tool exceptions are not a loop-stop mechanism.
     relation: constrains
     about: [knowledge-pageindex]
     targets: ["file:packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py", "file:packages/ai-parrot/src/parrot/clients/base.py"]
@@ -751,7 +850,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:02a8bfdafa65b01ffb95da845b15f734a4619c39ebbd03750c2d1b83205dc130 evaluation_digest=sha256:57294153270118cbb5d0be1a36b94f6974aafdc04ea3d539cbc1fc64c3d8c665 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:d21de9a14ba50fe0704668b9c8c4bae762e279d9e86f01e80745ecce56b7dde2 evaluation_digest=sha256:66d3e6b3225f9d614939610de676f811e14dbb612216c292444f511c823de153 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -798,10 +897,10 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:57294153270118cbb5d0be1a36b94f6974aafdc04ea3d539cbc1fc64c3d8c665",
+  "evaluation_digest": "sha256:66d3e6b3225f9d614939610de676f811e14dbb612216c292444f511c823de153",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:02a8bfdafa65b01ffb95da845b15f734a4619c39ebbd03750c2d1b83205dc130",
+  "input_digest": "sha256:d21de9a14ba50fe0704668b9c8c4bae762e279d9e86f01e80745ecce56b7dde2",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -832,7 +931,9 @@ Coverage:
 - [x] Is the internal agentic loop exposed over MCP — *Resolved in brainstorm*: not by default; it is opt-in (FEAT-842 `exclude:` slot).
 - [x] Old revisions after a re-import — *Resolved in brainstorm*: only the latest; the previous one is kept for the grace period, then removed; a citation to it is reported as "revision unavailable".
 - [x] How the dedicated client is obtained — *Resolved in this spec*: `agentic_client` kwarg, else a shallow clone with a fresh `ToolManager`.
-- [x] How bounds are enforced without a client turn cap — *Resolved in this spec*: ledger-side refusals (`max_reads`, `budget_chars`, `max_tool_calls`) plus `asyncio.wait_for`.
+- [x] How bounds are enforced without a client turn cap — *Resolved in revision 0.2*: exact wrapper-side clipping and read refusals, supervised cancellation at the admitted-call cap, and one entry-point deadline including repair; ordinary tool exceptions do not stop providers.
+- [x] How reads remain pinned across re-import — *Resolved in revision 0.2*: snapshot-bound private tools and search, pinned before stage 1, with no live reader dispatch or shared cache replacement.
+- [x] How overlapping citations are matched — *Resolved in revision 0.2*: search each merged covered interval independently and return the first covered match.
 - [ ] Should `AbstractClient` gain a capability flag (e.g. `supports_tool_loop`) so callers can fail fast on hf/meta/local/vllm/moonshot/nvidia/jev instead of reading `stopped="no_tool_calls"`? — *Owner: Jesus Lara*; touches `clients/base.py`, out of this slice.
 - [ ] Bookstore `agentic_retrieve` and `multistoresearch` citations (brainstorm: "inherit the read tools and citations") — follow-up slice or FEAT-840-style Bookstore task? — *Owner: Jesus Lara*.
 - [ ] Default budgets (`agentic_budget_chars=40000`, `agentic_max_reads=12`, `agentic_max_tool_calls=20`, `agentic_timeout_s=120`) are provisional; tune with the optimizer's evaluation task over Bookstore books. — *Owner: Jesus Lara*.
@@ -866,3 +967,4 @@ Status: skipped (exploration doc `sdd/proposals/pageindex-tree-optimizer.brainst
 | Rev | Date | Summary |
 |---|---|---|
 | 0.1 | 2026-11-08 | Initial spec from brainstorm revision 4 (slice 4). Provider tool-loop support verified; anchors at `dev` @ `9ffbe619f0`. |
+| 0.2 | 2026-11-08 | Applied review: snapshot-bound search/reads, supervised tool-cap cancellation, exact sub-500 character clipping, shared deadline including repair, interval-local citation matching; added AC-16–20 and adversarial regression fixtures. |
