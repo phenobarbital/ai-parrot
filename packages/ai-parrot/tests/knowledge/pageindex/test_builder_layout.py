@@ -1,4 +1,5 @@
 """FEAT-845 M5 — build_page_index layout-first pipeline, fallbacks, and errors."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -82,6 +83,7 @@ async def test_no_adapter_layout(headed_pdf):
 
 async def test_auto_falls_back_to_llm(headingless_pdf, monkeypatch):
     """Insufficient deterministic evidence invokes LLM structure generation."""
+
     async def fake_tree_parser(page_list, opt, adapter, light_adapter=None):
         return [{"title": "Doc", "start_index": 1, "end_index": 3}]
 
@@ -94,6 +96,7 @@ async def test_auto_falls_back_to_llm(headingless_pdf, monkeypatch):
 
 async def test_llm_failure_falls_back_to_pages(headingless_pdf, monkeypatch):
     """A failed LLM pass produces page structure while retaining segments."""
+
     async def fail_tree_parser(page_list, opt, adapter, light_adapter=None):
         raise RuntimeError("model down")
 
@@ -126,11 +129,15 @@ async def test_extraction_failure_is_explicit(headed_pdf, monkeypatch, stage):
     if stage == "analysis":
         monkeypatch.setattr(builder, "analyze_layout", lambda path: (_ for _ in ()).throw(ValueError("boom")))
     elif stage == "extraction":
-        monkeypatch.setattr(builder, "extract_markdown_per_page", lambda path, **kwargs: (_ for _ in ()).throw(ValueError("boom")))
+        monkeypatch.setattr(
+            builder, "extract_markdown_per_page", lambda path, **kwargs: (_ for _ in ()).throw(ValueError("boom"))
+        )
     elif stage == "segmentation":
         monkeypatch.setattr(builder, "segment_pages", lambda pages: (_ for _ in ()).throw(ValueError("boom")))
     else:
-        monkeypatch.setattr(builder, "extract_markdown_per_page", lambda path, **kwargs: [(number, "   ") for number in range(1, 5)])
+        monkeypatch.setattr(
+            builder, "extract_markdown_per_page", lambda path, **kwargs: [(number, "   ") for number in range(1, 5)]
+        )
     message = stage if stage != "empty" else "produced no text"
     with pytest.raises(PDFStructureError, match=message) as exc_info:
         await builder._layout_pages(str(headed_pdf))
@@ -142,14 +149,21 @@ async def test_extraction_failure_is_explicit(headed_pdf, monkeypatch, stage):
 
 async def test_layout_mode_summary_options(headed_pdf, monkeypatch):
     """Layout mode skips structure LLM calls but honors summary options."""
+
     async def unexpected_tree_parser(*args, **kwargs):
         raise AssertionError("layout mode called tree_parser")
 
     monkeypatch.setattr(builder, "tree_parser", unexpected_tree_parser)
     with_summaries = FakeAdapter()
-    result = await builder.build_page_index(str(headed_pdf), with_summaries, {"structure_mode": "layout", "if_add_node_summary": "yes"})
+    result = await builder.build_page_index(
+        str(headed_pdf), with_summaries, {"structure_mode": "layout", "if_add_node_summary": "yes"}
+    )
     assert "ask" in with_summaries.calls
     assert all("summary" in node for node in structure_to_list(result["structure"]))
     no_calls = FakeAdapter()
-    await builder.build_page_index(str(headed_pdf), no_calls, {"structure_mode": "layout", "if_add_node_summary": "no", "if_add_doc_description": "no"})
+    await builder.build_page_index(
+        str(headed_pdf),
+        no_calls,
+        {"structure_mode": "layout", "if_add_node_summary": "no", "if_add_doc_description": "no"},
+    )
     assert no_calls.calls == []

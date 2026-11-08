@@ -1,4 +1,5 @@
 """FEAT-845 M5 — builder return contract and layout-stage propagation."""
+
 from __future__ import annotations
 
 import asyncio
@@ -29,7 +30,9 @@ def small_pdf(tmp_path) -> Path:
             page = doc.new_page()
             page.insert_text((72, 100), f"Heading {number}", fontsize=16, fontname="hebo")
             for index in range(15):
-                page.insert_text((72, 140 + 18 * index), "Plain body sentence for the page.", fontsize=10, fontname="helv")
+                page.insert_text(
+                    (72, 140 + 18 * index), "Plain body sentence for the page.", fontsize=10, fontname="helv"
+                )
         doc.save(str(tmp_path / "small.pdf"))
     finally:
         doc.close()
