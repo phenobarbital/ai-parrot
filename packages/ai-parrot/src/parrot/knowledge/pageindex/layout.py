@@ -7,11 +7,11 @@ import math
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from parrot.knowledge.pageindex.segments import normalize_title
+from parrot.knowledge.pageindex.segments import _titles_match, normalize_title
 
 try:
     import pymupdf
@@ -255,3 +255,65 @@ def analyze_layout(pdf_path: str) -> LayoutProfile:
         bookmarks=bookmarks,
         bookmark_rejection=rejection,
     )
+
+
+class LayoutHeaders:
+    """pymupdf4llm ``hdr_info`` object driven by a LayoutProfile (rules 1-6 of spec §2)."""
+
+    TOLERANCE: float = 0.5
+
+    def __init__(self, profile: LayoutProfile) -> None:
+        self.profile = profile
+        self._size_rank: dict[int, int] = {size: rank for rank, size in enumerate(profile.heading_sizes)}
+        self._body_bold_prefix = "#" * (len(profile.heading_sizes) + 1) + " "
+        self._running: dict[str, list[str]] = {}
+        for line in profile.running:
+            self._running.setdefault(line.band, []).append(line.key)
+        self._bookmark_titles: dict[int, list[str]] = {}
+        if profile.bookmark_rejection is None:
+            for bookmark in profile.bookmarks:
+                self._bookmark_titles.setdefault(bookmark.page, []).append(bookmark.title)
+
+    def get_header_id(self, span: dict, page: Any = None) -> str:
+        """Return a heading prefix or an empty string for the supplied ``span``."""
+        text = str(span.get("text") or "")
+        if not text.strip():
+            return ""
+        bbox = tuple(float(value) for value in span["bbox"]) if span.get("bbox") is not None else None
+        page_no = int(page.number) + 1 if page is not None else None
+        if page is not None and bbox is not None and self._in_running_line(text, bbox, float(page.rect.height)):
+            return ""
+        size = round(float(span.get("size") or 0))
+        if size in self._size_rank:
+            return "#" * (self._size_rank[size] + 1) + " "
+        bold = _is_bold(span)
+        body = self.profile.body_size
+        if page_no is not None and bbox is not None and bold and body is not None and size == body:
+            if self._inside_bold_line(page_no, bbox):
+                return self._body_bold_prefix
+        if page_no is not None and (bold or (body is not None and size > body)):
+            if self._matches_bookmark(page_no, text):
+                return self._body_bold_prefix
+        return ""
+
+    def _in_running_line(self, text: str, bbox: tuple[float, ...], height: float) -> bool:
+        """Return whether ``text`` is part of a recorded running line in its page band."""
+        band = _band(bbox[1], bbox[3], height)
+        key = running_key(text)
+        return band is not None and any(key in running for running in self._running.get(band, []))
+
+    def _inside_bold_line(self, page_no: int, bbox: tuple[float, ...]) -> bool:
+        """Return whether ``bbox`` is inside a recorded standalone bold line on ``page_no``."""
+        x0, y0, x1, y1 = bbox
+        tolerance = self.TOLERANCE
+        return any(
+            x0 >= bold_line.bbox[0] - tolerance
+            and y0 >= bold_line.bbox[1] - tolerance
+            and x1 <= bold_line.bbox[2] + tolerance
+            and y1 <= bold_line.bbox[3] + tolerance
+            for bold_line in self.profile.bold_lines.get(page_no, [])
+        )
+
+    def _matches_bookmark(self, page_no: int, text: str) -> bool:
+        """Return whether ``text`` matches a usable bookmark on ``page_no``."""
+        return any(_titles_match(text, title) for title in self._bookmark_titles.get(page_no, []))
