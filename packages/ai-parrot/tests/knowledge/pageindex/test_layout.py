@@ -194,12 +194,13 @@ def test_header_detector_rules() -> None:
     )
     assert headers.get_header_id(_span("Important ", 10, (72.0, 132.7, 120.9, 142.2), bold=True), page=_page(0)) == ""
     assert headers.get_header_id(_span("Important Notes", 10, (72.0, 92.7, 148.7, 102.2), bold=True)) == ""
-    assert (
-        headers.get_header_id(_span("Getting Started", 10, (72, 200, 200, 212), bold=True), page=_page(1)) == "### "
-    )
+    assert headers.get_header_id(_span("Getting Started", 10, (72, 200, 200, 212), bold=True), page=_page(1)) == "### "
     assert headers.get_header_id(_span("Getting Started is easy", 10, (72, 220, 250, 232)), page=_page(1)) == ""
     rejected_headers = LayoutHeaders(profile.model_copy(update={"bookmark_rejection": "non-monotonic: page decreases"}))
-    assert rejected_headers.get_header_id(_span("Getting Started", 10, (72, 200, 200, 212), bold=True), page=_page(1)) == ""
+    assert (
+        rejected_headers.get_header_id(_span("Getting Started", 10, (72, 200, 200, 212), bold=True), page=_page(1))
+        == ""
+    )
     assert headers.get_header_id(_span("ordinary body", 10, (72, 250, 160, 266)), page=_page(0)) == ""
 
 
