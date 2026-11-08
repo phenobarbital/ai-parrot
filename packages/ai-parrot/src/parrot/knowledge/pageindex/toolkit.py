@@ -1106,9 +1106,7 @@ class PageIndexToolkit(AbstractToolkit):
         ):
             fn.__doc__ = public.__doc__
             tools.append(
-                ToolkitTool(
-                    name=f"{self.tool_prefix}_{public.__name__}", bound_method=fn, description=public.__doc__
-                )
+                ToolkitTool(name=f"{self.tool_prefix}_{public.__name__}", bound_method=fn, description=public.__doc__)
             )
         return tools
 

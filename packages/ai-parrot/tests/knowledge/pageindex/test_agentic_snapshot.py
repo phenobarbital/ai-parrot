@@ -57,9 +57,7 @@ def _fake_build(pages: list[tuple[int, str]], title: str = "Ch 1"):
                     "node_id": "0000",
                     "start_index": 1,
                     "end_index": 2,
-                    "nodes": [
-                        {"title": "1.1 Scope", "node_id": "0001", "start_index": 1, "end_index": 1}
-                    ],
+                    "nodes": [{"title": "1.1 Scope", "node_id": "0001", "start_index": 1, "end_index": 1}],
                 }
             ],
             "_node_markdown": {},
@@ -128,9 +126,7 @@ async def test_reimport_does_not_change_snapshot(
 
     before_documents = await tools["pageindex_list_documents"](tree_name="t")
     before_outline = await tools["pageindex_outline"](tree_name="t")
-    first_read = await tools["pageindex_read_pages"](
-        tree_name="t", doc_id="doc", pages="2", max_chars=500
-    )
+    first_read = await tools["pageindex_read_pages"](tree_name="t", doc_id="doc", pages="2", max_chars=500)
     assert first_read["next_cursor"] is not None
 
     live_tree = toolkit._load_tree("t")
@@ -147,9 +143,7 @@ async def test_reimport_does_not_change_snapshot(
     continued = await tools["pageindex_read_pages"](
         tree_name="t", doc_id="doc", pages="2", max_chars=500, cursor=first_read["next_cursor"]
     )
-    snapshot_read = await tools["pageindex_read_pages"](
-        tree_name="t", doc_id="doc", pages="2", max_chars=100000
-    )
+    snapshot_read = await tools["pageindex_read_pages"](tree_name="t", doc_id="doc", pages="2", max_chars=100000)
 
     assert imported["revision"] != old_revision
     assert toolkit._load_tree("t")["generation"]["id"] != old_generation
@@ -174,4 +168,3 @@ def test_agentic_search_not_cached(paged_toolkit: PageIndexToolkit) -> None:
     assert engine._tree is snapshot
     assert engine.generation_id == snapshot["generation"]["id"]
     assert paged_toolkit._search == cached
-
