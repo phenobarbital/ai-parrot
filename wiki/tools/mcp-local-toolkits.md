@@ -272,10 +272,11 @@ Serves PageIndex trees (search, retrieve, markdown/ebook ingest, node edits) to 
 `.parrot/pageindex/` in the repository. Install it with `parrot toolkits install pageindex`; `parrot self add pageindex`
 installs the `ai-parrot[bookstore]` extra it needs (`bm25s`, `pymupdf`).
 
-The template ships **without** an `llm:`: search is BM25 and the five tools that need a model
-(`pageindex_insert_content`, `pageindex_import_file`, `pageindex_import_folder`, `pageindex_import_pdf`,
-`pageindex_search_documents_scoped`) are hidden. Add an `llm:` line to the section to expose them and enable the LLM
-tree walk. `retrieve` output is bounded by `max_result_chars` (24000 in the template). See
+The template ships **without** an `llm:`: search is BM25 and the four tools that need a model
+(`pageindex_insert_content`, `pageindex_import_file`, `pageindex_import_folder`,
+`pageindex_search_documents_scoped`) are hidden. `pageindex_import_pdf` works without a model: structure comes from
+the PDF's bookmarks or printed headings, with no summaries. Add an `llm:` line to the section to expose them and
+enable the LLM tree walk. `retrieve` output is bounded by `max_result_chars` (24000 in the template). See
 [PageIndex Local MCP Toolkit](../knowledge/pageindex-local-mcp.md) for the options, the opt-in `exclude:` slot and
 troubleshooting.
 

@@ -58,20 +58,20 @@ toolkits:
 
 ### What is served
 
-Without `llm:` the server serves every tool except the five that need a model, which the factory hides through
+Without `llm:` the server serves every tool except the four that need a model, which the factory hides through
 `PageIndexToolkit.llm_dependent_tools`:
 
 - `pageindex_insert_content`
 - `pageindex_import_file`
 - `pageindex_import_folder`
-- `pageindex_import_pdf`
 - `pageindex_search_documents_scoped`
 
 Everything else works with no model: `pageindex_list_trees`, `create_tree`, `delete_tree`, `rename_tree`, `get_tree`,
 `get_generation`, `vacuum_tree`, `search` (BM25), `retrieve`, `insert_markdown`, `insert_ebook`, `tag_node`,
 `add_node`, `update_node`, `update_node_content`, `delete_node`, plus the read tools of the segment store
-(`outline`, `list_documents`, `read_pages`, `read_segments`). With `llm:` set, the five hidden tools appear and
-`search` / `retrieve` also run the LLM tree walk.
+(`outline`, `list_documents`, `read_pages`, `read_segments`) and `pageindex_import_pdf` (structure from the PDF's
+bookmarks or printed headings, no summaries; see [PageIndex Layout Structure](pageindex-layout-structure.md)). With
+`llm:` set, the four hidden tools appear and `search` / `retrieve` also run the LLM tree walk.
 
 A search that asks only for the LLM walk (`use_bm25=False, use_llm_walk=True`) with no model raises
 `ValueError("LLM walk requested but no LLM is configured for this toolkit")`; a default `search` degrades to BM25.

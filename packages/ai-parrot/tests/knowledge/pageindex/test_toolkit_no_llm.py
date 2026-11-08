@@ -11,14 +11,16 @@ import pytest
 from parrot.clients.base import AbstractClient
 from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
+from parrot.knowledge.pageindex.utils import structure_to_list
 
 LLM_TOOLS = {
     "pageindex_insert_content",
     "pageindex_import_file",
     "pageindex_import_folder",
-    "pageindex_import_pdf",
     "pageindex_search_documents_scoped",
 }
+
+FIXTURE = Path(__file__).parent / "fixtures" / "arxiv_2408_09869.pdf"
 
 _FILLER = (
     "the quick survey notes record observations gathered across many seasons of careful fieldwork "
@@ -110,6 +112,27 @@ def test_llm_dependent_tools_names(tmp_path: Path) -> None:
     tk = PageIndexToolkit(storage_dir=tmp_path)
     assert PageIndexToolkit.llm_dependent_tools == LLM_TOOLS
     assert LLM_TOOLS <= set(tk.list_tool_names())
+
+
+async def test_import_pdf_without_adapter(tmp_path: Path, monkeypatch) -> None:
+    """AC-14: an adapter-less toolkit serves and imports the committed PDF fixture."""
+    monkeypatch.setattr("parrot.knowledge.pageindex.utils.get_encoder", lambda model="gpt-4o": None)
+    monkeypatch.setattr(
+        "parrot.knowledge.pageindex.toolkit.get_injection_scoring_engine", lambda force_reresolve=False: None
+    )
+    tk = PageIndexToolkit(storage_dir=tmp_path)
+    assert tk.has_llm is False
+    assert "pageindex_import_pdf" in tk.list_tool_names()
+    assert "pageindex_import_pdf" not in PageIndexToolkit.llm_dependent_tools
+    await tk.create_tree("papers")
+
+    result = await tk.import_pdf("papers", str(FIXTURE))
+
+    assert result["structure_source"] == "hybrid"
+    assert result["doc_id"]
+    assert result["revision"]
+    tree = tk._store.load("papers")
+    assert all("structure_source" in node for node in structure_to_list(tree["structure"]))
 
 
 async def test_search_and_retrieve_without_adapter(tmp_path: Path) -> None:

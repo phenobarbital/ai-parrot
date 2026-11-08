@@ -7,8 +7,9 @@
     kwargs:
       storage_dir: {{repo_root}}/.parrot/pageindex
       max_result_chars: 24000
-    # Add a model to enable the LLM-dependent tools (import_pdf, insert_content,
-    # import_file, import_folder, search_documents_scoped) and the LLM tree walk.
+    # Add a model to enable the LLM-dependent tools (insert_content, import_file,
+    # import_folder, search_documents_scoped) and the LLM tree walk. import_pdf works
+    # without a model (structure from bookmarks / printed headings; no summaries).
     # llm: anthropic:claude-haiku-5-5
     # llm_kwargs: {}
     # The internal agentic retrieval tool (pageindex-agentic-retrieval) is opt-in:
