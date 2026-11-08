@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-843 — PageIndex Agentic Retrieval and Citations
 **Spec**: `sdd/specs/pageindex-agentic-retrieval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5323
@@ -252,4 +252,6 @@ Spec §4 Test Data: provider-like forever loop, parallel dispatch, stalled repai
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 449s. Merged (lint 3e0e4b215b, 1 residual style finding left for /sdd-done).
+
+Validation: direct run of agentic_retrieval/citations/read_ledger/read_tools/toolkit/agentic_snapshot tests → 111 passed at HEAD ea45ed6c37.

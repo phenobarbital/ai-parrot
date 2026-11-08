@@ -129,7 +129,7 @@
       "feature_id": "FEAT-843",
       "feature": "pageindex-agentic-retrieval",
       "spec": "sdd/specs/pageindex-agentic-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -139,8 +139,9 @@
       "parallelism_notes": "extends AgenticRetriever and uses clip_read_result/_ToolCallController from TASK-5323 (agentic.py); both modify agentic.py and test_agentic_retrieval.py",
       "assigned_to": null,
       "started_at": "2026-11-08T01:29:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5324-pageindex-agentic-run-loop.md"
+      "completed_at": "2026-11-08T02:07:57+00:00",
+      "file": "sdd/tasks/completed/TASK-5324-pageindex-agentic-run-loop.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5325",
