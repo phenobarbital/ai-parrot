@@ -613,7 +613,7 @@ def page_list_to_group_text(
     )
 
     for i, (page_content, page_tokens) in enumerate(
-        zip(page_contents, token_lengths)
+        zip(page_contents, token_lengths, strict=False)
     ):
         if current_token_count + page_tokens > average_tokens_per_part:
             # Skip closing an empty group — happens when the very first page
