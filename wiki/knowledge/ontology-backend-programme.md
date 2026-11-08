@@ -29,10 +29,10 @@ Phase 2 API (the PostgreSQL vocabulary store) is documented on
 
 The programme has no Python API of its own. The Phase 2 surface that exists today is:
 
-- [`OntologyStore`](ref:parrot.knowledge.ontology.vocabulary.OntologyStore) — read contract of the vocabulary plane
-- [`OntologyPublisher`](ref:parrot.knowledge.ontology.vocabulary.OntologyPublisher) — write contract, implemented only by PostgreSQL
-- [`create_ontology_store`](ref:parrot.knowledge.ontology.vocabulary.create_ontology_store) — builds a store from `ONTOLOGY_BACKEND`
-- [`register_vocabulary_backend`](ref:parrot.knowledge.ontology.vocabulary.register_vocabulary_backend) — registers a new vocabulary backend under a name
+- [`OntologyStore`](ref:parrot.knowledge.ontology.vocabulary.contracts) — read contract of the vocabulary plane
+- [`OntologyPublisher`](ref:parrot.knowledge.ontology.vocabulary.contracts) — write contract, implemented only by PostgreSQL
+- [`create_ontology_store`](ref:parrot.knowledge.ontology.vocabulary.backends) — builds a store from `ONTOLOGY_BACKEND`
+- [`register_vocabulary_backend`](ref:parrot.knowledge.ontology.vocabulary.backends) — registers a new vocabulary backend under a name
 
 ## Configuration & Parameters
 
@@ -98,7 +98,7 @@ OntologyStore depends on SurrealDB.
 
 The G1 spike runs against a pinned SurrealDB server image and a pinned `surrealdb` Python SDK.
 The full report is in
-[`sdd/state/FEAT-824/g1/report.md`](../../sdd/state/FEAT-824/g1/report.md).
+`sdd/state/FEAT-824/g1/report.md`.
 
 - **Server image**: `surrealdb/surrealdb@sha256:681c6c22c287421b5c7d99e0fde79b6e0d32c36c1ddeaab2762a1661cb04cd20`
 - **SDK**: `surrealdb` 3.0.0
@@ -174,5 +174,5 @@ command, described on the vocabulary store page.
 
 - [Ontology vocabulary store](ontology-vocabulary-store.md) — the Phase 2 API, settings, CLI and HTTP routes.
 - [ADR-0010: graph backends, PostgreSQL and SurrealDB](../../docs/decisions/graph-backends-postgres-surrealdb.md) — the accepted decision and its rejected alternatives.
-- [G1 SurrealDB spike report](../../sdd/state/FEAT-824/g1/report.md) — per-check evidence and the GO verdict.
-- [Ontology backend spec](../../sdd/specs/ontology-backend.spec.md) — the full programme and Phase 2 specification.
+- G1 SurrealDB spike report (`sdd/state/FEAT-824/g1/report.md`) — per-check evidence and the GO verdict.
+- Ontology backend spec (`sdd/specs/ontology-backend.spec.md`) — the full programme and Phase 2 specification.

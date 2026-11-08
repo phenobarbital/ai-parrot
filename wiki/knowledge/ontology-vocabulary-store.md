@@ -130,18 +130,18 @@ routes (`.../api/ontology`).
 
 ## Public API
 
-- [`OntologyStore`](ref:parrot.knowledge.ontology.vocabulary.OntologyStore) — read contract; every call reads one published version
-- [`OntologyPublisher`](ref:parrot.knowledge.ontology.vocabulary.OntologyPublisher) — write contract: `ensure_ontology`, `publish`, `publish_content`
-- [`PostgresOntologyStore`](ref:parrot.knowledge.ontology.vocabulary.PostgresOntologyStore) — PostgreSQL read backend (see Gotchas before relying on its read methods)
-- [`PostgresOntologyPublisher`](ref:parrot.knowledge.ontology.vocabulary.PostgresOntologyPublisher) — the only writer; runs the publication pipeline
-- [`SnapshotOntologyStore`](ref:parrot.knowledge.ontology.vocabulary.SnapshotOntologyStore) — read-only SQLite backend for offline and local use
-- [`create_ontology_store`](ref:parrot.knowledge.ontology.vocabulary.create_ontology_store) — builds a store by backend name; defaults to `ONTOLOGY_BACKEND`
-- [`register_vocabulary_backend`](ref:parrot.knowledge.ontology.vocabulary.register_vocabulary_backend) — registers or replaces a `VocabularyBackendSpec`
-- [`VocabularyBackendSpec`](ref:parrot.knowledge.ontology.vocabulary.VocabularyBackendSpec) — registry entry: name, `module:callable` factory, required options, pip extra
-- [`ConceptRef`](ref:parrot.knowledge.ontology.vocabulary.ConceptRef), [`Resolution`](ref:parrot.knowledge.ontology.vocabulary.Resolution), [`PublishResult`](ref:parrot.knowledge.ontology.vocabulary.PublishResult), [`StoreStatus`](ref:parrot.knowledge.ontology.vocabulary.StoreStatus) — result models
-- [`ValidationIssue`](ref:parrot.knowledge.ontology.vocabulary.ValidationIssue) — one reason a publication was rejected
-- [`OntologyStoreSettings`](ref:parrot.knowledge.ontology.vocabulary.OntologyStoreSettings) and [`resolve_ontology_settings`](ref:parrot.knowledge.ontology.vocabulary.resolve_ontology_settings) — resolved `ONTOLOGY_*` settings
-- [`VocabularyError`](ref:parrot.knowledge.ontology.vocabulary.VocabularyError) — base error; subclasses `OntologyNotFound`, `OntologyVersionNotFound`, `OntologyValidationError` (carries `issues`) and `PublishConflict`
+- [`OntologyStore`](ref:parrot.knowledge.ontology.vocabulary.contracts) — read contract; every call reads one published version
+- [`OntologyPublisher`](ref:parrot.knowledge.ontology.vocabulary.contracts) — write contract: `ensure_ontology`, `publish`, `publish_content`
+- [`PostgresOntologyStore`](ref:parrot.knowledge.ontology.vocabulary.postgres_store) — PostgreSQL read backend (see Gotchas before relying on its read methods)
+- [`PostgresOntologyPublisher`](ref:parrot.knowledge.ontology.vocabulary.publisher) — the only writer; runs the publication pipeline
+- [`SnapshotOntologyStore`](ref:parrot.knowledge.ontology.vocabulary.snapshot) — read-only SQLite backend for offline and local use
+- [`create_ontology_store`](ref:parrot.knowledge.ontology.vocabulary.backends) — builds a store by backend name; defaults to `ONTOLOGY_BACKEND`
+- [`register_vocabulary_backend`](ref:parrot.knowledge.ontology.vocabulary.backends) — registers or replaces a `VocabularyBackendSpec`
+- [`VocabularyBackendSpec`](ref:parrot.knowledge.ontology.vocabulary.backends) — registry entry: name, `module:callable` factory, required options, pip extra
+- [`ConceptRef`](ref:parrot.knowledge.ontology.vocabulary.contracts), [`Resolution`](ref:parrot.knowledge.ontology.vocabulary.contracts), [`PublishResult`](ref:parrot.knowledge.ontology.vocabulary.contracts), [`StoreStatus`](ref:parrot.knowledge.ontology.vocabulary.contracts) — result models
+- [`ValidationIssue`](ref:parrot.knowledge.ontology.vocabulary.contracts) — one reason a publication was rejected
+- [`OntologyStoreSettings`](ref:parrot.knowledge.ontology.vocabulary.settings) and [`resolve_ontology_settings`](ref:parrot.knowledge.ontology.vocabulary.settings) — resolved `ONTOLOGY_*` settings
+- [`VocabularyError`](ref:parrot.knowledge.ontology.vocabulary.exceptions) — base error; subclasses `OntologyNotFound`, `OntologyVersionNotFound`, `OntologyValidationError` (carries `issues`) and `PublishConflict`
 
 ## Configuration & Parameters
 

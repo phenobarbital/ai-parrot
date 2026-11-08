@@ -65,15 +65,15 @@ Parents therefore no longer carry their children's text.
 
 ## Public API
 
-- [`DocumentRevision`](ref:parrot.knowledge.pageindex.segments.DocumentRevision) — the immutable revision model
-- [`Segment`](ref:parrot.knowledge.pageindex.segments.Segment) — one addressable block
-- [`SegmentAddress`](ref:parrot.knowledge.pageindex.segments.SegmentAddress) — structured address with `label` and `key`
-- [`ReadResult`](ref:parrot.knowledge.pageindex.segments.ReadResult) — what the read tools return
-- [`SegmentStore`](ref:parrot.knowledge.pageindex.segment_store.SegmentStore) — revision files, cache, sweep
-- [`render_body`](ref:parrot.knowledge.pageindex.segments.render_body) / [`validate_ownership`](ref:parrot.knowledge.pageindex.segments.validate_ownership) — views and the partition check
-- [`scan_segments`](ref:parrot.knowledge.pageindex.injection_scan.scan_segments) — regex-first injection scoring
-- [`frame_segments`](ref:parrot.knowledge.pageindex.framing.frame_segments) and `DATA_FRAMING_INSTRUCTION` — data framing for prompts
-- [`get_injection_scoring_engine`](ref:parrot.security.prompt_injection.get_injection_scoring_engine) and `InjectionScoringEngine` — the public ML engine accessor
+- [`DocumentRevision`](ref:parrot.knowledge.pageindex.segments) — the immutable revision model
+- [`Segment`](ref:parrot.knowledge.pageindex.segments) — one addressable block
+- [`SegmentAddress`](ref:parrot.knowledge.pageindex.segments) — structured address with `label` and `key`
+- [`ReadResult`](ref:parrot.knowledge.pageindex.segments) — what the read tools return
+- [`SegmentStore`](ref:parrot.knowledge.pageindex.segment_store) — revision files, cache, sweep
+- [`render_body`](ref:parrot.knowledge.pageindex.segments) / [`validate_ownership`](ref:parrot.knowledge.pageindex.segments) — views and the partition check
+- [`scan_segments`](ref:parrot.knowledge.pageindex.injection_scan) — regex-first injection scoring
+- [`frame_segments`](ref:parrot.knowledge.pageindex.framing) and `DATA_FRAMING_INSTRUCTION` — data framing for prompts
+- [`get_injection_scoring_engine`](ref:parrot.security.prompt_injection) and `InjectionScoringEngine` — the public ML engine accessor
 - `pageindex_list_documents`, `pageindex_outline`, `pageindex_read_pages`, `pageindex_read_segments` — read tools on `PageIndexToolkit`
 - `pageindex_index_segments` — derive segments for a legacy subtree
 - `bookstore_read_pages`, `bookstore_read_segments`, `bookstore_outline` — the same per book

@@ -24,10 +24,10 @@ loaded tree.
 
 ## Public API
 
-- [`GenerationInfo`](ref:parrot.knowledge.pageindex.generation.GenerationInfo) — generation id, publication timestamp, and parent generation
-- [`StaleGenerationError`](ref:parrot.knowledge.pageindex.generation.StaleGenerationError) — candidate was built on an old live generation
-- [`TreeLockTimeout`](ref:parrot.knowledge.pageindex.locks.TreeLockTimeout) — the per-tree writer lock was not acquired in time
-- [`WriteTransaction`](ref:parrot.knowledge.pageindex.generation.WriteTransaction) — copy-on-write candidate and publication sequence
+- [`GenerationInfo`](ref:parrot.knowledge.pageindex.generation) — generation id, publication timestamp, and parent generation
+- [`StaleGenerationError`](ref:parrot.knowledge.pageindex.generation) — candidate was built on an old live generation
+- [`TreeLockTimeout`](ref:parrot.knowledge.pageindex.locks) — the per-tree writer lock was not acquired in time
+- [`WriteTransaction`](ref:parrot.knowledge.pageindex.generation) — copy-on-write candidate and publication sequence
 - `pageindex_get_generation` (`PageIndexToolkit.get_generation`) — returns the live generation information for a tree
 - `pageindex_vacuum_tree` (`PageIndexToolkit.vacuum_tree`) — removes unreferenced bodies older than the grace period
 
