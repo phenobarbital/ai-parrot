@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from pathlib import Path
 
 import pytest
 
@@ -14,6 +15,8 @@ from parrot.knowledge.pageindex.agentic import (
     clip_read_result,
     clone_for_tools,
 )
+from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
+from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 from parrot.models.basic import CompletionUsage
 from parrot.models.responses import AIMessage
 from parrot.knowledge.pageindex.segments import ReadResult, SegmentAddress, SegmentRead
@@ -353,3 +356,120 @@ async def test_external_cancellation_clears_registered_tools() -> None:
         await task
 
     assert client.tool_manager.list_tools() == []
+
+
+@pytest.fixture
+async def agentic_toolkit(
+    tmp_path: Path, monkeypatch
+) -> tuple[PageIndexToolkit, ScriptedToolLoopClient, dict[str, Any]]:
+    """Create a segmented tree backed by a dedicated scripted client."""
+
+    async def fake_build(doc, adapter, options=None, **kwargs):
+        return {
+            "doc_name": "Report.pdf",
+            "structure": [{"title": "Report", "node_id": "0000", "start_index": 1, "end_index": 1, "nodes": []}],
+            "_node_markdown": {},
+            "_pages": [(1, "# Report\n\nEvidence alpha is available for the requested answer.")],
+        }
+
+    client = ScriptedToolLoopClient([], "unused")
+    toolkit = PageIndexToolkit(storage_dir=tmp_path, agentic_client=client)
+    pdf = tmp_path / "Report.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    monkeypatch.setattr("parrot.knowledge.pageindex.toolkit.build_page_index", fake_build)
+    await toolkit.create_tree("t")
+    imported = await toolkit.import_pdf("t", str(pdf))
+    return toolkit, client, imported
+
+
+@pytest.mark.asyncio
+async def test_end_to_end_cited_evidence(agentic_toolkit) -> None:
+    """The toolkit binds search, reads, and citations to one evidence bundle."""
+    toolkit, client, imported = agentic_toolkit
+    revision = toolkit._segment_store.load_revision("t", imported["doc_id"], imported["revision"])
+    assert revision is not None
+    segment = revision.segments[0]
+    client.calls = [
+        (
+            "pageindex_read_segments",
+            {"tree_name": "t", "doc_id": imported["doc_id"], "start": 0, "end": 1, "max_chars": 10_000},
+        )
+    ]
+    client.output = (
+        "```json\n"
+        f'{{"answer": "grounded", "citations": [{{"address": "{imported["doc_id"]}@{imported["revision"]}#0", '
+        f'"excerpt": "{segment.text}"}}]}}\n'
+        "```"
+    )
+
+    bundle = await toolkit.agentic_retrieve("t", "Evidence alpha", budget_chars=20_000)
+
+    assert bundle["grounded"] is True
+    assert bundle["answer"] == "grounded"
+    assert bundle["tool_calls"] == 1
+    assert len(bundle["reads"]) == len(bundle["citations"]) == 1
+    assert bundle["rendered_citations"].startswith("[Report.pdf,")
+    assert bundle["usage"]
+
+
+@pytest.mark.asyncio
+async def test_agentic_retrieve_without_adapter_raises(tmp_path: Path) -> None:
+    """Agentic retrieval needs either an explicitly supplied client or an adapter."""
+    toolkit = PageIndexToolkit(storage_dir=tmp_path)
+
+    with pytest.raises(ValueError, match="requires an LLM"):
+        await toolkit.agentic_retrieve("missing", "question")
+
+
+def test_tool_listed_and_llm_dependent(tmp_path: Path) -> None:
+    """The public tool is generated with its prefix and marked LLM-dependent."""
+    toolkit = PageIndexToolkit(storage_dir=tmp_path)
+
+    assert "pageindex_agentic_retrieve" in PageIndexToolkit.llm_dependent_tools
+    assert "pageindex_agentic_retrieve" in toolkit.list_tool_names()
+
+
+def test_adapter_client_registry_untouched(tmp_path: Path) -> None:
+    """Creating the dedicated clone does not register PageIndex tools on the adapter client."""
+    source = StubClient()
+    toolkit = PageIndexToolkit(storage_dir=tmp_path, adapter=PageIndexLLMAdapter(client=source, model="stub"))
+
+    clone = toolkit._agentic_client()
+
+    assert clone is not source
+    assert source.tool_manager.list_tools() == []
+
+
+@pytest.mark.asyncio
+async def test_timeout_during_lock_wait(agentic_toolkit) -> None:
+    """A request waiting on the shared clone lock returns an empty timeout bundle."""
+    toolkit, _, _ = agentic_toolkit
+    await toolkit._agentic_lock.acquire()
+    try:
+        bundle = await toolkit.agentic_retrieve("t", "question", timeout_s=0.01)
+    finally:
+        toolkit._agentic_lock.release()
+
+    assert bundle["stopped"] == "timeout"
+    assert bundle["generation"] is None
+    assert bundle["candidates"] == []
+
+
+@pytest.mark.asyncio
+async def test_timeout_during_stage_one_search(agentic_toolkit, monkeypatch) -> None:
+    """Search uses the entry deadline and does not enter the agentic reading loop after expiry."""
+    toolkit, _, _ = agentic_toolkit
+
+    class SlowSearch:
+        """Search double that exceeds the task deadline."""
+
+        async def search(self, **kwargs: Any) -> list[dict[str, Any]]:
+            await asyncio.sleep(1)
+            return []
+
+    monkeypatch.setattr(toolkit, "_agentic_search", lambda tree_name, tree: SlowSearch())
+
+    bundle = await toolkit.agentic_retrieve("t", "question", timeout_s=0.01)
+
+    assert bundle["stopped"] == "timeout"
+    assert bundle["candidates"] == []

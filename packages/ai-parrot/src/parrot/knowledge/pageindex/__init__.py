@@ -24,6 +24,9 @@ from .generation import GenerationInfo, StaleGenerationError
 from .locks import TreeLockTimeout
 from .segments import DocumentRevision, ReadResult, Segment, SegmentAddress
 from .segment_store import SegmentStore
+from .read_ledger import ReadLedger
+from .citations import Citation, validate_citations
+from .agentic import EvidenceBundle
 
 __all__ = [
     "build_page_index",
@@ -52,4 +55,8 @@ __all__ = [
     "SegmentAddress",
     "ReadResult",
     "SegmentStore",
+    "ReadLedger",
+    "Citation",
+    "validate_citations",
+    "EvidenceBundle",
 ]
