@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-08T01:25:42+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-08T02:31:07+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -193,7 +193,7 @@
       "feature_id": "FEAT-843",
       "feature": "pageindex-agentic-retrieval",
       "spec": "sdd/specs/pageindex-agentic-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -204,8 +204,9 @@
       "parallelism_notes": "documents agentic_retrieve and exports from TASK-5325 (toolkit.py, __init__.py) and the shipped exclude entry from TASK-5326 (pageindex.yaml)",
       "assigned_to": null,
       "started_at": "2026-11-08T01:29:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5327-pageindex-agentic-retrieval-docs.md"
+      "completed_at": "2026-11-08T02:31:07+00:00",
+      "file": "sdd/tasks/completed/TASK-5327-pageindex-agentic-retrieval-docs.md",
+      "verification": "verified"
     }
   ]
 }
