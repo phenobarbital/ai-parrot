@@ -222,9 +222,7 @@ class AgenticRetriever:
         except asyncio.CancelledError:
             pass
 
-    def _prompt(
-        self, query: str, candidates: list[dict[str, Any]], outline: dict[str, Any], draft_answer: bool
-    ) -> str:
+    def _prompt(self, query: str, candidates: list[dict[str, Any]], outline: dict[str, Any], draft_answer: bool) -> str:
         """Build the data-framed stage-2 prompt from snapshot-bound discovery results."""
         answer_instruction = (
             "After reading, provide a cited answer."
