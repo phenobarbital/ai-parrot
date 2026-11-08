@@ -14,7 +14,10 @@ from parrot.knowledge.pageindex.agentic import (
     clip_read_result,
     clone_for_tools,
 )
+from parrot.models.basic import CompletionUsage
+from parrot.models.responses import AIMessage
 from parrot.knowledge.pageindex.segments import ReadResult, SegmentAddress, SegmentRead
+from parrot.tools.toolkit import ToolkitTool
 from parrot.tools import tool
 
 
@@ -48,6 +51,76 @@ class StubClient(AbstractClient):
     async def invoke(self, prompt: str, **kwargs: Any) -> Any:
         """Reject unneeded provider calls."""
         raise NotImplementedError
+
+
+class ScriptedToolLoopClient(StubClient):
+    """Provider-shaped client that dispatches a deterministic sequence through its manager."""
+
+    def __init__(
+        self,
+        calls: list[tuple[str, dict[str, Any]]],
+        output: str,
+        *,
+        repair_output: str | None = None,
+        delay: float = 0,
+        forever: bool = False,
+    ) -> None:
+        super().__init__()
+        self.calls = calls
+        self.output = output
+        self.repair_output = repair_output
+        self.delay = delay
+        self.forever = forever
+        self.repairs = 0
+
+    async def ask(self, prompt: str, model: str | None = None, **kwargs: Any) -> AIMessage:
+        """Execute scripted calls like a provider, then return its configured response."""
+        if not kwargs.get("use_tools"):
+            self.repairs += 1
+            output = self.repair_output if self.repair_output is not None else self.output
+            return AIMessage(input=prompt, output=output, model="stub", provider="stub", usage=CompletionUsage())
+        while True:
+            for name, parameters in self.calls:
+                try:
+                    await self.tool_manager.execute_tool(name, parameters)
+                except Exception:
+                    pass
+            if not self.forever:
+                break
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        return AIMessage(input=prompt, output=self.output, model="stub", provider="stub", usage=CompletionUsage())
+
+
+def _read_tool() -> ToolkitTool:
+    """Build one read tool whose response deliberately exceeds tiny grants."""
+
+    async def read_segments(max_chars: int = 12000) -> dict[str, Any]:
+        return _read_result("a" * max_chars).model_dump()
+
+    return ToolkitTool(name="read_segments", bound_method=read_segments, description="Read test segments.")
+
+
+def _retriever(client: ScriptedToolLoopClient) -> AgenticRetriever:
+    """Build a retriever with a local revision loader unused by these focused loop tests."""
+    return AgenticRetriever(client=client, model="stub", read_tools=[_read_tool()], load_revision=lambda *_: None)
+
+
+async def _run(client: ScriptedToolLoopClient, **kwargs: Any):
+    """Run a test retriever with small deterministic defaults."""
+    return await _retriever(client).run(
+        tree_name="tree",
+        query="what happened?",
+        candidates=[{"doc_id": "doc"}],
+        outline={"nodes": []},
+        generation=1,
+        budget_chars=kwargs.pop("budget_chars", 100),
+        max_reads=kwargs.pop("max_reads", 3),
+        max_tool_calls=kwargs.pop("max_tool_calls", 4),
+        deadline=kwargs.pop("deadline", asyncio.get_running_loop().time() + 1),
+        draft_answer=kwargs.pop("draft_answer", True),
+        **kwargs,
+    )
 
 
 @tool(name="original_tool", description="Original isolated test tool.")
@@ -167,3 +240,116 @@ def test_parse_answer(text: str, expected: str | None) -> None:
     answer = AgenticRetriever.parse_answer(text)
 
     assert (answer.answer if answer else None) == expected
+
+
+@pytest.mark.asyncio
+async def test_wrapped_reads_record_and_refuse_after_budget() -> None:
+    """The wrapper clips below the reader floor and reports a later budget refusal."""
+    client = ScriptedToolLoopClient(
+        [("read_segments", {}), ("read_segments", {})],
+        '```json\n{"answer": "grounded", "citations": []}\n```',
+    )
+
+    bundle = await _run(client)
+
+    assert bundle.stopped == "budget"
+    assert bundle.answer == "grounded"
+    assert bundle.chars_read == 100
+    assert bundle.reads[0].ranges == [(0, 100)]
+    assert bundle.tool_calls == 2
+    assert client.tool_manager.list_tools() == []
+
+
+@pytest.mark.asyncio
+async def test_call_cap_cancels_forever_loop_without_late_reads() -> None:
+    """A provider that keeps dispatching is cancelled at the admission cap."""
+    client = ScriptedToolLoopClient(
+        [("read_segments", {})],
+        '```json\n{"answer": "never", "citations": []}\n```',
+        forever=True,
+    )
+
+    bundle = await _run(client, budget_chars=1_000, max_tool_calls=2)
+    reads_at_return = bundle.chars_read
+    await asyncio.sleep(0)
+
+    assert bundle.stopped == "max_tool_calls"
+    assert bundle.answer is None
+    assert bundle.tool_calls == 2
+    assert reads_at_return == 1_000
+    assert client.tool_manager.list_tools() == []
+
+
+@pytest.mark.asyncio
+async def test_timeout_returns_partial_reads_without_an_answer() -> None:
+    """The absolute deadline cancels a slow provider after its completed reads."""
+    client = ScriptedToolLoopClient(
+        [("read_segments", {})],
+        '```json\n{"answer": "late", "citations": []}\n```',
+        delay=1,
+    )
+
+    bundle = await _run(client, deadline=asyncio.get_running_loop().time() + 0.01)
+
+    assert bundle.stopped == "timeout"
+    assert bundle.answer is None
+    assert bundle.chars_read == 100
+    assert client.tool_manager.list_tools() == []
+
+
+@pytest.mark.asyncio
+async def test_parse_failure_uses_one_structured_repair() -> None:
+    """A malformed provider answer is repaired once without tools."""
+    client = ScriptedToolLoopClient(
+        [],
+        "not json",
+        repair_output='{"answer": "repaired", "citations": []}',
+    )
+
+    bundle = await _run(client)
+
+    assert bundle.stopped == "no_tool_calls"
+    assert bundle.answer == "repaired"
+    assert client.repairs == 1
+
+
+@pytest.mark.asyncio
+async def test_parse_failure_is_reported_after_unsuccessful_repair() -> None:
+    """A single invalid repair leaves a parse-error bundle rather than raising."""
+    client = ScriptedToolLoopClient([], "not json", repair_output="still not json")
+
+    bundle = await _run(client)
+
+    assert bundle.stopped == "parse_error"
+    assert bundle.answer is None
+    assert client.repairs == 1
+
+
+@pytest.mark.asyncio
+async def test_invalid_citations_leave_the_answer_ungrounded() -> None:
+    """Citation validation retains a usable answer even when every proposal is invalid."""
+    client = ScriptedToolLoopClient(
+        [],
+        '```json\n{"answer": "answer", "citations": [{"address": "bad", "excerpt": "text"}]}\n```',
+    )
+
+    bundle = await _run(client)
+
+    assert bundle.stopped == "no_tool_calls"
+    assert bundle.answer == "answer"
+    assert bundle.grounded is False
+    assert [citation.reason for citation in bundle.rejected] == ["bad_address"]
+
+
+@pytest.mark.asyncio
+async def test_external_cancellation_clears_registered_tools() -> None:
+    """Cancelling the request propagates after the owned provider task is cleaned up."""
+    client = ScriptedToolLoopClient([], "unused", delay=10)
+    task = asyncio.create_task(_run(client))
+    await asyncio.sleep(0)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert client.tool_manager.list_tools() == []
