@@ -86,9 +86,7 @@ def test_adapter_is_live() -> None:
 async def test_prompts_are_framed(revision: DocumentRevision) -> None:
     """Send both proposal prompts with the shared data-framing system instruction."""
     adapter = MagicMock(client=MagicMock())
-    adapter.ask_structured = AsyncMock(
-        side_effect=[HeadingProposals(seqs=[]), KeyItemProposals(items=[])]
-    )
+    adapter.ask_structured = AsyncMock(side_effect=[HeadingProposals(seqs=[]), KeyItemProposals(items=[])])
     node = {"owned": [[0, 2]]}
 
     await propose_headings(node, revision, adapter, OptimizerSettings())
