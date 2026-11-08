@@ -149,6 +149,87 @@ def _project_root_for(cwd: Path, relative: Path) -> Path:
     return cwd
 
 
+#: Default portable toolkit config, relative to the project root.
+_DEFAULT_TOOLKIT_CONFIG = Path(".parrot") / "mcp-toolkits.yaml"
+
+
+def _linked_worktree_config(root: Path, relative: Path) -> Path | None:
+    """Return ``relative`` from the main checkout when ``root`` lies in a linked git worktree.
+
+    ``parrot sdd launch worker`` starts Claude Code inside a feature worktree, so the stdio servers of the
+    main checkout's portable ``.mcp.json`` start there too. ``_project_root_for`` stops at the worktree's own
+    ``.git`` marker, but ``.parrot/mcp-toolkits.yaml`` is gitignored and lives only in the main checkout. A
+    linked worktree's ``.git`` is a file (``gitdir: <common>/worktrees/<name>``) and that gitdir holds a
+    ``commondir`` pointer, so the main work tree is the parent of the common git dir. No ``git`` subprocess is
+    needed. The caller keeps ``root`` (the worktree) as the project root; only the config file is borrowed.
+
+    Args:
+        root: The resolved project root (the worktree, or a directory inside it).
+        relative: The relative toolkit config path that was not found under ``root``.
+
+    Returns:
+        The main checkout's config file when it exists, else ``None``.
+    """
+    try:
+        current = root.resolve()
+        git_entry = next((p / ".git" for p in (current, *current.parents) if (p / ".git").exists()), None)
+        if git_entry is None or not git_entry.is_file():
+            return None
+        text = git_entry.read_text(encoding="utf-8").strip()
+        if not text.startswith("gitdir:"):
+            return None
+        gitdir = Path(text[len("gitdir:") :].strip())
+        if not gitdir.is_absolute():
+            gitdir = git_entry.parent / gitdir
+        gitdir = gitdir.resolve()
+        commondir_file = gitdir / "commondir"
+        common = (
+            (gitdir / commondir_file.read_text(encoding="utf-8").strip()).resolve()
+            if commondir_file.is_file()
+            else gitdir
+        )
+        candidate = common.parent / relative
+        if candidate.is_file():
+            return candidate
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _resolve_root_and_config(cwd: Path, config_path: Path | None, pinned: str | None) -> tuple[Path, Path | None]:
+    """Resolve the project root and the toolkit config file for ``parrot mcp-local``.
+
+    ``$PARROT_PROJECT`` (``pinned``) wins outright. Otherwise a relative config is looked up with
+    ``_project_root_for`` and, when the resulting root is a linked git worktree that lacks the file, borrowed
+    from the main checkout via ``_linked_worktree_config`` — the root stays the worktree.
+
+    Args:
+        cwd: The process working directory.
+        config_path: The ``--config`` value, or ``None`` for the default path.
+        pinned: The ``PARROT_PROJECT`` environment value, or ``None``.
+
+    Returns:
+        ``(root, config_path)`` — ``config_path`` is ``None`` only when no explicit ``--config`` was given and
+        no worktree fallback applied, so ``load_toolkits_config`` resolves its default under ``root``.
+    """
+    if pinned:
+        root = Path(pinned)
+        if config_path is not None and not config_path.is_absolute():
+            config_path = root / config_path
+        return root, config_path
+    relative = config_path if config_path is not None else _DEFAULT_TOOLKIT_CONFIG
+    if relative.is_absolute():
+        return cwd, config_path
+    root = _project_root_for(cwd, relative)
+    if config_path is not None:
+        config_path = root / config_path
+    if not (root / relative).is_file():
+        shared = _linked_worktree_config(root, relative)
+        if shared is not None:
+            config_path = shared
+    return root, config_path
+
+
 def _print_toolkit_list(root: Path, config_path: Path | None = None) -> None:
     """Print resolvable toolkit names, enabled state, and class path.
 
@@ -233,14 +314,7 @@ def mcp_local(
       parrot mcp-local scraping --include scrape_url --include list_plans
       parrot mcp-local --list
     """
-    pinned = os.environ.get("PARROT_PROJECT")
-    if pinned:
-        root = Path(pinned)
-    else:
-        relative = config_path if config_path is not None else Path(".parrot") / "mcp-toolkits.yaml"
-        root = Path.cwd() if relative.is_absolute() else _project_root_for(Path.cwd(), relative)
-    if config_path is not None and not config_path.is_absolute():
-        config_path = root / config_path
+    root, config_path = _resolve_root_and_config(Path.cwd(), config_path, os.environ.get("PARROT_PROJECT"))
 
     if list_toolkits:
         _print_toolkit_list(root, config_path)
