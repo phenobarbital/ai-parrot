@@ -218,7 +218,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -229,8 +229,9 @@
       "parallelism_notes": "TASK-5340: pops _segments/structure_source/structure_report returned by build_page_index (builder.py); TASK-5338: relies on attach_pdf_document removing anchors (segments.py)",
       "assigned_to": null,
       "started_at": "2026-11-08T01:52:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5341-toolkit-layout-integration.md"
+      "completed_at": "2026-11-08T09:32:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5341-toolkit-layout-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5342",
@@ -279,7 +280,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -289,8 +290,9 @@
       "parallelism_notes": "TASK-5340: evaluate_pair calls build_page_index(adapter=None, structure_mode='layout'); same file utils.py (structure_min_confidence key added by TASK-5340)",
       "assigned_to": null,
       "started_at": "2026-11-08T01:52:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5344-layout-evaluation.md"
+      "completed_at": "2026-11-08T09:32:21+00:00",
+      "file": "sdd/tasks/completed/TASK-5344-layout-evaluation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5345",
