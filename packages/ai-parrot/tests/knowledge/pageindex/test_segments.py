@@ -177,13 +177,17 @@ def _anchor_free(tree):
 def test_attach_prefers_anchor():
     """Anchored nodes start at their own heading despite similar titles; no node keeps 'anchor' (AC-2, AC-10)."""
     pages = [(1, "# Scope Notes\n\nNotes text.\n\n# Scope\n\nScope text."), (2, "More.")]
-    plain = [{"title": "Scope Notes", "start_index": 1, "end_index": 1},
-             {"title": "Scope", "start_index": 1, "end_index": 2}]
+    plain = [
+        {"title": "Scope Notes", "start_index": 1, "end_index": 1},
+        {"title": "Scope", "start_index": 1, "end_index": 2},
+    ]
     attach_pdf_document(plain, _rev(pages))
-    assert [n["span"] for n in plain] == [None, [0, 5]]      # the ambiguity anchors remove (verified on current code)
+    assert [n["span"] for n in plain] == [None, [0, 5]]  # the ambiguity anchors remove (verified on current code)
 
-    anchored = [{"title": "Scope Notes", "start_index": 1, "end_index": 1, "anchor": {"page": 1, "ordinal": 0}},
-                {"title": "Scope", "start_index": 1, "end_index": 2, "anchor": {"page": 1, "ordinal": 2}}]
+    anchored = [
+        {"title": "Scope Notes", "start_index": 1, "end_index": 1, "anchor": {"page": 1, "ordinal": 0}},
+        {"title": "Scope", "start_index": 1, "end_index": 2, "anchor": {"page": 1, "ordinal": 2}},
+    ]
     rev = _rev(pages)
     attach_pdf_document(anchored, rev)
     assert [n["span"] for n in anchored] == [[0, 2], [2, 5]]
@@ -194,10 +198,16 @@ def test_attach_prefers_anchor():
 def test_attach_unresolved_anchor_and_cleared_subtree():
     """An unknown (page, ordinal) falls back to the title match; anchors under cleared subtrees are removed."""
     pages = [(1, "# Scope Notes\n\nNotes text.\n\n# Scope\n\nScope text."), (2, "More.")]
-    tree = [{"title": "Scope Notes", "start_index": 1, "end_index": 1, "anchor": {"page": 1, "ordinal": 99}},
-            {"title": "Ghost", "start_index": 5, "end_index": 5, "anchor": {"page": 5, "ordinal": 0},
-             "nodes": [{"title": "Ghost child", "start_index": 5, "end_index": 5,
-                        "anchor": {"page": 5, "ordinal": 1}}]}]
+    tree = [
+        {"title": "Scope Notes", "start_index": 1, "end_index": 1, "anchor": {"page": 1, "ordinal": 99}},
+        {
+            "title": "Ghost",
+            "start_index": 5,
+            "end_index": 5,
+            "anchor": {"page": 5, "ordinal": 0},
+            "nodes": [{"title": "Ghost child", "start_index": 5, "end_index": 5, "anchor": {"page": 5, "ordinal": 1}}],
+        },
+    ]
     attach_pdf_document(tree, _rev(pages))
     assert tree[0]["span"][0] == 0
     assert tree[1]["span"] is None
@@ -207,9 +217,16 @@ def test_attach_unresolved_anchor_and_cleared_subtree():
 def test_attach_malformed_anchor_does_not_raise():
     """A malformed anchor (missing keys, unhashable values, non-dict) falls back without raising."""
     pages = [(1, "# A\n\nText."), (2, "# B\n\nMore.\n\n## C\n\nLeaf.")]
-    tree = [{"title": "A", "start_index": 1, "end_index": 1, "anchor": {"page": [1], "ordinal": {}}},
-            {"title": "B", "start_index": 2, "end_index": 2, "anchor": "bogus",
-             "nodes": [{"title": "C", "start_index": 2, "end_index": 2, "anchor": {}}]}]
+    tree = [
+        {"title": "A", "start_index": 1, "end_index": 1, "anchor": {"page": [1], "ordinal": {}}},
+        {
+            "title": "B",
+            "start_index": 2,
+            "end_index": 2,
+            "anchor": "bogus",
+            "nodes": [{"title": "C", "start_index": 2, "end_index": 2, "anchor": {}}],
+        },
+    ]
     attach_pdf_document(tree, _rev(pages))
     assert tree[0]["span"] == [0, 2]
     assert tree[1]["span"] == [2, 6] and tree[1]["nodes"][0]["span"] == [4, 6]
