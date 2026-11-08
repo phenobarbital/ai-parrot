@@ -393,7 +393,9 @@ def heading_segments(node: dict, revision: DocumentRevision) -> list[Segment]:
         for segment in revision.segments[max(int(start), 0) : min(int(end), len(revision.segments))]
         if segment.kind == "heading"
     ]
-    if headings and _titles_match(normalize_title(node.get("title", "")), normalize_title(_heading_text(headings[0].text))):
+    if headings and _titles_match(
+        normalize_title(node.get("title", "")), normalize_title(_heading_text(headings[0].text))
+    ):
         return headings[1:]
     return headings
 
@@ -419,7 +421,11 @@ def should_expand(node_tokens: int, piece_tokens: list[int], cost: int, settings
 
 def _owned_in_span(owned: list[list[int]], start: int, end: int) -> list[list[int]]:
     """Return the intersection of owned ranges with one half-open span."""
-    return [[max(start, int(left)), min(end, int(right))] for left, right in owned if max(start, int(left)) < min(end, int(right))]
+    return [
+        [max(start, int(left)), min(end, int(right))]
+        for left, right in owned
+        if max(start, int(left)) < min(end, int(right))
+    ]
 
 
 def split_at(
@@ -437,8 +443,7 @@ def split_at(
         {
             int(seq)
             for seq in seqs
-            if any(int(start) <= int(seq) < int(end) for start, end in owned)
-            and 0 <= int(seq) < len(revision.segments)
+            if any(int(start) <= int(seq) < int(end) for start, end in owned) and 0 <= int(seq) < len(revision.segments)
         }
     )
     if not valid_seqs:
@@ -461,7 +466,9 @@ def split_at(
             }
         )
     piece_tokens = [owned_tokens(piece, revision) for piece in pieces]
-    if not should_expand(owned_tokens(node, revision), piece_tokens, routing_cost(pieces, revision, settings), settings):
+    if not should_expand(
+        owned_tokens(node, revision), piece_tokens, routing_cost(pieces, revision, settings), settings
+    ):
         return []
     node["nodes"] = pieces
     assign_ownership(node)
@@ -585,9 +592,7 @@ def finalize_stamps(plan: OptimizePlan) -> None:
 def _document_nodes(root: dict, doc_id: str, revision: str) -> list[dict]:
     """Return all nodes in a document subtree for one document revision."""
     return [
-        node
-        for node in structure_to_list(root)
-        if node.get("doc_id") == doc_id and node.get("revision") == revision
+        node for node in structure_to_list(root) if node.get("doc_id") == doc_id and node.get("revision") == revision
     ]
 
 
@@ -613,6 +618,7 @@ def plan_deterministic(
         assign_ownership(root)
         expand_at_headings(root, revision, settings, report, depth=0)
         assign_ownership(root)
+
     def mark_mutable(node: dict, ancestor_locked: bool = False) -> None:
         locked = ancestor_locked or is_locked(node)
         if locked:

@@ -168,7 +168,9 @@ def test_stamp_idempotence(revision: DocumentRevision) -> None:
     finalize_stamps(plan)
     assert is_stamped(node, settings, pass_name="headings", input_hash=input_hash, execution="deterministic")
     assert node["optimizer"]["passes"]["headings"]["at"] == "2026-01-01T00:00:00Z"
-    assert not is_stamped({"optimizer": True}, settings, pass_name="headings", input_hash=input_hash, execution="deterministic")
+    assert not is_stamped(
+        {"optimizer": True}, settings, pass_name="headings", input_hash=input_hash, execution="deterministic"
+    )
 
 
 def test_stamp_summary_dependencies() -> None:
