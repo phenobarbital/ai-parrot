@@ -1,0 +1,22 @@
+Synthesis reasoning — FEAT-841 (2026-11-07, unattended /sdd-proposal run)
+
+Step 1 — Ask: build a release escrow for the SDD flow: sdd-worker ends by emitting work.completed, the feature is held
+(AWAITING_VERDICT) until an external, non-participant verdict APPROVED bound to the head SHA is recorded in the ledger, and
+/sdd-done refuses in code without it. Explicitly NOT another diff review.
+Step 2 — Mode: enrichment (additive verbs; no broken behaviour reported).
+Step 3 — Localization: all 25 locations come from probe-verified citations (221 checks, 0 stale/missing after 9 read
+adjudications of body-range citations).
+Step 4 — Constraints: gate convention (exit code is the contract, no force param, three twins + contract test); ledger has
+closed kinds, content ids, no signatures, actor is self-declared; sandbox writes .parrot/ledger but has no parrot import and no
+network; no worker state.json; verdict must be an event; cross-machine visibility is eventual; HITL dormant; HEAD moves inside
+/sdd-done.
+Step 5 — Scope: new kinds + payloads, check_escrow_verdict gate, head-bound Verdict model, host-side runner/CLI + read-only
+judge agent, --escrow launch flag, policy YAML; modify worker Completion (both twins), worker_notification emitter,
+sdd-done twins ×3, events.py/reducer, launch_cli, worktree_status; untouched: review layer, hooks TOML, snapshot, HITL manager,
+buses. Risks: spoofing, stale verdicts, eventual cross-machine, reducer rebuild, operator-launched judge, dormant HITL.
+Step 6 — Confidence: 15 high / 3 medium (C8 applicability of GitCommitApprovalAdapter, C15 hook-point choice, C16 whether
+§4.5 commits in the PR flow).
+Step 7 — Unknowns (5): state location, meaning of 'signed', override shape, who judges in v1, behaviour when escrow is off.
+Step 8 — Next command: sdd-spec (brainstorm already exists; unknowns are policy decisions). overall_confidence = medium
+(scope confidence bounded by U1/U2). Research not truncated.
+Gates: plan gate and review gate auto-passed (no operator at the terminal); Q&A skipped — unknowns carried as unresolved.
