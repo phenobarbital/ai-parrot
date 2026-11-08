@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-844 — PageIndex Toolkit Fixes
 **Spec**: `sdd/specs/pageindex-toolkit-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -339,10 +339,8 @@ See the CREATE block for `test_prompt_injection_stdout.py` and the MODIFY block 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 (/sdd-fix session agent:sdd-fix:507d6e6a)
+**Date**: 2026-11-08
+**Notes**: `get_injection_scoring_engine` now runs the lazy import and `_resolve_injection_engine` inside `contextlib.redirect_stdout(sys.stderr)` (imports added). `StdioMCPServer` gained `_stdout` (None until `start()` binds `sys.stdout`); `_send` writes to it with a `sys.stdout` fallback. Tests: 3 in the new `tests/security/test_prompt_injection_stdout.py` (plain call, engine pass-through, `_scan` path) and 2 in `tests/mcp/test_local_server.py` (bound stream under redirect; fallback). Validation: 20 passed incl. `test_pageindex_serves_over_stdio`; ruff clean. Black was not applied: all three modified files were already non-conformant at base, and reformatting them is outside scope. Code commit: b797bdcc71.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

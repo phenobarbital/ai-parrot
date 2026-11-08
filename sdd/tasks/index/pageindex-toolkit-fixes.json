@@ -48,7 +48,7 @@
       "feature_id": "FEAT-844",
       "feature": "pageindex-toolkit-fixes",
       "spec": "sdd/specs/pageindex-toolkit-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -56,8 +56,9 @@
       "parallelism_notes": "Independent: touches security/prompt_injection.py, mcp/local_server.py and their tests only; no other FEAT-844 task declares those files.",
       "assigned_to": null,
       "started_at": "2026-11-08T01:29:34.927808+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5328-stdout-safe-injection-engine.md"
+      "completed_at": "2026-11-08T01:31:46+00:00",
+      "file": "sdd/tasks/completed/TASK-5328-stdout-safe-injection-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5329",
