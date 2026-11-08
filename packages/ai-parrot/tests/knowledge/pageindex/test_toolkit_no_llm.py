@@ -189,7 +189,7 @@ def test_bound_text_cuts_first_part_after_title(tmp_path: Path) -> None:
     assert out.startswith("## Title\n")
     assert out.endswith(_TAIL)
     assert len(out) <= limit + marker_len
-    assert "in 1 further sections" in out
+    assert "in this section and 1 further sections" in out  # FEAT-844 D4: the cut first section is named
 
 
 def test_bound_text_tiny_limit_keeps_title_line(tmp_path: Path) -> None:
@@ -226,4 +226,15 @@ def test_bound_text_oversized_part_without_paragraph_break(tmp_path: Path) -> No
     out = tk._bound_text(["## T\n" + "x" * 200])
     kept = out.split("\n\n[truncated:")[0]
     assert kept == ("## T\n" + "x" * 200)[:30]
+    assert out.endswith(_TAIL)
+    assert "in this section —" in out and "0 further" not in out  # FEAT-844 D4
+
+
+def test_bound_text_whole_sections_marker_unchanged(tmp_path: Path) -> None:
+    """FEAT-844 D4: when the first part fits, the marker keeps the FEAT-842 wording."""
+    parts = ["## A\n" + "a" * 40, "## B\n" + "b" * 40, "## C\n" + "c" * 40]
+    tk = PageIndexToolkit(storage_dir=tmp_path, max_result_chars=len(parts[0]) + 2)
+    out = tk._bound_text(parts)
+    assert out.startswith(parts[0] + "\n\n[truncated:")
+    assert "in 2 further sections" in out and "this section" not in out
     assert out.endswith(_TAIL)
