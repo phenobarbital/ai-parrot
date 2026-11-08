@@ -21,7 +21,7 @@ docs:
 **Feature ID**: FEAT-847
 **Date**: 2026-11-08
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.25.0
 
 ---
@@ -360,7 +360,7 @@ class GoogleCodingDispatchProfile(BaseModel):  # line 44
 - ~~`Model="haiku"` or `Model="sonnet"` in AGY `invoke_subagent`~~ — AGY's `invoke_subagent` `Model` parameter only accepts `'inherit' | 'flash_lite' | 'flash' | 'pro'`.
 
 ### Edit Sites (Blueprint Anchors)
-<!-- Verified against: f426e44f8d -->
+<!-- Verified against: 34a31c1199 -->
 
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
