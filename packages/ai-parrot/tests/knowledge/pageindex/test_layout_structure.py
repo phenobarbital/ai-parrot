@@ -123,8 +123,11 @@ def test_page_structure():
     ]
 
 
-from parrot.knowledge.pageindex.layout_structure import build_structure, insert_layout_headings, items_to_tree  # noqa: E402
-
+from parrot.knowledge.pageindex.layout_structure import (
+    build_structure,
+    insert_layout_headings,
+    items_to_tree,
+)  # noqa: E402
 
 HYBRID_PAGES = (
     "# Report Title\n\n## 1 Intro\n\nText.\n\n### 1.1 Scope\n\nText.",
@@ -155,8 +158,7 @@ def test_hybrid_insertion():
 def test_hybrid_rejects_noisy_layout():
     """Reliable bookmarks remain unchanged when an over-dense layout fails confidence."""
     pages = tuple(
-        f"## Chapter {page}\n\n" + "\n\n".join(f"#### Note {number}" for number in range(100))
-        for page in range(1, 3)
+        f"## Chapter {page}\n\n" + "\n\n".join(f"#### Note {number}" for number in range(100)) for page in range(1, 3)
     )
     profile = _profile(2, bookmarks=[(1, "Chapter 1", 1), (1, "Chapter 2", 2)])
 
