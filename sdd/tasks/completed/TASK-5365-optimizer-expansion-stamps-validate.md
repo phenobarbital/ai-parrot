@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-846 — PageIndex Tree Optimizer
 **Spec**: `sdd/specs/pageindex-tree-optimizer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5364
@@ -260,4 +260,9 @@ Spec §4 rows `test_expand_at_headings_and_cost_model`, `test_stamp_idempotence`
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed**: 2026-11-09 | **Implementation commit**: b59f004b87
+
+Delivered via sdd-coder pool (merged). Scope: optimizer expansion, stamps, validate.
+Validation: merge-tier — 8 passed, exit 0.
+Deviations: none noted.
+
