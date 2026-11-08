@@ -169,7 +169,8 @@ declaratively in this repo — set via GitHub repo settings.
 
 ## Worktrees
 
-Everything about worktrees — location (`.claude/worktrees/`), naming,
+Everything about worktrees — location (under the worktree root: default
+`.parrot/worktrees/`, override with an exported `WORKTREE_BASE_PATH`), naming,
 creation via `parrot sdd worktree ensure` (always from
 `origin/<base_branch>`, never `HEAD`, never `claude --worktree`), working
 inside one, finishing and cleanup — lives in **one** rule:
@@ -225,7 +226,9 @@ git checkout dev && git pull origin dev
 /sdd-spec <feature> -- ...                 # spec, committed to dev
 /sdd-task sdd/specs/<feature>.spec.md      # tasks, committed to dev
 /sdd-start TASK-<NNN>                      # creates the worktree, implements the task
-cd .claude/worktrees/feat-FEAT-<NNN>-<slug>
+MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+WORKTREES_DIR=$(parrot sdd worktree root --root "$MAIN_ROOT") || exit $?
+cd "$WORKTREES_DIR/feat-FEAT-<NNN>-<slug>"
 /sdd-start TASK-<NNN+1> …                  # or: parrot sdd launch worker FEAT-<NNN>
 /sdd-done FEAT-<NNN>                       # verify, push, PR → dev (--merge: direct), clean up
 ```

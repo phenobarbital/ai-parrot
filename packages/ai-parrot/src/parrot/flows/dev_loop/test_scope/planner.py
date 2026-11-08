@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .datatypes import CoreHit, Invocation, ScopePlan, TestContract, TestTarget
 from .mirror import prune_nested
 from .policy import AGENT_FLAGS, TIERS, ScopePolicy
 from .runners.registry import RunnerRegistry, load_registry
+
+if TYPE_CHECKING:
+    from .runners.base import RunnerAdapter
 
 # Decision from spike S2 (artifacts/logs/feat-563-s2-conftest-rootdir.md). Placeholders: {worktree}, {dist_root}.
 # Match the baseline runner's repository-relative JUnit node IDs while retaining
@@ -67,6 +71,38 @@ def _invocation(
     return Invocation(distribution=distribution, argv=argv, targets=kept)
 
 
+def _runner_settings(
+    registry: RunnerRegistry,
+    contract: TestContract | None,
+    *,
+    runner: str,
+    distribution: str,
+    adapter: RunnerAdapter,
+) -> dict[str, str]:
+    """Registry settings for ``runner`` with the matching contract block's settings merged on top.
+
+    ``plan_tests`` classifies contract targets with the block's own settings (a ``parrot-e2e``
+    block's ``plan``), so the invocation must see the same keys: registry
+    (``.parrot/test_runners.toml``) first, contract block second — the precedence
+    ``_normalize_runner`` already validates against (issue:a3aebc40ef48). The block is the first
+    of that kind whose merged settings name this group's distribution, else the first block of
+    the kind; without a contract, or a block of the kind, the registry settings come back as is.
+    """
+    base = dict(registry.settings_for(runner))
+    candidates = [block for block in contract.runners if block.kind == runner] if contract is not None else []
+    if not candidates:
+        return base
+    chosen = candidates[0]
+    for block in candidates:
+        try:
+            if adapter.distribution_of("", settings={**base, **block.settings}) == distribution:
+                chosen = block
+                break
+        except (KeyError, ValueError):
+            continue
+    return {**base, **chosen.settings}
+
+
 def build_plan(
     targets: Sequence[TestTarget],
     *,
@@ -99,7 +135,7 @@ def build_plan(
     for runner, distribution in sorted(groups):
         group = groups[(runner, distribution)]
         adapter = registry.adapter_for_kind(runner)
-        settings = registry.settings_for(runner)
+        settings = _runner_settings(registry, contract, runner=runner, distribution=distribution, adapter=adapter)
         if runner != "pytest":
             invocations.append(
                 adapter.invocation(

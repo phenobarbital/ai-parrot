@@ -157,6 +157,108 @@ def test_resolve_feature_prefers_feature_index_over_brief(tmp_path: Path, monkey
     assert ref.prompt_id == "FEAT-768"
 
 
+def _reattach_runner(
+    monkeypatch: pytest.MonkeyPatch,
+    primary: Path,
+    root: Path,
+    *,
+    refs: list[str],
+    checked_out: tuple[str, ...] = (),
+    key: str = "NAV-7762",
+) -> list[list[str]]:
+    """Fake ``_run`` for orphan-branch re-attachment; returns the recorded argv list.
+
+    ``git worktree add`` materialises a brief (index + frontmatter ``key:``) at the destination and later
+    ``git worktree list`` calls report it, as a real re-attach would.
+    """
+    calls: list[list[str]] = []
+    attached: list[Path] = []
+
+    def fake_run(argv: list[str], *, cwd: Path, env: object = None) -> subprocess.CompletedProcess[str]:
+        argv = list(argv)
+        calls.append(argv)
+        if argv[:2] == ["git", "for-each-ref"]:
+            return _result(argv, stdout="".join(f"{ref}\n" for ref in refs))
+        if argv[:3] == ["git", "worktree", "list"]:
+            entries = [f"worktree {primary}\nHEAD abc\nbranch refs/heads/dev\n\n"]
+            entries += [f"worktree {root / name}\nHEAD abc\nbranch refs/heads/{name}\n\n" for name in checked_out]
+            entries += [f"worktree {path}\nHEAD abc\nbranch refs/heads/{path.name}\n\n" for path in attached]
+            return _result(argv, stdout="".join(entries))
+        if argv[1:3] == ["-m", "parrot.sdd.scripts.worktree_root"]:
+            return _result(argv, stdout=f"{root}\n")
+        if argv[:3] == ["git", "worktree", "add"]:
+            destination = Path(next(arg for arg in argv[3:] if arg.startswith(str(root))))
+            _brief_worktree(destination.parent, slug="ecotank", key=key, name=destination.name)
+            attached.append(destination)
+            return _result(argv)
+        raise AssertionError(f"unexpected command: {argv}")
+
+    monkeypatch.setattr(launcher, "_run", fake_run)
+    return calls
+
+
+def _adds(calls: list[list[str]]) -> list[list[str]]:
+    """The ``git worktree add`` invocations among ``calls``."""
+    return [argv for argv in calls if argv[:3] == ["git", "worktree", "add"]]
+
+
+def test_resolve_feature_reattaches_orphan_brief_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A lone un-checked-out local ``hotfix-<KEY>-*`` branch is re-attached under the root and resolved."""
+    primary = _primary(tmp_path)
+    root = tmp_path / "wt-root"
+    branch = "hotfix-NAV-7762-ecotank"
+    calls = _reattach_runner(
+        monkeypatch, primary, root, refs=[f"refs/heads/{branch}", f"refs/remotes/origin/{branch}", "refs/heads/dev"]
+    )
+    ref = launcher.resolve_feature(primary, "nav-7762")
+    assert _adds(calls) == [["git", "worktree", "add", str(root / branch), branch]]
+    assert ref.is_brief
+    assert ref.worktree == str(root / branch)
+    assert ref.slug == "ecotank"
+
+
+def test_reattach_origin_only_branch_uses_no_track(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An origin-only ``fix-<KEY>-*`` branch is created with ``--no-track -b`` from ``origin/<branch>``."""
+    primary = _primary(tmp_path)
+    root = tmp_path / "wt-root"
+    branch = "fix-NAV-7762-ecotank"
+    calls = _reattach_runner(monkeypatch, primary, root, refs=[f"refs/remotes/origin/{branch}"])
+    ref = launcher.resolve_feature(primary, "NAV-7762")
+    assert _adds(calls) == [
+        ["git", "worktree", "add", "--no-track", "-b", branch, str(root / branch), f"origin/{branch}"]
+    ]
+    assert ref.worktree == str(root / branch)
+
+
+def test_reattach_ambiguous_or_blocked_is_exit_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two candidates, an occupied destination, an already checked-out branch or no branch → exit 2, no add."""
+    primary = _primary(tmp_path)
+    root = tmp_path / "wt-root"
+    branch = "hotfix-NAV-7762-ecotank"
+
+    calls = _reattach_runner(monkeypatch, primary, root, refs=[f"refs/heads/{branch}", "refs/heads/fix-NAV-7762-b"])
+    with pytest.raises(launcher.LaunchError, match="ambiguous brief branches") as ambiguous:
+        launcher.resolve_feature(primary, "NAV-7762")
+    assert ambiguous.value.exit_code == 2 and not _adds(calls)
+
+    (root / branch).mkdir(parents=True)
+    calls = _reattach_runner(monkeypatch, primary, root, refs=[f"refs/heads/{branch}"])
+    with pytest.raises(launcher.LaunchError, match="already exists") as occupied:
+        launcher.resolve_feature(primary, "NAV-7762")
+    assert occupied.value.exit_code == 2 and not _adds(calls)
+
+    calls = _reattach_runner(monkeypatch, primary, root, refs=[f"refs/heads/{branch}"], checked_out=(branch,))
+    with pytest.raises(launcher.LaunchError, match="could not uniquely resolve") as busy:
+        launcher.resolve_feature(primary, "NAV-7762")
+    assert busy.value.exit_code == 2 and not _adds(calls)
+
+    calls = _reattach_runner(monkeypatch, primary, root, refs=["refs/heads/hotfix-NAV-77620-other"])
+    with pytest.raises(launcher.LaunchError, match="could not uniquely resolve") as missing:
+        launcher.resolve_feature(primary, "NAV-7762")
+    assert missing.value.exit_code == 2 and not _adds(calls)
+    assert not any(argv[1:3] == ["-m", "parrot.sdd.scripts.worktree_root"] for argv in calls)
+
+
 def test_launch_brief_uses_existing_worktree_and_slug_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A brief launch reuses its worktree (no ensure_feature_worktree) and starts the worker with ``run <slug>``."""
     primary = _primary(tmp_path)

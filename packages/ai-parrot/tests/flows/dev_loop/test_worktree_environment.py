@@ -26,6 +26,7 @@ def scratch_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point the sandbox's Claude scratchpad root at a private directory instead of the real ``/tmp/claude-<uid>``."""
     root = tmp_path / "claude-scratch"
     monkeypatch.setattr(policy, "CLAUDE_SCRATCH_ROOT", root)
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
     return root
 
 
@@ -340,14 +341,16 @@ def test_real_native_hook_keeps_primary_environment_read_only(tmp_path: Path) ->
     assert target.read_text() == "original\n"
 
 
-def _registered_feature_worktree(tmp_path: Path) -> tuple[Path, Path]:
-    """Model a feature worktree registered under the primary checkout's ``.claude/worktrees``."""
+def _registered_feature_worktree(
+    tmp_path: Path, relative_root: Path = Path(".parrot") / "worktrees"
+) -> tuple[Path, Path]:
+    """Model a feature worktree registered under the primary checkout's resolved worktree root."""
     main = tmp_path / "main"
     git_dir = main / ".git"
     admin = git_dir / "worktrees" / "feat-x"
     admin.mkdir(parents=True)
     (admin / "commondir").write_text("../..\n")
-    worktree = main / ".claude" / "worktrees" / "feat-x"
+    worktree = main / relative_root / "feat-x"
     worktree.mkdir(parents=True)
     (worktree / ".git").write_text(f"gitdir: {admin}\n")
     return main, worktree
@@ -362,7 +365,7 @@ def test_feature_worktree_binds_primary_worktree_admin_dir(tmp_path: Path, monke
     monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
     main, worktree = _registered_feature_worktree(tmp_path)
     binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
-    assert (main / ".claude" / "worktrees").resolve() in binds
+    assert (main / ".parrot" / "worktrees").resolve() in binds
     assert (main / ".git").resolve() in binds
     assert main.resolve() not in binds
 
@@ -373,7 +376,7 @@ def test_primary_checkout_has_no_extra_worktree_admin_bind(
     monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
     main = tmp_path / "main"
     (main / ".git").mkdir(parents=True)
-    (main / ".claude" / "worktrees").mkdir(parents=True)
+    (main / ".parrot" / "worktrees").mkdir(parents=True)
     assert _writable_binds(policy.protected_argv(main, ["true"])) == [scratch_root.resolve(), main.resolve()]
 
 
@@ -392,6 +395,15 @@ def test_sandbox_binds_claude_scratch_root_after_private_tmp(
     bind_index = argv.index(str(scratch.resolve()))
     assert argv[bind_index - 1] == "--bind" and argv[bind_index + 1] == str(scratch.resolve())
     assert bind_index > tmpfs_index, "the bind must come after the tmpfs mount or the tmpfs shadows it"
+
+
+def test_feature_worktree_binds_custom_in_repo_worktree_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A repository-relative WORKTREE_BASE_PATH controls the writable worktree bind."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    monkeypatch.setenv("WORKTREE_BASE_PATH", ".custom/worktrees")
+    main, worktree = _registered_feature_worktree(tmp_path, Path(".custom") / "worktrees")
+    binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
+    assert (main / ".custom" / "worktrees").resolve() in binds
 
 
 def test_real_scratchpad_survives_between_sandboxed_commands(tmp_path: Path, scratch_root: Path) -> None:
@@ -425,7 +437,12 @@ def test_linked_checkout_without_admin_dir_binds_nothing_extra(
     monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
     worktree, env = checkout
     binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
-    assert binds == [scratch_root.resolve(), worktree.resolve(), (env.parent / ".git").resolve()]
+    assert binds == [
+        scratch_root.resolve(),
+        worktree.resolve(),
+        (env.parent / ".git").resolve(),
+        (env.parent / "artifacts" / "logs" / "sdd-coder-usage").resolve(),
+    ]
 
 
 def test_real_feature_worktree_can_administer_worktrees_but_not_primary_checkout(tmp_path: Path) -> None:
@@ -436,7 +453,7 @@ def test_real_feature_worktree_can_administer_worktrees_but_not_primary_checkout
     git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
     subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
     subprocess.run([*git, "commit", "--allow-empty", "-m", "initial"], cwd=main, capture_output=True, check=True)
-    admin_dir = main / ".claude" / "worktrees"
+    admin_dir = main / ".parrot" / "worktrees"
     admin_dir.mkdir(parents=True)
     feature = admin_dir / "feat-x"
     subprocess.run(["git", "worktree", "add", "-b", "feat-x", str(feature)], cwd=main, capture_output=True, check=True)
@@ -494,7 +511,7 @@ def test_real_feature_worktree_can_write_shared_ledger_but_not_wiki_plane(tmp_pa
     subprocess.run([*git, "commit", "--allow-empty", "-m", "initial"], cwd=main, capture_output=True, check=True)
     ledger_dir = main / ".parrot" / "ledger"
     ledger_dir.mkdir(parents=True)
-    feature = main / ".claude" / "worktrees" / "feat-x"
+    feature = main / ".parrot" / "worktrees" / "feat-x"
     feature.parent.mkdir(parents=True)
     subprocess.run(["git", "worktree", "add", "-b", "feat-x", str(feature)], cwd=main, capture_output=True, check=True)
 
@@ -524,6 +541,86 @@ def test_real_feature_worktree_can_write_shared_ledger_but_not_wiki_plane(tmp_pa
     )
     assert not (main / ".parrot" / "wiki.db").exists()
 
+
+
+def test_feature_worktree_binds_primary_coder_evidence_dir_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The evidence store is writable; the rest of ``artifacts/`` is not."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    (main / "artifacts" / "laya").mkdir(parents=True)
+    binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
+    assert (main / "artifacts" / "logs" / "sdd-coder-usage").resolve() in binds
+    assert (main / "artifacts").resolve() not in binds
+    assert (main / "artifacts" / "laya").resolve() not in binds
+    assert main.resolve() not in binds
+
+
+def test_coder_evidence_dir_is_created_when_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """First run: Bubblewrap cannot bind a missing path, so the helper creates it."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    assert not (main / "artifacts" / "logs" / "sdd-coder-usage").exists()
+    policy.protected_argv(worktree, ["true"])
+    assert (main / "artifacts" / "logs" / "sdd-coder-usage").is_dir()
+
+
+def test_primary_checkout_gets_no_evidence_bind_and_no_mkdir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    """The primary is already writable: no bind and no filesystem side effect."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main = tmp_path / "main"
+    (main / ".git").mkdir(parents=True)
+    assert _writable_binds(policy.protected_argv(main, ["true"])) == [scratch_root.resolve(), main.resolve()]
+    assert not (main / "artifacts").exists()
+
+
+def test_coder_evidence_dirs_degrades_when_mkdir_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A mkdir failure must not raise: ``protected_argv`` wraps every Bash call."""
+    main, worktree = _registered_feature_worktree(tmp_path)
+    git_dir = (main / ".git").resolve()
+
+    def _boom(*args: object, **kwargs: object) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(policy.Path, "mkdir", _boom)
+    assert policy.coder_evidence_dirs(worktree, git_dir) == ()
+
+
+def test_real_feature_worktree_can_write_evidence_store_but_not_laya(tmp_path: Path) -> None:
+    """Real Bubblewrap: the store is writable, the executable corner of ``artifacts/`` is not."""
+    _require_bubblewrap()
+    main = tmp_path / "main"
+    main.mkdir()
+    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
+    subprocess.run([*git, "commit", "--allow-empty", "-m", "initial"], cwd=main, capture_output=True, check=True)
+    (main / "artifacts" / "laya").mkdir(parents=True)
+    feature = main / ".parrot" / "worktrees" / "feat-x"
+    feature.parent.mkdir(parents=True)
+    subprocess.run(["git", "worktree", "add", "-b", "feat-x", str(feature)], cwd=main, capture_output=True, check=True)
+
+    store = main / "artifacts" / "logs" / "sdd-coder-usage"
+    result = subprocess.run(
+        policy.protected_argv(feature, ["touch", str(store / "probe")]), capture_output=True, text=True, timeout=20
+    )
+    assert result.returncode == 0, result.stderr
+    assert (store / "probe").is_file()
+
+    for forbidden in (main / "artifacts" / "laya" / "probe", main / "artifacts" / "probe"):
+        subprocess.run(policy.protected_argv(feature, ["touch", str(forbidden)]), capture_output=True, timeout=20)
+        assert not forbidden.exists(), forbidden
+
+
+def test_coder_evidence_dir_matches_resolve_durable_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drift guard: the stdlib-only policy module duplicates telemetry's default path."""
+    from parrot.flows.dev_loop.sdd_coder.telemetry import resolve_durable_root
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
+    resolved = resolve_durable_root(None, worktree_base_path=str(repo / ".parrot" / "worktrees"))
+    assert resolved == (repo / policy.CODER_EVIDENCE_DIR).resolve()
 
 # ---------------------------------------------------------------------------
 # Hung-command guard: a sandboxed process that never exits must not keep bwrap
@@ -651,7 +748,7 @@ def test_real_self_removal_leaves_a_usable_shell(tmp_path: Path) -> None:
     git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
     subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
     subprocess.run([*git, "commit", "--allow-empty", "-m", "initial"], cwd=main, capture_output=True, check=True)
-    admin_dir = main / ".claude" / "worktrees"
+    admin_dir = main / ".parrot" / "worktrees"
     admin_dir.mkdir(parents=True)
     feature = admin_dir / "feat-x"
     subprocess.run(["git", "worktree", "add", "-b", "feat-x", str(feature)], cwd=main, capture_output=True, check=True)
@@ -698,8 +795,8 @@ def test_scope_guard_verdict_is_returned_unchanged(
 def _native_hook_worktrees(tmp_path: Path) -> tuple[Path, Path, Path]:
     """Create linked session and task worktrees accepted by native hook helpers."""
     main = tmp_path / "main"
-    feature = main / ".claude" / "worktrees" / "feature"
-    task = main / ".claude" / "worktrees" / "task"
+    feature = main / ".parrot" / "worktrees" / "feature"
+    task = main / ".parrot" / "worktrees" / "task"
     for name, worktree in (("feature", feature), ("task", task)):
         admin = main / ".git" / "worktrees" / name
         admin.mkdir(parents=True)
@@ -909,7 +1006,7 @@ def test_main_reads_backend_from_environment(tmp_path: Path) -> None:
     }
     payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
     result = subprocess.run(
-        [sys.executable, "-S", policy.__file__, "--hook"],
+        [sys.executable, policy.__file__, "--hook"],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
@@ -940,7 +1037,7 @@ def test_main_uses_bubblewrap_backend_with_launcher_markers(tmp_path: Path) -> N
     }
     payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
     result = subprocess.run(
-        [sys.executable, "-S", policy.__file__, "--hook"],
+        [sys.executable, policy.__file__, "--hook"],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
@@ -1247,7 +1344,7 @@ def test_main_defaults_to_auto_backend(tmp_path: Path) -> None:
     env.update({"PATH": f"{bin_dir}{os.pathsep}{env.get('PATH', '')}", policy.RTK_ENV_SWITCH: "0"})
     payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
     result = subprocess.run(
-        [sys.executable, "-S", policy.__file__, "--hook"],
+        [sys.executable, policy.__file__, "--hook"],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
@@ -1285,7 +1382,7 @@ def test_main_hand_exported_claude_native_falls_back_to_auto(tmp_path: Path, mar
     env.update({key: str(tmp_path / value) for key, value in markers.items()})
     payload = {"cwd": str(feature), "tool_name": "Bash", "tool_input": {"command": "true"}}
     result = subprocess.run(
-        [sys.executable, "-S", policy.__file__, "--hook"],
+        [sys.executable, policy.__file__, "--hook"],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
@@ -1426,13 +1523,21 @@ def test_handwritten_bwrap_denied_in_native_mode_only(
 
 def test_packaged_hook_entry_point_denies_in_native_mode_without_import_error(tmp_path: Path) -> None:
     """``python -m parrot.sdd.scripts.worktree_environment --hook`` loads the sibling native module (TASK-5093)."""
-    feature, _task, _main = _native_hook_worktrees(tmp_path)
+    feature, _task, main = _native_hook_worktrees(tmp_path)
     payload = {
         "cwd": str(feature),
         "tool_name": "Write",
         "tool_input": {"file_path": str(feature / ".claude" / "settings.local.json")},
     }
-    env = {**os.environ, "PARROT_SDD_SANDBOX_BACKEND": "claude-native"}
+    # `claude-native` is trusted only beside both launcher markers; without them the hook falls back to `auto`.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PARROT_SDD_")}
+    env.update(
+        {
+            "PARROT_SDD_SANDBOX_BACKEND": "claude-native",
+            "PARROT_SDD_SANDBOX_ROOTS": os.pathsep.join((str(feature), str(main / ".git"), str(main))),
+            "PARROT_SDD_CACHE_DIR": str(tmp_path / "cache"),
+        }
+    )
     result = subprocess.run(
         [sys.executable, "-m", "parrot.sdd.scripts.worktree_environment", "--hook"],
         input=json.dumps(payload),

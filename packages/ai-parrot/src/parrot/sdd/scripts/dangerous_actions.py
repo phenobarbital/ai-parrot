@@ -123,9 +123,9 @@ _RM_ROOT = re.compile(
     r"(\s+(-[a-zA-Z]+|--[a-zA-Z-]+))*\s+['\"]?(/|~|\$\{?HOME\}?)[*/]*['\"]?\s*($|[;&|])"
 )
 _RM_CRITICAL = re.compile(
-    r"rm\s+(-[a-zA-Z]+\s+)*-?[a-zA-Z]*[rR][a-zA-Z]*\s+[^;&|]*(\.venv|\.git(/|\s|$)|\.claude/worktrees)"
+    r"rm\s+(-[a-zA-Z]+\s+)*-?[a-zA-Z]*[rR][a-zA-Z]*\s+[^;&|]*(\.venv|\.git(/|\s|$)|\.(claude|parrot)/worktrees)"
 )
-_WIN_CRITICAL = re.compile(r"(\.venv|\.git([\\/]|\s|$)|\.claude[\\/]worktrees)", re.IGNORECASE)
+_WIN_CRITICAL = re.compile(r"(\.venv|\.git([\\/]|\s|$)|\.(claude|parrot)[\\/]worktrees)", re.IGNORECASE)
 _WIN_ROOT_TOKEN = re.compile(
     r"(?:^|[\s'\"])(?:[A-Za-z]:[\\/]?\*?|~|\$home|\$env:userprofile)[\\/*]*(?=\s|$|['\"])", re.IGNORECASE
 )
@@ -147,7 +147,13 @@ _FORCE_FLAG = re.compile(r"(\s|^)(-f|--force)(\s|$|=)")
 
 
 def _branch_re(branches: Sequence[str]) -> str:
-    return r"\b(" + "|".join(re.escape(b) for b in branches) + r")\b"
+    """Match a protected branch name as a whole token, optionally as ``refs/heads/<name>``.
+
+    A letter, digit, ``_``, ``.``, ``/`` or ``-`` on either side means the name is only part of a longer branch
+    name (``feat-x-dev-loop``, ``feat/dev``), so it does not match (issue:a682edf559a5).
+    """
+    names = "|".join(re.escape(b) for b in branches)
+    return r"(?<![\w./-])(?:refs/heads/)?(" + names + r")(?![\w./-])"
 
 
 def _forced_refspec_targets(scan: str) -> list[str]:
@@ -272,7 +278,7 @@ def _bash(cmd: str, root: Path | None, protected: Sequence[str]) -> Verdict:  # 
         )
     if _RM_CRITICAL.search(scan):
         return _deny(
-            "Recursive delete of a repo-critical path (.venv, .git, .claude/worktrees).",
+            "Recursive delete of a repo-critical path (.venv, .git, .parrot/worktrees, .claude/worktrees).",
             "# .venv:     recreate it with your package manager (for example `uv sync`) instead of deleting by hand",
             "# a worktree: git worktree remove <path>  (see `parrot sdd worktree status` first)",
             "# build artefacts: delete the specific build directory, not a repository root",
@@ -313,7 +319,7 @@ def _bash(cmd: str, root: Path | None, protected: Sequence[str]) -> Verdict:  # 
             "export MY_TOKEN=...     # in your own shell, not through the agent",
             '<command> --token "$MY_TOKEN"',
         )
-    if re.search(r"git\s+(merge|pull)\b", scan) and root is not None and (root / ".claude" / "worktrees").is_dir():
+    if re.search(r"git\s+(merge|pull)\b", scan) and root is not None and _worktrees_dir_exists(root):
         if _live_worker():
             return Verdict(
                 "warn",
@@ -321,6 +327,16 @@ def _bash(cmd: str, root: Path | None, protected: Sequence[str]) -> Verdict:  # 
                 "uncommitted edits — verify with `git status` before proceeding.",
             )
     return _ALLOW
+
+
+def _worktrees_dir_exists(root: Path) -> bool:
+    """True when the repository's resolved worktree root exists (FEAT-802); never raises."""
+    try:
+        from parrot.sdd.config import worktree_root  # lazy + guarded, like load_sdd_config above
+
+        return worktree_root(root).is_dir()
+    except Exception:  # noqa: BLE001 — a hook must not fail on an optional capability
+        return (root / ".parrot" / "worktrees").is_dir()
 
 
 def _live_worker() -> bool:

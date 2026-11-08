@@ -295,6 +295,133 @@ def test_mirror_target_keeps_agent_marker(tmp_path: Path):
     assert markers == {"mirror": AGENT_MARKER_EXPRESSION, "declared": OVERRIDE_MARKER_EXPRESSION}
 
 
+def _e2e_block(plan: str) -> RunnerContract:
+    return RunnerContract(kind="parrot-e2e", targets=(), settings={"plan": plan}, tiers=("merge", "feature"))
+
+
+def _pytest_block(tmp_path: Path, path: str = "tests/test_pytest.py") -> RunnerContract:
+    target = tmp_path / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("")
+    return RunnerContract(kind="pytest", targets=(path,))
+
+
+def _e2e_invocations(plan) -> list:
+    return [invocation for invocation in plan.invocations if invocation.runner == "parrot-e2e"]
+
+
+def test_contract_e2e_block_settings_reach_invocation(tmp_path: Path):
+    """A parrot-e2e block's own ``plan`` reaches the invocation with an empty registry (issue:a3aebc40ef48)."""
+    contract = TestContract(
+        schema=2,
+        runners=(_pytest_block(tmp_path), _e2e_block("sdd/state/FEAT-581/e2e-plan.md")),
+        digest="sha256:test",
+    )
+
+    plan = plan_tests(
+        worktree=tmp_path, changed_files=[], tier="merge", contract=contract, registry=RunnerRegistry({}, {})
+    )
+
+    (e2e,) = _e2e_invocations(plan)
+    assert e2e.argv == ("parrot", "e2e", "run", "--plan", "sdd/state/FEAT-581/e2e-plan.md", "--owner-id", "sdd-coder")
+    assert e2e.distribution == "FEAT-581"
+    assert [invocation.runner for invocation in plan.invocations if invocation.runner == "pytest"] == ["pytest"]
+
+
+def test_contract_block_settings_override_registry_settings(tmp_path: Path):
+    """Contract block keys win over `.parrot/test_runners.toml`; registry keys the block omits are kept."""
+    registry = RunnerRegistry({}, {"parrot-e2e": {"plan": "sdd/state/OLD/e2e-plan.md", "owner_id": "toml-owner"}})
+    contract = TestContract(schema=2, runners=(_e2e_block("sdd/state/FEAT-581/e2e-plan.md"),), digest="sha256:test")
+
+    plan = plan_tests(worktree=tmp_path, changed_files=[], tier="merge", contract=contract, registry=registry)
+
+    (e2e,) = _e2e_invocations(plan)
+    assert e2e.argv == ("parrot", "e2e", "run", "--plan", "sdd/state/FEAT-581/e2e-plan.md", "--owner-id", "toml-owner")
+
+
+def test_two_e2e_blocks_keep_their_own_plan(tmp_path: Path):
+    """Two blocks of one kind are matched to their group by distribution, never by document order."""
+    contract = TestContract(
+        schema=2,
+        runners=(_e2e_block("sdd/state/FEAT-581/e2e-plan.md"), _e2e_block("sdd/state/FEAT-815/e2e-plan.md")),
+        digest="sha256:test",
+    )
+
+    plan = plan_tests(
+        worktree=tmp_path, changed_files=[], tier="merge", contract=contract, registry=RunnerRegistry({}, {})
+    )
+
+    assert sorted((invocation.distribution, invocation.argv[4]) for invocation in _e2e_invocations(plan)) == [
+        ("FEAT-581", "sdd/state/FEAT-581/e2e-plan.md"),
+        ("FEAT-815", "sdd/state/FEAT-815/e2e-plan.md"),
+    ]
+
+
+def test_fallback_mode_uses_registry_settings(tmp_path: Path):
+    """No contract, or a contract without a block of the kind, leaves the registry settings untouched."""
+    registry = RunnerRegistry({}, {"parrot-e2e": {"plan": "sdd/state/FEAT-581/e2e-plan.md"}})
+    target = TestTarget("", "FEAT-581", "declared", runner="parrot-e2e")
+    pytest_only = TestContract(schema=2, runners=(_pytest_block(tmp_path),), digest="sha256:test")
+
+    for contract in (None, pytest_only):
+        plan = build_plan(
+            [target], tier="merge", worktree=tmp_path, policy=ScopePolicy(), contract=contract, registry=registry
+        )
+        (e2e,) = _e2e_invocations(plan)
+        assert e2e.argv[4] == "sdd/state/FEAT-581/e2e-plan.md"
+
+
+def test_declared_e2e_command_is_planned_at_merge_tier(tmp_path: Path):
+    """A task-declared `parrot e2e run --plan …` is planned at merge tier, reported at task tier (issue:3ae0b2ae0ef4)."""
+    declared = (("parrot", "e2e", "run", "--plan", "sdd/state/FEAT-581/e2e-plan.md"),)
+    registry = RunnerRegistry({}, {})
+
+    plan = plan_tests(worktree=tmp_path, changed_files=[], tier="merge", declared=declared, registry=registry)
+
+    (e2e,) = _e2e_invocations(plan)
+    assert e2e.argv == ("parrot", "e2e", "run", "--plan", "sdd/state/FEAT-581/e2e-plan.md", "--owner-id", "sdd-coder")
+    assert e2e.distribution == "FEAT-581"
+    assert e2e.targets == (TestTarget("sdd/state/FEAT-581/e2e-plan.md", "FEAT-581", "declared", runner="parrot-e2e"),)
+
+    task_plan = plan_tests(worktree=tmp_path, changed_files=[], tier="task", declared=declared, registry=registry)
+
+    assert _e2e_invocations(task_plan) == []
+    assert "parrot-e2e: not eligible for tier task" in task_plan.notes
+
+
+def test_declared_e2e_without_plan_is_reported(tmp_path: Path):
+    """An operand-less declared command is dropped with a note, never silently."""
+    plan = plan_tests(
+        worktree=tmp_path,
+        changed_files=[],
+        tier="merge",
+        declared=(("parrot", "e2e", "run"),),
+        registry=RunnerRegistry({}, {}),
+    )
+
+    assert _e2e_invocations(plan) == []
+    assert "declared command has no operands, dropped: parrot e2e run" in plan.notes
+
+
+def test_declared_plan_and_contract_plan_keep_their_own_invocation(tmp_path: Path):
+    """A declared plan and a contract block's plan are two groups, each run with its own --plan."""
+    contract = TestContract(schema=2, runners=(_e2e_block("sdd/state/FEAT-581/e2e-plan.md"),), digest="sha256:test")
+
+    plan = plan_tests(
+        worktree=tmp_path,
+        changed_files=[],
+        tier="merge",
+        declared=(("parrot", "e2e", "run", "--plan", "sdd/state/FEAT-815/e2e-plan.md"),),
+        contract=contract,
+        registry=RunnerRegistry({}, {}),
+    )
+
+    assert sorted((invocation.distribution, invocation.argv[4]) for invocation in _e2e_invocations(plan)) == [
+        ("FEAT-581", "sdd/state/FEAT-581/e2e-plan.md"),
+        ("FEAT-815", "sdd/state/FEAT-815/e2e-plan.md"),
+    ]
+
+
 def test_declared_only_with_marked_contract_adds_no_sweep(tmp_path: Path):
     """The contract marker sweep still requires a contract target in the distribution."""
     contract = TestContract(

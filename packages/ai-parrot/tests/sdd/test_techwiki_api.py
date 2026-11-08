@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from parrot.sdd.scripts.techwiki_api import main
-from parrot.sdd.techwiki.api import GriffeUnavailable, generate
+from parrot.sdd.techwiki.api import GriffeUnavailable, RenderedPage, _unlink_pageless_refs, generate
 from parrot.sdd.techwiki.config import TechwikiConfig, TechwikiPackage
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -189,6 +189,52 @@ class TestRenderingRules:
         assert "BaseModel`" not in core.replace("PublicModel", "")  # the imported base class is not documented here
         assert "overload" not in core.lower().replace("overloads:", "")
 
+    def test_lazy_export_package_renders_an_index_page(self, techwiki_repo: tuple[Path, TechwikiConfig]) -> None:
+        """A package whose ``__all__`` resolves lazily still gets a page, listing its exports and submodules.
+
+        ``issue:6b80e9a6474b`` — ``parrot.auth`` declares 47 exports behind ``__getattr__``, so griffe sees
+        no public member on the package itself and it used to render nothing, leaving every re-export that
+        pointed at it unlinked.
+        """
+        pages = self._pages(techwiki_repo)
+        assert "samplepkg.lazy" in pages
+        body = pages["samplepkg.lazy"]
+        assert body.startswith("# samplepkg.lazy\n")
+        assert "A namespace package whose public names resolve lazily." in body
+        assert "- `LazyThing`" in body
+        assert "- [`samplepkg.lazy.impl`](ref:samplepkg.lazy.impl)" in body
+        assert "_LAZY_ATTRS" not in body  # private members stay private on an index page
+        assert "__getattr__" not in body
+
+    def test_package_index_links_only_submodules_that_have_pages(self, tmp_path: Path) -> None:
+        """An index page links a child only when that child rendered a page, so no ``ref:`` dangles."""
+        _require_griffe()
+        package = tmp_path / "src" / "mixedpkg"
+        (package / "hidden").mkdir(parents=True)
+        (package / "__init__.py").write_text('"""A namespace with one documented child."""\n', encoding="utf-8")
+        (package / "shown.py").write_text('def visible() -> None:\n    """Public."""\n', encoding="utf-8")
+        (package / "hidden" / "__init__.py").write_text('"""Nothing public."""\n\n_X = 1\n', encoding="utf-8")
+        cfg = TechwikiConfig(packages=[TechwikiPackage(dist="mixed", src="src", roots=["mixedpkg"])])
+        pages, skipped = generate(cfg, tmp_path)
+        assert not skipped
+        bodies = {page.module: page.body for page in pages}
+        assert set(bodies) == {"mixedpkg", "mixedpkg.shown"}
+        assert "- [`mixedpkg.shown`](ref:mixedpkg.shown)" in bodies["mixedpkg"]
+        assert "mixedpkg.hidden" not in bodies["mixedpkg"]
+        assert "## Exports" not in bodies["mixedpkg"]  # no ``__all__`` declared
+
+    def test_package_with_no_documented_descendant_renders_nothing(self, tmp_path: Path) -> None:
+        """A package whose whole subtree is private still produces no page (no empty index pages)."""
+        _require_griffe()
+        package = tmp_path / "src" / "quietpkg"
+        (package / "sub").mkdir(parents=True)
+        (package / "__init__.py").write_text('"""Quiet namespace."""\n', encoding="utf-8")
+        (package / "sub" / "__init__.py").write_text('"""Also quiet."""\n\n_X = 1\n', encoding="utf-8")
+        cfg = TechwikiConfig(packages=[TechwikiPackage(dist="quiet", src="src", roots=["quietpkg"])])
+        pages, skipped = generate(cfg, tmp_path)
+        assert not skipped
+        assert pages == []
+
     def test_reexport_alias_is_one_line_not_a_duplicate_body(self, techwiki_repo: tuple[Path, TechwikiConfig]) -> None:
         """A re-export renders as a single 'Re-exported from' line linking the source module page."""
         package = self._pages(techwiki_repo)["samplepkg"]
@@ -227,3 +273,95 @@ class TestRenderingRules:
         assert "| `size` | `int` |  | Edge length in pixels. |" in core
         assert "| `name` | `str \\| None` | `None` | Optional display name. |" in core
         assert "### Method `Widget.resize`" in core
+
+
+# --- issue:3ecba9ea5ffc — link a re-export only when its target module has a page -------------
+
+
+def _page(module: str, body: str) -> RenderedPage:
+    """Build a minimal RenderedPage for the unlink tests."""
+    return RenderedPage(module=module, section="API Reference", title=module, body=body)
+
+
+def test_alias_link_to_a_module_without_a_page_is_plain_text() -> None:
+    """issue:3ecba9ea5ffc — a re-export whose target produced no page is not linked."""
+    pages = {"a.b": _page("a.b", "Re-exported from [`a.missing.Thing`](ref:a.missing).\n")}
+    _unlink_pageless_refs(pages)
+    # Byte-identical to module.md.j2's own else-branch, the form used when target_module is falsy.
+    assert pages["a.b"].body == "Re-exported from `a.missing.Thing`.\n"
+    assert "](ref:" not in pages["a.b"].body
+
+
+def test_alias_link_to_a_paged_module_is_still_linked() -> None:
+    """The downgrade is not indiscriminate: a target that DID produce a page keeps its link."""
+    body = "Re-exported from [`a.target.Thing`](ref:a.target).\n"
+    pages = {"a.b": _page("a.b", body), "a.target": _page("a.target", "# a.target\n")}
+    _unlink_pageless_refs(pages)
+    assert pages["a.b"].body == body
+
+
+def test_unlink_leaves_images_and_ordinary_links_alone() -> None:
+    """The regex is anchored on the backticked alias form, so other Markdown is untouched."""
+    body = "![shot](ref:not-a-module)\n[plain](ref:a.missing)\n[`x.Y`](https://example.test)\n"
+    pages = {"a.b": _page("a.b", body)}
+    _unlink_pageless_refs(pages)
+    assert pages["a.b"].body == body
+
+
+def test_generate_links_only_re_exports_whose_target_has_a_page(tmp_path: Path) -> None:
+    """End-to-end wiring: generate() must apply the downgrade, not just the helper in isolation.
+
+    ``pkgx.real`` produces a page, so its re-export stays linked; ``pkgx.nosuch`` has no source
+    file and therefore no page, so its re-export renders as plain code text.
+    """
+    pkg = tmp_path / "packages" / "sample" / "src" / "pkgx"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text(
+        '"""Pkg."""\n\nfrom .nosuch import Thing\nfrom .real import Real\n\n__all__ = ["Thing", "Real"]\n',
+        encoding="utf-8",
+    )
+    (pkg / "real.py").write_text('"""Real."""\n\n\nclass Real:\n    """A real class."""\n', encoding="utf-8")
+    cfg = TechwikiConfig(packages=[TechwikiPackage(dist="sample", src="packages/sample/src", roots=["pkgx"])])
+    pages, skipped = generate(cfg, tmp_path)
+    assert skipped == []
+    body = next(page.body for page in pages if page.module == "pkgx")
+    assert "Re-exported from [`pkgx.real.Real`](ref:pkgx.real)." in body  # target has a page
+    assert "Re-exported from `pkgx.nosuch.Thing`." in body  # target has none
+    assert "](ref:pkgx.nosuch)" not in body
+
+
+@pytest.mark.skipif(
+    os.environ.get("TECHWIKI_FULL_BUNDLE") != "1",
+    reason="full-repository bundle is slow (~3.4k pages); set TECHWIKI_FULL_BUNDLE=1 to run",
+)
+def test_full_repository_bundle_has_no_dangling_links() -> None:
+    """AC-3: this repository's own bundle resolves every generated link (was 300 rows / 49 targets)."""
+    from parrot.sdd.techwiki.bundle import assemble
+    from parrot.sdd.techwiki.config import load_techwiki_config
+
+    root = Path(__file__).resolve().parents[4]
+    assert (root / "sdd" / "config.json").is_file(), root
+    cfg = load_techwiki_config(root)
+    _, report = assemble(cfg, root)
+    assert report.dangling == [], report.dangling[:10]
+    assert report.ok(), (report.collisions[:5], report.dangling[:5])
+
+
+def test_generated_page_link_to_a_page_named_like_a_markdown_file_is_not_dangling(tmp_path: Path) -> None:
+    """A module literally named ``md`` yields a page name ending in ``.md``.
+
+    ``rewrite_links`` resolves any target ending ``.md`` as a relative path, so the reference index's
+    already-final link to such a page used to be reported dangling once FEAT-818 began validating
+    generated pages. The link is correct and must be left alone.
+    """
+    from parrot.sdd.techwiki.bundle import assemble
+
+    pkg = tmp_path / "packages" / "sample" / "src" / "pkgy"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text('"""Pkg."""\n', encoding="utf-8")
+    (pkg / "md.py").write_text('"""Markdown splitter."""\n\n\nclass MdSplitter:\n    """Splits."""\n', encoding="utf-8")
+    cfg = TechwikiConfig(packages=[TechwikiPackage(dist="sample", src="packages/sample/src", roots=["pkgy"])])
+    pages, report = assemble(cfg, tmp_path)
+    assert any(page.name == "API-Reference-pkgy.md" for page in pages), [p.name for p in pages]
+    assert report.dangling == [], report.dangling
+    assert report.ok(), (report.collisions, report.dangling)

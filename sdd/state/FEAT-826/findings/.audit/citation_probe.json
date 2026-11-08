@@ -1,0 +1,2111 @@
+[
+ {
+  "finding": "F001",
+  "kind": "file",
+  "target": "sdd/specs/planogram-appearance-rule.spec.md:[(29, 29)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F001",
+  "kind": "anchor",
+  "target": "sdd/specs/planogram-appearance-rule.spec.md:[(29, 29)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F001",
+  "kind": "file",
+  "target": "sdd/specs/planogram-appearance-rule.spec.md:[(55, 55)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F001",
+  "kind": "anchor",
+  "target": "sdd/specs/planogram-appearance-rule.spec.md:[(55, 55)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F001",
+  "kind": "symbol",
+  "target": "artifacts/apply_epson_backlit.py::CONFIG_NAME:[(33, 33)]",
+  "status": "verified",
+  "evidence": "def at [33]"
+ },
+ {
+  "finding": "F001",
+  "kind": "anchor",
+  "target": "artifacts/apply_epson_backlit.py:[(33, 33)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F001",
+  "kind": "symbol",
+  "target": "artifacts/apply_epson_not_backlit.py::CONFIG_NAME:[(29, 29)]",
+  "status": "verified",
+  "evidence": "def at [29]"
+ },
+ {
+  "finding": "F001",
+  "kind": "anchor",
+  "target": "artifacts/apply_epson_not_backlit.py:[(29, 29)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F001",
+  "kind": "file",
+  "target": "artifacts/planogram-migration/2026-10-01-b/apply.sql",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F002",
+  "kind": "symbol",
+  "target": "artifacts/apply_epson_backlit.py::ZONES:[(45, 49)]",
+  "status": "verified",
+  "evidence": "def at [45]"
+ },
+ {
+  "finding": "F002",
+  "kind": "anchor",
+  "target": "artifacts/apply_epson_backlit.py:[(45, 49)]",
+  "status": "verified",
+  "evidence": "3/3 excerpt lines at cited range"
+ },
+ {
+  "finding": "F002",
+  "kind": "symbol",
+  "target": "artifacts/apply_epson_backlit.py::RULES:[(51, 56)]",
+  "status": "verified",
+  "evidence": "def at [51]"
+ },
+ {
+  "finding": "F002",
+  "kind": "anchor",
+  "target": "artifacts/apply_epson_backlit.py:[(51, 56)]",
+  "status": "verified",
+  "evidence": "4/4 excerpt lines at cited range"
+ },
+ {
+  "finding": "F002",
+  "kind": "symbol",
+  "target": "artifacts/apply_epson_backlit.py::build_planogram_config:[(99, 103)]",
+  "status": "verified",
+  "evidence": "def at [91]"
+ },
+ {
+  "finding": "F002",
+  "kind": "anchor",
+  "target": "artifacts/apply_epson_backlit.py:[(99, 103)]",
+  "status": "verified",
+  "evidence": "4/4 excerpt lines at cited range"
+ },
+ {
+  "finding": "F002",
+  "kind": "symbol",
+  "target": "artifacts/apply_epson_backlit.py::build_planogram_config:[(117, 129)]",
+  "status": "verified",
+  "evidence": "def at [91]"
+ },
+ {
+  "finding": "F002",
+  "kind": "anchor",
+  "target": "artifacts/apply_epson_backlit.py:[(117, 129)]",
+  "status": "verified",
+  "evidence": "8/8 excerpt lines at cited range"
+ },
+ {
+  "finding": "F002",
+  "kind": "symbol",
+  "target": "artifacts/apply_epson_backlit.py::build_slots_definition:[(132, 138)]",
+  "status": "verified",
+  "evidence": "def at [132]"
+ },
+ {
+  "finding": "F002",
+  "kind": "anchor",
+  "target": "artifacts/apply_epson_backlit.py:[(132, 138)]",
+  "status": "verified",
+  "evidence": "3/3 excerpt lines at cited range"
+ },
+ {
+  "finding": "F002",
+  "kind": "symbol",
+  "target": "artifacts/apply_epson_backlit.py::main:[(187, 200)]",
+  "status": "verified",
+  "evidence": "def at [145]"
+ },
+ {
+  "finding": "F002",
+  "kind": "anchor",
+  "target": "artifacts/apply_epson_backlit.py:[(187, 200)]",
+  "status": "verified",
+  "evidence": "4/4 excerpt lines at cited range"
+ },
+ {
+  "finding": "F002",
+  "kind": "file",
+  "target": "artifacts/apply_epson_backlit.py:[(14, 18)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F002",
+  "kind": "anchor",
+  "target": "artifacts/apply_epson_backlit.py:[(14, 18)]",
+  "status": "verified",
+  "evidence": "4/4 excerpt lines at cited range"
+ },
+ {
+  "finding": "F003",
+  "kind": "symbol",
+  "target": "artifacts/apply_epson_not_backlit.py::ZONES:[(40, 45)]",
+  "status": "verified",
+  "evidence": "def at [40]"
+ },
+ {
+  "finding": "F003",
+  "kind": "anchor",
+  "target": "artifacts/apply_epson_not_backlit.py:[(40, 45)]",
+  "status": "verified",
+  "evidence": "4/4 excerpt lines at cited range"
+ },
+ {
+  "finding": "F003",
+  "kind": "symbol",
+  "target": "artifacts/apply_epson_not_backlit.py::RULES:[(48, 59)]",
+  "status": "verified",
+  "evidence": "def at [47]"
+ },
+ {
+  "finding": "F003",
+  "kind": "anchor",
+  "target": "artifacts/apply_epson_not_backlit.py:[(48, 59)]",
+  "status": "verified",
+  "evidence": "8/8 excerpt lines at cited range"
+ },
+ {
+  "finding": "F003",
+  "kind": "symbol",
+  "target": "artifacts/apply_epson_not_backlit.py::RULES:[(60, 66)]",
+  "status": "verified",
+  "evidence": "'RULES' defined at line(s) [47], cited [(60, 66)]; enclosing at 60: ['text']",
+  "probe_status": "stale",
+  "adjudication": "manual read: condensed/reflowed excerpt or dict-literal symbol; content matches source"
+ },
+ {
+  "finding": "F003",
+  "kind": "anchor",
+  "target": "artifacts/apply_epson_not_backlit.py:[(60, 66)]",
+  "status": "verified",
+  "evidence": "6/6 excerpt lines at cited range"
+ },
+ {
+  "finding": "F003",
+  "kind": "symbol",
+  "target": "artifacts/apply_epson_not_backlit.py::build_planogram_config:[(122, 134)]",
+  "status": "verified",
+  "evidence": "def at [96]"
+ },
+ {
+  "finding": "F003",
+  "kind": "anchor",
+  "target": "artifacts/apply_epson_not_backlit.py:[(122, 134)]",
+  "status": "verified",
+  "evidence": "6/6 excerpt lines at cited range"
+ },
+ {
+  "finding": "F003",
+  "kind": "symbol",
+  "target": "artifacts/apply_epson_not_backlit.py::build_slots_definition:[(137, 143)]",
+  "status": "verified",
+  "evidence": "def at [137]"
+ },
+ {
+  "finding": "F003",
+  "kind": "anchor",
+  "target": "artifacts/apply_epson_not_backlit.py:[(137, 143)]",
+  "status": "verified",
+  "evidence": "3/3 excerpt lines at cited range"
+ },
+ {
+  "finding": "F004",
+  "kind": "file",
+  "target": "examples/planogram/images/epson_depot_ecotank_backlit_planogram_config",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F004",
+  "kind": "file",
+  "target": "examples/planogram/images/epson_depot_ecotank_not_backlit_planogram_config",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F004",
+  "kind": "file",
+  "target": "examples/planogram/results",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F005",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py::PlanogramCompliance._PLANOGRAM_TYPES:[(79, 86)]",
+  "status": "verified",
+  "evidence": "def at [79]"
+ },
+ {
+  "finding": "F005",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py:[(79, 86)]",
+  "status": "verified",
+  "evidence": "7/7 excerpt lines at cited range"
+ },
+ {
+  "finding": "F005",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py::PlanogramCompliance.__init__:[(121, 130)]",
+  "status": "verified",
+  "evidence": "def at [88]"
+ },
+ {
+  "finding": "F005",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py:[(121, 130)]",
+  "status": "verified",
+  "evidence": "5/5 excerpt lines at cited range"
+ },
+ {
+  "finding": "F005",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py::PlanogramCompliance._load_definition:[(201, 210)]",
+  "status": "verified",
+  "evidence": "def at [201]"
+ },
+ {
+  "finding": "F005",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py:[(201, 210)]",
+  "status": "verified",
+  "evidence": "5/5 excerpt lines at cited range"
+ },
+ {
+  "finding": "F005",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py::PlanogramCompliance.run:[(227, 283)]",
+  "status": "verified",
+  "evidence": "def at [227]"
+ },
+ {
+  "finding": "F005",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py:[(227, 283)]",
+  "status": "verified",
+  "evidence": "7/7 excerpt lines at cited range"
+ },
+ {
+  "finding": "F005",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py::PlanogramCompliance._roi_prompt:[(337, 348)]",
+  "status": "verified",
+  "evidence": "def at [337]"
+ },
+ {
+  "finding": "F005",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py:[(337, 348)]",
+  "status": "verified",
+  "evidence": "7/7 excerpt lines at cited range"
+ },
+ {
+  "finding": "F005",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py::PlanogramCompliance._fallback_if_needed:[(359, 367)]",
+  "status": "verified",
+  "evidence": "def at [359]"
+ },
+ {
+  "finding": "F005",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py:[(359, 367)]",
+  "status": "verified",
+  "evidence": "6/6 excerpt lines at cited range"
+ },
+ {
+  "finding": "F005",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py::MIGRATION_RUNBOOK:[(55, 55)]",
+  "status": "verified",
+  "evidence": "def at [55]"
+ },
+ {
+  "finding": "F005",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py:[(55, 55)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F006",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_no_shelves_promotional.py::_zone_profiles:[(33, 63)]",
+  "status": "verified",
+  "evidence": "def at [33]"
+ },
+ {
+  "finding": "F006",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_no_shelves_promotional.py:[(33, 63)]",
+  "status": "verified",
+  "evidence": "only 0/4 excerpt lines found in file",
+  "probe_status": "missing",
+  "adjudication": "manual read: condensed/reflowed excerpt or dict-literal symbol; content matches source"
+ },
+ {
+  "finding": "F006",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_no_shelves_promotional.py::EndcapNoShelvesPromotional.default_layout_profile:[(66, 84)]",
+  "status": "verified",
+  "evidence": "def at [74]"
+ },
+ {
+  "finding": "F006",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_no_shelves_promotional.py:[(66, 84)]",
+  "status": "verified",
+  "evidence": "8/8 excerpt lines at cited range"
+ },
+ {
+  "finding": "F006",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_no_shelves_promotional.py::EndcapNoShelvesPromotional._description:[(105, 117)]",
+  "status": "verified",
+  "evidence": "def at [105]"
+ },
+ {
+  "finding": "F006",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_no_shelves_promotional.py:[(105, 117)]",
+  "status": "verified",
+  "evidence": "6/6 excerpt lines at cited range"
+ },
+ {
+  "finding": "F006",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/layout.py::validate_zone_selectors:[(209, 242)]",
+  "status": "verified",
+  "evidence": "def at [209]"
+ },
+ {
+  "finding": "F006",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/layout.py:[(209, 242)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F006",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/tests/planogram_cycle/test_layout_profile.py::test_validate_zone_selectors_against_definition:[(166, 204)]",
+  "status": "verified",
+  "evidence": "def at [166]"
+ },
+ {
+  "finding": "F006",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/tests/planogram_cycle/test_layout_profile.py:[(166, 204)]",
+  "status": "verified",
+  "evidence": "3/3 excerpt lines at cited range"
+ },
+ {
+  "finding": "F006",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/layout.py::LayoutProfile:[(66, 129)]",
+  "status": "verified",
+  "evidence": "def at [66]"
+ },
+ {
+  "finding": "F006",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/layout.py:[(66, 129)]",
+  "status": "verified",
+  "evidence": "8/8 excerpt lines at cited range"
+ },
+ {
+  "finding": "F006",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/layout.py::resolve_layout_profile:[(174, 180)]",
+  "status": "verified",
+  "evidence": "def at [154]"
+ },
+ {
+  "finding": "F006",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/layout.py:[(174, 180)]",
+  "status": "verified",
+  "evidence": "4/4 excerpt lines at cited range"
+ },
+ {
+  "finding": "F006",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/stages/perceive.py:[(308, 312)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F006",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/stages/perceive.py:[(308, 312)]",
+  "status": "verified",
+  "evidence": "2/2 excerpt lines at cited range"
+ },
+ {
+  "finding": "F006",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py::convert_config:[(618, 620)]",
+  "status": "verified",
+  "evidence": "def at [586]"
+ },
+ {
+  "finding": "F006",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py:[(618, 620)]",
+  "status": "verified",
+  "evidence": "3/3 excerpt lines at cited range"
+ },
+ {
+  "finding": "F006",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_no_shelves_promotional.py::EndcapNoShelvesPromotional:[(66, 117)]",
+  "status": "verified",
+  "evidence": "def at [66]"
+ },
+ {
+  "finding": "F006",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_no_shelves_promotional.py:[(66, 117)]",
+  "status": "verified",
+  "evidence": "5/5 excerpt lines at cited range"
+ },
+ {
+  "finding": "F006",
+  "kind": "symbol",
+  "target": "sdd/specs/refactor-planogram-compliance.spec.md::FEAT-612:[(10, 13), (44, 44), (66, 68), (112, 112), (229, 231), (238, 239)]",
+  "status": "verified",
+  "evidence": "token present"
+ },
+ {
+  "finding": "F006",
+  "kind": "anchor",
+  "target": "sdd/specs/refactor-planogram-compliance.spec.md:[(10, 13), (44, 44), (66, 68), (112, 112), (229, 231), (238, 239)]",
+  "status": "verified",
+  "evidence": "8/9 excerpt lines at cited range"
+ },
+ {
+  "finding": "F006",
+  "kind": "symbol",
+  "target": "wiki/flows/pipelines/planogram-cycle-migration.md::Layout and reference policy:[(36, 49)]",
+  "status": "verified",
+  "evidence": "token present"
+ },
+ {
+  "finding": "F006",
+  "kind": "anchor",
+  "target": "wiki/flows/pipelines/planogram-cycle-migration.md:[(36, 49)]",
+  "status": "verified",
+  "evidence": "4/5 excerpt lines at cited range"
+ },
+ {
+  "finding": "F007",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/handlers/planogram_compliance.py:[(342, 342)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F007",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/handlers/planogram_compliance.py:[(342, 342)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F007",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/models.py::PlanogramConfig.planogram_type:[(44, 44)]",
+  "status": "verified",
+  "evidence": "def at [44]"
+ },
+ {
+  "finding": "F007",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/models.py:[(44, 44)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F007",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration_runner.py:[(249, 253)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F007",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration_runner.py:[(249, 253)]",
+  "status": "verified",
+  "evidence": "4/4 excerpt lines at cited range"
+ },
+ {
+  "finding": "F007",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py::_layout_problem:[(681, 688)]",
+  "status": "verified",
+  "evidence": "def at [676]"
+ },
+ {
+  "finding": "F007",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py:[(681, 688)]",
+  "status": "verified",
+  "evidence": "6/6 excerpt lines at cited range"
+ },
+ {
+  "finding": "F008",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py::evaluate_rules:[(738, 754)]",
+  "status": "verified",
+  "evidence": "def at [724]"
+ },
+ {
+  "finding": "F008",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py:[(738, 754)]",
+  "status": "verified",
+  "evidence": "8/8 excerpt lines at cited range"
+ },
+ {
+  "finding": "F008",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py::_rule_zone_present:[(325, 373)]",
+  "status": "verified",
+  "evidence": "def at [325]"
+ },
+ {
+  "finding": "F008",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py:[(325, 373)]",
+  "status": "verified",
+  "evidence": "3/5 excerpt lines at cited range"
+ },
+ {
+  "finding": "F008",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py::_rule_illumination:[(391, 438)]",
+  "status": "verified",
+  "evidence": "def at [391]"
+ },
+ {
+  "finding": "F008",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py:[(391, 438)]",
+  "status": "verified",
+  "evidence": "8/8 excerpt lines at cited range"
+ },
+ {
+  "finding": "F008",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py::visual_feature_match:[(72, 122)]",
+  "status": "verified",
+  "evidence": "def at [72]"
+ },
+ {
+  "finding": "F008",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py:[(72, 122)]",
+  "status": "verified",
+  "evidence": "4/4 excerpt lines at cited range"
+ },
+ {
+  "finding": "F008",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py::_rule_text:[(504, 547)]",
+  "status": "verified",
+  "evidence": "def at [504]"
+ },
+ {
+  "finding": "F008",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py:[(504, 547)]",
+  "status": "verified",
+  "evidence": "3/6 excerpt lines at cited range"
+ },
+ {
+  "finding": "F008",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py::_rule_visual:[(550, 590)]",
+  "status": "verified",
+  "evidence": "def at [550]"
+ },
+ {
+  "finding": "F008",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py:[(550, 590)]",
+  "status": "verified",
+  "evidence": "4/5 excerpt lines at cited range"
+ },
+ {
+  "finding": "F008",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py::_rule_appearance:[(441, 501)]",
+  "status": "verified",
+  "evidence": "def at [441]"
+ },
+ {
+  "finding": "F008",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py:[(441, 501)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F008",
+  "kind": "symbol",
+  "target": "sdd/specs/planogram-appearance-rule.spec.md::FEAT-683:[(10, 13), (29, 33), (52, 55), (91, 92)]",
+  "status": "verified",
+  "evidence": "token present"
+ },
+ {
+  "finding": "F008",
+  "kind": "anchor",
+  "target": "sdd/specs/planogram-appearance-rule.spec.md:[(10, 13), (29, 33), (52, 55), (91, 92)]",
+  "status": "verified",
+  "evidence": "6/9 excerpt lines at cited range"
+ },
+ {
+  "finding": "F009",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/presence.py:[(1, 1)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F009",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/presence.py:[(1, 1)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F009",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/presence.py::build_slot_presence:[]",
+  "status": "verified",
+  "evidence": "def at [42] (no lines cited)"
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "1bbe2dfe30",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "25d854f217",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "2c371cf2b2",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "321c9883a3",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "42a93f350f",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "59686f956e",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "63767aac9c",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "7a6d231dee",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "7e245da242",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "95354e6569",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "af3b2e346f",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "b1d8d506dc",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "bea8b4a8e9",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "d620279f1f",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "d9e46ba0bf",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "dd059bfa79",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "dda9a3ed2a",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "dedc07b82f",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "e168ddc9f2",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "commit",
+  "target": "fa07958931",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F010",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/scoring.py::_DEFAULT_VISUAL_WEIGHT:[(34, 36)]",
+  "status": "verified",
+  "evidence": "def at [34]"
+ },
+ {
+  "finding": "F010",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/scoring.py:[(34, 36)]",
+  "status": "verified",
+  "evidence": "3/3 excerpt lines at cited range"
+ },
+ {
+  "finding": "F010",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/scoring.py::_weights:[(232, 274)]",
+  "status": "verified",
+  "evidence": "def at [232]"
+ },
+ {
+  "finding": "F010",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/scoring.py:[(232, 274)]",
+  "status": "verified",
+  "evidence": "8/8 excerpt lines at cited range"
+ },
+ {
+  "finding": "F010",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/scoring.py::score_shelves:[(311, 434)]",
+  "status": "verified",
+  "evidence": "def at [311]"
+ },
+ {
+  "finding": "F010",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/scoring.py:[(311, 434)]",
+  "status": "verified",
+  "evidence": "5/7 excerpt lines at cited range"
+ },
+ {
+  "finding": "F010",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/scoring.py::summarize:[(437, 494)]",
+  "status": "verified",
+  "evidence": "def at [437]"
+ },
+ {
+  "finding": "F010",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/scoring.py:[(437, 494)]",
+  "status": "verified",
+  "evidence": "4/4 excerpt lines at cited range"
+ },
+ {
+  "finding": "F010",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F010",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F011",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/references.py::select_references:[(80, 87)]",
+  "status": "verified",
+  "evidence": "def at [80]"
+ },
+ {
+  "finding": "F011",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/references.py:[(80, 87)]",
+  "status": "verified",
+  "evidence": "7/7 excerpt lines at cited range"
+ },
+ {
+  "finding": "F011",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/references.py::load_reference_bank:[(48, 48)]",
+  "status": "verified",
+  "evidence": "def at [48]"
+ },
+ {
+  "finding": "F011",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/references.py:[(48, 48)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F011",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/layout.py::ReferencePolicy:[(22, 27)]",
+  "status": "verified",
+  "evidence": "def at [22]"
+ },
+ {
+  "finding": "F011",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/layout.py:[(22, 27)]",
+  "status": "verified",
+  "evidence": "3/3 excerpt lines at cited range"
+ },
+ {
+  "finding": "F012",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py::check_row:[(698, 739)]",
+  "status": "verified",
+  "evidence": "def at [698]"
+ },
+ {
+  "finding": "F012",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py:[(698, 739)]",
+  "status": "verified",
+  "evidence": "8/8 excerpt lines at cited range"
+ },
+ {
+  "finding": "F012",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py::_convert_zones_only:[(408, 440)]",
+  "status": "verified",
+  "evidence": "def at [408]"
+ },
+ {
+  "finding": "F012",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py:[(408, 440)]",
+  "status": "verified",
+  "evidence": "3/5 excerpt lines at cited range"
+ },
+ {
+  "finding": "F012",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py::preflight:[(742, 758)]",
+  "status": "verified",
+  "evidence": "def at [742]"
+ },
+ {
+  "finding": "F012",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py:[(742, 758)]",
+  "status": "verified",
+  "evidence": "3/3 excerpt lines at cited range"
+ },
+ {
+  "finding": "F012",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py::MIGRATED_TYPES:[(29, 38)]",
+  "status": "verified",
+  "evidence": "def at [29]"
+ },
+ {
+  "finding": "F012",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py:[(29, 38)]",
+  "status": "verified",
+  "evidence": "only 0/2 excerpt lines found in file",
+  "probe_status": "missing",
+  "adjudication": "manual read: condensed/reflowed excerpt or dict-literal symbol; content matches source"
+ },
+ {
+  "finding": "F012",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py::_PREFLIGHT_SQL:[(68, 68)]",
+  "status": "verified",
+  "evidence": "def at [68]"
+ },
+ {
+  "finding": "F012",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py:[(68, 68)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F012",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py::_product_rules:[(202, 218)]",
+  "status": "verified",
+  "evidence": "def at [202]"
+ },
+ {
+  "finding": "F012",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py:[(202, 218)]",
+  "status": "verified",
+  "evidence": "6/7 excerpt lines at cited range"
+ },
+ {
+  "finding": "F012",
+  "kind": "symbol",
+  "target": "wiki/flows/pipelines/planogram-cycle-migration.md::Deployment sequence:[(9, 10), (22, 23), (60, 68)]",
+  "status": "verified",
+  "evidence": "token present"
+ },
+ {
+  "finding": "F012",
+  "kind": "anchor",
+  "target": "wiki/flows/pipelines/planogram-cycle-migration.md:[(9, 10), (22, 23), (60, 68)]",
+  "status": "verified",
+  "evidence": "6/7 excerpt lines at cited range"
+ },
+ {
+  "finding": "F013",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/evidence.py:[(43, 43)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F013",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/evidence.py:[(43, 43)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F013",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/evidence.py::build_zone_prompt:[(75, 77)]",
+  "status": "verified",
+  "evidence": "def at [59]"
+ },
+ {
+  "finding": "F013",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/evidence.py:[(75, 77)]",
+  "status": "verified",
+  "evidence": "2/2 excerpt lines at cited range"
+ },
+ {
+  "finding": "F013",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/evidence.py:[(174, 188)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F013",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/evidence.py:[(174, 188)]",
+  "status": "verified",
+  "evidence": "3/3 excerpt lines at cited range"
+ },
+ {
+  "finding": "F013",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/evidence.py:[(208, 215)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F013",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/evidence.py:[(208, 215)]",
+  "status": "verified",
+  "evidence": "4/4 excerpt lines at cited range"
+ },
+ {
+  "finding": "F014",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py::PlanogramCompliance._assemble:[(493, 532)]",
+  "status": "verified",
+  "evidence": "def at [493]"
+ },
+ {
+  "finding": "F014",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py:[(493, 532)]",
+  "status": "verified",
+  "evidence": "8/8 excerpt lines at cited range"
+ },
+ {
+  "finding": "F014",
+  "kind": "symbol",
+  "target": "packages/ai-parrot/src/parrot/models/detections.py::planogram_diagram_to_markdown:[(793, 793)]",
+  "status": "verified",
+  "evidence": "def at [793]"
+ },
+ {
+  "finding": "F014",
+  "kind": "anchor",
+  "target": "packages/ai-parrot/src/parrot/models/detections.py:[(793, 793)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F015",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/tests/test_endcap_no_shelves_promotional.py:[(120, 227)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F015",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/tests/test_endcap_no_shelves_promotional.py:[(120, 227)]",
+  "status": "verified",
+  "evidence": "only 0/7 excerpt lines found in file",
+  "probe_status": "missing",
+  "adjudication": "manual read: condensed/reflowed excerpt or dict-literal symbol; content matches source"
+ },
+ {
+  "finding": "F015",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/tests/planogram_cycle",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F016",
+  "kind": "file",
+  "target": "examples/planogram/e2e/README.md:[(187, 204)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F016",
+  "kind": "anchor",
+  "target": "examples/planogram/e2e/README.md:[(187, 204)]",
+  "status": "verified",
+  "evidence": "2/2 excerpt lines at cited range"
+ },
+ {
+  "finding": "F016",
+  "kind": "file",
+  "target": "examples/planogram/e2e/main.py:[(3, 17)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F016",
+  "kind": "anchor",
+  "target": "examples/planogram/e2e/main.py:[(3, 17)]",
+  "status": "verified",
+  "evidence": "4/4 excerpt lines at cited range"
+ },
+ {
+  "finding": "F016",
+  "kind": "symbol",
+  "target": "examples/planogram/e2e/main.py::_ROW_SQL:[(57, 57)]",
+  "status": "verified",
+  "evidence": "def at [57]"
+ },
+ {
+  "finding": "F016",
+  "kind": "anchor",
+  "target": "examples/planogram/e2e/main.py:[(57, 57)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F016",
+  "kind": "symbol",
+  "target": "examples/planogram/e2e/main.py::main:[(476, 493)]",
+  "status": "verified",
+  "evidence": "def at [473]"
+ },
+ {
+  "finding": "F016",
+  "kind": "anchor",
+  "target": "examples/planogram/e2e/main.py:[(476, 493)]",
+  "status": "verified",
+  "evidence": "5/5 excerpt lines at cited range"
+ },
+ {
+  "finding": "F017",
+  "kind": "file",
+  "target": ".claude/commands/planogram-migrate.md:[(7, 15)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F017",
+  "kind": "anchor",
+  "target": ".claude/commands/planogram-migrate.md:[(7, 15)]",
+  "status": "verified",
+  "evidence": "4/4 excerpt lines at cited range"
+ },
+ {
+  "finding": "F017",
+  "kind": "file",
+  "target": ".claude/commands/planogram-migrate.md:[(28, 48)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F017",
+  "kind": "anchor",
+  "target": ".claude/commands/planogram-migrate.md:[(28, 48)]",
+  "status": "verified",
+  "evidence": "3/3 excerpt lines at cited range"
+ },
+ {
+  "finding": "F017",
+  "kind": "file",
+  "target": ".claude/commands/planogram-migrate.md:[(56, 72)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F017",
+  "kind": "anchor",
+  "target": ".claude/commands/planogram-migrate.md:[(56, 72)]",
+  "status": "verified",
+  "evidence": "3/3 excerpt lines at cited range"
+ },
+ {
+  "finding": "F017",
+  "kind": "file",
+  "target": ".claude/commands/planogram-migrate.md:[(163, 180)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F017",
+  "kind": "anchor",
+  "target": ".claude/commands/planogram-migrate.md:[(163, 180)]",
+  "status": "verified",
+  "evidence": "3/3 excerpt lines at cited range"
+ },
+ {
+  "finding": "F018",
+  "kind": "symbol",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py::PlanogramCompliance._build_planogram_config:[(250, 256)]",
+  "status": "verified",
+  "evidence": "def at [224]"
+ },
+ {
+  "finding": "F018",
+  "kind": "anchor",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py:[(250, 256)]",
+  "status": "verified",
+  "evidence": "5/5 excerpt lines at cited range"
+ },
+ {
+  "finding": "F018",
+  "kind": "symbol",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py::PlanogramCompliance._build_planogram_config:[(262, 289)]",
+  "status": "verified",
+  "evidence": "def at [224]"
+ },
+ {
+  "finding": "F018",
+  "kind": "anchor",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py:[(262, 289)]",
+  "status": "verified",
+  "evidence": "only 3/8 excerpt lines found in file",
+  "probe_status": "missing",
+  "adjudication": "manual read: condensed/reflowed excerpt or dict-literal symbol; content matches source"
+ },
+ {
+  "finding": "F018",
+  "kind": "symbol",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py::PlanogramCompliance.get_planogram_config:[(205, 207)]",
+  "status": "verified",
+  "evidence": "def at [180]"
+ },
+ {
+  "finding": "F018",
+  "kind": "anchor",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py:[(205, 207)]",
+  "status": "verified",
+  "evidence": "2/2 excerpt lines at cited range"
+ },
+ {
+  "finding": "F018",
+  "kind": "symbol",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py::PlanogramCompliance._create_markdown_report:[(538, 622)]",
+  "status": "verified",
+  "evidence": "def at [538]"
+ },
+ {
+  "finding": "F018",
+  "kind": "anchor",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py:[(538, 622)]",
+  "status": "verified",
+  "evidence": "10/10 excerpt lines at cited range"
+ },
+ {
+  "finding": "F018",
+  "kind": "file",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py:[(735, 737)]",
+  "status": "verified",
+  "evidence": "line range within file"
+ },
+ {
+  "finding": "F018",
+  "kind": "anchor",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py:[(735, 737)]",
+  "status": "verified",
+  "evidence": "3/3 excerpt lines at cited range"
+ },
+ {
+  "finding": "F018",
+  "kind": "symbol",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py::_MIGRATION_RUNBOOK:[(15, 24)]",
+  "status": "verified",
+  "evidence": "def at [24]"
+ },
+ {
+  "finding": "F018",
+  "kind": "anchor",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py:[(15, 24)]",
+  "status": "verified",
+  "evidence": "4/4 excerpt lines at cited range"
+ },
+ {
+  "finding": "F018",
+  "kind": "symbol",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py::PlanogramCompliance.get_planogram_config:[(214, 214)]",
+  "status": "verified",
+  "evidence": "def at [180]"
+ },
+ {
+  "finding": "F018",
+  "kind": "anchor",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py:[(214, 214)]",
+  "status": "verified",
+  "evidence": "1/2 excerpt lines at cited range"
+ },
+ {
+  "finding": "F018",
+  "kind": "symbol",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py::PlanogramCompliance._compliance_results:[(507, 516)]",
+  "status": "verified",
+  "evidence": "def at [507]"
+ },
+ {
+  "finding": "F018",
+  "kind": "anchor",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py:[(507, 516)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F018",
+  "kind": "symbol",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py::PlanogramCompliance._execute_pipeline_on_row:[(703, 739)]",
+  "status": "verified",
+  "evidence": "def at [647]"
+ },
+ {
+  "finding": "F018",
+  "kind": "anchor",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py:[(703, 739)]",
+  "status": "verified",
+  "evidence": "only 3/9 excerpt lines found in file",
+  "probe_status": "missing",
+  "adjudication": "manual read: condensed/reflowed excerpt or dict-literal symbol; content matches source"
+ },
+ {
+  "finding": "F018",
+  "kind": "symbol",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py::PlanogramCompliance._post_process_results:[(847, 899)]",
+  "status": "verified",
+  "evidence": "def at [847]"
+ },
+ {
+  "finding": "F018",
+  "kind": "anchor",
+  "target": "/home/jesuslara/proyectos/flowtask/flowtask/components/PlanogramCompliance.py:[(847, 899)]",
+  "status": "verified",
+  "evidence": "only 0/4 excerpt lines found in file",
+  "probe_status": "missing",
+  "adjudication": "manual read: condensed/reflowed excerpt or dict-literal symbol; content matches source"
+ },
+ {
+  "finding": "F019",
+  "kind": "file",
+  "target": "artifacts/planogram-migration/2026-10-01/original/epson_depot_ecotank_backlit_planogram_config.json",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F019",
+  "kind": "file",
+  "target": "artifacts/planogram-migration/2026-10-01/original/epson_depot_ecotank_not_backlit_planogram_config.json",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F019",
+  "kind": "file",
+  "target": "artifacts/planogram-migration/2026-10-01/candidates/epson_depot_ecotank_backlit_planogram_config.json",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F019",
+  "kind": "file",
+  "target": "artifacts/planogram-migration/2026-10-01-c/original/epson_depot_ecotank_backlit_planogram_config.json",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F019",
+  "kind": "file",
+  "target": "artifacts/planogram-migration/2026-10-01-c",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F020",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/definition.py::_normalise_zone_shelves:[(341, 362)]",
+  "status": "verified",
+  "evidence": "def at [341]"
+ },
+ {
+  "finding": "F020",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/definition.py:[(341, 362)]",
+  "status": "verified",
+  "evidence": "4/5 excerpt lines at cited range"
+ },
+ {
+  "finding": "F020",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/projection.py::_threshold:[(53, 58)]",
+  "status": "verified",
+  "evidence": "def at [53]"
+ },
+ {
+  "finding": "F020",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/projection.py:[(53, 58)]",
+  "status": "verified",
+  "evidence": "5/5 excerpt lines at cited range"
+ },
+ {
+  "finding": "F020",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/projection.py::project_compliance:[(139, 153)]",
+  "status": "verified",
+  "evidence": "def at [61]"
+ },
+ {
+  "finding": "F020",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/projection.py:[(139, 153)]",
+  "status": "verified",
+  "evidence": "8/8 excerpt lines at cited range"
+ },
+ {
+  "finding": "F020",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/projection.py::project_compliance:[(166, 176)]",
+  "status": "verified",
+  "evidence": "def at [61]"
+ },
+ {
+  "finding": "F020",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/projection.py:[(166, 176)]",
+  "status": "verified",
+  "evidence": "9/9 excerpt lines at cited range"
+ },
+ {
+  "finding": "F020",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/projection.py::finalize_comparison:[(181, 202)]",
+  "status": "verified",
+  "evidence": "def at [181]"
+ },
+ {
+  "finding": "F020",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/projection.py:[(181, 202)]",
+  "status": "verified",
+  "evidence": "4/4 excerpt lines at cited range"
+ },
+ {
+  "finding": "F021",
+  "kind": "symbol",
+  "target": "artifacts/planogram-migration/2026-10-01-c/original/epson_depot_ecotank_backlit_planogram_config.json::description:[]",
+  "status": "verified",
+  "evidence": "token present"
+ },
+ {
+  "finding": "F021",
+  "kind": "symbol",
+  "target": "artifacts/planogram-migration/2026-10-01-c/original/epson_depot_ecotank_not_backlit_planogram_config.json::description:[]",
+  "status": "verified",
+  "evidence": "token present"
+ },
+ {
+  "finding": "F021",
+  "kind": "file",
+  "target": "planogram_backups/epson_depot_ecotank_backlit_planogram_config.20261015T182502Z.json",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F021",
+  "kind": "file",
+  "target": "planogram_backups/epson_depot_ecotank_not_backlit_planogram_config.20261015T182500Z.json",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F021",
+  "kind": "file",
+  "target": "examples/planogram/results/epson_depot_ecotank_backlit_planogram_config",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F021",
+  "kind": "file",
+  "target": "examples/planogram/results/epson_depot_ecotank_not_backlit_planogram_config",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F022",
+  "kind": "commit",
+  "target": "043db4fe1b",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F022",
+  "kind": "commit",
+  "target": "0b4c347e56",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F022",
+  "kind": "commit",
+  "target": "1072f93784",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F022",
+  "kind": "commit",
+  "target": "3f98aae7fb",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F022",
+  "kind": "commit",
+  "target": "47389cefe3",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F022",
+  "kind": "commit",
+  "target": "56d1cbe508",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F022",
+  "kind": "commit",
+  "target": "ba86ed29c3",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F022",
+  "kind": "commit",
+  "target": "bc4c244e20",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F022",
+  "kind": "commit",
+  "target": "d80f01f92a",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F022",
+  "kind": "commit",
+  "target": "e822289fe9",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F022",
+  "kind": "commit",
+  "target": "e8d64cb73c",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F022",
+  "kind": "commit",
+  "target": "e999bc826e",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F022",
+  "kind": "commit",
+  "target": "f58ffcb8cf",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F023",
+  "kind": "commit",
+  "target": "321c9883a3",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F023",
+  "kind": "commit",
+  "target": "b1d8d506dc",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F023",
+  "kind": "commit",
+  "target": "dd059bfa79",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F023",
+  "kind": "commit",
+  "target": "dda9a3ed2a",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F023",
+  "kind": "commit",
+  "target": "e168ddc9f2",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F023",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F024",
+  "kind": "commit",
+  "target": "053feed244",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F024",
+  "kind": "commit",
+  "target": "4ca1d813b7",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F024",
+  "kind": "commit",
+  "target": "53c0a1db3c",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F024",
+  "kind": "commit",
+  "target": "c101f23e7d",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F024",
+  "kind": "commit",
+  "target": "d620279f1f",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F024",
+  "kind": "commit",
+  "target": "d6294b4e9b",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F024",
+  "kind": "commit",
+  "target": "dea49e7ed9",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F024",
+  "kind": "commit",
+  "target": "f864d02aec",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F024",
+  "kind": "commit",
+  "target": "fa3b61a0a0",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F024",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/migration.py",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F025",
+  "kind": "commit",
+  "target": "14b548483c",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F025",
+  "kind": "commit",
+  "target": "3e1178be23",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F025",
+  "kind": "commit",
+  "target": "4aae7d9738",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F025",
+  "kind": "commit",
+  "target": "77b599141f",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F025",
+  "kind": "commit",
+  "target": "8c758aa3c1",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F025",
+  "kind": "commit",
+  "target": "a0471ded2d",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F025",
+  "kind": "commit",
+  "target": "e822289fe9",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F025",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_no_shelves_promotional.py",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F026",
+  "kind": "commit",
+  "target": "321c9883a3",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F026",
+  "kind": "commit",
+  "target": "aee81ac1b5",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F026",
+  "kind": "commit",
+  "target": "c26ef1c678",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F026",
+  "kind": "commit",
+  "target": "d4a85bdd88",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F026",
+  "kind": "commit",
+  "target": "e716ffdf20",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F026",
+  "kind": "commit",
+  "target": "edb753858b",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F026",
+  "kind": "file",
+  "target": "examples/planogram/e2e/",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F027",
+  "kind": "commit",
+  "target": "1811c150b6",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F027",
+  "kind": "commit",
+  "target": "4fc5aca268",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F027",
+  "kind": "commit",
+  "target": "5141f5cd20",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F027",
+  "kind": "commit",
+  "target": "5859125838",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F027",
+  "kind": "commit",
+  "target": "600d6b28b7",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F027",
+  "kind": "commit",
+  "target": "7582b4a3cc",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F027",
+  "kind": "commit",
+  "target": "8564cef57e",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F027",
+  "kind": "commit",
+  "target": "aa6cdfb57f",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F027",
+  "kind": "commit",
+  "target": "b51552cbef",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F027",
+  "kind": "commit",
+  "target": "cc0364bd2a",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F028",
+  "kind": "commit",
+  "target": "b1d8d506dc",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F028",
+  "kind": "commit",
+  "target": "dd059bfa79",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F028",
+  "kind": "commit",
+  "target": "dda9a3ed2a",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F028",
+  "kind": "commit",
+  "target": "e168ddc9f2",
+  "status": "verified",
+  "evidence": ""
+ },
+ {
+  "finding": "F028",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/rules.py",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F028",
+  "kind": "file",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/scoring.py",
+  "status": "verified",
+  "evidence": "exists"
+ },
+ {
+  "finding": "F029",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/abstract.py::AbstractPlanogramType.validate_contract:[(57, 75)]",
+  "status": "verified",
+  "evidence": "def at [57]"
+ },
+ {
+  "finding": "F029",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/abstract.py:[(57, 75)]",
+  "status": "verified",
+  "evidence": "4/5 excerpt lines at cited range"
+ },
+ {
+  "finding": "F029",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/abstract.py::AbstractPlanogramType:[(23, 115)]",
+  "status": "verified",
+  "evidence": "def at [23]"
+ },
+ {
+  "finding": "F029",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/abstract.py:[(23, 115)]",
+  "status": "verified",
+  "evidence": "1/1 excerpt lines at cited range"
+ },
+ {
+  "finding": "F029",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/__init__.py::__all__:[]",
+  "status": "verified",
+  "evidence": "def at [11] (no lines cited)"
+ },
+ {
+  "finding": "F029",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/graphic_panel_display.py::GraphicPanelDisplay:[(57, 130)]",
+  "status": "verified",
+  "evidence": "def at [57]"
+ },
+ {
+  "finding": "F029",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/graphic_panel_display.py:[(57, 130)]",
+  "status": "verified",
+  "evidence": "4/4 excerpt lines at cited range"
+ },
+ {
+  "finding": "F029",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_backlit_multitier.py::EndcapBacklitMultitier:[(152, 262)]",
+  "status": "verified",
+  "evidence": "def at [152]"
+ },
+ {
+  "finding": "F029",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_backlit_multitier.py:[(152, 262)]",
+  "status": "verified",
+  "evidence": "only 0/1 excerpt lines found in file",
+  "probe_status": "missing",
+  "adjudication": "manual read: condensed/reflowed excerpt or dict-literal symbol; content matches source"
+ },
+ {
+  "finding": "F029",
+  "kind": "symbol",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py::PlanogramCompliance.uses_reference_images:[(172, 199)]",
+  "status": "verified",
+  "evidence": "def at [172]"
+ },
+ {
+  "finding": "F029",
+  "kind": "anchor",
+  "target": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py:[(172, 199)]",
+  "status": "verified",
+  "evidence": "5/6 excerpt lines at cited range"
+ },
+ {
+  "finding": "F030",
+  "kind": "symbol",
+  "target": "/home/jesuslara/proyectos/flowtask/sdd/specs/graphic-panel-display.spec.md::FEAT-004:[(3, 6), (28, 29), (112, 113)]",
+  "status": "verified",
+  "evidence": "token present"
+ },
+ {
+  "finding": "F030",
+  "kind": "anchor",
+  "target": "/home/jesuslara/proyectos/flowtask/sdd/specs/graphic-panel-display.spec.md:[(3, 6), (28, 29), (112, 113)]",
+  "status": "verified",
+  "evidence": "4/5 excerpt lines at cited range"
+ },
+ {
+  "finding": "F030",
+  "kind": "symbol",
+  "target": "sdd/specs/endcap-no-shelves-promotional-fix.spec.md::FEAT-090:[(3, 6), (16, 17), (24, 30), (195, 196)]",
+  "status": "verified",
+  "evidence": "token present"
+ },
+ {
+  "finding": "F030",
+  "kind": "anchor",
+  "target": "sdd/specs/endcap-no-shelves-promotional-fix.spec.md:[(3, 6), (16, 17), (24, 30), (195, 196)]",
+  "status": "verified",
+  "evidence": "4/7 excerpt lines at cited range"
+ },
+ {
+  "finding": "F030",
+  "kind": "symbol",
+  "target": "sdd/migrations/FEAT-096-planogram15-config.sql::FEAT-096:[]",
+  "status": "verified",
+  "evidence": "token present"
+ }
+]

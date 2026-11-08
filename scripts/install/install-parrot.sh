@@ -28,7 +28,8 @@
 #   --with <c>[,<c>...]      (--global) run `parrot self add <c>` per component: install
 #                            the packages an MCP toolkit needs (e.g. scraping). One of:
 #                            bounded-source, browsing, database-query, lsp, memory,
-#                            querysource, scraping, sdd-coder, targeted-writer
+#                            pageindex, querysource, scraping, sdd-coder,
+#                            targeted-writer
 #   -h, --help               Show this help and exit
 #
 # Contract: idempotent (reuses an existing venv, never deletes one); refuses
@@ -50,7 +51,7 @@ MIN_FREE_KB=2097152   # C14b gate: 2 GiB free under PARROT_HOME (managed CPython
 RAW_BASE="https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install"   # C14a non-piped alternative
 
 usage() {
-  sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # run "<purpose>" cmd...
@@ -173,7 +174,7 @@ PLAN
 # Components --with accepts: the packaged toolkit templates (parrot/mcp/_toolkit_templates/*.yaml). Checked before
 # the plan, so a wrong name fails before anything is downloaded, under --dry-run too. Kept equal to the templates by
 # tests/docs/test_install_posix.py::test_known_components_match_the_packaged_templates.
-KNOWN_COMPONENTS="bounded-source browsing database-query lsp memory querysource scraping sdd-coder targeted-writer"
+KNOWN_COMPONENTS="bounded-source browsing database-query lsp memory pageindex querysource scraping sdd-coder targeted-writer"
 check_components() {
   local c _comps
   [ -n "$WITH_COMPONENTS" ] || return 0

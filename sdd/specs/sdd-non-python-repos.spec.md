@@ -91,7 +91,7 @@ FEAT-804 both list this work as a deferred follow-up.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:6851e72687ee1a8f00300859374bc57721e5173cded02bb9d979861affe13448 evaluation_digest=sha256:f9de756c4d12d605f332bf5e57e4064d5ca2a618163a7c4df5f78669e36188a2 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:72734d825470b643b09fe45291f1b5d503a7edcd75182e1430705d2727aa338b evaluation_digest=sha256:f92e21013647e9fc1c8a1e4470c91ceb7e4acdd8553a51a7dfb0b4e9cd383d9e rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -160,11 +160,17 @@ execution model for tests.
 every profile (or for the profiles owning `--files`) and returns one exit code. Prompts call these two
 verbs instead of naming tools.
 
-**Engine lint pass.** `run_lint_pass` keeps its Python path unchanged and adds a profile pass: for each
-non-Python profile it runs `fix` then `format` over the task's changed files of that profile, commits
+**Engine lint pass.** `run_lint_pass` keeps its legacy Python path for files whose owning Python
+profile overrides neither `fix` nor `format`. Files owned by a Python profile that overrides `fix` or
+`format` use the profile pass instead, as do non-Python files. Only those two steps route: they are the
+only steps the engine pass runs, so a `lint`, `typecheck` or `test` override never moves a file off the
+legacy path, which keeps its line-scoped formatting and its ruff error report. An empty argv (`[]`) is
+an explicit disable and counts as an override; omitted or null steps retain detection. Each file goes
+through exactly one pass. The profile pass runs `fix` then
+`format` over the task's changed files of that profile, commits
 the result on the attempt branch, and reports tool errors. Each command is bounded by `LINT_TIMEOUT_S`.
-Formatting is whole-file there; line-scoped formatting stays a black / ruff feature. The profile pass
-reports no residual findings: a Node `lint` script lints the whole project, so residuals are left to the
+Formatting is whole-file in the profile pass; the unchanged legacy Python pass retains line-scoped
+formatting. The profile pass reports no residual findings: a Node `lint` script lints the whole project, so residuals are left to the
 single full pass in `/sdd-done`. The banned-import gate (`check_banned_imports`) stays Python-only; it
 already returns no findings when a task changes no `.py` file, so it never blocks a foreign task.
 
@@ -225,9 +231,23 @@ class WorktreeSetup(BaseModel):
     inputs: list[str] = Field(default_factory=list)      # worktree-relative files deciding a re-run
     timeout_s: int = 900
 
+class NativeGroupSettings(BaseModel):
+    # Mirror native_artifacts.NativeGroup without importing the path-loaded module.
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    copy_globs: list[str] = Field(default_factory=list)
+    pair_sources: list[str] = Field(default_factory=list)
+    required: bool = True
+    abi_scoped: bool = False
+    autobuild: bool = False
+    build: list[str] = Field(default_factory=list)
+    build_cwd: str = "."
+    build_timeout_s: int = 900
+    manual_hint: str | None = None
+
 class WorktreeSettings(BaseModel):
     enabled: bool = True
-    native_groups: list[dict[str, Any]] = Field(default_factory=list)   # NativeGroup shape
+    native_groups: list[NativeGroupSettings] = Field(default_factory=list)
     setup: WorktreeSetup | None = None
 
 class ToolchainOverride(BaseModel):
@@ -238,6 +258,10 @@ class ToolchainOverride(BaseModel):
     lint: list[str] | None = None
     typecheck: list[str] | None = None
     test: list[str] | None = None
+    # None: an overridden lint / typecheck argv runs verbatim (no paths appended);
+    # a step that is not overridden keeps the detected flag. True / False always wins.
+    lint_takes_files: bool | None = None
+    typecheck_takes_files: bool | None = None
 
 class ToolchainSettings(BaseModel):
     profiles: list[ToolchainOverride] = Field(default_factory=list)
@@ -286,7 +310,7 @@ def run_worktree_setup(*, main_root: Path, target: Path, manifest: NativeManifes
 | M6: Guard and `select_tests` | yes | three one-line behaviours fixed | — |
 | M7: Toolchain profiles | no | — | detection rules are fixed, but mapping real `package.json` shapes to steps needs judgment |
 | M8: `parrot sdd toolchain` CLI | yes | verbs, flags, exit codes and output lines fixed | — |
-| M9: Engine profile pass | no | — | restructures `run_lint_pass`; the Python path must stay byte-for-byte |
+| M9: Engine profile pass | no | — | restructures `run_lint_pass`; the Python path without a `fix` / `format` override must preserve existing behavior |
 | M10: Prompts | yes | exact replacement text per file fixed in the task; twins listed | — |
 | M11: Installer and doctor lines | yes | line formats fixed | — |
 | M12: Docs and foreign-repo test | yes | file list and assertions fixed | — |
@@ -308,10 +332,15 @@ def run_worktree_setup(*, main_root: Path, target: Path, manifest: NativeManifes
       # without `..` parts; timeout_s > 0
 
   class WorktreeSettings(BaseModel):
-      """`worktree` block — native artifact groups (NativeGroup shape) and the setup command."""
+      """`worktree` block — typed NativeGroupSettings entries and the setup command."""
+      # NativeGroupSettings mirrors every NativeGroup field, default and validation rule.
+      # Parity tests cover valid and invalid groups, including missing name, unknown keys and wrong types.
+      # Keep this mirror local: neither reader imports the other.
 
   class ToolchainOverride(BaseModel):
-      """One `toolchain.profiles[]` entry: replaces detected steps of the profile at (kind, root), or adds it."""
+      """One `toolchain.profiles[]` entry: replaces detected steps of the profile at (kind, root), or adds it.
+      `lint_takes_files` / `typecheck_takes_files` say whether paths are appended to that step's argv:
+      null means false for a step this entry overrides and the detected flag for a step it does not."""
 
   class ToolchainSettings(BaseModel):
       """`toolchain` block."""
@@ -552,6 +581,8 @@ def run_worktree_setup(*, main_root: Path, target: Path, manifest: NativeManifes
       lint_takes_files: bool = False
       typecheck_takes_files: bool = False
       source: Literal["detected", "override"] = "detected"
+      overridden_steps: tuple[str, ...] = ()  # non-null override fields in STEPS, including [] disables
+      # Engine routing reads only "fix" and "format" from overridden_steps (Module 9).
 
   def detect_package_manager(root: Path) -> str:
       """package.json `packageManager`, else the lockfile, else "pnpm" — the vitest adapter's
@@ -569,7 +600,12 @@ def run_worktree_setup(*, main_root: Path, target: Path, manifest: NativeManifes
   def step_argv(profile: ToolchainProfile, step: str, files: Sequence[str] = ()) -> list[str] | None:
       """Argv for ``step``: `fix`/`format` append ``files``; `lint`/`typecheck` append them only when the
       profile's `*_takes_files` is true. None when the step is not configured, or when `fix`/`format`
-      get no files.
+      get no files. For file-taking lint/typecheck steps, an empty files sequence means the full
+      profile root: append ".". With explicit files, append only those root-relative files, never ".".
+      Commands execute from the profile root. The flags are resolved by `detect_profiles`: a detected
+      step keeps its detected flag; an overridden `lint` / `typecheck` argv gets false, so it runs
+      verbatim with no path and no "." (`["make", "lint"]` stays `make lint`), unless the override
+      sets `lint_takes_files` / `typecheck_takes_files`, which always wins.
 
       Raises:
           ValueError: ``step`` is not in STEPS.
@@ -581,14 +617,19 @@ def run_worktree_setup(*, main_root: Path, target: Path, manifest: NativeManifes
     `[tool.black]`, else `["ruff","format"]` when ruff format settings exist (same rule as
     `detect_formatter`, lint.py:69-90); `typecheck = ["mypy"]` when `mypy.ini`, `.mypy.ini` or
     `[tool.mypy]` exists; `test = ["pytest"]`; both `*_takes_files` true; suffixes `(".py",)`.
+    Thus a full-profile typecheck resolves to `["mypy", "."]`, while a scoped check resolves to
+    `["mypy", <files...>]`; bare mypy is never emitted.
   - **node** — `PM = detect_package_manager(root)`; `EXEC` is `["pnpm","exec"]`, `["npx","--no-install"]`
     or `["yarn"]`. `fix = EXEC + ["eslint","--fix"]` when `eslint` is a dependency, else
     `EXEC + ["biome","check","--write"]` when `@biomejs/biome` is; `format = EXEC + ["prettier","--write"]`
-    when `prettier` is a dependency, else `EXEC + ["biome","format","--write"]`; `lint = [PM,"run","lint"]`
+    when `prettier` is a dependency, else `EXEC + ["biome","format","--write"]` only when
+    `@biomejs/biome` is a dependency, else `None`; `lint = [PM,"run","lint"]`
     when `scripts.lint` exists; `typecheck = [PM,"run","check"]` when `scripts.check` exists, else
-    `[PM,"run","typecheck"]`, else `EXEC + ["tsc","--noEmit"]` when `typescript` is a dependency and
-    `tsconfig.json` exists; `test = [PM,"run","test"]` when `scripts.test` exists; suffixes
+    `[PM,"run","typecheck"]` only when `scripts.typecheck` exists, else `EXEC + ["tsc","--noEmit"]`
+    when `typescript` is a dependency and `tsconfig.json` exists; `test = [PM,"run","test"]` when `scripts.test` exists; suffixes
     `(".ts",".tsx",".js",".jsx",".mjs",".cjs",".svelte",".vue")`.
+    Dependencies are checked in both `dependencies` and `devDependencies`. Every detection chain
+    ends in `None` when none of its conditions match; an absent script or dependency is never selected.
   - **rust** — `format = ["cargo","fmt","--"]`, `lint = ["cargo","clippy","--","-D","warnings"]`,
     `typecheck = ["cargo","check"]`, `test = ["cargo","test"]`; suffixes `(".rs",)`.
 
@@ -620,9 +661,11 @@ def run_worktree_setup(*, main_root: Path, target: Path, manifest: NativeManifes
   #   },
   ```
 
-### Module 9: Engine lint pass for non-Python profiles
+### Module 9: Engine lint pass for non-Python profiles and Python profiles that override `fix` or `format`
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/lint.py`
-- **Responsibility**: mechanical fix and format for the changed files of non-Python profiles.
+- **Responsibility**: honor `fix` / `format` overrides in the engine while preserving the legacy Python
+  path when neither step is overridden. A Python repository without ruff declares a `fix` or `format`
+  override to get the profile pass; the legacy pass still reports `ruff not found` there, as today.
 - **Depends on**: Module 7
 - **Interface Skeleton**:
   ```python
@@ -633,7 +676,8 @@ def run_worktree_setup(*, main_root: Path, target: Path, manifest: NativeManifes
       """Today's body of run_lint_pass, moved unchanged (verified: lint.py:215-…)."""
 
   async def run_profile_pass(cwd: str, changed: List[str], *, config: LintConfig, commit_message: str) -> LintReport:
-      """For every non-Python profile owning changed files: `fix`, then `format` (whole file), then one
+      """For non-Python profiles and Python profiles whose overridden_steps contain "fix" or "format":
+      when config.autofix is true, run `fix`, then `format` (whole file), then one
       autofix commit of the files the tools touched. Files are selected by the profile's suffixes and
       passed root-relative with the profile root as working directory; each command is bounded by
       LINT_TIMEOUT_S (verified: lint.py:30). A step that is not configured is skipped; a tool that cannot
@@ -643,9 +687,15 @@ def run_worktree_setup(*, main_root: Path, target: Path, manifest: NativeManifes
   async def run_lint_pass(
       cwd: str, changed: List[str], *, config: LintConfig, commit_message: str, diff_base: Optional[str] = None
   ) -> LintReport:  # verified: lint.py:215 — signature unchanged; sole caller engine.py:77
-      """Python pass, then profile pass; reports merged: fixed_files concatenated, the later commit kept,
-      tool errors joined with "; ", `formatter` = the Python formatter when Python files changed, else the
-      first profile formatter's tool name."""
+      """Partition changed files by profile ownership before running either pass. Python files with
+      no owning profile, or whose profile overrides neither `fix` nor `format`, go to _run_python_pass;
+      other owned files go to run_profile_pass. A `lint`, `typecheck` or `test` override alone never
+      changes the route. Never process a file twice or run the legacy formatter on a file routed to
+      the profile pass. Reports merged: fixed_files concatenated, the later commit kept, tool errors
+      joined with "; ", formatter = the legacy Python formatter when that pass processed files, else
+      the first profile formatter's tool name. Python profiles routed to the profile pass leave
+      residual lint to the full toolchain lint pass, as non-Python profiles do; the independent
+      banned-import gate is unchanged."""
   ```
 
 ### Module 10: Prompts use the toolchain verbs
@@ -662,12 +712,16 @@ def run_worktree_setup(*, main_root: Path, target: Path, manifest: NativeManifes
     "configured but not installed" and counts as not passed; "not configured" counts as passed.
   - `qa-runner` step 4 (verified: qa-runner.md:84-89): the two commands with `--files <changed-files>`;
     the "lint: not configured" sentence stays.
-  - `sdd-done` §4.5 (verified: sdd-done.md:165-182): the ruff / black block stays for Python files; for
-    every other changed file run `parrot sdd toolchain run fix --files …` then `format --files …`,
-    commit the result in the same style commit, then report `run lint` residuals.
+  - `sdd-done` §4.5 (verified: sdd-done.md:165-182): the ruff / black block stays for Python files
+    whose profile overrides neither `fix` nor `format`; for Python files whose profile overrides one of
+    them and for every other changed file run `parrot sdd toolchain run fix --files …` then
+    `format --files …`, commit the result in the same style commit, then report `run lint` residuals.
   - `sdd-worker-format.sh` (verified: :69-75): the "no changed Python files" early exit becomes a branch;
-    non-Python changed files go through `parrot sdd toolchain run format --files …` when `parrot` is on
-    `PATH`; the black / pylint path is untouched.
+    non-Python changed files and Python files whose profile overrides `fix` or `format` go through
+    `parrot sdd toolchain run format --files …` when `parrot` is on `PATH`; the black / pylint path
+    is retained only for Python files whose profile overrides neither step.
+  - Both read the route from `parrot sdd toolchain show --json` (`root`, `suffixes`,
+    `overridden_steps`); a `lint`, `typecheck` or `test` override alone never changes it.
   - Parity: every installed twin listed under §6 Edit Sites must be byte-identical to its packaged
     source after the re-sync. `scripts/sdd/check_asset_sync.py` is the existing gate; the task confirms
     it covers all eight twins and extends its parametrisation for any it does not.
@@ -725,6 +779,7 @@ def run_worktree_setup(*, main_root: Path, target: Path, manifest: NativeManifes
 | Test | Module | Description |
 |---|---|---|
 | `test_config_accepts_new_blocks` / `test_config_rejects_unknown_block_key` | M1 | each block validates; a typo inside a block fails |
+| `test_native_group_schema_parity` | M1, M3 | NativeGroupSettings and NativeGroup accept identical valid entries and defaults; both reject missing name, unknown keys and wrong field types |
 | `test_setup_rejects_absolute_and_parent_paths` | M1 | `cwd` / `inputs` validators |
 | `test_mode_from_config_json_wins_over_pyproject` | M2 | block precedence |
 | `test_mode_falls_back_to_pyproject_when_no_block` | M2 | ai-parrot path unchanged |
@@ -755,13 +810,20 @@ def run_worktree_setup(*, main_root: Path, target: Path, manifest: NativeManifes
 | `test_profiles_two_kinds_same_root_map_files_uniquely` | M7 | `pyproject.toml` + `package.json` at one root |
 | `test_detect_python_profile_matches_detect_formatter` | M7 | parity with lint.py |
 | `test_detect_node_profile_from_scripts_and_dependencies` | M7 | the navigator-frontend-next shape |
+| `test_node_missing_tools_are_not_configured` | M7, M8 | no formatter dependency yields format=None; neither check script nor TypeScript+tsconfig yields typecheck=None; run returns 0 without spawning a command |
+| `test_node_detection_fallbacks` | M7 | Prettier beats Biome; Biome requires its dependency; check beats typecheck, then TypeScript+tsconfig, then None; cover dependencies and devDependencies |
+| `test_python_typecheck_targets` | M7, M8 | full-profile argv is mypy . in the profile root; --files emits only the supplied relative files, including a nested profile root |
 | `test_profiles_at_runner_cwd_and_override_root` | M7 | ai-parrot shape: Python root + Svelte UI |
 | `test_override_replaces_and_disables_step` | M7 | `[]` disables |
+| `test_override_takes_files_resolution` | M7, M8 | Python `lint=["make","lint"]` resolves to `make lint` with and without `--files`; the same override with `lint_takes_files=true` appends "." or the files; a step that is not overridden keeps the detected flag; an explicit false on a detected step stops the appending |
 | `test_package_manager_parity_with_vitest_adapter` | M7 | one rule, two implementations |
 | `test_toolchain_run_exit_codes` | M8 | 0 / 1 / 2 / 3 and "not configured" |
 | `test_toolchain_noun_is_mounted` | M8 | `mounted_modules()` |
 | `test_profile_pass_formats_and_commits_ts_files` | M9 | fake formatter binary |
-| `test_python_pass_report_unchanged` | M9 | existing `test_lint.py` cases untouched |
+| `test_python_pass_report_unchanged` | M9 | existing no-override `test_lint.py` cases untouched; null overrides preserve the legacy path |
+| `test_python_lint_or_typecheck_override_keeps_legacy_route` | M9 | a Python profile overriding only `lint`, `typecheck` or `test` still goes through `_run_python_pass`: line-scoped formatting and the ruff `errors` / `residual` report are identical to the no-override case |
+| `test_python_override_engine_cli_parity` | M9 | format=[] never runs Black; custom fix/format argv match CLI resolution; omitted steps retain detection; mixed profile roots process each file once; config.autofix=False runs no mutating steps |
+| `test_python_override_prompt_routing` | M10 | closeout and format hook route Python files whose profile overrides `fix` or `format` through toolchain commands without also invoking legacy formatters; a `lint`-only override keeps the black / ruff path |
 | `test_installer_prints_toolchain_lines` | M11 | line format |
 
 ### Integration Tests
@@ -769,7 +831,7 @@ def run_worktree_setup(*, main_root: Path, target: Path, manifest: NativeManifes
 | Test | Description |
 |---|---|
 | `test_wheel_only_foreign_repo.py` (extended) | the six scenarios of Module 12, installed from the built wheel into a Node-shaped repository |
-| `test_config_blocks_parity` | one `sdd/config.json` fixture through `SddConfig`, the sandbox reader, `load_manifest` and `load_registry`; every reader accepts what the model accepts |
+| `test_config_blocks_parity` | valid and invalid `sdd/config.json` fixtures through `SddConfig`, the sandbox reader, `load_manifest` and `load_registry`; acceptance and rejection agree for each reader's owned block, including native group fields and defaults |
 
 ### Validation Contract
 
@@ -843,7 +905,21 @@ def full_config():
 - [ ] `parrot sdd toolchain run lint` exits 0 and prints `lint: not configured` in a repository with no
   lint tooling; `sdd-qa` no longer names ruff or mypy as mandatory.
 - [ ] The engine lint pass commits prettier output for a changed `.ts` file and its report for a
-  Python-only change is identical to today's.
+  Python-only change whose profile overrides neither `fix` nor `format` is identical to today's.
+- [ ] Full-profile Python typechecks run `mypy .` from the profile root; scoped checks pass only the
+  selected root-relative files. QA never invokes bare mypy.
+- [ ] Node profiles with no formatter dependency or supported typecheck script/tool report those
+  steps as not configured and spawn no command; each fallback requires its stated dependency/script.
+- [ ] Explicit Python `fix` / `format` overrides, including `[]` disables, are honored by the engine,
+  closeout and format hook. No file runs through both the legacy and profile passes; null/omitted
+  overrides preserve the legacy route, and `config.autofix=False` prevents all engine mutations.
+- [ ] A Python profile that overrides only `lint`, `typecheck` or `test` keeps the legacy engine route:
+  line-scoped formatting and the ruff error report are unchanged.
+- [ ] An overridden `lint` / `typecheck` argv runs verbatim, with no path appended, unless the override
+  sets `lint_takes_files` / `typecheck_takes_files`; a step that is not overridden keeps its detected
+  flag.
+- [ ] `SddConfig` and `load_manifest` agree on native-group fields, defaults and validation: missing
+  names, unknown keys and invalid field types are rejected by both readers.
 - [ ] ai-parrot's own vitest report paths keep the `admin-ui` label.
 - [ ] A worktree copy of `sdd/config.json` edited by a sandboxed session changes neither the launch
   policy nor the setup command.
@@ -1067,7 +1143,10 @@ Installed twins re-synced from the packaged sources in Module 10 (never hand-edi
 - **Self-skipping steps print one line** ("lint: not configured"), as `sdd-done` §4.5 does for ruff.
 - **Reports, not exceptions**, for anything that runs a subprocess during worktree preparation
   (`NativeSyncReport`, now `SetupReport`); the caller decides severity.
-- **Python path byte-for-byte.** `_run_python_pass` is today's `run_lint_pass` body moved, not edited.
+- **Legacy Python path byte-for-byte.** `_run_python_pass` is today's `run_lint_pass` body moved, not
+  edited. Only Python files whose profile overrides neither `fix` nor `format` enter it; the others
+  use the profile pass. `lint`, `typecheck` and informational `test` overrides alone do not change
+  lint-pass routing, because the engine pass runs none of them.
 
 ### Known Risks / Gotchas
 
@@ -1154,7 +1233,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:6851e72687ee1a8f00300859374bc57721e5173cded02bb9d979861affe13448 evaluation_digest=sha256:f9de756c4d12d605f332bf5e57e4064d5ca2a618163a7c4df5f78669e36188a2 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:72734d825470b643b09fe45291f1b5d503a7edcd75182e1430705d2727aa338b evaluation_digest=sha256:f92e21013647e9fc1c8a1e4470c91ceb7e4acdd8553a51a7dfb0b4e9cd383d9e rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -1204,7 +1283,7 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:f9de756c4d12d605f332bf5e57e4064d5ca2a618163a7c4df5f78669e36188a2",
+  "evaluation_digest": "sha256:f92e21013647e9fc1c8a1e4470c91ceb7e4acdd8553a51a7dfb0b4e9cd383d9e",
   "exit_code": 0,
   "findings": [
     {
@@ -1252,7 +1331,7 @@ Coverage:
       "waived_by": null
     }
   ],
-  "input_digest": "sha256:6851e72687ee1a8f00300859374bc57721e5173cded02bb9d979861affe13448",
+  "input_digest": "sha256:72734d825470b643b09fe45291f1b5d503a7edcd75182e1430705d2727aa338b",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -1362,3 +1441,5 @@ Summary: **11** confirmed · **0** rejected · **1** escalated.
 |---|---|---|---|
 | 0.1 | 2026-11-05 | Jesus Lara (with Claude) | Initial draft from the accepted proposal, phases 1 and 2. Design research folded in (11 confirmed, 1 escalated). The decision-audit gate could not be evaluated: `parrot sdd spec consequences` exits 3 with `SNAPSHOT_UNSTABLE: decision inventory changed while reading`, and the same failure reproduces on the already-approved `worktree-root-under-parrot` spec, so "Governing Decisions" and "Consequences" are not rendered and the status stays `draft` until the gate passes. |
 | 0.2 | 2026-11-05 | Jesus Lara (with Claude) | Decision-audit gate evaluated: `pass`, two advisory `potential-conflict` findings between this spec's own decisions (they share target files; none contradicts another). The earlier failure was a tool defect, not this spec: nine legacy v1 decision pages in the local wiki plane re-encoded to a different hash; they were re-saved with the current codec. The `toolchain-steps-come-from-profiles` decision no longer targets `sdd/toolchain.py`, which does not exist until Module 7 creates it. |
+| 0.3 | 2026-11-06 | Codex | Resolved specification review findings: explicit full-profile mypy targets; guarded Node tool/script fallbacks; Python override routing in the engine and prompts with legacy defaults preserved; typed native groups and positive/negative reader parity. Added regression requirements for all four fixes. |
+| 0.4 | 2026-11-06 | Jesus Lara (with Claude) | Review of rev 0.3 against the code; its four fixes are kept. Two corrections: (1) engine and prompt routing for an overridden Python profile is triggered only by a `fix` or `format` override, so a `lint` / `typecheck` / `test` override no longer costs line-scoped formatting and the ruff error report; (2) `ToolchainOverride` gains `lint_takes_files` / `typecheck_takes_files`, and an overridden `lint` / `typecheck` argv runs verbatim unless the override sets the flag, so a path-less command no longer gets "." appended. Tests and acceptance criteria added for both. Decision audit re-rendered. |

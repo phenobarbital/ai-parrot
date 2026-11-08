@@ -40,8 +40,18 @@ def validate_identifier(value: str, *, kind: str = "identifier") -> str:
     return value
 
 
+def _quote_ident(name: str) -> str:
+    """Standard SQL double-quote escaping for an identifier."""
+    return '"' + name.replace('"', '""') + '"'
+
+
 def qualified_table(schema: str, table: str) -> str:
     """Return ``"<schema>"."<table>"`` after validating both identifiers.
+
+    Defense-in-depth: each component is validated against a strict
+    allowlist regex (``validate_identifier``) AND escaped with standard
+    SQL identifier quoting (``"`` → ``""``), so even a hypothetical
+    bypass of the regex cannot produce an injection.
 
     Args:
         schema: Postgres schema name.
@@ -52,4 +62,4 @@ def qualified_table(schema: str, table: str) -> str:
     """
     validate_identifier(schema, kind="schema")
     validate_identifier(table, kind="table")
-    return f'"{schema}"."{table}"'
+    return f"{_quote_ident(schema)}.{_quote_ident(table)}"

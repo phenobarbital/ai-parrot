@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-824",
+  "mode": "enrichment",
+  "wiki_available": true,
+  "note": "Source is a complete draft design (PostgreSQL OntologyStore + SurrealDB KnowledgeStore). The plan therefore tests the draft against the code: which seams exist today, what the ArangoDB surface really is, and where the draft's assumptions (RDF/Turtle/IRI, SQLite per-repo, L1 synth cache) match or contradict the repository.",
+  "queries": [
+    {"id": "Q001", "type": "read", "priority": 1, "intent": "What is the existing ontology graph-store seam: protocol, backend registry and factory?", "params": {"path": "packages/ai-parrot/src/parrot/knowledge/ontology/contracts.py"}},
+    {"id": "Q002", "type": "read", "priority": 1, "intent": "Which operations does the ArangoDB ontology graph store implement, and how much raw AQL do they carry?", "params": {"path": "packages/ai-parrot/src/parrot/knowledge/ontology/graph_store.py", "hint": "outline first (wikitoolkit symbols outline), then ranged reads of the public methods"}},
+    {"id": "Q003", "type": "grep", "priority": 1, "intent": "Who constructs or calls the ontology graph store (blast radius of swapping the backend)?", "params": {"pattern": "create_ontology_graph_store|OntologyGraphStore|register_ontology_graph_store", "path": "packages/*/src"}},
+    {"id": "Q004", "type": "grep", "priority": 1, "intent": "Does AQL leak outside the store (callers building AQL strings, traversal patterns stored in ontology definitions)?", "params": {"pattern": "aql|AQL|GRAPH |OUTBOUND|INBOUND|execute_query|traversal", "path": "packages/ai-parrot/src/parrot/knowledge/ontology"}},
+    {"id": "Q005", "type": "read", "priority": 1, "intent": "What is the ontology data model in code (entities, relations, traversal patterns, source format) and how does it compare to the draft's RDF/Turtle/IRI model?", "params": {"path": "packages/ai-parrot/src/parrot/knowledge/ontology/schema.py", "also": ["packages/ai-parrot/src/parrot/knowledge/ontology/parser.py"]}},
+    {"id": "Q006", "type": "grep", "priority": 2, "intent": "Is there any RDF / Turtle / SKOS / OWL / IRI notion or dependency already in the repository?", "params": {"pattern": "rdflib|pyshacl|turtle|skos|owl:|\\biri\\b", "path": "packages/*/src packages/*/pyproject.toml"}},
+    {"id": "Q007", "type": "read", "priority": 2, "intent": "How does ontology multi-tenancy map tenants to databases/graphs (candidate mapping to Postgres schema / Surreal namespace)?", "params": {"path": "packages/ai-parrot/src/parrot/knowledge/ontology/tenant.py"}},
+    {"id": "Q008", "type": "read", "priority": 2, "intent": "What storage do the concept catalog and concept embeddings use today (already Postgres/pgvector?)", "params": {"path": "packages/ai-parrot/src/parrot/knowledge/ontology/concept_catalog/service.py", "also": ["packages/ai-parrot/src/parrot/knowledge/ontology/concept_embedding.py"], "hint": "outline + the persistence calls only"}},
+    {"id": "Q009", "type": "grep", "priority": 1, "intent": "What is the wikitoolkit storage-backend abstraction (sqlite vs arango) that a SurrealDB KnowledgeStore would replace or implement?", "params": {"pattern": "arango|class .*Backend|class .*Plane|def create_.*backend", "path": "packages/ai-parrot/src/parrot/knowledge/wiki"}},
+    {"id": "Q010", "type": "grep", "priority": 1, "intent": "What is the GraphIndex persistence seam (arango / postgres / sqlite backends, publisher) and where does the L1 synthesis cache live?", "params": {"pattern": "arango|postgres|class .*Backend|class .*Store|synth", "path": "packages/ai-parrot/src/parrot/knowledge/graphindex"}},
+    {"id": "Q011", "type": "tree", "priority": 2, "intent": "How does Bookstore persist its catalog/index today?", "params": {"path": "packages/ai-parrot/src/parrot/knowledge/bookstore", "also_grep": "sqlite|arango|pageindex|store"}},
+    {"id": "Q012", "type": "grep", "priority": 1, "intent": "Which distributions declare ArangoDB dependencies/extras, and is surrealdb / rdflib / pyshacl / pgvector declared anywhere?", "params": {"pattern": "arango|surreal|rdflib|pyshacl|pgvector|asyncdb", "path": "pyproject.toml packages/*/pyproject.toml"}},
+    {"id": "Q013", "type": "grep", "priority": 2, "intent": "Which configuration variables drive ArangoDB today?", "params": {"pattern": "ARANGO", "path": "packages/*/src"}},
+    {"id": "Q014", "type": "grep", "priority": 1, "intent": "Full inventory of ArangoDB consumers OUTSIDE ontology/wiki/graphindex (vector store, legal/BOE, formdesigner sinks, manuals, contracts, routing, multistoresearch) — the part of 'remove ArangoDB' the draft does not cover", "params": {"pattern": "arango", "path": "packages/*/src", "exclude": ["knowledge/ontology", "knowledge/wiki", "knowledge/graphindex"]}},
+    {"id": "Q015", "type": "glob", "priority": 3, "intent": "Which tests pin the ontology graph-store behaviour (reusable as a contract suite)?", "params": {"pattern": "packages/*/tests/**/*ontology*"}},
+    {"id": "Q016", "type": "read", "priority": 2, "intent": "How does the ontology RAG mixin use the graph store at query time (traversal, degradation to vector-only)?", "params": {"path": "packages/ai-parrot/src/parrot/knowledge/ontology/mixin.py", "hint": "ranged read around graph-store calls"}},
+
+    {"id": "Q101", "type": "git_log", "priority": 1, "intent": "Recent activity on the ontology package", "params": {"path": "packages/ai-parrot/src/parrot/knowledge/ontology", "since": "120 days"}},
+    {"id": "Q102", "type": "git_log", "priority": 1, "intent": "When and why the wikitoolkit ArangoDB backend landed", "params": {"path": "packages/ai-parrot/src/parrot/knowledge/wiki", "grep": "arango"}},
+    {"id": "Q103", "type": "git_log", "priority": 1, "intent": "State of the GraphIndex Postgres backend work", "params": {"path": "packages/ai-parrot/src/parrot/knowledge/graphindex", "grep": "postgres|arango"}},
+    {"id": "Q104", "type": "git_log", "priority": 2, "intent": "Any commit recording the ArangoDB licence decision or a prior removal attempt", "params": {"grep": "BUSL|licen|remove arango|drop arango|surreal"}},
+    {"id": "Q105", "type": "read", "priority": 1, "intent": "Task status of the two specs this proposal overlaps (graphindex-postgres-backend, wikitoolkit-arangodb-backend)", "params": {"path": "sdd/tasks/index/graphindex-postgres-backend.json", "also": ["sdd/tasks/index/wikitoolkit-arangodb-backend.json"], "hint": "feature_id, completed_at and task statuses only; also check origin/feat-* branches"}},
+
+    {"id": "Q201", "type": "wiki_query", "priority": 1, "intent": "Orientation: ontology graph store backend registry", "params": {"question": "ontology graph store backend registry"}},
+    {"id": "Q202", "type": "wiki_query", "priority": 1, "intent": "Orientation: wikitoolkit storage backend", "params": {"question": "wikitoolkit storage backend sqlite arangodb plane"}},
+    {"id": "Q203", "type": "wiki_query", "priority": 1, "intent": "Orientation: GraphIndex postgres backend and server plane", "params": {"question": "graphindex postgres backend server plane"}},
+    {"id": "Q204", "type": "wiki_query", "priority": 2, "intent": "Recorded decisions / ADRs about ArangoDB, licensing or graph backends", "params": {"question": "decision ArangoDB graph backend"}},
+    {"id": "Q205", "type": "wiki_page", "priority": 1, "intent": "Key decisions and non-goals of the GraphIndex Postgres backend spec", "params": {"id": "file:sdd/specs/graphindex-postgres-backend.spec.md"}},
+    {"id": "Q206", "type": "wiki_page", "priority": 1, "intent": "Key decisions of the wikitoolkit ArangoDB backend spec (what a replacement must preserve)", "params": {"id": "file:sdd/specs/wikitoolkit-arangodb-backend.spec.md"}},
+    {"id": "Q207", "type": "wiki_page", "priority": 2, "intent": "What the ontological graph RAG spec fixed as the ontology model and store contract", "params": {"id": "file:sdd/specs/ontological-graph-rag.spec.md"}},
+    {"id": "Q208", "type": "wiki_query", "priority": 2, "intent": "Bookstore index storage", "params": {"question": "bookstore catalog index storage"}},
+    {"id": "Q209", "type": "wiki_query", "priority": 3, "intent": "GraphIndex L1 synthesis cache", "params": {"question": "graphindex synthesis summary cache content hash"}}
+  ]
+}

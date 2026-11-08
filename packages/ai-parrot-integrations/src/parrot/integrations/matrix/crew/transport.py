@@ -8,7 +8,7 @@ Supports the async context-manager protocol for clean lifecycle management.
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional
+from typing import TYPE_CHECKING, Callable, Dict, Optional
 
 from . import context as ctx
 from .channels import ChannelManager
@@ -21,6 +21,14 @@ from .session import MatrixCollaborativeSession
 from .swarm import SwarmSessionManager
 from .swarm_toolkit import AgentSwarmToolkit
 from .tunnel import TunnelRegistry
+
+if TYPE_CHECKING:
+    from parrot.roost.endpoint import RoostEndpoint, WakeCallback
+
+#: Builds one agent's ``RoostEndpoint`` (FEAT-827). Called with the agent name and that agent's wake
+#: callback (``MatrixCrewAgentWrapper.handle_roost_wake``); the integrator supplies everything else —
+#: engine, dispatcher, carriers, ``RoostAgentConfig`` / grant, ledger, permission context.
+RoostEndpointFactory = Callable[[str, "WakeCallback"], "RoostEndpoint"]
 
 
 class MatrixCrewTransport:
@@ -38,10 +46,21 @@ class MatrixCrewTransport:
 
     Args:
         config: Validated ``MatrixCrewConfig`` instance.
+        roost_endpoint_factory: Optional :data:`RoostEndpointFactory`. When given, every agent that
+            gets an ``AgentSwarmToolkit`` also gets a started ``RoostEndpoint`` and its ``ask_agent``
+            runs over Roost; the endpoints are stopped by :meth:`stop`. Without it ``ask_agent``
+            keeps using the tunnels.
     """
 
-    def __init__(self, config: MatrixCrewConfig) -> None:
+    def __init__(
+        self,
+        config: MatrixCrewConfig,
+        *,
+        roost_endpoint_factory: Optional[RoostEndpointFactory] = None,
+    ) -> None:
         self._config = config
+        self._roost_endpoint_factory = roost_endpoint_factory
+        self._roost_endpoints: Dict[str, "RoostEndpoint"] = {}
         self._appservice: Optional[object] = None  # MatrixAppService
         self._coordinator: Optional[MatrixCoordinator] = None
         self._registry = MatrixCrewRegistry()
@@ -60,17 +79,23 @@ class MatrixCrewTransport:
     # ------------------------------------------------------------------
 
     @classmethod
-    def from_yaml(cls, path: str) -> "MatrixCrewTransport":
+    def from_yaml(
+        cls,
+        path: str,
+        *,
+        roost_endpoint_factory: Optional[RoostEndpointFactory] = None,
+    ) -> "MatrixCrewTransport":
         """Load crew configuration from a YAML file.
 
         Args:
             path: Path to the YAML configuration file.
+            roost_endpoint_factory: Optional :data:`RoostEndpointFactory` (see the class docstring).
 
         Returns:
             A new ``MatrixCrewTransport`` instance.
         """
         config = MatrixCrewConfig.from_yaml(path)
-        return cls(config)
+        return cls(config, roost_endpoint_factory=roost_endpoint_factory)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -214,26 +239,11 @@ class MatrixCrewTransport:
             self._swarm = SwarmSessionManager(self._config.collaborative, self)
 
         if self._tunnels is not None:
-            for agent_name in self._config.agents:
-                try:
-                    from parrot.manager import BotManager  # type: ignore
-
-                    bot = await BotManager.get_bot(self._config.agents[agent_name].chatbot_id)
-                except Exception as exc:
-                    self.logger.warning(
-                        "Could not resolve bot for agent '%s' — skipping toolkit " "attachment: %s",
-                        agent_name,
-                        exc,
-                    )
-                    continue
-                if bot is None or not hasattr(bot, "tool_manager"):
-                    self.logger.warning(
-                        "Agent '%s' has no bot/tool_manager yet — skipping " "AgentSwarmToolkit attachment",
-                        agent_name,
-                    )
-                    continue
-                toolkit = AgentSwarmToolkit(agent_name, self._tunnels, self._registry, self._channels, self._appservice)
-                bot.tool_manager.register_toolkit(toolkit)
+            await self._attach_swarm_toolkits()
+        elif self._roost_endpoint_factory is not None:
+            self.logger.warning(
+                "roost_endpoint_factory ignored: tunnels are disabled, so no AgentSwarmToolkit is attached"
+            )
 
         self._appservice.set_custom_event_callback(self._on_custom_event)
 
@@ -258,6 +268,8 @@ class MatrixCrewTransport:
                     self.logger.warning("Failed to cancel session: %s", exc)
         self._active_sessions.clear()
 
+        await self._stop_roost_endpoints()
+
         if self._tunnels:
             await self._tunnels.stop()
 
@@ -269,6 +281,83 @@ class MatrixCrewTransport:
             await self._appservice.stop()
 
         self.logger.info("Matrix crew transport stopped")
+
+    # ------------------------------------------------------------------
+    # Roost endpoints (FEAT-827, opt-in)
+    # ------------------------------------------------------------------
+
+    async def _attach_swarm_toolkits(self) -> None:
+        """Register an ``AgentSwarmToolkit`` on every crew agent whose bot is resolvable.
+
+        With a ``roost_endpoint_factory`` each toolkit also receives that agent's started
+        ``RoostEndpoint`` (FEAT-827), which routes its ``ask_agent`` over Roost.
+        """
+        for agent_name in self._config.agents:
+            try:
+                from parrot.manager import BotManager  # type: ignore
+
+                bot = await BotManager.get_bot(self._config.agents[agent_name].chatbot_id)
+            except Exception as exc:
+                self.logger.warning(
+                    "Could not resolve bot for agent '%s' — skipping toolkit " "attachment: %s",
+                    agent_name,
+                    exc,
+                )
+                continue
+            if bot is None or not hasattr(bot, "tool_manager"):
+                self.logger.warning(
+                    "Agent '%s' has no bot/tool_manager yet — skipping " "AgentSwarmToolkit attachment",
+                    agent_name,
+                )
+                continue
+            endpoint = await self._start_roost_endpoint(agent_name)
+            toolkit = AgentSwarmToolkit(
+                agent_name,
+                self._tunnels,
+                self._registry,
+                self._channels,
+                self._appservice,
+                endpoint=endpoint,
+            )
+            bot.tool_manager.register_toolkit(toolkit)
+
+    async def _start_roost_endpoint(self, agent_name: str) -> Optional["RoostEndpoint"]:
+        """Build and start *agent_name*'s Roost endpoint through the integrator's factory.
+
+        The factory receives the agent's ``handle_roost_wake``, so the served turn inherits the
+        inbound hop depth. A factory or ``start()`` error propagates (after stopping the endpoints
+        already started): falling back to the tunnels would silently drop the grant checks the
+        integrator asked for.
+
+        Args:
+            agent_name: Crew agent to build the endpoint for.
+
+        Returns:
+            The started endpoint, or ``None`` when no factory is configured or the agent has no wrapper.
+        """
+        if self._roost_endpoint_factory is None:
+            return None
+        wrapper = self._wrappers.get(agent_name)
+        if wrapper is None:
+            self.logger.warning("Agent '%s' has no wrapper — no Roost endpoint built", agent_name)
+            return None
+        try:
+            endpoint = self._roost_endpoint_factory(agent_name, wrapper.handle_roost_wake)
+            await endpoint.start()
+        except Exception:
+            await self._stop_roost_endpoints()
+            raise
+        self._roost_endpoints[agent_name] = endpoint
+        return endpoint
+
+    async def _stop_roost_endpoints(self) -> None:
+        """Stop every Roost endpoint this transport started; one failure never blocks the rest."""
+        for agent_name, endpoint in list(self._roost_endpoints.items()):
+            try:
+                await endpoint.stop()
+            except Exception as exc:  # noqa: BLE001 — shutdown must reach the remaining endpoints
+                self.logger.warning("Failed to stop Roost endpoint for '%s': %s", agent_name, exc)
+        self._roost_endpoints.clear()
 
     # ------------------------------------------------------------------
     # Message routing

@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import os
+import threading
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from parrot.knowledge.pageindex.ingest import IngestedMarkdown
+from parrot.knowledge.pageindex.locks import lock_path
 from parrot.knowledge.pageindex.schemas import TreeSearchResult
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, _REPLACED_MARKER
+from parrot.knowledge.pageindex.utils import structure_to_list
+from parrot.knowledge.okf.utils import flatten_concept_id_for_filename
 
 
 def _adapter() -> MagicMock:
@@ -73,6 +80,7 @@ def test_tool_discovery_exposes_expected_names(toolkit: PageIndexToolkit):
         "pageindex_list_trees",
         "pageindex_create_tree",
         "pageindex_delete_tree",
+        "pageindex_get_generation",
         "pageindex_get_tree",
         "pageindex_search",
         "pageindex_search_documents_scoped",
@@ -81,6 +89,7 @@ def test_tool_discovery_exposes_expected_names(toolkit: PageIndexToolkit):
         "pageindex_add_node",
         "pageindex_update_node",
         "pageindex_update_node_content",
+        "pageindex_vacuum_tree",
         "pageindex_insert_markdown",
         "pageindex_insert_content",
         "pageindex_import_file",
@@ -98,6 +107,131 @@ async def test_create_tree_persists_to_disk(toolkit: PageIndexToolkit, tmp_path:
     assert (tmp_path / "docs.json").is_file()
     listed = await toolkit.list_trees()
     assert "docs" in listed
+
+
+@pytest.mark.asyncio
+async def test_create_tree_publishes_generation_one(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("g")
+
+    assert (await toolkit.get_generation("g"))["id"] == 1
+
+
+@pytest.mark.asyncio
+async def test_write_nested_joins(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("g")
+
+    async with toolkit._write("g"):
+        async with toolkit._write("g"):
+            pass
+
+    assert (await toolkit.get_generation("g"))["id"] == 2
+
+
+@pytest.mark.asyncio
+async def test_mutate_retries_stale_generation(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("g")
+    calls = 0
+
+    async def apply(txn):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            externally_written = toolkit._store.load("g")
+            externally_written["doc_name"] = "external writer"
+            externally_written["generation"]["id"] += 1
+            toolkit._store.save("g", externally_written)
+        txn.tree["doc_name"] = "mutated"
+        return calls
+
+    assert await toolkit._mutate("g", apply) == 2
+    assert (await toolkit.get_tree("g"))["doc_name"] == "mutated"
+
+
+@pytest.mark.asyncio
+async def test_reader_keeps_generation(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("g")
+
+    async def add_first(txn):
+        node = {"node_id": "0000", "title": "Entry", "nodes": []}
+        txn.tree["structure"].append(node)
+        txn.set_body(node, "first body")
+
+    await toolkit._mutate("g", add_first)
+    old_tree = await toolkit.get_tree("g")
+    old_loader = toolkit._content_store.loader_for("g", old_tree)
+
+    async def replace_body(txn):
+        txn.set_body(txn.tree["structure"][0], "second body")
+
+    await toolkit._mutate("g", replace_body)
+
+    assert old_tree["structure"][0]["body_ref"] != (await toolkit.get_tree("g"))["structure"][0]["body_ref"]
+    assert old_loader("0000") == "first body"
+
+
+@pytest.mark.asyncio
+async def test_first_write_migrates_legacy_bodies(toolkit: PageIndexToolkit):
+    legacy_tree = {
+        "doc_name": "legacy",
+        "structure": [
+            {
+                "node_id": "0001",
+                "concept_id": "legacy/entry",
+                "title": "Legacy entry",
+                "nodes": [],
+            }
+        ],
+    }
+    toolkit._store.save("legacy", legacy_tree)
+    toolkit._content_store.save(
+        "legacy",
+        flatten_concept_id_for_filename("legacy/entry"),
+        "---\nconcept_id: legacy/entry\n---\nlegacy body",
+    )
+
+    async def noop(txn):
+        return None
+
+    await toolkit._mutate("legacy", noop)
+    node = (await toolkit.get_tree("legacy"))["structure"][0]
+
+    assert node["body_ref"]
+    assert toolkit._content_store.load_node("legacy", node) == "legacy body"
+
+
+@pytest.mark.asyncio
+async def test_search_engine_is_pinned_per_generation(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("g")
+    old_engine = toolkit._search_for("g")
+    old_tree = old_engine._tree
+
+    async def noop(txn):
+        return None
+
+    await toolkit._mutate("g", noop)
+    new_engine = toolkit._search_for("g")
+
+    assert new_engine is not old_engine
+    assert old_engine._tree is old_tree
+
+
+@pytest.mark.asyncio
+async def test_delete_tree_removes_bodies_and_lock(toolkit: PageIndexToolkit, tmp_path: Path):
+    await toolkit.create_tree("g")
+    toolkit._content_store.save("g", "0000", "body")
+    embeddings = tmp_path / "g" / "embeddings"
+    embeddings.mkdir()
+    (embeddings / "g.g1.matrix.npy").write_bytes(b"matrix")
+    lock = lock_path(tmp_path, "g")
+    lock.parent.mkdir(exist_ok=True)
+    lock.touch()
+
+    await toolkit.delete_tree("g")
+
+    assert not (tmp_path / "g.json").exists()
+    assert not (tmp_path / "g" / "bodies").exists()
+    assert not embeddings.exists()
+    assert not lock.exists()
 
 
 @pytest.mark.asyncio
@@ -234,7 +368,6 @@ async def test_import_pdf_missing_file_raises(toolkit: PageIndexToolkit, tmp_pat
 # FEAT-189: content-store + LLM-Wiki extensions
 # ---------------------------------------------------------------------------
 
-import json
 
 
 def _fake_build_pdf(monkeypatch):
@@ -257,7 +390,7 @@ def _fake_build_pdf(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_toolkit_import_pdf_persists_sidecar(
+async def test_toolkit_import_pdf_stores_blobs(
     monkeypatch,
     toolkit: PageIndexToolkit,
     tmp_path: Path,
@@ -268,9 +401,10 @@ async def test_toolkit_import_pdf_persists_sidecar(
     await toolkit.create_tree("compliance")
     await toolkit.import_pdf("compliance", str(pdf))
 
-    content_dir = tmp_path / "compliance"
-    md_files = sorted(p.name for p in content_dir.iterdir() if p.suffix == ".md")
-    assert md_files == ["0000.md", "0001.md", "0002.md"]
+    tree = await toolkit.get_tree("compliance")
+    assert all(node.get("body_ref") for node in tree["structure"])
+    assert toolkit._content_store.load("compliance", "0000") == "# Article 1\nVERBATIM_BODY_OF_ARTICLE_1.\n"
+    assert not list((tmp_path / "compliance").glob("*.md"))
 
     # Persisted JSON tree must not carry inline text or _node_markdown.
     with (tmp_path / "compliance.json").open() as f:
@@ -325,8 +459,8 @@ async def test_toolkit_retrieve_falls_back_to_summary_when_no_content(
 
     await toolkit.create_tree("compliance")
     await toolkit.import_pdf("compliance", str(pdf))
-    # Manually wipe the sidecar; retrieve must still return summary text.
-    (tmp_path / "compliance" / "0000.md").unlink()
+    node = (await toolkit.get_tree("compliance"))["structure"][0]
+    toolkit._content_store.body_path("compliance", node["body_ref"]).unlink()
     toolkit._content_store._cache.clear()
 
     text = await toolkit.retrieve("compliance", "scope", top_k=1)
@@ -387,12 +521,13 @@ async def test_toolkit_delete_node_removes_sidecar(
     await toolkit.import_pdf("compliance", str(pdf))
 
     tree = await toolkit.get_tree("compliance")
-    target_id = tree["structure"][0]["node_id"]
-    sidecar = tmp_path / "compliance" / f"{target_id}.md"
-    assert sidecar.is_file()
+    target_node = tree["structure"][0]
+    target_id = target_node["node_id"]
+    assert target_node["body_ref"]
+    assert toolkit._content_store.load("compliance", target_id) == "# Article 1\nVERBATIM_BODY_OF_ARTICLE_1.\n"
 
     await toolkit.delete_node("compliance", target_id)
-    assert not sidecar.is_file()
+    assert all(node["title"] != "Article 1" for node in (await toolkit.get_tree("compliance"))["structure"])
     # And the LRU cache entry is gone.
     assert ("compliance", target_id) not in toolkit._content_store._cache
 
@@ -501,13 +636,13 @@ async def test_delete_tree_clears_sidecar_and_json(
 
     result = await toolkit.delete_tree("compliance")
     assert result["tree_removed"] is True
-    assert result["sidecars_removed"] >= 1
+    assert result["sidecars_removed"] == 0
     assert not (tmp_path / "compliance.json").is_file()
     assert not (tmp_path / "compliance").is_dir()
 
 
 @pytest.mark.asyncio
-async def test_insert_markdown_persists_sidecar_and_strips_text(
+async def test_insert_markdown_stores_blobs_and_strips_text(
     monkeypatch,
     toolkit: PageIndexToolkit,
     tmp_path: Path,
@@ -550,13 +685,10 @@ async def test_insert_markdown_persists_sidecar_and_strips_text(
 
     _walk(persisted["structure"])
 
-    # Sidecar directory exists and contains at least the leaf-node bodies.
-    content_dir = tmp_path / "kb"
-    assert content_dir.is_dir()
-    md_files = list(content_dir.glob("*.md"))
-    assert md_files, "expected at least one node sidecar"
-    bodies = [p.read_text(encoding="utf-8") for p in md_files]
-    assert any("UNIQUE_INSTALL_MARKER" in b for b in bodies)
+    nodes = [node for node in structure_to_list(persisted["structure"]) if node.get("body_ref")]
+    assert nodes, "expected nodes with body blobs"
+    assert any("UNIQUE_INSTALL_MARKER" in (toolkit._content_store.load_node("kb", node) or "") for node in nodes)
+    assert not list((tmp_path / "kb").glob("*.md"))
 
 
 @pytest.mark.asyncio
@@ -639,9 +771,10 @@ async def test_import_folder_persists_sidecars(
 
     _walk(persisted["structure"])
 
-    content_dir = tmp_path / "docs"
-    md_files = list(content_dir.glob("*.md"))
-    assert md_files, "expected node sidecars after folder import"
+    nodes = [node for node in structure_to_list(persisted["structure"]) if node.get("body_ref")]
+    assert nodes, "expected nodes with body blobs after folder import"
+    assert all(toolkit._content_store.load_node("docs", node) for node in nodes)
+    assert not list((tmp_path / "docs").glob("*.md"))
 
 
 @pytest.mark.asyncio
@@ -668,8 +801,6 @@ async def test_add_node_creates_root_leaf_atomically(
     )
     assert result["node_id"]
     assert result["parent_node_id"] is None
-    new_id = result["node_id"]
-
     tree = await toolkit.get_tree("kb")
     titles = [n["title"] for n in tree["structure"]]
     assert "Finding 17" in titles
@@ -679,12 +810,13 @@ async def test_add_node_creates_root_leaf_atomically(
         persisted = json.load(f)
     for node in persisted["structure"]:
         assert "text" not in node
-    # Sidecar exists with the body.
-    sidecar = tmp_path / "kb" / f"{new_id}.md"
-    assert sidecar.is_file()
-    assert "UNIQUE_FINDING_BODY" in sidecar.read_text()
-    # Categories and metadata round-trip on the node.
+    # The immutable body blob is addressed by the inserted node's body_ref.
     node = next(n for n in persisted["structure"] if n["title"] == "Finding 17")
+    assert node["body_ref"]
+    body_path = tmp_path / "kb" / "bodies" / f"{node['body_ref']}.md"
+    assert body_path.is_file()
+    assert "UNIQUE_FINDING_BODY" in body_path.read_text()
+    # Categories and metadata round-trip on the node.
     assert node["categories"] == ["iam", "security"]
     assert node["metadata"] == {"severity": "high"}
 
@@ -722,9 +854,8 @@ async def test_add_node_under_existing_parent(
     assert child_titles == ["Finding A"]
     # Child has a node_id (possibly renumbered).
     child_id_in_tree = parent_node["nodes"][0]["node_id"]
-    sidecar = tmp_path / "kb" / f"{child_id_in_tree}.md"
-    assert sidecar.is_file()
-    assert sidecar.read_text() == "UNIQUE_CHILD_BODY"
+    child_node = parent_node["nodes"][0]
+    assert toolkit._content_store.load_node("kb", child_node) == "UNIQUE_CHILD_BODY"
     # Returned id matches what's in the tree.
     assert child["node_id"] == child_id_in_tree
 
@@ -760,7 +891,7 @@ async def test_add_node_rejects_empty_title(toolkit: PageIndexToolkit):
 
 
 @pytest.mark.asyncio
-async def test_update_node_content_overwrites_sidecar(
+async def test_update_node_content_publishes(
     monkeypatch,
     toolkit: PageIndexToolkit,
     tmp_path: Path,
@@ -776,13 +907,13 @@ async def test_update_node_content_overwrites_sidecar(
     res = await toolkit.add_node("kb", title="Finding", body="OLD_BODY")
     node_id = res["node_id"]
 
+    before_generation = (await toolkit.get_tree("kb"))["generation"]["id"]
     await toolkit.update_node_content("kb", node_id, "NEW_BODY content here")
 
-    sidecar = tmp_path / "kb" / f"{node_id}.md"
-    assert sidecar.read_text() == "NEW_BODY content here"
-    # Tree itself didn't change.
     tree = await toolkit.get_tree("kb")
+    assert tree["generation"]["id"] == before_generation + 1
     assert tree["structure"][0]["title"] == "Finding"
+    assert toolkit._content_store.load_node("kb", tree["structure"][0]) == "NEW_BODY content here"
 
 
 @pytest.mark.asyncio
@@ -803,10 +934,8 @@ async def test_update_node_content_marks_bm25_dirty(
     await toolkit.add_node("kb", title="Finding B", body="beta body")
     # Force BM25 build.
     await toolkit.search("kb", "alpha", top_k=3, use_llm_walk=False)
-    engine = toolkit._search["kb"]
-    assert engine._dirty is False
     await toolkit.update_node_content("kb", res["node_id"], "alpha_v2 token")
-    assert engine._dirty is True
+    assert "kb" not in toolkit._search
     # New token is now findable; old one is not.
     hits = await toolkit.search(
         "kb",
@@ -1120,8 +1249,8 @@ async def test_search_documents_scoped_falls_back_to_summary_when_no_sidecar(
     tmp_path: Path,
 ):
     await _seed_scoped_tree(monkeypatch, toolkit, tmp_path, "kb", "d.md", "BODY")
-    # Wipe the sidecar for node 0000 — retrieve must fall back to summary.
-    (tmp_path / "kb" / "0000.md").unlink()
+    node = (await toolkit.get_tree("kb"))["structure"][0]
+    toolkit._content_store.body_path("kb", node["body_ref"]).unlink()
     toolkit._content_store._cache.clear()
 
     async def fake_search(self, query):
@@ -1221,121 +1350,102 @@ async def _seed_rename_tree(toolkit: PageIndexToolkit, name: str, body: str) -> 
 
 @pytest.mark.asyncio
 async def test_rename_tree_basic(toolkit: PageIndexToolkit, tmp_path: Path) -> None:
-    """Move a tree and its sidecars to the new name."""
-    node_id = await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+    """Publish source content into a new destination generation."""
+    await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
 
     result = await toolkit.rename_tree("source", "destination")
 
-    assert result == {"src": "source", "dst": "destination", "replaced": False}
+    assert result == {"src": "source", "dst": "destination", "replaced": False, "generation": 1}
     assert not (tmp_path / "source.json").exists()
     assert not (tmp_path / "source").exists()
     assert (tmp_path / "destination.json").is_file()
-    assert (tmp_path / "destination" / f"{node_id}.md").read_text() == "SOURCE_BODY"
-    assert (await toolkit.get_tree("destination"))["structure"][0]["title"] == "source"
+    tree = await toolkit.get_tree("destination")
+    assert toolkit._content_store.load_node("destination", tree["structure"][0]) == "SOURCE_BODY"
+    assert tree["structure"][0]["title"] == "source"
 
 
 @pytest.mark.asyncio
 async def test_rename_tree_refuses_existing_dst_without_overwrite(toolkit: PageIndexToolkit, tmp_path: Path) -> None:
     """Reject collisions without mutating either tree."""
-    src_node = await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
-    dst_node = await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
+    await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+    await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
 
     with pytest.raises(ValueError, match="already exists"):
         await toolkit.rename_tree("source", "destination")
 
-    assert (tmp_path / "source" / f"{src_node}.md").read_text() == "SOURCE_BODY"
-    assert (tmp_path / "destination" / f"{dst_node}.md").read_text() == "DESTINATION_BODY"
+    source_tree = await toolkit.get_tree("source")
+    destination_tree = await toolkit.get_tree("destination")
+    assert toolkit._content_store.load_node("source", source_tree["structure"][0]) == "SOURCE_BODY"
+    assert toolkit._content_store.load_node("destination", destination_tree["structure"][0]) == "DESTINATION_BODY"
 
 
 @pytest.mark.asyncio
-async def test_rename_tree_overwrite_replaces_and_removes_backup(toolkit: PageIndexToolkit, tmp_path: Path) -> None:
-    """Replace destination contents and remove its backup JSON."""
-    node_id = await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+async def test_rename_tree_no_backup_tree(toolkit: PageIndexToolkit) -> None:
+    """Overwrite publication never creates a replacement backup tree."""
+    await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
     await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
 
     result = await toolkit.rename_tree("source", "destination", overwrite=True)
 
-    assert result == {"src": "source", "dst": "destination", "replaced": True}
-    assert (tmp_path / "destination" / f"{node_id}.md").read_text() == "SOURCE_BODY"
-    assert not list(tmp_path.glob(f"destination{_REPLACED_MARKER}*.json"))
+    assert result == {"src": "source", "dst": "destination", "replaced": True, "generation": 3}
+    tree = await toolkit.get_tree("destination")
+    assert toolkit._content_store.load_node("destination", tree["structure"][0]) == "SOURCE_BODY"
+    assert not any(_REPLACED_MARKER in name for name in await toolkit.list_trees())
 
 
 @pytest.mark.asyncio
-async def test_rename_tree_overwrite_removes_backup_dir_with_embeddings(
-    toolkit: PageIndexToolkit, tmp_path: Path
-) -> None:
-    """Leave no ``--replaced-`` directory behind even when it holds an ``embeddings/`` subdir."""
+async def test_rename_tree_no_window(toolkit: PageIndexToolkit) -> None:
+    """An overwrite keeps the destination JSON visible throughout publication."""
     await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
     await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
-    embeddings = tmp_path / "destination" / "embeddings"
-    embeddings.mkdir()
-    (embeddings / "destination.matrix.npy").write_bytes(b"old")
+    observations: list[bool] = []
+    started = threading.Event()
+    stopped = threading.Event()
 
-    await toolkit.rename_tree("source", "destination", overwrite=True)
+    def poll() -> None:
+        observations.append(toolkit._store.exists("destination"))
+        started.set()
+        while not stopped.is_set():
+            observations.append(toolkit._store.exists("destination"))
+            time.sleep(0.001)
 
-    assert not list(tmp_path.glob(f"destination{_REPLACED_MARKER}*"))
-    assert not (tmp_path / "destination" / "embeddings").exists()
+    thread = threading.Thread(target=poll)
+    thread.start()
+    assert started.wait(timeout=1)
+    try:
+        await toolkit.rename_tree("source", "destination", overwrite=True)
+    finally:
+        stopped.set()
+        thread.join(timeout=1)
 
-
-@pytest.mark.asyncio
-async def test_rename_tree_post_swap_reload_failure_is_not_a_rename_failure(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path
-) -> None:
-    """A reload/projection error after the committed swap is logged, not raised."""
-    node_id = await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
-
-    def boom(name: str):
-        raise RuntimeError("injected reload failure")
-
-    monkeypatch.setattr(toolkit, "_load_tree", boom)
-
-    result = await toolkit.rename_tree("source", "destination")
-
-    assert result == {"src": "source", "dst": "destination", "replaced": False}
-    assert (tmp_path / "destination.json").exists()
-    assert not (tmp_path / "source.json").exists()
-    assert (tmp_path / "destination" / f"{node_id}.md").read_text() == "SOURCE_BODY"
+    assert observations
+    assert all(observations)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["backup_json", "backup_content", "publish_content", "publish_json"])
-async def test_rename_tree_overwrite_rolls_back_on_failure(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path, failure: str
-) -> None:
-    """Restore the destination for failures at every individual move boundary."""
+async def test_rename_tree_projection_failure_keeps_both(monkeypatch, toolkit: PageIndexToolkit) -> None:
+    """A strict destination projection failure leaves both JSON trees unchanged."""
     await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
-    dst_node = await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
-    original_json_rename = toolkit._store.rename
-    original_content_rename = toolkit._content_store.rename_tree
-    json_calls = 0
-    content_calls = 0
+    await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
 
-    def fail_json(src: str, dst: str) -> None:
-        nonlocal json_calls
-        json_calls += 1
-        if (failure == "backup_json" and json_calls == 1) or (failure == "publish_json" and json_calls == 2):
-            raise OSError("injected JSON move failure")
-        original_json_rename(src, dst)
+    async def enrich(txn) -> None:
+        txn.tree["structure"][0]["type"] = "Section"
 
-    def fail_content(src: str, dst: str) -> bool:
-        nonlocal content_calls
-        content_calls += 1
-        if (failure == "backup_content" and content_calls == 1) or (
-            failure == "publish_content" and content_calls == 2
-        ):
-            raise OSError("injected content move failure")
-        return original_content_rename(src, dst)
+    await toolkit._mutate("source", enrich)
+    source_before = toolkit._store.load("source")
+    destination_before = toolkit._store.load("destination")
 
-    monkeypatch.setattr(toolkit._store, "rename", fail_json)
-    monkeypatch.setattr(toolkit._content_store, "rename_tree", fail_content)
+    def fail_projection(tree_name: str, tree: dict) -> bool:
+        raise RuntimeError("injected projection failure")
 
-    with pytest.raises(OSError, match="injected"):
+    monkeypatch.setattr(toolkit, "_project_okf_sidecars", fail_projection)
+    with pytest.raises(RuntimeError, match="injected projection failure"):
         await toolkit.rename_tree("source", "destination", overwrite=True)
 
-    assert (tmp_path / "destination" / f"{dst_node}.md").read_text() == "DESTINATION_BODY"
-    assert (tmp_path / "source.json").is_file()
-    assert (tmp_path / "destination.json").is_file()
-    assert not list(tmp_path.glob(f"destination{_REPLACED_MARKER}*.json"))
+    assert toolkit._store.load("source") == source_before
+    assert toolkit._store.load("destination") == destination_before
+    destination_tree = await toolkit.get_tree("destination")
+    assert toolkit._content_store.load_node("destination", destination_tree["structure"][0]) == "DESTINATION_BODY"
 
 
 @pytest.mark.asyncio
@@ -1360,13 +1470,16 @@ async def test_rename_tree_invalidates_search_engine_cache(toolkit: PageIndexToo
 async def test_rename_tree_reprojects_okf_sidecars(toolkit: PageIndexToolkit) -> None:
     """Reproject an enriched tree after it has its destination URI."""
     await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
-    source_tree = toolkit._trees["source"]
-    source_tree["structure"][0].update({"concept_id": "source/node", "type": "Section"})
-    toolkit._persist("source")
+
+    async def enrich(txn) -> None:
+        txn.tree["structure"][0].update({"concept_id": "source/node", "type": "Section"})
+
+    await toolkit._mutate("source", enrich)
     projected: list[str] = []
 
-    def project(tree_name: str, tree: dict) -> None:
+    def project(tree_name: str, tree: dict) -> bool:
         projected.append(tree_name)
+        return True
 
     toolkit._project_okf_sidecars = project
     await toolkit.rename_tree("source", "destination")
@@ -1385,8 +1498,8 @@ def test_rename_tree_exposed_as_tool(toolkit: PageIndexToolkit) -> None:
 
 
 @pytest.mark.asyncio
-async def test_rename_tree_refuses_inside_batch(toolkit: PageIndexToolkit) -> None:
-    """Reject open source or destination batch participation and invalid input."""
+async def test_rename_tree_refuses_inside_write(toolkit: PageIndexToolkit) -> None:
+    """Reject open source or destination write participation and invalid input."""
     await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
     await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
 
@@ -1398,38 +1511,144 @@ async def test_rename_tree_refuses_inside_batch(toolkit: PageIndexToolkit) -> No
         await toolkit.rename_tree("missing", "new")
     with pytest.raises(KeyError):  # 128-char names are valid; the source is simply absent
         await toolkit.rename_tree("s" * 128, "d" * 128)
-    async with toolkit._batch("source"):
-        with pytest.raises(ValueError, match="open batch"):
+    async with toolkit._write("source"):
+        with pytest.raises(ValueError, match="open write"):
             await toolkit.rename_tree("source", "new")
-    async with toolkit._batch("destination"):
-        with pytest.raises(ValueError, match="open batch"):
+    async with toolkit._write("destination"):
+        with pytest.raises(ValueError, match="open write"):
             await toolkit.rename_tree("source", "destination", overwrite=True)
 
 
 @pytest.mark.asyncio
-async def test_delete_node_cleans_up_concept_id_sidecar(monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path):
-    """delete_node removes concept_id-keyed sidecar when node has concept_id."""
-    # Create a tree with an OKF-enriched node.
+async def test_delete_node_leaves_blobs_for_sweep(toolkit: PageIndexToolkit, tmp_path: Path):
+    """delete_node leaves immutable body blobs for the grace-period sweep."""
     await toolkit.create_tree("cleanup_test")
-    # Manually inject an enriched node into the tree.
-    tree = toolkit._trees["cleanup_test"]
-    tree["structure"] = [
-        {
-            "node_id": "0000",
-            "concept_id": "controls/c1",
-            "type": "Control",
-            "title": "Control 1",
-            "summary": "Test",
-            "nodes": [],
-        }
-    ]
-    # Write both node_id and concept_id keyed sidecars.
-    toolkit._content_store.save("cleanup_test", "0000", "legacy body")
-    toolkit._content_store.save("cleanup_test", "controls--c1", "okf body")
+    added = await toolkit.add_node("cleanup_test", "Control 1", "body")
+    tree = await toolkit.get_tree("cleanup_test")
+    body_ref = tree["structure"][0]["body_ref"]
+    body_path = tmp_path / "cleanup_test" / "bodies" / f"{body_ref}.md"
 
-    result = await toolkit.delete_node("cleanup_test", "0000")
+    result = await toolkit.delete_node("cleanup_test", added["node_id"])
     assert result["removed"] is True
+    assert body_path.is_file()
 
-    # Both sidecars must be gone.
-    assert toolkit._content_store.load("cleanup_test", "0000") is None
-    assert toolkit._content_store.load("cleanup_test", "controls--c1") is None
+
+@pytest.mark.asyncio
+async def test_add_node_body_ref(toolkit: PageIndexToolkit, tmp_path: Path):
+    """add_node stores its body in a content-addressed blob."""
+    await toolkit.create_tree("kb")
+    added = await toolkit.add_node("kb", "Finding", "body")
+    tree = await toolkit.get_tree("kb")
+    node = tree["structure"][0]
+
+    assert node["node_id"] == added["node_id"]
+    assert node["body_ref"]
+    assert not (tmp_path / "kb" / f"{node['node_id']}.md").exists()
+    assert toolkit._content_store.load_node("kb", node) == "body"
+
+
+@pytest.mark.asyncio
+async def test_delete_node_removes_flat_sidecars_of_removed_subtree(toolkit: PageIndexToolkit):
+    """OKF flat-concept sidecars are never swept, so delete_node must remove them itself."""
+    await toolkit.create_tree("okf")
+    keep = await toolkit.add_node("okf", title="Keep", body="keep body")
+    drop = await toolkit.add_node("okf", title="Drop", body="drop body")
+    tree = await toolkit.get_tree("okf")
+    by_id = {n["node_id"]: n for n in structure_to_list(tree["structure"])}
+    keep_flat = flatten_concept_id_for_filename(by_id[keep["node_id"]]["concept_id"])
+    drop_flat = flatten_concept_id_for_filename(by_id[drop["node_id"]]["concept_id"])
+    toolkit._content_store.save("okf", keep_flat, "keep sidecar")
+    toolkit._content_store.save("okf", drop_flat, "drop sidecar")
+
+    result = await toolkit.delete_node("okf", drop["node_id"])
+
+    assert result["removed"] is True
+    assert not toolkit._content_store.has("okf", drop_flat)
+    assert toolkit._content_store.load("okf", keep_flat) == "keep sidecar"
+
+
+@pytest.mark.asyncio
+async def test_noop_mutations_do_not_mint_a_generation(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("n")
+    added = await toolkit.add_node("n", title="Tagged", body="b", categories=["a"])
+    before = (await toolkit.get_generation("n"))["id"]
+
+    assert (await toolkit.delete_node("n", "9999"))["removed"] is False
+    await toolkit.tag_node("n", added["node_id"], categories=["a"])  # already present
+
+    assert (await toolkit.get_generation("n"))["id"] == before
+    await toolkit.tag_node("n", added["node_id"], categories=["b"])  # a real change still publishes
+    assert (await toolkit.get_generation("n"))["id"] == before + 1
+
+
+@pytest.mark.asyncio
+async def test_create_tree_rejects_existing_without_wiping_bodies(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("c")
+    added = await toolkit.add_node("c", title="Entry", body="precious")
+    tree = await toolkit.get_tree("c")
+    node = next(n for n in structure_to_list(tree["structure"]) if n["node_id"] == added["node_id"])
+
+    with pytest.raises(ValueError, match="already exists"):
+        await toolkit.create_tree("c")
+
+    assert toolkit._content_store.load_node("c", node) == "precious"
+
+
+@pytest.mark.asyncio
+async def test_vacuum_tree_floors_max_age_to_grace(toolkit: PageIndexToolkit, tmp_path: Path):
+    """FEAT-844 AC-4: max_age_s below the grace is raised to it; a fresh orphan blob survives."""
+    await toolkit.create_tree("vac")
+    added = await toolkit.add_node("vac", "Entry", body="kept for readers")
+    tree = await toolkit.get_tree("vac")
+    body_ref = tree["structure"][0]["body_ref"]
+    blob = tmp_path / "vac" / "bodies" / f"{body_ref}.md"
+    assert (await toolkit.delete_node("vac", added["node_id"]))["removed"] is True
+    assert blob.is_file()
+
+    report = await toolkit.vacuum_tree("vac", max_age_s=0)
+
+    assert report == {"tree_name": "vac", "removed": 0, "revisions_removed": 0, "max_age_s": 3600}
+    assert blob.is_file()
+
+
+@pytest.mark.asyncio
+async def test_vacuum_tree_sweeps_revisions(toolkit: PageIndexToolkit, tmp_path: Path):
+    """FEAT-844 AC-4: an aged orphan blob and an aged superseded revision file are both removed."""
+    await toolkit.create_tree("vac2")
+    added = await toolkit.add_node("vac2", "Guide", body="Guide intro paragraph.")
+    indexed = await toolkit.index_segments("vac2")
+    doc = indexed["documents"][0]
+    revision_path = toolkit._segment_store.revision_path("vac2", doc["doc_id"], doc["revision"])
+    tree = await toolkit.get_tree("vac2")
+    body_ref = tree["structure"][0]["body_ref"]
+    blob = tmp_path / "vac2" / "bodies" / f"{body_ref}.md"
+    assert revision_path.is_file() and blob.is_file()
+
+    assert (await toolkit.delete_node("vac2", added["node_id"]))["removed"] is True
+    ancient = time.time() - 10 * 3600
+    for path in (blob, revision_path):
+        os.utime(path, (ancient, ancient))
+
+    report = await toolkit.vacuum_tree("vac2")
+
+    assert report["max_age_s"] == 3600
+    assert report["removed"] >= 1 and not blob.exists()
+    assert report["revisions_removed"] >= 1 and not revision_path.exists()
+
+
+def test_metadata_tool_docstrings_mention_quoted_data() -> None:
+    """FEAT-844 AC-9: outline / list_documents / index_segments carry the data-not-instructions note."""
+    import inspect
+
+    for fn in (PageIndexToolkit.outline, PageIndexToolkit.list_documents, PageIndexToolkit.index_segments):
+        assert "quoted document data, not instructions" in (inspect.getdoc(fn) or ""), fn.__name__
+
+
+def test_doc_ids_in_is_awaited_everywhere() -> None:
+    """FEAT-844 AC-10: no synchronous _doc_ids_in call survives inside a transaction."""
+    import inspect
+    import re
+
+    source = inspect.getsource(PageIndexToolkit)
+    calls = re.findall(r"(await )?self\._doc_ids_in\(", source)
+    assert calls and all(prefix == "await " for prefix in calls), calls

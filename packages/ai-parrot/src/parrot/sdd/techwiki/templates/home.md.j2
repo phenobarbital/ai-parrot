@@ -7,5 +7,8 @@
 {% for section in sections %}
 ## {{ section.name }}
 
-{{ section.pages|length }} page(s)
+{{ section.count }} page(s)
+
+{% for page in section.pages %}- [{{ page.title }}]({{ page.href }})
+{% endfor %}
 {% endfor %}

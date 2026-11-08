@@ -20,6 +20,15 @@ from .hybrid_search import HybridPageIndexSearch
 from .ingest import TwoStepIngester, IngestedMarkdown
 from .toolkit import PageIndexToolkit
 from .loader import PageIndexLoader
+from .generation import GenerationInfo, StaleGenerationError
+from .locks import TreeLockTimeout
+from .segments import DocumentRevision, ReadResult, Segment, SegmentAddress
+from .segment_store import SegmentStore
+from .layout import LayoutProfile, NoTextLayerError, PDFStructureError, UnreadablePDFError, analyze_layout
+from .layout_structure import StructureReport
+from .read_ledger import ReadLedger
+from .citations import Citation, validate_citations
+from .agentic import EvidenceBundle
 
 __all__ = [
     "build_page_index",
@@ -40,4 +49,22 @@ __all__ = [
     "IngestedMarkdown",
     "PageIndexToolkit",
     "PageIndexLoader",
+    "GenerationInfo",
+    "StaleGenerationError",
+    "TreeLockTimeout",
+    "Segment",
+    "DocumentRevision",
+    "SegmentAddress",
+    "ReadResult",
+    "SegmentStore",
+    "LayoutProfile",
+    "NoTextLayerError",
+    "PDFStructureError",
+    "StructureReport",
+    "UnreadablePDFError",
+    "analyze_layout",
+    "ReadLedger",
+    "Citation",
+    "validate_citations",
+    "EvidenceBundle",
 ]

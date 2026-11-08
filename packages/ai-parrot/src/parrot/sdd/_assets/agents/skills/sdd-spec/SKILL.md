@@ -76,7 +76,7 @@ stay with the thinking model — eligibility never delegates a design choice.
      `⚠️  /sdd-spec no longer scaffolds hotfixes — use /sdd-brief <source> (FEAT-698).`
    - feature must not use `main`
 6. Sync base branch:
-   - refuse if inside `.claude/worktrees/`
+   - refuse if `git rev-parse --git-dir` differs from `--git-common-dir` (a linked worktree)
    - refuse dirty worktree
    - `git checkout <base_branch>`
    - `git pull --ff-only origin <base_branch>`

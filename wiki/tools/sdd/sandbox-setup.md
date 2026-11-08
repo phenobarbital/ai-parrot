@@ -15,11 +15,17 @@ sandbox also uses `bwrap` internally, so the production setup requires
 
 ```bash
 # Single bwrap — should print "works"
-bwrap --ro-bind / / --dev /dev -- echo "works"
+bwrap --ro-bind / / --proc /proc --dev /dev -- echo "works"
 
 # Nested bwrap — must also print "nested works"
-bwrap --ro-bind / / --dev /dev -- bwrap --ro-bind / / --dev /dev -- echo "nested works"
+bwrap --ro-bind / / --proc /proc --dev /dev -- \
+  bwrap --ro-bind / / --proc /proc --dev /dev -- echo "nested works"
 ```
+
+`--proc /proc` is **not** optional in the nested command: with only
+`--ro-bind / /` the outer sandbox inherits the host `/proc` as a read-only
+bind, the inner `bwrap` cannot write its `uid_map`, and the probe fails on a
+host that is in fact configured correctly.
 
 If single works but nested fails with `apply-seccomp: write
 /proc/self/setgroups (nested userns is capability-restricted)`, follow
@@ -62,7 +68,8 @@ sudo apparmor_parser -r /etc/apparmor.d/bwrap
 
 ```bash
 # Must succeed after both steps
-bwrap --ro-bind / / --dev /dev -- bwrap --ro-bind / / --dev /dev -- echo "nested works"
+bwrap --ro-bind / / --proc /proc --dev /dev -- \
+  bwrap --ro-bind / / --proc /proc --dev /dev -- echo "nested works"
 ```
 
 If it prints `nested works`, the SDD sandbox (and Claude Code's native
@@ -74,6 +81,7 @@ sessions to pick up the change.
 | Symptom | Fix |
 |---|---|
 | `No permissions to create new namespace` on nested bwrap | Step 2 (AppArmor profile) is missing |
+| `setting up uid map: Read-only file system` on nested bwrap | Not AppArmor — the userns was created fine. The outer `bwrap` is missing `--proc /proc`; add it to both levels |
 | `apply-seccomp: write /proc/self/setgroups` | Both Step 1 and Step 2 needed |
 | Single bwrap also fails | `apt install bubblewrap` and Step 1 |
 | Works in terminal but not in `parrot sdd launch` | Restart the worker session after applying the fix |

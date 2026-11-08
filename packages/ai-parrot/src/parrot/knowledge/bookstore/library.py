@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
+from parrot.knowledge.pageindex.layout import PDFStructureError
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, REPLACED_MARKER
 
 from .carding import (
@@ -238,6 +239,7 @@ class Bookstore:
                 adapter=self.adapter if self.adapter is not None else _NullAdapter(),
                 storage_dir=loc.trees_dir,
                 lightweight_model=self.lightweight_model,
+                generation_grace_s=_STAGING_MAX_AGE_S,
             )
         return self._toolkits[scope]
 
@@ -310,6 +312,18 @@ class Bookstore:
             except Exception:  # noqa: BLE001 — crash recovery is best-effort
                 logger.warning("Failed to sweep reserved tree %r", tree_name, exc_info=True)
 
+        live_names = {
+            tree_name.split(REPLACED_MARKER if REPLACED_MARKER in tree_name else _STAGING_MARKER, maxsplit=1)[0]
+            for tree_name, _, _ in reserved
+        }
+        for live_name in live_names:
+            if not toolkit._store.exists(live_name):
+                continue
+            try:
+                await toolkit.vacuum_tree(live_name)
+            except Exception:  # noqa: BLE001 — vacuum is best-effort during recovery
+                logger.warning("Failed to vacuum live tree %r during reserved-tree sweep", live_name, exc_info=True)
+
     # ------------------------------------------------------------------
     # Read surface
     # ------------------------------------------------------------------
@@ -371,7 +385,9 @@ class Bookstore:
         missing.
         """
         card, loc = self.resolve_book(book_id)
-        body = self._content_store(loc.scope).load(card.tree_name, node_id)
+        # Live generation first: a leftover legacy ``<node_id>.md`` must never be
+        # served for a node id that a reindexed/renamed tree has reused.
+        body = self._content_store(loc.scope).load_current(card.tree_name, node_id)
         entry = next((e for e in card.toc if e.node_id == node_id), None)
         if body is None and entry is None:
             raise BookstoreError(f"Unknown section {node_id!r} in book {book_id!r} — " "check bookstore_get_toc")
@@ -384,6 +400,74 @@ class Bookstore:
             "end_page": entry.end_page if entry else None,
             "content": body or "",
         }
+
+    async def _document_of(self, card: Any, toolkit: PageIndexToolkit) -> dict[str, Any]:
+        """The single imported document of a book's tree."""
+        documents = await toolkit.list_documents(card.tree_name)
+        if not documents:
+            raise BookstoreError("book has no segments — reindex it or run pageindex_index_segments")
+        return documents[0]
+
+    @staticmethod
+    def _book_result(card: Any, result: dict[str, Any]) -> dict[str, Any]:
+        return {"book_id": card.book_id, "book_title": card.title, **result}
+
+    @staticmethod
+    def _message(exc: Exception) -> str:
+        return str(exc.args[0]) if isinstance(exc, KeyError) and exc.args else str(exc)
+
+    async def read_pages(
+        self, book_id: str, pages: str, max_chars: int = 12000, cursor: Optional[str] = None
+    ) -> dict[str, Any]:
+        """Read a page range of a book (``"5-7,12"``) with citable segment addresses."""
+        card, loc = self.resolve_book(book_id)
+        toolkit = self._toolkit(loc.scope)
+        doc = await self._document_of(card, toolkit)
+        try:
+            result = await toolkit.read_pages(
+                card.tree_name, doc["doc_id"], pages, max_chars=max_chars, cursor=cursor
+            )
+        except (KeyError, ValueError) as exc:
+            raise BookstoreError(self._message(exc)) from exc
+        return self._book_result(card, result)
+
+    async def read_segments(
+        self,
+        book_id: str,
+        start: Optional[int] = None,
+        end: Optional[int] = None,
+        node_id: Optional[str] = None,
+        max_chars: int = 12000,
+        cursor: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Read paragraphs of a book by position or a section's own text (``node_id``)."""
+        card, loc = self.resolve_book(book_id)
+        toolkit = self._toolkit(loc.scope)
+        doc = await self._document_of(card, toolkit)
+        try:
+            result = await toolkit.read_segments(
+                card.tree_name,
+                doc["doc_id"],
+                start=start,
+                end=end,
+                node_id=node_id,
+                max_chars=max_chars,
+                cursor=cursor,
+            )
+        except (KeyError, ValueError) as exc:
+            raise BookstoreError(self._message(exc)) from exc
+        return self._book_result(card, result)
+
+    async def outline(self, book_id: str, node_id: Optional[str] = None, max_depth: int = 3) -> dict[str, Any]:
+        """Compact outline of a book or one of its sections."""
+        card, loc = self.resolve_book(book_id)
+        toolkit = self._toolkit(loc.scope)
+        await self._document_of(card, toolkit)
+        try:
+            result = await toolkit.outline(card.tree_name, node_id=node_id, max_depth=max_depth)
+        except (KeyError, ValueError) as exc:
+            raise BookstoreError(self._message(exc)) from exc
+        return self._book_result(card, result)
 
     def _expand_with_related(self, cards: list[BookCard]) -> list[BookCard]:
         """Widen ``cards`` with depth-1 related books (no LLM call).
@@ -1012,8 +1096,8 @@ class Bookstore:
                 or ``.txt`` without an LLM, or EPUB without
                 ``ai-parrot-loaders``.
         """
-        path = Path(file_path).expanduser().resolve()
-        if not path.is_file():
+        path = await asyncio.to_thread(lambda: Path(file_path).expanduser().resolve())
+        if not await asyncio.to_thread(path.is_file):
             raise BookstoreError(f"File not found: {path}")
         fmt = _FORMAT_BY_SUFFIX.get(path.suffix.lower())
         if fmt is None:
@@ -1044,18 +1128,16 @@ class Bookstore:
         try:
             await toolkit.create_tree(staging, doc_name=title or path.stem)
             if fmt == "pdf":
-                if not self.has_llm:
-                    raise BookstoreError(
-                        "PDF ingest needs an LLM to detect and structure "
-                        "the table of contents — configure one (--llm) "
-                        "or convert to markdown/text first"
+                try:
+                    result = await toolkit.import_pdf(
+                        tree_name=staging,
+                        pdf_path=str(path),
+                        with_summaries=self.has_llm,
+                        with_doc_description=self.has_llm,
+                        structure_mode="auto" if self.has_llm else "layout",
                     )
-                result = await toolkit.import_pdf(
-                    tree_name=staging,
-                    pdf_path=str(path),
-                    with_summaries=self.has_llm,
-                    with_doc_description=self.has_llm,
-                )
+                except PDFStructureError as exc:
+                    raise BookstoreError(f"Cannot index {path.name}: {exc}") from exc
                 doc_description = result.get("doc_description") or ""
             elif fmt == "md":
                 await toolkit.insert_markdown(
@@ -1095,6 +1177,7 @@ class Bookstore:
                 doc_description=doc_description or tree.get("doc_description") or "",
                 toc_digest=toc_digest,
                 toc_entries=toc_entries,
+                tree=tree,
             )
             if not title:
                 taken_titles = {c.title.casefold() for c in self.list_books() if c.book_id != slug}
@@ -1168,10 +1251,14 @@ class Bookstore:
         doc_description: str,
         toc_digest: str,
         toc_entries: list,
+        tree: dict,
     ) -> CardDraft:
         if not self.has_llm:
             return fallback_card_fields(path, toc_entries)
-        loader = self._content_store(scope).loader_for(tree_name)
+        # Pinned to ``tree``: ids resolve via load_node (body_ref first), so a
+        # stale <node_id>.md left by an overwrite can never be sampled instead
+        # of the live body.
+        loader = self._content_store(scope).loader_for(tree_name, tree)
         node_ids = [e.node_id for e in toc_entries if e.node_id]
         samples = sample_sections(loader, node_ids)
         try:
@@ -1324,8 +1411,9 @@ class Bookstore:
                 results.append({"file": str(path), "status": "failed", "error": str(exc)})
         if relate and any_succeeded:
             await self.relate_books(None, communities_only=True)
+        folder_resolved = await asyncio.to_thread(lambda: Path(folder).expanduser().resolve())
         return {
-            "folder": str(Path(folder).expanduser().resolve()),
+            "folder": str(folder_resolved),
             "results": results,
             "ignored": [str(p) for p in ignored],
         }
@@ -1381,6 +1469,7 @@ class Bookstore:
             doc_description=tree.get("doc_description") or "",
             toc_digest=toc_digest,
             toc_entries=toc_entries,
+            tree=tree,
         )
         updated = card.model_copy(
             update={

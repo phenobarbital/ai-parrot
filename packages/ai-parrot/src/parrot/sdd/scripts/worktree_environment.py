@@ -35,7 +35,7 @@ def existing_directory(path: Path) -> Path:
     subsequent command — the session loses its own shell and cannot even
     ``cd`` back to the primary checkout. Anchoring on the nearest surviving
     ancestor keeps the sandbox on a real directory instead: for a removed
-    worktree that is the primary checkout's ``.claude/worktrees``, so the next
+    worktree that is the primary checkout's worktree root, so the next
     command lands back inside the primary checkout.
 
     Args:
@@ -136,17 +136,26 @@ def command_policy_error(cwd: Path, argv: Sequence[str]) -> str | None:
     return POLICY_MESSAGE
 
 
-WORKTREE_ADMIN_DIR = Path(".claude") / "worktrees"
 # The shared SDD work ledger (``WikiProjectConfig.ledger_path``). It always
 # resolves to the primary checkout, so a worktree agent filing a finding with
 # ``wikitoolkit ledger open`` writes there, never into its own checkout.
 SHARED_LEDGER_DIR = Path(".parrot") / "ledger"
+# The sdd-coder durable evidence store. ``resolve_durable_root``
+# (parrot/flows/dev_loop/sdd_coder/telemetry.py) places it under the PRIMARY
+# checkout so the dataset outlives ``git worktree remove``, and
+# ``parrot sdd task review prepare`` / ``finalize`` write into it from inside a
+# worktree. Only this directory is bound: ``artifacts/`` also holds Python the
+# host executes (``artifacts/laya/``), which must stay read-only. This module is
+# stdlib-only by contract, so the path is duplicated here rather than imported;
+# ``test_coder_evidence_dir_matches_resolve_durable_root`` guards the drift.
+CODER_EVIDENCE_DIR = Path("artifacts") / "logs" / "sdd-coder-usage"
 # Claude Code keeps every session's scratchpad under this root
 # (``/tmp/claude-<uid>/<project-slug>/<session-id>/scratchpad``) and tells the
 # seat to use it for temporary files. The sandbox replaces ``/tmp`` with a
 # private tmpfs, so the root is bound back in — writable — for all sessions of
 # this user at once; every session on the host belongs to the same user.
-# ``os.getuid`` does not exist on Windows; the hook must still import there (the path is only used by the POSIX sandbox).
+# ``os.getuid`` does not exist on Windows; the hook must still import there.
+# The path is only used by the POSIX sandbox.
 CLAUDE_SCRATCH_ROOT = Path("/tmp") / f"claude-{os.getuid() if hasattr(os, 'getuid') else 0}"
 
 
@@ -154,7 +163,7 @@ def worktree_admin_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
     """Return the primary checkout's worktree directory when ``root`` is a linked worktree.
 
     Linked worktrees (feature and pool checkouts) live under the primary
-    checkout's ``.claude/worktrees``. ``/sdd-done`` run from inside one must
+    checkout's resolved worktree root (default ``.parrot/worktrees``). ``/sdd-done`` run from inside one must
     create a throwaway ledger-snapshot worktree there and remove the feature
     worktree itself, and both operations write to that directory rather than
     to the worktree being executed in. The rest of the primary checkout is
@@ -174,10 +183,32 @@ def worktree_admin_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
     primary = git_dir.parent
     if primary == root:
         return ()
-    admin_dir = (primary / WORKTREE_ADMIN_DIR).resolve()
+    admin_dir = _worktree_root(primary).resolve()
     if not admin_dir.is_dir() or admin_dir.is_relative_to(root):
         return ()
     return (admin_dir,)
+
+
+def _worktree_root(primary: Path) -> Path:
+    """Resolve the primary checkout's worktree root, importing no third-party package.
+
+    The tmux worker launcher runs this module under ``python -S``, where
+    ``parrot.sdd.config`` (pydantic) cannot be imported. Prefer it when it is
+    importable; otherwise mirror its ``WORKTREE_BASE_PATH`` resolution.
+
+    Args:
+        primary: The primary checkout root.
+
+    Returns:
+        The absolute, normalized worktree root.
+    """
+    try:
+        from parrot.sdd.config import worktree_root
+    except ImportError:
+        value = (os.environ.get("WORKTREE_BASE_PATH") or "").strip() or ".parrot/worktrees"
+        root = Path(value) if os.path.isabs(value) else primary / value
+        return Path(os.path.normpath(root.absolute()))
+    return worktree_root(primary)
 
 
 def shared_ledger_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
@@ -209,6 +240,45 @@ def shared_ledger_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
     return (ledger_dir,)
 
 
+def coder_evidence_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
+    """Return the primary checkout's sdd-coder evidence store for a linked worktree.
+
+    ``parrot sdd task review prepare`` and ``parrot sdd task finalize`` resolve
+    the store to ``<primary>/artifacts/logs/sdd-coder-usage`` and write the
+    review checkpoint and the task journal there. Only that directory is
+    returned: the rest of ``artifacts/`` holds Python the unsandboxed host
+    executes and stays read-only.
+
+    Unlike :func:`shared_ledger_dirs`, a missing directory is created rather
+    than skipped: the store does not exist before the first execution, and
+    Bubblewrap cannot bind a path that is not there.
+
+    Args:
+        root: The checkout root resolved for the command's working directory.
+        git_dir: The common Git directory, or ``None`` outside a repository.
+
+    Returns:
+        The evidence directory to bind writable, or an empty tuple for the
+        primary checkout (already writable) and when it cannot be created.
+    """
+    if git_dir is None:
+        return ()
+    primary = git_dir.parent
+    if primary == root:
+        return ()
+    evidence_dir = (primary / CODER_EVIDENCE_DIR).resolve()
+    if evidence_dir.is_relative_to(root):
+        return ()
+    try:
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # Never raise: protected_argv wraps every Bash call, so one raise denies
+        # the whole session. Degrade to "no bind" and let the CLI report its own
+        # write failure.
+        return ()
+    return (evidence_dir,)
+
+
 def claude_scratch_root() -> Path:
     """Return Claude Code's per-user scratchpad root, creating it when absent.
 
@@ -230,10 +300,12 @@ def protected_argv(cwd: Path, argv: Sequence[str], *, derive_pythonpath: bool = 
     """Build a fail-closed Linux filesystem sandbox for a command and its children.
 
     Only the checkout, Git administration directory, the primary checkout's
-    worktree directory (``.claude/worktrees``, so a worktree agent can run
+    worktree directory (the resolved worktree root, so a worktree agent can run
     ``git worktree add/remove`` for ``/sdd-done``), the primary checkout's
     shared SDD ledger (``.parrot/ledger``, so a worktree agent can file and
-    claim ledger issues), private temporary storage,
+    claim ledger issues), the sdd-coder evidence store
+    (``artifacts/logs/sdd-coder-usage``, so review checkpoints and task journals can be
+    written), private temporary storage,
     and Claude Code's scratchpad root (``/tmp/claude-<uid>``, bound back over the
     private ``/tmp`` so a seat's scratchpad survives between commands) are
     writable. The rest of the primary checkout and existing shared
@@ -285,6 +357,8 @@ def protected_argv(cwd: Path, argv: Sequence[str], *, derive_pythonpath: bool = 
         command.extend(["--bind", str(git_dir), str(git_dir)])
     for ledger_dir in shared_ledger_dirs(root, git_dir):
         command.extend(["--bind", str(ledger_dir), str(ledger_dir)])
+    for evidence_dir in coder_evidence_dirs(root, git_dir):
+        command.extend(["--bind", str(evidence_dir), str(evidence_dir)])
     for environment in shared_environments(cwd):
         command.extend(["--ro-bind", str(environment), str(environment)])
     # Caches are disposable and must not write into the shared host cache.

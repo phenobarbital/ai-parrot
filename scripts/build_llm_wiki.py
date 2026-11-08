@@ -130,7 +130,7 @@ DEFAULT_EXCLUDES: tuple[str, ...] = (
     "build",
     "dist",
     ".egg-info",
-    ".claude/worktrees",
+    ".parrot/worktrees",
     "site-packages",
 )
 
@@ -187,9 +187,7 @@ class WikiBuildConfig:
     max_body_chars: int = 24_000
     backend: str = "sqlite"
     enrich_llm: Optional[str] = None
-    enrich_kinds: frozenset[str] = frozenset(
-        {"package", "module", "class", "doc"}
-    )
+    enrich_kinds: frozenset[str] = frozenset({"package", "module", "class", "doc"})
     enrich_concurrency: int = 8
     enrich_limit: Optional[int] = None
 
@@ -276,20 +274,12 @@ def _is_excluded(path: Path, excludes: Iterable[str]) -> bool:
     return any(frag in s for frag in excludes)
 
 
-def discover_python_files(
-    src_root: Path, excludes: Iterable[str]
-) -> list[Path]:
+def discover_python_files(src_root: Path, excludes: Iterable[str]) -> list[Path]:
     """Return every non-excluded ``*.py`` under ``src_root`` (sorted)."""
-    return sorted(
-        p
-        for p in src_root.rglob("*.py")
-        if p.is_file() and not _is_excluded(p, excludes)
-    )
+    return sorted(p for p in src_root.rglob("*.py") if p.is_file() and not _is_excluded(p, excludes))
 
 
-def discover_markdown_files(
-    doc_paths: Iterable[Path], excludes: Iterable[str]
-) -> list[Path]:
+def discover_markdown_files(doc_paths: Iterable[Path], excludes: Iterable[str]) -> list[Path]:
     """Return every non-excluded ``*.md`` reachable from ``doc_paths``."""
     found: set[Path] = set()
     for base in doc_paths:
@@ -390,7 +380,7 @@ def _iter_imports(tree: ast.Module, module_name: str) -> set[str]:
             if node.level and node.level > 0:
                 # Relative: drop `level` trailing components from the package.
                 base = pkg_parts[: len(pkg_parts) - node.level]
-                mod = (base + ([node.module] if node.module else []))
+                mod = base + ([node.module] if node.module else [])
                 prefix = ".".join(mod)
             else:
                 prefix = node.module or ""
@@ -437,8 +427,7 @@ def extract_module(py_file: Path, module_name: str) -> Optional[_ModuleExtract]:
                     "doc": _first_line(ast.get_docstring(m)),
                 }
                 for m in node.body
-                if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))
-                and not m.name.startswith("_")
+                if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)) and not m.name.startswith("_")
             ]
             classes.append(
                 {
@@ -581,9 +570,7 @@ class WikiComposer:
             pkg = ".".join(parts[:i])
             self._packages.add(pkg)
 
-    def _add_class(
-        self, module: str, cls: dict[str, Any], uri: str, source_id: Optional[str]
-    ) -> None:
+    def _add_class(self, module: str, cls: dict[str, Any], uri: str, source_id: Optional[str]) -> None:
         cid = CLASS_CID.format(module=module, name=cls["name"])
         self._class_by_simple.setdefault(cls["name"], []).append(cid)
         summary = _first_line(cls["doc"]) or f"Class {cls['name']} in {module}"
@@ -603,9 +590,7 @@ class WikiComposer:
         )
         self._add_edge(MODULE_CID.format(name=module), cid, "defines")
 
-    def _add_function(
-        self, module: str, fn: dict[str, Any], uri: str, source_id: Optional[str]
-    ) -> None:
+    def _add_function(self, module: str, fn: dict[str, Any], uri: str, source_id: Optional[str]) -> None:
         cid = FUNC_CID.format(module=module, name=fn["name"])
         summary = _first_line(fn["doc"]) or f"Function {fn['name']} in {module}"
         body = f"# {fn['name']}\n\n```python\n{fn['signature']}\n```\n\n{fn['doc']}\n"
@@ -712,12 +697,8 @@ class WikiComposer:
         all_modules = set(self._module_ids)
         for pkg in sorted(self._packages):
             cid = PKG_CID.format(name=pkg)
-            children_mods = sorted(
-                m for m in all_modules if _direct_child(pkg, m)
-            )
-            children_pkgs = sorted(
-                p for p in self._packages if _direct_child(pkg, p)
-            )
+            children_mods = sorted(m for m in all_modules if _direct_child(pkg, m))
+            children_pkgs = sorted(p for p in self._packages if _direct_child(pkg, p))
             body = self._package_body(pkg, children_pkgs, children_mods)
             self._add_page(
                 PageDraft(
@@ -727,8 +708,7 @@ class WikiComposer:
                     kind="package",
                     node_kind=NodeKind.DOCUMENT,
                     source_uri=pkg.replace(".", "/"),
-                    summary=f"Package {pkg} ({len(children_mods)} modules, "
-                    f"{len(children_pkgs)} sub-packages).",
+                    summary=f"Package {pkg} ({len(children_mods)} modules, " f"{len(children_pkgs)} sub-packages).",
                     body=body,
                     domain_tags={"package": pkg},
                 )
@@ -738,9 +718,7 @@ class WikiComposer:
             for child in children_mods:
                 self._add_edge(cid, MODULE_CID.format(name=child), "contains")
 
-    def _package_body(
-        self, pkg: str, sub_pkgs: list[str], modules: list[str]
-    ) -> str:
+    def _package_body(self, pkg: str, sub_pkgs: list[str], modules: list[str]) -> str:
         lines = [f"# `{pkg}`", "", f"Python package **{pkg}**.", ""]
         if sub_pkgs:
             lines += ["## Sub-packages", ""]
@@ -796,10 +774,7 @@ class WikiComposer:
 
 def _direct_child(parent: str, candidate: str) -> bool:
     """True when ``candidate`` is a direct dotted child of ``parent``."""
-    return (
-        candidate.startswith(parent + ".")
-        and "." not in candidate[len(parent) + 1 :]
-    )
+    return candidate.startswith(parent + ".") and "." not in candidate[len(parent) + 1 :]
 
 
 _DOTTED_RE = re.compile(r"\b(?:parrot|parrot_tools|parrot_loaders|parrot_pipelines|sdd)(?:\.[a-zA-Z_][a-zA-Z0-9_]*)+\b")
@@ -874,16 +849,10 @@ def _enrich_prompt(page: PageDraft) -> str:
     """Build the user prompt asking the model to summarise one page."""
     label = _KIND_LABEL.get(page.kind, "page")
     excerpt = page.body[:6000] if page.body else page.summary
-    return (
-        f"{label}: {page.title}\n\n"
-        f"Source excerpt:\n\n{excerpt}\n\n"
-        "Write the summary."
-    )
+    return f"{label}: {page.title}\n\n" f"Source excerpt:\n\n{excerpt}\n\n" "Write the summary."
 
 
-async def enrich_summaries(
-    config: WikiBuildConfig, pages: list[PageDraft]
-) -> dict[str, Any]:
+async def enrich_summaries(config: WikiBuildConfig, pages: list[PageDraft]) -> dict[str, Any]:
     """Rewrite selected page summaries into LLM prose (in place).
 
     Uses the AI-Parrot client factory — ``LLMFactory.create`` resolves a
@@ -907,9 +876,7 @@ async def enrich_summaries(
 
     provider, model = LLMFactory.parse_llm_string(config.enrich_llm or "")
     if not model:
-        raise ValueError(
-            f"--enrich-llm needs an explicit model, e.g. '{provider}:gemini-3-flash'"
-        )
+        raise ValueError(f"--enrich-llm needs an explicit model, e.g. '{provider}:gemini-3-flash'")
 
     targets = [p for p in pages if p.kind in config.enrich_kinds]
     if config.enrich_limit is not None:
@@ -947,8 +914,7 @@ async def enrich_summaries(
             first = await _summarise(targets[0])
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError(
-                f"enrichment canary call failed ({type(exc).__name__}: {exc}). "
-                "Check the API key and model name."
+                f"enrichment canary call failed ({type(exc).__name__}: {exc}). " "Check the API key and model name."
             ) from exc
         if first:
             targets[0].summary = first
@@ -1029,37 +995,25 @@ async def build_wiki(config: WikiBuildConfig) -> dict[str, Any]:
     for md in md_files:
         composer.add_doc(md)
 
-    logger.info(
-        "composed %d pages, %d edges", len(composer.pages), len(composer.edges)
-    )
+    logger.info("composed %d pages, %d edges", len(composer.pages), len(composer.edges))
 
     # 5b. Optional LLM enrichment — rewrite summaries as prose in place, so
     # the store, OKF frontmatter, and graph tooltips all carry it.
     enrich_stats: Optional[dict[str, Any]] = None
     if config.enrich_llm:
-        enrich_stats = await enrich_summaries(
-            config, list(composer.pages.values())
-        )
+        enrich_stats = await enrich_summaries(config, list(composer.pages.values()))
 
     # 6. Populate the retrieval plane.
-    store = create_wiki_store(
-        config.output, wiki_name=config.wiki_name, backend=config.backend
-    )
+    store = create_wiki_store(config.output, wiki_name=config.wiki_name, backend=config.backend)
     records = [p.to_record() for p in composer.pages.values()]
     n_pages = await store.upsert_pages(records)
     valid_ids = set(composer.pages)
-    edge_tuples = [
-        e.as_store_tuple()
-        for e in composer.edges
-        if e.src in valid_ids and e.dst in valid_ids
-    ]
+    edge_tuples = [e.as_store_tuple() for e in composer.edges if e.src in valid_ids and e.dst in valid_ids]
     n_edges = await store.add_edges(edge_tuples)
     logger.info("wiki.db: %d pages, %d edges written", n_pages, n_edges)
 
     # 7. OKF markdown bundle (human-browsable projection).
-    okf_report = await export_okf_bundle(
-        store, config.output, wiki_name=config.wiki_name
-    )
+    okf_report = await export_okf_bundle(store, config.output, wiki_name=config.wiki_name)
     logger.info("OKF bundle: %d files", okf_report.files_written)
 
     # 8. Interactive knowledge-graph map.
@@ -1084,9 +1038,7 @@ async def build_wiki(config: WikiBuildConfig) -> dict[str, Any]:
         "duration_ms": round((time.monotonic() - t0) * 1000, 1),
     }
     _write_readme(config, stats)
-    (config.output / "wiki_stats.json").write_text(
-        json.dumps(stats, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    (config.output / "wiki_stats.json").write_text(json.dumps(stats, indent=2, ensure_ascii=False), encoding="utf-8")
     logger.info("build complete in %.1f ms", stats["duration_ms"])
     return stats
 
@@ -1101,9 +1053,7 @@ def _register_sources(
     if config.backend != "sqlite":
         return  # json manifest path kept simple; skip for memory backend
     try:
-        mgr = SourceCollectionManager(
-            config.output / "sources", db_path=config.output / "wiki.db"
-        )
+        mgr = SourceCollectionManager(config.output / "sources", db_path=config.output / "wiki.db")
     except Exception as exc:  # noqa: BLE001
         logger.warning("source manifest unavailable: %s", exc)
         return
@@ -1115,22 +1065,12 @@ def _register_sources(
             logger.debug("could not register source %s: %s", path, exc)
 
 
-def _export_graph_map(
-    composer: WikiComposer, config: WikiBuildConfig
-) -> dict[str, Any]:
+def _export_graph_map(composer: WikiComposer, config: WikiBuildConfig) -> dict[str, Any]:
     """Assemble the selected page subset into a graph and export HTML/JSON."""
     kinds = config.graph_node_kinds
-    node_ids = {
-        p.concept_id for p in composer.pages.values() if p.kind in kinds
-    }
-    nodes = [
-        p.to_node() for p in composer.pages.values() if p.concept_id in node_ids
-    ]
-    edges = [
-        e.to_edge()
-        for e in composer.edges
-        if e.src in node_ids and e.dst in node_ids
-    ]
+    node_ids = {p.concept_id for p in composer.pages.values() if p.kind in kinds}
+    nodes = [p.to_node() for p in composer.pages.values() if p.concept_id in node_ids]
+    edges = [e.to_edge() for e in composer.edges if e.src in node_ids and e.dst in node_ids]
     if not nodes:
         logger.warning("no graph nodes selected — skipping graph export")
         return {"nodes": 0, "edges": 0, "exported": False}
@@ -1144,9 +1084,7 @@ def _export_graph_map(
     communities = None
     analytics = None
     try:
-        communities = detect_communities(
-            graph=assembler.graph, nodes=nodes, write_back_to_nodes=True
-        )
+        communities = detect_communities(graph=assembler.graph, nodes=nodes, write_back_to_nodes=True)
     except Exception as exc:  # noqa: BLE001
         logger.warning("community detection skipped: %s", exc)
     try:
@@ -1172,12 +1110,8 @@ def _export_graph_map(
         "exported": True,
         "html": str(html_path.relative_to(config.output)),
         "json": str(json_path.relative_to(config.output)),
-        "communities": (
-            len(communities.communities) if communities else 0
-        ),
-        "modularity": (
-            round(communities.modularity, 4) if communities else None
-        ),
+        "communities": (len(communities.communities) if communities else 0),
+        "modularity": (round(communities.modularity, 4) if communities else None),
     }
 
 
@@ -1229,8 +1163,7 @@ def _write_readme(config: WikiBuildConfig, stats: dict[str, Any]) -> None:
         "machine plane an agent queries and contributes to. |",
         "| `index.md` + category folders | OKF v0.1 markdown bundle — the "
         "human-browsable projection of every page. |",
-        "| `graph.html` | Interactive, offline knowledge-graph map (open in a "
-        "browser). |",
+        "| `graph.html` | Interactive, offline knowledge-graph map (open in a " "browser). |",
         "| `graph.json` | Serialized graph (nodes, edges, communities). |",
         "| `wiki_stats.json` | Full build report. |",
         "",
@@ -1399,9 +1332,7 @@ def parse_args(argv: Optional[list[str]] = None) -> WikiBuildConfig:
         default=None,
         help="Cap pages enriched (cheap trial run before the full corpus).",
     )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Debug logging."
-    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Debug logging.")
     args = parser.parse_args(argv)
 
     level = logging.DEBUG if args.verbose else logging.INFO
@@ -1434,15 +1365,11 @@ def parse_args(argv: Optional[list[str]] = None) -> WikiBuildConfig:
         config.wiki_name = args.wiki_name
     if args.no_functions:
         config.include_functions = False
-    config.graph_node_kinds = frozenset(
-        k.strip() for k in args.graph_kinds.split(",") if k.strip()
-    )
+    config.graph_node_kinds = frozenset(k.strip() for k in args.graph_kinds.split(",") if k.strip())
     config.backend = args.backend
     if args.enrich_llm:
         config.enrich_llm = args.enrich_llm
-        config.enrich_kinds = frozenset(
-            k.strip() for k in args.enrich_kinds.split(",") if k.strip()
-        )
+        config.enrich_kinds = frozenset(k.strip() for k in args.enrich_kinds.split(",") if k.strip())
         config.enrich_concurrency = args.enrich_concurrency
         config.enrich_limit = args.enrich_limit
     return config

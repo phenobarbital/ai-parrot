@@ -104,6 +104,11 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
             "git stash -u           # keep untracked work recoverable instead"
     fi
 
+    # A protected branch name as a whole token: a hyphen, dot or slash is part
+    # of a branch name, so `feat-x-dev-loop` or `feat/dev` must not match `dev`
+    # (issue:a682edf559a5). `refs/heads/` is matched explicitly.
+    PROTECTED_TOKEN='(^|[^[:alnum:]_./-])(refs/heads/)?(main|dev|staging|master)($|[^[:alnum:]_./-])'
+
     # Force-push to a long-lived branch. Feature branches are fine.
     # ERE has no negative lookahead, so --force-with-lease is excluded by a
     # separate test rather than inline in the pattern.
@@ -120,7 +125,7 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
     if echo "$SCAN" | grep -qE 'git\s+push\b' \
        && echo "$SCAN" | grep -qE '(\s|^)(-f|--force)(\s|$|=)' \
        && ! echo "$SCAN" | grep -q -- '--force-with-lease'; then
-        if echo "$SCAN" | grep -qE '\b(main|dev|staging|master)\b'; then
+        if echo "$SCAN" | grep -qE "$PROTECTED_TOKEN"; then
             block "Force-push to a protected branch (main/dev/staging) rewrites history other worktrees and CI depend on." \
                 "git push origin <feature-branch>        # push your own branch" \
                 "gh pr create --base dev                 # land it through a PR" \
@@ -139,7 +144,7 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
     fi
 
     # Deleting a protected branch.
-    if echo "$SCAN" | grep -qE 'git\s+branch\s+[^;&|]*-[dD]\b[^;&|]*\b(main|dev|staging|master)\b'; then
+    if echo "$SCAN" | grep -qE 'git\s+branch\s+[^;&|]*-[dD]\b[^;&|]*'"$PROTECTED_TOKEN"; then
         block "Deleting a protected branch (main/dev/staging)." \
             "# There is no safe variant. Delete a feature branch instead:" \
             "git branch -d <feature-branch>"
@@ -169,8 +174,8 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
     fi
 
     # Repo-critical paths that must never be blown away wholesale.
-    if echo "$SCAN" | grep -qE 'rm\s+(-[a-zA-Z]+\s+)*-?[a-zA-Z]*[rR][a-zA-Z]*\s+[^;&|]*(\.venv|packages/?\s*$|\.git(/|\s|$)|\.claude/worktrees)'; then
-        block "Recursive delete of a repo-critical path (.venv, packages/, .git, .claude/worktrees)." \
+    if echo "$SCAN" | grep -qE 'rm\s+(-[a-zA-Z]+\s+)*-?[a-zA-Z]*[rR][a-zA-Z]*\s+[^;&|]*(\.venv|packages/?\s*$|\.git(/|\s|$)|\.(claude|parrot)/worktrees)'; then
+        block "Recursive delete of a repo-critical path (.venv, packages/, .git, .parrot/worktrees, .claude/worktrees)." \
             "# .venv:              make distclean   (then: uv sync)" \
             "# a worktree:         parrot sdd worktree remove <target>" \
             "# build artefacts:    make clean"
@@ -228,7 +233,7 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
     fi
 
     # --- warn (non-blocking) ----------------------------------------------
-    if echo "$SCAN" | grep -qE 'git\s+(merge|pull)\b' && [[ -d .claude/worktrees ]]; then
+    if echo "$SCAN" | grep -qE 'git\s+(merge|pull)\b' && [[ -d "${WORKTREE_BASE_PATH:-.parrot/worktrees}" ]]; then
         if pgrep -f 'sdd-worker' >/dev/null 2>&1; then
             echo '{"systemMessage": "A sdd-worker process is live. A merge/pull on a shared branch can check out files over its uncommitted edits — verify with `git status` and `ps -eo pid,args | grep sdd-worker` before proceeding."}'
         fi

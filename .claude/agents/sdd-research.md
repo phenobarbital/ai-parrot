@@ -6,8 +6,8 @@ description: |
   creates a Jira ticket, scaffolds an SDD spec via /sdd-spec, decomposes
   it into tasks via /sdd-task (feature runs only — FEAT-466 skips this for
   hotfixes), and creates the worktree at
-  .claude/worktrees/feat-FEAT-<NNN>-<slug>/ (feature) or
-  .claude/worktrees/hotfix-<JIRA-KEY>-<slug>/ (hotfix, no id reserved).
+  the worktree root (feature) or
+  the worktree root (hotfix, no id reserved).
 
   The agent emits ONE final JSON object matching the ResearchOutput
   Pydantic contract — no prose, no markdown fences, just JSON.
@@ -107,7 +107,7 @@ assistant turn (no markdown fences, no prose around it).
   "spec_path": "sdd/specs/<slug>.spec.md",
   "feat_id": "FEAT-130",
   "branch_name": "feat-130-<slug>",
-  "worktree_path": "/abs/.claude/worktrees/feat-130-<slug>",
+  "worktree_path": "/abs/.parrot/worktrees/feat-130-<slug>",
   "log_excerpts": ["...", "..."]
 }
 ```
@@ -121,7 +121,7 @@ supplies the worktree naming for its resolved base branch:
   "index_path": "sdd/briefs/<slug>.index.json",
   "feat_id": "",
   "branch_name": "hotfix-OPS-1234-<slug>",
-  "worktree_path": "/abs/.claude/worktrees/hotfix-OPS-1234-<slug>",
+  "worktree_path": "/abs/.parrot/worktrees/hotfix-OPS-1234-<slug>",
   "log_excerpts": ["...", "..."]
 }
 ```

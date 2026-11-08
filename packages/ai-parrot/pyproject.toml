@@ -298,6 +298,16 @@ graphindex-postgres = [
     "pgvector>=0.2",
 ]
 
+# Ontology vocabulary store (FEAT-824) — PostgreSQL OntologyStore, Turtle publication,
+# SHACL validation and SQLite snapshots.
+ontology-store = [
+    "asyncpg>=0.29",
+    "pgvector>=0.2",
+    "rdflib>=7.0",
+    "pyshacl>=0.26",
+    "numpy>=1.26",
+]
+
 # LLM Wiki pluggable per-language scanners (FEAT-394) — accurate
 # tree-sitter outlines for PHP/JS/TS/Rust `wikitoolkit build` plugins.
 # Optional: every plugin degrades to a stdlib-only heuristic when this

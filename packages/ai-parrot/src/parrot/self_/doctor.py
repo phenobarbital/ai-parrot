@@ -218,6 +218,16 @@ def _sdd_base_branch(root: Path) -> tuple[str, DoctorCheck | None]:
                                   fix="fix sdd/config.json (parrot sdd install --dry-run shows the seed shape)")
 
 
+#: Mount flags for the ``bwrap`` userns probes below.  ``--proc /proc`` is **required**:
+#: with only ``--ro-bind / /`` the sandbox inherits the host ``/proc`` as a read-only
+#: bind, so a nested ``bwrap`` cannot write its ``uid_map`` and dies with
+#: "setting up uid map: Read-only file system" even on a correctly configured host —
+#: a false negative that reads like a missing AppArmor ``userns`` permission.  The real
+#: wrapper (:mod:`parrot.sdd.scripts.worktree_environment`) passes ``--proc`` too, so the
+#: probe must mirror it or it does not test what the sandbox actually does.
+_BWRAP_PROBE_FLAGS: tuple[str, ...] = ("--ro-bind", "/", "/", "--proc", "/proc", "--dev", "/dev")
+
+
 def check_bwrap_sandbox() -> list[DoctorCheck]:
     """Linux-only: verify that Bubblewrap can create nested user namespaces.
 
@@ -241,7 +251,7 @@ def check_bwrap_sandbox() -> list[DoctorCheck]:
     # Single-level bwrap
     try:
         single = subprocess.run(
-            [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--", "echo", "ok"],
+            [bwrap, *_BWRAP_PROBE_FLAGS, "--", "echo", "ok"],
             capture_output=True, text=True, check=False, timeout=10)
     except (OSError, subprocess.TimeoutExpired) as exc:
         checks.append(DoctorCheck(
@@ -263,8 +273,8 @@ def check_bwrap_sandbox() -> list[DoctorCheck]:
     # Nested bwrap (what Claude Code native sandbox + SDD sandbox requires)
     try:
         nested = subprocess.run(
-            [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--",
-             bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--", "echo", "ok"],
+            [bwrap, *_BWRAP_PROBE_FLAGS, "--",
+             bwrap, *_BWRAP_PROBE_FLAGS, "--", "echo", "ok"],
             capture_output=True, text=True, check=False, timeout=10)
     except (OSError, subprocess.TimeoutExpired) as exc:
         checks.append(DoctorCheck(
@@ -336,7 +346,7 @@ def _check_worktree_tests(root: Path) -> DoctorCheck:
 
 
 def _check_sdd_git(root: Path, branch: str) -> list[DoctorCheck]:
-    """Base branch on origin, ledger tracked, worktrees ignored."""
+    """Base branch on origin, ledger tracked, worktrees ignored, no legacy worktrees."""
     checks: list[DoctorCheck] = []
     remote = _git(root, "ls-remote", "--heads", "origin", branch)
     if remote.returncode != 0:
@@ -353,11 +363,40 @@ def _check_sdd_git(root: Path, branch: str) -> list[DoctorCheck]:
         name="sdd: id ledger tracked", ok=tracked.returncode == 0,
         detail=f"{SDD_LEDGER} {'is' if tracked.returncode == 0 else 'is NOT'} git-tracked",
         fix="" if tracked.returncode == 0 else f'git add {SDD_LEDGER} && git commit -m "sdd: seed id ledger"'))
-    ignored = _git(root, "check-ignore", "-q", ".claude/worktrees/x")
+    try:
+        from parrot.sdd.config import legacy_migration_recipe, legacy_worktrees  # lazy on purpose
+        from parrot.sdd.installer import worktree_root_scope
+    except ImportError:
+        checks.append(DoctorCheck(name="sdd: worktrees ignored", ok=True, informational=True,
+                                  detail="parrot.sdd modules unavailable in this build"))
+        return checks
+    scope, rel = worktree_root_scope(root)
+    if scope == "repo-root":
+        checks.append(DoctorCheck(
+            name="sdd: worktrees ignored", ok=False,
+            detail="the worktree root resolves to the repository root itself",
+            fix="set WORKTREE_BASE_PATH to a subdirectory (default: .parrot/worktrees)"))
+    elif scope == "external":
+        checks.append(DoctorCheck(name="sdd: worktrees ignored", ok=True, informational=True,
+                                  detail="external worktree root; outside repository tracking scope"))
+    else:
+        ignored = _git(root, "check-ignore", "-q", f"{rel}/x")
+        checks.append(DoctorCheck(
+            name="sdd: worktrees ignored", ok=ignored.returncode == 0,
+            detail=f"{rel}/ {'is' if ignored.returncode == 0 else 'is NOT'} git-ignored",
+            fix="" if ignored.returncode == 0 else "parrot sdd install (adds the .gitignore block)"))
+    legacy = legacy_worktrees(root)
+    recipe: list[str] = []
+    if legacy:
+        try:
+            recipe = legacy_migration_recipe(root, legacy)
+        except ValueError as exc:
+            recipe = [f"cannot generate a safe migration recipe: {exc}"]
     checks.append(DoctorCheck(
-        name="sdd: worktrees ignored", ok=ignored.returncode == 0,
-        detail=f".claude/worktrees/ {'is' if ignored.returncode == 0 else 'is NOT'} git-ignored",
-        fix="" if ignored.returncode == 0 else "parrot sdd install (adds the .gitignore block)"))
+        name="sdd: legacy worktrees", ok=not legacy,
+        detail=(f"{len(legacy)} worktree(s) registered under .claude/worktrees/" if legacy
+                else "none under .claude/worktrees/"),
+        fix="\n".join(recipe)))
     return checks
 
 

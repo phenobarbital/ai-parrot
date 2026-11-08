@@ -9,6 +9,77 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.1.2] — 2026-11-07 — Worktree root under .parrot/, --stale work-loss fixes, A2UI body limits
+
+Patch release. Core and its siblings move to `2.1.2`; the fifteen `ai-parrot-client-*`
+satellites and `ai-parrot-openlit-bridge` move to `1.1.2`. Every sibling now pins
+`ai-parrot>=2.1.2`.
+
+### Changed
+- **Worktree root moves to `.parrot/worktrees/` (FEAT-802, hard cut).** The SDD worktree
+  root is resolved by `parrot.sdd.scripts.worktree_root` (`parrot sdd worktree root` prints
+  it; `WORKTREE_BASE_PATH` overrides it; `conf.WORKTREE_ROOT` / `WORKTREE_DIR` follow).
+  `parrot sdd install` and `parrot self doctor` refuse while worktrees remain registered
+  under the legacy `.claude/worktrees/` and print the migration recipe (`mv` +
+  `git worktree repair`); the dangerous-actions guard, the installer ignore block, the e2e
+  supervisor, every command/agent/rule twin and the human docs name the new default.
+  Orphan directories left under the legacy path are not scanned by `worktree remove --stale`.
+
+### Removed
+- **`/enable` OAuth2 compatibility route and `EnableResponse` (FEAT-821).** Integrations
+  enable through the current endpoint only.
+
+### Fixed
+- **`parrot sdd worktree remove --stale` work-loss holes (FEAT-823):** an orphan pool
+  directory still holding registered worktrees is refused (children listed with their
+  dirty/unpushed counts), a deregistered checkout whose `.git` survives is refused when it
+  has work to lose or its state cannot be read, and symlinks are skipped with a warning;
+  regression tests and the orphan taxonomy are documented in `/remove-worktree`.
+- **A2UI body limits (FEAT-822):** a capped body reader with `413` helpers, bound before the
+  read, so a sub-app's `client_max_size` no longer goes unenforced.
+- **Roost (FEAT-825/827):** `ask_agent` carries the conversation id; `MatrixCarrier` carries
+  `RoostMessage.hops`, with a Matrix crew wake adapter and an endpoint factory seam.
+- **`worktree sync-base` test gaps (FEAT-820):** `resolve_target` / `resolve_base_branch`,
+  the never-push guards and up-to-date advisory, the push-protection truth table, an
+  unrecovered abort and the CLI exit-code mapping are now covered.
+- `parrot sdd launch worker --tmux` crashed under `python -S` when importing `parrot`.
+- `parrot self doctor` gives each bwrap probe level a writable `/proc`.
+- `formdesigner` quotes SQL identifiers as defense in depth.
+- Dependencies: `pypdf` and `pyasn1` Dependabot high alerts patched; `maturin` 1.14.1 → 1.16.0.
+
+---
+
+## [2.1.1] — 2026-11-05 — First published 2.1.x; documentation site and technical-wiki fixes
+
+Patch release. Core and its siblings move to `2.1.1`; the fifteen `ai-parrot-client-*`
+satellites and `ai-parrot-openlit-bridge` move to `1.1.1`. Every sibling now pins
+`ai-parrot>=2.1.1`.
+
+**`2.1.0` never reached PyPI** — its `deploy` job was skipped because the
+`smoke-sdd-foreign` release gate failed. `2.1.1` is therefore the first published
+`2.1.x`: everything listed under `[2.1.0]` ships here as well.
+
+### Added
+- **Informative documentation site (FEAT-803):** a GitHub Pages site with chapter
+  overviews (hub, core, data, integrations), tutorials (first chatbot, first agent,
+  first tool, deployment), a minimal-configuration section and a curated tools page,
+  built strictly with overlay verification.
+
+### Fixed
+- **Release gate (the `2.1.0` blocker):** `remove_worktree`, `techwiki_check`,
+  `worktree_baseline`, `worktree_push_protection` and `worktree_sync` were documented in
+  the installed markdown with no C3 scenario in `test_wheel_only_foreign_repo.py`, which
+  failed `smoke-sdd-foreign` and skipped the PyPI publish.
+- **Technical wiki (FEAT-818/819 + hotfixes):** generated API pages emit Markdown links
+  instead of `[[wiki links]]`; artifact-forbidden characters are sanitized out of page
+  names; a single API Reference index page is linked from the sidebar; links in generated
+  pages are rewritten and validated; a re-export is linked only when its target has a
+  page, and a generated page's final link is no longer re-resolved; a package with no
+  public members of its own still renders an index page.
+- `IdentifiedProduct` tolerates null LLM values.
+
+---
+
 ## [2.1.0] — 2026-11-05 — Gemini 2.5 retirement, per-component LLM defaults, worktree sync-base, technical wiki
 
 Minor release. Core and its siblings move to `2.1.0`; the fifteen `ai-parrot-client-*`

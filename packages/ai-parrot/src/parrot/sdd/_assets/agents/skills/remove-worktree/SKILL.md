@@ -20,6 +20,11 @@ Invocation: `remove-worktree [<branch|FEAT-id|dir>] [--stale] [--delete-branch] 
 1. Run `parrot sdd worktree list` and show the user every worktree and orphan directory with its state.
 2. Dry-run first: `parrot sdd worktree remove <target> --dry-run`.
 3. Remove only after the user agrees: `parrot sdd worktree remove <target>` (`--stale` for orphan directories).
+   `--stale` refuses an orphan directory that still holds registered worktrees
+   (a coder `--pool` dir is the usual case) and one that is itself a checkout
+   with uncommitted or unpushed work. Remove those individually first, then
+   sweep the empty parent. Never reach for `--force` to get past the refusal
+   without reading what it names.
 
 ## Safety gates (all enforced by the tool)
 

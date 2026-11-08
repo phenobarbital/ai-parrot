@@ -20,7 +20,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
-from parrot.sdd.config import SddConfig, find_repo_root, load_sdd_config
+from parrot.sdd.config import SddConfig, find_repo_root, load_sdd_config, worktree_root_setting
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +182,9 @@ def parse(doc_path: Path, *, config: SddConfig | None = None) -> FlowMeta:
     Returns:
         ``FlowMeta(type="feature", base_branch=<configured base>)`` when no
         frontmatter is present (backwards-compat for in-flight specs);
-        otherwise a fully-validated ``FlowMeta``.
+        otherwise a fully-validated ``FlowMeta``. A ``/sdd-brief`` block
+        (``kind: brief``) without ``type`` gets ``type="hotfix"`` when its
+        ``base_branch`` is the configured hotfix base, else ``"feature"``.
 
     Raises:
         pydantic.ValidationError: When frontmatter is present but
@@ -193,6 +195,9 @@ def parse(doc_path: Path, *, config: SddConfig | None = None) -> FlowMeta:
     if block is None:
         return FlowMeta(type="feature", base_branch=cfg.base_branch, hotfix_base=cfg.hotfix_base)
     block = {k: v for k, v in block.items() if k != "hotfix_base"}
+    if block.get("kind") == "brief" and "type" not in block:
+        # /sdd-brief frontmatter carries no `type`; a brief on the hotfix base is a hotfix.
+        block["type"] = "hotfix" if block.get("base_branch") == cfg.hotfix_base else "feature"
     return FlowMeta(**block, hotfix_base=cfg.hotfix_base)
 
 
@@ -375,9 +380,6 @@ def resolve_flow(
     return FlowMeta(type=final_type, base_branch=final_base, hotfix_base=cfg.hotfix_base)
 
 
-#: Every SDD worktree lives directly under this repo-relative directory.
-WORKTREE_ROOT: str = ".claude/worktrees"
-
 #: A reserved feature id, e.g. ``FEAT-552``. Bare numbers are rejected.
 _FEATURE_ID_RE = re.compile(r"^FEAT-\d+$")
 
@@ -418,7 +420,8 @@ def plan_worktree(
         jira_key: Jira issue key; required when ``meta.type == "hotfix"``.
 
     Returns:
-        A ``WorktreePlan`` whose ``path`` is repo-relative.
+        A ``WorktreePlan`` whose ``path`` is built from
+        :func:`worktree_root_setting`.
 
     Raises:
         ValueError: When ``slug`` is empty or blank; when a feature run has no
@@ -441,7 +444,8 @@ def plan_worktree(
     else:
         raise ValueError(f"Unsupported flow type: {meta.type}")
 
-    path = f"{WORKTREE_ROOT}/{name}"
+    # FEAT-802: repo-relative unless WORKTREE_BASE_PATH is absolute.
+    path = f"{worktree_root_setting()}/{name}"
     base_ref = f"origin/{meta.base_branch}"
 
     return WorktreePlan(name=name, path=path, base_ref=base_ref)

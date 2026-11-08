@@ -14,7 +14,7 @@ Bubblewrap: nested bwrap is not used, and the policy is compiled by
 ## What it protects — and what it does not
 
 - Bash commands and their descendants: writes are limited to the task worktree, the common Git
-  directory, the primary checkout's `.claude/worktrees/` and `.parrot/ledger/`, and the per-user
+  directory, the primary checkout's worktree root (default `.parrot/worktrees/`) and `.parrot/ledger/`, and the per-user
   scratchpad (`/tmp/claude-<uid>`). Everything else, including the primary checkout, `$HOME`, the
   shared `.venv` (and any symlink alias to it), RTK's data directory, Git `config`/`hooks`/
   `config.worktree`, is read-only. Network egress is denied unless a host is explicitly allowed.
@@ -207,7 +207,7 @@ version change requires re-qualification):
    happen through `/sdd-done`, which must be **run on the host** — a normal shell or Claude session, not
    the sandboxed sdd-worker. Running `/sdd-done` from inside the worker (pre-FEAT-633 practice) no longer works.
 3. `config`, `config.worktree`, hooks and lock files stay read-only by design; worktree administration
-   under the primary checkout's `.claude/worktrees/` remains possible.
+   under the primary checkout's worktree root remains possible.
 4. A native `sdd-coder` seat prefixes every Bash command with `cd <its sub-worktree> && …`: `cd` does
    not persist between tool calls, and the hook uses that exact prefix to pick the task cwd for the
    scope guard and `PYTHONPATH`. Known limitation: only that exact form is recognised — `cd X; …`,

@@ -33,7 +33,7 @@ them to the spec's base branch. This command creates no worktree (FEAT-552);
 - Do not implement code.
 - Only decompose an approved spec. If status is not `approved`, warn and ask
   for confirmation before proceeding.
-- Must run from the main repo, not inside `.claude/worktrees/`.
+- Must run from the main repo, not inside a linked worktree.
 - Must run on the spec's `base_branch`.
 - Do not hand-compute `TASK-NNN` IDs for feature work.
 - Use per-spec indexes under `sdd/tasks/index/`; ignore the historical
@@ -50,7 +50,7 @@ them to the spec's base branch. This command creates no worktree (FEAT-552);
    - `feature` must not use `main`
    - `staging` is valid for feature stabilization during release freeze
 3. Sync:
-   - refuse if inside `.claude/worktrees/`
+   - refuse if `git rev-parse --git-dir` differs from `--git-common-dir` (a linked worktree)
    - refuse dirty worktree
    - `git checkout <base_branch>`
    - `git pull --ff-only origin <base_branch>`

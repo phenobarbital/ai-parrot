@@ -1182,8 +1182,11 @@ class FormAPIHandler:
         """
         tenant = self._get_tenant(request)
         await self._rbac_shadow_gate(request, "export_forms")
+        cap = a2ui_wire.apply_body_cap(request)
         try:
             body = await request.json()
+        except web.HTTPRequestEntityTooLarge:
+            return a2ui_wire.oversized_response(request, limit=cap)
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
         if not isinstance(body, dict):
@@ -1262,15 +1265,28 @@ class FormAPIHandler:
             The translated createSurface envelope, or a validation error response.
         """
         tenant = self._get_tenant(request)
-        if request.content_length is not None and request.content_length > a2ui_wire.A2UI_MAX_BODY_BYTES:
-            return JSONResponse({"error": "body too large", "max_bytes": a2ui_wire.A2UI_MAX_BODY_BYTES}, status=413)
+        cap = a2ui_wire.apply_body_cap(request)
         try:
             body = await request.json()
+        except web.HTTPRequestEntityTooLarge:
+            return a2ui_wire.oversized_response(request, limit=cap)
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
         schema = body.get("schema") if isinstance(body, dict) else None
         if not isinstance(schema, dict):
             return JSONResponse({"error": "schema (object) is required"}, status=400)
+        # FEAT-822 (issue:bf978b6bae8a, S3) — every scalar below is
+        # caller-controlled and flows into the translator, and the schema is
+        # walked recursively there; validate both before that happens.
+        for field in ("locale", "form_id", "title"):
+            value = body.get(field)
+            if value is not None and not isinstance(value, str):
+                return JSONResponse({"error": f"{field} must be a string"}, status=400)
+        if a2ui_wire.exceeds_json_depth(schema):
+            return JSONResponse(
+                {"error": "schema too deeply nested", "max_depth": a2ui_wire.A2UI_MAX_SCHEMA_DEPTH},
+                status=400,
+            )
         if get_renderer("a2ui") is None:
             return JSONResponse({"supported": supported_formats()}, status=415)
 
@@ -1413,24 +1429,22 @@ class FormAPIHandler:
         # FEAT-421 review fix: see get_form's comment — this route is also
         # mounted tenant="public".
         enforce_membership_unless_public(request, form, tenant)
+        cap = a2ui_wire.apply_body_cap(request)
         try:
             body = await request.json()
+        except web.HTTPRequestEntityTooLarge:
+            return a2ui_wire.oversized_response(
+                request,
+                limit=cap,
+                surface_id=f"form-{form.form_uid}",
+                message="The submitted data model exceeds the maximum allowed size.",
+            )
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         # FEAT-544 (spec §3 Module 5) — same unwrap as submit_data's A2UI branch.
         a2ui_surface_id: str | None = None
         if a2ui_wire.is_a2ui_request(request, body):
-            expected_surface_id = f"form-{form.form_uid}"
-            if request.content_length is not None and request.content_length > a2ui_wire.A2UI_MAX_BODY_BYTES:
-                from parrot.outputs.a2ui.runtime.models import A2UIErrorCode, error_envelope
-
-                envelope = error_envelope(
-                    A2UIErrorCode.INTERNAL,
-                    "The submitted data model exceeds the maximum allowed size.",
-                    surface_id=expected_surface_id,
-                )
-                return a2ui_wire.a2ui_response([envelope], status=413)
             try:
                 submission_in = a2ui_wire.unwrap_action(form, body)
             except a2ui_wire.A2UIWireError as exc:
@@ -1568,8 +1582,13 @@ class FormAPIHandler:
         """POST /api/v1/forms — Create a form from a natural language prompt."""
         # FEAT-302: RBAC gate-keeping (shadow mode by default)
         await self._rbac_shadow_gate(request, "create_form")
+        # FEAT-822 — the cap must bind before the body is buffered, and this
+        # route is dual-wire: an A2UI surface import comes in here too.
+        cap = a2ui_wire.apply_body_cap(request)
         try:
             body = await request.json()
+        except web.HTTPRequestEntityTooLarge:
+            return a2ui_wire.oversized_response(request, limit=cap, surface_id="form-import")
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
@@ -1625,17 +1644,14 @@ class FormAPIHandler:
         )
 
     async def _import_a2ui_surface(self, request: web.Request, body: dict[str, Any], *, tenant: str) -> web.Response:
-        """Import an A2UI surface as a persisted form."""
-        if request.content_length is not None and request.content_length > a2ui_wire.A2UI_MAX_BODY_BYTES:
-            from parrot.outputs.a2ui.runtime.models import A2UIErrorCode, error_envelope
+        """Import an A2UI surface as a persisted form.
 
-            surface = body.get("createSurface")
-            surface_id = surface.get("surfaceId") if isinstance(surface, dict) else None
-            return a2ui_wire.a2ui_response(
-                [error_envelope(A2UIErrorCode.INTERNAL, "body too large", surface_id=surface_id or "form-import")],
-                status=413,
-            )
-
+        No size guard here: ``create_form`` caps the read before the body
+        exists, so by the time this method is reached the body is already
+        known to be under the cap (FEAT-822 / issue:bf978b6bae8a). The guard
+        this replaces ran *after* ``request.json()`` had buffered the body and
+        trusted ``Content-Length``, so it was advisory on both counts.
+        """
         from ..extractors import A2UIExtractor
 
         try:
@@ -2057,8 +2073,16 @@ class FormAPIHandler:
         # reachable unauthenticated; a private form's must not).
         enforce_membership_unless_public(request, form, tenant)
 
+        cap = a2ui_wire.apply_body_cap(request)
         try:
             body = await request.json()
+        except web.HTTPRequestEntityTooLarge:
+            return a2ui_wire.oversized_response(
+                request,
+                limit=cap,
+                surface_id=f"form-{form.form_uid}",
+                message="The submitted data model exceeds the maximum allowed size.",
+            )
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
@@ -2069,16 +2093,6 @@ class FormAPIHandler:
         # (non-None only for an A2UI caller) selects the reply shape below.
         a2ui_surface_id: str | None = None
         if a2ui_wire.is_a2ui_request(request, body):
-            expected_surface_id = f"form-{form.form_uid}"
-            if request.content_length is not None and request.content_length > a2ui_wire.A2UI_MAX_BODY_BYTES:
-                from parrot.outputs.a2ui.runtime.models import A2UIErrorCode, error_envelope
-
-                envelope = error_envelope(
-                    A2UIErrorCode.INTERNAL,
-                    "The submitted data model exceeds the maximum allowed size.",
-                    surface_id=expected_surface_id,
-                )
-                return a2ui_wire.a2ui_response([envelope], status=413)
             try:
                 submission_in = a2ui_wire.unwrap_action(form, body)
             except a2ui_wire.A2UIWireError as exc:

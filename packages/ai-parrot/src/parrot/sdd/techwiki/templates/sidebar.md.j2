@@ -1,4 +1,4 @@
 {% for section in sections %}## {{ section.name }}
-{% for page in section.pages %}- [[{{ page.name }}]]
+{% for page in section.pages %}- [{{ page.title }}]({{ page.href }})
 {% endfor %}
 {% endfor %}

@@ -1,0 +1,18 @@
+# parrot:summary: PageIndex document trees — per-repository search, read and edit over stdio.
+# parrot:requires_llm: false
+# parrot:requires_dist: bm25s,pymupdf
+# parrot:requires_pip: ai-parrot[bookstore]
+  pageindex:
+    class: parrot.knowledge.pageindex.toolkit.PageIndexToolkit
+    kwargs:
+      storage_dir: {{repo_root}}/.parrot/pageindex
+      max_result_chars: 24000
+    # Add a model to enable the LLM-dependent tools (insert_content, import_file,
+    # import_folder, search_documents_scoped) and the LLM tree walk. import_pdf works
+    # without a model (structure from bookmarks / printed headings; no summaries).
+    # llm: anthropic:claude-haiku-5-5
+    # llm_kwargs: {}
+    # The internal agentic retrieval tool is opt-in: remove it from this list
+    # (and set llm:) to expose pageindex_agentic_retrieve.
+    exclude: [pageindex_agentic_retrieve]
+    env: {}

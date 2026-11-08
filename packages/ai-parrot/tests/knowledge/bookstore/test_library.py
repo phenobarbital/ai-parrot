@@ -19,7 +19,14 @@ from parrot.knowledge.bookstore.library import (
     Bookstore,
     BookstoreError,
 )
-from parrot.knowledge.bookstore.models import BookCommunity, BookRelation, RelationJudgement, REL_WEIGHTS, TocEntry
+from parrot.knowledge.bookstore.models import (
+    BookCommunity,
+    BookRelation,
+    CardDraft,
+    RelationJudgement,
+    REL_WEIGHTS,
+    TocEntry,
+)
 
 from .conftest import SAMPLE_MARKDOWN
 
@@ -47,6 +54,11 @@ def store(locations, fake_adapter) -> Bookstore:
 @pytest.fixture
 def store_no_llm(locations) -> Bookstore:
     return Bookstore(locations)
+
+
+def test_toolkit_receives_grace(store: Bookstore) -> None:
+    """Use the staging retention window for generation garbage collection."""
+    assert store._toolkit("project")._generation_grace_s == _STAGING_MAX_AGE_S
 
 
 @pytest.mark.asyncio
@@ -191,19 +203,67 @@ async def test_add_book_txt_requires_llm(store_no_llm, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_add_book_pdf_requires_llm(store_no_llm, tmp_path):
-    """PDF ToC detection/structuring always needs an LLM (FEAT-531 bug).
-
-    Ingest must fail fast with a clear ``BookstoreError`` — not deep
-    inside the PageIndex builder with ``'_NullAdapter' object has no
-    attribute 'ask_with_finish_info'`` (an AttributeError, not a
-    BookstoreError, so it used to bypass the CLI's clean-error handling
-    and crash with a full traceback).
-    """
+async def test_add_book_unreadable_pdf(store_no_llm, tmp_path):
+    """An unreadable PDF raises BookstoreError naming the file."""
     pdf = tmp_path / "book.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
-    with pytest.raises(BookstoreError, match="LLM"):
+    with pytest.raises(BookstoreError, match="Cannot index book.pdf"):
         await store_no_llm.add_book(pdf)
+    assert store_no_llm.list_books() == []
+
+
+def _headed_pdf(path: Path) -> Path:
+    """Create a three-page PDF with bookmarks and visible headings."""
+    import pymupdf
+
+    doc = pymupdf.open()
+    try:
+        for page_number in range(1, 4):
+            page = doc.new_page()
+            page.insert_text((72, 100), f"Chapter {page_number}", fontsize=16, fontname="hebo")
+            page.insert_text((72, 140), f"Section {page_number}.1", fontsize=12, fontname="hebo")
+            for line_number in range(20):
+                page.insert_text(
+                    (72, 180 + (line_number * 18)),
+                    "Body text describes the manual and its practical topics.",
+                    fontsize=10,
+                    fontname="helv",
+                )
+        doc.set_toc(
+            [
+                [1, "Chapter 1", 1],
+                [2, "Section 1.1", 1],
+                [1, "Chapter 2", 2],
+                [2, "Section 2.1", 2],
+                [1, "Chapter 3", 3],
+                [2, "Section 3.1", 3],
+            ]
+        )
+        doc.save(str(path))
+    finally:
+        doc.close()
+    return path
+
+
+@pytest.mark.asyncio
+async def test_add_book_pdf_without_llm(store_no_llm, tmp_path, monkeypatch):
+    """A real PDF uses deterministic structure without calling the null adapter."""
+    monkeypatch.setattr("parrot.knowledge.pageindex.utils.get_encoder", lambda model="gpt-4o": None)
+    monkeypatch.setattr(
+        "parrot.knowledge.pageindex.toolkit.get_injection_scoring_engine", lambda force_reresolve=False: None
+    )
+
+    async def _never(*args, **kwargs):
+        raise AssertionError("_NullAdapter must not be called on the PDF path")
+
+    for name in ("ask", "ask_structured", "ask_with_finish_info"):
+        monkeypatch.setattr(f"parrot.knowledge.bookstore.library._NullAdapter.{name}", _never)
+
+    card, status = await store_no_llm.add_book(_headed_pdf(tmp_path / "manual.pdf"))
+
+    assert status == "added"
+    assert card.card_origin == "fallback"
+    assert card.toc
 
 
 @pytest.mark.asyncio
@@ -270,6 +330,19 @@ async def test_read_surface_toc_search_and_section(store, book_md):
     assert section["content"]
     hits = await store.search_book(card.book_id, "vector search")
     assert hits and {"node_id", "title", "score"} <= set(hits[0])
+
+
+@pytest.mark.asyncio
+async def test_read_section_reads_body_ref(store: Bookstore, book_md: Path) -> None:
+    """Resolve a catalog node id through the live tree's immutable body reference."""
+    card, _ = await store.add_book(book_md)
+    tree = await store._toolkit("project").get_tree(card.tree_name)
+    node = next(node for node in tree["structure"] if node.get("body_ref"))
+
+    section = store.read_section(card.book_id, node["node_id"])
+
+    assert section["content"]
+    assert "synthetic handbook" in section["content"].lower()
 
 
 @pytest.mark.asyncio
@@ -703,6 +776,22 @@ async def test_reindex_success_swaps_tree_same_book_id(store: Bookstore, book_md
 
 
 @pytest.mark.asyncio
+async def test_reindex_leaves_no_replaced_tree(store: Bookstore, book_md: Path) -> None:
+    """Publication replaces the live generation without creating a backup tree."""
+    card, _ = await store.add_book(book_md)
+    book_md.write_text(
+        SAMPLE_MARKDOWN + "\n## Updated Chapter\n\n"
+        "The updated chapter contains enough descriptive text to remain visible to the markdown parser.\n",
+        encoding="utf-8",
+    )
+
+    _, status = await store.add_book(book_md)
+
+    assert status == "updated"
+    assert not list(store._location("project").trees_dir.glob(f"*{REPLACED_MARKER}*.json"))
+
+
+@pytest.mark.asyncio
 async def test_add_failed_ingest_leaves_no_tree(store: Bookstore, book_md: Path) -> None:
     """Leave no staging or card after a first-add failure."""
 
@@ -781,6 +870,26 @@ async def test_sweep_deletes_stale_staging_keeps_fresh(store: Bookstore, book_md
 
 
 @pytest.mark.asyncio
+async def test_sweep_vacuums_live_reserved_target(store: Bookstore, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Vacuum surviving live trees without letting a cleanup failure stop recovery."""
+    toolkit = store._toolkit("project")
+    live_name = "live"
+    await toolkit.create_tree(live_name)
+    await toolkit.create_tree(f"{live_name}{_STAGING_MARKER}deadbeef")
+    vacuumed: list[str] = []
+
+    async def failing_vacuum(tree_name: str) -> None:
+        vacuumed.append(tree_name)
+        raise RuntimeError("vacuum failed")
+
+    monkeypatch.setattr(toolkit, "vacuum_tree", failing_vacuum)
+
+    await store._sweep_reserved_trees("project")
+
+    assert vacuumed == [live_name]
+
+
+@pytest.mark.asyncio
 async def test_all_taken_slugs_ignores_reserved_names(store: Bookstore, book_md: Path) -> None:
     """Ignore staging and replacement names."""
     toolkit = store._toolkit("project")
@@ -825,3 +934,34 @@ async def test_cancelled_ingest_cleans_up_staging_tree(monkeypatch, store: Books
 
     trees_dir = store._location("project").trees_dir
     assert not list(trees_dir.glob(f"*{_STAGING_MARKER}*.json"))
+
+
+@pytest.mark.asyncio
+async def test_draft_card_samples_live_bodies_not_stale_legacy(
+    store: Bookstore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Card the live generation: a stale ``<node_id>.md`` must never reach the LLM."""
+    book_path = tmp_path / "pinned-book.md"
+    book_path.write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    card, _ = await store.add_book(book_path)
+    tree = await store._toolkit("project").get_tree(card.tree_name)
+    node = next(n for n in tree["structure"] if n.get("body_ref"))
+    node_id = node["node_id"]
+
+    # A leftover legacy sidecar, as rename_tree(overwrite=True) over a legacy
+    # destination leaves behind. The unpinned loader prefers it over body_ref.
+    store._content_store("project").save(card.tree_name, node_id, "STALE LEGACY BODY from another book")
+
+    captured: list[list[str]] = []
+
+    async def _capture(adapter, *, filename, doc_description, toc_digest, samples):
+        captured.append(list(samples))
+        return CardDraft(title="Pinned Book", topics=["testing"])
+
+    monkeypatch.setattr("parrot.knowledge.bookstore.library.generate_card_fields", _capture)
+
+    await store.refresh_card(card.book_id)
+
+    assert captured, "generate_card_fields was never reached"
+    joined = "\n".join(captured[0])
+    assert "STALE LEGACY BODY" not in joined, "carding sampled a stale legacy sidecar instead of the live body"

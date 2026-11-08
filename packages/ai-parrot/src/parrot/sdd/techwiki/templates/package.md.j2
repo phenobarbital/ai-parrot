@@ -1,0 +1,28 @@
+# {{ title }}
+
+{% if source_link %}
+[View source]({{ source_link }})
+
+{% endif %}
+{% if description %}
+{{ description }}
+
+{% endif %}
+{% if exports %}
+## Exports
+
+This package resolves its public names from its submodules, so they are documented on the
+pages listed below rather than here.
+
+{% for name in exports %}
+- `{{ name }}`
+{% endfor %}
+
+{% endif %}
+{% if submodules %}
+## Submodules
+
+{% for sub in submodules %}
+- [`{{ sub }}`](ref:{{ sub }})
+{% endfor %}
+{% endif %}

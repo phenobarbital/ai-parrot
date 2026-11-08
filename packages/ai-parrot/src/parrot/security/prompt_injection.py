@@ -1,18 +1,21 @@
 """
 Prompt Injection Detection and Protection.
 """
-from typing import Optional, Dict, Any, List, Tuple
+
+from typing import Optional, Dict, Any, List, Protocol, Tuple, runtime_checkable
 from enum import Enum
+import contextlib
 import re
+import sys
 from datetime import datetime, timezone
 from navconfig.logging import logging
-
 
 logger = logging.getLogger(__name__)
 
 
 class ThreatLevel(Enum):
     """Severity levels for detected threats."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -83,7 +86,7 @@ def max_threat_level(
     highest = default
     for threat in threats or ():
         level = _coerce_threat_level(
-            threat.get('level') if isinstance(threat, dict) else None,
+            threat.get("level") if isinstance(threat, dict) else None,
             default,
         )
         if THREAT_LEVEL_ORDER.get(level, -1) > THREAT_LEVEL_ORDER.get(highest, -1):
@@ -93,6 +96,7 @@ def max_threat_level(
 
 class PromptInjectionException(Exception):
     """Raised when a critical prompt injection is detected in strict mode."""
+
     def __init__(self, message: str, threats: List[Dict], original_input: str):
         super().__init__(message)
         self.threats = threats
@@ -107,56 +111,37 @@ class PromptInjectionDetector:
     # CRITICAL: Direct instruction override attempts
     CRITICAL_PATTERNS = [
         (
-            re.compile(r'ignore\s+(all\s+)?(previous|above|prior)\s+instructions?', re.IGNORECASE),
-            "Direct instruction override"
+            re.compile(r"ignore\s+(all\s+)?(previous|above|prior)\s+instructions?", re.IGNORECASE),
+            "Direct instruction override",
         ),
         (
-            re.compile(r'forget\s+(everything|all|your\s+(instructions?|rules?|prompt))', re.IGNORECASE),
-            "Memory wipe attempt"
+            re.compile(r"forget\s+(everything|all|your\s+(instructions?|rules?|prompt))", re.IGNORECASE),
+            "Memory wipe attempt",
         ),
-        (
-            re.compile(r'you\s+are\s+now\s+(a|an|no\s+longer)', re.IGNORECASE),
-            "Role hijacking"
-        ),
-        (
-            re.compile(r'disregard\s+(all\s+)?(previous|above|prior|your)', re.IGNORECASE),
-            "Disregard command"
-        ),
+        (re.compile(r"you\s+are\s+now\s+(a|an|no\s+longer)", re.IGNORECASE), "Role hijacking"),
+        (re.compile(r"disregard\s+(all\s+)?(previous|above|prior|your)", re.IGNORECASE), "Disregard command"),
     ]
 
     # HIGH: System impersonation
     HIGH_PATTERNS = [
-        (
-            re.compile(r'system\s*:\s*', re.IGNORECASE),
-            "System role impersonation"
-        ),
-        (
-            re.compile(r'<\s*/?system\s*>', re.IGNORECASE),
-            "System tag injection"
-        ),
-        (
-            re.compile(r'\[SYSTEM\]|\(SYSTEM\)|【SYSTEM】', re.IGNORECASE),
-            "System marker injection"
-        ),
-        (
-            re.compile(r'new\s+instructions?:\s*', re.IGNORECASE),
-            "Instruction replacement"
-        ),
-        (
-            re.compile(r'assistant\s*:\s*ignore', re.IGNORECASE),
-            "Assistant role injection"
-        ),
+        (re.compile(r"system\s*:\s*", re.IGNORECASE), "System role impersonation"),
+        (re.compile(r"<\s*/?system\s*>", re.IGNORECASE), "System tag injection"),
+        (re.compile(r"\[SYSTEM\]|\(SYSTEM\)|【SYSTEM】", re.IGNORECASE), "System marker injection"),
+        (re.compile(r"new\s+instructions?:\s*", re.IGNORECASE), "Instruction replacement"),
+        (re.compile(r"assistant\s*:\s*ignore", re.IGNORECASE), "Assistant role injection"),
     ]
 
     # MEDIUM: Prompt extraction attempts
     MEDIUM_PATTERNS = [
         (
-            re.compile(r'(reveal|show|print|display|output)\s+(your\s+)?(prompt|instructions|system\s+message)', re.IGNORECASE),
-            "Prompt extraction attempt"
+            re.compile(
+                r"(reveal|show|print|display|output)\s+(your\s+)?(prompt|instructions|system\s+message)", re.IGNORECASE
+            ),
+            "Prompt extraction attempt",
         ),
         (
-            re.compile(r'what\s+(is|are)\s+your\s+(original\s+)?(instructions?|prompt|rules?)', re.IGNORECASE),
-            "Instruction disclosure request"
+            re.compile(r"what\s+(is|are)\s+your\s+(original\s+)?(instructions?|prompt|rules?)", re.IGNORECASE),
+            "Instruction disclosure request",
         ),
     ]
 
@@ -168,7 +153,7 @@ class PromptInjectionDetector:
     # XML. Extend by calling ``add_framework_allowlist(pattern)``.
     DEFAULT_FRAMEWORK_ALLOWLIST: List[re.Pattern] = [
         re.compile(
-            r'<user_context\b[^>]*>.*?</user_context>',
+            r"<user_context\b[^>]*>.*?</user_context>",
             re.IGNORECASE | re.DOTALL,
         ),
     ]
@@ -181,8 +166,7 @@ class PromptInjectionDetector:
         self.logger = logger or logging.getLogger(__name__)
         # Copy the class default so per-instance extensions don't leak.
         self.framework_allowlist: List[re.Pattern] = list(
-            allowlist if allowlist is not None
-            else self.DEFAULT_FRAMEWORK_ALLOWLIST
+            allowlist if allowlist is not None else self.DEFAULT_FRAMEWORK_ALLOWLIST
         )
 
     def add_framework_allowlist(self, pattern: re.Pattern | str) -> None:
@@ -231,43 +215,46 @@ class PromptInjectionDetector:
         # Check CRITICAL patterns
         for pattern, description in self.CRITICAL_PATTERNS:
             if match := pattern.search(text):
-                threats.append({
-                    'level': ThreatLevel.CRITICAL,
-                    'pattern': pattern.pattern,
-                    'description': description,
-                    'matched_text': match.group(0),
-                    'position': match.span()
-                })
+                threats.append(
+                    {
+                        "level": ThreatLevel.CRITICAL,
+                        "pattern": pattern.pattern,
+                        "description": description,
+                        "matched_text": match.group(0),
+                        "position": match.span(),
+                    }
+                )
 
         # Check HIGH patterns
         for pattern, description in self.HIGH_PATTERNS:
             if match := pattern.search(text):
-                threats.append({
-                    'level': ThreatLevel.HIGH,
-                    'pattern': pattern.pattern,
-                    'description': description,
-                    'matched_text': match.group(0),
-                    'position': match.span()
-                })
+                threats.append(
+                    {
+                        "level": ThreatLevel.HIGH,
+                        "pattern": pattern.pattern,
+                        "description": description,
+                        "matched_text": match.group(0),
+                        "position": match.span(),
+                    }
+                )
 
         # Check MEDIUM patterns
         for pattern, description in self.MEDIUM_PATTERNS:
             if match := pattern.search(text):
-                threats.append({
-                    'level': ThreatLevel.MEDIUM,
-                    'pattern': pattern.pattern,
-                    'description': description,
-                    'matched_text': match.group(0),
-                    'position': match.span()
-                })
+                threats.append(
+                    {
+                        "level": ThreatLevel.MEDIUM,
+                        "pattern": pattern.pattern,
+                        "description": description,
+                        "matched_text": match.group(0),
+                        "position": match.span(),
+                    }
+                )
 
         return threats
 
     def sanitize(
-        self,
-        text: str,
-        strict: bool = True,
-        replacement: str = "[FILTERED_CONTENT]"
+        self, text: str, strict: bool = True, replacement: str = "[FILTERED_CONTENT]"
     ) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Sanitize text by replacing detected patterns.
@@ -294,6 +281,41 @@ class PromptInjectionDetector:
         return sanitized, threats
 
 
+@runtime_checkable
+class InjectionScoringEngine(Protocol):
+    """Public contract of a resolved ML prompt-injection scorer.
+
+    ``score`` returns an injection probability in ``[0, 1]``. Implementations are thread-safe
+    and must be called off the event loop (``asyncio.to_thread``).
+    """
+
+    engine_name: str
+    model_id: str
+
+    def score(self, text: str) -> float:
+        """Return the injection probability for ``text``."""
+        ...
+
+
+def get_injection_scoring_engine(force_reresolve: bool = False) -> Optional[InjectionScoringEngine]:
+    """Return the process-wide ML engine the PromptInjectionGuardrail uses, or ``None`` (regex only).
+
+    The resolution chain lives in ``parrot.bots.guardrails.builtin.prompt_injection``, which owns the
+    pytector/onnxruntime import boundary; it is imported lazily here so ``parrot.security`` never
+    imports ``parrot.bots`` at module import time. Import and resolution run with stdout redirected
+    to stderr: pytector prints a "Loading Hugging Face model …" banner on first use, and a caller
+    serving a stdio JSON-RPC channel (``parrot mcp-local``) must never see it on stdout. Never raises.
+    """
+    try:
+        with contextlib.redirect_stdout(sys.stderr):
+            from parrot.bots.guardrails.builtin.prompt_injection import _resolve_injection_engine
+
+            return _resolve_injection_engine(force_reresolve)
+    except Exception as exc:  # noqa: BLE001 - callers fall back to the regex detector
+        logger.warning("ML injection scoring engine unavailable: %s", exc)
+        return None
+
+
 class SecurityEventLogger:
     """
     Logs security events with session tracking.
@@ -311,7 +333,7 @@ class SecurityEventLogger:
         threats: List[Dict[str, Any]],
         original_input: str,
         sanitized_input: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ):
         """
         Log a detected prompt injection attempt.
@@ -322,8 +344,8 @@ class SecurityEventLogger:
         # detectors (regex patterns, pytector model) so use .get() defaults
         # instead of [] access to stay resilient to shape differences.
         for threat in threats:
-            level = threat.get('level', ThreatLevel.LOW)
-            level_str = level.value.upper() if hasattr(level, 'value') else str(level).upper()
+            level = threat.get("level", ThreatLevel.LOW)
+            level_str = level.value.upper() if hasattr(level, "value") else str(level).upper()
             self.logger.warning(
                 f"🔒 SECURITY: Prompt injection detected | "
                 f"Severity: {level_str} | "
@@ -343,7 +365,7 @@ class SecurityEventLogger:
                 original_input=original_input,
                 sanitized_input=sanitized_input,
                 max_severity=max_severity,
-                metadata=metadata or {}
+                metadata=metadata or {},
             )
 
     async def log_security_category_event(
@@ -429,7 +451,7 @@ class SecurityEventLogger:
         original_input: str,
         sanitized_input: str,
         max_severity: ThreatLevel,
-        metadata: Dict[str, Any]
+        metadata: Dict[str, Any],
     ):
         """Store security event in database."""
         try:
@@ -451,7 +473,7 @@ class SecurityEventLogger:
             async with await self.db_pool.acquire() as conn:
                 await conn.execute(
                     query,
-                    'prompt_injection',
+                    "prompt_injection",
                     user_id,
                     session_id,
                     chatbot_id,
@@ -463,9 +485,7 @@ class SecurityEventLogger:
                     datetime.now(timezone.utc),
                 )
 
-            self.logger.info(
-                f"Security event logged to database for user {user_id}"
-            )
+            self.logger.info(f"Security event logged to database for user {user_id}")
 
         except Exception as e:
             self.logger.error(f"Failed to log security event to database: {e}")

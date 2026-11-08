@@ -608,7 +608,9 @@ class ValidationSupervisor:
 
         try:
             feature_id = await asyncio.to_thread(self._resolve_feature_id, worktree, feature)
-            runner_registry = await asyncio.to_thread(load_registry, worktree)
+            # Task tier runs in a seat-writable attempt worktree: read the runner TOML from the
+            # fork SHA, never the working tree (issue:29e8e7ad138f).
+            runner_registry = await asyncio.to_thread(load_registry, worktree, ref=base_ref if tier == "task" else None)
             plan = await self._plan_selection(
                 worktree=worktree,
                 tier=tier,
@@ -865,10 +867,10 @@ class ValidationSupervisor:
         )
         if tier == "merge":
             namespace = await asyncio.to_thread(
-                green_cache.cache_namespace,
+                green_cache.namespace_for,
                 feature_id=feature_id,
                 base_ref=baseline_ref,
-                contract_digest=contract.digest if contract is not None else "",
+                contract=contract,
             )
             plan = await asyncio.to_thread(
                 green_cache.filter_cached,

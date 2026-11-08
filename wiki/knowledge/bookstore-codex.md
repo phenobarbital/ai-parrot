@@ -84,6 +84,10 @@ custom MCP settings to persist.
 Without an LLM, in-book and cross-book search require `bm25s`. Catalog search,
 cards, inventory, tables of contents, and section reads work without it.
 
+PDFs can be added without an LLM: their structure comes from the PDF's bookmarks or printed headings
+(one node per page when neither is reliable), with no summaries or book description. Scanned PDFs
+without a text layer are rejected. See [PageIndex Layout Structure Builder](pageindex-layout-structure.md).
+
 ## Book relations and communities
 
 Beyond the catalog, Bookstore also maintains a typed graph over the

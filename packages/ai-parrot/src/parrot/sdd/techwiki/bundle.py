@@ -8,12 +8,21 @@ import logging
 import posixpath
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
+from urllib.parse import unquote
 from typing import Any
 
 import yaml
 
 from parrot.sdd.techwiki.config import TechwikiConfig
-from parrot.sdd.techwiki.naming import PageNameError, page_name, page_title, rewrite_links
+from parrot.sdd.techwiki.naming import (
+    UNLINK,
+    PageNameError,
+    page_href,
+    page_link,
+    page_name,
+    page_title,
+    rewrite_links,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +53,12 @@ class BundleReport:
     skipped_modules: list[dict[str, Any]] = field(default_factory=list)
     collisions: list[dict[str, str]] = field(default_factory=list)
     dangling: list[dict[str, str]] = field(default_factory=list)
+    # Informational: generated-page ``ref:`` links whose module has no page (a re-export from an import
+    # shim without a public API). The link is dropped and its text kept; this never fails the bundle.
+    unlinked: list[dict[str, str]] = field(default_factory=list)
 
     def ok(self) -> bool:
-        """Return whether the bundle has neither collisions nor dangling links."""
+        """Return whether the bundle has neither collisions nor dangling links (unlinked rows do not count)."""
         return not self.collisions and not self.dangling
 
 
@@ -184,7 +196,10 @@ def _reference_index_page(cfg: TechwikiConfig, generated: list[BundlePage]) -> B
     ]
     for root_name in sorted(by_root):
         lines.extend(["", f"## {root_name}", ""])
-        lines.extend(f"- [[{page.name}]]" for page in sorted(by_root[root_name], key=lambda item: str(item.module)))
+        lines.extend(
+            f"- {page_link(page.name, str(page.module))}"
+            for page in sorted(by_root[root_name], key=lambda item: str(item.module))
+        )
     return BundlePage(
         source=None,
         section=cfg.reference_section,
@@ -275,17 +290,44 @@ def assemble(
             manifest[_source_id(root, page.source)] = page.name
 
     for page in pages:
-        if page.source is None:
-            continue
+        if page.source is None and page.module is None:
+            continue  # the reference index page: its links are final hrefs built by _reference_index_page
 
-        def resolve(target: str, page: BundlePage = page) -> str | None:
-            if target.startswith("ref:"):
+        def resolve(target: str, page: BundlePage = page) -> str | None | object:
+            """Return the wiki page name a link target names, recording unresolved targets as dangling.
+
+            Args:
+                target: The raw Markdown link target (``ref:<module>``, ``index:<name>`` or a relative path).
+                page: The page the link appears on, bound at definition time.
+
+            Returns:
+                The resolved page name; ``None`` when the target is not in the manifest (reported as
+                dangling); :data:`UNLINK` for a generated page's ``ref:`` to a module that has no page
+                (reported as unlinked, the link text is kept).
+            """
+            origin = _source_id(root, page.source) if page.source is not None else _ref_id(page)
+            if target.startswith(("ref:", "index:")):
                 key = target
+            elif page.source is None:
+                if unquote(target) in by_name:
+                    # A generated page (the reference index) links final page names, not source paths; such a
+                    # link is already correct. Only a page whose name ends in ``.md`` -- a module literally
+                    # named ``md`` -- reaches here at all, because that is what rewrite_links treats as a path.
+                    return None
+                # Any other relative target: a generated page has no location in the source tree to resolve
+                # it against, so it can never be anything but dangling.
+                report.dangling.append({"source": origin, "target": target})
+                return None
             else:
                 key = posixpath.normpath(str(PurePosixPath(_source_id(root, page.source)).parent / target))
             resolved = manifest.get(key)
             if resolved is None:
-                report.dangling.append({"source": _source_id(root, page.source), "target": target})
+                if page.source is None and target.startswith("ref:"):
+                    # Re-export from a module without public members (e.g. an import shim without
+                    # __all__): there is no page to link, and that is not an authoring error.
+                    report.unlinked.append({"source": origin, "target": target})
+                    return UNLINK
+                report.dangling.append({"source": origin, "target": target})
             return resolved
 
         page.body = rewrite_links(page.body, resolve)
@@ -322,9 +364,10 @@ def _template(name: str) -> Any:
 def write_navigation(pages: list[BundlePage], report: BundleReport, cfg: TechwikiConfig, out: Path) -> None:
     """Write only the Home and Sidebar navigation files.
 
-    Home counts every page of every section. The sidebar lists every authored and decision page, but for the
-    reference section only the index page (``module is None``): GitHub renders the sidebar on every wiki
-    page, so the thousands of module pages must not appear there.
+    Both list every authored and decision page as a plain Markdown link (never ``[[Page]]``, which GitHub
+    cannot render by the hundreds in a wiki this size). For the reference section they link only the index
+    page (``module is None``), since the thousands of module pages belong on the index; Home also shows the
+    full page count of every section.
 
     Args:
         pages: Assembled pages used to construct navigation.
@@ -336,18 +379,21 @@ def write_navigation(pages: list[BundlePage], report: BundleReport, cfg: Techwik
     sections: dict[str, list[BundlePage]] = {}
     for page in pages:
         sections.setdefault(page.section, []).append(page)
-    home_rows = [{"name": name, "pages": items} for name, items in sections.items()]
-    sidebar_rows = [
+    rows = [
         {
             "name": name,
-            "pages": [p for p in items if p.module is None] if name == cfg.reference_section else items,
+            "count": len(items),
+            "pages": [
+                {"title": p.title, "href": page_href(p.name)}
+                for p in (items if name != cfg.reference_section else [p for p in items if p.module is None])
+            ],
         }
         for name, items in sections.items()
     ]
     (out / "Home.md").write_text(
-        _template("home.md.j2").render(report=report, site_url=cfg.site_url, sections=home_rows), encoding="utf-8"
+        _template("home.md.j2").render(report=report, site_url=cfg.site_url, sections=rows), encoding="utf-8"
     )
-    (out / "_Sidebar.md").write_text(_template("sidebar.md.j2").render(sections=sidebar_rows), encoding="utf-8")
+    (out / "_Sidebar.md").write_text(_template("sidebar.md.j2").render(sections=rows), encoding="utf-8")
 
 
 def write_bundle(pages: list[BundlePage], report: BundleReport, cfg: TechwikiConfig, out: Path) -> None:

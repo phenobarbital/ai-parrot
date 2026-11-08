@@ -38,6 +38,11 @@ A2UI_CANCEL_ACTION = "form.cancel"
 #: Risks" — enforcement lives in the handlers that call this module).
 A2UI_MAX_BODY_BYTES = int(os.environ.get("A2UI_MAX_DATA_MODEL_BYTES", str(1024 * 1024)))
 
+#: Maximum nesting depth accepted for an inbound JSON Schema in
+#: ``translate_form`` (FEAT-822 / issue:bf978b6bae8a S3). Checked iteratively,
+#: so a hostile schema cannot exhaust the Python stack while being validated.
+A2UI_MAX_SCHEMA_DEPTH = int(os.environ.get("A2UI_MAX_SCHEMA_DEPTH", "32"))
+
 
 class A2UIActionSubmission(BaseModel):
     """Answers unwrapped from an inbound A2UI ``action`` envelope.
@@ -309,3 +314,152 @@ def a2ui_response(envelopes: list[dict[str, Any]], *, status: int) -> web.Respon
         m = _a2ui_ns()
         return web.json_response(envelopes[0], status=status, content_type=m.A2UI_MEDIA_TYPE)
     return web.json_response({"messages": envelopes}, status=status)
+
+
+def apply_body_cap(request: web.Request, *, limit: int | None = None) -> int:
+    """Lower this request's aiohttp read cap, and return the cap in force.
+
+    aiohttp enforces ``BaseRequest._client_max_size`` *inside*
+    ``BaseRequest.read()`` -- and therefore inside ``.text()`` and ``.json()``
+    -- raising :exc:`aiohttp.web.HTTPRequestEntityTooLarge` as soon as the
+    bytes accumulated so far exceed it. Because it counts bytes as they
+    arrive instead of trusting ``Content-Length``, it is the one seam that
+    also covers a chunked body, where ``content_length`` is ``None`` -- the
+    bypass FEAT-822 exists to close (``issue:bf978b6bae8a``).
+
+    Call this immediately before ``await request.json()`` and catch
+    ``web.HTTPRequestEntityTooLarge`` at the call site to shape the 413;
+    :func:`oversized_response` picks the right shape.
+
+    The cap is only ever lowered, never raised, so a host application that
+    already configures a smaller ``client_max_size`` keeps it.
+
+    Args:
+        request: The incoming aiohttp request.
+        limit: Byte cap; ``None`` resolves to :data:`A2UI_MAX_BODY_BYTES` at
+            call time, so the module attribute stays monkeypatchable.
+
+    Returns:
+        The cap now in force for this request, to echo as ``max_bytes``.
+    """
+    cap = A2UI_MAX_BODY_BYTES if limit is None else limit
+    current = getattr(request, "_client_max_size", None)
+    if isinstance(current, int) and 0 < current < cap:
+        # The host app is stricter than we are; do not widen its limit.
+        return current
+    # Private attribute by necessity: aiohttp exposes the per-request cap only
+    # through ``web.Application(client_max_size=...)``, which is app-wide and
+    # therefore cannot express a per-route limit. ``read()`` reads it on every
+    # call, so assigning here is what makes the cap take effect.
+    request._client_max_size = cap  # noqa: SLF001
+    return cap
+
+
+def exceeds_json_depth(value: Any, *, max_depth: int | None = None) -> bool:
+    """Return whether a decoded JSON value nests deeper than ``max_depth``.
+
+    Counts container nesting levels: a flat object or array is depth 1. The
+    walk uses an explicit stack rather than recursion, so a hostile payload
+    cannot exhaust the Python stack while it is being validated (FEAT-822 /
+    ``issue:bf978b6bae8a`` item S3), and it short-circuits on the first node
+    past the cap rather than traversing the whole structure.
+
+    Args:
+        value: Any JSON-decoded value.
+        max_depth: Depth cap; ``None`` resolves to
+            :data:`A2UI_MAX_SCHEMA_DEPTH` at call time.
+
+    Returns:
+        ``True`` when some container sits deeper than ``max_depth``.
+    """
+    cap = A2UI_MAX_SCHEMA_DEPTH if max_depth is None else max_depth
+    stack: list[tuple[Any, int]] = [(value, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if not isinstance(node, (dict, list)):
+            continue
+        if depth > cap:
+            return True
+        children = node.values() if isinstance(node, dict) else node
+        stack.extend((child, depth + 1) for child in children)
+    return False
+
+
+def is_a2ui_content_type(request: web.Request) -> bool:
+    """Return whether the request declares the A2UI media type.
+
+    Headers-only counterpart to :func:`is_a2ui_request`, for the oversize
+    branch, which must choose an error shape BEFORE the body is parsed.
+    Deliberately has no ``parrot.*`` import so it works without the optional
+    A2UI extra installed. Never raises.
+
+    Args:
+        request: The incoming aiohttp request.
+
+    Returns:
+        ``True`` when the request's media type is ``application/a2ui+json``.
+    """
+    return request.content_type == "application/a2ui+json"
+
+
+def oversized_json_response(limit: int) -> web.Response:
+    """Return the plain-JSON 413 used by non-A2UI routes.
+
+    Args:
+        limit: The cap that was exceeded, echoed as ``max_bytes``.
+
+    Returns:
+        A 413 ``web.Response`` whose shape matches the guards this replaces.
+    """
+    return web.json_response({"error": "body too large", "max_bytes": limit}, status=413)
+
+
+def oversized_a2ui_response(surface_id: str, message: str = "body too large") -> web.Response:
+    """Return the A2UI-enveloped 413 used by A2UI routes.
+
+    Args:
+        surface_id: The surface the error belongs to.
+        message: The human-readable error message.
+
+    Returns:
+        A 413 ``web.Response`` carrying a single A2UI error envelope.
+    """
+    from parrot.outputs.a2ui.runtime.models import A2UIErrorCode, error_envelope
+
+    return a2ui_response(
+        [error_envelope(A2UIErrorCode.INTERNAL, message, surface_id=surface_id)],
+        status=413,
+    )
+
+
+def oversized_response(
+    request: web.Request,
+    *,
+    limit: int,
+    surface_id: str | None = None,
+    message: str = "body too large",
+) -> web.Response:
+    """Return the 413 shaped for this request's wire. Never raises.
+
+    The oversize branch has to choose its error shape BEFORE the body is
+    available, so the decision is made on the request headers alone.
+
+    Args:
+        request: The incoming aiohttp request.
+        limit: The cap that was exceeded, echoed as ``max_bytes`` on the
+            plain-JSON shape.
+        surface_id: The surface to name in the A2UI envelope; ``None`` on
+            routes that have no A2UI shape at all.
+        message: The human-readable message for the A2UI envelope.
+
+    Returns:
+        An A2UI-enveloped 413 for an A2UI caller, else the plain-JSON 413.
+        Falls back to the plain shape when the optional ``parrot.outputs.a2ui``
+        extra is not installed.
+    """
+    if surface_id is not None and is_a2ui_content_type(request):
+        try:
+            return oversized_a2ui_response(surface_id, message)
+        except ImportError:
+            pass
+    return oversized_json_response(limit)

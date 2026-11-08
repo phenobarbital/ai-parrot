@@ -1,5 +1,6 @@
 # packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py
 """FEAT-633 move A: ledger/worktree helpers live in parrot.sdd.scripts; scripts/sdd shims alias them."""
+
 from __future__ import annotations
 
 import importlib
@@ -19,9 +20,20 @@ MOVED_HOOK = SRC / "parrot" / "sdd" / "scripts" / "worktree_environment.py"  # r
 OLD_HOOK = SRC / "parrot" / "flows" / "dev_loop" / "worktree_environment.py"  # rev 0.5 C19 shim
 MOVED_LIBS = ("brief_meta",)  # rev 0.4 C17: library module, no main() until TASK-4299 adds the CLI
 SDD_META_NAMES = (
-    "KNOWN_BRANCHES", "KNOWN_PROJECTS", "PROJECT_ALIASES", "WORK_KIND_FLOW", "WORKTREE_ROOT", "DocTaxonomy",
-    "FlowMeta", "WorktreePlan", "emit", "normalize_project", "normalize_tag", "parse", "parse_taxonomy",
-    "plan_worktree", "resolve_flow",
+    "KNOWN_BRANCHES",
+    "KNOWN_PROJECTS",
+    "PROJECT_ALIASES",
+    "WORK_KIND_FLOW",
+    "DocTaxonomy",
+    "FlowMeta",
+    "WorktreePlan",
+    "emit",
+    "normalize_project",
+    "normalize_tag",
+    "parse",
+    "parse_taxonomy",
+    "plan_worktree",
+    "resolve_flow",
 )
 
 
@@ -52,9 +64,15 @@ def test_shim_aliases_package_module(name: str) -> None:
 
 @pytest.mark.parametrize("name", ("reserve_ids", "ensure_worktree"))
 def test_live_cli_help_and_usage_error_unchanged(name: str) -> None:
-    shim, pkg = _run(f"scripts.sdd.{name}", "--help", cwd=REPO_ROOT), _run(f"parrot.sdd.scripts.{name}", "--help", cwd=REPO_ROOT)
+    shim, pkg = _run(f"scripts.sdd.{name}", "--help", cwd=REPO_ROOT), _run(
+        f"parrot.sdd.scripts.{name}", "--help", cwd=REPO_ROOT
+    )
     assert (shim.returncode, shim.stdout) == (pkg.returncode, pkg.stdout)
-    assert _run(f"scripts.sdd.{name}", cwd=REPO_ROOT).returncode == _run(f"parrot.sdd.scripts.{name}", cwd=REPO_ROOT).returncode == 2
+    assert (
+        _run(f"scripts.sdd.{name}", cwd=REPO_ROOT).returncode
+        == _run(f"parrot.sdd.scripts.{name}", cwd=REPO_ROOT).returncode
+        == 2
+    )
 
 
 def test_sdd_meta_reexport_identity() -> None:
@@ -62,6 +80,16 @@ def test_sdd_meta_reexport_identity() -> None:
     src = importlib.import_module("parrot.knowledge.wiki.ledger.sdd_meta")
     for name in SDD_META_NAMES:
         assert getattr(pkg, name) is getattr(src, name), name
+
+
+def test_sdd_meta_worktree_root_removed() -> None:
+    """The removed constant has no compatibility alias in either module."""
+    pkg = importlib.import_module("parrot.sdd.scripts.sdd_meta")
+    src = importlib.import_module("parrot.knowledge.wiki.ledger.sdd_meta")
+    with pytest.raises(AttributeError):
+        _ = pkg.WORKTREE_ROOT
+    with pytest.raises(AttributeError):
+        _ = src.WORKTREE_ROOT
 
 
 def test_worktree_environment_shim_reexports_moved_module() -> None:  # rev 0.3 C16 / AC-8
@@ -87,7 +115,11 @@ def test_hook_answers_with_bare_interpreter(hook: Path, tmp_path: Path) -> None:
     # -I -S: stdlib only (no site-packages, no PYTHONPATH, no script dir on sys.path).
     proc = subprocess.run(
         [sys.executable, "-I", "-S", str(hook), "--hook"],
-        input="{}", cwd=tmp_path, capture_output=True, text=True, timeout=10,
+        input="{}",
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     assert proc.returncode == 0, proc.stderr
     assert json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
@@ -146,7 +178,7 @@ def test_remove_worktree_root_is_primary_checkout(tmp_path: Path, monkeypatch: p
     from parrot.sdd.scripts import remove_worktree
 
     primary = _git_repo(tmp_path / "repo")
-    worktree = primary / ".claude" / "worktrees" / "wt"
+    worktree = primary / ".parrot" / "worktrees" / "wt"
     worktree.parent.mkdir(parents=True)
     subprocess.run(["git", "worktree", "add", "-q", str(worktree), "-b", "wt"], cwd=primary, check=True)
     monkeypatch.chdir(worktree)
@@ -163,7 +195,7 @@ def test_remove_worktree_list_and_dry_run(tmp_path: Path, monkeypatch: pytest.Mo
     remove_worktree._ROOT = None
     assert remove_worktree.main(["list"]) == 0
 
-    worktree = primary / ".claude" / "worktrees" / "wt"
+    worktree = primary / ".parrot" / "worktrees" / "wt"
     worktree.parent.mkdir(parents=True)
     subprocess.run(["git", "worktree", "add", "-q", str(worktree), "-b", "wt"], cwd=primary, check=True)
     assert remove_worktree.main(["remove", "wt", "--dry-run"]) == 0
@@ -174,7 +206,7 @@ def test_remove_worktree_refuses_dirty(tmp_path: Path, monkeypatch: pytest.Monke
     from parrot.sdd.scripts import remove_worktree
 
     primary = _git_repo(tmp_path / "repo")
-    worktree = primary / ".claude" / "worktrees" / "wt"
+    worktree = primary / ".parrot" / "worktrees" / "wt"
     worktree.parent.mkdir(parents=True)
     subprocess.run(["git", "worktree", "add", "-q", str(worktree), "-b", "wt"], cwd=primary, check=True)
     (worktree / "dirty.txt").write_text("uncommitted\n")
@@ -183,6 +215,159 @@ def test_remove_worktree_refuses_dirty(tmp_path: Path, monkeypatch: pytest.Monke
 
     assert remove_worktree.main(["remove", "wt"]) != 0
     assert worktree.is_dir()
+
+
+def _pool_with_registered_child(
+    primary: Path, pool_name: str = "feat-FEAT-999-x--pool"
+) -> tuple[Path, Path]:
+    """Build an unregistered pool dir holding one registered worktree.
+
+    Returns ``(pool, child)``. This is the FEAT-823 D1 shape: the pool itself is
+    never a git worktree, only the ``TASK-*`` child inside it is.
+    """
+    pool = primary / ".parrot" / "worktrees" / pool_name
+    pool.mkdir(parents=True)
+    child = pool / "TASK-1-a1"
+    subprocess.run(
+        ["git", "worktree", "add", "-q", str(child), "-b", "task-1-a1"],
+        cwd=primary,
+        check=True,
+    )
+    return pool, child
+
+
+def _registered_paths(primary: Path) -> set[str]:
+    """Return the worktree paths git currently tracks in ``primary``."""
+    proc = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        cwd=primary,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return {ln.split(" ", 1)[1] for ln in proc.stdout.splitlines() if ln.startswith("worktree ")}
+
+
+def _deregister_keeping_dir(primary: Path, name: str, stash: Path) -> None:
+    """Drop git's record of a worktree while leaving its directory in place.
+
+    Moves the admin dir OUT of ``.git/worktrees/`` entirely — renaming it
+    *inside* that directory merely re-registers the worktree under the new
+    admin name, which does not reproduce the FEAT-823 D2 shape.
+    """
+    shutil.move(str(primary / ".git" / "worktrees" / name), str(stash / name))
+    subprocess.run(["git", "worktree", "prune"], cwd=primary, check=True)
+
+
+def test_stale_refuses_orphan_holding_registered_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:  # FEAT-823 AC1 / issue:751782605094
+    """--stale must not rmtree a pool dir that still holds a registered worktree."""
+    from parrot.sdd.scripts import remove_worktree
+
+    primary = _git_repo(tmp_path / "repo")
+    pool, child = _pool_with_registered_child(primary)
+    (child / "draft.py").write_text("uncommitted coder work\n")
+    monkeypatch.chdir(primary)
+    remove_worktree._ROOT = None
+
+    assert remove_worktree.main(["remove", "--stale"]) != 0
+    assert pool.is_dir(), "pool dir was deleted despite holding a registered worktree"
+    assert child.is_dir(), "registered child was deleted"
+    assert (child / "draft.py").exists(), "uncommitted coder work was discarded"
+    assert str(child.resolve()) in _registered_paths(primary), "git's record of the child was dropped"
+
+
+def test_stale_force_reports_nested_registrations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:  # FEAT-823 AC2 + AC3
+    """--force removes the pool but still names every nested worktree first."""
+    from parrot.sdd.scripts import remove_worktree
+
+    primary = _git_repo(tmp_path / "repo")
+    _pool, child = _pool_with_registered_child(primary)
+    monkeypatch.chdir(primary)
+    remove_worktree._ROOT = None
+
+    remove_worktree.main(["remove", "--stale", "--force"])
+    err = capsys.readouterr().err
+
+    assert "TASK-1-a1" in err, "the nested worktree was not named before removal"
+    # Match on the tokens, not on counts: a fresh `git worktree add` has 0 of each.
+    assert "dirty:" in err and "unpushed:" in err, "per-child work state was not reported"
+
+
+def test_stale_refuses_dirty_orphan_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:  # FEAT-823 AC4 / issue:65a431065cae
+    """A deregistered-but-live checkout with uncommitted work is gated."""
+    from parrot.sdd.scripts import remove_worktree
+
+    primary = _git_repo(tmp_path / "repo")
+    orphan = primary / ".parrot" / "worktrees" / "wt"
+    orphan.parent.mkdir(parents=True)
+    subprocess.run(["git", "worktree", "add", "-q", str(orphan), "-b", "wt"], cwd=primary, check=True)
+    (orphan / "dirty.txt").write_text("precious uncommitted work\n")
+
+    stash = tmp_path / "admin-stash"
+    stash.mkdir()
+    _deregister_keeping_dir(primary, "wt", stash)
+    assert str(orphan.resolve()) not in _registered_paths(primary), "fixture still registered"
+    assert (orphan / ".git").exists(), "fixture is no longer a checkout"
+
+    monkeypatch.chdir(primary)
+    remove_worktree._ROOT = None
+
+    assert remove_worktree.main(["remove", "--stale"]) != 0
+    assert (orphan / "dirty.txt").exists(), "uncommitted work was discarded without --force"
+
+    assert remove_worktree.main(["remove", "--stale", "--force"]) == 0
+    assert not orphan.exists()
+
+
+def test_stale_skips_symlinked_orphan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:  # FEAT-823 AC5 / issue:65a431065cae
+    """A symlink is skipped with a warning; the sweep still completes."""
+    from parrot.sdd.scripts import remove_worktree
+
+    primary = _git_repo(tmp_path / "repo")
+    worktrees = primary / ".parrot" / "worktrees"
+    worktrees.mkdir(parents=True)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "keepme.txt").write_text("outside the worktree tree\n")
+    # Names matter: discover() iterates sorted(), so the symlink is visited
+    # first and an OSError would leave zzz-plain untouched.
+    link = worktrees / "aaa-link"
+    link.symlink_to(elsewhere, target_is_directory=True)
+    plain = worktrees / "zzz-plain"
+    plain.mkdir()
+
+    monkeypatch.chdir(primary)
+    remove_worktree._ROOT = None
+
+    assert remove_worktree.main(["remove", "--stale"]) == 0
+    assert link.is_symlink(), "the symlink itself must be left alone"
+    assert (elsewhere / "keepme.txt").exists(), "the symlink target must never be touched"
+    assert not plain.exists(), "the sweep stopped early instead of continuing"
+
+
+def test_stale_still_removes_plain_container(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:  # FEAT-823 AC7 — non-regression
+    """An emptied pool dir is still swept without --force."""
+    from parrot.sdd.scripts import remove_worktree
+
+    primary = _git_repo(tmp_path / "repo")
+    pool = primary / ".parrot" / "worktrees" / "feat-FEAT-998-y--pool"
+    pool.mkdir(parents=True)
+    (pool / "leftover.log").write_text("scratch\n")
+    monkeypatch.chdir(primary)
+    remove_worktree._ROOT = None
+
+    assert remove_worktree.main(["remove", "--stale"]) == 0
+    assert not pool.exists()
 
 
 def test_remove_worktree_shim_aliases() -> None:

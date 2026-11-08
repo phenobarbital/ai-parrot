@@ -431,9 +431,9 @@ parrot sdd status                            # missing | current | outdated | ed
 ```
 
 - The install writes the host's `/sdd-*` commands, the seeds `sdd/config.json`, `sdd/CONVENTIONS.md` and
-  `sdd/tasks/.id_ledger.json`, an ignore block for `.claude/worktrees/` and `.parrot/`, a marked `.gitattributes` block
+  `sdd/tasks/.id_ledger.json`, an ignore block for the resolved worktree root (default `.parrot/worktrees/`, or `WORKTREE_BASE_PATH`) and `.parrot/`, a marked `.gitattributes` block
   (`merge=union` for the ledger log) and the four `parrot-ledger` git hooks. What it wrote is recorded in
-  `sdd/.sdd-installed.json`; commit it. `/sdd-insight` is not installed.
+  `sdd/.sdd-installed.json`; commit it. `parrot sdd install` and `parrot self doctor` refuse while worktrees remain under the legacy `.claude/worktrees/` and print the migration recipe. `/sdd-insight` is not installed.
 - Edit `sdd/config.json`: `base_branch`, `hotfix_base`, `issue_tracker`, `test_command`, ... A repository whose
   tests are not pytest (Node, Rust, Go, ...) MUST set `test_command` (e.g. `"npm test"`): without it, `/sdd-task`
   rejects every non-pytest validation command. When

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import numpy as np
 import pytest
 
 from parrot.knowledge.pageindex.hybrid_search import HybridPageIndexSearch
@@ -124,6 +125,53 @@ def test_mark_dirty_triggers_rebuild():
     assert engine._dirty is True
 
 
+def test_mark_dirty_uses_tree_name_not_doc_name():
+    """An explicit tree name owns the generation-specific embedding matrix."""
+    embedding_store = MagicMock()
+    engine = HybridPageIndexSearch(
+        tree=_fixture_tree(),
+        adapter=_adapter(),
+        embedding_store=embedding_store,
+        tree_name="tree-key",
+        generation_id=4,
+    )
+
+    engine.mark_dirty()
+
+    assert engine.tree_name == "tree-key"
+    assert engine.generation_id == 4
+    embedding_store.invalidate_tree.assert_called_once_with("tree-key")
+
+
+def test_vec_rank_builds_using_tree_name_and_generation():
+    """Dense ranking rebuilds its matrix under the explicit generation key."""
+    embedding_store = MagicMock()
+    embedding_store.load_tree_matrix.return_value = None
+    embedding_store.build_tree_matrix.return_value = (
+        np.ones((5, 4), dtype=np.float32),
+        ["0000", "0001", "0002", "0003", "0004"],
+    )
+
+    def embed(texts: list[str]) -> np.ndarray:
+        return np.ones((len(texts), 4), dtype=np.float32)
+
+    engine = HybridPageIndexSearch(
+        tree=_fixture_tree(),
+        adapter=_adapter(),
+        embedding_store=embedding_store,
+        embed_fn=embed,
+        tree_name="tree-key",
+        generation_id=4,
+    )
+
+    engine._vec_rank("query", top_k=2)
+
+    embedding_store.load_tree_matrix.assert_called_once_with("tree-key", generation_id=4)
+    build_args, build_kwargs = embedding_store.build_tree_matrix.call_args
+    assert build_args[0] == "tree-key"
+    assert build_kwargs == {"generation_id": 4}
+
+
 @pytest.mark.asyncio
 async def test_hybrid_search_content_loader_enriches_bm25(monkeypatch):
     # Body contains a unique token absent from title and summary.
@@ -182,7 +230,7 @@ async def test_hybrid_search_no_loader_matches_baseline():
     engine = HybridPageIndexSearch(tree=tree, adapter=_adapter())
     ids, texts = engine._flatten_corpus()
     # Pre-feature baseline: text reads node["text"].
-    for nid, text in zip(ids, texts):
+    for nid, text in zip(ids, texts, strict=True):
         from parrot.knowledge.pageindex.utils import find_node_by_id
         node = find_node_by_id(tree["structure"], nid)
         assert node is not None
@@ -257,3 +305,20 @@ async def test_reranker_invoked_when_requested(monkeypatch):
     reranker.rerank.assert_awaited_once()
     assert [r["node_id"] for r in results] == ["0002", "0001"]
     assert results[0]["source"] == "reranked"
+
+
+@pytest.mark.asyncio
+async def test_bm25_without_adapter() -> None:
+    """FEAT-842 AC-5: an engine with no adapter still searches with BM25."""
+    engine = HybridPageIndexSearch(tree=_fixture_tree(), adapter=None, default_bm25_k=5)
+    results = await engine.search("late fee payment", top_k=3, use_bm25=True, use_llm_walk=False)
+    assert results
+    assert results[0]["source"] == "bm25"
+
+
+@pytest.mark.asyncio
+async def test_llm_rank_without_adapter_raises() -> None:
+    """FEAT-842 AC-5."""
+    engine = HybridPageIndexSearch(tree=_fixture_tree(), adapter=None)
+    with pytest.raises(ValueError, match="no LLM is configured"):
+        await engine._llm_rank("anything")

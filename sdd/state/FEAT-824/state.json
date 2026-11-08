@@ -1,0 +1,178 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-824",
+  "feature_slug": "ontology-backend",
+  "started_at": "2026-11-06T13:24:56Z",
+  "updated_at": "2026-11-06T15:40:00Z",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "sdd/proposals/SPEC_ontology_backend_postgres_surrealdb.md",
+    "raw_path": "sdd/state/FEAT-824/source.md",
+    "fetched_at": "2026-11-06T13:24:56Z",
+    "summary_oneline": "Replace ArangoDB (licence change) with a coherent ontology-graph backend: PostgreSQL for the ontology + SurrealDB for the knowledge store"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-11-06T13:24:56Z",
+      "completed_at": "2026-11-06T13:24:56Z",
+      "duration_seconds": 0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-11-06T13:25:00Z",
+      "completed_at": "2026-11-06T13:30:00Z",
+      "duration_seconds": 300,
+      "queries_total": 30,
+      "approved_by_user": false,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-824/research_plan.json",
+      "note": "Plan shown to the user in the session and executed without waiting for an explicit y/edit/abort; the review gate (Phase 4) is the first blocking gate."
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-11-06T13:30:00Z",
+      "completed_at": "2026-11-06T14:10:00Z",
+      "duration_seconds": 2400,
+      "queries_executed": 32,
+      "queries_skipped": 0,
+      "depth_reached": 2,
+      "files_read": 27,
+      "grep_calls": 25,
+      "git_calls": 10,
+      "truncated": false,
+      "truncation_reason": null,
+      "note": "All 30 planned queries ran, plus one parent follow-up (Q017 → F017). The advisory per-lane wall limit (255 s) was exceeded by two lanes and was not enforced: no lane was failed or re-run. 30+ cross-lane follow-ups recorded in finding Notes were not executed (budget); the material ones are listed in synthesis.meta.notes. After the first commit the user pointed to the research note `sdd/proposals/Grafos open source para ai-parrot.md`; it was read in full and recorded as F032 (Q032).",
+      "parallel": {
+        "enabled": true,
+        "fallback_reason": null,
+        "lanes": {
+          "codebase": {
+            "status": "completed",
+            "prefix": "FC",
+            "queries_executed": 16,
+            "queries_skipped": 0,
+            "files_read": 19,
+            "grep_calls": 20,
+            "git_calls": 0,
+            "findings": 16,
+            "duration_seconds": 501,
+            "completed_at": "2026-11-06T13:58:00Z",
+            "note": "plus FC-017, a sequential parent follow-up after the lanes (4 greps, 1 git call)"
+          },
+          "git": {
+            "status": "completed",
+            "prefix": "FG",
+            "queries_executed": 5,
+            "queries_skipped": 0,
+            "files_read": 3,
+            "grep_calls": 0,
+            "git_calls": 9,
+            "findings": 6,
+            "duration_seconds": 163,
+            "completed_at": "2026-11-06T13:35:00Z"
+          },
+          "wiki": {
+            "status": "completed",
+            "prefix": "FW",
+            "queries_executed": 9,
+            "queries_skipped": 0,
+            "files_read": 4,
+            "grep_calls": 1,
+            "git_calls": 0,
+            "findings": 11,
+            "duration_seconds": 412,
+            "completed_at": "2026-11-06T13:50:00Z"
+          }
+        },
+        "merge": {
+          "started_at": "2026-11-06T14:08:00Z",
+          "completed_at": "2026-11-06T14:10:00Z",
+          "input_count": 34,
+          "output_count": 31,
+          "merged_count": 3,
+          "audit_dir": "findings/.audit",
+          "note": "Merged pairs: FC-001+FW-001, FC-009+FW-002, FC-010+FW-003. Eight further citations duplicated across topically distinct findings were removed from the later finding with a pointer note instead of merging the findings."
+        },
+        "citation_probe": {
+          "mode": "inline-script",
+          "path_citations": 145,
+          "verified": 138,
+          "enclosing_scope": 6,
+          "label_not_identifier": 1,
+          "skipped_wiki_memory_ids": 2,
+          "missing_or_out_of_range": 0,
+          "note": "Run inline by a script instead of sdd-contract-probe agents: all 145 cited repository paths exist and every cited line range is inside its file. Six citations name the enclosing symbol while citing lines inside its body; one symbol label is a file label. No finding needed a [citation-check] tag."
+        }
+      }
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-11-06T14:10:00Z",
+      "completed_at": "2026-11-06T14:25:00Z",
+      "duration_seconds": 900,
+      "synthesis_path": "sdd/state/FEAT-824/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 23,
+      "claims_high_conf": 15,
+      "claims_medium_conf": 8,
+      "claims_low_conf": 0,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 3,
+      "note": "Re-derived after the review gate: the user's four answers adopt the draft in full, so the enrichment block was rewritten and U5 added; lint re-run and passed. Second revision: F032 added, C14/C15 raised to medium, C21–C23 added; lint passed."
+    },
+    "review": {
+      "status": "completed",
+      "completed_at": "2026-11-06T14:35:00Z",
+      "decision": "refine-synthesis",
+      "note": "Review gate and Q&A were presented together: the summary in the session, then U1–U4 as one question dialog."
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-11-06T14:30:00Z",
+      "completed_at": "2026-11-06T14:35:00Z",
+      "duration_seconds": 300,
+      "questions_total": 5,
+      "questions_answered": 4,
+      "skipped_reason": null,
+      "note": "U1–U4 answered by the user; U5 (destination of the instance-graph pipeline) arises from the answers to U2 and U3 and is deferred to the spec."
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-11-06T14:35:00Z",
+      "completed_at": "2026-11-06T14:50:00Z",
+      "duration_seconds": 900,
+      "proposal_path": "sdd/proposals/ontology-backend.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "the user closed the four architectural forks in favour of the draft and localization is high-confidence; the spec must phase the programme, start with spike G1 and settle U5",
+      "note": "commit_sha is not recorded here: the state file is part of the commit it would name; see `git log -- sdd/proposals/ontology-backend.proposal.md`."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 27,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "wall_seconds": 2400
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "/sdd-spec FEAT-824"
+  }
+}

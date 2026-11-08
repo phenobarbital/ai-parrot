@@ -8,6 +8,7 @@ discover/post to swarm channels.
 """
 
 import logging
+import uuid
 from contextvars import ContextVar
 from typing import Any, Dict, List, Optional
 
@@ -133,7 +134,9 @@ class AgentSwarmToolkit(AbstractToolkit):
 
         Returns:
             The ``AgentAnswer`` envelope as a plain dict on success, or a
-            ``{"status": ...}`` dict mapped to FEAT-463 status strings.
+            ``{"status": ...}`` dict mapped to FEAT-463 status strings. Both carry the
+            Roost ``conversation_id`` (``metadata["conversation_id"]`` on success) whenever a
+            conversation was opened, so the outcome can be matched to the Roost audit ledger.
         """
         from parrot.auth.context import _pctx_var
         from parrot.roost.endpoint import RoostFailure
@@ -152,6 +155,8 @@ class AgentSwarmToolkit(AbstractToolkit):
         # Bind the call's authority for this query only; with none, keep any ambient request context.
         pctx = _CALL_PCTX.get()
         token = _pctx_var.set(pctx) if pctx is not None else None
+        # Minted here, never taken from tool arguments: the id only correlates this call with the audit ledger.
+        conversation_id = uuid.uuid4().hex
         try:
             result = await self._endpoint.query(
                 question,
@@ -159,18 +164,22 @@ class AgentSwarmToolkit(AbstractToolkit):
                 timeout=timeout,
                 expected_schema=expected_schema,
                 hops=ctx.current_hops.get(),
+                conversation_id=conversation_id,
             )
         except RoostFailure as exc:
             status = status_map.get(exc.failure.code, "error")
             logger.debug("Roost ask_agent %s -> %s failed: %s", self._agent_name, agent, exc)
-            return {"status": status, "detail": exc.failure.detail}
+            return {"status": status, "detail": exc.failure.detail, "conversation_id": conversation_id}
         except GrantDenied as exc:
             logger.debug("Roost ask_agent %s -> %s outside grant: %s", self._agent_name, agent, exc)
             return {"status": "refused", "detail": f"grant denied: {exc}"}
         finally:
             if token is not None:
                 _pctx_var.reset(token)
-        return AgentAnswer(answer=result, metadata={"via": "roost", "status": "ok"}).model_dump()
+        return AgentAnswer(
+            answer=result,
+            metadata={"via": "roost", "status": "ok", "conversation_id": conversation_id},
+        ).model_dump()
 
     async def send_feedback(
         self,

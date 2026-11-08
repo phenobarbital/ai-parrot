@@ -9,7 +9,7 @@ import unicodedata
 import uuid
 
 import jsonschema
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Mapping, Optional, Sequence
 
 from parrot.core.events.lifecycle import TraceContext
 
@@ -42,6 +42,22 @@ if TYPE_CHECKING:
 #:
 #:     return msg.reply(Performative.INFORM, content=answer, tokens=usage.total_tokens)
 WakeCallback = Callable[[RoostMessage, Dispatch], Awaitable[Optional[RoostMessage]]]
+
+
+def _is_wire_identifier(value: object) -> bool:
+    """Return whether *value* is safe as a caller-supplied identifier on the wire and in audit entries.
+
+    Args:
+        value: Candidate identifier (a trace id or a conversation id).
+
+    Returns:
+        ``True`` for a non-empty string without whitespace or Unicode control/format characters.
+    """
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and not any(character.isspace() or unicodedata.category(character) in {"Cc", "Cf"} for character in value)
+    )
 
 
 class RoostFailure(Exception):
@@ -85,7 +101,15 @@ class RoostEndpoint:
         self._subs: list[tuple[Carrier, str]] = []
         self._sweep_interval = sweep_interval
         self._sweeper: Optional[asyncio.Task[None]] = None
-        self._metrics = {"messages_in": 0, "messages_out": 0, "wakes": 0, "not_understood": 0, "stored": 0}
+        self._metrics = {
+            "messages_in": 0,
+            "messages_out": 0,
+            "wakes": 0,
+            "not_understood": 0,
+            "stored": 0,
+            "turns_started": 0,
+        }
+        self._turns: set[asyncio.Task[None]] = set()
         self._token_budget_warned: set[str] = set()
         self._awarded_grants: dict[str, InterAgentGrant] = {}
 
@@ -122,7 +146,16 @@ class RoostEndpoint:
             self._sweeper = asyncio.get_running_loop().create_task(self._sweep_loop())
 
     async def stop(self) -> None:
-        """Unsubscribe and fail outstanding request waiters as cancelled."""
+        """Cancel in-flight agent turns, unsubscribe, and fail outstanding request waiters as cancelled.
+
+        Turns are cancelled and awaited before the carriers are released: a turn that is inside
+        ``query()`` closes its conversation as ``CANCELLED`` over a carrier that is still live.
+        """
+        turns = list(self._turns)
+        for turn in turns:
+            turn.cancel()
+        if turns:
+            await asyncio.gather(*turns, return_exceptions=True)
         if self._sweeper is not None:
             self._sweeper.cancel()
             await asyncio.gather(self._sweeper, return_exceptions=True)
@@ -192,7 +225,7 @@ class RoostEndpoint:
             await self._resolve_pending(msg)
             return
         if dispatch.decision is DispatchDecision.RUN_TOOL:
-            await self._run_tool(msg)
+            self._spawn_turn(self._run_tool(msg), msg=msg)
             return
         if dispatch.decision is DispatchDecision.STORE:
             if dispatch.handler is not None:
@@ -202,18 +235,7 @@ class RoostEndpoint:
             return
         if dispatch.decision is DispatchDecision.WAKE_LLM:
             self._metrics["wakes"] += 1
-            if self.wake is not None:
-                response = await self.wake(msg, dispatch)
-                if response is not None:
-                    await self._send_reply(response)
-                    exhausted = self.engine.charge(msg.conversation_id, response.tokens)
-                    if response.tokens == 0:
-                        self._warn_unfed_token_budget(msg.conversation_id)
-                    if exhausted is not None:
-                        for emitted in exhausted.emit:
-                            await self._route_emitted(emitted)
-                    self._forget_if_closed(msg.conversation_id)
-            await self._resolve_pending(msg)
+            self._spawn_turn(self._serve_wake(msg, dispatch), msg=msg)
             return
         if dispatch.decision is DispatchDecision.BID_FROM_CONTRACT:
             bid = self.config.bid if self.config is not None else None
@@ -235,6 +257,58 @@ class RoostEndpoint:
             return
         if dispatch.decision is DispatchDecision.REPLAN:
             await self._resolve_pending(msg)
+
+    def _spawn_turn(self, coro: Coroutine[Any, Any, None], *, msg: RoostMessage) -> asyncio.Task[None]:
+        """Run an agent turn (LLM wake or serving tool call) off the carrier consumer.
+
+        Carriers deliver one message at a time per address, so a turn that opens its own onward Roost
+        conversation must not hold the consumer: the reply it waits for arrives on that same consumer
+        (``issue:a409d14b8130``). Protocol work stays inline in ``_on_message``; only the turn is
+        detached, tracked for ``stop()``, and logged when it fails.
+
+        Args:
+            coro: The turn to run.
+            msg: The inbound message the turn serves (for the failure log).
+
+        Returns:
+            The tracked task.
+        """
+        task = asyncio.get_running_loop().create_task(coro)
+        self._turns.add(task)
+        self._metrics["turns_started"] += 1
+
+        def _done(done: asyncio.Task[None]) -> None:
+            self._turns.discard(done)
+            if done.cancelled():
+                return
+            exc = done.exception()
+            if exc is not None:
+                self.logger.error(
+                    "Roost turn for %s on conversation %s failed", self.agent_name, msg.conversation_id, exc_info=exc
+                )
+
+        task.add_done_callback(_done)
+        return task
+
+    async def _serve_wake(self, msg: RoostMessage, dispatch: Dispatch) -> None:
+        """Wake the local agent for *msg*, deliver its reply, and charge the conversation budget."""
+        if self.wake is not None:
+            response = await self.wake(msg, dispatch)
+            if response is not None:
+                await self._send_reply(response)
+                exhausted = self.engine.charge(msg.conversation_id, response.tokens)
+                if response.tokens == 0:
+                    self._warn_unfed_token_budget(msg.conversation_id)
+                if exhausted is not None:
+                    for emitted in exhausted.emit:
+                        await self._route_emitted(emitted)
+                self._forget_if_closed(msg.conversation_id)
+        await self._resolve_pending(msg)
+
+    @property
+    def turns_in_flight(self) -> int:
+        """Number of agent turns currently running off the carrier consumer."""
+        return len(self._turns)
 
     def _advertised_tool(self, msg: RoostMessage) -> Optional[str]:
         """Return the tool name for an inbound message, or ``None`` when it is not advertised.
@@ -550,6 +624,7 @@ class RoostEndpoint:
         expected_schema: Optional[dict] = None,
         hops: int = 0,
         trace_id: str | None = None,
+        conversation_id: Optional[str] = None,
     ) -> Any:
         """Execute a Query conversation without an agreement phase.
 
@@ -560,20 +635,23 @@ class RoostEndpoint:
             expected_schema: Optional JSON Schema the answer must satisfy (``FailureCode.SCHEMA`` otherwise).
             hops: Chain depth of the caller seeding the hop budget.
             trace_id: Exact application trace identifier to retain in LocalEnvelope audit entries.
+            conversation_id: Identifier to open the conversation under, so the caller can correlate the
+                outcome (success or failure) with audit entries. A fresh one is minted when omitted.
 
         Raises:
             GrantDenied: *receiver* is outside the caller's grant.
-            ValueError: *trace_id* is empty, non-string, whitespace, or contains control/format characters.
+            ValueError: *trace_id* or *conversation_id* is empty, non-string, whitespace, or contains
+                control/format characters.
+            ConversationExistsError: *conversation_id* already names a conversation on this endpoint's
+                engine; nothing is sent and that conversation is left untouched.
         """
-        if trace_id is not None and (
-            not isinstance(trace_id, str)
-            or not trace_id
-            or any(character.isspace() or unicodedata.category(character) in {"Cc", "Cf"} for character in trace_id)
-        ):
+        if trace_id is not None and not _is_wire_identifier(trace_id):
             raise ValueError("trace_id must be a non-empty string without whitespace or control characters")
+        if conversation_id is not None and not _is_wire_identifier(conversation_id):
+            raise ValueError("conversation_id must be a non-empty string without whitespace or control characters")
         if not self.grant.allows(self.config, receiver.name):
             raise GrantDenied(receiver.name)
-        conversation_id = uuid.uuid4().hex
+        conversation_id = conversation_id or uuid.uuid4().hex
         trace = TraceContext(trace_id=trace_id, span_id=secrets.token_hex(8)) if trace_id is not None else None
         envelope = squawk_bridge.new_envelope(
             correlation_id=conversation_id,

@@ -1,13 +1,11 @@
 """HTTP handler for the OAuth2 integrations endpoints.
 
-Exposes four routes under ``/api/v1/agents/integrations/{agent_id}``:
+Exposes three routes under ``/api/v1/agents/integrations/{agent_id}``:
 
 - ``GET    /api/v1/agents/integrations/{agent_id}``
   → list integrations for the current user.
 - ``POST   /api/v1/agents/integrations/{agent_id}/{provider}/connect``
   → initiate the OAuth2 popup flow; returns auth_url + state nonce.
-- ``POST   /api/v1/agents/integrations/{agent_id}/{provider}/enable``
-  → compatibility no-op returning the current descriptor.
 - ``DELETE /api/v1/agents/integrations/{agent_id}/{provider}``
   → disconnect the principal's provider connection.
 
@@ -37,7 +35,6 @@ class IntegrationsHandler(BaseView):
 
     URL dispatch is performed by URL suffix inspection:
     - ``POST .../{provider}/connect`` → start OAuth2 flow.
-    - ``POST .../{provider}/enable``  → return current connection status.
     - ``DELETE .../{provider}``       → disconnect.
     """
 
@@ -89,11 +86,10 @@ class IntegrationsHandler(BaseView):
         return web.json_response([d.model_dump(mode="json") for d in descriptors])
 
     async def post(self) -> web.Response:
-        """``POST`` dispatcher — routes to connect-init or confirm-enable.
+        """``POST`` dispatcher — routes to connect-init.
 
         Dispatches by the last path segment:
         - ``…/{provider}/connect`` → :meth:`_post_connect`
-        - ``…/{provider}/enable``  → :meth:`_post_enable`
 
         Returns:
             JSON response from the appropriate sub-handler.
@@ -101,10 +97,8 @@ class IntegrationsHandler(BaseView):
         path = self.request.path
         if path.endswith("/connect"):
             return await self._post_connect()
-        if path.endswith("/enable"):
-            return await self._post_enable()
         return web.json_response(
-            {"error": "Unknown POST endpoint.  Use /connect or /enable."}, status=404
+            {"error": "Unknown POST endpoint.  Use /connect."}, status=404
         )
 
     async def _post_connect(self) -> web.Response:
@@ -166,35 +160,6 @@ class IntegrationsHandler(BaseView):
             return web.json_response({"error": str(exc)}, status=500)
 
         return web.json_response(resp.model_dump(mode="json"))
-
-    async def _post_enable(self) -> web.Response:
-        """Handle ``POST .../integrations/{agent_id}/{provider}/enable``.
-
-        Returns:
-            ``EnableResponse`` JSON containing the current descriptor. This
-            compatibility route does not mutate connection state.
-        """
-        provider: str = self.request.match_info["provider"]
-        user_id = await self._get_user_id()
-        if not user_id:
-            return web.json_response({"error": "Authenticated user not identified."}, status=401)
-
-        svc = IntegrationsService()
-        try:
-            descriptor = await svc.status(user_id, provider, request=self.request)
-        except PermissionError:
-            return web.json_response({"error": "forbidden"}, status=403)
-        except ValueError as exc:
-            return web.json_response({"error": str(exc)}, status=400)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Error enabling integration for user=%s provider=%s", user_id, provider)
-            return web.json_response({"error": str(exc)}, status=500)
-
-        from parrot.auth.oauth2.models import EnableResponse
-
-        return web.json_response(
-            EnableResponse(integration=descriptor).model_dump(mode="json")
-        )
 
     async def delete(self) -> web.Response:
         """Handle ``DELETE .../integrations/{agent_id}/{provider}``.

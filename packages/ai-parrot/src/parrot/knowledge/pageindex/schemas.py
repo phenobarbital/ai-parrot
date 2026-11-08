@@ -126,6 +126,11 @@ class PageIndexNode(BaseModel):
     prefix_summary: Optional[str] = None
     text: Optional[str] = None
     line_num: Optional[int] = None
+    doc_id: Optional[str] = None
+    revision: Optional[str] = None
+    span: Optional[list[int]] = None
+    owned: Optional[list[list[int]]] = None
+    structure_source: Optional[str] = None
     nodes: Optional[list[PageIndexNode]] = None
 
     model_config = {"extra": "allow"}

@@ -23,7 +23,6 @@ from parrot.sdd.scripts.brief_meta import brief_worktree_plan
 from parrot.sdd.scripts.sdd_meta import WorktreePlan, plan_worktree, resolve_flow
 
 
-
 def _load_native_artifacts():
     """Load ``native_artifacts.py`` by file path (stdlib + pydantic only).
 
@@ -192,21 +191,26 @@ def _worktree_branches(repo_root: Path) -> dict[Path, str]:
 
 
 def _find_reusable_worktree(plan: WorktreePlan, target_path: Path, *, repo_root: Path) -> Path | None:
-    """Return the existing worktree for ``plan``, ``None`` when there is none.
+    """Return the worktree at exactly ``target_path`` on ``plan.name``, if any.
 
-    A registered worktree matches by exact path or by basename ``plan.name``.
-    One that is checked out on a DIFFERENT branch is an error, never a silent
-    reuse.
+    A worktree at the target on a different branch is an error. The requested
+    branch checked out anywhere else is also an error: it must be migrated to
+    the resolved target rather than silently reused.
     """
-    for wt_path, branch_name in _worktree_branches(repo_root).items():
-        if wt_path != target_path and wt_path.name != plan.name:
-            continue
-        if branch_name != plan.name:
+    branches = _worktree_branches(repo_root)
+    at_target = branches.get(target_path)
+    if at_target is not None and at_target != plan.name:
+        raise EnsureWorktreeError(
+            f"Worktree at {target_path} is checked out on branch {at_target!r}, " f"but expected branch {plan.name!r}."
+        )
+    if at_target == plan.name:
+        return target_path
+    for worktree_path, branch_name in branches.items():
+        if branch_name == plan.name:
             raise EnsureWorktreeError(
-                f"Worktree at {wt_path} is checked out on branch {branch_name!r}, "
-                f"but expected branch {plan.name!r}."
+                f"Branch {plan.name!r} is already checked out at {worktree_path}, not at the expected "
+                f"{target_path}; move it (see `parrot self doctor` for the migration recipe) or remove it first."
             )
-        return wt_path
     return None
 
 

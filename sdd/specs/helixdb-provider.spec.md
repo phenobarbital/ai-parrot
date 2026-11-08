@@ -11,7 +11,7 @@ tags: [helixdb, graph-database, wiki, graphindex, vector-search, bm25]
 **Feature ID**: FEAT-670
 **Date**: 2026-10-14
 **Author**: Jesus Lara (with Claude)
-**Status**: approved
+**Status**: superseded by FEAT-824 (sdd/specs/ontology-backend.spec.md)
 **Target version**: 1.3.0
 **Source brainstorm**: `sdd/proposals/helixdb-provider.brainstorm.md` (accepted 2026-10-14; Option A; 9 resolved questions)
 **Depends on**: **FEAT-540 `graphindex-core-seams` v0.5** (M7 graph-persistence contract + registry, M8 ontology contracts, wiki/source backend registries) — must be merged to `dev` before this feature's worktree is created

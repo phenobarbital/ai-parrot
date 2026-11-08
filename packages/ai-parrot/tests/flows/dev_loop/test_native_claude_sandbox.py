@@ -41,8 +41,8 @@ def linked(tmp_path: Path) -> tuple[Path, Path]:
     for admin in (feature_admin, pool_admin):
         admin.mkdir(parents=True)
         (admin / "commondir").write_text("../..\n")
-    feature = main / ".claude" / "worktrees" / "feat"
-    pool = main / ".claude" / "worktrees" / "pool"
+    feature = main / ".parrot" / "worktrees" / "feat"
+    pool = main / ".parrot" / "worktrees" / "pool"
     for worktree, admin in ((feature, feature_admin), (pool, pool_admin)):
         worktree.mkdir(parents=True)
         (worktree / ".git").write_text(f"gitdir: {admin}\n")
@@ -61,6 +61,14 @@ def test_native_settings_reject_widening_inputs(tmp_path: Path) -> None:
         native.native_sandbox_settings(tmp_path)
     with pytest.raises(ValueError):
         native.validate_allowed_domains(["https://github.com"])
+
+
+def test_native_allow_write_includes_coder_evidence_dir(linked: tuple[Path, Path]) -> None:
+    """The native backend allows exactly what Bubblewrap binds, and nothing else under ``artifacts/``."""
+    feature, main = linked
+    allow = native.native_sandbox_settings(feature)["sandbox"]["filesystem"]["allowWrite"]
+    assert str((main / "artifacts" / "logs" / "sdd-coder-usage").resolve()) in allow
+    assert str((main / "artifacts").resolve()) not in allow
 
 
 def test_settings_are_strict_and_explicit(linked: tuple[Path, Path]) -> None:
@@ -683,7 +691,7 @@ def test_write_matrix_positive_and_negative(linked: tuple[Path, Path], monkeypat
     task_file = feature / "task.py"
     native.validate_native_write_path(feature, task_file)
     native.validate_native_write_path(feature, policy.claude_scratch_root() / "scratch.txt")
-    native.validate_native_write_path(feature, main / ".claude" / "worktrees" / "new" / "file")
+    native.validate_native_write_path(feature, main / ".parrot" / "worktrees" / "new" / "file")
     denied = [
         feature / ".venv" / "editable.pth",
         main / ".git" / "config",
@@ -704,7 +712,7 @@ def test_write_matrix_positive_and_negative(linked: tuple[Path, Path], monkeypat
 def test_task_cwd_prefix_rules(linked: tuple[Path, Path]) -> None:
     """A literal absolute prefix selects a sibling linked worktree; a relative one resolves against the session."""
     feature, main = linked
-    pool = main / ".claude" / "worktrees" / "pool"
+    pool = main / ".parrot" / "worktrees" / "pool"
     assert native.native_task_cwd(feature, f"cd {pool} && pytest -q") == pool.resolve()
     assert native.native_task_cwd(feature, "pytest -q") == feature
     # issue:2860a2723bad — `cd packages && …` stays inside the session worktree, so the hook roots there
@@ -806,6 +814,30 @@ def test_script_mode_sibling_import_resolves_inside_sdd_scripts(tmp_path: Path) 
         check=False,
     )
     assert result.stdout.strip() == "ok", result.stderr
+
+
+def test_script_mode_native_settings_for_a_linked_worktree(linked: tuple[Path, Path], tmp_path: Path) -> None:
+    """The tmux child (``python -S``) builds settings for a linked worktree without importing parrot."""
+    feature, main = linked
+    admin_root = main / ".parrot" / "worktrees"
+    admin_root.mkdir(parents=True, exist_ok=True)
+    dev_loop = Path(native.__file__).resolve().parents[2] / "flows" / "dev_loop"
+    code = (
+        "import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; "
+        "import native_claude_sandbox as n, worktree_environment as w; "
+        "s = n.native_sandbox_settings(Path(sys.argv[2])); "
+        "assert 'parrot' not in sys.modules, 'parrot'; "
+        "print(sys.argv[3] in s['sandbox']['filesystem']['allowWrite'])"
+    )
+    result = subprocess.run(
+        [sys.executable, "-S", "-c", code, str(dev_loop), str(feature), str(admin_root.resolve())],
+        capture_output=True,
+        text=True,
+        env={"HOME": str(tmp_path)},
+        cwd=tmp_path,
+        check=False,
+    )
+    assert result.stdout.strip() == "True", result.stderr
 
 
 def test_tiktoken_cache_is_shared_not_per_session(

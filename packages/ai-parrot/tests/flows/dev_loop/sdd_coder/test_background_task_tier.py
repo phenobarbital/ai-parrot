@@ -81,6 +81,15 @@ async def test_supervisor_verdict_persisted(tmp_path: Path, monkeypatch: pytest.
     )
     monkeypatch.setattr(background_module, "plan_tests", lambda **_kwargs: _plan(*invocations))
     monkeypatch.setattr(background_module, "protected_argv", lambda _cwd, argv: list(argv))
+    real_load_registry = background_module.load_registry
+    registry_refs: list[str | None] = []
+
+    def load_at_ref(path: Path, *, ref: str | None = None):
+        # The worktree is not a git repo: stand in for the TOML committed at the fork SHA.
+        registry_refs.append(ref)
+        return real_load_registry(path)
+
+    monkeypatch.setattr(background_module, "load_registry", load_at_ref)
 
     def unexpected_green(*_args: object, **_kwargs: object) -> None:
         pytest.fail("a partial validation run must not write the green cache")
@@ -109,6 +118,7 @@ async def test_supervisor_verdict_persisted(tmp_path: Path, monkeypatch: pytest.
     assert registration.backend == "validation-subprocess"
 
     verdict = await supervisor.wait_verdict(execution_id, registration.handle, 10)
+    assert registry_refs == ["abc123"]  # task tier reads the runner TOML at the fork SHA, never the working tree
     assert verdict.status == "timed_out"
     assert [runner.status for runner in verdict.runners] == ["timed_out", "ok"]
     assert len(verdict.evidence) == 1

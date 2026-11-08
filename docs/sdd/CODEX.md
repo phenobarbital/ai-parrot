@@ -26,7 +26,6 @@ through `/skills`.
 | `/sdd-next` | `$sdd-next` | Suggest unblocked tasks and ready ledger issues. |
 | `/sdd-status` | `$sdd-status` | Show the reconciled task board and worktree health. |
 | `/sdd-explain` | `$sdd-explain` | Explain a subsystem or trace its implementation. |
-| `/sdd-insight` | `$sdd-insight` | Analyze Claude transcripts and repository SDD discipline. |
 
 ## Codex adaptation contract
 
@@ -59,7 +58,7 @@ copy Claude command frontmatter into Codex skill frontmatter.
   explicit path staging and cached-diff inspection. If unrelated changes are
   already staged, stop before a workflow commit and report the conflict; never
   include or unstage them silently. Do not use `git add .` or `git add -A`.
-- Use `scripts.sdd.finalize_task` with real `TaskCompletionEvidence` and the
+- Use `parrot sdd task finalize` with real `TaskCompletionEvidence` and the
   exact implementation HEAD for normal task completion. It owns the Completion
   Note and active-to-completed move; do not manually edit either or fall back to
   `close_task.sh` after failed finalization. The closeout repair path in
@@ -75,9 +74,6 @@ copy Claude command frontmatter into Codex skill frontmatter.
   grant permission for destructive operations. Prefer a fresh throwaway
   snapshot worktree for a retry, and remove only clean, owned, idle worktrees.
   Never load Jira credentials with shell `eval` or print them into tool output.
-- `$sdd-insight` uses a fresh `artifacts/sdd-insight.*` directory and its local
-  deterministic fallback when Claude's Workflow capability is unavailable.
-  It analyzes Claude transcripts; native Codex transcripts are unsupported.
 
 The skill directory and `SKILL.md` entry point follow the
 [official skill format](https://developers.openai.com/plugins/build/skills).
@@ -116,15 +112,15 @@ session and run `/skills` or `/agent` again.
 Use `$sdd-brief` for a single issue or hotfix; `sdd-spec` no longer has a hotfix path (FEAT-698).
 
 ```text
-$sdd-brief NAV-9001
+$sdd-brief PROJ-123
 $sdd-brief cs:123 --research light --no-interview
 $sdd-brief issue:<hex> --split
 ```
 
 The flow fetches the source, verifies a root cause and a `path:line` anchor,
-then provisions a worktree through `scripts.sdd.ensure_worktree`. Non-ledger
+then provisions a worktree through `parrot sdd worktree ensure`. Non-ledger
 sources default to `main`; ledger sources always use `dev` and refuse an
-explicit `--base-branch main`. It commits and pushes only the new brief branch,
+explicit `--base-branch <hotfix_base>`. It commits and pushes only the new brief branch,
 never `main`. Tasks use local `HOTFIX-<KEY>-<N>` IDs without FEAT/TASK reservation.
 
 Open the returned worktree for manual implementation or ask its `sdd-worker`
@@ -145,7 +141,7 @@ review spec and set status: approved
 $sdd-task
         |
         v
-cd .claude/worktrees/<feature-worktree>
+cd .parrot/worktrees/<feature-worktree>
         |
         v
 $sdd-start TASK-NNN
@@ -157,8 +153,8 @@ repeat until all tasks are done, or delegate to sdd-worker
 $sdd-done FEAT-NNN
 ```
 
-The worktree directory is still `.claude/worktrees/` for compatibility with the
-existing SDD scripts and task indexes. Codex uses `.codex/agents/` only for
+The worktree directory is `.parrot/worktrees/` by default (override with an exported
+`WORKTREE_BASE_PATH`; print it with `parrot sdd worktree root`). Codex uses `.codex/agents/` only for
 custom agent configuration.
 
 ## Start From A Ticket Or Bug Report
@@ -167,7 +163,7 @@ Use `$sdd-proposal` when the source is thin and the repository probably has more
 context than the request:
 
 ```text
-$sdd-proposal NAV-8421
+$sdd-proposal PROJ-123
 $sdd-proposal "Nextstop module does not generate the PDF"
 $sdd-proposal docs/notes/pdf-failure.md --mode=investigation
 ```
@@ -210,7 +206,7 @@ Use `$sdd-spec` to create the formal specification:
 
 ```text
 $sdd-spec crew-result-storage
-$sdd-brief NAV-9001   # hotfixes skip $sdd-spec — one-command brief flow (FEAT-698)
+$sdd-brief PROJ-123   # hotfixes skip $sdd-spec — one-command brief flow (FEAT-698)
 ```
 
 The spec is the single source of truth. It must include:
@@ -233,13 +229,13 @@ Before writing the spec, the flow resolves and validates:
 ```yaml
 ---
 type: feature
-base_branch: dev
+base_branch: <base_branch>
 ---
 ```
 
 Rules:
 
-- `type: feature` defaults to `base_branch: dev`.
+- `type: feature` defaults to the repository's configured development branch.
 - `type: feature` may use `staging` during a release freeze.
 - `type: feature` must not use `main`.
 - `$sdd-spec` no longer scaffolds hotfixes; use `$sdd-brief <source>` (FEAT-698).
@@ -247,7 +243,7 @@ Rules:
 For feature specs, `$sdd-spec` reserves the formal `FEAT-NNN` through:
 
 ```bash
-python -m scripts.sdd.reserve_ids --kind feature --count 1 --base-branch <base_branch> --label <feature-slug>
+parrot sdd ids reserve --kind feature --count 1 --base-branch <base_branch> --label <feature-slug>
 ```
 
 Do not hand-compute feature IDs.
@@ -274,12 +270,12 @@ This skill:
 4. Writes task files to `sdd/tasks/active/`.
 5. Writes or updates the per-spec index at `sdd/tasks/index/<feature-slug>.json`.
 6. Commits only the task files and index.
-7. Creates the feature worktree under `.claude/worktrees/`.
+7. Creates the feature worktree under `.parrot/worktrees/`.
 
 Task IDs are reserved with:
 
 ```bash
-python -m scripts.sdd.reserve_ids --kind task --count <N> --base-branch <base_branch> --label <feature-slug>
+parrot sdd ids reserve --kind task --count <N> --base-branch <base_branch> --label <feature-slug>
 ```
 
 Do not hand-compute task IDs.
@@ -289,7 +285,7 @@ Do not hand-compute task IDs.
 Move into the generated worktree:
 
 ```bash
-cd .claude/worktrees/feat-<FEAT-ID>-<feature-slug>
+cd .parrot/worktrees/feat-<FEAT-ID>-<feature-slug>
 ```
 
 Then run:
@@ -308,7 +304,7 @@ The worker must:
 - modify only files listed by the task
 - run the task's acceptance checks
 - commit the implementation files
-- close the task with `scripts.sdd.finalize_task` and durable completion evidence
+- close the task with `parrot sdd task finalize` and durable completion evidence
 - inspect its generated Completion Note, staged paths and removed active copy
 - commit the SDD state update
 
@@ -355,7 +351,7 @@ the main repository:
 $sdd-done FEAT-NNN
 $sdd-done FEAT-NNN --dry-run
 $sdd-done FEAT-NNN --force
-# Configure the jira.transition post_pr hook; see wiki/sdd-tooling/sdd/closeout-hooks.md
+$sdd-done FEAT-NNN --resolve-jira
 ```
 
 `$sdd-done` verifies:
@@ -374,7 +370,7 @@ the configured parent branch. Use `--merge` only when direct merge is
 intentional.
 
 For hotfix work, `$sdd-done` never merges directly to `main` and never pushes
-to `main`. It prints the manual `gh pr create --base main ...` command. After
+to the hotfix base. It prints the manual `gh pr create --base <hotfix_base> ...` command. After
 that PR is merged, use `--sync-down` only if the automatic sync workflow did
 not propagate the hotfix to `staging` and `dev`.
 
@@ -389,7 +385,7 @@ not propagate the hotfix to `staging` and `dev`.
 | Active tasks | `sdd/tasks/active/TASK-NNN-<slug>.md` |
 | Completed tasks | `sdd/tasks/completed/TASK-NNN-<slug>.md` |
 | Per-spec task index | `sdd/tasks/index/<slug>.json` |
-| Worktrees | `.claude/worktrees/<branch-name>/` |
+| Worktrees | `.parrot/worktrees/<branch-name>/` |
 | Codex SDD skills | `.agents/skills/sdd-*/SKILL.md` |
 | Codex worker agent | `.codex/agents/sdd-worker.toml` |
 
@@ -405,7 +401,8 @@ Keep these rules intact when running the flow:
    the user.
 5. Do not invent imports, symbols, or dependencies. Verify with wiki, `rg`, and
    source reads.
-6. Store persisted test logs under `artifacts/logs/`.
+6. Store persisted test logs under `${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/<FEAT-ID>/`, outside the worktree:
+   an untracked file inside it makes `git worktree remove` refuse.
 7. Do not run `$sdd-task` or `$sdd-done` from inside a worktree.
 8. Do not direct-merge hotfixes to `main`.
 
@@ -414,15 +411,15 @@ Keep these rules intact when running the flow:
 Ticket-driven feature:
 
 ```text
-$sdd-proposal NAV-8036
-$sdd-spec nav-8036-<slug>
+$sdd-proposal PROJ-123
+$sdd-spec proj-123-<slug>
 # edit spec status to approved
-$sdd-task sdd/specs/nav-8036-<slug>.spec.md
-cd .claude/worktrees/feat-<FEAT-ID>-nav-8036-<slug>
+$sdd-task sdd/specs/proj-123-<slug>.spec.md
+cd .parrot/worktrees/feat-<FEAT-ID>-proj-123-<slug>
 $sdd-start TASK-NNN
 # repeat tasks
 cd ../../..
-# Configure jira.transition in .parrot/sdd_hooks.toml; see wiki/sdd-tooling/sdd/closeout-hooks.md
+$sdd-done FEAT-NNN --resolve-jira
 ```
 
 Greenfield feature:
@@ -439,17 +436,17 @@ $sdd-done FEAT-NNN
 Hotfix:
 
 ```text
-$sdd-proposal NAV-9001 --mode=investigation
-$sdd-brief NAV-9001
+$sdd-proposal PROJ-123 --mode=investigation
+$sdd-brief PROJ-123
 # the brief flow scaffolds the hotfix on main; no $sdd-spec / $sdd-task
-$sdd-done NAV-9001
+$sdd-done PROJ-123
 ```
 
 ## Related Documentation
 
 - [SDD Workflow](./WORKFLOW.md)
-- [SDD Guide](https://github.com/phenobarbital/ai-parrot/wiki/SDD-Tooling-Gu%C3%ADa-de-uso-de-los-comandos-%60%2Fsdd-%2A%60)
-- [SDD Platform](https://github.com/phenobarbital/ai-parrot/wiki/SDD-Tooling-AI-Parrot-Spec-Driven-Development-%28SDD%29-Platform)
+- [SDD Guide](./GUIDE.md)
+- [SDD Platform](./PLATFORM.md)
 - `AGENTS.md`
 - `.agents/skills/sdd-*/SKILL.md`
 - `.codex/agents/sdd-worker.toml`

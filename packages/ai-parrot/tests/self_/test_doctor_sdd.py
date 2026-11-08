@@ -22,7 +22,9 @@ from parrot.self_ import doctor
 
 
 def _git(root: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@x", *args], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@x", *args], check=True, capture_output=True
+    )
 
 
 @pytest.fixture
@@ -35,6 +37,7 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # wait on a pinentry prompt.
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
     origin = tmp_path / "origin.git"
     subprocess.run(["git", "init", "-q", "--bare", "-b", "dev", str(origin)], check=True)
     repo = tmp_path / "repo"
@@ -43,9 +46,11 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (repo / "sdd/tasks").mkdir(parents=True)
     (repo / "sdd/tasks/.id_ledger.json").write_text('{"task": 0, "feature": 0}\n')
     (repo / "sdd/config.json").write_text(json.dumps({"base_branch": "dev", "hotfix_base": "main"}) + "\n")
-    (repo / ".gitignore").write_text(".claude/worktrees/\n")
+    (repo / ".gitignore").write_text("/.parrot/worktrees/\n")
     # Bare lines, no installer marker block: `doctor._check_ledger_attributes` only requires the two merge=union lines.
-    (repo / ".gitattributes").write_text("sdd/ledger/events.jsonl merge=union\nsdd/ledger/archive/*.jsonl merge=union\n")
+    (repo / ".gitattributes").write_text(
+        "sdd/ledger/events.jsonl merge=union\nsdd/ledger/archive/*.jsonl merge=union\n"
+    )
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "seed")
     _git(repo, "push", "-q", "-u", "origin", "dev")
@@ -63,10 +68,12 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _gh_ok(real_run):
     """Pass-through for git; fake `gh auth status` → exit 0."""
+
     def run(cmd, *a, **k):
         if cmd[:3] == ["gh", "auth", "status"]:
             return subprocess.CompletedProcess(cmd, 0, "", "")
         return real_run(cmd, *a, **k)
+
     return run
 
 
@@ -128,14 +135,35 @@ def test_doctor_cli_pin_provenance(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     "break_it, check_name, fix_fragment",
     [
         (lambda r: _git(r, "remote", "remove", "origin"), "sdd: origin remote", "git remote add origin"),
-        (lambda r: subprocess.run(["git", "-C", str(r), "push", "-q", "origin", "--delete", "dev"], check=True), "sdd: base branch on origin", "git push -u origin dev"),
-        (lambda r: (_git(r, "rm", "-q", "--cached", "sdd/tasks/.id_ledger.json"), _git(r, "commit", "-q", "--no-verify", "-m", "untrack")), "sdd: id ledger tracked", "git add sdd/tasks/.id_ledger.json"),
+        (
+            lambda r: subprocess.run(["git", "-C", str(r), "push", "-q", "origin", "--delete", "dev"], check=True),
+            "sdd: base branch on origin",
+            "git push -u origin dev",
+        ),
+        (
+            lambda r: (
+                _git(r, "rm", "-q", "--cached", "sdd/tasks/.id_ledger.json"),
+                _git(r, "commit", "-q", "--no-verify", "-m", "untrack"),
+            ),
+            "sdd: id ledger tracked",
+            "git add sdd/tasks/.id_ledger.json",
+        ),
         (lambda r: (r / ".gitignore").write_text(""), "sdd: worktrees ignored", "parrot sdd install"),
-        (lambda r: (r / ".gitattributes").write_text(""), "sdd: ledger merge=union", "parrot sdd install"),  # rev 0.5 C23
-        (lambda r: (r / ".git" / "hooks" / "post-merge").unlink(), "sdd: ledger hooks", "parrot sdd install"),  # rev 0.5 C23
+        (
+            lambda r: (r / ".gitattributes").write_text(""),
+            "sdd: ledger merge=union",
+            "parrot sdd install",
+        ),  # rev 0.5 C23
+        (
+            lambda r: (r / ".git" / "hooks" / "post-merge").unlink(),
+            "sdd: ledger hooks",
+            "parrot sdd install",
+        ),  # rev 0.5 C23
     ],
 )
-def test_each_missing_prerequisite_fails_its_check_with_a_fix(ready_repo: Path, break_it, check_name: str, fix_fragment: str) -> None:
+def test_each_missing_prerequisite_fails_its_check_with_a_fix(
+    ready_repo: Path, break_it, check_name: str, fix_fragment: str
+) -> None:
     """C15 'done when': a fixture repo missing each prerequisite gets the matching check failing, with its fix."""
     break_it(ready_repo)
     bad = {c.name: c for c in doctor.failed(doctor._check_sdd(ready_repo))}
@@ -168,6 +196,7 @@ def test_host_cli_missing_is_informational_only(ready_repo: Path, monkeypatch: p
 def test_sdd_modules_absent_degrade_to_informational(ready_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """ImportError for parrot.sdd.config / installer / audit must yield informational checks, never raise."""
     import builtins
+
     real_import = builtins.__import__
 
     def no_sdd(name, *a, **k):
@@ -185,7 +214,9 @@ def _guard_status(**guard):
 
 
 def test_guard_hook_unresolvable_fails_with_fix() -> None:
-    check = doctor._check_guard_hook(_guard_status(form="baked", command="/gone/python x.py", targets=["a"], resolvable=False))
+    check = doctor._check_guard_hook(
+        _guard_status(form="baked", command="/gone/python x.py", targets=["a"], resolvable=False)
+    )
     assert not check.ok and not check.informational and "parrot sdd install" in check.fix and "--portable" in check.fix
 
 
@@ -204,7 +235,9 @@ def test_guard_hook_absent_is_informational() -> None:
     assert ok.ok and not ok.informational and "PATH" in ok.detail
 
 
-def test_scope_runtime_only_excludes_repo_host_and_component_checks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_scope_runtime_only_excludes_repo_host_and_component_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """C14: a broken repo / host config / toolkit must NOT surface under --runtime-only."""
     repo = tmp_path / "repo"
     (repo / "sdd").mkdir(parents=True)  # no git at all → every SDD check would fail in "full"
@@ -230,7 +263,9 @@ def test_cli_flags_mutually_exclusive_and_exit_codes(monkeypatch: pytest.MonkeyP
         assert result.exit_code == 1 and "gh auth login" in result.output
 
 
-def test_hung_ls_remote_times_out_as_informational(ready_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hung_ls_remote_times_out_as_informational(
+    ready_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """`git ls-remote` that never answers must not hang the doctor: it degrades to an informational check."""
     import os
     import shutil
@@ -254,7 +289,9 @@ def test_hung_ls_remote_times_out_as_informational(ready_repo: Path, tmp_path: P
 
 
 @pytest.mark.parametrize("missing", [None, "python3", "jq"])
-def test_sdd_tool_checks_follow_the_installed_assets(ready_repo: Path, monkeypatch: pytest.MonkeyPatch, missing) -> None:
+def test_sdd_tool_checks_follow_the_installed_assets(
+    ready_repo: Path, monkeypatch: pytest.MonkeyPatch, missing
+) -> None:
     """rev 0.8 C29: jq and python3 are checked while the installed SDD files invoke them; a missing one fails
     with its install fix (a minimal host such as the ubuntu:24.04 image has no python3)."""
     from parrot.sdd.installer import install_sdd_integration
@@ -277,9 +314,12 @@ def _assets_checks(status: dict) -> dict[str, doctor.DoctorCheck]:
 
 
 def test_missing_target_of_installed_host_fails_files_current() -> None:
-    status = {"hosts": {"claude": {"current": [".claude/commands/sdd-start.md"],
-                                   "missing": [".claude/commands/sdd-done.md"]},
-                        "codex": {"missing": [".agents/skills/sdd-start/SKILL.md"]}}}
+    status = {
+        "hosts": {
+            "claude": {"current": [".claude/commands/sdd-start.md"], "missing": [".claude/commands/sdd-done.md"]},
+            "codex": {"missing": [".agents/skills/sdd-start/SKILL.md"]},
+        }
+    }
     check = _assets_checks(status)["sdd: files current"]
     assert not check.ok and not check.informational
     assert ".claude/commands/sdd-done.md" in check.detail and "parrot sdd install" in check.fix
@@ -287,8 +327,9 @@ def test_missing_target_of_installed_host_fails_files_current() -> None:
 
 
 def test_foreign_target_is_informational() -> None:
-    status = {"hosts": {"claude": {"current": [".claude/commands/sdd-start.md"],
-                                   "foreign": [".claude/agents/sdd-worker.md"]}}}
+    status = {
+        "hosts": {"claude": {"current": [".claude/commands/sdd-start.md"], "foreign": [".claude/agents/sdd-worker.md"]}}
+    }
     checks = _assets_checks(status)
     assert checks["sdd: files current"].ok
     foreign = checks["sdd: foreign files"]
@@ -298,8 +339,17 @@ def test_foreign_target_is_informational() -> None:
 
 
 def test_all_missing_hosts_mean_not_installed() -> None:
-    status = {"hosts": {"claude": {"current": [], "outdated": [], "edited": [], "foreign": [],
-                                   "missing": [".claude/commands/sdd-start.md"]}}}
+    status = {
+        "hosts": {
+            "claude": {
+                "current": [],
+                "outdated": [],
+                "edited": [],
+                "foreign": [],
+                "missing": [".claude/commands/sdd-start.md"],
+            }
+        }
+    }
     check = _assets_checks(status)["sdd: files current"]
     assert check.ok and check.informational and check.detail == "SDD flow not installed"
 
@@ -326,7 +376,74 @@ def test_worktree_tests_check_is_informational(ready_repo: Path) -> None:
     assert check not in doctor.failed(checks)
 
 
+# --- FEAT-802 TASK-5179: resolved worktree root + legacy worktrees ----------------------------------------
+
+
+def _sdd_git_checks(repo: Path) -> dict[str, doctor.DoctorCheck]:
+    return {c.name: c for c in doctor._check_sdd_git(repo, "dev")}
+
+
+def test_doctor_legacy_worktrees_check(ready_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """AC6: a worktree registered under .claude/worktrees/ fails `sdd: legacy worktrees` with the recipe as fix."""
+    from parrot.sdd.config import legacy_migration_recipe, legacy_worktrees
+
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    assert _sdd_git_checks(ready_repo)["sdd: legacy worktrees"].ok
+    _git(ready_repo, "worktree", "add", "-q", "-b", "feat-1", ".claude/worktrees/feat-FEAT-1-x")
+    check = _sdd_git_checks(ready_repo)["sdd: legacy worktrees"]
+    assert not check.ok and not check.informational and "1 worktree(s)" in check.detail
+    assert check.fix == "\n".join(legacy_migration_recipe(ready_repo, legacy_worktrees(ready_repo)))
+    assert "worktree repair" in check.fix and "mv " in check.fix
+    # an occupied destination cannot be migrated safely: the fix is a diagnostic, never a runnable move
+    (ready_repo / ".parrot/worktrees/feat-FEAT-1-x").mkdir(parents=True)
+    check = _sdd_git_checks(ready_repo)["sdd: legacy worktrees"]
+    assert not check.ok and "cannot generate a safe migration recipe" in check.fix and "mv " not in check.fix
+
+
+def test_doctor_custom_root_scope(ready_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """AC7: in-repo roots (relative/absolute) are probed repo-relatively; external roots are informational with no
+    `check-ignore`; a root equal to the repository fails."""
+    from parrot.sdd.installer import install_sdd_integration
+
+    monkeypatch.delenv("WORKTREE_BASE_PATH", raising=False)
+    monkeypatch.setenv("WORKTREE_BASE_PATH", "custom wt")
+    check = _sdd_git_checks(ready_repo)["sdd: worktrees ignored"]
+    assert not check.ok and "custom wt/ is NOT" in check.detail and "parrot sdd install" in check.fix
+    install_sdd_integration(ready_repo)
+    check = _sdd_git_checks(ready_repo)["sdd: worktrees ignored"]
+    assert check.ok and check.detail == "custom wt/ is git-ignored"
+
+    monkeypatch.setenv("WORKTREE_BASE_PATH", str(ready_repo / "abs-wt"))
+    install_sdd_integration(ready_repo)
+    check = _sdd_git_checks(ready_repo)["sdd: worktrees ignored"]
+    assert check.ok and check.detail == "abs-wt/ is git-ignored"
+    assert str(ready_repo) not in (ready_repo / ".gitignore").read_text()
+
+    calls: list[tuple[str, ...]] = []
+    real_git = doctor._git
+
+    def spy(root: Path, *args: str):
+        calls.append(args)
+        return real_git(root, *args)
+
+    monkeypatch.setattr(doctor, "_git", spy)
+    monkeypatch.setenv("WORKTREE_BASE_PATH", "../outside")
+    check = _sdd_git_checks(ready_repo)["sdd: worktrees ignored"]
+    assert check.ok and check.informational
+    assert check.detail == "external worktree root; outside repository tracking scope"
+    assert not any(args and args[0] == "check-ignore" for args in calls)
+
+    monkeypatch.setenv("WORKTREE_BASE_PATH", str(ready_repo))
+    check = _sdd_git_checks(ready_repo)["sdd: worktrees ignored"]
+    assert not check.ok and "WORKTREE_BASE_PATH" in check.fix
+
+
 # --- bwrap sandbox checks (OS-level, tested with mocks) ---------------------------------------------------
+
+
+def _proc_flag_count(argv: list[str]) -> int:
+    """Number of adjacent ``--proc /proc`` pairs in a bwrap argv."""
+    return sum(1 for i, arg in enumerate(argv[:-1]) if arg == "--proc" and argv[i + 1] == "/proc")
 
 
 class TestBwrapSandbox:
@@ -372,6 +489,34 @@ class TestBwrapSandbox:
         assert by_name["sdd: bwrap"].ok
         nested = by_name["sdd: bwrap nested userns"]
         assert not nested.ok and "sandbox-setup.md" in nested.fix
+
+    def test_probe_gives_each_level_a_writable_proc(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Every probe level must pass ``--proc /proc``.
+
+        With only ``--ro-bind / /`` the outer sandbox hands the inner bwrap the host
+        ``/proc`` as a read-only bind; the inner bwrap then cannot write its ``uid_map``
+        and the nested probe fails with "setting up uid map: Read-only file system" on a
+        host that is configured correctly.  Mocked ``subprocess.run`` can never surface
+        that, so the argv itself is the assertion — and it must mirror the real wrapper
+        in :mod:`parrot.sdd.scripts.worktree_environment`, which passes ``--proc`` too.
+        """
+        monkeypatch.setattr(doctor.sys, "platform", "linux")
+        monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/bwrap")
+        seen: list[list[str]] = []
+
+        def fake_run(cmd, **kw):
+            seen.append(list(cmd))
+            return subprocess.CompletedProcess(cmd, 0, "ok\n", "")
+
+        monkeypatch.setattr(doctor.subprocess, "run", fake_run)
+        doctor._check_bwrap_sandbox()
+
+        assert len(seen) == 2, "expected a single-level and a nested probe"
+        single, nested = seen
+        assert _proc_flag_count(single) == 1
+        # The nested probe spawns bwrap twice; each level needs its own fresh procfs.
+        assert nested.count("/usr/bin/bwrap") == 2
+        assert _proc_flag_count(nested) == 2
 
     def test_all_ok(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(doctor.sys, "platform", "linux")

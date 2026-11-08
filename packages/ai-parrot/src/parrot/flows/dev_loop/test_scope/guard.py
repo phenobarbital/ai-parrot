@@ -11,7 +11,7 @@ from .context import read_attempt_context
 from .contract import parse_validation_commands
 from .datatypes import ScopePlan
 from .runners.base import RunnerAdapter
-from .runners.registry import load_registry
+from .runners.registry import RunnerRegistry, load_registry
 from .select import changed_files, plan_tests
 
 BLOCK_MESSAGE: str = (
@@ -32,9 +32,15 @@ class GuardOutcome:
 
 
 def _runner_for(argv: Sequence[str], *, worktree: Path) -> RunnerAdapter | None:
-    """Return the registered runner for ``argv``, or None when registry loading fails."""
+    """Return the registered runner for ``argv``, or None when registry loading fails.
+
+    The registry comes from the attempt's base ref, never the seat-writable working tree: without an
+    attempt context only the built-in runners are used and no TOML is read.
+    """
+    ctx = read_attempt_context(worktree)
     try:
-        return load_registry(worktree).adapter_for_argv(argv)
+        registry = load_registry(worktree, ref=ctx.base_ref) if ctx is not None else RunnerRegistry({}, {})
+        return registry.adapter_for_argv(argv)
     except ValueError:
         return None
 
@@ -49,8 +55,13 @@ def _task_plan(worktree: Path) -> ScopePlan | None:
     except OSError:
         task_text = ""
     declared = parse_validation_commands(task_text) if task_text else []
+    try:
+        registry = load_registry(worktree, ref=ctx.base_ref)
+    except ValueError:
+        return None
     return plan_tests(
         worktree=worktree,
+        registry=registry,
         changed_files=changed_files(worktree, ctx.base_ref),
         tier="task",
         declared=declared,

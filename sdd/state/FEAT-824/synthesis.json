@@ -1,0 +1,1274 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-824",
+  "mode": "enrichment",
+  "summary_oneline": "Retire ArangoDB from the whole workspace by adopting the draft's PostgreSQL RDF OntologyStore and SurrealDB KnowledgeStore, plugged into the FEAT-540 seams, superseding FEAT-670 and re-homing the instance-graph pipeline the draft omits.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/contracts.py",
+      "symbol": "GraphDocumentStore",
+      "lines": "26-103",
+      "role": "document/edge CRUD contract (14 abstract methods) consumed by GraphIndex's Arango persistence",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/contracts.py",
+      "symbol": "OntologyTraversalStore",
+      "lines": "106-166",
+      "role": "traversal contract (6 methods + `dialect`) every ontology caller should depend on — the surface a new backend must implement",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/contracts.py",
+      "symbol": "create_ontology_graph_store",
+      "lines": "169-206",
+      "role": "name-keyed backend registry and factory; `arangodb` is the only built-in",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/graph_store.py",
+      "symbol": "ArangoOntologyGraphStore",
+      "lines": "62-100",
+      "role": "sole implementation of both contracts; one ArangoDB database per tenant, AQL built inline — the module to retire",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/graph_store.py",
+      "symbol": "UpsertResult",
+      "lines": "24-59",
+      "role": "return type of the neutral contract that lives in the Arango module; must move before the module can be deleted",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/schema.py",
+      "symbol": "TraversalPattern",
+      "lines": "261-297",
+      "role": "pattern model carrying `query_template` (AQL) and the per-dialect `query_templates` hook",
+      "evidence": [
+        "F005",
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/schema.py",
+      "symbol": "OntologyDefinition",
+      "lines": "421-448",
+      "role": "YAML ontology model: entities, relations, traversal_patterns, ArangoSearch `search_views`",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/schema.py",
+      "symbol": "TenantContext",
+      "lines": "531-546",
+      "role": "per-tenant context passed to every store call; `arango_db` is a required field",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/schema.py",
+      "symbol": "ResolvedIntent.dialect",
+      "lines": "561-575",
+      "role": "query dialect of a resolved intent, default `aql`",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/defaults/base.ontology.yaml",
+      "symbol": "traversal_patterns",
+      "lines": "116-149",
+      "role": "bundled patterns whose `query_template` is literal AQL (same in knowledge, legal, field_services, contracts, procedures)",
+      "evidence": [
+        "F004",
+        "F018"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/defaults/domains/legal.ontology.yaml",
+      "symbol": "search_views",
+      "lines": "145-205",
+      "role": "ArangoSearch view declarations and a pattern that queries the view by name",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/intent.py",
+      "symbol": "dialect",
+      "lines": "76-265",
+      "role": "intent resolver: default dialect `aql`, LLM-generated dynamic query, legacy `aql` response key",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/validators.py",
+      "symbol": "validate_aql",
+      "lines": "36-144",
+      "role": "AQL safety validator registered through `register_query_validator(\"aql\", ...)`",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/mixin.py",
+      "symbol": "OntologyRAGMixin._run_graph_query",
+      "lines": "509-545",
+      "role": "single query-time entry into the store (`execute_pattern` / `execute_query`), inside a 4-level degradation chain",
+      "evidence": [
+        "F016"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/refresh.py",
+      "symbol": "ArangoOntologyGraphStore",
+      "lines": "22-80",
+      "role": "refresh pipeline typed against the concrete Arango class",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/concept_catalog/service.py",
+      "symbol": "ConceptCatalogService",
+      "lines": "100-117",
+      "role": "sole SQL writer of the Postgres `ontology_concept*` tables (concept vocabulary, state machine, outbox)",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/concept_catalog/worker.py",
+      "symbol": "ConceptCatalogSyncWorker",
+      "lines": "1-53",
+      "role": "outbox worker that materialises concepts and `concept_isa` into ArangoDB",
+      "evidence": [
+        "F008",
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/concept_embedding.py",
+      "symbol": "ConceptEmbeddingPipeline",
+      "lines": "1-101",
+      "role": "concept embeddings in pgvector table `ontology.concepts` (the `ontology` schema name is taken)",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/tenant.py",
+      "symbol": "TenantOntologyManager.__init__",
+      "lines": "60-83",
+      "role": "tenant → graph database / pgvector schema name templates",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/loaders/graphindex.py",
+      "symbol": "_make_persistence",
+      "lines": "227-248",
+      "role": "only production call site of the ontology factory, hard-coding `arangodb`",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/backends.py",
+      "symbol": "GraphBackendSpec",
+      "lines": "22-52",
+      "role": "GraphIndex backend registry (sqlite, null, postgres, arangodb) with capabilities",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/persist_arango.py",
+      "symbol": "ArangoPersistence",
+      "lines": "52-884",
+      "role": "GraphIndex Arango persistence, only consumer of `GraphDocumentStore`",
+      "evidence": [
+        "F003",
+        "F020"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/persist_postgres.py",
+      "symbol": "PostgresPersistence",
+      "lines": "207-207",
+      "role": "shipped Postgres GraphIndex backend (temporal, embeddings, hybrid retrieval)",
+      "evidence": [
+        "F010",
+        "F020"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+      "symbol": "_BUILTIN_WIKI_BACKENDS",
+      "lines": "764-787",
+      "role": "wiki backend table: sqlite, memory (local) and arangodb, postgres (server)",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+      "symbol": "BaseWikiStore",
+      "lines": "870-1247",
+      "role": "wiki store contract any further backend implements",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/postgres_store.py",
+      "symbol": "PostgresWikiStore",
+      "lines": "127-160",
+      "role": "shipped Postgres wiki server plane over the shared `graphindex.*` schema",
+      "evidence": [
+        "F009",
+        "F025"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/arango_store.py",
+      "symbol": "ArangoDBWikiStore",
+      "lines": "137-335",
+      "role": "Arango wiki backend to retire",
+      "evidence": [
+        "F009",
+        "F019"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/serve.py",
+      "symbol": "build_server_app",
+      "lines": "137-141",
+      "role": "`wikitoolkit serve` gate that refuses any backend other than `arangodb`",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/sources_backend.py",
+      "symbol": "SourceManifestBackend",
+      "lines": "50-380",
+      "role": "source-manifest contract with sqlite, json and arangodb backends (no postgres one)",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/project.py",
+      "symbol": "WikiProjectConfig",
+      "lines": "589-831",
+      "role": "per-repo wiki config carrying `arango_*` fields and the `ARANGODB` credential prefix",
+      "evidence": [
+        "F009",
+        "F013"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/legal/boe/queries.py",
+      "symbol": "ArangoOntologyGraphStore",
+      "lines": "8-152",
+      "role": "legal/BOE pack typed against the concrete Arango store (also `boe/sync.py`, `legal/wiki_store.py`, `legal/librarian/suppression.py`)",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/pyproject.toml",
+      "symbol": "db",
+      "lines": "233-239",
+      "role": "`db` extra pulling `asyncdb[...,arangodb,...]`",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-embeddings/pyproject.toml",
+      "symbol": "arango",
+      "lines": "63-99",
+      "role": "`arango` extra (`python-arango-async`) for the Arango vector store",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/tests/knowledge/graphindex/persistence_conformance.py",
+      "symbol": "case_apply_and_revert",
+      "lines": "1-45",
+      "role": "house pattern for a backend-agnostic conformance suite; none exists for the ontology store",
+      "evidence": [
+        "F010",
+        "F015"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/retrieval/wiki_cache.py",
+      "symbol": "WikiPage",
+      "lines": null,
+      "role": "L1 synthesis cache models (section-level, source digests); no persistence layer found",
+      "evidence": [
+        "F029",
+        "F017"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/bookstore/catalog.py",
+      "symbol": "CatalogStore",
+      "lines": "163-738",
+      "role": "Bookstore catalog on sync SQLite + FTS5 — not an ArangoDB consumer",
+      "evidence": [
+        "F028",
+        "F011"
+      ]
+    },
+    {
+      "path": "sdd/specs/helixdb-provider.spec.md",
+      "symbol": "§1 Non-Goals",
+      "lines": null,
+      "role": "approved FEAT-670 (26 tasks pending): HelixDB as a peer backend on the same planes, ArangoDB explicitly not retired",
+      "evidence": [
+        "F031"
+      ]
+    },
+    {
+      "path": "sdd/specs/graphindex-core-seams.spec.md",
+      "symbol": "§1 Non-Goals",
+      "lines": null,
+      "role": "FEAT-540 positions a removal reverses: ArangoDB keeps working, no migration, `TenantContext.arango_db` not renamed",
+      "evidence": [
+        "F030"
+      ]
+    },
+    {
+      "path": "sdd/proposals/Grafos open source para ai-parrot.md",
+      "symbol": "Arquitectura recomendada: un motor de referencia, dos despliegues y un log de deltas",
+      "lines": "54-62",
+      "role": "research note behind the draft: ArangoDB licence terms, ten-engine comparison, ranking (PostgreSQL + AGE, FalkorDB, SurrealDB server)",
+      "evidence": [
+        "F032"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Backend-neutral contracts and registries already exist for every knowledge plane (ontology: `register_ontology_backend`; GraphIndex: `register_graph_backend`; wiki: `register_wiki_backend`; source manifest: `SourceManifestBackend`).",
+      "evidence": [
+        "F001",
+        "F009",
+        "F010",
+        "F030"
+      ],
+      "implication": "a replacement is a set of registrations into these seams; the draft's parallel `OntologyStore` / `KnowledgeStore` Protocols and its decision D7 would duplicate shipped FEAT-540 work"
+    },
+    {
+      "statement": "The traversal contract is dialect-bound: a store exposes `dialect`, `execute_pattern` needs a template in that dialect or raises `TraversalPatternUnavailable`, and `execute_query` rejects a `DynamicQuery` in another dialect.",
+      "evidence": [
+        "F002",
+        "F004"
+      ],
+      "implication": "a non-AQL backend serves nothing until every pattern has a template in its dialect (or a neutral traversal spec exists) and a validator is registered for that dialect"
+    },
+    {
+      "statement": "AQL is ontology content, not only store code: bundled `*.ontology.yaml` patterns, ArangoSearch `search_views`, the LLM dynamic-query path and the validators are all AQL; tenant/client YAML outside the repository carries more.",
+      "evidence": [
+        "F004",
+        "F005",
+        "F018"
+      ],
+      "implication": "the migration has a content track (re-template patterns, re-prompt the dynamic path, map search views to another FTS index) that the draft does not mention"
+    },
+    {
+      "statement": "The coded ontology is a layered YAML property-graph schema plus a per-tenant instance graph (employees, norms, contracts, procedures) with discovery, refresh and authorization reachability — there is no RDF, Turtle, SKOS or IRI anywhere, and `rdflib` / `pyshacl` are undeclared.",
+      "evidence": [
+        "F005",
+        "F006",
+        "F016",
+        "F027"
+      ],
+      "implication": "the draft's OntologyStore (concept vocabulary + closure) is a different, greenfield object; it does not replace what `parrot.knowledge.ontology` does today"
+    },
+    {
+      "statement": "Tenancy is one graph database plus one pgvector schema per tenant, and `TenantContext.arango_db` is a required field of the context every contract method takes.",
+      "evidence": [
+        "F007"
+      ],
+      "implication": "the new backend needs a per-tenant isolation unit and the field must be generalised; the draft's `ontology_id` / namespace axis is a different partitioning"
+    },
+    {
+      "statement": "The concept vocabulary is already authoritative in Postgres (`ontology_concept*` tables, five-state machine, outbox); ArangoDB only receives a materialised copy, and concept embeddings live in pgvector table `ontology.concepts`.",
+      "evidence": [
+        "F008"
+      ],
+      "implication": "the Postgres half of the draft partly exists under another schema; the work is removing the Arango materialisation and adding what patterns need (is_a expansion), and `CREATE SCHEMA ontology` would collide with `ontology.concepts`"
+    },
+    {
+      "statement": "A Postgres server plane already ships for GraphIndex and for the wiki (FEAT-520): asyncpg only, no SQLAlchemy, no `PgVectorStore` reuse, bitemporal append-only versioning, `ts_rank_cd` judged sufficient over true BM25, fresh ingests only.",
+      "evidence": [
+        "F009",
+        "F010",
+        "F020",
+        "F022",
+        "F025"
+      ],
+      "implication": "removing ArangoDB from GraphIndex and the wiki is a deletion plus data move, not a new backend; the draft's rejection of plain Postgres for the wiki reverses a recorded decision and must be justified"
+    },
+    {
+      "statement": "Seven modules import `ArangoOntologyGraphStore` directly (refresh, concept catalog reconcile/worker, the legal/BOE pack in ai-parrot-tools) and the public package exports it.",
+      "evidence": [
+        "F003"
+      ],
+      "implication": "the concrete class cannot be deleted until these are typed against the contracts; this spans two distributions"
+    },
+    {
+      "statement": "ArangoDB is also used outside the knowledge planes: an Arango vector store, the `arangodbsearch` tool, `parrot/interfaces/hierarchy.py`, a formdesigner sink, routing rules and the contracts/manuals loaders — 43 files in four distributions.",
+      "evidence": [
+        "F014",
+        "F030"
+      ],
+      "implication": "\"ArangoDB must be removed\" is larger than the draft's scope; the feature has to state which of these it covers"
+    },
+    {
+      "statement": "Database access goes through `asyncdb`, and the installed asyncdb ships no SurrealDB driver; `surrealdb` is declared in no `pyproject.toml`.",
+      "evidence": [
+        "F012",
+        "F017"
+      ],
+      "implication": "a SurrealDB store needs the raw SDK (a new dependency and extra) or a new asyncdb driver"
+    },
+    {
+      "statement": "The ontology RAG path degrades to `vector_only` when the graph is unavailable.",
+      "evidence": [
+        "F016"
+      ],
+      "implication": "the new backend must keep failing soft; a pattern with no template in the new dialect must degrade, not crash"
+    },
+    {
+      "statement": "Approved FEAT-670 adds HelixDB to the same planes and states ArangoDB is not retired; FEAT-540 states ArangoDB keeps working unchanged; no ADR, decision page or commit records the licence decision — the reasoning exists only in an untracked research note.",
+      "evidence": [
+        "F031",
+        "F030",
+        "F021",
+        "F024",
+        "F032"
+      ],
+      "implication": "the removal needs an ADR that cites the research note and supersedes those positions; FEAT-670 is superseded (user decision U1)"
+    },
+    {
+      "statement": "Bookstore and PageIndex are canonical on SQLite and files; FEAT-670 had decided projection-only for them, and the L1 synthesis cache has no persistence today.",
+      "evidence": [
+        "F011",
+        "F028",
+        "F029",
+        "F017"
+      ],
+      "implication": "moving Bookstore and L1 to SurrealDB is re-platforming unrelated to the ArangoDB removal"
+    },
+    {
+      "statement": "Engine selection criteria, stated by the user and backed by the research note: open-source, non-enterprise editions only; no paid SaaS; must run on the AWS services in use (Apache AGE is not installable on Amazon RDS); and the platform must get simpler, so multi-service stacks such as JanusGraph (Cassandra plus Elasticsearch) are out.",
+      "evidence": [
+        "F032"
+      ],
+      "implication": "any backend proposed in the spec is checked against these four criteria; they also explain why the note's first choice (PostgreSQL + AGE) is not the one adopted"
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      {
+        "name": "PostgreSQL OntologyStore (draft §4)",
+        "role": "RDF-faithful concept vocabulary (`concept`, `label`, `relation`, `closure`, `statement`, `version`), Turtle publication pipeline (rdflib + pyshacl), read-only SQLite snapshot for local use, `resolve` / `expand` / `canonical` contract — greenfield: no RDF, IRI or Turtle exists today",
+        "evidence": [
+          "F006",
+          "F005",
+          "F012"
+        ]
+      },
+      {
+        "name": "reconciliation with the existing concept catalog",
+        "role": "the Postgres `ontology_concept*` tables (UUID + tenant slug, five-state review machine, outbox) and pgvector `ontology.concepts` already hold a concept vocabulary; the spec must map them onto the IRI/versioned model and avoid the `ontology` schema name collision",
+        "evidence": [
+          "F008"
+        ]
+      },
+      {
+        "name": "SurrealDB KnowledgeStore (draft §5)",
+        "role": "wiki, Bookstore and L1 cache on SurrealDB in server mode, exposed to existing callers through the FEAT-540 seams (`register_wiki_backend`, `SourceManifestBackend`) rather than only through a new Protocol",
+        "evidence": [
+          "F009",
+          "F030",
+          "F026"
+        ]
+      },
+      {
+        "name": "first persistence for the L1 cache",
+        "role": "a store for `WikiPage` / `WikiSection` (section-level, multi-source digests) — richer than the draft's flat `synth` table, and today not persisted at all",
+        "evidence": [
+          "F029",
+          "F017"
+        ]
+      },
+      {
+        "name": "Bookstore on the KnowledgeStore",
+        "role": "async server-backed replacement of the sync SQLite `CatalogStore` and of PageIndex tree storage; reverses the projection-only decision recorded in FEAT-670",
+        "evidence": [
+          "F028",
+          "F011"
+        ]
+      },
+      {
+        "name": "new home for the instance graph and its query content",
+        "role": "per-tenant instance data, traversal patterns, dynamic queries, search views and their validator in a non-AQL form (open question U5)",
+        "evidence": [
+          "F004",
+          "F005",
+          "F016",
+          "F027"
+        ]
+      },
+      {
+        "name": "SurrealDB dependency, extra and local daemon",
+        "role": "`surrealdb` SDK (asyncdb has no driver), `parrot knowledge daemon`, spike G1 as the go/no-go gate",
+        "evidence": [
+          "F012",
+          "F017"
+        ]
+      },
+      {
+        "name": "conformance suites",
+        "role": "backend-agnostic contract cases for the ontology and knowledge stores, following `persistence_conformance.py`",
+        "evidence": [
+          "F015",
+          "F010"
+        ]
+      },
+      {
+        "name": "licence ADR and FEAT-670 supersession",
+        "role": "decision record for the removal, citing the research note and the four selection criteria, and explaining why PostgreSQL + AGE and FalkorDB were passed over; FEAT-670 marked superseded",
+        "evidence": [
+          "F024",
+          "F030",
+          "F031",
+          "F032"
+        ]
+      },
+      {
+        "name": "data move for existing ArangoDB deployments",
+        "role": "migration or re-ingest for ontology tenants, wiki namespaces with `backend=arangodb`, GraphIndex Arango planes and Arango vector collections",
+        "evidence": [
+          "F019",
+          "F025",
+          "F026",
+          "F014"
+        ]
+      }
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology/contracts.py",
+        "symbol": "create_ontology_graph_store",
+        "change": "register the new built-in, drop the `arangodb` lazy import, host `UpsertResult`",
+        "evidence": [
+          "F001",
+          "F002"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology/schema.py",
+        "symbol": "TenantContext",
+        "change": "generalise `arango_db`; revisit the `aql` default of `ResolvedIntent.dialect` and the ArangoSearch-shaped `search_views`",
+        "evidence": [
+          "F007",
+          "F004",
+          "F005"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology/refresh.py",
+        "symbol": "ArangoOntologyGraphStore",
+        "change": "type against the contracts (same for `concept_catalog/reconcile.py` and `concept_catalog/worker.py`)",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology/concept_catalog/worker.py",
+        "symbol": "ConceptCatalogSyncWorker",
+        "change": "materialise concepts into the new graph backend, or drop the materialisation if patterns read concepts from Postgres",
+        "evidence": [
+          "F008"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology/intent.py",
+        "symbol": "dialect",
+        "change": "default dialect and dynamic-query prompt follow the configured store",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology/validators.py",
+        "symbol": "validate_aql",
+        "change": "add a validator for the new dialect; retire the AQL one with the store",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology/defaults/base.ontology.yaml",
+        "symbol": "traversal_patterns",
+        "change": "add templates in the new dialect to every bundled ontology file",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/legal/boe/queries.py",
+        "symbol": "ArangoOntologyGraphStore",
+        "change": "legal/BOE pack depends on the contract, not on the Arango class",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/loaders/graphindex.py",
+        "symbol": "_make_persistence",
+        "change": "remove the `arangodb` branch and client construction",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/backends.py",
+        "symbol": "GraphBackendSpec",
+        "change": "drop the `arangodb` registration together with `persist_arango.py`",
+        "evidence": [
+          "F010"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+        "symbol": "_BUILTIN_WIKI_BACKENDS",
+        "change": "drop the `arangodb` entry and its config branches",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/serve.py",
+        "symbol": "build_server_app",
+        "change": "accept the remaining server backend(s)",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/sources_backend.py",
+        "symbol": "SourceManifestBackend",
+        "change": "replace the Arango source-manifest backend (no Postgres one exists)",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/pyproject.toml",
+        "symbol": "db",
+        "change": "remove `arangodb` from the `db` extra; the `arango` extra of ai-parrot-embeddings follows if the vector store is in scope",
+        "evidence": [
+          "F012"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-embeddings/src/parrot/stores/arango.py",
+        "symbol": "Arango vector store module",
+        "change": "remove the Arango vector store and its `arango` extra (role inferred, file not opened)",
+        "evidence": [
+          "F014",
+          "F012"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/arangodbsearch.py",
+        "symbol": "arangodbsearch",
+        "change": "remove or re-target the agent tool",
+        "evidence": [
+          "F014",
+          "F013"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/interfaces/hierarchy.py",
+        "symbol": "hierarchy interface",
+        "change": "port the employee-hierarchy interface off direct AQL (15 calls per the FEAT-540 spec; file not opened)",
+        "evidence": [
+          "F014",
+          "F030"
+        ]
+      },
+      {
+        "path": "packages/parrot-formdesigner/src/parrot_formdesigner/services/sinks/asyncdb_store.py",
+        "symbol": "formdesigner asyncdb sink",
+        "change": "drop the ArangoDB target of the form-submission sink (role inferred, file not opened)",
+        "evidence": [
+          "F014"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/registry/routing/rules.py",
+        "symbol": "routing rules",
+        "change": "remove ArangoDB-specific store routing (role inferred, file not opened)",
+        "evidence": [
+          "F014"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/bookstore/catalog.py",
+        "symbol": "CatalogStore",
+        "change": "Bookstore catalog served by the KnowledgeStore instead of sync SQLite",
+        "evidence": [
+          "F028",
+          "F011"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/retrieval/wiki_cache.py",
+        "symbol": "WikiPage",
+        "change": "L1 pages gain a persistence layer on the KnowledgeStore",
+        "evidence": [
+          "F029",
+          "F017"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/tests/knowledge/wiki/decisions/test_backend_parity.py",
+        "symbol": "FEAT-578 backend-parity test",
+        "change": "parity guard names `ARANGODB_HOST`; re-target to the remaining server backends",
+        "evidence": [
+          "F024"
+        ]
+      },
+      {
+        "path": "sdd/specs/helixdb-provider.spec.md",
+        "symbol": "header",
+        "change": "mark FEAT-670 superseded by FEAT-824",
+        "evidence": [
+          "F031"
+        ]
+      }
+    ],
+    "untouched": [
+      "GraphIndex's structural plane (L0): the shipped `sqlite` and `postgres` backends stay; only the `arangodb` registration and `persist_arango.py` go.",
+      "pgvector as the vector plane for ontology entities and as the primary vector store.",
+      "git as the source of truth for OKF pages (draft D5).",
+      "OWL DL reasoning, free Cypher/SPARQL access for agents and any ontology editing UI (draft non-goals).",
+      "Whether the shipped `PostgresWikiStore` remains as a peer wiki backend is not decided here; nothing in FEAT-824 requires removing it."
+    ],
+    "patterns": [
+      {
+        "statement": "Register backends by name with a lazy factory and declared capabilities, never by `if backend ==` branches.",
+        "evidence": [
+          "F010",
+          "F009",
+          "F001"
+        ]
+      },
+      {
+        "statement": "Prove a backend with a shared conformance suite of backend-agnostic `case_*` coroutines.",
+        "evidence": [
+          "F010",
+          "F015"
+        ]
+      },
+      {
+        "statement": "Postgres plane conventions of FEAT-520: asyncpg pool, versioned DDL migration, settings resolver in the style of `GRAPHINDEX_PG_*`.",
+        "evidence": [
+          "F010",
+          "F020",
+          "F025"
+        ]
+      },
+      {
+        "statement": "Postgres as writer of record with an outbox drained by a `FOR UPDATE SKIP LOCKED` worker for cross-store materialisation.",
+        "evidence": [
+          "F008"
+        ]
+      },
+      {
+        "statement": "Graph failures degrade to vector-only instead of failing the request.",
+        "evidence": [
+          "F016"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "statement": "Scope: the four answers make this a multi-feature programme (new ontology model, new knowledge store, port of every consumer, workspace-wide removal, data migration); one spec and one worktree will not hold it.",
+        "evidence": [
+          "F014",
+          "F003",
+          "F009",
+          "F030"
+        ]
+      },
+      {
+        "statement": "SurrealDB is documented but untested here: the research note records BM25, HNSW, RRF and multi-process server mode, and also that the Python SDK 3.x is beta and transactions exist only over WebSocket; spike G1 must run before anything else. It is BSL 1.1 (source-available, not OSI): unlike ArangoDB there is no restrictive binary licence, but users who offer it as a service carry that obligation.",
+        "evidence": [
+          "F032",
+          "F017",
+          "F021"
+        ]
+      },
+      {
+        "statement": "The draft's OntologyStore does not cover what the ontology subsystem does today; with ArangoDB gone everywhere, the instance graph, traversal patterns, dynamic queries, refresh and authorization reachability need a destination in the same programme (U5).",
+        "evidence": [
+          "F004",
+          "F005",
+          "F016",
+          "F027",
+          "F003"
+        ]
+      },
+      {
+        "statement": "Two concept authorities would coexist: the reviewed, tenant-scoped Postgres concept catalog and the Turtle-published, IRI-keyed OntologyStore; the draft's single `ontology_id` axis has no slot for per-tenant overlays.",
+        "evidence": [
+          "F008",
+          "F007"
+        ]
+      },
+      {
+        "statement": "Model mismatch on the knowledge side: the wiki contract is page-level (`BaseWikiStore`: pages, edges, embeddings, sources, meta, compare-and-swap, federation), Bookstore is PageIndex trees, L1 is section-level; the draft's bundle/document/section/chunk schema matches none of them one-to-one.",
+        "evidence": [
+          "F009",
+          "F026",
+          "F028",
+          "F029",
+          "F019"
+        ]
+      },
+      {
+        "statement": "Recorded decisions are reversed without a record: FEAT-520 judged Postgres FTS sufficient for the wiki and chose fresh ingests only, FEAT-540 kept ArangoDB working unchanged, FEAT-670 kept Bookstore/PageIndex canonical on files.",
+        "evidence": [
+          "F025",
+          "F030",
+          "F031",
+          "F028",
+          "F024"
+        ]
+      },
+      {
+        "statement": "AQL written by tenants and generated by the LLM lives outside the repository's control; a dialect change needs a content migration and a new safety validator.",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "statement": "No migration tooling exists for any ArangoDB plane.",
+        "evidence": [
+          "F025",
+          "F026",
+          "F019"
+        ]
+      },
+      {
+        "statement": "Sequencing with FEAT-541 (GraphIndex package extraction, spec'd, not implemented) and the unmerged `feat-255-ontology-rag-kb` branch, which touch the same seams.",
+        "evidence": [
+          "F023",
+          "F022"
+        ]
+      },
+      {
+        "statement": "House convention is database access through asyncdb, which has no SurrealDB driver; the raw SDK is a deliberate exception.",
+        "evidence": [
+          "F017",
+          "F012"
+        ]
+      },
+      {
+        "statement": "The adopted engine is the research note's third choice; the first (PostgreSQL + AGE) is excluded by Amazon RDS and the second (FalkorDB) by SSPL, per-graph write serialisation and no BM25. The note also recommends keeping ArangoDB as an optional legacy adapter, while the user chose removal from the whole workspace — the removal should be the last phase, after parity.",
+        "evidence": [
+          "F032"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "The ontology store already has a backend-neutral seam: two ABCs and a name-keyed registry with `arangodb` as the only built-in.",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high",
+      "reasoning": "contracts.py read in full; confirmed independently by the wiki lane."
+    },
+    {
+      "id": "C2",
+      "statement": "`ArangoOntologyGraphStore` is the only implementation of both contracts, isolates tenants by ArangoDB database and builds AQL inline.",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "class header, `_get_db`, `_execute_aql`, `is_reachable` and `execute_pattern` read directly."
+    },
+    {
+      "id": "C3",
+      "statement": "Seven modules in two distributions import the concrete Arango class and the factory has a single production call site hard-coding `arangodb`.",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "repository-wide grep with line-level hits."
+    },
+    {
+      "id": "C4",
+      "statement": "AQL is embedded in the bundled ontology YAML, the LLM dynamic-query path and the validators, with a per-dialect hook that only has `aql` content.",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "grep with excerpts across YAML, intent.py, validators.py and schema.py."
+    },
+    {
+      "id": "C5",
+      "statement": "The coded ontology is a layered YAML property-graph schema with a per-tenant instance graph; nothing in the repository uses RDF, Turtle, SKOS or IRIs.",
+      "evidence": [
+        "F005",
+        "F006",
+        "F027"
+      ],
+      "confidence": "high",
+      "reasoning": "schema.py and parser.py read; two repository-wide greps returned zero matches; the FEAT-053 spec says the same."
+    },
+    {
+      "id": "C6",
+      "statement": "The concept vocabulary is authoritative in Postgres and ArangoDB only holds a copy materialised by an outbox worker.",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high",
+      "reasoning": "service, models and worker docstrings and constructors read directly; the table DDL itself was not located."
+    },
+    {
+      "id": "C7",
+      "statement": "GraphIndex has a shipped, merged Postgres backend with temporal plane and one-pass hybrid retrieval.",
+      "evidence": [
+        "F010",
+        "F020",
+        "F022",
+        "F025"
+      ],
+      "confidence": "high",
+      "reasoning": "registry, DDL, ten commits and a completed task index agree."
+    },
+    {
+      "id": "C8",
+      "statement": "The wiki has a shipped Postgres server backend, while `wikitoolkit serve` still accepts only `arangodb`.",
+      "evidence": [
+        "F009",
+        "F022"
+      ],
+      "confidence": "high",
+      "reasoning": "backend table and serve gate read directly; index shows the task done."
+    },
+    {
+      "id": "C9",
+      "statement": "Bookstore does not use ArangoDB.",
+      "evidence": [
+        "F011",
+        "F028"
+      ],
+      "confidence": "high",
+      "reasoning": "package grep has no arango/postgres hit; wiki pages describe SQLite + PageIndex files."
+    },
+    {
+      "id": "C10",
+      "statement": "The L1 synthesis cache is a set of models with no persistence layer today.",
+      "evidence": [
+        "F029",
+        "F017"
+      ],
+      "confidence": "medium",
+      "reasoning": "wiki_cache.py has no I/O, but three sibling modules that reference `WikiPage` were not opened."
+    },
+    {
+      "id": "C11",
+      "statement": "43 files outside ontology, wiki and GraphIndex reference ArangoDB, among them a vector store, an agent tool, the hierarchy interface and a formdesigner sink.",
+      "evidence": [
+        "F014",
+        "F030"
+      ],
+      "confidence": "medium",
+      "reasoning": "the count is exact; the role of five of the heaviest files is inferred from path and match density, not from reading them."
+    },
+    {
+      "id": "C12",
+      "statement": "FEAT-670 (HelixDB) is approved with all 26 tasks pending, no code on dev and no remote branch, and declares ArangoDB not retired.",
+      "evidence": [
+        "F031",
+        "F017"
+      ],
+      "confidence": "high",
+      "reasoning": "spec read through the wiki page; absence of code and branches checked by grep and `git branch -r`."
+    },
+    {
+      "id": "C13",
+      "statement": "No commit, ADR or decision page records the ArangoDB licence decision or any SurrealDB work.",
+      "evidence": [
+        "F021",
+        "F024"
+      ],
+      "confidence": "medium",
+      "reasoning": "negative result from targeted git and wiki searches; absence cannot be proven exhaustively."
+    },
+    {
+      "id": "C14",
+      "statement": "ArangoDB's licensing makes it unsafe as a default backend for an MIT project distributed for commercial use: source under BUSL-1.1, prebuilt binaries and Docker images under a Community License with no commercial-use rights and a 100 GiB cap.",
+      "evidence": [
+        "F032",
+        "F021"
+      ],
+      "confidence": "medium",
+      "reasoning": "documented in the research note with links to ArangoDB's own licence pages; the links were not re-fetched and nothing else in the repository records it."
+    },
+    {
+      "id": "C15",
+      "statement": "SurrealDB 3.3.x in server mode provides what the draft relies on: BM25 + HNSW + RRF, unlimited namespaces, multi-process access; with known gaps — BSL 1.1, Python SDK 3.x still beta, transactions only over WebSocket.",
+      "evidence": [
+        "F032",
+        "F017",
+        "F021"
+      ],
+      "confidence": "medium",
+      "reasoning": "documented in the research note's engine matrix with sources; nothing is exercised in the repository yet, so the draft's spike G1 remains the gate."
+    },
+    {
+      "id": "C16",
+      "statement": "A coherent replacement is a set of backend registrations into the FEAT-540 seams plus removal of the Arango built-ins and re-homing of the AQL content, not a parallel pair of new Protocols.",
+      "evidence": [
+        "F001",
+        "F009",
+        "F010",
+        "F030"
+      ],
+      "confidence": "medium",
+      "reasoning": "design judgement inferred from the shipped seams; it is the reading most consistent with FEAT-540, but it is a recommendation, not a fact."
+    },
+    {
+      "id": "C17",
+      "statement": "The draft's OntologyStore does not cover the instance graph, traversal patterns, authorization reachability and refresh pipeline that the ontology subsystem serves today.",
+      "evidence": [
+        "F005",
+        "F016",
+        "F027"
+      ],
+      "confidence": "high",
+      "reasoning": "both the draft's contract and the coded pipeline were read; the operations do not overlap."
+    },
+    {
+      "id": "C18",
+      "statement": "Tenancy is one graph database and one pgvector schema per tenant, with `arango_db` required on `TenantContext`.",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "model and templates read directly."
+    },
+    {
+      "id": "C19",
+      "statement": "Removing ArangoDB reverses recorded non-goals of FEAT-540 and FEAT-670.",
+      "evidence": [
+        "F030",
+        "F031"
+      ],
+      "confidence": "high",
+      "reasoning": "both specs' non-goal sections read through their wiki pages."
+    },
+    {
+      "id": "C20",
+      "statement": "The installed asyncdb has no SurrealDB driver and `surrealdb`, `rdflib` and `pyshacl` are declared nowhere.",
+      "evidence": [
+        "F017",
+        "F012"
+      ],
+      "confidence": "high",
+      "reasoning": "driver directory listed; all pyproject files grepped."
+    },
+    {
+      "id": "C21",
+      "statement": "HelixDB does not fit the write model: it has a single writer process (many readers, no concurrent writers), unlike SQLite WAL where several processes can write, serialised; and its Python client `helix-py` is GPL-3.0. Both support superseding FEAT-670.",
+      "evidence": [
+        "F032",
+        "F031"
+      ],
+      "confidence": "medium",
+      "reasoning": "single-writer stated by the user (2026-11-06) and by the research note (\"single writer process\", no documented multi-process access); GPL-3.0 stated in the note with a link; neither re-verified here."
+    },
+    {
+      "id": "C22",
+      "statement": "The engine choice is governed by four criteria: open-source non-enterprise editions, no paid SaaS, deployable on the AWS services in use (no AGE on RDS), and a simpler platform.",
+      "evidence": [
+        "F032"
+      ],
+      "confidence": "medium",
+      "reasoning": "stated by the user on 2026-11-06; the note backs the JanusGraph and NebulaGraph exclusions, while the AGE-on-RDS exclusion is user-stated and appears in the draft, not in the note."
+    },
+    {
+      "id": "C23",
+      "statement": "The research note itself ranks PostgreSQL + AGE first, FalkorDB second and SurrealDB in server mode third, and recommends keeping ArangoDB as an optional legacy adapter.",
+      "evidence": [
+        "F032"
+      ],
+      "confidence": "high",
+      "reasoning": "read directly in the note's recommendation section."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "FEAT-670 (HelixDB provider, approved, 26 tasks pending, Apache-2.0) targets the same planes and says ArangoDB is not retired. How does FEAT-824 relate to it?",
+      "blocks_claims": [
+        "C12",
+        "C15",
+        "C16",
+        "C19"
+      ],
+      "plausible_answers": [
+        "supersede FEAT-670 — PostgreSQL + SurrealDB replace the HelixDB plan",
+        "keep FEAT-670 as a later peer backend — FEAT-824 only retires ArangoDB",
+        "reconsider the engine — use HelixDB (Apache-2.0) instead of SurrealDB (BSL 1.1)"
+      ],
+      "ask_user": true,
+      "user_answer": "Sustituir FEAT-670 — PostgreSQL + SurrealDB replace the HelixDB plan; FEAT-670 is cancelled and an ADR records the licence decision.",
+      "resolved": true
+    },
+    {
+      "id": "U2",
+      "question": "How far does 'remove ArangoDB' reach in this feature: only ontology-graph management, all knowledge planes, or every ArangoDB consumer in the workspace (vector store, `arangodbsearch` tool, hierarchy interface, formdesigner sink)?",
+      "blocks_claims": [
+        "C11",
+        "C3"
+      ],
+      "plausible_answers": [
+        "knowledge planes and the domain packs that ride the ontology store; the rest in a follow-up feature",
+        "the whole workspace in this feature",
+        "the ontology graph store only"
+      ],
+      "ask_user": true,
+      "user_answer": "Todo el workspace — every ArangoDB consumer in the four distributions is in scope (vector store, arangodbsearch tool, hierarchy.py, formdesigner sink, docker/arango).",
+      "resolved": true
+    },
+    {
+      "id": "U3",
+      "question": "Which ontology does the new backend serve, and which engine hosts the per-tenant instance graph and its traversal patterns?",
+      "blocks_claims": [
+        "C16",
+        "C17",
+        "C5"
+      ],
+      "plausible_answers": [
+        "keep the YAML property-graph model; instance graph on SurrealDB (new `surrealql` dialect); concept vocabulary stays in Postgres",
+        "keep the YAML model; instance graph on Postgres (edge tables + recursive CTE); no SurrealDB for the ontology",
+        "adopt the draft's RDF/Turtle OntologyStore in Postgres as the ontology; port the existing pattern pipeline later"
+      ],
+      "ask_user": true,
+      "user_answer": "Adoptar el RDF del borrador — the draft's RDF/Turtle OntologyStore in Postgres becomes the ontology; the existing pattern pipeline is ported or retired afterwards.",
+      "resolved": true
+    },
+    {
+      "id": "U4",
+      "question": "Does FEAT-824 include the draft's SurrealDB KnowledgeStore for wiki, Bookstore and the L1 cache, given that the wiki already has a Postgres server plane, Bookstore is not on ArangoDB and L1 has no store?",
+      "blocks_claims": [
+        "C8",
+        "C9",
+        "C10"
+      ],
+      "plausible_answers": [
+        "no — the wiki moves to the shipped Postgres plane, Bookstore and L1 stay out",
+        "partly — add SurrealDB as a wiki backend (shared local server), leave Bookstore and L1 out",
+        "yes — the full chunk-level KnowledgeStore of the draft"
+      ],
+      "ask_user": true,
+      "user_answer": "KnowledgeStore completo — wiki, Bookstore and the L1 cache move to the draft's SurrealDB KnowledgeStore.",
+      "resolved": true
+    },
+    {
+      "id": "U5",
+      "question": "With ArangoDB removed everywhere and the ontology becoming an RDF concept vocabulary, where do the per-tenant instance graph and its machinery go (YAML entities/relations, traversal patterns, LLM dynamic queries, discovery/refresh, authorization reachability, the legal/BOE, contracts and manuals packs, hierarchy.py)?",
+      "blocks_claims": [
+        "C17",
+        "C4",
+        "C16"
+      ],
+      "plausible_answers": [
+        "SurrealDB `entity` / `related` behind `OntologyTraversalStore`, with patterns re-templated in a `surrealql` dialect",
+        "re-model each consumer on the two-step flow (`OntologyStore.expand` then `KnowledgeStore.search`) and retire traversal patterns and dynamic queries",
+        "Postgres edge tables with recursive CTEs for the instance graph; SurrealDB only for documents"
+      ],
+      "ask_user": true,
+      "resolved": false,
+      "user_answer": null,
+      "note": "Arises from the combination of the answers to U2 and U3; deferred to the spec."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "The user closed the four architectural forks in favour of the draft, the licence and engine premises are now documented (F032), and localization is high-confidence; the spec must phase the programme, start with spike G1, and settle U5. Overall confidence stays medium: SurrealDB is untested here and U5 is open."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014",
+      "F015",
+      "F016",
+      "F017",
+      "F018",
+      "F019",
+      "F020",
+      "F021",
+      "F022",
+      "F023",
+      "F024",
+      "F025",
+      "F026",
+      "F027",
+      "F028",
+      "F029",
+      "F030",
+      "F031",
+      "F032"
+    ],
+    "findings_unused": [],
+    "notes": "Follow-ups left for the spec (answerable by more research, not by the user): DDL/migration location of the `ontology_concept*` tables; roles of `stores/arango.py`, `interfaces/hierarchy.py`, `parrot_tools/wiki/toolkit.py`, formdesigner `asyncdb_store.py` and `registry/routing/rules.py`; whether `test_ontology_graph_store.py` mocks AsyncDB; how Postgres-backed tests obtain a database in CI; which wiki namespaces are configured with backend=arangodb; the stance of the FEAT-541 spec on backends; status of FEAT-255's unmerged branch. Wall-clock budget was exceeded (lanes took 163 s, 412 s and 501 s against an advisory 255 s) without dropping any planned query. User correction after the review gate (2026-11-06): the draft's design is adopted in full (U1 supersede FEAT-670, U2 whole workspace, U3 RDF OntologyStore, U4 full KnowledgeStore); the enrichment block was re-derived accordingly and U5 was added as the one unresolved question. User correction (2026-11-06, after the first commit): the licence and engine premises are documented in `sdd/proposals/Grafos open source para ai-parrot.md` (F032); C14 and C15 raised from low to medium, C21–C23 added, and the user's engine selection criteria recorded as a constraint. User statement (2026-11-06): HelixDB is single-writer — it serves multiple readers but not multiple writers, unlike SQLite — recorded in C21."
+  }
+}

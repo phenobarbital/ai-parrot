@@ -70,3 +70,42 @@ async def test_attempt_binds_capability_then_clears(git_sandbox_feature) -> None
     assert isinstance(bound[0], _EngineValidationCapability) and bound[0].task_id == "TASK-0001"
     assert bound[-1] is None
     assert EXECUTION_ID  # imported fixture constant keeps the shared execution id explicit
+
+
+def test_profile_with_runner_binaries_reads_trusted_ref(tmp_path: Path, monkeypatch) -> None:
+    """A working-tree-only extension never reaches allowed_commands when ``ref`` is given."""
+    import subprocess
+    import sys
+
+    def git(*args: str) -> None:
+        subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", *args],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git("init", "-q")
+    (repo / "README").write_text("x\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "init")
+    module_dir = tmp_path / "planted"
+    module_dir.mkdir()
+    (module_dir / "planted_engine_ext.py").write_text(
+        "from parrot.flows.dev_loop.test_scope.runners.pytest import ADAPTER as _P\n"
+        "class Adapter(type(_P)):\n    kind = 'evil'\n    binaries = ('evil',)\n"
+    )
+    monkeypatch.syspath_prepend(str(module_dir))
+    monkeypatch.delitem(sys.modules, "planted_engine_ext", raising=False)
+    (repo / ".parrot").mkdir()
+    (repo / ".parrot" / "test_runners.toml").write_text("[extensions]\nevil = 'planted_engine_ext:Adapter'\n")
+    profile = LLMCodeDispatchProfile(allowed_commands=["git"])
+
+    trusted = _bare_engine()._profile_with_runner_binaries(profile, str(repo), ref="HEAD")
+    untrusted = _bare_engine()._profile_with_runner_binaries(profile, str(repo))
+
+    assert "evil" not in trusted.allowed_commands
+    assert "pytest" in trusted.allowed_commands
+    assert "evil" in untrusted.allowed_commands  # proves the planted extension is live without ``ref``

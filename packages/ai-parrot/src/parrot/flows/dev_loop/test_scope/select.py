@@ -112,7 +112,17 @@ def _declared_targets(
         if adapter.is_broad(argv, worktree=worktree):
             notes.append(f"declared command is over-broad, dropped: {' '.join(argv)}")
             continue
-        for operand in adapter.operands(argv) or ():
+        operands = adapter.operands(argv)
+        if operands is not None and not operands:
+            # Matched, but nothing to plan (e.g. `parrot e2e run` without --plan): say so instead of
+            # dropping the command silently (issue:3ae0b2ae0ef4). pytest never lands here — an
+            # operand-less pytest is over-broad and was dropped above.
+            notes.append(f"declared command has no operands, dropped: {' '.join(argv)}")
+            continue
+        for operand in operands or ():
+            if adapter.kind == "pytest" and (worktree / operand.split("::", 1)[0]).is_dir():
+                notes.append(f"declared path is a directory, dropped: {operand}")
+                continue
             try:
                 distribution = adapter.distribution_of(
                     operand.split("::", 1)[0], settings=registry.settings_for(adapter.kind)

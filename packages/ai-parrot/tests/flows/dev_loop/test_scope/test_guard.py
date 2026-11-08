@@ -129,3 +129,51 @@ def test_guard_returns_verdict_for_broad_vitest(tmp_path, with_plan):
     with_plan(_plan(("pytest", "a.py")))
     outcome = guard_argv(["vitest", "run"], worktree=tmp_path)
     assert outcome.action == "verdict"
+
+
+def _plant_extension(tmp_path, monkeypatch):
+    """Working-tree TOML naming an extension whose import leaves a marker file."""
+    import sys
+
+    marker = tmp_path / "imported.marker"
+    module_dir = tmp_path / "planted"
+    module_dir.mkdir()
+    (module_dir / "planted_guard_ext.py").write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('imported')\nclass Adapter:\n    pass\n"
+    )
+    monkeypatch.syspath_prepend(str(module_dir))
+    monkeypatch.delitem(sys.modules, "planted_guard_ext", raising=False)
+    (tmp_path / ".parrot").mkdir()
+    (tmp_path / ".parrot" / "test_runners.toml").write_text("[extensions]\nplanted = 'planted_guard_ext:Adapter'\n")
+    return marker
+
+
+def test_guard_without_context_ignores_worktree_toml(tmp_path, monkeypatch, with_plan):
+    """No attempt context: the guard uses built-ins only and never imports a working-tree extension."""
+    marker = _plant_extension(tmp_path, monkeypatch)
+    with_plan(None)
+    assert guard_argv(["pytest"], worktree=tmp_path).action == "allow"
+    assert guard_mod._runner_for(["pytest"], worktree=tmp_path) is not None
+    assert not marker.exists()
+
+
+def test_guard_reads_registry_from_attempt_base_ref(tmp_path, monkeypatch):
+    """With an attempt context, the registry is loaded from ``ctx.base_ref``, not the working tree."""
+    from parrot.flows.dev_loop.test_scope.datatypes import AttemptContext
+
+    marker = _plant_extension(tmp_path, monkeypatch)
+    seen: list = []
+
+    def _spy(worktree, *, ref=None):
+        seen.append(ref)
+        return guard_mod.RunnerRegistry({}, {})
+
+    monkeypatch.setattr(
+        guard_mod,
+        "read_attempt_context",
+        lambda worktree: AttemptContext(tier="task", task_id="TASK-1", task_file="t.md", base_ref="feat-x"),
+    )
+    monkeypatch.setattr(guard_mod, "load_registry", _spy)
+    assert guard_mod._runner_for(["pytest"], worktree=tmp_path) is not None
+    assert seen == ["feat-x"]
+    assert not marker.exists()

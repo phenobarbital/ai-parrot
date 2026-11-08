@@ -121,6 +121,60 @@ class BookstoreToolkit(AbstractToolkit):
         """
         return self._bookstore.read_section(book_id, node_id)
 
+    async def read_pages(
+        self, book_id: str, pages: str, max_chars: int = 12000, cursor: Optional[str] = None
+    ) -> dict[str, Any]:
+        """Read pages of a book, e.g. ``pages="5-7,12"``.
+
+        Returns quoted book text split into segments; cite a segment by its ``address.label``
+        (e.g. *p. 12 ¶3*). When ``truncated`` is true, call again with ``cursor=next_cursor``.
+
+        Args:
+            book_id: The book.
+            pages: Page ranges, comma separated.
+            max_chars: Character budget for this call.
+            cursor: ``next_cursor`` from a previous call.
+        """
+        return await self._bookstore.read_pages(book_id, pages, max_chars=max_chars, cursor=cursor)
+
+    async def read_segments(
+        self,
+        book_id: str,
+        start: Optional[int] = None,
+        end: Optional[int] = None,
+        node_id: Optional[str] = None,
+        max_chars: int = 12000,
+        cursor: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Read paragraphs (segments) of a book by position ``[start, end)`` or one section's own text.
+
+        Returns quoted book text; cite a segment by its ``address.label`` (e.g. *Setup > Install ¶2*).
+        When ``truncated`` is true, call again with ``cursor=next_cursor``.
+
+        Args:
+            book_id: The book.
+            start: First segment position (inclusive).
+            end: Last segment position (exclusive).
+            node_id: Section id from ``bookstore_get_toc``; reads only that section's own paragraphs.
+            max_chars: Character budget for this call.
+            cursor: ``next_cursor`` from a previous call.
+        """
+        return await self._bookstore.read_segments(
+            book_id, start=start, end=end, node_id=node_id, max_chars=max_chars, cursor=cursor
+        )
+
+    async def outline(self, book_id: str, node_id: Optional[str] = None, max_depth: int = 3) -> dict[str, Any]:
+        """Compact outline of a book (or one section): titles, node ids, pages and paragraph counts.
+
+        Cheaper than ``bookstore_get_toc`` for deciding what to read next.
+
+        Args:
+            book_id: The book.
+            node_id: Outline only this section's subtree.
+            max_depth: How many levels to include.
+        """
+        return await self._bookstore.outline(book_id, node_id=node_id, max_depth=max_depth)
+
     async def related_books(
         self,
         book_id: str,

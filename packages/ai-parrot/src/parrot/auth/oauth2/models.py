@@ -97,16 +97,6 @@ class ConnectInitResponse(BaseModel):
     expires_in: int = 600
 
 
-class EnableResponse(BaseModel):
-    """Response for the confirm-enable endpoint.
-
-    Attributes:
-        integration: Integration descriptor returned by the compatibility endpoint.
-    """
-
-    integration: IntegrationDescriptor
-
-
 class DisconnectResponse(BaseModel):
     """Response for the disconnect endpoint.
 
