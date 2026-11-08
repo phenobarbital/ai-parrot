@@ -95,9 +95,7 @@ async def evaluate_pair(pair: EvalPair, *, min_confidence: float) -> EvalResult:
     reference = json.loads(pair.reference.read_text(encoding="utf-8"))["structure"]
 
     reference_nodes = [
-        (depth, node)
-        for depth, node in _walk(reference)
-        if normalize_title(str(node.get("title", ""))) != "preface"
+        (depth, node) for depth, node in _walk(reference) if normalize_title(str(node.get("title", ""))) != "preface"
     ]
     layout_nodes = _walk(built["structure"])
     matches: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
