@@ -1,4 +1,5 @@
 """Read tools: list_documents, outline, read_pages, read_segments (FEAT-840 / TASK-5309)."""
+
 import asyncio
 import json
 from pathlib import Path
@@ -53,7 +54,10 @@ def _fake_build(pages):
             "doc_name": "doc.pdf",
             "structure": [
                 {
-                    "title": "Ch 1", "node_id": "0000", "start_index": 1, "end_index": 2,
+                    "title": "Ch 1",
+                    "node_id": "0000",
+                    "start_index": 1,
+                    "end_index": 2,
                     "nodes": [{"title": "1.1 Scope", "node_id": "0001", "start_index": 1, "end_index": 1}],
                 }
             ],
@@ -91,7 +95,7 @@ async def test_read_pages_order_and_budget(paged_toolkit):
     for _ in range(50):
         part = await tk.read_pages("t", "doc", "1-2", max_chars=500, cursor=cursor)
         for s in part["segments"]:
-            assert s["text"] == stored[s["seq"]][s["start"]:s["end"]]
+            assert s["text"] == stored[s["seq"]][s["start"] : s["end"]]
             got.setdefault(s["seq"], "")
             got[s["seq"]] += s["text"]
         cursor = part["next_cursor"]
@@ -133,6 +137,20 @@ async def test_read_segments_by_node_owned_ranges(paged_toolkit):
     assert "Intro text." in texts and "Scope text." not in texts
     child_res = await tk.read_segments("t", node_id=child["node_id"], max_chars=100000)
     assert "Scope text." in [s["text"] for s in child_res["segments"]]
+
+
+@pytest.mark.asyncio
+async def test_cursor_outside_selection_rejected(paged_toolkit):
+    """FEAT-844 AC-7: a cursor whose seq is not in the requested pages raises instead of dropping its offset."""
+    tk = paged_toolkit
+    first = await tk.read_pages("t", "doc", "2", max_chars=600)
+    assert first["truncated"] and first["next_cursor"]
+    cursor = first["next_cursor"]
+    with pytest.raises(ValueError, match="not in the requested selection"):
+        await tk.read_pages("t", "doc", "1", cursor=cursor)
+    resumed = await tk.read_pages("t", "doc", "2", cursor=cursor)
+    assert resumed["segments"][0]["seq"] == first["segments"][-1]["seq"]
+    assert resumed["segments"][0]["start"] == first["segments"][-1]["end"]
 
 
 @pytest.mark.asyncio
@@ -185,5 +203,4 @@ async def test_outline_and_list_documents(paged_toolkit):
 
 def test_read_tools_are_exposed(toolkit):
     names = set(toolkit.list_tool_names())
-    assert {"pageindex_list_documents", "pageindex_outline", "pageindex_read_pages",
-            "pageindex_read_segments"} <= names
+    assert {"pageindex_list_documents", "pageindex_outline", "pageindex_read_pages", "pageindex_read_segments"} <= names

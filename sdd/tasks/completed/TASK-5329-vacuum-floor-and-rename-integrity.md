@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-844 — PageIndex Toolkit Fixes
 **Spec**: `sdd/specs/pageindex-toolkit-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -278,10 +278,8 @@ See the MODIFY blocks above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 (/sdd-fix session agent:sdd-fix:507d6e6a)
+**Date**: 2026-11-08
+**Notes**: `vacuum_tree` clamps `max_age_s` to `max(int(max_age_s), generation_grace_s)` (None = grace), runs both `NodeContentStore.sweep_unreferenced` and `SegmentStore.sweep_unreferenced` via `asyncio.to_thread` under the tree lock, and returns `{tree_name, removed, revisions_removed, max_age_s}`; docstring rewritten (LLM-facing). `rename_tree` raises `ValueError("rename_tree: revision ...@... of '...' is missing")` instead of warn+continue. Tests: `test_vacuum_tree_floors_max_age_to_grace`, `test_vacuum_tree_sweeps_revisions` (files aged with os.utime — a grace of 0 would already sweep at publish time, so the test keeps the default grace), `test_rename_tree_missing_revision_fails_fast` (fresh toolkit instance so no cached revision masks the missing file; placed in test_segment_migration.py, not test_tree_ops.py which holds pure tree-op tests); `test_crash_between_bodies_and_json` reopens with `generation_grace_s=0`. Validation: 78 passed; ruff clean except a pre-existing E402 at test_toolkit.py:369. Code commit: 51556a97cb.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the rename fail-fast test lives in `test_segment_migration.py` (spec §3 M2 named `test_tree_ops.py`, which has no toolkit fixture).

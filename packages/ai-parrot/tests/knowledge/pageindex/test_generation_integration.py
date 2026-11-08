@@ -145,11 +145,13 @@ async def test_crash_between_bodies_and_json(tmp_path: Path, monkeypatch: pytest
     assert len(orphan_paths) == 1
 
     monkeypatch.setattr(JSONTreeStore, "save", original_save)
-    reopened = PageIndexToolkit(adapter=_adapter(), storage_dir=tmp_path)
+    # vacuum_tree never sweeps below the configured grace (FEAT-844 D1), so the
+    # reopened toolkit opts into an immediate sweep through its configuration.
+    reopened = PageIndexToolkit(adapter=_adapter(), storage_dir=tmp_path, generation_grace_s=0)
     assert await reopened.get_tree("t") == json.loads(original_tree)
-    report = await reopened.vacuum_tree("t", max_age_s=0)
+    report = await reopened.vacuum_tree("t")
 
-    assert report["removed"] == 1
+    assert report["removed"] == 1 and report["max_age_s"] == 0
     assert not orphan_paths[0].exists()
 
 
