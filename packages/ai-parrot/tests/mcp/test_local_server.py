@@ -21,9 +21,11 @@ class EchoInput(BaseModel):
 
 class EchoTool(AbstractTool):
     """Echo input back"""
+
     name = "echo"
     description = "Echo input back"
     args_schema = EchoInput
+
     async def _execute(self, text: str) -> str:
         return text
 
@@ -37,10 +39,7 @@ class TestStdioMCPServer:
     @pytest.mark.asyncio
     async def test_handle_request_initialize(self):
         server = StdioMCPServer(LocalServerConfig(name="test"))
-        response = await server._handle_request({
-            "jsonrpc": "2.0", "id": 1,
-            "method": "initialize", "params": {}
-        })
+        response = await server._handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
         assert response["id"] == 1
         assert response["result"]["protocolVersion"] == "2024-11-05"
 
@@ -49,39 +48,28 @@ class TestStdioMCPServer:
         server = StdioMCPServer(LocalServerConfig(name="test"))
         # register a tool first
         server.register_tool(EchoTool())
-        response = await server._handle_request({
-            "jsonrpc": "2.0", "id": 2,
-            "method": "tools/list", "params": {}
-        })
+        response = await server._handle_request({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
         assert len(response["result"]["tools"]) == 1
 
     @pytest.mark.asyncio
     async def test_handle_request_tools_call(self):
         server = StdioMCPServer(LocalServerConfig(name="test"))
         server.register_tool(EchoTool())
-        response = await server._handle_request({
-            "jsonrpc": "2.0", "id": 3,
-            "method": "tools/call",
-            "params": {"name": "echo", "arguments": {"text": "hi"}}
-        })
+        response = await server._handle_request(
+            {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "echo", "arguments": {"text": "hi"}}}
+        )
         assert response["result"]["isError"] is False
 
     @pytest.mark.asyncio
     async def test_handle_notification_no_response(self):
         server = StdioMCPServer(LocalServerConfig(name="test"))
-        response = await server._handle_request({
-            "jsonrpc": "2.0",
-            "method": "notifications/initialized"
-        })
+        response = await server._handle_request({"jsonrpc": "2.0", "method": "notifications/initialized"})
         assert response is None
 
     @pytest.mark.asyncio
     async def test_handle_unknown_method(self):
         server = StdioMCPServer(LocalServerConfig(name="test"))
-        response = await server._handle_request({
-            "jsonrpc": "2.0", "id": 4,
-            "method": "unknown/method", "params": {}
-        })
+        response = await server._handle_request({"jsonrpc": "2.0", "id": 4, "method": "unknown/method", "params": {}})
         assert "error" in response
         assert response["error"]["code"] == -32603
 
@@ -91,6 +79,25 @@ class TestStdioMCPServer:
         server._running = True
         await server.stop()
         assert server._running is False
+
+    def test_send_uses_stream_bound_at_start(self):
+        """FEAT-844 AC-2: a redirect active during _send does not capture the frame."""
+        import io
+
+        server = StdioMCPServer(LocalServerConfig(name="test"))
+        bound, other = io.StringIO(), io.StringIO()
+        server._stdout = bound  # what start() binds from sys.stdout
+        with contextlib.redirect_stdout(other):
+            server._send({"jsonrpc": "2.0", "id": 1, "result": {}})
+        assert json.loads(bound.getvalue()) == {"jsonrpc": "2.0", "id": 1, "result": {}}
+        assert other.getvalue() == ""
+
+    def test_send_before_start_writes_sys_stdout(self, capsys):
+        """FEAT-844 AC-2 fallback: without start(), _send still writes to sys.stdout."""
+        server = StdioMCPServer(LocalServerConfig(name="test"))
+        assert server._stdout is None
+        server._send({"jsonrpc": "2.0", "id": 2, "result": {}})
+        assert json.loads(capsys.readouterr().out.strip())["id"] == 2
 
 
 class _ScriptedStdin:
@@ -118,6 +125,7 @@ class TestStdioMCPServerConcurrency:
 
         class BlockTool(AbstractTool):
             """Wait until the echo tool has run"""
+
             name = "block"
             description = "Wait until released"
             args_schema = BlockInput
@@ -128,6 +136,7 @@ class TestStdioMCPServerConcurrency:
 
         class ReleaseTool(AbstractTool):
             """Release the blocked tool"""
+
             name = "release"
             description = "Release the blocked tool"
             args_schema = BlockInput
@@ -141,8 +150,12 @@ class TestStdioMCPServerConcurrency:
         server.register_tool(ReleaseTool())
 
         lines = [
-            json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "block", "arguments": {}}}),
-            json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "release", "arguments": {}}}),
+            json.dumps(
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "block", "arguments": {}}}
+            ),
+            json.dumps(
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "release", "arguments": {}}}
+            ),
         ]
         monkeypatch.setattr(sys, "stdin", _ScriptedStdin(lines))
 
@@ -163,6 +176,7 @@ class TestStdioMCPServerConcurrency:
 
         class HangTool(AbstractTool):
             """Never returns"""
+
             name = "hang"
             description = "Never returns"
             args_schema = HangInput
@@ -178,7 +192,11 @@ class TestStdioMCPServerConcurrency:
             sys,
             "stdin",
             _ScriptedStdin(
-                [json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "hang", "arguments": {}}})]
+                [
+                    json.dumps(
+                        {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "hang", "arguments": {}}}
+                    )
+                ]
             ),
         )
 
@@ -258,4 +276,3 @@ class TestSilentExitsAreLogged:
 
         assert exits == [0], "the handler must still force the exit"
         assert any("received SIGTERM" in r.getMessage() for r in caplog.records), caplog.text
-

@@ -1,0 +1,147 @@
+{
+  "feature": "pageindex-toolkit-fixes",
+  "feature_id": "FEAT-844",
+  "spec": "sdd/specs/pageindex-toolkit-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-08T01:40:00+00:00",
+  "completed_at": "2026-11-08T01:44:35+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/security/test_prompt_injection_stdout.py",
+          "packages/ai-parrot/tests/mcp/test_local_server.py",
+          "packages/ai-parrot/tests/mcp/test_pageindex_template.py::test_pageindex_serves_over_stdio",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_injection_scan.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_toolkit.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_toolkit_no_llm.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_generation_integration.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_tree_ops.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_framing.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_read_tools.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_segment_migration.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_segment_import.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_local_mcp_docs.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:65f3d320480c0973351b0d2fb215b79779450dd12f8d589f27e40922c9342ea6"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5328",
+      "slug": "stdout-safe-injection-engine",
+      "title": "Stdout-safe injection-engine resolution + bound stdio output stream",
+      "feature_id": "FEAT-844",
+      "feature": "pageindex-toolkit-fixes",
+      "spec": "sdd/specs/pageindex-toolkit-fixes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent: touches security/prompt_injection.py, mcp/local_server.py and their tests only; no other FEAT-844 task declares those files.",
+      "assigned_to": null,
+      "started_at": "2026-11-08T01:29:34.927808+00:00",
+      "completed_at": "2026-11-08T01:31:46+00:00",
+      "file": "sdd/tasks/completed/TASK-5328-stdout-safe-injection-engine.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5329",
+      "slug": "vacuum-floor-and-rename-integrity",
+      "title": "vacuum_tree grace floor + revision sweep; rename_tree fails fast on a missing revision",
+      "feature_id": "FEAT-844",
+      "feature": "pageindex-toolkit-fixes",
+      "spec": "sdd/specs/pageindex-toolkit-fixes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "First writer of knowledge/pageindex/toolkit.py, test_toolkit.py and test_segment_migration.py in this feature; TASK-5330 serializes behind it on those files.",
+      "assigned_to": null,
+      "started_at": "2026-11-08T01:29:34.927808+00:00",
+      "completed_at": "2026-11-08T01:34:57+00:00",
+      "file": "sdd/tasks/completed/TASK-5329-vacuum-floor-and-rename-integrity.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5330",
+      "slug": "segment-store-follow-ups",
+      "title": "Segment-store follow-ups — framing openers, cursor selection, empty bodies, docstrings, async _doc_ids_in",
+      "feature_id": "FEAT-844",
+      "feature": "pageindex-toolkit-fixes",
+      "spec": "sdd/specs/pageindex-toolkit-fixes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5329"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies the same files as TASK-5329 (knowledge/pageindex/toolkit.py, tests/knowledge/pageindex/test_toolkit.py, test_segment_migration.py) — serialized behind it; adds framing.py, test_framing.py, test_read_tools.py which no other task declares.",
+      "assigned_to": null,
+      "started_at": "2026-11-08T01:34:58.111873+00:00",
+      "completed_at": "2026-11-08T01:38:08+00:00",
+      "file": "sdd/tasks/completed/TASK-5330-segment-store-follow-ups.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5331",
+      "slug": "bound-text-marker-wording",
+      "title": "_bound_text marker names a cut first section",
+      "feature_id": "FEAT-844",
+      "feature": "pageindex-toolkit-fixes",
+      "spec": "sdd/specs/pageindex-toolkit-fixes.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5330"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies knowledge/pageindex/toolkit.py after TASK-5330 (same file; transitive edge to TASK-5329 omitted); test_toolkit_no_llm.py is declared by no other task.",
+      "assigned_to": null,
+      "started_at": "2026-11-08T01:38:08.858078+00:00",
+      "completed_at": "2026-11-08T01:40:06+00:00",
+      "file": "sdd/tasks/completed/TASK-5331-bound-text-marker-wording.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-5332",
+      "slug": "documentation-pageindex-local-mcp",
+      "title": "Documentation — wiki/knowledge/pageindex-local-mcp.md",
+      "feature_id": "FEAT-844",
+      "feature": "pageindex-toolkit-fixes",
+      "spec": "sdd/specs/pageindex-toolkit-fixes.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5328",
+        "TASK-5331"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Documents the marker wording TASK-5331 fixes in PageIndexToolkit._bound_text (toolkit.py) and the stdout redirect TASK-5328 adds in get_injection_scoring_engine (security/prompt_injection.py); must read both merged methods.",
+      "assigned_to": null,
+      "started_at": "2026-11-08T01:40:06.788674+00:00",
+      "completed_at": "2026-11-08T01:40:28+00:00",
+      "file": "sdd/tasks/completed/TASK-5332-documentation-pageindex-local-mcp.md",
+      "verification": "verified"
+    }
+  ]
+}
