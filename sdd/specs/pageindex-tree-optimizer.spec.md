@@ -83,9 +83,9 @@ Carried from the brainstorm's *Constraints & Requirements* and resolved question
   that produces a revision optimizes the new subtree before publishing; an explicit
   `optimize` (toolkit tool, `parrot pageindex optimize`, `bookstore optimize`) works on
   existing trees, defaults to a dry run with a report, and publishes a generation when applied.
-- **G6 — Idempotent.** A per-node stamp (input hash, settings hash, optimizer version) makes
-  a second run with the same inputs change nothing even though the LLM passes are not
-  deterministic.
+- **G6 — Idempotent.** Per-pass completion records on each node (consumed-input hash,
+  settings hash, execution context and optimizer version) make a second run with the same
+  inputs and execution context change nothing even though LLM passes are not deterministic.
 - **G7 — Scope.** Only subtrees that came from an import (`doc_id`) and are not `locked`;
   subtree optimization preserves ownership outside its selected scope.
 - **G8 — Bottom-up summaries.** Leaves from their own segments; a short leaf uses its text
@@ -124,7 +124,7 @@ Carried from the brainstorm's *Constraints & Requirements* and resolved question
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:dd991e434103e5c1d01951e13cd31cc464778cda672bcdae2b4fdd6ca4cd3aa6 evaluation_digest=sha256:253075e6a5af29d926be47ef640d5f0a78de222864eba3f6bec8988f9f720d42 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:71412444245eb880da6bc9bdd9141c175d22a30a135f2ea7d61f2086c7d4c3d6 evaluation_digest=sha256:0f73707705db5a3f2c0d6f633dc690b81d1bb0182ff3db30ae40af77874f8205 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -169,11 +169,12 @@ Two layers, kept in two modules so the first is testable without any model:
      smaller than the leaf's own tokens and every piece is at least `min_leaf_tokens`;
      `routing_cost` is the token count of the pieces' titles and summaries when present, else
      `routing_tokens_per_child` per piece (G3).
-   - *stamp* — each node touched or checked gets `optimizer = {version, input, settings,
-     at, summary}`; `input` hashes `(doc_id, revision, owned, title, [(child.title,
-     child.span)])`. A node whose stamp matches is skipped by the LLM passes; the
-     deterministic passes are idempotent by construction, so a second run reports zero
-     actions (G6).
+   - *prepare pass inputs* — deterministic planning never writes completion stamps.
+     Preserve the input tree's stamps for per-pass comparison; structural changes invalidate
+     dependent passes. Only a matching, previously completed pass may be skipped. After
+     requested passes and candidate validation succeed, finalize their completion records
+     using the pass inputs actually consumed (see the stamp lifecycle below). Deterministic
+     passes are idempotent by construction; an unchanged second run reports zero actions (G6).
    - *validate* — per affected document, `validate_ownership(all nodes of that doc,
      revision)` must return no problems; every `key_item.seq` must fall inside an owned range
      of its node; `locked` nodes and out-of-scope nodes must be unchanged except for
@@ -202,7 +203,39 @@ Two layers, kept in two modules so the first is testable without any model:
      `summary_max_words` (`"llm"`); a parent is composed in one call from its children's
      summaries, its own owned segments and its `key_items` (`"composed"`), or
      deterministically (`"<own text>. Subsections cover: <child titles>"`) when there is no
-     live adapter; a node whose stamp matches keeps its summary (`"kept"`).
+     live adapter; a matching completed summary pass keeps its summary and stamp byte-for-byte.
+     `"kept"` is a reporting outcome, never a replacement for persisted summary provenance.
+
+**Stamp lifecycle and retry cache (normative).** Completion is per pass (`headings`,
+`key_items`, `summary`), not a blanket node flag. Each record contains the optimizer version,
+settings digest, pass-input digest, execution-context digest and completion time. A pass
+record is created only after that pass succeeds and the candidate validates; failed or
+unrequested passes get no new completion record. In particular, `with_summaries=False`
+does not mark summaries complete, and unavailable/disabled model passes remain pending.
+Successful empty heading/key-item proposals count as completed work. No-model summaries
+can complete in deterministic mode; a later live-model request invalidates that mode.
+
+The structural digest covers `(doc_id, revision, owned, title, [(child.title, child.span)])`.
+Each pass also hashes all data it actually consumes: key-item extraction uses the post-split
+ownership; summary input includes own key items and the ordered child titles, summaries,
+key items and spans. Evaluate summary digests deepest-first after children finish. The
+execution digest identifies deterministic versus live mode, pass/prompt version and, for
+live calls, provider/client type and effective model (never credentials). Switching from
+no model to a live model, or changing a child summary, therefore schedules the affected work.
+Short inline summaries remain deterministic even with a live adapter.
+Effective live mode requires both `settings.llm_passes` and a live adapter; disabling model
+passes selects deterministic summary fallback without marking heading/key-item work complete.
+`skipped_stamped` counts a node only when all its requested, eligible passes have matching
+completion records; deferred/unavailable work is not reported as completed stamp reuse.
+
+Use the same complete `(pass, version, settings, input, execution)` key for the in-memory
+retry cache. Cache only accepted successful outputs; revalidate proposal anchors against
+the retry candidate. Recompute scope, ownership and pass keys on every retry; never reuse
+candidate object identities across retries. Records for passes invalidated by a later
+structural change in the same run are discarded, not restamped against unconsumed inputs;
+evaluate those passes on the final shape before claiming completion. Preserve matching
+records and their timestamps unchanged. An identical final tree and body references mark
+the standalone transaction `noop`; stamp checks alone never publish a generation.
 
 **Import.** `import_pdf`, `insert_markdown` and `insert_ebook` call the optimizer on the
 new subtree inside their existing transaction, right after `_stage_document`, when
@@ -210,7 +243,12 @@ new subtree inside their existing transaction, right after `_stage_document`, wh
 that path (`if_add_node_summary: "no"`) so a PDF import makes far fewer calls: structure from
 layout, summaries bottom-up with inline short leaves. The document description, which the
 builder only produced inside its summary block, is generated by the toolkit afterwards with
-the same helpers (`generate_doc_description`, `create_clean_structure_for_description`).
+the optimizer-owned `describe_document` helper: serialize
+`create_clean_structure_for_description` output as quoted data with `frame_text`, then call
+the live adapter with `DATA_FRAMING_INSTRUCTION`. Instructions stay outside the frame;
+document-derived titles and summaries stay inside it. Do not call the legacy, unframed
+`builder.generate_doc_description` on this optimized path. The legacy helper stays unchanged
+for `optimize_on_import=False` and callers that bypass the toolkit.
 `insert_content`/`import_file` reach the same hook through `insert_markdown`. With
 `optimize_on_import=False` every import behaves exactly as on `dev` today.
 
@@ -220,12 +258,20 @@ llm_passes=True, …)` plans on a deep copy of the loaded tree and returns an `O
 summaries written, repaired gaps, skipped locked/stamped nodes, LLM calls made, documents,
 errors). With `apply=True` it runs through `_mutate`: the apply closure re-plans on
 `txn.tree` (so a stale snapshot is simply re-planned and the LLM results of the first pass
-are reused through an in-memory cache keyed by stamp input), replaces the scoped subtree,
+are reused through the complete per-pass cache key above), replaces the scoped subtree,
 calls `reindex_node_ids`, assigns `concept_id` to new nodes with sibling-scoped dedup
 (`derive_concept_id` + `dedup_concept_ids`; `ensure_concept_ids` alone would let two equal
-headings under one parent collide), re-renders and stages the body of every node of every
-affected document (`render_body` → `txn.set_body`, empty → `drop_body`), and lets the
-outermost `_write` publish. The tool is **not** LLM-dependent: without a model the dry run,
+headings under one parent collide), and stages bodies only for mutable nodes in the selected
+scope whose rendered body or identity changed (`render_body` → `txn.set_body`, empty →
+`drop_body`). Effective locks include locked ancestors, even above the selected subtree;
+locked nodes, their descendants and out-of-scope nodes retain their original bodies and
+`body_ref` byte-for-byte. Removing a node is allowed only within that mutable scope.
+Validate ownership across each complete affected document and protected-node equality
+again after staging and stamp finalization, immediately before publication. Validation errors
+abort the transaction without publishing; identical candidates use `txn.noop`. The existing
+`set_body`/`drop_body` helpers enforce no optimizer lock policy, so the toolkit must enforce
+these guards explicitly. The outermost `_write` publishes only a changed valid candidate.
+The tool is **not** LLM-dependent: without a model the dry run,
 the deterministic passes and the deterministic summaries work; the report says
 `llm_passes: "skipped (no model)"`.
 
@@ -266,12 +312,14 @@ evaluation task.
    DocumentRevision ──▶ optimizer.plan_deterministic ──▶ OptimizePlan ──▶ optimizer_llm.run_llm_passes
    (SegmentStore)        scope · repair · normalize ·     candidate +      headings · key_items ·
                          ownership · expand · decide ·    report           bottom-up summaries
-                         stamp                              │              (framed prompts, live adapter only)
+                         pass inputs                        │              (framed prompts; deterministic fallback)
                                                             ▼
                                              optimizer.validate_candidate ──▶ errors ⇒ reject (no publish)
                                                             │ ok
                                                             ▼
-                               reindex_node_ids · concept ids (dedup) · render_body → txn.set_body
+                               reindex_node_ids · concept ids (dedup) · scoped body staging
+                                                            │
+                                      finalize successful pass stamps · validate final candidate
                                                             │
                                                             ▼
                                         WriteTransaction.publish  (FEAT-831: lock, stale check, generation)
@@ -291,7 +339,7 @@ evaluation task.
 | `SegmentStore.load_revision` (`segment_store.py:64`) | uses | revisions of the documents in scope |
 | `framing.frame_segments` / `DATA_FRAMING_INSTRUCTION` (`framing.py:33, 10`) | uses | every optimizer and summary prompt |
 | `builder._limited_gather` / `_LLM_SEMAPHORE` (`builder.py:80, 75`) | uses | summary fan-out under the shared gate |
-| `builder.generate_doc_description` + `utils.create_clean_structure_for_description` (`builder.py:1553`, `utils.py:713`) | uses | document description after bottom-up summaries |
+| `optimizer_llm.describe_document` (new) + `utils.create_clean_structure_for_description` | uses | framed document description after bottom-up summaries; legacy builder helper is not called |
 | `layout_structure.heading_title` / `MAX_HEADING_WORDS` (`layout_structure.py:61, 23`) | uses | heading-like acceptance rule |
 | `tree_ops.reindex_node_ids` (`tree_ops.py:22`) | uses | after structural changes |
 | `okf.concept_id.derive_concept_id` / `dedup_concept_ids` (`concept_id.py:72, 103`) | uses | ids for new nodes |
@@ -328,12 +376,16 @@ class KeyItem(BaseModel):
     page: Optional[int] = None
     ordinal: int = 0
 
-class OptimizerStamp(BaseModel):
+class PassStamp(BaseModel):
     version: str                        # OPTIMIZER_VERSION
-    input: str                          # sha256[:16] of (doc_id, revision, owned, title, [(child.title, child.span)])
+    input: str                          # sha256[:16] of all inputs consumed by this pass
     settings: str                       # OptimizerSettings.settings_hash()
+    execution: str                      # digest of mode, prompt version, provider/client type and effective model
     at: str                             # UTC ISO-8601
-    summary: Literal["inline", "llm", "composed", "kept", "none"] = "none"
+
+class OptimizerStamp(BaseModel):
+    passes: dict[Literal["headings", "key_items", "summary"], PassStamp]
+    summary: Literal["inline", "llm", "composed", "none"] = "none"  # provenance, never rewritten to "kept"
 
 class MergeAction(BaseModel):
     absorbed_concept_id: Optional[str]; absorbed_title: str; into_concept_id: Optional[str]; into_title: str
@@ -409,6 +461,7 @@ await bookstore.optimize_book("clean-code", apply=True)
 
   class OptimizerSettings(BaseModel): ...                        # §2 Data Models
   class KeyItem(BaseModel): ...
+  class PassStamp(BaseModel): ...
   class OptimizerStamp(BaseModel): ...
   class MergeAction(BaseModel): ...
   class ExpandAction(BaseModel): ...
@@ -418,8 +471,10 @@ await bookstore.optimize_book("clean-code", apply=True)
       """A candidate tree (deep copy of the input) plus the report and the per-node LLM cache."""
       candidate: dict[str, Any]
       report: OptimizeReport
-      touched: set[int]                                          # id(node) of nodes whose body must be re-staged
-      llm_cache: dict[str, Any]                                  # stamp input → accepted LLM results (reused on retry)
+      mutable: set[int]                                          # id(node) in this candidate, in scope and effectively unlocked
+      touched: set[int]                                          # subset of mutable needing body staging; recomputed on retry
+      pending_stamps: dict[int, dict[str, PassStamp]]             # successful pass records; finalize only after validation
+      llm_cache: dict[str, Any]                                  # full per-pass cache key → accepted successful output
 
   def owned_tokens(node: dict, revision: DocumentRevision) -> int:
       """Sum of ``segments[seq].tokens`` over the node's owned ranges."""
@@ -429,7 +484,8 @@ await bookstore.optimize_book("clean-code", apply=True)
 
   def optimizable_roots(tree: dict, revisions: Revisions, *, node_id: Optional[str] = None) -> list[dict]:
       """Imported subtree roots in scope: carry ``doc_id``/``revision`` present in ``revisions`` and are not locked;
-      with ``node_id`` only that subtree (KeyError when absent). Locked descendants are excluded by the passes."""
+      with ``node_id`` only that subtree (KeyError when absent). Check ancestors above the selection for effective
+      locks. Locked descendants are excluded by all passes, body staging and stamp finalization."""
 
   def repair_ownership(doc_nodes: list[dict], revision: DocumentRevision, report: OptimizeReport) -> list[str]:
       """Re-own every unowned ``[a, b)`` to the deepest in-scope ancestor whose span covers it; count ``repaired_gaps``.
@@ -465,35 +521,48 @@ await bookstore.optimize_book("clean-code", apply=True)
   def stamp_input(node: dict) -> str:
       """sha256[:16] of json (doc_id, revision, owned, title, [(child.title, child.span)])."""
 
-  def is_stamped(node: dict, settings: OptimizerSettings) -> bool:
-      """Stamp present, same version, same settings hash and same input hash."""
+  def pass_input(node: dict, pass_name: str) -> str:
+      """Hash structural input plus every consumed dependency; summary includes own key_items and ordered
+      child titles, summaries, key_items and spans. Called after prerequisite passes finish."""
 
-  def write_stamp(node: dict, settings: OptimizerSettings, *, summary: str) -> None: ...
+  def pass_cache_key(pass_name: str, input_hash: str, execution: str, settings: OptimizerSettings) -> str:
+      """Hash pass name, OPTIMIZER_VERSION, settings hash, input hash and execution digest."""
+
+  def is_stamped(node: dict, settings: OptimizerSettings, *, pass_name: str,
+                 input_hash: str, execution: str) -> bool:
+      """Matching completed record for this pass only; missing or legacy blanket stamps are cache misses."""
+
+  def finalize_stamps(plan: OptimizePlan) -> None:
+      """After successful candidate validation, persist successful pending pass records for mutable nodes only.
+      Discard records invalidated by later structural changes; preserve matching records and timestamps."""
 
   def plan_deterministic(tree: dict, revisions: Revisions, settings: OptimizerSettings, *,
                          tree_name: str, node_id: Optional[str] = None) -> OptimizePlan:
-      """Deep-copy ``tree``; run scope → repair → normalize → ownership → expand → stamp; fill the report counters."""
+      """Deep-copy ``tree``; run scope → repair → normalize → ownership → expand; fill counters and mutable/touched
+      sets. Preserve prior stamps for per-pass checks; never write completion records in this phase."""
 
   def validate_candidate(plan: OptimizePlan, revisions: Revisions, *, base_tree: dict) -> list[str]:
       """Per document: ``validate_ownership`` over every node of that doc; key_item anchors inside owned ranges;
-      locked and out-of-scope nodes unchanged except ``node_id``. Non-empty ⇒ reject."""
+      effectively locked and out-of-scope nodes unchanged except ``node_id``, including bodies/body_ref.
+      Run before stamp finalization and again after staging/finalization; non-empty ⇒ abort without publish."""
 
   def leaves_over_target(nodes: list[dict], revisions: Revisions, settings: OptimizerSettings) -> int: ...
   ```
 
 ### Module 2: LLM passes
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/pageindex/optimizer_llm.py` (new)
-- **Responsibility**: heading proposals, `key_items`, bottom-up summaries; framed prompts;
+- **Responsibility**: heading proposals, `key_items`, bottom-up summaries and document descriptions; framed prompts;
   acceptance rules; the live-adapter gate.
 - **Depends on**: M1, `framing.py`, `builder._limited_gather`, `PageIndexLLMAdapter.ask_structured`.
 - **Interface Skeleton**:
   ```python
   # knowledge/pageindex/optimizer_llm.py (new)
-  from parrot.knowledge.pageindex.framing import DATA_FRAMING_INSTRUCTION, frame_segments   # verified: framing.py:10,33
+  from parrot.knowledge.pageindex.framing import DATA_FRAMING_INSTRUCTION, frame_segments, frame_text  # verified: framing.py:10,33,39
   from parrot.knowledge.pageindex.builder import _LLM_SEMAPHORE, _limited_gather             # verified: builder.py:75,80
   from parrot.knowledge.pageindex.segments import SegmentAddress, SegmentRead                # verified: segments.py:71,97
   from parrot.knowledge.pageindex.optimizer import (KeyItem, OptimizePlan, OptimizerSettings, Revisions,
-                                                    is_stamped, owned_tokens, split_at, write_stamp)
+                                                    is_stamped, pass_input, pass_cache_key, owned_tokens, split_at)
+  from parrot.knowledge.pageindex.utils import create_clean_structure_for_description
 
   class HeadingProposals(BaseModel):
       """Structured output: ``seqs`` of segments the model takes for printed sub-headings."""
@@ -510,6 +579,10 @@ await bookstore.optimize_book("clean-code", apply=True)
 
   def adapter_is_live(adapter: Any) -> bool:
       """True only for an adapter with a client (Bookstore's ``_NullAdapter`` has ``client = None``)."""  # verified: library.py:167
+
+  def execution_digest(adapter: Optional[Any], *, mode: str, prompt_version: str) -> str:
+      """Digest deterministic/live mode and prompt version; live includes provider/client type and effective model,
+      never credentials or object identity. Inline summary mode remains deterministic with a live adapter."""
 
   def reads_for(node: dict, revision: DocumentRevision) -> list[SegmentRead]:
       """One full ``SegmentRead`` per owned segment, so ``frame_segments`` labels each with its address."""
@@ -536,10 +609,18 @@ await bookstore.optimize_book("clean-code", apply=True)
                            settings: OptimizerSettings) -> tuple[str, str]:
       """``composed`` from child summaries + own segments + key_items; deterministic fallback without a live adapter."""
 
+  async def describe_document(structure: Any, adapter: Any) -> str:
+      """With a live adapter only: serialize create_clean_structure_for_description(structure), wrap the entire
+      payload with frame_text(source=\"document structure\"), and call ask with DATA_FRAMING_INSTRUCTION.
+      Keep all instructions outside the frame; do not call builder.generate_doc_description."""
+
   async def run_llm_passes(plan: OptimizePlan, revisions: Revisions, adapter: Optional[Any],
                            settings: OptimizerSettings, *, with_summaries: bool = True) -> None:
-      """Headings → key_items → summaries (deepest first, ``_limited_gather``); skips stamped nodes; reuses
-      ``plan.llm_cache``; counts ``llm_calls_made`` and ``rejected_proposals``; sets ``report.llm_passes``."""
+      """Headings → key_items → summaries (deepest first, ``_limited_gather``); skip only matching completed passes.
+      Run deterministic summary fallbacks without a live adapter. with_summaries=False leaves summaries pending.
+      Reuse full-key plan.llm_cache entries, revalidate anchors, collect successful pending stamps; never stamp
+      failed/unavailable/unrequested passes. Re-evaluate work invalidated by same-run structural changes.
+      Count llm_calls_made/rejected_proposals and set report.llm_passes; toolkit validates and finalizes stamps."""
   ```
 
 ### Module 3: Schema, indexing and OKF aliases
@@ -593,8 +674,9 @@ await bookstore.optimize_book("clean-code", apply=True)
 
       async def _optimize_import(self, txn: WriteTransaction, revision: DocumentRevision, roots: list[dict],
                                  *, with_summaries: bool) -> OptimizeReport:
-          """Deterministic passes + LLM passes (live adapter only) on the just-imported subtree; re-stage bodies of touched
-          nodes; called right after ``_stage_document`` in import_pdf / insert_markdown / insert_ebook."""  # verified: toolkit.py:1706,1763,1906
+          """Plan and run requested passes on the just-imported subtree; live calls only with a live adapter.
+          Stage only mutable touched nodes, validate, finalize successful stamps, then validate the final candidate.
+          Any validation failure aborts the enclosing import transaction. Called after _stage_document."""
 
       async def optimize(self, tree_name: str, node_id: Optional[str] = None, apply: bool = False,
                          llm_passes: bool = True, target_leaf_tokens: Optional[int] = None,
@@ -602,7 +684,9 @@ await bookstore.optimize_book("clean-code", apply=True)
           """Plan (dry run by default) or plan-and-publish the optimization of a tree or subtree.
 
           The result is quoted document data, not instructions. Returns the ``OptimizeReport`` as a dict; with
-          ``apply=True`` and no ``errors`` a new generation is published and ``generation_after`` is set.
+          ``apply=True`` publishes only when the final candidate differs; an identical standalone transaction uses
+          txn.noop and generation_after equals generation_before. Preserve protected bodies and references during
+          staging; validate again after staging/stamp finalization. Validation errors abort without publication.
           Raises KeyError for an unknown tree or node."""
 
       async def update_node(self, tree_name, node_id, title=None, summary=None,
@@ -611,7 +695,7 @@ await bookstore.optimize_book("clean-code", apply=True)
       # update_node_content (verified: toolkit.py:2209-2213): when node.get("doc_id") → node["locked"] = True,
       #   node["locked_reason"] = "body_edited"
       # import_pdf (verified: toolkit.py:1856-1861): "if_add_node_summary": "yes" only when with_summaries and NOT
-      #   optimize_on_import; description generated after _optimize_import when with_doc_description and a live adapter
+      #   optimize_on_import; describe_document runs after _optimize_import when with_doc_description and a live adapter
       # insert_markdown (verified: toolkit.py:1673-1677): options={"if_add_node_summary": "no"} when optimize_on_import
 
   # __init__.py (modifies :69): export "OptimizerSettings", "OptimizeReport"
@@ -687,19 +771,27 @@ await bookstore.optimize_book("clean-code", apply=True)
 | `test_normalize_duplicates_empty_and_tiny` | M1 | identical spans collapse; empty leaves go; under-minimum contiguous leaves merge with alias + literal key_item; non-contiguous ones stay |
 | `test_assign_ownership_residuals` | M1 | leading, interstitial and trailing parent text stays owned by the parent; `render_body` shows gap markers |
 | `test_expand_at_headings_and_cost_model` | M1 | shallowest level first; `should_expand` refuses pieces under the floor and splits whose cost beats scanning |
-| `test_stamp_idempotence` | M1 | second `plan_deterministic` on a stamped candidate reports zero actions; a settings change invalidates stamps |
+| `test_stamp_idempotence` | M1 | deterministic planning writes no completion stamps; per-pass matching includes version/settings/input/execution; finalization preserves matching records and timestamps; legacy blanket stamps miss |
+| `test_stamp_summary_dependencies` | M1 | changing child summary or own/child key_items invalidates parent summary input even when titles/spans/owned ranges stay identical |
 | `test_validate_candidate` | M1 | partition check per document, key_item anchors, locked and out-of-scope nodes unchanged |
 | `test_heading_like_and_proposals` | M2 | acceptance rule; proposals outside owned ranges or table/code/caption segments are rejected and counted |
 | `test_key_items_literal_check` | M2 | literal labels must occur in their anchor; abstractive need a valid anchor; cap |
 | `test_summaries_inline_llm_composed` | M2 | inline for short leaves (no call), word cap for LLM leaves, parents composed; deterministic fallback with `_NullAdapter` |
 | `test_adapter_is_live` | M2 | `_NullAdapter`-shaped objects are not live |
+| `test_first_run_executes_before_stamping` | M2 | fresh unstamped candidates actually call heading/key-item/summary passes where eligible; successful empty proposals complete, failures/unavailable passes do not; stamps finalize only after validation |
+| `test_stamp_capability_upgrade` | M2 | same settings: no-model run followed by live-model run performs pending model work and replaces deterministic large-leaf/parent summaries; unchanged third run makes zero calls; changed provider/model invalidates live records |
+| `test_summaries_deferred_then_requested` | M2 | with_summaries=False creates no summary completion record; later with_summaries=True computes summaries; inline summaries remain deterministic |
+| `test_retry_cache_dependencies` | M2 | unchanged full pass keys reuse outputs; changed execution context or child summary misses the corresponding cache entry; cached anchors are revalidated after retry |
+| `test_framed_document_description` | M2 | capture the actual description adapter call: every title/summary is inside frame_text, embedded closing tags are neutralized, instructions outside, system prompt exact; legacy description helper is not called |
 | `test_prompts_are_framed` | M2 | every prompt contains `<document_text` and the system prompt is `DATA_FRAMING_INSTRUCTION` |
 | `test_schema_fields_roundtrip` | M3 | new optional fields serialize and old trees validate |
 | `test_bm25_and_embedding_see_key_items` | M3 | labels in `_flatten_corpus` text and in search results; `content_key` unchanged without `extra` |
 | `test_okf_alias_resolution` | M3 | `get_concept`/`cite` resolve an alias to the absorber |
 | `test_optimize_dry_run_and_apply` | M4 | dry run publishes nothing; apply publishes one generation, bodies re-rendered, `node_id`s renumbered, concept ids deduped |
 | `test_optimize_on_import_paths` | M4 | pdf (fake builder with `_segments`), markdown and ebook imports stage optimized subtrees; `optimize_on_import=False` is byte-identical to today |
-| `test_locked_semantics` | M4 | `update_node_content` on a segment-backed node locks it; `update_node(locked=)`; locked subtrees untouched by optimize |
+| `test_locked_semantics` | M4 | body edit locks node; optimize a sibling in the same document and then the full tree: edited bytes/body_ref and locked descendants stay identical; selection beneath a locked ancestor is excluded |
+| `test_final_staging_validation` | M4 | inject a protected body_ref change during staging or stamp finalization: final validation rejects and no generation publishes; set_body/drop_body never called on protected nodes |
+| `test_same_document_subtree_staging` | M4 | optimize one subtree while another subtree of the same document is out of scope: its bodies, body_ref and stamps are byte-identical; complete-document ownership still validates |
 | `test_optimize_stale_retry` | M4 | a publish between planning and apply is re-planned; LLM cache reused (call count) |
 | `test_optimize_rejects_bad_candidate` | M4 | an injected overlap yields `errors` and no new generation |
 | `test_optimize_without_model` | M4 | `pageindex_optimize` listed without `llm`; `llm_passes: "skipped (no model)"` |
@@ -709,7 +801,9 @@ await bookstore.optimize_book("clean-code", apply=True)
 ### Integration Tests
 | Test | Description |
 |---|---|
-| `test_optimizer_integration.py::test_import_then_optimize_is_noop` | real arxiv fixture, fake live adapter: import (layout structure) → `optimize(apply=True)` publishes nothing new beyond stamps; a second run reports zero actions |
+| `test_optimizer_integration.py::test_import_then_optimize_is_noop` | real arxiv fixture, fake live adapter: import executes eligible passes and finalizes stamps; identical `optimize(apply=True)` publishes nothing, preserves timestamps/body_ref and reports zero actions/calls |
+| `test_optimizer_integration.py::test_deferred_summaries_and_parent_refresh` | import without summaries, then explicitly optimize with live adapter; summaries are produced. Edit one child summary and optimize the full tree: its parent is recomposed while unrelated completed passes remain cached |
+| `test_optimizer_integration.py::test_import_description_is_framed` | optimized PDF import with_doc_description=True captures the actual description call and verifies framed payload/system prompt; with no model it makes no description call; opt-out import retains legacy behavior |
 | `test_optimizer_integration.py::test_subtree_optimize_preserves_outside_ownership` | two documents in one tree; optimizing one leaves the other's owned ranges and bodies byte-identical while its `node_id`s renumber |
 | `test_optimizer_integration.py::test_citations_survive_optimize` | a citation validated before optimize (FEAT-843 validator) still validates after, same revision |
 | `test_optimizer_integration.py::test_two_processes_optimize_and_edit` | mp pattern of `test_segment_integration.py`: an edit between planning and publish is not overwritten (stale → re-plan) |
@@ -769,12 +863,12 @@ markers: none
 - [ ] AC-4 (G2) No pass creates a node whose title is not a heading segment or an accepted heading-like printed line; concepts become `key_items` with `kind` and a valid anchor; a `literal` label occurs in its anchor text.
 - [ ] AC-5 (G4) After `optimize(apply=True)` and after every optimized import, `validate_ownership` over each affected document returns no problems; a candidate that fails validation publishes nothing and reports `errors`.
 - [ ] AC-6 (G5) No edit operation (`add_node`, `delete_node`, `update_node`, `update_node_content`, `tag_node`, `rename_tree`) calls the optimizer; `import_pdf`, `insert_markdown`, `insert_ebook` do when `optimize_on_import` is true; `optimize()` defaults to a dry run that opens no transaction.
-- [ ] AC-7 (G6) A second `optimize(apply=True)` with the same inputs and settings publishes no new generation and reports zero merges, expansions, key_items and summaries (stamps).
-- [ ] AC-8 (G7) Nodes without `doc_id`, nodes flagged `locked` and their descendants are never modified; a subtree optimize leaves every node outside the subtree unchanged except `node_id`; `update_node_content` on a segment-backed node sets `locked`/`locked_reason`.
+- [ ] AC-7 (G6) First-run eligible passes execute before completion stamps are finalized. A second `optimize(apply=True)` with the same inputs, settings and execution context publishes no new generation, makes no LLM calls and reports zero merges, expansions, key_items and summaries; matching stamp timestamps and body references are unchanged. Unavailable/failed/unrequested passes are not marked complete. Later model availability or summary enablement runs deferred work; child-summary/key-item changes invalidate dependent parent summaries and retry-cache entries.
+- [ ] AC-8 (G7) Nodes without `doc_id`, nodes flagged `locked` and their descendants are never modified; ancestor locks above a selected subtree also apply. A subtree optimize leaves every node outside it unchanged except `node_id`, including same-document bodies, body_ref and stamps. `update_node_content` on a segment-backed node sets `locked`/`locked_reason`. Body staging excludes protected nodes and final validation after staging/stamp finalization rejects any violation without publication.
 - [ ] AC-9 (G8) Summaries: a leaf at or below `inline_summary_tokens` makes no LLM call; parents are composed after their children; no summary exceeds `summary_max_words` by more than 20 %; with a `_NullAdapter` or no adapter the deterministic summaries are used and no call is made.
 - [ ] AC-10 (G9) `key_items` labels appear in the BM25 corpus text, in the embedded text and cache key (unchanged key when absent), in search results and in `outline`.
 - [ ] AC-11 (G10) A `concept_id` removed by a merge resolves through `OKFToolkit.get_concept` and `cite` to the absorbing node, whose `key_items` include the merged title as `literal`.
-- [ ] AC-12 (G11) Every optimizer/summary prompt wraps document text in `<document_text …>` with `DATA_FRAMING_INSTRUCTION` as system prompt; a proposal naming a segment outside what the model was shown is rejected.
+- [ ] AC-12 (G11) Every optimizer/summary prompt, including the document description on optimized imports, wraps document-derived content in `<document_text …>` with `DATA_FRAMING_INSTRUCTION` as system prompt; instructions stay outside the frame and embedded closing tags are neutralized by the framing helpers. The optimized description path never calls the legacy unframed helper; a proposal naming a segment outside what the model was shown is rejected, including cached proposals after a retry.
 - [ ] AC-13 (G12) `bookstore add` of a PDF yields an optimized tree and a card TOC derived from it; `bookstore optimize <id> --apply` republishes and rewrites `toc`, `toc_digest`, `chapter_count`, `page_count`; without `--apply` the card and tree are unchanged.
 - [ ] AC-14 `pageindex_optimize` is served by `parrot mcp-local pageindex` without `llm:` (not in `llm_dependent_tools`), and the report then says `llm_passes: "skipped (no model)"`.
 - [ ] AC-15 A citation validated before `optimize(apply=True)` validates after it (same `doc_id`/`revision`); `optimize` never writes a revision file.
@@ -803,7 +897,7 @@ from parrot.knowledge.pageindex.generation import (                    # generat
 )
 from parrot.knowledge.pageindex.framing import DATA_FRAMING_INSTRUCTION, frame_segments, frame_text  # framing.py:10, :33, :39
 from parrot.knowledge.pageindex.builder import (                       # builder.py
-    _LLM_SEMAPHORE, _limited_gather, generate_doc_description, build_page_index,  # :75, :80, :1553, :1571
+    _LLM_SEMAPHORE, _limited_gather, build_page_index,  # :75, :80, :1571; legacy description helper not used here
 )
 from parrot.knowledge.pageindex.layout_structure import MAX_HEADING_WORDS, heading_title, StructureReport  # :23, :61, :38
 from parrot.knowledge.pageindex.layout import StructureSource          # layout.py:24
@@ -894,7 +988,7 @@ _LLM_SEMAPHORE: ContextVar[Optional[asyncio.Semaphore]]                         
 async def _limited_gather(coros, *, return_exceptions=False) -> list                     # :80 (plain gather when the var is unset)
 async def generate_node_summary(node, adapter) -> str                                    # :1522 (unframed; legacy)
 async def generate_summaries_for_structure(structure, adapter)                           # :1536
-async def generate_doc_description(structure, adapter) -> str                            # :1553
+async def generate_doc_description(structure, adapter) -> str                            # :1553; unframed legacy path only
 async def build_page_index(doc, adapter=None, options=None, light_adapter=None, llm_concurrency=16) -> dict  # :1571
     # sets _LLM_SEMAPHORE :1603; summaries + description only inside `elif opt.if_add_node_summary == "yes"` :1639-1647
     # returns {doc_name, structure, structure_source, structure_report, _node_markdown, _pages, _segments[, doc_description]}
@@ -972,7 +1066,7 @@ def derive_toc(tree, max_depth=2) -> tuple[list[TocEntry], str]                 
 | prompts | `frame_segments` + `DATA_FRAMING_INSTRUCTION` | user prompt / system prompt | `framing.py:33, 10` |
 | structured outputs | `PageIndexLLMAdapter.ask_structured` | `output_type=` pydantic | `llm_adapter.py:99` |
 | import summaries off | `build_page_index` options | `"if_add_node_summary": "no"` | `toolkit.py:1856-1861`; `builder.py:1639` |
-| description after summaries | `generate_doc_description` + `create_clean_structure_for_description` | toolkit call | `builder.py:1553`; `utils.py:713` |
+| description after summaries | new `optimizer_llm.describe_document` + `create_clean_structure_for_description` + `frame_text` | toolkit optimized-import call; legacy helper bypassed | `utils.py:709`; `framing.py:39`; legacy `builder.py:1553-1566` |
 | markdown summaries off | `md_to_tree(options=…)` | `{"if_add_node_summary": "no"}` | `toolkit.py:1673`; `md_builder.py:277-310` |
 | new node ids | `derive_concept_id` + `dedup_concept_ids` | per sibling list before publish | `concept_id.py:72, 103` |
 | BM25 text | `_flatten_corpus` | labels joined into the text | `hybrid_search.py:179` |
@@ -984,7 +1078,8 @@ def derive_toc(tree, max_depth=2) -> tuple[list[TocEntry], str]                 
 ### Does NOT Exist (Anti-Hallucination)
 Checked with `grep -rn` over `knowledge/pageindex/` and `knowledge/bookstore/` at `09d3377826`:
 - ~~`optimizer.py`, `optimizer_llm.py`, `optimizer_eval.py`, `knowledge/pageindex/cli.py`~~ — created by this spec
-- ~~`OptimizerSettings`, `OptimizeReport`, `OptimizerStamp`, `KeyItem`, `OptimizePlan`~~ — new here
+- ~~`OptimizerSettings`, `OptimizeReport`, `PassStamp`, `OptimizerStamp`, `KeyItem`, `OptimizePlan`~~ — new here
+- ~~`optimizer_llm.describe_document`~~ — new framed helper here; existing `builder.generate_doc_description` remains unframed and is not reused
 - ~~any writer of `key_items`~~ — only `_outline_on` reads it (`toolkit.py:941`)
 - ~~`locked`, `locked_reason`, `aliases`, `optimizer` node fields~~ — nothing reads or writes them
 - ~~`PageIndexToolkit.optimize`, `_optimize_import`, `_revisions_for`~~; ~~`Bookstore.optimize_book`~~; ~~`bookstore optimize`~~; ~~`parrot pageindex`~~
@@ -1051,8 +1146,19 @@ Verified against: `09d3377826`
 - **Ownership helpers from FEAT-840**: `_subtract` for residual ranges, `render_body` for
   bodies, `validate_ownership` for the gate; do not reimplement them.
 - **Transactions**: the apply closure must be re-runnable (it is retried on
-  `StaleGenerationError`); keep LLM results in `plan.llm_cache` keyed by `stamp_input` so a
-  retry re-plans deterministically and reuses accepted proposals and summaries.
+  `StaleGenerationError`); use the complete per-pass cache key from §2, including execution
+  context and consumed dependencies, and revalidate cached anchors on retry. Recompute
+  candidate-local mutable/touched sets; never carry object identities between candidates.
+  Stage mutable touched nodes only, validate, finalize successful stamps, validate again,
+  then publish if changed. Validation errors abort the transaction; an unchanged standalone
+  apply sets `txn.noop`. Joined mutators must not suppress the owning import's publication.
+- **Completion stamps**: deterministic planning never stamps work as complete. Record only
+  successful requested passes after validation, preserving matching timestamps. No-model
+  heading/key-item passes stay pending; deterministic summary provenance cannot satisfy a
+  later live summary request. Recompute parent input hashes after child summaries finish.
+- **Descriptions**: use `optimizer_llm.describe_document` with `frame_text` and
+  `DATA_FRAMING_INSTRUCTION` for optimized imports; leave the legacy builder helper and
+  opt-out path unchanged. Use a fixed framing source label, not a document-controlled attribute.
 - **Concept ids for new nodes**: `derive_concept_id(title, parent_concept_id)` for each new
   sibling list, then `dedup_concept_ids(siblings)`; never leave it to `ensure_concept_ids`
   at publish (no dedup there).
@@ -1071,8 +1177,8 @@ Verified against: `09d3377826`
   segmentation (`md_builder.py:304`), so those words never reach a revision; the merge rule
   cannot keep what was never imported. Left as is (§1 Non-Goals, §8).
 - **LLM proposals cost on retry.** A concurrent publish between planning and `publish`
-  re-plans inside `_mutate`; the cache avoids repeating calls for nodes whose stamp input is
-  unchanged, but a retry after a structural edit to the same subtree repeats them.
+  re-plans inside `_mutate`; only complete matching pass keys permit reuse. A structural edit,
+  changed child summary or execution context repeats the affected calls.
 - **Locked-by-edit nodes stop being views.** After `update_node_content` on a segment-backed
   node the body is the edited text, the owned ranges still describe the source; `optimize`
   skips it, `read_segments` still reads the revision. Documented in §10.
@@ -1141,7 +1247,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:dd991e434103e5c1d01951e13cd31cc464778cda672bcdae2b4fdd6ca4cd3aa6 evaluation_digest=sha256:253075e6a5af29d926be47ef640d5f0a78de222864eba3f6bec8988f9f720d42 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:71412444245eb880da6bc9bdd9141c175d22a30a135f2ea7d61f2086c7d4c3d6 evaluation_digest=sha256:0f73707705db5a3f2c0d6f633dc690b81d1bb0182ff3db30ae40af77874f8205 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -1189,7 +1295,7 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:253075e6a5af29d926be47ef640d5f0a78de222864eba3f6bec8988f9f720d42",
+  "evaluation_digest": "sha256:0f73707705db5a3f2c0d6f633dc690b81d1bb0182ff3db30ae40af77874f8205",
   "exit_code": 0,
   "findings": [
     {
@@ -1277,7 +1383,7 @@ Coverage:
       "waived_by": null
     }
   ],
-  "input_digest": "sha256:dd991e434103e5c1d01951e13cd31cc464778cda672bcdae2b4fdd6ca4cd3aa6",
+  "input_digest": "sha256:71412444245eb880da6bc9bdd9141c175d22a30a135f2ea7d61f2086c7d4c3d6",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -1293,7 +1399,7 @@ Coverage:
       "adr:doc:e7c5ae770b06db3b35cdd4cba93001a58bfa7bef": "394f4656c71618a256427d81350fdc32335fa791"
     },
     "rules_version": 1,
-    "structural_revision": "sha256:6372831876a0232ff90a38927c17625c53fbc40f7e85180bba36ff2202c8259a",
+    "structural_revision": "sha256:cfc45addd689bbe708007ca56d165f966aca717f10de6ca93185c4a459a06b29",
     "taxonomy_digest": "65548b9a71329b13ab44f4904dff99814e1aac0da4bb2b58171a7201e3a9ba39"
   },
   "status": "pass"
@@ -1343,6 +1449,39 @@ Open:
 | # | Suggestion (kind) | Disposition | Reason | Landed in |
 |---|---|---|---|---|
 
+### Specification review resolutions (2026-11-08)
+
+The four design findings below are resolved in this draft; implementation acceptance
+criteria remain unchecked. Existing source contracts were rechecked in the working tree
+at HEAD `c9e2b3e92ed390c276dbd589d87601b5264a1f8f`: `generation.set_body` and `drop_body`
+do not enforce optimizer locks; `toolkit._write` honors standalone `txn.noop`;
+`builder.generate_doc_description` is unframed; `framing.frame_text` neutralizes framing tags.
+This supplements, rather than replaces, the original §6 base-commit verification.
+
+| Ledger finding | Resolution | Required regression evidence |
+|---|---|---|
+| `issue:799850fae51a` — premature completion stamps | M1 prepares inputs; M2 records successful per-pass work; toolkit validates before finalizing; matching timestamps remain unchanged | `test_first_run_executes_before_stamping`, `test_stamp_idempotence`, import/no-op integration; AC-7 |
+| `issue:e0f615b28773` — protected bodies re-rendered | Mutable in-scope staging only, effective ancestor locks, complete-document ownership check and final protected-node/body_ref validation | `test_locked_semantics`, `test_same_document_subtree_staging`, `test_final_staging_validation`; AC-8 |
+| `issue:0365d1296ae9` — incomplete stamp/cache dependencies | Completed passes identify execution context and consumed dependencies; missing model/disabled summaries leave work pending; parent summaries hash child outputs | `test_stamp_capability_upgrade`, `test_summaries_deferred_then_requested`, `test_stamp_summary_dependencies`, `test_retry_cache_dependencies`; AC-7 |
+| `issue:8fa23e962b2d` — unframed description call | New optimizer-owned framed helper; legacy helper preserved only for opt-out/bypass callers | `test_framed_document_description`, optimized import description integration; AC-12 and AC-16 |
+
+A fresh read-only reviewer checked the revised diff for consistency across these four fixes,
+their interfaces, tests and acceptance criteria: no additional contradictions found within
+that scope. This is design evidence, not runtime validation or approval of the full feature.
+The earlier interrupted cross-check produced no evidence and is not counted as a pass.
+
+Specification validation: path check, Validation Contract parsing/cache round-trip,
+document consistency checks and `git diff --check` passed. The connected wiki decision
+audit returned `status: pass`, complete coverage and `check: current` after its generated
+sections were refreshed. The shell audit stalled on a local wiki-store read; the connected
+service supplied the audit evidence instead. Logs are under
+`artifacts/logs/pageindex_optimizer_spec_*` (local artifacts, not implementation test results).
+
+The audit's four non-blocking overlap advisories do not require supersession: setting a
+body-edit lock does not execute the optimizer; printed-heading and generation-publication
+rules constrain an explicitly/import-triggered run without introducing an edit trigger.
+These decisions are complementary. No waiver or decision-plane approval is claimed.
+
 ---
 
 ## 10. Documentation
@@ -1352,8 +1491,9 @@ Policy: `required`. Pages this feature delivers (frontmatter `docs.pages`):
 - `wiki/knowledge/pageindex-tree-optimizer.md` (new): what the optimizer does and does not
   do; the passes in order; `OptimizerSettings` with the provisional defaults and how to
   override them (`optimizer_settings`, `optimize(target_leaf_tokens=…)`, CLI flags);
-  `key_items` (`literal`/`abstractive`, anchors, where they are indexed); stamps and
-  idempotence; `locked`/`locked_reason` and the body-edit rule; `aliases`; the report fields;
+  `key_items` (`literal`/`abstractive`, anchors, where they are indexed); per-pass completion
+  stamps, deferred work, dependency invalidation and idempotence; effective ancestor locks,
+  scoped body staging and the body-edit rule; framed optimized-import descriptions; `aliases`; the report fields;
   `optimize_on_import`; `parrot pageindex optimize` and `bookstore optimize`; the
   `optimizer_eval` harness and the tuning follow-up; what legacy trees get.
 - `wiki/knowledge/pageindex.md`: Configuration Options gains `optimize_on_import` /
@@ -1371,7 +1511,7 @@ Policy: `required`. Pages this feature delivers (frontmatter `docs.pages`):
 - **Isolation**: one feature worktree for the spec (`feat-FEAT-846-pageindex-tree-optimizer`,
   from `origin/dev`); the `sdd-coder` engine gives each task its own sub-worktree inside it.
 - **Module dependency graph**:
-  - M2 → M1 (imports `OptimizePlan`, `KeyItem`, `split_at`, `write_stamp`, `is_stamped`).
+  - M2 → M1 (imports `OptimizePlan`, `KeyItem`, `split_at`, `pass_input`, `pass_cache_key`, `is_stamped`).
   - M3 has no edge to M1/M2 (reads dict fields only); it can run concurrently with them.
   - M4 → M1, M2, M3 (calls the planner and the passes; relies on the schema fields and the
     live-adapter gate).

@@ -32,16 +32,16 @@ class SegmentStore:
 
     def segments_dir(self, tree_name: str) -> Path:
         """Return ``<storage_dir>/<tree_name>/segments``; ValueError on a bad name."""
-        if not isinstance(tree_name, str) or not _TREE_NAME_RE.match(tree_name):
+        if not isinstance(tree_name, str) or not _TREE_NAME_RE.fullmatch(tree_name):
             raise ValueError(f"Invalid tree_name {tree_name!r}")
         return self._dir / tree_name / "segments"
 
     def revision_path(self, tree_name: str, doc_id: str, revision: str) -> Path:
         """Path of one revision file; ValueError on a malformed doc_id or revision."""
         directory = self.segments_dir(tree_name)
-        if not isinstance(doc_id, str) or not _DOC_ID_RE.match(doc_id):
+        if not isinstance(doc_id, str) or not _DOC_ID_RE.fullmatch(doc_id):
             raise ValueError(f"Invalid doc_id {doc_id!r}")
-        if not isinstance(revision, str) or not _REVISION_RE.match(revision):
+        if not isinstance(revision, str) or not _REVISION_RE.fullmatch(revision):
             raise ValueError(f"Invalid revision {revision!r}")
         return directory / f"{doc_id}.{revision}.json"
 
@@ -90,15 +90,18 @@ class SegmentStore:
             if not entry.is_file() or entry.suffix != ".json":
                 continue
             doc_id, _, revision = entry.stem.rpartition(".")
-            if _DOC_ID_RE.match(doc_id) and _REVISION_RE.match(revision):
+            if _DOC_ID_RE.fullmatch(doc_id) and _REVISION_RE.fullmatch(revision):
                 pairs.append((doc_id, revision))
         return sorted(pairs)
 
     @staticmethod
     def live_revisions(tree: dict[str, Any]) -> set[tuple[str, str]]:
         """Every ``(doc_id, revision)`` named by a node of ``tree``."""
-        return {(n["doc_id"], n["revision"]) for n in structure_to_list(tree.get("structure", []))
-                if isinstance(n.get("doc_id"), str) and isinstance(n.get("revision"), str)}
+        return {
+            (n["doc_id"], n["revision"])
+            for n in structure_to_list(tree.get("structure", []))
+            if isinstance(n.get("doc_id"), str) and isinstance(n.get("revision"), str)
+        }
 
     def mark_superseded(self, tree_name: str, pairs: Iterable[tuple[str, str]]) -> int:
         """Restart the grace clock (``os.utime``) of revisions a new generation stopped referencing."""
