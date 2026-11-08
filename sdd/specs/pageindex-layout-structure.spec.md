@@ -17,7 +17,7 @@ docs:
 **Feature ID**: FEAT-845
 **Date**: 2026-11-08
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 2.2.0
 
 > Third of the six slices of `sdd/proposals/pageindex-tree-optimizer.brainstorm.md`
@@ -116,6 +116,9 @@ physical pages, verify every title (`check_title_appearance_in_start_concurrent`
 
 ## Governing Decisions
 
+The audit snapshot below predates revision 0.2. It is historical evidence, not validation of
+the revised contracts; rerun the decision audit before approving this draft.
+
 <!-- decision-audit: input_digest=sha256:767e670b173c673e4075420c4c20d89360e31b09a989658fa8940f0b0727d87e evaluation_digest=sha256:24f3c9ab72285f4d42e3d2f1a6b9eb1968d6918f6ed05b5d9c177b0a674ebeb6 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
@@ -144,9 +147,13 @@ physical pages, verify every title (`check_title_appearance_in_start_concurrent`
    `structure_source` stamped on every node, and a single return dict that adds
    `structure_source`, `structure_report` and `_segments` to the existing keys.
 
-If step 2 or 3 fails (`ValueError`, `ImportError`, `FileNotFoundError`, logged), the build
-continues with no pages and no segments: the LLM pipeline or the page fallback decides, and
-`import_pdf` takes its existing no-segments path. `BytesIO` input skips steps 2–4 and keeps
+For path inputs, if layout analysis, extraction or segmentation fails (`ValueError`,
+`ImportError`, `FileNotFoundError`), raise `PDFStructureError` with the failed stage and chain
+the original exception. Also raise it when extraction yields no non-whitespace segments despite
+step 1 finding text. Do not fall back to a successful contentless import: these failures occur
+before `import_pdf` opens its write transaction, leaving any existing document unchanged.
+The page fallback is for insufficient structure confidence or LLM structure failure only;
+it retains the successfully extracted pages and segments. `BytesIO` input skips steps 2–4 and keeps
 today's behaviour (LLM pipeline, no pages). Segments are always produced by the layout-aware
 extraction, whatever source wins, so one PDF yields one revision regardless of the structure
 mode.
@@ -166,7 +173,8 @@ the function (never shared across threads).
 - *Standalone bold lines*: per page, lines at body size whose every non-empty span is bold
   (`span.flags & pymupdf.TEXT_FONT_BOLD`, or `"Bold"` in the font name), with at most 12 words,
   not ending in `.` or `,`, that are the only line of their block or the first line of a block
-  whose other lines are not bold. Stored as normalized text per page.
+  whose other lines are not bold. Store each occurrence's normalized text and line bounding
+  box per page; identical text at different positions remains separate.
 - *Bookmarks*: `doc.get_toc(simple=True)` (`[level, title, page]`, page 1-based). Usable
   entries have a stripped title and `1 <= page <= page_count`; levels are normalized so a level
   never exceeds the previous one by more than 1. The bookmarks are **rejected**, with the
@@ -182,8 +190,11 @@ span and makes a line a heading when any of its spans returns a non-empty prefix
 1. empty span text → `""`;
 2. the span lies in a running line (same band, same normalized key) → `""`;
 3. `round(span.size)` is a heading size at rank *i* (0-based) → `"#" * (i + 1) + " "`;
-4. the span is bold, at body size, and its normalized text is contained in a standalone bold
-   line of that page → `"#" * (len(heading_sizes) + 1) + " "` (the body-bold level);
+4. the span is bold, at body size, and its bounding box lies within a recorded standalone bold
+   line's bounding box on that page (0.5 pt tolerance on each edge) →
+   `"#" * (len(heading_sizes) + 1) + " "` (the body-bold level). Text containment alone never
+   qualifies a span under this rule: a separate bold run-in word repeating part of a heading
+   does not qualify through standalone-bold membership;
 5. the span is bold or above body size and its normalized text matches a usable bookmark title
    of the same page (`_titles_match`, `segments.py:312`: equality, or containment of at least
    3 characters) → the body-bold level;
@@ -213,15 +224,18 @@ heading is on a page `<= max(3, ceil(0.1 × page_count))`, else 0.5.
 
 **Choice.** With `mode` in `auto` | `layout` and `min_confidence` (option
 `structure_min_confidence`, provisional default 0.6, set by the evaluation in M10):
-1. bookmarks confidence `>= min_confidence` → the bookmark tree, plus the layout headings the
-   hybrid rule inserts. `structure_source` is `hybrid` when at least one heading was inserted,
-   else `bookmarks`;
+1. bookmarks confidence `>= min_confidence` → the bookmark tree. Apply hybrid insertion only
+   when the layout candidate also has confidence `>= min_confidence`; otherwise keep the
+   bookmark tree unchanged. `structure_source` is `hybrid` when at least one heading was
+   inserted, else `bookmarks`. Hybrid confidence is the minimum of the bookmark and layout
+   confidence; a bookmark-only result retains bookmark confidence;
 2. else layout confidence `>= min_confidence` → `layout`;
 3. else nothing (the builder then runs the LLM pipeline in `auto` mode with an adapter, or
    builds the page fallback).
 `mode="llm"` skips 1–2 (`structure_source="llm"`) and requires an adapter.
 
-**Hybrid rule.** The anchored bookmarks map a heading *level* to a bookmark *depth* (for each
+**Hybrid rule.** Only run this rule after both candidate scores pass the threshold. With no
+anchored bookmarks there is no level mapping, so insert nothing. The anchored bookmarks map a heading *level* to a bookmark *depth* (for each
 level, the most common depth among the bookmarks anchored at that level). Every heading segment
 that anchors no bookmark is placed by its level `L`:
 - `L` lower (shallower) than every mapped level → not structure; its text stays owned by the
@@ -273,6 +287,12 @@ inside the frame. Their logic and return values are unchanged.
 and the description are skipped with an info log, and `mode="llm"` raises
 `ValueError("structure_mode='llm' needs an LLM adapter")`. An unknown mode raises
 `ValueError`.
+
+**Mode scope.** `structure_mode` controls structure generation only. With an adapter,
+`layout` skips all LLM structure calls but still generates summaries and descriptions when
+their existing options enable them. To guarantee no model calls with a configured adapter,
+select `layout` and disable both summary and description options. Without an adapter those
+options are skipped as above, regardless of their requested values.
 
 **Toolkit.** `import_pdf` gains `structure_mode: str = "auto"` and passes it through
 `options`. It uses the builder's `_segments` when present (no second tokenization) and
@@ -382,12 +402,17 @@ class RunningLine(BaseModel):
     pages: int                 # distinct pages it recurs on
 
 
+class BoldLine(BaseModel):
+    text: str                  # normalized text, diagnostic only; not occurrence identity
+    bbox: tuple[float, float, float, float]  # page coordinates: x0, y0, x1, y1
+
+
 class LayoutProfile(BaseModel):
     page_count: int
     body_size: Optional[int] = None          # None when no countable text
     heading_sizes: list[int] = Field(default_factory=list)   # largest first, <= MAX_SIZE_LEVELS
     running: list[RunningLine] = Field(default_factory=list)
-    bold_lines: dict[int, list[str]] = Field(default_factory=dict)  # page -> normalized lines
+    bold_lines: dict[int, list[BoldLine]] = Field(default_factory=dict)  # 1-based page -> occurrences
     bookmarks: list[Bookmark] = Field(default_factory=list)  # usable entries, document order
     bookmark_rejection: Optional[str] = None
 
@@ -405,7 +430,7 @@ class StructureReport(BaseModel):
     source: StructureSource
     mode: StructureMode
     min_confidence: float
-    confidence: Optional[float] = None       # chosen deterministic candidate; None for llm/pages
+    confidence: Optional[float] = None       # chosen score; min of both for hybrid; None for llm/pages
     candidates: list[CandidateScore] = Field(default_factory=list)
     inserted_headings: int = 0               # hybrid insertions
     body_size: Optional[int] = None
@@ -496,6 +521,7 @@ def main(argv: Optional[list[str]] = None) -> int: ...
   class NoTextLayerError(PDFStructureError): ...
   class Bookmark(BaseModel): ...
   class RunningLine(BaseModel): ...
+  class BoldLine(BaseModel): ...
   class LayoutProfile(BaseModel): ...
 
   def running_key(text: str) -> str:
@@ -560,7 +586,8 @@ def main(argv: Optional[list[str]] = None) -> int: ...
 
   def insert_layout_headings(bookmark_items: list[dict], profile: LayoutProfile,
                              segments: Sequence[Segment]) -> tuple[list[dict], int]:
-      """Hybrid rule of spec §2; returns the merged item list and the number of inserted headings."""
+      """Hybrid rule of spec §2; caller must gate on both candidate scores meeting min_confidence.
+      Returns the merged item list and insertion count; no anchored bookmarks means no insertions."""
 
   def items_to_tree(items: Sequence[dict], segments: Sequence[Segment], profile: LayoutProfile) -> list[dict]:
       """Stack-built tree; start/end pages per the LLM-path convention; Preface when needed."""
@@ -613,11 +640,13 @@ def main(argv: Optional[list[str]] = None) -> int: ...
   ) -> dict:
       """Returns {doc_name, structure, structure_source, structure_report (dict), _node_markdown,
       _pages, _segments, doc_description?}. Raises UnreadablePDFError, NoTextLayerError, and
-      ValueError for an unknown structure_mode or structure_mode='llm' without an adapter."""
+      PDFStructureError for layout/extraction/segmentation failure or empty extracted content,
+      and ValueError for an unknown structure_mode or structure_mode='llm' without an adapter."""
 
-  async def _layout_pages(doc: str) -> tuple[Optional[LayoutProfile], list[tuple[int, str]], list[Segment]]:
+  async def _layout_pages(doc: str) -> tuple[LayoutProfile, list[tuple[int, str]], list[Segment]]:
       """analyze_layout + layout-aware extraction + segment_pages, each in asyncio.to_thread;
-      ([None], [], []) on ValueError/ImportError/FileNotFoundError (logged)."""
+      raise PDFStructureError with stage and chained cause on ValueError/ImportError/FileNotFoundError,
+      or when no non-whitespace segment is produced. Never return empty content as success."""
 
   # knowledge/pageindex/utils.py  (modifies utils.py:764)  _DEFAULTS gains
   #     "structure_mode": "auto", "structure_min_confidence": 0.6
@@ -656,8 +685,9 @@ def main(argv: Optional[list[str]] = None) -> int: ...
       """Build a PageIndex subtree from a PDF and splice it into ``tree_name``.
 
       Structure comes from the PDF's bookmarks or printed headings when they are reliable, from the
-      LLM otherwise (structure_mode='auto'); 'layout' never calls a model, 'llm' forces the LLM
-      pipeline. Works without a configured model (no summaries then).
+      LLM otherwise (structure_mode='auto'); 'layout' never calls a model for structure, 'llm'
+      forces the LLM structure pipeline. Summaries and descriptions remain controlled by their
+      own options when a model is configured. Works without a model (no summaries or description).
 
       Returns: {tree_name, new_node_ids, doc_name, doc_description, doc_id, revision,
                 structure_source, structure_confidence, structure_report}
@@ -780,6 +810,7 @@ def main(argv: Optional[list[str]] = None) -> int: ...
 | `test_layout.py::test_body_size_and_heading_sizes` | M1 | Synthetic PDF (pymupdf `insert_text`, sizes 10/12/16): body 10, heading sizes `[16, 12]` |
 | `test_layout.py::test_running_lines_excluded` | M1 | Header and page-number footer on every page are running; never headings; text kept |
 | `test_layout.py::test_bold_standalone_lines` | M1 | Bold body-size standalone line recorded; bold run-in word inside a paragraph is not |
+| `test_layout.py::test_bold_heading_occurrence_collision` | M1 | No bookmarks, standalone `Important Notes` and a different line with bold run-in `Important` on the same page: only the recorded heading occurrence qualifies, including through real markdown extraction |
 | `test_layout.py::test_bookmarks_usable_and_levels_normalized` | M1 | `set_toc` with a level jump and an out-of-range page → normalized, entry dropped |
 | `test_layout.py::test_bookmarks_rejected_non_monotonic` | M1 | Decreasing page → `bookmark_rejection` names it |
 | `test_layout.py::test_bookmarks_rejected_per_page_enumeration` | M1 | One `Page n` entry per page → rejected |
@@ -790,6 +821,8 @@ def main(argv: Optional[list[str]] = None) -> int: ...
 | `test_layout_structure.py::test_score_bookmarks_found_and_anchored` | M3 | Found ratio, anchors unique, title-in-paragraph counts as found but not anchored |
 | `test_layout_structure.py::test_score_layout_factors` | M3 | Fewer than 2 headings → 0; sentence-like headings lower `clean`; density and start factors |
 | `test_layout_structure.py::test_hybrid_insertion` | M3 | Same-level unbookmarked heading → sibling; deeper → child; shallower → not structure |
+| `test_layout_structure.py::test_hybrid_rejects_noisy_layout` | M3 | Valid bookmarks score 1.0; 100 short bold labels per page make layout fail density threshold: bookmark-only tree, zero insertions, both scores reported |
+| `test_layout_structure.py::test_hybrid_confidence_and_empty_mapping` | M3 | Passing candidates yield hybrid confidence equal to their minimum; found-but-unanchored bookmarks yield no insertions |
 | `test_layout_structure.py::test_items_to_tree_pages_and_preface` | M3 | `end_index` convention with and without appear-at-start; `Preface` when the first item starts after page 1 |
 | `test_layout_structure.py::test_choice_order_and_modes` | M3 | bookmarks > layout > None; `llm` mode → None; threshold respected |
 | `test_layout_structure.py::test_page_structure` | M3 | Root titled by stem, one child per page |
@@ -798,8 +831,9 @@ def main(argv: Optional[list[str]] = None) -> int: ...
 | `test_builder_layout.py::test_auto_falls_back_to_llm` | M5 | Headingless PDF + mocked adapter (tree_parser patched) → `llm`, `llm_used` |
 | `test_builder_layout.py::test_llm_failure_falls_back_to_pages` | M5 | Patched `tree_parser` raises → `pages`, `llm_error` set |
 | `test_builder_layout.py::test_modes_and_errors` | M5 | Unknown mode, `llm` without adapter → `ValueError`; image-only PDF → `NoTextLayerError` |
-| `test_builder_layout.py::test_layout_failure_keeps_import_alive` | M5 | `analyze_layout` raising `ValueError` → no `_pages`, page/LLM fallback |
-| `test_builder_pages.py` (rewritten) | M5 | Replaces the source-count test with a behavioural check of the return keys; `_layout_pages` fallbacks |
+| `test_builder_layout.py::test_extraction_failure_is_explicit` | M5 | Parameterize analysis/extraction/segmentation errors and empty extracted text: `PDFStructureError` names the stage and preserves the cause where applicable; no contentless success |
+| `test_builder_layout.py::test_layout_mode_summary_options` | M5 | Configured adapter + layout mode never calls `tree_parser`; enabled summaries call the adapter; disabling both summaries and description makes zero adapter calls |
+| `test_builder_pages.py` (rewritten) | M5 | Replaces the source-count test with a behavioural check of the return keys and `_layout_pages` error propagation |
 | `test_builder_framing.py::test_structure_prompts_framed` | M6 | Every adapter call made by the 13 functions carries `system_prompt=DATA_FRAMING_INSTRUCTION`; page text sits inside `<document_text>`; a `</document_text>` in page text is neutralized |
 | `test_layout_import.py::test_import_pdf_result_and_segments_reuse` | M7 | Result keys; `_segments` used (no second `segment_pages`); fake without `_segments` still works |
 | `test_layout_import.py::test_list_documents_structure_source` | M7 | PDF row has the source; markdown row has `None` |
@@ -818,6 +852,8 @@ def main(argv: Optional[list[str]] = None) -> int: ...
 | `test_layout_integration.py::test_fixture_import_is_hybrid_and_anchored` | Fixture through `import_pdf` on a toolkit with no adapter: `structure_source == "hybrid"`, ten bookmark titles with reference pages and depths, `References` and `Appendix` at depth 1, every bookmark node's span starts at a `heading` segment, ownership partitions the revision |
 | `test_layout_integration.py::test_fixture_read_pages_after_layout_import` | `read_pages("…", doc_id, "2")` returns the `### **2 Getting Started**` heading segment with its address |
 | `test_layout_integration.py::test_low_confidence_pdf_uses_framed_llm` | Synthetic headingless PDF with a mocked adapter: LLM path taken, every prompt framed |
+| `test_layout_integration.py::test_failed_extraction_does_not_publish` | No-adapter toolkit imports a text-bearing PDF with analysis/extraction failure or empty markdown: raises `PDFStructureError`, existing tree/revision unchanged; Bookstore maps the error to `BookstoreError` |
+| `test_layout_integration.py::test_page_fallback_retains_content` | Headingless PDF without an adapter: page fallback creates a document revision, and `read_pages` returns its original text |
 | existing segment and toolkit tests unchanged | `test_segment_import.py`, `test_segment_integration.py`, `test_read_tools.py`, `test_toolkit.py`, `test_pdf_to_markdown.py` |
 
 ### Validation Contract
@@ -885,9 +921,12 @@ REFERENCE = Path(__file__).parent / "fixtures" / "docling_structure.json"      #
   report; the layout candidate or a fallback is used instead.
 - [ ] AC-5 With `adapter=None`, `structure_mode="auto"` behaves as `"layout"`, summaries and the
   description are skipped, and `"llm"` raises `ValueError`; an unknown mode raises `ValueError`.
+  With an adapter, `layout` skips LLM structure generation but honors summary/description
+  options; disabling both gives zero model calls.
 - [ ] AC-6 When no candidate reaches `structure_min_confidence` and an adapter is configured,
-  the LLM pipeline runs (`structure_source == "llm"`); when it raises, the result is the page
-  fallback with `llm_error` in the report.
+  in `auto` mode the LLM pipeline runs (`structure_source == "llm"`); when it raises, the result
+  is the page fallback with `llm_error` in the report. Page fallback retains extracted segments
+  and publishes a readable document revision, including without an adapter.
 - [ ] AC-7 Every adapter call made by the 13 structure-pipeline functions passes
   `system_prompt=DATA_FRAMING_INSTRUCTION`, and every document-derived value they interpolate is
   inside `<document_text>`; their return values for the existing builder tests are unchanged.
@@ -919,6 +958,18 @@ REFERENCE = Path(__file__).parent / "fixtures" / "docling_structure.json"      #
   (`parrot sdd techwiki check`).
 - [ ] AC-18 No new dependency; all Validation Contract tests pass; `ruff check` is clean on
   touched files.
+- [ ] AC-19 Layout analysis, extraction or segmentation failure on a path input raises
+  `PDFStructureError` with the failed stage and chained cause; empty extracted content also
+  raises. No `import_pdf` write transaction or document replacement occurs; Bookstore may create
+  and clean up its temporary staging tree, but the published book remains unchanged. Bookstore reports the error
+  as `BookstoreError`; no-adapter imports cannot succeed with only page titles.
+- [ ] AC-20 Body-bold heading eligibility uses page and line geometry. A separate bold run-in
+  occurrence with matching text is not promoted by the standalone-bold rule, including when
+  tested through pymupdf4llm extraction.
+- [ ] AC-21 Hybrid insertions require both bookmark and layout confidence to meet the
+  threshold. Reliable bookmarks plus failing layout yield `bookmarks`, zero insertions and
+  both candidate scores in the report. Hybrid confidence is the minimum of both scores;
+  no anchored bookmarks means no insertions.
 
 ---
 
@@ -1152,9 +1203,11 @@ Verified against: `07d5ece62c`
 - **Emphasis in heading text.** Header lines arrive as `### **1 Introduction**`; always compare
   through `heading_title`. `normalize_title` alone does not strip `**`.
 - **Bold-line noise.** Documents that set labels (`Note`, `Example 3`) in bold on their own line
-  produce extra body-bold headings; in hybrid mode they may land at a mapped depth. The layout
-  score's `clean` and density factors and the evaluation measure this; the threshold is the
-  control.
+  produce extra body-bold headings; in hybrid mode they may land at a mapped depth. Both
+  candidate scores must pass before hybrid insertion, so layout's `clean` and density factors
+  can reject noisy additions even with perfect bookmarks. This is a document-level heuristic,
+  not a guarantee of per-heading precision; evaluate remaining noise in M10. Repeated bold
+  words outside a recorded heading occurrence do not qualify through the body-bold rule.
 - **Text in figures.** The analysis pass sees text inside figures that pymupdf4llm omits from the
   markdown; tiny figure fonts fall below body size, and the 10 % share cap keeps large figure
   labels out of the heading sizes. A heading size that never reaches the markdown simply
@@ -1331,7 +1384,9 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
   - `wiki/knowledge/pageindex-layout-structure.md` — create: how PDF structure is chosen
     (sources, scores, hybrid rule, page conventions), `structure_mode`, `structure_source`,
     `structure_min_confidence` and its evaluation (metrics only), errors, framing of the
-    fallback, PDF import without a model.
+    fallback, PDF import without a model. Explain that structure mode does not disable optional
+    summaries, that hybrid insertion requires both scores, and that extraction failure aborts
+    publication rather than storing a contentless document.
   - `wiki/knowledge/pageindex.md` — update: the "Building Trees from PDFs" section and the "How
     It Works" steps describe the layout-first pipeline; link the new page.
   - `wiki/knowledge/bookstore-codex.md` — update: PDFs work without an LLM.
@@ -1372,3 +1427,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-08 | Jesus Lara (with Claude) | Initial draft from the umbrella brainstorm (slice 3), the FEAT-840/842 hand-offs and two clarifications; re-anchored after FEAT-842 merged (PR #2029) |
+| 0.2 | 2026-11-08 | Codex | Resolve review findings: fail before publication on extraction errors; identify bold heading occurrences by geometry; gate hybrid insertions on both scores; define structure-only mode semantics; add regression tests and AC-19–21 |
