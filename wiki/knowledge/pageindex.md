@@ -22,6 +22,7 @@ PageIndex builds a **hierarchical semantic tree** from PDF and Markdown document
 - [Integration with Agents](#integration-with-agents)
 - [Configuration Options](#configuration-options)
 - [Generation Publication](pageindex-generation-publication.md)
+- [Segment Store](pageindex-segment-store.md)
 - [API Reference](#api-reference)
 
 ---
@@ -438,6 +439,8 @@ async def multi_doc_search(tree_paths: list[str], query: str, adapter):
 
 For copy-on-write publication, immutable body blobs, locking, generation
 retention, and sweeping, see [PageIndex Generation Publication](pageindex-generation-publication.md).
+For addressable segments below the node (page and paragraph reads, citations, injection flags,
+`<tree>/segments/`), see [PageIndex Segment Store](pageindex-segment-store.md).
 
 Options passed to `build_page_index` or `md_to_tree`:
 

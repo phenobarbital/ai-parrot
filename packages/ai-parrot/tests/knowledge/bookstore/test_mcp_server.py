@@ -45,9 +45,9 @@ def test_server_description_with_llm(seeded_locations, fake_adapter, capsys):
     assert capsys.readouterr().out == ""
 
 
-def test_mcp_tools_list_has_ten_tools(seeded_locations):
+def test_mcp_tools_list_has_thirteen_tools(seeded_locations):
     server = create_bookstore_mcp_server(seeded_locations)
-    assert len(server.tools) == 10
+    assert len(server.tools) == 13
     assert all(name.startswith("bookstore_") for name in server.tools)
 
 

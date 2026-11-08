@@ -17,6 +17,8 @@ from parrot.knowledge.okf.utils import flatten_concept_id_for_filename
 from parrot.knowledge.pageindex.okf.concept_id import derive_concept_id
 from parrot.knowledge.pageindex.content_store import NodeContentStore
 from parrot.knowledge.pageindex.locks import TreeLockTimeout, tree_lock  # noqa: F401
+from parrot.knowledge.pageindex.segment_store import SegmentStore
+from parrot.knowledge.pageindex.segments import DocumentRevision
 from parrot.knowledge.pageindex.store import JSONTreeStore
 from parrot.knowledge.pageindex.utils import structure_to_list
 
@@ -126,6 +128,7 @@ class WriteTransaction:
         lock_timeout_s: float,
         grace_s: int,
         projector: Callable[[dict[str, Any], str], bool],
+        segment_store: Optional[SegmentStore] = None,
     ) -> None:
         self.tree_name = tree_name
         self.tree: dict[str, Any] = copy.deepcopy(base_tree)
@@ -151,6 +154,9 @@ class WriteTransaction:
             for n in base_nodes
             if not n.get("body_ref") and isinstance(n.get("node_id"), str) and n["node_id"]
         }
+        self._segments = segment_store if segment_store is not None else SegmentStore(self._storage_dir)
+        self._staged_revisions: dict[tuple[str, str], DocumentRevision] = {}
+        self._base_revisions: set[tuple[str, str]] = SegmentStore.live_revisions(base_tree)
 
     def set_body(self, node: dict[str, Any], markdown: str) -> BodyRef:
         """Stage ``markdown`` for ``node`` and set its immutable body reference."""
@@ -166,6 +172,14 @@ class WriteTransaction:
         self._staged[body_ref.key] = markdown or ""
         node["body_ref"] = body_ref.key
         return body_ref
+
+    def set_revision(self, rev: DocumentRevision) -> None:
+        """Stage ``rev`` under ``(doc_id, revision)``; idempotent."""
+        self._staged_revisions[(rev.doc_id, rev.revision)] = rev
+
+    def live_revisions(self) -> set[tuple[str, str]]:
+        """Every ``(doc_id, revision)`` named by a node of ``self.tree``."""
+        return SegmentStore.live_revisions(self.tree)
 
     def drop_body(self, node: dict[str, Any]) -> None:
         """Remove ``body_ref`` from ``node``; the blob is left for the sweep."""
@@ -232,6 +246,21 @@ class WriteTransaction:
             ):
                 raise ValueError(f"missing body for node {node.get('node_id', '<unknown>')!r}")
 
+        for doc_id, revision in sorted(self.live_revisions()):
+            if (doc_id, revision) not in self._staged_revisions and not self._segments.has_revision(
+                self.tree_name, doc_id, revision
+            ):
+                raise ValueError(f"missing revision {doc_id}@{revision} for tree {self.tree_name!r}")
+
+        if self._staged_revisions:
+            await asyncio.gather(
+                *(
+                    asyncio.to_thread(self._segments.save_revision, self.tree_name, rev)
+                    for rev in self._staged_revisions.values()
+                )
+            )
+            await asyncio.to_thread(self._fsync_bodies_dir, self._segments.segments_dir(self.tree_name))
+
         staged_keys = [key for key in self._staged if not self._content.body_path(self.tree_name, key).is_file()]
         await asyncio.gather(
             *(
@@ -256,6 +285,13 @@ class WriteTransaction:
         )
         bodies_swept = await asyncio.to_thread(
             self._content.sweep_unreferenced, self.tree_name, self.tree, max_age_s=self._grace_s
+        )
+
+        await asyncio.to_thread(
+            self._segments.mark_superseded, self.tree_name, self._base_revisions - self.live_revisions()
+        )
+        await asyncio.to_thread(
+            self._segments.sweep_unreferenced, self.tree_name, self.tree, max_age_s=self._grace_s
         )
 
         return PublishReport(
