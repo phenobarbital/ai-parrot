@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-845 — PageIndex Layout Structure Builder
 **Spec**: `sdd/specs/pageindex-layout-structure.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5341
@@ -288,10 +288,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+*(filled by sdd-worker)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker orchestrator, MCP seat, 1 attempt
+**Date**: 2026-11-08
+**Notes**: Merged into the feature branch; lint clean. Pageindex suite run directly on the host: only the 4 pre-existing failures (test_adapter x2, test_okf_ontology x2) that also fail on clean origin/dev. Engine background validation is capped at ~60s so it is not used. No review feedback recorded.

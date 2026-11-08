@@ -240,7 +240,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -250,8 +250,9 @@
       "parallelism_notes": "TASK-5341: calls import_pdf(structure_mode=...) added in toolkit.py; PDFStructureError (TASK-5333, layout.py) reached transitively",
       "assigned_to": null,
       "started_at": "2026-11-08T01:52:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5342-bookstore-pdf-without-llm.md"
+      "completed_at": "2026-11-08T09:52:41+00:00",
+      "file": "sdd/tasks/completed/TASK-5342-bookstore-pdf-without-llm.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5343",
@@ -260,7 +261,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -270,8 +271,9 @@
       "parallelism_notes": "TASK-5341: same file toolkit.py (llm_dependent_tools); its new no-adapter fixture-import test needs the import_pdf result keys from TASK-5341",
       "assigned_to": null,
       "started_at": "2026-11-08T01:52:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5343-import-pdf-without-model.md"
+      "completed_at": "2026-11-08T09:52:42+00:00",
+      "file": "sdd/tasks/completed/TASK-5343-import-pdf-without-model.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5344",
