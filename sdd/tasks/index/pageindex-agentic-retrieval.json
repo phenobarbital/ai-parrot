@@ -172,7 +172,7 @@
       "feature_id": "FEAT-843",
       "feature": "pageindex-agentic-retrieval",
       "spec": "sdd/specs/pageindex-agentic-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -182,8 +182,9 @@
       "parallelism_notes": "tests serve/hide the pageindex_agentic_retrieve tool that TASK-5325 adds (toolkit.py)",
       "assigned_to": null,
       "started_at": "2026-11-08T01:29:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5326-pageindex-template-exclude-agentic.md"
+      "completed_at": "2026-11-08T02:22:35+00:00",
+      "file": "sdd/tasks/completed/TASK-5326-pageindex-template-exclude-agentic.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5327",
