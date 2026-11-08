@@ -144,15 +144,20 @@ async def test_fixture_import_is_hybrid_and_anchored(tmp_path):
     assert imported["structure_source"] == "hybrid"
     reference = json.loads(REFERENCE.read_text())
     expected = [
-        (depth, normalize_title(node["title"]), node["start_index"])
-        for depth, node in _depths(reference["structure"])
+        (depth, normalize_title(node["title"]), node["start_index"]) for depth, node in _depths(reference["structure"])
     ]
     tree = toolkit._store.load("fixture")
     nodes = structure_to_list(tree["structure"])
-    actual = [(depth, normalize_title(node["title"]), node["start_index"]) for depth, node in _depths(tree["structure"])]
+    actual = [
+        (depth, normalize_title(node["title"]), node["start_index"]) for depth, node in _depths(tree["structure"])
+    ]
     for entry in expected:
         assert entry in actual
-    assert [(depth, node["title"]) for depth, node in _depths(tree["structure"]) if node["title"] in {"References", "Appendix"}] == [
+    assert [
+        (depth, node["title"])
+        for depth, node in _depths(tree["structure"])
+        if node["title"] in {"References", "Appendix"}
+    ] == [
         (1, "References"),
         (1, "Appendix"),
     ]
