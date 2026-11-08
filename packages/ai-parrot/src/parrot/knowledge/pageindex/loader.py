@@ -89,7 +89,7 @@ class PageIndexLoader(AbstractLoader):
         super().__init__(source, **kwargs)
         if storage_dir is None:
             raise ValueError(
-                "PageIndexLoader requires a 'storage_dir' — trees are always " "persisted via PageIndexToolkit."
+                "PageIndexLoader requires a 'storage_dir' — trees are always persisted via PageIndexToolkit."
             )
 
         self.doctype = "pageindex_node"

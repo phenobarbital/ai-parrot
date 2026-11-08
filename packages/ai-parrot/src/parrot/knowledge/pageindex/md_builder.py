@@ -100,11 +100,13 @@ def parse_markdown_structure(md_text: str) -> list[dict]:
             level, title = parsed
             if not sections and any(part.strip() for part in current_text):
                 preamble = "\n".join(current_text).strip()
+                # Same level as the first heading: a sibling, never the parent
+                # of every section in a document that starts at "##".
                 sections.append(
                     {
                         "structure": "0",
                         "title": "Introduction",
-                        "level": 1,
+                        "level": level,
                         "line_num": 1,
                         "text": preamble,
                         "token_count": count_tokens(preamble),

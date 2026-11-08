@@ -344,7 +344,7 @@ class HybridPageIndexSearch:
         _use_beam = use_embedding_walk if use_embedding_walk is not None else self._use_embedding_walk
 
         if not (use_bm25 or use_llm_walk or use_vec or _use_beam):
-            raise ValueError("At least one of use_bm25 / use_llm_walk / use_vec / use_embedding_walk" " must be True")
+            raise ValueError("At least one of use_bm25 / use_llm_walk / use_vec / use_embedding_walk must be True")
 
         bm25_ranking: list[str] = []
         llm_ranking: list[str] = []

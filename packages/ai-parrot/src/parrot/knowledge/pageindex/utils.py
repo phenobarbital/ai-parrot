@@ -58,7 +58,7 @@ def get_encoder(model: str = "gpt-4o") -> Any | None:
         except Exception:  # noqa: BLE001 — KeyError, network, cache errors
             continue
     logger.warning(
-        "tiktoken encoding unavailable (offline?) — falling back to a " "character-based token estimate",
+        "tiktoken encoding unavailable (offline?) — falling back to a character-based token estimate",
     )
     return None
 
@@ -100,12 +100,25 @@ def get_json_content(response: str) -> str:
 
 
 def extract_json(content: str) -> Any:
-    """Extract JSON, repairing None/trailing commas only outside quoted strings."""
+    """Extract JSON from an LLM reply.
+
+    Valid JSON parses unchanged. Otherwise a ```json fence is taken from
+    anywhere in the reply, ``None`` and trailing commas are repaired outside
+    quoted strings only, and raw newlines or tabs inside strings are accepted.
+
+    Args:
+        content: Raw LLM response text.
+
+    Returns:
+        The parsed value, or ``{}`` when the text cannot be parsed.
+    """
     json_content = content.strip()
     try:
         return json.loads(json_content)
     except json.JSONDecodeError:
-        if json_content.startswith("```"):
+        # A reply that opens with prose or a fence wraps the JSON; a reply that
+        # opens with JSON is left whole so backticks inside strings survive.
+        if not json_content.startswith(("{", "[")) and "```" in json_content:
             json_content = get_json_content(json_content)
         # Match strings first so repairs never change titles, excerpts or code.
         tokens = re.compile(r'"(?:[^"\\]|\\.)*"|\bNone\b|,\s*(?=[}\]])', re.DOTALL)
@@ -116,7 +129,8 @@ def extract_json(content: str) -> Any:
             json_content,
         )
         try:
-            return json.loads(repaired)
+            # strict=False: LLMs often emit raw newlines inside long string values.
+            return json.loads(repaired, strict=False)
         except json.JSONDecodeError:
             logger.error("Failed to parse JSON even after cleanup")
             return {}
@@ -235,7 +249,7 @@ def get_text_of_pdf_pages_with_labels(
     text = ""
     for page_num in range(start_page - 1, end_page):
         if 0 <= page_num < len(pdf_pages):
-            text += f"<physical_index_{page_num+1}>\n" f"{pdf_pages[page_num][0]}\n" f"<physical_index_{page_num+1}>\n"
+            text += f"<physical_index_{page_num+1}>\n{pdf_pages[page_num][0]}\n<physical_index_{page_num+1}>\n"
     return text
 
 
