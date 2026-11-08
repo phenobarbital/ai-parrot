@@ -74,7 +74,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -84,8 +84,9 @@
       "parallelism_notes": "TASK-5333: modifies layout.py and test_layout.py that TASK-5333 creates; reads LayoutProfile.bold_lines/BoldLine/running_key",
       "assigned_to": null,
       "started_at": "2026-11-08T01:52:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5334-layout-header-detector.md"
+      "completed_at": "2026-11-08T09:05:47+00:00",
+      "file": "sdd/tasks/completed/TASK-5334-layout-header-detector.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5335",
@@ -113,7 +114,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +124,9 @@
       "parallelism_notes": "TASK-5333: layout_structure.py imports LayoutProfile, Bookmark, running_key, StructureSource, StructureMode from layout.py",
       "assigned_to": null,
       "started_at": "2026-11-08T01:52:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5336-structure-candidates.md"
+      "completed_at": "2026-11-08T09:05:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5336-structure-candidates.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5337",
