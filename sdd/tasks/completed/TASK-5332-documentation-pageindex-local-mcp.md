@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-844 — PageIndex Toolkit Fixes
 **Spec**: `sdd/specs/pageindex-toolkit-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5328, TASK-5331
@@ -154,10 +154,8 @@ not a registered test runner) and `/sdd-done` gates on it.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5.5 (/sdd-fix session agent:sdd-fix:507d6e6a)
+**Date**: 2026-11-08
+**Notes**: `wiki/knowledge/pageindex-local-mcp.md` — the `retrieve` truncation bullet quotes both marker variants (D4); a new `vacuum_tree` bullet documents the grace floor and the `revisions_removed` / `max_age_s` result keys; the "Known issue — stdout noise on first ingest" bullet became "stdout stays pure while the scorer loads" (redirect at resolution time + stream bound at start, formerly issue:70f18da2a8d5). Validation: `test_local_mcp_docs.py` 2 passed; `parrot sdd techwiki check --spec sdd/specs/pageindex-toolkit-fixes.spec.md --root .` → "Docs: required — ok" (exit 0). Docs commit: 047ab5883f.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

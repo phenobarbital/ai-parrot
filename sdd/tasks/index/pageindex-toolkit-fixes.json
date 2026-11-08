@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-08T01:40:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-08T01:40:28+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -128,7 +128,7 @@
       "feature_id": "FEAT-844",
       "feature": "pageindex-toolkit-fixes",
       "spec": "sdd/specs/pageindex-toolkit-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -139,8 +139,9 @@
       "parallelism_notes": "Documents the marker wording TASK-5331 fixes in PageIndexToolkit._bound_text (toolkit.py) and the stdout redirect TASK-5328 adds in get_injection_scoring_engine (security/prompt_injection.py); must read both merged methods.",
       "assigned_to": null,
       "started_at": "2026-11-08T01:40:06.788674+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5332-documentation-pageindex-local-mcp.md"
+      "completed_at": "2026-11-08T01:40:28+00:00",
+      "file": "sdd/tasks/completed/TASK-5332-documentation-pageindex-local-mcp.md",
+      "verification": "verified"
     }
   ]
 }
