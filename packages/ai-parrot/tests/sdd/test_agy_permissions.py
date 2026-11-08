@@ -148,6 +148,15 @@ ASK = [
     "echo done > /dev/null 2>&1",
     "rm -rf build",  # not covered by a managed rule: agy prompts by itself, the hook stays neutral
     "npm test",
+    "git fetch --prune origin",
+    "git commit -m 'sdd: line one\n\nline two'",
+    "git commit -m \"$(cat <<'EOF'\nsdd: brief\n\nbody\nEOF\n)\"",
+    "rg --pretty 'x' packages/",
+    "git log --oneline origin/dev..HEAD",
+    "git branch --contains HEAD",
+    "git merge --ff-only origin/dev",
+    "git switch -c fix-y",
+    "date +%Y-%m-%d",
 ]
 
 
@@ -208,6 +217,59 @@ FORCE_ASK = [
     ("ruff check --fix", "without an explicit path"),
     ("LD_PRELOAD=/x.so pytest packages/a/test_a.py", "environment override"),
     ("timeout 5 find . -delete", "find -delete"),
+    # adversarial review findings (codex + Claude subagent), each reproduced before the fix
+    ("git branch -Df feature", "git branch -Df"),
+    ("git branch -vd feat-x", "git branch -vd"),
+    ("git switch -Cfeature HEAD~1", "git switch -Cfeature"),
+    ("git switch -fc newb", "git switch -fc"),
+    ("git push -df origin feature", "not a plain push"),
+    ("git push -fu origin feat-x", "not a plain push"),
+    ("git push --del origin feat-x", "not a plain push"),
+    ("git push origin 'refs/heads/*:refs/heads/*'", "pushes a pattern"),
+    ("git push https://example.com/x.git HEAD", "pushes to a URL"),
+    ("git commit --amen --no-edit", "--amen"),
+    ("git commit --no-verif -m x", "--no-verif"),
+    ("git commit -F /etc/passwd", "outside the workspace"),
+    ("git remote -v add evil https://example.com/x.git", "git remote"),
+    ("git config --global --list", "git config"),
+    ("git diff --no-index /etc/passwd /etc/hosts", "--no-index"),
+    ("git blame --contents /etc/passwd README.md", "--contents"),
+    ("git grep -Osh x", "git grep -Osh"),
+    ("git grep --open-files-in-pager=sh x", "--open-files-in-pager"),
+    ("git pull --rebase origin dev", "git pull --rebase"),
+    ("git merge --abort", "not a plain merge"),
+    ("git add -f .env", "adds ignored files"),
+    ("git fetch --prune-tags origin", "git fetch --prune-tags"),
+    ("git -C $OTHER commit -m x", "shell variable"),
+    ("git -C $(pwd)/../../../../../../../.. add -A", "outside the workspace"),
+    ("gh api -XDELETE repos/o/r/git/refs/heads/feature", "method DELETE"),
+    ("gh pr create --title t --body-file /etc/passwd", "outside the workspace"),
+    ("cat <<EOF\n$(find . -name victim -delete)\nEOF", "unquoted heredoc body"),
+    ("echo '<<X'\ngit push -f origin feat-x", "not a plain push"),
+    ("echo '<<X'\nsed -i s/a/b/ README.md", "sed -i"),
+    ("cat {/etc/passwd,x}", "brace expansion"),
+    ('cat "$(git rev-parse --show-toplevel)/../../../../../../../../../../../../etc/passwd"', "outside the workspace"),
+    ("cat $(pwd)/../../../../../../../../../etc/passwd", "outside the workspace"),
+    ("find -L /etc -type f", "outside the workspace"),
+    ("grep -f/etc/passwd .gitignore", "outside the workspace"),
+    ("grep -eroot /etc/passwd", "outside the workspace"),
+    ("rg --file=/etc/passwd .gitignore", "outside the workspace"),
+    ("rg --files /etc", "outside the workspace"),
+    ("rg --hostname-bin=/tmp/evil x README.md", "runs a program"),
+    ("jq -f /etc/passwd README.md", "outside the workspace"),
+    ("date -f /etc/passwd", "outside the workspace"),
+    ("sort --compress-program=sh x", "runs a program"),
+    ("sort -ro out.txt in.txt", "sort -ro"),
+    ("sort --out=out.txt in.txt", "sort --out"),
+    ("tree -ofile .", "tree -ofile"),
+    ("printf '{}' > .agents/hooks.json", "hook or git configuration"),
+    ("echo x > .git/hooks/pre-commit", "hook or git configuration"),
+    ("pytest packages/a/test_a.py --junitxml /tmp/x.xml", "writes output files"),
+    ("pytest --basetemp=packages packages/a/test_a.py", "writes output files"),
+    ("PYTHONPATH=/tmp/evil pytest packages/a/test_a.py", "PYTHONPATH entry"),
+    ("GIT_PAGER='sh -c id' git log", "environment override GIT_PAGER"),
+    ("parrot sdd docs migrate-index", "not on the SDD auto-approve list"),
+    ("wikitoolkit export -o /tmp/x", "not on the SDD auto-approve list"),
 ]
 
 
@@ -226,7 +288,18 @@ DENY = [
     ("git push --force origin dev", "Force-push"),
     ("echo x > .env", "secrets file"),
     ("uv publish", "publication"),
+    ("git push origin HEAD:heads/main", "push to main"),
+    ("echo '<<X'\ngit push origin HEAD:main", "push to main"),
 ]
+
+
+def test_symlink_out_of_the_workspace_is_confirmed(ws: Path, tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (ws / "link").symlink_to(outside)
+    decision = _decide("cat link/secret.txt", ws)
+    assert decision.decision == "force_ask"
+    assert "symlink" in decision.reason
 
 
 @pytest.mark.parametrize(("command", "why"), DENY)

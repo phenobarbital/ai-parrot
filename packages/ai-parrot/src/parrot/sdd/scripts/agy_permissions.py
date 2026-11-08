@@ -8,14 +8,20 @@ therefore carries both halves of the policy:
 * :data:`SDD_ALLOW_RULES` — the managed agy rules that ``parrot sdd install --host google`` merges into
   the user's agy settings, broad enough for ``/sdd-spec``, ``/sdd-task``, ``/sdd-brief`` and ``/sdd-fix``;
 * :func:`evaluate` — the hook that narrows those rules: ``deny`` for destructive commands (the C32
-  dangerous-actions rules plus a push to the hotfix branch), ``force_ask`` for risky variants a broad rule
-  would approve (``find -delete``, ``sed -i``, reads outside the workspace, a bare ``pytest`` …), ``ask``
-  otherwise. A command no managed rule covers is never escalated: agy prompts for it anyway.
+  dangerous-actions rules plus a push to the hotfix branch), ``force_ask`` for anything a managed rule would
+  approve that the policy cannot positively classify as routine, ``ask`` otherwise. A command no managed rule
+  covers is never escalated: agy prompts for it anyway.
 
-It is a narrowing layer on top of agy's own matching, not a sandbox. Served as
-``parrot sdd hooks agy-permissions --hook``; :func:`main` always exits 0 and writes one JSON object. Only
-the stdlib and the sibling ``dangerous_actions`` guard are imported at module level; ``parrot.sdd.config``
-is loaded lazily and guarded.
+High-risk commands (``git push|switch|merge|config|remote|worktree|checkout``, ``parrot sdd``,
+``wikitoolkit``) are judged against **positive** allowlists of options and verbs, so short-option clusters,
+long-option abbreviations and unknown flags fall to ``force_ask``. Read-only tools are judged by where their
+path arguments resolve (attached option values, brace expansion and symlinks included). Heredocs and
+newlines are parsed quote-aware.
+
+It is a narrowing layer on top of agy's own matching, not a sandbox: an approved ``pytest`` runs repository
+code by design. Served as ``parrot sdd hooks agy-permissions --hook``; :func:`main` always exits 0 and writes
+one JSON object. Only the stdlib and the sibling ``dangerous_actions`` guard are imported at module level;
+``parrot.sdd.config`` is loaded lazily and guarded.
 """
 
 from __future__ import annotations
@@ -77,10 +83,9 @@ RULE_WORDS: tuple[tuple[str, ...], ...] = (
 SDD_ALLOW_RULES: tuple[str, ...] = tuple(f"command({' '.join(words)})" for words in RULE_WORDS)
 
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-_SAFE_ENV = frozenset(
-    {"PYTHONPATH", "PYTHONDONTWRITEBYTECODE", "GIT_TERMINAL_PROMPT", "GIT_PAGER", "PAGER", "NO_COLOR", "TERM",
-     "LANG", "LC_ALL", "TZ"}
-)  # fmt: skip
+#: environment overrides a covered command may carry; PYTHONPATH entries must also stay inside the workspace
+_SAFE_ENV = frozenset({"PYTHONDONTWRITEBYTECODE", "GIT_TERMINAL_PROMPT", "NO_COLOR", "TERM", "LANG", "LC_ALL", "TZ"})
+_PATH_ENV = frozenset({"PYTHONPATH"})
 
 
 def _strip_assignments(words: Sequence[str]) -> list[str]:
@@ -105,7 +110,7 @@ def rule_covers(words: Sequence[str]) -> bool:
 
 
 # --------------------------------------------------------------------------
-# decisions
+# decisions and state
 # --------------------------------------------------------------------------
 
 
@@ -122,9 +127,9 @@ _PLACEHOLDER = "__PARROT_SUBST__"
 _SEPARATORS = frozenset({";", "&&", "||", "|", "|&", "&", "(", ")", ";;", ";&", "{", "}", "!"})
 _WRITE_REDIRECTS = frozenset({">", ">>", ">|", "&>", "&>>", "<>"})
 _FD_REDIRECTS = frozenset({">&", "<&"})
-_HERE_REDIRECTS = frozenset({"<<", "<<-", "<<<"})
-_HEREDOC = re.compile(r"(?<!<)<<-?(?!<)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 _WRAPPERS = frozenset({"time", "nohup", "command", "builtin"})
+#: directories whose files configure agents, hooks or git: never rewritten through a redirect unprompted
+_CONTROL_DIRS = frozenset({".agents", ".agent", ".git", ".claude", ".codex", ".gemini", ".parrot"})
 
 
 @dataclass
@@ -132,6 +137,7 @@ class _Context:
     """Per-command evaluation state."""
 
     roots: list[Path]
+    real_roots: list[str]
     cwd: Path | None
     root: Path | None
     hotfix: frozenset[str]
@@ -155,20 +161,99 @@ class _Segment:
 # --------------------------------------------------------------------------
 
 
-def _strip_heredocs(command: str) -> str:
-    """Remove heredoc bodies and join the remaining lines as ``;``-separated commands."""
-    lines = command.replace("\\\n", " ").split("\n")
-    kept: list[str] = []
-    index = 0
-    while index < len(lines):
-        line = lines[index]
-        kept.append(line)
+def _heredoc_word(text: str, start: int) -> tuple[str, bool, int]:
+    """Read a heredoc delimiter at ``start``: its unquoted text, whether any part was quoted, and the end index."""
+    index = start
+    if index < len(text) and text[index] == "-":
         index += 1
-        for match in _HEREDOC.finditer(line):
-            while index < len(lines) and lines[index].strip() != match.group(2):
-                index += 1
+    while index < len(text) and text[index] in " \t":
+        index += 1
+    word: list[str] = []
+    quoted = False
+    quote: str | None = None
+    while index < len(text):
+        char = text[index]
+        if quote:
+            if char == quote:
+                quote = None
+            else:
+                word.append(char)
+        elif char in "'\"":
+            quote = char
+            quoted = True
+        elif char == "\\":
+            quoted = True
+        elif char.isspace() or char in ";&|<>()":
+            break
+        else:
+            word.append(char)
+        index += 1
+    return "".join(word), quoted, index
+
+
+def _normalize(command: str, ctx: _Context) -> str:
+    """Drop heredoc bodies and turn unquoted newlines into ``;`` (quote-aware).
+
+    Raises:
+        ValueError: an unterminated quote or heredoc.
+    """
+    text = command.replace("\\\n", "")
+    out: list[str] = []
+    pending: list[tuple[str, bool]] = []
+    quote: str | None = None
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote:
+            out.append(char)
+            if char == "\\" and quote == '"' and index + 1 < len(text):
+                out.append(text[index + 1])
+                index += 2
+                continue
+            if char == quote:
+                quote = None
             index += 1
-    return " ; ".join(line for line in kept if line.strip())
+            continue
+        if char in "'\"":
+            quote = char
+        elif char == "\\" and index + 1 < len(text):
+            out.append(text[index : index + 2])
+            index += 2
+            continue
+        elif text.startswith("<<", index) and not text.startswith("<<<", index) and text[index - 1 : index] != "<":
+            delimiter, quoted, end = _heredoc_word(text, index + 2)
+            if not delimiter:
+                raise ValueError("heredoc without a delimiter")
+            pending.append((delimiter, quoted))
+            out.append(" ")
+            index = end
+            continue
+        elif char == "\n":
+            out.append(" ; ")
+            index += 1
+            for delimiter, quoted in pending:
+                body: list[str] = []
+                while True:
+                    if index >= len(text):
+                        raise ValueError("unterminated heredoc")
+                    newline = text.find("\n", index)
+                    line = text[index : newline if newline != -1 else len(text)]
+                    index = newline + 1 if newline != -1 else len(text)
+                    if line.strip() == delimiter:
+                        break
+                    body.append(line)
+                joined = "\n".join(body)
+                if not quoted and ("$(" in joined or "`" in joined):
+                    ctx.risks.append("an unquoted heredoc body runs a command substitution")
+            pending = []
+            continue
+        out.append(char)
+        index += 1
+    if quote:
+        raise ValueError("unterminated quote")
+    if pending:
+        raise ValueError("unterminated heredoc")
+    return "".join(out)
 
 
 def _closing_paren(text: str, start: int) -> int:
@@ -246,7 +331,7 @@ def _extract_substitutions(text: str) -> tuple[str, list[str]]:
 
 
 def _segments(text: str) -> list[_Segment]:
-    """Split a substitution-free command into simple commands."""
+    """Split a substitution-free, single-line command into simple commands."""
     lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
     lexer.commenters = ""
@@ -263,7 +348,7 @@ def _segments(text: str) -> list[_Segment]:
             current = _Segment([], [], [])
         elif token.isdigit() and (nxt in _WRITE_REDIRECTS or nxt in _FD_REDIRECTS or nxt == "<"):
             pass  # a file descriptor number (`2>`), not an argument
-        elif token in _WRITE_REDIRECTS or token in _FD_REDIRECTS or token in _HERE_REDIRECTS or token == "<":
+        elif token in _WRITE_REDIRECTS or token in _FD_REDIRECTS or token in {"<", "<<<"}:
             current.redirects.append((token, nxt))
             index += 1
         elif not current.argv and _ASSIGNMENT.match(token):
@@ -305,6 +390,103 @@ def _unwrap(segment: _Segment) -> _Segment:
         else:
             break
     return _Segment(argv, env, segment.redirects)
+
+
+# --------------------------------------------------------------------------
+# options
+# --------------------------------------------------------------------------
+
+
+def _long_name(token: str) -> str:
+    """``--name`` of a long option token (``--name=value`` included), else ``""``."""
+    return token.split("=", 1)[0] if token.startswith("--") and len(token) > 2 else ""
+
+
+def _short_letters(token: str) -> str:
+    """The letters of a short-option token or cluster (``-Df`` → ``Df``), else ``""``."""
+    return token[1:] if re.fullmatch(r"-[A-Za-z0-9]+", token) else ""
+
+
+def _risky_flag(
+    args: Sequence[str], short: str = "", long: Sequence[str] = (), benign: Sequence[str] = ()
+) -> str | None:
+    """First option that sets a risky short letter (clusters included) or a risky long option.
+
+    Long options also match any prefix of four characters or more (git and GNU tools accept unambiguous
+    abbreviations such as ``--amen`` or ``--del``); a complete option listed in ``benign`` (``--prune``, a
+    prefix of ``--prune-tags``) is never treated as an abbreviation.
+    """
+    for token in args:
+        if token == "--":
+            break
+        name = _long_name(token)
+        if name:
+            if name in benign:
+                continue
+            if any(full == name or (len(name) >= 4 and full.startswith(name)) for full in long):
+                return token
+        elif short and set(_short_letters(token)) & set(short):
+            return token
+    return None
+
+
+def _unknown_flag(
+    args: Sequence[str],
+    short: str = "",
+    long: frozenset[str] = frozenset(),
+    valued_short: str = "",
+    valued_long: frozenset[str] = frozenset(),
+) -> str | None:
+    """First option outside a positive allowlist; a cluster may only use allowed letters.
+
+    A letter in ``valued_short`` ends its cluster (the rest, or the next token, is its value).
+    """
+    skip = False
+    for token in args:
+        if skip:
+            skip = False
+            continue
+        if token == "--":
+            break
+        name = _long_name(token)
+        if name:
+            if name in long:
+                continue
+            if name in valued_long:
+                skip = "=" not in token
+                continue
+            return token
+        letters = _short_letters(token)
+        if letters:
+            for position, char in enumerate(letters):
+                if char in valued_short:
+                    skip = position == len(letters) - 1
+                    break
+                if char not in short:
+                    return token
+            continue
+        if token.startswith("-") and token != "-":
+            return token
+    return None
+
+
+def _positionals(args: Sequence[str], valued: frozenset[str] = frozenset()) -> list[str]:
+    out: list[str] = []
+    skip = False
+    after_dashes = False
+    for token in args:
+        if skip:
+            skip = False
+            continue
+        if after_dashes:
+            out.append(token)
+        elif token == "--":
+            after_dashes = True
+        elif token in valued:
+            skip = True
+        elif not token.startswith("-") or token == "-":
+            out.append(token)
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -351,13 +533,12 @@ def workspace_roots(workspace_paths: Sequence[str], fallback: Path | None) -> li
     return roots
 
 
-def _under(path: str, root: Path) -> bool:
-    text = str(root)
-    return path == text or path.startswith(text.rstrip(os.sep) + os.sep)
+def _under(path: str, root: str) -> bool:
+    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
 
 
 def _inside(ctx: _Context, path: Path | None) -> bool:
-    return path is not None and any(_under(str(path), root) for root in ctx.roots)
+    return path is not None and any(_under(str(path), str(root)) for root in ctx.roots)
 
 
 def _expand(token: str) -> str | None:
@@ -374,33 +555,69 @@ def _expand(token: str) -> str | None:
 
 
 def _path_like(token: str) -> bool:
-    return "/" in token or token.startswith("~") or "$" in token or token == ".." or _PLACEHOLDER in token
+    return (
+        "/" in token or token.startswith("~") or "$" in token or "{" in token or token == ".." or _PLACEHOLDER in token
+    )
+
+
+def _resolve(ctx: _Context, token: str) -> tuple[str | None, str | None]:
+    """Resolve a path-like token: ``(normalized absolute path, None)`` or ``(None, problem)``."""
+    if "{" in token and "}" in token and ("," in token or ".." in token):
+        return None, "uses brace expansion"
+    if _PLACEHOLDER in token:
+        if not ctx.subst_trusted:
+            return None, "is built from a command substitution"
+        base = ctx.cwd or (ctx.roots[0] if ctx.roots else None)
+        if base is None:
+            return None, "is built from a command substitution"
+        token = token.replace(_PLACEHOLDER, str(base))
+    expanded = _expand(token)
+    if expanded is None:
+        return None, "is built from a shell variable"
+    if not os.path.isabs(expanded):
+        if ctx.cwd is None:
+            return None, "is relative to an unknown directory"
+        expanded = os.path.join(str(ctx.cwd), expanded)
+    return os.path.normpath(expanded), None
 
 
 def _path_problem(ctx: _Context, token: str) -> str | None:
     """Why a path-like token may point outside the workspace, or None when it stays inside."""
-    if _PLACEHOLDER in token:
-        return None if ctx.subst_trusted else "is built from a command substitution"
-    expanded = _expand(token)
-    if expanded is None:
-        return "is built from a shell variable"
-    if expanded == "/dev/null" or expanded.startswith("/dev/fd/") or expanded in {"/dev/stdout", "/dev/stderr"}:
+    norm, problem = _resolve(ctx, token)
+    if problem or norm is None:
+        return problem
+    if norm == "/dev/null" or norm.startswith("/dev/fd/") or norm in {"/dev/stdout", "/dev/stderr", "/dev/stdin"}:
         return None
-    if not os.path.isabs(expanded):
-        if ctx.cwd is None:
-            return "is relative to an unknown directory"
-        expanded = os.path.join(str(ctx.cwd), expanded)
-    if any(_under(os.path.normpath(expanded), root) for root in ctx.roots):
-        return None
-    return "is outside the workspace"
+    if not any(_under(norm, str(root)) for root in ctx.roots):
+        return "is outside the workspace"
+    if not any(_under(os.path.realpath(norm), root) for root in ctx.real_roots):
+        return "resolves outside the workspace through a symlink"
+    return None
 
 
-def _check_paths(ctx: _Context, tokens: Sequence[str], what: str) -> str | None:
+def _check_paths(ctx: _Context, tokens: Sequence[str], what: str, *, attached: bool = False) -> str | None:
+    """First path-like token (or option value) that may point outside the workspace.
+
+    Args:
+        ctx: Evaluation state.
+        tokens: Arguments to inspect; ``--opt=value`` values are inspected too.
+        what: Label for the reason.
+        attached: Also inspect values attached to short options (``-f/etc/passwd``).
+    """
     for token in tokens:
-        value = token.split("=", 1)[1] if token.startswith("--") and "=" in token else token
-        if value.startswith("-") and value != token:
+        if token == "--":
             continue
-        if (value is token and token.startswith("-")) or not _path_like(value):
+        if token.startswith("--"):
+            if "=" not in token:
+                continue
+            value = token.split("=", 1)[1]
+        elif token.startswith("-") and token != "-":
+            if not (attached and len(token) > 2):
+                continue
+            value = token[2:]
+        else:
+            value = token
+        if not _path_like(value):
             continue
         problem = _path_problem(ctx, value)
         if problem:
@@ -409,53 +626,37 @@ def _check_paths(ctx: _Context, tokens: Sequence[str], what: str) -> str | None:
 
 
 # --------------------------------------------------------------------------
-# per-command rules
+# read-only tools
 # --------------------------------------------------------------------------
 
 _FIND_ACTIONS = frozenset({"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0", "-fprintf", "-fls"})
+_FIND_PATH_VALUED = frozenset({"-newer", "-anewer", "-cnewer", "-samefile", "-files0-from"})
 _SED_PRINT = (
     re.compile(r"^\s*(\d+|\$)(\s*,\s*(\d+|\$))?\s*p\s*$"),
     re.compile(r"^\s*/[^/]*/(\s*,\s*/[^/]*/)?\s*p\s*$"),
     re.compile(r"^\s*s(.)(?:(?!\1)[^\\]|\\.)*\1(?:(?!\1)[^\\]|\\.)*\1[gpiI0-9]*\s*$"),
 )
 _GREP_VALUED = frozenset(
-    {"-e", "--regexp", "-f", "--file", "-m", "--max-count", "-A", "-B", "-C", "--context", "--after-context",
-     "--before-context", "--include", "--exclude", "--exclude-dir", "-g", "--glob", "-t", "--type", "-T",
-     "--type-not", "--color", "--colour", "-M", "--max-columns", "-j", "--threads", "--max-depth", "-d"}
+    {"-m", "--max-count", "-A", "-B", "-C", "--context", "--after-context", "--before-context", "--include",
+     "--exclude", "--exclude-dir", "-g", "--glob", "-t", "--type", "-T", "--type-not", "--color", "--colour",
+     "-M", "--max-columns", "-j", "--threads", "--max-depth", "-d", "--sort", "--sortr"}
 )  # fmt: skip
-_NO_PATH_CHECK = frozenset({"echo", "printf", "test", "date", "basename", "dirname", "realpath", "readlink", "which",
-                            "pwd"})  # fmt: skip
-_PYTEST_VALUED = frozenset(
-    {"-k", "-m", "-p", "-c", "-o", "-n", "-W", "-r", "--tb", "--maxfail", "--rootdir", "--basetemp", "--deselect",
-     "--ignore", "--ignore-glob", "--confcutdir", "--durations", "--junitxml", "--log-level", "--cov",
-     "--cov-report", "--dist", "--color", "--import-mode", "--timeout", "-x"}
-)  # fmt: skip
-
-
-def _positionals(args: Sequence[str], valued: frozenset[str]) -> list[str]:
-    out: list[str] = []
-    skip = False
-    for token in args:
-        if skip:
-            skip = False
-            continue
-        if token in valued and token != "-x":
-            skip = True
-        elif not token.startswith("-") or token == "-":
-            out.append(token)
-    return out
+#: tools whose arguments are text, not paths (their redirects are still checked)
+_TEXT_ONLY = frozenset({"echo", "printf", "test", "basename", "dirname", "realpath", "readlink", "which", "pwd"})
 
 
 def _find(ctx: _Context, args: list[str]) -> str | None:
     hit = next((a for a in args if a in _FIND_ACTIONS), None)
     if hit:
         return f"`find {hit}` runs or deletes"
-    starts: list[str] = []
     index = 0
+    while index < len(args) and (args[index] in {"-H", "-L", "-P", "-D"} or args[index].startswith("-O")):
+        index += 2 if args[index] == "-D" else 1
+    starts: list[str] = []
     while index < len(args) and not (args[index].startswith("-") or args[index] in {"(", "!", ")"}):
         starts.append(args[index])
         index += 1
-    values = [args[i + 1] for i in range(len(args) - 1) if args[i] in {"-newer", "-samefile"}]
+    values = [args[i + 1] for i in range(len(args) - 1) if args[i] in _FIND_PATH_VALUED or args[i].startswith("-newer")]
     return _check_paths(ctx, [*(starts or ["."]), *values], "find path")
 
 
@@ -480,13 +681,13 @@ def _sed(ctx: _Context, args: list[str]) -> str | None:
                 return f"`sed {token}` is not on the read-only list"
         elif token.startswith("-") and token != "-":
             cluster = token[1:]
-            for pos, char in enumerate(cluster):
+            for position, char in enumerate(cluster):
                 if char == "i":
                     return "`sed -i` edits files in place"
                 if char == "f":
                     return "`sed -f` runs a script file"
                 if char == "e":
-                    rest = cluster[pos + 1 :]
+                    rest = cluster[position + 1 :]
                     if rest:
                         scripts.append(rest)
                     else:
@@ -505,30 +706,88 @@ def _sed(ctx: _Context, args: list[str]) -> str | None:
     return _check_paths(ctx, files, "sed input")
 
 
+def _grep(ctx: _Context, name: str, args: list[str]) -> str | None:
+    if name == "rg":
+        hit = _risky_flag(args, long=("--pre", "--pre-glob", "--hostname-bin"))
+        if hit:
+            return f"`rg {hit}` runs a program"
+
+    def is_pattern_option(token: str) -> bool:
+        return (not token.startswith("--") and token.startswith("-e")) or token.startswith("--regexp")
+
+    explicit = (
+        any(
+            is_pattern_option(t) or (not t.startswith("--") and t.startswith("-f")) or t.startswith("--file")
+            for t in args
+        )
+        or "--type-list" in args
+    )
+    positionals = _positionals(args, _GREP_VALUED | {"-e", "--regexp", "-f", "--file"})
+    files = positionals if explicit else positionals[1:]
+    pattern_files = [args[i + 1] for i in range(len(args) - 1) if args[i] in {"-f", "--file"}]
+    options = [t for t in args if t.startswith("-") and not is_pattern_option(t)]
+    return _check_paths(ctx, [*files, *pattern_files, *options], f"{name} path", attached=True)
+
+
+def _jq(ctx: _Context, args: list[str]) -> str | None:
+    from_file = any(t in {"-f", "--from-file"} or t.startswith("--from-file=") for t in args)
+    positionals: list[str] = []
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if token in {"--arg", "--argjson"}:
+            index += 3
+            continue
+        if token in {"--rawfile", "--slurpfile"}:
+            positionals.extend(args[index + 2 : index + 3])
+            index += 3
+            continue
+        if token in {"--indent", "-L"}:
+            positionals.extend(args[index + 1 : index + 2] if token == "-L" else [])
+            index += 2
+            continue
+        if not token.startswith("-") or token == "-":
+            positionals.append(token)
+        index += 1
+    files = positionals if from_file else positionals[1:]
+    return _check_paths(ctx, [*files, *(t for t in args if t.startswith("--"))], "jq input")
+
+
 def _read_only(ctx: _Context, name: str, args: list[str]) -> str | None:
     if name == "find":
         return _find(ctx, args)
     if name == "sed":
         return _sed(ctx, args)
-    if name == "sort" and any(a == "--output" or a.startswith(("--output=", "-o")) for a in args):
-        return "`sort -o` writes a file"
-    if name == "tree" and "-o" in args:
-        return "`tree -o` writes a file"
+    if name in {"grep", "rg"}:
+        return _grep(ctx, name, args)
+    if name == "jq":
+        return _jq(ctx, args)
+    if name == "sort":
+        hit = _risky_flag(args, short="o", long=("--output", "--compress-program"))
+        if hit:
+            return f"`sort {hit}` writes a file or runs a program"
+    if name == "tree":
+        hit = _risky_flag(args, short="o", long=("--output",))
+        if hit:
+            return f"`tree {hit}` writes a file"
     if name == "uniq" and len(_positionals(args, frozenset({"-f", "-s", "-w"}))) >= 2:
         return "`uniq IN OUT` writes a file"
-    if name == "rg" and any(a in {"--pre", "--pre-glob"} or a.startswith("--pre=") for a in args):
-        return "`rg --pre` runs a command"
-    if name in _NO_PATH_CHECK:
+    if name in _TEXT_ONLY:
         return None
-    if name in {"grep", "rg"}:
-        explicit = any(a in {"-e", "--regexp", "-f", "--file"} or a.startswith("--regexp=") for a in args)
-        positionals = _positionals(args, _GREP_VALUED)
-        files = positionals if explicit else positionals[1:]
-        valued = [args[i + 1] for i in range(len(args) - 1) if args[i] in {"-f", "--file"}]
-        return _check_paths(ctx, [*files, *valued], f"{name} path")
-    if name == "jq":
-        return _check_paths(ctx, _positionals(args, frozenset({"--arg", "--argjson"}))[1:], "jq input")
-    return _check_paths(ctx, args, f"{name} path")
+    return _check_paths(ctx, args, f"{name} path", attached=True)
+
+
+# --------------------------------------------------------------------------
+# git
+# --------------------------------------------------------------------------
+
+#: options whose value is free text (messages, formats, search strings): never path-checked
+_GIT_TEXT_VALUED = frozenset(
+    {"-m", "--message", "--author", "--committer", "--date", "--grep", "-S", "-G", "--format", "--pretty",
+     "--trailer", "--since", "--until", "--before", "--after", "--subject-prefix"}
+)  # fmt: skip
+_BRANCH_NAME = re.compile(r"^[A-Za-z0-9._/-]+$")
+_REMOTE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def _current_branch(start: Path | None) -> str | None:
@@ -549,98 +808,195 @@ def _current_branch(start: Path | None) -> str | None:
     return head.removeprefix("ref: refs/heads/") if head.startswith("ref: refs/heads/") else None
 
 
-def _push(ctx: _Context, args: list[str], cwd: Path | None) -> str | None:
-    risky = {"-f", "--force", "--force-with-lease", "--force-if-includes", "-d", "--delete", "--mirror", "--all",
-             "--prune", "--no-verify", "--receive-pack", "--exec"}  # fmt: skip
-    hit = next((a for a in args if a.split("=", 1)[0] in risky), None)
-    positionals = _positionals(args, frozenset({"-o", "--push-option", "--repo"}))
-    refspecs = positionals[1:]
-    destinations: list[str] = []
-    for spec in refspecs or ["HEAD"]:
-        if spec.startswith(":"):
-            hit = hit or f"refspec {spec} deletes a branch"
+def _git_paths(ctx: _Context, args: list[str], cwd: Path | None) -> str | None:
+    """Path-check git arguments (free-text option values excluded) relative to the git working directory."""
+    tokens: list[str] = []
+    skip = False
+    for token in args:
+        if skip:
+            skip = False
             continue
+        name = _long_name(token) or token
+        if name in _GIT_TEXT_VALUED:
+            skip = "=" not in token
+            continue
+        if token.startswith(("-m", "-S", "-G")) and not token.startswith("--"):
+            continue
+        tokens.append(token)
+    outer = ctx.cwd
+    ctx.cwd = cwd
+    try:
+        return _check_paths(ctx, tokens, "git path")
+    finally:
+        ctx.cwd = outer
+
+
+def _push(ctx: _Context, args: list[str], cwd: Path | None) -> str | None:
+    unknown = _unknown_flag(
+        args,
+        short="uqvn",
+        long=frozenset(
+            {"--set-upstream", "--quiet", "--verbose", "--porcelain", "--dry-run", "--progress", "--no-progress",
+             "--atomic"}
+        ),  # fmt: skip
+    )
+    if unknown:
+        return f"`git push {unknown}` is not a plain push"
+    positionals = _positionals(args)
+    if positionals and not _REMOTE_NAME.match(positionals[0]):
+        return f"`git push {positionals[0]}` pushes to a URL or path, not a configured remote"
+    destinations: list[str] = []
+    for spec in positionals[1:] or ["HEAD"]:
+        if spec.startswith(":"):
+            return f"refspec {spec} deletes a branch"
         if spec.startswith("+"):
-            hit = hit or f"refspec {spec} forces the update"
-            spec = spec[1:]
+            return f"refspec {spec} forces the update"
+        if "*" in spec:
+            return f"refspec {spec} pushes a pattern"
         dest = spec.split(":", 1)[1] if ":" in spec else spec
-        if dest == "HEAD":
+        if dest == "HEAD" or (":" not in spec and spec == "HEAD"):
             dest = _current_branch(cwd) or ""
-        destinations.append(dest.removeprefix("refs/heads/"))
+        for prefix in ("refs/heads/", "heads/"):
+            dest = dest.removeprefix(prefix)
+        destinations.append(dest)
     blocked = sorted({d for d in destinations if d in ctx.hotfix})
     if blocked:
         ctx.deny.append(
             f"BLOCKED: push to {', '.join(blocked)} — that branch changes only through a pull request. "
             f"Push your own branch and open a PR against {blocked[0]}."
         )
-    return f"`git push {hit}`" + (" is risky" if not hit.startswith("refspec") else "") if hit else None
+    return None
+
+
+def _commit(ctx: _Context, args: list[str], cwd: Path | None) -> str | None:
+    hit = _risky_flag(args, long=("--amend", "--no-verify"))
+    if hit:
+        return f"`git commit {hit}` rewrites history or skips hooks"
+    valued = {"-m", "-F", "-C", "-c", "-t", "--message", "--file", "--author", "--date", "--reuse-message",
+              "--reedit-message", "--fixup", "--squash", "--trailer", "--cleanup", "--template"}  # fmt: skip
+    files: list[str] = []
+    skip: str | None = None
+    for token in args:
+        if skip is not None:
+            if skip in {"-F", "--file", "-t", "--template"}:
+                files.append(token)
+            skip = None
+            continue
+        name = _long_name(token)
+        if name in {"--file", "--template"} and "=" in token:
+            files.append(token.split("=", 1)[1])
+        if token in valued:
+            skip = token
+        elif _short_letters(token):
+            for position, char in enumerate(token[1:]):
+                if char == "n":
+                    return "`git commit -n` skips hooks"
+                if char in "mFCct":
+                    rest = token[position + 2 :]
+                    if char in "Ft":
+                        if rest:
+                            files.append(rest)
+                        else:
+                            skip = f"-{char}"
+                    elif not rest:
+                        skip = f"-{char}"
+                    break
+    outer = ctx.cwd
+    ctx.cwd = cwd
+    try:
+        return _check_paths(ctx, files, "git commit message file")
+    finally:
+        ctx.cwd = outer
 
 
 def _git_sub(ctx: _Context, sub: str, args: list[str], cwd: Path | None) -> str | None:  # noqa: C901 — flat rule table
     if sub not in GIT_SUBCOMMANDS:
         return f"`git {sub}` is not on the SDD auto-approve list"
     if sub in _GIT_READ:
-        if any(a == "--output" or a.startswith("--output=") or a in {"-O", "--open-files-in-pager"} for a in args):
-            return f"`git {sub}` writes a file or opens a pager"
-        return None
+        hit = _risky_flag(
+            args,
+            short="O" if sub == "grep" else "",
+            long=("--output", "--open-files-in-pager", "--no-index", "--contents"),
+        )
+        if hit:
+            return f"`git {sub} {hit}` writes a file, runs a program or reads outside git"
+        return _git_paths(ctx, args, cwd)
     if sub == "branch":
-        risky = {"-d", "-D", "--delete", "-m", "-M", "--move", "-c", "-C", "--copy", "-f", "--force", "-u",
-                 "--set-upstream-to", "--unset-upstream", "--edit-description"}  # fmt: skip
-        hit = next((a for a in args if a.split("=", 1)[0] in risky), None)
+        hit = _risky_flag(
+            args,
+            short="dDmMcCfu",
+            long=("--delete", "--move", "--copy", "--force", "--set-upstream-to", "--unset-upstream",
+                  "--edit-description"),
+        )  # fmt: skip
         return f"`git branch {hit}` changes branches" if hit else None
     if sub == "remote":
-        return None if not args or args[0] in {"-v", "--verbose", "get-url", "show"} else "`git remote` changes remotes"
+        rest = [a for a in args if a not in {"-v", "--verbose"}]
+        return None if not rest or rest[0] in {"get-url", "show"} else "`git remote` changes remotes"
     if sub == "config":
-        writes = {"--unset", "--unset-all", "--add", "--replace-all", "--edit", "-e", "--rename-section",
-                  "--remove-section", "--file", "-f", "--blob"}  # fmt: skip
-        if any(a.split("=", 1)[0] in writes for a in args) or len(_positionals(args, frozenset())) >= 2:
-            return "`git config` writes configuration"
+        reads = {"--get", "--get-all", "--get-regexp", "--list"}
+        unknown = _unknown_flag(
+            args,
+            short="lz",
+            long=frozenset(reads | {"--show-origin", "--show-scope", "--null", "--name-only", "--includes",
+                                    "--no-includes", "--local", "--worktree"}),
+            valued_long=frozenset({"--type", "--default"}),
+        )  # fmt: skip
+        reading = any(_long_name(a) in reads for a in args) or bool({"-l"} & set(args))
+        if unknown or (not reading and len(_positionals(args)) != 1):
+            return "`git config` writes configuration or reads outside the repository"
         return None
     if sub == "worktree":
-        return None if args[:1] == ["list"] else "`git worktree` other than `list` (use `parrot sdd worktree`)"
+        ok = args[:1] == ["list"] and not _unknown_flag(
+            args[1:], short="vz", long=frozenset({"--porcelain", "--verbose"})
+        )
+        return None if ok else "`git worktree` other than `list` (use `parrot sdd worktree`)"
     if sub == "fetch":
-        if any(a in {"-f", "--force", "--update-head-ok"} or a.startswith("--upload-pack") for a in args):
-            return "`git fetch --force` can rewrite local branches"
+        hit = _risky_flag(
+            args, short="f", long=("--force", "--update-head-ok", "--upload-pack", "--prune-tags"), benign=("--prune",)
+        )
+        if hit:
+            return f"`git fetch {hit}` can rewrite local refs"
         if any(":" in p or p.startswith("+") for p in _positionals(args, frozenset({"--depth", "-j", "--jobs"}))[1:]):
             return "a `git fetch` refspec can rewrite a local branch"
         return None
+    if sub == "add":
+        hit = _risky_flag(args, short="f", long=("--force",))
+        return f"`git add {hit}` adds ignored files" if hit else _git_paths(ctx, args, cwd)
     if sub == "commit":
-        valued = {"-m", "-F", "-C", "-c", "-t", "--message", "--file", "--author", "--date", "--reuse-message",
-                  "--reedit-message", "--fixup", "--squash", "--trailer", "--cleanup", "--template"}  # fmt: skip
-        skip = False
-        for token in args:
-            if skip:
-                skip = False
-                continue
-            if token.split("=", 1)[0] in {"--amend", "--no-verify"}:
-                return f"`git commit {token}` rewrites history or skips hooks"
-            if token in valued:
-                skip = True
-            elif re.fullmatch(r"-[a-zA-Z]+", token):
-                for char in token[1:]:
-                    if char == "n":
-                        return "`git commit -n` skips hooks"
-                    if char in "mFCct":
-                        break
-        return None
+        return _commit(ctx, args, cwd)
     if sub == "pull":
-        return (
-            "`git pull --force`" if any(a in {"-f", "--force"} or a.startswith("--upload-pack") for a in args) else None
-        )
+        hit = _risky_flag(args, short="fr", long=("--force", "--rebase", "--upload-pack"))
+        return f"`git pull {hit}` rewrites local history or refs" if hit else None
     if sub == "push":
         return _push(ctx, args, cwd)
     if sub == "checkout":
         plain = [a for a in args if a not in {"-q", "--quiet"}]
         if len(plain) == 1 and plain[0] in ctx.protected:
             return None
-        if plain[:1] == ["-b"] and len(plain) in {2, 3} and not any(p.startswith("-") for p in plain[1:]):
+        if (
+            plain[:1] == ["-b"]
+            and len(plain) in {2, 3}
+            and all(_BRANCH_NAME.match(p) and not p.startswith("-") for p in plain[1:])
+        ):
             return None
         return "`git checkout` of paths or other refs can discard changes (use `git switch <branch>`)"
     if sub == "switch":
-        risky = {"-f", "--force", "--discard-changes", "-C", "--force-create"}
-        hit = next((a for a in args if a in risky), None)
-        return f"`git switch {hit}` can discard changes" if hit else None
-    return None  # merge, add
+        unknown = _unknown_flag(
+            args,
+            short="cqt",
+            long=frozenset({"--create", "--quiet", "--track", "--no-track", "--detach", "--guess", "--no-guess",
+                            "--progress", "--no-progress"}),
+        )  # fmt: skip
+        return f"`git switch {unknown}` can discard changes" if unknown else None
+    unknown = _unknown_flag(  # merge
+        args,
+        short="qv",
+        long=frozenset({"--ff-only", "--no-ff", "--ff", "--no-edit", "--edit", "--quiet", "--verbose", "--stat",
+                        "--no-stat", "--log", "--no-log", "--continue", "--progress", "--no-progress", "--signoff"}),
+        valued_short="m",
+        valued_long=frozenset({"--message"}),
+    )  # fmt: skip
+    return f"`git merge {unknown}` is not a plain merge" if unknown else None
 
 
 def _git(ctx: _Context, args: list[str]) -> str | None:
@@ -651,13 +1007,12 @@ def _git(ctx: _Context, args: list[str]) -> str | None:
         if token == "-C" or (token.startswith("-C") and len(token) > 2):
             target = args[index + 1] if token == "-C" and index + 1 < len(args) else token[2:]
             index += 2 if token == "-C" else 1
-            expanded = _expand(target) if _PLACEHOLDER not in target else None
-            if expanded is None:
-                cwd = None
-                continue
-            path = Path(os.path.normpath(os.path.join(str(cwd) if cwd else "/", expanded)))
-            if not _inside(ctx, path):
-                return f"`git -C {target}` is outside the workspace"
+            norm, problem = _resolve(ctx, target)
+            if problem or norm is None:
+                return f"`git -C {target.replace(_PLACEHOLDER, '$(…)')}` {problem}"
+            path = Path(norm)
+            if not _inside(ctx, path) or not any(_under(os.path.realpath(norm), r) for r in ctx.real_roots):
+                return f"`git -C {target.replace(_PLACEHOLDER, '$(…)')}` is outside the workspace"
             cwd = path
             continue
         if token in {"--no-pager", "--no-optional-locks", "--literal-pathspecs", "--no-replace-objects"}:
@@ -669,24 +1024,61 @@ def _git(ctx: _Context, args: list[str]) -> str | None:
     return _git_sub(ctx, args[index], args[index + 1 :], cwd)
 
 
-def _gh(args: list[str]) -> str | None:
-    if args[:1] != ["api"]:
+# --------------------------------------------------------------------------
+# gh, parrot, wikitoolkit, tests
+# --------------------------------------------------------------------------
+
+
+def _gh(ctx: _Context, args: list[str]) -> str | None:
+    if args[:1] == ["api"]:
+        for index, token in enumerate(args):
+            method = None
+            if token in {"-X", "--method"}:
+                method = args[index + 1] if index + 1 < len(args) else ""
+            elif token.startswith("--method="):
+                method = token.split("=", 1)[1]
+            elif token.startswith("-X") and len(token) > 2:
+                method = token[2:]
+            if method is not None and method.upper() != "GET":
+                return f"`gh api` with method {method} changes GitHub state"
+            if token in {"-f", "-F", "--field", "--raw-field", "--input"} or token.startswith(
+                ("--field=", "--raw-field=", "--input=")
+            ):
+                return "`gh api` with fields sends a write request"
+            if re.match(r"-[fF].", token):
+                return "`gh api` with fields sends a write request"
         return None
-    for index, token in enumerate(args):
-        if token in {"-X", "--method"}:
-            method = args[index + 1] if index + 1 < len(args) else ""
-            if method.upper() != "GET":
-                return f"`gh api {token} {method}` changes GitHub state"
-        if token.startswith("--method=") and token.split("=", 1)[1].upper() != "GET":
-            return "`gh api --method` changes GitHub state"
-        if token.split("=", 1)[0] in {"-f", "-F", "--field", "--raw-field", "--input"} or re.match(r"-[fF]\w", token):
-            return "`gh api` with fields sends a write request"
+    if args[:2] == ["pr", "create"]:
+        files = [args[i + 1] for i in range(len(args) - 1) if args[i] in {"-F", "--body-file"}]
+        files += [t.split("=", 1)[1] for t in args if t.startswith("--body-file=")]
+        files += [t[2:] for t in args if t.startswith("-F") and len(t) > 2]
+        return _check_paths(ctx, files, "gh pr create body file")
     return None
 
 
-_PARROT_RISKY_NOUNS = frozenset({"install", "uninstall", "launch", "closeout"})
-_PARROT_RISKY_VERBS = frozenset({("worktree", "remove"), ("worktree", "push-protection"), ("hooks", "install")})
-_WIKI_RISKY = frozenset({"claude", "codex", "gemini", "google", "mcp", "serve"})
+_SPEC_VERBS = frozenset(
+    {"init-run", "render-brief", "stamp-run", "validate-suggestions", "check-path", "commit-intake",
+     "existing-feature-id", "consequences"}
+)  # fmt: skip
+#: the `parrot sdd <noun> <verb>` surface the four agy SDD skills use; None = every verb
+_PARROT_SDD: dict[str, frozenset[str] | None] = {
+    "worktree": frozenset({"ensure", "root", "status", "list", "baseline", "sync-base"}),
+    "task": frozenset({"close", "finalize", "graph", "state", "review", "heal"}),
+    "ids": frozenset({"reserve", "check", "ledger"}),
+    "spec": _SPEC_VERBS,
+    "brief": frozenset({"plan", "write-index"}),
+    "docs": frozenset({"parse", "taxonomy", "resolve-flow", "list"}),
+    "tests": frozenset({"select", "report", "contract", "e2e-closeout"}),
+    "techwiki": frozenset({"check", "api"}),
+    "hooks": frozenset({"dangerous-actions", "agy-permissions"}),
+    "ledger": None,
+    "status": None,
+}
+_WIKITOOLKIT = frozenset(
+    {"query", "page", "related", "status", "symbols", "ledger", "spec", "remember", "note", "link", "memories",
+     "audit", "standup", "decisions", "adr", "lint", "entity", "communities", "ground", "schema", "usage", "ns",
+     "inbox", "build"}
+)  # fmt: skip
 
 
 def _parrot(args: list[str]) -> str | None:
@@ -694,29 +1086,62 @@ def _parrot(args: list[str]) -> str | None:
         return _wikitoolkit(args[1:])
     noun = args[1] if len(args) > 1 else ""
     verb = args[2] if len(args) > 2 else ""
-    if noun in _PARROT_RISKY_NOUNS or (noun, verb) in _PARROT_RISKY_VERBS:
-        return f"`parrot sdd {noun}{' ' + verb if verb else ''}` changes the environment"
-    return None
+    if noun in _PARROT_SDD and (_PARROT_SDD[noun] is None or verb in (_PARROT_SDD[noun] or ())):
+        return None
+    if not noun or noun in {"--help", "-h"}:
+        return None
+    return f"`parrot sdd {noun}{' ' + verb if verb else ''}` is not on the SDD auto-approve list"
 
 
 def _wikitoolkit(args: list[str]) -> str | None:
-    return f"`wikitoolkit {args[0]}` installs or serves" if args[:1] and args[0] in _WIKI_RISKY else None
+    if not args or args[0] in _WIKITOOLKIT or args[0] in {"--help", "-h"}:
+        return None
+    return f"`wikitoolkit {args[0]}` is not on the SDD auto-approve list"
+
+
+_TEST_OUTPUTS = ("--junitxml", "--junit-xml", "--basetemp", "--html", "--report-log", "--log-file", "--resultlog")
+_PYTEST_VALUED = frozenset(
+    {"-k", "-m", "-p", "-c", "-o", "-n", "-W", "-r", "--tb", "--maxfail", "--rootdir", "--deselect", "--ignore",
+     "--ignore-glob", "--confcutdir", "--durations", "--log-level", "--cov", "--cov-report", "--dist", "--color",
+     "--import-mode", "--timeout", "--override-ini", "--config-file"}
+)  # fmt: skip
 
 
 def _tests(ctx: _Context, args: list[str], name: str) -> str | None:
+    hit = _risky_flag(args, long=_TEST_OUTPUTS)
+    if hit:
+        return f"`{name} {hit}` writes output files"
     positionals = _positionals(args, _PYTEST_VALUED)
     paths = [p for p in positionals if "/" in p or p.endswith(".py") or "::" in p or p == "."]
     if not paths:
         return f"`{name}` without an explicit path runs on the whole repository"
-    valued = [args[i + 1] for i in range(len(args) - 1) if args[i] in {"--basetemp", "--rootdir", "-c"}]
-    return _check_paths(ctx, [*paths, *valued, *(a for a in args if a.startswith("--"))], f"{name} path")
+    overrides = [args[i + 1].split("=", 1)[-1] for i in range(len(args) - 1) if args[i] in {"-o", "--override-ini"}]
+    return _check_paths(ctx, [*args, *overrides], f"{name} path")
+
+
+# --------------------------------------------------------------------------
+# segments
+# --------------------------------------------------------------------------
+
+
+def _env_risk(ctx: _Context, segment: _Segment) -> str | None:
+    for assignment in segment.env:
+        name, _, value = assignment.partition("=")
+        if name in _PATH_ENV:
+            for entry in filter(None, value.split(os.pathsep)):
+                problem = _path_problem(ctx, entry)
+                if problem:
+                    return f"{name} entry `{entry}` {problem}"
+        elif name not in _SAFE_ENV:
+            return f"environment override {name}"
+    return None
 
 
 def _segment_risk(ctx: _Context, segment: _Segment) -> str | None:
     """The risk of one covered simple command, or None."""
-    bad_env = [e.split("=", 1)[0] for e in segment.env if e.split("=", 1)[0] not in _SAFE_ENV]
-    if bad_env:
-        return f"environment override {', '.join(bad_env)}"
+    env = _env_risk(ctx, segment)
+    if env:
+        return env
     if not _inside(ctx, ctx.cwd):
         return "the working directory is outside the workspace"
     argv = segment.argv
@@ -726,12 +1151,12 @@ def _segment_risk(ctx: _Context, segment: _Segment) -> str | None:
     if name == "git":
         return _git(ctx, args)
     if name == "gh":
-        return _gh(args)
+        return _gh(ctx, args)
     if name == "parrot":
         return _parrot(args)
     if name == "wikitoolkit":
         return _wikitoolkit(args)
-    if name == "pytest" or name in {"black"}:
+    if name in {"pytest", "black"}:
         return _tests(ctx, args, name)
     if name in {"python", "python3"}:
         return _tests(ctx, args[2:], "pytest")
@@ -740,39 +1165,38 @@ def _segment_risk(ctx: _Context, segment: _Segment) -> str | None:
     return None  # source/. .venv/bin/activate
 
 
+def _control_path(ctx: _Context, norm: str) -> bool:
+    """Whether an absolute path lies in a control directory (``.agents``, ``.git`` …) of a workspace root."""
+    for root in ctx.roots:
+        if _under(norm, str(root)) and norm != str(root):
+            first = Path(os.path.relpath(norm, root)).parts[0]
+            if first in _CONTROL_DIRS:
+                return True
+    return False
+
+
 def _redirect_risk(ctx: _Context, segment: _Segment) -> None:
     """Record denies/risks for one segment's redirections (applies to every command)."""
     for op, target in segment.redirects:
-        if op in _HERE_REDIRECTS or not target:
+        if op == "<<<" or not target:
             continue
         if op in _FD_REDIRECTS and (target.isdigit() or target == "-"):
             continue
         writes = op in _WRITE_REDIRECTS or op in _FD_REDIRECTS
+        shown = target.replace(_PLACEHOLDER, "$(…)")
         problem = _path_problem(ctx, target) if _path_like(target) or ctx.cwd is None else None
         if problem:
-            ctx.risks.append(f"redirect {op} `{target.replace(_PLACEHOLDER, '$(…)')}` {problem}")
-        elif writes and target != "/dev/null":
-            verdict = dangerous_actions.evaluate(
-                {"tool_name": "Write", "tool_input": {"file_path": target}}, root=ctx.root
-            )
-            if verdict.decision == "deny":
-                ctx.deny.append(verdict.reason)
-
-
-def _evaluate_command(ctx: _Context, command: str, depth: int = 0) -> None:
-    """Classify one command string (recursing into substitutions), recording into ``ctx``."""
-    if depth > 8:
-        ctx.risks.append("substitutions nested too deeply")
-        return
-    text, bodies = _extract_substitutions(_strip_heredocs(command))
-    for body in bodies:
-        _evaluate_command(ctx, body, depth + 1)
-    outer_trusted = ctx.subst_trusted
-    ctx.subst_trusted = all(_trusted_substitution(body) for body in bodies)
-    try:
-        _evaluate_segments(ctx, text)
-    finally:
-        ctx.subst_trusted = outer_trusted
+            ctx.risks.append(f"redirect {op} `{shown}` {problem}")
+            continue
+        if not writes or target == "/dev/null":
+            continue
+        norm, _ = _resolve(ctx, target)
+        if norm is not None and _control_path(ctx, norm):
+            ctx.risks.append(f"redirect {op} `{shown}` rewrites agent, hook or git configuration")
+            continue
+        verdict = dangerous_actions.evaluate({"tool_name": "Write", "tool_input": {"file_path": target}}, root=ctx.root)
+        if verdict.decision == "deny":
+            ctx.deny.append(verdict.reason)
 
 
 _TRUSTED_SUBSTITUTIONS: tuple[tuple[str, ...], ...] = (
@@ -784,7 +1208,9 @@ _TRUSTED_SUBSTITUTIONS: tuple[tuple[str, ...], ...] = (
 
 
 def _trusted_substitution(body: str) -> bool:
-    """Whether a substitution only prints a path or name derived from the repository itself."""
+    """Whether a substitution only prints a path or name inside the repository (its value is then path-checked)."""
+    if "\n" in body or "$(" in body or "`" in body:
+        return False
     try:
         segments = _segments(body)
     except ValueError:
@@ -804,12 +1230,8 @@ def _evaluate_segments(ctx: _Context, text: str) -> None:
         argv = segment.argv
         if argv and argv[0] in {"cd", "pushd"}:
             target = argv[1] if len(argv) > 1 else "~"
-            expanded = _expand(target) if _PLACEHOLDER not in target and target != "-" else None
-            ctx.cwd = (
-                None
-                if expanded is None or ctx.cwd is None and not os.path.isabs(expanded)
-                else Path(os.path.normpath(os.path.join(str(ctx.cwd or "/"), expanded)))
-            )
+            norm, problem = _resolve(ctx, target) if target != "-" else (None, "previous directory")
+            ctx.cwd = None if problem or norm is None else Path(norm)
             continue
         if argv and argv[0] == "popd":
             ctx.cwd = None
@@ -819,6 +1241,22 @@ def _evaluate_segments(ctx: _Context, text: str) -> None:
             risk = _segment_risk(ctx, segment)
             if risk:
                 ctx.risks.append(risk)
+
+
+def _evaluate_command(ctx: _Context, command: str, depth: int = 0) -> None:
+    """Classify one command string (recursing into substitutions), recording into ``ctx``."""
+    if depth > 8:
+        ctx.risks.append("substitutions nested too deeply")
+        return
+    text, bodies = _extract_substitutions(_normalize(command, ctx))
+    for body in bodies:
+        _evaluate_command(ctx, body, depth + 1)
+    outer_trusted = ctx.subst_trusted
+    ctx.subst_trusted = all(_trusted_substitution(body) for body in bodies)
+    try:
+        _evaluate_segments(ctx, text)
+    finally:
+        ctx.subst_trusted = outer_trusted
 
 
 def _hotfix_branches(root: Path | None) -> frozenset[str]:
@@ -843,7 +1281,8 @@ def evaluate(payload: dict[str, Any], *, root: Path | None) -> Decision:
         root: The repository root used for ``sdd/config.json`` and the dangerous-actions rules.
 
     Returns:
-        ``deny`` for a destructive command, ``force_ask`` for a risky variant of a managed rule, else ``ask``.
+        ``deny`` for a destructive command, ``force_ask`` for a covered command the policy cannot positively
+        classify as routine, else ``ask``.
     """
     if os.environ.get(dangerous_actions.ESCAPE_ENV) == "1":
         return _ASK
@@ -870,6 +1309,7 @@ def evaluate(payload: dict[str, Any], *, root: Path | None) -> Decision:
         return Decision("deny", verdict.reason)
     ctx = _Context(
         roots=roots,
+        real_roots=[os.path.realpath(r) for r in roots],
         cwd=cwd,
         root=root,
         hotfix=_hotfix_branches(root),

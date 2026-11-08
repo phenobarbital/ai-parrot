@@ -276,16 +276,20 @@ matches it; a hook can block or force a confirmation, but cannot approve. `parro
 therefore does two things, so that `/sdd-spec`, `/sdd-task`, `/sdd-brief` and `/sdd-fix` run without a prompt on
 every command:
 
-- It adds the managed SDD rules (`command(find)`, `command(git -C)`, `command(parrot sdd)`, `command(pytest)`, …)
-  to `~/.gemini/antigravity-cli/settings.json`, and to the snap build's copy under
-  `~/snap/antigravity-cli/common/` when that file exists. Your own rules and settings are kept; the receipt records
-  only the rules the install added, and `parrot sdd uninstall --host google` removes exactly those.
 - It registers `parrot sdd hooks agy-permissions --hook` in the repository's `.agents/hooks.json` (named hook
   `parrot-sdd-permissions`, matcher `run_command`; commit the file). The hook denies what the dangerous-actions
-  guard denies plus any push to `main`/`master`/`hotfix_base`, and asks for confirmation on risky variants the
-  broad rules would let through: `find -exec/-delete`, `sed -i`, reads or redirects outside the workspace,
-  `git push --force`, `git commit --amend`, a bare `pytest`, `parrot sdd install|launch`, and the like.
-  `PARROT_ALLOW_DANGEROUS=1` turns it off for a deliberate recovery.
+  guard denies plus any push to `main`/`master`/`hotfix_base`, and asks for confirmation whenever a managed rule
+  would approve something it cannot classify as routine: `find -exec/-delete`, `sed -i`, reads or redirects
+  outside the workspace (symlinks, brace expansion and `$(…)`/variable paths included), writes into `.agents/`
+  or `.git/`, `git push` with any flag beyond `-u`/`-q`/`-v`/`-n`, `git commit --amend`, a bare `pytest`, and
+  `parrot sdd` / `wikitoolkit` verbs outside the SDD surface. `PARROT_ALLOW_DANGEROUS=1` turns it off for a
+  deliberate recovery.
+- Only once the hook is registered, it adds the managed SDD rules (`command(find)`, `command(git -C)`,
+  `command(parrot sdd)`, `command(pytest)`, …) to `~/.gemini/antigravity-cli/settings.json`, and to the snap
+  build's copy under `~/snap/antigravity-cli/common/` when that file exists; nothing is created in your home when
+  agy has never run. Your own rules and settings are kept. `parrot-sdd-rules.json`, next to each settings file,
+  records which rules parrot added and which repositories rely on them: `parrot sdd uninstall --host google`
+  removes those rules only when no other repository still uses them, and never a rule you already had.
 
 `--no-agy-permissions` skips both; `parrot sdd status --json` reports the hook and how many managed rules are
 missing. The snap build of agy cannot run the SDD flow at all: its confinement hides the project venv's
