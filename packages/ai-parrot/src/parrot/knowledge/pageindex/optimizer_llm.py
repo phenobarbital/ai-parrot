@@ -2,17 +2,32 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
+from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel
 
-from parrot.knowledge.pageindex.framing import DATA_FRAMING_INSTRUCTION, frame_segments
+from parrot.knowledge.pageindex.builder import _LLM_SEMAPHORE, _limited_gather
+from parrot.knowledge.pageindex.framing import DATA_FRAMING_INSTRUCTION, frame_segments, frame_text
 from parrot.knowledge.pageindex.layout_structure import MAX_HEADING_WORDS
-from parrot.knowledge.pageindex.optimizer import KeyItem, OptimizerSettings
+from parrot.knowledge.pageindex.optimizer import (
+    KeyItem,
+    OptimizePlan,
+    OptimizerSettings,
+    PassStamp,
+    Revisions,
+    is_stamped,
+    owned_tokens,
+    pass_cache_key,
+    pass_input,
+    split_at,
+)
 from parrot.knowledge.pageindex.segments import DocumentRevision, Segment, SegmentAddress, SegmentRead
+from parrot.knowledge.pageindex.utils import create_clean_structure_for_description
 
 PROMPT_VERSION = "v1"
 _NON_HEADING_KINDS = frozenset({"table", "code", "caption"})
@@ -190,3 +205,237 @@ async def propose_key_items(
             )
         )
     return accepted
+
+
+def _summary_text(node: dict, revision: DocumentRevision) -> str:
+    """Return the node's owned text as a whitespace-normalized string."""
+    return " ".join(
+        segment.text.strip() for segment in _owned_segments(node, revision).values() if segment.text.strip()
+    )
+
+
+def _trim_summary(text: str, max_words: int) -> str:
+    """Return ``text`` within the permitted summary word cap."""
+    words = text.split()
+    return " ".join(words[: int(max_words * 1.2)])
+
+
+async def summarize_leaf(
+    node: dict,
+    revision: DocumentRevision,
+    adapter: Optional[Any],
+    settings: OptimizerSettings,
+) -> tuple[str, str]:
+    """Return an inline or framed, capped summary for a leaf node."""
+    text = _summary_text(node, revision)
+    if owned_tokens(node, revision) <= settings.inline_summary_tokens:
+        return text, "inline"
+    if not adapter_is_live(adapter):
+        return _trim_summary(text, settings.summary_max_words), "llm"
+
+    prompt = (
+        f"Summarize this document text in at most {settings.summary_max_words} words.\n\n"
+        f"{frame_segments(reads_for(node, revision), source=f'{revision.doc_id}@{revision.revision}')}"
+    )
+    result = await adapter.ask_structured(prompt, SummaryOut, system_prompt=DATA_FRAMING_INSTRUCTION)
+    return _trim_summary(result.summary, settings.summary_max_words), "llm"
+
+
+async def compose_parent(
+    node: dict,
+    revision: DocumentRevision,
+    adapter: Optional[Any],
+    settings: OptimizerSettings,
+) -> tuple[str, str]:
+    """Compose a parent summary from child summaries, text, and key items."""
+    children = node.get("nodes") or []
+    child_titles = [str(child.get("title", "")) for child in children if child.get("title")]
+    child_summaries = [str(child.get("summary", "")) for child in children if child.get("summary")]
+    own_text = _summary_text(node, revision)
+    key_items = [
+        item.get("label", "") if isinstance(item, dict) else item.label for item in node.get("key_items") or []
+    ]
+    if not adapter_is_live(adapter):
+        summary = own_text
+        if child_titles:
+            summary = (
+                f"{summary}. Subsections cover: {', '.join(child_titles)}"
+                if summary
+                else (f"Subsections cover: {', '.join(child_titles)}")
+            )
+        return _trim_summary(summary, settings.summary_max_words), "composed"
+
+    parts = ["Compose a concise parent summary from the framed document data below."]
+    if child_summaries:
+        parts.append(f"Child summaries: {' | '.join(child_summaries)}")
+    if key_items:
+        parts.append(f"Key items: {', '.join(str(item) for item in key_items if item)}")
+    parts.append(frame_segments(reads_for(node, revision), source=f"{revision.doc_id}@{revision.revision}"))
+    result = await adapter.ask_structured("\n\n".join(parts), SummaryOut, system_prompt=DATA_FRAMING_INSTRUCTION)
+    return _trim_summary(result.summary, settings.summary_max_words), "composed"
+
+
+async def describe_document(structure: Any, adapter: Any) -> str:
+    """Return a framed description of a structure when a live adapter is available."""
+    if not adapter_is_live(adapter):
+        return ""
+    payload = json.dumps(create_clean_structure_for_description(structure), ensure_ascii=False)
+    framed = frame_text(payload, source="document structure")
+    prompt = "Describe the document structure for retrieval and navigation.\n\n" + framed
+    return await adapter.ask(prompt, system_prompt=DATA_FRAMING_INSTRUCTION)
+
+
+def _nodes_by_depth(node: dict) -> dict[int, list[dict]]:
+    """Return candidate nodes grouped by depth for bottom-up processing."""
+    levels: dict[int, list[dict]] = {}
+
+    def visit(current: dict, depth: int) -> None:
+        levels.setdefault(depth, []).append(current)
+        for child in current.get("nodes") or []:
+            visit(child, depth + 1)
+
+    visit(node, 0)
+    return levels
+
+
+def _record_stamp(plan: OptimizePlan, node: dict, pass_name: str, input_hash: str, execution: str) -> None:
+    """Record a successful pass for later candidate validation and finalization."""
+    plan.pending_stamps.setdefault(id(node), {})[pass_name] = PassStamp(
+        version="v1",
+        input=input_hash,
+        settings=plan.report.settings.settings_hash(),
+        execution=execution,
+        at=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+def _is_completed(
+    plan: OptimizePlan, node: dict, settings: OptimizerSettings, pass_name: str, input_hash: str, execution: str
+) -> bool:
+    """Return whether a persisted or pending record matches this exact pass input."""
+    pending = plan.pending_stamps.get(id(node), {}).get(pass_name)
+    return (pending is not None and pending.input == input_hash and pending.execution == execution) or is_stamped(
+        node, settings, pass_name=pass_name, input_hash=input_hash, execution=execution
+    )
+
+
+async def run_llm_passes(
+    plan: OptimizePlan,
+    revisions: Revisions,
+    adapter: Optional[Any],
+    settings: OptimizerSettings,
+    *,
+    with_summaries: bool = True,
+) -> None:
+    """Run optimizer LLM work and retain successful completion records for later finalization."""
+    token = None
+    if _LLM_SEMAPHORE.get() is None:
+        token = _LLM_SEMAPHORE.set(asyncio.Semaphore(16))
+    live = settings.llm_passes and adapter_is_live(adapter)
+    plan.report.llm_passes = (
+        "ran" if live else ("skipped (disabled)" if not settings.llm_passes else "skipped (no model)")
+    )
+
+    async def cached_call(key: str, call: Any) -> Any:
+        if key not in plan.llm_cache:
+            plan.llm_cache[key] = await call()
+        return plan.llm_cache[key]
+
+    try:
+        roots: list[dict] = []
+
+        def collect_roots(node: dict, parent_key: Optional[tuple[Any, Any]] = None) -> None:
+            key = (node.get("doc_id"), node.get("revision"))
+            if key in revisions and key != parent_key:
+                roots.append(node)
+                return
+            for child in node.get("nodes") or []:
+                collect_roots(child, key)
+
+        collect_roots(plan.candidate)
+        for root in roots:
+            revision = revisions[(root["doc_id"], root["revision"])]
+            nodes = [node for level in _nodes_by_depth(root).values() for node in level]
+            if live:
+                for node in list(nodes):
+                    if node.get("nodes"):
+                        continue
+                    input_hash = pass_input(node, "headings")
+                    execution = execution_digest(adapter, mode="live")
+                    if _is_completed(plan, node, settings, "headings", input_hash, execution):
+                        continue
+                    key = pass_cache_key("headings", input_hash, execution, settings)
+                    try:
+                        headings = await cached_call(
+                            key,
+                            lambda node=node: propose_headings(node, revision, adapter, settings, report=plan.report),
+                        )
+                        plan.report.llm_calls_made += 1
+                        split_at(node, revision, headings, source="llm", settings=settings, report=plan.report)
+                        _record_stamp(plan, node, "headings", input_hash, execution)
+                    except Exception as error:
+                        plan.report.errors.append(str(error))
+
+                nodes = [node for level in _nodes_by_depth(root).values() for node in level]
+                for node in nodes:
+                    if node.get("nodes") or owned_tokens(node, revision) <= settings.target_leaf_tokens:
+                        continue
+                    input_hash = pass_input(node, "key_items")
+                    execution = execution_digest(adapter, mode="live")
+                    if _is_completed(plan, node, settings, "key_items", input_hash, execution):
+                        continue
+                    key = pass_cache_key("key_items", input_hash, execution, settings)
+                    try:
+                        items = await cached_call(
+                            key,
+                            lambda node=node: propose_key_items(node, revision, adapter, settings, report=plan.report),
+                        )
+                        node["key_items"] = [item.model_dump() for item in items]
+                        plan.report.key_items_added += len(items)
+                        plan.report.llm_calls_made += 1
+                        _record_stamp(plan, node, "key_items", input_hash, execution)
+                    except Exception as error:
+                        plan.report.errors.append(str(error))
+
+            if not with_summaries:
+                continue
+            levels = _nodes_by_depth(root)
+            for depth in sorted(levels, reverse=True):
+
+                async def summarize(node: dict) -> None:
+                    input_hash = pass_input(node, "summary")
+                    is_leaf = not node.get("nodes")
+                    mode = (
+                        "deterministic"
+                        if is_leaf and owned_tokens(node, revision) <= settings.inline_summary_tokens
+                        else ("live" if live else "deterministic")
+                    )
+                    execution = execution_digest(adapter if live else None, mode=mode)
+                    if _is_completed(plan, node, settings, "summary", input_hash, execution):
+                        return
+                    key = pass_cache_key("summary", input_hash, execution, settings)
+                    try:
+                        summary, kind = await cached_call(
+                            key,
+                            lambda node=node: (
+                                summarize_leaf(node, revision, adapter if live else None, settings)
+                                if not node.get("nodes")
+                                else compose_parent(node, revision, adapter if live else None, settings)
+                            ),
+                        )
+                        node["summary"] = summary
+                        node["optimizer"] = {**(node.get("optimizer") or {}), "summary": kind}
+                        plan.report.summaries_written += 1
+                        if live and not (is_leaf and owned_tokens(node, revision) <= settings.inline_summary_tokens):
+                            plan.report.llm_calls_made += 1
+                        _record_stamp(plan, node, "summary", input_hash, execution)
+                    except Exception as error:
+                        plan.report.errors.append(str(error))
+
+                results = await _limited_gather((summarize(node) for node in levels[depth]), return_exceptions=True)
+                for result in results:
+                    if isinstance(result, Exception):
+                        plan.report.errors.append(str(result))
+    finally:
+        if token is not None:
+            _LLM_SEMAPHORE.reset(token)
