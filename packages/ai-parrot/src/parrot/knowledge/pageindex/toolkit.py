@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable, Optional, TypeVar
 
 from parrot.clients.base import AbstractClient
-from parrot.tools.toolkit import AbstractToolkit
+from parrot.tools.toolkit import AbstractToolkit, ToolkitTool
 from .builder import build_page_index
 from .content_store import NodeContentStore
 from .embedding_store import NodeEmbeddingStore
@@ -839,12 +839,8 @@ class PageIndexToolkit(AbstractToolkit):
             framed=frame_segments(reads, source=f"{revision.doc_id}@{revision.revision}"),
         )
 
-    async def list_documents(self, tree_name: str) -> list[dict[str, Any]]:
-        """List the imported documents of a tree: doc_id, revision, name, pages, segments, root node, scored_by.
-
-        Use a ``doc_id`` from here with ``pageindex_read_pages`` / ``pageindex_read_segments``.
-        """
-        tree = self._load_tree(tree_name)
+    async def _list_documents_on(self, tree_name: str, tree: dict[str, Any]) -> list[dict[str, Any]]:
+        """``list_documents`` over an explicit tree (live or a request snapshot)."""
         rows: list[dict[str, Any]] = []
         for doc_id, info in self._documents_of(tree).items():
             rev = await asyncio.to_thread(self._segment_store.load_revision, tree_name, doc_id, info["revision"])
@@ -862,14 +858,23 @@ class PageIndexToolkit(AbstractToolkit):
             )
         return rows
 
-    async def outline(
-        self, tree_name: str, node_id: Optional[str] = None, max_depth: int = 3, max_chars: int = 6000
-    ) -> dict[str, Any]:
-        """Compact outline of a tree or subtree: titles, node ids, page ranges and segment counts.
+    async def list_documents(self, tree_name: str) -> list[dict[str, Any]]:
+        """List the imported documents of a tree: doc_id, revision, name, pages, segments, root node, scored_by.
 
-        Cheaper than ``pageindex_get_tree``; use it to decide what to read.
+        Use a ``doc_id`` from here with ``pageindex_read_pages`` / ``pageindex_read_segments``.
         """
         tree = self._load_tree(tree_name)
+        return await self._list_documents_on(tree_name, tree)
+
+    async def _outline_on(
+        self,
+        tree_name: str,
+        tree: dict[str, Any],
+        node_id: Optional[str] = None,
+        max_depth: int = 3,
+        max_chars: int = 6000,
+    ) -> dict[str, Any]:
+        """``outline`` over an explicit tree (live or a request snapshot)."""
         structure = tree.get("structure", [])
         if node_id:
             root = find_node_by_id(structure, node_id)
@@ -921,6 +926,35 @@ class PageIndexToolkit(AbstractToolkit):
             "truncated": truncated,
         }
 
+    async def outline(
+        self, tree_name: str, node_id: Optional[str] = None, max_depth: int = 3, max_chars: int = 6000
+    ) -> dict[str, Any]:
+        """Compact outline of a tree or subtree: titles, node ids, page ranges and segment counts.
+
+        Cheaper than ``pageindex_get_tree``; use it to decide what to read.
+        """
+        tree = self._load_tree(tree_name)
+        return await self._outline_on(tree_name, tree, node_id=node_id, max_depth=max_depth, max_chars=max_chars)
+
+    async def _read_pages_on(
+        self,
+        tree_name: str,
+        tree: dict[str, Any],
+        doc_id: str,
+        pages: str,
+        max_chars: int = 12000,
+        cursor: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """``read_pages`` over an explicit tree (live or a request snapshot)."""
+        revision = await asyncio.to_thread(self._revision_for, tree_name, tree, doc_id)
+        paged = [seg.page for seg in revision.segments if seg.page is not None]
+        if not paged:
+            raise ValueError("document has no pages; use read_segments")
+        wanted = set(parse_page_spec(pages, max_page=revision.source.pages or max(paged)))
+        seqs = [seg.seq for seg in revision.segments if seg.page in wanted]
+        result = self._read(tree_name, tree, revision, seqs, max_chars=max_chars, cursor=cursor)
+        return result.model_dump()
+
     async def read_pages(
         self, tree_name: str, doc_id: str, pages: str, max_chars: int = 12000, cursor: Optional[str] = None
     ) -> dict[str, Any]:
@@ -931,18 +965,12 @@ class PageIndexToolkit(AbstractToolkit):
         ``cursor=next_cursor`` to continue.
         """
         tree = self._load_tree(tree_name)
-        revision = await asyncio.to_thread(self._revision_for, tree_name, tree, doc_id)
-        paged = [seg.page for seg in revision.segments if seg.page is not None]
-        if not paged:
-            raise ValueError("document has no pages; use read_segments")
-        wanted = set(parse_page_spec(pages, max_page=revision.source.pages or max(paged)))
-        seqs = [seg.seq for seg in revision.segments if seg.page in wanted]
-        result = self._read(tree_name, tree, revision, seqs, max_chars=max_chars, cursor=cursor)
-        return result.model_dump()
+        return await self._read_pages_on(tree_name, tree, doc_id, pages, max_chars=max_chars, cursor=cursor)
 
-    async def read_segments(
+    async def _read_segments_on(
         self,
         tree_name: str,
+        tree: dict[str, Any],
         doc_id: Optional[str] = None,
         start: Optional[int] = None,
         end: Optional[int] = None,
@@ -950,11 +978,7 @@ class PageIndexToolkit(AbstractToolkit):
         max_chars: int = 12000,
         cursor: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Read paragraphs (segments) by position ``[start, end)`` or a node's own text with ``node_id``.
-
-        Same result shape and cursor rules as ``pageindex_read_pages``.
-        """
-        tree = self._load_tree(tree_name)
+        """``read_segments`` over an explicit tree (live or a request snapshot)."""
         if node_id:
             node = find_node_by_id(tree.get("structure", []), node_id)
             if node is None:
@@ -979,6 +1003,112 @@ class PageIndexToolkit(AbstractToolkit):
             seqs = list(range(lo, hi))
         result = self._read(tree_name, tree, revision, seqs, max_chars=max_chars, cursor=cursor)
         return result.model_dump()
+
+    async def read_segments(
+        self,
+        tree_name: str,
+        doc_id: Optional[str] = None,
+        start: Optional[int] = None,
+        end: Optional[int] = None,
+        node_id: Optional[str] = None,
+        max_chars: int = 12000,
+        cursor: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Read paragraphs (segments) by position ``[start, end)`` or a node's own text with ``node_id``.
+
+        Same result shape and cursor rules as ``pageindex_read_pages``.
+        """
+        tree = self._load_tree(tree_name)
+        return await self._read_segments_on(
+            tree_name,
+            tree,
+            doc_id=doc_id,
+            start=start,
+            end=end,
+            node_id=node_id,
+            max_chars=max_chars,
+            cursor=cursor,
+        )
+
+    def _agentic_search(self, tree_name: str, tree: dict[str, Any]) -> HybridPageIndexSearch:
+        """Build a request-local engine with snapshot-bound content loading and existing search settings."""
+        generation_id = (tree.get("generation") or {}).get("id", 0)
+        return HybridPageIndexSearch(
+            tree=tree,
+            adapter=self._adapter,
+            reranker=self._reranker,
+            model=self._model,
+            default_bm25_k=self._default_bm25_k,
+            content_loader=self._content_store.loader_for(tree_name, tree),
+            embedding_store=self._embedding_store,
+            embed_fn=self._embed_fn,
+            use_vec_rank=self._use_vec_rank,
+            use_embedding_walk=self._use_embedding_walk,
+            tree_name=tree_name,
+            generation_id=generation_id,
+        )
+
+    def _agentic_read_tools(self, tree_name: str, tree: dict[str, Any]) -> list[ToolkitTool]:
+        """Build four request-local tools bound to this tree snapshot and its revisions."""
+        bound = tree_name
+
+        def _check(name: str) -> None:
+            if name != bound:
+                raise ValueError(f"this retrieval is bound to tree {bound!r}, not {name!r}")
+
+        async def list_documents(tree_name: str) -> list[dict[str, Any]]:
+            _check(tree_name)
+            return await self._list_documents_on(bound, tree)
+
+        async def outline(
+            tree_name: str, node_id: Optional[str] = None, max_depth: int = 3, max_chars: int = 6000
+        ) -> dict[str, Any]:
+            _check(tree_name)
+            return await self._outline_on(bound, tree, node_id=node_id, max_depth=max_depth, max_chars=max_chars)
+
+        async def read_pages(
+            tree_name: str,
+            doc_id: str,
+            pages: str,
+            max_chars: int = 12000,
+            cursor: Optional[str] = None,
+        ) -> dict[str, Any]:
+            _check(tree_name)
+            return await self._read_pages_on(bound, tree, doc_id, pages, max_chars=max_chars, cursor=cursor)
+
+        async def read_segments(
+            tree_name: str,
+            doc_id: Optional[str] = None,
+            start: Optional[int] = None,
+            end: Optional[int] = None,
+            node_id: Optional[str] = None,
+            max_chars: int = 12000,
+            cursor: Optional[str] = None,
+        ) -> dict[str, Any]:
+            _check(tree_name)
+            return await self._read_segments_on(
+                bound,
+                tree,
+                doc_id=doc_id,
+                start=start,
+                end=end,
+                node_id=node_id,
+                max_chars=max_chars,
+                cursor=cursor,
+            )
+
+        tools: list[ToolkitTool] = []
+        for public, fn in (
+            (self.list_documents, list_documents),
+            (self.outline, outline),
+            (self.read_pages, read_pages),
+            (self.read_segments, read_segments),
+        ):
+            fn.__doc__ = public.__doc__
+            tools.append(
+                ToolkitTool(name=f"{self.tool_prefix}_{public.__name__}", bound_method=fn, description=public.__doc__)
+            )
+        return tools
 
     async def index_segments(self, tree_name: str, node_id: Optional[str] = None) -> dict[str, Any]:
         """Create segments for documents imported before segment support, from their stored bodies.
