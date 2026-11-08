@@ -55,14 +55,14 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: creates layout.py (LayoutProfile, BoldLine, errors, analyze_layout) and test_layout.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T01:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5333-layout-analysis.md"
     },
@@ -73,7 +73,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,7 +82,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5333: modifies layout.py and test_layout.py that TASK-5333 creates; reads LayoutProfile.bold_lines/BoldLine/running_key",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T01:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5334-layout-header-detector.md"
     },
@@ -93,14 +93,14 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: pdf_to_markdown.py and test_pdf_page_images.py only; no other task touches them",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T01:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5335-layout-extraction-hook.md"
     },
@@ -111,7 +111,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -120,7 +120,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5333: layout_structure.py imports LayoutProfile, Bookmark, running_key, StructureSource, StructureMode from layout.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T01:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5336-structure-candidates.md"
     },
@@ -131,7 +131,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -140,7 +140,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5336: modifies layout_structure.py/test_layout_structure.py it creates; build_structure calls score_bookmarks/score_layout and fills CandidateScore/StructureReport",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T01:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5337-structure-tree-and-choice.md"
     },
@@ -151,14 +151,14 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: segments.py attach_pdf_document and test_segments.py only; anchor shape {page, ordinal} fixed by the spec",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T01:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5338-anchored-attach.md"
     },
@@ -169,14 +169,14 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: first builder.py editor (the 13 prompt functions + framing import); TASK-5340 edits builder.py after it",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T01:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5339-framed-structure-prompts.md"
     },
@@ -187,7 +187,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -199,7 +199,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5334: LayoutHeaders (layout.py); TASK-5335: extract_markdown_per_page(hdr_info=) (pdf_to_markdown.py); TASK-5337: build_structure/page_structure/score_* (layout_structure.py); TASK-5339: same file builder.py, serialized after the framing edits",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T01:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5340-builder-orchestration.md"
     },
@@ -210,7 +210,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -220,7 +220,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5340: pops _segments/structure_source/structure_report returned by build_page_index (builder.py); TASK-5338: relies on attach_pdf_document removing anchors (segments.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T01:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5341-toolkit-layout-integration.md"
     },
@@ -231,7 +231,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -240,7 +240,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5341: calls import_pdf(structure_mode=...) added in toolkit.py; PDFStructureError (TASK-5333, layout.py) reached transitively",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T01:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5342-bookstore-pdf-without-llm.md"
     },
@@ -251,7 +251,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -260,7 +260,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5341: same file toolkit.py (llm_dependent_tools); its new no-adapter fixture-import test needs the import_pdf result keys from TASK-5341",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T01:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5343-import-pdf-without-model.md"
     },
@@ -271,7 +271,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -280,7 +280,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5340: evaluate_pair calls build_page_index(adapter=None, structure_mode='layout'); same file utils.py (structure_min_confidence key added by TASK-5340)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T01:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5344-layout-evaluation.md"
     },
@@ -291,7 +291,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -301,7 +301,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5341: asserts import_pdf/list_documents structure keys (toolkit.py); TASK-5342: asserts Bookstore maps PDFStructureError to BookstoreError (library.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T01:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5345-layout-integration-tests.md"
     },
@@ -312,7 +312,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -322,7 +322,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5344: page documents layout_eval and the measured threshold (metrics from its Completion Note); TASK-5342: page and bookstore-codex.md document PDF books without an LLM",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T01:52:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5346-documentation.md"
     }
