@@ -103,7 +103,8 @@ A typical agent flow, as tool calls:
   classified by a model. BM25 therefore indexes titles and bodies only. Setting `llm:` adds summaries on later ingests.
 - **`retrieve` truncation.** When the joined bodies exceed `max_result_chars`, whole sections are kept while they
   fit and the text ends with `[truncated: N more characters in K further sections — lower top_k or narrow the query]`.
-  An oversized first section is cut at a paragraph break, never inside its `## title` line. The MCP wrapper appends
+  The bound applies to the kept text: the marker (about 90 characters) is added on top, and a title line longer than
+  the bound is kept whole. An oversized first section is cut at a paragraph break, never inside its `## title` line. The MCP wrapper appends
   its own `Metadata:` trailer after the tool text.
 - **`get_tree` is unbounded.** To browse a large tree use `pageindex_outline` (bounded to `max_chars=6000` by default)
   and read pages or segments from there.

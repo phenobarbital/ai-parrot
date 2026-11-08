@@ -181,7 +181,11 @@ def test_bound_text_cuts_first_part_after_title(tmp_path: Path) -> None:
     limit = 150
     tk = PageIndexToolkit(storage_dir=tmp_path, max_result_chars=limit)
     out = tk._bound_text(parts)
-    marker_len = len(out) - len(out.split("\n\n[truncated:")[0])
+    kept = out.split("\n\n[truncated:")[0]
+    marker_len = len(out) - len(kept)
+    assert kept.endswith("para ")  # cut on a whole paragraph
+    assert kept.count("para") % 20 == 0  # no paragraph split mid-way
+    assert len(kept) <= limit
     assert out.startswith("## Title\n")
     assert out.endswith(_TAIL)
     assert len(out) <= limit + marker_len
@@ -208,3 +212,18 @@ async def test_retrieve_is_bounded(tmp_path: Path) -> None:
     full = await unbounded.retrieve("guide", "edelweiss alpine coastal river", top_k=3)
     assert len(full) > 200
     assert not full.endswith(_TAIL)
+
+
+def test_bound_text_exact_fit_is_not_truncated(tmp_path: Path) -> None:
+    parts = ["## A\nxx", "## B\nyy"]
+    joined = "\n\n".join(parts)
+    tk = PageIndexToolkit(storage_dir=tmp_path, max_result_chars=len(joined))
+    assert tk._bound_text(parts) == joined
+
+
+def test_bound_text_oversized_part_without_paragraph_break(tmp_path: Path) -> None:
+    tk = PageIndexToolkit(storage_dir=tmp_path, max_result_chars=30)
+    out = tk._bound_text(["## T\n" + "x" * 200])
+    kept = out.split("\n\n[truncated:")[0]
+    assert kept == ("## T\n" + "x" * 200)[:30]
+    assert out.endswith(_TAIL)
