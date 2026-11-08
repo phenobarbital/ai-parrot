@@ -55,7 +55,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -63,8 +63,9 @@
       "parallelism_notes": "no dependencies: creates layout.py (LayoutProfile, BoldLine, errors, analyze_layout) and test_layout.py",
       "assigned_to": null,
       "started_at": "2026-11-08T01:52:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5333-layout-analysis.md"
+      "completed_at": "2026-11-08T08:59:19+00:00",
+      "file": "sdd/tasks/completed/TASK-5333-layout-analysis.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5334",
@@ -93,7 +94,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -101,8 +102,9 @@
       "parallelism_notes": "no dependencies: pdf_to_markdown.py and test_pdf_page_images.py only; no other task touches them",
       "assigned_to": null,
       "started_at": "2026-11-08T01:52:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5335-layout-extraction-hook.md"
+      "completed_at": "2026-11-08T08:59:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5335-layout-extraction-hook.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5336",
@@ -151,7 +153,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -159,8 +161,9 @@
       "parallelism_notes": "no dependencies: segments.py attach_pdf_document and test_segments.py only; anchor shape {page, ordinal} fixed by the spec",
       "assigned_to": null,
       "started_at": "2026-11-08T01:52:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5338-anchored-attach.md"
+      "completed_at": "2026-11-08T08:59:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5338-anchored-attach.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5339",
@@ -169,7 +172,7 @@
       "feature_id": "FEAT-845",
       "feature": "pageindex-layout-structure",
       "spec": "sdd/specs/pageindex-layout-structure.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -177,8 +180,9 @@
       "parallelism_notes": "no dependencies: first builder.py editor (the 13 prompt functions + framing import); TASK-5340 edits builder.py after it",
       "assigned_to": null,
       "started_at": "2026-11-08T01:52:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5339-framed-structure-prompts.md"
+      "completed_at": "2026-11-08T08:59:20+00:00",
+      "file": "sdd/tasks/completed/TASK-5339-framed-structure-prompts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5340",

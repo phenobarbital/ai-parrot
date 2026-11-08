@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-845 — PageIndex Layout Structure Builder
 **Spec**: `sdd/specs/pageindex-layout-structure.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -357,10 +357,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+*(filled by sdd-worker)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker orchestrator; seat gpt-5.6-sol (codex), 1 attempt
+**Date**: 2026-11-08
+**Notes**: Merged into the feature branch; lint clean. Merge-tier run (pageindex + bookstore + mcp template, 725 tests): 721 passed, 4 failed (test_adapter x2, test_okf_ontology x2), identical on a clean origin/dev baseline, so pre-existing. The engine's background validation timed out at ~60s, so the run was done directly on the host. Review feedback: none recorded.
