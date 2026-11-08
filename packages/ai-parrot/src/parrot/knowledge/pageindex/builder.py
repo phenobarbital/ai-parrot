@@ -1676,7 +1676,7 @@ async def _layout_stage(stage: str, name: str, func: Any, *args: Any, **kwargs: 
         return await asyncio.to_thread(func, *args, **kwargs)
     except PDFStructureError:
         raise
-    except (ValueError, ImportError, FileNotFoundError) as exc:
+    except Exception as exc:  # any pymupdf/pymupdf4llm failure is a structure error
         raise PDFStructureError(f"PDF layout {stage} failed for {name}: {exc}") from exc
 
 

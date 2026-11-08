@@ -129,16 +129,15 @@ The CLI writes JSON and markdown reports to `artifacts/logs/layout_eval/<UTC>.js
 - `page_agreement` — start-page agreement (|start_index delta| <= 1)
 - `seconds` — time taken
 
-**Metrics (TASK-5344).** The four-pair run (arxiv, nist_800_53, nist_csf_2_0, aicpa_tsc) produced the following metrics:
+**Metrics (TASK-5344).** The committed fixture pair (`docling_structure.json`) was measured with
+`python -m parrot.knowledge.pageindex.layout_eval`: `recall_top = 1.0`, `recall_all = 1.0`,
+`page_agreement = 1.0`, `structure_source = hybrid` (9 pages, confidence 1.0). The four-pair run
+against the local corpus (arxiv, nist_800_53, nist_csf_2_0, aicpa_tsc) was **not executed** here:
+those PDFs are not available in the repository or CI. Run the four-pair command above locally and
+record the metrics before changing `structure_min_confidence`.
 
-| Pair | Pages | Structure Source | Chosen Confidence | Candidate Confidences | Recall Top | Recall All | Page Agreement | Node Count | Seconds |
-|------|-------|------------------|-------------------|-----------------------|------------|------------|----------------|------------|---------|
-| arxiv | 189 | hybrid | 0.6 | bookmarks: 0.6, layout: 0.6 | 1.0 | 1.0 | 1.0 | 10 | 12.3 |
-| nist_800_53 | 492 | layout | 0.6 | bookmarks: 0.0, layout: 0.6 | 0.8 | 0.7 | 0.6 | 358 | 45.2 |
-| nist_csf_2_0 | 32 | bookmarks | 0.6 | bookmarks: 0.6, layout: 0.4 | 1.0 | 1.0 | 1.0 | 12 | 3.1 |
-| aicpa_tsc | 75 | layout | 0.6 | bookmarks: 0.0, layout: 0.6 | 0.5 | 0.4 | 0.3 | 75 | 8.7 |
-
-**Suggested threshold:** 0.6 (no good/bad separation; all pairs meet the default).
+**Threshold:** `structure_min_confidence` stays at the default `0.6` because no four-pair data exists
+to justify a different value.
 
 **Open question 2 (spec §8):** Body-size standalone bold lines do **not** count as headings when the document has no bookmarks. The layout candidate's `clean` factor already filters out noisy bold lines, and the hybrid rule requires both scores to pass, so the risk of false positives is low. The decision is to keep the current heuristic (only size-rank and bookmark-matching rules).
 

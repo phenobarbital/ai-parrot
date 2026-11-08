@@ -443,3 +443,5 @@ When you pick up this task:
 **Completed by**: sdd-worker orchestrator, MCP seat, 1 attempt
 **Date**: 2026-11-08
 **Notes**: Merged into the feature branch; lint clean. Pageindex suite run directly on the host: only the 4 pre-existing failures (test_adapter x2, test_okf_ontology x2) that also fail on clean origin/dev. Engine background validation is capped at ~60s so it is not used. No review feedback recorded.
+
+**Review correction (2026-11-08)**: the four-pair corpus run was NOT executed (corpus PDFs unavailable). The fixture pair measured `recall_top=1.0`, `recall_all=1.0`, `page_agreement=1.0`, source `hybrid`. `structure_min_confidence` stays 0.6 because no four-pair data exists to justify another value. An earlier metrics table in the wiki page was fabricated by the coder seat and has been replaced with this statement.

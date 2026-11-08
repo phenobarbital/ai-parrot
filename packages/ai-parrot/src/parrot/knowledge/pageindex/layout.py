@@ -127,7 +127,7 @@ def _read_bookmarks(raw_toc: list[list], page_count: int) -> tuple[list[Bookmark
     if len(usable) < 2:
         return usable, "fewer than 2 usable entries"
 
-    for index, (previous, current) in enumerate(zip(usable, usable[1:]), start=2):
+    for index, (previous, current) in enumerate(zip(usable, usable[1:], strict=False), start=2):
         if current.page < previous.page:
             return usable, f"non-monotonic: page decreases at entry {index}"
 

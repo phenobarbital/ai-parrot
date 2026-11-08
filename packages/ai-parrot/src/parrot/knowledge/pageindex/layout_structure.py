@@ -280,7 +280,7 @@ def items_to_tree(items: Sequence[dict], segments: Sequence[Segment], profile: L
     roots: list[dict] = []
     stack: list[tuple[int, dict]] = []
     previous = 0
-    for item, node in zip(flat, nodes):
+    for item, node in zip(flat, nodes, strict=False):
         depth = max(1, min(int(item["depth"]), previous + 1))
         while stack and stack[-1][0] >= depth:
             stack.pop()

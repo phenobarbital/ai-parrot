@@ -123,11 +123,12 @@ def test_page_structure():
     ]
 
 
-from parrot.knowledge.pageindex.layout_structure import (
+from parrot.knowledge.pageindex.layout_structure import (  # noqa: E402
     build_structure,
     insert_layout_headings,
     items_to_tree,
-)  # noqa: E402
+)
+
 
 HYBRID_PAGES = (
     "# Report Title\n\n## 1 Intro\n\nText.\n\n### 1.1 Scope\n\nText.",
