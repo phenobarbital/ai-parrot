@@ -2,7 +2,7 @@
 
 **Feature**: agy-permission-hook — make the SDD command surface usable from the Antigravity CLI
 **Spec**: `sdd/briefs/agy-permission-hook.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -189,4 +189,21 @@ Parametrize the tests over the risk table (one allowed and one risky case per ro
 
 ## Completion Note
 
-<!-- filled in when the task closes -->
+`parrot/sdd/scripts/agy_permissions.py` (stdlib + sibling `dangerous_actions` only at import time):
+`SDD_ALLOW_RULES` (83 `command(...)` rules built from `RULE_WORDS`), `rule_covers` (agy word-prefix matching,
+leading `NAME=value` dropped), `evaluate` → `Decision(deny|force_ask|ask)` and `main --hook` (one JSON object,
+exit 0, neutral `ask` with a reason on any error). Parsing strips heredoc bodies, extracts `$(…)`/backticks/
+`<(…)` recursively, tokenizes with `shlex(punctuation_chars=True)`, sees through `time/timeout/nice/env/nohup`
+wrappers and tracks `cd`. Only segments a managed rule covers are escalated; `dangerous_actions` denies run
+first (its `warn` becomes `force_ask`), redirects into secret files are denied, a push to main/master/
+`hotfix_base` (bare push on those branches included, branch read from `HEAD`) is denied.
+
+Deviations from the task text, all in the conservative direction: a path argument built from a shell variable
+or from a command substitution is `force_ask` unless the substitution is a trusted repo-path producer
+(`git rev-parse`, `git branch --show-current`, `pwd`, `parrot sdd worktree root`); git positional arguments
+are not path-checked (git cannot touch files outside the repository except via `-C`, which is checked).
+
+Validation: test_agy_permissions.py → 123 passed; test_sdd_cli.py + test_dangerous_actions.py → 146 passed;
+ruff clean, black applied. Live check (agy 1.4.12, interactive, `--settings` carrying `SDD_ALLOW_RULES`, the
+worktree hook in `.agents/hooks.json`): `find . -maxdepth 1 -name '*.txt' | head -n 5` ran with no prompt;
+`find . -maxdepth 1 -name 'zzz*.tmp' -delete` prompted with `Reason: \`find -delete\` runs or deletes`.
