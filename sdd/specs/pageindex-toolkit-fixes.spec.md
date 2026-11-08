@@ -298,6 +298,8 @@ tests:
 - packages/ai-parrot/tests/knowledge/pageindex/test_framing.py
 - packages/ai-parrot/tests/knowledge/pageindex/test_read_tools.py
 - packages/ai-parrot/tests/knowledge/pageindex/test_segment_migration.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_segment_import.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_local_mcp_docs.py
 markers: none
 
 ### Test Data / Fixtures
