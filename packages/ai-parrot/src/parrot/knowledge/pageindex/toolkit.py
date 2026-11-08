@@ -125,6 +125,8 @@ class PageIndexToolkit(AbstractToolkit):
         llm_client: An :class:`AbstractClient` (what ``parrot mcp-local``
             passes); wrapped into ``PageIndexLLMAdapter(client=llm_client,
             model=model)``. Mutually exclusive with ``adapter``.
+        max_result_chars: Upper bound on the text :meth:`retrieve` returns;
+            ``None`` = unbounded.
     """
 
     name = "pageindex"
@@ -162,6 +164,7 @@ class PageIndexToolkit(AbstractToolkit):
         read_max_chars: int = 12000,
         *,
         llm_client: Optional[AbstractClient] = None,
+        max_result_chars: Optional[int] = None,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -193,6 +196,7 @@ class PageIndexToolkit(AbstractToolkit):
         self._folder_concurrency = max(1, folder_concurrency)
         self._use_vec_rank = use_vec_rank
         self._use_embedding_walk = use_embedding_walk
+        self._max_result_chars = max_result_chars
 
         # ---- Embedding store (FEAT-237) ---------------------------------
         # Constructed only when at least one embedding feature is enabled.
@@ -357,6 +361,40 @@ class PageIndexToolkit(AbstractToolkit):
     def has_llm(self) -> bool:
         """True when an LLM adapter is configured (LLM walk and ingest tools available)."""
         return self._adapter is not None
+
+    def _bound_text(self, parts: list[str]) -> str:
+        """Join ``parts`` and apply ``max_result_chars``.
+
+        Keeps whole parts while they fit; when the first part alone exceeds the bound it is cut
+        at the last paragraph break before the bound, never inside its ``## title`` line. Appends
+        ``"\\n\\n[truncated: {n} more characters in {k} further sections — lower top_k or narrow the query]"``.
+        With ``max_result_chars`` None, returns ``"\\n\\n".join(parts)`` unchanged.
+        """
+        joined = "\n\n".join(parts)
+        limit = self._max_result_chars
+        if limit is None or len(joined) <= limit:
+            return joined
+        kept_parts: list[str] = []
+        for part in parts:
+            candidate = "\n\n".join([*kept_parts, part])
+            if len(candidate) > limit:
+                break
+            kept_parts.append(part)
+        if kept_parts:
+            kept = "\n\n".join(kept_parts)
+            dropped_parts = len(parts) - len(kept_parts)
+        else:
+            first = parts[0]
+            title_end = first.find("\n")
+            title_end = len(first) if title_end == -1 else title_end
+            cut = first.rfind("\n\n", title_end, max(limit, title_end))
+            kept = first[:cut] if cut != -1 else first[: max(limit, title_end)]
+            dropped_parts = len(parts) - 1
+        dropped_chars = len(joined) - len(kept)
+        return (
+            f"{kept}\n\n[truncated: {dropped_chars} more characters in {dropped_parts} further sections"
+            " — lower top_k or narrow the query]"
+        )
 
     def _ingester(self) -> TwoStepIngester:
         return TwoStepIngester(
@@ -1153,7 +1191,7 @@ class PageIndexToolkit(AbstractToolkit):
                 body = node.get("text") or node.get("summary") or node.get("prefix_summary") or ""
             if body:
                 parts.append(f"## {title}\n{body}")
-        return "\n\n".join(parts)
+        return self._bound_text(parts)
 
     async def search_documents_scoped(
         self,

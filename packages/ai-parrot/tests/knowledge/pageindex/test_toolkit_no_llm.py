@@ -144,3 +144,67 @@ async def test_llm_walk_only_without_adapter_raises(tmp_path: Path) -> None:
     await tk.insert_markdown("guide", DOC)
     with pytest.raises(ValueError, match="LLM walk requested"):
         await tk.search("guide", "edelweiss", use_bm25=False, use_llm_walk=True)
+
+
+_TAIL = "lower top_k or narrow the query]"
+
+
+def test_bound_text_none_is_identity(tmp_path: Path) -> None:
+    """AC-6: None keeps the output byte-identical."""
+    tk = PageIndexToolkit(storage_dir=tmp_path)
+    assert tk._bound_text(["## A\nx", "## B\ny"]) == "## A\nx\n\n## B\ny"
+    assert tk._bound_text([]) == ""
+
+
+def test_bound_text_within_limit_is_identity(tmp_path: Path) -> None:
+    tk = PageIndexToolkit(storage_dir=tmp_path, max_result_chars=100)
+    assert tk._bound_text(["## A\nx", "## B\ny"]) == "## A\nx\n\n## B\ny"
+
+
+def test_bound_text_keeps_whole_parts_and_marks(tmp_path: Path) -> None:
+    """AC-6: whole parts kept while they fit; marker names chars and sections dropped."""
+    parts = [f"## S{i}\n" + "word " * 10 for i in range(3)]
+    tk = PageIndexToolkit(storage_dir=tmp_path, max_result_chars=len(parts[0]) + 5)
+    out = tk._bound_text(parts)
+    assert out.startswith(parts[0] + "\n\n[truncated:")
+    assert "## S1" not in out
+    assert out.endswith(_TAIL)
+    assert "in 2 further sections" in out
+    dropped = len("\n\n".join(parts)) - len(parts[0])
+    assert f"{dropped} more characters" in out
+
+
+def test_bound_text_cuts_first_part_after_title(tmp_path: Path) -> None:
+    """AC-6: an oversized first part is cut at a paragraph break, never inside '## title'."""
+    first = "## Title\n" + "\n\n".join(["para " * 20] * 5)
+    parts = [first, "## Other\nbody"]
+    limit = 150
+    tk = PageIndexToolkit(storage_dir=tmp_path, max_result_chars=limit)
+    out = tk._bound_text(parts)
+    marker_len = len(out) - len(out.split("\n\n[truncated:")[0])
+    assert out.startswith("## Title\n")
+    assert out.endswith(_TAIL)
+    assert len(out) <= limit + marker_len
+    assert "in 1 further sections" in out
+
+
+def test_bound_text_tiny_limit_keeps_title_line(tmp_path: Path) -> None:
+    tk = PageIndexToolkit(storage_dir=tmp_path, max_result_chars=3)
+    out = tk._bound_text(["## A long title\nbody text here", "## B\nz"])
+    assert out.startswith("## A long title")
+    assert out.endswith(_TAIL)
+
+
+async def test_retrieve_is_bounded(tmp_path: Path) -> None:
+    """AC-6 end to end: retrieve on a no-LLM toolkit honours max_result_chars."""
+    pytest.importorskip("bm25s")
+    tk = PageIndexToolkit(storage_dir=tmp_path, max_result_chars=200)
+    await tk.create_tree("guide")
+    await tk.insert_markdown("guide", DOC)
+    out = await tk.retrieve("guide", "edelweiss alpine coastal river", top_k=3)
+    assert out.endswith(_TAIL)
+    assert out.startswith("## ")
+    unbounded = PageIndexToolkit(storage_dir=tmp_path)
+    full = await unbounded.retrieve("guide", "edelweiss alpine coastal river", top_k=3)
+    assert len(full) > 200
+    assert not full.endswith(_TAIL)
