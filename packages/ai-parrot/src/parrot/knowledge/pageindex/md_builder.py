@@ -98,6 +98,18 @@ def parse_markdown_structure(md_text: str) -> list[dict]:
         parsed = _parse_header_level(line)
         if parsed:
             level, title = parsed
+            if not sections and any(part.strip() for part in current_text):
+                preamble = "\n".join(current_text).strip()
+                sections.append(
+                    {
+                        "structure": "0",
+                        "title": "Introduction",
+                        "level": 1,
+                        "line_num": 1,
+                        "text": preamble,
+                        "token_count": count_tokens(preamble),
+                    }
+                )
             if current_text and sections:
                 sections[-1]["text"] = "\n".join(current_text).strip()
                 sections[-1]["token_count"] = count_tokens(sections[-1]["text"])
@@ -128,6 +140,17 @@ def parse_markdown_structure(md_text: str) -> list[dict]:
         else:
             current_text.append(line)
 
+    if not sections and md_text.strip():
+        sections.append(
+            {
+                "structure": "1",
+                "title": "Introduction",
+                "level": 1,
+                "line_num": 1,
+                "text": "",
+                "token_count": 0,
+            }
+        )
     if current_text and sections:
         sections[-1]["text"] = "\n".join(current_text).strip()
         sections[-1]["token_count"] = count_tokens(sections[-1]["text"])
@@ -301,7 +324,7 @@ async def md_to_tree(
         logger.warning("No markdown headers found")
         return {"doc_name": doc_name, "structure": []}
 
-    tree = thin_tree(tree, max_token_threshold=50)
+    # Short sections can contain critical facts; thinning is an explicit caller choice.
 
     if opt.if_add_node_id == "yes":
         write_node_id(tree)

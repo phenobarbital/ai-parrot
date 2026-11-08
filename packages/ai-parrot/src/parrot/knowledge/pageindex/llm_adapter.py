@@ -3,41 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from typing import Any, Optional, Union
 
 from parrot.clients.base import AbstractClient
 from parrot.models.outputs import StructuredOutputConfig
 
+from .utils import extract_json
+
 logger = logging.getLogger("parrot.knowledge.pageindex.llm_adapter")
-
-
-def extract_json(content: str) -> Any:
-    """Extract JSON from LLM text that may contain ```json fences."""
-    try:
-        start_idx = content.find("```json")
-        if start_idx != -1:
-            start_idx += 7
-            end_idx = content.rfind("```")
-            json_content = content[start_idx:end_idx].strip()
-        else:
-            json_content = content.strip()
-
-        json_content = json_content.replace("None", "null")
-        json_content = json_content.replace("\n", " ").replace("\r", " ")
-        json_content = " ".join(json_content.split())
-        return json.loads(json_content)
-    except json.JSONDecodeError:
-        try:
-            json_content = json_content.replace(",]", "]").replace(",}", "}")
-            return json.loads(json_content)
-        except Exception:
-            logger.error("Failed to parse JSON even after cleanup")
-            return {}
-    except Exception as e:
-        logger.error("Unexpected error extracting JSON: %s", e)
-        return {}
 
 
 class PageIndexLLMAdapter:
@@ -54,6 +28,10 @@ class PageIndexLLMAdapter:
         max_retries: int = 3,
         retry_delay: float = 1.0,
     ):
+        if max_retries < 1:
+            raise ValueError("max_retries must be at least 1")
+        if retry_delay < 0:
+            raise ValueError("retry_delay must be non-negative")
         self.client = client
         self.model = model or getattr(client, "default_model", "gemini-3.1-flash-lite-preview")
         self.max_retries = max_retries

@@ -100,30 +100,26 @@ def get_json_content(response: str) -> str:
 
 
 def extract_json(content: str) -> Any:
-    """Extract JSON from LLM response text."""
+    """Extract JSON, repairing None/trailing commas only outside quoted strings."""
+    json_content = content.strip()
     try:
-        start_idx = content.find("```json")
-        if start_idx != -1:
-            start_idx += 7
-            end_idx = content.rfind("```")
-            json_content = content[start_idx:end_idx].strip()
-        else:
-            json_content = content.strip()
-
-        json_content = json_content.replace("None", "null")
-        json_content = json_content.replace("\n", " ").replace("\r", " ")
-        json_content = " ".join(json_content.split())
         return json.loads(json_content)
     except json.JSONDecodeError:
+        if json_content.startswith("```"):
+            json_content = get_json_content(json_content)
+        # Match strings first so repairs never change titles, excerpts or code.
+        tokens = re.compile(r'"(?:[^"\\]|\\.)*"|\bNone\b|,\s*(?=[}\]])', re.DOTALL)
+        repaired = tokens.sub(
+            lambda match: (
+                match.group() if match.group().startswith('"') else ("null" if match.group() == "None" else "")
+            ),
+            json_content,
+        )
         try:
-            json_content = json_content.replace(",]", "]").replace(",}", "}")
-            return json.loads(json_content)
-        except Exception:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
             logger.error("Failed to parse JSON even after cleanup")
             return {}
-    except Exception as e:
-        logger.error("Unexpected error extracting JSON: %s", e)
-        return {}
 
 
 # --- PDF Parsing ---
@@ -163,10 +159,11 @@ def get_page_tokens(
         else:
             raise ValueError(f"Invalid pdf_path: {pdf_path}")
         page_list = []
-        for page in doc:
-            page_text = page.get_text()
-            token_length = measure(page_text)
-            page_list.append((page_text, token_length))
+        with doc:
+            for page in doc:
+                page_text = page.get_text()
+                token_length = measure(page_text)
+                page_list.append((page_text, token_length))
         return page_list
     else:
         raise ValueError(f"Unsupported PDF parser: {pdf_parser}")
@@ -275,12 +272,9 @@ def write_node_id(data: Any, node_id: int = 0) -> int:
 def get_nodes(structure: Any) -> list[dict]:
     """Flatten a tree into a list of nodes (without children)."""
     if isinstance(structure, dict):
-        structure_node = copy.deepcopy(structure)
-        structure_node.pop("nodes", None)
+        structure_node = copy.deepcopy({key: value for key, value in structure.items() if key != "nodes"})
         nodes = [structure_node]
-        for key in list(structure.keys()):
-            if "nodes" in key:
-                nodes.extend(get_nodes(structure[key]))
+        nodes.extend(get_nodes(structure.get("nodes", [])))
         return nodes
     elif isinstance(structure, list):
         nodes: list[dict] = []

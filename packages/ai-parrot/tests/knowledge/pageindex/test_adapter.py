@@ -16,6 +16,7 @@ def _make_mock_client(output: str = "test output", structured: object = None):
     response.structured_output = structured
     response.finish_reason = "stop"
     client.ask = AsyncMock(return_value=response)
+    client.invoke = AsyncMock(return_value=MagicMock(output=structured if structured is not None else output))
     client.default_model = "test-model"
     return client
 

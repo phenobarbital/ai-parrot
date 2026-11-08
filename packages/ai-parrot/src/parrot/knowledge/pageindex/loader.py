@@ -282,7 +282,7 @@ class PageIndexLoader(AbstractLoader):
         node_id = node.get("node_id")
         body: Optional[str] = None
         if node_id:
-            body = self._content_store.load(self.tree_name, node_id)
+            body = self._content_store.load_node(self.tree_name, node)
         content = (
             body or node.get("text") or node.get("summary") or node.get("prefix_summary") or node.get("title") or ""
         )

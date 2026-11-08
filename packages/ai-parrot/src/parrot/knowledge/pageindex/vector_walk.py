@@ -66,6 +66,8 @@ class FlatMatrixSearch:
         Returns:
             List of ``(node_id, score)`` tuples sorted by descending score.
         """
+        if top_k <= 0:
+            return []
         q = np.asarray(query_vec, dtype=np.float32)
         q_norm = np.linalg.norm(q)
         if q_norm > 1e-10:
@@ -83,6 +85,9 @@ async def embedding_tree_walk(
     beam_width: int = 3,
     max_depth: int = 10,
     embed_fn=None,
+    *,
+    tree_name: Optional[str] = None,
+    generation_id: int = 0,
 ) -> list[str]:
     """Beam search over per-node embeddings to propose candidate node_ids.
 
@@ -107,13 +112,13 @@ async def embedding_tree_walk(
         List of ``node_id`` strings in beam-descent order (higher-ranked
         nodes appear first).  May be empty if no embeddings are available.
     """
-    tree_name: str = tree.get("doc_name") or ""
+    tree_name = tree_name or tree.get("doc_name") or ""
     root_structure = tree.get("structure", [])
     if isinstance(root_structure, dict):
         root_structure = [root_structure]
     root_nodes: list[dict] = list(root_structure or [])
 
-    if not root_nodes or not tree_name:
+    if not root_nodes or not tree_name or beam_width <= 0 or max_depth <= 0:
         return []
 
     collected: list[str] = []  # all visited node_ids in order
@@ -122,36 +127,23 @@ async def embedding_tree_walk(
     # Start with the root-level nodes.
     current_level: list[dict] = root_nodes
 
+    mat_result = await asyncio.to_thread(store.load_tree_matrix, tree_name, generation_id=generation_id)
+    order_idx: dict[str, int] = {}
+    if mat_result is not None:
+        matrix, node_order = mat_result
+        order_idx = {nid: i for i, nid in enumerate(node_order)}
+    q = np.asarray(query_vec, dtype=np.float32)
+    q_norm = np.linalg.norm(q)
+    if q_norm > 1e-10:
+        q = q / q_norm
+
     for _depth in range(max_depth):
         if not current_level:
             break
 
-        # Gather children of all current-level nodes into a flat pool.
-        child_pool: list[dict] = []
+        scored: list[tuple[str, float, dict]] = []
+
         for node in current_level:
-            children = node.get("nodes", [])
-            if isinstance(children, dict):
-                children = [children]
-            child_pool.extend(children or [])
-
-        if not child_pool:
-            # Leaf level — add current-level node_ids as candidates.
-            for node in current_level:
-                nid = node.get("node_id")
-                if nid and nid not in collected:
-                    collected.append(nid)
-            break
-
-        # Score child_pool nodes with available embeddings.
-        scored: list[tuple[str, float, dict]] = []  # (node_id, score, node)
-
-        # Try per-tree matrix first for efficiency; fall back to global cache.
-        mat_result = store.load_tree_matrix(tree_name)
-        if mat_result is not None:
-            matrix, node_order = mat_result
-            order_idx: dict[str, int] = {nid: i for i, nid in enumerate(node_order)}
-
-        for node in child_pool:
             nid = node.get("node_id") or ""
             if not nid:
                 continue
@@ -165,7 +157,7 @@ async def embedding_tree_walk(
                 vec = np.asarray(matrix[idx], dtype=np.float32)
             else:
                 # Fallback: global cache
-                vec = store.get_or_embed(tree_name, nid, title, summary)
+                vec = await asyncio.to_thread(store.get_or_embed, tree_name, nid, title, summary)
 
             if vec is None and embed_fn is not None:
                 # Last resort: embed on demand (single text, slow path).
@@ -180,12 +172,10 @@ async def embedding_tree_walk(
             if vec is None:
                 continue
 
-            q = np.asarray(query_vec, dtype=np.float32)
-            # Cosine similarity
-            q_norm = np.linalg.norm(q)
+            # Query normalization is shared across all nodes.
             v_norm = np.linalg.norm(vec)
             if q_norm > 1e-10 and v_norm > 1e-10:
-                score = float(np.dot(q / q_norm, vec / v_norm))
+                score = float(np.dot(q, vec / v_norm))
             else:
                 score = 0.0
             scored.append((nid, score, node))
@@ -207,6 +197,9 @@ async def embedding_tree_walk(
                 collected.append(nid)
 
         # Descend into the top candidates' subtrees.
-        current_level = [node for (_, _, node) in top_candidates]
+        current_level = []
+        for _, _, node in top_candidates:
+            children = node.get("nodes") or []
+            current_level.extend([children] if isinstance(children, dict) else children)
 
     return collected

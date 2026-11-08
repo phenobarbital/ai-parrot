@@ -63,7 +63,7 @@ def parse_markdown_links(body: str) -> list[str]:
             if target.startswith("/"):
                 target = target[1:]
             # Skip empty, external URLs, and anchor-only links
-            if not target or target.startswith("http") or target.startswith("#"):
+            if not target or target.startswith(("http", "#")):
                 continue
             seen[target] = None
     return list(seen.keys())

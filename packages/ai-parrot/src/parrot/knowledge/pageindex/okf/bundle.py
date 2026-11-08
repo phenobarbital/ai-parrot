@@ -39,7 +39,6 @@ from parrot.knowledge.pageindex.okf.graph import parse_markdown_links
 from parrot.knowledge.pageindex.okf.ontology import (
     ConceptType,
     RelationType,
-    RelatesTo,
 )
 from parrot.knowledge.pageindex.okf.projection import (
     flatten_concept_id_for_filename,
@@ -315,8 +314,7 @@ def export_okf_bundle(
         abs_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Load sidecar body
-        flat_key = flatten_concept_id_for_filename(cid)
-        raw_body = content_store.load(tree_name, flat_key) or ""
+        raw_body = content_store.load_node(tree_name, node) or ""
         body = _strip_frontmatter(raw_body)
 
         # Rewrite pageindex:// URIs in body

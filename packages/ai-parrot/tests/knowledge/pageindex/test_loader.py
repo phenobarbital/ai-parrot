@@ -77,7 +77,7 @@ def _make_loader(tmp_path, **kwargs) -> PageIndexLoader:
     loader.toolkit = _FakeToolkit()
     # Sidecars are empty in the fake → content falls back to node summary.
     loader._content_store = MagicMock()
-    loader._content_store.load.return_value = None
+    loader._content_store.load_node.return_value = None
     return loader
 
 

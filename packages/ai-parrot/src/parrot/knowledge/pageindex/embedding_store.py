@@ -38,6 +38,8 @@ from typing import Callable, Optional
 
 import numpy as np
 
+from .store import JSONTreeStore
+
 logger = logging.getLogger("parrot.knowledge.pageindex.embedding_store")
 
 
@@ -60,8 +62,7 @@ class NodeEmbeddingStore:
             Changing this effectively invalidates all existing entries
             (new hash, no collision with old).
         dimension: Embedding vector dimension.  Used to validate loaded
-            vectors but not enforced at write time — mismatches will
-            surface at matmul time.
+            vectors and batches before they enter the cache.
         cache_size: Maximum number of content-key → vector entries held in
             the in-memory LRU cache.
 
@@ -114,6 +115,7 @@ class NodeEmbeddingStore:
 
     def _global_dir(self, tree_name: str) -> Path:
         """Return the global-tier directory for a tree."""
+        JSONTreeStore._validate_name(tree_name)
         return self._storage_dir / tree_name / "embeddings" / "global"
 
     def _global_path(self, tree_name: str, key: str) -> Path:
@@ -126,6 +128,7 @@ class NodeEmbeddingStore:
         Generation zero retains the legacy filename.
         """
         suffix = "" if generation_id == 0 else f".g{generation_id}"
+        JSONTreeStore._validate_name(tree_name)
         return self._storage_dir / tree_name / "embeddings" / f"{tree_name}{suffix}.matrix.npy"
 
     def _order_path(self, tree_name: str, generation_id: int = 0) -> Path:
@@ -134,6 +137,7 @@ class NodeEmbeddingStore:
         Generation zero retains the legacy filename.
         """
         suffix = "" if generation_id == 0 else f".g{generation_id}"
+        JSONTreeStore._validate_name(tree_name)
         return self._storage_dir / tree_name / "embeddings" / f"{tree_name}{suffix}.node_order.json"
 
     def prune_tree_matrices(self, tree_name: str, keep: set[int]) -> int:
@@ -194,7 +198,10 @@ class NodeEmbeddingStore:
         if not path.exists():
             return None
         try:
-            return np.load(str(path))
+            vec = np.load(str(path), allow_pickle=False)
+            if vec.shape != (self._dimension,) or not np.isfinite(vec).all():
+                return None
+            return vec
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to load global embedding %s: %s", path, exc)
             return None
@@ -203,7 +210,13 @@ class NodeEmbeddingStore:
         """Persist a single vector to disk (global tier)."""
         path = self._global_path(tree_name, key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(str(path), vec.astype(np.float32))
+        fd, temp_name = tempfile.mkstemp(dir=path.parent, suffix=".npy.tmp")
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                np.save(handle, vec.astype(np.float32), allow_pickle=False)
+            os.replace(temp_name, path)
+        finally:
+            Path(temp_name).unlink(missing_ok=True)
 
     # ---- public API ----------------------------------------------------
 
@@ -229,6 +242,7 @@ class NodeEmbeddingStore:
         Returns:
             1-D float32 numpy array if cached; ``None`` otherwise.
         """
+        JSONTreeStore._validate_name(tree_name)
         key = self.content_key(self._model_id, title, summary)
         # 1) In-memory LRU
         vec = self._cache_get(key)
@@ -269,6 +283,7 @@ class NodeEmbeddingStore:
         Raises:
             ValueError: When ``nodes`` is empty.
         """
+        JSONTreeStore._validate_name(tree_name)
         if not nodes:
             raise ValueError("nodes must be non-empty")
 
@@ -286,7 +301,10 @@ class NodeEmbeddingStore:
         missing_indices: list[int] = []
         cached_vecs: dict[str, np.ndarray] = {}
 
-        for idx, (node_id, key, text) in enumerate(items):
+        pending: set[str] = set()
+        for idx, (_node_id, key, _text) in enumerate(items):
+            if key in cached_vecs or key in pending:
+                continue
             # Check LRU first.
             vec = self._cache_get(key)
             if vec is not None:
@@ -299,12 +317,15 @@ class NodeEmbeddingStore:
                 cached_vecs[key] = vec
             else:
                 missing_indices.append(idx)
+                pending.add(key)
 
         # Batch-embed only the cache misses.
         if missing_indices:
             texts = [items[i][2] for i in missing_indices]
             new_vecs = embed_fn(texts)
             new_vecs = np.asarray(new_vecs, dtype=np.float32)
+            if new_vecs.shape != (len(texts), self._dimension) or not np.isfinite(new_vecs).all():
+                raise ValueError("embed_fn returned an invalid embedding batch")
             for batch_pos, idx in enumerate(missing_indices):
                 node_id, key, text = items[idx]
                 vec = new_vecs[batch_pos]
@@ -340,8 +361,17 @@ class NodeEmbeddingStore:
         try:
             with os.fdopen(matrix_fd, "wb") as matrix_file:
                 np.save(matrix_file, matrix)
+            matrix_stat = matrix_temp_path.stat()
             with os.fdopen(order_fd, "w", encoding="utf-8") as order_file:
-                json.dump(node_id_order, order_file, ensure_ascii=False)
+                json.dump(
+                    {
+                        "model_id": self._model_id,
+                        "node_ids": node_id_order,
+                        "matrix_signature": [matrix_stat.st_mtime_ns, matrix_stat.st_size],
+                    },
+                    order_file,
+                    ensure_ascii=False,
+                )
             os.replace(matrix_temp_path, matrix_path)
             os.replace(order_temp_path, order_path)
         except Exception:
@@ -373,10 +403,27 @@ class NodeEmbeddingStore:
         if not matrix_path.exists() or not order_path.exists():
             return None
         try:
+            before = matrix_path.stat()
             matrix = np.load(str(matrix_path), mmap_mode="r")
-            node_id_order = json.loads(order_path.read_text(encoding="utf-8"))
+            after = matrix_path.stat()
+            metadata = json.loads(order_path.read_text(encoding="utf-8"))
+            if not isinstance(metadata, dict) or metadata.get("model_id") != self._model_id:
+                return None
+            signature = [before.st_mtime_ns, before.st_size]
+            if signature != [after.st_mtime_ns, after.st_size] or signature != metadata.get("matrix_signature"):
+                return None
+            node_id_order = metadata.get("node_ids")
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to load tree matrix for %r: %s", tree_name, exc)
+            return None
+        if (
+            matrix.ndim != 2
+            or matrix.shape[1] != self._dimension
+            or not isinstance(node_id_order, list)
+            or len(node_id_order) != matrix.shape[0]
+            or not all(isinstance(node_id, str) for node_id in node_id_order)
+        ):
+            logger.warning("Invalid tree matrix or node order for %r", tree_name)
             return None
         return matrix, node_id_order
 

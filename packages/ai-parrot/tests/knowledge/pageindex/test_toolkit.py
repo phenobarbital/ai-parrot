@@ -216,7 +216,7 @@ async def test_search_engine_is_pinned_per_generation(toolkit: PageIndexToolkit)
 
 
 @pytest.mark.asyncio
-async def test_delete_tree_removes_bodies_and_lock(toolkit: PageIndexToolkit, tmp_path: Path):
+async def test_delete_tree_removes_bodies_preserving_lock(toolkit: PageIndexToolkit, tmp_path: Path):
     await toolkit.create_tree("g")
     toolkit._content_store.save("g", "0000", "body")
     embeddings = tmp_path / "g" / "embeddings"
@@ -231,7 +231,7 @@ async def test_delete_tree_removes_bodies_and_lock(toolkit: PageIndexToolkit, tm
     assert not (tmp_path / "g.json").exists()
     assert not (tmp_path / "g" / "bodies").exists()
     assert not embeddings.exists()
-    assert not lock.exists()
+    assert lock.exists()
 
 
 @pytest.mark.asyncio

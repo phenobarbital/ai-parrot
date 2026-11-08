@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import logging
 import os
 import time
@@ -77,7 +78,9 @@ async def tree_lock(storage_dir: Path, tree_name: str, *, timeout: float) -> Asy
         while True:
             try:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
+            except OSError as exc:
+                if exc.errno not in (errno.EACCES, errno.EAGAIN):
+                    raise
                 if time.monotonic() >= deadline:
                     raise TreeLockTimeout(tree_name) from None
                 await asyncio.sleep(_LOCK_POLL_SECONDS)

@@ -29,7 +29,7 @@ import numpy as np
 from parrot._imports import lazy_import
 from .llm_adapter import PageIndexLLMAdapter
 from .retriever import PageIndexRetriever
-from .utils import find_node_by_id, get_nodes
+from .utils import find_node_by_id, get_nodes, structure_to_list
 
 if TYPE_CHECKING:
     from .embedding_store import NodeEmbeddingStore
@@ -295,7 +295,7 @@ class HybridPageIndexSearch:
     def _rrf_fuse(rankings: list[list[str]], k: int = _RRF_K) -> list[tuple[str, float]]:
         scores: dict[str, float] = {}
         for ranking in rankings:
-            for rank, node_id in enumerate(ranking):
+            for rank, node_id in enumerate(dict.fromkeys(ranking)):
                 if not node_id:
                     continue
                 scores[node_id] = scores.get(node_id, 0.0) + 1.0 / (k + rank + 1)
@@ -309,7 +309,7 @@ class HybridPageIndexSearch:
         top_k: int = 10,
         use_bm25: bool = True,
         use_llm_walk: bool = True,
-        use_vec: bool = False,
+        use_vec: Optional[bool] = None,
         use_embedding_walk: Optional[bool] = None,
         rerank: bool = False,
     ) -> list[dict[str, Any]]:
@@ -337,6 +337,9 @@ class HybridPageIndexSearch:
         Raises:
             ValueError: When all signals are disabled.
         """
+        if top_k <= 0:
+            return []
+        use_vec = self._use_vec_rank if use_vec is None else use_vec
         # Resolve Phase B flag: per-call override wins over constructor default.
         _use_beam = use_embedding_walk if use_embedding_walk is not None else self._use_embedding_walk
 
@@ -366,6 +369,8 @@ class HybridPageIndexSearch:
                     query_vec=q_vec,
                     store=self._embedding_store,
                     embed_fn=self._embed_fn,
+                    tree_name=self._index_name(),
+                    generation_id=self._generation_id,
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("embedding_tree_walk failed: %s", exc)
@@ -401,10 +406,14 @@ class HybridPageIndexSearch:
         if not fused:
             return []
 
-        structure = self._structure()
+        nodes_by_id = {node.get("node_id"): node for node in structure_to_list(self._structure())}
         results: list[dict[str, Any]] = []
+        seen: set[str] = set()
         for node_id, score in fused:
-            node = find_node_by_id(structure, node_id)
+            if node_id in seen:
+                continue
+            seen.add(node_id)
+            node = nodes_by_id.get(node_id)
             if not node:
                 continue
             results.append(
