@@ -879,7 +879,7 @@ tests:
 - packages/ai-parrot/tests/knowledge/pageindex/test_local_mcp_docs.py
 - packages/ai-parrot/tests/mcp/test_pageindex_template.py
 - packages/ai-parrot/tests/knowledge/bookstore/test_library.py
-markers: []
+markers: none
 
 ### Test Data / Fixtures
 ```python
