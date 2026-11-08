@@ -59,14 +59,14 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root of the graph: creates optimizer.py and test_optimizer.py; no dependency (reads FEAT-840 segments helpers already on dev)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T23:08:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5364-optimizer-models-scope-ownership.md"
     },
@@ -77,7 +77,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -86,7 +86,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5364: extends optimizer.py (OptimizerSettings, OptimizePlan, assign_ownership) and test_optimizer.py — same files, serialized",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T23:08:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5365-optimizer-expansion-stamps-validate.md"
     },
@@ -97,7 +97,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -106,7 +106,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5365: imports split_at, pass_input, pass_cache_key, is_stamped from optimizer.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T23:08:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5366-optimizer-llm-gate-headings-keyitems.md"
     },
@@ -117,7 +117,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -126,7 +126,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5366: extends optimizer_llm.py (adapter_is_live, execution_digest, propose_*) and test_optimizer_llm.py — same files",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T23:08:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5367-optimizer-llm-summaries-run-passes.md"
     },
@@ -137,14 +137,14 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "independent of M1/M2: reads node dict fields only; owns schemas.py, hybrid_search.py, embedding_store.py exclusively in this feature",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T23:08:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5368-schema-keyitems-indexing.md"
     },
@@ -155,14 +155,14 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "independent: reads node['aliases'] only; owns okf/tools.py and okf/bundle.py in this feature",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T23:08:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5369-okf-alias-resolution-export.md"
     },
@@ -173,7 +173,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -183,7 +183,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5367: calls run_llm_passes/describe_document (optimizer_llm.py) and plan_deterministic/finalize_stamps (optimizer.py, TASK-5365 transitively); TASK-5368: relies on the new PageIndexNode fields (schemas.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T23:08:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5370-toolkit-optimize-on-import.md"
     },
@@ -194,7 +194,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -203,7 +203,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5370: reuses _revisions_for and the staging helper in toolkit.py; same files toolkit.py/test_optimizer_toolkit.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T23:08:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5371-toolkit-optimize-tool.md"
     },
@@ -214,7 +214,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -223,7 +223,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5371: both modify toolkit.py and test_optimizer_toolkit.py; test_locked_semantics drives optimize()",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T23:08:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5372-toolkit-locked-semantics.md"
     },
@@ -234,7 +234,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -243,7 +243,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5371: calls PageIndexToolkit.optimize (toolkit.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T23:08:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5373-bookstore-optimize-book.md"
     },
@@ -254,7 +254,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -263,7 +263,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5373: extends test_optimizer_bookstore.py created there (same file); calls PageIndexToolkit.optimize from TASK-5371",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T23:08:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5374-parrot-pageindex-cli.md"
     },
@@ -274,7 +274,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -283,7 +283,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5371: the harness imports PDFs through PageIndexToolkit.import_pdf and calls optimize (toolkit.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T23:08:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5375-optimizer-eval-harness.md"
     },
@@ -294,7 +294,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -304,7 +304,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5375: runs optimizer_eval.main; TASK-5372: last toolkit change before measuring; may edit the target_leaf_tokens default in optimizer.py (TASK-5364/5365, reached transitively). NOT for a coder seat (FEAT-845 TASK-5344 precedent)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T23:08:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5376-optimizer-tuning-run.md"
     },
@@ -315,7 +315,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -324,7 +324,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5372: exercises the complete toolkit surface (optimize, import hook, locks) in toolkit.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T23:08:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5377-optimizer-integration-tests.md"
     },
@@ -335,7 +335,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -347,7 +347,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5376: page states the shipped target_leaf_tokens + report sha256; TASK-5374: documents parrot pageindex optimize; TASK-5369: documents alias export; TASK-5377: last test task so all documented symbols exist",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-08T23:08:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5378-optimizer-documentation.md"
     }
