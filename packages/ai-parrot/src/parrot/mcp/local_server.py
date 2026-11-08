@@ -23,7 +23,7 @@ import asyncio
 import json
 import logging
 import sys
-from typing import Any
+from typing import Any, Optional, TextIO
 
 from parrot.mcp.server_base import LocalServerConfig, MCPServerBase
 
@@ -66,6 +66,10 @@ class StdioMCPServer(LocalMCPServerBase):
         self._running = False
         self._inflight: set["asyncio.Task[None]"] = set()
         self._by_request_id: dict[Any, "asyncio.Task[None]"] = {}
+        # The JSON-RPC output stream, bound once in start(). Reading `sys.stdout` per write
+        # would follow any later process-wide redirect (a library banner guard such as the
+        # one around the prompt-injection scorer) and misroute protocol frames.
+        self._stdout: Optional[TextIO] = None
 
     async def start(self):
         """Start the stdio MCP server.
@@ -78,6 +82,7 @@ class StdioMCPServer(LocalMCPServerBase):
         """
         self.logger.info("Starting stdio MCP server with %s tools...", len(self.tools))
         self._running = True
+        self._stdout = sys.stdout
         loop = asyncio.get_running_loop()
 
         try:
@@ -198,10 +203,14 @@ class StdioMCPServer(LocalMCPServerBase):
         """Write one JSON-RPC message.
 
         A single synchronous write on the event-loop thread cannot interleave
-        with another task's write, so no lock is needed.
+        with another task's write, so no lock is needed. Writes to the stream
+        bound in :meth:`start` (``sys.stdout`` before ``start()`` runs), so a
+        ``contextlib.redirect_stdout`` active elsewhere in the process never
+        captures a frame.
         """
-        sys.stdout.write(json.dumps(response) + "\n")
-        sys.stdout.flush()
+        out = self._stdout if self._stdout is not None else sys.stdout
+        out.write(json.dumps(response) + "\n")
+        out.flush()
 
     # ------------------------------------------------------------------ handling
 

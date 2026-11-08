@@ -92,6 +92,25 @@ class TestStdioMCPServer:
         await server.stop()
         assert server._running is False
 
+    def test_send_uses_stream_bound_at_start(self):
+        """FEAT-844 AC-2: a redirect active during _send does not capture the frame."""
+        import io
+
+        server = StdioMCPServer(LocalServerConfig(name="test"))
+        bound, other = io.StringIO(), io.StringIO()
+        server._stdout = bound  # what start() binds from sys.stdout
+        with contextlib.redirect_stdout(other):
+            server._send({"jsonrpc": "2.0", "id": 1, "result": {}})
+        assert json.loads(bound.getvalue()) == {"jsonrpc": "2.0", "id": 1, "result": {}}
+        assert other.getvalue() == ""
+
+    def test_send_before_start_writes_sys_stdout(self, capsys):
+        """FEAT-844 AC-2 fallback: without start(), _send still writes to sys.stdout."""
+        server = StdioMCPServer(LocalServerConfig(name="test"))
+        assert server._stdout is None
+        server._send({"jsonrpc": "2.0", "id": 2, "result": {}})
+        assert json.loads(capsys.readouterr().out.strip())["id"] == 2
+
 
 class _ScriptedStdin:
     """A stand-in for ``sys.stdin`` that hands out scripted lines, then EOF."""

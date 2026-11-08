@@ -3,7 +3,9 @@ Prompt Injection Detection and Protection.
 """
 from typing import Optional, Dict, Any, List, Protocol, Tuple, runtime_checkable
 from enum import Enum
+import contextlib
 import re
+import sys
 from datetime import datetime, timezone
 from navconfig.logging import logging
 
@@ -315,11 +317,15 @@ def get_injection_scoring_engine(force_reresolve: bool = False) -> Optional[Inje
 
     The resolution chain lives in ``parrot.bots.guardrails.builtin.prompt_injection``, which owns the
     pytector/onnxruntime import boundary; it is imported lazily here so ``parrot.security`` never
-    imports ``parrot.bots`` at module import time. Never raises.
+    imports ``parrot.bots`` at module import time. Import and resolution run with stdout redirected
+    to stderr: pytector prints a "Loading Hugging Face model …" banner on first use, and a caller
+    serving a stdio JSON-RPC channel (``parrot mcp-local``) must never see it on stdout. Never raises.
     """
     try:
-        from parrot.bots.guardrails.builtin.prompt_injection import _resolve_injection_engine
-        return _resolve_injection_engine(force_reresolve)
+        with contextlib.redirect_stdout(sys.stderr):
+            from parrot.bots.guardrails.builtin.prompt_injection import _resolve_injection_engine
+
+            return _resolve_injection_engine(force_reresolve)
     except Exception as exc:  # noqa: BLE001 - callers fall back to the regex detector
         logger.warning("ML injection scoring engine unavailable: %s", exc)
         return None
