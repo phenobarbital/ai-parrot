@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import numpy as np
 import pytest
 
-from parrot.knowledge.pageindex.hybrid_search import HybridPageIndexSearch
+from parrot.knowledge.pageindex.hybrid_search import HybridPageIndexSearch, key_item_text
 from parrot.knowledge.pageindex.schemas import TreeSearchResult
 
 
@@ -60,6 +60,22 @@ async def test_bm25_only_returns_lexical_matches():
     assert results[0]["source"] == "bm25"
     ids = [r["node_id"] for r in results]
     assert "0001" in ids[:2]
+
+
+@pytest.mark.asyncio
+async def test_bm25_and_embedding_see_key_items():
+    tree = _fixture_tree()
+    key_items = [{"label": "postquantum", "kind": "literal", "seq": 3}]
+    tree["structure"][2]["key_items"] = key_items
+    engine = HybridPageIndexSearch(tree=tree, adapter=None, default_bm25_k=5)
+
+    ids, texts = engine._flatten_corpus()
+    security_text = texts[ids.index("0004")]
+    results = await engine.search("postquantum", top_k=1, use_bm25=True, use_llm_walk=False)
+
+    assert "postquantum" in security_text
+    assert results[0]["node_id"] == "0004"
+    assert results[0]["key_items"] == key_items
 
 
 @pytest.mark.asyncio
@@ -225,7 +241,7 @@ async def test_hybrid_search_content_loader_enriches_bm25(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_hybrid_search_no_loader_matches_baseline():
-    """Without a content_loader corpus is exactly title + summary (legacy text)."""
+    """Without a content_loader corpus uses inline body text plus labels."""
     tree = _fixture_tree()
     engine = HybridPageIndexSearch(tree=tree, adapter=_adapter())
     ids, texts = engine._flatten_corpus()
@@ -237,7 +253,7 @@ async def test_hybrid_search_no_loader_matches_baseline():
         title = node.get("title") or ""
         summary = node.get("summary") or ""
         body = node.get("text") or ""
-        assert text == f"{title} {summary} {body}".strip()
+        assert text == f"{title} {summary} {key_item_text(node)} {body}".strip()
 
 
 @pytest.mark.asyncio
