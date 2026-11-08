@@ -18,7 +18,7 @@ and body retrieval are all deterministic. Adding an `llm:` line to the section e
 
 ## Public API
 
-- [`PageIndexToolkit`](ref:parrot.knowledge.pageindex.toolkit.PageIndexToolkit) — the toolkit the server exposes
+- [`PageIndexToolkit`](ref:parrot.knowledge.pageindex.toolkit) — the toolkit the server exposes
 
 ## Configuration & Parameters
 
@@ -41,7 +41,7 @@ toolkits:
       max_result_chars: 24000
     # llm: anthropic:claude-haiku-5-5
     # llm_kwargs: {}
-    exclude: []
+    exclude: [pageindex_agentic_retrieve]
     env: {}
 ```
 
@@ -58,7 +58,7 @@ toolkits:
 
 ### What is served
 
-Without `llm:` the server serves every tool except the five that need a model, which the factory hides through
+Without `llm:` the server serves every tool except the six that need a model, which the factory hides through
 `PageIndexToolkit.llm_dependent_tools`:
 
 - `pageindex_insert_content`
@@ -66,11 +66,12 @@ Without `llm:` the server serves every tool except the five that need a model, w
 - `pageindex_import_folder`
 - `pageindex_import_pdf`
 - `pageindex_search_documents_scoped`
+- `pageindex_agentic_retrieve`
 
 Everything else works with no model: `pageindex_list_trees`, `create_tree`, `delete_tree`, `rename_tree`, `get_tree`,
 `get_generation`, `vacuum_tree`, `search` (BM25), `retrieve`, `insert_markdown`, `insert_ebook`, `tag_node`,
 `add_node`, `update_node`, `update_node_content`, `delete_node`, plus the read tools of the segment store
-(`outline`, `list_documents`, `read_pages`, `read_segments`). With `llm:` set, the five hidden tools appear and
+(`outline`, `list_documents`, `read_pages`, `read_segments`). With `llm:` set, the hidden tools appear (the agentic tool only once it is removed from `exclude:`) and
 `search` / `retrieve` also run the LLM tree walk.
 
 A search that asks only for the LLM walk (`use_bm25=False, use_llm_walk=True`) with no model raises
@@ -78,9 +79,11 @@ A search that asks only for the LLM walk (`use_bm25=False, use_llm_walk=True`) w
 
 ### The `exclude:` opt-in slot
 
-`exclude: []` in the template is the agreed place to switch tools off. The internal agentic retrieval tool
-(`pageindex-agentic-retrieval`, a later slice) is opt-in: it will be listed there and removed from the list to
-expose it. An empty list changes nothing today.
+`exclude:` in the template is the agreed place to switch tools off. The shipped template lists
+`pageindex_agentic_retrieve` there, so the internal agentic retrieval tool is opt-in: it stays hidden even when `llm:`
+is set. To expose it, set `llm:` and remove the name from the list (`exclude: []`). See
+[PageIndex Agentic Retrieval and Citations](pageindex-agentic-retrieval.md) for what the tool does and its budgets.
+Without `llm:` it is hidden regardless, because it is LLM-dependent.
 
 ## Usage Examples
 
