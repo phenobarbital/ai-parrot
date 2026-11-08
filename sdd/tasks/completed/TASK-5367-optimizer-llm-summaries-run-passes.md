@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-846 — PageIndex Tree Optimizer
 **Spec**: `sdd/specs/pageindex-tree-optimizer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5366
@@ -217,4 +217,9 @@ Spec §4 rows `test_summaries_inline_llm_composed`, `test_first_run_executes_bef
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed**: 2026-11-09 | **Implementation commit**: 6ed793caed
+
+Delivered via sdd-coder pool (merged). Scope: optimizer LLM summaries and run passes.
+Validation: merge-tier — 10 passed, exit 0.
+Deviations: none noted.
+

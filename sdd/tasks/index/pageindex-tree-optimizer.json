@@ -120,7 +120,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -130,8 +130,9 @@
       "parallelism_notes": "TASK-5366: extends optimizer_llm.py (adapter_is_live, execution_digest, propose_*) and test_optimizer_llm.py — same files",
       "assigned_to": null,
       "started_at": "2026-11-08T23:08:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5367-optimizer-llm-summaries-run-passes.md"
+      "completed_at": "2026-11-08T23:39:23+00:00",
+      "file": "sdd/tasks/completed/TASK-5367-optimizer-llm-summaries-run-passes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5368",
