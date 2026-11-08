@@ -17,7 +17,7 @@ docs:
 **Feature ID**: FEAT-846
 **Date**: 2026-11-08
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 2.2.0
 
 > Sixth and last slice of the umbrella brainstorm
@@ -52,9 +52,10 @@ served over MCP) to that state without re-importing it.
 
 Today, on `dev`:
 
-- No optimizer of any kind exists; `md_to_tree` still drops sub-50-token sections with
-  `thin_tree` (`md_builder.py:304`) and the PDF path never merges or splits anything after
-  the structure is chosen.
+- No optimizer of any kind exists, and the PDF path never merges or splits anything after
+  the structure is chosen. Since `f426e44f8d`, `md_to_tree` keeps short sections and the text
+  before the first heading (it no longer calls `thin_tree`), so markdown revisions now carry
+  tiny sections that only a merge rule can tidy.
 - Summaries are one LLM call per node over raw page text (`builder.py:1522-1550`) or per
   markdown section (`md_builder.py:226-248`), unframed, with no word limit, and parents are
   summarized independently of their children.
@@ -94,14 +95,16 @@ Carried from the brainstorm's *Constraints & Requirements* and resolved question
 - **G9 — `key_items` are indexed.** They join the BM25 text, the embedded text (and its cache
   key) and the tree the LLM walk sees.
 - **G10 — OKF identity.** A node removed by a merge keeps resolving: its `concept_id` becomes
-  an alias of the node that absorbed it; its title survives as a literal `key_item`.
+  an alias of the node that absorbed it; its title survives as a literal `key_item`. An
+  exported OKF bundle rewrites links to it to the absorbing node.
 - **G11 — Hardening.** Every piece of document text that enters an optimizer or summary
   prompt is framed with the FEAT-840 helpers; model output that names segments or headings
   is validated against the segments it was shown.
 - **G12 — Bookstore.** New books are optimized at import; existing books opt in per book
   (`bookstore optimize <book_id>`); the card's TOC is rebuilt afterwards.
 - **G13 — Provisional, configurable sizes** with an evaluation harness that reports what the
-  defaults do on a corpus, so they can be tuned later.
+  defaults do on a corpus, and one deterministic tuning run inside this feature that may
+  adjust `target_leaf_tokens` by a fixed rule (M6).
 
 ### Non-Goals (explicitly out of scope)
 
@@ -111,20 +114,24 @@ Carried from the brainstorm's *Constraints & Requirements* and resolved question
 - Traffic-driven expansion (brainstorm Option C) — rejected; retrieval never writes to a tree.
 - Re-partitioning a tree after `add_node`/`delete_node`. Edits do not trigger the optimizer
   (G5); the next explicit `optimize` repairs ownership gaps those edits left (§2).
-- Replacing `thin_tree` in `md_to_tree` or the builder's legacy summary functions
-  (`generate_node_summary`, `generate_prefix_summaries`); they stay for callers that bypass
-  the toolkit. Whether `thin_tree(50)` should go is an §8 question.
-- Emitting `aliases` in OKF sidecar frontmatter or the OKF bundle (`parrot.knowledge.okf`
-  is shared with the ontology work); aliases resolve through `OKFToolkit` only (G10).
+- Replacing the builder's legacy summary functions (`generate_node_summary`,
+  `generate_prefix_summaries`); they stay for callers that bypass the toolkit. `thin_tree`
+  stays as a function for explicit callers; `md_to_tree` already stopped calling it (§8).
+- An `aliases` field in OKF sidecar frontmatter or in the OKF bundle (`parrot.knowledge.okf`
+  is shared with the ontology work). Aliases resolve through `OKFToolkit`, and the PageIndex
+  bundle exporter rewrites links and `relates_to` targets that name an alias to the
+  absorbing concept (G10, §8).
 - Citations in `parrot_tools/multistoresearch` and Bookstore `agentic_retrieve` (FEAT-843 §8).
-- Tuning the default sizes themselves. This slice ships provisional values and the harness
-  (G13); the tuning run is a follow-up task once a corpus is available (§8).
+- Tuning the LLM-dependent defaults (`summary_max_words`, `max_key_items`,
+  `routing_tokens_per_child`) and the deterministic floors (`min_leaf_tokens`,
+  `inline_summary_tokens`). The M6 tuning run is deterministic and may adjust only
+  `target_leaf_tokens` (G13, §8); an LLM-mode run is a ledger follow-up.
 
 ---
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:71412444245eb880da6bc9bdd9141c175d22a30a135f2ea7d61f2086c7d4c3d6 evaluation_digest=sha256:0f73707705db5a3f2c0d6f633dc690b81d1bb0182ff3db30ae40af77874f8205 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:8ed1ff34933e033998fdf974d55bce38057547d8191c18075b2e4dcdd2075846 evaluation_digest=sha256:f6c7286f746e864f936b00a3867806b7d1890728df856287f0a9ad821c067704 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -326,6 +333,7 @@ evaluation task.
 
    key_items ──▶ HybridPageIndexSearch._flatten_corpus (BM25)  ·  NodeEmbeddingStore text + key  ·  outline (already)
    aliases   ──▶ OKFToolkit._by_concept_id  (get_concept / cite resolve a merged concept_id)
+             ──▶ export_okf_bundle  (links and relates_to naming an alias → the absorber)
 ```
 
 ### Integration Points
@@ -346,6 +354,7 @@ evaluation task.
 | `HybridPageIndexSearch._flatten_corpus` / result dict (`hybrid_search.py:165, 420-426`) | modifies | `key_items` labels in the BM25 text and in search results |
 | `NodeEmbeddingStore.content_key` / `build_tree_matrix` (`embedding_store.py:96, 243`) | modifies | labels in the embedded text; key changes only when labels exist |
 | `OKFToolkit.__init__` (`okf/tools.py:66-85`) | modifies | aliases map to the absorbing node |
+| `export_okf_bundle` / `_export_frontmatter` (`okf/bundle.py:252, 185`) | modifies | on export, an alias maps to the absorber's file and `concept_id`; no new frontmatter key |
 | `PageIndexNode` (`schemas.py:118`) | extends | `key_items`, `locked`, `locked_reason`, `aliases`, `optimizer` |
 | `Bookstore` / `bookstore` CLI (`library.py:179`, `cli.py:98`) | extends | `optimize_book`, `bookstore optimize` |
 | `parrot` CLI registry (`cli/__init__.py:170-`) | extends | `"pageindex": "parrot.knowledge.pageindex.cli"` |
@@ -436,10 +445,10 @@ await bookstore.optimize_book("clean-code", apply=True)
 |---|---|---|---|
 | M1: deterministic planner | no | models and function names fixed below | the merge/ownership/expansion interplay on real trees needs judgement; validation must be exact |
 | M2: LLM passes | no | prompts framed; acceptance rules fixed | prompt wording and the heading-like rule need iteration against real PDFs |
-| M3: schema + indexing + OKF aliases | yes | field names, `content_key(extra=)` rule, alias map | — |
+| M3: schema + indexing + OKF aliases | yes | field names, `content_key(extra=)` rule, alias map (toolkit lookup and bundle export) | — |
 | M4: toolkit integration | no | hook sites fixed in §6 | transaction/retry semantics and the import-path change to builder options |
 | M5: Bookstore + CLIs | yes | method/command names and options fixed below | — |
-| M6: evaluation harness | yes | mirrors `layout_eval.py` shape | — |
+| M6: evaluation harness | harness: yes; tuning run: no | mirrors `layout_eval.py` shape; `tuned_target` rule fixed below | the tuning run must be executed by the orchestrator or on the host, with every number copied from the written report — in FEAT-845 (TASK-5344) a coder seat invented a metrics table for this corpus |
 | M7: documentation + integration tests | yes | pages and test names fixed in §4/§10 | — |
 
 ### Module 1: Deterministic planner
@@ -588,7 +597,8 @@ await bookstore.optimize_book("clean-code", apply=True)
       """One full ``SegmentRead`` per owned segment, so ``frame_segments`` labels each with its address."""
 
   def heading_like(segment: Segment) -> bool:
-      """Single line, ≤ MAX_HEADING_WORDS words, no terminal period, kind not in {table, code, caption}."""
+      """Single line, ≤ MAX_HEADING_WORDS words, no terminal period, kind not in {table, code, caption}.
+      No median-paragraph length check (rejected in §8); the split still has to pass ``should_expand``."""
 
   def literal_in_anchor(label: str, text: str) -> bool:
       """Casefolded, whitespace-collapsed substring test."""
@@ -624,9 +634,9 @@ await bookstore.optimize_book("clean-code", apply=True)
   ```
 
 ### Module 3: Schema, indexing and OKF aliases
-- **Path**: `schemas.py`, `hybrid_search.py`, `embedding_store.py`, `okf/tools.py`
+- **Path**: `schemas.py`, `hybrid_search.py`, `embedding_store.py`, `okf/tools.py`, `okf/bundle.py`
 - **Responsibility**: the new node fields; `key_items` in BM25 text, embedded text, cache key
-  and search results; alias resolution.
+  and search results; alias resolution in `OKFToolkit`; alias rewriting on OKF bundle export.
 - **Depends on**: none (reads dict fields).
 - **Interface Skeleton**:
   ```python
@@ -652,6 +662,16 @@ await bookstore.optimize_book("clean-code", apply=True)
 
   # okf/tools.py (modifies :82-85)
   # for node in structure_to_list(...): map concept_id AND every entry of node.get("aliases") or [] → node
+
+  # okf/bundle.py (modifies :185, :206, :291, :325)                                        # verified at f426e44f8d
+  # export_okf_bundle, after the concept_id → path map (:286-291): for every node, map each entry of
+  #   node.get("aliases") or [] to that node's path, and build alias_to_concept = {alias: node concept_id};
+  #   a live concept_id always wins over an equal alias. _rewrite_pageindex_uris (:146) then rewrites
+  #   pageindex:// links that name an alias to the absorber's file with no change of its own.
+  def _export_frontmatter(node: dict, tree_name: str,
+                          alias_to_concept: Optional[dict[str, str]] = None) -> str:     # verified: bundle.py:185
+      """``relates_to`` targets are exported as ``alias_to_concept.get(concept, concept)`` (:206). No ``aliases`` key
+      is written; ``import_okf_bundle`` is unchanged."""
   ```
 
 ### Module 4: Toolkit integration
@@ -734,7 +754,10 @@ await bookstore.optimize_book("clean-code", apply=True)
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/pageindex/optimizer_eval.py` (new)
 - **Responsibility**: a deterministic report of what the settings do on a corpus (leaf token
   distribution, leaves over target, nodes before/after, `key_items`, summary lengths, LLM
-  calls) so the defaults can be tuned; no tuning logic beyond a suggested target.
+  calls, LLM-sourced heading splits) so the defaults can be tuned; no tuning logic beyond a
+  suggested target and the fixed `tuned_target` rule. `TreeMetrics` holds numbers and the
+  file-stem label only, never a node title, so a report over a non-redistributable PDF
+  (AICPA) can be quoted. Plus one tuning run (below).
 - **Depends on**: M4 (runs `import_pdf` into a temporary storage dir, then `optimize`).
 - **Interface Skeleton**:
   ```python
@@ -744,13 +767,42 @@ await bookstore.optimize_book("clean-code", apply=True)
       label: str; pages: Optional[int]; nodes_before: int; nodes_after: int; leaves_before: int; leaves_after: int
       leaf_tokens_p50: int; leaf_tokens_p90: int; leaf_tokens_max: int; leaves_over_target_before: int
       leaves_over_target_after: int; key_items: int; summary_words_mean: float; llm_calls: int; seconds: float
+      llm_heading_splits: int   # report.expanded entries with source == "llm" (0 in a deterministic run)
   class EvalReport(BaseModel): created_at: str; settings: EvalSettings; results: list[TreeMetrics]; suggested_target_leaf_tokens: Optional[int]
   async def evaluate_pdf(pdf: Path, *, settings: EvalSettings, storage_dir: Path) -> TreeMetrics: ...
   async def evaluate_corpus(pdfs: list[Path], *, settings: EvalSettings, out_dir: Path = DEFAULT_OUT) -> EvalReport:
       """Writes ``optimizer_eval-<ts>.json``; ``suggested_target_leaf_tokens`` is the p75 of post-layout leaf tokens
       rounded to 100, or ``None`` with fewer than three trees."""
+  def tuned_target(report: EvalReport, current: OptimizerSettings) -> Optional[int]:
+      """``report.suggested_target_leaf_tokens`` when it is not ``None`` and lies in
+      ``[2 * current.min_leaf_tokens, 2 * current.target_leaf_tokens]``; else ``None``. The lower bound keeps a split
+      possible (both pieces ≥ the floor); the upper bound keeps G1 (expansion first) from being tuned away."""
   def main(argv: Optional[list[str]] = None) -> int: ...   # python -m parrot.knowledge.pageindex.optimizer_eval <pdf|dir>...
+      # prints the report path and tuned_target(report, OptimizerSettings())
   ```
+- **Tuning run** (the last M6 task; after every M1 and M4 task, before M7). It is not a
+  Validation Command and not a test (AC-1: no `real_llm` test); it runs once and can take
+  minutes:
+  - **Inputs**: the four PDFs in the primary checkout's gitignored
+    `corpus/compliance_soc2_hipaa/raw/` (`nist_800_53_r5.pdf`, `nist_csf_2_0.pdf`,
+    `hipaa_45cfr164_2022.pdf`, `aicpa_tsc_2017.pdf`) plus the committed
+    `tests/knowledge/pageindex/fixtures/arxiv_2408_09869.pdf`. A feature worktree has no
+    copy of the corpus; read it from the primary checkout, which the worker sandbox mounts
+    read-only: `MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)`.
+  - **Mode**: deterministic (no `--llm`); the worker sandbox has no route to a model
+    provider. The report goes to the default `artifacts/logs/optimizer_eval/` (gitignored)
+    and is never committed.
+  - **Rule**: when `tuned_target` returns a value, it becomes the `target_leaf_tokens`
+    default in `OptimizerSettings`; otherwise the default stays 1500. No other default
+    changes.
+  - **Evidence**: the Completion Note gives the report path and its sha256, the number of
+    PDFs evaluated, `suggested_target_leaf_tokens` and the `tuned_target` result, and copies
+    every number it quotes from that report. If fewer than three PDFs can be read or the run
+    fails, the note says "not run" with the error and no default changes; it never
+    estimates a number.
+  - **Follow-up**: the task opens one ledger issue (`--kind tech_debt --discovered-from
+    spec:FEAT-846`) for an LLM-mode run on the host that measures `llm_heading_splits`,
+    `key_items` and summary lengths and settles the LLM-dependent defaults.
 
 ### Module 7: Documentation and integration tests
 - **Path**: `wiki/knowledge/pageindex-tree-optimizer.md` (new), `wiki/knowledge/pageindex.md`
@@ -787,6 +839,7 @@ await bookstore.optimize_book("clean-code", apply=True)
 | `test_schema_fields_roundtrip` | M3 | new optional fields serialize and old trees validate |
 | `test_bm25_and_embedding_see_key_items` | M3 | labels in `_flatten_corpus` text and in search results; `content_key` unchanged without `extra` |
 | `test_okf_alias_resolution` | M3 | `get_concept`/`cite` resolve an alias to the absorber |
+| `test_okf_bundle_rewrites_aliases` | M3 | an exported bundle rewrites a `pageindex://` link and a `relates_to` target naming an absorbed `concept_id` to the absorber's file and id; a live `concept_id` wins over an equal alias; no `aliases` key in any frontmatter |
 | `test_optimize_dry_run_and_apply` | M4 | dry run publishes nothing; apply publishes one generation, bodies re-rendered, `node_id`s renumbered, concept ids deduped |
 | `test_optimize_on_import_paths` | M4 | pdf (fake builder with `_segments`), markdown and ebook imports stage optimized subtrees; `optimize_on_import=False` is byte-identical to today |
 | `test_locked_semantics` | M4 | body edit locks node; optimize a sibling in the same document and then the full tree: edited bytes/body_ref and locked descendants stay identical; selection beneath a locked ancestor is excluded |
@@ -796,7 +849,8 @@ await bookstore.optimize_book("clean-code", apply=True)
 | `test_optimize_rejects_bad_candidate` | M4 | an injected overlap yields `errors` and no new generation |
 | `test_optimize_without_model` | M4 | `pageindex_optimize` listed without `llm`; `llm_passes: "skipped (no model)"` |
 | `test_optimize_book_and_cli` | M5 | `optimize_book(apply=True)` rebuilds card TOC fields; `bookstore optimize` and `parrot pageindex optimize` print a report |
-| `test_optimizer_eval_report` | M6 | metrics and suggested target over the arxiv fixture with a fake adapter |
+| `test_optimizer_eval_report` | M6 | metrics and suggested target over the arxiv fixture with a fake adapter; `llm_heading_splits` counts `ExpandAction(source="llm")`; the JSON report contains no node title |
+| `test_tuned_target_bounds` | M6 | `tuned_target` returns the suggestion inside `[2 × min_leaf_tokens, 2 × target_leaf_tokens]` and `None` below, above, or with fewer than three trees |
 
 ### Integration Tests
 | Test | Description |
@@ -826,6 +880,7 @@ tests:
 - packages/ai-parrot/tests/knowledge/pageindex/test_hybrid_search.py
 - packages/ai-parrot/tests/knowledge/pageindex/test_embedding_store.py
 - packages/ai-parrot/tests/knowledge/pageindex/test_okf_tools.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_okf_bundle.py
 - packages/ai-parrot/tests/knowledge/pageindex/test_toolkit.py
 - packages/ai-parrot/tests/knowledge/pageindex/test_toolkit_no_llm.py
 - packages/ai-parrot/tests/knowledge/pageindex/test_generation_integration.py
@@ -867,14 +922,15 @@ markers: none
 - [ ] AC-8 (G7) Nodes without `doc_id`, nodes flagged `locked` and their descendants are never modified; ancestor locks above a selected subtree also apply. A subtree optimize leaves every node outside it unchanged except `node_id`, including same-document bodies, body_ref and stamps. `update_node_content` on a segment-backed node sets `locked`/`locked_reason`. Body staging excludes protected nodes and final validation after staging/stamp finalization rejects any violation without publication.
 - [ ] AC-9 (G8) Summaries: a leaf at or below `inline_summary_tokens` makes no LLM call; parents are composed after their children; no summary exceeds `summary_max_words` by more than 20 %; with a `_NullAdapter` or no adapter the deterministic summaries are used and no call is made.
 - [ ] AC-10 (G9) `key_items` labels appear in the BM25 corpus text, in the embedded text and cache key (unchanged key when absent), in search results and in `outline`.
-- [ ] AC-11 (G10) A `concept_id` removed by a merge resolves through `OKFToolkit.get_concept` and `cite` to the absorbing node, whose `key_items` include the merged title as `literal`.
+- [ ] AC-11 (G10) A `concept_id` removed by a merge resolves through `OKFToolkit.get_concept` and `cite` to the absorbing node, whose `key_items` include the merged title as `literal`. An exported OKF bundle rewrites links and `relates_to` targets naming it to the absorbing node's file and `concept_id`, and writes no `aliases` frontmatter key.
 - [ ] AC-12 (G11) Every optimizer/summary prompt, including the document description on optimized imports, wraps document-derived content in `<document_text …>` with `DATA_FRAMING_INSTRUCTION` as system prompt; instructions stay outside the frame and embedded closing tags are neutralized by the framing helpers. The optimized description path never calls the legacy unframed helper; a proposal naming a segment outside what the model was shown is rejected, including cached proposals after a retry.
 - [ ] AC-13 (G12) `bookstore add` of a PDF yields an optimized tree and a card TOC derived from it; `bookstore optimize <id> --apply` republishes and rewrites `toc`, `toc_digest`, `chapter_count`, `page_count`; without `--apply` the card and tree are unchanged.
 - [ ] AC-14 `pageindex_optimize` is served by `parrot mcp-local pageindex` without `llm:` (not in `llm_dependent_tools`), and the report then says `llm_passes: "skipped (no model)"`.
 - [ ] AC-15 A citation validated before `optimize(apply=True)` validates after it (same `doc_id`/`revision`); `optimize` never writes a revision file.
 - [ ] AC-16 `optimize_on_import=False` reproduces today's import output byte-for-byte for the three paths (existing import tests unchanged under that flag).
-- [ ] AC-17 `python -m parrot.knowledge.pageindex.optimizer_eval <pdf>` writes a JSON report with the §3 M6 metrics.
+- [ ] AC-17 `python -m parrot.knowledge.pageindex.optimizer_eval <pdf>` writes a JSON report with the §3 M6 metrics (including `llm_heading_splits`; numbers and file-stem labels only, no node title) and prints `tuned_target`.
 - [ ] AC-18 No breaking change: every new node field is optional, every new constructor argument has a default, `content_key(model_id, title, summary)` keeps its digest.
+- [ ] AC-19 (G13) The M6 tuning run was executed once, deterministically, over the four compliance PDFs and the arXiv fixture. Its Completion Note gives the report path and sha256 and copies every number from that report. `OptimizerSettings().target_leaf_tokens` equals `tuned_target(report, …)` when that returned a value and 1500 otherwise; no other default changed. If fewer than three PDFs could be evaluated, the note says "not run" with the error. The LLM-mode follow-up ledger issue exists.
 
 ---
 
@@ -993,11 +1049,12 @@ async def build_page_index(doc, adapter=None, options=None, light_adapter=None, 
     # sets _LLM_SEMAPHORE :1603; summaries + description only inside `elif opt.if_add_node_summary == "yes"` :1639-1647
     # returns {doc_name, structure, structure_source, structure_report, _node_markdown, _pages, _segments[, doc_description]}
 
-# knowledge/pageindex/md_builder.py
-def thin_tree(tree, max_token_threshold=200) -> list[dict]                               # :183
-async def generate_prefix_summaries(tree, adapter) -> None                               # :226
-async def md_to_tree(md_text, adapter=None, options=None, doc_name="document.md") -> dict  # :254
-    # default_opts if_add_node_summary "yes" :279; thin_tree(tree, max_token_threshold=50) :304; summaries when adapter :309-310
+# knowledge/pageindex/md_builder.py   (re-verified at f426e44f8d)
+def thin_tree(tree, max_token_threshold=200) -> list[dict]                               # :206 (no longer called by md_to_tree)
+async def generate_prefix_summaries(tree, adapter) -> None                               # :249
+async def md_to_tree(md_text, adapter=None, options=None, doc_name="document.md") -> dict  # :277
+    # default_opts if_add_node_summary "yes" :302; no thinning (comment :327); summaries when adapter :332;
+    # text before the first heading becomes an "Introduction" section (parse_markdown_structure)
 
 # knowledge/pageindex/hybrid_search.py
 _BM25_TEXT_LIMIT = 4000                                                                  # :49
@@ -1016,6 +1073,11 @@ class OKFToolkit:                                                               
     def __init__(self, tree, graph, content_store, tree_name, store=None)                # :66; _by_concept_id built :81-85
     def get_concept(self, concept_id) -> dict                                            # :174 (KeyError when unknown)
     def cite(self, concept_id) -> dict                                                   # :255
+
+# knowledge/pageindex/okf/bundle.py   (verified at f426e44f8d)
+def _rewrite_pageindex_uris(text, src_rel_path, concept_file_map) -> tuple[str, int]    # :146 (only ids in the map are rewritten)
+def _export_frontmatter(node: dict, tree_name: str) -> str                              # :185 (relates_to concept ids exported as-is :206)
+def export_okf_bundle(tree, tree_name, content_store, output_dir) -> ExportReport         # :252 (concept_file_map :286-291; frontmatter call :325)
 
 # knowledge/pageindex/okf/concept_id.py
 def derive_concept_id(title, parent_path="") -> str                                      # :72
@@ -1067,11 +1129,12 @@ def derive_toc(tree, max_depth=2) -> tuple[list[TocEntry], str]                 
 | structured outputs | `PageIndexLLMAdapter.ask_structured` | `output_type=` pydantic | `llm_adapter.py:99` |
 | import summaries off | `build_page_index` options | `"if_add_node_summary": "no"` | `toolkit.py:1856-1861`; `builder.py:1639` |
 | description after summaries | new `optimizer_llm.describe_document` + `create_clean_structure_for_description` + `frame_text` | toolkit optimized-import call; legacy helper bypassed | `utils.py:709`; `framing.py:39`; legacy `builder.py:1553-1566` |
-| markdown summaries off | `md_to_tree(options=…)` | `{"if_add_node_summary": "no"}` | `toolkit.py:1673`; `md_builder.py:277-310` |
+| markdown summaries off | `md_to_tree(options=…)` | `{"if_add_node_summary": "no"}` | `toolkit.py:1675`; `md_builder.py:300-336` (f426e44f8d) |
 | new node ids | `derive_concept_id` + `dedup_concept_ids` | per sibling list before publish | `concept_id.py:72, 103` |
 | BM25 text | `_flatten_corpus` | labels joined into the text | `hybrid_search.py:179` |
 | embedding text/key | `build_tree_matrix` / `content_key(extra=)` | labels | `embedding_store.py:276-283, 96` |
 | alias lookup | `OKFToolkit._by_concept_id` | map aliases too | `okf/tools.py:82-85` |
+| alias export | `export_okf_bundle` / `_export_frontmatter` | alias → absorber path in `concept_file_map`; `relates_to` through `alias_to_concept` | `okf/bundle.py:286-291, 206, 325` (f426e44f8d) |
 | card TOC after optimize | `derive_toc` + `catalog.upsert` | `optimize_book` | `library.py:1464, 1500` |
 | CLI group | lazy registry | `"pageindex"` entry, attribute `pageindex` | `cli/__init__.py:176, 98-99` |
 
@@ -1117,6 +1180,9 @@ Verified against: `09d3377826`
 | `packages/ai-parrot/src/parrot/knowledge/pageindex/embedding_store.py` | MODIFY | `    def content_key(model_id: str, title: str, summary: str) -> str:` | `embedding_store.py:96` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/pageindex/embedding_store.py` | MODIFY | `            text = f"{title} {summary}".strip() if (title or summary) else ""` | `embedding_store.py:282` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/pageindex/okf/tools.py` | MODIFY | `                self._by_concept_id[cid] = node` | `okf/tools.py:85` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/pageindex/okf/bundle.py` | MODIFY | `def _export_frontmatter(node: dict, tree_name: str) -> str:` | `okf/bundle.py:185` (f426e44f8d) | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/pageindex/okf/bundle.py` | MODIFY | `            concept_file_map[cid] = _build_export_path(cid, concept_type_val)` | `okf/bundle.py:291` (f426e44f8d) | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/pageindex/okf/bundle.py` | MODIFY | `        frontmatter = _export_frontmatter(node, tree_name)` | `okf/bundle.py:325` (f426e44f8d) | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/bookstore/library.py` | MODIFY | `    async def refresh_card(self, book_id: str) -> BookCard:` (insert `optimize_book` before it) | `library.py:1460` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/bookstore/cli.py` | MODIFY | `@bookstore.command("remove")` (insert `optimize` before it) | `cli.py:569` | 1 |
 | `packages/ai-parrot/src/parrot/cli/__init__.py` | MODIFY | `    "bookstore": "parrot.knowledge.bookstore.cli",` | `cli/__init__.py:176` | 1 |
@@ -1173,9 +1239,10 @@ Verified against: `09d3377826`
   carries no `#` lines may have none, so expansion relies on the heading-like LLM proposals
   or does nothing; `key_items` still work. The report shows `leaves_over_target_after` so
   the user sees it.
-- **`thin_tree(50)` in `md_to_tree`** drops sub-50-token markdown sections *before*
-  segmentation (`md_builder.py:304`), so those words never reach a revision; the merge rule
-  cannot keep what was never imported. Left as is (§1 Non-Goals, §8).
+- **Short markdown sections now reach revisions.** Since `f426e44f8d`, `md_to_tree` keeps
+  sub-50-token sections and the text before the first heading (an "Introduction" section),
+  so markdown imports produce more tiny leaves. The normalize merge rule absorbs contiguous
+  ones with an alias and a literal `key_item`; nothing is dropped.
 - **LLM proposals cost on retry.** A concurrent publish between planning and `publish`
   re-plans inside `_mutate`; only complete matching pass keys permit reuse. A structural edit,
   changed child summary or execution context repeats the affected calls.
@@ -1190,9 +1257,16 @@ Verified against: `09d3377826`
   `ask_structured` raises; the live gate prevents both from being reached.
 - **Cost of `validate_ownership`** is O(segments) per document per apply; fine for books,
   measured by the eval harness.
-- **Evaluation corpus**: the Bookstore library is empty on this machine and the committed
-  fixture is one arXiv paper; the compliance corpus is gitignored. The harness runs on
-  whatever PDFs it is given; the tuning run is a follow-up (§8).
+- **Evaluation corpus**: the Bookstore library is empty on this machine. The four compliance
+  PDFs are gitignored and exist only in the primary checkout, so the M6 tuning run reads them
+  from there (the worker sandbox mounts it read-only). In FEAT-845 (TASK-5344) the same
+  corpus run was never executed and a coder seat invented a metrics table; M6 therefore
+  keeps the tuning run away from coder seats, copies every number from the written report
+  and records its sha256.
+- **False-positive headings.** The heading-like rule can promote a short sentence to a
+  node title. A split still has to pass `should_expand` (every piece ≥ `min_leaf_tokens`,
+  token cost pays off) and no text is lost; `llm_heading_splits` makes the rate visible
+  in the LLM-mode follow-up run.
 
 ### External Dependencies
 | Package | Version | Reason |
@@ -1247,7 +1321,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:71412444245eb880da6bc9bdd9141c175d22a30a135f2ea7d61f2086c7d4c3d6 evaluation_digest=sha256:0f73707705db5a3f2c0d6f633dc690b81d1bb0182ff3db30ae40af77874f8205 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:8ed1ff34933e033998fdf974d55bce38057547d8191c18075b2e4dcdd2075846 evaluation_digest=sha256:f6c7286f746e864f936b00a3867806b7d1890728df856287f0a9ad821c067704 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -1295,7 +1369,7 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:0f73707705db5a3f2c0d6f633dc690b81d1bb0182ff3db30ae40af77874f8205",
+  "evaluation_digest": "sha256:f6c7286f746e864f936b00a3867806b7d1890728df856287f0a9ad821c067704",
   "exit_code": 0,
   "findings": [
     {
@@ -1383,7 +1457,7 @@ Coverage:
       "waived_by": null
     }
   ],
-  "input_digest": "sha256:71412444245eb880da6bc9bdd9141c175d22a30a135f2ea7d61f2086c7d4c3d6",
+  "input_digest": "sha256:8ed1ff34933e033998fdf974d55bce38057547d8191c18075b2e4dcdd2075846",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -1430,12 +1504,14 @@ Resolved in this spec:
 - [x] Ownership gaps left by `delete_node`/`add_node` under an imported parent — *Resolved here*: repaired by the next explicit optimize (re-owned by the covering ancestor, counted as `repaired_gaps`); overlaps are an error.
 - [x] LLM-pass gate — *Resolved here*: a live adapter (`client is not None`), because Bookstore's `_NullAdapter` makes `has_llm` true.
 
-Open:
+Resolved by Jesus Lara on 2026-11-08:
 
-- [ ] Provisional defaults (`target_leaf_tokens=1500`, `min_leaf_tokens=200`, `inline_summary_tokens=120`, `summary_max_words=60`, `max_key_items=8`, `routing_tokens_per_child=48`) need the evaluation run the brainstorm asked for; the Bookstore library here is empty and only the arXiv fixture is committed — which corpus, and who runs `optimizer_eval` to settle them? — *Owner: Jesus Lara*
-- [ ] Should `md_to_tree` stop thinning sub-50-token sections (`thin_tree(50)`) now that the optimizer merges tiny leaves without losing their text? It changes markdown import output and `test_md_builder.py`. — *Owner: Jesus Lara* (default: leave it)
-- [ ] Should `aliases` be emitted in OKF sidecar frontmatter and the OKF bundle so exported knowledge bases resolve merged concepts offline? Touches `parrot.knowledge.okf.frontmatter`. — *Owner: Jesus Lara* (follow-up)
-- [ ] Heading-like acceptance for LLM proposals (single line, ≤ 20 words, no terminal period, not table/code/caption) is the strictest rule that still admits bold run-in headings the layout pass missed; is a false positive (a short sentence promoted to a heading) acceptable at this rate, or should proposals also require the line to be shorter than the median paragraph? — *Owner: Jesus Lara* (default: the rule as written)
+- [x] Provisional defaults: which corpus, and who runs `optimizer_eval`? — *Resolved*: a task inside this feature, the last M6 task. It runs the harness once, deterministically (the worker sandbox reaches no model provider), over the four gitignored compliance PDFs, read from the primary checkout, plus the committed arXiv fixture. `target_leaf_tokens` takes `tuned_target(report)` when that returns a value; every other default stays provisional. The Completion Note copies its numbers from the written report and gives its sha256, or says "not run". An LLM-mode run that settles `summary_max_words`, `max_key_items` and `routing_tokens_per_child` is a ledger follow-up the task opens. The run is not delegated to a coder seat (FEAT-845 TASK-5344 precedent). See §3 M6 and AC-19.
+- [x] Should `md_to_tree` stop thinning sub-50-token sections? — *Resolved by `f426e44f8d`* (on `dev` before this resolution): `md_to_tree` no longer calls `thin_tree`; short sections and the text before the first heading are kept (`test_review_regressions.py::test_markdown_keeps_short_text`). `thin_tree` remains for explicit callers. Markdown imports now hand the optimizer tiny sections, which the normalize merge rule absorbs without losing text.
+- [x] Should `aliases` reach exported OKF knowledge bases? — *Resolved*: links only, in the PageIndex-owned bundle exporter. `export_okf_bundle` maps each alias to its absorber, so `pageindex://` links and `relates_to` targets naming a merged concept are rewritten to the absorber's file and `concept_id`. No `aliases` frontmatter key, and the shared `parrot.knowledge.okf.frontmatter` is unchanged. An `aliases` field with import round-trip stays a non-goal. See §3 M3 and AC-11.
+- [x] Heading-like acceptance strictness — *Resolved*: the rule as written (single line, ≤ `MAX_HEADING_WORDS` words, no terminal period, not table/code/caption), and every split still passes `should_expand`. The median-paragraph check is rejected: in documents with short paragraphs (clauses, manuals, where missed headings are most common) it would reject real headings, and in ordinary prose the median paragraph is already over 20 words, so it never triggers. `TreeMetrics.llm_heading_splits` makes the false-positive rate measurable in the LLM-mode follow-up.
+
+Open: none.
 
 ---
 
@@ -1493,9 +1569,12 @@ Policy: `required`. Pages this feature delivers (frontmatter `docs.pages`):
   override them (`optimizer_settings`, `optimize(target_leaf_tokens=…)`, CLI flags);
   `key_items` (`literal`/`abstractive`, anchors, where they are indexed); per-pass completion
   stamps, deferred work, dependency invalidation and idempotence; effective ancestor locks,
-  scoped body staging and the body-edit rule; framed optimized-import descriptions; `aliases`; the report fields;
+  scoped body staging and the body-edit rule; framed optimized-import descriptions; `aliases`
+  (toolkit lookup and bundle export); the report fields;
   `optimize_on_import`; `parrot pageindex optimize` and `bookstore optimize`; the
-  `optimizer_eval` harness and the tuning follow-up; what legacy trees get.
+  `optimizer_eval` harness, `tuned_target`, how the shipped `target_leaf_tokens` was set
+  (report date and sha256, or "provisional" when the run did not happen; no metrics table
+  that is not copied from the report) and the LLM-mode follow-up; what legacy trees get.
 - `wiki/knowledge/pageindex.md`: Configuration Options gains `optimize_on_import` /
   `optimizer_settings`; API Reference links the new page.
 - `wiki/knowledge/pageindex-local-mcp.md`: `pageindex_optimize` in the tool list, marked as
@@ -1516,11 +1595,15 @@ Policy: `required`. Pages this feature delivers (frontmatter `docs.pages`):
   - M4 → M1, M2, M3 (calls the planner and the passes; relies on the schema fields and the
     live-adapter gate).
   - M5 → M4 (`optimize_book` and both CLIs call `PageIndexToolkit.optimize`).
-  - M6 → M4 (the harness imports PDFs through the toolkit and calls `optimize`).
-  - M7 → all.
+  - M6 → M4 (the harness imports PDFs through the toolkit and calls `optimize`). The M6
+    tuning task edits the `target_leaf_tokens` default in `optimizer.py`, so it runs after
+    every M1 task and is executed by the orchestrator or on the host, never by a coder seat.
+  - M7 → all (after the tuning task, so the page states the shipped defaults).
 - **Shared files**: `toolkit.py` is modified only by M4, but M4 will be several tasks
   (constructor + import hook; `optimize` tool; lock semantics) — serialize them.
-  `hybrid_search.py` and `embedding_store.py` belong to M3 only. `library.py`/`cli.py` to M5.
-- **Exclusive resources**: none (no native build, no lockfile, no migration).
+  `hybrid_search.py`, `embedding_store.py` and `okf/bundle.py` belong to M3 only.
+  `library.py`/`cli.py` to M5.
+- **Exclusive resources**: none (no native build, no lockfile, no migration). The tuning run
+  reads the primary checkout's `corpus/compliance_soc2_hipaa/raw/` read-only.
 - **Cross-feature dependencies**: none pending — FEAT-831, 840, 842, 843 and 845 are all on
   `dev` at `09d3377826`.
