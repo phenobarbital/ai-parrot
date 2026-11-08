@@ -267,6 +267,38 @@ parrot sdd uninstall --stalled --dry-run    # stale files + stale MCP entries, c
 - `sdd/CONVENTIONS.md` is a seed with `## Repository layout` and `## Project areas`; created once, never
   overwritten. `/sdd-insight` is not installed.
 
+### Antigravity (agy): permission hook and rules
+
+<!-- verify: flag=sdd install:--no-agy-permissions -->
+<!-- verify: cli-verb=sdd hooks agy-permissions -->
+agy runs a shell command without asking only when a `permissions.allow` rule in the user's agy `settings.json`
+matches it; a hook can block or force a confirmation, but cannot approve. `parrot sdd install --host google`
+therefore does two things, so that `/sdd-spec`, `/sdd-task`, `/sdd-brief` and `/sdd-fix` run without a prompt on
+every command:
+
+- It registers `parrot sdd hooks agy-permissions --hook` in the repository's `.agents/hooks.json` (named hook
+  `parrot-sdd-permissions`, matcher `run_command`; commit the file). The hook denies what the dangerous-actions
+  guard denies plus any push to `main`/`master`/`hotfix_base`, and asks for confirmation whenever a managed rule
+  would approve something it cannot classify as routine: `find -exec/-delete`, `sed -i`, reads or redirects
+  outside the workspace (symlinks, brace expansion and `$(…)`/variable paths included), writes into `.agents/`
+  or `.git/`, `git push` with any flag beyond `-u`/`-q`/`-v`/`-n`, `git commit --amend`, a bare `pytest`, and
+  `parrot sdd` / `wikitoolkit` verbs outside the SDD surface. `PARROT_ALLOW_DANGEROUS=1` turns it off for a
+  deliberate recovery.
+- Only once the hook is registered, it adds the managed SDD rules (`command(find)`, `command(git -C)`,
+  `command(parrot sdd)`, `command(pytest)`, …) to `~/.gemini/antigravity-cli/settings.json`, and to the snap
+  build's copy under `~/snap/antigravity-cli/common/` when that file exists; nothing is created in your home when
+  agy has never run. Your own rules and settings are kept. `parrot-sdd-rules.json`, next to each settings file,
+  records which rules parrot added and which repositories rely on them: `parrot sdd uninstall --host google`
+  removes those rules only when no other repository still uses them, and never a rule you already had.
+
+`--no-agy-permissions` skips both; `parrot sdd status --json` reports the hook and how many managed rules are
+missing. agy refuses a command whose hook cannot run, so keep `parrot` on `PATH` for agy sessions (the managed
+launcher or an activated venv); if the policy itself fails it answers "confirm this command" rather than letting
+the broad rules apply unchecked. ai-parrot's own tracked hook runs `scripts/sdd/agy_hook.sh` instead, which
+evaluates the checkout's source with the main checkout's `.venv` and asks before every command when it cannot. The snap build of agy cannot run the SDD flow at all: its confinement hides the project venv's
+interpreter and cannot run `ssh`, so `parrot`, `wikitoolkit` and `git push` fail inside it. Install the official
+build instead: `curl -fsSL https://antigravity.google/cli/install.sh | bash` (it installs `~/.local/bin/agy`).
+
 ### Cleaning up stale SDD files
 
 `parrot sdd uninstall --stalled` removes stale SDD files and stale MCP toolkit entries. It scans all three

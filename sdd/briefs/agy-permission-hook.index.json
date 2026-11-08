@@ -1,0 +1,51 @@
+{
+  "feature": "agy-permission-hook",
+  "feature_id": "BRIEF-agy-permission-hook",
+  "spec": "sdd/briefs/agy-permission-hook.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-11-08",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-agy-permission-hook-1",
+      "slug": "agy-policy-hook",
+      "title": "agy permission policy module and hooks agy-permissions verb",
+      "feature_id": "BRIEF-agy-permission-hook",
+      "feature": "agy-permission-hook",
+      "spec": "sdd/briefs/agy-permission-hook.brief.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "creates agy_permissions.py, mounts the verb, tracked .agents/hooks.json; task 2 imports SDD_ALLOW_RULES",
+      "assigned_to": null,
+      "started_at": "2026-11-08T21:44:58+00:00",
+      "completed_at": "2026-11-08T21:54:13+00:00",
+      "file": "sdd/briefs/agy-permission-hook/tasks/HOTFIX-agy-permission-hook-1-agy-policy-hook.md"
+    },
+    {
+      "id": "HOTFIX-agy-permission-hook-2",
+      "slug": "installer-agy-registration",
+      "title": "parrot sdd install registers the agy hook and rules",
+      "feature_id": "BRIEF-agy-permission-hook",
+      "feature": "agy-permission-hook",
+      "spec": "sdd/briefs/agy-permission-hook.brief.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "HOTFIX-agy-permission-hook-1"
+      ],
+      "parallel": false,
+      "parallelism_notes": "installer.py + cli.py install flag; cli.py also edited by task 1 (VERBS)",
+      "assigned_to": null,
+      "started_at": "2026-11-08T21:54:30+00:00",
+      "completed_at": "2026-11-08T22:35:42+00:00",
+      "file": "sdd/briefs/agy-permission-hook/tasks/HOTFIX-agy-permission-hook-2-installer-agy-registration.md"
+    }
+  ]
+}
