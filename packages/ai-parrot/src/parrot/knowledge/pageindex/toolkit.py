@@ -367,7 +367,9 @@ class PageIndexToolkit(AbstractToolkit):
 
         Keeps whole parts while they fit; when the first part alone exceeds the bound it is cut
         at the last paragraph break before the bound, never inside its ``## title`` line. Appends
-        ``"\\n\\n[truncated: {n} more characters in {k} further sections — lower top_k or narrow the query]"``.
+        ``"\\n\\n[truncated: {n} more characters in {k} further sections — lower top_k or narrow the query]"``
+        when whole sections were dropped, or ``"\\n\\n[truncated: {n} more characters in this section[ and {k}
+        further sections] — lower top_k or narrow the query]"`` when the first section itself was cut.
         With ``max_result_chars`` None, returns ``"\\n\\n".join(parts)`` unchanged.
         """
         joined = "\n\n".join(parts)
@@ -380,6 +382,7 @@ class PageIndexToolkit(AbstractToolkit):
             if len(candidate) > limit:
                 break
             kept_parts.append(part)
+        first_cut = not kept_parts
         if kept_parts:
             kept = "\n\n".join(kept_parts)
             dropped_parts = len(parts) - len(kept_parts)
@@ -391,10 +394,13 @@ class PageIndexToolkit(AbstractToolkit):
             kept = first[:cut] if cut != -1 else first[: max(limit, title_end)]
             dropped_parts = len(parts) - 1
         dropped_chars = len(joined) - len(kept)
-        return (
-            f"{kept}\n\n[truncated: {dropped_chars} more characters in {dropped_parts} further sections"
-            " — lower top_k or narrow the query]"
-        )
+        if not first_cut:
+            where = f"in {dropped_parts} further sections"
+        elif dropped_parts:
+            where = f"in this section and {dropped_parts} further sections"
+        else:
+            where = "in this section"
+        return f"{kept}\n\n[truncated: {dropped_chars} more characters {where} — lower top_k or narrow the query]"
 
     def _ingester(self) -> TwoStepIngester:
         return TwoStepIngester(
