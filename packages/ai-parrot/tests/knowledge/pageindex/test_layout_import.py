@@ -131,7 +131,9 @@ async def test_anchor_stripped_without_revision(toolkit, tmp_path, monkeypatch):
     """No pages produces no revision and persists no transient anchors."""
     pdf = tmp_path / "doc.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
-    monkeypatch.setattr("parrot.knowledge.pageindex.toolkit.build_page_index", _fake(with_segments=False, with_pages=False))
+    monkeypatch.setattr(
+        "parrot.knowledge.pageindex.toolkit.build_page_index", _fake(with_segments=False, with_pages=False)
+    )
     await toolkit.create_tree("no-revision")
     result = await toolkit.import_pdf("no-revision", str(pdf))
 

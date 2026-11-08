@@ -1604,9 +1604,7 @@ class PageIndexToolkit(AbstractToolkit):
         segments = (
             list(built_segments)
             if built_segments is not None
-            else await asyncio.to_thread(segment_pages, pages)
-            if pages
-            else []
+            else await asyncio.to_thread(segment_pages, pages) if pages else []
         )
         report = await self._scan(segments)
         source: Optional[SourceInfo] = None
