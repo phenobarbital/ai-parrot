@@ -196,19 +196,67 @@ async def test_add_book_txt_requires_llm(store_no_llm, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_add_book_pdf_requires_llm(store_no_llm, tmp_path):
-    """PDF ToC detection/structuring always needs an LLM (FEAT-531 bug).
-
-    Ingest must fail fast with a clear ``BookstoreError`` — not deep
-    inside the PageIndex builder with ``'_NullAdapter' object has no
-    attribute 'ask_with_finish_info'`` (an AttributeError, not a
-    BookstoreError, so it used to bypass the CLI's clean-error handling
-    and crash with a full traceback).
-    """
+async def test_add_book_unreadable_pdf(store_no_llm, tmp_path):
+    """An unreadable PDF raises BookstoreError naming the file."""
     pdf = tmp_path / "book.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
-    with pytest.raises(BookstoreError, match="LLM"):
+    with pytest.raises(BookstoreError, match="Cannot index book.pdf"):
         await store_no_llm.add_book(pdf)
+    assert store_no_llm.list_books() == []
+
+
+def _headed_pdf(path: Path) -> Path:
+    """Create a three-page PDF with bookmarks and visible headings."""
+    import pymupdf
+
+    doc = pymupdf.open()
+    try:
+        for page_number in range(1, 4):
+            page = doc.new_page()
+            page.insert_text((72, 100), f"Chapter {page_number}", fontsize=16, fontname="hebo")
+            page.insert_text((72, 140), f"Section {page_number}.1", fontsize=12, fontname="hebo")
+            for line_number in range(20):
+                page.insert_text(
+                    (72, 180 + (line_number * 18)),
+                    "Body text describes the manual and its practical topics.",
+                    fontsize=10,
+                    fontname="helv",
+                )
+        doc.set_toc(
+            [
+                [1, "Chapter 1", 1],
+                [2, "Section 1.1", 1],
+                [1, "Chapter 2", 2],
+                [2, "Section 2.1", 2],
+                [1, "Chapter 3", 3],
+                [2, "Section 3.1", 3],
+            ]
+        )
+        doc.save(str(path))
+    finally:
+        doc.close()
+    return path
+
+
+@pytest.mark.asyncio
+async def test_add_book_pdf_without_llm(store_no_llm, tmp_path, monkeypatch):
+    """A real PDF uses deterministic structure without calling the null adapter."""
+    monkeypatch.setattr("parrot.knowledge.pageindex.utils.get_encoder", lambda model="gpt-4o": None)
+    monkeypatch.setattr(
+        "parrot.knowledge.pageindex.toolkit.get_injection_scoring_engine", lambda force_reresolve=False: None
+    )
+
+    async def _never(*args, **kwargs):
+        raise AssertionError("_NullAdapter must not be called on the PDF path")
+
+    for name in ("ask", "ask_structured", "ask_with_finish_info"):
+        monkeypatch.setattr(f"parrot.knowledge.bookstore.library._NullAdapter.{name}", _never)
+
+    card, status = await store_no_llm.add_book(_headed_pdf(tmp_path / "manual.pdf"))
+
+    assert status == "added"
+    assert card.card_origin == "fallback"
+    assert card.toc
 
 
 @pytest.mark.asyncio
