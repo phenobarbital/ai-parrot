@@ -1,4 +1,5 @@
 """PageIndex stage-2 agentic retrieval (FEAT-843): bounded read loop with validated citations."""
+
 from __future__ import annotations
 
 import asyncio
@@ -31,11 +32,15 @@ logger = logging.getLogger(__name__)
 BUDGET_MESSAGE = "read budget exhausted — answer from what you have read"
 StopReason = Literal["answered", "budget", "max_tool_calls", "timeout", "no_tool_calls", "parse_error"]
 
-SYSTEM_PROMPT = DATA_FRAMING_INSTRUCTION + "\n\n" + (
-    "Read document text before answering. Cite each claim by the exact `address` attribute from a "
-    "<segment address=…> tag (doc@rev#seq). Copy each citation excerpt verbatim; do not paraphrase it. "
-    "Your final message must be exactly one ```json block containing "
-    '{"answer": str|null, "citations": [{"address": str, "excerpt": str}]}. '
+SYSTEM_PROMPT = (
+    DATA_FRAMING_INSTRUCTION
+    + "\n\n"
+    + (
+        "Read document text before answering. Cite each claim by the exact `address` attribute from a "
+        "<segment address=…> tag (doc@rev#seq). Copy each citation excerpt verbatim; do not paraphrase it. "
+        "Your final message must be exactly one ```json block containing "
+        '{"answer": str|null, "citations": [{"address": str, "excerpt": str}]}. '
+    )
 )
 
 

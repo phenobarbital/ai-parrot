@@ -1,4 +1,5 @@
 """FEAT-843 M3/M4 — agentic retrieval core helpers."""
+
 from __future__ import annotations
 
 import asyncio
