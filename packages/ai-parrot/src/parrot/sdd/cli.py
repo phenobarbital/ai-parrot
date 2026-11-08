@@ -320,6 +320,11 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
     "hooks": {
         "install": ("install_hooks", (), "Install the SDD git hooks."),
         "dangerous-actions": ("dangerous_actions", (), "Serve the PreToolUse dangerous-actions guard (--hook)."),
+        "agy-permissions": (
+            "agy_permissions",
+            (),
+            "Serve the Antigravity (agy) PreToolUse permission policy (--hook).",
+        ),
     },
 }
 #: Packaged modules with a main() that are deliberately NOT mounted (C22: /sdd-insight does not ship).

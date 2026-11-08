@@ -1,0 +1,16 @@
+{
+  "parrot-sdd-permissions": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "parrot sdd hooks agy-permissions --hook",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
