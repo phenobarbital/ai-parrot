@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-842 — PageIndex Local MCP Toolkit
 **Spec**: `sdd/specs/pageindex-local-mcp-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5314, TASK-5316, TASK-5317
@@ -248,10 +248,8 @@ See the CREATE block for `test_local_mcp_docs.py` above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (fallback sequential loop)
+**Date**: 2026-11-08
+**Notes**: new page, `pageindex` section before `sdd-coder`, ToC link under Generation Publication; docs test + test_getting_started_claims pass (17); `parrot sdd techwiki check` reports "Docs: required — ok". Since FEAT-840 has already merged, the page documents `pageindex_outline` / `read_pages` / `read_segments` as available, not "when it lands". The page also lists the stdout-noise defect (issue:70f18da2a8d5) as a known issue; remove that bullet when it is fixed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

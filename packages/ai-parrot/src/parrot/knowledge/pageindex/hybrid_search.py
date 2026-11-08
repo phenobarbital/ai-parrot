@@ -55,6 +55,7 @@ class HybridPageIndexSearch:
     Args:
         tree: A PageIndex tree dict (``{doc_name, structure: [...]}``).
         adapter: The LLM adapter used by the inner :class:`PageIndexRetriever`.
+            Optional: only needed for the LLM walk; BM25 and vector signals work without it.
         reranker: Optional reranker applied to the fused candidate set.
         model: Model passed through to :class:`PageIndexRetriever`.
         default_bm25_k: Number of candidates fetched from BM25 per query.
@@ -73,7 +74,7 @@ class HybridPageIndexSearch:
     def __init__(
         self,
         tree: dict[str, Any],
-        adapter: PageIndexLLMAdapter,
+        adapter: Optional[PageIndexLLMAdapter] = None,
         reranker: Optional[Any] = None,
         model: Optional[str] = None,
         default_bm25_k: int = 20,
@@ -282,6 +283,8 @@ class HybridPageIndexSearch:
     # ---- LLM walk ------------------------------------------------------
 
     async def _llm_rank(self, query: str) -> list[str]:
+        if self._adapter is None:
+            raise ValueError("LLM walk requested but no LLM is configured for this toolkit")
         retriever = PageIndexRetriever(
             tree=self._tree,
             adapter=self._adapter,

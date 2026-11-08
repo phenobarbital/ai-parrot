@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-842 — PageIndex Local MCP Toolkit
 **Spec**: `sdd/specs/pageindex-local-mcp-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -179,10 +179,8 @@ See the MODIFY block for `test_hybrid_search.py` above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (fallback sequential loop)
+**Date**: 2026-11-08
+**Notes**: adapter optional; `_llm_rank` raises ValueError; 2 tests added, all 19 hybrid_search tests pass. One pre-existing ruff B905 in the test file (line ~233, not mine) left untouched.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

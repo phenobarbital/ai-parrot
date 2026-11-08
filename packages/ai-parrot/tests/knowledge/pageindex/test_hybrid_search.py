@@ -230,7 +230,7 @@ async def test_hybrid_search_no_loader_matches_baseline():
     engine = HybridPageIndexSearch(tree=tree, adapter=_adapter())
     ids, texts = engine._flatten_corpus()
     # Pre-feature baseline: text reads node["text"].
-    for nid, text in zip(ids, texts):
+    for nid, text in zip(ids, texts, strict=True):
         from parrot.knowledge.pageindex.utils import find_node_by_id
         node = find_node_by_id(tree["structure"], nid)
         assert node is not None
@@ -305,3 +305,20 @@ async def test_reranker_invoked_when_requested(monkeypatch):
     reranker.rerank.assert_awaited_once()
     assert [r["node_id"] for r in results] == ["0002", "0001"]
     assert results[0]["source"] == "reranked"
+
+
+@pytest.mark.asyncio
+async def test_bm25_without_adapter() -> None:
+    """FEAT-842 AC-5: an engine with no adapter still searches with BM25."""
+    engine = HybridPageIndexSearch(tree=_fixture_tree(), adapter=None, default_bm25_k=5)
+    results = await engine.search("late fee payment", top_k=3, use_bm25=True, use_llm_walk=False)
+    assert results
+    assert results[0]["source"] == "bm25"
+
+
+@pytest.mark.asyncio
+async def test_llm_rank_without_adapter_raises() -> None:
+    """FEAT-842 AC-5."""
+    engine = HybridPageIndexSearch(tree=_fixture_tree(), adapter=None)
+    with pytest.raises(ValueError, match="no LLM is configured"):
+        await engine._llm_rank("anything")

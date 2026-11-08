@@ -22,6 +22,7 @@ PageIndex builds a **hierarchical semantic tree** from PDF and Markdown document
 - [Integration with Agents](#integration-with-agents)
 - [Configuration Options](#configuration-options)
 - [Generation Publication](pageindex-generation-publication.md)
+- [Local MCP Toolkit](pageindex-local-mcp.md)
 - [Segment Store](pageindex-segment-store.md)
 - [API Reference](#api-reference)
 

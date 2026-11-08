@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-842 — PageIndex Local MCP Toolkit
 **Spec**: `sdd/specs/pageindex-local-mcp-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -261,10 +261,8 @@ See the CREATE block for `test_pageindex_template.py` above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (fallback sequential loop)
+**Date**: 2026-11-08
+**Notes**: template content verbatim from spec §2; example uses a relative `storage_dir` (JSONTreeStore does `Path(storage_dir)`, resolved against the server cwd = project root when a host launches it) and says so in a comment. 3 new tests + test_toolkit_seed_install_metadata + test_lsp_template pass (26); ruff clean. Package-data glob `_toolkit_templates/*.yaml` already covers the new file.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
