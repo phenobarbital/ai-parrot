@@ -1071,15 +1071,37 @@ class PageIndexToolkit(AbstractToolkit):
     async def vacuum_tree(self, tree_name: str, max_age_s: Optional[int] = None) -> dict[str, Any]:
         """Remove old files unreferenced by the live generation of a tree.
 
-        Only files older than the generation grace period are removed unless
-        ``max_age_s`` supplies a different age.
+        Only files older than the generation grace period are removed.
+        ``max_age_s`` may *raise* that age but never lower it: this method is
+        LLM-callable, and the grace period is the guarantee readers holding an
+        earlier generation rely on. Recovery code that must sweep more
+        aggressively calls :meth:`_vacuum_tree` directly.
+
+        Args:
+            tree_name: Tree to sweep.
+            max_age_s: Minimum age of a file before it may be removed. Values
+                below the generation grace period are raised to it.
+        """
+        floor = self._generation_grace_s
+        effective = floor if max_age_s is None else max(int(max_age_s), floor)
+        return await self._vacuum_tree(tree_name, effective)
+
+    async def _vacuum_tree(self, tree_name: str, max_age_s: int) -> dict[str, Any]:
+        """Sweep ``tree_name`` with no grace floor.
+
+        Private on purpose: ``_``-prefixed names are never exposed as LLM-callable
+        tools, so only in-process recovery paths can breach the grace period.
+
+        Args:
+            tree_name: Tree to sweep.
+            max_age_s: Minimum age of a file before it may be removed.
         """
         async with tree_lock(self._storage_dir, tree_name, timeout=self._lock_timeout_s):
             tree = self._store.load(tree_name)
             removed = self._content_store.sweep_unreferenced(
                 tree_name,
                 tree,
-                max_age_s=self._generation_grace_s if max_age_s is None else max_age_s,
+                max_age_s=max_age_s,
             )
             if self._embedding_store is not None:
                 generation = generation_of(tree)

@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import multiprocessing as mp
+import os
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -147,7 +149,10 @@ async def test_crash_between_bodies_and_json(tmp_path: Path, monkeypatch: pytest
     monkeypatch.setattr(JSONTreeStore, "save", original_save)
     reopened = PageIndexToolkit(adapter=_adapter(), storage_dir=tmp_path)
     assert await reopened.get_tree("t") == json.loads(original_tree)
-    report = await reopened.vacuum_tree("t", max_age_s=0)
+    # Orphan recovery is an in-process admin path, so it uses the unclamped
+    # sweep; the LLM-callable vacuum_tree() would raise max_age_s to the grace
+    # floor and leave the orphan for later.
+    report = await reopened._vacuum_tree("t", max_age_s=0)
 
     assert report["removed"] == 1
     assert not orphan_paths[0].exists()
@@ -181,3 +186,42 @@ async def test_legacy_tree_read_only_untouched(tmp_path: Path) -> None:
     assert hits and hits[0]["node_id"] == "0001"
     assert "immutable quasar" in retrieved.lower()
     assert _file_snapshot(tmp_path) == before
+
+
+@pytest.mark.asyncio
+async def test_vacuum_tree_cannot_breach_generation_grace(tmp_path: Path) -> None:
+    """An LLM-supplied ``max_age_s`` must not delete a body still inside the grace window."""
+    toolkit = PageIndexToolkit(adapter=_adapter(), storage_dir=tmp_path, generation_grace_s=3600)
+    await toolkit.create_tree("t")
+    added = await toolkit.add_node("t", "Intro", body="first body")
+    node_id = added["node_id"]
+    tree = await toolkit.get_tree("t")
+    old_ref = next(n["body_ref"] for n in tree["structure"] if n["node_id"] == node_id)
+    old_blob = toolkit._content_store.body_path("t", old_ref)
+    await toolkit.update_node_content("t", node_id, "second body")
+    assert old_blob.is_file(), "precondition: the superseded blob is still on disk"
+
+    report = await toolkit.vacuum_tree("t", max_age_s=0)
+
+    assert report["removed"] == 0
+    assert old_blob.is_file(), "vacuum_tree is LLM-callable; max_age_s must not breach the grace floor"
+
+
+@pytest.mark.asyncio
+async def test_vacuum_tree_floor_still_allows_a_longer_age(tmp_path: Path) -> None:
+    """A ``max_age_s`` above the floor is honoured: the floor only ever makes the sweep safer."""
+    toolkit = PageIndexToolkit(adapter=_adapter(), storage_dir=tmp_path, generation_grace_s=60)
+    await toolkit.create_tree("t")
+    added = await toolkit.add_node("t", "Intro", body="first body")
+    node_id = added["node_id"]
+    tree = await toolkit.get_tree("t")
+    old_ref = next(n["body_ref"] for n in tree["structure"] if n["node_id"] == node_id)
+    old_blob = toolkit._content_store.body_path("t", old_ref)
+    await toolkit.update_node_content("t", node_id, "second body")
+    ancient = time.time() - 10 * 3600
+    os.utime(old_blob, (ancient, ancient))
+
+    report = await toolkit.vacuum_tree("t", max_age_s=7200)
+
+    assert report["removed"] == 1
+    assert not old_blob.exists()
