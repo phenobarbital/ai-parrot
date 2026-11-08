@@ -67,6 +67,8 @@ class ScriptedToolLoopClient(StubClient):
         repair_output: str | None = None,
         delay: float = 0,
         forever: bool = False,
+        parallel: bool = False,
+        repair_delay: float = 0,
     ) -> None:
         super().__init__()
         self.calls = calls
@@ -74,20 +76,30 @@ class ScriptedToolLoopClient(StubClient):
         self.repair_output = repair_output
         self.delay = delay
         self.forever = forever
+        self.parallel = parallel
+        self.repair_delay = repair_delay
         self.repairs = 0
 
     async def ask(self, prompt: str, model: str | None = None, **kwargs: Any) -> AIMessage:
         """Execute scripted calls like a provider, then return its configured response."""
         if not kwargs.get("use_tools"):
             self.repairs += 1
+            if self.repair_delay:
+                await asyncio.sleep(self.repair_delay)
             output = self.repair_output if self.repair_output is not None else self.output
             return AIMessage(input=prompt, output=output, model="stub", provider="stub", usage=CompletionUsage())
         while True:
-            for name, parameters in self.calls:
-                try:
-                    await self.tool_manager.execute_tool(name, parameters)
-                except Exception:
-                    pass
+            if self.parallel:
+                await asyncio.gather(
+                    *(self.tool_manager.execute_tool(name, parameters) for name, parameters in self.calls),
+                    return_exceptions=True,
+                )
+            else:
+                for name, parameters in self.calls:
+                    try:
+                        await self.tool_manager.execute_tool(name, parameters)
+                    except Exception:
+                        pass
             if not self.forever:
                 break
         if self.delay:
@@ -264,6 +276,23 @@ async def test_wrapped_reads_record_and_refuse_after_budget() -> None:
 
 
 @pytest.mark.asyncio
+async def test_parallel_reads_never_overspend_budget_below_read_floor() -> None:
+    """Concurrent reads share one budget; the final grant is below the 500-char floor and never overspends."""
+    client = ScriptedToolLoopClient(
+        [("read_segments", {"max_chars": 50})] * 4,
+        '```json\n{"answer": "grounded", "citations": []}\n```',
+        parallel=True,
+    )
+
+    bundle = await _run(client, budget_chars=120, max_tool_calls=8)
+
+    assert bundle.chars_read == 120
+    assert bundle.stopped == "budget"
+    assert bundle.tool_calls == 4
+    assert client.tool_manager.list_tools() == []
+
+
+@pytest.mark.asyncio
 async def test_call_cap_cancels_forever_loop_without_late_reads() -> None:
     """A provider that keeps dispatching is cancelled at the admission cap."""
     client = ScriptedToolLoopClient(
@@ -326,6 +355,34 @@ async def test_parse_failure_is_reported_after_unsuccessful_repair() -> None:
     assert bundle.stopped == "parse_error"
     assert bundle.answer is None
     assert client.repairs == 1
+
+
+@pytest.mark.asyncio
+async def test_stalled_repair_gets_only_the_remaining_deadline() -> None:
+    """A repair that stalls after a delayed initial call is cut off at the single request deadline."""
+    client = ScriptedToolLoopClient([], "not json", delay=0.05, repair_delay=10)
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    bundle = await _run(client, deadline=started + 0.3)
+    elapsed = loop.time() - started
+
+    assert client.repairs == 1
+    assert bundle.stopped == "timeout"
+    assert bundle.answer is None
+    assert 0.25 <= elapsed < 1
+    assert client.tool_manager.list_tools() == []
+
+
+@pytest.mark.asyncio
+async def test_no_repair_starts_after_deadline_expiry() -> None:
+    """When the initial call outlives the deadline no repair call is ever started."""
+    client = ScriptedToolLoopClient([], "not json", delay=1, repair_delay=10)
+
+    bundle = await _run(client, deadline=asyncio.get_running_loop().time() + 0.02)
+
+    assert client.repairs == 0
+    assert bundle.stopped == "timeout"
 
 
 @pytest.mark.asyncio
