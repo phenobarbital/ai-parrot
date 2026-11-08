@@ -1,4 +1,5 @@
 """FEAT-843 M1 — ReadLedger."""
+
 import pytest
 
 from parrot.knowledge.pageindex.read_ledger import BudgetExhausted, ReadLedger

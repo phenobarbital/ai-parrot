@@ -3,6 +3,7 @@
 Records the half-open character ranges of stored segment text that read tools actually
 returned. Cursors are not a ledger; only ranges recorded here are citable.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -97,7 +98,13 @@ class ReadLedger:
     def entries(self) -> list[LedgerEntry]:
         """Return coverage entries sorted by document, revision, and segment sequence."""
         return [
-            LedgerEntry(doc_id=key[0], revision=key[1], seq=key[2], ranges=list(ranges), chars=sum(end - start for start, end in ranges))
+            LedgerEntry(
+                doc_id=key[0],
+                revision=key[1],
+                seq=key[2],
+                ranges=list(ranges),
+                chars=sum(end - start for start, end in ranges),
+            )
             for key, ranges in sorted(self._ranges.items())
         ]
 
