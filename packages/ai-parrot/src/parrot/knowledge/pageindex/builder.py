@@ -470,7 +470,9 @@ async def toc_transformer(
     Given table of contents:
     {frame_text(toc_content, source=_FRAME_SOURCE)}"""
 
-    last_complete, finish_reason = await adapter.ask_with_finish_info(init_prompt, system_prompt=DATA_FRAMING_INSTRUCTION)
+    last_complete, finish_reason = await adapter.ask_with_finish_info(
+        init_prompt, system_prompt=DATA_FRAMING_INSTRUCTION
+    )
     if_complete = await check_if_toc_transformation_is_complete(
         toc_content, last_complete, adapter
     )
@@ -497,7 +499,9 @@ async def toc_transformer(
 
         Please continue the json structure, directly output the remaining part of the json structure."""
 
-        new_complete, finish_reason = await adapter.ask_with_finish_info(continuation, system_prompt=DATA_FRAMING_INSTRUCTION)
+        new_complete, finish_reason = await adapter.ask_with_finish_info(
+            continuation, system_prompt=DATA_FRAMING_INSTRUCTION
+        )
 
         if new_complete.startswith("```json"):
             new_complete = get_json_content(new_complete)
