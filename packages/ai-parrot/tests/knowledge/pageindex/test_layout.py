@@ -17,6 +17,7 @@ from parrot.knowledge.pageindex.layout import (  # noqa: E402
     LayoutProfile,
     RunningLine,
     UnreadablePDFError,
+    _bookmark_prefix_match,
     _keep_page_order,
     _read_bookmarks,
     _visual_rows,
@@ -389,3 +390,41 @@ def test_header_prefix_levels_with_secondary_size() -> None:
     assert headers.get_header_id(_span("Important", 10, (72.0, 192.0, 150.0, 203.0), bold=True), page=_page(0)) == "#### "
     assert headers.get_header_id(_span("Revisions", 12, (72.0, 300.0, 150.0, 311.0), bold=True), page=_page(0)) == ""
     assert headers.get_header_id(_span("Chapter", 16, (72.0, 400.0, 150.0, 416.0)), page=_page(0)) == "# "
+
+
+@pytest.mark.parametrize(
+    ("text", "title", "expected"),
+    [
+        ("AC-7", "AC-7 UNSUCCESSFUL LOGON ATTEMPTS", True),
+        ("attempts.", "AC-7 UNSUCCESSFUL LOGON ATTEMPTS", False),
+        ("information", "SI-7 SOFTWARE, FIRMWARE, AND INFORMATION INTEGRITY", False),
+        ("requirement", "2.1   REQUIREMENTS AND CONTROLS", False),
+        ("REQUIREMENTS", "2.1   REQUIREMENTS AND CONTROLS", True),
+        ("2.1", "2.1   REQUIREMENTS AND CONTROLS", False),
+        ("AC-2 ACCOUNT MANAGEMENT Control", "AC-2 ACCOUNT MANAGEMENT", True),
+        ("Getting Started", "2 Getting Started", True),
+        ("", "2 Getting Started", False),
+    ],
+)
+def test_bookmark_prefix_match(text: str, title: str, expected: bool) -> None:
+    """Only equal, word-boundary-prefix or whole-title-prefix spans match a bookmark title."""
+    assert _bookmark_prefix_match(text, title) is expected
+
+
+def test_bookmark_match_prefix_only() -> None:
+    """The bookmark rule ignores mid-title words and non-bold prose at a body-text size."""
+    profile = LayoutProfile(
+        page_count=1,
+        body_size=10,
+        heading_sizes=[16, 14],
+        bold_sizes=[11, 10],
+        bookmarks=[Bookmark(level=3, title="AC-7 UNSUCCESSFUL LOGON ATTEMPTS", page=1)],
+    )
+    headers = LayoutHeaders(profile)
+
+    assert headers.get_header_id(_span("AC-7", 10, (72.0, 300.0, 100.0, 312.0), bold=True), page=_page(0)) == "### "
+    assert headers.get_header_id(_span("attempts.", 10, (72.0, 320.0, 120.0, 332.0), bold=True), page=_page(0)) == ""
+    prose = _span("AC-7 UNSUCCESSFUL LOGON ATTEMPTS are counted", 11, (72.0, 340.0, 300.0, 352.0))
+    assert headers.get_header_id(prose, page=_page(0)) == ""
+    larger = _span("AC-7 UNSUCCESSFUL LOGON ATTEMPTS", 13, (72.0, 360.0, 300.0, 374.0))
+    assert headers.get_header_id(larger, page=_page(0)) == "### "

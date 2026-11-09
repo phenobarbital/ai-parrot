@@ -12,7 +12,7 @@ from typing import Any, Literal, Mapping, Optional, Sequence
 
 from pydantic import BaseModel, Field
 
-from parrot.knowledge.pageindex.segments import _titles_match, normalize_title
+from parrot.knowledge.pageindex.segments import normalize_title
 
 try:
     import pymupdf
@@ -455,6 +455,25 @@ def analyze_layout(pdf_path: str) -> LayoutProfile:
     )
 
 
+def _bookmark_prefix_match(text: str, title: str) -> bool:
+    """Return whether a span's text is a bookmark title, a word-boundary prefix of it, or begins with all of it.
+
+    Both sides go through ``normalize_title``; empty sides never match. A mid-title word (``attempts.`` in
+    ``AC-7 UNSUCCESSFUL LOGON ATTEMPTS``) does not match; the title's first span does.
+
+    Args:
+        text: The span text.
+        title: A usable bookmark title on the span's page.
+
+    Returns:
+        True when the span equals, starts, or begins with the whole title.
+    """
+    span, wanted = normalize_title(text), normalize_title(title)
+    if not span or not wanted:
+        return False
+    return span == wanted or wanted.startswith(span + " ") or span.startswith(wanted + " ")
+
+
 class LayoutHeaders:
     """pymupdf4llm ``hdr_info`` object driven by a LayoutProfile (rules 1-6 of spec §2)."""
 
@@ -494,7 +513,7 @@ class LayoutHeaders:
         if page_no is not None and bbox is not None and bold and size in self._bold_prefixes:
             if self._inside_bold_line(page_no, bbox):
                 return self._bold_prefixes[size]
-        if page_no is not None and (bold or (body is not None and size > body)):
+        if page_no is not None and (bold or (body is not None and size > body and size not in self._bold_prefixes)):
             if self._matches_bookmark(page_no, text):
                 return self._body_bold_prefix
         return ""
@@ -518,5 +537,5 @@ class LayoutHeaders:
         )
 
     def _matches_bookmark(self, page_no: int, text: str) -> bool:
-        """Return whether ``text`` matches a usable bookmark on ``page_no``."""
-        return any(_titles_match(text, title) for title in self._bookmark_titles.get(page_no, []))
+        """Return whether ``text`` is a usable bookmark title of ``page_no`` or a word-boundary prefix of one."""
+        return any(_bookmark_prefix_match(text, title) for title in self._bookmark_titles.get(page_no, []))
