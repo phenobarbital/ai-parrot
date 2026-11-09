@@ -190,6 +190,22 @@ def test_stamp_summary_dependencies() -> None:
     assert pass_input(node, "summary") != original
 
 
+def test_validate_candidate_allows_absorbed_alias_but_not_silent_removal(revision: DocumentRevision) -> None:
+    base_child = {"node_id": "0002", "concept_id": "a/tiny", "title": "Tiny", "nodes": []}
+    base = {"node_id": "0001", "concept_id": "a", "title": "A", "nodes": [base_child]}
+    absorbed = {"node_id": "0001", "concept_id": "a", "title": "A", "aliases": ["a/tiny"], "nodes": []}
+    removed = {"node_id": "0001", "concept_id": "a", "title": "A", "nodes": []}
+    revisions = {("doc", revision.revision): revision}
+
+    ok_plan = OptimizePlan(absorbed, OptimizeReport())
+    ok_plan.mutable.add(id(absorbed))
+    assert not any("was removed" in e for e in validate_candidate(ok_plan, revisions, base_tree=base))
+
+    bad_plan = OptimizePlan(removed, OptimizeReport())
+    bad_plan.mutable.add(id(removed))
+    assert any("protected node 0002 was removed" in e for e in validate_candidate(bad_plan, revisions, base_tree=base))
+
+
 def test_validate_candidate(revision: DocumentRevision) -> None:
     candidate = {
         "node_id": "doc",

@@ -658,12 +658,16 @@ def validate_candidate(plan: OptimizePlan, revisions: Revisions, *, base_tree: d
                 if not any(int(start) <= seq < int(end) for start, end in node.get("owned") or []):
                     errors.append(f"key_item anchor {seq} is outside owned ranges for {node.get('title', '')}")
     candidate_by_id = {node.get("node_id"): node for node in nodes if node.get("node_id") is not None}
+    absorbed_aliases = {alias for node in nodes for alias in node.get("aliases") or []}
     for base_node in structure_to_list(base_tree):
         node_id = base_node.get("node_id")
         if node_id is None:
             continue
         candidate_node = candidate_by_id.get(node_id)
         if candidate_node is None:
+            # A node merged into a sibling during normalization survives as that sibling's alias.
+            if base_node.get("concept_id") and base_node["concept_id"] in absorbed_aliases:
+                continue
             errors.append(f"protected node {node_id} was removed")
         elif id(candidate_node) not in plan.mutable and _node_fields(candidate_node) != _node_fields(base_node):
             errors.append(f"protected node {node_id} changed")
