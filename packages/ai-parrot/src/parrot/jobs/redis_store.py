@@ -202,6 +202,10 @@ class RedisJobStore:
     def _index_key(self) -> str:
         return f"{self._key_prefix}:_index"
 
+    def _user_index_key(self, user_id: str) -> str:
+        """Return the sorted-set index key for one user."""
+        return f"{self._key_prefix}:_user:{user_id}"
+
     # ------------------------------------------------------------------
     # CRUD operations
     # ------------------------------------------------------------------
@@ -226,10 +230,16 @@ class RedisJobStore:
         except AttributeError:
             score = _now_ts()
         await self._redis.zadd(self._index_key, {job.job_id: score})
+        user_index_key: Optional[str] = None
+        if job.user_id:
+            user_index_key = self._user_index_key(job.user_id)
+            await self._redis.zadd(user_index_key, {job.job_id: score})
 
         # Apply TTL for terminal states
         if job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
             await self._redis.expire(key, self._job_ttl)
+            if user_index_key is not None:
+                await self._redis.expire(user_index_key, self._job_ttl)
 
     async def get(self, job_id: str) -> Optional[Job]:
         """Return the Job for ``job_id``, or ``None`` if not found.
@@ -254,8 +264,12 @@ class RedisJobStore:
             True if the job existed and was deleted.
         """
         await self._ensure_connected()
+        data = await self._redis.hgetall(self._job_key(job_id))
         deleted = await self._redis.delete(self._job_key(job_id))
         await self._redis.zrem(self._index_key, job_id)
+        user_id = data.get("user_id") if data else None
+        if user_id:
+            await self._redis.zrem(self._user_index_key(user_id), job_id)
         return bool(deleted)
 
     async def list_jobs(
@@ -263,57 +277,60 @@ class RedisJobStore:
         obj_id: Optional[str] = None,
         status: Optional[JobStatus] = None,
         limit: int = 100,
+        user_id: Optional[str] = None,
     ) -> List[Job]:
         """Return jobs from Redis, optionally filtered.
 
-        Retrieves the most-recently-created ``limit`` jobs and applies
-        optional in-memory filtering.  For large stores you should add
-        a secondary index; for typical video-generation workloads this
-        is sufficient.
+        Retrieves the requested index in pages, applying filters before the
+        limit so another user's recent jobs cannot starve a user query.
 
         Args:
             obj_id: Filter by job object ID.
             status: Filter by job status.
             limit: Maximum number of jobs to return (newest first).
+            user_id: Optional user identifier whose index should be read.
 
         Returns:
             List of Job objects sorted by created_at descending.
         """
         await self._ensure_connected()
-        # Get newest IDs from the sorted set (ZREVRANGE = highest score first)
-        fetch_count = limit * 2
-        job_ids = await self._redis.zrevrange(self._index_key, 0, fetch_count - 1)
-
-        if not job_ids:
+        if limit <= 0:
             return []
-
-        # Batch fetch all job hashes via pipeline (avoids N+1 round-trips)
-        pipe = self._redis.pipeline()
-        for jid in job_ids:
-            pipe.hgetall(self._job_key(jid))
-        results = await pipe.execute()
-
-        expired_ids: list[str] = []
+        index_key = self._user_index_key(user_id) if user_id else self._index_key
+        offset = 0
+        page_size = max(limit * 2, 20)
         jobs: List[Job] = []
-        for jid, data in zip(job_ids, results):
-            if not data:
-                expired_ids.append(jid)
-                continue
-            job = _deserialize_job(data)
-            if job is None:
-                expired_ids.append(jid)
-                continue
-            if obj_id and job.obj_id != obj_id:
-                continue
-            if status and job.status != status:
-                continue
-            jobs.append(job)
-            if len(jobs) >= limit:
+        while len(jobs) < limit:
+            job_ids = await self._redis.zrevrange(index_key, offset, offset + page_size - 1)
+            if not job_ids:
                 break
-
-        # Clean stale index entries
-        if expired_ids:
-            await self._redis.zrem(self._index_key, *expired_ids)
+            offset += len(job_ids)
+            pipe = self._redis.pipeline()
+            for jid in job_ids:
+                pipe.hgetall(self._job_key(jid))
+            results = await pipe.execute()
+            expired_ids: list[str] = []
+            for jid, data in zip(job_ids, results):
+                if not data:
+                    expired_ids.append(jid)
+                    continue
+                job = _deserialize_job(data)
+                if job is None:
+                    expired_ids.append(jid)
+                    continue
+                if obj_id and job.obj_id != obj_id:
+                    continue
+                if status and job.status != status:
+                    continue
+                if user_id and job.user_id != user_id:
+                    continue
+                jobs.append(job)
+                if len(jobs) >= limit:
+                    break
+            if expired_ids:
+                await self._redis.zrem(index_key, *expired_ids)
+            if len(job_ids) < page_size:
+                break
 
         return jobs
 
