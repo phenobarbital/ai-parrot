@@ -1,4 +1,5 @@
 """FEAT-860 regression tests for strict conditional Redis source cleanup."""
+
 from __future__ import annotations
 
 import json
@@ -52,7 +53,7 @@ class FakeRedis:
         if has_legacy == "1":
             self.values.pop(legacy_key, None)
             self.sets.get(legacy_list, set()).discard(name)
-        for mapping_key in keys[int(mapping_start) - 1:int(mapping_start) - 1 + int(mapping_count)]:
+        for mapping_key in keys[int(mapping_start) - 1 : int(mapping_start) - 1 + int(mapping_count)]:
             if self.values.get(mapping_key) == name:
                 self.values.pop(mapping_key)
         if not self.sets.get(namespaced_list, set()):
