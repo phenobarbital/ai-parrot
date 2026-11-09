@@ -11,7 +11,6 @@ from .models import CrewDefinition
 from .postgres_persistence import CrewPostgres
 from .redis_persistence import CrewRedis, CrewRedisCleanupResult
 
-
 class CrewStorageUnavailable(RuntimeError):
     """A required storage operation failed without a trustworthy answer."""
 

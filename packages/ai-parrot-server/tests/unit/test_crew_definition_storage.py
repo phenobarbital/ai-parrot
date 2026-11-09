@@ -162,11 +162,7 @@ class FakeRedis:
         """Conditionally remove the captured fake source."""
         result = await self.cleanup(snapshot)
         if result is CrewRedisCleanupResult.deleted:
-            self.crews = [
-                crew
-                for crew in self.crews
-                if (crew.tenant, crew.name) != (snapshot.tenant, snapshot.name)
-            ]
+            self.crews = [crew for crew in self.crews if (crew.tenant, crew.name) != (snapshot.tenant, snapshot.name)]
         return result
 
 
