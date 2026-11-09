@@ -2,7 +2,7 @@
 
 Subcommands: ``add`` / ``add-folder`` / ``list`` / ``show`` / ``search`` /
 ``toc`` / ``card`` / ``related`` / ``relate`` / ``communities`` /
-``export-wiki`` / ``remove`` / ``mcp`` / ``locations`` (FEAT-533 adds
+``export-wiki`` / ``optimize`` / ``remove`` / ``mcp`` / ``locations`` (FEAT-533 adds
 ``related``/``relate``/``communities``/``export-wiki`` — see
 ``wiki/knowledge/bookstore-graph.md``). Heavy parrot imports are deferred into
 command bodies (the ``wiki/cli.py`` discipline) so ``bookstore --help``
@@ -564,6 +564,59 @@ def export_wiki(out_dir: Optional[str], global_scope: bool, no_register: bool) -
         click.echo(f"registered namespace 'bookstore' in {result['registered_in']}")
     else:
         click.echo("namespace registration skipped")
+
+
+@bookstore.command("optimize")
+@click.argument("book_id")
+@click.option("--global", "global_scope", is_flag=True, help="Use the global library.")
+@click.option("--apply", is_flag=True, help="Publish the optimized tree and rebuild the card TOC.")
+@click.option("--no-llm", is_flag=True, help="Skip model-backed optimizer passes.")
+@click.option(
+    "--llm",
+    default=None,
+    help="LLM spec 'provider:model' (default: $PARROT_BOOKSTORE_LLM).",
+)
+@click.option("--json", "as_json", is_flag=True, help="JSON output.")
+def optimize_cmd(
+    book_id: str,
+    global_scope: bool,
+    apply: bool,
+    no_llm: bool,
+    llm: Optional[str],
+    as_json: bool,
+) -> None:
+    """Optimize a book's PageIndex tree; dry-run unless ``--apply`` is passed."""
+    from .library import BookstoreError
+
+    scope = "global" if global_scope else "project"
+    store = _open_bookstore(
+        llm_spec=llm,
+        scope_needed=scope,
+        use_llm=not no_llm,
+    )
+    try:
+        report = asyncio.run(
+            store.optimize_book(
+                book_id,
+                apply=apply,
+                llm_passes=False if no_llm else None,
+            )
+        )
+    except BookstoreError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if as_json:
+        click.echo(json.dumps(report, indent=2, default=str))
+        return
+    mode = "applied" if apply else "dry-run"
+    click.echo(f"{mode}: {book_id}")
+    click.echo(
+        f"nodes: {report.get('nodes_before', 0)} -> {report.get('nodes_after', 0)}; "
+        f"merged: {len(report.get('merged', []))}; expanded: {len(report.get('expanded', []))}"
+    )
+    click.echo(f"llm: {report.get('llm_passes', 'unknown')}")
+    for error in report.get("errors", []):
+        click.echo(f"error: {error}", err=True)
 
 
 @bookstore.command("remove")

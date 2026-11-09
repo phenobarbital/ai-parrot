@@ -1457,6 +1457,49 @@ class Bookstore:
         self._invalidate_graph(book_id)
         return removed
 
+    async def optimize_book(
+        self,
+        book_id: str,
+        *,
+        apply: bool = False,
+        llm_passes: Optional[bool] = None,
+    ) -> dict[str, Any]:
+        """Optimize a book's PageIndex tree and refresh its structural card fields.
+
+        Args:
+            book_id: Catalog id of the book whose tree should be optimized.
+            apply: Whether to publish the optimized tree. Defaults to a dry run.
+            llm_passes: Whether to run model-backed optimizer passes. When omitted,
+                follows whether this bookstore has an LLM adapter configured.
+
+        Returns:
+            The optimizer report.
+        """
+        card, loc = self.resolve_book(book_id)
+        toolkit = self._toolkit(loc.scope)
+        report = await toolkit.optimize(
+            card.tree_name,
+            apply=apply,
+            llm_passes=self.has_llm if llm_passes is None else llm_passes,
+        )
+        if apply and not report.get("errors"):
+            tree = await toolkit.get_tree(card.tree_name)
+            toc_entries, toc_digest = derive_toc(tree)
+            page_count = max(
+                (entry.end_page for entry in toc_entries if entry.end_page is not None),
+                default=None,
+            )
+            updated = card.model_copy(
+                update={
+                    "toc": toc_entries,
+                    "toc_digest": toc_digest,
+                    "chapter_count": sum(1 for entry in toc_entries if entry.depth == 1),
+                    "page_count": page_count,
+                }
+            )
+            self._catalog(loc.scope).upsert(updated)
+        return report
+
     async def refresh_card(self, book_id: str) -> BookCard:
         """Re-run carding on an existing tree (e.g. after enabling an LLM)."""
         card, loc = self.resolve_book(book_id)
