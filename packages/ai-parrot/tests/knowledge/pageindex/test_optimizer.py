@@ -528,9 +528,7 @@ def _paged_tree(pages: list[tuple[int, str]], title: str = "Libro") -> tuple[dic
 
 def test_split_at_sets_page_fields() -> None:
     """Pieces of a paged revision carry start_index/end_index from their owned segments' pages."""
-    tree, revisions = _paged_tree(
-        [(1, f"# Alpha\n\n{_PROSE}"), (2, f"{_PROSE}\n\n# Beta\n\n{_PROSE}"), (3, _PROSE)]
-    )
+    tree, revisions = _paged_tree([(1, f"# Alpha\n\n{_PROSE}"), (2, f"{_PROSE}\n\n# Beta\n\n{_PROSE}"), (3, _PROSE)])
     plan = plan_deterministic(
         tree, revisions, OptimizerSettings(target_leaf_tokens=100, min_leaf_tokens=20), tree_name="t"
     )
@@ -562,3 +560,264 @@ def test_pseudo_headings_drop_numbered_footers() -> None:
     revision = next(iter(revisions.values()))
 
     assert [heading_title(s.text) for s in pseudo_heading_segments(tree["nodes"][0], revision)] == ["Real Title"]
+
+
+# --- FEAT-859: document-wide running lines --------------------------------------------------------------------------
+
+
+def _footer_pages(count: int = 6, extra: dict[int, str] | None = None) -> list[tuple[int, str]]:
+    """Pages 1..count, each prose plus an ``APPENDIX C PAGE <427+n>`` footer; ``extra`` prepends text to a page."""
+    extra = extra or {}
+    return [(n, f"{extra.get(n, '')}{_PROSE}\n\nAPPENDIX C PAGE {427 + n}") for n in range(1, count + 1)]
+
+
+def _first_seq_on_page(revision: DocumentRevision, page: int) -> int:
+    """Return the sequence number of the first segment on ``page``."""
+    return min(segment.seq for segment in revision.segments if segment.page == page)
+
+
+def _short_table_tree() -> tuple[dict, dict, DocumentRevision]:
+    """One imported root over six footer pages, split into `Tables` (pages 1-4) and `TABLE C-3` (pages 5-6)."""
+    tree, revisions = _paged_tree(_footer_pages(), title="APPENDIX C")
+    revision = next(iter(revisions.values()))
+    root = tree["nodes"][0]
+    split, end = _first_seq_on_page(revision, 5), len(revision.segments)
+    root["owned"] = []
+    root["nodes"] = [
+        {
+            "doc_id": "libro",
+            "revision": revision.revision,
+            "title": title,
+            "span": [start, stop],
+            "owned": [[start, stop]],
+            "nodes": [],
+        }
+        for title, start, stop in (("Tables", 0, split), ("TABLE C-3", split, end))
+    ]
+    return tree, revisions, revision
+
+
+def test_document_running_keys_finds_page_footers() -> None:
+    """A footer printed once on every page of its range is a running line of the document."""
+    from parrot.knowledge.pageindex.layout import running_key
+    from parrot.knowledge.pageindex.optimizer import document_running_keys
+
+    _, revisions = _paged_tree(_footer_pages())
+    revision = next(iter(revisions.values()))
+
+    assert running_key("APPENDIX C PAGE 428") in document_running_keys(revision)
+
+
+def test_document_running_keys_ignores_spread_stacked_and_unpaged() -> None:
+    """Spread-out titles, titles stacked on one page and unpaged revisions give no running line."""
+    from parrot.knowledge.pageindex.layout import running_key
+    from parrot.knowledge.pageindex.optimizer import document_running_keys
+
+    spread = [(n, f"{'PRIMERA SECCIÓN' if n in (1, 8, 15) else 'texto'}\n\n{_PROSE}") for n in range(1, 16)]
+    _, revisions = _paged_tree(spread)
+    assert running_key("PRIMERA SECCIÓN") not in document_running_keys(next(iter(revisions.values())))
+
+    stacked = [(1, _PROSE), (2, f"[SP 800-39]\n\n{_PROSE}\n\n[SP 800-39]"), (3, "[SP 800-39]"), (4, "[SP 800-39]")]
+    _, revisions = _paged_tree(stacked)
+    assert running_key("[SP 800-39]") not in document_running_keys(next(iter(revisions.values())))
+
+    footers = "".join(f"{_PROSE}\n\nAPPENDIX C PAGE {n}\n\n" for n in (428, 429, 430, 431))
+    _, revisions = _markdown_tree(footers)
+    assert document_running_keys(next(iter(revisions.values()))) == frozenset()
+
+
+def test_pseudo_headings_drop_document_footer_in_short_leaf() -> None:
+    """A two-page leaf holds its footer twice (below the per-leaf threshold) but the footer is still dropped."""
+    from parrot.knowledge.pageindex.layout_structure import heading_title
+    from parrot.knowledge.pageindex.optimizer import pseudo_heading_segments
+
+    _, revisions = _paged_tree(_footer_pages(extra={5: "**Real Title**\n\n"}))
+    revision = next(iter(revisions.values()))
+    leaf = {"title": "TABLE C-3", "owned": [[_first_seq_on_page(revision, 5), len(revision.segments)]]}
+
+    assert [heading_title(s.text) for s in pseudo_heading_segments(leaf, revision)] == ["Real Title"]
+
+
+def test_pseudo_headings_explicit_running_keys_override() -> None:
+    """An explicit empty running-line set leaves only the per-leaf rule, so the two footers are offered again."""
+    from parrot.knowledge.pageindex.layout_structure import heading_title
+    from parrot.knowledge.pageindex.optimizer import pseudo_heading_segments
+
+    _, revisions = _paged_tree(_footer_pages(extra={5: "**Real Title**\n\n"}))
+    revision = next(iter(revisions.values()))
+    leaf = {"title": "TABLE C-3", "owned": [[_first_seq_on_page(revision, 5), len(revision.segments)]]}
+
+    titles = [heading_title(s.text) for s in pseudo_heading_segments(leaf, revision, running_keys=frozenset())]
+    assert titles == ["Real Title", "APPENDIX C PAGE 432", "APPENDIX C PAGE 433"]
+
+
+def test_expand_does_not_split_short_leaf_at_document_footer() -> None:
+    """The optimizer never titles a piece after a page footer, even in a short leaf."""
+    import re
+
+    from parrot.knowledge.pageindex.utils import structure_to_list
+
+    tree, revisions, _ = _short_table_tree()
+    plan = plan_deterministic(
+        tree, revisions, OptimizerSettings(target_leaf_tokens=100, min_leaf_tokens=20), tree_name="t"
+    )
+
+    titles = [str(node.get("title")) for node in structure_to_list(plan.candidate["nodes"])]
+    assert "TABLE C-3" in titles
+    assert not [title for title in titles if re.search(r"PAGE \d+$", title)]
+    assert validate_candidate(plan, revisions, base_tree={"nodes": []}) == []
+
+
+def test_expand_computes_running_keys_once(monkeypatch) -> None:
+    """A document computes its running-line set once, however many roots and leaves the expansion visits."""
+    from parrot.knowledge.pageindex import optimizer
+
+    calls: list[str] = []
+    original = optimizer.document_running_keys
+
+    def counting(revision: DocumentRevision) -> frozenset[str]:
+        calls.append(revision.revision)
+        return original(revision)
+
+    monkeypatch.setattr(optimizer, "document_running_keys", counting)
+    settings = OptimizerSettings(target_leaf_tokens=100, min_leaf_tokens=20)
+    tree, revisions, _ = _short_table_tree()
+    plan_deterministic(tree, revisions, settings, tree_name="t")
+    assert len(calls) == 1
+
+    calls.clear()
+    tree, revisions, _ = _short_table_tree()
+    two_roots = {"nodes": tree["nodes"][0]["nodes"]}  # each top-level section is its own optimizable root
+    plan = plan_deterministic(two_roots, revisions, settings, tree_name="t")
+    assert len(optimizable_roots(two_roots, revisions)) == 2
+    assert not plan.report.errors
+    assert len(calls) == 1
+
+
+# --- FEAT-861: page splits for long table leaves -------------------------------------------------------------------
+
+_TABLE_TITLE = "TABLE C-9: TEST FAMILY"
+_PAGE_RANGE = r"\((?:page \d+|pages \d+-\d+)\)$"
+
+
+def _table_rows(rows: int, label: str) -> str:
+    """Return a markdown table of ``rows`` body rows; consecutive ``|`` lines form one table segment."""
+    body = [f"| {label}-{n} | {'control name text ' * 4}|" for n in range(1, rows + 1)]
+    return "\n".join(["| CONTROL | NAME |", "|---|---|", *body])
+
+
+def _table_leaf_pages(extra: dict[int, str] | None = None) -> list[tuple[int, str]]:
+    """Page 1: bold table title + table; pages 2-4: running header + table; page 5: the running header only.
+
+    ``extra`` inserts text after the running header of a page.
+    """
+    extra = extra or {}
+    header = "RUNNING HEADER OF THE DOC"
+    pages = [(1, f"**{_TABLE_TITLE}**\n\n{_table_rows(12, 'P1')}")]
+    pages += [(n, f"{header}\n\n{extra.get(n, '')}{_table_rows(12, f'P{n}')}") for n in (2, 3, 4)]
+    pages.append((5, header))
+    return pages
+
+
+def _page_block_tokens(revision: DocumentRevision, page: int) -> int:
+    """Return the tokens of every segment on ``page``."""
+    return sum(segment.tokens for segment in revision.segments if segment.page == page)
+
+
+def test_table_page_splits_packs_pages_backward() -> None:
+    """Points are the first table segment plus page starts; the trailing stub page joins the piece before it."""
+    from parrot.knowledge.pageindex.optimizer import table_page_splits
+
+    tree, revisions = _paged_tree(_table_leaf_pages(), title=_TABLE_TITLE)
+    revision = next(iter(revisions.values()))
+    leaf = tree["nodes"][0]
+    target = _page_block_tokens(revision, 2) + _page_block_tokens(revision, 3)
+    settings = OptimizerSettings(target_leaf_tokens=target, min_leaf_tokens=100)
+
+    titles = table_page_splits(leaf, revision, settings)
+
+    first_table = next(segment.seq for segment in revision.segments if segment.kind == "table")
+    assert list(titles) == [first_table, _first_seq_on_page(revision, 2), _first_seq_on_page(revision, 4)]
+    assert list(titles.values()) == [
+        f"{_TABLE_TITLE} (page 1)",
+        f"{_TABLE_TITLE} (pages 2-3)",
+        f"{_TABLE_TITLE} (pages 4-5)",
+    ]
+    ends = [*list(titles)[1:], len(revision.segments)]
+    assert all(
+        owned_tokens({"owned": [[start, end]]}, revision) <= target for start, end in zip(titles, ends, strict=True)
+    )
+
+
+def test_table_page_splits_requires_table_share_and_two_pages() -> None:
+    """Prose-dominated, single-page and unpaged table leaves are not page-split."""
+    from parrot.knowledge.pageindex.optimizer import table_page_splits
+
+    settings = OptimizerSettings(target_leaf_tokens=100, min_leaf_tokens=20)
+    prose = [(1, f"{_PROSE}\n\n{_table_rows(2, 'A')}"), (2, f"{_PROSE}\n\n{_table_rows(2, 'B')}")]
+    one_page = [(1, f"**{_TABLE_TITLE}**\n\n{_table_rows(12, 'A')}\n\nBetween tables.\n\n{_table_rows(12, 'B')}")]
+    for pages in (prose, one_page):
+        tree, revisions = _paged_tree(pages, title=_TABLE_TITLE)
+        assert table_page_splits(tree["nodes"][0], next(iter(revisions.values())), settings) == {}
+
+    tree, revisions = _markdown_tree(f"{_table_rows(12, 'A')}\n\nBetween tables.\n\n{_table_rows(12, 'B')}")
+    assert table_page_splits(tree["nodes"][0], next(iter(revisions.values())), settings) == {}
+
+
+def test_split_at_uses_given_titles() -> None:
+    """``titles`` names the pieces it covers; without it every title comes from the piece's first segment."""
+    from parrot.knowledge.pageindex.optimizer import split_at
+
+    settings = OptimizerSettings(target_leaf_tokens=100, min_leaf_tokens=20)
+    pages = [(1, f"# Alpha\n\n{_PROSE}"), (2, f"# Beta\n\n{_PROSE}")]
+
+    def pieces(titles: dict[int, str] | None) -> list[str]:
+        tree, revisions = _paged_tree(pages)
+        revision = next(iter(revisions.values()))
+        seqs = [segment.seq for segment in revision.segments if segment.kind == "heading"]
+        named = {seqs[1]: "Named"} if titles is not None else None
+        result = split_at(
+            tree["nodes"][0], revision, seqs, source="layout", settings=settings, report=OptimizeReport(), titles=named
+        )
+        return [piece["title"] for piece in result]
+
+    assert pieces({}) == ["Alpha", "Named"]
+    assert pieces(None) == ["Alpha", "Beta"]
+
+
+def test_expand_splits_long_table_leaf_at_pages() -> None:
+    """A long table leaf becomes page-range pieces within the target; its title paragraph stays on the parent."""
+    import re
+
+    tree, revisions = _paged_tree(_table_leaf_pages(), title=_TABLE_TITLE)
+    revision = next(iter(revisions.values()))
+    target = _page_block_tokens(revision, 2) + _page_block_tokens(revision, 3)
+    plan = plan_deterministic(
+        tree, revisions, OptimizerSettings(target_leaf_tokens=target, min_leaf_tokens=100), tree_name="t"
+    )
+
+    leaf = plan.candidate["nodes"][0]
+    pieces = leaf["nodes"]
+    assert len(pieces) == 3
+    assert all(re.search(_PAGE_RANGE, piece["title"]) for piece in pieces)
+    assert all(owned_tokens(piece, revision) <= target for piece in pieces)
+    assert [(piece["start_index"], piece["end_index"]) for piece in pieces] == [(1, 1), (2, 3), (4, 5)]
+    assert _owns(leaf, 0)  # the bold table title
+    assert [action.source for action in plan.report.expanded] == ["layout"]
+    assert validate_candidate(plan, revisions, base_tree={"nodes": []}) == []
+
+
+def test_expand_prefers_pseudo_headings_over_table_pages() -> None:
+    """A table leaf with a usable pseudo-heading is split there, not at page boundaries."""
+    import re
+
+    from parrot.knowledge.pageindex.utils import structure_to_list
+
+    tree, revisions = _paged_tree(_table_leaf_pages({3: "**Real Section**\n\n"}), title=_TABLE_TITLE)
+    plan = plan_deterministic(
+        tree, revisions, OptimizerSettings(target_leaf_tokens=700, min_leaf_tokens=100), tree_name="t"
+    )
+
+    assert [piece["title"] for piece in plan.candidate["nodes"][0]["nodes"]] == ["Real Section"]
+    titles = [str(node.get("title")) for node in structure_to_list(plan.candidate["nodes"])]
+    assert not [title for title in titles if re.search(_PAGE_RANGE, title)]

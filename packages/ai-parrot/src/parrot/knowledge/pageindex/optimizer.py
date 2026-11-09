@@ -28,6 +28,10 @@ OPTIMIZER_VERSION = "v1"
 Revisions = dict[tuple[str, str], DocumentRevision]
 # A pseudo-heading title seen more often than this in one leaf is a running header/footer, not a heading.
 PSEUDO_HEADING_MAX_REPEATS = 2
+RUNNING_LINE_MIN_DENSITY = 0.8
+"""Share of its page range a repeated paragraph title must cover to count as a running header or footer."""
+TABLE_SPLIT_MIN_SHARE = 0.5
+"""Share of a leaf's owned tokens that must be ``table`` segments before it may be split at page boundaries."""
 _TRAILING_CONJUNCTIONS = frozenset({"and", "or", "nor", "y", "e", "o", "u", "ni"})
 _LIST_MARKER_RE = re.compile(r"^(?:\(\w{1,4}\)|[a-z]\)|[-•*–])\s")
 
@@ -483,22 +487,54 @@ def _is_upper_case(title: str) -> bool:
     return len(cased) >= 2 and all(char.isupper() for char in cased)
 
 
-def pseudo_heading_segments(node: dict, revision: DocumentRevision) -> list[Segment]:
+def document_running_keys(revision: DocumentRevision) -> frozenset[str]:
+    """Return the ``running_key`` of every paragraph title that runs through the revision as a header or footer.
+
+    A key qualifies when its paged ``paragraph`` segments sit on more than ``PSEUDO_HEADING_MAX_REPEATS`` distinct
+    pages, never twice on one page, and those pages cover at least ``RUNNING_LINE_MIN_DENSITY`` of the page range they
+    span. Segments without a page are ignored, so an unpaged revision returns an empty set.
+
+    Args:
+        revision: The document revision whose paragraphs are scanned.
+
+    Returns:
+        The running keys of the revision's running headers and footers.
+    """
+    pages_by_key: dict[str, list[int]] = {}
+    for segment in revision.segments:
+        if segment.kind == "paragraph" and segment.page is not None:
+            pages_by_key.setdefault(running_key(heading_title(segment.text)), []).append(int(segment.page))
+    keys: set[str] = set()
+    for key, pages in pages_by_key.items():
+        distinct = set(pages)
+        if len(distinct) <= PSEUDO_HEADING_MAX_REPEATS or len(distinct) != len(pages):
+            continue
+        if len(distinct) / (max(distinct) - min(distinct) + 1) >= RUNNING_LINE_MIN_DENSITY:
+            keys.add(key)
+    return frozenset(keys)
+
+
+def pseudo_heading_segments(
+    node: dict, revision: DocumentRevision, *, running_keys: Optional[frozenset[str]] = None
+) -> list[Segment]:
     """Return owned single-line paragraph segments that read as headings.
 
     A candidate is a ``paragraph`` segment whose stripped text is one line, either fully wrapped in emphasis
     (starts and ends with ``**`` or ``__``; split runs such as ``**P****ROLOGO**`` included) or whose cased letters
     (at least two) are all upper case, and whose ``heading_title`` passes ``is_heading_text``. Titles occurring more
     than ``PSEUDO_HEADING_MAX_REPEATS`` times among the node's owned paragraphs are dropped (running headers and
-    footers), as is a first candidate whose title matches the node title (same rule as ``heading_segments``).
+    footers), as are titles whose ``running_key`` is a running line of the whole document (``running_keys``), and a
+    first candidate whose title matches the node title (same rule as ``heading_segments``).
 
     Args:
         node: The leaf whose owned segments are scanned.
         revision: The document revision the node is anchored to.
+        running_keys: The document's running-line keys; ``None`` computes ``document_running_keys(revision)``.
 
     Returns:
         The candidate segments in document order.
     """
+    running = document_running_keys(revision) if running_keys is None else running_keys
     paragraphs = [
         segment
         for start, end in node.get("owned") or []
@@ -517,7 +553,8 @@ def pseudo_heading_segments(node: dict, revision: DocumentRevision) -> list[Segm
         title = heading_title(text)
         if not (_is_emphasis_wrapped(text) or _is_upper_case(title)) or not is_heading_text(title):
             continue
-        if counts.get(running_key(title), 0) > PSEUDO_HEADING_MAX_REPEATS:
+        key = running_key(title)
+        if counts.get(key, 0) > PSEUDO_HEADING_MAX_REPEATS or key in running:
             continue
         candidates.append(segment)
     if candidates and _titles_match(
@@ -654,6 +691,75 @@ def _piece_pages(piece: dict, revision: DocumentRevision) -> Optional[tuple[int,
     return (min(pages), max(pages)) if pages else None
 
 
+def table_page_splits(node: dict, revision: DocumentRevision, settings: OptimizerSettings) -> dict[int, str]:
+    """Return page-boundary split points for a long table leaf, mapped to their piece titles.
+
+    Applies only when ``table`` segments hold at least ``TABLE_SPLIT_MIN_SHARE`` of the leaf's owned tokens and sit on
+    at least two pages. The owned segments from the first ``table`` segment on are grouped into page blocks (a block
+    starts where the page changes; an unpaged segment joins the current block) and packed from the last block
+    backward: a boundary goes before a block when adding it would exceed ``settings.target_leaf_tokens``, so a short
+    trailing page joins the piece before it. The points (the first ``table`` segment plus those boundaries) then pass
+    through ``_coalesce_split_points``. Each piece is titled after the leaf plus ``(page N)`` / ``(pages N-M)``. The
+    text before the first ``table`` segment stays with the leaf (the parent once split).
+
+    Args:
+        node: The oversized leaf.
+        revision: The document revision the node is anchored to.
+        settings: Optimizer settings (``target_leaf_tokens``, ``min_leaf_tokens``).
+
+    Returns:
+        The split sequences mapped to piece titles, in order; ``{}`` when the rule does not apply or fewer than two
+        points remain.
+    """
+    owned = list(node.get("owned") or [])
+    segments = [
+        segment
+        for start, end in owned
+        for segment in revision.segments[max(int(start), 0) : min(int(end), len(revision.segments))]
+    ]
+    total = sum(segment.tokens for segment in segments)
+    tables = [segment for segment in segments if segment.kind == "table"]
+    if not total or sum(segment.tokens for segment in tables) < TABLE_SPLIT_MIN_SHARE * total:
+        return {}
+    if len({segment.page for segment in tables if segment.page is not None}) < 2:
+        return {}
+    first = next(index for index, segment in enumerate(segments) if segment.kind == "table")
+    starts: list[int] = [tables[0].seq]
+    blocks: list[int] = [0]
+    page = tables[0].page
+    for segment in segments[first:]:
+        if segment.page is not None and page is not None and segment.page != page:
+            starts.append(segment.seq)
+            blocks.append(0)
+        if segment.page is not None:
+            page = segment.page
+        blocks[-1] += segment.tokens
+    boundaries: list[int] = []
+    running = 0
+    for index in range(len(blocks) - 1, -1, -1):
+        if running and running + blocks[index] > settings.target_leaf_tokens:
+            boundaries.append(starts[index + 1])
+            running = 0
+        running += blocks[index]
+    kept = _coalesce_split_points(node, revision, [starts[0], *sorted(boundaries)], settings)
+    if len(kept) < 2:
+        return {}
+    final_end = max(int(end) for _, end in owned)
+    title = str(node.get("title") or "").strip()
+    titles: dict[int, str] = {}
+    for index, seq in enumerate(kept):
+        end = kept[index + 1] if index + 1 < len(kept) else final_end
+        pages = _piece_pages({"owned": _owned_in_span(owned, seq, end)}, revision)
+        if pages is None:
+            suffix = f"(part {index + 1})"
+        elif pages[0] == pages[1]:
+            suffix = f"(page {pages[0]})"
+        else:
+            suffix = f"(pages {pages[0]}-{pages[1]})"
+        titles[seq] = f"{title} {suffix}".strip()
+    return titles
+
+
 def split_at(
     node: dict,
     revision: DocumentRevision,
@@ -662,8 +768,12 @@ def split_at(
     source: str,
     settings: OptimizerSettings,
     report: OptimizeReport,
+    titles: Optional[dict[int, str]] = None,
 ) -> list[dict]:
-    """Create children at valid owned split sequences when the cost model permits it."""
+    """Create children at valid owned split sequences when the cost model permits it.
+
+    A piece takes its title from its first segment's text, unless its start sequence is in ``titles``.
+    """
     owned = list(node.get("owned") or [])
     valid_seqs = sorted(
         {
@@ -687,7 +797,7 @@ def split_at(
                 "revision": node.get("revision"),
                 "span": [seq, end],
                 "owned": piece_owned,
-                "title": heading_title(revision.segments[seq].text),
+                "title": titles[seq] if titles and seq in titles else heading_title(revision.segments[seq].text),
                 "nodes": [],
             }
         )
@@ -715,20 +825,31 @@ def split_at(
 
 
 def expand_at_headings(
-    node: dict, revision: DocumentRevision, settings: OptimizerSettings, report: OptimizeReport, *, depth: int
+    node: dict,
+    revision: DocumentRevision,
+    settings: OptimizerSettings,
+    report: OptimizeReport,
+    *,
+    depth: int,
+    running_keys: Optional[frozenset[str]] = None,
 ) -> None:
     """Recursively expand oversized leaves at their shallowest owned heading level.
 
     When the leaf owns no usable heading segment, it falls back to ``pseudo_heading_segments`` (standalone bold or
     upper-case lines) and drops split points that would leave a piece under ``min_leaf_tokens``
-    (``_coalesce_split_points``) before ``split_at``; the expand action's source stays ``"layout"``.
+    (``_coalesce_split_points``) before ``split_at``; the expand action's source stays ``"layout"``. The document's
+    running-line keys are computed once (``document_running_keys``) when ``running_keys`` is ``None`` and passed down
+    the recursion. A leaf with no heading and no pseudo-heading split point falls back to ``table_page_splits``:
+    page-range pieces of a long table, titled through ``split_at(..., titles=...)``.
     """
     if is_locked(node) or depth >= settings.max_depth:
         return
+    if running_keys is None:
+        running_keys = document_running_keys(revision)
     children = node.get("nodes") or []
     if children:
         for child in children:
-            expand_at_headings(child, revision, settings, report, depth=depth + 1)
+            expand_at_headings(child, revision, settings, report, depth=depth + 1, running_keys=running_keys)
         assign_ownership(node)
         return
     if owned_tokens(node, revision) <= settings.target_leaf_tokens:
@@ -738,18 +859,21 @@ def expand_at_headings(
         for segment in heading_segments(node, revision)
         if segment.level is not None and len(heading_title(segment.text).split()) <= MAX_HEADING_WORDS
     ]
+    titles: Optional[dict[int, str]] = None
     if headings:
         shallowest = min(segment.level for segment in headings if segment.level is not None)
         seqs = [segment.seq for segment in headings if segment.level == shallowest]
     else:
-        seqs = _coalesce_split_points(
-            node, revision, [segment.seq for segment in pseudo_heading_segments(node, revision)], settings
-        )
+        candidates = pseudo_heading_segments(node, revision, running_keys=running_keys)
+        seqs = _coalesce_split_points(node, revision, [segment.seq for segment in candidates], settings)
+        if not seqs:
+            titles = table_page_splits(node, revision, settings)
+            seqs = list(titles)
         if not seqs:
             return
-    pieces = split_at(node, revision, seqs, source="layout", settings=settings, report=report)
+    pieces = split_at(node, revision, seqs, source="layout", settings=settings, report=report, titles=titles)
     for piece in pieces:
-        expand_at_headings(piece, revision, settings, report, depth=depth + 1)
+        expand_at_headings(piece, revision, settings, report, depth=depth + 1, running_keys=running_keys)
 
 
 def _digest(payload: Any) -> str:
@@ -883,6 +1007,8 @@ def plan_deterministic(
     report.nodes_before = len(structure_to_list(candidate))
     roots = optimizable_roots(candidate, revisions, node_id=node_id)
     report.documents = sorted({str(root["doc_id"]) for root in roots})
+    # One document can have many roots (one per top-level section); scan its running lines once.
+    running_by_revision: dict[tuple[str, str], frozenset[str]] = {}
     for root in roots:
         key = (root["doc_id"], root["revision"])
         revision = revisions[key]
@@ -893,7 +1019,9 @@ def plan_deterministic(
             continue
         normalize(root.get("nodes") or [], revision, settings, report, parent=root)
         assign_ownership(root)
-        expand_at_headings(root, revision, settings, report, depth=0)
+        if key not in running_by_revision:
+            running_by_revision[key] = document_running_keys(revision)
+        expand_at_headings(root, revision, settings, report, depth=0, running_keys=running_by_revision[key])
         assign_ownership(root)
 
     def mark_mutable(node: dict, ancestor_locked: bool = False) -> None:

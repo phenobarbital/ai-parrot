@@ -1172,7 +1172,11 @@ class IntegrationBotManager:
                 self.logger.error("Error while cancelling polling tasks: %s", e)
 
         # Now close bot sessions
-        for name, (bot, _dp, _) in self.telegram_bots.items():
+        for name, (bot, _dp, wrapper) in self.telegram_bots.items():
+            try:
+                await wrapper.close()
+            except Exception as exc:
+                self.logger.error("Error closing Telegram wrapper '%s': %s", name, exc)
             try:
                 self.logger.debug("Closing session for bot '%s'", name)
                 await bot.session.close()
@@ -1199,6 +1203,11 @@ class IntegrationBotManager:
         # voice transcriber); each close is isolated so one failure never
         # skips the other.
         for name, wrapper in self.msteams_bots.items():
+            try:
+                self.logger.debug("Closing queued commands for MS Teams bot '%s'", name)
+                await wrapper.close_queued_commands()
+            except Exception as exc:
+                self.logger.error("Error closing queued commands for MS Teams bot '%s': %s", name, exc)
             try:
                 self.logger.debug("Closing FormDesigner client for MS Teams bot '%s'", name)
                 await wrapper.close_formdesigner_client()
