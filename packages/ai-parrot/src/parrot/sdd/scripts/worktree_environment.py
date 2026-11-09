@@ -7,6 +7,7 @@ a Claude hook, even when importing the rest of Parrot is unavailable.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -648,6 +649,22 @@ def _branch(then: str, otherwise: str) -> str:
     return f"if {_native_check()}; then {then}{_ELSE}{otherwise}{_FI}"
 
 
+def _shell_prefix_policy() -> dict[str, Any] | None:
+    """Return a token-authenticated shell-prefix policy, or ``None`` without proof."""
+    policy_path = os.environ.get("PARROT_SDD_SHELL_PREFIX_POLICY")
+    token = os.environ.get("PARROT_SDD_SHELL_PREFIX_TOKEN")
+    if not policy_path or not token:
+        return None
+    try:
+        contents = Path(policy_path).read_bytes()
+        policy = json.loads(contents)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(policy, dict) or hashlib.sha256(contents).hexdigest() != token:
+        return None
+    return policy
+
+
 def _wrap_bash(command: str, cwd: Path, tool_input: dict[str, Any], native: Any, backend: str = "") -> str:
     """Run one Bash command through the scope guard, RTK and the sandbox wrapper.
 
@@ -691,6 +708,10 @@ def _wrap_bash(command: str, cwd: Path, tool_input: dict[str, Any], native: Any,
             return command
         shell = bounded_shell_argv(command, tool_input) if explicit else ["/bin/bash", "-c", command]
         return shlex.join(["env", *(f"{key}={value}" for key, value in diff.items()), *shell])
+    if backend == "bubblewrap" and (policy := _shell_prefix_policy()) and policy.get("mode") == "legacy":
+        if tool_input.get("timeout") or tool_input.get("run_in_background"):
+            return shlex.join(bounded_shell_argv(command, tool_input))
+        return command
     shell = bounded_shell_argv(command, tool_input)
     if native:  # auto: the launcher did not run, so the full environment is needed in the native branch
         env = native.native_command_environment(task_cwd)
@@ -979,7 +1000,9 @@ def agy_verdict(
 def hook_response(payload: dict[str, Any], *, backend: str = "bubblewrap") -> dict[str, Any]:
     """Apply guards and file checks for one of three backends; deny invalid modes.
 
-    * ``bubblewrap`` (the keyword default; explicit legacy): always wrap in ``bwrap``.
+    * ``bubblewrap`` (the keyword default; explicit legacy): wraps in ``bwrap`` unless a token-authenticated
+      legacy shell prefix is active, in which case the prefix already applies Bubblewrap and a plain command
+      is left unchanged.
     * ``claude-native`` (launcher): never nest ``bwrap``. The launcher's backend variable is trusted (the
       hook cannot see the sandbox), so there is no runtime check; the command is rewritten only when its
       environment differs from the inherited one, the guard/RTK changed it, or it carries an explicit
