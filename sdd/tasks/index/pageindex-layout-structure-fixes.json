@@ -82,7 +82,7 @@
       "feature_id": "FEAT-855",
       "feature": "pageindex-layout-structure-fixes",
       "spec": "sdd/specs/pageindex-layout-structure-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -92,8 +92,9 @@
       "parallelism_notes": "needs LayoutHeaders._bold_prefixes from TASK-5409 (layout.py) for the rule-5 condition; also shares test_layout.py",
       "assigned_to": null,
       "started_at": "2026-11-09T13:50:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5410-bookmark-rule-prefix-guard.md"
+      "completed_at": "2026-11-09T13:51:39+00:00",
+      "file": "sdd/tasks/completed/TASK-5410-bookmark-rule-prefix-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5411",

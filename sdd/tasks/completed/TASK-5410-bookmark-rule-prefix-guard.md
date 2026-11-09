@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-855 — PageIndex Layout Structure Fixes
 **Spec**: `sdd/specs/pageindex-layout-structure-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5409
@@ -216,8 +216,14 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude (Opus 5.5) — /sdd-fix session agent:sdd-fix:cdd27bba
+**Date**: 2026-11-09
+**Notes**: Implemented as blueprinted: `_bookmark_prefix_match` (module level), rule 5 condition
+`bold or (size > body and size not in self._bold_prefixes)`, `_matches_bookmark` uses the new matcher, and the unused
+`_titles_match` import is gone from layout.py (segments._titles_match itself is unchanged and still used by
+`score_bookmarks` / `layout_eval`). Tests: parametrized `test_bookmark_prefix_match` (9 cases) and
+`test_bookmark_match_prefix_only` (bold `AC-7` tagged, bold `attempts.` not, 11 pt prose at a body-text size not, a
+13 pt non-bold title span tagged). Validation: test_layout.py + test_layout_integration.py 36 passed; ruff clean;
+`test_header_detector_rules` unchanged.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
