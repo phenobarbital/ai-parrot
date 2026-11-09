@@ -23,12 +23,14 @@ import itertools
 import logging
 import secrets
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
 from parrot.knowledge.pageindex.layout import PDFStructureError
+from parrot.knowledge.pageindex.locks import TreeLockTimeout, tree_lock
 from parrot.knowledge.pageindex.segments import RevisionMismatchError
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, REPLACED_MARKER
 
@@ -197,9 +199,17 @@ class Bookstore:
         locations: list[LibraryLocation],
         adapter: Optional[Any] = None,
         lightweight_model: Optional[str] = None,
+        *,
+        reindex_lock_timeout_s: float = 5.0,
     ) -> None:
         if not locations:
             raise BookstoreError("No library locations resolved")
+        if (
+            isinstance(reindex_lock_timeout_s, bool)
+            or not isinstance(reindex_lock_timeout_s, (int, float))
+            or not 0 < reindex_lock_timeout_s < float("inf")
+        ):
+            raise ValueError("reindex_lock_timeout_s must be a positive finite number")
         self.locations = locations
         self.adapter = adapter
         if adapter is None and lightweight_model:
@@ -213,6 +223,9 @@ class Bookstore:
         self._catalogs: dict[str, CatalogStore] = {}
         self._toolkits: dict[str, PageIndexToolkit] = {}
         self._content_stores: dict[str, NodeContentStore] = {}
+        self._reindex_lock_timeout_s = float(reindex_lock_timeout_s)
+        self._ready_scopes: set[str] = set()
+        self._ready_locks: dict[tuple[str, asyncio.AbstractEventLoop], asyncio.Lock] = {}
 
     @property
     def has_llm(self) -> bool:
@@ -244,6 +257,30 @@ class Bookstore:
                 generation_grace_s=_STAGING_MAX_AGE_S,
             )
         return self._toolkits[scope]
+
+    async def _ready_toolkit(self, scope: str) -> PageIndexToolkit:
+        """Await successful reserved-tree recovery before returning an async toolkit."""
+        if scope in self._ready_scopes:
+            return self._toolkit(scope)
+
+        loop = asyncio.get_running_loop()
+        lock = self._ready_locks.setdefault((scope, loop), asyncio.Lock())
+        async with lock:
+            if scope not in self._ready_scopes:
+                await self._sweep_reserved_trees(scope)
+                self._ready_scopes.add(scope)
+        return self._toolkit(scope)
+
+    def _operation_storage_dir(self, scope: str) -> Path:
+        """Return the Bookstore-only lock namespace for one library scope."""
+        return self._location(scope).root / ".bookstore-operations"
+
+    @asynccontextmanager
+    async def _book_operation_lock(self, scope: str, slug: str, *, timeout: Optional[float] = None) -> AsyncIterator[None]:
+        """Hold the separate operation lock for one book slug."""
+        lock_timeout = self._reindex_lock_timeout_s if timeout is None else timeout
+        async with tree_lock(self._operation_storage_dir(scope), f"book-{slug}", timeout=lock_timeout):
+            yield
 
     def _content_store(self, scope: str) -> NodeContentStore:
         if scope not in self._content_stores:
@@ -300,31 +337,30 @@ class Bookstore:
             return
 
         toolkit = self._toolkit(scope)
-        for tree_name, live_exists, mtime in reserved:
+        for tree_name, _live_exists, _mtime in reserved:
+            live_name = tree_name.split(
+                REPLACED_MARKER if REPLACED_MARKER in tree_name else _STAGING_MARKER, maxsplit=1
+            )[0]
             try:
-                if REPLACED_MARKER in tree_name:
-                    live_name = tree_name.split(REPLACED_MARKER, maxsplit=1)[0]
-                    if not live_exists:
-                        await toolkit.rename_tree(tree_name, live_name)
-                    else:
+                async with self._book_operation_lock(scope, live_name, timeout=0):
+                    current = await asyncio.to_thread(self._scan_reserved_trees, location.trees_dir)
+                    state = next((item for item in current if item[0] == tree_name), None)
+                    if state is None:
+                        continue
+                    _name, live_exists, mtime = state
+                    if REPLACED_MARKER in tree_name:
+                        if not live_exists:
+                            await toolkit.rename_tree(tree_name, live_name)
+                        else:
+                            await toolkit.delete_tree(tree_name)
+                    elif _STAGING_MARKER in tree_name and time.time() - mtime > _STAGING_MAX_AGE_S:
                         await toolkit.delete_tree(tree_name)
-                elif _STAGING_MARKER in tree_name:
-                    if time.time() - mtime > _STAGING_MAX_AGE_S:
-                        await toolkit.delete_tree(tree_name)
+                    if toolkit._store.exists(live_name):
+                        await toolkit.vacuum_tree(live_name)
+            except TreeLockTimeout:
+                self.logger.debug("Skipping busy reserved tree %r during sweep", tree_name)
             except Exception:  # noqa: BLE001 — crash recovery is best-effort
                 logger.warning("Failed to sweep reserved tree %r", tree_name, exc_info=True)
-
-        live_names = {
-            tree_name.split(REPLACED_MARKER if REPLACED_MARKER in tree_name else _STAGING_MARKER, maxsplit=1)[0]
-            for tree_name, _, _ in reserved
-        }
-        for live_name in live_names:
-            if not toolkit._store.exists(live_name):
-                continue
-            try:
-                await toolkit.vacuum_tree(live_name)
-            except Exception:  # noqa: BLE001 — vacuum is best-effort during recovery
-                logger.warning("Failed to vacuum live tree %r during reserved-tree sweep", live_name, exc_info=True)
 
     # ------------------------------------------------------------------
     # Read surface
@@ -371,7 +407,7 @@ class Bookstore:
         otherwise this is BM25-only (requires the optional ``bm25s``).
         """
         card, loc = self.resolve_book(book_id)
-        toolkit = self._toolkit(loc.scope)
+        toolkit = await self._ready_toolkit(loc.scope)
         return await toolkit.search(
             tree_name=card.tree_name,
             query=query,
@@ -439,7 +475,7 @@ class Bookstore:
         if not self.has_llm:
             raise BookstoreError("agentic retrieval requires an LLM; configure a model for this bookstore")
 
-        toolkit = self._toolkit(loc.scope)
+        toolkit = await self._ready_toolkit(loc.scope)
         await self._document_of(card, toolkit)
         try:
             bundle = await toolkit.agentic_retrieve(
@@ -470,7 +506,7 @@ class Bookstore:
         decorated["book_title"] = card.title
         expected_generation = bundle.get("generation")
         tree: Optional[dict[str, Any]] = None
-        toolkit = self._toolkit(scope)
+        toolkit = await self._ready_toolkit(scope)
         try:
             candidate = await toolkit.get_tree(card.tree_name)
             generation = (candidate.get("generation") or {}).get("id")
@@ -566,7 +602,7 @@ class Bookstore:
     ) -> dict[str, Any]:
         """Read a page range of a book (``"5-7,12"``) with citable segment addresses."""
         card, loc = self.resolve_book(book_id)
-        toolkit = self._toolkit(loc.scope)
+        toolkit = await self._ready_toolkit(loc.scope)
         doc = await self._document_of(card, toolkit)
         try:
             result = await toolkit.read_pages(
@@ -603,7 +639,7 @@ class Bookstore:
             BookstoreError: The underlying read cannot be completed.
         """
         card, loc = self.resolve_book(book_id)
-        toolkit = self._toolkit(loc.scope)
+        toolkit = await self._ready_toolkit(loc.scope)
         doc = await self._document_of(card, toolkit)
         try:
             result = await toolkit.read_segments(
@@ -626,7 +662,7 @@ class Bookstore:
     async def outline(self, book_id: str, node_id: Optional[str] = None, max_depth: int = 3) -> dict[str, Any]:
         """Compact outline of a book or one of its sections."""
         card, loc = self.resolve_book(book_id)
-        toolkit = self._toolkit(loc.scope)
+        toolkit = await self._ready_toolkit(loc.scope)
         await self._document_of(card, toolkit)
         try:
             result = await toolkit.outline(card.tree_name, node_id=node_id, max_depth=max_depth)
@@ -707,7 +743,7 @@ class Bookstore:
             for card in cards:
                 by_scope.setdefault(card.scope, []).append(card)
             for scope, scope_cards in by_scope.items():
-                toolkit = self._toolkit(scope)
+                toolkit = await self._ready_toolkit(scope)
                 scoped = await toolkit.search_documents_scoped(
                     tree_names=[c.tree_name for c in scope_cards],
                     query=query,
@@ -1268,6 +1304,7 @@ class Bookstore:
         if fmt is None:
             raise BookstoreError(f"Unsupported format {path.suffix!r} — " f"supported: {sorted(_FORMAT_BY_SUFFIX)}")
 
+        toolkit = await self._ready_toolkit(scope)
         catalog = self._catalog(scope)
         await self._sweep_reserved_trees(scope)
         payload = await asyncio.to_thread(path.read_bytes)
@@ -1282,7 +1319,6 @@ class Bookstore:
                 return existing.model_copy(update={"scope": scope}), "skipped"
             status = "updated"
 
-        toolkit = self._toolkit(scope)
         if status == "updated":
             slug = existing.book_id
         else:
@@ -1613,13 +1649,17 @@ class Bookstore:
         report nothing rather than a book that no longer exists.
         """
         card, loc = self.resolve_book(book_id)
-        toolkit = self._toolkit(loc.scope)
+        toolkit = await self._ready_toolkit(loc.scope)
         try:
-            await toolkit.delete_tree(card.tree_name)
-        except Exception:  # noqa: BLE001 — the tree may already be gone
-            logger.warning("Tree %r missing while removing book %r", card.tree_name, book_id)
-        removed = self._catalog(loc.scope).remove(book_id)
-        self._invalidate_graph(book_id)
+            async with self._book_operation_lock(loc.scope, card.tree_name):
+                try:
+                    await toolkit.delete_tree(card.tree_name)
+                except Exception:  # noqa: BLE001 — the tree may already be gone
+                    logger.warning("Tree %r missing while removing book %r", card.tree_name, book_id)
+                removed = self._catalog(loc.scope).remove(book_id)
+                self._invalidate_graph(book_id)
+        except TreeLockTimeout as exc:
+            raise BookstoreError(f"Re-index already in progress for {card.tree_name!r}") from exc
         return removed
 
     async def optimize_book(
@@ -1641,34 +1681,45 @@ class Bookstore:
             The optimizer report.
         """
         card, loc = self.resolve_book(book_id)
-        toolkit = self._toolkit(loc.scope)
-        report = await toolkit.optimize(
-            card.tree_name,
-            apply=apply,
-            llm_passes=self.has_llm if llm_passes is None else llm_passes,
-        )
-        if apply and not report.get("errors"):
-            tree = await toolkit.get_tree(card.tree_name)
-            toc_entries, toc_digest = derive_toc(tree)
-            page_count = max(
-                (entry.end_page for entry in toc_entries if entry.end_page is not None),
-                default=None,
+        toolkit = await self._ready_toolkit(loc.scope)
+
+        async def run_optimization() -> dict[str, Any]:
+            """Run the optimizer and persist structural fields after publication."""
+            report = await toolkit.optimize(
+                card.tree_name,
+                apply=apply,
+                llm_passes=self.has_llm if llm_passes is None else llm_passes,
             )
-            updated = card.model_copy(
-                update={
-                    "toc": toc_entries,
-                    "toc_digest": toc_digest,
-                    "chapter_count": sum(1 for entry in toc_entries if entry.depth == 1),
-                    "page_count": page_count,
-                }
-            )
-            self._catalog(loc.scope).upsert(updated)
-        return report
+            if apply and not report.get("errors"):
+                tree = await toolkit.get_tree(card.tree_name)
+                toc_entries, toc_digest = derive_toc(tree)
+                page_count = max(
+                    (entry.end_page for entry in toc_entries if entry.end_page is not None),
+                    default=None,
+                )
+                updated = card.model_copy(
+                    update={
+                        "toc": toc_entries,
+                        "toc_digest": toc_digest,
+                        "chapter_count": sum(1 for entry in toc_entries if entry.depth == 1),
+                        "page_count": page_count,
+                    }
+                )
+                self._catalog(loc.scope).upsert(updated)
+            return report
+
+        if not apply:
+            return await run_optimization()
+        try:
+            async with self._book_operation_lock(loc.scope, card.tree_name):
+                return await run_optimization()
+        except TreeLockTimeout as exc:
+            raise BookstoreError(f"Re-index already in progress for {card.tree_name!r}") from exc
 
     async def refresh_card(self, book_id: str) -> BookCard:
         """Re-run carding on an existing tree (e.g. after enabling an LLM)."""
         card, loc = self.resolve_book(book_id)
-        tree = await self._toolkit(loc.scope).get_tree(card.tree_name)
+        tree = await (await self._ready_toolkit(loc.scope)).get_tree(card.tree_name)
         toc_entries, toc_digest = derive_toc(tree)
         draft = await self._draft_card(
             path=Path(card.source_path),
