@@ -1236,6 +1236,118 @@ def test_launch_brief_and_fix_exec_slash_command(
     assert "--agent" not in command and "--settings" not in command
 
 
+@pytest.mark.parametrize(
+    ("argv", "host", "prompt"),
+    [
+        (
+            ["sdd", "launch", "brief", "--host", "google", "NAV-1", "--no-interview"],
+            "google",
+            "/sdd-brief NAV-1 --no-interview",
+        ),
+        (
+            ["sdd", "launch", "brief", "NAV-1", "--host", "google"],
+            "claude",
+            "/sdd-brief NAV-1 --host google",
+        ),
+        (["sdd", "launch", "fix", "--host", "google", "--top", "2"], "google", "/sdd-fix --top 2"),
+    ],
+)
+def test_brief_fix_host_placement(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, argv: list[str], host: str, prompt: str
+) -> None:
+    """Host is parsed only before the first passthrough brief or fix argument."""
+    seen: dict[str, object] = {}
+    monkeypatch.delenv("PARROT_SDD_HOST", raising=False)
+    monkeypatch.setattr(launcher, "_invocation_dir", lambda: _primary(tmp_path))
+    monkeypatch.setattr(launcher, "launch_session", lambda value, **kwargs: seen.update(prompt=value, **kwargs) or 0)
+
+    result = CliRunner().invoke(devloop, argv)
+
+    assert result.exit_code == 0, result.output
+    assert seen["prompt"] == prompt
+    assert seen["host"] == host
+
+
+@pytest.mark.parametrize(
+    ("args", "environment", "expected_host"),
+    [
+        (["--host", "google"], None, "google"),
+        ([], None, "claude"),
+        ([], {"PARROT_SDD_HOST": "google"}, "google"),
+    ],
+)
+def test_worker_host_option_uses_flag_or_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    args: list[str],
+    environment: dict[str, str] | None,
+    expected_host: str,
+) -> None:
+    """Worker passes the selected host explicitly to the launcher."""
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(launcher, "launch", lambda *values, **kwargs: seen.update(values=values, **kwargs) or 0)
+
+    result = CliRunner().invoke(devloop, ["sdd", "launch", "worker", "FEAT-768", *args], env=environment)
+
+    assert result.exit_code == 0, result.output
+    assert seen["host"] == expected_host
+
+
+def test_worker_host_option_rejects_invalid_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Click validates the host environment variable through its declared choice."""
+    monkeypatch.setattr(launcher, "launch", lambda *args, **kwargs: pytest.fail("invalid host must not launch"))
+
+    result = CliRunner().invoke(
+        devloop,
+        ["sdd", "launch", "worker", "FEAT-768"],
+        env={"PARROT_SDD_HOST": "bogus"},
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--host'" in result.output
+
+
+def test_launch_cli_google_host(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """CLI host selection preserves AGY worker and interactive-session execution contracts."""
+    worktree = _google_launch_ready(tmp_path, monkeypatch)
+    monkeypatch.setattr(launcher, "_enable_push_protection", lambda path: "push protection enabled")
+    monkeypatch.setattr(launcher, "_invocation_dir", lambda: tmp_path / "primary")
+    monkeypatch.setenv(launcher.AGY_UNATTENDED_ENV, "1")
+    monkeypatch.setenv(launcher.native_claude_sandbox.BACKEND_ENV, "bubblewrap")
+
+    worker_seen = _capture_agy_exec(monkeypatch)
+    result = CliRunner().invoke(
+        devloop,
+        ["sdd", "launch", "worker", "FEAT-768", "--host", "google", "--no-upstream"],
+    )
+
+    assert result.exit_code == 0, result.output
+    worker_argv = worker_seen["argv"]
+    worker_env = worker_seen["env"]
+    assert isinstance(worker_argv, list)
+    assert isinstance(worker_env, dict)
+    assert "--dangerously-skip-permissions" in worker_argv
+    assert "--mode" not in worker_argv
+    assert worker_env[launcher.AGY_UNATTENDED_ENV] == "1"
+    assert worker_env[launcher.native_claude_sandbox.BACKEND_ENV] == "bubblewrap"
+    assert worker_seen["cwd"] == worktree
+
+    for argv in (
+        ["sdd", "launch", "brief", "--host", "google", "NAV-1"],
+        ["sdd", "launch", "fix", "--host", "google", "--top", "2"],
+    ):
+        session_seen = _capture_agy_exec(monkeypatch)
+        result = CliRunner().invoke(devloop, argv)
+        assert result.exit_code == 0, result.output
+        session_argv = session_seen["argv"]
+        session_env = session_seen["env"]
+        assert isinstance(session_argv, list)
+        assert isinstance(session_env, dict)
+        assert "--dangerously-skip-permissions" not in session_argv
+        assert "--mode" not in session_argv
+        assert launcher.AGY_UNATTENDED_ENV not in session_env
+        assert launcher.native_claude_sandbox.BACKEND_ENV not in session_env
+
+
 def test_launch_help_lists_three_verbs() -> None:
     """The launch noun carries worker, brief and fix; the devloop spelling is gone."""
     result = CliRunner().invoke(devloop, ["sdd", "launch", "--help"])
