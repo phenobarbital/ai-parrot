@@ -2,19 +2,27 @@
 
 import time
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import jwt
 import pytest
+from aiogram.types import ReplyKeyboardRemove
 
 from parrot.integrations.telegram.browser_login import (
+    BrowserLoginEntry,
     BrowserVerificationError,
     BrowserVerifierUnavailableError,
+    VerifiedBrowserIdentity,
     get_browser_identity_verifier,
+    register_browser_identity_verifier,
 )
 from parrot.integrations.telegram.browser_verifiers import (
     NavigatorJWTVerifier,
     ensure_navigator_browser_verifiers,
 )
+from parrot.integrations.telegram.auth import CompositeAuthStrategy, TelegramUserSession
+from parrot.integrations.telegram.models import PostAuthAction, TelegramAgentConfig
+from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
 
 TEST_KEY = "feat-854-contract-test-key-0123456789abcdef"
 
@@ -163,3 +171,183 @@ def test_ensure_verifiers_respects_host_and_key_material(monkeypatch: pytest.Mon
     assert isinstance(get_browser_identity_verifier(app, bot_id="7001", auth_method="azure"), NavigatorJWTVerifier)
     assert isinstance(get_browser_identity_verifier(app, bot_id="7001", auth_method="google"), NavigatorJWTVerifier)
     assert get_browser_identity_verifier(app, bot_id="7001", auth_method="oauth2") is None
+
+
+def _wrapper(*, post_auth: bool = False) -> TelegramAgentWrapper:
+    """Build a narrow wrapper double around authentication completion methods."""
+    wrapper = TelegramAgentWrapper.__new__(TelegramAgentWrapper)
+    wrapper.config = TelegramAgentConfig(
+        name="bot",
+        chatbot_id="bot",
+        tenant="tenant-a",
+        post_auth_actions=[PostAuthAction(provider="jira", required=True)] if post_auth else [],
+    )
+    wrapper.app = {}
+    wrapper.bot = MagicMock()
+    wrapper.bot.send_message = AsyncMock()
+    wrapper.bot.send_chat_action = AsyncMock()
+    wrapper.logger = MagicMock()
+    wrapper._bot_id = "7001"
+    wrapper._user_sessions = {}
+    wrapper._persist_principal_link = AsyncMock(return_value=True)
+    wrapper._initialize_user_context = AsyncMock()
+    wrapper._is_combined_payload = MagicMock(return_value=False)
+    wrapper._begin_login_attempt = AsyncMock()
+    strategy = MagicMock()
+    strategy.name = "basic"
+    strategy.handle_callback = AsyncMock()
+    wrapper._auth_strategy = strategy
+    return wrapper
+
+
+def _entry() -> BrowserLoginEntry:
+    """Return browser correlation state owned by the server."""
+    return BrowserLoginEntry(
+        state="browser." + "a" * 43,
+        telegram_id=88123,
+        chat_id=88124,
+        bot_id="7001",
+        bot_username="bot",
+        created_at=time.monotonic(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_complete_auth_payload_success_notifies_chat() -> None:
+    """A successful legacy callback stores, links, initializes, and notifies once."""
+    wrapper = _wrapper()
+
+    async def authenticate(_data: dict[str, Any], session: TelegramUserSession) -> bool:
+        session.set_authenticated("42", "token", "Alice")
+        return True
+
+    wrapper._auth_strategy.handle_callback.side_effect = authenticate
+
+    assert await wrapper._complete_auth_payload({}, telegram_id=88123, chat_id=88124)
+
+    assert wrapper._user_sessions[88123].nav_user_id == "42"
+    wrapper._persist_principal_link.assert_awaited_once_with(wrapper._user_sessions[88123])
+    wrapper._initialize_user_context.assert_awaited_once_with(wrapper._user_sessions[88123])
+    assert wrapper.bot.send_message.await_args.kwargs["chat_id"] == 88124
+
+
+@pytest.mark.asyncio
+async def test_handle_web_app_data_delegates_to_complete() -> None:
+    """Webview parsing delegates to the core while retaining its reply keyboard behavior."""
+    wrapper = _wrapper()
+    session = TelegramUserSession(telegram_id=88123, telegram_first_name="Alice")
+    session.set_authenticated("42", "token", "Alice")
+    wrapper._get_user_session = MagicMock(return_value=session)
+    wrapper._complete_auth_payload = AsyncMock(return_value=True)
+    message = MagicMock()
+    message.web_app_data.data = '{"token": "token"}'
+    message.from_user.id = 88123
+    message.chat.id = 88124
+    message.answer = AsyncMock()
+
+    await wrapper.handle_web_app_data(message)
+
+    wrapper._complete_auth_payload.assert_awaited_once_with(
+        {"token": "token"}, telegram_id=88123, chat_id=88124, notify=False
+    )
+    assert isinstance(message.answer.await_args.kwargs["reply_markup"], ReplyKeyboardRemove)
+
+
+@pytest.mark.asyncio
+async def test_browser_basic_rejects_forged_identity() -> None:
+    """Browser basic credentials never reach the trusting legacy callback."""
+    wrapper = _wrapper()
+
+    with pytest.raises(BrowserVerificationError):
+        await wrapper._complete_auth_payload(
+            {"auth_method": "basic", "user_id": "admin", "token": ""},
+            telegram_id=88123,
+            chat_id=88124,
+            browser_entry=_entry(),
+        )
+
+    wrapper._auth_strategy.handle_callback.assert_not_awaited()
+    assert wrapper._user_sessions == {}
+    wrapper._persist_principal_link.assert_not_awaited()
+    wrapper._initialize_user_context.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_browser_identity_uses_verified_claims() -> None:
+    """Payload identity claims must match verifier claims and are never authoritative."""
+    wrapper = _wrapper()
+    verifier = MagicMock()
+    verifier.verify = AsyncMock(return_value=VerifiedBrowserIdentity(user_id="42", display_name="Alice"))
+    register_browser_identity_verifier(wrapper.app, bot_id="7001", auth_method="basic", verifier=verifier)
+
+    with pytest.raises(BrowserVerificationError):
+        await wrapper._complete_auth_payload(
+            {"auth_method": "basic", "user_id": "43", "token": "verified-token"},
+            telegram_id=88123,
+            chat_id=88124,
+            browser_entry=_entry(),
+        )
+    assert await wrapper._complete_auth_payload(
+        {"auth_method": "basic", "token": "verified-token"},
+        telegram_id=88123,
+        chat_id=88124,
+        browser_entry=_entry(),
+    )
+    assert wrapper._user_sessions[88123].nav_user_id == "42"
+
+    composite = CompositeAuthStrategy({"basic": wrapper._auth_strategy}, "https://example.test/login")
+    wrapper._auth_strategy = composite
+    with pytest.raises(BrowserVerificationError):
+        await wrapper._complete_auth_payload(
+            {"auth_method": "unknown", "token": "verified-token"},
+            telegram_id=88123,
+            chat_id=88124,
+            browser_entry=_entry(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_browser_verifier_unavailable_fails_closed() -> None:
+    """Missing or unavailable verifiers propagate typed errors without legacy fallback."""
+    wrapper = _wrapper()
+    with pytest.raises(BrowserVerifierUnavailableError):
+        await wrapper._complete_auth_payload(
+            {"auth_method": "basic", "token": "token"},
+            telegram_id=88123,
+            chat_id=88124,
+            browser_entry=_entry(),
+        )
+
+    verifier = MagicMock()
+    verifier.verify = AsyncMock(side_effect=BrowserVerifierUnavailableError("offline"))
+    register_browser_identity_verifier(wrapper.app, bot_id="7001", auth_method="basic", verifier=verifier)
+    with pytest.raises(BrowserVerifierUnavailableError):
+        await wrapper._complete_auth_payload(
+            {"auth_method": "basic", "token": "token"},
+            telegram_id=88123,
+            chat_id=88124,
+            browser_entry=_entry(),
+        )
+    wrapper._auth_strategy.handle_callback.assert_not_awaited()
+    assert wrapper._user_sessions == {}
+
+
+@pytest.mark.asyncio
+async def test_browser_mode_combined_post_auth() -> None:
+    """Browser combined login stages a candidate with entry-owned chat correlation."""
+    wrapper = _wrapper(post_auth=True)
+    verifier = MagicMock()
+    verifier.verify = AsyncMock(return_value=VerifiedBrowserIdentity(user_id="42", display_name="Alice"))
+    register_browser_identity_verifier(wrapper.app, bot_id="7001", auth_method="basic", verifier=verifier)
+
+    assert await wrapper._complete_auth_payload(
+        {"auth_method": "basic", "token": "verified-token"},
+        telegram_id=88123,
+        chat_id=88124,
+        browser_entry=_entry(),
+    )
+
+    candidate = wrapper._begin_login_attempt.await_args.args[0]
+    assert candidate.nav_user_id == "42"
+    assert wrapper._begin_login_attempt.await_args.kwargs["chat_id"] == 88124
+    assert wrapper._user_sessions == {}
