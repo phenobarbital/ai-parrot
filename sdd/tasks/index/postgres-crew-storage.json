@@ -150,7 +150,7 @@
       "feature_id": "FEAT-860",
       "feature": "postgres-crew-storage",
       "spec": "sdd/specs/postgres-crew-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -160,8 +160,9 @@
       "parallelism_notes": "Consumes CrewDefinitionStorage/CrewMigrationReport from TASK-5447 and serializes modifications of definition_storage.py and test_crew_definition_storage.py.",
       "assigned_to": null,
       "started_at": "2026-11-09T19:16:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5448-crew-redis-postgres-migration.md"
+      "completed_at": "2026-11-09T21:43:41+00:00",
+      "file": "sdd/tasks/completed/TASK-5448-crew-redis-postgres-migration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5449",
