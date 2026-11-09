@@ -16,14 +16,14 @@
       "feature_id": "BRIEF-legacy-sandbox-shell-prefix",
       "feature": "legacy-sandbox-shell-prefix",
       "spec": "sdd/briefs/legacy-sandbox-shell-prefix.brief.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "creates shell_prefix.py; every later task imports it",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T21:50:27+00:00",
       "completed_at": null,
       "file": "sdd/briefs/legacy-sandbox-shell-prefix/tasks/HOTFIX-legacy-sandbox-shell-prefix-1-prefix-runtime.md"
     },
@@ -34,7 +34,7 @@
       "feature_id": "BRIEF-legacy-sandbox-shell-prefix",
       "feature": "legacy-sandbox-shell-prefix",
       "spec": "sdd/briefs/legacy-sandbox-shell-prefix.brief.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": false,
       "parallelism_notes": "modifies native_claude_sandbox.py and worktree_environment.py, which task 3 also edits",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T21:50:27+00:00",
       "completed_at": null,
       "file": "sdd/briefs/legacy-sandbox-shell-prefix/tasks/HOTFIX-legacy-sandbox-shell-prefix-2-launcher-and-hook.md"
     },
@@ -54,7 +54,7 @@
       "feature_id": "BRIEF-legacy-sandbox-shell-prefix",
       "feature": "legacy-sandbox-shell-prefix",
       "spec": "sdd/briefs/legacy-sandbox-shell-prefix.brief.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -63,7 +63,7 @@
       "parallel": false,
       "parallelism_notes": "edits shell_prefix.py, worktree_environment.py and native_claude_sandbox.py after task 2",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T21:50:27+00:00",
       "completed_at": null,
       "file": "sdd/briefs/legacy-sandbox-shell-prefix/tasks/HOTFIX-legacy-sandbox-shell-prefix-3-rtk-in-prefix.md"
     },
@@ -74,7 +74,7 @@
       "feature_id": "BRIEF-legacy-sandbox-shell-prefix",
       "feature": "legacy-sandbox-shell-prefix",
       "spec": "sdd/briefs/legacy-sandbox-shell-prefix.brief.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -83,7 +83,7 @@
       "parallel": false,
       "parallelism_notes": "needs the finished prefix to measure and document it",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T21:50:27+00:00",
       "completed_at": null,
       "file": "sdd/briefs/legacy-sandbox-shell-prefix/tasks/HOTFIX-legacy-sandbox-shell-prefix-4-qualify-and-document.md"
     }
