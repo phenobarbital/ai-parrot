@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-855 — PageIndex Layout Structure Fixes
 **Spec**: `sdd/specs/pageindex-layout-structure-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -343,8 +343,15 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude (Opus 5.5) — /sdd-fix session agent:sdd-fix:cdd27bba
+**Date**: 2026-11-09
+**Notes**: Implemented as blueprinted: `BOOKMARK_MAX_DROPPED_SHARE`, `_keep_page_order` (patience sort), 3-tuple
+`_read_bookmarks` (collect → drop → normalize → check; messages unchanged), `LayoutProfile.bookmarks_dropped` with an
+INFO log, `CandidateScore.dropped` set in both `score_bookmarks` returns. Tests: `test_keep_page_order_longest_subsequence`,
+`test_bookmarks_out_of_order_entry_dropped`, `test_bookmarks_too_many_out_of_order_rejected`,
+`test_bookmarks_dropped_recorded_in_profile` (synthetic PDF), `test_score_bookmarks_reports_dropped`; the unpacking
+test updated. Validation: test_layout.py + test_layout_structure.py + test_layout_eval.py → 31 passed; ruff clean.
+The first draft of the profile test used 20 level-1 one-per-page entries, which the existing per-page-enumeration
+rule (correctly) rejects; the test now mixes levels on 30 pages.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
