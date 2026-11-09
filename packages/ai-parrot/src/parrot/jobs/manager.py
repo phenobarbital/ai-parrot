@@ -7,6 +7,7 @@ status monitoring, and result retrieval.
 When a ``RedisJobStore`` is provided at construction time the manager mirrors
 every job mutation to Redis, making jobs durable across server restarts.
 """
+
 from typing import Dict, Optional, Callable, Awaitable, Any, TYPE_CHECKING
 import asyncio
 import uuid
@@ -72,9 +73,7 @@ class JobManager:
                     await self._store.connect()
                     self.logger.info("RedisJobStore connected")
                 except Exception as exc:  # pylint: disable=broad-except
-                    self.logger.warning(
-                        "RedisJobStore connection failed — jobs will be in-memory only: %s", exc
-                    )
+                    self.logger.warning("RedisJobStore connection failed — jobs will be in-memory only: %s", exc)
                     self._store = None
 
     async def stop(self) -> None:
@@ -312,9 +311,7 @@ class JobManager:
                     self.jobs[job_id] = job
                     return job
             except Exception as exc:  # pylint: disable=broad-except
-                self.logger.warning(
-                    "RedisJobStore.get failed for job %s: %s", job_id, exc
-                )
+                self.logger.warning("RedisJobStore.get failed for job %s: %s", job_id, exc)
 
         return None
 
@@ -362,13 +359,9 @@ class JobManager:
         """
         if self._store is not None:
             try:
-                return await self._store.list_jobs(
-                    obj_id=obj_id, status=status, limit=limit
-                )
+                return await self._store.list_jobs(obj_id=obj_id, status=status, limit=limit)
             except Exception as exc:  # pylint: disable=broad-except
-                self.logger.warning(
-                    "RedisJobStore.list_jobs failed, falling back to memory: %s", exc
-                )
+                self.logger.warning("RedisJobStore.list_jobs failed, falling back to memory: %s", exc)
         return self.list_jobs(obj_id=obj_id, status=status, limit=limit)
 
     def delete_job(self, job_id: str) -> bool:
@@ -414,9 +407,7 @@ class JobManager:
         jobs_to_delete = [
             job_id
             for job_id, job in self.jobs.items()
-            if job.completed_at
-            and (now - job.completed_at) > ttl_delta
-            and job.status in terminal_statuses
+            if job.completed_at and (now - job.completed_at) > ttl_delta and job.status in terminal_statuses
         ]
 
         for job_id in jobs_to_delete:
@@ -485,9 +476,7 @@ class JobManager:
         async def async_execution_wrapper() -> Any:
             if asyncio.iscoroutinefunction(func):
                 return await func(*args, **kwargs)
-            return await asyncio.get_running_loop().run_in_executor(
-                None, lambda: func(*args, **kwargs)
-            )
+            return await asyncio.get_running_loop().run_in_executor(None, lambda: func(*args, **kwargs))
 
         job = self.create_job(
             job_id=job_id,

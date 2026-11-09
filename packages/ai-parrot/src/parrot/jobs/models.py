@@ -1,10 +1,12 @@
 from typing import Optional, Union, Dict, Any
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from enum import Enum
 from dataclasses import dataclass, field
 
+
 class JobStatus(str, Enum):
     """Status of async job execution."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -15,6 +17,7 @@ class JobStatus(str, Enum):
 @dataclass
 class Job:
     """Represents an asynchronous execution job."""
+
     job_id: str
     obj_id: str
     query: Union[str, Dict[str, str]]
@@ -53,20 +56,20 @@ class Job:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
-            'job_id': self.job_id,
-            'obj_id': self.obj_id,
-            'status': self.status.value,
-            'query': self.query,
-            'result': self.result,
-            'error': self.error,
-            'created_at': self.created_at.isoformat(),
-            'started_at': self.started_at.isoformat() if self.started_at else None,
-            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
-            'elapsed_time': self.elapsed_time,
-            'execution_mode': self.execution_mode,
-            'user_id': self.user_id,
-            'session_id': self.session_id,
-            'metadata': self.metadata
+            "job_id": self.job_id,
+            "obj_id": self.obj_id,
+            "status": self.status.value,
+            "query": self.query,
+            "result": self.result,
+            "error": self.error,
+            "created_at": self.created_at.isoformat(),
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "elapsed_time": self.elapsed_time,
+            "execution_mode": self.execution_mode,
+            "user_id": self.user_id,
+            "session_id": self.session_id,
+            "metadata": self.metadata,
         }
 
     @property
@@ -111,7 +114,6 @@ class Job:
         For your in-memory JobManager, this is a no-op since
         we're working with the same object reference.
         """
-        pass
 
     def __repr__(self) -> str:
         return f"Job(id={self.id}, status={self.get_status()})"

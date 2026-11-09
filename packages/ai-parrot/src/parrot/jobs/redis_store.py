@@ -17,6 +17,7 @@ An additional sorted-set keeps track of all known job IDs so that
 TTL is applied to individual job hashes after they reach a terminal state
 (completed, failed, cancelled).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -111,9 +112,7 @@ def _deserialize_job(data: Dict[str, str]) -> Optional[Job]:
         )
         return job
     except Exception as exc:  # pylint: disable=broad-except
-        logging.getLogger("Parrot.RedisJobStore").error(
-            "Failed to deserialize job: %s | data=%s", exc, data
-        )
+        logging.getLogger("Parrot.RedisJobStore").error("Failed to deserialize job: %s | data=%s", exc, data)
         return None
 
 
@@ -136,6 +135,7 @@ class RedisJobStore:
         if redis_url is None:
             try:
                 from parrot.conf import REDIS_SERVICES_URL  # pylint: disable=import-outside-toplevel
+
                 redis_url = REDIS_SERVICES_URL
             except ImportError:
                 redis_url = "redis://localhost:6379/4"
