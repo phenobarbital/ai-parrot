@@ -101,6 +101,117 @@ def _preflight_sandbox(worktree: Path, allowed_domains: Sequence[str]) -> None:
         raise LaunchError(1, f"native sandbox unavailable ({exc}); refusing to launch") from exc
 
 
+OFFICIAL_AGY_INSTALL = "curl -fsSL https://antigravity.google/cli/install.sh | bash"
+
+_SNAP_WRAPPER_READ_LIMIT = 4096
+
+
+def resolve_agy() -> Path:
+    """Locate the ``agy`` the launch would exec.
+
+    Returns:
+        The path ``shutil.which`` found for ``agy``.
+
+    Raises:
+        LaunchError: Exit code 1 when ``agy`` is not on ``PATH``.
+    """
+    found = shutil.which("agy")
+    if found is None:
+        raise LaunchError(1, f"missing host prerequisite(s): agy — install the official build: {OFFICIAL_AGY_INSTALL}")
+    return Path(found)
+
+
+def agy_is_snap(agy: Path) -> bool:
+    """Tell whether ``agy`` is the community snap.
+
+    True when ``agy`` (as given or after symlink resolution) lives under ``/snap/``, when it resolves to the
+    ``snap`` binary itself (the ``snap run`` wrapper, ``/usr/bin/snap``), or when it is a small text wrapper
+    script that invokes ``snap run``.
+
+    Args:
+        agy: The ``agy`` path found on ``PATH``.
+
+    Returns:
+        Whether the launch would exec the community snap.
+    """
+    if str(agy).startswith("/snap/"):
+        return True
+    try:
+        resolved = agy.resolve()
+    except (OSError, RuntimeError):
+        resolved = agy
+    if str(resolved).startswith("/snap/") or resolved.name == "snap":
+        return True
+    try:
+        with open(resolved, "rb") as handle:
+            head = handle.read(_SNAP_WRAPPER_READ_LIMIT)
+    except OSError:
+        return False
+    if b"\0" in head:  # a binary: never a text wrapper
+        return False
+    try:
+        text = head.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return "snap run" in text
+
+
+def require_official_agy(agy: Path) -> None:
+    """Refuse the community snap, naming the official install command.
+
+    Args:
+        agy: The ``agy`` path found on ``PATH``.
+
+    Raises:
+        LaunchError: Exit code 2 when ``agy`` is the community snap.
+    """
+    if agy_is_snap(agy):
+        raise LaunchError(
+            2,
+            f"{agy} is the community antigravity-cli snap, which cannot run the SDD flow (no project Python, "
+            f"bwrap or ssh inside its confinement). Install the official agy instead: {OFFICIAL_AGY_INSTALL}",
+        )
+
+
+def google_worker_sandbox(sandbox: str | None, allowed_domains: Sequence[str]) -> str:
+    """Select the Google worker's sandbox backend, failing closed before ``agy`` starts.
+
+    Args:
+        sandbox: The requested sandbox mode; ``None`` means ``required``.
+        allowed_domains: Configured network-domain restrictions (unsupported for Google).
+
+    Returns:
+        Always :data:`native_claude_sandbox.BACKEND_BUBBLEWRAP`.
+
+    Raises:
+        LaunchError: Exit code 2 for ``off``, an invalid mode or domain restrictions; exit code 1 for a
+            non-Linux platform, a missing ``bwrap`` or a failed Bubblewrap capability probe.
+    """
+    mode = (sandbox or "required").strip().lower()
+    if mode == "off":
+        raise LaunchError(2, "--sandbox off is not allowed for the unattended Google worker")
+    if mode not in native_claude_sandbox.SANDBOX_MODES:
+        raise LaunchError(2, f"invalid sandbox mode: {sandbox}")
+    if allowed_domains:
+        raise LaunchError(
+            2,
+            "network domain restrictions are not supported with --host google (the Bubblewrap wrapper does not "
+            "isolate the network); remove --sandbox-allow-domain and the configured domains",
+        )
+    platform = native_claude_sandbox.sandbox_platform()
+    if platform != "linux":
+        raise LaunchError(
+            1, f"the Google worker requires the Bubblewrap sandbox, which is Linux-only (platform: {platform})"
+        )
+    bwrap = shutil.which("bwrap")
+    if bwrap is None:
+        raise LaunchError(1, "missing host prerequisite(s): bwrap — the Google worker requires Bubblewrap")
+    usable, reason = native_claude_sandbox._bwrap_probe(bwrap)
+    if not usable:
+        raise LaunchError(1, f"Bubblewrap probe failed ({reason}); refusing to launch agy")
+    return native_claude_sandbox.BACKEND_BUBBLEWRAP
+
+
 def resolve_primary_checkout(cwd: Path) -> Path:
     """Resolve the primary checkout that owns ``cwd``'s Git directory."""
     try:
