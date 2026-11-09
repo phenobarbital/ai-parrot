@@ -137,7 +137,7 @@
       "feature_id": "FEAT-858",
       "feature": "bookstore-agentic-retrieval",
       "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -147,8 +147,9 @@
       "parallelism_notes": "TASK-5430: serializes overlapping writes to packages/ai-parrot/src/parrot/knowledge/bookstore/library.py",
       "assigned_to": null,
       "started_at": "2026-11-09T17:17:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5431-bookstore-doctor.md"
+      "completed_at": "2026-11-09T18:08:46+00:00",
+      "file": "sdd/tasks/completed/TASK-5431-bookstore-doctor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5432",
