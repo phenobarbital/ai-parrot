@@ -29,7 +29,7 @@ else:  # run as a script: this file's directory is sys.path[0]
 POLICY_ENV = "PARROT_SDD_SHELL_PREFIX_POLICY"
 TOKEN_ENV = "PARROT_SDD_SHELL_PREFIX_TOKEN"
 _POLICY_KEYS = {"schema_version", "mode", "worktree", "hook_commands", "mcp_argv", "rtk"}
-_EVAL_PAYLOAD = re.compile(r''' && eval (?P<word>(?:'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s'"<])+?) < /dev/null''')
+_EVAL_PAYLOAD = re.compile(r""" && eval (?P<word>(?:'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s'"<])+?) < /dev/null""")
 
 
 @dataclass(frozen=True)
