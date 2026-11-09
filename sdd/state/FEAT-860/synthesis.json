@@ -1,0 +1,672 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-860",
+  "mode": "enrichment",
+  "summary_oneline": "Add a Postgres CrewDefinition store (navigator.crew_definitions) beside CrewRedis, initialized after Redis, with a migration=True flag that copies existing Redis crews into Postgres and rehydrates crews from it.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/crew/redis_persistence.py",
+      "symbol": "CrewRedis",
+      "lines": "17-587",
+      "role": "the only CrewDefinition store today; its 7 BotManager-used methods are the contract a Postgres store must mirror",
+      "evidence": [
+        "F001",
+        "F014"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/crew/redis_persistence.py",
+      "symbol": "CrewRedis._deserialize_crew",
+      "lines": "180-218",
+      "role": "read-side compatibility (unknown-key stripping) that Postgres reads must share",
+      "evidence": [
+        "F001",
+        "F011"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/crew/redis_persistence.py",
+      "symbol": "CrewRedis.list_all_crews",
+      "lines": "397-419",
+      "role": "enumeration of every (tenant, name) incl. legacy global keys \u2014 the migration source iterator",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+      "symbol": "BotManager.__init__",
+      "lines": "227-271",
+      "role": "builds self.crew_redis when enable_crews; where a second store is wired",
+      "evidence": [
+        "F002",
+        "F015"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+      "symbol": "BotManager.load_crews",
+      "lines": "3457-3502",
+      "role": "startup rehydration of all tenants' crews; natural hook for 'init Redis, then Postgres, then migrate'",
+      "evidence": [
+        "F002",
+        "F018"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+      "symbol": "BotManager.add_crew",
+      "lines": "3255-3292",
+      "role": "write-through save (error logged, memory-only fallback)",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+      "symbol": "BotManager.get_crew",
+      "lines": "3294-3367",
+      "role": "cache miss -> load_crew -> load_crew_by_id rehydration",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+      "symbol": "BotManager.remove_crew",
+      "lines": "3383-3429",
+      "role": "delete path (also half of the HTTP PUT update)",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+      "symbol": "BotManager.sync_crews",
+      "lines": "3504-3555",
+      "role": "cross-worker reconciliation via list_all_crews before listing",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/crew_definition.py",
+      "symbol": "CrewDefinition",
+      "lines": "216-309",
+      "role": "persisted model: crew_id uuid4 str, tenant default 'global', name; extra='forbid'",
+      "evidence": [
+        "F003",
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/models/ui_surfaces.py",
+      "symbol": "PgUISurfaceStore",
+      "lines": "457-520",
+      "role": "closest navigator.* store pattern: default_dsn, ensure_schema, CREATE SCHEMA IF NOT EXISTS navigator, ON CONFLICT upsert",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/core/storage/backends/postgres.py",
+      "symbol": "PostgresResultStorage._ensure_table",
+      "lines": "58-110",
+      "role": "lazy idempotent DDL precedent for crews; its _TABLE_RE rejects schema-qualified names",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/conf.py",
+      "symbol": "ENABLE_CREWS",
+      "lines": "96",
+      "role": "only flag gating crew-definition persistence; new backend/migration keys go here",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/recipes/migrate.py",
+      "symbol": "migrate_store",
+      "lines": "101-135",
+      "role": "idempotent sweep + dry_run + MigrationReport precedent for the migration loop",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/studio/storage/backend.py",
+      "symbol": "ensure_studio_storage",
+      "lines": "155",
+      "role": "backend-selection precedent: explicit setting, probe, fail-closed",
+      "evidence": [
+        "F021"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/tests/studio/storage/test_storage_gates.py",
+      "symbol": "test_load_database_bots_untouched",
+      "lines": "268-283",
+      "role": "FEAT-621 gates: creation.sql and _load_database_bots frozen; no migration at startup (Studio scope)",
+      "evidence": [
+        "F018"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/tests/test_botmanager_flags.py",
+      "symbol": "test_enable_crews_true_creates_crew_redis",
+      "lines": "186-194",
+      "role": "pins bm.crew_redis and the CrewRedis patch target",
+      "evidence": [
+        "F015",
+        "F008"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "BotManager is the only production consumer of CrewRedis and uses 7 methods: save_crew, load_crew, load_crew_by_id, delete_crew, ping, get_all_crews, list_all_crews",
+      "evidence": [
+        "F002"
+      ],
+      "implication": "a Postgres store (or a dual-store facade) must offer exactly these with the same return conventions; handlers and other get_crew consumers stay untouched"
+    },
+    {
+      "statement": "Crew identity is (tenant, name) with a secondary (tenant, crew_id) index; None normalizes to 'global'; legacy un-tenanted keys are read only for 'global'",
+      "evidence": [
+        "F001",
+        "F003"
+      ],
+      "implication": "the table needs UNIQUE (tenant, name) and UNIQUE (tenant, crew_id); the migration must enumerate legacy global crews too (list_all_crews already does)"
+    },
+    {
+      "statement": "Stored crews stay loadable only because CrewRedis._deserialize_crew strips unknown keys before CrewDefinition(**dict) under extra='forbid'",
+      "evidence": [
+        "F001",
+        "F011"
+      ],
+      "implication": "Postgres reads must reuse the same compatibility step \u2014 extract it to a shared helper rather than duplicate it"
+    },
+    {
+      "statement": "CrewDefinition keeps gaining fields (ToolNode, execution wiki, infographic theme) and a column-per-field table already caused total load failure for navigator.ai_bots",
+      "evidence": [
+        "F012",
+        "F006"
+      ],
+      "implication": "store the whole model_dump(mode='json') in one jsonb column and promote only identity/listing columns"
+    },
+    {
+      "statement": "Two DDL policies coexist: in-module auto-create (PgUISurfaceStore, PostgresResultStorage) and migration-files-only with no migration at startup (Studio, FEAT-621 gates scoped to the Studio stack)",
+      "evidence": [
+        "F005",
+        "F016",
+        "F018",
+        "F004"
+      ],
+      "implication": "the spec must pick one for navigator.crew_definitions; creation.sql and BotManager._load_database_bots are byte-frozen and must not be edited"
+    },
+    {
+      "statement": "PostgresResultStorage validates table names with ^[a-z_][a-z0-9_]*$, which rejects navigator.crew_definitions",
+      "evidence": [
+        "F004"
+      ],
+      "implication": "do not reuse that helper; follow the PgUISurfaceStore schema-qualified DDL idiom"
+    },
+    {
+      "statement": "CrewRedis is built in BotManager.__init__, before the aiohttp app and its app['database'] pool exist; default_dsn can be None",
+      "evidence": [
+        "F006",
+        "F007",
+        "F002"
+      ],
+      "implication": "the Postgres store must connect lazily (AsyncDB per call with a DSN) or be created in on_startup, and must define behaviour when no DSN is configured"
+    },
+    {
+      "statement": "BotManager.load_crews runs in every gunicorn worker at startup",
+      "evidence": [
+        "F002",
+        "F010"
+      ],
+      "implication": "a startup migration must be idempotent (ON CONFLICT upsert) and serialized (pg advisory lock), with per-crew error isolation and a report"
+    },
+    {
+      "statement": "Persistence errors are swallowed: CrewRedis returns False/None and BotManager logs and keeps the crew memory-only",
+      "evidence": [
+        "F001",
+        "F002"
+      ],
+      "implication": "a silent Postgres write failure during a 'move' could lose crews if Redis is cleaned afterwards"
+    },
+    {
+      "statement": "Tests pin bm.crew_redis and patch parrot.manager.manager.CrewRedis",
+      "evidence": [
+        "F015",
+        "F008"
+      ],
+      "implication": "keep the crew_redis attribute (or update test_botmanager_flags.py) and add a sibling patch target for the Postgres store"
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      "A Postgres CrewDefinition store in handlers/crew/ (e.g. CrewPostgres) over navigator.crew_definitions: tenant, name, crew_id, description, execution_mode, definition jsonb, created_at/updated_at timestamptz; UNIQUE (tenant, name), UNIQUE (tenant, crew_id); the 7 BotManager methods + close; save = INSERT ... ON CONFLICT (tenant, name) DO UPDATE",
+      "DDL for navigator.crew_definitions (in-module ensure_schema and/or a crew_definitions_creation.sql file \u2014 U4)",
+      "A dual-store composition that initializes Redis, then Postgres, and routes reads/writes per the chosen source-of-truth policy (U1)",
+      "A migration routine (Redis -> Postgres) driven by migration=True: iterate list_all_crews + load_crew, upsert, per-crew report, optional dry_run, advisory lock (U2, U3)",
+      "Config keys following the CREW_RESULT_STORAGE* precedent (e.g. CREW_DEFINITION_STORAGE, CREW_DEFINITION_PG_DSN, CREW_DEFINITION_MIGRATION) with BotManager kwarg overrides (U5)",
+      "A shared deserialization helper extracted from CrewRedis._strip_unknown_keys/_deserialize_crew",
+      "Unit tests with a fake AsyncDB (PgUISurfaceStore pattern), a live test gated on a DSN env var, and migration tests"
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+        "symbol": "BotManager.__init__ / load_crews / add_crew / get_crew / remove_crew / sync_crews",
+        "change": "construct and call the dual store; run the migration from load_crews when enabled",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-server/src/parrot/handlers/crew/redis_persistence.py",
+        "symbol": "CrewRedis._deserialize_crew",
+        "change": "delegate to the shared compatibility helper",
+        "evidence": [
+          "F001",
+          "F011"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/conf.py",
+        "symbol": "ENABLE_CREWS",
+        "change": "add the crew-definition backend / DSN / migration keys next to it",
+        "evidence": [
+          "F007"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-server/src/parrot/handlers/crew/README_BOTMANAGER_PERSISTENCE.md",
+        "symbol": "## Key Format / ## Migration",
+        "change": "fix the stale pre-tenant key layout and document the Postgres backend + migration flag (same for README_REDIS_PERSISTENCE.md)",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/tests/test_botmanager_flags.py",
+        "symbol": "test_enable_crews_true_creates_crew_redis",
+        "change": "cover the second store's construction and patch target",
+        "evidence": [
+          "F015"
+        ]
+      }
+    ],
+    "untouched": [
+      "CrewHandler HTTP surface (/api/v1/crew GET/PUT/DELETE; no PATCH added here)",
+      "Execution results: PostgresResultStorage / crew_executions (FEAT-147/FEAT-307)",
+      "packages/ai-parrot-server/src/parrot/handlers/creation.sql and BotManager._load_database_bots (FEAT-621 AC17 frozen)",
+      "CrewDefinition model fields",
+      "The Studio migration runner (apply_studio_migrations)"
+    ],
+    "patterns": [
+      {
+        "pattern": "PgUISurfaceStore: AsyncDB('pg', dsn=default_dsn) per call, _DDL_STATEMENTS with CREATE SCHEMA IF NOT EXISTS navigator, ensure_schema tolerating races, ON CONFLICT upsert",
+        "evidence": [
+          "F005"
+        ]
+      },
+      {
+        "pattern": "migrate_store: idempotent sweep, per-item try/except into a report, dry_run never writes",
+        "evidence": [
+          "F010"
+        ]
+      },
+      {
+        "pattern": "Config flag + constructor override (FEAT-042 BotManager flags; CREW_RESULT_STORAGE* naming)",
+        "evidence": [
+          "F007",
+          "F015"
+        ]
+      },
+      {
+        "pattern": "Studio backend selection: explicit setting, read-only probe, fail closed when Postgres is required",
+        "evidence": [
+          "F021"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "risk": "Redis and Postgres diverge when both are written/read",
+        "impact": "a crew edited in one store resurrects or disappears via sync_crews",
+        "mitigation": "one source of truth after migration (U1)",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "risk": "Concurrent startup migration in every worker",
+        "impact": "duplicate work, lock contention, racing deletes if 'move' cleans Redis",
+        "mitigation": "ON CONFLICT upsert + pg advisory lock, or explicit one-shot trigger (U3)",
+        "evidence": [
+          "F010",
+          "F002"
+        ]
+      },
+      {
+        "risk": "Deleting Redis keys after a swallowed Postgres write failure",
+        "impact": "permanent loss of crew definitions",
+        "mitigation": "verify by re-reading from Postgres before any Redis delete; keep Redis by default (U2)",
+        "evidence": [
+          "F001",
+          "F002"
+        ]
+      },
+      {
+        "risk": "Stored crews that no longer validate (model validators, not unknown keys)",
+        "impact": "migration aborts or silently skips",
+        "mitigation": "per-crew error isolation and a report",
+        "evidence": [
+          "F003",
+          "F010"
+        ]
+      },
+      {
+        "risk": "Naive vs tz-aware timestamps (CrewRedis writes datetime.utcnow())",
+        "impact": "wrong created_at/updated_at in timestamptz columns",
+        "mitigation": "treat naive as UTC on write",
+        "evidence": [
+          "F003",
+          "F001"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "CrewRedis is the only CrewDefinition store; no crew_definitions table or CREW_DEFINITION_STORAGE key exists in packages/",
+      "evidence": [
+        "F014",
+        "F001",
+        "F005",
+        "F016"
+      ],
+      "confidence": "high",
+      "reasoning": "wiki + grep, confirmed by absent probes"
+    },
+    {
+      "id": "C2",
+      "statement": "BotManager is the only production caller of CrewRedis and uses 7 of its methods",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "repo-wide grep with call sites"
+    },
+    {
+      "id": "C3",
+      "statement": "load_crews eagerly rehydrates every tenant's crews at startup via get_all_crews(tenant=None)",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "read of load_crews"
+    },
+    {
+      "id": "C4",
+      "statement": "Identity is (tenant, name) with a secondary (tenant, crew_id) lookup; legacy keys apply to 'global' only",
+      "evidence": [
+        "F001",
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "read of key helpers and model fields"
+    },
+    {
+      "id": "C5",
+      "statement": "Unknown-key stripping in _deserialize_crew is what keeps historical crews loadable under extra='forbid'",
+      "evidence": [
+        "F001",
+        "F011"
+      ],
+      "confidence": "high",
+      "reasoning": "code read + commit 60811a57bd rationale"
+    },
+    {
+      "id": "C6",
+      "statement": "A jsonb document column (plus identity columns) is safer than column-per-field for CrewDefinition",
+      "evidence": [
+        "F012",
+        "F006",
+        "F003"
+      ],
+      "confidence": "medium",
+      "reasoning": "design inference from schema churn and the ai_bots drift lesson"
+    },
+    {
+      "id": "C7",
+      "statement": "PostgresResultStorage's table-name regex rejects schema-qualified names",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "anchor verified at postgres.py:19"
+    },
+    {
+      "id": "C8",
+      "statement": "PgUISurfaceStore is the closest pattern for a navigator.* store",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high",
+      "reasoning": "read of DDL list, ensure_schema and save"
+    },
+    {
+      "id": "C9",
+      "statement": "The Postgres store must connect lazily because CrewRedis is built before app['database'] exists",
+      "evidence": [
+        "F006",
+        "F002"
+      ],
+      "confidence": "medium",
+      "reasoning": "inferred from construction order; on_startup construction is also possible"
+    },
+    {
+      "id": "C10",
+      "statement": "The FEAT-621 gates do not cover handlers/crew/ but encode a 'no DDL outside migrations, no migration at startup' policy",
+      "evidence": [
+        "F018",
+        "F016"
+      ],
+      "confidence": "high",
+      "reasoning": "gate scope read directly"
+    },
+    {
+      "id": "C11",
+      "statement": "No Redis-to-Postgres data migration or migration= flag exists; migrate_store and apply_studio_migrations are the precedents",
+      "evidence": [
+        "F010",
+        "F020"
+      ],
+      "confidence": "high",
+      "reasoning": "grep + wiki query, both empty for the pattern"
+    },
+    {
+      "id": "C12",
+      "statement": "A startup migration needs idempotency and a cross-worker lock",
+      "evidence": [
+        "F010",
+        "F002"
+      ],
+      "confidence": "medium",
+      "reasoning": "inferred from multi-worker startup and the Studio runner's advisory lock"
+    },
+    {
+      "id": "C13",
+      "statement": "test_botmanager_flags.py pins bm.crew_redis and the CrewRedis patch target",
+      "evidence": [
+        "F015",
+        "F008"
+      ],
+      "confidence": "high",
+      "reasoning": "symbols verified by probe"
+    },
+    {
+      "id": "C14",
+      "statement": "Both crew persistence READMEs document the pre-tenant key layout",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read"
+    },
+    {
+      "id": "C15",
+      "statement": "CrewRedis writes naive datetime.utcnow() while the model defaults are tz-aware",
+      "evidence": [
+        "F003",
+        "F001"
+      ],
+      "confidence": "high",
+      "reasoning": "anchors at redis_persistence.py:235 and :538"
+    },
+    {
+      "id": "C16",
+      "statement": "creation.sql and _load_database_bots are byte-frozen, so crew DDL and rehydration live elsewhere",
+      "evidence": [
+        "F018",
+        "F017"
+      ],
+      "confidence": "high",
+      "reasoning": "gate test read"
+    },
+    {
+      "id": "C17",
+      "statement": "default_dsn is None when DB settings are absent; CREW_RESULT_STORAGE* is the naming precedent",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "conf.py read"
+    },
+    {
+      "id": "C18",
+      "statement": "Persistence write failures are logged and swallowed, leaving the crew memory-only",
+      "evidence": [
+        "F001",
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "save_crew / add_crew read"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Once Postgres is enabled, which store is the source of truth for reads and writes?",
+      "blocks_claims": [
+        "C3",
+        "C12"
+      ],
+      "plausible_answers": [
+        "Postgres primary for reads and writes; Redis read-only fallback for crews not yet migrated",
+        "Dual-write to both; read Postgres first, then Redis",
+        "Postgres only after migration; Redis no longer written"
+      ],
+      "ask_user": true,
+      "user_answer": "Postgres primary: reads and writes go to Postgres; Redis is a read-only fallback for crews not yet migrated."
+    },
+    {
+      "id": "U2",
+      "question": "Does 'mover' mean deleting the Redis keys after a verified copy, or copying and keeping Redis?",
+      "blocks_claims": [
+        "C18"
+      ],
+      "plausible_answers": [
+        "Copy only; keep Redis untouched (reversible)",
+        "Copy, re-read from Postgres to verify, then delete the Redis keys",
+        "Copy and mark the Redis keys as migrated (rename/TTL)"
+      ],
+      "ask_user": true,
+      "user_answer": "Copy, verify, delete: copy into Postgres, re-read each crew from Postgres to confirm it, then delete its Redis keys."
+    },
+    {
+      "id": "U3",
+      "question": "Where does the migration run?",
+      "blocks_claims": [
+        "C10",
+        "C12"
+      ],
+      "plausible_answers": [
+        "In BotManager.load_crews at startup when migration=True, serialized with a pg advisory lock",
+        "As an explicit one-shot (CLI / method) never called at startup, per the FEAT-621 policy",
+        "Both: the startup hook and the CLI call the same idempotent function"
+      ],
+      "ask_user": true,
+      "user_answer": "Startup + lock: run in BotManager.load_crews when migration=True, serialized across workers with a pg advisory lock and idempotent via upsert."
+    },
+    {
+      "id": "U4",
+      "question": "How is navigator.crew_definitions created?",
+      "blocks_claims": [
+        "C10"
+      ],
+      "plausible_answers": [
+        "Auto-created by the store (CREATE TABLE IF NOT EXISTS, PgUISurfaceStore idiom)",
+        "A crew_definitions_creation.sql applied by an operator; the store only probes",
+        "Both: the .sql file is the reference and the store ensures it idempotently"
+      ],
+      "ask_user": true,
+      "user_answer": "The store auto-creates the table (CREATE SCHEMA/TABLE IF NOT EXISTS in-module, PgUISurfaceStore idiom)."
+    },
+    {
+      "id": "U5",
+      "question": "Where do the backend and migration flags live, and which DSN does the store use?",
+      "blocks_claims": [
+        "C9",
+        "C17"
+      ],
+      "plausible_answers": [
+        "parrot.conf keys (CREW_DEFINITION_STORAGE / CREW_DEFINITION_MIGRATION / CREW_DEFINITION_PG_DSN falling back to default_dsn) with BotManager kwarg overrides",
+        "BotManager / store constructor kwargs only",
+        "Reuse default_dsn and ENABLE_CREWS; only a migration kwarg"
+      ],
+      "ask_user": true,
+      "user_answer": "Conf + kwarg: parrot.conf keys (e.g. CREW_DEFINITION_STORAGE, CREW_DEFINITION_MIGRATION, CREW_DEFINITION_PG_DSN falling back to default_dsn) overridable by BotManager/store kwargs."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and the request already fixes the architecture (Redis + Postgres store + migration flag); the open forks are policy choices (U1-U5) that the Q&A phase can settle without a brainstorm."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F014",
+      "F015",
+      "F016",
+      "F017",
+      "F018",
+      "F020",
+      "F021"
+    ],
+    "findings_unused": [
+      "F013",
+      "F019"
+    ],
+    "notes": "overall_confidence is medium because scope confidence is medium until U1-U4 are answered; median claim and localization confidence are high. One citation is ambiguous rather than wrong (utcnow anchor at redis_persistence.py:235 and :538)."
+  }
+}
