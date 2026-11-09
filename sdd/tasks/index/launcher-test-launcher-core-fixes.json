@@ -37,14 +37,14 @@
       "feature_id": "FEAT-862",
       "feature": "launcher-test-launcher-core-fixes",
       "spec": "sdd/specs/launcher-test-launcher-core-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task: modifies launcher.py + test_launcher_core.py only; no other task in this feature",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-fix session (Claude, agent:sdd-fix:88be2347)",
+      "started_at": "2026-11-09T23:06:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5453-launcher-git-c-locale.md"
     }
