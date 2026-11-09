@@ -76,6 +76,27 @@ def _worktree_config_enabled(wt: Path) -> bool:
     return proc.returncode == 0 and proc.stdout.strip().lower() == "true"
 
 
+def _common_pushurl_remedy(config: Path) -> str:
+    """Return the host command that removes a common push URL."""
+    return f"git config --file {config} --unset-all {_PUSHURL}"
+
+
+def _refuse_common_pushurl(wt: Path, config: Path) -> None:
+    """Refuse when the common config sets a push URL that every checkout inherits.
+
+    ``git remote set-url --push`` run from a worktree writes the common ``.git/config``, so a
+    "restored" ``no_push`` there blocks the primary checkout and every sibling. Removing only the
+    worktree-local value would leave that block in place, so stop and name the remedy instead.
+    """
+    values = _common_values(wt, config, _PUSHURL)
+    if values:
+        raise SyncError(
+            EXIT_TARGET,
+            f"common {_PUSHURL} is set ({', '.join(values)}); it blocks every checkout. "
+            f"Never use `git remote set-url --push` from a worktree. Host remedy: {_common_pushurl_remedy(config)}",
+        )
+
+
 def enable(wt: Path) -> str:
     """Make ``remote.origin.pushurl=no_push`` the sole effective push URL of one linked worktree.
 
@@ -124,10 +145,12 @@ def disable(wt: Path) -> str:
         Operator-facing summary.
 
     Raises:
-        SyncError: In a sandbox (exit 5), or when Git refuses the removal (exit 2).
+        SyncError: In a sandbox (exit 5), when a common push URL would still block the push
+            (exit 2, nothing written), or when Git refuses the removal (exit 2).
     """
     _require_host("disable")
-    _common_config(wt)
+    config = _common_config(wt)
+    _refuse_common_pushurl(wt, config)
     if not _worktree_config_enabled(wt):
         return "push protection not enabled"
     proc = _git(wt, "config", "--worktree", "--unset-all", _PUSHURL)
@@ -157,6 +180,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             message = disable(wt)
         else:
             message = "protected" if push_protection_ok(wt) else "not protected"
+            common = _common_config(wt)
+            values = _common_values(wt, common, _PUSHURL)
+            if values:
+                message += (
+                    f"; common {_PUSHURL} is set ({', '.join(values)}), remove it with: "
+                    f"{_common_pushurl_remedy(common)}"
+                )
         result = PushProtectionResult(
             worktree=worktree, action=args.action, protected=push_protection_ok(wt), exit_code=EXIT_OK, message=message
         )

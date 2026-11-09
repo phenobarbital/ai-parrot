@@ -561,6 +561,7 @@ fi
 # Contamination is reported, not repaired here, and does not block the code PR.
 # FEAT-813: a sandboxed worker left `remote.origin.pushurl=no_push` on this worktree; drop it
 # (idempotent, a no-op when never enabled) so the host push below can reach origin.
+# Never use 'git remote set-url --push' or 'git config remote.origin.pushurl' to get past the guard: from a worktree they write the shared '.git/config' and block every checkout (issue:d0c89274743b). If 'push-protection disable' refuses, stop and report its message to the operator.
 parrot sdd worktree push-protection disable "<worktree-path>" || echo "⚠️  push-protection disable failed; push may be refused"
 git -C <worktree-path> push origin "$BRANCH"
 ```
