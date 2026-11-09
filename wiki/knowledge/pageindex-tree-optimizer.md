@@ -80,10 +80,31 @@ Tokens are always counted over the segments a node **owns** (its `owned` ranges)
    segment kinds are not changed (the segmenter still types those lines `paragraph`).
    Repeat counts are keyed by `running_key` (casefold, digit runs collapsed to `#`), so a running footer that differs
    only by its page number (`CHAPTER THREE PAGE 19`, `APPENDIX C PAGE 428`) counts as one repeated title and is
-   ignored once it occurs more than `PSEUDO_HEADING_MAX_REPEATS` times. Pieces created from a paged revision (a PDF)
+   ignored once it occurs more than `PSEUDO_HEADING_MAX_REPEATS` times.
+   That count only sees one leaf, and a two- or three-page piece holds its footer once or twice, so a paged revision
+   also has **document running lines** (FEAT-859, `issue:5a605ae51f61`): `document_running_keys(revision)` returns
+   the `running_key` of every paragraph title that sits on more than `PSEUDO_HEADING_MAX_REPEATS` distinct pages,
+   never twice on one page, and covers at least `RUNNING_LINE_MIN_DENSITY` (0.8) of the page range it spans.
+   `pseudo_heading_segments` drops those titles in any leaf. `plan_deterministic` computes the set once per document
+   (a document has one root per top-level section) and passes it to `expand_at_headings`, which hands it down the
+   recursion (`running_keys`; called without it, each function computes it itself). A page footer covers its whole range once per page; a real
+   heading repeated through a book does not (Kant's `PRIMERA SECCIÓN` covers 0.03 of its range, numbered chapters
+   0.30), and reference labels such as `[SP 800-39]` stack on one page, so both stay with the per-leaf rule. An
+   unpaged revision has no document running lines. Pieces created from a paged revision (a PDF)
    carry `start_index` (page of the first owned segment) and `end_index` (page of the last owned segment); pieces
    of an unpaged revision (ebook, markdown) carry neither key. Every split — layout or LLM —
    moves the split leaf's key items onto the piece that now owns their anchor.
+   A leaf with neither a heading nor a pseudo-heading split point can still be one long table (FEAT-861,
+   `issue:f31b01d845b0`): table rows are `table` segments, and the only repeated line inside, the page footer, is
+   ignored. When `table` segments hold at least `TABLE_SPLIT_MIN_SHARE` (0.5) of the leaf's owned tokens and sit on at
+   least two pages, `table_page_splits` splits the leaf at page boundaries: the first `table` segment, then the first
+   owned segment of each later page. Pages are packed **from the last page backward** up to `target_leaf_tokens`, so a
+   short trailing page (often just the next page's running header) joins the piece before it instead of pushing a
+   piece over the target or vetoing the split, and the points then go through the same `min_leaf_tokens` coalescing.
+   The text before the table (its title, a lead-in paragraph) stays with the parent. Each piece is titled after the
+   leaf plus its page range — `TABLE C-17: SYSTEM AND SERVICES ACQUISITION FAMILY (page 481)`, `… (pages 484-485)`,
+   PDF page indexes like `start_index` / `end_index` — passed to `split_at(..., titles=…)`; the expand action's source
+   stays `"layout"`. A table on a single page and a single `table` segment larger than the target are not split.
 5. **LLM heading pass** (live model and `llm_passes` only). Only the leaf's heading-like segments are sent, framed
    and windowed under `LLM_INPUT_BUDGET_TOKENS` (see [Framing](#framing)); a leaf without any makes no call. The model
    returns segment numbers of printed sub-headings. A proposal is accepted only when it names a segment the leaf owns
