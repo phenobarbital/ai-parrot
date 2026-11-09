@@ -220,7 +220,7 @@
       "feature_id": "FEAT-858",
       "feature": "bookstore-agentic-retrieval",
       "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -230,8 +230,9 @@
       "parallelism_notes": "TASK-5431: consumes Bookstore.doctor; agentic_retrieve is available transitively",
       "assigned_to": null,
       "started_at": "2026-11-09T17:17:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5435-bookstore-ask-doctor-cli.md"
+      "completed_at": "2026-11-09T18:15:37+00:00",
+      "file": "sdd/tasks/completed/TASK-5435-bookstore-ask-doctor-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5436",
