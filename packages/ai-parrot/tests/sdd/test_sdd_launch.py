@@ -1416,9 +1416,7 @@ def test_google_worker_sandbox_failed_probe_fails(monkeypatch: pytest.MonkeyPatc
     assert "userns denied" in str(error.value)
 
 
-def _capture_agy_exec(
-    monkeypatch: pytest.MonkeyPatch, agy: str | None = "/home/u/.local/bin/agy"
-) -> dict[str, object]:
+def _capture_agy_exec(monkeypatch: pytest.MonkeyPatch, agy: str | None = "/home/u/.local/bin/agy") -> dict[str, object]:
     """Mock AGY discovery and exec without resolving a symlink into ``/snap``."""
     seen: dict[str, object] = {}
     monkeypatch.setattr(launcher.shutil, "which", lambda name: agy if name == "agy" else None)
