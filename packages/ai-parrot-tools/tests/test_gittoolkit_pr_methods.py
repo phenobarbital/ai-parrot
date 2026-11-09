@@ -679,8 +679,10 @@ def _page_calls(tk, method, pages, **kwargs):
 
 def test_list_pull_request_files_paginates() -> None:
     pages = [
-        [{"filename": f"a{i}", "status": "modified", "additions": 1, "deletions": 0, "changes": 1, "patch": "p"}
-         for i in range(100)],
+        [
+            {"filename": f"a{i}", "status": "modified", "additions": 1, "deletions": 0, "changes": 1, "patch": "p"}
+            for i in range(100)
+        ],
         [{"filename": f"b{i}", "status": "added"} for i in range(20)],
     ]
     result, calls = _page_calls(_toolkit(), "list_pull_request_files", pages)
@@ -696,24 +698,64 @@ def test_list_pull_request_files_paginates() -> None:
 
 
 def test_list_pull_request_comments_shapes_author_type() -> None:
-    pages = [[{"id": 1, "user": {"login": "bot[bot]", "type": "Bot"}, "body": "hi",
-               "created_at": "t", "html_url": "u", "extra": 1}]]
+    pages = [
+        [
+            {
+                "id": 1,
+                "user": {"login": "bot[bot]", "type": "Bot"},
+                "body": "hi",
+                "created_at": "t",
+                "html_url": "u",
+                "extra": 1,
+            }
+        ]
+    ]
     result, calls = _page_calls(_toolkit(), "list_pull_request_comments", pages)
     assert calls[0][1].endswith("/issues/7/comments")
-    assert result == [{"id": 1, "author": "bot[bot]", "author_type": "Bot", "body": "hi",
-                       "created_at": "t", "html_url": "u"}]
+    assert result == [
+        {"id": 1, "author": "bot[bot]", "author_type": "Bot", "body": "hi", "created_at": "t", "html_url": "u"}
+    ]
 
 
 def test_list_pull_request_reviews_and_review_comments() -> None:
-    reviews = [[{"id": 2, "user": {"login": "bob", "type": "User"}, "state": "APPROVED",
-                "body": "ok", "submitted_at": "t", "commit_id": "abc"}]]
+    reviews = [
+        [
+            {
+                "id": 2,
+                "user": {"login": "bob", "type": "User"},
+                "state": "APPROVED",
+                "body": "ok",
+                "submitted_at": "t",
+                "commit_id": "abc",
+            }
+        ]
+    ]
     result, calls = _page_calls(_toolkit(), "list_pull_request_reviews", reviews)
     assert calls[0][1].endswith("/pulls/7/reviews")
-    assert result[0] == {"id": 2, "author": "bob", "author_type": "User", "state": "APPROVED",
-                         "body": "ok", "submitted_at": "t", "commit_id": "abc"}
-    inline = [[{"id": 3, "user": {"login": "bob", "type": "User"}, "path": "f.py", "line": 4,
-                "body": "b", "commit_id": "abc", "created_at": "t", "html_url": "u",
-                "in_reply_to_id": 2}]]
+    assert result[0] == {
+        "id": 2,
+        "author": "bob",
+        "author_type": "User",
+        "state": "APPROVED",
+        "body": "ok",
+        "submitted_at": "t",
+        "commit_id": "abc",
+    }
+    inline = [
+        [
+            {
+                "id": 3,
+                "user": {"login": "bob", "type": "User"},
+                "path": "f.py",
+                "line": 4,
+                "body": "b",
+                "commit_id": "abc",
+                "created_at": "t",
+                "html_url": "u",
+                "in_reply_to_id": 2,
+            }
+        ]
+    ]
     result, calls = _page_calls(_toolkit(), "list_pull_request_review_comments", inline)
     assert calls[0][1].endswith("/pulls/7/comments")
     assert result[0]["in_reply_to_id"] == 2 and result[0]["path"] == "f.py" and result[0]["line"] == 4

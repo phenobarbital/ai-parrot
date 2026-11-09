@@ -2210,9 +2210,7 @@ class GitToolkit(AbstractToolkit):
         results: List[Dict[str, Any]] = []
         page = 1
         while len(results) < max_items:
-            response = self._request(
-                "GET", url, token, expected=200, params={"per_page": 100, "page": page}
-            )
+            response = self._request("GET", url, token, expected=200, params={"per_page": 100, "page": page})
             data = response.json()
             items = data if isinstance(data, list) else []
             results.extend(shaper(item) for item in items)
