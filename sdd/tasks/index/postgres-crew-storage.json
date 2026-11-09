@@ -47,7 +47,7 @@
       "feature_id": "FEAT-860",
       "feature": "postgres-crew-storage",
       "spec": "sdd/specs/postgres-crew-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -55,8 +55,9 @@
       "parallelism_notes": "Independent codec extraction; owns redis_persistence.py before TASK-5445 extends it.",
       "assigned_to": null,
       "started_at": "2026-11-09T19:16:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5443-crew-definition-codec.md"
+      "completed_at": "2026-11-09T21:11:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5443-crew-definition-codec.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5444",
@@ -65,7 +66,7 @@
       "feature_id": "FEAT-860",
       "feature": "postgres-crew-storage",
       "spec": "sdd/specs/postgres-crew-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -73,8 +74,9 @@
       "parallelism_notes": "Independent configuration declarations in conf.py and isolated tests; no dependency on new storage classes.",
       "assigned_to": null,
       "started_at": "2026-11-09T19:16:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5444-crew-definition-config.md"
+      "completed_at": "2026-11-09T21:13:33+00:00",
+      "file": "sdd/tasks/completed/TASK-5444-crew-definition-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5445",
