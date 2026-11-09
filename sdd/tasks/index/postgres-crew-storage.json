@@ -211,7 +211,7 @@
       "feature_id": "FEAT-860",
       "feature": "postgres-crew-storage",
       "spec": "sdd/specs/postgres-crew-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -221,8 +221,9 @@
       "parallelism_notes": "Consumes complete migrate_from_redis and reports from TASK-5448. Exclusive: live ensure_schema applies shared navigator DDL outside declared files.",
       "assigned_to": null,
       "started_at": "2026-11-09T19:16:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5451-crew-live-migration-validation.md"
+      "completed_at": "2026-11-09T21:52:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5451-crew-live-migration-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5452",
