@@ -49,16 +49,17 @@
       "priority": "high",
       "effort": "M",
       "parallelism_notes": "Independent: owns packages/ai-parrot/src/parrot/jobs/models.py, packages/ai-parrot/src/parrot/jobs/manager.py, packages/ai-parrot/src/parrot/jobs/redis_store.py, packages/ai-parrot/src/parrot/jobs/__init__.py, packages/ai-parrot-server/src/parrot/handlers/jobs/job.py, packages/ai-parrot-server/src/parrot/handlers/jobs/models.py, packages/ai-parrot-server/src/parrot/handlers/jobs/redis_store.py, packages/ai-parrot/tests/test_parrot_jobs_core.py; consumes only existing APIs and changes no shared external state.",
-      "file": "sdd/tasks/active/TASK-5395-jobs-core-relocation.md",
+      "file": "sdd/tasks/completed/TASK-5395-jobs-core-relocation.md",
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [],
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-11-09T16:09:42+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-09T16:17:28+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5396",
@@ -87,16 +88,17 @@
       "priority": "high",
       "effort": "M",
       "parallelism_notes": "Independent: owns packages/ai-parrot-integrations/src/parrot/integrations/core/queued/models.py, packages/ai-parrot-integrations/src/parrot/integrations/core/queued/decorators.py, packages/ai-parrot-integrations/src/parrot/integrations/core/queued/messages.py, packages/ai-parrot-integrations/src/parrot/integrations/core/queued/__init__.py, packages/ai-parrot-integrations/tests/integrations/core/test_queued_commands.py; consumes only existing APIs and changes no shared external state.",
-      "file": "sdd/tasks/active/TASK-5397-queued-command-declarations.md",
+      "file": "sdd/tasks/completed/TASK-5397-queued-command-declarations.md",
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [],
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-11-09T16:09:42+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-09T16:17:28+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5398",
@@ -126,16 +128,17 @@
       "priority": "high",
       "effort": "M",
       "parallelism_notes": "Independent: owns packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py, packages/ai-parrot-integrations/tests/integrations/telegram/test_queued_commands_telegram.py; consumes only existing APIs and changes no shared external state.",
-      "file": "sdd/tasks/active/TASK-5399-telegram-routed-delivery.md",
+      "file": "sdd/tasks/completed/TASK-5399-telegram-routed-delivery.md",
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [],
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-11-09T16:09:42+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-09T16:17:28+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5400",
@@ -206,16 +209,17 @@
       "priority": "high",
       "effort": "M",
       "parallelism_notes": "Independent: owns packages/ai-parrot-tools/src/parrot_tools/gittoolkit.py, packages/ai-parrot-tools/tests/test_gittoolkit_pr_methods.py; consumes only existing APIs and changes no shared external state.",
-      "file": "sdd/tasks/active/TASK-5403-gittoolkit-pr-context.md",
+      "file": "sdd/tasks/completed/TASK-5403-gittoolkit-pr-context.md",
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [],
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-11-09T16:09:42+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-09T16:17:29+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5404",
