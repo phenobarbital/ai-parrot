@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-854 — Telegram Auth Open Mode (webview | browser)
 **Spec**: `sdd/specs/telegram-auth-open-mode.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5418, TASK-5420
@@ -446,10 +446,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; seat gpt-5.6-terra (codex), attempt 1, 390s
+**Date**: 2026-11-09
+**Notes**: wrapper.py: _complete_auth_payload, helpers, webview adapter, _begin_login_attempt; completion-boundary tests appended. Merge-tier validation green (18 passed). File list matches the task; no review fixes.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

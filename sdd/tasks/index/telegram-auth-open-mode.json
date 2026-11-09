@@ -143,7 +143,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -154,8 +154,9 @@
       "parallelism_notes": "Imports BrowserLoginEntry, PAGE_AUTH_METHODS, the two typed errors and get_browser_identity_verifier from TASK-5418 (browser_login.py); appends to test_browser_identity_verification.py, which TASK-5420 creates.",
       "assigned_to": null,
       "started_at": "2026-11-09T16:55:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5422-complete-auth-payload.md"
+      "completed_at": "2026-11-09T17:19:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5422-complete-auth-payload.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5423",
