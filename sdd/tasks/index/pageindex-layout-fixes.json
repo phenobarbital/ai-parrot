@@ -42,16 +42,17 @@
       "feature_id": "FEAT-856",
       "feature": "pageindex-layout-fixes",
       "spec": "sdd/specs/pageindex-layout-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-11-09T16:04:31+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-09T16:07:30+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency: touches only layout.py and test_layout.py, which TASK-5413 does not modify",
-      "file": "sdd/tasks/active/TASK-5412-enumerated-row-headings.md"
+      "file": "sdd/tasks/completed/TASK-5412-enumerated-row-headings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5413",
