@@ -450,6 +450,7 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
 6. **End execution.** Call `coder_end_execution(execution_id=<uuid>)` only after admitted work settles and persistence succeeds.
    Keep `recovery_required` blocked until completion/termination evidence is available. Then continue with "## Completion" (code review, push, summary with the per-model table).
 
+
 ## Execution optimization (FEAT-584)
 Use coder_task_context and coder_delivery_report for known inspection chains;
 use source_inspect_batch for independent reads after wiki-first discovery.
@@ -468,26 +469,218 @@ Unsupported hosts/contexts use an explicit outcome and checkpoint; never invoke 
 through Bash or claim parent compaction also compacts a native child. Real adapter wiring
 requires M0 and the approved M5 amendment. Keep current 90s coder_wait policy and no busy-wait.
 
-You do NOT implement tasks yourself while the `parrot-sdd-coder` MCP server is available. You plan, dispatch,
-consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their own sub-worktree.
+## Per-delivery correction feedback
 
-0. **Begin execution, then plan.** Obtain one UUID for this worker invocation FROM A COMMAND —
-   `python3 -c 'import uuid; print(uuid.uuid4())'` (fallback: `cat /proc/sys/kernel/random/uuid`). NEVER compose it by
-   hand or derive it from the feature name: it must be a lowercase canonical UUID (36 chars, hex digits + hyphens only).
-   If a call fails with `invalid_arguments` naming `execution_id`, regenerate it with the command and retry once. Then call
-   `coder_begin_execution(feature=<FEAT-ID>, worktree=<absolute path of this worktree>, execution_id=<uuid>)`. Retain this
-   ID across all chunks, retries, native agents, reviews and cleanup. Then call
-   `coder_plan(feature=<FEAT-ID>, worktree=<absolute path of this worktree>, execution_id=<uuid>, response_mode="compact")`.
-   If either tool is unavailable, or the result is `status: error` with `error.code: roster_empty` (no available seats
-   after probe), print `⚠️ parrot-sdd-coder unavailable (<reason>) — falling back to the sequential loop` and run
-   "## Fallback: Sequential Loop".
-   If the result is `status: error` with `error.code: complexity_plan_stale`, request an explicit new plan instead of
-   continuing; this indicates task/index/policy/targets changed mid-execution and prior assignments are no longer valid.
-   Any other `error.code` is a STOP condition (report the code and diagnostics).
+Sources are reviewer-confirmed defects: `fix(...) TASK-N review fixes` commits and verified code-review findings.
+Exclude lint findings and engine autofixes entirely. Before recording, classify the lesson:
+
+- **Repo lesson**: applies to every model (e.g. querysource requires `datamodel.BaseModel`). Update the task's
+  Codebase Contract or the canonical repository conventions within your authorized scope, so every coder receives
+  it. If a convention change is outside scope, record the proposed change in the Completion Note for its owner.
+  Never attribute a repository contract fact exclusively to a model or file it as model feedback.
+- **Model lesson**: a confirmed behavior defect in that model's delivery (e.g. fail-open handling or tests that
+  never assert the required behavior). Persist it in this feedback plane.
+
+For model lessons, record the confirmed finding with
+`coder_record_feedback(feature, worktree, feedback)` after verifying the correction. Each `feedback` contains:
+
+- `source`: `review_fix_commit` or `code_review`; `lesson_scope`: `model`.
+- `task_id`, `attempt_uid`: from the attempt that introduced the defect, not the last attempt by assumption.
+- `backend`, `model`: from that attempt; use `resolved_model` when nonempty, otherwise `model`. For native
+  coders use backend `native` and the `model` / `attempt_uid` returned by `coder_prepare_native`.
+- `pattern`: a stable slug such as `fail-open-authorization` or `unverified-attribute`; reuse it for recurrences.
+- `files`: the affected repository-relative paths.
+- `defect`: what the coder actually delivered incorrectly.
+- `evidence`: original commit + file/symbol and the failing check or concrete code evidence.
+- `correction`: the action this model must take to avoid repeating the defect.
+- `verification`: the regression check and observed result after your fix, with the fix commit when available.
+
+Keep each field concise (at most 600 characters for explanatory fields); store full test logs under
+`${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/<FEAT-ID>/` (outside the worktree, so `/sdd-done` can remove it).
+File one confirmed pattern per attempt. A repeated recording call is not another recurrence. Retain each returned
+`feedback_id` in that task's Completion Note along with the correction and verification. Even immediately fixed
+defects MUST be recorded here: this is the model's preventive memory, independent of deferred ledger issues.
+
+Exclude speculative findings, environment/provider failures, merge conflicts alone, and bugs introduced by your
+own integration changes. Do not turn "obvious bug" into feedback without checking the original delivery. Feedback
+is attributed to backend/model, not seat nickname. Never invent a model or an attempt ID. If the tool rejects an
+unknown attempt (for example after a server restart), preserve the full record in the Completion Note as
+`feedback NOT recorded` and report it; do not claim reinforcement was saved. The same applies to tool outages.
+
+**Measure every reviewed delivery**, even if no fixes were needed: call `coder_record_review(feature, worktree,
+review)` with `task_id`, `attempt_uid`, `backend`, `model`, `review_evidence`, and `fix_commits` (full SHAs of all
+reviewer corrections, or `[]`). Use `fix(<feature>): TASK-N review fixes` for those correction commits. Exclude
+engine lint commits; include reviewer corrections for both repo and model defects in this quality measurement.
+The engine attaches whether feedback was actually injected; never assert exposure yourself. Record review outcomes
+before the next chunk. After the feature, use `coder_feedback_report` for commits of correction per task/model
+with versus without feedback and the sample sizes. Missing history is not a zero baseline or proof of improvement.
+
+Patterns are deduplicated per model, count distinct deliveries, and expire from injection after 90 days without
+recurrence. Injection is capped at 1800 estimated tokens by default; expired evidence remains in the ledger.
+
+## Fallback: Sequential Loop (no parrot-sdd-coder server)
+
+For each task in dependency order:
+
+### a) Read and Understand Task (in worktree)
+- Read the full task file.
+- Extract and print:
+  - **Exact files to create** (list them)
+  - **Exact files to modify** (list them)
+  - **Class/function names specified** (list them)
+  - **Acceptance criteria** (list them)
+
+### b) Verify Codebase Contract (MANDATORY — Anti-Hallucination)
+Before writing ANY code, verify the task's `## Codebase Contract` section:
+- **Verified Imports**: `grep` or `read` each file to confirm the imports exist.
+- **Existing Signatures**: `read` each file to confirm class/method signatures are accurate.
+- **Does NOT Exist**: Review this list — NEVER reference anything listed here.
+- If any entry is stale (file moved, method renamed, attribute removed), update
+  the contract in the task file FIRST, then proceed with corrected references.
+- **NEVER guess an import, attribute, or method. If it's not in the contract
+  and you're unsure, verify with `grep` or `read` before using it.**
+
+### b2) Delegated implementation (ONLY when a Delegation Contract exists)
+
+Skip this entire step unless the task file contains a `## Delegation Contract`
+section AND the `parrot-targeted-writer` MCP server is available. A task
+without one takes the normal route in step (c) — that is the default, not a
+failure.
+
+1. Call MCP tool `writer_generate` (server `parrot-targeted-writer`) with `task_path`.
+2. On `status: error` with a contract code (`stale_target`, `missing_block`,
+   `placeholder_code`, `underspecified_create`, …): fix the packet in the task file
+   (refresh hashes with `sha256sum`, complete the design) and retry once, or implement
+   the task yourself in step (c). **Never silently invokes another coder** — no other
+   coding tool is substituted when delegation fails.
+3. On `ok`: read `data.patch_path` with `source_read` in ranges of at most 350 lines and
+   review EVERY hunk against the task's Codebase Contract. Never apply a patch you have
+   not fully read. If a hunk is wrong, do not apply: fix the packet/blocks and regenerate
+   at most once more, else implement normally.
+4. Call `writer_apply` with `artifact_id` and `reviewed_sha256 = data.patch_sha256`
+   (verify it equals `sha256sum artifacts/tool-optimizations/<id>/patch.diff`).
+5. Run the task's acceptance tests yourself in step (e). The writer never runs tests, and
+   a model's claim that tests passed is not execution evidence.
+6. SDD state is never delegated: the index and task files are edited only by you,
+   in step (g).
+
+### c) Implement — EXACTLY as specified (in worktree)
+- Create/modify ONLY the files listed in the task.
+- Use ONLY the class names, method signatures, and patterns specified.
+- Use ONLY the imports from the verified Codebase Contract.
+- Follow project conventions (asyncio-first, Pydantic v2, etc.) — the binding
+  set, per language, is `sdd/CONVENTIONS.md`.
+
+### d) Post-Implementation Verification (MANDATORY, in worktree)
+```
+VERIFICATION CHECKLIST for TASK-<NNN>:
+□ Every file listed as CREATE in the task → exists?
+□ Every file listed as MODIFY in the task → was modified?
+□ No files were created that are NOT listed in the task?
+□ Class/interface names match the task specification?
+□ No unrelated changes were made?
+□ Delegated patch hunks were all reviewed before writer_apply?
+```
+If ANY check fails, fix or STOP.
+
+### e) Validate (in worktree)
+- Lint mechanically, never by hand (this path has no engine to do it), and only with the linters the repository
+  configures. When it configures ruff (`ruff.toml`, `.ruff.toml` or `[tool.ruff]` in `pyproject.toml`):
+  `ruff check --fix <task .py files>`, then `black <task .py files>` only if `pyproject.toml` has `[tool.black]`;
+  fix only syntax errors / undefined names (`ruff check --select E9,F63,F7,F82`) and leave remaining style
+  findings to `/sdd-done`. A repository without a ruff config gets no ruff run.
+- When `test_command` in `sdd/config.json` is set, run it once from the repo root INSTEAD of the `select_tests` merge-tier sweep below: record the command, exit code and output tail; a non-zero exit blocks the merge; zero tests run → report "⚠️ not run — no tests selected", never ✅. When it is null, the sweep below is unchanged.
+- Run the task's `## Validation Commands`, then `LOGS="${SDD_LOGS_ROOT:-/tmp/claude-$(id -u)/sdd-logs}/FEAT-<NNN>";
+  mkdir -p "$LOGS"; parrot sdd tests select --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
+  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --feature FEAT-<NNN> --report-task TASK-<NNN> --run > "$LOGS/merge-tests-TASK-<NNN>.log" 2>&1`
+  as a background `run_command` call (no timeout), then read that log — a foreground call is
+  bounded at 120 s and this sweep is routinely longer
+  (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).
+- To tell whether a failure already happens on `<base_branch>`, rely on the baseline verdict the merge-tier
+  sweep above already computes. Never improvise a baseline tree (`git archive`, a hand-built detached worktree,
+  `git show` into a scratch dir): it carries no gitignored compiled `.so` files, so `import parrot` fails on
+  `parrot.utils.types`, and never hand-copy `.so` files into one. If you need a baseline tree for anything else,
+  get it with `parrot sdd worktree baseline create --base origin/<base_branch>` (prints its path, native
+  artifacts synced) and remove it with `parrot sdd worktree baseline remove <path>` when done.
+- If stuck after 3 attempts, mark as `"done-with-issues"`.
+
+### f) Commit Code (in worktree)
+```bash
+# ONLY task-scoped files — NOT sdd/ files
+git add <file1> <file2> ...
+git commit -m "feat(<feature-slug>): TASK-<NNN> — <title>"
+```
+
+### g) Update SDD State (in worktree, alongside code — FEAT-145)
+
+After committing the code in step (f), update the per-spec index in the
+SAME worktree on the SAME feature branch. No `cd` to the main repo. The
+merge in `/sdd-done` will bring the index file to `base_branch` alongside
+the code commit.
+
+```bash
+INDEX="sdd/tasks/index/<feature-slug>.json"
+NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
+
+# Move active → completed with `git mv`, stamp the index (status/completed_at/
+# verification/file), stage both, and HARD-VERIFY no active/ copy survives.
+# Never hand-roll this with mv/cp + jq: a copy leaves the active/ file behind
+# and it lands on the base branch as a stalled orphan.
+parrot sdd task close TASK-<NNN> <feature-slug> verified
+
+# Fill in Completion Note in the moved task file (in completed/).
+
+# Stage and commit on the feature branch (NOT the main repo's BASE_BRANCH)
+git add sdd/tasks/completed/TASK-<NNN>-<slug>.md
+git diff --cached --name-only        # sanity-check: only the index + this task's files
+git commit -m "sdd: complete TASK-<NNN> — <title>"
+```
+
+### h) Continue
+Move to the next task. Do NOT stop between tasks unless divergence was detected.
 
 ## Completion
 
-After all tasks are done:
+After all tasks are done, at the development-to-review boundary:
+
+0. **Settle, checkpoint, compact-or-explicit-outcome, then a fresh reviewer.** This sequence never runs inside an
+   active tool call or while native/background work is still outstanding.
+   - **Settle children, close execution (engine path).** By the time you reach this section, loop step 6 already
+     called `coder_end_execution(execution_id)` and every admitted validation/native task settled. Persist the
+     durable review checkpoint from that settlement:
+     `parrot sdd task review prepare --feature <FEAT-ID> --worktree <path> --execution-id <uuid>`.
+     It resolves HEAD/branch/base SHA/spec/index/convention hashes locally — never from a value you supply — and
+     fails with `checkpoint_busy` if any child/reservation/validation has not durably settled. Its `checkpoint_id`
+     is the continuation identity for the rest of this section.
+   - **Checkpoint could not be persisted (engine path).** The engine settled, but `review prepare` (or the
+     `validate` that follows) failed to write or reload the checkpoint — an unwritable or unreachable durable
+     evidence store, for example. This is NOT `unsupported_host`: a checkpoint was due and is missing, so the
+     review that follows is not covered by neutral evidence. Record `checkpoint: evidence_persistence_failed`
+     plus the verbatim error in your completion summary, say in that summary that the review ran without a
+     persisted checkpoint, and continue to code review. Do not retry in a loop and do not fabricate a
+     `checkpoint_id`.
+   - **No-engine variant (Fallback loop, or the MCP server was never available).** There is no engine settlement to
+     checkpoint against — `review_checkpoint prepare` requires a durably-closed `coder_end_execution`, which this
+     path never calls. Do not invent a substitute settlement API. Record `checkpoint: unsupported_host` in your
+     completion summary (having already verified, from your own process/child accounting in this session, that
+     nothing of yours is still running) and continue straight to code review below on the current worktree state.
+     This label means "this host/path has no engine settlement to checkpoint", nothing else — never use it for
+     an engine-path failure to write or reload the checkpoint.
+   - **Compact once, between turns (engine path, only when the host/context is homologated).** Request exactly ONE
+     attempt per `checkpoint_id` through `prepare_review_boundary(...,
+     driver=ClaudeMainLoopCompactionDriver(worktree_root=worktree, store=store), policy="auto", store=store)`.
+     This driver is a receipt reader, never a `$.session.compact()` invoker: it gates the main context on the
+     worktree-local `compaction_status`, records `compaction.requested`, and records `compaction.finished` only from
+     a real receipt. With no observable receipt surface it returns explicit `failed`/`unknown`; subagent/fork remains
+     unsupported unless runtime evidence proves its target. Codex/Antigravity/any other unverified host is
+     `unsupported_host`. Never invoke `/compact` through `run_command`, retry blindly on `in_progress`/timeout, or claim that
+     compacting yourself also compacted a native child's context.
+   - **Reload/validate the checkpoint** before starting review:
+     `parrot sdd task review validate --feature <FEAT-ID> --worktree <path> --execution-id <uuid>
+     --checkpoint-id <id>`. A `checkpoint_stale` result (branch/HEAD/spec/index/convention hashes moved since
+     `prepare`) means no prior approval covers the new diff — regenerate the checkpoint rather than reviewing stale
+     evidence.
+   - **Start a fresh, independent reviewer from this neutral evidence** — never your own reasoning about it.
 
 1. **Code review** — invoke the `code-reviewer` agent with a neutral adversarial brief.
    The brief MUST NOT include your own assessment or reasoning — only raw evidence:
@@ -519,15 +712,51 @@ After all tasks are done:
    **File every deferred finding in the SDD ledger.** A finding you verified against
    the real code but did not fix — any severity, including ones out of this
    feature's file scope — MUST be attempted with `wikitoolkit ledger open` before you
-   push. The ledger intentionally resolves to the main checkout. When a sandbox
-   mounts that root read-only, do not retry without protection and do not create a
-   worktree-local ledger. Record the complete finding in the final summary as
-   `(NOT filed: shared ledger is read-only)` so a privileged follow-up can file it.
+   push, so it survives the PR and shows up in `ledger ready` / `ledger context`
+   for future work. Rejected (false-positive) findings are not filed. The ledger
+   intentionally resolves to the main checkout's `.parrot/ledger/`, which the sandbox
+   keeps writable. Prefer the `ledger_open` MCP tool (same fields as the
+   CLI: `title`, `body`, `kind`, `severity`, `discovered_from`, `about[]`); use the CLI
+   below when the tool is not available. If both report the ledger read-only, do not
+   retry without protection and do not create a worktree-local ledger. Record the
+   complete finding in the final summary as `(NOT filed: shared ledger is read-only)`
+   so a privileged follow-up can file it.
 
-2. **Push the feature branch** (from worktree):
    ```bash
-   git push origin HEAD
+   wikitoolkit ledger open \
+     --kind bug|tech_debt|feature_gap|vulnerability \
+     --severity critical|major|minor|low \
+     --discovered-from spec:FEAT-<ID> \
+     --about "sym:<repo-relative-file>#<qualname>" \
+     --title "<one-line defect>" \
+     --body "<what is wrong, where (file + symbol), why it matters, suggested fix>"
    ```
+
+   Map 🟠 → `major`, 🟡 → `minor`, 💡 → `low` (🔴 is always fixed; if you ever
+   defer one, file it as `critical` — it blocks `/sdd-done`). Pass `--about` once per
+   affected file/symbol with the repo-relative path: `ledger context` matches on it.
+   Record each returned `issue:<id>` in the summary. If `wikitoolkit` reports
+   `Ledger unavailable; NOT filed: shared ledger is read-only`, or is unavailable,
+   log a warning and list the findings with `(NOT filed: shared ledger is read-only)`.
+
+2. **Do NOT push.** The sandbox has no route to `github.com` (no git-over-HTTPS, no SSH); `/sdd-done`
+   on the host pushes. `gh` (`api.github.com`) is available for read and PR-comment operations only;
+   never try `git push`, SSH, or ask to widen the sandbox.
+
+2a. **Record optional desktop completion (feature scope only).** Only after all
+    tasks are done, children have settled, review/deferred-finding handling is
+    complete and step 2 pushed successfully, run from the feature worktree:
+    ```bash
+    if [ -n "${PARROT_SDD_NOTIFY_PYTHON:-}" ] && [ -n "${PARROT_SDD_NOTIFY_HELPER:-}" ]; then
+      "$PARROT_SDD_NOTIFY_PYTHON" -S "$PARROT_SDD_NOTIFY_HELPER" --complete
+    fi
+    ```
+    Never run this in task-scoped JSON brief mode, for child completion,
+    interrupts, blocked/unfinished tasks, unfinished review or a failed push.
+    A recording failure is advisory: log it and continue the final summary;
+    never widen sandbox permissions or retry outside the sandbox. The helper's
+    warning is the diagnostic even when its best-effort CLI exits zero.
+    The next eligible Stop event attempts delivery while the Antigravity session remains open.
 
 3. **Print summary:**
    ```
@@ -540,15 +769,33 @@ After all tasks are done:
 
    Code review:
      🔴 Critical: <N> (fixed)
-     🟠 Important: <N> (<M> fixed, <K> noted)
-     🟡 Suggestions: <N> (noted for PR)
+     🟠 Important: <N> (<M> fixed, <K> deferred)
+     🟡 Suggestions: <N> (deferred)
+     📒 Ledger: issue:<id> [<severity>] <title>   (one line per deferred finding)
+
+   Seats:
+     seat         tasks  retries  failures  wall-clock  tokens(in/out)
+     qwen           3      0        0        21m04s      118k/31k
+     gemini         2      1        0        14m12s       62k/19k
+     codex-spark    2      0        1        17m40s       n/a
+     haiku(native)  1      0        0         6m03s       n/a
+
+   Do NOT compute the Seats rows by hand from `attempts[*]`: every
+   `coder_status` / `coder_wait` result carries a `seats` array (one
+   `SeatUsageSummary` per seat — `tasks_handled`, `attempts`, `retries`,
+   `failures`, `duration_s`, `input_tokens`/`output_tokens`,
+   `usage_known`), already aggregated over the job by the engine. Print
+   those rows verbatim (`n/a` when `usage_known` is false), and add ONE
+   `haiku(native)` row yourself for the tasks you ran natively — the engine
+   never sees those attempts.
 
    Worktree: .parrot/worktrees/<worktree-name>
    Branch: <branch-name>
    Commits: <N>
 
    Next:
-     - Run /sdd-done FEAT-<ID> for verification, PR, and cleanup
+     - Run /sdd-done FEAT-<ID> **from the host** (outside this sdd-worker
+       session) — it pushes, opens the PR and cleans up.
    ```
 
 ## Structured Output Contract (dispatched runs)
@@ -594,3 +841,5 @@ STOP and report (do NOT continue silently) if:
 - Your implementation has diverged from the task specification.
 - An import, attribute, or method you need is NOT in the Codebase Contract
   and cannot be verified to exist — do NOT guess, STOP and report.
+- `coder_plan` returned an error other than `roster_empty`, or `dependency_cycle`.
+- A `merge_conflict` you cannot resolve without changing files outside the task's list.
