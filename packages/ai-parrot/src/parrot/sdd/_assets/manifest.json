@@ -718,6 +718,14 @@
         "codex",
         "google"
       ]
+    },
+    {
+      "source": "sdd/AGY.md",
+      "target": "docs/sdd/AGY.md",
+      "hosts": [
+        "codex",
+        "google"
+      ]
     }
   ]
 }

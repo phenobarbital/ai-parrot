@@ -55,6 +55,7 @@ PACKAGED_ONLY: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (".claude/agents/code-reviewer.md", "claude/agents/code-reviewer.md", ("claude",)),
     (".claude/agents/qa-runner.md", "claude/agents/qa-runner.md", ("claude",)),
     ("docs/sdd/CODEX.md", "sdd/CODEX.md", ("codex", "google")),
+    ("docs/sdd/AGY.md", "sdd/AGY.md", ("codex", "google")),  # FEAT-847 — linked by the shared .agents/skills
 )
 PACKAGED_SOURCES: frozenset[str] = frozenset(source for _target, source, _hosts in PACKAGED_ONLY)
 #: rev 0.5 C22 — `/sdd-insight` does not ship on any host (it depends on unshipped `reference/sdd-insight/`

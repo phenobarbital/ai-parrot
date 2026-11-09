@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -808,3 +809,54 @@ def test_install_prints_worktree_tests_note(empty_repo: Path) -> None:
     actions = install_sdd_integration(empty_repo, hosts=("codex",))
     assert any(a.startswith("note: worktree tests") and "pythonpath" in a for a in actions)
     assert not any(a.startswith("note: worktree tests") for a in install_sdd_integration(empty_repo, dry_run=True))
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_AGY_DOC = "docs/sdd/AGY.md"
+_AGY_MARKER = "<!-- agy-fresh-shell-example -->"
+
+
+@pytest.mark.parametrize("host", ["google", "codex"])
+def test_install_ships_agy_contract(empty_repo: Path, host: str) -> None:
+    install_sdd_integration(empty_repo, hosts=(host,))
+    text = (empty_repo / _AGY_DOC).read_text(encoding="utf-8")
+    assert "## Antigravity Adaptation Contract" in text
+
+
+def test_agy_contract_repo_copy_matches_package() -> None:
+    packaged = _REPO_ROOT / "packages/ai-parrot/src/parrot/sdd/_assets/sdd/AGY.md"
+    assert (_REPO_ROOT / _AGY_DOC).read_bytes() == packaged.read_bytes()
+
+
+@pytest.mark.parametrize(
+    "needle",
+    [
+        "invoke_subagent",
+        "manage_subagents",
+        'TypeName="self"',
+        "flash",
+        "inherit",
+        "PARROT_SDD_AGY_UNATTENDED",
+        "parrot sdd launch worker",
+        "install.sh",
+        "snap",
+    ],
+)
+def test_agy_contract_has_required_content(needle: str) -> None:
+    assert needle in (_REPO_ROOT / _AGY_DOC).read_text(encoding="utf-8")
+
+
+def test_agy_worktree_examples_run_in_fresh_shells(tmp_path: Path) -> None:
+    text = (_REPO_ROOT / _AGY_DOC).read_text(encoding="utf-8")
+    blocks = re.findall(re.escape(_AGY_MARKER) + r"\n```bash\n(.*?)\n```", text, re.DOTALL)
+    assert len(blocks) >= 2
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    subprocess.run(["git", "init", "-q", str(wt)], check=True)
+    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path)}
+    for block in blocks:
+        script = block.replace("/abs/path/to/worktree", str(wt))
+        result = subprocess.run(["bash", "-c", script], cwd=tmp_path, env=env, capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        if "rev-parse" in script:
+            assert Path(result.stdout.strip()).resolve() == wt.resolve()

@@ -72,6 +72,7 @@
   ".claude/rules/worktree-management.md",
   ".claude/skills/second-opinion/SKILL.md",
   ".codex/agents/sdd-worker.toml",
+  "docs/sdd/AGY.md",
   "docs/sdd/CODEX.md",
   "sdd/CONVENTIONS.md",
   "sdd/WORKFLOW.md",
