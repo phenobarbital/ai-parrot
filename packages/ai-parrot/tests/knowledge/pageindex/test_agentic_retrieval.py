@@ -622,3 +622,53 @@ async def test_provider_exception_returns_partial_bundle() -> None:
     assert client.repairs == 0  # no repair round-trip is spent on a provider failure
     assert client.tool_manager.list_tools() == []
 
+
+class NoLoopClient(StubClient):
+    """Client declaring that its text ask() runs no tool loop; counts ask() calls (FEAT-848)."""
+
+    supports_tool_loop = False
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.ask_calls = 0
+
+    async def ask(self, prompt: str, model: str | None = None, **kwargs: Any) -> Any:
+        """Count the call; the fail-fast path must never reach it."""
+        self.ask_calls += 1
+        raise AssertionError("ask() must not be called on a client without a tool loop")
+
+
+def test_agentic_retriever_rejects_no_loop_client() -> None:
+    """Direct construction raises, naming the class and client_type."""
+    with pytest.raises(ValueError, match=r"NoLoopClient \(stub\) declares supports_tool_loop=False"):
+        AgenticRetriever(
+            client=NoLoopClient(),
+            model="stub",
+            read_tools=[_read_tool()],
+            load_revision=lambda *_: None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_agentic_retrieve_fails_fast_without_tool_loop(agentic_toolkit, monkeypatch) -> None:
+    """On a real tree, agentic_retrieve raises before candidate search and before any ask()."""
+    toolkit, _, _ = agentic_toolkit
+    client = NoLoopClient()
+    toolkit._agentic_client_override = client
+    monkeypatch.setattr(toolkit, "_agentic_search", lambda *_: pytest.fail("candidate search reached"))
+
+    with pytest.raises(ValueError, match="NoLoopClient"):
+        await toolkit.agentic_retrieve("t", "question")
+
+    assert client.ask_calls == 0
+
+
+def test_agentic_client_clone_rejects_no_loop_adapter_client(tmp_path: Path) -> None:
+    """The clone path (adapter client copied by clone_for_tools) is checked too."""
+    toolkit = PageIndexToolkit(
+        storage_dir=tmp_path,
+        adapter=PageIndexLLMAdapter(client=NoLoopClient(), model="stub"),
+    )
+
+    with pytest.raises(ValueError, match="supports_tool_loop=False"):
+        toolkit._agentic_client()

@@ -166,16 +166,19 @@ slice, so the returned excerpt is always verbatim.
 
 ### Provider support
 
-The loop depends on the provider executing tools inside `ask()`. Verified in this release:
+The loop needs a client whose text `ask()` executes tool calls. Clients declare it with the class attribute
+`AbstractClient.supports_tool_loop` (text `ask()` only — it makes no claim about `ask_stream()` or about inline
+`ask(tools=...)` registration).
 
-| Tool loop runs inside `ask()` | No tool execution in `ask()` |
+| Text `ask()` runs the tool loop | Declares `supports_tool_loop = False` |
 |---|---|
-| anthropic, google, openai (via `openai_base`), bedrock, gemma4, groq, grok, zai | hf, meta, local, vllm, moonshot, nvidia, jev |
+| every installed provider, except the three on the right; `OpenAICodexClient` and `ClaudeAgentClient` run it through their agent bridges, using tools registered in `client.tool_manager` | `hf` / `transformers` (`TransformersClient`), `jev` / `typesafe` (`JevClient`), `gemini-live` (`GeminiLiveClient`) |
 
-OpenRouter is not in the verified table, so treat it as unsupported until checked. On an unsupported provider the
-model is offered the tools but never calls them: the bundle comes back with `tool_calls == 0`,
-`stopped="no_tool_calls"` and `grounded=False`. The retriever cannot detect this statically. A capability flag on
-`AbstractClient` is an open question; it is not shipped.
+The retriever calls `require_tool_loop(client)` before candidate search. If the client declares
+`supports_tool_loop = False`, it raises `ValueError` with the message:
+`"agentic retrieval requires a client that executes tool calls inside ask(); <Class> (<client_type>) declares supports_tool_loop=False"`.
+When the model runs without making any tool call, `stopped="no_tool_calls"` now means a capable client whose model
+simply chose not to call any tools — it is no longer a proxy for "unsupported provider".
 
 ### Ledger versus cursors
 

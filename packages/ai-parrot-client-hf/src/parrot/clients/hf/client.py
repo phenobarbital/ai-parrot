@@ -38,6 +38,7 @@ class TransformersClient(AbstractClient):
 
     client_type: str = "transformers"
     client_name: str = "transformers"
+    supports_tool_loop: bool = False  # FEAT-848: ask() warns and ignores tools; no tool loop
 
     # FEAT-523 folder-convention attributes (read by LLMFactory).
     # New keys ("hf", "transformers") — not registered in SUPPORTED_CLIENTS
