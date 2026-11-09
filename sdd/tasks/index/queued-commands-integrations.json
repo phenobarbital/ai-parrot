@@ -53,11 +53,11 @@
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "depends_on": [],
       "parallel": true,
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:09:42+00:00",
       "completed_at": null
     },
     {
@@ -71,13 +71,13 @@
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "depends_on": [
         "TASK-5395"
       ],
       "parallel": true,
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:09:42+00:00",
       "completed_at": null
     },
     {
@@ -91,11 +91,11 @@
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "depends_on": [],
       "parallel": true,
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:09:42+00:00",
       "completed_at": null
     },
     {
@@ -109,14 +109,14 @@
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "depends_on": [
         "TASK-5396",
         "TASK-5397"
       ],
       "parallel": true,
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:09:42+00:00",
       "completed_at": null
     },
     {
@@ -130,11 +130,11 @@
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "depends_on": [],
       "parallel": true,
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:09:42+00:00",
       "completed_at": null
     },
     {
@@ -148,14 +148,14 @@
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "depends_on": [
         "TASK-5398",
         "TASK-5399"
       ],
       "parallel": true,
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:09:42+00:00",
       "completed_at": null
     },
     {
@@ -169,14 +169,14 @@
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "depends_on": [
         "TASK-5398",
         "TASK-5400"
       ],
       "parallel": true,
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:09:42+00:00",
       "completed_at": null
     },
     {
@@ -190,13 +190,13 @@
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "depends_on": [
         "TASK-5398"
       ],
       "parallel": true,
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:09:42+00:00",
       "completed_at": null
     },
     {
@@ -210,11 +210,11 @@
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "depends_on": [],
       "parallel": true,
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:09:42+00:00",
       "completed_at": null
     },
     {
@@ -228,14 +228,14 @@
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "depends_on": [
         "TASK-5398",
         "TASK-5403"
       ],
       "parallel": true,
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:09:42+00:00",
       "completed_at": null
     },
     {
@@ -249,13 +249,13 @@
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "depends_on": [
         "TASK-5404"
       ],
       "parallel": true,
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:09:42+00:00",
       "completed_at": null
     },
     {
@@ -269,20 +269,20 @@
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "depends_on": [
         "TASK-5405",
         "TASK-5398"
       ],
       "parallel": true,
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:09:42+00:00",
       "completed_at": null
     },
     {
       "id": "TASK-5407",
       "slug": "queued-commands-documentation",
-      "title": "Documentation \u2014 queued commands, GitHub reviewer and JobManager",
+      "title": "Documentation — queued commands, GitHub reviewer and JobManager",
       "priority": "medium",
       "effort": "M",
       "parallelism_notes": "TASK-5395 creates parrot.jobs exports/shims; TASK-5396 creates cancel_job/user index contracts; TASK-5397 creates queued_command and models; TASK-5398 creates service/progress APIs; TASK-5399 creates send_parsed_to_chat; TASK-5400 creates TelegramQueuedCommands; TASK-5401 creates TeamsQueuedCommands; TASK-5402 creates SlackQueuedCommands; TASK-5403 creates GitToolkit PR reads; TASK-5404 creates full-review models/report helpers; TASK-5405 creates isolated dispatch; TASK-5406 creates pr_review/config/prepare hooks. All are documented symbols; this is the sole final documentation task.",
@@ -290,7 +290,7 @@
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "depends_on": [
         "TASK-5395",
         "TASK-5396",
@@ -307,7 +307,7 @@
       ],
       "parallel": true,
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:09:42+00:00",
       "completed_at": null
     }
   ]
