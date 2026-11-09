@@ -39,7 +39,15 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 BUDGET_MESSAGE = "read budget exhausted — answer from what you have read"
-StopReason = Literal["answered", "budget", "max_tool_calls", "timeout", "no_tool_calls", "parse_error"]
+StopReason = Literal[
+    "answered",
+    "budget",
+    "max_tool_calls",
+    "timeout",
+    "no_tool_calls",
+    "parse_error",
+    "provider_error",
+]
 
 SYSTEM_PROMPT = (
     DATA_FRAMING_INSTRUCTION
@@ -194,7 +202,7 @@ class AgenticRetriever:
                     return await inner(**kwargs)
                 async with read_lock:
                     try:
-                        grant = ledger.charge(kwargs.get("max_chars", 12000))
+                        grant = ledger.charge(int(kwargs.get("max_chars") or 12000))
                     except BudgetExhausted:
                         flags["budget"] = True
                         return BUDGET_MESSAGE
@@ -214,12 +222,19 @@ class AgenticRetriever:
 
     @staticmethod
     async def _cancel(task: asyncio.Task[Any]) -> None:
-        """Cancel and consume one owned task if it is still running."""
+        """Cancel and consume one owned task if it is still running.
+
+        Consuming also swallows a task that already failed: cleanup runs in a ``finally`` and
+        must never replace the bundle ``run`` is about to return with the provider's exception
+        (which the ``provider_error`` branch has already logged).
+        """
         if not task.done():
             task.cancel()
         try:
             await task
         except asyncio.CancelledError:
+            pass
+        except Exception:  # noqa: BLE001 - cleanup must not raise over the caller's result
             pass
 
     def _prompt(self, query: str, candidates: list[dict[str, Any]], outline: dict[str, Any], draft_answer: bool) -> str:
@@ -275,7 +290,20 @@ class AgenticRetriever:
         deadline: float,
         draft_answer: bool,
     ) -> EvidenceBundle:
-        """Run the supervised stage-2 loop under the caller-provided absolute deadline."""
+        """Run the supervised stage-2 loop under the caller-provided absolute deadline.
+
+        Termination semantics callers must size for:
+
+        * **Cap-fill ends the loop immediately.** The controller sets its stop event as soon
+          as the last admitted tool call completes, so a model that uses *exactly*
+          ``max_tool_calls`` reads returns ``stopped="max_tool_calls"`` with no answer. Size
+          ``max_tool_calls`` one above the read count you expect.
+        * **A provider-done / stop tie resolves to ``max_tool_calls``.** When the provider
+          finishes in the same tick the cap is reached, ``asyncio.wait`` reports both and the
+          stop branch wins, discarding a completed answer.
+        * **A provider failure is not raised.** It returns ``stopped="provider_error"`` with
+          ``answer=None`` and the reads already charged against the budget.
+        """
         if budget_chars <= 0 or max_reads <= 0 or max_tool_calls <= 0:
             raise ValueError("budget_chars, max_reads, and max_tool_calls must be positive")
         if not math.isfinite(deadline):
@@ -317,13 +345,19 @@ class AgenticRetriever:
                 elif stop_task in done:
                     stopped = "max_tool_calls"
                 else:
-                    response = await provider_task
+                    try:
+                        response = await provider_task
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:  # noqa: BLE001 - a provider failure must not lose paid-for reads
+                        self.logger.warning("agentic provider call failed: %s", exc, exc_info=True)
+                        stopped = "provider_error"
             if stopped in {"timeout", "max_tool_calls"}:
                 await self._cancel(provider_task)
             if stop_task is not None:
                 await self._cancel(stop_task)
 
-            if stopped not in {"timeout", "max_tool_calls"}:
+            if stopped not in {"timeout", "max_tool_calls", "provider_error"}:
                 output = str(response.output) if response is not None else ""
                 answer = self.parse_answer(output)
                 if answer is None:
@@ -354,7 +388,7 @@ class AgenticRetriever:
                 elif stopped == "answered" and controller.admitted == 0:
                     stopped = "no_tool_calls"
 
-            if stopped not in {"timeout", "max_tool_calls", "parse_error"} and answer is not None:
+            if stopped not in {"timeout", "max_tool_calls", "parse_error", "provider_error"} and answer is not None:
                 try:
                     kept, rejected = await self._validate(ledger, answer.citations, deadline)
                 except TimeoutError:

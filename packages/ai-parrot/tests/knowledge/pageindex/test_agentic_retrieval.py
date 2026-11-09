@@ -15,6 +15,7 @@ from parrot.knowledge.pageindex.agentic import (
     clip_read_result,
     clone_for_tools,
 )
+from parrot.knowledge.pageindex.read_ledger import ReadLedger
 from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 from parrot.models.basic import CompletionUsage
@@ -530,3 +531,94 @@ async def test_timeout_during_stage_one_search(agentic_toolkit, monkeypatch) -> 
 
     assert bundle["stopped"] == "timeout"
     assert bundle["candidates"] == []
+
+
+class _FailsAfterReadClient(ScriptedToolLoopClient):
+    """Provider-shaped client that performs its scripted reads and then fails the provider call."""
+
+    async def ask(self, prompt: str, model: str | None = None, **kwargs: Any) -> AIMessage:
+        """Run the scripted reads, then raise as a provider would."""
+        if not kwargs.get("use_tools"):
+            return await super().ask(prompt, model, **kwargs)
+        for name, parameters in self.calls:
+            await self.tool_manager.execute_tool(name, parameters)
+        raise RuntimeError("boom")
+
+
+@pytest.mark.asyncio
+async def test_null_max_chars_is_a_recoverable_tool_error() -> None:
+    """Every real read tool annotates ``max_chars: int``, so ``None`` is refused by the args schema.
+
+    The refusal is a tool error the provider can recover from — it never reaches the ledger and
+    never aborts the request. Validation runs before the wrapper's admission, so the refused call
+    is not even charged against ``max_tool_calls``. This pins the boundary that makes the
+    wrapper's coercion defensive rather than load-bearing.
+    """
+    client = ScriptedToolLoopClient(
+        [("read_segments", {"max_chars": None})],
+        '```json\n{"answer": "grounded", "citations": []}\n```',
+    )
+
+    bundle = await _run(client)
+
+    assert bundle.chars_read == 0
+    assert bundle.reads == []
+    assert bundle.tool_calls == 0
+    # No call was admitted, so the loop reports no_tool_calls rather than a crash.
+    assert bundle.stopped == "no_tool_calls"
+
+
+@pytest.mark.asyncio
+async def test_wrapper_coerces_falsy_max_chars_to_the_default() -> None:
+    """Below the args schema, a falsy max_chars charges the 12000 default instead of raising."""
+    retriever = _retriever(ScriptedToolLoopClient([], ""))
+    for value in (None, 0):
+        ledger = ReadLedger(budget_chars=100, max_reads=3)
+        wrapped = retriever._wrap(
+            _read_tool(),
+            ledger,
+            _ToolCallController(4),
+            asyncio.Lock(),
+            {"budget": False},
+        )
+
+        result = await wrapped.bound_method(max_chars=value)
+
+        # 12000 is requested, the 100-char budget caps the grant, and the read is charged.
+        assert ledger.chars_read == 100, value
+        assert result["segments"][0]["end"] == 100, value
+
+
+@pytest.mark.asyncio
+async def test_read_tool_honours_positive_max_chars() -> None:
+    """A positive max_chars is still charged exactly, so the coercion only touches falsy values."""
+    client = ScriptedToolLoopClient(
+        [("read_segments", {"max_chars": 50})],
+        '```json\n{"answer": "grounded", "citations": []}\n```',
+    )
+
+    bundle = await _run(client)
+
+    assert bundle.chars_read == 50
+    assert bundle.reads[0].ranges == [(0, 50)]
+
+
+@pytest.mark.asyncio
+async def test_provider_exception_returns_partial_bundle() -> None:
+    """A provider failure is reported as provider_error with the reads it already paid for."""
+    client = _FailsAfterReadClient(
+        [("read_segments", {})],
+        '```json\n{"answer": "never returned", "citations": []}\n```',
+    )
+
+    bundle = await _run(client)
+
+    assert bundle.stopped == "provider_error"
+    assert bundle.answer is None
+    assert bundle.grounded is False
+    assert bundle.citations == []
+    assert bundle.chars_read == 100
+    assert bundle.reads[0].ranges == [(0, 100)]
+    assert client.repairs == 0  # no repair round-trip is spent on a provider failure
+    assert client.tool_manager.list_tools() == []
+
