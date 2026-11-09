@@ -532,12 +532,14 @@ class TestOAuth2BrowserBranch:
         return app, wrapper
 
     @staticmethod
-    def _register_attempt(wrapper, state: str, *, created_at: float | None = None) -> BrowserLoginEntry:
+    def _register_attempt(
+        wrapper, state: str, *, created_at: float | None = None, chat_id: int = 54321
+    ) -> BrowserLoginEntry:
         """Register a browser correlation and matching OAuth2 PKCE state."""
         entry = BrowserLoginEntry(
             state=state,
             telegram_id=12345,
-            chat_id=54321,
+            chat_id=chat_id,
             bot_id="7001",
             bot_username="browser_bot",
             created_at=time.monotonic() if created_at is None else created_at,
@@ -673,7 +675,7 @@ class TestOAuth2BrowserBranch:
         error_state = new_browser_state()
         missing_code_state = new_browser_state()
         self._register_attempt(wrapper, error_state)
-        self._register_attempt(wrapper, missing_code_state)
+        self._register_attempt(wrapper, missing_code_state, chat_id=54322)
 
         provider_error = await self._request(app, f"error=access_denied&state={error_state}")
         missing_code = await self._request(app, f"state={missing_code_state}")

@@ -2691,8 +2691,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             telegram_id=session.telegram_id,
             chat_id=message.chat.id,
             notify=False,
+            run_post_success=False,
         )
         if success:
+            session = self._user_sessions.get(session.telegram_id, session)
             await message.answer(
                 f"✅ Authenticated as *{session.display_name}* "
                 f"(`{session.nav_user_id}`).\n\n"
@@ -2700,6 +2702,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 parse_mode="Markdown",
                 reply_markup=ReplyKeyboardRemove(),
             )
+            await self._persist_principal_link(session)
+            await self._initialize_user_context(session, message=message)
         else:
             await message.answer("❌ Login failed. Please try again with /login.")
 
@@ -2711,12 +2715,15 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         chat_id: int,
         notify: bool = True,
         browser_entry: Optional[BrowserLoginEntry] = None,
+        run_post_success: bool = True,
     ) -> bool:
         """Run primary authentication and its post-success pipeline.
 
         Browser page-method credentials are authenticated through a registered
         server-side verifier. Webview and OAuth2 payloads retain their strategy
-        callback path.
+        callback path. When ``run_post_success`` is False the caller owns
+        principal-link persistence and user-context initialization (the webview
+        adapter replies first, preserving its pre-FEAT-854 ordering).
 
         Raises:
             BrowserVerificationError: The browser credential or identity is invalid.
@@ -2757,6 +2764,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 "Your identity will be used for all interactions.",
                 parse_mode="Markdown",
             )
+        if not run_post_success:
+            return True
         await self._persist_principal_link(target)
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
         try:

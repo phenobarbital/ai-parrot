@@ -55,6 +55,15 @@ def test_registry_register_consume_single_use() -> None:
     assert registry.consume(entry.state) is None
 
 
+def test_registry_register_supersedes_older_state_for_same_chat() -> None:
+    registry = BrowserLoginRegistry()
+    first, second = new_browser_state(), new_browser_state()
+    registry.register(_entry(first))
+    registry.register(_entry(second))
+    assert registry.peek(first) is None
+    assert registry.consume(second) is not None
+
+
 def test_registry_ttl_expiry() -> None:
     registry = BrowserLoginRegistry()
     expired = _entry(new_browser_state(), created_at=time.monotonic() - 601)

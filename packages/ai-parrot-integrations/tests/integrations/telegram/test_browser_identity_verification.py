@@ -284,9 +284,36 @@ async def test_handle_web_app_data_delegates_to_complete() -> None:
     await wrapper.handle_web_app_data(message)
 
     wrapper._complete_auth_payload.assert_awaited_once_with(
-        {"token": "token"}, telegram_id=88123, chat_id=88124, notify=False
+        {"token": "token"}, telegram_id=88123, chat_id=88124, notify=False, run_post_success=False
     )
     assert isinstance(message.answer.await_args.kwargs["reply_markup"], ReplyKeyboardRemove)
+
+
+@pytest.mark.asyncio
+async def test_handle_web_app_data_replies_before_post_success() -> None:
+    """Webview keeps its legacy order: reply first, then link persistence and context init."""
+    wrapper = _wrapper()
+    session = TelegramUserSession(telegram_id=88123, telegram_first_name="Alice")
+    wrapper._get_user_session = MagicMock(return_value=session)
+    order: list[str] = []
+
+    async def authenticate(_data: dict[str, Any], target: TelegramUserSession) -> bool:
+        target.set_authenticated("42", "token", "Alice")
+        return True
+
+    wrapper._auth_strategy.handle_callback.side_effect = authenticate
+    wrapper._persist_principal_link = AsyncMock(side_effect=lambda *_a, **_k: order.append("persist"))
+    wrapper._initialize_user_context = AsyncMock(side_effect=lambda *_a, **_k: order.append("init"))
+    message = MagicMock()
+    message.web_app_data.data = '{"token": "token"}'
+    message.from_user.id = 88123
+    message.chat.id = 88124
+    message.answer = AsyncMock(side_effect=lambda *_a, **_k: order.append("reply"))
+
+    await wrapper.handle_web_app_data(message)
+
+    assert order == ["reply", "persist", "init"]
+    assert wrapper._initialize_user_context.await_args.kwargs["message"] is message
 
 
 @pytest.mark.asyncio

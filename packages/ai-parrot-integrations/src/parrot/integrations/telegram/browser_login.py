@@ -75,6 +75,11 @@ class BrowserLoginRegistry:
         if _STATE_RE.fullmatch(entry.state) is None:
             raise ValueError("Browser login state must use the browser namespace and contain 32 random bytes")
         self._sweep()
+        # A new /login supersedes any earlier pending link for the same chat.
+        for stale in [
+            key for key, old in self._entries.items() if old.chat_id == entry.chat_id and old.bot_id == entry.bot_id
+        ]:
+            del self._entries[stale]
         self._entries[entry.state] = entry
 
     def consume(self, state: str) -> Optional[BrowserLoginEntry]:
