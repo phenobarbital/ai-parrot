@@ -4,7 +4,7 @@ Tests:
   - Without embedding params, no store is created (backward compat).
   - With use_vec_rank=True, embedding store is constructed.
   - _search_for passes embedding_store + flags to HybridPageIndexSearch.
-  - Tree mutations via _persist propagate dirty flag to embedding store.
+  - Publishing a generation prunes stale per-generation embedding matrices.
 
 Import note:
     We use PageIndexToolkit via normal import since toolkit.py does not
@@ -173,10 +173,10 @@ class TestToolkitEmbeddingWiring:
         engine = toolkit._search_for("t")
         assert engine._embedding_store is None
 
-    def test_dirty_propagation_via_persist(
+    async def test_publish_prunes_stale_generation_matrices(
         self, mock_adapter, tmp_path
     ) -> None:
-        """_persist calls engine.mark_dirty which invalidates embedding matrix."""
+        """Publishing keeps the new and base generations' matrices and prunes older ones."""
         with patch("parrot.embeddings.registry.EmbeddingRegistry"):
             toolkit = _make_toolkit(
                 mock_adapter, tmp_path,
@@ -185,33 +185,44 @@ class TestToolkitEmbeddingWiring:
                 embedding_dimension=16,
             )
 
-        tree = {"doc_name": "my-tree", "structure": []}
-        toolkit._trees["my-tree"] = tree
+        # create_tree publishes generation 1.
+        await toolkit.create_tree("my-tree")
+        first = (await toolkit.get_generation("my-tree"))["id"]
+        assert first == 1
 
-        # Build the engine first by calling _search_for
+        # Build the engine so we can assert the publish drops the cached one.
         engine = toolkit._search_for("my-tree")
         assert toolkit._search.get("my-tree") is engine
 
-        # Build a fake tree matrix to verify invalidation
+        # Materialize a matrix for the live generation.
         import numpy as np
 
-        # Use a tiny embed_fn to build the matrix
         def _tiny_embed(texts):
             return np.random.default_rng(0).standard_normal(
                 (len(texts), 16)
             ).astype(np.float32)
 
         store = toolkit._embedding_store
-        store.build_tree_matrix("my-tree", [
-            {"node_id": "0001", "title": "Root", "summary": "Root"}
-        ], _tiny_embed)
-        assert store.load_tree_matrix("my-tree") is not None
+        store.build_tree_matrix(
+            "my-tree",
+            [{"node_id": "0001", "title": "Root", "summary": "Root"}],
+            _tiny_embed,
+            generation_id=first,
+        )
+        assert store.load_tree_matrix("my-tree", generation_id=first) is not None
 
-        # Calling _persist should mark dirty → invalidate embedding matrix
-        with patch.object(toolkit._store, "save"):
-            toolkit._persist("my-tree")
+        # One publication keeps it: _after_publish keeps {new, base}.
+        async with toolkit._write("my-tree"):
+            pass
+        assert (await toolkit.get_generation("my-tree"))["id"] == first + 1
+        assert store.load_tree_matrix("my-tree", generation_id=first) is not None
+        assert toolkit._search.get("my-tree") is None
 
-        assert store.load_tree_matrix("my-tree") is None
+        # The next publication makes generation `first` older than the base and prunes it.
+        async with toolkit._write("my-tree"):
+            pass
+        assert (await toolkit.get_generation("my-tree"))["id"] == first + 2
+        assert store.load_tree_matrix("my-tree", generation_id=first) is None
 
     def test_embedding_store_dimension_parameter(
         self, mock_adapter, tmp_path
