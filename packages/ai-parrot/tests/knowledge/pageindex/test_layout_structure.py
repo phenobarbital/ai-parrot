@@ -150,7 +150,6 @@ from parrot.knowledge.pageindex.layout_structure import (  # noqa: E402
     items_to_tree,
 )
 
-
 HYBRID_PAGES = (
     "# Report Title\n\n## 1 Intro\n\nText.\n\n### 1.1 Scope\n\nText.",
     "## 2 Usage\n\nText.\n\n## Appendix\n\nText.",

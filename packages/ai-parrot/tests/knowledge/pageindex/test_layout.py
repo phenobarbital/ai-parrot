@@ -340,7 +340,9 @@ def test_secondary_text_size_bold_rows(tmp_path: Path) -> None:
 def test_split_row_heading(tmp_path: Path) -> None:
     """A code cell and a title cell printed on one baseline form one bold row and one heading line."""
     code_width = pymupdf.get_text_length("AC-2", fontname="hebo", fontsize=10)
-    pages = [[(72, 100, "AC-2", 10, "hebo"), (72 + code_width + 14, 100, "ACCOUNT MANAGEMENT", 10, "hebo"), *_body(150, 30)]]
+    pages = [
+        [(72, 100, "AC-2", 10, "hebo"), (72 + code_width + 14, 100, "ACCOUNT MANAGEMENT", 10, "hebo"), *_body(150, 30)]
+    ]
     path = _write_pdf(tmp_path / "split.pdf", pages)
 
     profile = analyze_layout(str(path))
@@ -387,7 +389,9 @@ def test_header_prefix_levels_with_secondary_size() -> None:
     headers = LayoutHeaders(profile)
 
     assert headers.get_header_id(_span("Revisions", 12, (72.0, 92.0, 150.0, 103.0), bold=True), page=_page(0)) == "### "
-    assert headers.get_header_id(_span("Important", 10, (72.0, 192.0, 150.0, 203.0), bold=True), page=_page(0)) == "#### "
+    assert (
+        headers.get_header_id(_span("Important", 10, (72.0, 192.0, 150.0, 203.0), bold=True), page=_page(0)) == "#### "
+    )
     assert headers.get_header_id(_span("Revisions", 12, (72.0, 300.0, 150.0, 311.0), bold=True), page=_page(0)) == ""
     assert headers.get_header_id(_span("Chapter", 16, (72.0, 400.0, 150.0, 416.0)), page=_page(0)) == "# "
 
