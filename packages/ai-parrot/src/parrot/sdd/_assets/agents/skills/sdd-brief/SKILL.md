@@ -5,10 +5,11 @@ description: Research a bug, code-scanning alert, Jira/GitHub issue, or ledger i
 
 # SDD Brief
 
-## Full procedure and Codex adaptations
+## Full procedure and host adaptations
 
 Before executing, read the [full sdd-brief procedure](../../../.claude/commands/sdd-brief.md)
-and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+and your host's adaptation contract: the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract)
+on Codex, or the [Antigravity adaptation contract](../../../docs/sdd/AGY.md#antigravity-adaptation-contract) on Google Antigravity (`agy`).
 The full procedure holds the detail omitted here; the adaptation contract
 overrides Claude runtime syntax. Retain every gate below.
 

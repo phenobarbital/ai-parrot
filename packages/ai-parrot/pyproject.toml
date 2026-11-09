@@ -1030,6 +1030,7 @@ parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
     "_assets/sdd/WORKFLOW.md",
     "_assets/sdd/CONVENTIONS.md",
     "_assets/sdd/CODEX.md",
+    "_assets/sdd/AGY.md",
     "techwiki/templates/*.j2",
     "techwiki/templates/*.md.j2",
 ]

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-847 — SDD Antigravity CLI (AGY) Operational Compatibility
 **Spec**: `sdd/specs/sdd-agy-compatibility.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none
@@ -319,10 +319,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; seat gpt-5.6-terra (codex), 2 attempts
+**Date**: 2026-11-09
+**Notes**: agy_verdict() worktree-env guard + containment in worktree_environment.py with tests. Merge-tier validation green (chunk 0: 549 passed, 10 skipped; asset sync 27 passed).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

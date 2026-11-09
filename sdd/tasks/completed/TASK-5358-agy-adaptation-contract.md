@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-847 — SDD Antigravity CLI (AGY) Operational Compatibility
 **Spec**: `sdd/specs/sdd-agy-compatibility.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5355
@@ -49,6 +49,8 @@ every file a skill links. Keep `docs/sdd/AGY.md` byte-identical to `_assets/sdd/
 | `packages/ai-parrot/pyproject.toml` | MODIFY | package-data `"_assets/sdd/AGY.md"` |
 | `packages/ai-parrot/src/parrot/sdd/_assets/manifest.json` | MODIFY | regenerated |
 | `packages/ai-parrot/tests/sdd/test_installer.py` | MODIFY | ship/identity/sections/fresh-shell tests |
+| `packages/ai-parrot/tests/sdd/fixtures/asset_targets.json` | MODIFY | add docs/sdd/AGY.md target |
+| `tests/sdd_scripts/test_check_asset_sync.py` | MODIFY | hard-coded asset count 91 -> 92 |
 
 ---
 
@@ -97,7 +99,9 @@ def test_non_claude_host_skills_have_every_file_they_read(empty_repo, host)   # 
     {"path": "scripts/sdd/check_asset_sync.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/pyproject.toml", "action": "MODIFY"},
     {"path": "packages/ai-parrot/src/parrot/sdd/_assets/manifest.json", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/tests/sdd/test_installer.py", "action": "MODIFY"}
+    {"path": "packages/ai-parrot/tests/sdd/test_installer.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/sdd/fixtures/asset_targets.json", "action": "MODIFY"},
+    {"path": "tests/sdd_scripts/test_check_asset_sync.py", "action": "MODIFY"}
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/sdd/installer.py#install_sdd_integration"
@@ -250,10 +254,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; seat sonnet (native), 1 attempt
+**Date**: 2026-11-09
+**Notes**: docs/sdd/AGY.md + packaged copy, PACKAGED_ONLY entry, package-data pattern, manifest regenerated (92 assets), installer tests. Deviation: asset_targets.json and the hard-coded asset count (91->92) updated; both declared in the task's file table after the fidelity gate flagged them. Merge-tier validation green (chunk 1: 581 passed, 10 skipped; asset sync 27 passed).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: see notes
