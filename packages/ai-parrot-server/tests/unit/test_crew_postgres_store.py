@@ -282,4 +282,3 @@ async def test_lock_release_and_retry_after_failure() -> None:
     assert connection.calls[0][2] == connection.calls[1][2]
     assert database.context.entered == database.context.exited == 2
     assert store._schema_ensured is False
-

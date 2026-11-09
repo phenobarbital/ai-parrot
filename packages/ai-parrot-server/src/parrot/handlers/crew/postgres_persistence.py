@@ -211,9 +211,7 @@ class CrewPostgres:
         async with await db.connection() as conn:
             deleted_id = await conn.fetchval(_DELETE_SQL, *self._write_args(crew, deleted_at))
         if deleted_id is None:
-            raise ValueError(
-                f"Crew {crew.tenant or 'global'}:{crew.name!s} no longer has identity {crew.crew_id!r}"
-            )
+            raise ValueError(f"Crew {crew.tenant or 'global'}:{crew.name!s} no longer has identity {crew.crew_id!r}")
         return True
 
     async def _load_row(self, name: str, tenant: str | None = None) -> CrewStoredRow | None:
@@ -318,4 +316,3 @@ class CrewPostgres:
 
     async def close(self) -> None:
         """Per-call connections require no persistent close operation."""
-
