@@ -13,7 +13,6 @@ import pytest
 
 from parrot.sdd.scripts import native_claude_sandbox as native
 
-
 pytestmark = pytest.mark.skipif(
     os.environ.get("PARROT_TEST_REAL_LLM") != "1", reason="live provider probes require PARROT_TEST_REAL_LLM=1"
 )
