@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-09T13:23:51+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-09T17:19:26+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -298,11 +298,11 @@
       "priority": "medium",
       "effort": "M",
       "parallelism_notes": "TASK-5395 creates parrot.jobs exports/shims; TASK-5396 creates cancel_job/user index contracts; TASK-5397 creates queued_command and models; TASK-5398 creates service/progress APIs; TASK-5399 creates send_parsed_to_chat; TASK-5400 creates TelegramQueuedCommands; TASK-5401 creates TeamsQueuedCommands; TASK-5402 creates SlackQueuedCommands; TASK-5403 creates GitToolkit PR reads; TASK-5404 creates full-review models/report helpers; TASK-5405 creates isolated dispatch; TASK-5406 creates pr_review/config/prepare hooks. All are documented symbols; this is the sole final documentation task.",
-      "file": "sdd/tasks/active/TASK-5407-queued-commands-documentation.md",
+      "file": "sdd/tasks/completed/TASK-5407-queued-commands-documentation.md",
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [
         "TASK-5395",
         "TASK-5396",
@@ -320,7 +320,8 @@
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-11-09T16:09:42+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-09T17:19:26+00:00",
+      "verification": "verified"
     }
   ]
 }
