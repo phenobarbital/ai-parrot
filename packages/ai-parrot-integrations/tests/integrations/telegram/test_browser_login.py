@@ -29,7 +29,6 @@ from parrot.integrations.telegram.browser_login import (
     telegram_deep_link,
 )
 
-
 def _entry(state: str, created_at: float | None = None) -> BrowserLoginEntry:
     return BrowserLoginEntry(
         state=state,

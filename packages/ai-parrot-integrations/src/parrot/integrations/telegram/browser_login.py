@@ -274,9 +274,7 @@ async def browser_complete_handler(request: web.Request) -> web.Response:
         return _json(410, ok=False, error="expired")
 
     auth_method = body.get("auth_method")
-    if auth_method is not None and (
-        not isinstance(auth_method, str) or auth_method not in PAGE_AUTH_METHODS
-    ):
+    if auth_method is not None and (not isinstance(auth_method, str) or auth_method not in PAGE_AUTH_METHODS):
         return _json(401, ok=False, error="rejected")
     wrappers = request.app.get(TELEGRAM_WRAPPERS_APP_KEY)
     wrapper = wrappers.get(entry.bot_id) if wrappers is not None else None
