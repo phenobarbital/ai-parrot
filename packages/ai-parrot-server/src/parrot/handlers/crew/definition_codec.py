@@ -1,4 +1,5 @@
 """Shared compatibility codec for stored crew definitions."""
+
 from __future__ import annotations
 
 import logging

@@ -12,7 +12,6 @@ from navconfig.logging import logging
 
 from .definition_codec import crew_definition_from_dict, strip_unknown_keys
 from .models import CrewDefinition
-from ...conf import REDIS_URL
 
 
 class CrewRedis:
@@ -598,7 +597,7 @@ async def test_crew_redis():
         print("\n=== Test 6: Get Crew Metadata ===")
         metadata = await crew_redis.get_crew_metadata("test_crew")
         if metadata:
-            print(f"Crew metadata:")
+            print("Crew metadata:")
             for key, value in metadata.items():
                 print(f"  - {key}: {value}")
 

@@ -1,4 +1,5 @@
 """Regression tests for the shared stored-crew definition codec."""
+
 from __future__ import annotations
 
 import logging
@@ -39,7 +40,11 @@ def test_nested_unknown_fields_and_warning(caplog: pytest.LogCaptureFixture) -> 
 
     with pytest.raises(ValueError, match="unknown crew members"):
         crew_definition_from_dict(
-            {"name": "invalid", "agents": [{"agent_id": "research"}], "flow_relations": [{"source": "ghost", "target": "research"}]},
+            {
+                "name": "invalid",
+                "agents": [{"agent_id": "research"}],
+                "flow_relations": [{"source": "ghost", "target": "research"}],
+            },
             logging.getLogger(__name__),
         )
 
