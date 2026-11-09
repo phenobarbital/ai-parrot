@@ -280,9 +280,19 @@ def test_record_publishes_manual_review_artifact(
 
     exit_code = main(
         [
-            "record", "--feature", FEATURE_SLUG, "--task", "TASK-2", "--worktree", str(worktree),
-            "--summary", "Manual semantic review passed.", "--execution-id", execution_id,
-            "--fix-commit", head_sha,
+            "record",
+            "--feature",
+            FEATURE_SLUG,
+            "--task",
+            "TASK-2",
+            "--worktree",
+            str(worktree),
+            "--summary",
+            "Manual semantic review passed.",
+            "--execution-id",
+            execution_id,
+            "--fix-commit",
+            head_sha,
         ]
     )
 
@@ -308,8 +318,15 @@ def test_record_generates_execution_id_when_omitted(
 
     exit_code = main(
         [
-            "record", "--feature", FEATURE_SLUG, "--task", "TASK-2", "--worktree", str(worktree),
-            "--summary", "Manual semantic review passed.",
+            "record",
+            "--feature",
+            FEATURE_SLUG,
+            "--task",
+            "TASK-2",
+            "--worktree",
+            str(worktree),
+            "--summary",
+            "Manual semantic review passed.",
         ]
     )
 
@@ -340,8 +357,18 @@ def test_record_rejects_invalid_input_without_writing(
     durable_root = tmp_path / "durable"
     monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
     argv = [
-        "record", "--feature", FEATURE_SLUG, "--task", "TASK-2", "--worktree", str(worktree),
-        "--summary", "Manual semantic review passed.", "--execution-id", EXECUTION_ID, *arguments,
+        "record",
+        "--feature",
+        FEATURE_SLUG,
+        "--task",
+        "TASK-2",
+        "--worktree",
+        str(worktree),
+        "--summary",
+        "Manual semantic review passed.",
+        "--execution-id",
+        EXECUTION_ID,
+        *arguments,
     ]
 
     exit_code = main(argv)
