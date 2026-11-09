@@ -57,10 +57,11 @@ directory switching, no shared mutable state across features.
   installation by the main-checkout operator. Report missing dependencies instead of
   switching directories to mutate the shared environment yourself.
 - When auto mode reports that a hook changed a Bash call's input, resend the hook's command once and verbatim; never hand-write or abbreviate a `bwrap` or `env …` wrapper.
+- **Legacy sandbox mode** (`PARROT_SDD_SANDBOX_BACKEND=bubblewrap`): the operator launched with `sandbox=legacy`, the fallback for hosts where the Claude native sandbox is unavailable (for example, no AppArmor profile that lets `bwrap` create user namespaces). The launcher applies `/usr/bin/bwrap …` and RTK through `CLAUDE_CODE_SHELL_PREFIX`, below auto-mode review, so ordinary Bash calls do not incur a per-command refusal. A refusal can still occur for a scope-guard rewrite or verdict, an explicit timeout, or a session not started by the launcher. Resend that command once and verbatim; batch related commands into one Bash call and use Read, Grep and Glob for read-only inspection. Stop and report only when the verbatim resend is refused again.
 - Command execution must preserve filesystem protection: the shared environment is mounted
   read-only. Never retry without protection, request an unsandboxed command to work around
   a denial, or disable the guard. If isolation is unavailable, stop and report the blocker.
-- Under the supported launchers the Claude native sandbox enforces the filesystem/network boundary and the hook keeps the test-scope guard, RTK rewrite and file-tool checks; nested bwrap is not used; never request dangerouslyDisableSandbox.
+- Under the supported launchers in the default (native) mode the Claude native sandbox enforces the filesystem/network boundary and the hook keeps the test-scope guard, RTK rewrite and file-tool checks; nested bwrap is not used; never request dangerouslyDisableSandbox.
 - The primary checkout's worktree root and `.parrot/ledger/` are the only writable
   exceptions outside your worktree: the first exists for worktree administration (it does NOT
   mean `/sdd-done` runs from here — see "Completion"), the second so you can file deferred

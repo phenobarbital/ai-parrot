@@ -78,6 +78,28 @@ output and passes it through unchanged, so the resend is approved. Each rewritte
 
 ## Sandbox mode
 
+### Legacy shell prefix
+
+`legacy` is the Bubblewrap fallback when the native Claude sandbox cannot start.  Its launcher writes an immutable
+session policy and sets `CLAUDE_CODE_SHELL_PREFIX` to a launcher which receives **one command-string argument** from
+Claude Code.  The prefix passes through only the exact hook command strings and exact stdio-MCP argv entries recorded
+in that policy.  It wraps every other invocation — including each Bash-tool preamble — with `/usr/bin/bwrap`; this is
+the filesystem boundary in legacy mode.  Pass-through commands receive a SHA-256 policy token in
+`PARROT_SDD_SHELL_PREFIX_TOKEN`, which lets the hook prove that the prefix already supplied the boundary.  Missing,
+invalid, or unsafe policy state exits 2 rather than running an unguarded command.
+
+The policy and executable live below `$XDG_STATE_HOME/parrot-sdd/shell-prefix/<session>/` (or
+`~/.local/state/parrot-sdd/shell-prefix/<session>/`), outside the worktree and session-writable cache roots.  The
+directory is mode 0700, its executable is 0500, and its policy is 0400.  RTK runs in the prefix against Claude's
+`eval` payload, so neither its optimization nor the legacy Bubblewrap boundary changes Bash input after auto mode
+has reviewed it.  The task-3 live probe on Claude Code 2.1.321 did not observe a prefix invocation while the native
+sandbox was active; native sessions therefore keep their established launcher/native-hook path and do not rely on
+the prefix.
+
+An agent frontmatter `permissionMode` does not apply to a `claude --agent <name>` session: the session keeps the
+launcher's/account permission mode.  The launcher deliberately does not override it; frontmatter permission mode
+still applies when that agent is launched as a subagent.
+
 The SDD flow runs in many consumer repositories whose developers cannot all harden their hosts at once
 (FEAT-633). The native sandbox therefore has an explicit, auditable mode (spec §4 policy 10, AC13):
 
