@@ -44,6 +44,17 @@ from .callbacks import CallbackRegistry, CallbackContext, CallbackResult
 from .suggestion_buttons import SUGGESTION_PREFIX, SuggestionButtonStore, build_suggestion_keyboard
 from .context import telegram_chat_scope
 from .models import TelegramAgentConfig
+from .browser_login import (
+    TELEGRAM_WRAPPERS_APP_KEY,
+    PAGE_AUTH_METHODS,
+    BrowserLoginEntry,
+    BrowserVerificationError,
+    BrowserVerifierUnavailableError,
+    get_or_create_browser_login_registry,
+    get_browser_identity_verifier,
+    new_browser_state,
+)
+from .browser_verifiers import ensure_navigator_browser_verifiers
 from .auth import (
     TelegramUserSession,
     AbstractAuthStrategy,
@@ -279,6 +290,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         # Register message handlers
         self._register_handlers()
+        # FEAT-854: browser-mode login wiring (no-op in webview mode).
+        self._setup_browser_mode()
 
     def _register_handlers(self) -> None:
         """Register aiogram message handlers on the router."""
@@ -2497,6 +2510,63 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         finally:
             typing_task.cancel()
 
+    def _enabled_auth_methods(self) -> set:
+        """Names of the auth methods this bot's strategy actually serves."""
+        strategy = self._auth_strategy
+        if strategy is None:
+            return set()
+        if isinstance(strategy, CompositeAuthStrategy):
+            return set(strategy.strategies)
+        return {strategy.name}
+
+    def _setup_browser_mode(self) -> None:
+        """Validate and wire browser-mode login at construction (FEAT-854).
+
+        Raises:
+            ValueError: browser mode is configured but cannot work.
+        """
+        if getattr(self.config, "auth_open_mode", "webview") != "browser" or self._auth_strategy is None:
+            return
+        name = getattr(self.config, "name", "?")
+        if self.app is None:
+            raise ValueError(
+                f"Agent '{name}': auth_open_mode='browser' requires the shared aiohttp app "
+                "(the completion endpoints and the bot must run in the same server)."
+            )
+        if not self._bot_id:
+            raise ValueError(f"Agent '{name}': auth_open_mode='browser' could not resolve the bot id.")
+        bot_id = str(self._bot_id)
+        get_or_create_browser_login_registry(self.app)
+        page_methods = sorted(self._enabled_auth_methods() & PAGE_AUTH_METHODS)
+        missing = ensure_navigator_browser_verifiers(
+            self.app, bot_id=bot_id, methods=page_methods, tenant_id=self.config.tenant
+        )
+        if missing:
+            methods = ", ".join(missing)
+            raise ValueError(
+                f"Agent '{name}': browser mode requires identity verifiers for: {methods}. "
+                f"Register a verifier under app['telegram_browser_identity_verifiers']['{bot_id}']"
+                "[<method>] before startup, or configure AUTH_SECRET_KEY / OAUTH_JWT_KEYS "
+                "shared with the Navigator issuer."
+            )
+        self.app.setdefault(TELEGRAM_WRAPPERS_APP_KEY, {})[bot_id] = self
+        self.logger.info(
+            "Browser-mode login enabled for bot %s (methods: %s)", bot_id, sorted(self._enabled_auth_methods())
+        )
+
+    async def _get_bot_username(self) -> Optional[str]:
+        """Return the bot's @username (cached after the first success), or None."""
+        cached = getattr(self, "_bot_username", None)
+        if cached:
+            return cached
+        try:
+            me = await self.bot.get_me()
+        except Exception:  # noqa: BLE001 - deep link is optional
+            self.logger.debug("get_me() failed; browser success page will omit the deep link", exc_info=True)
+            return None
+        self._bot_username = getattr(me, "username", None)
+        return self._bot_username
+
     async def handle_login(self, message: Message) -> None:
         """Handle /login — show login WebApp button via configured strategy."""
         chat_id = message.chat.id
@@ -2521,12 +2591,30 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             await message.answer("❌ Authentication is not configured for this bot.")
             return
 
-        # Generate CSRF state and delegate keyboard to strategy
-        state = secrets.token_urlsafe(32)
+        # Generate CSRF state and delegate keyboard to strategy.
+        browser_mode = getattr(self.config, "auth_open_mode", "webview") == "browser"
+        registry = None
+        if browser_mode:
+            state = new_browser_state()
+            registry = get_or_create_browser_login_registry(self.app)
+            registry.register(
+                BrowserLoginEntry(
+                    state=state,
+                    telegram_id=session.telegram_id,
+                    chat_id=chat_id,
+                    bot_id=str(self._bot_id or ""),
+                    bot_username=await self._get_bot_username(),
+                    created_at=time.monotonic(),
+                )
+            )
+        else:
+            state = secrets.token_urlsafe(32)
 
         try:
             keyboard = await self._auth_strategy.build_login_keyboard(self.config, state)
         except ValueError as exc:
+            if registry is not None:
+                registry.consume(state)
             await message.answer(f"❌ Login configuration error: {exc}")
             return
 
@@ -2551,6 +2639,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 "🔐 *Navigator Authentication*\n\n" "Tap the button below to sign in with your Navigator credentials."
             )
 
+        if browser_mode:
+            prompt_text += "\n\nThe link opens in your browser. Come back here when you are done."
         await message.answer(prompt_text, reply_markup=keyboard, parse_mode="Markdown")
 
     async def handle_logout(self, message: Message) -> None:
@@ -2596,34 +2686,30 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         )
 
     async def handle_web_app_data(self, message: Message) -> None:
-        """Handle data returned from the login WebApp.
-
-        Delegates to the configured auth strategy to process the primary
-        callback. Configured secondary providers are started only after that
-        callback has produced a validated pending candidate.
-        """
+        """Webview adapter that delegates primary authentication to the shared core."""
         if not message.web_app_data or not message.from_user:
             return
-
         if not self._auth_strategy:
             return
-
         try:
             data = json.loads(message.web_app_data.data)
         except (json.JSONDecodeError, TypeError):
             await message.answer("❌ Invalid login response data.")
             return
-
         session = self._get_user_session(message)
-
+        self._user_sessions.setdefault(session.telegram_id, session)
         if getattr(self.config, "post_auth_actions", None) or self._is_combined_payload(data):
             await self._handle_combined_auth(message, data, session)
             return
-
-        # Standard (single-step) auth flow.
-        success = await self._auth_strategy.handle_callback(data, session)
-
+        success = await self._complete_auth_payload(
+            data,
+            telegram_id=session.telegram_id,
+            chat_id=message.chat.id,
+            notify=False,
+            run_post_success=False,
+        )
         if success:
+            session = self._user_sessions.get(session.telegram_id, session)
             await message.answer(
                 f"✅ Authenticated as *{session.display_name}* "
                 f"(`{session.nav_user_id}`).\n\n"
@@ -2632,12 +2718,171 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 reply_markup=ReplyKeyboardRemove(),
             )
             await self._persist_principal_link(session)
-            # Eagerly build per-user agent/tool state so the first
-            # question does not pay the post_login cost. A typing
-            # indicator covers any noticeable delay.
             await self._initialize_user_context(session, message=message)
         else:
             await message.answer("❌ Login failed. Please try again with /login.")
+
+    async def _complete_auth_payload(
+        self,
+        data: Dict[str, Any],
+        *,
+        telegram_id: int,
+        chat_id: int,
+        notify: bool = True,
+        browser_entry: Optional[BrowserLoginEntry] = None,
+        run_post_success: bool = True,
+    ) -> bool:
+        """Run primary authentication and its post-success pipeline.
+
+        Browser page-method credentials are authenticated through a registered
+        server-side verifier. Webview and OAuth2 payloads retain their strategy
+        callback path. When ``run_post_success`` is False the caller owns
+        principal-link persistence and user-context initialization (the webview
+        adapter replies first, preserving its pre-FEAT-854 ordering).
+
+        Raises:
+            BrowserVerificationError: The browser credential or identity is invalid.
+            BrowserVerifierUnavailableError: No verifier can complete browser authentication.
+        """
+        if not self._auth_strategy:
+            return False
+        session = self._user_sessions.get(telegram_id) or TelegramUserSession(telegram_id=telegram_id)
+        staged = bool(getattr(self.config, "post_auth_actions", None) or self._is_combined_payload(data))
+        target = self._new_login_candidate(session) if staged else session
+        try:
+            method = self._resolve_browser_auth_method(data) if browser_entry is not None else None
+            if browser_entry is not None and method in PAGE_AUTH_METHODS:
+                await self._authenticate_browser_identity(data, method, target, browser_entry)
+                ok = True
+            else:
+                ok = await self._auth_strategy.handle_callback(data, target)
+        except (BrowserVerificationError, BrowserVerifierUnavailableError):
+            if notify:
+                await self._notify_login_failed(chat_id)
+            raise
+        if not ok or not target.authenticated or not target.nav_user_id:
+            if notify:
+                await self._notify_login_failed(chat_id)
+            return False
+        if staged:
+            if not target.nav_session_token:
+                if notify:
+                    await self._notify_login_failed(chat_id)
+                return False
+            await self._begin_login_attempt(target, chat_id=chat_id, send=self._chat_sender(chat_id))
+            return True
+        self._user_sessions[telegram_id] = target
+        if notify:
+            await self.bot.send_message(
+                chat_id=chat_id,
+                text=f"✅ Authenticated as *{target.display_name}* (`{target.nav_user_id}`).\n\n"
+                "Your identity will be used for all interactions.",
+                parse_mode="Markdown",
+            )
+        if not run_post_success:
+            return True
+        await self._persist_principal_link(target)
+        typing_task = asyncio.create_task(self._typing_indicator(chat_id))
+        try:
+            await self._initialize_user_context(target)
+        finally:
+            typing_task.cancel()
+        return True
+
+    def _new_login_candidate(self, session: TelegramUserSession) -> TelegramUserSession:
+        """Return an unauthenticated candidate retaining Telegram identity fields."""
+        return TelegramUserSession(
+            telegram_id=session.telegram_id,
+            telegram_username=session.telegram_username,
+            telegram_first_name=session.telegram_first_name,
+            telegram_last_name=session.telegram_last_name,
+        )
+
+    def _resolve_browser_auth_method(self, data: Dict[str, Any]) -> str:
+        """Return the enabled method targeted by a browser payload.
+
+        Raises:
+            BrowserVerificationError: The payload selects no valid configured method.
+        """
+        supplied = data.get("auth_method")
+        if isinstance(self._auth_strategy, CompositeAuthStrategy):
+            if not isinstance(supplied, str) or supplied not in self._auth_strategy.strategies:
+                raise BrowserVerificationError("Browser payload selected an unavailable authentication method")
+            return supplied
+        method = self._auth_strategy.name
+        if supplied is None and method == "basic":
+            return method
+        if supplied != method:
+            raise BrowserVerificationError("Browser payload selected an unavailable authentication method")
+        return method
+
+    async def _authenticate_browser_identity(
+        self,
+        data: Dict[str, Any],
+        method: str,
+        target: TelegramUserSession,
+        browser_entry: BrowserLoginEntry,
+    ) -> None:
+        """Authenticate a target exclusively from a verifier-proven identity.
+
+        Raises:
+            BrowserVerificationError: Credential or supplied identity claims are invalid.
+            BrowserVerifierUnavailableError: No verifier is configured for this bot and method.
+        """
+        token = data.get("token")
+        if not isinstance(token, str) or not token:
+            raise BrowserVerificationError("Browser payload did not include a credential")
+        verifier = get_browser_identity_verifier(
+            self.app,
+            bot_id=browser_entry.bot_id,
+            auth_method=method,
+        )
+        if verifier is None:
+            raise BrowserVerifierUnavailableError("Browser identity verifier is unavailable")
+        try:
+            identity = await verifier.verify(
+                token,
+                auth_method=method,
+                bot_id=browser_entry.bot_id,
+                tenant_id=self.config.tenant,
+            )
+        except (BrowserVerificationError, BrowserVerifierUnavailableError):
+            raise
+        except Exception as exc:
+            self.logger.warning("Browser identity verifier failed for method %s: %s", method, exc)
+            raise BrowserVerifierUnavailableError("Browser identity verifier is unavailable") from exc
+        for field in ("user_id", "display_name", "email"):
+            supplied = data.get(field)
+            verified = getattr(identity, field)
+            if supplied and verified is not None and str(supplied) != str(verified):
+                raise BrowserVerificationError("Browser payload identity does not match the verified identity")
+        target.set_authenticated(
+            nav_user_id=identity.user_id,
+            session_token=token,
+            display_name=identity.display_name,
+            email=identity.email,
+        )
+        if isinstance(self._auth_strategy, CompositeAuthStrategy):
+            target.metadata["auth_method"] = method
+
+    def _chat_sender(self, chat_id: int) -> Callable[..., Awaitable[Any]]:
+        """Return a sender bound to one Telegram chat without requiring a Message."""
+
+        async def send(text: str, **kwargs: Any) -> Any:
+            return await self.bot.send_message(chat_id=chat_id, text=text, **kwargs)
+
+        return send
+
+    async def _notify_login_failed(self, chat_id: int) -> None:
+        """Tell the chat authentication failed without masking the original error."""
+        try:
+            await self.bot.send_message(
+                chat_id=chat_id,
+                text="❌ Login failed. Please try again with /login.",
+                parse_mode=None,
+            )
+        except Exception:  # noqa: BLE001 - notification is best effort
+            self.logger.warning("Could not send login-failure notice to chat %s", chat_id, exc_info=True)
 
     async def _handle_combined_auth(
         self,
@@ -2665,7 +2910,17 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         await self._start_login_attempt(message, candidate)
 
     async def _start_login_attempt(self, message: Message, candidate: TelegramUserSession) -> None:
-        """Create the pending attempt and send secondary Connect buttons."""
+        """Webview adapter over ``_begin_login_attempt``."""
+        await self._begin_login_attempt(candidate, chat_id=message.chat.id, send=message.answer)
+
+    async def _begin_login_attempt(
+        self,
+        candidate: TelegramUserSession,
+        *,
+        chat_id: int,
+        send: Callable[..., Awaitable[Any]],
+    ) -> None:
+        """Create a pending attempt and send secondary Connect buttons."""
         from parrot.auth.principal import Principal
 
         actions = list(getattr(self.config, "post_auth_actions", None) or [])
@@ -2677,7 +2932,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         )
         attempt = self._login_coordinator.create(
             telegram_id=candidate.telegram_id,
-            chat_id=message.chat.id,
+            chat_id=chat_id,
             bot_id=str(self._bot_id or ""),
             principal=principal,
             permission_context=self._connection_permission_context(candidate, principal),
@@ -2713,7 +2968,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[[InlineKeyboardButton(text=f"Connect {action.provider}", url=url)]]
             )
-            await message.answer(
+            await send(
                 f"Authorize {action.provider} to finish login.",
                 reply_markup=keyboard,
                 parse_mode=None,

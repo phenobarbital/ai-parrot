@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-854 — Telegram Auth Open Mode (webview | browser)
 **Spec**: `sdd/specs/telegram-auth-open-mode.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5418
@@ -390,10 +390,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; seat minimax (nova), attempt 1, 534s
+**Date**: 2026-11-09
+**Notes**: Updated login.html, azure_login.html, login_multi.html (browser completion, SSO param continuity) and added test_login_pages_browser_mode.py. CAVEAT: its 4 Playwright round-trip tests were SKIPPED in validation (chromium not installed in sandbox), so the browser-side behavior is unexercised; re-run where chromium is available. Merge-tier validation green (50 passed, 4 skipped, chunk 1). File list matches the task; no review fixes.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

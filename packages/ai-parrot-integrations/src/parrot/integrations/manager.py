@@ -200,6 +200,11 @@ def attach_telegram_wrapper(app: Any, wrapper: Any, bot: Any) -> None:
         notifier.attach(wrapper._bot_id, bot)
     wrapper._register_jira_session_hook()
     wrapper._attach_login_coordinator()
+    # FEAT-854: browser-mode bots need the completion endpoint in this same app.
+    if getattr(getattr(wrapper, "config", None), "auth_open_mode", "webview") == "browser":
+        from parrot.integrations.telegram.browser_login import setup_browser_auth_routes
+
+        setup_browser_auth_routes(app)
 
 
 def _connection_publisher(app: Any) -> ConnectionEventPublisher:
