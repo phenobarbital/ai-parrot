@@ -282,7 +282,7 @@ class MultiStoreSearchToolkit(AbstractToolkit):
             if fts and not origin.supports_fts:
                 plan.append((origin, None))
                 continue
-            method = origin.fts_search if fts else origin.search
+            method = origin.fts_search if fts else getattr(origin, "search_section", origin.search)
             timeout = origin.timeout or self.default_timeout
             coros.append(asyncio.wait_for(method(query, k), timeout=timeout))
             plan.append((origin, len(coros) - 1))
@@ -321,6 +321,14 @@ class MultiStoreSearchToolkit(AbstractToolkit):
                 status="error",
                 note=repr(result),
                 hits=[],
+            )
+        if isinstance(result, OriginSection):
+            return result.model_copy(
+                update={
+                    "origin": origin.name,
+                    "origin_kind": origin.kind,
+                    "description": origin.description,
+                }
             )
         return OriginSection(
             origin=origin.name,
