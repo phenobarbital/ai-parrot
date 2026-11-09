@@ -1199,6 +1199,11 @@ class IntegrationBotManager:
         # skips the other.
         for name, wrapper in self.msteams_bots.items():
             try:
+                self.logger.debug("Closing queued commands for MS Teams bot '%s'", name)
+                await wrapper.close_queued_commands()
+            except Exception as exc:
+                self.logger.error("Error closing queued commands for MS Teams bot '%s': %s", name, exc)
+            try:
                 self.logger.debug("Closing FormDesigner client for MS Teams bot '%s'", name)
                 await wrapper.close_formdesigner_client()
             except Exception as e:
