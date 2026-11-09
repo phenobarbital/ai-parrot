@@ -1,0 +1,30 @@
+{
+  "feature": "pageindex-segment-store-fixes",
+  "feature_id": "FEAT-850",
+  "spec": "sdd/specs/pageindex-segment-store-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-09T12:20:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-5384",
+      "slug": "save-revision-scan-upgrade",
+      "title": "Scan-aware SegmentStore.save_revision + tests",
+      "feature_id": "FEAT-850",
+      "feature": "pageindex-segment-store-fixes",
+      "spec": "sdd/specs/pageindex-segment-store-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Sole task; touches segment_store.py and its test only.",
+      "discovered_from": "issue:fa6a5f71a22f",
+      "assigned_to": "agent:sdd-fix",
+      "file": "sdd/tasks/active/TASK-5384-save-revision-scan-upgrade.md"
+    }
+  ]
+}
