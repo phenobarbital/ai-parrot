@@ -1414,3 +1414,116 @@ def test_google_worker_sandbox_failed_probe_fails(monkeypatch: pytest.MonkeyPatc
         launcher.google_worker_sandbox("preferred", ())
     assert error.value.exit_code == 1
     assert "userns denied" in str(error.value)
+
+
+def _capture_agy_exec(
+    monkeypatch: pytest.MonkeyPatch, agy: str | None = "/home/u/.local/bin/agy"
+) -> dict[str, object]:
+    """Mock AGY discovery and exec without resolving a symlink into ``/snap``."""
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: agy if name == "agy" else None)
+    monkeypatch.setattr(launcher.os, "chdir", lambda path: seen.__setitem__("cwd", Path(path)))
+
+    def _exec(file: str, argv: list[str], env: dict[str, str]) -> None:
+        seen.update(argv=list(argv), env=env)
+        raise SystemExit(0)
+
+    monkeypatch.setattr(launcher.os, "execvpe", _exec)
+    return seen
+
+
+def test_launch_agy_worker_is_unattended(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    seen = _capture_agy_exec(monkeypatch)
+    base = {
+        "PATH": "/usr/bin",
+        launcher.native_claude_sandbox.CACHE_DIR_ENV: "/cache",
+        launcher.native_claude_sandbox.ROOTS_ENV: "/roots",
+        launcher.native_claude_sandbox.DEGRADED_ENV: "1",
+    }
+    with pytest.raises(SystemExit):
+        launcher.launch_agy_worker(["--verbose"], cwd=tmp_path, initial_prompt="run FEAT-768", base_env=base)
+    argv = seen["argv"]
+    env = seen["env"]
+    assert isinstance(argv, list)
+    assert isinstance(env, dict)
+    assert seen["cwd"] == tmp_path
+    assert argv[1:4] == ["--agent", "sdd-worker", "--dangerously-skip-permissions"]
+    assert argv[-2:] == ["-p", "run FEAT-768"]
+    assert "--verbose" in argv and "--mode" not in argv
+    assert env[launcher.AGY_UNATTENDED_ENV] == "1"
+    assert env[launcher.native_claude_sandbox.BACKEND_ENV] == "bubblewrap"
+    for name in (
+        launcher.native_claude_sandbox.CACHE_DIR_ENV,
+        launcher.native_claude_sandbox.ROOTS_ENV,
+        launcher.native_claude_sandbox.DEGRADED_ENV,
+    ):
+        assert name not in env
+
+
+def test_launch_session_google_is_interactive(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    seen = _capture_agy_exec(monkeypatch)
+    base = {
+        "PATH": "/usr/bin",
+        launcher.AGY_UNATTENDED_ENV: "1",
+        launcher.native_claude_sandbox.BACKEND_ENV: "bubblewrap",
+        launcher.native_claude_sandbox.CACHE_DIR_ENV: "/cache",
+        launcher.native_claude_sandbox.ROOTS_ENV: "/roots",
+        launcher.native_claude_sandbox.DEGRADED_ENV: "1",
+    }
+    with pytest.raises(SystemExit):
+        launcher.launch_session(
+            "interview NAV-1",
+            cwd=tmp_path,
+            claude_args=("--verbose",),
+            base_env=base,
+            host="google",
+        )
+    argv = seen["argv"]
+    env = seen["env"]
+    assert argv == ["/home/u/.local/bin/agy", "--verbose", "-i", "interview NAV-1"]
+    assert isinstance(env, dict)
+    assert seen["cwd"] == tmp_path
+    assert "--dangerously-skip-permissions" not in argv and "--mode" not in argv
+    for name in (
+        launcher.AGY_UNATTENDED_ENV,
+        launcher.native_claude_sandbox.BACKEND_ENV,
+        launcher.native_claude_sandbox.CACHE_DIR_ENV,
+        launcher.native_claude_sandbox.ROOTS_ENV,
+        launcher.native_claude_sandbox.DEGRADED_ENV,
+    ):
+        assert name not in env
+
+
+@pytest.mark.parametrize("launcher_name", ["worker", "session"])
+def test_agy_launchers_refuse_snap(
+    launcher_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _capture_agy_exec(monkeypatch, "/snap/bin/agy")
+    if launcher_name == "worker":
+        result = launcher.launch_agy_worker((), cwd=tmp_path, initial_prompt="run FEAT-768")
+        prefix = "launch-worker:"
+    else:
+        result = launcher.launch_session("interview NAV-1", cwd=tmp_path, host="google")
+        prefix = "launch:"
+    stderr = capsys.readouterr().err
+    assert result == 2
+    assert prefix in stderr
+    assert launcher.OFFICIAL_AGY_INSTALL in stderr
+
+
+@pytest.mark.parametrize("launcher_name", ["worker", "session"])
+def test_agy_launchers_report_missing_binary(
+    launcher_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    seen = _capture_agy_exec(monkeypatch, agy=None)
+    if launcher_name == "worker":
+        result = launcher.launch_agy_worker((), cwd=tmp_path, initial_prompt="run FEAT-768")
+    else:
+        result = launcher.launch_session("interview NAV-1", cwd=tmp_path, host="google")
+    assert result == 1
+    assert "argv" not in seen
