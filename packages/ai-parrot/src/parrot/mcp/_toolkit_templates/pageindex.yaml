@@ -14,5 +14,6 @@
     # llm_kwargs: {}
     # The internal agentic retrieval tool is opt-in: remove it from this list
     # (and set llm:) to expose pageindex_agentic_retrieve.
+    # pageindex_optimize works without llm: (deterministic passes + deterministic summaries).
     exclude: [pageindex_agentic_retrieve]
     env: {}

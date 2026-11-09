@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from parrot.knowledge.pageindex.optimizer_llm import run_llm_passes
 from parrot.knowledge.pageindex.segments import segment_pages
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 from parrot.knowledge.pageindex.utils import structure_to_list
@@ -110,3 +111,131 @@ async def test_optimize_on_import_paths(tmp_path: Path, monkeypatch: pytest.Monk
         nodes = structure_to_list(disabled._store.load(tree_name)["structure"])
         assert all("optimizer" not in node for node in nodes)
         assert [node.get("summary") for node in nodes] == ["legacy summary"]
+
+
+async def _tree_with_document(tmp_path: Path, name: str = "guide") -> PageIndexToolkit:
+    """Create a segment-backed tree that explicit optimization can process."""
+    toolkit = PageIndexToolkit(
+        storage_dir=tmp_path,
+        optimize_on_import=False,
+        optimizer_settings={"target_leaf_tokens": 20, "min_leaf_tokens": 0},
+    )
+    await toolkit.create_tree(name)
+    await toolkit.insert_markdown(
+        name,
+        "# Guide\n\n"
+        "## First section\n\n"
+        "This section has enough repeated prose to create a deterministic optimizer report. " * 8
+        + "\n\n## Second section\n\n"
+        + "This is another section with enough text to produce segment-backed bodies. " * 8,
+    )
+    return toolkit
+
+
+@pytest.mark.asyncio
+async def test_optimize_dry_run_and_apply(tmp_path: Path) -> None:
+    """Dry runs leave generations unchanged and a repeated apply is a no-op."""
+    toolkit = await _tree_with_document(tmp_path)
+    before = (await toolkit.get_generation("guide"))["id"]
+
+    dry_run = await toolkit.optimize("guide", llm_passes=False)
+
+    assert dry_run["dry_run"] is True
+    assert dry_run["generation_before"] == dry_run["generation_after"] == before
+    assert (await toolkit.get_generation("guide"))["id"] == before
+
+    applied = await toolkit.optimize("guide", apply=True, llm_passes=False)
+    repeated = await toolkit.optimize("guide", apply=True, llm_passes=False)
+
+    assert applied["dry_run"] is False
+    assert applied["generation_after"] == before + 1
+    assert repeated["generation_before"] == repeated["generation_after"] == before + 1
+
+
+@pytest.mark.asyncio
+async def test_final_staging_validation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Final validation errors return a report and do not publish a partial candidate."""
+    toolkit = await _tree_with_document(tmp_path)
+    before = (await toolkit.get_generation("guide"))["id"]
+    validations = 0
+
+    def reject_after_staging(*args: object, **kwargs: object) -> list[str]:
+        """Accept the planning check but reject the final staged candidate."""
+        nonlocal validations
+        validations += 1
+        return [] if validations == 1 else ["final candidate rejected"]
+
+    monkeypatch.setattr("parrot.knowledge.pageindex.toolkit.validate_candidate", reject_after_staging)
+
+    report = await toolkit.optimize("guide", apply=True, llm_passes=False)
+
+    assert report["errors"] == ["final candidate rejected"]
+    assert (await toolkit.get_generation("guide"))["id"] == before
+
+
+@pytest.mark.asyncio
+async def test_same_document_subtree_staging(tmp_path: Path) -> None:
+    """A subtree optimize leaves bodies outside its selected document unchanged."""
+    toolkit = await _tree_with_document(tmp_path)
+    await toolkit.insert_markdown("guide", "# Separate\n\nIndependent document content. " * 20)
+    before = toolkit._store.load("guide")
+    first_root, second_root = before["structure"]
+    second_refs = [node.get("body_ref") for node in structure_to_list([second_root])]
+
+    report = await toolkit.optimize("guide", node_id=first_root["node_id"], apply=True, llm_passes=False)
+    after = toolkit._store.load("guide")
+    after_second = next(node for node in after["structure"] if node.get("doc_id") == second_root.get("doc_id"))
+
+    assert report["errors"] == []
+    assert [node.get("body_ref") for node in structure_to_list([after_second])] == second_refs
+
+
+@pytest.mark.asyncio
+async def test_optimize_stale_retry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A stale retry recreates the plan while retaining its LLM result cache."""
+    toolkit = await _tree_with_document(tmp_path)
+    cache_ids: list[int] = []
+
+    async def stale_once(*args: object, **kwargs: object) -> None:
+        """Advance the stored generation after the first plan to force one retry."""
+        cache_ids.append(id(args[0].llm_cache))
+        await run_llm_passes(*args, **kwargs)
+        if len(cache_ids) == 1:
+            concurrent = toolkit._store.load("guide")
+            concurrent["generation"]["id"] += 1
+            toolkit._store.save("guide", concurrent)
+
+    monkeypatch.setattr("parrot.knowledge.pageindex.toolkit.run_llm_passes", stale_once)
+
+    report = await toolkit.optimize("guide", apply=True, llm_passes=False)
+
+    assert report["errors"] == []
+    assert len(cache_ids) == 2
+    assert len(set(cache_ids)) == 1
+
+
+@pytest.mark.asyncio
+async def test_optimize_rejects_bad_candidate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Planning validation failures are returned without publishing a generation."""
+    toolkit = await _tree_with_document(tmp_path)
+    before = (await toolkit.get_generation("guide"))["id"]
+    monkeypatch.setattr(
+        "parrot.knowledge.pageindex.toolkit.validate_candidate", lambda *args, **kwargs: ["invalid ownership"]
+    )
+
+    report = await toolkit.optimize("guide", apply=True, llm_passes=False)
+
+    assert report["errors"] == ["invalid ownership"]
+    assert (await toolkit.get_generation("guide"))["id"] == before
+
+
+@pytest.mark.asyncio
+async def test_optimize_without_model(tmp_path: Path) -> None:
+    """The optimizer is exposed and runs deterministic passes without an LLM adapter."""
+    toolkit = await _tree_with_document(tmp_path)
+
+    report = await toolkit.optimize("guide")
+
+    assert "pageindex_optimize" in toolkit.list_tool_names()
+    assert "pageindex_optimize" not in toolkit.llm_dependent_tools
+    assert report["llm_passes"] == "skipped (no model)"
