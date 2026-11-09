@@ -28,6 +28,7 @@ from typing import Any, Optional
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
 from parrot.knowledge.pageindex.layout import PDFStructureError
+from parrot.knowledge.pageindex.segments import RevisionMismatchError
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, REPLACED_MARKER
 
 from .carding import (
@@ -439,8 +440,24 @@ class Bookstore:
         node_id: Optional[str] = None,
         max_chars: int = 12000,
         cursor: Optional[str] = None,
+        *,
+        expected_revision: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Read paragraphs of a book by position or a section's own text (``node_id``)."""
+        """Read paragraphs of a book by position or a section's own text (``node_id``).
+
+        Args:
+            book_id: Stable identifier of the book to read.
+            start: Optional first segment sequence number.
+            end: Optional exclusive final segment sequence number.
+            node_id: Optional section node to read instead of a sequence range.
+            max_chars: Maximum text budget for the read.
+            cursor: Optional continuation cursor from a previous read.
+            expected_revision: Optional revision that the returned snapshot must match.
+
+        Raises:
+            RevisionMismatchError: The returned snapshot or cursor names another revision.
+            BookstoreError: The underlying read cannot be completed.
+        """
         card, loc = self.resolve_book(book_id)
         toolkit = self._toolkit(loc.scope)
         doc = await self._document_of(card, toolkit)
@@ -454,8 +471,12 @@ class Bookstore:
                 max_chars=max_chars,
                 cursor=cursor,
             )
+        except RevisionMismatchError:
+            raise
         except (KeyError, ValueError) as exc:
             raise BookstoreError(self._message(exc)) from exc
+        if expected_revision is not None and result["revision"] != expected_revision:
+            raise RevisionMismatchError(f"Expected revision {expected_revision!r}, received {result['revision']!r}")
         return self._book_result(card, result)
 
     async def outline(self, book_id: str, node_id: Optional[str] = None, max_depth: int = 3) -> dict[str, Any]:
