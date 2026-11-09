@@ -1569,17 +1569,20 @@ def test_google_foreground_uses_agy_without_claude_launcher_options(
         lambda argv, **kwargs: captured.update(argv=list(argv), **kwargs) or 0,
     )
 
-    assert launcher.launch(
-        "FEAT-768",
-        tmux=False,
-        detach=False,
-        sandbox="preferred",
-        allowed_domains=(),
-        no_upstream=True,
-        claude_args=("--verbose",),
-        gh_token=False,
-        host="google",
-    ) == 0
+    assert (
+        launcher.launch(
+            "FEAT-768",
+            tmux=False,
+            detach=False,
+            sandbox="preferred",
+            allowed_domains=(),
+            no_upstream=True,
+            claude_args=("--verbose",),
+            gh_token=False,
+            host="google",
+        )
+        == 0
+    )
     assert captured["argv"] == ["--verbose"]
     assert captured["cwd"] == worktree
     assert captured["initial_prompt"] == "run FEAT-768"
@@ -1588,7 +1591,9 @@ def test_google_foreground_uses_agy_without_claude_launcher_options(
     assert "--no-gh-token" not in captured["argv"]
 
 
-def test_google_tmux_child_propagates_host_without_claude_options(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_google_tmux_child_propagates_host_without_claude_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The stdlib tmux child receives the explicit host choice and no Claude-only flags."""
     _google_launch_ready(tmp_path, monkeypatch)
     calls: list[list[str]] = []
@@ -1596,17 +1601,20 @@ def test_google_tmux_child_propagates_host_without_claude_options(tmp_path: Path
     monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: "linux")
     monkeypatch.setattr(launcher, "_run", _tmux_runner(calls, panes=["0|||agy"]))
 
-    assert launcher.launch(
-        "FEAT-768",
-        tmux=True,
-        detach=True,
-        sandbox="preferred",
-        allowed_domains=(),
-        no_upstream=True,
-        claude_args=("--verbose",),
-        gh_token=False,
-        host="google",
-    ) == 0
+    assert (
+        launcher.launch(
+            "FEAT-768",
+            tmux=True,
+            detach=True,
+            sandbox="preferred",
+            allowed_domains=(),
+            no_upstream=True,
+            claude_args=("--verbose",),
+            gh_token=False,
+            host="google",
+        )
+        == 0
+    )
     child = calls[0][calls[0].index("--in-session") : calls[0].index(";")]
     assert ["--host", "google"] == child[child.index("--host") : child.index("--host") + 2]
     assert "--sandbox-allow-domain" not in child and "--no-gh-token" not in child
@@ -1644,7 +1652,14 @@ def test_google_snap_refusal_happens_before_host_preparation(tmp_path: Path, mon
     monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda *args: pytest.fail("must not prepare worktree"))
     with pytest.raises(launcher.LaunchError, match="community antigravity-cli snap"):
         launcher.launch(
-            "FEAT-768", tmux=False, detach=False, sandbox=None, allowed_domains=(), no_upstream=True, claude_args=(), host="google"
+            "FEAT-768",
+            tmux=False,
+            detach=False,
+            sandbox=None,
+            allowed_domains=(),
+            no_upstream=True,
+            claude_args=(),
+            host="google",
         )
 
 
@@ -1681,7 +1696,9 @@ def test_agy_hook_launcher_form_requires_packaged_script(tmp_path: Path, monkeyp
         launcher._require_agy_hooks(tmp_path)
 
 
-def test_agy_hook_bare_and_baked_forms_require_runnable_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_agy_hook_bare_and_baked_forms_require_runnable_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Bare PATH commands and baked absolute commands both fail closed when un-runnable."""
     from parrot.sdd import installer
 

@@ -926,9 +926,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if forwarded[:1] == ["--"]:
         forwarded.pop(0)
     if args.host == "google":
-        return launch_agy_worker(
-            forwarded, cwd=args.cwd or _invocation_dir(), initial_prompt=f"run {args.in_session}"
-        )
+        return launch_agy_worker(forwarded, cwd=args.cwd or _invocation_dir(), initial_prompt=f"run {args.in_session}")
     domain_args = [item for domain in args.sandbox_allow_domain for item in ("--sandbox-allow-domain", domain)]
     token_args = ["--no-gh-token"] if args.no_gh_token else []
     return native_claude_sandbox.launch_worker(
