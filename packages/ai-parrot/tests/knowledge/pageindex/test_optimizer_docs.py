@@ -37,6 +37,9 @@ def test_optimizer_page_documents_feat_853_fixes() -> None:
     text = PAGE.read_text(encoding="utf-8")
     for name in (
         "LLM_INPUT_BUDGET_TOKENS",
+        "running_key",
+        "start_index",
+        "end_index",
         "window_reads",
         "key_items_rehomed",
         "reconcile_key_items",

@@ -77,7 +77,12 @@ Tokens are always counted over the segments a node **owns** (its `owned` ranges)
    times in the leaf is a running header or footer and is ignored, and split points that would leave a piece under
    `min_leaf_tokens` are dropped first, so one stray short line cannot veto the split. This is how ebook and markdown
    imports, whose chapter titles arrive as bold paragraphs rather than `#` headings, are expanded without a model;
-   segment kinds are not changed (the segmenter still types those lines `paragraph`). Every split — layout or LLM —
+   segment kinds are not changed (the segmenter still types those lines `paragraph`).
+   Repeat counts are keyed by `running_key` (casefold, digit runs collapsed to `#`), so a running footer that differs
+   only by its page number (`CHAPTER THREE PAGE 19`, `APPENDIX C PAGE 428`) counts as one repeated title and is
+   ignored once it occurs more than `PSEUDO_HEADING_MAX_REPEATS` times. Pieces created from a paged revision (a PDF)
+   carry `start_index` (page of the first owned segment) and `end_index` (page of the last owned segment); pieces
+   of an unpaged revision (ebook, markdown) carry neither key. Every split — layout or LLM —
    moves the split leaf's key items onto the piece that now owns their anchor.
 5. **LLM heading pass** (live model and `llm_passes` only). Only the leaf's heading-like segments are sent, framed
    and windowed under `LLM_INPUT_BUDGET_TOKENS` (see [Framing](#framing)); a leaf without any makes no call. The model
