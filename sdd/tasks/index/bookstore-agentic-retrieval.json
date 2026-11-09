@@ -262,7 +262,7 @@
       "feature_id": "FEAT-858",
       "feature": "bookstore-agentic-retrieval",
       "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -273,8 +273,9 @@
       "parallelism_notes": "TASK-5431: serializes overlapping writes to packages/ai-parrot/src/parrot/knowledge/bookstore/library.py; TASK-5436: serializes overlapping writes to packages/ai-parrot/tests/knowledge/bookstore/test_agentic_eval.py; Exclusive host-only execution mutates shared corpus EPUB trees/catalog and calls the provider outside declared committed files.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5437-bookstore-host-evaluation.md"
+      "completed_at": "2026-11-09T19:13:17+00:00",
+      "file": "sdd/tasks/completed/TASK-5437-bookstore-host-evaluation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5438",

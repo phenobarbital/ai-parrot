@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-858 — Bookstore Agentic Retrieval
 **Spec**: `sdd/specs/bookstore-agentic-retrieval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2–4h; host wall time depends on provider when applicable)
 **Depends-on**: TASK-5431, TASK-5436
@@ -221,4 +221,10 @@ The logs are intentional execution artifacts outside this task's committed file 
 
 ## Completion Note
 
-NOT COMPLETED - needs the owner host. The task requires the real library, an explicit model, re-indexing the two legacy EPUBs and the owner's review of the 21 handwritten questions; the worker sandbox cannot do this and must not fabricate a corpus. Two coder attempts (gpt-5.6-terra, gpt-5.6-sol) both returned empty_delivery. Harness from TASK-5436 is merged and ready. After the owner runs it, TASK-5438 (docs, depends on 5437) can proceed.
+Host run by the owner (Jesus Lara), not a worker. Model: google:gemini-3.5-flash-lite, concurrency 1, seed 858.
+- Report: artifacts/logs/bookstore_agentic_eval/20261109T190824Z/report.md sha256 1a62ca75295dfeb96e9f3e3fa88dc7a6d488eb91fed20007a9ecc82d28b72f56; metrics.json sha256 07eb7049e1443f39346a6b74cedc1548c0b4f0c6fee90a298fe6a534655abc58 (artifacts are not committed).
+- Fixture: sdd/state/FEAT-858/agentic-eval-questions.json sha256 393e8facd6bcb427790ccb96d39b9466e40376642805c2028790b5ddf2bc86d5; 56 questions (35 generated, 21 handwritten, 7 books).
+- Rows: planned 140, attempted 140, completed 140, no stale/skipped.
+- Recommendation: retain_baseline (baseline = 40000 chars, 12 reads). No candidate beat the baseline strictly on (median chars, median wall), so library.py is unchanged; Bookstore adds no local defaults. Regression: test_bookstore_defaults_match_recorded_recommendation.
+- Observations (not acted on): handwritten baseline gold_hit 8/21, grounded 16/21; generated gold_hit 5/35; median chars read is 12000 in every setting, so the budget sweep may be capped. Owner reviewed the 21 gold nodes (owner-stated, not verified by the worker).
+- Ledger: issue:7e09c516a2d3 (pageindex_read_pages called on segment-only documents).
