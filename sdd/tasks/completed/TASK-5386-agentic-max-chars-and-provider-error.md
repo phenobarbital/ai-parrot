@@ -441,8 +441,44 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: Claude Code session ai-parrot-b5 (/sdd-fix d34c567792ef)
+**Date**: 2026-11-09
+**Notes**: `StopReason` gained `"provider_error"`; `AgenticRetriever.run` catches the provider
+task's exception (re-raising `asyncio.CancelledError` first), logs it at warning, and falls
+through to the normal `EvidenceBundle` build; the literal was added to both guard sets. `run`'s
+docstring now documents cap-fill, the provider-done/stop tie and `provider_error`.
 
-**Deviations from spec**: none | describe if any
+Implementing the provider_error path surfaced a second defect the task did not anticipate:
+`AgenticRetriever._cancel` did `await task` guarded only by `except asyncio.CancelledError`, so
+the `finally` block re-raised the provider's exception and destroyed the bundle `run` was about
+to return — the feature was unreachable without fixing it. `_cancel` now also swallows a
+non-cancellation exception, with a docstring saying why. This is inside the task's declared file
+and required by FR-4.2 ("run() does not re-raise"), so it was fixed here rather than deferred.
+
+29/29 pass in `test_agentic_retrieval.py`; 29/29 across `test_read_ledger.py`,
+`test_read_tools.py`, `test_citations.py`, `test_agentic_snapshot.py`. ruff and black clean.
+
+**Deviations from spec**: one finding that changes what FR-2 means.
+
+FR-2 / spec §1 item 2 claims a model passing `max_chars: null` reaches
+`ledger.charge(None)` and raises `TypeError`, aborting the request. **That is not reachable.**
+Every real read tool annotates `max_chars: int = 12000` (`toolkit.py:1057`, `1071`, `1090`,
+`1124`, and the snapshot-bound clones at `1183`+), so the `ToolkitTool` args schema rejects
+`None` with a pydantic `ValidationError` *before* the wrapper's `call` runs — and before
+`controller.admit()`, so the refused call is not even charged against `max_tool_calls`. The
+provider receives a recoverable tool error.
+
+The coercion was still implemented as specified (`int(kwargs.get("max_chars") or 12000)`): it is
+correct, harmless, and real defence in depth should any read tool ever declare
+`Optional[int]`. But it is not a crash fix, and the tests say so rather than pretending
+otherwise:
+- `test_null_max_chars_is_a_recoverable_tool_error` pins the real boundary (schema refusal,
+  `tool_calls == 0`, `stopped == "no_tool_calls"`, nothing charged).
+- `test_wrapper_coerces_falsy_max_chars_to_the_default` tests the coercion where it actually
+  applies, by calling `_wrap`'s wrapped method directly beneath the schema, for `None` and `0`.
+- `test_read_tool_honours_positive_max_chars` pins FR-2.2.
+
+AC-6 as literally worded ("instead of raising TypeError") cannot be demonstrated end-to-end,
+because the TypeError does not occur. The underlying intent — a null `max_chars` must not abort
+an agentic request — is verified and holds. Ledger item (1) of issue:2e4dfac0d686 should be
+read as already mitigated by the schema, not as a live crash.
