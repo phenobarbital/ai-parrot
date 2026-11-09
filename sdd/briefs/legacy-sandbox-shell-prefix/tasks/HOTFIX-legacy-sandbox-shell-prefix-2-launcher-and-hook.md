@@ -157,4 +157,4 @@ fail-closed rule: no valid token means today's `bwrap` wrap.
 
 ## Completion Note
 
-Pending; populated by the task finalizer after implementation and validation.
+Implemented by seat gpt-5.6-terra (codex), 1 attempt, 511s, merged (lint aef81f5f10). Task tests green: test_native_claude_sandbox / test_worktree_environment / test_sdd_launch = 324 passed. The engine merge-tier importer sweep timed out (sandbox) with failures; reproduced on the host: 6 failures, all in tests/launcher (project-venv trust check: test_resolve_order_and_validity, test_worktree_prefers_local_then_main, 4 in test_launcher_reexec). All 6 also fail on the main checkout, so pre-existing, unrelated to this task (tracked as issue:91d60a249533). The other 403 selected tests pass; the engine-sandbox hang did not reproduce on the host.
