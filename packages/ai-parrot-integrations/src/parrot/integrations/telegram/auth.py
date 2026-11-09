@@ -35,7 +35,6 @@ from navconfig.logging import logging
 from parrot.integrations.core.auth.oauth2_providers import get_provider, OAuth2ProviderConfig
 from parrot.integrations.telegram.browser_login import BROWSER_COMPLETE_PATH
 
-
 logger = logging.getLogger("parrot.Telegram.Auth")
 
 
@@ -327,6 +326,7 @@ def _browser_page_params(config: Any, state: str) -> Dict[str, str]:
 def _browser_keyboard(text: str, url: str) -> InlineKeyboardMarkup:
     """Inline keyboard whose single button opens ``url`` in the system browser."""
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=text, url=url)]])
+
 
 class AbstractAuthStrategy(ABC):
     """Base class for Telegram authentication strategies.
