@@ -307,9 +307,13 @@ def test_standalone_loader_resolves_kernel_by_path() -> None:
 
 @pytest.mark.parametrize("subagent", ["sdd-worker", "sdd-coder"])
 def test_programmatic_claude_protection_does_not_depend_on_project_settings(
-    linked_worktree: Path, subagent: str
+    linked_worktree: Path, monkeypatch: pytest.MonkeyPatch, subagent: str
 ) -> None:
     """Programmatic prompts lose frontmatter, so protection must be injected."""
+    # The assertion concerns hook injection, not whether this host can create
+    # Bubblewrap namespaces.  Keep the launch planner deterministic on hosts
+    # where the configured legacy backend cannot start Bubblewrap.
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_MODE", "off")
     dispatcher = ClaudeCodeDispatcher(max_concurrent=1, redis_url="redis://unused", stream_ttl_seconds=1)
     profile = ClaudeCodeDispatchProfile(subagent=subagent, setting_sources=[])
     options = dispatcher._resolve_run_options(profile, str(linked_worktree))
@@ -1550,3 +1554,196 @@ def test_packaged_hook_entry_point_denies_in_native_mode_without_import_error(tm
     assert output["permissionDecision"] == "deny"
     assert "Shared-environment guard failed" not in output["permissionDecisionReason"]
     assert "No module named" not in output["permissionDecisionReason"]
+
+
+def _agy(workspaces: list[Path] | None, name: str = "run_command", **args: Any) -> dict[str, Any]:
+    """Build an Antigravity PreToolUse event as captured from agy 1.5.3."""
+    payload: dict[str, Any] = {"conversationId": "c1", "stepIdx": 1, "toolCall": {"name": name, "args": args}}
+    if workspaces is not None:
+        payload["workspacePaths"] = [str(workspace) for workspace in workspaces]
+    return payload
+
+
+def test_worktree_env_agy_verdict_rewrite(tmp_path: Path) -> None:
+    """Interactive commands receive only a literal package-source rewrite."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "packages" / "core" / "src").mkdir(parents=True)
+    decision, _reason, overwrite = policy.agy_verdict(
+        _agy([repo], CommandLine="pytest tests/test_x.py -q"), root=repo, backend="bubblewrap", unattended=False
+    )
+    assert decision == "ask"
+    assert overwrite is not None and set(overwrite) == {"CommandLine"}
+    assert overwrite["CommandLine"].startswith("PYTHONPATH=")
+    assert overwrite["CommandLine"].endswith("pytest tests/test_x.py -q")
+    assert "printf" not in overwrite["CommandLine"]
+
+
+@pytest.mark.parametrize("command", ["uv sync", "cd sub && uv pip install x"])
+def test_worktree_env_agy_verdict_denies_shared_environment_mutations(tmp_path: Path, command: str) -> None:
+    """Every simple command in an AGY compound is checked for uv mutation."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    decision, reason, overwrite = policy.agy_verdict(
+        _agy([repo], CommandLine=command), root=repo, backend="bubblewrap", unattended=False
+    )
+    assert (decision, overwrite) == ("deny", None)
+    assert reason == policy.POLICY_MESSAGE
+
+
+def test_worktree_env_agy_verdict_leaves_no_source_or_existing_rewrite(tmp_path: Path) -> None:
+    """No source tree and an idempotent rewrite both leave the command untouched."""
+    plain = tmp_path / "plain"
+    (plain / ".git").mkdir(parents=True)
+    assert policy.agy_verdict(
+        _agy([plain], CommandLine="pytest tests/test_x.py -q"), root=plain, backend="bubblewrap", unattended=False
+    ) == ("ask", "", None)
+
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "packages" / "core" / "src").mkdir(parents=True)
+    prefix = policy._literal_pythonpath(repo)
+    assert prefix is not None
+    assert policy.agy_verdict(
+        _agy([repo], CommandLine=f"{prefix} pytest tests/test_x.py -q"),
+        root=repo,
+        backend="bubblewrap",
+        unattended=False,
+    ) == ("ask", "", None)
+
+
+def test_worktree_env_agy_verdict_bwrap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unattended workers wrap only through reachable Bubblewrap."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "packages" / "core" / "src").mkdir(parents=True)
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap" if name == "bwrap" else None)
+    decision, _reason, overwrite = policy.agy_verdict(
+        _agy([repo], CommandLine="pytest tests/test_x.py -q"), root=repo, backend="bubblewrap", unattended=True
+    )
+    assert decision == "ask"
+    assert overwrite is not None
+    assert shlex.split(overwrite["CommandLine"])[-3:] == ["/bin/bash", "-c", "pytest tests/test_x.py -q"]
+    assert "/usr/bin/bwrap" in overwrite["CommandLine"]
+
+    monkeypatch.setattr(policy.shutil, "which", lambda _name: None)
+    assert (
+        policy.agy_verdict(
+            _agy([repo], CommandLine="pytest tests/test_x.py -q"), root=repo, backend="bubblewrap", unattended=True
+        )[0]
+        == "deny"
+    )
+    assert (
+        policy.agy_verdict(
+            _agy([repo], CommandLine="pytest tests/test_x.py -q"), root=repo, backend="auto", unattended=True
+        )[0]
+        == "deny"
+    )
+    interactive = policy.agy_verdict(
+        _agy([repo], CommandLine="pytest tests/test_x.py -q"), root=repo, backend="bubblewrap", unattended=False
+    )
+    assert interactive[2] is not None and "bwrap" not in interactive[2]["CommandLine"]
+
+
+def test_worktree_env_agy_write_containment(checkout: tuple[Path, Path], tmp_path: Path) -> None:
+    """AGY file tools stay in their checkout and cannot reach protected targets."""
+    worktree, _environment = checkout
+    inside = worktree / "notes.txt"
+    assert policy.agy_verdict(
+        _agy([worktree], "write_file", Path="notes.txt", Content="ok", Overwrite=True),
+        root=worktree,
+        backend="bubblewrap",
+        unattended=False,
+    ) == ("ask", "", None)
+    assert policy.agy_verdict(
+        _agy([worktree], "edit_file", Path=str(inside)), root=worktree, backend="bubblewrap", unattended=False
+    ) == ("ask", "", None)
+
+    external = tmp_path / "outside.txt"
+    escaped_parent = worktree / "linked-parent"
+    escaped_parent.symlink_to(tmp_path, target_is_directory=True)
+    for path in ("../outside.txt", str(external), "linked-parent/new-file.txt", ".venv/editable.pth", ".git/config"):
+        decision, _reason, overwrite = policy.agy_verdict(
+            _agy([worktree], "write_file", Path=path, Content="bad", Overwrite=True),
+            root=worktree,
+            backend="bubblewrap",
+            unattended=False,
+        )
+        assert (decision, overwrite) == ("deny", None)
+    assert (
+        policy.agy_verdict(_agy([worktree], "edit_file"), root=worktree, backend="bubblewrap", unattended=False)[0]
+        == "deny"
+    )
+
+
+def test_worktree_env_agy_write_denies_primary_shared_environment(tmp_path: Path) -> None:
+    """A primary checkout's real virtual environment remains protected."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    environment = repo / ".venv"
+    environment.mkdir()
+    (environment / "pyvenv.cfg").write_text("home = /usr/bin\n")
+    assert (
+        policy.agy_verdict(
+            _agy([repo], "write_file", Path=".venv/editable.pth", Content="bad", Overwrite=True),
+            root=repo,
+            backend="bubblewrap",
+            unattended=False,
+        )[0]
+        == "deny"
+    )
+
+
+@pytest.mark.parametrize("workspaces", [None, [], [Path("relative")]])
+def test_worktree_env_agy_workspace_context_is_required(tmp_path: Path, workspaces: list[Path] | None) -> None:
+    """Missing and non-absolute AGY workspace contexts are denied."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    assert (
+        policy.agy_verdict(_agy(workspaces, CommandLine="true"), root=repo, backend="bubblewrap", unattended=False)[0]
+        == "deny"
+    )
+
+
+def test_worktree_env_agy_workspace_context_rejects_ambiguity_and_other_repositories(tmp_path: Path) -> None:
+    """The payload can name only the root checkout supplied to the hook."""
+    repo = tmp_path / "repo"
+    other = tmp_path / "other"
+    (repo / ".git").mkdir(parents=True)
+    (other / ".git").mkdir(parents=True)
+    assert (
+        policy.agy_verdict(_agy([repo, other], CommandLine="true"), root=repo, backend="bubblewrap", unattended=False)[
+            0
+        ]
+        == "deny"
+    )
+    assert (
+        policy.agy_verdict(_agy([other], CommandLine="true"), root=repo, backend="bubblewrap", unattended=False)[0]
+        == "deny"
+    )
+
+
+def test_worktree_env_agy_outside_cwd_and_non_agy_tools_are_unchanged(tmp_path: Path) -> None:
+    """Policy leaves force-ask classification to AGY permissions for outside Cwds."""
+    repo = tmp_path / "repo"
+    external = tmp_path / "external"
+    (repo / ".git").mkdir(parents=True)
+    external.mkdir()
+    assert policy.agy_verdict(
+        _agy([repo], CommandLine="uv sync", Cwd=str(external)), root=repo, backend="bubblewrap", unattended=False
+    ) == ("ask", "", None)
+    assert policy.agy_verdict(
+        _agy([repo], "view_file", Path="outside.txt"), root=repo, backend="bubblewrap", unattended=False
+    ) == ("ask", "", None)
+
+
+def test_worktree_env_agy_verdict_does_not_change_claude_hook(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The AGY policy is separate from Claude's existing Bash response shape."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap" if name == "bwrap" else None)
+    response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}})
+    output = response["hookSpecificOutput"]
+    assert output["hookEventName"] == "PreToolUse"
+    assert "permissionDecision" not in output
+    assert shlex.split(output["updatedInput"]["command"])[-3:] == ["/bin/bash", "-c", "true"]
