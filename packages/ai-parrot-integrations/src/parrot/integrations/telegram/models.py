@@ -5,6 +5,7 @@ Data models for Telegram bot configuration.
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Any
+from urllib.parse import urlsplit
 from navconfig import config
 from parrot.integrations.knowledge_upload.models import KnowledgeUploadConfig
 
@@ -90,6 +91,14 @@ class TelegramAgentConfig:
     # FEAT-109: multi-method list. When set, takes priority over auth_method.
     # Populated by __post_init__ from auth_method when not explicitly set.
     auth_methods: List[str] = field(default_factory=list)
+    # FEAT-854: auth presentation mode. "webview" (default) = WebApp button +
+    # Telegram.WebApp.sendData(); "browser" = inline URL button opened in the
+    # system browser + server-side completion endpoints.
+    auth_open_mode: str = "webview"
+    # FEAT-854: public base URL of the parrot server (e.g. "https://parrot.example").
+    # Required in browser mode to build absolute completion URLs. Formalizes the
+    # getattr(config, "public_base_url", "") reads in wrapper.py.
+    public_base_url: Optional[str] = None
     # OAuth2 settings (used when auth_method="oauth2")
     oauth2_provider: str = "google"
     oauth2_client_id: Optional[str] = None
@@ -223,6 +232,25 @@ class TelegramAgentConfig:
                     base = base.rsplit("/", 1)[0]
                 self.google_auth_url = f"{base}/google/"
 
+        # FEAT-854: validate the auth presentation mode.
+        _ALLOWED_OPEN_MODES = {"webview", "browser"}
+        if self.auth_open_mode not in _ALLOWED_OPEN_MODES:
+            raise ValueError(
+                f"Agent '{self.name}': auth_open_mode must be one of "
+                f"{sorted(_ALLOWED_OPEN_MODES)}, got {self.auth_open_mode!r}"
+            )
+        if self.auth_open_mode == "browser":
+            public_base_url = self.public_base_url.strip() if isinstance(self.public_base_url, str) else ""
+            parsed_public_base_url = urlsplit(public_base_url)
+            if (
+                parsed_public_base_url.scheme not in {"http", "https"}
+                or not parsed_public_base_url.netloc
+            ):
+                raise ValueError(
+                    f"Agent '{self.name}': browser mode requires public_base_url "
+                    "to be an absolute http(s) URL"
+                )
+
     @property
     def voice_enabled(self) -> bool:
         """Return True if voice transcription is configured and enabled."""
@@ -285,6 +313,8 @@ class TelegramAgentConfig:
             force_authentication=data.get("force_authentication", False),
             auth_method=data.get("auth_method", "basic"),
             auth_methods=auth_methods,
+            auth_open_mode=data.get("auth_open_mode", "webview"),
+            public_base_url=data.get("public_base_url"),
             oauth2_provider=data.get("oauth2_provider", "google"),
             oauth2_client_id=data.get("oauth2_client_id"),
             oauth2_client_secret=data.get("oauth2_client_secret"),
