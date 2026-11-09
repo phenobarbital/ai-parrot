@@ -35,16 +35,22 @@ async def test_delegate_once(tmp_path: Path) -> None:
             "stopped": "budget",
             "usage": {"tokens": 2},
             "citations": [
-                {"doc_id": "doc", "revision": "rev", "seq": 1, "start": 4, "end": 9, "excerpt": "exact", "label": "p. 1"}
+                {
+                    "doc_id": "doc",
+                    "revision": "rev",
+                    "seq": 1,
+                    "start": 4,
+                    "end": 9,
+                    "excerpt": "exact",
+                    "label": "p. 1",
+                }
             ],
         }
     )
     toolkit.get_tree = AsyncMock(
         return_value={
             "generation": {"id": 3},
-            "structure": [
-                {"title": "Chapter", "doc_id": "doc", "revision": "rev", "owned": [[0, 3]], "nodes": []}
-            ],
+            "structure": [{"title": "Chapter", "doc_id": "doc", "revision": "rev", "owned": [[0, 3]], "nodes": []}],
         }
     )
     bookstore.resolve_book = MagicMock(return_value=(card, LibraryLocation(scope="project", root=tmp_path / "library")))
