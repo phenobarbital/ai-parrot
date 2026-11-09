@@ -45,7 +45,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -53,8 +53,9 @@
       "parallelism_notes": "no dependencies: only worktree_environment.py and its test file; creates agy_verdict/AGY_FILE_TOOLS for TASK-5348",
       "assigned_to": null,
       "started_at": "2026-11-09T00:08:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5347-agy-verdict-worktree-env.md"
+      "completed_at": "2026-11-09T00:21:14+00:00",
+      "file": "sdd/tasks/completed/TASK-5347-agy-verdict-worktree-env.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5348",
@@ -103,7 +104,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -111,8 +112,9 @@
       "parallelism_notes": "no dependencies: only models/google_coding.py and test_google_coding_dispatcher.py",
       "assigned_to": null,
       "started_at": "2026-11-09T00:08:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5350-google-coding-profile-literals.md"
+      "completed_at": "2026-11-09T00:21:15+00:00",
+      "file": "sdd/tasks/completed/TASK-5350-google-coding-profile-literals.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5351",
@@ -121,7 +123,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -129,8 +131,9 @@
       "parallelism_notes": "no dependencies: opens the feature_launcher.py / test_sdd_launch.py chain (5351 -> 5352 -> 5353 -> 5354)",
       "assigned_to": null,
       "started_at": "2026-11-09T00:08:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5351-launcher-google-preflight.md"
+      "completed_at": "2026-11-09T00:21:15+00:00",
+      "file": "sdd/tasks/completed/TASK-5351-launcher-google-preflight.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5352",
@@ -200,7 +203,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -208,8 +211,9 @@
       "parallelism_notes": "no dependencies: first editor of scripts/sdd/check_asset_sync.py and _assets/manifest.json (before TASK-5358); creates tests/sdd/test_agy_agents.py",
       "assigned_to": null,
       "started_at": "2026-11-09T00:08:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5355-agy-missing-subagents.md"
+      "completed_at": "2026-11-09T00:21:16+00:00",
+      "file": "sdd/tasks/completed/TASK-5355-agy-missing-subagents.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5356",
