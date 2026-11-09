@@ -1,6 +1,7 @@
 """FEAT-854: browser-mode login registry, state format, verifier contract and pages."""
 
 import time
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -288,9 +289,7 @@ async def test_browser_mode_full_flow_basic(browser_client) -> None:
     )
 
 
-from pathlib import Path
-
-_WIKI_PAGE = Path(__file__).resolve().parents[5] / "wiki/integrations/telegram-auth-open-mode.md"
+_WIKI_PAGE =Path(__file__).resolve().parents[5] / "wiki/integrations/telegram-auth-open-mode.md"
 
 
 def test_wiki_page_documents_browser_mode():
