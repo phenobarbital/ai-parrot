@@ -1320,9 +1320,7 @@ def test_google_official_agy_is_accepted(tmp_path: Path) -> None:
     launcher.require_official_agy(agy)
 
 
-def test_google_agy_is_snap_detects_symlink_wrapper_and_plain(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_google_agy_is_snap_detects_symlink_wrapper_and_plain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     snap_target = tmp_path / "usr" / "bin" / "snap"
     snap_target.parent.mkdir(parents=True)
     snap_target.write_bytes(b"\x7fELF" + b"\0" * 32)
@@ -1347,7 +1345,7 @@ def test_google_agy_is_snap_detects_symlink_wrapper_and_plain(
     assert launcher.agy_is_snap(wrapper) is True
 
     plain = tmp_path / "agy-plain"
-    plain.write_text("#!/bin/sh\nexec /opt/agy/bin/agy \"$@\"\n", encoding="utf-8")
+    plain.write_text('#!/bin/sh\nexec /opt/agy/bin/agy "$@"\n', encoding="utf-8")
     assert launcher.agy_is_snap(plain) is False
 
 
