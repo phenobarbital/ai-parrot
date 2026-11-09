@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-09T13:42:48+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-09T13:58:18+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -103,7 +103,7 @@
       "feature_id": "FEAT-855",
       "feature": "pageindex-layout-structure-fixes",
       "spec": "sdd/specs/pageindex-layout-structure-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -115,8 +115,9 @@
       "parallelism_notes": "exclusive: host-only layout_eval over the git-ignored corpus in the main checkout, writes artifacts/logs/layout_eval; measures the combined effect of TASK-5408 (bookmarks_dropped), TASK-5409 (bold_sizes) and TASK-5410 (_bookmark_prefix_match)",
       "assigned_to": null,
       "started_at": "2026-11-09T13:51:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5411-layout-evaluation-and-docs.md"
+      "completed_at": "2026-11-09T13:58:18+00:00",
+      "file": "sdd/tasks/completed/TASK-5411-layout-evaluation-and-docs.md",
+      "verification": "verified"
     }
   ]
 }
