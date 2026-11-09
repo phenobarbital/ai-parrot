@@ -315,6 +315,11 @@ CREW_RESULT_STORAGE_PG_DSN = config.get("CREW_RESULT_STORAGE_PG_DSN", fallback=d
 CREW_RESULT_STORAGE_REDIS_URL = config.get("CREW_RESULT_STORAGE_REDIS_URL", fallback=REDIS_URL)
 CREW_RESULT_STORAGE_REDIS_TTL = int(config.get("CREW_RESULT_STORAGE_REDIS_TTL", fallback=604800))
 
+# Crew definition storage (FEAT-860)
+CREW_DEFINITION_STORAGE = config.get("CREW_DEFINITION_STORAGE", fallback="redis")
+CREW_DEFINITION_PG_DSN = config.get("CREW_DEFINITION_PG_DSN", fallback=default_dsn)
+CREW_DEFINITION_MIGRATION = config.getboolean("CREW_DEFINITION_MIGRATION", fallback=False)
+
 # AgentsFlow state checkpointing (FEAT-399)
 FLOW_CHECKPOINT_STORE = config.get("FLOW_CHECKPOINT_STORE", fallback="redis")
 FLOW_CHECKPOINT_DURABLE_STORE = config.get("FLOW_CHECKPOINT_DURABLE_STORE", fallback=None)
