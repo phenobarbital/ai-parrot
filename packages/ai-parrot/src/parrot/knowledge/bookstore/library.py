@@ -17,6 +17,7 @@ back to deterministic carding and searches run BM25-only.
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import itertools
 import logging
@@ -408,6 +409,149 @@ class Bookstore:
         if not documents:
             raise BookstoreError("book has no segments — reindex it or run pageindex_index_segments")
         return documents[0]
+
+    async def agentic_retrieve(
+        self,
+        book_id: str,
+        query: str,
+        top_k: int = 5,
+        draft_answer: bool = True,
+        budget_chars: Optional[int] = None,
+        max_reads: Optional[int] = None,
+        timeout_s: Optional[float] = None,
+    ) -> dict[str, Any]:
+        """Return per-book PageIndex evidence with generation-safe book citation labels.
+
+        Args:
+            book_id: Stable identifier of the indexed book to research.
+            query: Research question for the bounded PageIndex reading loop.
+            top_k: Number of first-stage candidates to consider.
+            draft_answer: Whether PageIndex should ask the model for a final answer.
+            budget_chars: Optional read-character budget forwarded to PageIndex.
+            max_reads: Optional read-operation budget forwarded to PageIndex.
+            timeout_s: Optional total request timeout forwarded to PageIndex.
+
+        Raises:
+            BookstoreError: If the book lacks indexed segments or no compatible LLM is configured.
+            ValueError: If PageIndex rejects a numeric argument.
+        """
+        card, loc = self.resolve_book(book_id)
+        if not self.has_llm:
+            raise BookstoreError("agentic retrieval requires an LLM; configure a model for this bookstore")
+
+        toolkit = self._toolkit(loc.scope)
+        await self._document_of(card, toolkit)
+        try:
+            bundle = await toolkit.agentic_retrieve(
+                card.tree_name,
+                query,
+                top_k=top_k,
+                draft_answer=draft_answer,
+                budget_chars=budget_chars,
+                max_reads=max_reads,
+                timeout_s=timeout_s,
+            )
+        except ValueError as exc:
+            message = self._message(exc)
+            if "requires an LLM" in message or "supports_tool_loop=False" in message:
+                raise BookstoreError(message) from exc
+            raise
+        return await self._decorate_citations(card, loc.scope, bundle)
+
+    async def _decorate_citations(self, card: BookCard, scope: str, bundle: dict[str, Any]) -> dict[str, Any]:
+        """Copy and enrich citations, using ownership only from the matching snapshot.
+
+        A current tree is safe to consult only when it is the same generation captured by
+        the PageIndex retrieval.  It may otherwise describe a re-indexed document whose
+        node ownership no longer applies to the already validated citation.
+        """
+        decorated = copy.deepcopy(bundle)
+        decorated["book_id"] = card.book_id
+        decorated["book_title"] = card.title
+        expected_generation = bundle.get("generation")
+        tree: Optional[dict[str, Any]] = None
+        toolkit = self._toolkit(scope)
+        try:
+            candidate = await toolkit.get_tree(card.tree_name)
+            generation = (candidate.get("generation") or {}).get("id")
+            if generation == expected_generation:
+                tree = candidate
+        except (KeyError, ValueError):
+            self.logger.debug("Unable to load citation-decoration snapshot for %s", card.book_id, exc_info=True)
+
+        rendered: list[str] = []
+        citations = decorated.get("citations")
+        if not isinstance(citations, list):
+            return decorated
+
+        for citation in citations:
+            if not isinstance(citation, dict):
+                continue
+            section_path = self._citation_section_path(tree, citation)
+            if section_path is None:
+                stored = citation.get("section")
+                if isinstance(stored, list) and all(isinstance(item, str) for item in stored):
+                    section_path = list(stored)
+            if section_path is None:
+                section_path = self._toc_section_path(tree, citation)
+            citation["book_id"] = card.book_id
+            citation["title"] = card.title
+            if section_path:
+                citation["chapter"] = section_path[0]
+                citation["section_path"] = section_path
+            label = citation.get("label")
+            if isinstance(label, str):
+                chapter = citation.get("chapter")
+                parts = [card.title]
+                if isinstance(chapter, str) and chapter:
+                    parts.append(chapter)
+                parts.append(label)
+                rendered.append(f"[{', '.join(parts)}]")
+        decorated["rendered_citations"] = "; ".join(rendered)
+        return decorated
+
+    @staticmethod
+    def _citation_section_path(tree: Optional[dict[str, Any]], citation: dict[str, Any]) -> Optional[list[str]]:
+        """Return one unambiguous owning node's root-to-node titles, if available."""
+        if tree is None:
+            return None
+        doc_id = citation.get("doc_id")
+        revision = citation.get("revision")
+        seq = citation.get("seq")
+        if not isinstance(doc_id, str) or not isinstance(revision, str) or not isinstance(seq, int):
+            return None
+        matches: list[list[str]] = []
+
+        def walk(nodes: list[dict[str, Any]], path: list[str]) -> None:
+            for node in nodes:
+                title = node.get("title")
+                node_path = path + [title] if isinstance(title, str) and title else path
+                if node.get("doc_id") == doc_id and node.get("revision") == revision:
+                    for owned in node.get("owned") or []:
+                        if isinstance(owned, list) and len(owned) == 2 and owned[0] <= seq < owned[1]:
+                            matches.append(node_path)
+                            break
+                children = node.get("nodes") or []
+                if isinstance(children, list):
+                    walk(children, node_path)
+
+        structure = tree.get("structure") or []
+        if isinstance(structure, list):
+            walk(structure, [])
+        return matches[0] if len(matches) == 1 and matches[0] else None
+
+    @staticmethod
+    def _toc_section_path(tree: Optional[dict[str, Any]], citation: dict[str, Any]) -> Optional[list[str]]:
+        """Return a matching snapshot's unique top-level page chapter, if any."""
+        if tree is None or not isinstance(citation.get("page"), int):
+            return None
+        page = citation["page"]
+        matches: list[str] = []
+        for node in tree.get("structure") or []:
+            start, end, title = node.get("start_index"), node.get("end_index"), node.get("title")
+            if isinstance(start, int) and isinstance(end, int) and isinstance(title, str) and start <= page <= end:
+                matches.append(title)
+        return [matches[0]] if len(matches) == 1 else None
 
     @staticmethod
     def _book_result(card: Any, result: dict[str, Any]) -> dict[str, Any]:
