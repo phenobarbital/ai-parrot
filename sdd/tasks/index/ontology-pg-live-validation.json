@@ -27,7 +27,8 @@
       "feature": "ontology-pg-live-validation",
       "title": "Add CI job for ontology vocabulary PostgreSQL tests",
       "file": "sdd/tasks/active/TASK-5456-ontology-pg-ci-job.md",
-      "status": "pending",
+      "status": "in-progress",
+      "started_at": "2026-11-10T00:45:00+00:00",
       "priority": "high",
       "effort": "small",
       "depends_on": [
