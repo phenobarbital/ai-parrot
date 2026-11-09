@@ -276,7 +276,9 @@ class Bookstore:
         return self._location(scope).root / ".bookstore-operations"
 
     @asynccontextmanager
-    async def _book_operation_lock(self, scope: str, slug: str, *, timeout: Optional[float] = None) -> AsyncIterator[None]:
+    async def _book_operation_lock(
+        self, scope: str, slug: str, *, timeout: Optional[float] = None
+    ) -> AsyncIterator[None]:
         """Hold the separate operation lock for one book slug."""
         lock_timeout = self._reindex_lock_timeout_s if timeout is None else timeout
         async with tree_lock(self._operation_storage_dir(scope), f"book-{slug}", timeout=lock_timeout):
