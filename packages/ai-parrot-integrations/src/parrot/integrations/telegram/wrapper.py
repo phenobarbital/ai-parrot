@@ -3840,6 +3840,12 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
     async def close(self) -> None:
         """Release resources held by the wrapper (call on shutdown)."""
+        # Queued jobs first, and every step isolated: one failing close must not skip the rest.
+        if getattr(self, "_queued_commands", None) is not None:
+            try:
+                await self._queued_commands.shutdown()
+            except Exception:  # noqa: BLE001
+                self.logger.warning("Queued-command shutdown failed", exc_info=True)
         if self._bot_id:
             try:
                 from parrot.tools.reminder import unregister_telegram_bot
@@ -3848,17 +3854,24 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             except Exception:  # noqa: BLE001 - reminders are optional
                 pass
         if self._transcriber is not None:
-            await self._transcriber.close()
+            try:
+                await self._transcriber.close()
+            except Exception:  # noqa: BLE001
+                self.logger.warning("Transcriber close failed", exc_info=True)
             self._transcriber = None
         # FEAT-213: also close the TTS synthesizer if it was created
         if self._synthesizer is not None:
-            await self._synthesizer.close()
+            try:
+                await self._synthesizer.close()
+            except Exception:  # noqa: BLE001
+                self.logger.warning("Synthesizer close failed", exc_info=True)
             self._synthesizer = None
         # FEAT-647: cancel running knowledge-upload jobs (their finally deletes staged files)
         if getattr(self, "_knowledge_upload", None) is not None:
-            await self._knowledge_upload.shutdown()
-        if getattr(self, "_queued_commands", None) is not None:
-            await self._queued_commands.shutdown()
+            try:
+                await self._knowledge_upload.shutdown()
+            except Exception:  # noqa: BLE001
+                self.logger.warning("Knowledge-upload shutdown failed", exc_info=True)
 
     async def handle_voice(self, message: Message) -> None:
         """Handle voice note (ContentType.VOICE) and audio file (ContentType.AUDIO).

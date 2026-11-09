@@ -244,3 +244,19 @@ async def test_redis_user_index_lists_and_prunes() -> None:
             await store._redis.delete(store._index_key, store._user_index_key("alice"))
             await store._redis.delete(store._job_key("older"), store._job_key("newer"))
         await store.close()
+
+
+@pytest.mark.asyncio
+async def test_delete_job_prunes_persistence_bookkeeping() -> None:
+    """Per-job persistence locks/versions must not outlive the job."""
+    manager = JobManager(store=_MemoryStore(), persistence_timeout=0.05)
+    job = manager.create_job("prune", "agent", "query")
+    await manager._drain_persistence_tasks()
+    await manager._persist(deepcopy(job))
+    assert job.job_id in manager._persistence_versions
+    assert job.job_id in manager._persistence_locks
+
+    assert manager.delete_job(job.job_id) is True
+    assert job.job_id not in manager._persistence_versions
+    assert job.job_id not in manager._persistence_locks
+    await manager._drain_persistence_tasks()

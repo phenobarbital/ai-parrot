@@ -222,24 +222,26 @@ class RedisJobStore:
         await self._ensure_connected()
         key = self._job_key(job.job_id)
         flat = _serialize_job(job)
-        await self._redis.hset(key, mapping=flat)
-
         # Track in sorted set (score = created_at epoch)
         try:
             score = job.created_at.timestamp()
         except AttributeError:
             score = _now_ts()
-        await self._redis.zadd(self._index_key, {job.job_id: score})
-        user_index_key: Optional[str] = None
-        if job.user_id:
-            user_index_key = self._user_index_key(job.user_id)
-            await self._redis.zadd(user_index_key, {job.job_id: score})
+        user_index_key: Optional[str] = self._user_index_key(job.user_id) if job.user_id else None
+        terminal = job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
 
-        # Apply TTL for terminal states
-        if job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
-            await self._redis.expire(key, self._job_ttl)
+        # One MULTI/EXEC transaction: a timeout or crash can never leave a terminal
+        # job hash without its TTL, or a hash without its index entries.
+        async with self._redis.pipeline(transaction=True) as pipe:
+            pipe.hset(key, mapping=flat)
+            pipe.zadd(self._index_key, {job.job_id: score})
             if user_index_key is not None:
-                await self._redis.expire(user_index_key, self._job_ttl)
+                pipe.zadd(user_index_key, {job.job_id: score})
+            if terminal:
+                pipe.expire(key, self._job_ttl)
+                if user_index_key is not None:
+                    pipe.expire(user_index_key, self._job_ttl)
+            await pipe.execute()
 
     async def get(self, job_id: str) -> Optional[Job]:
         """Return the Job for ``job_id``, or ``None`` if not found.

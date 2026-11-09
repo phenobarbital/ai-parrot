@@ -184,7 +184,10 @@ class QueuedCommandService:
         if self._stopping:
             return SubmitOutcome(status="rejected", message="The command service is shutting down.")
 
-        parsed_args = self._parse_arguments(command, raw_args)
+        try:
+            parsed_args = self._parse_arguments(command, raw_args)
+        except ValueError:
+            return SubmitOutcome(status="rejected", message="Could not parse the arguments (check your quotes).")
         try:
             prepared = await self._prepare(command, parsed_args)
         except CommandUsageError as exc:
@@ -340,6 +343,9 @@ class QueuedCommandService:
                 finally:
                     current_command_job.reset(token)
             except asyncio.TimeoutError as exc:
+                if asyncio.get_running_loop().time() < execution_deadline:
+                    # An inner timeout raised by the command itself, not our runtime budget.
+                    raise
                 error = f"timed out after {self._seconds_label(command.spec.max_runtime)}"
                 await self._deliver(
                     deliver,
@@ -399,6 +405,7 @@ class QueuedCommandService:
             )
             raise
         except Exception as exc:
+            self.logger.warning("Queued job %s failed: %s", job_id, exc, exc_info=True)
             await self._deliver(
                 deliver,
                 JobNotice(
@@ -406,7 +413,7 @@ class QueuedCommandService:
                     command=command.spec.command,
                     label=prepared.label or command.spec.description or command.spec.command,
                     status="failed",
-                    error=str(exc)[:300],
+                    error=f"{type(exc).__name__}: the command failed; see the bot logs for details",
                     elapsed_s=asyncio.get_running_loop().time() - execution_started,
                 ),
             )
@@ -533,8 +540,27 @@ class QueuedCommandService:
             if error is not None:
                 self.logger.error("Scheduling failed for queued job %s: %s", job_id, error, exc_info=error)
                 self._release_failed_schedule(job_id)
+                return
+            # A cancel that lands before ``_run_command`` starts skips its ``finally``;
+            # tie admission release to the job task itself so the reservation cannot leak.
+            job_task = self.manager.tasks.get(job_id) if self.manager is not None else None
+            if job_task is None or job_task.done():
+                self._release_admission(job_id)
+            else:
+                job_task.add_done_callback(lambda _t: self._release_admission(job_id))
 
         task.add_done_callback(_done)
+
+    def _release_admission(self, job_id: str) -> None:
+        """Idempotently drop the live marker and dedup reservation of a job."""
+
+        self._live_job_ids.discard(job_id)
+        if self.manager is None:
+            return
+        job = self.manager.jobs.get(job_id)
+        dedup_key = job.metadata.get("dedup_key") if job is not None and job.metadata else None
+        if dedup_key is not None and self._reservations.get(dedup_key) == job_id:
+            self._reservations.pop(dedup_key, None)
 
     def _release_failed_schedule(self, job_id: str) -> None:
         """Release local admission state when JobManager scheduling fails."""

@@ -58,7 +58,9 @@ class SlackQueuedCommands:
                 header = format_notice_header(notice)
                 text = f"<@{requester.user_id}> {header}"
                 if parsed.text:
-                    text = f"{text}\n{parsed.text}"
+                    # Command output may echo untrusted text: defuse <!channel>/<!here>/<@user> pings.
+                    safe = parsed.text.replace("<!", "<​!").replace("<@", "<​@")
+                    text = f"{text}\n{safe}"
                 await self.wrapper.post_message(
                     requester.chat_id,
                     text=text,

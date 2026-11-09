@@ -1,7 +1,7 @@
 """
-Job Manager for Asynchronous Crew Execution.
+Job Manager for Asynchronous Job Execution.
 
-Manages async execution of AgentCrew operations with job tracking,
+Manages async execution of jobs (crews, queued chat commands) with job tracking,
 status monitoring, and result retrieval.
 
 When a ``RedisJobStore`` is provided at construction time the manager mirrors
@@ -143,6 +143,13 @@ class JobManager:
                 await asyncio.wait_for(self._store.save(job), timeout=self.persistence_timeout)
         except (TimeoutError, Exception) as exc:  # pylint: disable=broad-except
             self.logger.warning("RedisJobStore.save failed for job %s: %s", job.job_id, exc)
+
+    def _prune_persistence_state(self, job_id: str) -> None:
+        """Drop per-job lock/version bookkeeping once the job is gone."""
+        lock = self._persistence_locks.get(job_id)
+        if lock is None or not lock.locked():
+            self._persistence_locks.pop(job_id, None)
+        self._persistence_versions.pop(job_id, None)
 
     async def _remove_from_store(self, job_id: str) -> None:
         """Remove a job from the Redis store (silent on failure)."""
@@ -448,6 +455,7 @@ class JobManager:
                 self.tasks[job_id].cancel()
                 del self.tasks[job_id]
             del self.jobs[job_id]
+            self._prune_persistence_state(job_id)
             self._track_persistence_task(self._remove_from_store(job_id))
             self.logger.info("Deleted job %s", job_id)
             return True
@@ -482,6 +490,7 @@ class JobManager:
 
         for job_id in jobs_to_delete:
             del self.jobs[job_id]
+            self._prune_persistence_state(job_id)
             if job_id in self.tasks:
                 del self.tasks[job_id]
 

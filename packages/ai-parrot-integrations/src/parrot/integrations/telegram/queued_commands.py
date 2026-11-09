@@ -85,11 +85,15 @@ class TelegramQueuedCommands:
             return None
         if not await self.wrapper._check_authentication(message):
             return None
-        session = self.wrapper._get_user_session(message)
         user = message.from_user
+        if user is None:
+            # Anonymous senders (e.g. channel posts) must never share one actor identity.
+            await message.answer("⛔ This command needs an identifiable sender.")
+            return None
+        session = self.wrapper._get_user_session(message)
         return Requester(
             platform="telegram",
-            user_id=str(user.id) if user is not None else "unknown",
+            user_id=str(user.id),
             chat_id=str(message.chat.id),
             thread_id=str(message.message_thread_id) if getattr(message, "is_topic_message", False) else None,
             message_id=str(message.message_id),

@@ -400,7 +400,10 @@ async def test_failure_notice_and_status() -> None:
     await _wait_for_terminal(service, outcome.job_id)
 
     assert recorder.notices[0].status == "failed"
-    assert len(recorder.notices[0].error) == 300
+    # Raw exception text must never reach the chat; only the exception type does.
+    assert "x" * 20 not in recorder.notices[0].error
+    assert recorder.notices[0].error.startswith("RuntimeError")
+    assert len(recorder.notices[0].error) <= 300
     assert service.manager.jobs[outcome.job_id].status == JobStatus.FAILED
     await service.stop()
 
@@ -687,4 +690,56 @@ async def test_queue_deadline_never_invokes_method() -> None:
     release.set()
     await _wait_for_terminal(service, first.job_id)
     await _wait_for_terminal(service, retry.job_id)
+    await service.stop()
+
+
+@pytest.mark.asyncio
+async def test_job_task_end_releases_admission_even_if_body_never_cleans_up() -> None:
+    """A cancel that skips ``_run_command``'s ``finally`` must not strand the reservation."""
+
+    service = _service()
+    await service.start()
+    manager = service.manager
+    job = manager.create_job("early01", "agent", "query", metadata={"dedup_key": "review:early"})
+    service._reservations["review:early"] = job.job_id
+    service._live_job_ids.add(job.job_id)
+
+    async def body() -> None:
+        # Stands in for a job whose ``_run_command`` never reached its ``finally``.
+        await asyncio.Event().wait()
+
+    schedule = asyncio.create_task(manager.execute_job(job.job_id, body))
+    service._track_schedule(job.job_id, schedule)
+    await schedule
+    assert service._reservations == {"review:early": job.job_id}
+
+    assert await manager.cancel_job(job.job_id, "cancelled by the requester") is True
+    deadline = asyncio.get_running_loop().time() + 1.0
+    while service._reservations and asyncio.get_running_loop().time() < deadline:  # noqa: ASYNC110
+        await asyncio.sleep(0.001)
+
+    assert service._reservations == {}
+    assert job.job_id not in service._live_job_ids
+    await service.stop()
+
+
+@pytest.mark.asyncio
+async def test_unbalanced_quotes_are_rejected_not_raised() -> None:
+    """Positional parsing errors become a clean rejection instead of an exception."""
+
+    async def method(*_: str) -> str:
+        return "done"
+
+    command = QueuedCommand(
+        spec=QueuedCommandSpec(command="review", description="review", parse_mode="positional"),
+        method_name="review",
+        method=method,
+        prepare=None,
+    )
+    service = _service()
+    outcome = await service.submit(command, '"unterminated', _requester(), _Recorder())
+
+    assert outcome.status == "rejected"
+    assert "quotes" in outcome.message
+    assert not service.manager.jobs
     await service.stop()
