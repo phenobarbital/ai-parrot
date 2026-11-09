@@ -14,7 +14,7 @@ docs:
 **Feature ID**: FEAT-860
 **Date**: 2026-11-09
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor release
 
 ---
