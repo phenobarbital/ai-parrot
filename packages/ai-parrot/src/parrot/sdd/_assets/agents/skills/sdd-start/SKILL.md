@@ -130,6 +130,7 @@ implement the task yourself — the normal route is the default.
     - verify cached names
     - commit `feat(<feature-slug>): TASK-NNN - <title>`
 11. Close task:
+    - after the semantic review, run `parrot sdd task review record --feature <slug> --task <id> --worktree <path> --summary "<review>"` and use the printed `review_ref` as `review_evidence`; never write into the evidence store by hand
     - create the `TaskCompletionEvidence` JSON (fields `feature_slug`, `task_id`,
       `implementation_sha`, `validation_refs`, `review_evidence`, `fix_commits`,
       `completion_facts`) with the task ID, feature slug, exact implementation
