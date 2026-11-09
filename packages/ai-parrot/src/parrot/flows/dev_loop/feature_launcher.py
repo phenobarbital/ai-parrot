@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -637,6 +638,7 @@ def launch(
     claude_args: Sequence[str],
     base_env: Mapping[str, str] | None = None,
     gh_token: bool = True,
+    host: Literal["claude", "google"] = "claude",
 ) -> int:
     """Prepare and launch or attach to the worker for one feature.
 
@@ -647,11 +649,15 @@ def launch(
     into ``os.environ``. The worker and the tmux client get ``base_env``, never the loaded
     ``os.environ``. ``None`` falls back to ``os.environ`` for callers that never imported parrot.
     """
+    if host == "google":
+        agy = resolve_agy()
+        require_official_agy(agy)
+
     env = dict(os.environ if base_env is None else base_env)
     for key_to_clear in tuple(env):
         if key_to_clear.startswith("PARROT_SDD_NOTIFY_"):
             env.pop(key_to_clear)
-    if sandbox is not None:
+    if sandbox is not None and host == "claude":
         if sandbox not in native_claude_sandbox.SANDBOX_MODES:
             raise LaunchError(2, f"invalid sandbox mode: {sandbox}")
         env[native_claude_sandbox.MODE_ENV] = sandbox
@@ -687,7 +693,11 @@ def launch(
         )
     except ValueError as exc:
         raise LaunchError(2, str(exc)) from exc
-    _preflight_sandbox(worktree, effective_domains)
+    if host == "google":
+        google_worker_sandbox(sandbox or os.environ.get(native_claude_sandbox.MODE_ENV), effective_domains)
+        _require_agy_hooks(worktree)
+    else:
+        _preflight_sandbox(worktree, effective_domains)
     if not no_upstream:
         print(prepare_upstream(worktree), file=sys.stderr)
         # Host-only advisory; imported here because the tmux child runs under python -S.
@@ -695,9 +705,15 @@ def launch(
 
         print(stale_base_summary(worktree), file=sys.stderr)
     print(_enable_push_protection(worktree), file=sys.stderr)
-    domain_args = [item for domain in allowed_domains for item in ("--sandbox-allow-domain", domain)]
-    token_args = [] if gh_token else ["--no-gh-token"]
+    domain_args = (
+        [] if host == "google" else [item for domain in allowed_domains for item in ("--sandbox-allow-domain", domain)]
+    )
+    token_args = [] if host == "google" or gh_token else ["--no-gh-token"]
     if not tmux:
+        if host == "google":
+            return launch_agy_worker(
+                list(claude_args), cwd=worktree, initial_prompt=f"run {ref.prompt_id}", base_env=env
+            )
         return native_claude_sandbox.launch_worker(
             [*token_args, *domain_args, *claude_args],
             cwd=worktree,
@@ -732,6 +748,7 @@ def launch(
             ref.prompt_id,
             "--cwd",
             str(worktree),
+            *(("--host", "google") if host == "google" else ()),
             *domain_args,
             *token_args,
         ]
@@ -810,6 +827,41 @@ def launch_agy_worker(
     return 1
 
 
+def _require_agy_hooks(checkout: Path) -> None:
+    """Require a current, runnable managed AGY permission hook in ``checkout``.
+
+    Args:
+        checkout: Worktree that will host the AGY session.
+
+    Raises:
+        LaunchError: Exit code 2 when the hook is absent, stale, or cannot execute.
+    """
+    from parrot.sdd.installer import _agy_permissions_report
+
+    report = _agy_permissions_report(checkout)
+    hint = "run `parrot sdd install --host google` in this repository"
+    if report.get("command") is None:
+        raise LaunchError(2, f"the agy permission hook is not installed in {checkout}/.agents/hooks.json; {hint}")
+    if report.get("stale"):
+        raise LaunchError(2, f"the agy permission hook matcher is stale ({report.get('matcher')!r}); {hint}")
+
+    form = report.get("form")
+    command = str(report["command"])
+    runnable = False
+    if form == "launcher":
+        runnable = (checkout / "scripts" / "sdd" / "agy_hook.sh").is_file()
+    elif form == "bare":
+        runnable = shutil.which("parrot") is not None
+    elif form == "baked":
+        try:
+            executable = Path(shlex.split(command)[0])
+        except (IndexError, ValueError):
+            executable = Path()
+        runnable = executable.is_file() and os.access(executable, os.X_OK)
+    if not runnable:
+        raise LaunchError(2, f"the agy permission hook command is not runnable ({command!r}); {hint}")
+
+
 def launch_session(
     initial_prompt: str,
     *,
@@ -829,6 +881,7 @@ def launch_session(
         try:
             agy = resolve_agy()
             require_official_agy(agy)
+            _require_agy_hooks(cwd)
         except LaunchError as exc:
             print(f"launch: {exc}", file=sys.stderr)
             return exc.exit_code
@@ -862,6 +915,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--in-session", metavar="FEAT-ID")
     # The worktree is passed explicitly rather than trusted from the process cwd.
     parser.add_argument("--cwd", type=Path, default=None)
+    parser.add_argument("--host", choices=("claude", "google"), default="claude")
     parser.add_argument("--sandbox-allow-domain", action="append", default=[])
     parser.add_argument("--no-gh-token", action="store_true", default=False)
     parser.add_argument("claude_args", nargs=argparse.REMAINDER)
@@ -871,6 +925,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     forwarded = list(args.claude_args)
     if forwarded[:1] == ["--"]:
         forwarded.pop(0)
+    if args.host == "google":
+        return launch_agy_worker(forwarded, cwd=args.cwd or _invocation_dir(), initial_prompt=f"run {args.in_session}")
     domain_args = [item for domain in args.sandbox_allow_domain for item in ("--sandbox-allow-domain", domain)]
     token_args = ["--no-gh-token"] if args.no_gh_token else []
     return native_claude_sandbox.launch_worker(
