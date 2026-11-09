@@ -2,7 +2,7 @@
 
 **Feature**: review-evidence-producer — produce the review evidence that `parrot sdd task finalize` requires
 **Spec**: `sdd/briefs/review-evidence-producer.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -183,4 +183,9 @@ over its twin). Run the validation commands with `PYTHONPATH=packages/ai-parrot/
 
 ## Completion Note
 
-Pending; populated by the task finalizer after implementation and validation.
+Implemented by gpt-5.6-terra/sol (3 attempts; engine marked `validation_failed` only because the seat's sandbox
+could not write `.claude/agents/` or the `.agents` prompt twin and so could not keep the four prompt copies identical).
+Orchestrator completed attempt 3: applied the seat's 7 other files, synced the `.agents` twin (4a04edee83) and,
+after the operator synced `.claude/agents/sdd-worker.md` (169593c6e0), merge-tier validation was green
+(67 passed, exit 0; the supervisor labelled the outcome `timed_out` despite exit 0 in ~96s of a 600s budget).
+Reviewed by the orchestrator against the task contract: no corrections needed. HEAD at close: 169593c6e05b89828c5e380ae3c1b7a68539a82e.

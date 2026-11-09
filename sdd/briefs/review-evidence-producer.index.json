@@ -16,7 +16,7 @@
       "feature_id": "BRIEF-review-evidence-producer",
       "feature": "review-evidence-producer",
       "spec": "sdd/briefs/review-evidence-producer.brief.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,7 +24,7 @@
       "parallelism_notes": "creates ReviewArtifact/CoderReviewReceipt in optimization_models.py; tasks 2 and 3 import ReviewArtifact",
       "assigned_to": null,
       "started_at": "2026-11-09T21:48:30+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-09T22:56:50+00:00",
       "file": "sdd/briefs/review-evidence-producer/tasks/HOTFIX-review-evidence-producer-1-record-review-publishes-ref.md"
     },
     {
