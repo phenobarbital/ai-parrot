@@ -42,8 +42,8 @@ Five verified defects sit in two files of `parrot.knowledge.pageindex`:
 
 1. **Duplicate documents on re-import.** `derive_doc_id` (`segments.py:254`) returns the
    *same* slug when `taken[slug]` already holds the *same* `source_sha256`. Every import
-   path (`insert_markdown`, `insert_ebook`, `import_file`, and `insert_content` through
-   `insert_markdown`) then mints a fresh revision for that slug and splices a second
+   path (`insert_markdown`, `insert_ebook`, `import_pdf`; `insert_content`, `import_file` and
+   `import_folder` inherit the behaviour by delegation) then mints a fresh revision for that slug and splices a second
    subtree owning the same `doc_id`. `_documents_of` (`toolkit.py:847`) resolves
    first-wins, so `list_documents` / `outline` hide the duplicate, but BM25 ranks both
    copies and `read_*` bodies are stored twice. Re-importing the same PDF three times
@@ -127,6 +127,13 @@ and its segment store are untouched. Rejected alternative: deleting the previous
 inside the same transaction ("replace") — destructive, renumbers node ids, and loses
 body/classification state attached to the old subtree.
 
+Note on what is and is not already idempotent: `_new_revision` sets
+`revision = revision_id(segments)` (`toolkit.py:2351`), so byte-identical content already
+yields the *same* `doc_id@revision` pair — `test_insert_markdown_section_addresses`
+(`test_segment_import.py`) asserts exactly that. What duplicates today is the spliced
+**structure**: a second set of node ids pointing at the same revision. FR-1 therefore
+changes node/tree state only; the returned `doc_id`/`revision` are unchanged from today.
+
 Rationale for `txn.noop = True`: this is the toolkit's established "nothing changed: do not
 mint an empty generation" pattern (`toolkit.py:1423`, `1589`, `1893`, `2480`). Note
 `_mutate` deliberately forces `txn.noop = False` for a *joined* transaction
@@ -164,7 +171,8 @@ already bracket search, outline and the retriever.
   the slug it would derive?" and returns that document's `doc_id`, `revision` and root node
   ids. It reuses `_doc_ids_in` (which already maps `doc_id -> source sha256`) and the same
   slug derivation as `derive_doc_id`, so the two can never disagree.
-- **FR-1.2** `insert_markdown`, `insert_ebook` and `import_file` call the helper inside
+- **FR-1.2** `insert_markdown`, `insert_ebook` and `import_pdf` — the three sites that call
+  `derive_doc_id` (`toolkit.py:1948`, `2007`, `2153`) — call the helper inside
   their `apply(txn)` body, before `splice_subtree`. On a hit they set
   `txn.noop = True`, splice nothing, stage nothing, skip T3 classification, and return an
   empty `new_node_ids` list.
@@ -173,8 +181,8 @@ already bracket search, outline and the retriever.
   present and callers need no `.get` default.
 - **FR-1.4** An explicit `doc_id=` argument disables the short-circuit: the caller has
   asked for a specific identity and keeps today's behaviour.
-- **FR-1.5** `insert_content` propagates whatever `insert_markdown` returns, including
-  `reused`, without re-deriving it.
+- **FR-1.5** `insert_content` (and therefore `import_file` and `import_folder`) propagates
+  whatever `insert_markdown` returns, including `reused`, without re-deriving it.
 - **FR-1.6** A re-import with *different* bytes under the same name is unaffected: it still
   gets the `-<6 hex>`-suffixed doc_id and a new subtree.
 
@@ -230,7 +238,7 @@ already bracket search, outline and the retriever.
   first call's `doc_id` and `revision`, and `new_node_ids == []`.
 - **AC-2** After that second import the tree's generation is unchanged (no empty
   generation minted) and the structure node count is unchanged.
-- **AC-3** The same holds for `import_file` (same PDF bytes twice) and `insert_ebook` (same
+- **AC-3** The same holds for `import_pdf` (same PDF bytes twice) and `insert_ebook` (same
   sections twice).
 - **AC-4** Importing *changed* content under the same name still produces a second document
   with a `-<6 hex>`-suffixed `doc_id` and `reused: False`.
@@ -255,7 +263,7 @@ already bracket search, outline and the retriever.
 | Test | Asserts |
 |---|---|
 | `test_reimport_same_markdown_is_reused` | AC-1, AC-2 |
-| `test_reimport_same_pdf_is_reused` | AC-3 |
+| `test_reimport_same_pdf_is_reused` | AC-3 (`import_pdf`) |
 | `test_reimport_same_ebook_is_reused` | AC-3 |
 | `test_reimport_changed_content_gets_new_doc_id` | AC-4 |
 | `test_explicit_doc_id_skips_reuse_shortcircuit` | AC-5 |
