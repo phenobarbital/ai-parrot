@@ -284,7 +284,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -294,8 +294,9 @@
       "parallelism_notes": "TASK-5371: the harness imports PDFs through PageIndexToolkit.import_pdf and calls optimize (toolkit.py)",
       "assigned_to": null,
       "started_at": "2026-11-08T23:08:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5375-optimizer-eval-harness.md"
+      "completed_at": "2026-11-09T00:36:24+00:00",
+      "file": "sdd/tasks/completed/TASK-5375-optimizer-eval-harness.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5376",

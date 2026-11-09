@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-846 — PageIndex Tree Optimizer
 **Spec**: `sdd/specs/pageindex-tree-optimizer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5371
@@ -190,4 +190,12 @@ Spec §4 rows `test_optimizer_eval_report`, `test_tuned_target_bounds`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed**: 2026-11-09 | **Implementation commit**: be2e49e5f7 (coder, native opus) + ae36fdcb26 (orchestrator fix in optimizer.py)
+
+Delivered `optimizer_eval.py` + tests. Validation: merge-tier — 2 passed; optimizer, optimizer_toolkit, optimizer_eval suites — 19 passed after the fix.
+
+Finding resolved by orchestrator (outside this task's file list, in TASK-5365's `optimizer.py`): the harness showed `optimize(apply=True)` at default settings failing with 'protected node ... was removed', because `validate_candidate` did not accept nodes absorbed by normalization (kept as `aliases`). Fixed with a regression test; the default-settings run on the arxiv fixture now applies (nodes 18 -> 14).
+
+Deferred minor finding (ledger): OptimizeReport.nodes_after / leaves_over_target_after are computed before the LLM passes, so they understate LLM heading splits.
+Judgement calls by coder: leaf tokens measured via asyncio.to_thread; extra helper `suggest_target`; private `PageIndexToolkit._revisions_for` used.
+
