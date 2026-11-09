@@ -1692,6 +1692,8 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                     self._llm = self._create_llm_client(config)
                     if self.tool_manager and hasattr(self._llm, "tool_manager"):
                         self.sync_tools(self._llm)
+                    # FEAT-848: one warning when an agent-mode bot's client runs no tool loop.
+                    self._warn_if_client_lacks_tool_loop()
                 except Exception as e:
                     self.logger.error(f"Error configuring LLM: {e}")
                     raise
@@ -3700,6 +3702,27 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         if len(text) <= max_length:
             return text
         return text[: max_length - 3].rstrip() + "..."
+
+    def _warn_if_client_lacks_tool_loop(self) -> None:
+        """Log one warning when an agent-mode bot's client declares ``supports_tool_loop = False``.
+
+        FEAT-848: such a client ignores the bot's tools (``TransformersClient`` does so without a log of
+        its own), so the operator gets one signal per real ``configure()`` run. Never raises and never
+        changes behaviour. The flag is checked first, by identity: ``configure()`` test stubs use a
+        ``MagicMock`` client on a bot that has no ``enable_tools``.
+        """
+        if getattr(self._llm, "supports_tool_loop", True) is not False:
+            return
+        if not self.is_agent_mode():
+            return
+        self.logger.warning(
+            "%s: LLM client %s (%s) declares supports_tool_loop=False; "
+            "its %d registered tools will not be executed",
+            self.name,
+            type(self._llm).__name__,
+            getattr(self._llm, "client_type", "?"),
+            self.tool_manager.tool_count(),
+        )
 
     def is_agent_mode(self) -> bool:
         """Check if the bot is configured to operate in agent mode."""
