@@ -111,6 +111,7 @@ class OptimizeReport(BaseModel):
     skipped_locked: int = 0
     skipped_stamped: int = 0
     rejected_proposals: int = 0
+    key_items_rehomed: int = 0
     llm_passes: str = "skipped (disabled)"
     llm_calls_estimated: int = 0
     llm_calls_made: int = 0
@@ -138,7 +139,7 @@ def _ranges_contiguous(ranges: list[list[int]]) -> bool:
     ordered = sorted((int(start), int(end)) for start, end in ranges)
     if any(end <= start for start, end in ordered):
         return False
-    return all(end == next_start for (_, end), (next_start, _) in zip(ordered, ordered[1:]))
+    return all(end == next_start for (_, end), (next_start, _) in zip(ordered, ordered[1:], strict=False))
 
 
 def _merge_ranges(ranges: list[list[int]]) -> list[list[int]]:
@@ -281,7 +282,12 @@ def _absorb(
     report: OptimizeReport,
     revision: DocumentRevision,
 ) -> None:
-    """Merge a leaf into another leaf while retaining the absorbed title and alias."""
+    """Merge a leaf into another node, retaining the absorbed title and alias.
+
+    When ``absorbed`` owns ranges, ``absorber["span"]`` is widened to cover their extent so that a later
+    ``assign_ownership`` (which rebuilds a leaf's ``owned`` from its ``span``) keeps them with the absorber.
+    An absorbed node without owned ranges adds no key item and leaves the span unchanged.
+    """
     absorber["owned"] = _merge_ranges(list(absorber.get("owned") or []) + list(absorbed.get("owned") or []))
     absorbed_id = absorbed.get("concept_id")
     if absorbed_id:
@@ -303,16 +309,41 @@ def _absorb(
         )
         absorber.setdefault("key_items", []).append(key_item.model_dump())
         report.key_items_added += 1
+    if ranges and absorber.get("span"):
+        # Keep the absorbed ranges with the absorber: assign_ownership rebuilds a leaf's owned from its span.
+        absorber["span"] = [
+            min(int(absorber["span"][0]), min(int(start) for start, _ in ranges)),
+            max(int(absorber["span"][1]), max(int(end) for _, end in ranges)),
+        ]
     _record_merge(absorbed, absorber, reason, report)
 
 
 def normalize(
-    parent_children: list[dict], revision: DocumentRevision, settings: OptimizerSettings, report: OptimizeReport
+    parent_children: list[dict],
+    revision: DocumentRevision,
+    settings: OptimizerSettings,
+    report: OptimizeReport,
+    *,
+    parent: Optional[dict] = None,
 ) -> None:
-    """Collapse duplicate/empty leaves and contiguous undersized sibling leaves."""
+    """Collapse duplicate/empty leaves and contiguous undersized sibling leaves.
+
+    An empty leaf (no children, no owned ranges) is absorbed into ``parent`` with reason ``"empty"`` (its
+    ``concept_id`` becomes a parent alias) and removed. A published empty leaf (``node_id`` set) without a
+    ``concept_id`` is kept, because its removal could never pass ``validate_candidate``. Without ``parent`` an
+    empty leaf is removed unrecorded (legacy behaviour). The recursion passes each child as the ``parent`` of
+    its own children.
+
+    Args:
+        parent_children: The sibling list to normalize in place.
+        revision: The document revision the nodes are anchored to.
+        settings: Optimizer settings (``min_leaf_tokens``).
+        report: Report receiving merge actions and counters.
+        parent: The node owning ``parent_children``; it absorbs empty leaves.
+    """
     for child in parent_children:
         if not is_locked(child):
-            normalize(child.get("nodes") or [], revision, settings, report)
+            normalize(child.get("nodes") or [], revision, settings, report, parent=child)
 
     index = 0
     while index < len(parent_children):
@@ -321,6 +352,12 @@ def normalize(
             index += 1
             continue
         if not node.get("nodes") and not (node.get("owned") or []):
+            if node.get("node_id") is not None and not node.get("concept_id"):
+                # Published without an identity to alias: removing it could never pass validate_candidate.
+                index += 1
+                continue
+            if parent is not None:
+                _absorb(parent, node, "empty", report, revision)
             parent_children.pop(index)
             continue
         duplicate_index = next(
@@ -429,6 +466,57 @@ def _owned_in_span(owned: list[list[int]], start: int, end: int) -> list[list[in
     ]
 
 
+def _item_seq(item: Any) -> int:
+    """Return the anchor sequence of a key item stored as a dict or a ``KeyItem``."""
+    return int(item["seq"] if isinstance(item, dict) else item.seq)
+
+
+def _item_key(item: Any) -> tuple[Any, int]:
+    """Return the ``(label, seq)`` identity of a key item stored as a dict or a ``KeyItem``."""
+    label = item.get("label") if isinstance(item, dict) else item.label
+    return label, _item_seq(item)
+
+
+def _owns_seq(node: dict, seq: int) -> bool:
+    """Return whether ``seq`` lies inside one of the node's half-open owned ranges."""
+    return any(int(start) <= seq < int(end) for start, end in node.get("owned") or [])
+
+
+def _add_key_item(node: dict, item: Any) -> bool:
+    """Append ``item`` to the node's key items unless an item with the same label and anchor is there."""
+    existing = node.setdefault("key_items", [])
+    if _item_key(item) in {_item_key(other) for other in existing}:
+        return False
+    existing.append(item)
+    return True
+
+
+def _move_key_items_to_pieces(node: dict, pieces: list[dict], report: OptimizeReport) -> None:
+    """Move key items of a just-split node onto the piece whose owned ranges now hold their anchor.
+
+    Args:
+        node: The node that ``split_at`` turned into a parent (its ``owned`` is already the residual).
+        pieces: The new child pieces.
+        report: Report whose ``key_items_rehomed`` counts every moved item.
+    """
+    items = node.get("key_items")
+    if not items:
+        return
+    kept: list[Any] = []
+    for item in items:
+        seq = _item_seq(item)
+        target = None if _owns_seq(node, seq) else next((piece for piece in pieces if _owns_seq(piece, seq)), None)
+        if target is None:
+            kept.append(item)
+            continue
+        _add_key_item(target, item)
+        report.key_items_rehomed += 1
+    if kept:
+        node["key_items"] = kept
+    else:
+        node.pop("key_items", None)
+
+
 def split_at(
     node: dict,
     revision: DocumentRevision,
@@ -473,6 +561,7 @@ def split_at(
         return []
     node["nodes"] = pieces
     assign_ownership(node)
+    _move_key_items_to_pieces(node, pieces, report)
     report.expanded.append(
         ExpandAction(
             parent_title=node.get("title", ""),
@@ -597,6 +686,48 @@ def _document_nodes(root: dict, doc_id: str, revision: str) -> list[dict]:
     ]
 
 
+def reconcile_key_items(root: dict, revision: DocumentRevision, mutable: set[int], report: OptimizeReport) -> None:
+    """Re-home or drop key items whose anchor is outside their node's owned ranges.
+
+    Scans the nodes of ``root``'s document revision. For each node whose ``id()`` is in ``mutable``, a key item
+    (dict or ``KeyItem``) whose ``seq`` is not inside the node's ``owned`` ranges moves to the node of the same
+    document revision whose ``owned`` ranges contain ``seq`` when that node is in ``mutable``, skipping a duplicate
+    ``(label, seq)`` already there (``report.key_items_rehomed += 1``). Otherwise the item is dropped
+    (``report.rejected_proposals += 1``). Nodes outside ``mutable`` are never modified.
+
+    Args:
+        root: The imported document root to scan.
+        revision: The document revision the nodes are anchored to.
+        mutable: ``id()`` of the nodes the optimizer may change.
+        report: Report receiving the move and drop counters.
+    """
+    nodes = _document_nodes(root, revision.doc_id, revision.revision)
+    owners: dict[int, dict] = {}
+    for node in nodes:
+        for start, end in node.get("owned") or []:
+            for seq in range(int(start), int(end)):
+                owners.setdefault(seq, node)
+    for node in nodes:
+        if id(node) not in mutable or not node.get("key_items"):
+            continue
+        kept: list[Any] = []
+        for item in node["key_items"]:
+            seq = _item_seq(item)
+            if _owns_seq(node, seq):
+                kept.append(item)
+                continue
+            owner = owners.get(seq)
+            if owner is not None and id(owner) in mutable:
+                _add_key_item(owner, item)
+                report.key_items_rehomed += 1
+            else:
+                report.rejected_proposals += 1
+        if kept:
+            node["key_items"] = kept
+        else:
+            node.pop("key_items", None)
+
+
 def plan_deterministic(
     tree: dict, revisions: Revisions, settings: OptimizerSettings, *, tree_name: str, node_id: Optional[str] = None
 ) -> OptimizePlan:
@@ -615,7 +746,7 @@ def plan_deterministic(
         if problems:
             report.errors.extend(problems)
             continue
-        normalize(root.get("nodes") or [], revision, settings, report)
+        normalize(root.get("nodes") or [], revision, settings, report, parent=root)
         assign_ownership(root)
         expand_at_headings(root, revision, settings, report, depth=0)
         assign_ownership(root)
@@ -633,6 +764,8 @@ def plan_deterministic(
     for root in roots:
         mark_mutable(root)
     plan.optimizable_roots = roots
+    for root in roots:
+        reconcile_key_items(root, revisions[(root["doc_id"], root["revision"])], plan.mutable, report)
     before_roots = optimizable_roots(tree, revisions, node_id=node_id)
     report.leaves_over_target_before = leaves_over_target(before_roots, revisions, settings)
     refresh_after_counts(plan, revisions, settings)
