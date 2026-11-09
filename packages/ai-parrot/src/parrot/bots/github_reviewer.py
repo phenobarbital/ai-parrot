@@ -74,7 +74,13 @@ from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
 # FEAT-317: GitHubWebhookConfig/HookEvent moved to navigator_eventbus.hooks;
 # imported here via the parrot.core.hooks re-export facade.
 from parrot.core.hooks import GitHubWebhookConfig, HookEvent
-from parrot.integrations.core.queued import current_job_id, report_command_progress
+from parrot.integrations.core.queued import (
+    CommandUsageError,
+    PreparedCommand,
+    current_job_id,
+    queued_command,
+    report_command_progress,
+)
 from parrot.integrations.telegram import telegram_command
 from parrot.scheduler import ScheduleType, schedule, schedule_daily_report, schedule_weekly_report
 from parrot.tools.manager import ToolManager
@@ -1056,6 +1062,7 @@ class GitHubReviewer(Agent):
         else:
             env_cap = config.get("GITHUB_REVIEWER_MAX_TOOL_CALLS", fallback=5)
             self.max_review_tool_calls = int(env_cap)
+        self.max_full_review_tool_calls = conf.GITHUB_REVIEW_FULL_MAX_TOOL_CALLS
 
         self._ac_field_id: str = config.get("JIRA_ACCEPTANCE_CRITERIA_FIELD", fallback="customfield_10100")
         self._jira_fields: str = ",".join(sorted({"summary", "description", "status", self._ac_field_id}))
@@ -3607,10 +3614,14 @@ class GitHubReviewer(Agent):
         ]
         return "\n".join(lines)
 
-    @telegram_command(
+    @queued_command(
         "review_pr",
         description="Review a PR against its Jira ticket and draft it if it does not comply",
         parse_mode="raw",
+        prepare="_prepare_review_pr",
+        max_runtime=conf.GITHUB_REVIEW_COMMAND_MAX_RUNTIME,
+        max_concurrent=2,
+        concurrency_group="github_review",
     )
     async def review_pr(self, target: str = "", **kwargs: Any) -> str:
         """Answer ``/review_pr <pull request link>``.
@@ -3661,6 +3672,173 @@ class GitHubReviewer(Agent):
 
         outcome = await self.strict_review_pull_request(payload)
         return self._format_command_reply(repo, pr_number, payload, outcome)
+
+    def _review_pr_usage(self, error: str) -> str:
+        """Return the existing strict-review usage text with a local error."""
+        return (
+            f"⚠️ {error}.\n\n"
+            f"Usage: `/review_pr https://github.com/{self.repository}/pull/123` "
+            f"— a `{self.repository}#123` slug or a bare `123` also work."
+        )
+
+    async def _prepare_review_pr(self, raw: str) -> PreparedCommand:
+        """Validate the existing strict PR grammar locally and reserve its dedup key."""
+        repo, pr_number, error = self._parse_pr_target(raw)
+        if error or pr_number is None:
+            raise CommandUsageError(self._review_pr_usage(error or "no pull request given"))
+        repo = repo or self.repository
+        return PreparedCommand(
+            kwargs={"target": raw.strip()},
+            label=f"review of {repo}#{pr_number}",
+            dedup_key=f"review_pr:{repo}#{pr_number}",
+        )
+
+    async def _prepare_pr_review(self, raw: str) -> PreparedCommand:
+        """Parse full-review grammar and flags without performing I/O."""
+        tokens = raw.split()
+        if not tokens:
+            raise CommandUsageError("Usage: `/pr_review <PR> [JIRA-KEY] [--auto-draft] [--dry-run]`")
+        repo, pr_number, error = self._parse_pr_target(tokens[0])
+        if error or pr_number is None:
+            raise CommandUsageError("Usage: `/pr_review <PR> [JIRA-KEY] [--auto-draft] [--dry-run]`")
+
+        jira_key: Optional[str] = None
+        auto_draft = False
+        dry_run = False
+        for token in tokens[1:]:
+            normalized = "--" + token[1:] if token.startswith(("—", "–")) else token
+            if normalized == "--auto-draft" and not auto_draft:
+                auto_draft = True
+            elif normalized == "--dry-run" and not dry_run:
+                dry_run = True
+            elif jira_key is None and re.fullmatch(r"[A-Za-z][A-Za-z0-9]+-\d+", token):
+                jira_key = token.upper()
+            else:
+                raise CommandUsageError("Usage: `/pr_review <PR> [JIRA-KEY] [--auto-draft] [--dry-run]`")
+
+        repo = repo or self.repository
+        return PreparedCommand(
+            kwargs={
+                "target": tokens[0],
+                "jira_key": jira_key,
+                "auto_draft": auto_draft,
+                "dry_run": dry_run,
+            },
+            label=f"full review of {repo}#{pr_number}",
+            dedup_key=f"pr_review:{repo}#{pr_number}",
+        )
+
+    @queued_command(
+        "pr_review",
+        description="Full PR review against its Jira ticket; posts the report on the PR (background)",
+        parse_mode="raw",
+        aliases=("pr-review",),
+        prepare="_prepare_pr_review",
+        max_runtime=conf.GITHUB_REVIEW_COMMAND_MAX_RUNTIME,
+        max_concurrent=2,
+        concurrency_group="github_review",
+    )
+    async def pr_review(
+        self,
+        target: str = "",
+        jira_key: Optional[str] = None,
+        auto_draft: bool = False,
+        dry_run: bool = False,
+        **kwargs: Any,
+    ) -> str:
+        """Fetch a PR, run the full review, and return the chat reply."""
+        if kwargs:
+            self.logger.debug("/pr_review: ignoring unexpected arguments %s", sorted(kwargs))
+        repo, pr_number, error = self._parse_pr_target(target)
+        if error or pr_number is None:
+            return "⚠️ Usage: `/pr_review <PR> [JIRA-KEY] [--auto-draft] [--dry-run]`"
+        repo = repo or self.repository
+        if self.git_toolkit is None:
+            return "⚠️ GitHub is not configured on this agent, so no PR can be reviewed."
+        payload = await self._fetch_pr_payload(repo, pr_number)
+        if payload is None:
+            return f"⚠️ Could not read `{repo}#{pr_number}` from GitHub. Check the link and the agent's access."
+        outcome = await self.full_review_pull_request(
+            payload,
+            jira_key=jira_key,
+            auto_draft=auto_draft,
+            dry_run=dry_run,
+        )
+        return self._format_pr_review_reply(repo, pr_number, payload, outcome)
+
+    async def full_review_pull_request(
+        self,
+        payload: Dict[str, Any],
+        *,
+        jira_key: Optional[str] = None,
+        auto_draft: bool = False,
+        dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """Review with isolated reads, then perform only explicitly guarded GitHub writes."""
+        repo = str(payload.get("repository") or self.repository)
+        pr_number = payload.get("pr_number")
+        if pr_number is None:
+            return {"status": "error", "reason": "missing pr_number", "verdict": None, "report": "", "comment": None,
+                    "draft": "not_applicable", "jira_key": jira_key, "requirement_source": None,
+                    "criteria_met": 0, "criteria_total": 0}
+
+        context = await self._gather_full_review_context(repo, int(pr_number), payload, jira_key)
+        if context.ticket_status == "not_found" and context.jira_key_explicit:
+            return {"status": "ticket_not_found", "verdict": None, "report": "", "comment": None,
+                    "draft": "not_applicable", "jira_key": context.jira_key,
+                    "requirement_source": context.requirement_source, "criteria_met": 0, "criteria_total": 0,
+                    "reason": "explicit ticket could not be read"}
+
+        await report_command_progress("asking review agent")
+        review = self._apply_verdict_floor(
+            await self._ask_llm_for_full_review(context), ac_evaluated=context.ac_evaluated
+        )
+        await report_command_progress("rendering report")
+        report = self._render_full_review_report(context, review)
+        criteria_total = len(review.criteria)
+        criteria_met = sum(criterion.status == "met" for criterion in review.criteria)
+        outcome: Dict[str, Any] = {
+            "status": "reviewed",
+            "verdict": review.verdict,
+            "report": report,
+            "comment": None,
+            "draft": "skipped_dry_run" if dry_run else "not_applicable",
+            "jira_key": context.jira_key,
+            "requirement_source": context.requirement_source,
+            "criteria_met": criteria_met,
+            "criteria_total": criteria_total,
+            "reason": None,
+            "dry_run": dry_run,
+            "findings": [observation.model_dump() for observation in review.code_observations],
+        }
+        if dry_run:
+            return outcome
+
+        if self.git_toolkit is None:
+            outcome["comment"] = {"error": "git_toolkit is not configured"}
+            return outcome
+        try:
+            outcome["comment"] = await self.git_toolkit.add_pr_comment(
+                pr_number=int(pr_number), body=self._cap_full_review_comment(report), repository=repo
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error("GitHubReviewer: could not post full review on %s#%s: %s", repo, pr_number, exc, exc_info=True)
+            outcome["comment"] = {"error": str(exc)}
+
+        state = str(payload.get("state") or "").lower()
+        if auto_draft and review.verdict == "does_not_meet":
+            if state != "open":
+                outcome["draft"] = "not_open"
+            elif payload.get("draft"):
+                outcome["draft"] = "already_draft"
+            else:
+                try:
+                    await self.git_toolkit.convert_pr_to_draft(pr_number=int(pr_number), repository=repo)
+                    outcome["draft"] = "converted"
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.error("GitHubReviewer: could not draft %s#%s: %s", repo, pr_number, exc, exc_info=True)
+                    outcome["draft"] = "failed"
+        return outcome
 
     async def _read_pr_items(
         self,

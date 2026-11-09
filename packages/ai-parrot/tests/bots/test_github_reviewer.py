@@ -40,6 +40,7 @@ from parrot.bots.github_reviewer import (
     _WIKI_TOOLS_PROMPT,
 )
 from parrot.core.hooks.github_webhook import GitHubWebhookHook
+from parrot.integrations.core.queued import CommandUsageError
 from parrot_tools.gittoolkit import (
     ContributorStats,
     ContributorWeek,
@@ -217,6 +218,8 @@ class _MinimalReviewer:
     _TICKET_PIE_OTHERS = GitHubReviewer._TICKET_PIE_OTHERS
     # Strict on-demand gate (/review_pr).
     review_pr = GitHubReviewer.review_pr
+    _review_pr_usage = GitHubReviewer._review_pr_usage
+    _prepare_review_pr = GitHubReviewer._prepare_review_pr
     strict_review_pull_request = GitHubReviewer.strict_review_pull_request
     _parse_pr_target = classmethod(GitHubReviewer._parse_pr_target.__func__)
     _summarize_checks = classmethod(GitHubReviewer._summarize_checks.__func__)
@@ -5204,12 +5207,20 @@ class TestStrictReviewPullRequest:
 
 
 class TestReviewPRCommand:
-    async def test_is_registered_as_a_raw_telegram_command(self) -> None:
-        """``raw`` keeps a pasted URL intact — keyword parsing would mangle it."""
-        meta = GitHubReviewer.review_pr._telegram_command
-        assert meta["command"] == "review_pr"
-        assert meta["parse_mode"] == "raw"
-        assert meta["description"]
+    async def test_review_pr_is_a_queued_command(self) -> None:
+        """Strict review remains raw but is now dispatched through the shared queue."""
+        spec = GitHubReviewer.review_pr._queued_command
+        assert spec.command == "review_pr"
+        assert spec.parse_mode == "raw"
+        assert spec.concurrency_group == "github_review"
+        assert spec.description
+
+    async def test_prepare_review_pr_usage_error(self) -> None:
+        """Invalid strict targets are rejected locally with the existing usage text."""
+        reviewer = _wire_strict()
+        with pytest.raises(CommandUsageError, match="repository link"):
+            await reviewer._prepare_review_pr("https://github.com/owner/repo")
+        reviewer.git_toolkit.get_pull_request.assert_not_called()
 
     async def test_a_repository_link_gets_usage_help(self) -> None:
         r = _wire_strict()

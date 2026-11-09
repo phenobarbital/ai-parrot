@@ -20,6 +20,7 @@ from parrot.bots import github_reviewer
 from parrot.clients.base import AbstractClient
 from parrot.models.basic import CompletionUsage
 from parrot.models.responses import AIMessage
+from parrot.integrations.core.queued import CommandUsageError
 from parrot.bots.github_reviewer import (
     BotFindingAssessment,
     CodeObservation,
@@ -104,6 +105,13 @@ class _Reviewer:
     _render_full_review_report = GitHubReviewer._render_full_review_report
     _format_pr_review_reply = GitHubReviewer._format_pr_review_reply
     _cap_full_review_comment = staticmethod(GitHubReviewer._cap_full_review_comment)
+    _parse_pr_target = classmethod(GitHubReviewer._parse_pr_target.__func__)
+    _PR_URL_RE = GitHubReviewer._PR_URL_RE
+    _PR_SLUG_RE = GitHubReviewer._PR_SLUG_RE
+    _PR_NUMBER_RE = GitHubReviewer._PR_NUMBER_RE
+    _prepare_pr_review = GitHubReviewer._prepare_pr_review
+    full_review_pull_request = GitHubReviewer.full_review_pull_request
+    pr_review = GitHubReviewer.pr_review
 
 
 class _ReadToolkit(AbstractToolkit):
@@ -682,6 +690,123 @@ async def test_chat_summary_ticket_not_found_and_no_ticket() -> None:
     )
     assert "no ticket linked — acceptance criteria not evaluated" in reply
     assert "Draft: converted to draft" in reply
+
+
+# --------------------------------------------------------------------------- TASK-5406
+
+
+async def test_prepare_pr_review_grammar() -> None:
+    """Full-review preparation normalizes flags, keys, labels, and dedup keys without I/O."""
+    reviewer = _Reviewer()
+    prepared = await reviewer._prepare_pr_review(
+        "https://github.com/acme/api/pull/412 nav-8036 —auto-draft --dry-run"
+    )
+
+    assert prepared.kwargs == {
+        "target": "https://github.com/acme/api/pull/412",
+        "jira_key": "NAV-8036",
+        "auto_draft": True,
+        "dry_run": True,
+    }
+    assert prepared.label == "full review of acme/api#412"
+    assert prepared.dedup_key == "pr_review:acme/api#412"
+    with pytest.raises(CommandUsageError):
+        await reviewer._prepare_pr_review("412 --unknown")
+    reviewer.git_toolkit.list_pull_request_files.assert_not_called()
+
+
+def _reviewer_for_orchestration() -> _Reviewer:
+    """Return the existing full-review double with explicit write and LLM seams."""
+    reviewer = _Reviewer()
+    reviewer.git_toolkit.add_pr_comment = AsyncMock(return_value={"id": 1, "html_url": "https://example.test/comment/1"})
+    reviewer.git_toolkit.convert_pr_to_draft = AsyncMock(return_value={"draft": True})
+    reviewer._ask_llm_for_full_review = AsyncMock(return_value=_review())
+    return reviewer
+
+
+async def test_full_review_posts_report_comment() -> None:
+    """A successful full review posts one report comment and never submits a review verdict."""
+    reviewer = _reviewer_for_orchestration()
+    outcome = await reviewer.full_review_pull_request(_payload(), jira_key="NAV-8036")
+
+    assert outcome["status"] == "reviewed"
+    assert outcome["comment"]["html_url"] == "https://example.test/comment/1"
+    assert "# PR Review: acme/api#412" in outcome["report"]
+    reviewer.git_toolkit.add_pr_comment.assert_awaited_once()
+    assert not hasattr(reviewer.git_toolkit, "submit_pr_review") or not reviewer.git_toolkit.submit_pr_review.called
+
+
+async def test_full_review_dry_run_writes_nothing() -> None:
+    """Dry run has precedence over auto-draft and retains the complete chat report."""
+    reviewer = _reviewer_for_orchestration()
+    reviewer._ask_llm_for_full_review.return_value = _review(
+        verdict="does_not_meet", recommended_action="CONVERT_TO_DRAFT"
+    )
+    outcome = await reviewer.full_review_pull_request(
+        _payload(), jira_key="NAV-8036", auto_draft=True, dry_run=True
+    )
+
+    assert outcome["draft"] == "skipped_dry_run"
+    assert outcome["report"]
+    reviewer.git_toolkit.add_pr_comment.assert_not_awaited()
+    reviewer.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+
+
+async def test_full_review_auto_draft_only_on_does_not_meet() -> None:
+    """Only an evaluated does-not-meet verdict converts an open non-draft PR."""
+    reviewer = _reviewer_for_orchestration()
+    reviewer._ask_llm_for_full_review.return_value = _review(
+        verdict="does_not_meet", recommended_action="CONVERT_TO_DRAFT"
+    )
+    outcome = await reviewer.full_review_pull_request(_payload(), jira_key="NAV-8036", auto_draft=True)
+    assert outcome["draft"] == "converted"
+    reviewer.git_toolkit.convert_pr_to_draft.assert_awaited_once()
+
+    reviewer.git_toolkit.convert_pr_to_draft.reset_mock()
+    reviewer._ask_llm_for_full_review.return_value = _review(verdict="needs_attention")
+    outcome = await reviewer.full_review_pull_request(_payload(), jira_key="NAV-8036", auto_draft=True)
+    assert outcome["draft"] == "not_applicable"
+    reviewer.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+
+
+async def test_full_review_llm_failure_writes_nothing() -> None:
+    """LLM errors propagate to the queue and never reach either GitHub write."""
+    reviewer = _reviewer_for_orchestration()
+    reviewer._ask_llm_for_full_review.side_effect = FullReviewLLMError("provider offline")
+    with pytest.raises(FullReviewLLMError, match="provider offline"):
+        await reviewer.full_review_pull_request(_payload(), jira_key="NAV-8036", auto_draft=True)
+    reviewer.git_toolkit.add_pr_comment.assert_not_awaited()
+    reviewer.git_toolkit.convert_pr_to_draft.assert_not_awaited()
+
+
+async def test_explicit_ticket_not_found_posts_nothing() -> None:
+    """An unreadable explicitly requested ticket terminates before the LLM or writes."""
+    reviewer = _reviewer_for_orchestration()
+    reviewer._fetch_ticket.return_value = None
+    outcome = await reviewer.full_review_pull_request(_payload(), jira_key="NAV-9999")
+    assert outcome["status"] == "ticket_not_found"
+    reviewer._ask_llm_for_full_review.assert_not_awaited()
+    reviewer.git_toolkit.add_pr_comment.assert_not_awaited()
+
+
+async def test_comment_failure_returns_full_report_in_chat() -> None:
+    """Comment failures leave the completed outcome and report available to the requester."""
+    reviewer = _reviewer_for_orchestration()
+    reviewer.git_toolkit.add_pr_comment.side_effect = RuntimeError("GitHub unavailable")
+    outcome = await reviewer.full_review_pull_request(_payload(), jira_key="NAV-8036")
+    assert outcome["status"] == "reviewed"
+    assert outcome["comment"]["error"] == "GitHub unavailable"
+    reply = reviewer._format_pr_review_reply(REPO, PR, _payload(), outcome)
+    assert outcome["report"] in reply
+
+
+async def test_pr_review_end_to_end_stubbed_github() -> None:
+    """The queued method fetches, posts the report, and returns a deliverable notice."""
+    reviewer = _reviewer_for_orchestration()
+    reviewer._fetch_pr_payload = AsyncMock(return_value=_payload())
+    reply = await reviewer.pr_review("https://github.com/acme/api/pull/412", jira_key="NAV-8036")
+    reviewer.git_toolkit.add_pr_comment.assert_awaited_once()
+    assert "Report: https://example.test/comment/1" in reply
 
 
 # --------------------------------------------------------------------------- TASK-5405 AC1-AC5
