@@ -43,30 +43,31 @@ seven providers "do not execute tools in `ask()`" (hf, meta, local, vllm, moonsh
 That grep looked only at each provider's own `client.py`; `MetaClient`, `LocalLLMClient`,
 `vLLMClient`, `MoonshotClient`, `NvidiaClient` and `OpenRouterClient` all resolve `ask()` to
 `OpenAIBaseClient.ask()` (or call it through `super()`), which runs `_run_tool_call_loop`
-(`openai_base.py:995`). The providers that really have no tool loop are **four classes**:
+(`openai_base.py:995`). The providers without a text `ask()` tool loop are **three classes**:
 `TransformersClient` (hf — warns "Tool calling not supported", `hf/client.py:373-374`),
 `JevClient` (jev — warns "ignores tools", `jev/client.py:546-547`), `GeminiLiveClient`
-(google-live — `ask()` takes no `tools` and yields voice, `live.py:1289`) and `OpenAICodexClient`
-(codex — tools are served to the external Codex process over `CodexToolBridge`, not executed in
-`ask()` itself; see §2 for how it is classified). The wiki page shipped by FEAT-843 repeats the
+(google-live — `ask()` takes no `tools` and yields voice, `live.py:1289`). `OpenAICodexClient`
+and `ClaudeAgentClient` drive external agent loops through tool bridges and remain capable;
+their tools must be registered in `ToolManager` (see §2). The wiki page shipped by FEAT-843 repeats the
 wrong table (`wiki/knowledge/pageindex-agentic-retrieval.md:173`).
 
 ### Goals
 
 - G1 — One declarative class attribute on `AbstractClient`, `supports_tool_loop: bool`, default
   `True`, with the same shape as the existing declarative attributes `credential_env` and
-  `budget_supported_methods` (`base.py:312-322`). `False` means: `ask()` / `ask_stream()` do not
-  execute offered tools and feed results back before returning.
+  `budget_supported_methods` (`base.py:312-322`). `False` means: text `ask()` does not execute
+  offered tools and feed results back before returning. The flag makes no claim about `ask_stream()`.
 - G2 — The providers that do not run a loop declare `False`: `TransformersClient`, `JevClient`,
-  `GeminiLiveClient`. `OpenAICodexClient` stays `True` (its tool results are consumed before
-  `ask()` returns, through the bridge).
+  `GeminiLiveClient`. `OpenAICodexClient` and `ClaudeAgentClient` stay `True` (registered tool
+  results are consumed before `ask()` returns, through their respective bridges).
 - G3 — `AgenticRetriever` and `PageIndexToolkit.agentic_retrieve` fail fast with a `ValueError`
   that names the client when the selected client declares `False` — before any candidate search
   or LLM call.
 - G4 — A guard test keeps the flag honest: for every installed provider it resolves `ask()`
-  through the MRO (plus one hop of `self._helper(` calls) and asserts that the presence of a
-  tool-execution marker matches the declared flag, with an explicit, documented allowlist for
-  clients whose loop runs in an external process (`OpenAICodexClient`).
+  through the MRO (plus one hop of `self._helper(` calls) and asserts that the presence of
+  executable tool-call evidence matches the declared flag, with an explicit, documented allowlist
+  for external agent loops (`OpenAICodexClient`, `ClaudeAgentClient`), each backed by a bridge
+  exposure test (Codex's already exists).
 - G5 — The documentation says the right thing: the provider table in the agentic-retrieval page
   is corrected, and `abstract-client.md` documents the attribute.
 
@@ -74,6 +75,10 @@ wrong table (`wiki/knowledge/pageindex-agentic-retrieval.md:173`).
 
 - Changing any provider's tool loop, adding a loop to hf/jev/live/codex, or adding a caller-
   settable turn cap to `ask()` (FEAT-843 §7 risk; separate work).
+- Declaring streaming capability or changing `ask_stream()`. Streaming already differs from
+  `ask()` in Grok and Meta's default Responses path; a separate flag is follow-up work.
+- Standardizing inline `tools` registration across providers. Callers must use the provider's
+  supported registration and enabling path; the agent bridges expose registered manager tools.
 - Making `Agent`/`AbstractBot` consult the flag. They already degrade through their own prompt
   path; wiring is a follow-up (§8).
 - A `typing.Protocol` (`ToolLoopCapable`) like `VoiceCapable` (`protocols.py:17`). A boolean
@@ -85,7 +90,7 @@ wrong table (`wiki/knowledge/pageindex-agentic-retrieval.md:173`).
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:837dfed57c0d972b85f85ee295095e79412186c1310c01aef0bc1b388bb71479 evaluation_digest=sha256:591a264b48b845c9db74ef04b19bccd2b57ba3ec701111034130fbfae430fe8a rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:c7c61619194ccfc1da5cddd122a7e20fb44ff90a5f54b36f8dcb23f035dc20bd evaluation_digest=sha256:5ef0f9b1b8c8392d9838d559c59c773ba1c6869438d337bdc2635ff24feac6c0 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -98,8 +103,8 @@ class AbstractClient(EventEmitterMixin, ABC):
     ...
     budget_supported_methods: FrozenSet[str] = frozenset()        # base.py:322 (existing)
 
-    # FEAT-848: whether ask()/ask_stream() execute the model's tool calls and feed the
-    # results back until a final answer. False = tools are ignored or only forwarded.
+    # FEAT-848: whether text ask() executes enabled, registered tools and feeds results
+    # back before returning. No claim about ask_stream() or inline tools registration.
     supports_tool_loop: bool = True
 ```
 
@@ -108,13 +113,23 @@ to their `client_name`. Nothing else in the clients changes: the flag is declara
 callers, never consulted by `ask()` itself (a provider that warns and ignores tools keeps doing
 exactly that).
 
-**Classification rule** (what `True` promises): when `ask()` is given `tools`/`use_tools`, the
-tool calls the model emits are executed and their results are fed back to the model before
-`ask()` returns its final answer — in-process (`_execute_tool`, `_run_tool_call_loop`,
-`_handle_multiturn_function_calls`, `_run_tool_loop`) or by an external agent process that the
-client drives to completion (`OpenAICodexClient` via `CodexToolBridge`). `False` when tools are
-ignored (`TransformersClient`, `JevClient`) or when `ask()` has no tools parameter at all
-(`GeminiLiveClient`, a voice iterator).
+**Classification rule** (what `True` promises): text `ask()` supports executing model-emitted
+tool calls and feeding their results back before returning, subject to its existing loop limits.
+Tools must be registered and enabled through the provider's supported path. Execution may be
+in-process (`_execute_tool`, `_run_tool_call_loop`, `_handle_multiturn_function_calls`,
+`_run_tool_loop`) or driven through an external agent (`OpenAICodexClient` via `CodexToolBridge`,
+`ClaudeAgentClient` via `ClaudeAgentToolBridge`). `False` means no such text `ask()` loop:
+`TransformersClient`, `JevClient`, and the voice iterator `GeminiLiveClient`.
+
+`True` does **not** promise support for inline `ask(tools=...)`: Codex discards that argument
+through `**kwargs`, and Claude explicitly ignores it. Both bridges expose tools already
+registered in `client.tool_manager`, subject to their run-option exposure filters. PageIndex
+already clears and registers its wrapped tools there, then calls `ask(tools=None, use_tools=True)`
+(`agentic.py:295-304`). Preserve and test this delivery path. The flag is a class capability,
+not a guarantee that a particular model, configuration, or call will invoke a tool.
+
+`ask_stream()` is outside this contract: Grok ignores tools on that path, and Meta's default
+Responses streaming path omits tool round trips (`grok/client.py:417-558`, `meta/client.py:887-892`).
 
 **Fail fast (FEAT-843 consumer).** `PageIndexToolkit._agentic_client()` (`toolkit.py:1145`)
 raises `ValueError` when the resolved client (override or clone) declares `False`; it runs at
@@ -126,15 +141,26 @@ unchanged — `no_tool_calls` remains the outcome for a `True` client whose mode
 called a tool.
 
 **Guard test.** `tests/clients/test_tool_loop_capability.py` enumerates
-`LLMFactory.supported_clients()` exactly like `test_credential_env.py::_classes()`
-(`test_credential_env.py:12-19`, skipping extras that are not installed). For each class it
-collects the source of every `ask` in the MRO (stopping at the first one that does not call
-`super().ask`) plus the source of each `self._name(` helper that `ask` calls (one hop), and sets
-`runs_loop = any(marker in text for marker in MARKERS)`. The assertion is
+`LLMFactory.supported_clients()` using `test_credential_env.py::_classes()` as the registry
+enumeration precedent (`test_credential_env.py:12-19`). Skip confirmed absent extras only;
+do not copy its broad exception swallowing. For each class it
+parses dedented source with `ast.parse` for every reachable `ask` in the MRO (following
+`super().ask(...)` call nodes), plus each directly called `self._name(...)` helper (one hop).
+Only executable `ast.Call` nodes whose function is `self.<name>` count toward
+`TOOL_EXECUTION_METHODS`; comments, docstrings, string literals and uncalled method references
+do not count. Nested function/class bodies are not evidence unless separately resolved as calls.
+The resulting boolean is `runs_loop`. The assertion is
 `cls.supports_tool_loop is (runs_loop or cls.__name__ in EXTERNAL_LOOP_CLIENTS)`, with
-`EXTERNAL_LOOP_CLIENTS = frozenset({"OpenAICodexClient"})` and a docstring explaining why. The
-prototype of this rule, run on `dev @ 8758f61456`, classifies all 39 installed provider keys
-(§6 table) with exactly the four `False` classes above — no other allowlist entry is needed.
+`EXTERNAL_LOOP_CLIENTS = frozenset({"OpenAICodexClient", "ClaudeAgentClient"})`, documenting each
+bridge. The original substring prototype on `dev @ 8758f61456` was insufficient: Claude matched a
+comment mentioning `_execute_tool()` (`claude_agent.py:481`). The AST rule above was prototyped on
+`dev @ 1c3790c12b` over the 39 installed provider keys (22 classes): it yields exactly the three
+`False` classes and the two bridge clients as `ast_loop=NO`, every other class as `yes` — so the
+allowlist needs no further entry. Allowlist membership is backed by an exposure test, not by name
+alone: Codex is already covered by
+`ai-parrot-client-openai/tests/unit/test_codex_agent.py::test_tool_bridge_routes_through_tool_manager`;
+this feature adds the Claude counterpart (§3 M3, `test_claude_bridge_exposes_registered_tools`).
+Executing tools *through* the bridges is the bridges' own contract (FEAT-434), not this feature's.
 
 ### Component Diagram
 
@@ -186,7 +212,7 @@ class AbstractClient(EventEmitterMixin, ABC):
 |---|---|---|---|
 | M1: flag + overrides | yes | attribute name, default, placement (after `budget_supported_methods`), the three `False` classes, comment text | — |
 | M2: fail-fast in agentic retrieval | yes | two check sites, `ValueError`, exact message format | — |
-| M3: guard test | yes | enumeration via `LLMFactory.supported_clients()`, MRO + one-hop rule, `MARKERS`, `EXTERNAL_LOOP_CLIENTS` | — |
+| M3: guard test | yes | provider enumeration, MRO + one-hop AST call rule, `TOOL_EXECUTION_METHODS`, both bridge exceptions, one Claude bridge exposure test | — |
 | M4: documentation | yes | two pages, corrected table, FEAT-843 §8 note | — |
 
 ### Module 1: Capability flag and provider overrides
@@ -202,10 +228,10 @@ class AbstractClient(EventEmitterMixin, ABC):
   # base.py (modifies :322 — insert after the budget_supported_methods declaration)
   class AbstractClient(EventEmitterMixin, ABC):                        # verified: base.py:297
       budget_supported_methods: FrozenSet[str] = frozenset()           # verified: base.py:322
-      # FEAT-848: whether ask()/ask_stream() execute the model's tool calls and feed the results
-      # back until a final answer (in-process or through an agent bridge the client drives to
-      # completion). False = tools are ignored or only forwarded; callers that need a completed
-      # loop (AgenticRetriever) fail fast on it instead of reading tool_calls == 0.
+      # FEAT-848: whether text ask() executes enabled, registered tools and feeds results back
+      # before returning (in-process or through an agent bridge, subject to existing limits).
+      # No claim about ask_stream() or inline tools registration. AgenticRetriever fails fast
+      # on False instead of reading tool_calls == 0 after a wasted call.
       supports_tool_loop: bool = True
 
   # hf/client.py (modifies :40)
@@ -260,21 +286,36 @@ class AbstractClient(EventEmitterMixin, ABC):
 - **Interface Skeleton**:
   ```python
   # tests/clients/test_tool_loop_capability.py (new)
-  MARKERS: tuple[str, ...] = ("_run_tool_call_loop", "_execute_tool(", "_handle_multiturn_function_calls", "_run_tool_loop(")
-  EXTERNAL_LOOP_CLIENTS: frozenset[str] = frozenset({"OpenAICodexClient"})
-      # tools are executed by the Codex process through CodexToolBridge and consumed before ask() returns
+  TOOL_EXECUTION_METHODS: frozenset[str] = frozenset({
+      "_run_tool_call_loop", "_execute_tool", "_handle_multiturn_function_calls", "_run_tool_loop",
+  })
+  EXTERNAL_LOOP_CLIENTS: frozenset[str] = frozenset({"OpenAICodexClient", "ClaudeAgentClient"})
+      # Registered manager tools are exposed through CodexToolBridge / ClaudeAgentToolBridge;
+      # the client drives the external agent to completion before ask() returns.
 
   def _installed_classes() -> dict[str, type[AbstractClient]]:
-      """Same enumeration as test_credential_env._classes (LLMFactory.supported_clients, skip uninstalled)."""   # verified: test_credential_env.py:12-19
+      """Enumerate LLMFactory.supported_clients; skip confirmed absent extras, fail other loader errors."""
 
-  def _resolved_ask_text(cls: type[AbstractClient]) -> str:
-      """Source of every ``ask`` in the MRO up to the first that does not call ``super().ask``,
-      plus the source of each ``self._helper(`` the ask bodies call (one hop)."""
+  def _resolved_ask_calls(cls: type[AbstractClient]) -> frozenset[str]:
+      """Return self-method call names from reachable ask bodies and one-hop helpers.
+
+      Parse dedented source with ast; follow actual super().ask() calls through the MRO.
+      Ignore comments, strings, uncalled references and nested function/class definitions.
+      """
 
   def test_default_is_true() -> None: ...                              # AbstractClient.supports_tool_loop is True
   @pytest.mark.parametrize("provider", sorted(_installed_classes()))
   def test_flag_matches_resolved_ask(provider: str) -> None: ...       # flag is (runs_loop or name in EXTERNAL_LOOP_CLIENTS)
   def test_known_false_classes() -> None: ...                          # hf/jev/google-live declare False when installed (skip otherwise)
+  def test_comment_and_string_markers_do_not_count() -> None: ...      # synthetic no-loop class stays False
+  def test_executable_marker_counts_through_mro_and_helper() -> None: ...  # synthetic inherited/wrapped loop
+  def test_uncalled_nested_marker_does_not_count() -> None: ...        # dead nested helper stays False
+  def test_claude_bridge_exposes_registered_tools() -> None:
+      """Register a sentinel tool in ClaudeAgentClient().tool_manager, build the bridge the way
+      ask() does (ClaudeAgentToolBridge(client.tool_manager, ...).select(prompt, max_exposed_tools),
+      claude_agent.py:465-484) and assert the sentinel is in bridge.exposed_names(). No SDK call,
+      no network; pytest.importorskip("claude_agent_sdk"). The Codex counterpart already exists:
+      test_codex_agent.py::test_tool_bridge_routes_through_tool_manager (:129)."""
 
   # tests/knowledge/pageindex/test_agentic_retrieval.py (append after :481)
   class NoLoopClient(StubClient):                                      # StubClient verified: test_agentic_retrieval.py:27
@@ -294,12 +335,15 @@ class AbstractClient(EventEmitterMixin, ABC):
 - **Depends on**: Module 1 (names), Module 2 (error text).
 - **Interface Skeleton** (content contract, not code):
   - `abstract-client.md` — under `## Public API`: `supports_tool_loop` (what `True` promises, the
-    classification rule, the four `False` classes, "declarative: `ask()` never reads it"); under
+    ask-only classification rule, the three `False` classes, "declarative: `ask()` never reads it",
+    and the registered-tool prerequisite for both agent bridges); under
     `## Gotchas`: a `False` client offered tools warns and ignores them — check the flag first.
   - `pageindex-agentic-retrieval.md:170-178` — replace the two-column table with: **runs the loop**
     — every installed provider except: `hf`/`transformers` (`TransformersClient`), `jev`/`typesafe`
-    (`JevClient`), `gemini-live` (`GeminiLiveClient`); `OpenAICodexClient` runs it through the
-    Codex bridge. State that `agentic_retrieve` now raises `ValueError` on a `False` client, and
+    (`JevClient`), `gemini-live` (`GeminiLiveClient`); `OpenAICodexClient` and `ClaudeAgentClient`
+    run it through their respective bridges using registered manager tools. Label the table
+    as text `ask()` capability only; explicitly exclude streaming and inline-tool registration
+    guarantees. State that `agentic_retrieve` now raises `ValueError` on a `False` client, and
     that `stopped="no_tool_calls"` is reserved for a capable client whose model made no call.
     Remove "OpenRouter is not in the verified table" (it inherits `OpenAIBaseClient.ask`).
   - `pageindex-agentic-retrieval.spec.md:939` — append `— Resolved by FEAT-848 (client-tool-loop-capability)`
@@ -314,7 +358,11 @@ class AbstractClient(EventEmitterMixin, ABC):
 |---|---|---|
 | `test_default_is_true` | M1 | `AbstractClient.supports_tool_loop is True` |
 | `test_known_false_classes` | M1 | installed `TransformersClient`/`JevClient`/`GeminiLiveClient` declare `False`; skipped per class when the satellite is absent |
-| `test_flag_matches_resolved_ask[provider]` | M3 | MRO + one-hop audit agrees with the flag for every installed provider; `OpenAICodexClient` passes through `EXTERNAL_LOOP_CLIENTS` |
+| `test_flag_matches_resolved_ask[provider]` | M3 | MRO + one-hop AST call audit agrees with the ask-only flag; both agent bridge clients are explicit exceptions |
+| `test_comment_and_string_markers_do_not_count` | M3 | comments/docstrings/string literals containing execution method names cannot classify a synthetic no-loop client as capable |
+| `test_executable_marker_counts_through_mro_and_helper` | M3 | actual inherited/delegated self-method calls count, including a one-hop helper |
+| `test_uncalled_nested_marker_does_not_count` | M3 | an uncalled nested function containing an execution call is not evidence |
+| `test_claude_bridge_exposes_registered_tools` | M3 | a sentinel registered in `ClaudeAgentClient().tool_manager` appears in `ClaudeAgentToolBridge(...).exposed_names()`; no SDK call (Codex side already covered by `test_codex_agent.py:129`) |
 | `test_agentic_retriever_rejects_no_loop_client` | M2 | construction raises `ValueError` with class name and `client_type` |
 | `test_agentic_retrieve_fails_fast_without_tool_loop` | M2 | toolkit raises before any `ask()`; stub call counter is 0 |
 
@@ -347,17 +395,23 @@ markers: none
 
 - [ ] AC-1 Every file in the Validation Contract passes; no `real_llm` test is added.
 - [ ] AC-2 `AbstractClient.supports_tool_loop` exists, is a class attribute, defaults to `True`, and
-  `ask()`/`ask_stream()` in `base.py` do not read it (G1).
+  neither `ask()` nor `ask_stream()` in `base.py` reads it (G1). Its documented scope is text
+  `ask()` only, with provider-supported tool registration/enabling and existing loop limits;
+  it makes no streaming or inline-tool registration guarantee.
 - [ ] AC-3 `TransformersClient`, `JevClient` and `GeminiLiveClient` declare `supports_tool_loop = False`;
   no other provider class in the workspace declares `False` (G2).
 - [ ] AC-4 `AgenticRetriever(client=<False client>, ...)` raises `ValueError` whose message contains the
   class name and `client_type`; `PageIndexToolkit.agentic_retrieve` with such a client raises the same
   error before any `ask()` call and before candidate search (G3).
 - [ ] AC-5 `test_flag_matches_resolved_ask` passes for every installed provider with
-  `EXTERNAL_LOOP_CLIENTS == {"OpenAICodexClient"}` and no `xfail`/`skip` on a provider that is
-  installed (G4).
+  `EXTERNAL_LOOP_CLIENTS == {"OpenAICodexClient", "ClaudeAgentClient"}` and no `xfail`/`skip`
+  on an installed provider (G4). Only AST call evidence counts; comment/string/nested-definition
+  negative fixtures and MRO/helper positive fixtures pass. `test_claude_bridge_exposes_registered_tools`
+  passes when `claude_agent_sdk` is installed; the Codex side is covered by the existing
+  `test_codex_agent.py::test_tool_bridge_routes_through_tool_manager`.
 - [ ] AC-6 `wiki/knowledge/pageindex-agentic-retrieval.md` no longer lists meta, local, vllm, moonshot,
-  nvidia or openrouter as unsupported; `wiki/clients/abstract-client.md` documents the attribute;
+  nvidia or openrouter as unsupported; both pages document the ask-only scope and both bridges'
+  manager-registration prerequisite (inline `tools` is ignored by those clients);
   `parrot sdd techwiki check` passes for both pages (G5).
 - [ ] AC-7 No breaking change: no signature changes, `EvidenceBundle`/`StopReason` unchanged,
   `test_import_hygiene.py` still passes (the attribute adds no import to `base.py`).
@@ -461,9 +515,18 @@ def test_tool_listed_and_llm_dependent(tmp_path: Path) -> None                # 
 
 | Resolved `ask()` runs the loop | Classes (provider keys) |
 |---|---|
-| yes — in-process | `AnthropicClient` (anthropic, anthropic-aws, bedrock, claude), `ClaudeAgentClient`, `GoogleGenAIClient`, `GeminiOpenAICompatClient`, `OpenAIClient`, `OpenRouterClient`, `MetaClient` (meta, meta-muse, muse), `LocalLLMClient` (local, localllm, llamacpp, ollama), `vLLMClient`, `MoonshotClient` (moonshot, kimi), `NvidiaClient`, `GroqClient`, `GrokClient` (grok, xai), `ZaiClient` (zai, z.ai), `Gemma4Client`, `BedrockConverseClient`, `BedrockMantleClient` (bedrock-mantle, mantle), `NovaClient` |
-| yes — external process | `OpenAICodexClient` (codex-agent, codex-code, openai-codex) — `EXTERNAL_LOOP_CLIENTS` |
+| yes — in-process | `AnthropicClient` (anthropic, anthropic-aws, bedrock, claude), `GoogleGenAIClient`, `GeminiOpenAICompatClient`, `OpenAIClient`, `OpenRouterClient`, `MetaClient` (meta, meta-muse, muse), `LocalLLMClient` (local, localllm, llamacpp, ollama), `vLLMClient`, `MoonshotClient` (moonshot, kimi), `NvidiaClient`, `GroqClient`, `GrokClient` (grok, xai), `ZaiClient` (zai, z.ai), `Gemma4Client`, `BedrockConverseClient`, `BedrockMantleClient` (bedrock-mantle, mantle), `NovaClient` |
+| yes — external agent bridge | `OpenAICodexClient` (codex-agent, codex-code, openai-codex), `ClaudeAgentClient` (claude-agent, claude-code) — `EXTERNAL_LOOP_CLIENTS`; tools must be registered in `ToolManager` |
 | **no** | `TransformersClient` (hf, transformers), `JevClient` (jev, typesafe), `GeminiLiveClient` (gemini-live) |
+
+Review correction verified on `dev @ af753b61ce`: this table describes text `ask()` only.
+Claude's earlier in-process classification came from a comment-only substring match in
+`claude_agent.py:481`; actual delivery uses `ClaudeAgentToolBridge` at `:465-484` and SDK
+collection at `:644`. Codex ignores inline tools at `codex_agent.py:133`; Claude does so at
+`claude_agent.py:591`. The AST guard rule was then prototyped on `dev @ 1c3790c12b` (the clients
+are unchanged since `8758f61456`) and reproduces this table exactly — 3 `False`, 2 bridge
+exceptions, 17 in-process classes; the committed test is implementation work, the classification
+is not.
 
 ### Integration Points
 
@@ -515,18 +578,26 @@ Verified against: `8758f61456`
   without the attribute is treated as capable (today's behaviour).
 - The guard test uses `inspect.getsource` on functions reached through the MRO; wrap each lookup in
   `try/except (OSError, TypeError)` (Cython/compiled or dynamically built methods) and treat a
-  missing source as "no marker".
+  missing source as no executable evidence, reporting the unresolved method in assertion diagnostics.
+  Parse dedented source with `ast.parse`; method names in comments or strings never count.
+  Provider enumeration must skip only confirmed absent optional dependencies, not arbitrary loader
+  exceptions; an installed provider's import or audit failure must fail AC-5 visibly.
 - Satellite tests are not touched; everything lives in `packages/ai-parrot/tests` and skips when a
   satellite is not installed (the enumeration drops uninstalled extras, `test_credential_env.py:16-18`).
 
 ### Known Risks / Gotchas
-- **The audit is a heuristic.** A provider that renames its loop helper breaks
-  `test_flag_matches_resolved_ask`; the fix is to extend `MARKERS` (if it still runs a loop) or set
-  the flag (if it stopped). Either way the test forces the decision to be written down — that is its
-  job. Allowlist growth must be justified in the test docstring.
-- **`OpenAICodexClient` and the bridge**: the loop runs in the Codex process; `expose_parrot_tools`
-  can be `False`, in which case tools are not offered at all — still `True` for the flag (the client
-  *can* run the loop). Document in the test.
+- **The AST audit remains structural, not proof of runtime execution.** A provider that renames
+  its loop helper requires updating `TOOL_EXECUTION_METHODS` after checking behavior. Conditions
+  can disable otherwise reachable calls; the flag describes capability, not per-call activation.
+  Exception membership must be backed by an exposure test (Codex: existing `test_codex_agent.py:129`;
+  Claude: this feature). Future allowlist growth requires a documented bridge and an equivalent test.
+- **Agent bridges**: `expose_parrot_tools` and exposure filters can prevent registered tools from
+  being offered — still `True` for the class flag (the client *can* run the loop). Neither bridge
+  registers inline `tools` passed to `ask()`. Preserve PageIndex's manager-registration path and
+  configure exposure explicitly in bridge tests.
+- **Streaming diverges today**: Grok ignores tools in `ask_stream()`; Meta's default Responses
+  streaming path does not run tool round trips. This flag must never be used to infer streaming
+  capability. No streaming implementation change belongs to this feature.
 - **`GeminiLiveClient.ask` is a voice iterator**; `False` is about the text `ask()` contract.
   `LiveToolAdapter` (`live.py:81`) executes function calls inside the realtime session — that is not
   the `ask()` loop and must not flip the flag.
@@ -550,7 +621,7 @@ schema_version: 1
 document_id: client-tool-loop-capability
 entries:
   - id: tool-loop-flag-is-declarative
-    statement: AbstractClient declares whether ask() executes tool calls through the class attribute supports_tool_loop (default True); ask() never reads it, and a provider whose ask() ignores or merely forwards tools must set it to False.
+    statement: AbstractClient declares text ask() tool-loop capability through supports_tool_loop (default True), assuming provider-supported tool registration and enabling; ask() never reads it. Providers without that loop set False. The flag makes no claim about streaming or inline tools registration; Codex and Claude agent bridges expose registered ToolManager tools.
     relation: requires
     about: [clients]
     targets:
@@ -577,7 +648,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:837dfed57c0d972b85f85ee295095e79412186c1310c01aef0bc1b388bb71479 evaluation_digest=sha256:591a264b48b845c9db74ef04b19bccd2b57ba3ec701111034130fbfae430fe8a rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:c7c61619194ccfc1da5cddd122a7e20fb44ff90a5f54b36f8dcb23f035dc20bd evaluation_digest=sha256:5ef0f9b1b8c8392d9838d559c59c773ba1c6869438d337bdc2635ff24feac6c0 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -614,10 +685,10 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:591a264b48b845c9db74ef04b19bccd2b57ba3ec701111034130fbfae430fe8a",
+  "evaluation_digest": "sha256:5ef0f9b1b8c8392d9838d559c59c773ba1c6869438d337bdc2635ff24feac6c0",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:837dfed57c0d972b85f85ee295095e79412186c1310c01aef0bc1b388bb71479",
+  "input_digest": "sha256:c7c61619194ccfc1da5cddd122a7e20fb44ff90a5f54b36f8dcb23f035dc20bd",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -643,7 +714,8 @@ Coverage:
 ## 8. Open Questions
 
 - [x] Which providers really lack a tool loop? — *Resolved in this spec (§6 audit)*: `TransformersClient`,
-  `JevClient`, `GeminiLiveClient`; `OpenAICodexClient` runs it externally. FEAT-843's list of seven was
+  `JevClient`, `GeminiLiveClient`; `OpenAICodexClient` and `ClaudeAgentClient` use agent bridges.
+  FEAT-843's list of seven was
   a grep artefact (inherited `OpenAIBaseClient.ask`).
 - [x] Flag or Protocol? — *Resolved*: class attribute `supports_tool_loop: bool = True` (precedent
   `budget_supported_methods`).
@@ -655,9 +727,10 @@ Coverage:
   the wrong label (cosmetic — `existing-feature-id` resolves by spec, not by ledger label).
 - [ ] Should `AbstractBot`/`Agent` warn (or refuse) when a `False` client is configured with tools,
   instead of silently running prompt-only? — *Owner: Jesus Lara*; follow-up, not this slice.
-- [ ] Should `ask_stream()` have its own flag? Today every `False` client is `False` for both paths and
-  every loop client streams its loop too (`_max_tool_rounds = 25` on the streaming paths). Revisit only
-  if a provider diverges. — *Owner: Jesus Lara*.
+- [x] Does this flag cover `ask_stream()`? — *Resolved in review*: no; Grok and Meta already
+  diverge. All contracts, documentation and guard assertions in this feature cover text `ask()` only.
+- [ ] Should `ask_stream()` gain a separate capability flag and provider audit? — *Owner: Jesus Lara*;
+  follow-up, not this slice.
 
 ---
 
@@ -692,3 +765,5 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-09 | Jesus Lara | Initial draft from FEAT-843 §8 escalation; MRO audit corrects the provider list. |
+| 0.2 | 2026-11-09 | Codex | Apply review findings: ask-only capability, AST call evidence with both bridge exceptions, mocked bridge delivery tests, and explicit tool-registration prerequisites. |
+| 0.3 | 2026-11-09 | Jesus Lara | Triage of 0.2: every code claim verified (CONFIRM ask-only scope, AST rule, Claude bridge exception); AST rule prototyped over all installed providers — classification confirmed; bridge *delivery* tests trimmed to one Claude *exposure* test (Codex already covered; execution is the bridges' contract); generated Governing Decisions / Consequences re-rendered (gate pass). |
