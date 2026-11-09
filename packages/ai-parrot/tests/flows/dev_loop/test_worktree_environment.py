@@ -1737,6 +1737,21 @@ def test_worktree_env_agy_outside_cwd_and_non_agy_tools_are_unchanged(tmp_path: 
     ) == ("ask", "", None)
 
 
+@pytest.mark.parametrize("command", ["uv pip install foo", "rm -rf .", "echo hi"])
+def test_worktree_env_agy_unattended_outside_cwd_is_denied(tmp_path: Path, command: str) -> None:
+    """Unattended runs have no operator and would skip the wrapper: an outside Cwd must deny, never ask."""
+    repo = tmp_path / "repo"
+    external = tmp_path / "external"
+    (repo / ".git").mkdir(parents=True)
+    external.mkdir()
+    decision, reason, overwrite = policy.agy_verdict(
+        _agy([repo], CommandLine=command, Cwd=str(external)), root=repo, backend="bubblewrap", unattended=True
+    )
+    assert decision == "deny"
+    assert "outside the checkout" in reason
+    assert overwrite is None
+
+
 def test_worktree_env_agy_verdict_does_not_change_claude_hook(
     checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:

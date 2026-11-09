@@ -915,6 +915,9 @@ def agy_verdict(
                 raise ValueError("run_command Cwd must be a non-empty string")
             cwd = (checkout / raw_cwd).resolve()
             if cwd != checkout and not cwd.is_relative_to(checkout):
+                if unattended:
+                    # No operator will confirm, and the command would run unwrapped: fail closed.
+                    raise ValueError(f"unattended run_command Cwd {cwd} is outside the checkout {checkout}")
                 return "ask", "", None
         _agy_command_policy(cwd, command)
         if unattended:
