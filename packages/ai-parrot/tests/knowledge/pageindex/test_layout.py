@@ -542,9 +542,7 @@ def test_enumerated_prefix_level() -> None:
     assert headers.get_header_id(_span("ACCOUNT", 9, (100.0, 92.0, 200.0, 103.0)), page=_page(0)) == "##### "
     assert headers.get_header_id(_span("(1)", 10, (72.0, 91.0, 90.0, 103.0), bold=True), page=_page(0)) == "##### "
     assert headers.get_header_id(_span("ACCOUNT", 9, (100.0, 200.0, 200.0, 211.0)), page=_page(0)) == ""
-    capped = LayoutHeaders(
-        profile.model_copy(update={"heading_sizes": [26, 16, 14, 13], "bold_sizes": [11, 10]})
-    )
+    capped = LayoutHeaders(profile.model_copy(update={"heading_sizes": [26, 16, 14, 13], "bold_sizes": [11, 10]}))
     assert capped.get_header_id(_span("ACCOUNT", 9, (100.0, 92.0, 200.0, 103.0)), page=_page(0)) == "###### "
 
 
@@ -566,7 +564,9 @@ def test_enumerated_wrapped_heading_markdown(tmp_path: Path) -> None:
     try:
         page = doc.new_page()
         page.insert_text((72, 100), "(3)", fontsize=10, fontname="hebo")
-        page.insert_text((72 + marker_width + 4, 100), "ACCESS CONTROL | USE OF DEVICES WITH NO", fontsize=9, fontname="helv")
+        page.insert_text(
+            (72 + marker_width + 4, 100), "ACCESS CONTROL | USE OF DEVICES WITH NO", fontsize=9, fontname="helv"
+        )
         page.insert_text((90, 111), "IDENTIFIABLE OWNER", fontsize=9, fontname="helv")
         for x, y, text, size, font in _body(150, 30):
             page.insert_text((x, y), text, fontsize=size, fontname=font)
