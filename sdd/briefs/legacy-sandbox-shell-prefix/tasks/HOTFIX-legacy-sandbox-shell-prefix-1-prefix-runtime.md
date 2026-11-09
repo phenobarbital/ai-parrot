@@ -122,4 +122,4 @@ hook, so keep imports minimal.
 
 ## Completion Note
 
-Pending; populated by the task finalizer after implementation and validation.
+Implemented by seat gpt-5.6-terra (codex), 1 attempt, 321s, merged at a31814aeaa. Files: `shell_prefix.py`, `test_shell_prefix.py`. Merge-tier validation (background handle `d386f1d8-…:HOTFIX-1:merge`) finished green: 11 passed. Direct `pytest` in the sandbox fails on a navconfig `ErrorFileHandler` (log-dir write), so the engine validation was used instead.
