@@ -266,7 +266,9 @@ def test_two_processes_optimize_and_edit(tmp_path, monkeypatch):
         await toolkit.import_pdf("t", str(FIXTURE), structure_mode="layout", doc_id="alpha")
         tree = toolkit._store.load("t")
         target = next(
-            n for n in structure_to_list(tree["structure"]) if n.get("doc_id") and n.get("body_ref") and not n.get("nodes")
+            n
+            for n in structure_to_list(tree["structure"])
+            if n.get("doc_id") and n.get("body_ref") and not n.get("nodes")
         )
         generation = (await toolkit.get_generation("t"))["id"]
 
@@ -274,7 +276,9 @@ def test_two_processes_optimize_and_edit(tmp_path, monkeypatch):
         adapter = _LiveAdapter()
 
         async def edit_between_plan_and_publish() -> None:
-            process = mp.get_context("spawn").Process(target=_edit_in_child, args=(str(tmp_path), target["node_id"], str(out)))
+            process = mp.get_context("spawn").Process(
+                target=_edit_in_child, args=(str(tmp_path), target["node_id"], str(out))
+            )
             process.start()
             await asyncio.to_thread(process.join, 90)
             if process.is_alive():
