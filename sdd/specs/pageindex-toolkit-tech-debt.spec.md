@@ -230,6 +230,8 @@ already bracket search, outline and the retriever.
   short "same-source re-import" note pointing at FR-1.
 
 
+---
+
 ### Validation Contract
 
 tests:
@@ -247,10 +249,7 @@ tests:
 - packages/ai-parrot/tests/knowledge/pageindex/test_folder_import.py
 - packages/ai-parrot/tests/knowledge/pageindex/test_generation.py
 - packages/ai-parrot/tests/knowledge/pageindex/test_locks.py
-
-markers: []
-
----
+markers: none
 
 ## 5. Acceptance Criteria
 
