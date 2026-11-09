@@ -8,7 +8,7 @@ from parrot.integrations.telegram.auth import (
     BasicAuthStrategy,
     TelegramUserSession,
 )
-
+from parrot.integrations.telegram.models import TelegramAgentConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -217,3 +217,54 @@ class TestTelegramUserSessionOAuth2:
         assert session.nav_session_token is None
         assert session.oauth2_access_token is None
         assert session.authenticated is False
+
+
+class TestAuthOpenModeConfig:
+    """FEAT-854 M1: auth_open_mode / public_base_url config surface."""
+
+    def test_config_auth_open_mode_default_webview(self):
+        """Unset field resolves to 'webview' (legacy behavior)."""
+        cfg = TelegramAgentConfig(name="t", chatbot_id="c")
+
+        assert cfg.auth_open_mode == "webview"
+        assert cfg.public_base_url is None
+
+    def test_config_auth_open_mode_invalid_raises(self):
+        """An unknown mode fails at config load."""
+        with pytest.raises(ValueError, match="auth_open_mode"):
+            TelegramAgentConfig(name="t", chatbot_id="c", auth_open_mode="popup")
+
+    def test_config_browser_requires_public_base_url(self):
+        """Browser mode without public_base_url fails at config load."""
+        with pytest.raises(ValueError, match="browser mode requires public_base_url"):
+            TelegramAgentConfig(name="t", chatbot_id="c", auth_open_mode="browser")
+
+        with pytest.raises(ValueError, match="browser mode requires public_base_url"):
+            TelegramAgentConfig(
+                name="t",
+                chatbot_id="c",
+                auth_open_mode="browser",
+                public_base_url="ftp://parrot.example",
+            )
+
+        cfg = TelegramAgentConfig(
+            name="t",
+            chatbot_id="c",
+            auth_open_mode="browser",
+            public_base_url="https://parrot.example",
+        )
+
+        assert cfg.public_base_url == "https://parrot.example"
+
+    def test_config_from_dict_maps_open_mode(self):
+        """YAML loading carries both new keys."""
+        cfg = TelegramAgentConfig.from_dict(
+            "t",
+            {
+                "auth_open_mode": "browser",
+                "public_base_url": "https://parrot.example",
+            },
+        )
+
+        assert cfg.auth_open_mode == "browser"
+        assert cfg.public_base_url == "https://parrot.example"
