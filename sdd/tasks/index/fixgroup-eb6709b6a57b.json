@@ -1,0 +1,27 @@
+{
+  "feature": "fixgroup-eb6709b6a57b",
+  "feature_id": "FEAT-865",
+  "spec": "sdd/specs/fixgroup-eb6709b6a57b.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-10T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-5457",
+      "slug": "common-pushurl-guard",
+      "title": "Refuse push-protection disable over a common push URL; forbid set-url bypass in /sdd-done",
+      "feature_id": "FEAT-865",
+      "feature": "fixgroup-eb6709b6a57b",
+      "spec": "sdd/specs/fixgroup-eb6709b6a57b.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-5457-common-pushurl-guard.md",
+      "discovered_from": "issue:d0c89274743b"
+    }
+  ]
+}
