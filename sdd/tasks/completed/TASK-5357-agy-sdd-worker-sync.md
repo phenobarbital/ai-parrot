@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-847 — SDD Antigravity CLI (AGY) Operational Compatibility
 **Spec**: `sdd/specs/sdd-agy-compatibility.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5358
@@ -230,10 +230,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; seat qwen (nova), 1 attempt (salvaged)
+**Date**: 2026-11-09
+**Notes**: Google sdd-worker prompt ported to agy. Orchestrator review found the delivery incomplete (missing Fallback/Per-delivery sections, duplicated loop block, outdated Completion) and fixed it in 71f03387aa; feedback recorded. Merge-tier validation green (102 passed).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

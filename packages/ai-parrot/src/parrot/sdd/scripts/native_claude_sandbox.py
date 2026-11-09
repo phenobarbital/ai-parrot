@@ -327,6 +327,18 @@ def _bwrap_probe(executable: str) -> tuple[bool, str]:
     return True, ""
 
 
+def bwrap_probe(executable: str) -> tuple[bool, str]:
+    """Public entry point to probe whether Bubblewrap can create the namespaces a sandbox needs.
+
+    Args:
+        executable: Resolved path to the Bubblewrap executable.
+
+    Returns:
+        Whether Bubblewrap is usable and a human-readable failure reason.
+    """
+    return _bwrap_probe(executable)
+
+
 def native_sandbox_available() -> tuple[bool, str]:
     """Probe whether the native Claude sandbox can start on this host.
 

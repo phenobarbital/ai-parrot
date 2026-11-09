@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-847 — SDD Antigravity CLI (AGY) Operational Compatibility
 **Spec**: `sdd/specs/sdd-agy-compatibility.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5349, TASK-5350, TASK-5354, TASK-5356, TASK-5357, TASK-5359
@@ -196,10 +196,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; seat qwen (nova), 1 attempt
+**Date**: 2026-11-09
+**Notes**: Operator page wiki/sdd-tooling/sdd/agy-compatibility.md plus test_agy_compat_docs.py. Orchestrator checked that every symbol the page links (agy_verdict, evaluate, launch_agy_worker, launch_session, GoogleCodingDispatchProfile), PARROT_SDD_HOST, PARROT_SDD_AGY_UNATTENDED and the mode/effort literals exist in the code. Validation green (2 passed, techwiki decision ok).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -9,6 +9,7 @@ another's.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -221,8 +222,11 @@ class TestFixTwins:
             content = read_workflow_file(path)
             if content.startswith("---\n"):
                 content = content.split("---\n", 2)[2].lstrip()
-            # Host adaptations are limited to the title and skill invocation prefix.
+            # Host adaptations are limited to the title, the skill invocation prefix and the shared-skill
+            # "Full procedure and host adaptations" header (FEAT-847) that links the host contracts.
             body = content.split("\n", 1)[1].replace("$sdd-", "/sdd-").strip()
+            body = re.sub(r"## Full procedure and host adaptations\n.*?(?=\n## )", "", body, flags=re.DOTALL)
+            body = re.sub(r"\n{3,}", "\n\n", body)
             bodies.append(body)
         assert bodies[0] == bodies[1] == bodies[2]
 

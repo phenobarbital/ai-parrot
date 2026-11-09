@@ -13,11 +13,12 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import time
-from typing import Mapping, Sequence
+from typing import Literal, Mapping, Sequence
 
 if __package__:
     from . import native_claude_sandbox, worktree_environment
@@ -99,6 +100,117 @@ def _preflight_sandbox(worktree: Path, allowed_domains: Sequence[str]) -> None:
         raise LaunchError(2, str(exc)) from exc
     except RuntimeError as exc:
         raise LaunchError(1, f"native sandbox unavailable ({exc}); refusing to launch") from exc
+
+
+OFFICIAL_AGY_INSTALL = "curl -fsSL https://antigravity.google/cli/install.sh | bash"
+
+_SNAP_WRAPPER_READ_LIMIT = 4096
+
+
+def resolve_agy() -> Path:
+    """Locate the ``agy`` the launch would exec.
+
+    Returns:
+        The path ``shutil.which`` found for ``agy``.
+
+    Raises:
+        LaunchError: Exit code 1 when ``agy`` is not on ``PATH``.
+    """
+    found = shutil.which("agy")
+    if found is None:
+        raise LaunchError(1, f"missing host prerequisite(s): agy — install the official build: {OFFICIAL_AGY_INSTALL}")
+    return Path(found)
+
+
+def agy_is_snap(agy: Path) -> bool:
+    """Tell whether ``agy`` is the community snap.
+
+    True when ``agy`` (as given or after symlink resolution) lives under ``/snap/``, when it resolves to the
+    ``snap`` binary itself (the ``snap run`` wrapper, ``/usr/bin/snap``), or when it is a small text wrapper
+    script that invokes ``snap run``.
+
+    Args:
+        agy: The ``agy`` path found on ``PATH``.
+
+    Returns:
+        Whether the launch would exec the community snap.
+    """
+    if str(agy).startswith("/snap/"):
+        return True
+    try:
+        resolved = agy.resolve()
+    except (OSError, RuntimeError):
+        resolved = agy
+    if str(resolved).startswith("/snap/") or resolved.name == "snap":
+        return True
+    try:
+        with open(resolved, "rb") as handle:
+            head = handle.read(_SNAP_WRAPPER_READ_LIMIT)
+    except OSError:
+        return False
+    if b"\0" in head:  # a binary: never a text wrapper
+        return False
+    try:
+        text = head.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return "snap run" in text
+
+
+def require_official_agy(agy: Path) -> None:
+    """Refuse the community snap, naming the official install command.
+
+    Args:
+        agy: The ``agy`` path found on ``PATH``.
+
+    Raises:
+        LaunchError: Exit code 2 when ``agy`` is the community snap.
+    """
+    if agy_is_snap(agy):
+        raise LaunchError(
+            2,
+            f"{agy} is the community antigravity-cli snap, which cannot run the SDD flow (no project Python, "
+            f"bwrap or ssh inside its confinement). Install the official agy instead: {OFFICIAL_AGY_INSTALL}",
+        )
+
+
+def google_worker_sandbox(sandbox: str | None, allowed_domains: Sequence[str]) -> str:
+    """Select the Google worker's sandbox backend, failing closed before ``agy`` starts.
+
+    Args:
+        sandbox: The requested sandbox mode; ``None`` means ``required``.
+        allowed_domains: Configured network-domain restrictions (unsupported for Google).
+
+    Returns:
+        Always :data:`native_claude_sandbox.BACKEND_BUBBLEWRAP`.
+
+    Raises:
+        LaunchError: Exit code 2 for ``off``, an invalid mode or domain restrictions; exit code 1 for a
+            non-Linux platform, a missing ``bwrap`` or a failed Bubblewrap capability probe.
+    """
+    mode = (sandbox or "required").strip().lower()
+    if mode == "off":
+        raise LaunchError(2, "--sandbox off is not allowed for the unattended Google worker")
+    if mode not in native_claude_sandbox.SANDBOX_MODES:
+        raise LaunchError(2, f"invalid sandbox mode: {sandbox}")
+    if allowed_domains:
+        raise LaunchError(
+            2,
+            "network domain restrictions are not supported with --host google (the Bubblewrap wrapper does not "
+            "isolate the network); remove --sandbox-allow-domain and the configured domains",
+        )
+    platform = native_claude_sandbox.sandbox_platform()
+    if platform != "linux":
+        raise LaunchError(
+            1, f"the Google worker requires the Bubblewrap sandbox, which is Linux-only (platform: {platform})"
+        )
+    bwrap = shutil.which("bwrap")
+    if bwrap is None:
+        raise LaunchError(1, "missing host prerequisite(s): bwrap — the Google worker requires Bubblewrap")
+    usable, reason = native_claude_sandbox.bwrap_probe(bwrap)
+    if not usable:
+        raise LaunchError(1, f"Bubblewrap probe failed ({reason}); refusing to launch agy")
+    return native_claude_sandbox.BACKEND_BUBBLEWRAP
 
 
 def resolve_primary_checkout(cwd: Path) -> Path:
@@ -526,6 +638,7 @@ def launch(
     claude_args: Sequence[str],
     base_env: Mapping[str, str] | None = None,
     gh_token: bool = True,
+    host: Literal["claude", "google"] = "claude",
 ) -> int:
     """Prepare and launch or attach to the worker for one feature.
 
@@ -536,11 +649,15 @@ def launch(
     into ``os.environ``. The worker and the tmux client get ``base_env``, never the loaded
     ``os.environ``. ``None`` falls back to ``os.environ`` for callers that never imported parrot.
     """
+    if host == "google":
+        agy = resolve_agy()
+        require_official_agy(agy)
+
     env = dict(os.environ if base_env is None else base_env)
     for key_to_clear in tuple(env):
         if key_to_clear.startswith("PARROT_SDD_NOTIFY_"):
             env.pop(key_to_clear)
-    if sandbox is not None:
+    if sandbox is not None and host == "claude":
         if sandbox not in native_claude_sandbox.SANDBOX_MODES:
             raise LaunchError(2, f"invalid sandbox mode: {sandbox}")
         env[native_claude_sandbox.MODE_ENV] = sandbox
@@ -576,7 +693,11 @@ def launch(
         )
     except ValueError as exc:
         raise LaunchError(2, str(exc)) from exc
-    _preflight_sandbox(worktree, effective_domains)
+    if host == "google":
+        google_worker_sandbox(sandbox or os.environ.get(native_claude_sandbox.MODE_ENV), effective_domains)
+        _require_agy_hooks(worktree)
+    else:
+        _preflight_sandbox(worktree, effective_domains)
     if not no_upstream:
         print(prepare_upstream(worktree), file=sys.stderr)
         # Host-only advisory; imported here because the tmux child runs under python -S.
@@ -584,9 +705,15 @@ def launch(
 
         print(stale_base_summary(worktree), file=sys.stderr)
     print(_enable_push_protection(worktree), file=sys.stderr)
-    domain_args = [item for domain in allowed_domains for item in ("--sandbox-allow-domain", domain)]
-    token_args = [] if gh_token else ["--no-gh-token"]
+    domain_args = (
+        [] if host == "google" else [item for domain in allowed_domains for item in ("--sandbox-allow-domain", domain)]
+    )
+    token_args = [] if host == "google" or gh_token else ["--no-gh-token"]
     if not tmux:
+        if host == "google":
+            return launch_agy_worker(
+                list(claude_args), cwd=worktree, initial_prompt=f"run {ref.prompt_id}", base_env=env
+            )
         return native_claude_sandbox.launch_worker(
             [*token_args, *domain_args, *claude_args],
             cwd=worktree,
@@ -621,6 +748,7 @@ def launch(
             ref.prompt_id,
             "--cwd",
             str(worktree),
+            *(("--host", "google") if host == "google" else ()),
             *domain_args,
             *token_args,
         ]
@@ -639,19 +767,129 @@ def launch(
     return _attach_session(name)
 
 
+AGY_UNATTENDED_ENV = "PARROT_SDD_AGY_UNATTENDED"
+AGY_WORKER_ARGS: tuple[str, ...] = ("--agent", "sdd-worker", "--dangerously-skip-permissions")
+
+
+def agy_environment(base_env: Mapping[str, str] | None, *, unattended: bool) -> dict[str, str]:
+    """Build an AGY environment without Claude-native sandbox markers.
+
+    Args:
+        base_env: Operator environment, or ``None`` to copy ``os.environ``.
+        unattended: Whether to enable the guarded Bubblewrap worker mode.
+
+    Returns:
+        A fresh environment mapping for the AGY process.
+    """
+    env = dict(os.environ if base_env is None else base_env)
+    for name in (
+        native_claude_sandbox.CACHE_DIR_ENV,
+        native_claude_sandbox.ROOTS_ENV,
+        native_claude_sandbox.DEGRADED_ENV,
+        native_claude_sandbox.BACKEND_ENV,
+        AGY_UNATTENDED_ENV,
+    ):
+        env.pop(name, None)
+    if unattended:
+        env[AGY_UNATTENDED_ENV] = "1"
+        env[native_claude_sandbox.BACKEND_ENV] = native_claude_sandbox.BACKEND_BUBBLEWRAP
+    return env
+
+
+def launch_agy_worker(
+    agy_args: Sequence[str],
+    *,
+    cwd: Path,
+    initial_prompt: str,
+    base_env: Mapping[str, str] | None = None,
+) -> int:
+    """Exec the guarded unattended ``sdd-worker`` AGY process.
+
+    Args:
+        agy_args: Additional arguments forwarded verbatim to AGY.
+        cwd: Feature worktree in which AGY runs.
+        initial_prompt: Prompt passed to AGY's print mode.
+        base_env: Operator environment, or ``None`` to copy ``os.environ``.
+
+    Returns:
+        A launch error code, or 1 if ``execvpe`` unexpectedly returns.
+    """
+    try:
+        agy = resolve_agy()
+        require_official_agy(agy)
+    except LaunchError as exc:
+        print(f"launch-worker: {exc}", file=sys.stderr)
+        return exc.exit_code
+    command = [str(agy), *AGY_WORKER_ARGS, *agy_args, "-p", initial_prompt]
+    env = agy_environment(base_env, unattended=True)
+    os.chdir(cwd)
+    os.execvpe(command[0], command, env)
+    return 1
+
+
+def _require_agy_hooks(checkout: Path) -> None:
+    """Require a current, runnable managed AGY permission hook in ``checkout``.
+
+    Args:
+        checkout: Worktree that will host the AGY session.
+
+    Raises:
+        LaunchError: Exit code 2 when the hook is absent, stale, or cannot execute.
+    """
+    from parrot.sdd.installer import _agy_permissions_report
+
+    report = _agy_permissions_report(checkout)
+    hint = "run `parrot sdd install --host google` in this repository"
+    if report.get("command") is None:
+        raise LaunchError(2, f"the agy permission hook is not installed in {checkout}/.agents/hooks.json; {hint}")
+    if report.get("stale"):
+        raise LaunchError(2, f"the agy permission hook matcher is stale ({report.get('matcher')!r}); {hint}")
+
+    form = report.get("form")
+    command = str(report["command"])
+    runnable = False
+    if form == "launcher":
+        runnable = (checkout / "scripts" / "sdd" / "agy_hook.sh").is_file()
+    elif form == "bare":
+        runnable = shutil.which("parrot") is not None
+    elif form == "baked":
+        try:
+            executable = Path(shlex.split(command)[0])
+        except (IndexError, ValueError):
+            executable = Path()
+        runnable = executable.is_file() and os.access(executable, os.X_OK)
+    if not runnable:
+        raise LaunchError(2, f"the agy permission hook command is not runnable ({command!r}); {hint}")
+
+
 def launch_session(
     initial_prompt: str,
     *,
     cwd: Path,
     claude_args: Sequence[str] = (),
     base_env: Mapping[str, str] | None = None,
+    host: Literal["claude", "google"] = "claude",
 ) -> int:
-    """Open an interactive Claude session in ``cwd`` with ``initial_prompt`` as its first message (C30 item 5).
+    """Open an interactive Claude or AGY session in ``cwd`` with an initial prompt.
 
     Used by ``parrot sdd launch brief|fix``: no agent, no sandbox settings, no tmux — identical to typing the
     slash command by hand, except that the operator environment (``base_env``, captured before ``parrot`` was
-    imported) is what Claude starts from. Returns 1 when ``claude`` is not on PATH; otherwise never returns.
+    imported) is what the host starts from. AGY never receives ``--dangerously-skip-permissions``. Returns a
+    host prerequisite error code, or 1 if ``execvpe`` unexpectedly returns.
     """
+    if host == "google":
+        try:
+            agy = resolve_agy()
+            require_official_agy(agy)
+            _require_agy_hooks(cwd)
+        except LaunchError as exc:
+            print(f"launch: {exc}", file=sys.stderr)
+            return exc.exit_code
+        command = [str(agy), *claude_args, "-i", initial_prompt]
+        env = agy_environment(base_env, unattended=False)
+        os.chdir(cwd)
+        os.execvpe(command[0], command, env)
+        return 1
     claude = shutil.which("claude")
     if claude is None:
         print("launch: missing host prerequisite(s): claude", file=sys.stderr)
@@ -677,6 +915,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--in-session", metavar="FEAT-ID")
     # The worktree is passed explicitly rather than trusted from the process cwd.
     parser.add_argument("--cwd", type=Path, default=None)
+    parser.add_argument("--host", choices=("claude", "google"), default="claude")
     parser.add_argument("--sandbox-allow-domain", action="append", default=[])
     parser.add_argument("--no-gh-token", action="store_true", default=False)
     parser.add_argument("claude_args", nargs=argparse.REMAINDER)
@@ -686,6 +925,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     forwarded = list(args.claude_args)
     if forwarded[:1] == ["--"]:
         forwarded.pop(0)
+    if args.host == "google":
+        return launch_agy_worker(forwarded, cwd=args.cwd or _invocation_dir(), initial_prompt=f"run {args.in_session}")
     domain_args = [item for domain in args.sandbox_allow_domain for item in ("--sandbox-allow-domain", domain)]
     token_args = ["--no-gh-token"] if args.no_gh_token else []
     return native_claude_sandbox.launch_worker(

@@ -23,8 +23,8 @@ class GoogleCodingDispatchProfile(BaseModel):
     ] = "sdd-worker"
     model: str = "auto"
     agent: Optional[str] = None
-    effort: Optional[Literal["low", "medium", "high"]] = None
-    mode: Literal["accept-edits", "plan"] = "accept-edits"
+    effort: Optional[Literal["low", "medium", "high", "xhigh", "max"]] = None
+    mode: Literal["accept-edits", "auto", "plan"] = "accept-edits"
     dangerously_skip_permissions: bool = True
     sandbox: bool = True
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)

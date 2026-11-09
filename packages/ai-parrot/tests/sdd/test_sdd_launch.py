@@ -1236,6 +1236,118 @@ def test_launch_brief_and_fix_exec_slash_command(
     assert "--agent" not in command and "--settings" not in command
 
 
+@pytest.mark.parametrize(
+    ("argv", "host", "prompt"),
+    [
+        (
+            ["sdd", "launch", "brief", "--host", "google", "NAV-1", "--no-interview"],
+            "google",
+            "/sdd-brief NAV-1 --no-interview",
+        ),
+        (
+            ["sdd", "launch", "brief", "NAV-1", "--host", "google"],
+            "claude",
+            "/sdd-brief NAV-1 --host google",
+        ),
+        (["sdd", "launch", "fix", "--host", "google", "--top", "2"], "google", "/sdd-fix --top 2"),
+    ],
+)
+def test_brief_fix_host_placement(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, argv: list[str], host: str, prompt: str
+) -> None:
+    """Host is parsed only before the first passthrough brief or fix argument."""
+    seen: dict[str, object] = {}
+    monkeypatch.delenv("PARROT_SDD_HOST", raising=False)
+    monkeypatch.setattr(launcher, "_invocation_dir", lambda: _primary(tmp_path))
+    monkeypatch.setattr(launcher, "launch_session", lambda value, **kwargs: seen.update(prompt=value, **kwargs) or 0)
+
+    result = CliRunner().invoke(devloop, argv)
+
+    assert result.exit_code == 0, result.output
+    assert seen["prompt"] == prompt
+    assert seen["host"] == host
+
+
+@pytest.mark.parametrize(
+    ("args", "environment", "expected_host"),
+    [
+        (["--host", "google"], None, "google"),
+        ([], None, "claude"),
+        ([], {"PARROT_SDD_HOST": "google"}, "google"),
+    ],
+)
+def test_worker_host_option_uses_flag_or_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    args: list[str],
+    environment: dict[str, str] | None,
+    expected_host: str,
+) -> None:
+    """Worker passes the selected host explicitly to the launcher."""
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(launcher, "launch", lambda *values, **kwargs: seen.update(values=values, **kwargs) or 0)
+
+    result = CliRunner().invoke(devloop, ["sdd", "launch", "worker", "FEAT-768", *args], env=environment)
+
+    assert result.exit_code == 0, result.output
+    assert seen["host"] == expected_host
+
+
+def test_worker_host_option_rejects_invalid_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Click validates the host environment variable through its declared choice."""
+    monkeypatch.setattr(launcher, "launch", lambda *args, **kwargs: pytest.fail("invalid host must not launch"))
+
+    result = CliRunner().invoke(
+        devloop,
+        ["sdd", "launch", "worker", "FEAT-768"],
+        env={"PARROT_SDD_HOST": "bogus"},
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--host'" in result.output
+
+
+def test_launch_cli_google_host(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """CLI host selection preserves AGY worker and interactive-session execution contracts."""
+    worktree = _google_launch_ready(tmp_path, monkeypatch)
+    monkeypatch.setattr(launcher, "_enable_push_protection", lambda path: "push protection enabled")
+    monkeypatch.setattr(launcher, "_invocation_dir", lambda: tmp_path / "primary")
+    monkeypatch.setenv(launcher.AGY_UNATTENDED_ENV, "1")
+    monkeypatch.setenv(launcher.native_claude_sandbox.BACKEND_ENV, "bubblewrap")
+
+    worker_seen = _capture_agy_exec(monkeypatch)
+    result = CliRunner().invoke(
+        devloop,
+        ["sdd", "launch", "worker", "FEAT-768", "--host", "google", "--no-upstream"],
+    )
+
+    assert result.exit_code == 0, result.output
+    worker_argv = worker_seen["argv"]
+    worker_env = worker_seen["env"]
+    assert isinstance(worker_argv, list)
+    assert isinstance(worker_env, dict)
+    assert "--dangerously-skip-permissions" in worker_argv
+    assert "--mode" not in worker_argv
+    assert worker_env[launcher.AGY_UNATTENDED_ENV] == "1"
+    assert worker_env[launcher.native_claude_sandbox.BACKEND_ENV] == "bubblewrap"
+    assert worker_seen["cwd"] == worktree
+
+    for argv in (
+        ["sdd", "launch", "brief", "--host", "google", "NAV-1"],
+        ["sdd", "launch", "fix", "--host", "google", "--top", "2"],
+    ):
+        session_seen = _capture_agy_exec(monkeypatch)
+        result = CliRunner().invoke(devloop, argv)
+        assert result.exit_code == 0, result.output
+        session_argv = session_seen["argv"]
+        session_env = session_seen["env"]
+        assert isinstance(session_argv, list)
+        assert isinstance(session_env, dict)
+        assert "--dangerously-skip-permissions" not in session_argv
+        assert "--mode" not in session_argv
+        assert launcher.AGY_UNATTENDED_ENV not in session_env
+        assert launcher.native_claude_sandbox.BACKEND_ENV not in session_env
+
+
 def test_launch_help_lists_three_verbs() -> None:
     """The launch noun carries worker, brief and fix; the devloop spelling is gone."""
     result = CliRunner().invoke(devloop, ["sdd", "launch", "--help"])
@@ -1305,3 +1417,418 @@ def test_tmux_launch_enables_push_protection(tmp_path: Path, monkeypatch: pytest
     )
     assert protected == [worktree]
     assert calls[0][:2] == ["tmux", "new-session"]
+
+
+def test_google_snap_agy_is_refused_with_install_command(tmp_path: Path) -> None:
+    with pytest.raises(launcher.LaunchError) as error:
+        launcher.require_official_agy(Path("/snap/bin/agy"))
+    assert error.value.exit_code == 2
+    assert launcher.OFFICIAL_AGY_INSTALL in str(error.value)
+
+
+def test_google_official_agy_is_accepted(tmp_path: Path) -> None:
+    agy = tmp_path / "agy"
+    agy.write_bytes(b"\x7fELF\x02\x01\x01\x00" + b"\0" * 64)
+    launcher.require_official_agy(agy)
+
+
+def test_google_agy_is_snap_detects_symlink_wrapper_and_plain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    snap_target = tmp_path / "usr" / "bin" / "snap"
+    snap_target.parent.mkdir(parents=True)
+    snap_target.write_bytes(b"\x7fELF" + b"\0" * 32)
+    symlinked = tmp_path / "bin" / "agy"
+    symlinked.parent.mkdir()
+    symlinked.symlink_to(snap_target)
+    assert launcher.agy_is_snap(symlinked) is True
+
+    into_snap = tmp_path / "agy-snapdir"
+    real_resolve = Path.resolve
+
+    def _resolve(self: Path, strict: bool = False) -> Path:
+        if self == into_snap:
+            return Path("/snap/antigravity-cli/12/bin/agy")
+        return real_resolve(self, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", _resolve)
+    assert launcher.agy_is_snap(into_snap) is True
+
+    wrapper = tmp_path / "agy-wrapper"
+    wrapper.write_text('#!/bin/sh\nexec /usr/bin/snap run antigravity-cli.agy "$@"\n', encoding="utf-8")
+    assert launcher.agy_is_snap(wrapper) is True
+
+    plain = tmp_path / "agy-plain"
+    plain.write_text('#!/bin/sh\nexec /opt/agy/bin/agy "$@"\n', encoding="utf-8")
+    assert launcher.agy_is_snap(plain) is False
+
+
+def test_google_resolve_agy_missing_names_install_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: None)
+    with pytest.raises(launcher.LaunchError) as error:
+        launcher.resolve_agy()
+    assert error.value.exit_code == 1
+    assert launcher.OFFICIAL_AGY_INSTALL in str(error.value)
+
+
+def test_google_resolve_agy_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/local/bin/agy" if name == "agy" else None)
+    assert launcher.resolve_agy() == Path("/usr/local/bin/agy")
+
+
+def _google_host_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: "linux")
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/bwrap" if name == "bwrap" else None)
+    monkeypatch.setattr(launcher.native_claude_sandbox, "_bwrap_probe", lambda executable: (True, "ok"))
+
+
+@pytest.mark.parametrize("mode", ["off", "OFF", "bogus"])
+def test_google_worker_sandbox_refuses_off_and_bad_modes(mode: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    _google_host_ok(monkeypatch)
+    with pytest.raises(launcher.LaunchError) as error:
+        launcher.google_worker_sandbox(mode, ())
+    assert error.value.exit_code == 2
+
+
+def test_google_worker_sandbox_refuses_domains(monkeypatch: pytest.MonkeyPatch) -> None:
+    _google_host_ok(monkeypatch)
+    with pytest.raises(launcher.LaunchError) as error:
+        launcher.google_worker_sandbox("required", ("example.com",))
+    assert error.value.exit_code == 2
+    assert "network domain" in str(error.value)
+
+
+@pytest.mark.parametrize("mode", [None, "required", "legacy", "preferred"])
+def test_google_worker_sandbox_selects_bubblewrap(mode: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
+    _google_host_ok(monkeypatch)
+    assert launcher.google_worker_sandbox(mode, ()) == "bubblewrap"
+
+
+def test_google_worker_sandbox_non_linux_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    _google_host_ok(monkeypatch)
+    monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: "macos")
+    with pytest.raises(launcher.LaunchError) as error:
+        launcher.google_worker_sandbox("preferred", ())
+    assert error.value.exit_code == 1
+
+
+def test_google_worker_sandbox_missing_bwrap_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    _google_host_ok(monkeypatch)
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: None)
+    with pytest.raises(launcher.LaunchError) as error:
+        launcher.google_worker_sandbox("preferred", ())
+    assert error.value.exit_code == 1
+    assert "bwrap" in str(error.value)
+
+
+def test_google_worker_sandbox_failed_probe_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    _google_host_ok(monkeypatch)
+    monkeypatch.setattr(launcher.native_claude_sandbox, "_bwrap_probe", lambda executable: (False, "userns denied"))
+    with pytest.raises(launcher.LaunchError) as error:
+        launcher.google_worker_sandbox("preferred", ())
+    assert error.value.exit_code == 1
+    assert "userns denied" in str(error.value)
+
+
+def _capture_agy_exec(monkeypatch: pytest.MonkeyPatch, agy: str | None = "/home/u/.local/bin/agy") -> dict[str, object]:
+    """Mock AGY discovery and exec without resolving a symlink into ``/snap``."""
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: agy if name == "agy" else None)
+    monkeypatch.setattr(launcher.os, "chdir", lambda path: seen.__setitem__("cwd", Path(path)))
+
+    def _exec(file: str, argv: list[str], env: dict[str, str]) -> None:
+        seen.update(argv=list(argv), env=env)
+        raise SystemExit(0)
+
+    monkeypatch.setattr(launcher.os, "execvpe", _exec)
+    return seen
+
+
+def test_launch_agy_worker_is_unattended(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    seen = _capture_agy_exec(monkeypatch)
+    base = {
+        "PATH": "/usr/bin",
+        launcher.native_claude_sandbox.CACHE_DIR_ENV: "/cache",
+        launcher.native_claude_sandbox.ROOTS_ENV: "/roots",
+        launcher.native_claude_sandbox.DEGRADED_ENV: "1",
+    }
+    with pytest.raises(SystemExit):
+        launcher.launch_agy_worker(["--verbose"], cwd=tmp_path, initial_prompt="run FEAT-768", base_env=base)
+    argv = seen["argv"]
+    env = seen["env"]
+    assert isinstance(argv, list)
+    assert isinstance(env, dict)
+    assert seen["cwd"] == tmp_path
+    assert argv[1:4] == ["--agent", "sdd-worker", "--dangerously-skip-permissions"]
+    assert argv[-2:] == ["-p", "run FEAT-768"]
+    assert "--verbose" in argv and "--mode" not in argv
+    assert env[launcher.AGY_UNATTENDED_ENV] == "1"
+    assert env[launcher.native_claude_sandbox.BACKEND_ENV] == "bubblewrap"
+    for name in (
+        launcher.native_claude_sandbox.CACHE_DIR_ENV,
+        launcher.native_claude_sandbox.ROOTS_ENV,
+        launcher.native_claude_sandbox.DEGRADED_ENV,
+    ):
+        assert name not in env
+
+
+def test_launch_session_google_is_interactive(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    seen = _capture_agy_exec(monkeypatch)
+    monkeypatch.setattr(launcher, "_require_agy_hooks", lambda checkout: None)
+    base = {
+        "PATH": "/usr/bin",
+        launcher.AGY_UNATTENDED_ENV: "1",
+        launcher.native_claude_sandbox.BACKEND_ENV: "bubblewrap",
+        launcher.native_claude_sandbox.CACHE_DIR_ENV: "/cache",
+        launcher.native_claude_sandbox.ROOTS_ENV: "/roots",
+        launcher.native_claude_sandbox.DEGRADED_ENV: "1",
+    }
+    with pytest.raises(SystemExit):
+        launcher.launch_session(
+            "interview NAV-1",
+            cwd=tmp_path,
+            claude_args=("--verbose",),
+            base_env=base,
+            host="google",
+        )
+    argv = seen["argv"]
+    env = seen["env"]
+    assert argv == ["/home/u/.local/bin/agy", "--verbose", "-i", "interview NAV-1"]
+    assert isinstance(env, dict)
+    assert seen["cwd"] == tmp_path
+    assert "--dangerously-skip-permissions" not in argv and "--mode" not in argv
+    for name in (
+        launcher.AGY_UNATTENDED_ENV,
+        launcher.native_claude_sandbox.BACKEND_ENV,
+        launcher.native_claude_sandbox.CACHE_DIR_ENV,
+        launcher.native_claude_sandbox.ROOTS_ENV,
+        launcher.native_claude_sandbox.DEGRADED_ENV,
+    ):
+        assert name not in env
+
+
+@pytest.mark.parametrize("launcher_name", ["worker", "session"])
+def test_agy_launchers_refuse_snap(
+    launcher_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _capture_agy_exec(monkeypatch, "/snap/bin/agy")
+    if launcher_name == "worker":
+        result = launcher.launch_agy_worker((), cwd=tmp_path, initial_prompt="run FEAT-768")
+        prefix = "launch-worker:"
+    else:
+        result = launcher.launch_session("interview NAV-1", cwd=tmp_path, host="google")
+        prefix = "launch:"
+    stderr = capsys.readouterr().err
+    assert result == 2
+    assert prefix in stderr
+    assert launcher.OFFICIAL_AGY_INSTALL in stderr
+
+
+@pytest.mark.parametrize("launcher_name", ["worker", "session"])
+def test_agy_launchers_report_missing_binary(
+    launcher_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    seen = _capture_agy_exec(monkeypatch, agy=None)
+    if launcher_name == "worker":
+        result = launcher.launch_agy_worker((), cwd=tmp_path, initial_prompt="run FEAT-768")
+    else:
+        result = launcher.launch_session("interview NAV-1", cwd=tmp_path, host="google")
+    assert result == 1
+    assert "argv" not in seen
+
+
+def test_unattended_env_name_matches_the_hook() -> None:
+    """The launcher and AGY hook use one unattended-mode environment key."""
+    from parrot.sdd.scripts import agy_permissions
+
+    assert launcher.AGY_UNATTENDED_ENV == agy_permissions.UNATTENDED_ENV
+
+
+def _google_launch_ready(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Configure a Google worker launch through its host preparation boundary."""
+    primary = _primary(tmp_path)
+    worktree = tmp_path / "feature"
+    worktree.mkdir()
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setattr(launcher, "resolve_agy", lambda: tmp_path / "agy")
+    monkeypatch.setattr(launcher, "require_official_agy", lambda agy: None)
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda checkout, ref: worktree)
+    monkeypatch.setattr(launcher, "tmux_session_exists", lambda name: False)
+    monkeypatch.setattr(launcher, "google_worker_sandbox", lambda sandbox, domains: "bubblewrap")
+    monkeypatch.setattr(launcher, "_require_agy_hooks", lambda checkout: None)
+    return worktree
+
+
+def test_google_foreground_uses_agy_without_claude_launcher_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Google foreground workers skip Claude preflight and launcher-only AGY arguments."""
+    worktree = _google_launch_ready(tmp_path, monkeypatch)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(launcher, "_preflight_sandbox", lambda *args: pytest.fail("Claude preflight must be skipped"))
+    monkeypatch.setattr(
+        launcher.native_claude_sandbox,
+        "launch_worker",
+        lambda *args, **kwargs: pytest.fail("Claude worker must not be launched"),
+    )
+    monkeypatch.setattr(
+        launcher,
+        "launch_agy_worker",
+        lambda argv, **kwargs: captured.update(argv=list(argv), **kwargs) or 0,
+    )
+
+    assert (
+        launcher.launch(
+            "FEAT-768",
+            tmux=False,
+            detach=False,
+            sandbox="preferred",
+            allowed_domains=(),
+            no_upstream=True,
+            claude_args=("--verbose",),
+            gh_token=False,
+            host="google",
+        )
+        == 0
+    )
+    assert captured["argv"] == ["--verbose"]
+    assert captured["cwd"] == worktree
+    assert captured["initial_prompt"] == "run FEAT-768"
+    assert isinstance(captured["base_env"], dict)
+    assert "--sandbox-allow-domain" not in captured["argv"]
+    assert "--no-gh-token" not in captured["argv"]
+
+
+def test_google_tmux_child_propagates_host_without_claude_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stdlib tmux child receives the explicit host choice and no Claude-only flags."""
+    _google_launch_ready(tmp_path, monkeypatch)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/tmux" if name == "tmux" else None)
+    monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: "linux")
+    monkeypatch.setattr(launcher, "_run", _tmux_runner(calls, panes=["0|||agy"]))
+
+    assert (
+        launcher.launch(
+            "FEAT-768",
+            tmux=True,
+            detach=True,
+            sandbox="preferred",
+            allowed_domains=(),
+            no_upstream=True,
+            claude_args=("--verbose",),
+            gh_token=False,
+            host="google",
+        )
+        == 0
+    )
+    child = calls[0][calls[0].index("--in-session") : calls[0].index(";")]
+    assert ["--host", "google"] == child[child.index("--host") : child.index("--host") + 2]
+    assert "--sandbox-allow-domain" not in child and "--no-gh-token" not in child
+
+
+def test_main_dispatches_google_and_claude_workers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tmux child dispatches by its explicit host while Claude remains the default."""
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    seen: list[tuple[str, list[str], dict[str, object]]] = []
+    monkeypatch.setattr(
+        launcher,
+        "launch_agy_worker",
+        lambda argv, **kwargs: seen.append(("google", list(argv), kwargs)) or 0,
+    )
+    monkeypatch.setattr(
+        launcher.native_claude_sandbox,
+        "launch_worker",
+        lambda argv, **kwargs: seen.append(("claude", list(argv), kwargs)) or 0,
+    )
+    assert launcher.main(["--in-session", "FEAT-768", "--cwd", str(worktree), "--host", "google", "--", "--x"]) == 0
+    assert launcher.main(["--in-session", "FEAT-768", "--cwd", str(worktree), "--", "--x"]) == 0
+    assert seen == [
+        ("google", ["--x"], {"cwd": worktree, "initial_prompt": "run FEAT-768"}),
+        ("claude", ["--x"], {"cwd": worktree, "initial_prompt": "run FEAT-768"}),
+    ]
+
+
+def test_google_snap_refusal_happens_before_host_preparation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A snap AGY is rejected before a worktree, push protection, or tmux can be prepared."""
+    primary = _primary(tmp_path)
+    monkeypatch.chdir(primary)
+    monkeypatch.setenv("PWD", str(primary))
+    monkeypatch.setattr(launcher, "resolve_agy", lambda: Path("/snap/bin/agy"))
+    monkeypatch.setattr(launcher, "ensure_feature_worktree", lambda *args: pytest.fail("must not prepare worktree"))
+    with pytest.raises(launcher.LaunchError, match="community antigravity-cli snap"):
+        launcher.launch(
+            "FEAT-768",
+            tmux=False,
+            detach=False,
+            sandbox=None,
+            allowed_domains=(),
+            no_upstream=True,
+            claude_args=(),
+            host="google",
+        )
+
+
+@pytest.mark.parametrize(
+    "report",
+    [
+        {"command": None, "stale": False, "form": None},
+        {"command": "parrot sdd hooks agy-permissions --hook", "stale": True, "matcher": "run_command", "form": "bare"},
+    ],
+)
+def test_google_session_refuses_missing_or_stale_hook(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, report: dict[str, object]
+) -> None:
+    """Interactive Google sessions fail closed before AGY execs when their hook is invalid."""
+    from parrot.sdd import installer
+
+    monkeypatch.setattr(installer, "_agy_permissions_report", lambda checkout: report)
+    monkeypatch.setattr(launcher, "resolve_agy", lambda: tmp_path / "agy")
+    monkeypatch.setattr(launcher, "require_official_agy", lambda agy: None)
+    monkeypatch.setattr(launcher.os, "execvpe", lambda *args: pytest.fail("AGY must not execute"))
+    assert launcher.launch_session("/sdd-fix", cwd=tmp_path, host="google") == 2
+
+
+def test_agy_hook_launcher_form_requires_packaged_script(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A launcher-form hook is rejected when its repository script is absent."""
+    from parrot.sdd import installer
+
+    monkeypatch.setattr(
+        installer,
+        "_agy_permissions_report",
+        lambda checkout: {"command": "sh ../scripts/sdd/agy_hook.sh", "stale": False, "form": "launcher"},
+    )
+    with pytest.raises(launcher.LaunchError, match="not runnable"):
+        launcher._require_agy_hooks(tmp_path)
+
+
+def test_agy_hook_bare_and_baked_forms_require_runnable_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bare PATH commands and baked absolute commands both fail closed when un-runnable."""
+    from parrot.sdd import installer
+
+    monkeypatch.setattr(
+        installer,
+        "_agy_permissions_report",
+        lambda checkout: {"command": "parrot sdd hooks agy-permissions --hook", "stale": False, "form": "bare"},
+    )
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: None)
+    with pytest.raises(launcher.LaunchError, match="not runnable"):
+        launcher._require_agy_hooks(tmp_path)
+
+    executable = tmp_path / "parrot"
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(
+        installer,
+        "_agy_permissions_report",
+        lambda checkout: {"command": f"{executable} sdd hooks agy-permissions --hook", "stale": False, "form": "baked"},
+    )
+    with pytest.raises(launcher.LaunchError, match="not runnable"):
+        launcher._require_agy_hooks(tmp_path)

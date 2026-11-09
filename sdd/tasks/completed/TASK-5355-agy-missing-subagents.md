@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-847 — SDD Antigravity CLI (AGY) Operational Compatibility
 **Spec**: `sdd/specs/sdd-agy-compatibility.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -50,6 +50,8 @@ The existing rule `(".agents/agents/sdd-*/agent.md", ("google",))` covers `sdd-c
 | `scripts/sdd/check_asset_sync.py` | MODIFY | two `ASSET_SOURCES` rules |
 | `packages/ai-parrot/src/parrot/sdd/_assets/manifest.json` | MODIFY | regenerated (3 new google entries) |
 | `packages/ai-parrot/tests/sdd/test_agy_agents.py` | CREATE | manifest/install/status/format tests |
+| `packages/ai-parrot/tests/sdd/fixtures/asset_targets.json` | MODIFY | add the 3 new asset targets (installer name-preservation test) |
+| `tests/sdd_scripts/test_check_asset_sync.py` | MODIFY | hard-coded asset count 88 -> 91 |
 
 ---
 
@@ -107,7 +109,9 @@ def sdd_status(root: Path) -> dict[str, Any]                           # ["hosts
     {"path": "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/qa-runner/agent.md", "action": "CREATE"},
     {"path": "scripts/sdd/check_asset_sync.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/src/parrot/sdd/_assets/manifest.json", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/tests/sdd/test_agy_agents.py", "action": "CREATE"}
+    {"path": "packages/ai-parrot/tests/sdd/test_agy_agents.py", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/sdd/fixtures/asset_targets.json", "action": "MODIFY"},
+    {"path": "tests/sdd_scripts/test_check_asset_sync.py", "action": "MODIFY"}
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/sdd/installer.py#install_sdd_integration",
@@ -276,10 +280,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator; seat sonnet (native), 1 attempt
+**Date**: 2026-11-09
+**Notes**: Three AGY subagents (sdd-coder, code-reviewer, qa-runner) + ASSET_SOURCES rules + generated assets/manifest. Deviation: also updated asset_targets.json and the hard-coded asset count (88->91) in test_check_asset_sync.py; both declared in the task's file table after the fidelity gate flagged them. Merge-tier validation green (chunk 0: 549 passed, 10 skipped; asset sync 27 passed).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: describe above
