@@ -43,6 +43,15 @@ from .hybrid_search import HybridPageIndexSearch
 from .ingest import IngestedMarkdown, TwoStepIngester
 from .llm_adapter import PageIndexLLMAdapter
 from .md_builder import md_to_tree
+from .optimizer import (
+    OptimizeReport,
+    OptimizerSettings,
+    Revisions,
+    finalize_stamps,
+    plan_deterministic,
+    validate_candidate,
+)
+from .optimizer_llm import adapter_is_live, describe_document, run_llm_passes
 from .retriever import PageIndexRetriever
 from .locks import tree_lock
 from .store import JSONTreeStore
@@ -72,11 +81,13 @@ from parrot.security.prompt_injection import PromptInjectionDetector, get_inject
 from .tree_ops import (
     delete_node as _delete_node,
     make_folder_node,
+    reindex_node_ids,
     splice_subtree,
 )
 from .utils import find_node_by_id, get_pdf_name, structure_to_list
 from parrot.knowledge.okf.utils import flatten_concept_id_for_filename
 from parrot.knowledge.pageindex.okf.projection import _strip_frontmatter
+from parrot.knowledge.pageindex.okf.concept_id import derive_concept_id, dedup_concept_ids
 
 logger = logging.getLogger("parrot.knowledge.pageindex.toolkit")
 
@@ -169,6 +180,8 @@ class PageIndexToolkit(AbstractToolkit):
         agentic_max_reads: int = 12,
         agentic_max_tool_calls: int = 20,
         agentic_timeout_s: float = 120.0,
+        optimize_on_import: bool = True,
+        optimizer_settings: Optional["OptimizerSettings | dict"] = None,
         *,
         llm_client: Optional[AbstractClient] = None,
         max_result_chars: Optional[int] = None,
@@ -209,6 +222,12 @@ class PageIndexToolkit(AbstractToolkit):
         self._agentic_max_reads = agentic_max_reads
         self._agentic_max_tool_calls = agentic_max_tool_calls
         self._agentic_timeout_s = agentic_timeout_s
+        self._optimize_on_import = optimize_on_import
+        self._optimizer_settings = (
+            OptimizerSettings.model_validate(optimizer_settings or {})
+            if isinstance(optimizer_settings, dict) or optimizer_settings is None
+            else optimizer_settings
+        )
         self._agentic_clone: Optional[AbstractClient] = None
         self._agentic_lock = asyncio.Lock()
 
@@ -1675,6 +1694,7 @@ class PageIndexToolkit(AbstractToolkit):
         subtree = await md_to_tree(
             md_text=markdown,
             adapter=self._adapter,
+            options={"if_add_node_summary": "no"} if self._optimize_on_import else None,
             doc_name=doc_name or "ingested.md",
         )
         # Build-time scratch fields that should never reach disk.
@@ -1706,6 +1726,8 @@ class PageIndexToolkit(AbstractToolkit):
             new_ids = splice_subtree(txn.tree, fresh, parent_node_id=parent_node_id)
             if revision is not None:
                 self._stage_document(txn, revision, fresh["structure"])
+                if self._optimize_on_import:
+                    await self._optimize_import(txn, revision, fresh["structure"], with_summaries=True)
                 imported.update(doc_id=revision.doc_id, revision=revision.revision)
             else:
                 self._stage_node_markdown(txn, original_id_to_node, node_markdown)
@@ -1763,6 +1785,8 @@ class PageIndexToolkit(AbstractToolkit):
             new_ids = splice_subtree(txn.tree, fresh, parent_node_id=parent_node_id)
             if revision is not None:
                 self._stage_document(txn, revision, fresh["structure"])
+                if self._optimize_on_import:
+                    await self._optimize_import(txn, revision, fresh["structure"], with_summaries=True)
                 imported.update(doc_id=revision.doc_id, revision=revision.revision)
             else:
                 self._stage_node_markdown(txn, original_id_to_node, node_markdown)
@@ -1856,8 +1880,8 @@ class PageIndexToolkit(AbstractToolkit):
             doc=pdf_path,
             adapter=self._adapter,
             options={
-                "if_add_node_summary": "yes" if with_summaries else "no",
-                "if_add_doc_description": "yes" if with_doc_description else "no",
+                "if_add_node_summary": "yes" if with_summaries and not self._optimize_on_import else "no",
+                "if_add_doc_description": "yes" if with_doc_description and not self._optimize_on_import else "no",
                 "if_add_node_id": "yes",
                 "structure_mode": structure_mode,
             },
@@ -1906,6 +1930,10 @@ class PageIndexToolkit(AbstractToolkit):
             new_ids = splice_subtree(txn.tree, fresh, parent_node_id=parent_node_id)
             if revision is not None:
                 self._stage_document(txn, revision, fresh["structure"])
+                if self._optimize_on_import:
+                    await self._optimize_import(txn, revision, fresh["structure"], with_summaries=with_summaries)
+                    if with_doc_description and adapter_is_live(self._adapter):
+                        subtree["doc_description"] = await describe_document(fresh["structure"], self._adapter)
                 imported.update(doc_id=revision.doc_id, revision=revision.revision)
             else:
                 self._stage_node_markdown(txn, original_id_to_node, node_markdown)
@@ -1966,6 +1994,147 @@ class PageIndexToolkit(AbstractToolkit):
                 sha = rev.source.sha256 if rev is not None else None
             taken[doc_id] = sha
         return taken
+
+    def _revisions_for(self, tree_name: str, roots: list[dict]) -> Revisions:
+        """Load revisions named under ``roots`` through SegmentStore, skipping missing files."""
+        revisions: Revisions = {}
+        for node in structure_to_list(roots):
+            doc_id = node.get("doc_id")
+            revision_id = node.get("revision")
+            if not isinstance(doc_id, str) or not isinstance(revision_id, str):
+                continue
+            key = (doc_id, revision_id)
+            if key in revisions:
+                continue
+            try:
+                loaded = self._segment_store.load_revision(tree_name, doc_id, revision_id)
+            except ValueError:
+                loaded = None
+            if loaded is not None:
+                revisions[key] = loaded
+        return revisions
+
+    async def _optimize_import(
+        self,
+        txn: WriteTransaction,
+        revision: DocumentRevision,
+        roots: list[dict],
+        *,
+        with_summaries: bool,
+    ) -> OptimizeReport:
+        """Optimize and validate a just-imported subtree inside its existing transaction."""
+        revisions = self._revisions_for(txn.tree_name, roots)
+        revisions[(revision.doc_id, revision.revision)] = revision
+        base_tree = {"nodes": roots}
+        original_spans = {
+            node.get("concept_id"): list(node["span"])
+            for node in structure_to_list(roots)
+            if node.get("concept_id") and node.get("span")
+        }
+        plan = plan_deterministic(
+            base_tree,
+            revisions,
+            self._optimizer_settings,
+            tree_name=txn.tree_name,
+        )
+
+        def subtract_children(start: int, end: int, children: list[dict]) -> list[list[int]]:
+            """Return parent-owned ranges after subtracting child spans."""
+            cursor = start
+            residuals: list[list[int]] = []
+            for child_start, child_end in sorted(
+                (int(child["span"][0]), int(child["span"][1])) for child in children if child.get("span")
+            ):
+                if child_start > cursor:
+                    residuals.append([cursor, min(child_start, end)])
+                cursor = max(cursor, child_end)
+            if cursor < end:
+                residuals.append([cursor, end])
+            return [residual for residual in residuals if residual[0] < residual[1]]
+
+        def restore_merged_ownership(node: dict) -> None:
+            """Restore ranges absorbed during normalization from stable aliases."""
+            children = node.get("nodes") or []
+            for child in children:
+                restore_merged_ownership(child)
+            spans = [list(node["span"])] if node.get("span") else []
+            spans.extend(original_spans[alias] for alias in node.get("aliases") or [] if alias in original_spans)
+            spans.extend(list(child["span"]) for child in children if child.get("span"))
+            if not spans:
+                return
+            start = min(int(span[0]) for span in spans)
+            end = max(int(span[1]) for span in spans)
+            node["span"] = [start, end]
+            node["owned"] = subtract_children(start, end, children)
+
+        for root in plan.candidate.get("nodes") or []:
+            restore_merged_ownership(root)
+        await run_llm_passes(
+            plan,
+            revisions,
+            self._adapter,
+            self._optimizer_settings,
+            with_summaries=with_summaries,
+        )
+
+        optimized_roots = plan.candidate.get("nodes") or []
+
+        def assign_concept_ids(nodes: list[dict], parent_path: str = "") -> None:
+            """Assign and sibling-deduplicate concept ids below imported roots."""
+            for node in nodes:
+                if not node.get("concept_id"):
+                    node["concept_id"] = derive_concept_id(str(node.get("title", "")), parent_path)
+            dedup_concept_ids(nodes)
+            for node in nodes:
+                children = node.get("nodes") or []
+                if children:
+                    assign_concept_ids(children, str(node["concept_id"]))
+
+        for root in optimized_roots:
+            assign_concept_ids([root])
+            for node in structure_to_list(root):
+                plan.mutable.add(id(node))
+                plan.touched.add(id(node))
+        for node in structure_to_list(optimized_roots):
+            if id(node) not in plan.mutable or id(node) not in plan.touched:
+                continue
+            loaded = revisions.get((node.get("doc_id"), node.get("revision")))
+            if loaded is None:
+                continue
+            body = render_body(loaded, node, node.get("nodes") or [])
+            if body.strip():
+                txn.set_body(node, body)
+            else:
+                txn.drop_body(node)
+
+        validation_base = {"nodes": []}
+        errors = validate_candidate(plan, revisions, base_tree=validation_base)
+        if errors:
+            plan.report.errors.extend(errors)
+            raise ValueError("; ".join(errors))
+        finalize_stamps(plan)
+        errors = validate_candidate(plan, revisions, base_tree=validation_base)
+        if errors:
+            plan.report.errors.extend(errors)
+            raise ValueError("; ".join(errors))
+
+        replacements = {id(original): optimized for original, optimized in zip(roots, optimized_roots)}
+
+        def replace_roots(nodes: list[dict]) -> None:
+            """Replace the original imported roots with optimized candidates."""
+            for index, node in enumerate(nodes):
+                replacement = replacements.get(id(node))
+                if replacement is not None:
+                    nodes[index] = replacement
+                    continue
+                replace_roots(node.get("nodes") or [])
+
+        replace_roots(txn.tree.get("structure") or [])
+        reindex_node_ids(txn.tree)
+        roots[:] = optimized_roots
+        plan.report.dry_run = False
+        plan.report.generation_before = txn.base_generation.id if txn.base_generation is not None else None
+        return plan.report
 
     def _stage_document(self, txn: WriteTransaction, revision: DocumentRevision, roots: list[dict[str, Any]]) -> None:
         """Stage ``revision`` and one view body per node of the subtree rooted at ``roots``.
