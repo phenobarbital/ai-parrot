@@ -16,7 +16,7 @@ from parrot.flows.dev_loop.sdd_coder.checkpoint import (
     prepare_review_checkpoint,
     validate_review_checkpoint,
 )
-from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
+from parrot.flows.dev_loop.sdd_coder.evidence import EvidenceCorruptionError, ExecutionEvidenceStore
 from parrot.flows.dev_loop.sdd_coder.optimization_models import BackgroundRegistration, ReviewArtifact
 from parrot.flows.dev_loop.sdd_coder.models import ExecutionSnapshot
 from parrot.flows.dev_loop.sdd_coder.background import BackgroundRegistry
@@ -300,6 +300,7 @@ def test_record_publishes_manual_review_artifact(
     assert exit_code == 0
     assert result["ok"] is True
     assert result["execution_id"] == execution_id
+    assert result["execution_id_generated"] is False
     review_ref = result["review_ref"]
     page = asyncio.run(ExecutionEvidenceStore(durable_root).read_artifact(execution_id, review_ref["artifact_id"]))
     artifact = ReviewArtifact.model_validate_json(page["content"])
@@ -334,6 +335,7 @@ def test_record_generates_execution_id_when_omitted(
     assert exit_code == 0
     assert result["ok"] is True
     assert str(uuid.UUID(result["execution_id"])) == result["execution_id"]
+    assert result["execution_id_generated"] is True
     assert (durable_root / "executions" / result["execution_id"] / "artifacts").is_dir()
 
 
@@ -379,3 +381,102 @@ def test_record_rejects_invalid_input_without_writing(
     assert result["error"] == "invalid_input"
     assert error_fragment in result["message"]
     assert not (durable_root / "executions" / EXECUTION_ID / "artifacts").exists()
+
+
+def _record_argv(worktree: Path, *extra: str) -> list[str]:
+    """A valid `record` argv for `worktree` with a fixed execution ID, plus any extra arguments."""
+    return [
+        "record",
+        "--feature",
+        FEATURE_SLUG,
+        "--task",
+        "TASK-2",
+        "--worktree",
+        str(worktree),
+        "--summary",
+        "Manual semantic review passed.",
+        "--execution-id",
+        EXECUTION_ID,
+        *extra,
+    ]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [OSError("disk full"), EvidenceCorruptionError("artifact hash mismatch")],
+    ids=["os_error", "evidence_corruption"],
+)
+def test_record_reports_store_errors_as_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    error: Exception,
+) -> None:
+    """A failed artifact write is an operation_error JSON result, never a traceback (issue:f64fd3bb663f)."""
+    worktree = _build_repo(tmp_path)
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(tmp_path / "durable"))
+
+    async def failing_put_artifact(self: ExecutionEvidenceStore, execution_id: str, payload: object) -> None:
+        raise error
+
+    monkeypatch.setattr(ExecutionEvidenceStore, "put_artifact", failing_put_artifact)
+
+    exit_code = main(_record_argv(worktree))
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert result == {"ok": False, "error": "operation_error", "message": str(error)}
+
+
+@pytest.mark.parametrize("failure", ["not_a_repository", "git_missing"])
+def test_record_reports_git_failures_as_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: str,
+) -> None:
+    """A failed or missing git is an operation_error JSON result with exit 1 and nothing stored."""
+    durable_root = tmp_path / "durable"
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
+    if failure == "not_a_repository":
+        worktree = tmp_path / "plain"
+        worktree.mkdir()
+        monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    else:
+        worktree = _build_repo(tmp_path)
+        empty_bin = tmp_path / "empty-bin"
+        empty_bin.mkdir()
+        monkeypatch.setenv("PATH", str(empty_bin))
+
+    exit_code = main(_record_argv(worktree))
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert result["ok"] is False
+    assert result["error"] == "operation_error"
+    assert "git" in result["message"]
+    assert not (durable_root / "executions" / EXECUTION_ID / "artifacts").exists()
+
+
+def test_record_reads_head_without_blocking_subprocess_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`record` reads HEAD through the async run_bounded helper, never a blocking subprocess.run (issue:f64fd3bb663f)."""
+    worktree = _build_repo(tmp_path)
+    durable_root = tmp_path / "durable"
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
+    head_sha = _run_git(["rev-parse", "HEAD"], cwd=worktree).stdout.strip()
+
+    def blocking_run(*args: object, **kwargs: object) -> None:
+        raise AssertionError("record must not call the blocking subprocess.run")
+
+    monkeypatch.setattr(subprocess, "run", blocking_run)
+
+    exit_code = main(_record_argv(worktree))
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    page = asyncio.run(
+        ExecutionEvidenceStore(durable_root).read_artifact(EXECUTION_ID, result["review_ref"]["artifact_id"])
+    )
+    assert ReviewArtifact.model_validate_json(page["content"]).head_sha == head_sha

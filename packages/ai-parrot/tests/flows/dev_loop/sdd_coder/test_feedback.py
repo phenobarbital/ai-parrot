@@ -369,6 +369,37 @@ async def test_record_review_without_execution_id_is_ledger_only(
     assert receipt.review_ref is None
 
 
+async def test_record_review_invalid_artifact_raises_coder_failure(
+    git_sandbox_feature: tuple, noop_probe: object
+) -> None:
+    """A review that cannot form a ReviewArtifact is a CoderFailure, before any ledger write (issue:f64fd3bb663f)."""
+    worktree, _branch, base_path, _index = git_sandbox_feature
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")], feedback={"enabled": False}),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    execution_id = "550e0000-0000-4000-8000-000000000074"
+    await engine.begin_execution("demo", str(worktree), execution_id)
+    prep = await engine.prepare_native("demo", str(worktree), "TASK-0001", execution_id)
+    review = CoderReview(
+        task_id=prep.task_id,
+        attempt_uid=prep.attempt_uid,
+        backend="native",
+        model=prep.model,
+        fix_commits=[],
+        review_evidence="Semantic review completed.",
+    )
+    ledger = CoderFeedbackStore.from_root(Path(worktree)).log
+    before = list(ledger.iter_events())
+
+    with pytest.raises(CoderFailure) as exc_info:
+        await engine.record_review("demo", str(worktree), review, "not-a-uuid")
+
+    assert exc_info.value.code == "invalid_arguments"
+    assert list(ledger.iter_events()) == before
+
+
 def test_coder_review_accepts_brief_task_ids() -> None:
     """Review measurements accept both formal and brief-local task identifiers."""
     common = {

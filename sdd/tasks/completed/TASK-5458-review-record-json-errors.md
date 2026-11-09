@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-866 — `task review record` Reports Store/git Errors as JSON and Stops Blocking the Loop
 **Spec**: `sdd/specs/sdd-coder-engine-fixes-4.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -272,10 +272,21 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: /sdd-fix session (Claude, agent:sdd-fix:88be2347)
+**Date**: 2026-11-10
+**Notes**: Implemented spec §2 A–C in commit `f28b0491be`. `_run_record` reads HEAD through
+`run_bounded(argv, timeout_s=GIT_TIMEOUT_S, env=git_env())` and raises `subprocess.CalledProcessError` on a non-zero
+rc; `main` appends git's stderr to that message, maps `EvidenceCorruptionError` to `operation_error` / exit 1, adds
+`execution_id_generated` to the `record` output and documents the fallback in `--help` and its docstring.
+`record_review` wraps `ReviewArtifact(...)` in its own `try` → `CoderFailure("invalid_arguments")`. Evidence:
+- before the source change: 5 of the new/extended tests fail (both `execution_id_generated` assertions,
+  `[evidence_corruption]`, the blocking-call guard, the engine test with a raw `ValidationError`); the `[os_error]`
+  and both git-failure cases already passed (regression guards).
+- after: both Validation Commands pass (45 tests); the 7 other test files that reference `review_checkpoint` /
+  `record_review` pass (87 tests); `ruff check` clean on the four files.
+- `test_wheel_only_foreign_repo.py`: 5 pass, 1 fails —
+  `test_install_then_every_documented_helper_invocation` cannot fill the `<id>` / `<review>` placeholders of the
+  `task review record` line that `7308d681b4` (PR #2070) added to the sdd-start docs. Not caused by this task (it
+  touches neither the docs nor that test); filed as `issue:4e0a0d2635aa`.
 
 **Deviations from spec**: none

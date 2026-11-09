@@ -2781,19 +2781,24 @@ class SddCoderEngine:
                 raise CoderFailure(
                     "evidence_persistence_failed", f"could not read feature worktree HEAD: {error.strip()}"
                 )
-            artifact = ReviewArtifact(
-                source="coder_review",
-                feature_slug=ctx.feature,
-                task_id=review.task_id,
-                execution_id=execution_id,
-                summary=review.review_evidence,
-                fix_commits=review.fix_commits,
-                head_sha=head_sha.strip(),
-                recorded_at=datetime.now(timezone.utc),
-                attempt_uid=review.attempt_uid,
-                backend=review.backend,
-                model=review.model,
-            )
+            try:
+                artifact = ReviewArtifact(
+                    source="coder_review",
+                    feature_slug=ctx.feature,
+                    task_id=review.task_id,
+                    execution_id=execution_id,
+                    summary=review.review_evidence,
+                    fix_commits=review.fix_commits,
+                    head_sha=head_sha.strip(),
+                    recorded_at=datetime.now(timezone.utc),
+                    attempt_uid=review.attempt_uid,
+                    backend=review.backend,
+                    model=review.model,
+                )
+            except PydanticValidationError as exc:
+                raise CoderFailure(
+                    "invalid_arguments", f"review cannot be recorded as durable evidence: {exc}"
+                ) from exc
             try:
                 review_ref = await self._evidence_store.put_artifact(execution_id, artifact)
             except (ValueError, OSError, EvidenceCorruptionError) as exc:
