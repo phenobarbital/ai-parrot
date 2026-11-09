@@ -399,6 +399,14 @@ class GetPRChecksInput(BaseModel):
     )
 
 
+class ListPRItemsInput(BaseModel):
+    """Bounded PR context listing arguments."""
+
+    pr_number: int = Field(..., description="Pull request number")
+    repository: Optional[str] = Field(None, description="owner/repo; defaults to configured repository")
+    max_items: int = Field(300, ge=1, le=1000, description="Stop after this many items")
+
+
 class ConvertPRToDraftInput(BaseModel):
     """Input payload for ``convert_pr_to_draft``."""
 
@@ -2187,6 +2195,118 @@ class GitToolkit(AbstractToolkit):
         # Phrased to nest inside a caller's sentence, so it must not repeat
         # "for this token" — the caller has already said whose token it is.
         return reason
+
+    def _paginate_pr_items_sync(
+        self,
+        repository: Optional[str],
+        pr_number: int,
+        max_items: int,
+        suffix: str,
+        shaper: Any,
+    ) -> List[Dict[str, Any]]:
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
+        url = f"https://api.github.com/repos/{repo}/{suffix.format(n=pr_number)}"
+        results: List[Dict[str, Any]] = []
+        page = 1
+        while len(results) < max_items:
+            response = self._request(
+                "GET", url, token, expected=200, params={"per_page": 100, "page": page}
+            )
+            data = response.json()
+            items = data if isinstance(data, list) else []
+            results.extend(shaper(item) for item in items)
+            if len(items) < 100:
+                break
+            page += 1
+        return results[:max_items]
+
+    @staticmethod
+    def _pr_user(item: Dict[str, Any]) -> Dict[str, Any]:
+        user = item.get("user") or {}
+        return {"author": user.get("login"), "author_type": user.get("type")}
+
+    @tool_schema(ListPRItemsInput)
+    async def list_pull_request_files(
+        self, pr_number: int, repository: Optional[str] = None, max_items: int = 300
+    ) -> List[Dict[str, Any]]:
+        """List changed files, including patch when supplied by GitHub."""
+
+        def shape(i: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                "filename": i.get("filename"),
+                "status": i.get("status"),
+                "additions": i.get("additions"),
+                "deletions": i.get("deletions"),
+                "changes": i.get("changes"),
+                "patch": i.get("patch"),
+            }
+
+        return await asyncio.to_thread(
+            self._paginate_pr_items_sync, repository, pr_number, max_items, "pulls/{n}/files", shape
+        )
+
+    @tool_schema(ListPRItemsInput)
+    async def list_pull_request_comments(
+        self, pr_number: int, repository: Optional[str] = None, max_items: int = 300
+    ) -> List[Dict[str, Any]]:
+        """List issue-style comments with author identity and Bot/User type."""
+
+        def shape(i: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                "id": i.get("id"),
+                **self._pr_user(i),
+                "body": i.get("body"),
+                "created_at": i.get("created_at"),
+                "html_url": i.get("html_url"),
+            }
+
+        return await asyncio.to_thread(
+            self._paginate_pr_items_sync, repository, pr_number, max_items, "issues/{n}/comments", shape
+        )
+
+    @tool_schema(ListPRItemsInput)
+    async def list_pull_request_reviews(
+        self, pr_number: int, repository: Optional[str] = None, max_items: int = 300
+    ) -> List[Dict[str, Any]]:
+        """List PR review summaries with state and commit identity."""
+
+        def shape(i: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                "id": i.get("id"),
+                **self._pr_user(i),
+                "state": i.get("state"),
+                "body": i.get("body"),
+                "submitted_at": i.get("submitted_at"),
+                "commit_id": i.get("commit_id"),
+            }
+
+        return await asyncio.to_thread(
+            self._paginate_pr_items_sync, repository, pr_number, max_items, "pulls/{n}/reviews", shape
+        )
+
+    @tool_schema(ListPRItemsInput)
+    async def list_pull_request_review_comments(
+        self, pr_number: int, repository: Optional[str] = None, max_items: int = 300
+    ) -> List[Dict[str, Any]]:
+        """List inline comments, locations and reply relationships."""
+
+        def shape(i: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                "id": i.get("id"),
+                **self._pr_user(i),
+                "path": i.get("path"),
+                "line": i.get("line"),
+                "body": i.get("body"),
+                "commit_id": i.get("commit_id"),
+                "created_at": i.get("created_at"),
+                "html_url": i.get("html_url"),
+                "in_reply_to_id": i.get("in_reply_to_id"),
+            }
+
+        return await asyncio.to_thread(
+            self._paginate_pr_items_sync, repository, pr_number, max_items, "pulls/{n}/comments", shape
+        )
 
     @tool_schema(GetPRChecksInput)
     async def get_pr_checks(
