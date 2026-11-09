@@ -28,8 +28,8 @@ number less, but the signal is richer":
 | `same_author` | `deterministic` | Shared author, slug-normalised (accents/case collapse; single-initial or non-Latin fallback slugs are excluded to avoid false positives) |
 | `shares_topic` | `deterministic` | Jaccard similarity over slugified topics, ≥ 0.2; edge weight **is** the Jaccard score |
 | `same_tradition` | `deterministic` | Shared tradition/school, slug-normalised |
-| `same_genre` | `deterministic` | Equal, classified (non-`"other"`) genre |
-| `same_era` | `deterministic` | `\|year_a - year_b\| ≤ 50`, or an equal period slug |
+| `same_genre` | `deterministic` | Equal, classified (non-"other") genre |
+| `same_era` | `deterministic` | `|year_a - year_b| ≤ 50`, or an equal period slug |
 | `same_language` | `deterministic` | Both books have the same language set |
 | `influenced_by` | `llm` | LLM judges the source book was influenced by the candidate — **directed** |
 | `responds_to` | `llm` | LLM judges the source book responds to/critiques the candidate — **directed** |
@@ -150,10 +150,22 @@ Read tools (`bookstore_related_books`, `bookstore_communities`,
 `bookstore_get_community`) are SQL-only and work identically in both
 rows — they never touch an LLM, whether or not one is configured.
 
+## Agentic retrieval integration
+
+The `bookstore_agentic_retrieve` tool (FEAT-858) provides per-book cited retrieval through the PageIndex agentic loop. It returns a validated evidence bundle with book identity, exact-range citations, and the same `stopped` values as PageIndex (no `stale` value). The tool is visible without an LLM and explains configuration failures via `PARROT_BOOKSTORE_LLM` guidance.
+
+Use it when you need evidence you can quote and check:
+
+```text
+$bookstore agentic_retrieve amor-y-pedagogia-unamuno-miguel "What does Avito want to achieve with his son's education?"
+```
+
+The tool supports optional revision guards on segment reads and deterministic drift repair via `bookstore doctor`. For programmatic access, see [Bookstore Agentic Retrieval](bookstore-agentic-retrieval.md).
+
 ## CLI reference
 
 ```bash
-bookstore relate [BOOK_ID...] [--all] [--no-llm] [--communities-only] \
+bookstore relate [BOOK_ID...] [--all] [--no-llm] [--communities-only] \\
                   [--force] [--resolution F] [--llm SPEC]
 bookstore related BOOK_ID [--rel REL] [--depth N] [--json]
 bookstore communities [--json]
@@ -161,4 +173,6 @@ bookstore export-wiki [--out DIR] [--global] [--no-register]
 bookstore add FILE --relate            # relate the new book after ingest
 bookstore add-folder DIR --relate      # relate each file, communities once at the end
 bookstore list --by-community          # group the inventory by community
+bookstore ask BOOK_ID QUERY [--llm provider:model] [--budget-chars N] [--max-reads N] [--timeout S] [--json]
+bookstore doctor [--global] [--repair] [--relate] [--no-llm] [--llm provider:model] [--json]
 ```
