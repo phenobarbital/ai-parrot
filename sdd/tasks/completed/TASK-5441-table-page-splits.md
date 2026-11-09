@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-861 — PageIndex Optimizer Fixes 4 — Page Splits for Long Table Leaves
 **Spec**: `sdd/specs/pageindex-optimizer-fixes-4.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -319,10 +319,16 @@ Names and intent fixed by spec §4 (Unit Tests table); bodies per the blueprint 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-fix session (Claude)
+**Date**: 2026-11-09
+**Notes**: `TABLE_SPLIT_MIN_SHARE`, `table_page_splits` (eligibility: table share + table on >= 2 pages; page blocks
+from the first `table` segment; backward packing; `_coalesce_split_points`; page-range titles), `split_at(...,
+titles=None)`, and the third fallback in `expand_at_headings`. Five tests added. Validation commands:
+`test_optimizer.py` + `test_optimizer_integration.py` + `test_layout_integration.py` 48 passed; ruff + black clean.
+AC-5 proven by running a copy of the test file outside the repo against `origin/dev` @ `f245375ced` (pageindex source
+identical to the base `ae583b386c`): `test_expand_splits_long_table_leaf_at_pages` fails there with `assert 0 == 3`
+(the leaf stays whole); the three tests of the new API fail with ImportError/TypeError; the pseudo-heading guard
+passes on both. Code commit `90442976dc`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. The test fixture targets "pages 2+3" so backward packing gives `(page 1)`,
+`(pages 2-3)`, `(pages 4-5)` while forward packing would leave a last piece over the target.

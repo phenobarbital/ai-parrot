@@ -40,16 +40,17 @@
       "feature_id": "FEAT-861",
       "feature": "pageindex-optimizer-fixes-4",
       "spec": "sdd/specs/pageindex-optimizer-fixes-4.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": "sdd-fix session (Claude)",
       "started_at": "2026-11-09T18:32:44+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-09T18:36:44+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: modifies optimizer.py + test_optimizer.py only; no other task touches them",
-      "file": "sdd/tasks/active/TASK-5441-table-page-splits.md"
+      "file": "sdd/tasks/completed/TASK-5441-table-page-splits.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5442",
