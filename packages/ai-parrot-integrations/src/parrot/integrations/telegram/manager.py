@@ -369,7 +369,11 @@ class TelegramBotManager:
                 self.logger.warning("Error waiting for tasks: %s", e)
 
         # Close bot sessions
-        for name, (bot, _dp, _wrapper) in self.bots.items():
+        for name, (bot, _dp, wrapper) in self.bots.items():
+            try:
+                await wrapper.close()
+            except Exception as exc:
+                self.logger.error("Error closing Telegram wrapper '%s': %s", name, exc)
             try:
                 await bot.session.close()
                 self.logger.debug("Closed bot session: %s", name)
