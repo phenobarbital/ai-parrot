@@ -476,9 +476,7 @@ class Bookstore:
         except (KeyError, ValueError) as exc:
             raise BookstoreError(self._message(exc)) from exc
         if expected_revision is not None and result["revision"] != expected_revision:
-            raise RevisionMismatchError(
-                f"Expected revision {expected_revision!r}, received {result['revision']!r}"
-            )
+            raise RevisionMismatchError(f"Expected revision {expected_revision!r}, received {result['revision']!r}")
         return self._book_result(card, result)
 
     async def outline(self, book_id: str, node_id: Optional[str] = None, max_depth: int = 3) -> dict[str, Any]:
