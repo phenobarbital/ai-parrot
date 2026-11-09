@@ -154,7 +154,7 @@ class MultiStoreSearchToolkit(AbstractToolkit):
         results = await asyncio.gather(*coros, return_exceptions=True)
 
         sections_by_query: List[List[OriginSection]] = [[] for _ in queries]
-        for (query_idx, origin), result in zip(plan, results):
+        for (query_idx, origin), result in zip(plan, results, strict=False):
             sections_by_query[query_idx].append(
                 self._section_from_result(origin, result)
             )

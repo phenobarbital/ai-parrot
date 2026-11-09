@@ -2435,7 +2435,7 @@ class PageIndexToolkit(AbstractToolkit):
             plan.report.errors.extend(errors)
             raise ValueError("; ".join(errors))
 
-        replacements = {id(original): optimized for original, optimized in zip(roots, optimized_roots)}
+        replacements = {id(original): optimized for original, optimized in zip(roots, optimized_roots, strict=False)}
 
         def replace_roots(nodes: list[dict]) -> None:
             """Replace the original imported roots with optimized candidates."""
