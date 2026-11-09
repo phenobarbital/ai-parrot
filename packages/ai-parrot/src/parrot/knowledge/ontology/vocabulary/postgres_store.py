@@ -15,7 +15,7 @@ from parrot.knowledge.ontology.vocabulary.contracts import (
     VersionContent,
 )
 from parrot.knowledge.ontology.vocabulary.exceptions import OntologyNotFound, OntologyVersionNotFound
-from parrot.knowledge.ontology.vocabulary.pg_schema import create_ontology_pg_pool
+from parrot.knowledge.ontology.vocabulary.pg_schema import create_ontology_pg_pool, vector_literal
 from parrot.knowledge.ontology.vocabulary.settings import resolve_ontology_settings
 from parrot.knowledge.ontology.vocabulary.turtle import content_checksum, serialize
 
@@ -25,11 +25,6 @@ _VISIBLE = "since_version <= $2 AND (until_version IS NULL OR $2 < until_version
 def _visible(alias: str) -> str:
     """Version-visibility predicate for a table alias; the version is always bound as ``$2``."""
     return f"{alias}.since_version <= $2 AND ({alias}.until_version IS NULL OR $2 < {alias}.until_version)"
-
-
-def _vector_literal(embedding: Sequence[float]) -> str:
-    """pgvector text form (``[1,2,3]``), usable with ``$n::vector`` on a pool without the vector codec."""
-    return "[" + ",".join(repr(float(value)) for value in embedding) + "]"
 
 
 class PostgresOntologyStore:
@@ -173,7 +168,7 @@ class PostgresOntologyStore:
 
             vector: list[str] = []
             if embedding is not None:
-                vec_args: list[Any] = [ontology_id, version, _vector_literal(embedding)]
+                vec_args: list[Any] = [ontology_id, version, vector_literal(embedding)]
                 vec_filter = ""
                 if kinds:
                     vec_args.append(list(kinds))
@@ -184,7 +179,7 @@ class PostgresOntologyStore:
                         FROM {schema}.concept c
                         WHERE c.ontology_id = $1 AND {_visible('c')} AND NOT c.deprecated
                           AND c.embedding IS NOT NULL{vec_filter}
-                        ORDER BY c.embedding <=> $3::vector, c.iri
+                        ORDER BY c.embedding <=> $3::text::vector, c.iri
                         LIMIT ${len(vec_args)}""",
                     *vec_args,
                 )
