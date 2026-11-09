@@ -1,5 +1,6 @@
 """Deterministic evaluation-plan, scoring, coverage and privacy regressions."""
 
+import inspect
 import json
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,7 @@ from parrot.knowledge.bookstore.agentic_eval import (
     evaluate_library,
     generate_questions,
 )
-from parrot.knowledge.bookstore.library import BookstoreError
+from parrot.knowledge.bookstore.library import Bookstore, BookstoreError
 from parrot.knowledge.pageindex.agentic import EvidenceBundle
 from parrot.knowledge.pageindex.citations import Citation
 
@@ -284,3 +285,32 @@ async def test_generate_never_overwrites(tmp_path: Path) -> None:
     with pytest.raises(BookstoreError):
         await generate_questions(_settings(tmp_path))
     assert (tmp_path / "q.json").read_text() == "[]"
+
+
+# Numeric evidence recorded from the owner-host run 20261109T190824Z (report.md sha256
+# 1a62ca75295dfeb96e9f3e3fa88dc7a6d488eb91fed20007a9ecc82d28b72f56, fixture sha256
+# 393e8facd6bcb427790ccb96d39b9466e40376642805c2028790b5ddf2bc86d5): per handwritten setting,
+# (grounded of 21, gold hits of 21, median chars read, median wall seconds).
+_RECORDED_HANDWRITTEN = {
+    "baseline": (16, 8, 12000, 4.6749),
+    "c20000_r12": (17, 10, 12000, 4.8523),
+    "c60000_r12": (13, 9, 12000, 4.6998),
+    "c40000_r8": (14, 10, 12000, 4.745),
+    "c40000_r16": (13, 9, 12000, 5.1955),
+}
+
+
+def test_bookstore_defaults_match_recorded_recommendation() -> None:
+    """The recorded host numbers retain the baseline, so Bookstore adds no local defaults."""
+    rows = _rows({})
+    for name, (grounded, hits, chars, wall) in _RECORDED_HANDWRITTEN.items():
+        own = [r for r in rows if r["setting"] == name and r["provenance"] == "handwritten"]
+        assert len(own) == 21
+        for index, row in enumerate(own):
+            row.update(grounded=index < grounded, gold_hit=index < hits, chars_read=chars, wall_s=wall)
+    rec = ae.select_recommendation(rows)
+    assert (rec["status"], rec["setting"], rec["completed_total"]) == ("retain_baseline", "baseline", 140)
+
+    # Retaining the baseline means no promotion: None arguments still reach PageIndex unchanged.
+    params = inspect.signature(Bookstore.agentic_retrieve).parameters
+    assert all(params[name].default is None for name in ("budget_chars", "max_reads", "timeout_s"))
