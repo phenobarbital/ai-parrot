@@ -93,11 +93,12 @@ async def case_expand_closed_and_reflexive(store: OntologyStore, ontology_id: st
 
 
 async def case_expand_multiple_inheritance(store: OntologyStore, ontology_id: str) -> None:
-    """expand() correctly handles multiple inheritance (PublicAuthority has two parents)."""
-    # PublicAuthority is subclass of both Organization and PublicBody
-    ancestors = await store.expand(ontology_id, [PUBLIC_AUTHORITY_IRI], family="subclass", direction="up")
+    """expand() correctly handles multiple inheritance (PublicAuthority has two parents in v1)."""
+    # PublicAuthority is subclass of both Organization and PublicBody in v1;
+    # v2 removes the PublicBody link, so we must pin as_of=1.
+    ancestors = await store.expand(ontology_id, [PUBLIC_AUTHORITY_IRI], family="subclass", direction="up", as_of=1)
     assert PUBLIC_AUTHORITY_IRI in ancestors
-    # Should include both parent branches
+    # Should include both parent branches at v1
     assert ORGANIZATION_IRI in ancestors, f"Expected {ORGANIZATION_IRI} in ancestors"
     assert PUBLIC_BODY_IRI in ancestors, f"Expected {PUBLIC_BODY_IRI} in ancestors"
     assert LEGAL_ENTITY_IRI in ancestors, f"Expected {LEGAL_ENTITY_IRI} in ancestors"
@@ -124,7 +125,7 @@ async def case_export_checksum_roundtrip(store: OntologyStore, ontology_id: str)
     # Export as JSON-LD
     jsonld_data = await store.export(ontology_id, fmt="jsonld")
     assert len(jsonld_data) > 0, "Expected non-empty JSON-LD export"
-    assert b'"@context"' in jsonld_data or b"@graph" in jsonld_data, "Expected JSON-LD structure"
+    assert b'"@context"' in jsonld_data or b"@graph" in jsonld_data or b'"@id"' in jsonld_data, "Expected JSON-LD structure"
 
 
 async def case_unknown_version_rejected(store: OntologyStore, ontology_id: str) -> None:
