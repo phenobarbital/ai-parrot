@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-09T12:20:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-09T12:09:58+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-850",
       "feature": "pageindex-segment-store-fixes",
       "spec": "sdd/specs/pageindex-segment-store-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,7 +24,9 @@
       "parallelism_notes": "Sole task; touches segment_store.py and its test only.",
       "discovered_from": "issue:fa6a5f71a22f",
       "assigned_to": "agent:sdd-fix",
-      "file": "sdd/tasks/active/TASK-5384-save-revision-scan-upgrade.md"
+      "file": "sdd/tasks/completed/TASK-5384-save-revision-scan-upgrade.md",
+      "completed_at": "2026-11-09T12:09:58+00:00",
+      "verification": "verified"
     }
   ]
 }

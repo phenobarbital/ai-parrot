@@ -54,11 +54,34 @@ class SegmentStore:
     def _cache_evict(self, key: tuple[str, str, str]) -> None:
         self._cache.pop(key, None)
 
+    @staticmethod
+    def _scan_state(rev: DocumentRevision) -> tuple[Any, ...]:
+        """Scan results of ``rev``: the scorer plus every segment's flags and injection mark."""
+        return (
+            rev.scored_by,
+            [(seg.flags, seg.injection.model_dump() if seg.injection else None) for seg in rev.segments],
+        )
+
     def save_revision(self, tree_name: str, rev: DocumentRevision) -> Path:
-        """Write ``rev`` atomically; no-op when the file already exists."""
+        """Write ``rev`` atomically.
+
+        The revision id hashes segment texts only, so an existing file can hold the same text with
+        different (or no) injection-scan results. An existing file is left untouched unless ``rev``
+        carries scan results (``scored_by`` set) that differ from it, or it is unreadable; in that case it is
+        replaced atomically and its cache entry evicted. An unscanned ``rev`` never overwrites a scanned one.
+        """
         path = self.revision_path(tree_name, rev.doc_id, rev.revision)
-        if not path.is_file():
-            _atomic_write(path, rev.model_dump_json())
+        if path.is_file():
+            if rev.scored_by is None:
+                return path
+            try:
+                existing = DocumentRevision.model_validate_json(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                existing = None
+            if existing is not None and self._scan_state(existing) == self._scan_state(rev):
+                return path
+            self._cache_evict((tree_name, rev.doc_id, rev.revision))
+        _atomic_write(path, rev.model_dump_json())
         return path
 
     def load_revision(self, tree_name: str, doc_id: str, revision: str) -> Optional[DocumentRevision]:

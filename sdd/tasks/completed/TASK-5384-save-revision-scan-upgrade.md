@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-850 — SegmentStore revision replacement on scan upgrade
 **Spec**: `sdd/specs/pageindex-segment-store-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -75,4 +75,4 @@ Implement exactly the above; close with `parrot sdd task close TASK-5384 pageind
 
 ## Completion Note
 
-(filled on close)
+Implemented as specified: `save_revision` replaces an existing file atomically (cache evicted) only when the incoming revision is scanned and its scan state differs or the file is unreadable. 6 new tests; 34 pass with test_generation.py; ruff clean. Commit db7c30ed7c.
