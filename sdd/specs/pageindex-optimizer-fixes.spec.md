@@ -83,7 +83,7 @@ published and every LLM result is thrown away:
   would need a re-import of every ebook. It is an alternative the issue offered, rejected in §7.
 - Changing `PROMPT_VERSION` or `OptimizerSettings` fields. Either one changes the execution or
   settings digest and invalidates every persisted completion stamp (see §7).
-- Tuning runs (`issue:7111d74a3066`, `issue:336eef8010a1`) and the toolkit's
+- Tuning runs (`issue:7111d74a3066`, `issue:336eef8010a1`, both closed by the 2026-11-09 run) and the toolkit's
   `_restore_merged_ownership` (`toolkit.py:112`). The toolkit is not modified.
 - `OptimizeReport.nodes_after` / `leaves_over_target_after` accuracy (separate deferred
   finding of TASK-5375).
@@ -92,7 +92,7 @@ published and every LLM result is thrown away:
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:a66c440b731d031fc35828435c8db8adbfb774acf751c1d3f45788ceebd5c38f evaluation_digest=sha256:f4f7314911fa5838fe2f25f55c7ff08c6b66b108e18087018dc892809316e999 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:6f38ffccddd8aca88a1dcc1e6c4dce08a787998bee8c37e9517735f43b0a29c9 evaluation_digest=sha256:836c51729584294c2fcbac5ffc17990010916a50f6ca661fb9598d9b2e2618a1 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -574,7 +574,7 @@ async def run_llm_passes(plan, revisions, adapter, settings, *, with_summaries=T
 
 ### Edit Sites (Blueprint Anchors)
 
-Verified against: `8e1882833c`
+Verified against: `8e1882833c` (wiki anchors re-checked at `9712eab0bb`)
 
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
@@ -603,7 +603,7 @@ Verified against: `8e1882833c`
 | `packages/ai-parrot/tests/knowledge/pageindex/test_optimizer_toolkit.py` | MODIFY | `async def _tree_with_document(tmp_path: Path, name: str = "guide") -> PageIndexToolkit:` | `test_optimizer_toolkit.py:117` | 1 |
 | `packages/ai-parrot/tests/knowledge/pageindex/test_optimizer_docs.py` | MODIFY | `def test_pages_link_optimizer_page() -> None:` | `test_optimizer_docs.py:35` | 1 |
 | `wiki/knowledge/pageindex-tree-optimizer.md` | MODIFY | `## The passes, in order` | `pageindex-tree-optimizer.md:46` | 1 |
-| `wiki/knowledge/pageindex-tree-optimizer.md` | MODIFY | `## Framing` | `pageindex-tree-optimizer.md:220` | 1 |
+| `wiki/knowledge/pageindex-tree-optimizer.md` | MODIFY | `## Framing` | `pageindex-tree-optimizer.md:221` | 1 |
 
 ---
 
@@ -711,7 +711,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:a66c440b731d031fc35828435c8db8adbfb774acf751c1d3f45788ceebd5c38f evaluation_digest=sha256:f4f7314911fa5838fe2f25f55c7ff08c6b66b108e18087018dc892809316e999 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:6f38ffccddd8aca88a1dcc1e6c4dce08a787998bee8c37e9517735f43b0a29c9 evaluation_digest=sha256:836c51729584294c2fcbac5ffc17990010916a50f6ca661fb9598d9b2e2618a1 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -756,7 +756,7 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:f4f7314911fa5838fe2f25f55c7ff08c6b66b108e18087018dc892809316e999",
+  "evaluation_digest": "sha256:836c51729584294c2fcbac5ffc17990010916a50f6ca661fb9598d9b2e2618a1",
   "exit_code": 0,
   "findings": [
     {
@@ -794,7 +794,7 @@ Coverage:
       "waived_by": null
     }
   ],
-  "input_digest": "sha256:a66c440b731d031fc35828435c8db8adbfb774acf751c1d3f45788ceebd5c38f",
+  "input_digest": "sha256:6f38ffccddd8aca88a1dcc1e6c4dce08a787998bee8c37e9517735f43b0a29c9",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -825,8 +825,9 @@ Coverage:
 - [x] Fix issue 0a69 in the segmenter, the loaders, or the optimizer? — *Resolved at spec time*:
   in the optimizer (Decisions `pseudo-headings-in-optimizer`). Both options the issue offered
   have the blast radius recorded in §7.
-- [ ] Is 20 000 tokens the right per-call budget? It is the issue's suggestion. The LLM-mode
-  tuning run (`issue:336eef8010a1`) should confirm it. — *Owner: Jesus Lara*
+- [ ] Is 20 000 tokens the right per-call budget? It is the issue's suggestion. The next
+  LLM-mode `optimizer_eval` run (the 2026-11-09 one closed `issue:336eef8010a1` before this
+  fix existed) should confirm it. — *Owner: Jesus Lara*
 
 ---
 
