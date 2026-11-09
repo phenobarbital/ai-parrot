@@ -276,11 +276,11 @@
       "priority": "high",
       "effort": "M",
       "parallelism_notes": "TASK-5405 supplies _ask_llm_for_full_review and serializes github_reviewer.py/full-review test edits; TASK-5398 supplies QueuedCommandService for the service-to-GitHub integration test and progress helpers.",
-      "file": "sdd/tasks/active/TASK-5406-reviewer-queued-orchestration.md",
+      "file": "sdd/tasks/completed/TASK-5406-reviewer-queued-orchestration.md",
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [
         "TASK-5405",
         "TASK-5398"
@@ -288,7 +288,8 @@
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-11-09T16:09:42+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-09T17:12:15+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5407",

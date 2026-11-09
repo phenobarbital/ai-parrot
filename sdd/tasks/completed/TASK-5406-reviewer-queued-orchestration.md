@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-851 - Queued chat commands for the integrations
 **Spec**: `sdd/specs/queued-commands-integrations.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5405, TASK-5398
