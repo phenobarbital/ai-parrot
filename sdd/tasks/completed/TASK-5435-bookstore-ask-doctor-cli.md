@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-858 — Bookstore Agentic Retrieval
 **Spec**: `sdd/specs/bookstore-agentic-retrieval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2–4h; host wall time depends on provider when applicable)
 **Depends-on**: TASK-5431
@@ -219,4 +219,4 @@ calls in pytest. Save execution logs under artifacts/logs/.
 
 ## Completion Note
 
-Populated by the task finalizer after implementation, validation and the exact implementation commit.
+Native opus, 1 attempt. Merged; bookstore tests 232 passed (test_integration_graph.py sqlite env failures, untouched). ask/doctor CLI commands; provider/model identity sanitised to one line on stderr. Review recorded.

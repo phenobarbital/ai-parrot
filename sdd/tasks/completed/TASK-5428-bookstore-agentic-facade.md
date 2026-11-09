@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-858 — Bookstore Agentic Retrieval
 **Spec**: `sdd/specs/bookstore-agentic-retrieval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h; host wall time depends on provider when applicable)
 **Depends-on**: TASK-5427
@@ -240,4 +240,4 @@ calls in pytest. Save execution logs under artifacts/logs/.
 
 ## Completion Note
 
-Populated by the task finalizer after implementation, validation and the exact implementation commit.
+Implemented by seat gpt-5.6-terra (codex), 1 attempt, 380s, 0 retries. Orchestrator reviewed diff vs AC-1..4, no fixes. Validation: merge-tier 104 passed. Review: coder-review recorded. Closed via 'parrot sdd task close'.

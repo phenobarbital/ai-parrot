@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-858 — Bookstore Agentic Retrieval
 **Spec**: `sdd/specs/bookstore-agentic-retrieval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2–4h; host wall time depends on provider when applicable)
 **Depends-on**: TASK-5432, TASK-5434, TASK-5435, TASK-5437
@@ -217,4 +217,4 @@ as a pytest/vitest/cargo runner (the repository registry does not register techw
 
 ## Completion Note
 
-Populated by the task finalizer after implementation, validation and the exact implementation commit.
+Seat glm (nova, zai.glm-4.7-flash), 1 attempt, 217s. Review found invented APIs (Bookstore(library_path=...) ctor/table that belong to BookstoreOrigin, agentic_client arg, '$bookstore agentic_retrieve' invocation), wrong relative links, unrelated markdown rewrites in bookstore-graph.md and placeholder text instead of the measured results. Orchestrator rewrote the doc from source and restored bookstore-graph.md; fix commit e19168b6d2217585cd61afda976e391d353cb0e7. Feedback coder-feedback:7418f9da4ea8959b4974b37f; review coder-review:862ffc8a638acc46a9358aba. Docs state the retain_baseline outcome with report/fixture hashes. Not validated by a docs build.
