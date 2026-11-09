@@ -10,6 +10,7 @@ from typing import Any, Dict, Sequence
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import ValidationError
 
 from parrot.flows.dev_loop import (
     GoogleCodingDispatchProfile,
@@ -483,4 +484,38 @@ async def test_create_process_isolates_stdin(dispatcher, monkeypatch, tmp_path):
     assert captured["kwargs"]["stdin"] is asyncio.subprocess.DEVNULL
     assert captured["kwargs"]["stdout"] is asyncio.subprocess.PIPE
     assert captured["kwargs"]["stderr"] is asyncio.subprocess.PIPE
+
+
+@pytest.mark.parametrize("mode", ["accept-edits", "auto", "plan"])
+@pytest.mark.parametrize("effort", [None, "low", "medium", "high", "xhigh", "max"])
+def test_google_coding_profile_auto_and_xhigh(mode: str, effort: str | None) -> None:
+    profile = GoogleCodingDispatchProfile(mode=mode, effort=effort)
+    assert (profile.mode, profile.effort) == (mode, effort)
+
+
+def test_google_coding_profile_defaults_unchanged() -> None:
+    profile = GoogleCodingDispatchProfile()
+    assert profile.mode == "accept-edits" and profile.effort is None
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("mode", "yolo"), ("effort", "ultra"), ("effort", "minimal")],
+)
+def test_google_coding_profile_rejects_unknown_values(field: str, value: str) -> None:
+    with pytest.raises(ValidationError):
+        GoogleCodingDispatchProfile(**{field: value})
+
+
+def test_build_command_passes_through_auto_mode_and_xhigh_effort(dispatcher) -> None:
+    command = dispatcher._build_command(
+        profile=GoogleCodingDispatchProfile(mode="auto", effort="xhigh"),
+        schema_path="s.json",
+        prompt="p",
+    )
+
+    mode_index = command.index("--mode")
+    effort_index = command.index("--effort")
+    assert command[mode_index : mode_index + 2] == ["--mode", "auto"]
+    assert command[effort_index : effort_index + 2] == ["--effort", "xhigh"]
 
