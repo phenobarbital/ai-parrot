@@ -189,7 +189,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -201,8 +201,9 @@
       "parallelism_notes": "Appends to browser_login.py and test_browser_login.py (TASK-5418); calls TelegramAgentWrapper._complete_auth_payload (TASK-5422); resolves wrappers via app['telegram_wrappers'] populated by TASK-5423 and its full-flow test drives handle_login's browser branch (TASK-5423).",
       "assigned_to": null,
       "started_at": "2026-11-09T16:55:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5424-browser-complete-endpoint.md"
+      "completed_at": "2026-11-09T17:35:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5424-browser-complete-endpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5425",
@@ -211,7 +212,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -223,8 +224,9 @@
       "parallelism_notes": "Imports is_browser_state, render_browser_* and the registry key from TASK-5418; delegates to _complete_auth_payload (TASK-5422); tests rely on handle_login registering the browser state and the wrapper map (TASK-5423). Touches oauth2_callback.py/test_oauth2_integration.py only, so it runs alongside TASK-5424.",
       "assigned_to": null,
       "started_at": "2026-11-09T16:55:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5425-oauth2-callback-browser-branch.md"
+      "completed_at": "2026-11-09T17:35:13+00:00",
+      "file": "sdd/tasks/completed/TASK-5425-oauth2-callback-browser-branch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5426",
