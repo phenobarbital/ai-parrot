@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-849 — PageIndex Toolkit Tech Debt
 **Spec**: `sdd/specs/pageindex-toolkit-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5385
@@ -364,8 +364,26 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: Claude Code session ai-parrot-b5 (/sdd-fix d34c567792ef)
+**Date**: 2026-11-09
+**Notes**: The snapshot in `agentic_retrieve` now runs as
+`await asyncio.wait_for(asyncio.to_thread(lambda: copy.deepcopy(self._load_tree(tree_name))),
+timeout=remaining)`, preceded by the usual `remaining = deadline - loop.time()` recompute and
+falling back to `timeout_bundle()` (no arguments, so `generation=None` per FR-3.2). It stays
+inside `_agentic_lock`. The second `copy.deepcopy(self._load_tree(...))` occurrence, in a
+different method, was left alone as the task required.
 
-**Deviations from spec**: none | describe if any
+`agentic_retrieve`'s docstring gained the per-instance serialisation paragraph; the three
+original paragraphs are unchanged.
+
+The regression test was verified non-vacuous: with the new block reverted to the original
+one-liner, `test_agentic_retrieve_times_out_on_snapshot` fails with `assert 2 is None` — the
+synchronous sleep blocks the loop, the slow load completes, and the method proceeds past its
+deadline with a real generation instead of returning a timeout bundle. Restored afterwards.
+
+6/6 pass in `test_agentic_snapshot.py`; 35/35 across `test_locks.py` and
+`test_agentic_retrieval.py`.
+
+**Deviations from spec**: none. One note: `ruff check` reports one B905 (`zip()` without
+`strict=`) at `toolkit.py:2390`, verified pre-existing on `origin/dev` and outside this task's
+scope, so left alone — same finding as TASK-5385.

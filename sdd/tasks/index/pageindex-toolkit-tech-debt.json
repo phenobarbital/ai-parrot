@@ -64,7 +64,7 @@
     {
       "id": "TASK-5386",
       "slug": "agentic-max-chars-and-provider-error",
-      "title": "Agentic retrieval \u2014 max_chars=None coercion and a provider_error stop reason",
+      "title": "Agentic retrieval — max_chars=None coercion and a provider_error stop reason",
       "feature_id": "FEAT-849",
       "feature": "pageindex-toolkit-tech-debt",
       "spec": "sdd/specs/pageindex-toolkit-tech-debt.spec.md",
@@ -87,7 +87,7 @@
       "feature_id": "FEAT-849",
       "feature": "pageindex-toolkit-tech-debt",
       "spec": "sdd/specs/pageindex-toolkit-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -97,13 +97,14 @@
       "parallelism_notes": "Serialized after TASK-5385: both modify packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py (same-file edit, lower id first). No symbol from TASK-5385 is used.",
       "assigned_to": null,
       "started_at": "2026-11-09T12:28:57.982299+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5387-agentic-retrieve-deadline-bound-snapshot.md"
+      "completed_at": "2026-11-09T12:30:41+00:00",
+      "file": "sdd/tasks/completed/TASK-5387-agentic-retrieve-deadline-bound-snapshot.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5388",
       "slug": "documentation-agentic-retrieval-page",
-      "title": "Documentation \u2014 PageIndex agentic retrieval page",
+      "title": "Documentation — PageIndex agentic retrieval page",
       "feature_id": "FEAT-849",
       "feature": "pageindex-toolkit-tech-debt",
       "spec": "sdd/specs/pageindex-toolkit-tech-debt.spec.md",
