@@ -670,7 +670,9 @@ def _install_agy_hook(root: Path, receipt: dict[str, Any], *, portable: bool | N
         if owned:
             _widen_legacy_matcher(path, data)
             return True, [widened]
-        return True, [f"note: {AGY_HOOKS_PATH} — stale matcher 'run_command' (not owned by this install); widen it by hand"]
+        return True, [
+            f"note: {AGY_HOOKS_PATH} — stale matcher 'run_command' (not owned by this install); widen it by hand"
+        ]
     if matcher is not None and matcher != _AGY_MATCHER:
         return True, [f"warning: {AGY_HOOKS_PATH} — user-edited matcher '{matcher}'; keeping it"]
     data[AGY_HOOK_NAME] = entry

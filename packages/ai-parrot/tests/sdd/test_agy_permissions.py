@@ -405,9 +405,7 @@ def test_escape_hatch(ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.parametrize("command", ["git push origin main", "find . -delete", "echo hi"])
-def test_escape_hatch_never_lifts_the_unattended_guard(
-    ws: Path, monkeypatch: pytest.MonkeyPatch, command: str
-) -> None:
+def test_escape_hatch_never_lifts_the_unattended_guard(ws: Path, monkeypatch: pytest.MonkeyPatch, command: str) -> None:
     """A PARROT_ALLOW_DANGEROUS inherited from the launching shell must not disarm an unattended worker."""
     monkeypatch.setenv("PARROT_ALLOW_DANGEROUS", "1")
     monkeypatch.setenv("PARROT_SDD_AGY_UNATTENDED", "1")
