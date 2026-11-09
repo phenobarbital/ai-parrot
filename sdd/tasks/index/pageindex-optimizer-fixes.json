@@ -82,7 +82,7 @@
       "feature_id": "FEAT-853",
       "feature": "pageindex-optimizer-fixes",
       "spec": "sdd/specs/pageindex-optimizer-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -93,8 +93,9 @@
       "parallelism_notes": "Imports reconcile_key_items from TASK-5391 and is_heading_text from TASK-5392 (optimizer.py); also edits test_optimizer_toolkit.py after TASK-5391.",
       "assigned_to": null,
       "started_at": "2026-11-09T13:19:39.225998+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5393-bounded-llm-inputs-and-pass-wiring.md"
+      "completed_at": "2026-11-09T13:26:15+00:00",
+      "file": "sdd/tasks/completed/TASK-5393-bounded-llm-inputs-and-pass-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5394",
