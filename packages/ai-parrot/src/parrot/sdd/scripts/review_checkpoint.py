@@ -1,4 +1,4 @@
-"""Prepare or validate the durable review handoff from authoritative local state.
+"""Prepare, validate, or record the durable review handoff from authoritative local state.
 
 Spec `sdd/specs/sdd-execution-optimization.spec.md` (FEAT-584), module M4
 (R5 "Checkpoint antes del code reviewer"). Every fact this CLI reports comes
@@ -14,7 +14,12 @@ import argparse
 import asyncio
 import json
 import os
+import subprocess
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
+
+from pydantic import ValidationError
 
 from parrot.flows.dev_loop.sdd_coder.checkpoint import (
     CheckpointBusyError,
@@ -26,7 +31,7 @@ from parrot.flows.dev_loop.sdd_coder.checkpoint import (
     validate_review_checkpoint,
 )
 from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
-from parrot.flows.dev_loop.sdd_coder.optimization_models import ReviewCheckpoint
+from parrot.flows.dev_loop.sdd_coder.optimization_models import ReviewArtifact, ReviewCheckpoint
 from parrot.flows.dev_loop.sdd_coder.telemetry import resolve_durable_root
 
 #: Mirrors `scripts.sdd.finalize_task._TELEMETRY_ROOT_ENV` -- the same
@@ -81,8 +86,39 @@ async def _run_validate(
     return {**_checkpoint_summary(checkpoint), "valid": True}
 
 
+async def _run_record(
+    *,
+    feature: str,
+    task: str,
+    worktree: Path,
+    summary: str,
+    execution_id: str,
+    fix_commits: list[str],
+    store: ExecutionEvidenceStore,
+) -> dict[str, object]:
+    """Publish a manual semantic review artifact for task finalization."""
+    head_sha = subprocess.run(
+        ["git", "-C", str(worktree), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    artifact = ReviewArtifact(
+        feature_slug=feature,
+        task_id=task,
+        execution_id=execution_id,
+        source="manual",
+        summary=summary,
+        fix_commits=fix_commits,
+        head_sha=head_sha,
+        recorded_at=datetime.now(timezone.utc),
+    )
+    review_ref = await store.put_artifact(execution_id, artifact)
+    return {"execution_id": execution_id, "review_ref": review_ref.model_dump()}
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Prepare/validate: same codes and JSON output with a reference to the checkpoint.
+    """Prepare, validate, or record reviews with stable JSON output.
 
     Exit codes: 0 success, 1 operation error, 2 invalid input, 3 stale/busy.
     """
@@ -100,6 +136,14 @@ def main(argv: list[str] | None = None) -> int:
     validate_parser.add_argument("--execution-id", required=True)
     validate_parser.add_argument("--checkpoint-id", required=True)
 
+    record_parser = sub.add_parser("record", help="Publish a semantic review as durable evidence for finalize.")
+    record_parser.add_argument("--feature", required=True)
+    record_parser.add_argument("--task", required=True)
+    record_parser.add_argument("--worktree", required=True)
+    record_parser.add_argument("--summary", required=True)
+    record_parser.add_argument("--execution-id")
+    record_parser.add_argument("--fix-commit", action="append", default=[])
+
     args = parser.parse_args(argv)
     worktree = Path(args.worktree)
 
@@ -114,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
             result = asyncio.run(
                 _run_prepare(feature=args.feature, worktree=worktree, execution_id=args.execution_id, store=store)
             )
-        else:
+        elif args.command == "validate":
             result = asyncio.run(
                 _run_validate(
                     feature=args.feature,
@@ -124,9 +168,25 @@ def main(argv: list[str] | None = None) -> int:
                     store=store,
                 )
             )
-    except ValueError as exc:
+        else:
+            execution_id = args.execution_id or str(uuid.uuid4())
+            result = asyncio.run(
+                _run_record(
+                    feature=args.feature,
+                    task=args.task,
+                    worktree=worktree,
+                    summary=args.summary,
+                    execution_id=execution_id,
+                    fix_commits=args.fix_commit,
+                    store=store,
+                )
+            )
+    except (ValidationError, ValueError) as exc:
         print(json.dumps({"ok": False, "error": "invalid_input", "message": str(exc)}))
         return 2
+    except subprocess.CalledProcessError as exc:
+        print(json.dumps({"ok": False, "error": "operation_error", "message": str(exc)}))
+        return 1
     except (CheckpointBusyError, CheckpointStaleError, CheckpointIncompleteError) as exc:
         print(json.dumps({"ok": False, "error": exc.error_code, "message": str(exc)}))
         return 3

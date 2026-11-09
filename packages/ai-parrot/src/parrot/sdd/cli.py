@@ -278,7 +278,7 @@ VERBS: dict[str, dict[str, tuple[str, tuple[str, ...], str]]] = {
         "heal": ("heal_orphans", (), "Re-attach orphaned task files to their per-spec index."),
         "graph": ("check_task_graph", (), "Validate a per-spec index task graph."),
         "state": ("check_task_state", (), "Read-only backstop for stalled task files."),
-        "review": ("review_checkpoint", (), "Review checkpoint: prepare | validate."),
+        "review": ("review_checkpoint", (), "Review: prepare | validate | record."),
     },
     "ids": {
         "reserve": ("reserve_ids", (), "Reserve TASK/FEAT ids on the git-native ledger."),
