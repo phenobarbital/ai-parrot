@@ -13,16 +13,21 @@ pymupdf4llm = pytest.importorskip("pymupdf4llm")
 from parrot.knowledge.pageindex.layout import (  # noqa: E402
     Bookmark,
     BoldLine,
+    EnumeratedLine,
     LayoutHeaders,
     LayoutProfile,
     RunningLine,
     UnreadablePDFError,
     _bookmark_prefix_match,
+    _collect_enumerated_lines,
+    _is_enumerated_row,
     _keep_page_order,
     _read_bookmarks,
     _visual_rows,
     analyze_layout,
+    running_key,
 )
+from parrot.knowledge.pageindex.segments import normalize_title  # noqa: E402
 
 FILLER = "body text line with plenty of ordinary words for the statistics"
 Item = tuple[float, float, str, float, str]
@@ -432,3 +437,150 @@ def test_bookmark_match_prefix_only() -> None:
     assert headers.get_header_id(prose, page=_page(0)) == ""
     larger = _span("AC-7 UNSUCCESSFUL LOGON ATTEMPTS", 13, (72.0, 360.0, 300.0, 374.0))
     assert headers.get_header_id(larger, page=_page(0)) == "### "
+
+
+TITLE = "ACCOUNT MANAGEMENT | DISABLE ACCOUNTS"
+
+
+def _line(page: int, block: int, y: float, *spans: tuple[str, float, bool], x: float = 72.0) -> dict:
+    """Build an analyze_layout-shaped line dict from (text, size, bold) spans."""
+    span_dicts = [
+        {"text": text, "size": size, "flags": 16 if bold else 0, "font": "Helvetica-Bold" if bold else "Helvetica"}
+        for text, size, bold in spans
+    ]
+    text = "".join(span["text"] for span in span_dicts).strip()
+    return {
+        "page": page,
+        "block": block,
+        "index": 0,
+        "block_lines": 1,
+        "spans": span_dicts,
+        "text": text,
+        "bbox": (x, y, x + 300.0, y + 10.0),
+        "band": None,
+        "key": running_key(text),
+    }
+
+
+def _enumerated_pdf(tmp_path: Path) -> Path:
+    """Write one page: a bold enumerator + 9 pt caps title on one baseline, a bold list item, a caps row without |."""
+    marker_width = pymupdf.get_text_length("(1)", fontname="hebo", fontsize=10)
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page()
+        page.insert_text((72, 100), "(1)", fontsize=10, fontname="hebo")
+        page.insert_text((72 + marker_width + 4, 100), TITLE, fontsize=9, fontname="helv")
+        page.insert_text((72, 140), "(a) Have expired;", fontsize=10, fontname="hebo")
+        page.insert_text((72, 180), "(2)", fontsize=10, fontname="hebo")
+        page.insert_text((72 + marker_width + 4, 180), "PLAIN CAPS TITLE", fontsize=9, fontname="helv")
+        for x, y, text, size, font in _body(220, 30):
+            page.insert_text((x, y), text, fontsize=size, fontname=font)
+        path = tmp_path / "enumerated.pdf"
+        doc.save(str(path))
+    finally:
+        doc.close()
+    return path
+
+
+def test_enumerated_row_detection() -> None:
+    """A bold enumerator followed by caps text with a separator opens an enumerated title; nothing else does."""
+    assert _is_enumerated_row([_line(1, 0, 100, ("(1)", 10, True), (TITLE, 9, False))])
+    assert not _is_enumerated_row([_line(1, 0, 100, ("(1)", 10, True), ("ACCOUNT MANAGEMENT", 9, False))])
+    assert not _is_enumerated_row([_line(1, 0, 100, ("(1)", 10, True), ("Account management | Disable", 9, False))])
+    assert not _is_enumerated_row([_line(1, 0, 100, ("(1)", 10, False), (TITLE, 9, False))])
+    assert not _is_enumerated_row([_line(1, 0, 100, ("(1) " + TITLE, 10, True))])
+
+
+def test_enumerated_lines_in_profile(tmp_path: Path) -> None:
+    """analyze_layout records the enumerated title and ignores the list item and the caps row without a separator."""
+    profile = analyze_layout(str(_enumerated_pdf(tmp_path)))
+
+    assert [line.text for line in profile.enumerated_lines[1]] == [normalize_title("(1) " + TITLE)]
+    assert sum(len(lines) for lines in profile.enumerated_lines.values()) == 1
+
+
+def test_enumerated_title_continuations() -> None:
+    """Wrapped titles keep caps continuation rows from their block or the next block; nothing else is joined."""
+    lines = [
+        _line(1, 0, 100, ("(3)", 10, True), ("ACCESS CONTROL | USE OF STORAGE DEVICES WITH NO", 9, False)),
+        _line(1, 0, 111, ("IDENTIFIABLE OWNER", 9, False), x=90.0),
+        _line(1, 1, 150, ("(5)", 10, True), ("IA | INDIVIDUAL AUTHENTICATION", 9, False)),
+        _line(1, 2, 161, ("WITH GROUP AUTHENTICATION", 9, False), x=90.0),
+        _line(1, 3, 172, ("Mixed case body text follows.", 10, False)),
+        _line(1, 4, 300, ("(6)", 10, True), ("IA | FAR AWAY", 9, False)),
+        _line(1, 5, 500, ("NOT A CONTINUATION", 9, False)),
+        _line(1, 6, 600, ("(7)", 10, True), ("IA | WITH BODY", 9, False)),
+        _line(1, 6, 611, ("Then body text in mixed case.", 10, False)),
+    ]
+
+    texts = [line.text for line in _collect_enumerated_lines(lines, set())[1]]
+
+    assert texts == [
+        normalize_title("(3) ACCESS CONTROL | USE OF STORAGE DEVICES WITH NO IDENTIFIABLE OWNER"),
+        normalize_title("(5) IA | INDIVIDUAL AUTHENTICATION WITH GROUP AUTHENTICATION"),
+        normalize_title("(6) IA | FAR AWAY"),
+        normalize_title("(7) IA | WITH BODY"),
+    ]
+
+
+def test_enumerated_repeat_filter() -> None:
+    """The same enumerated title on three pages is a running label, not a heading."""
+    lines = [_line(page, 0, 100, ("(1)", 10, True), (TITLE, 9, False)) for page in (1, 2, 3)]
+
+    assert _collect_enumerated_lines(lines, set()) == {}
+    assert len(_collect_enumerated_lines(lines[:2], set())) == 2
+
+
+def test_enumerated_prefix_level() -> None:
+    """Enumerated spans get one level below the lowest bold size, capped at six."""
+    enumerated = {1: [EnumeratedLine(text="t", bbox=(72.0, 90.0, 400.0, 104.0))]}
+    profile = LayoutProfile(
+        page_count=1, body_size=10, heading_sizes=[16, 14], bold_sizes=[12, 10], enumerated_lines=enumerated
+    )
+    headers = LayoutHeaders(profile)
+
+    assert headers.get_header_id(_span("ACCOUNT", 9, (100.0, 92.0, 200.0, 103.0)), page=_page(0)) == "##### "
+    assert headers.get_header_id(_span("(1)", 10, (72.0, 91.0, 90.0, 103.0), bold=True), page=_page(0)) == "##### "
+    assert headers.get_header_id(_span("ACCOUNT", 9, (100.0, 200.0, 200.0, 211.0)), page=_page(0)) == ""
+    capped = LayoutHeaders(
+        profile.model_copy(update={"heading_sizes": [26, 16, 14, 13], "bold_sizes": [11, 10]})
+    )
+    assert capped.get_header_id(_span("ACCOUNT", 9, (100.0, 92.0, 200.0, 103.0)), page=_page(0)) == "###### "
+
+
+def test_enumerated_heading_markdown(tmp_path: Path) -> None:
+    """The enumerated row renders as exactly one heading line holding the marker and both names."""
+    path = _enumerated_pdf(tmp_path)
+    chunks = pymupdf4llm.to_markdown(str(path), page_chunks=True, hdr_info=LayoutHeaders(analyze_layout(str(path))))
+    heading_lines = [line for line in chunks[0]["text"].splitlines() if line.startswith("#")]
+
+    assert len(heading_lines) == 1
+    assert "(1)" in heading_lines[0]
+    assert "ACCOUNT MANAGEMENT" in heading_lines[0] and "DISABLE ACCOUNTS" in heading_lines[0]
+
+
+def test_enumerated_wrapped_heading_markdown(tmp_path: Path) -> None:
+    """A title wrapped onto a second caps line renders as one heading line holding both lines."""
+    marker_width = pymupdf.get_text_length("(3)", fontname="hebo", fontsize=10)
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page()
+        page.insert_text((72, 100), "(3)", fontsize=10, fontname="hebo")
+        page.insert_text((72 + marker_width + 4, 100), "ACCESS CONTROL | USE OF DEVICES WITH NO", fontsize=9, fontname="helv")
+        page.insert_text((90, 111), "IDENTIFIABLE OWNER", fontsize=9, fontname="helv")
+        for x, y, text, size, font in _body(150, 30):
+            page.insert_text((x, y), text, fontsize=size, fontname=font)
+        path = tmp_path / "wrapped.pdf"
+        doc.save(str(path))
+    finally:
+        doc.close()
+
+    profile = analyze_layout(str(path))
+    chunks = pymupdf4llm.to_markdown(str(path), page_chunks=True, hdr_info=LayoutHeaders(profile))
+    heading_lines = [line for line in chunks[0]["text"].splitlines() if line.startswith("#")]
+
+    assert [line.text for line in profile.enumerated_lines[1]] == [
+        normalize_title("(3) ACCESS CONTROL | USE OF DEVICES WITH NO IDENTIFIABLE OWNER")
+    ]
+    assert len(heading_lines) == 1
+    assert "WITH NO" in heading_lines[0] and "IDENTIFIABLE OWNER" in heading_lines[0]
