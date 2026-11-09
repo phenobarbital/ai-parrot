@@ -3718,9 +3718,7 @@ class GitHubReviewer(Agent):
         )
 
         try:
-            context.checks = await self._fetch_checks(
-                repo, int(pr_number), str(context.payload.get("head_sha") or "")
-            )
+            context.checks = await self._fetch_checks(repo, int(pr_number), str(context.payload.get("head_sha") or ""))
         except Exception as exc:  # noqa: BLE001 - CI is informational
             self.logger.warning("GitHubReviewer: checks unavailable for %s#%s: %s", repo, pr_number, exc)
             context.checks = PRChecksSummary(available=False, reason=_one_line(exc, 200))
@@ -3848,9 +3846,7 @@ class GitHubReviewer(Agent):
 
         lines.extend(["## Code Observations", ""])
         if review.code_observations:
-            ordered = sorted(
-                review.code_observations, key=lambda o: _FULL_REVIEW_SEVERITY_ORDER.get(o.severity, 9)
-            )
+            ordered = sorted(review.code_observations, key=lambda o: _FULL_REVIEW_SEVERITY_ORDER.get(o.severity, 9))
             for obs in ordered:
                 where = ""
                 if obs.file:

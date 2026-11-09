@@ -278,7 +278,12 @@ async def test_gather_reports_progress_and_job_id(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(github_reviewer, "report_command_progress", fake_progress)
     monkeypatch.setattr(github_reviewer, "current_job_id", lambda: "3f9c2a1b7d40")
     context = await _Reviewer()._gather_full_review_context(REPO, PR, _payload(), "NAV-8036")
-    assert stages == ["fetching ticket", "fetching diff and files", "reading PR comments", "waiting for repository wiki"]
+    assert stages == [
+        "fetching ticket",
+        "fetching diff and files",
+        "reading PR comments",
+        "waiting for repository wiki",
+    ]
     assert context.job_id == "3f9c2a1b7d40"
 
 
@@ -410,8 +415,9 @@ async def test_report_has_claude_headings_and_bot_tables() -> None:
 async def test_report_without_ticket_says_ac_not_evaluated() -> None:
     """No linked ticket: the AC section says so and there is no criteria table."""
     reviewer = _Reviewer()
-    context = _context(jira_key=None, ticket=None, ticket_status="not_linked", comments=[], reviews=[],
-                       review_comments=[])
+    context = _context(
+        jira_key=None, ticket=None, ticket_status="not_linked", comments=[], reviews=[], review_comments=[]
+    )
     report = reviewer._render_full_review_report(
         context, _review(criteria=[], verdict="needs_attention", recommended_action="REQUEST_CHANGES")
     )
