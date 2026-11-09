@@ -20,7 +20,7 @@ def test_spec_documentation_decision_is_ok() -> None:
 def test_page_names_operator_facts() -> None:
     """Test that the page contains essential operator facts."""
     content = PAGE.read_text(encoding="utf-8")
-    
+
     # Check for essential operator facts
     assert "--host google" in content
     assert "PARROT_SDD_AGY_UNATTENDED" in content
