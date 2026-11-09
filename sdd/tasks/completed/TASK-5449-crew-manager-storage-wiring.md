@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-860 — Postgres CrewDefinition Storage
 **Spec**: `sdd/specs/postgres-crew-storage.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-5448
@@ -248,4 +248,15 @@ move the task, stamp completion, or run legacy task-close helpers.
 
 ## Completion Note
 
-Pending; populated by the task finalizer after implementation and validation.
+
+- Task: TASK-5449
+- Feature: postgres-crew-storage
+- Implementation SHA: bf3143fc9ee976aad078f6dfbb7b0bd9133a9d1f
+- Closed at (UTC): 2026-11-09T22:03:26+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 426.214s · Tokens: n/a |

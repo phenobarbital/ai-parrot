@@ -171,7 +171,7 @@
       "feature_id": "FEAT-860",
       "feature": "postgres-crew-storage",
       "spec": "sdd/specs/postgres-crew-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -181,8 +181,9 @@
       "parallelism_notes": "Consumes initialized composition, migration hook and deletion resolver completed by TASK-5448; its transitive prerequisites provide config/PG helpers.",
       "assigned_to": null,
       "started_at": "2026-11-09T19:16:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5449-crew-manager-storage-wiring.md"
+      "completed_at": "2026-11-09T22:03:26+00:00",
+      "file": "sdd/tasks/completed/TASK-5449-crew-manager-storage-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5450",
