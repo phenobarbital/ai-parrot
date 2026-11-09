@@ -222,7 +222,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -232,8 +232,9 @@
       "parallelism_notes": "TASK-5371: both modify toolkit.py and test_optimizer_toolkit.py; test_locked_semantics drives optimize()",
       "assigned_to": null,
       "started_at": "2026-11-08T23:08:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5372-toolkit-locked-semantics.md"
+      "completed_at": "2026-11-09T00:33:56+00:00",
+      "file": "sdd/tasks/completed/TASK-5372-toolkit-locked-semantics.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5373",

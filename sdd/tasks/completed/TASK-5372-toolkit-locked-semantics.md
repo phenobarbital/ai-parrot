@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-846 — PageIndex Tree Optimizer
 **Spec**: `sdd/specs/pageindex-tree-optimizer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5371
@@ -154,4 +154,9 @@ Spec §4 row `test_locked_semantics`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed**: 2026-11-09 | **Implementation commit**: f9914e62af
+
+Delivered via sdd-coder pool (merged). Scope: toolkit locked semantics.
+Validation: merge-tier wave (5372+5373) — 212 passed, exit 0.
+Deviations: none noted.
+
