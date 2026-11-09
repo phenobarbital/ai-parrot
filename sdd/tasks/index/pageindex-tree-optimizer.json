@@ -264,7 +264,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -274,8 +274,9 @@
       "parallelism_notes": "TASK-5373: extends test_optimizer_bookstore.py created there (same file); calls PageIndexToolkit.optimize from TASK-5371",
       "assigned_to": null,
       "started_at": "2026-11-08T23:08:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5374-parrot-pageindex-cli.md"
+      "completed_at": "2026-11-09T00:46:27+00:00",
+      "file": "sdd/tasks/completed/TASK-5374-parrot-pageindex-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5375",
