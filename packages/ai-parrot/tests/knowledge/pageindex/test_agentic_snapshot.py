@@ -1,7 +1,9 @@
 """FEAT-843 — snapshot-bound search/read helpers (AC-16)."""
 
+import asyncio
 import copy
 import inspect
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -168,3 +170,33 @@ def test_agentic_search_not_cached(paged_toolkit: PageIndexToolkit) -> None:
     assert engine._tree is snapshot
     assert engine.generation_id == snapshot["generation"]["id"]
     assert paged_toolkit._search == cached
+
+
+@pytest.mark.asyncio
+async def test_agentic_retrieve_times_out_on_snapshot(
+    paged_toolkit: PageIndexToolkit, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A tree load that cannot finish inside the deadline yields a timeout bundle, not an overrun.
+
+    The stub sleeps *synchronously*: before the snapshot moved to ``asyncio.to_thread`` under
+    ``asyncio.wait_for`` it would have blocked the event loop and the call would have returned
+    late instead of returning a timeout bundle.
+    """
+    real_load = paged_toolkit._load_tree
+
+    def slow_load(tree_name: str) -> dict:
+        time.sleep(0.6)
+        return real_load(tree_name)
+
+    monkeypatch.setattr(paged_toolkit, "_load_tree", slow_load)
+
+    started = asyncio.get_running_loop().time()
+    bundle = await paged_toolkit.agentic_retrieve("t", "what happened?", timeout_s=0.1)
+    elapsed = asyncio.get_running_loop().time() - started
+
+    assert bundle["stopped"] == "timeout"
+    assert bundle["candidates"] == []
+    assert bundle["generation"] is None
+    # The deadline is honoured: the request returns without waiting out the whole slow load.
+    assert elapsed < 0.5
+

@@ -1245,6 +1245,12 @@ class PageIndexToolkit(AbstractToolkit):
         Returns an evidence bundle: candidates, the exact ranges read, validated citations
         (``[Report.pdf, p. 12 ¶3]``), rejected ones with reasons, and optionally a drafted
         answer. ``grounded`` is false when no citation survived validation. Requires an LLM.
+
+        **Serialised per toolkit instance.** A single ``_agentic_lock`` guards the whole
+        request, so exactly one agentic retrieval runs at a time per ``PageIndexToolkit``. A
+        second concurrent caller waits for the lock and, if its own ``timeout_s`` expires first,
+        receives a ``stopped="timeout"`` bundle without ever having searched. Scale out with
+        separate toolkit instances, not with concurrent calls on one.
         """
         resolved_budget = self._agentic_budget_chars if budget_chars is None else budget_chars
         resolved_reads = self._agentic_max_reads if max_reads is None else max_reads
@@ -1292,7 +1298,16 @@ class PageIndexToolkit(AbstractToolkit):
             except TimeoutError:
                 return timeout_bundle()
 
-            tree = copy.deepcopy(self._load_tree(tree_name))
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return timeout_bundle()
+            try:
+                tree = await asyncio.wait_for(
+                    asyncio.to_thread(lambda: copy.deepcopy(self._load_tree(tree_name))),
+                    timeout=remaining,
+                )
+            except TimeoutError:
+                return timeout_bundle()
             generation = generation_of(tree)
             generation_id = generation.id if generation else None
             remaining = deadline - loop.time()
