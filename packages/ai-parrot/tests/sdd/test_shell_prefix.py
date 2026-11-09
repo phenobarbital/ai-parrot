@@ -128,7 +128,9 @@ def test_errors_exit_2_and_exec_nothing(
         policy_path.chmod(mode)
         monkeypatch.setenv(shell_prefix.POLICY_ENV, str(policy_path))
     if bwrap_missing:
-        monkeypatch.setattr(shell_prefix, "protected_argv", lambda cwd, argv: (_ for _ in ()).throw(RuntimeError("bwrap missing")))
+        monkeypatch.setattr(
+            shell_prefix, "protected_argv", lambda cwd, argv: (_ for _ in ()).throw(RuntimeError("bwrap missing"))
+        )
     captured = _capture_exec(monkeypatch)
 
     with pytest.raises(SystemExit) as raised:
