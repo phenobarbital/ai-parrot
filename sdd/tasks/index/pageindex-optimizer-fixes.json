@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-09T13:10:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-09T13:27:44+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -104,7 +104,7 @@
       "feature_id": "FEAT-853",
       "feature": "pageindex-optimizer-fixes",
       "spec": "sdd/specs/pageindex-optimizer-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -116,8 +116,9 @@
       "parallelism_notes": "Documents symbols created by TASK-5391/TASK-5392 (packages/ai-parrot/src/parrot/knowledge/pageindex/optimizer.py) and TASK-5393 (packages/ai-parrot/src/parrot/knowledge/pageindex/optimizer_llm.py: LLM_INPUT_BUDGET_TOKENS, window_reads); runs last.",
       "assigned_to": null,
       "started_at": "2026-11-09T13:26:32.460727+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5394-optimizer-fixes-documentation.md"
+      "completed_at": "2026-11-09T13:27:44+00:00",
+      "file": "sdd/tasks/completed/TASK-5394-optimizer-fixes-documentation.md",
+      "verification": "verified"
     }
   ]
 }
