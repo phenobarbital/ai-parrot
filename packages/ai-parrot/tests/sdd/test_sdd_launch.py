@@ -1305,3 +1305,114 @@ def test_tmux_launch_enables_push_protection(tmp_path: Path, monkeypatch: pytest
     )
     assert protected == [worktree]
     assert calls[0][:2] == ["tmux", "new-session"]
+
+
+def test_google_snap_agy_is_refused_with_install_command(tmp_path: Path) -> None:
+    with pytest.raises(launcher.LaunchError) as error:
+        launcher.require_official_agy(Path("/snap/bin/agy"))
+    assert error.value.exit_code == 2
+    assert launcher.OFFICIAL_AGY_INSTALL in str(error.value)
+
+
+def test_google_official_agy_is_accepted(tmp_path: Path) -> None:
+    agy = tmp_path / "agy"
+    agy.write_bytes(b"\x7fELF\x02\x01\x01\x00" + b"\0" * 64)
+    launcher.require_official_agy(agy)
+
+
+def test_google_agy_is_snap_detects_symlink_wrapper_and_plain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snap_target = tmp_path / "usr" / "bin" / "snap"
+    snap_target.parent.mkdir(parents=True)
+    snap_target.write_bytes(b"\x7fELF" + b"\0" * 32)
+    symlinked = tmp_path / "bin" / "agy"
+    symlinked.parent.mkdir()
+    symlinked.symlink_to(snap_target)
+    assert launcher.agy_is_snap(symlinked) is True
+
+    into_snap = tmp_path / "agy-snapdir"
+    real_resolve = Path.resolve
+
+    def _resolve(self: Path, strict: bool = False) -> Path:
+        if self == into_snap:
+            return Path("/snap/antigravity-cli/12/bin/agy")
+        return real_resolve(self, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", _resolve)
+    assert launcher.agy_is_snap(into_snap) is True
+
+    wrapper = tmp_path / "agy-wrapper"
+    wrapper.write_text('#!/bin/sh\nexec /usr/bin/snap run antigravity-cli.agy "$@"\n', encoding="utf-8")
+    assert launcher.agy_is_snap(wrapper) is True
+
+    plain = tmp_path / "agy-plain"
+    plain.write_text("#!/bin/sh\nexec /opt/agy/bin/agy \"$@\"\n", encoding="utf-8")
+    assert launcher.agy_is_snap(plain) is False
+
+
+def test_google_resolve_agy_missing_names_install_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: None)
+    with pytest.raises(launcher.LaunchError) as error:
+        launcher.resolve_agy()
+    assert error.value.exit_code == 1
+    assert launcher.OFFICIAL_AGY_INSTALL in str(error.value)
+
+
+def test_google_resolve_agy_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/local/bin/agy" if name == "agy" else None)
+    assert launcher.resolve_agy() == Path("/usr/local/bin/agy")
+
+
+def _google_host_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: "linux")
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/bwrap" if name == "bwrap" else None)
+    monkeypatch.setattr(launcher.native_claude_sandbox, "_bwrap_probe", lambda executable: (True, "ok"))
+
+
+@pytest.mark.parametrize("mode", ["off", "OFF", "bogus"])
+def test_google_worker_sandbox_refuses_off_and_bad_modes(mode: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    _google_host_ok(monkeypatch)
+    with pytest.raises(launcher.LaunchError) as error:
+        launcher.google_worker_sandbox(mode, ())
+    assert error.value.exit_code == 2
+
+
+def test_google_worker_sandbox_refuses_domains(monkeypatch: pytest.MonkeyPatch) -> None:
+    _google_host_ok(monkeypatch)
+    with pytest.raises(launcher.LaunchError) as error:
+        launcher.google_worker_sandbox("required", ("example.com",))
+    assert error.value.exit_code == 2
+    assert "network domain" in str(error.value)
+
+
+@pytest.mark.parametrize("mode", [None, "required", "legacy", "preferred"])
+def test_google_worker_sandbox_selects_bubblewrap(mode: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
+    _google_host_ok(monkeypatch)
+    assert launcher.google_worker_sandbox(mode, ()) == "bubblewrap"
+
+
+def test_google_worker_sandbox_non_linux_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    _google_host_ok(monkeypatch)
+    monkeypatch.setattr(launcher.native_claude_sandbox, "sandbox_platform", lambda: "macos")
+    with pytest.raises(launcher.LaunchError) as error:
+        launcher.google_worker_sandbox("preferred", ())
+    assert error.value.exit_code == 1
+
+
+def test_google_worker_sandbox_missing_bwrap_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    _google_host_ok(monkeypatch)
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: None)
+    with pytest.raises(launcher.LaunchError) as error:
+        launcher.google_worker_sandbox("preferred", ())
+    assert error.value.exit_code == 1
+    assert "bwrap" in str(error.value)
+
+
+def test_google_worker_sandbox_failed_probe_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    _google_host_ok(monkeypatch)
+    monkeypatch.setattr(launcher.native_claude_sandbox, "_bwrap_probe", lambda executable: (False, "userns denied"))
+    with pytest.raises(launcher.LaunchError) as error:
+        launcher.google_worker_sandbox("preferred", ())
+    assert error.value.exit_code == 1
+    assert "userns denied" in str(error.value)
