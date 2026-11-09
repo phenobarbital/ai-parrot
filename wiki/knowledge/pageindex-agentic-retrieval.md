@@ -266,3 +266,4 @@ call itself does **not** propagate — it comes back as `stopped="provider_error
 - [PageIndex — Tree-Based RAG for Document Retrieval](pageindex.md) — tree construction and stage-1 retrieval
 - [PageIndex Segment Store](pageindex-segment-store.md) — revisions, addresses, the read tools and cursors this builds on
 - [PageIndex Local MCP](pageindex-local-mcp.md) — the `exclude:` opt-in slot and the MCP template
+- [Bookstore Agentic Retrieval](../bookstore-agentic-retrieval.md) — per-book cited retrieval, multi-origin excerpts, safe re-indexing and measured budgets

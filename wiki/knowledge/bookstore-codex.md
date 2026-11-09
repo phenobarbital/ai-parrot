@@ -65,6 +65,44 @@ Codex loads project MCP settings for trusted repositories and discovers skills
 under `.agents/skills`. See the official [MCP configuration](https://developers.openai.com/codex/mcp)
 and [skill discovery](https://developers.openai.com/codex/skills) documentation.
 
+## Agentic retrieval and citations
+
+The `bookstore_agentic_retrieve` tool provides per-book cited retrieval through the PageIndex agentic loop. It returns a validated evidence bundle with book identity, exact-range citations, and the same `stopped` values as PageIndex (no `stale` value). Use it when you need evidence you can quote and check:
+
+```text
+$bookstore agentic_retrieve amor-y-pedagogia-unamuno-miguel "What does Avito want to achieve with his son's education?"
+```
+
+The tool supports optional revision guards on segment reads and deterministic drift repair via `bookstore doctor`. For programmatic access, see [Bookstore Agentic Retrieval](bookstore-agentic-retrieval.md).
+
+## Recovery and drift repair
+
+Run `bookstore doctor` to report drift, orphans, and unjudged books:
+
+```bash
+parrot bookstore doctor
+```
+
+Repair cards with drift (TOC mismatch):
+
+```bash
+parrot bookstore doctor --repair
+```
+
+Build missing judgements without LLM (deterministic):
+
+```bash
+parrot bookstore doctor --relate --no-llm
+```
+
+For full recovery: repair + relate:
+
+```bash
+parrot bookstore doctor --repair --relate --llm google:gemini-3.5-flash-lite
+```
+
+The report includes `reserved` entries (scope/name/action/reason), `books` entries (scope/book_id/status/repaired), `unjudged_book_ids`, `errors`, and optional `relate_summary`. Statuses are `ok`, `drift`, `orphan_card`, `busy`, or `error`. See [Bookstore Agentic Retrieval](bookstore-agentic-retrieval.md) for details.
+
 ## Library and model selection
 
 The library is selected from `PARROT_LIBRARY_DIR` or the target Git root's
