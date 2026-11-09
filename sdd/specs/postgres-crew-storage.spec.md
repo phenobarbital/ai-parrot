@@ -327,6 +327,8 @@ is required before production migration; never claim mock results prove destruct
 tests:
 - packages/ai-parrot-server/tests/unit/test_crew_redis_legacy_payloads.py
 - packages/ai-parrot-server/tests/unit/test_crew_definition_codec.py
+- packages/ai-parrot-server/tests/unit/test_crew_definition_config.py
+- packages/ai-parrot-server/tests/unit/test_crew_definition_docs.py
 - packages/ai-parrot-server/tests/unit/test_crew_redis_snapshot.py
 - packages/ai-parrot-server/tests/unit/test_crew_postgres_store.py
 - packages/ai-parrot-server/tests/unit/test_crew_definition_storage.py
@@ -336,6 +338,8 @@ tests:
 - packages/ai-parrot-server/tests/handlers/test_crew_migration_live.py
 - packages/ai-parrot/tests/test_botmanager_flags.py
 markers: none
+
+### Live Test Environment
 
 Live tests require `NAVIGATOR_PG_DSN`; Redis integration additionally requires an explicit
 `CREW_MIGRATION_TEST_REDIS_URL` to an isolated disposable Redis database. No service provisioning is
