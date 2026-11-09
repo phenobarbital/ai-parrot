@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-859 — PageIndex Optimizer Fixes 3 — Document-Wide Running Lines for Pseudo-Headings
 **Spec**: `sdd/specs/pageindex-optimizer-fixes-3.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -289,10 +289,14 @@ Names and intent fixed by spec §4 (Unit Tests table); bodies per the blueprint 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-fix session (Claude)
+**Date**: 2026-11-09
+**Notes**: `RUNNING_LINE_MIN_DENSITY`, `document_running_keys`, and `running_keys` on `pseudo_heading_segments` /
+`expand_at_headings` (computed once per call tree). Six tests added. The two regression tests
+(`test_pseudo_headings_drop_document_footer_in_short_leaf`, `test_expand_does_not_split_short_leaf_at_document_footer`)
+were run as a copy outside the repo against `origin/dev` @ `ac571679fe` (optimizer identical to the base): both fail
+there with the bug (`APPENDIX C PAGE 432` offered / used as a piece title), and pass here. Validation commands:
+`test_optimizer.py` + `test_optimizer_integration.py` + `test_layout_integration.py` 43 passed; ruff + black clean.
+Code commit `58789357fe`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: black also reflowed one existing call in `test_split_at_sets_page_fields` (style only).

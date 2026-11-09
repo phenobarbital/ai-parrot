@@ -40,16 +40,17 @@
       "feature_id": "FEAT-859",
       "feature": "pageindex-optimizer-fixes-3",
       "spec": "sdd/specs/pageindex-optimizer-fixes-3.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": "sdd-fix session (Claude)",
       "started_at": "2026-11-09T17:14:43+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-09T17:18:35+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: modifies optimizer.py + test_optimizer.py only; no other task touches them",
-      "file": "sdd/tasks/active/TASK-5439-document-running-lines.md"
+      "file": "sdd/tasks/completed/TASK-5439-document-running-lines.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5440",
