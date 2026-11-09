@@ -96,11 +96,15 @@ from ..handlers.crew.execution_history_handler import CrewExecutionHistoryHandle
 from ..handlers.crew.tool_catalog import CrewToolCatalogHandler
 from ..handlers.crew.special_nodes import CrewSpecialNodeCatalogHandler
 from ..handlers.crew.redis_persistence import CrewRedis
+from ..handlers.crew.postgres_persistence import CrewPostgres
+from ..handlers.crew.definition_storage import CrewDefinitionStorage, CrewStorageConflict, CrewStorageUnavailable
 from ..handlers.flows.checkpoints import FlowCheckpointHandler
 from parrot.bots.flows.core.checkpoint.recovery import get_recovery_service
 from ..openapi.config import setup_swagger
 from ..conf import (
     BOT_CLEANUP_TIMEOUT,
+    CREW_DEFINITION_MIGRATION,
+    CREW_DEFINITION_STORAGE,
     ENABLE_CREWS,
     ENABLE_DATABASE_BOTS,
     ENABLE_DASHBOARDS,
@@ -231,6 +235,8 @@ class BotManager:
         enable_registry_bots: bool = ENABLE_REGISTRY_BOTS,
         enable_experts: bool = True,
         enable_swagger_api: bool = ENABLE_SWAGGER,
+        crew_storage_backend: Optional[str] = None,
+        crew_migration: Optional[bool] = None,
     ) -> None:
         """Initialize BotManager.
 
@@ -248,6 +254,8 @@ class BotManager:
                 discovery. Defaults to ``True``.
             enable_swagger_api: When True, register the OpenAPI/Swagger routes
                 via ``setup_swagger()``. Defaults to ``ENABLE_SWAGGER``.
+            crew_storage_backend: Optional crew definition backend override.
+            crew_migration: Optional crew definition migration override.
         """
         self.app = None
         self._bots: Dict[str, AbstractBot] = {}
@@ -267,8 +275,27 @@ class BotManager:
         self.enable_registry_bots: bool = enable_registry_bots
         self.enable_experts: bool = enable_experts
         self.enable_swagger_api: bool = enable_swagger_api
-        # Initialize Redis persistence for crews — keyed off instance attr
+        # Initialize crew persistence only when the feature is enabled.
         self.crew_redis = CrewRedis() if self.enable_crews else None
+        configured_backend = crew_storage_backend if crew_storage_backend is not None else CREW_DEFINITION_STORAGE
+        self.crew_storage_backend = configured_backend.lower()
+        self.crew_migration = CREW_DEFINITION_MIGRATION if crew_migration is None else crew_migration
+        self.crew_storage: Optional[CrewDefinitionStorage] = None
+        if self.enable_crews:
+            postgres = None
+            if self.crew_storage_backend == "postgres":
+                postgres = CrewPostgres()
+            elif self.crew_storage_backend != "redis":
+                self.logger.warning(
+                    "Unknown crew definition storage backend %r; using Redis for backward compatibility",
+                    configured_backend,
+                )
+                self.crew_storage_backend = "redis"
+            self.crew_storage = CrewDefinitionStorage(
+                self.crew_redis,
+                postgres,
+                migration=self.crew_migration,
+            )
         # Integration manager
         self._integration_manager: Optional["IntegrationBotManager"] = None
         # Shared Redis client published at app['redis'] during setup(). True
@@ -3189,8 +3216,10 @@ Available documentation UIs:
         # Initialize BotConfigStorage and attach to app
         if self.enable_registry_bots:
             app["bot_config_storage"] = BotConfigStorage()
-        # Load crews from Redis
+        # Initialize the configured store before loading crews from it.
         if self.enable_crews:
+            if self.crew_storage is not None:
+                await self.crew_storage.initialize()
             await self.load_crews()
         # Start background cleanup task for expired bots
         self._cleanup_task = asyncio.create_task(self._cleanup_expired_bots())
@@ -3269,16 +3298,22 @@ Available documentation UIs:
         if crew_key in self._crews:
             raise ValueError(f"Crew '{name}' already exists")
 
-        # Add to memory
-        self._crews[crew_key] = (crew, crew_def)
-
-        # Persist to Redis (only when Redis-backed persistence is enabled)
+        # Preserve Redis mode's historic best-effort cache-first behavior.
         if self.crew_redis is None:
+            self._crews[crew_key] = (crew, crew_def)
             self.logger.debug(
                 "Crew persistence disabled (ENABLE_CREWS is False); " "crew '%s' registered in memory only",
                 name,
             )
             return
+
+        if self.crew_storage is not None and self.crew_storage_backend == "postgres":
+            await self.crew_storage.save_crew(crew_def)
+            self._crews[crew_key] = (crew, crew_def)
+            self.logger.info("Registered crew '%s' after PostgreSQL persistence", name)
+            return
+
+        self._crews[crew_key] = (crew, crew_def)
 
         try:
             await self.crew_redis.save_crew(crew_def)
@@ -3338,11 +3373,12 @@ Available documentation UIs:
             return (None, None)
 
         try:
+            storage = self.crew_storage or self.crew_redis
             # Try to load by name first
-            crew_def = await self.crew_redis.load_crew(identifier, tenant)
+            crew_def = await storage.load_crew(identifier, tenant)
             # If not found by name, try by ID
             if not crew_def:
-                crew_def = await self.crew_redis.load_crew_by_id(identifier, tenant)
+                crew_def = await storage.load_crew_by_id(identifier, tenant)
 
             if crew_def:
                 # We found it in Redis!
@@ -3360,6 +3396,8 @@ Available documentation UIs:
                 else:
                     return (base_crew, crew_def)
 
+        except (CrewStorageUnavailable, CrewStorageConflict):
+            raise
         except Exception as e:
             self.logger.error(f"Error loading crew '{identifier}' from Redis: {e}")
             return (None, None)
@@ -3395,6 +3433,26 @@ Available documentation UIs:
         crew_def = None
         tenant = self._normalize_tenant(tenant)
 
+        if self.crew_storage is not None and self.crew_storage_backend == "postgres":
+            resolution = await self.crew_storage.resolve_for_delete(identifier, tenant)
+            if resolution.state == "absent":
+                return False
+            if resolution.state == "deleted":
+                if resolution.definition is not None:
+                    self._crews.pop(self._get_crew_key(tenant, resolution.definition.name), None)
+                return True
+
+            resolved = resolution.definition
+            if resolved is None:
+                raise CrewStorageUnavailable("Crew deletion resolution had no definition")
+            cached = self._crews.get(self._get_crew_key(tenant, resolved.name))
+            if cached is not None and cached[1].crew_id != resolved.crew_id:
+                raise CrewStorageConflict("Crew definition delete conflicts with the current identity")
+            await self.crew_storage.delete_crew(resolved)
+            self._crews.pop(self._get_crew_key(tenant, resolved.name), None)
+            self.logger.info("Removed crew '%s' after PostgreSQL tombstone persistence", resolved.name)
+            return True
+
         # Try by name first
         crew_key = self._get_crew_key(tenant, identifier)
         if crew_key in self._crews:
@@ -3427,6 +3485,40 @@ Available documentation UIs:
             return True
 
         return False
+
+    async def persist_crew_update(self, identifier: str, crew: AgentCrew, crew_def: CrewDefinition) -> None:
+        """Persist a same-name update once before replacing its cache entry.
+
+        Args:
+            identifier: Existing crew name or identifier.
+            crew: Rebuilt crew instance for the updated definition.
+            crew_def: Requested updated definition.
+
+        Raises:
+            CrewStorageConflict: If the requested update renames or conflicts.
+            CrewStorageUnavailable: If the configured store cannot persist it.
+        """
+        if self.crew_storage is None:
+            raise CrewStorageUnavailable("Crew persistence is disabled")
+
+        tenant = self._normalize_tenant(crew_def.tenant)
+        existing = await self.crew_storage.load_crew(identifier, tenant)
+        if existing is None:
+            existing = await self.crew_storage.load_crew_by_id(identifier, tenant)
+        if existing is None:
+            raise CrewStorageConflict("Crew definition update conflicts with an absent crew")
+        if crew_def.name != existing.name:
+            raise CrewStorageConflict("Crew definition updates cannot rename a crew")
+
+        persisted_def = crew_def.model_copy(
+            update={
+                "crew_id": existing.crew_id,
+                "tenant": existing.tenant,
+                "created_at": existing.created_at,
+            }
+        )
+        await self.crew_storage.save_crew(persisted_def)
+        self._crews[self._get_crew_key(existing.tenant, existing.name)] = (crew, persisted_def)
 
     def update_crew(self, identifier: str, crew: AgentCrew, crew_def: CrewDefinition) -> bool:
         """
@@ -3465,13 +3557,12 @@ Available documentation UIs:
             self.logger.debug("Crew persistence disabled (ENABLE_CREWS is False); " "skipping crew loading from Redis")
             return
         try:
-            # Check Redis connection
-            if not await self.crew_redis.ping():
-                self.logger.warning("Redis connection failed, skipping crew loading")
+            storage = self.crew_storage or self.crew_redis
+            if not await storage.ping():
+                self.logger.warning("Crew definition storage connection failed, skipping crew loading")
                 return
 
-            # Get all crew definitions from Redis
-            crew_defs = await self.crew_redis.get_all_crews()
+            crew_defs = await storage.get_all_crews()
 
             if not crew_defs:
                 self.logger.info("No crews found in Redis")
@@ -3513,8 +3604,8 @@ Available documentation UIs:
             # Redis-backed persistence disabled; nothing to sync (in-memory only)
             return
         try:
-            # Get all crew names from Redis
-            remote_entries = await self.crew_redis.list_all_crews()
+            storage = self.crew_storage or self.crew_redis
+            remote_entries = await storage.list_all_crews()
             remote_names = {self._get_crew_key(entry["tenant"], entry["name"]) for entry in remote_entries}
             local_names = set(self._crews.keys())
 
@@ -3531,7 +3622,7 @@ Available documentation UIs:
             for key in added:
                 try:
                     tenant, name = self._split_crew_key(key)
-                    crew_def = await self.crew_redis.load_crew(name, tenant)
+                    crew_def = await storage.load_crew(name, tenant)
                     if crew_def:
                         crew = await self._create_crew_from_definition(crew_def)
                         self._crews[key] = (crew, crew_def)
