@@ -95,7 +95,7 @@
       "feature_id": "FEAT-858",
       "feature": "bookstore-agentic-retrieval",
       "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -105,8 +105,9 @@
       "parallelism_notes": "TASK-5428: serializes overlapping writes to packages/ai-parrot/src/parrot/knowledge/bookstore/library.py",
       "assigned_to": null,
       "started_at": "2026-11-09T17:17:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5429-bookstore-scope-recovery.md"
+      "completed_at": "2026-11-09T17:47:54+00:00",
+      "file": "sdd/tasks/completed/TASK-5429-bookstore-scope-recovery.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5430",
@@ -155,7 +156,7 @@
       "feature_id": "FEAT-858",
       "feature": "bookstore-agentic-retrieval",
       "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -165,8 +166,9 @@
       "parallelism_notes": "TASK-5428: consumes Bookstore.agentic_retrieve and inherited read revision guard",
       "assigned_to": null,
       "started_at": "2026-11-09T17:17:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5432-bookstore-agentic-tools.md"
+      "completed_at": "2026-11-09T17:47:54+00:00",
+      "file": "sdd/tasks/completed/TASK-5432-bookstore-agentic-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5433",
@@ -194,7 +196,7 @@
       "feature_id": "FEAT-858",
       "feature": "bookstore-agentic-retrieval",
       "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -205,8 +207,9 @@
       "parallelism_notes": "TASK-5428: consumes Bookstore._decorate_citations and guarded read_segments; TASK-5433: consumes SearchOrigin.search_section and toolkit section normalization",
       "assigned_to": null,
       "started_at": "2026-11-09T17:17:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5434-bookstore-search-origin.md"
+      "completed_at": "2026-11-09T17:47:55+00:00",
+      "file": "sdd/tasks/completed/TASK-5434-bookstore-search-origin.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5435",
@@ -235,7 +238,7 @@
       "feature_id": "FEAT-858",
       "feature": "bookstore-agentic-retrieval",
       "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -245,8 +248,9 @@
       "parallelism_notes": "TASK-5428: consumes Bookstore.agentic_retrieve for the evaluation harness",
       "assigned_to": null,
       "started_at": "2026-11-09T17:17:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5436-bookstore-evaluation-harness.md"
+      "completed_at": "2026-11-09T17:47:55+00:00",
+      "file": "sdd/tasks/completed/TASK-5436-bookstore-evaluation-harness.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5437",

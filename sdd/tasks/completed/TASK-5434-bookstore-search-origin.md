@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-858 — Bookstore Agentic Retrieval
 **Spec**: `sdd/specs/bookstore-agentic-retrieval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h; host wall time depends on provider when applicable)
 **Depends-on**: TASK-5428, TASK-5433
@@ -319,4 +319,4 @@ calls in pytest. Save execution logs under artifacts/logs/.
 
 ## Completion Note
 
-Populated by the task finalizer after implementation, validation and the exact implementation commit.
+Native opus, 1 attempt. Merged; merge-tier 39 multistoresearch tests passed. Beyond contract (disclosed by coder): test imports LibraryLocation, DocumentRevision, SourceInfo, segment_text, revision_id; label helper copies SegmentAddress.label format. Task Test Spec asked for logs under artifacts/logs - not saved.

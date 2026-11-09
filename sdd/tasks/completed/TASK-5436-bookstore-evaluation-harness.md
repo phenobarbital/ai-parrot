@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-858 — Bookstore Agentic Retrieval
 **Spec**: `sdd/specs/bookstore-agentic-retrieval.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2–4h; host wall time depends on provider when applicable)
 **Depends-on**: TASK-5428
@@ -258,4 +258,4 @@ calls in pytest. Save execution logs under artifacts/logs/.
 
 ## Completion Note
 
-Populated by the task finalizer after implementation, validation and the exact implementation commit.
+Native sonnet, 1 attempt. Merged; test_agentic_eval passes. Coder-disclosed guesses to review: tree keys node_id/owned; largest_leaf_tokens reads 'tokens'/'token_count'; >=40-token check uses whitespace word proxy; <17/21 candidate disqualified, baseline <17 => insufficient_coverage; uses private Bookstore._toolkit; timeout/provider_error recorded as status=error. Host corpus not run.
