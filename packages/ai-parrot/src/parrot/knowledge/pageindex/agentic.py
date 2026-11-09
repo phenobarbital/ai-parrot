@@ -31,6 +31,7 @@ __all__ = [
     "EvidenceBundle",
     "AgenticRetriever",
     "clone_for_tools",
+    "require_tool_loop",
     "clip_read_result",
     "SYSTEM_PROMPT",
     "BUDGET_MESSAGE",
@@ -77,6 +78,22 @@ class EvidenceBundle(BaseModel):
     stopped: StopReason = "answered"
     usage: dict[str, int] = Field(default_factory=dict)
     rendered_citations: str = ""
+
+
+def require_tool_loop(client: AbstractClient) -> None:
+    """Raise ``ValueError`` naming the client when it declares ``supports_tool_loop = False``.
+
+    FEAT-848: agentic retrieval needs a client whose text ``ask()`` executes tool calls. The flag is
+    read with a ``True`` default, so a duck-typed client without the attribute keeps today's behaviour.
+
+    Raises:
+        ValueError: ``client`` declares that its ``ask()`` runs no tool loop.
+    """
+    if getattr(client, "supports_tool_loop", True) is False:
+        raise ValueError(
+            "agentic retrieval requires a client that executes tool calls inside ask(); "
+            f"{type(client).__name__} ({getattr(client, 'client_type', '?')}) declares supports_tool_loop=False"
+        )
 
 
 def clone_for_tools(client: AbstractClient) -> AbstractClient:
@@ -168,6 +185,7 @@ class AgenticRetriever:
         read_tools: Sequence[AbstractTool],
         load_revision: Callable[[str, str], Optional[DocumentRevision]],
     ) -> None:
+        require_tool_loop(client)
         self._client = client
         self._model = model
         self._read_tools = list(read_tools)
