@@ -32,6 +32,21 @@ def test_optimizer_page_exists_and_names_settings_and_commands() -> None:
         assert name in text, name
 
 
+def test_optimizer_page_documents_feat_853_fixes() -> None:
+    """The optimizer page names the FEAT-853 behaviour: bounded prompts, re-homed anchors, pseudo-headings."""
+    text = PAGE.read_text(encoding="utf-8")
+    for name in (
+        "LLM_INPUT_BUDGET_TOKENS",
+        "window_reads",
+        "key_items_rehomed",
+        "reconcile_key_items",
+        "is_heading_text",
+        "pseudo_heading_segments",
+        "PSEUDO_HEADING_MAX_REPEATS",
+    ):
+        assert name in text, name
+
+
 def test_pages_link_optimizer_page() -> None:
     pageindex = (WIKI / "pageindex.md").read_text(encoding="utf-8")
     assert "pageindex-tree-optimizer.md" in pageindex
