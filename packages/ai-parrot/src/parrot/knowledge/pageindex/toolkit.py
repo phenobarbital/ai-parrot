@@ -1444,14 +1444,25 @@ class PageIndexToolkit(AbstractToolkit):
                 node.get("node_id"): node for node in structure_to_list(base_tree["nodes"]) if node.get("node_id")
             }
 
+            def has_mutable(node: dict) -> bool:
+                """Return whether ``node`` or any descendant is inside the mutable scope."""
+                return id(node) in optimized.mutable or any(has_mutable(child) for child in node.get("nodes") or [])
+
             def restore_protected(node: dict) -> None:
                 """Undo pass effects outside the selected mutable scope."""
                 if id(node) not in optimized.mutable:
                     base = base_by_node_id.get(node.get("node_id"))
                     if base is not None:
-                        node.clear()
-                        node.update(copy.deepcopy(base))
-                    return
+                        if has_mutable(node):
+                            # An ancestor of the scoped section: restore its own fields, keep the candidate children.
+                            children = node.get("nodes")
+                            node.clear()
+                            node.update(copy.deepcopy({key: value for key, value in base.items() if key != "nodes"}))
+                            node["nodes"] = children if children is not None else []
+                        else:
+                            node.clear()
+                            node.update(copy.deepcopy(base))
+                            return
                 for child in node.get("nodes") or []:
                     restore_protected(child)
 

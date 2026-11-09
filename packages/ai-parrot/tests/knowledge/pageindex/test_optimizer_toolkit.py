@@ -154,6 +154,25 @@ async def test_optimize_dry_run_and_apply(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_scoped_optimize_of_inner_section_publishes_changes(tmp_path: Path) -> None:
+    """Scoping to a non-root section applies its changes instead of restoring the base tree."""
+    toolkit = await _tree_with_document(tmp_path)
+    before_tree = await toolkit.get_tree("guide")
+    before = (await toolkit.get_generation("guide"))["id"]
+    inner = before_tree["structure"][0]["nodes"][0]
+    untouched = before_tree["structure"][0]["nodes"][-1]
+    assert untouched["title"] == "Second section"
+
+    report = await toolkit.optimize("guide", node_id=inner["node_id"], apply=True, llm_passes=False)
+
+    assert report["errors"] == []
+    assert report["generation_after"] == before + 1
+    after_tree = await toolkit.get_tree("guide")
+    assert after_tree["structure"][0]["nodes"][0] != inner
+    assert after_tree["structure"][0]["nodes"][-1] == untouched
+
+
+@pytest.mark.asyncio
 async def test_final_staging_validation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Final validation errors return a report and do not publish a partial candidate."""
     toolkit = await _tree_with_document(tmp_path)

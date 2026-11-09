@@ -266,10 +266,18 @@ async def compose_parent(
         return _trim_summary(summary, settings.summary_max_words), "composed"
 
     parts = ["Compose a concise parent summary from the framed document data below."]
+    # Child summaries and key items derive from untrusted document text: frame them like the segments.
     if child_summaries:
-        parts.append(f"Child summaries: {' | '.join(child_summaries)}")
+        parts.append(
+            frame_text("\n".join(child_summaries), source=f"{revision.doc_id}@{revision.revision} child summaries")
+        )
     if key_items:
-        parts.append(f"Key items: {', '.join(str(item) for item in key_items if item)}")
+        parts.append(
+            frame_text(
+                "\n".join(str(item) for item in key_items if item),
+                source=f"{revision.doc_id}@{revision.revision} key items",
+            )
+        )
     parts.append(frame_segments(reads_for(node, revision), source=f"{revision.doc_id}@{revision.revision}"))
     result = await adapter.ask_structured("\n\n".join(parts), SummaryOut, system_prompt=DATA_FRAMING_INSTRUCTION)
     return _trim_summary(result.summary, settings.summary_max_words), "composed"
@@ -390,7 +398,17 @@ async def run_llm_passes(
                             key,
                             lambda node=node: propose_key_items(node, revision, adapter, settings, report=plan.report),
                         )
-                        node["key_items"] = [item.model_dump() for item in items]
+                        # Keep key items already attached (e.g. titles absorbed by a merge); add proposals after them.
+                        merged_items: list[Any] = list(node.get("key_items") or [])
+                        seen = {
+                            (m.get("label"), m.get("seq")) if isinstance(m, dict) else (m.label, m.seq)
+                            for m in merged_items
+                        }
+                        for item in items:
+                            if (item.label, item.seq) not in seen:
+                                seen.add((item.label, item.seq))
+                                merged_items.append(item.model_dump())
+                        node["key_items"] = merged_items
                         plan.report.key_items_added += len(items)
                         plan.report.llm_calls_made += 1
                         _record_stamp(plan, node, "key_items", input_hash, execution)
