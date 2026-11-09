@@ -245,7 +245,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -255,8 +255,9 @@
       "parallelism_notes": "TASK-5358: the ported prompt's 'Antigravity runtime' section links docs/sdd/AGY.md#antigravity-adaptation-contract, which TASK-5358 creates",
       "assigned_to": null,
       "started_at": "2026-11-09T00:08:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5357-agy-sdd-worker-sync.md"
+      "completed_at": "2026-11-09T00:57:22+00:00",
+      "file": "sdd/tasks/completed/TASK-5357-agy-sdd-worker-sync.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5358",
@@ -286,7 +287,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -296,8 +297,9 @@
       "parallelism_notes": "TASK-5358: skills link docs/sdd/AGY.md#antigravity-adaptation-contract it creates (codex/google link check); both modify tests/sdd/test_installer.py",
       "assigned_to": null,
       "started_at": "2026-11-09T00:08:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5359-shared-skill-host-headers.md"
+      "completed_at": "2026-11-09T00:57:23+00:00",
+      "file": "sdd/tasks/completed/TASK-5359-shared-skill-host-headers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5360",
