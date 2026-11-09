@@ -15,7 +15,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence
 
 POLICY_MESSAGE = (
     "Worktree agents may read and execute the shared environment, but must not mutate it. "
@@ -778,6 +778,161 @@ def _is_handwritten_bwrap(command: str) -> bool:
     except ValueError:
         return False
     return bool(words) and (words[0] == "bwrap" or words[0].endswith("/bwrap"))
+
+
+AGY_FILE_TOOLS = frozenset({"write_file", "edit_file"})
+
+
+def _agy_checkout(payload: dict[str, Any], root: Path) -> Path:
+    """Return the checkout named by one validated Antigravity workspace.
+
+    Args:
+        payload: An Antigravity PreToolUse payload.
+        root: The checkout root supplied by the hook caller.
+
+    Returns:
+        The canonical root of the payload's workspace checkout.
+
+    Raises:
+        ValueError: If the workspace context is absent, ambiguous, invalid, or
+            names a checkout other than ``root``.
+    """
+    paths = payload.get("workspacePaths")
+    if not isinstance(paths, list) or len(paths) != 1:
+        raise ValueError("Antigravity requires exactly one workspace path")
+    raw_path = paths[0]
+    if not isinstance(raw_path, str) or not Path(raw_path).is_absolute():
+        raise ValueError("Antigravity workspace path must be an absolute path")
+    workspace = Path(raw_path)
+    if not workspace.is_dir():
+        raise ValueError("Antigravity workspace path must name an existing directory")
+    checkout, _ = repository_paths(workspace)
+    expected, _ = repository_paths(root)
+    if checkout.resolve() != expected.resolve():
+        raise ValueError("Antigravity workspace does not match the active checkout")
+    return checkout.resolve()
+
+
+def _agy_command_policy(cwd: Path, command: str) -> None:
+    """Raise when any simple command in ``command`` mutates a shared environment.
+
+    Args:
+        cwd: The checkout-relative command directory.
+        command: Shell text from an Antigravity ``run_command`` event.
+
+    Raises:
+        ValueError: If one simple command violates the environment policy.
+    """
+    segments = command
+    for marker in _COMPOUND_MARKERS:
+        segments = segments.replace(marker, ";")
+    for segment in segments.split(";"):
+        try:
+            words = shlex.split(segment)
+        except ValueError:
+            continue
+        if error := command_policy_error(cwd, words):
+            raise ValueError(error)
+
+
+def _literal_pythonpath(checkout: Path) -> str | None:
+    """Build a literal PYTHONPATH assignment for package sources in ``checkout``.
+
+    Args:
+        checkout: The canonical checkout root.
+
+    Returns:
+        A shell-safe PYTHONPATH assignment, or ``None`` without source roots.
+    """
+    sources = sorted(str(path) for path in (checkout / "packages").glob("*/src") if path.is_dir())
+    if not sources:
+        return None
+    return "PYTHONPATH=" + shlex.quote(":".join(sources)) + "${PYTHONPATH:+:$PYTHONPATH}"
+
+
+def validate_agy_write_path(checkout: Path, raw_path: str) -> Path:
+    """Confine an Antigravity file-tool target to ``checkout``.
+
+    Args:
+        checkout: The active checkout root.
+        raw_path: The relative or absolute target received from Antigravity.
+
+    Returns:
+        The canonical target path.
+
+    Raises:
+        ValueError: If the target escapes the checkout, enters Git metadata, or
+            aliases a protected shared Python environment.
+    """
+    root = checkout.resolve()
+    candidate = Path(raw_path) if Path(raw_path).is_absolute() else root / raw_path
+    target = candidate.resolve()
+    if target == root or not target.is_relative_to(root):
+        raise ValueError(f"Antigravity file write outside the active checkout {root}: {raw_path}")
+    if target.relative_to(root).parts[0] == ".git":
+        raise ValueError("Antigravity file writes to Git administration are not permitted")
+    validate_write_path(root, target)
+    return target
+
+
+def agy_verdict(
+    payload: dict[str, Any], *, root: Path, backend: str, unattended: bool
+) -> tuple[Literal["deny", "ask"], str, dict[str, str] | None]:
+    """Return an Antigravity permission decision for one PreToolUse payload.
+
+    Args:
+        payload: The Antigravity event payload.
+        root: The active checkout root supplied by the caller.
+        backend: The configured sandbox backend.
+        unattended: Whether the worker runs without an operator.
+
+    Returns:
+        A decision, reason, and optional shallow ``CommandLine`` overwrite.
+    """
+    try:
+        checkout = _agy_checkout(payload, root)
+        call = payload["toolCall"]
+        if not isinstance(call, dict):
+            raise ValueError("Antigravity toolCall must be an object")
+        name, args = call.get("name"), call.get("args")
+        if not isinstance(args, dict):
+            raise ValueError("Antigravity toolCall.args must be an object")
+        if name in AGY_FILE_TOOLS:
+            target = args.get("Path")
+            if not isinstance(target, str) or not target:
+                raise ValueError(f"{name} has no target path the guard can identify")
+            validate_agy_write_path(checkout, target)
+            return "ask", "", None
+        if name != "run_command":
+            return "ask", "", None
+        command = args.get("CommandLine")
+        if not isinstance(command, str) or not command.strip():
+            raise ValueError("run_command CommandLine must be a non-empty string")
+        cwd = checkout
+        if "Cwd" in args:
+            raw_cwd = args["Cwd"]
+            if not isinstance(raw_cwd, str) or not raw_cwd:
+                raise ValueError("run_command Cwd must be a non-empty string")
+            cwd = (checkout / raw_cwd).resolve()
+            if cwd != checkout and not cwd.is_relative_to(checkout):
+                return "ask", "", None
+        _agy_command_policy(cwd, command)
+        if unattended:
+            if backend != "bubblewrap":
+                raise ValueError("unattended agy requires PARROT_SDD_SANDBOX_BACKEND=bubblewrap")
+            shell = bounded_shell_argv(command, {})
+            if (checkout / "packages").is_dir() and any((checkout / "packages").glob("*/src")):
+                protected = shlex.join(protected_argv(cwd, shell, derive_pythonpath=True))
+                wrapped = f"{derived_pythonpath_assignment(checkout)} {protected}"
+            else:
+                wrapped = shlex.join(protected_argv(cwd, shell))
+            return "ask", "", {"CommandLine": wrapped}
+        prefix = _literal_pythonpath(checkout)
+        if prefix is None or command.startswith(prefix):
+            return "ask", "", None
+        return "ask", "", {"CommandLine": f"{prefix} {command}"}
+    except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+        return "deny", str(exc), None
 
 
 def hook_response(payload: dict[str, Any], *, backend: str = "bubblewrap") -> dict[str, Any]:
