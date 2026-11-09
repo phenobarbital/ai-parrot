@@ -91,6 +91,64 @@ from parrot.knowledge.pageindex.okf.concept_id import derive_concept_id, dedup_c
 
 logger = logging.getLogger("parrot.knowledge.pageindex.toolkit")
 
+_OPTIMIZER_LLM_CACHE_MAX = 4096
+
+
+def _subtract_children(start: int, end: int, children: list[dict]) -> list[list[int]]:
+    """Return the ranges of ``[start, end)`` not covered by the children's spans."""
+    cursor = start
+    residuals: list[list[int]] = []
+    for child_start, child_end in sorted(
+        (int(child["span"][0]), int(child["span"][1])) for child in children if child.get("span")
+    ):
+        if child_start > cursor:
+            residuals.append([cursor, min(child_start, end)])
+        cursor = max(cursor, child_end)
+    if cursor < end:
+        residuals.append([cursor, end])
+    return [residual for residual in residuals if residual[0] < residual[1]]
+
+
+def _restore_merged_ownership(node: dict, original_spans: dict[Any, list[int]]) -> None:
+    """Restore the ranges a node absorbed during normalization, recovered from its stable aliases."""
+    children = node.get("nodes") or []
+    for child in children:
+        _restore_merged_ownership(child, original_spans)
+    spans = [list(node["span"])] if node.get("span") else []
+    spans.extend(original_spans[alias] for alias in node.get("aliases") or [] if alias in original_spans)
+    spans.extend(list(child["span"]) for child in children if child.get("span"))
+    if not spans:
+        return
+    start = min(int(span[0]) for span in spans)
+    end = max(int(span[1]) for span in spans)
+    node["span"] = [start, end]
+    node["owned"] = _subtract_children(start, end, children)
+
+
+def _assign_concept_ids(nodes: list[dict], parent_path: str = "", frozen: Optional[set[int]] = None) -> None:
+    """Assign missing concept ids and deduplicate each sibling list.
+
+    Args:
+        nodes: Sibling nodes to process (recursively).
+        parent_path: Concept path of the parent.
+        frozen: ``id()`` of nodes that must keep their current concept id (protected nodes outside the
+            optimizer's scope); deduplication may only rename the others.
+    """
+    frozen = frozen or set()
+    saved = {id(node): node.get("concept_id") for node in nodes if id(node) in frozen}
+    for node in nodes:
+        if not node.get("concept_id"):
+            node["concept_id"] = derive_concept_id(str(node.get("title", "")), parent_path)
+    dedup_concept_ids(nodes)
+    for node in nodes:
+        if id(node) in frozen and saved.get(id(node)):
+            node["concept_id"] = saved[id(node)]
+    for node in nodes:
+        children = node.get("nodes") or []
+        if children:
+            _assign_concept_ids(children, str(node["concept_id"]), frozen)
+
+
 _MAX_TREES_HARD_CAP = 10
 REPLACED_MARKER = "--replaced-"
 _REPLACED_MARKER = REPLACED_MARKER  # backwards-compatible alias
@@ -228,6 +286,7 @@ class PageIndexToolkit(AbstractToolkit):
             if isinstance(optimizer_settings, dict) or optimizer_settings is None
             else optimizer_settings
         )
+        self._optimizer_llm_cache: dict[str, Any] = {}
         self._agentic_clone: Optional[AbstractClient] = None
         self._agentic_lock = asyncio.Lock()
 
@@ -1395,7 +1454,11 @@ class PageIndexToolkit(AbstractToolkit):
         if min_leaf_tokens is not None:
             overrides["min_leaf_tokens"] = min_leaf_tokens
         settings = self._optimizer_settings.model_copy(update=overrides)
-        llm_cache: dict[str, Any] = {}
+        # Content-addressed (pass input + model + settings), so safe to share across calls: a retry after a
+        # transient failure, or an apply after a dry run, reuses every LLM result already obtained.
+        if len(self._optimizer_llm_cache) > _OPTIMIZER_LLM_CACHE_MAX:
+            self._optimizer_llm_cache.clear()
+        llm_cache = self._optimizer_llm_cache
 
         async def plan(tree: dict[str, Any]) -> tuple[Any, Revisions]:
             """Plan, enrich, and validate one fresh tree snapshot."""
@@ -1409,35 +1472,9 @@ class PageIndexToolkit(AbstractToolkit):
                 for node in structure_to_list(base_tree["nodes"])
                 if node.get("concept_id") and node.get("span")
             }
-
-            def restore_merged_ownership(node: dict) -> None:
-                """Restore ranges absorbed by deterministic normalization."""
-                children = node.get("nodes") or []
-                for child in children:
-                    restore_merged_ownership(child)
-                spans = [list(node["span"])] if node.get("span") else []
-                spans.extend(original_spans[alias] for alias in node.get("aliases") or [] if alias in original_spans)
-                spans.extend(list(child["span"]) for child in children if child.get("span"))
-                if not spans:
-                    return
-                start = min(int(span[0]) for span in spans)
-                end = max(int(span[1]) for span in spans)
-                node["span"] = [start, end]
-                cursor = start
-                owned: list[list[int]] = []
-                for child_start, child_end in sorted(
-                    (int(child["span"][0]), int(child["span"][1])) for child in children if child.get("span")
-                ):
-                    if child_start > cursor:
-                        owned.append([cursor, min(child_start, end)])
-                    cursor = max(cursor, child_end)
-                if cursor < end:
-                    owned.append([cursor, end])
-                node["owned"] = [span for span in owned if span[0] < span[1]]
-
             for root in optimized.candidate.get("nodes") or []:
                 if any(id(node) in optimized.mutable for node in structure_to_list([root])):
-                    restore_merged_ownership(root)
+                    _restore_merged_ownership(root, original_spans)
             await run_llm_passes(optimized, revisions, self._adapter, settings)
 
             base_by_node_id = {
@@ -1473,17 +1510,6 @@ class PageIndexToolkit(AbstractToolkit):
                 optimized.report.errors.extend(errors)
             return optimized, revisions
 
-        def assign_concept_ids(nodes: list[dict], parent_path: str = "") -> None:
-            """Assign missing ids and deduplicate each sibling list."""
-            for node in nodes:
-                if not node.get("concept_id"):
-                    node["concept_id"] = derive_concept_id(str(node.get("title", "")), parent_path)
-            dedup_concept_ids(nodes)
-            for node in nodes:
-                children = node.get("nodes") or []
-                if children:
-                    assign_concept_ids(children, str(node["concept_id"]))
-
         def stage_bodies(txn: WriteTransaction, optimized: Any, revisions: Revisions) -> None:
             """Stage views only for optimizer-owned mutable nodes."""
             for candidate in structure_to_list(optimized.candidate.get("nodes", [])):
@@ -1516,20 +1542,40 @@ class PageIndexToolkit(AbstractToolkit):
             return optimized.report.model_dump()
 
         failed_report: Optional[OptimizeReport] = None
+        # Plan (and run the LLM passes) on a snapshot BEFORE taking the tree lock; the transaction reuses this
+        # plan only when the generation it opens is the one that was planned, and re-plans otherwise.
+        snapshot = copy.deepcopy(self._load_tree(tree_name))
+        snapshot_generation = generation_of(snapshot)
+        prepared: dict[str, Any] = {"plan": await plan(snapshot), "generation": snapshot_generation}
 
         async def apply_plan(txn: WriteTransaction) -> OptimizeReport:
-            """Re-plan from the transaction snapshot so stale retries are safe."""
+            """Commit the pre-planned candidate, or re-plan from the transaction snapshot when it is stale."""
             nonlocal failed_report
-            optimized, revisions = await plan(txn.tree)
+            pre_plan = prepared.pop("plan", None)
+            pre_generation = prepared.get("generation")
+            if (
+                pre_plan is not None
+                and pre_generation is not None
+                and txn.base_generation is not None
+                and txn.base_generation.id == pre_generation.id
+            ):
+                optimized, revisions = pre_plan
+            else:
+                optimized, revisions = await plan(txn.tree)
             if optimized.report.errors:
                 failed_report = optimized.report
                 raise ValueError("; ".join(optimized.report.errors))
             candidate_tree = copy.deepcopy(txn.tree)
             candidate_tree["structure"] = optimized.candidate.get("nodes") or []
             reindex_node_ids(candidate_tree)
-            assign_concept_ids(candidate_tree["structure"])
+            frozen = {
+                id(node) for node in structure_to_list(candidate_tree["structure"]) if id(node) not in optimized.mutable
+            }
+            _assign_concept_ids(candidate_tree["structure"], frozen=frozen)
             stage_bodies(txn, optimized, revisions)
             finalize_stamps(optimized)
+            # Protected-node equality was already validated at plan time against this same generation's tree
+            # (before node ids were renumbered), so only ownership and anchors are re-checked here.
             errors = validate_candidate(optimized, revisions, base_tree={"nodes": []})
             if errors:
                 optimized.report.errors.extend(errors)
@@ -2224,37 +2270,8 @@ class PageIndexToolkit(AbstractToolkit):
             tree_name=txn.tree_name,
         )
 
-        def subtract_children(start: int, end: int, children: list[dict]) -> list[list[int]]:
-            """Return parent-owned ranges after subtracting child spans."""
-            cursor = start
-            residuals: list[list[int]] = []
-            for child_start, child_end in sorted(
-                (int(child["span"][0]), int(child["span"][1])) for child in children if child.get("span")
-            ):
-                if child_start > cursor:
-                    residuals.append([cursor, min(child_start, end)])
-                cursor = max(cursor, child_end)
-            if cursor < end:
-                residuals.append([cursor, end])
-            return [residual for residual in residuals if residual[0] < residual[1]]
-
-        def restore_merged_ownership(node: dict) -> None:
-            """Restore ranges absorbed during normalization from stable aliases."""
-            children = node.get("nodes") or []
-            for child in children:
-                restore_merged_ownership(child)
-            spans = [list(node["span"])] if node.get("span") else []
-            spans.extend(original_spans[alias] for alias in node.get("aliases") or [] if alias in original_spans)
-            spans.extend(list(child["span"]) for child in children if child.get("span"))
-            if not spans:
-                return
-            start = min(int(span[0]) for span in spans)
-            end = max(int(span[1]) for span in spans)
-            node["span"] = [start, end]
-            node["owned"] = subtract_children(start, end, children)
-
         for root in plan.candidate.get("nodes") or []:
-            restore_merged_ownership(root)
+            _restore_merged_ownership(root, original_spans)
         await run_llm_passes(
             plan,
             revisions,
@@ -2265,19 +2282,8 @@ class PageIndexToolkit(AbstractToolkit):
 
         optimized_roots = plan.candidate.get("nodes") or []
 
-        def assign_concept_ids(nodes: list[dict], parent_path: str = "") -> None:
-            """Assign and sibling-deduplicate concept ids below imported roots."""
-            for node in nodes:
-                if not node.get("concept_id"):
-                    node["concept_id"] = derive_concept_id(str(node.get("title", "")), parent_path)
-            dedup_concept_ids(nodes)
-            for node in nodes:
-                children = node.get("nodes") or []
-                if children:
-                    assign_concept_ids(children, str(node["concept_id"]))
-
         for root in optimized_roots:
-            assign_concept_ids([root])
+            _assign_concept_ids([root])
             for node in structure_to_list(root):
                 plan.mutable.add(id(node))
                 plan.touched.add(id(node))

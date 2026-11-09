@@ -219,3 +219,17 @@ def test_validate_candidate(revision: DocumentRevision) -> None:
     }
     plan = OptimizePlan(candidate, OptimizeReport())
     assert len(validate_candidate(plan, {("doc", revision.revision): revision}, base_tree=candidate)) >= 2
+
+
+def test_refresh_after_counts_tracks_candidate_changes(revision: DocumentRevision) -> None:
+    """The report's after-counters follow later structural passes such as LLM heading splits."""
+    from parrot.knowledge.pageindex.optimizer import refresh_after_counts
+
+    tree = {"nodes": [{"node_id": "0000", "doc_id": "doc", "revision": revision.revision, "title": "Doc", "nodes": []}]}
+    plan = plan_deterministic(tree, {("doc", revision.revision): revision}, OptimizerSettings(), tree_name="t")
+    before = plan.report.nodes_after
+
+    plan.candidate["nodes"][0]["nodes"].append({"title": "Added", "nodes": []})
+    refresh_after_counts(plan, {("doc", revision.revision): revision}, OptimizerSettings())
+
+    assert plan.report.nodes_after == before + 1

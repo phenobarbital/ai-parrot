@@ -24,6 +24,7 @@ from parrot.knowledge.pageindex.optimizer import (
     owned_tokens,
     pass_cache_key,
     pass_input,
+    refresh_after_counts,
     split_at,
 )
 from parrot.knowledge.pageindex.segments import DocumentRevision, Segment, SegmentAddress, SegmentRead
@@ -327,6 +328,35 @@ def _is_completed(
     )
 
 
+def _estimate_llm_calls(
+    plan: OptimizePlan,
+    nodes: list[dict],
+    revision: DocumentRevision,
+    adapter: Optional[Any],
+    settings: OptimizerSettings,
+    *,
+    with_summaries: bool,
+) -> int:
+    """Count the LLM calls the passes would make on the current candidate (splits made later add more)."""
+    estimate = 0
+    execution = execution_digest(adapter, mode="live")
+    for node in nodes:
+        if id(node) not in plan.mutable:
+            continue
+        is_leaf = not node.get("nodes")
+        if is_leaf:
+            if not _is_completed(plan, node, settings, "headings", pass_input(node, "headings"), execution):
+                estimate += 1
+            if owned_tokens(node, revision) > settings.target_leaf_tokens and not _is_completed(
+                plan, node, settings, "key_items", pass_input(node, "key_items"), execution
+            ):
+                estimate += 1
+        if with_summaries and (not is_leaf or owned_tokens(node, revision) > settings.inline_summary_tokens):
+            if not _is_completed(plan, node, settings, "summary", pass_input(node, "summary"), execution):
+                estimate += 1
+    return estimate
+
+
 async def run_llm_passes(
     plan: OptimizePlan,
     revisions: Revisions,
@@ -365,8 +395,11 @@ async def run_llm_passes(
             revision = revisions[(root["doc_id"], root["revision"])]
             nodes = [node for level in _nodes_by_depth(root).values() for node in level]
             if live:
+                plan.report.llm_calls_estimated += _estimate_llm_calls(
+                    plan, nodes, revision, adapter, settings, with_summaries=with_summaries
+                )
                 for node in list(nodes):
-                    if node.get("nodes"):
+                    if node.get("nodes") or id(node) not in plan.mutable:
                         continue
                     input_hash = pass_input(node, "headings")
                     execution = execution_digest(adapter, mode="live")
@@ -380,13 +413,20 @@ async def run_llm_passes(
                         )
                         plan.report.llm_calls_made += 1
                         split_at(node, revision, headings, source="llm", settings=settings, report=plan.report)
+                        for piece in node.get("nodes") or []:
+                            plan.mutable.add(id(piece))
+                            plan.touched.add(id(piece))
                         _record_stamp(plan, node, "headings", input_hash, execution)
                     except Exception as error:
                         plan.report.errors.append(str(error))
 
                 nodes = [node for level in _nodes_by_depth(root).values() for node in level]
                 for node in nodes:
-                    if node.get("nodes") or owned_tokens(node, revision) <= settings.target_leaf_tokens:
+                    if (
+                        node.get("nodes")
+                        or id(node) not in plan.mutable
+                        or owned_tokens(node, revision) <= settings.target_leaf_tokens
+                    ):
                         continue
                     input_hash = pass_input(node, "key_items")
                     execution = execution_digest(adapter, mode="live")
@@ -421,6 +461,8 @@ async def run_llm_passes(
             for depth in sorted(levels, reverse=True):
 
                 async def summarize(node: dict) -> None:
+                    if id(node) not in plan.mutable:
+                        return
                     input_hash = pass_input(node, "summary")
                     is_leaf = not node.get("nodes")
                     mode = (
@@ -454,6 +496,7 @@ async def run_llm_passes(
                 for result in results:
                     if isinstance(result, Exception):
                         plan.report.errors.append(str(result))
+        refresh_after_counts(plan, revisions, settings)
     finally:
         if token is not None:
             _LLM_SEMAPHORE.reset(token)

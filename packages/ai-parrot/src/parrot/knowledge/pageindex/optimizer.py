@@ -128,6 +128,7 @@ class OptimizePlan:
         self.touched: set[int] = set()
         self.pending_stamps: dict[int, dict[str, PassStamp]] = {}
         self.llm_cache: dict[str, Any] = {}
+        self.optimizable_roots: list[dict] = []
 
 
 def _ranges_contiguous(ranges: list[list[int]]) -> bool:
@@ -631,11 +632,17 @@ def plan_deterministic(
 
     for root in roots:
         mark_mutable(root)
-    report.nodes_after = len(structure_to_list(candidate))
+    plan.optimizable_roots = roots
     before_roots = optimizable_roots(tree, revisions, node_id=node_id)
     report.leaves_over_target_before = leaves_over_target(before_roots, revisions, settings)
-    report.leaves_over_target_after = leaves_over_target(roots, revisions, settings)
+    refresh_after_counts(plan, revisions, settings)
     return plan
+
+
+def refresh_after_counts(plan: OptimizePlan, revisions: Revisions, settings: OptimizerSettings) -> None:
+    """Recompute the report's ``*_after`` counters from the current candidate (call after any structural pass)."""
+    plan.report.nodes_after = len(structure_to_list(plan.candidate))
+    plan.report.leaves_over_target_after = leaves_over_target(plan.optimizable_roots, revisions, settings)
 
 
 def _node_fields(node: dict) -> dict:

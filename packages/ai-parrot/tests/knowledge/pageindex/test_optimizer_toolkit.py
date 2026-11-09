@@ -173,6 +173,83 @@ async def test_scoped_optimize_of_inner_section_publishes_changes(tmp_path: Path
 
 
 @pytest.mark.asyncio
+async def test_scoped_optimize_keeps_concept_ids_outside_scope(tmp_path: Path) -> None:
+    """Sibling concept ids outside the scoped node are never re-deduplicated by an apply."""
+    toolkit = await _tree_with_document(tmp_path)
+    before_tree = await toolkit.get_tree("guide")
+    inner = before_tree["structure"][0]["nodes"][0]
+    outside = [n["concept_id"] for n in before_tree["structure"][0]["nodes"][1:]]
+    assert len(set(outside)) < len(outside)  # the fixture has duplicate sibling concept ids
+
+    report = await toolkit.optimize("guide", node_id=inner["node_id"], apply=True, llm_passes=False)
+
+    assert report["errors"] == []
+    after_tree = await toolkit.get_tree("guide")
+    assert [n["concept_id"] for n in after_tree["structure"][0]["nodes"][1:]] == outside
+
+
+@pytest.mark.asyncio
+async def test_dry_run_llm_results_are_reused_by_apply(tmp_path: Path) -> None:
+    """The content-addressed LLM cache is shared across calls, so an apply repeats no model call."""
+    from parrot.knowledge.pageindex.optimizer_llm import HeadingProposals, KeyItemProposals, SummaryOut
+
+    adapter = MagicMock(client=MagicMock(), model="test-model")
+
+    async def structured(prompt: str, output_model: type, **kwargs: object) -> object:
+        """Return an empty, schema-valid proposal for each pass."""
+        if output_model is HeadingProposals:
+            return HeadingProposals(seqs=[])
+        if output_model is KeyItemProposals:
+            return KeyItemProposals(items=[])
+        return SummaryOut(summary="short summary")
+
+    adapter.ask_structured = AsyncMock(side_effect=structured)
+    adapter.ask = AsyncMock(return_value="description")
+    toolkit = PageIndexToolkit(
+        adapter=adapter,
+        storage_dir=tmp_path,
+        optimize_on_import=False,
+        optimizer_settings={"target_leaf_tokens": 20, "min_leaf_tokens": 0},
+    )
+    await toolkit.create_tree("guide")
+    await toolkit.insert_markdown("guide", "# Guide\n\n## A\n\n" + "Alpha text sentence. " * 30)
+
+    dry = await toolkit.optimize("guide")
+    calls_after_dry_run = adapter.ask_structured.await_count
+    applied = await toolkit.optimize("guide", apply=True)
+
+    assert dry["llm_passes"] == "ran"
+    assert dry["llm_calls_estimated"] > 0
+    assert calls_after_dry_run > 0
+    assert adapter.ask_structured.await_count == calls_after_dry_run
+    assert applied["errors"] == []
+
+
+@pytest.mark.asyncio
+async def test_locked_nodes_make_no_llm_calls(tmp_path: Path) -> None:
+    """Locked subtrees are excluded from the LLM passes, so no model call is spent on them."""
+    adapter = MagicMock(client=MagicMock(), model="test-model")
+    adapter.ask_structured = AsyncMock(side_effect=AssertionError("locked node sent to the model"))
+    adapter.ask = AsyncMock(return_value="description")
+    toolkit = PageIndexToolkit(
+        adapter=adapter,
+        storage_dir=tmp_path,
+        optimize_on_import=False,
+        optimizer_settings={"target_leaf_tokens": 20, "min_leaf_tokens": 0},
+    )
+    await toolkit.create_tree("guide")
+    await toolkit.insert_markdown("guide", "# Guide\n\n## A\n\n" + "Alpha text sentence. " * 30)
+    root = (await toolkit.get_tree("guide"))["structure"][0]
+    await toolkit.update_node("guide", root["node_id"], locked=True)
+
+    report = await toolkit.optimize("guide", apply=True)
+
+    assert adapter.ask_structured.await_count == 0
+    assert report["errors"] == []
+    assert report["llm_calls_made"] == 0
+
+
+@pytest.mark.asyncio
 async def test_final_staging_validation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Final validation errors return a report and do not publish a partial candidate."""
     toolkit = await _tree_with_document(tmp_path)
