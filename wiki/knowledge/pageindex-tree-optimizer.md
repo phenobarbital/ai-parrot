@@ -80,7 +80,17 @@ Tokens are always counted over the segments a node **owns** (its `owned` ranges)
    segment kinds are not changed (the segmenter still types those lines `paragraph`).
    Repeat counts are keyed by `running_key` (casefold, digit runs collapsed to `#`), so a running footer that differs
    only by its page number (`CHAPTER THREE PAGE 19`, `APPENDIX C PAGE 428`) counts as one repeated title and is
-   ignored once it occurs more than `PSEUDO_HEADING_MAX_REPEATS` times. Pieces created from a paged revision (a PDF)
+   ignored once it occurs more than `PSEUDO_HEADING_MAX_REPEATS` times.
+   That count only sees one leaf, and a two- or three-page piece holds its footer once or twice, so a paged revision
+   also has **document running lines** (FEAT-859, `issue:5a605ae51f61`): `document_running_keys(revision)` returns
+   the `running_key` of every paragraph title that sits on more than `PSEUDO_HEADING_MAX_REPEATS` distinct pages,
+   never twice on one page, and covers at least `RUNNING_LINE_MIN_DENSITY` (0.8) of the page range it spans.
+   `pseudo_heading_segments` drops those titles in any leaf. `plan_deterministic` computes the set once per document
+   (a document has one root per top-level section) and passes it to `expand_at_headings`, which hands it down the
+   recursion (`running_keys`; called without it, each function computes it itself). A page footer covers its whole range once per page; a real
+   heading repeated through a book does not (Kant's `PRIMERA SECCIÓN` covers 0.03 of its range, numbered chapters
+   0.30), and reference labels such as `[SP 800-39]` stack on one page, so both stay with the per-leaf rule. An
+   unpaged revision has no document running lines. Pieces created from a paged revision (a PDF)
    carry `start_index` (page of the first owned segment) and `end_index` (page of the last owned segment); pieces
    of an unpaged revision (ebook, markdown) carry neither key. Every split — layout or LLM —
    moves the split leaf's key items onto the piece that now owns their anchor.
