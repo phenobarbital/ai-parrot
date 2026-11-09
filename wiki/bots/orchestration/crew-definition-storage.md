@@ -75,9 +75,16 @@ mock-only or skipped live tests do not prove destructive cleanup safety.
 ## Gotchas
 
 - PostgreSQL mode fails closed. An outage or malformed authoritative row is not absence; the crew definition
-  endpoints (create, read, update, delete) return `503` for storage failures and `409` for identity conflicts. Other
-  callers of `BotManager.get_crew` (execution, saved executions, the orchestrator and the scheduler) do not map these
-  typed errors yet, so they surface as their own generic failures.
+  endpoints (create, read, update, delete), crew execution and saved-execution replay return `503` for storage
+  failures and `409` for identity conflicts. The scheduler and the autonomous orchestrator are not HTTP callers: a
+  storage error there fails that job with the typed error instead of being reported as a missing crew.
+- Creating a crew never replaces a live crew of the same name: it returns `409`. A tombstoned name may be created
+  again explicitly. A malformed authoritative row can still be deleted, because the tombstone is written from its
+  stored identity.
+- The startup migration report is logged: a summary line plus a warning for each conflict, kept source and failed
+  Redis cleanup.
+- A malformed or conflicting Redis source is skipped (and logged) when listing crews, so it cannot hide the
+  authoritative PostgreSQL definitions; an unreachable Redis still fails the listing.
 - PostgreSQL reserves both `(tenant, name)` and `(tenant, crew_id)`. Redis fallback is allowed only when both
   identities are confirmed absent from PostgreSQL.
 - Deletes commit a tombstone before cache eviction or best-effort Redis cleanup. Tombstones are not auto-purged,

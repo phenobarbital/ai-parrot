@@ -38,7 +38,7 @@ def _manager(storage: MagicMock) -> BotManager:
 async def test_persistence_precedes_cache_mutation() -> None:
     """Failed PostgreSQL writes leave a prior cache entry unchanged."""
     storage = MagicMock()
-    storage.save_crew = AsyncMock(side_effect=CrewStorageUnavailable("down"))
+    storage.create_crew = AsyncMock(side_effect=CrewStorageUnavailable("down"))
     manager = _manager(storage)
     old_crew = MagicMock()
     old_definition = _definition()
@@ -48,6 +48,67 @@ async def test_persistence_precedes_cache_mutation() -> None:
         await manager.add_crew("new", MagicMock(), _definition("new", "new-id"))
 
     assert manager._crews == {"tenant:crew": (old_crew, old_definition)}
+
+
+@pytest.mark.asyncio
+async def test_create_uses_non_overwriting_insert_and_conflict_keeps_cache() -> None:
+    """A create never upserts, and a same-name conflict leaves the cache unchanged."""
+    storage = MagicMock()
+    storage.create_crew = AsyncMock(side_effect=CrewStorageConflict("name taken"))
+    storage.save_crew = AsyncMock()
+    manager = _manager(storage)
+
+    with pytest.raises(CrewStorageConflict):
+        await manager.add_crew("crew", MagicMock(), _definition())
+
+    storage.save_crew.assert_not_called()
+    assert manager._crews == {}
+
+    storage.create_crew = AsyncMock(return_value=True)
+    crew = MagicMock()
+    await manager.add_crew("crew", crew, _definition())
+
+    storage.create_crew.assert_awaited_once()
+    assert "tenant:crew" in manager._crews
+
+
+@pytest.mark.asyncio
+async def test_malformed_authoritative_row_is_tombstoned_by_identity() -> None:
+    """A row whose document cannot be decoded is still deletable through its stored identity."""
+    storage = MagicMock()
+    resolution = CrewDeletionResolution(state="active", definition=None, tenant="tenant", name="crew", crew_id="bad-id")
+    storage.resolve_for_delete = AsyncMock(return_value=resolution)
+    storage.tombstone_resolution = AsyncMock(return_value=True)
+    manager = _manager(storage)
+    manager._crews["tenant:crew"] = (MagicMock(), _definition(crew_id="bad-id"))
+
+    assert await manager.remove_crew("crew", "tenant") is True
+
+    storage.tombstone_resolution.assert_awaited_once_with(resolution)
+    storage.delete_crew.assert_not_called()
+    assert manager._crews == {}
+
+
+def test_migration_report_is_logged() -> None:
+    """Startup migration conflicts, failures and cleanup problems are surfaced in the log."""
+    from parrot.handlers.crew.definition_storage import CrewMigrationReport
+
+    manager = _manager(MagicMock())
+    manager.logger = MagicMock()
+    report = CrewMigrationReport(
+        migrated=["a:one"],
+        conflicts=["a:two"],
+        failed={"a:two": "definition conflict"},
+        redis_cleanup_failed=["a:three"],
+    )
+
+    manager._log_crew_migration_report(report)
+
+    warnings = [call.args for call in manager.logger.warning.call_args_list]
+    assert any("a:two" in args for args in warnings)
+    assert any("a:three" in args for args in warnings)
+    summary = manager.logger.info.call_args.args
+    assert summary[1:7] == (1, 0, 0, 1, 1, 1)
 
 
 @pytest.mark.asyncio

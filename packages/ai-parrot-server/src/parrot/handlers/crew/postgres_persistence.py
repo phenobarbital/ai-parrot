@@ -59,6 +59,30 @@ ON CONFLICT (tenant, name) DO NOTHING
 RETURNING crew_id
 """
 
+_CREATE_SQL = f"""
+INSERT INTO {TABLE} (
+    tenant, name, crew_id, description, execution_mode, definition,
+    created_at, updated_at, deleted_at
+) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, NULL)
+ON CONFLICT (tenant, name) DO UPDATE SET
+    crew_id = EXCLUDED.crew_id,
+    description = EXCLUDED.description,
+    execution_mode = EXCLUDED.execution_mode,
+    definition = EXCLUDED.definition,
+    created_at = EXCLUDED.created_at,
+    updated_at = EXCLUDED.updated_at,
+    deleted_at = NULL
+WHERE {TABLE}.deleted_at IS NOT NULL
+RETURNING crew_id
+"""
+
+_TOMBSTONE_IDENTITY_SQL = f"""
+UPDATE {TABLE}
+SET deleted_at = $4, updated_at = $4
+WHERE tenant = $1 AND name = $2 AND crew_id = $3
+RETURNING crew_id
+"""
+
 _DELETE_SQL = f"""
 INSERT INTO {TABLE} (
     tenant, name, crew_id, description, execution_mode, definition,
@@ -193,6 +217,51 @@ class CrewPostgres:
         if saved_id is None:
             raise RuntimeError("Postgres did not confirm the crew definition save")
         crew.updated_at = updated_at
+        return True
+
+    async def create_crew(self, crew: CrewDefinition) -> bool:
+        """Create a crew without replacing a live same-name row.
+
+        A new name is inserted and a tombstoned name is explicitly revived; a live row of the same
+        name leaves storage untouched. A ``crew_id`` collision raises the driver's integrity error.
+
+        Args:
+            crew: Definition to create.
+
+        Returns:
+            ``True`` when created, ``False`` when a live crew already holds the name.
+        """
+        await self._ensure_ready()
+        created_at = datetime.now(timezone.utc)
+        db = self._get_db()
+        async with await db.connection() as conn:
+            created_id = await conn.fetchval(_CREATE_SQL, *self._write_args(crew, created_at))
+        if created_id is None:
+            return False
+        crew.updated_at = created_at
+        return True
+
+    async def tombstone_identity(self, tenant: str | None, name: str, crew_id: str) -> bool:
+        """Tombstone a stored row by identity, even when its document cannot be decoded.
+
+        Args:
+            tenant: Tenant identifier, defaulting to ``"global"``.
+            name: Stored crew name.
+            crew_id: Stored crew identifier the caller resolved.
+
+        Returns:
+            ``True`` once the tombstone is committed.
+
+        Raises:
+            ValueError: If the row no longer carries the expected identity.
+        """
+        await self._ensure_ready()
+        deleted_at = datetime.now(timezone.utc)
+        db = self._get_db()
+        async with await db.connection() as conn:
+            tombstoned = await conn.fetchval(_TOMBSTONE_IDENTITY_SQL, tenant or "global", name, crew_id, deleted_at)
+        if tombstoned is None:
+            raise ValueError(f"Crew {tenant or 'global'}:{name!s} no longer has identity {crew_id!r}")
         return True
 
     async def insert_if_absent(self, crew: CrewDefinition) -> bool:

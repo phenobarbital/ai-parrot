@@ -13,6 +13,7 @@ from parrot.handlers.crew.models import (
 )
 from ..jobs import JobManager
 from ._tenancy import resolve_session_tenant
+from .definition_storage import CrewStorageConflict, CrewStorageUnavailable
 
 
 @is_authenticated()
@@ -777,6 +778,10 @@ class CrewExecutionHandler(BaseView):
                 "execution_mode": selected_mode.value
             }, status=202)
 
+        except CrewStorageUnavailable:
+            return self.error(response={"message": "Crew storage is unavailable"}, status=503)
+        except CrewStorageConflict:
+            return self.error(response={"message": "Crew storage conflict"}, status=409)
         except web.HTTPError:
             # FEAT-446: let resolve_session_tenant's 403/400 (and any other
             # deliberately-raised HTTP error) propagate instead of being

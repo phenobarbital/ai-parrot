@@ -258,6 +258,45 @@ async def test_write_requires_returning_confirmation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_only_replaces_tombstones() -> None:
+    """Create inserts or revives a tombstone, reports a live name, and keeps driver errors intact."""
+    crew = _crew()
+    integrity_error = RuntimeError("uq_crew_definitions_tenant_crew_id")
+    connection = FakeConnection(fetchval_results=[crew.crew_id, None, integrity_error])
+    store, database = _store(connection)
+
+    before = crew.updated_at
+    assert await store.create_crew(crew) is True
+    assert crew.updated_at > before
+    assert await store.create_crew(_crew(name="other", crew_id="crew-2")) is False
+    with pytest.raises(RuntimeError) as raised:
+        await store.create_crew(_crew(name="third", crew_id="crew-3"))
+    assert raised.value is integrity_error
+
+    sql = connection.calls[0][1]
+    assert "WHERE navigator.crew_definitions.deleted_at IS NOT NULL" in sql
+    assert "deleted_at = NULL" in sql
+    assert isinstance(connection.calls[0][2][5], dict)
+    assert database.context.entered == database.context.exited == 3
+
+
+@pytest.mark.asyncio
+async def test_tombstone_identity_requires_matching_identity() -> None:
+    """A tombstone by identity succeeds only while the row still has the resolved crew_id."""
+    connection = FakeConnection(fetchval_results=["crew-1", None])
+    store, _ = _store(connection)
+
+    assert await store.tombstone_identity("acme", "research", "crew-1") is True
+    with pytest.raises(ValueError, match="no longer has identity"):
+        await store.tombstone_identity("acme", "research", "stale-id")
+
+    sql, args = connection.calls[0][1], connection.calls[0][2]
+    assert "WHERE tenant = $1 AND name = $2 AND crew_id = $3" in sql
+    assert args[:3] == ("acme", "research", "crew-1")
+    assert isinstance(args[3], datetime)
+
+
+@pytest.mark.asyncio
 async def test_lock_release_and_retry_after_failure() -> None:
     """The dedicated lock session releases on errors/cancellation and does not run DDL."""
     connection = FakeConnection(fetchval_results=[True, True, True, True])

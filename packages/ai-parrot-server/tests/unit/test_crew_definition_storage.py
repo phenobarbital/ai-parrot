@@ -12,6 +12,7 @@ import pytest
 
 from parrot.handlers.crew.definition_storage import (
     CrewDefinitionStorage,
+    CrewStorageConflict,
     CrewStorageUnavailable,
 )
 from parrot.handlers.crew.redis_persistence import CrewRedisCleanupResult
@@ -51,6 +52,7 @@ class FakePostgres:
         self.closed = False
         self.lock_acquired = True
         self.lock_released = False
+        self.malformed: set[str] = set()
 
     async def ping(self) -> bool:
         """Return configurable health."""
@@ -66,6 +68,26 @@ class FakePostgres:
             raise self.save_error
         self.rows = [row for row in self.rows if (row.tenant, row.name) != (crew.tenant, crew.name)]
         self.rows.append(_row(crew))
+        return True
+
+    async def create_crew(self, crew: CrewDefinition) -> bool:
+        """Create a new name or revive a tombstone; refuse a live same-name row."""
+        existing = await self._load_row(crew.name, crew.tenant)
+        if existing is not None and existing.deleted_at is None:
+            return False
+        by_id = await self._load_row_by_id(crew.crew_id, crew.tenant)
+        if by_id is not None and (existing is None or by_id.crew_id != existing.crew_id):
+            raise ValueError("identity conflict")
+        self.rows = [row for row in self.rows if (row.tenant, row.name) != (crew.tenant, crew.name)]
+        self.rows.append(_row(crew))
+        return True
+
+    async def tombstone_identity(self, tenant: str | None, name: str, crew_id: str) -> bool:
+        """Tombstone a stored row by identity without decoding its document."""
+        existing = await self._load_row(name, tenant)
+        if existing is None or existing.crew_id != crew_id:
+            raise ValueError("identity conflict")
+        existing.deleted_at = datetime.now(timezone.utc)
         return True
 
     async def insert_if_absent(self, crew: CrewDefinition) -> bool:
@@ -111,7 +133,9 @@ class FakePostgres:
             self.lock_released = True
 
     def _decode_row(self, row: SimpleNamespace) -> CrewDefinition:
-        """Return the decoded fake document."""
+        """Return the decoded fake document, or fail like a malformed stored payload."""
+        if row.name in self.malformed:
+            raise ValueError("malformed stored definition")
         return row.definition
 
 
@@ -125,6 +149,7 @@ class FakeRedis:
         self.delete_crew = AsyncMock(return_value=True)
         self.closed = False
         self.incomplete_name: str | None = None
+        self.unreadable_name: str | None = None
         self.cleanup = AsyncMock(return_value=CrewRedisCleanupResult.deleted)
 
     async def ping(self) -> bool:
@@ -151,6 +176,8 @@ class FakeRedis:
 
     async def snapshot_crew(self, name: str, tenant: str | None = None) -> SimpleNamespace | None:
         """Return one snapshot or model an entry disappearing during capture."""
+        if name == self.unreadable_name:
+            raise ValueError("malformed Redis definition")
         if name == self.incomplete_name:
             return None
         crew = await self.load_crew(name, tenant)
@@ -217,6 +244,78 @@ async def test_union_snapshot_order_and_incomplete_inventory() -> None:
     redis.incomplete_name = "redis"
     with pytest.raises(CrewStorageUnavailable):
         await storage.get_all_crews()
+
+
+@pytest.mark.asyncio
+async def test_vanished_redis_entry_is_resolved_against_postgres_rows() -> None:
+    """An inventory entry that vanished because it was migrated is explained by its Postgres row."""
+    moved = _crew("moved", "moved-id")
+    redis = FakeRedis([moved])
+    redis.incomplete_name = "moved"
+    storage = CrewDefinitionStorage(redis, FakePostgres([_row(moved)]))
+
+    assert await storage.list_all_crews() == [{"tenant": "global", "name": "moved"}]
+    assert [crew.crew_id for crew in await storage.get_all_crews()] == ["moved-id"]
+
+
+@pytest.mark.asyncio
+async def test_unreadable_redis_source_does_not_hide_postgres_crews() -> None:
+    """A malformed or conflicting Redis source is skipped, not allowed to fail the authoritative listing."""
+    bad = _crew("bad", "bad-id")
+    good = _crew("good", "good-id")
+    redis = FakeRedis([bad])
+    redis.unreadable_name = "bad"
+    storage = CrewDefinitionStorage(redis, FakePostgres([_row(good)]))
+
+    assert await storage.list_all_crews() == [{"tenant": "global", "name": "good"}]
+    assert [crew.name for crew in await storage.get_all_crews()] == ["good"]
+
+
+@pytest.mark.asyncio
+async def test_create_refuses_live_name_but_revives_tombstone() -> None:
+    """Create never replaces a live crew, reports ID collisions, and may reuse a tombstoned name."""
+    live = _crew("taken", "live-id")
+    postgres = FakePostgres([_row(live), _row(_crew("gone", "gone-id"), deleted=True)])
+    storage = CrewDefinitionStorage(FakeRedis(), postgres)
+
+    with pytest.raises(CrewStorageConflict):
+        await storage.create_crew(_crew("taken", "other-id"))
+    assert (await storage.load_crew("taken")).crew_id == "live-id"
+
+    with pytest.raises(CrewStorageConflict):
+        await storage.create_crew(_crew("fresh", "live-id"))
+
+    assert await storage.create_crew(_crew("gone", "new-id")) is True
+    assert (await storage.load_crew("gone")).crew_id == "new-id"
+
+    postgres.save_error = ConnectionError("database unavailable")
+    redis_save = storage.redis.save_crew
+    postgres.create_crew = AsyncMock(side_effect=ConnectionError("database unavailable"))
+    with pytest.raises(CrewStorageUnavailable):
+        await storage.create_crew(_crew("other", "other-2"))
+    redis_save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_malformed_row_resolves_with_identity_and_can_be_tombstoned() -> None:
+    """A row whose document cannot be decoded still carries its identity and can be deleted."""
+    broken = _crew("broken", "broken-id")
+    postgres = FakePostgres([_row(broken)])
+    postgres.malformed.add("broken")
+    storage = CrewDefinitionStorage(FakeRedis(), postgres)
+
+    resolution = await storage.resolve_for_delete("broken")
+    assert resolution.state == "active"
+    assert resolution.definition is None
+    assert (resolution.tenant, resolution.name, resolution.crew_id) == ("global", "broken", "broken-id")
+
+    assert await storage.tombstone_resolution(resolution) is True
+    assert (await storage.resolve_for_delete("broken")).state == "deleted"
+    assert await storage.load_crew("broken") is None
+
+    stale = resolution.model_copy(update={"crew_id": "recreated"})
+    with pytest.raises(CrewStorageConflict):
+        await storage.tombstone_resolution(stale)
 
 
 @pytest.mark.asyncio

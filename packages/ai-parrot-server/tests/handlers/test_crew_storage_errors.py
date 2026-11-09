@@ -116,6 +116,39 @@ async def test_identity_conflict_is_409() -> None:
 
 
 @pytest.mark.asyncio
+async def test_execution_endpoints_map_storage_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Running or replaying a crew reports storage outages as 503 and identity conflicts as 409."""
+    from parrot.handlers.crew.execution_handler import CrewExecutionHandler
+    from parrot.handlers.crew.execution_history_handler import CrewExecutionHistoryHandler
+
+    monkeypatch.setattr(
+        "parrot.handlers.crew.execution_handler.resolve_session_tenant", AsyncMock(return_value="tenant")
+    )
+    secret = "postgres://user:password@db/crew"
+
+    for error, expected in (
+        (CrewStorageUnavailable(secret), 503),
+        (CrewStorageConflict(secret), 409),
+    ):
+        manager = MagicMock(crew_storage_backend="postgres")
+        manager.get_crew = AsyncMock(side_effect=error)
+        run_handler = _handler(manager)
+
+        run_response = await CrewExecutionHandler.execute_crew(run_handler, {"crew_id": "crew", "query": "hi"})
+
+        assert run_response.status == expected
+        assert secret not in run_response.body.decode()
+
+        replay_handler = _handler(manager)
+        replay_handler.service.replay_execution = AsyncMock(side_effect=error)
+
+        replay_response = await CrewExecutionHistoryHandler._replay(replay_handler, "tenant", "user", "execution")
+
+        assert replay_response.status == expected
+        assert secret not in replay_response.body.decode()
+
+
+@pytest.mark.asyncio
 async def test_deleted_retry_succeeds_and_absent_is_404() -> None:
     """PostgreSQL deletes call the tombstone-aware manager without a cache precheck."""
     manager = MagicMock(crew_storage_backend="postgres")

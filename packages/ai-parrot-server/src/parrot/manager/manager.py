@@ -3219,7 +3219,9 @@ Available documentation UIs:
         # Initialize the configured store before loading crews from it.
         if self.enable_crews:
             if self.crew_storage is not None:
-                await self.crew_storage.initialize()
+                report = await self.crew_storage.initialize()
+                if report is not None:
+                    self._log_crew_migration_report(report)
             await self.load_crews()
         # Start background cleanup task for expired bots
         self._cleanup_task = asyncio.create_task(self._cleanup_expired_bots())
@@ -3308,7 +3310,8 @@ Available documentation UIs:
             return
 
         if self.crew_storage is not None and self.crew_storage_backend == "postgres":
-            await self.crew_storage.save_crew(crew_def)
+            # A create must never replace a live same-name crew another worker already persisted.
+            await self.crew_storage.create_crew(crew_def)
             self._crews[crew_key] = (crew, crew_def)
             self.logger.info("Registered crew '%s' after PostgreSQL persistence", name)
             return
@@ -3444,7 +3447,16 @@ Available documentation UIs:
 
             resolved = resolution.definition
             if resolved is None:
-                raise CrewStorageUnavailable("Crew deletion resolution had no definition")
+                # A malformed authoritative row keeps its identity; tombstone it without a decodable document.
+                if resolution.name is None or resolution.crew_id is None:
+                    raise CrewStorageUnavailable("Crew deletion resolution had no definition")
+                cached = self._crews.get(self._get_crew_key(tenant, resolution.name))
+                if cached is not None and cached[1].crew_id != resolution.crew_id:
+                    raise CrewStorageConflict("Crew definition delete conflicts with the current identity")
+                await self.crew_storage.tombstone_resolution(resolution)
+                self._crews.pop(self._get_crew_key(tenant, resolution.name), None)
+                self.logger.info("Removed malformed crew '%s' after PostgreSQL tombstone persistence", resolution.name)
+                return True
             cached = self._crews.get(self._get_crew_key(tenant, resolved.name))
             if cached is not None and cached[1].crew_id != resolved.crew_id:
                 raise CrewStorageConflict("Crew definition delete conflicts with the current identity")
@@ -3485,6 +3497,32 @@ Available documentation UIs:
             return True
 
         return False
+
+    def _log_crew_migration_report(self, report: Any) -> None:
+        """Log the outcome of the startup crew-definition migration.
+
+        Args:
+            report: ``CrewMigrationReport`` returned by ``CrewDefinitionStorage.initialize``.
+        """
+        if report.skipped_reason:
+            self.logger.warning("Crew definition migration skipped: %s", report.skipped_reason)
+        self.logger.info(
+            "Crew definition migration: %d migrated, %d already present, %d deleted sources, "
+            "%d conflicts, %d failed, %d Redis cleanups failed%s",
+            len(report.migrated),
+            len(report.already_present),
+            len(report.deleted_sources),
+            len(report.conflicts),
+            len(report.failed),
+            len(report.redis_cleanup_failed),
+            " (dry run)" if report.dry_run else "",
+        )
+        for key in report.conflicts:
+            self.logger.warning("Crew definition migration conflict retained in Redis for reconciliation: %s", key)
+        for key, reason in report.failed.items():
+            self.logger.warning("Crew definition migration kept source %s: %s", key, reason)
+        for key in report.redis_cleanup_failed:
+            self.logger.warning("Crew definition migration could not remove verified Redis source: %s", key)
 
     async def persist_crew_update(self, identifier: str, crew: AgentCrew, crew_def: CrewDefinition) -> None:
         """Persist a same-name update once before replacing its cache entry.

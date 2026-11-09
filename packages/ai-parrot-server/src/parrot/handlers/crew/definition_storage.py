@@ -11,6 +11,7 @@ from .models import CrewDefinition
 from .postgres_persistence import CrewPostgres
 from .redis_persistence import CrewRedis, CrewRedisCleanupResult
 
+
 class CrewStorageUnavailable(RuntimeError):
     """A required storage operation failed without a trustworthy answer."""
 
@@ -24,6 +25,9 @@ class CrewDeletionResolution(BaseModel):
 
     state: Literal["active", "deleted", "absent"]
     definition: CrewDefinition | None = None
+    tenant: str | None = None
+    name: str | None = None
+    crew_id: str | None = None
 
 
 class CrewMigrationReport(BaseModel):
@@ -285,7 +289,56 @@ class CrewDefinitionStorage:
                 return CrewDeletionResolution(state="active", definition=crew)
             return CrewDeletionResolution(state="absent")
         state: Literal["active", "deleted"] = "deleted" if self._is_deleted(row) else "active"
-        return CrewDeletionResolution(state=state, definition=self._decode_row(row))
+        return CrewDeletionResolution(
+            state=state,
+            definition=self._decode_row(row),
+            tenant=row.tenant,
+            name=row.name,
+            crew_id=row.crew_id,
+        )
+
+    async def tombstone_resolution(self, resolution: CrewDeletionResolution) -> bool:
+        """Tombstone a resolved row whose definition cannot be decoded.
+
+        Args:
+            resolution: Active resolution carrying the stored identity but no definition.
+
+        Returns:
+            ``True`` once the tombstone is committed.
+
+        Raises:
+            CrewStorageUnavailable: If storage is unavailable or the resolution has no identity.
+            CrewStorageConflict: If the row no longer has the resolved identity.
+        """
+        if not self._uses_postgres or resolution.name is None or resolution.crew_id is None:
+            raise CrewStorageUnavailable("Crew definition delete is unavailable")
+        try:
+            return bool(await self.postgres.tombstone_identity(resolution.tenant, resolution.name, resolution.crew_id))
+        except Exception as error:
+            raise self._translate_exception("delete", error) from error
+
+    async def create_crew(self, crew: CrewDefinition) -> bool:
+        """Create a crew without replacing an existing live definition.
+
+        Args:
+            crew: Definition to create.
+
+        Returns:
+            ``True`` when created.
+
+        Raises:
+            CrewStorageConflict: If a live crew already holds the name or the ID collides.
+            CrewStorageUnavailable: If the configured store cannot persist it.
+        """
+        if not self._uses_postgres:
+            return await self.redis.save_crew(crew)
+        try:
+            created = await self.postgres.create_crew(crew)  # type: ignore[union-attr]
+        except Exception as error:
+            raise self._translate_exception("create", error) from error
+        if not created:
+            raise CrewStorageConflict("Crew definition create conflicts with an existing crew name")
+        return True
 
     async def delete_crew(self, crew: CrewDefinition) -> bool:
         """Commit an authoritative tombstone before best-effort Redis cleanup."""
@@ -381,10 +434,20 @@ class CrewDefinitionStorage:
             if tenant is not None:
                 inventory = [entry for entry in inventory if entry["tenant"] == (tenant or "global")]
             snapshots = []
+            vanished: list[tuple[str, str]] = []
             for entry in inventory:
-                snapshot = await self.redis.snapshot_crew(entry["name"], entry["tenant"])
+                try:
+                    snapshot = await self.redis.snapshot_crew(entry["name"], entry["tenant"])
+                except ValueError as error:
+                    # A malformed or conflicting Redis source is retained for reconciliation; it must not hide
+                    # the authoritative Postgres definitions. Backend failures (not ValueError) still propagate.
+                    self.logger.warning(
+                        "Skipping unreadable Redis crew %s:%s in listing: %s", entry["tenant"], entry["name"], error
+                    )
+                    continue
                 if snapshot is None:
-                    raise CrewStorageUnavailable("Crew definition inventory snapshot is incomplete")
+                    vanished.append((entry["tenant"], entry["name"]))
+                    continue
                 snapshots.append(snapshot)
             rows = await self.postgres._list_rows(tenant)  # type: ignore[union-attr]
         except CrewStorageUnavailable:
@@ -394,6 +457,11 @@ class CrewDefinitionStorage:
 
         identities = {(row.tenant, row.name): row for row in rows}
         ids = {(row.tenant, row.crew_id): row for row in rows}
+        for identity in vanished:
+            # An entry that disappeared after the inventory was captured is explained only by a Postgres row
+            # (for example a concurrent migration); otherwise the view is incomplete and must not be used.
+            if identity not in identities:
+                raise CrewStorageUnavailable("Crew definition inventory snapshot is incomplete")
         crews: list[CrewDefinition] = []
         entries: list[dict[str, str]] = []
         included = set()
