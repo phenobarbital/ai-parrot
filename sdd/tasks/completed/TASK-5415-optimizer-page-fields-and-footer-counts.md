@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-857 — PageIndex Optimizer Fixes 2 — Page Fields and Footer-Safe Pseudo-Headings
 **Spec**: `sdd/specs/pageindex-optimizer-fixes-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -210,10 +210,8 @@ See the blueprint stubs; names are fixed by the spec §4.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-fix session (Claude)
+**Date**: 2026-11-09
+**Notes**: `_piece_pages` + page fields in `split_at`; `running_key` repeat counts in `pseudo_heading_segments`; three tests added. `test_optimizer.py` + `test_layout_integration.py` (31) and the other optimizer test files (41) pass; ruff clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
