@@ -66,7 +66,13 @@ async def _delete_owned_redis_keys(store: CrewRedis, crews: list[CrewDefinition]
             ]
         )
         if tenant == "global":
-            keys.extend([store._get_legacy_key(crew.name), store._get_legacy_list_key(), store._get_legacy_id_mapping_key(crew.crew_id)])
+            keys.extend(
+                [
+                    store._get_legacy_key(crew.name),
+                    store._get_legacy_list_key(),
+                    store._get_legacy_id_mapping_key(crew.crew_id),
+                ]
+            )
     await store.redis.delete(*keys)
 
 
@@ -139,7 +145,10 @@ async def test_live_legacy_and_reassigned_mapping_survive() -> None:
     async def mutate_legacy_and_mapping() -> None:
         """Create a legacy source and repoint the ID mapping without sleeps."""
         await snapshot_ready.wait()
-        await redis.redis.set(redis._get_legacy_key(first.name), redis._serialize_crew(_crew(first.name, first.crew_id, "global", version=2)))
+        await redis.redis.set(
+            redis._get_legacy_key(first.name),
+            redis._serialize_crew(_crew(first.name, first.crew_id, "global", version=2)),
+        )
         await redis.redis.set(redis._get_id_mapping_key(first.crew_id, "global"), replacement_name)
         await redis.redis.set(redis._get_legacy_id_mapping_key(first.crew_id), replacement_name)
         write_finished.set()

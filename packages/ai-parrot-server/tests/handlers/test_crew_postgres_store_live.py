@@ -16,7 +16,10 @@ from parrot.handlers.crew.models import AgentDefinition, CrewDefinition, FlowRel
 from parrot.handlers.crew.postgres_persistence import CrewPostgres
 
 DSN = os.getenv("NAVIGATOR_PG_DSN", "")
-pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(not DSN, reason="NAVIGATOR_PG_DSN not set (live PG checks skipped)")]
+pytestmark = [
+    pytest.mark.asyncio,
+    pytest.mark.skipif(not DSN, reason="NAVIGATOR_PG_DSN not set (live PG checks skipped)"),
+]
 
 
 def _crew(name: str, crew_id: str, tenant: str, *, metadata: dict[str, object] | None = None) -> CrewDefinition:
