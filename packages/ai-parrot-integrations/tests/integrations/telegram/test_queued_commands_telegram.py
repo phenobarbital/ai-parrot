@@ -1,4 +1,5 @@
 """Regression coverage for Preserve Telegram topic and reply routing for every result type (TASK-5399)."""
+
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
