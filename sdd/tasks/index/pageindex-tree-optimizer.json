@@ -179,7 +179,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -190,8 +190,9 @@
       "parallelism_notes": "TASK-5367: calls run_llm_passes/describe_document (optimizer_llm.py) and plan_deterministic/finalize_stamps (optimizer.py, TASK-5365 transitively); TASK-5368: relies on the new PageIndexNode fields (schemas.py)",
       "assigned_to": null,
       "started_at": "2026-11-08T23:08:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5370-toolkit-optimize-on-import.md"
+      "completed_at": "2026-11-09T00:11:00+00:00",
+      "file": "sdd/tasks/completed/TASK-5370-toolkit-optimize-on-import.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5371",

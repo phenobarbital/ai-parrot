@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-846 — PageIndex Tree Optimizer
 **Spec**: `sdd/specs/pageindex-tree-optimizer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5367, TASK-5368
@@ -212,4 +212,15 @@ Spec §4 row `test_optimize_on_import_paths`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed**: 2026-11-09 | **Implementation commit**: a42e9586d9 (coder, attempt 3) + 669d61bdc4 (orchestrator test fixes)
+
+Delivered via sdd-coder pool: attempts 1-2 (terra) and 3 (sol) all failed the engine's task-tier validation on `test_toolkit.py::test_insert_markdown_then_search`; attempt 3's branch was merged manually.
+
+Root cause (not a coder defect): `optimize_on_import` defaults to True, and the optimizer merges sections under `min_leaf_tokens` (200) into their parent, so the legacy fixture's tiny "Installation" section no longer survived as a node. Spec AC-16 says existing import tests run unchanged under `optimize_on_import=False`.
+
+Deviation (files outside the task list, orchestrator-edited):
+- `tests/knowledge/pageindex/test_toolkit.py`: `toolkit` fixture now passes `optimize_on_import=False`.
+- `tests/knowledge/bookstore/test_library.py::test_reindex_roundtrip_markdown`: replacement chapter enlarged above the optimizer's minimum leaf size (Bookstore optimizes new books by design, spec G12).
+
+Validation: test_optimizer_toolkit, test_toolkit, test_segment_import, test_toolkit_no_llm, test_layout_import, bookstore/ — 291 passed; the 1 failure + 4 errors in bookstore/test_integration_graph.py (sqlite 'unable to open database file') are pre-existing, reproduced on the pre-task baseline.
+
