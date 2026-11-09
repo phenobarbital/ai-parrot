@@ -522,3 +522,105 @@ def test_launcher_outside_a_checkout_asks_for_every_command(tmp_path: Path) -> N
     out = json.loads(proc.stdout)
     assert out["decision"] == "force_ask"
     assert "not a git checkout" in out["reason"]
+
+
+@pytest.fixture
+def unattended(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enable the non-interactive AGY permission mode."""
+    monkeypatch.setenv(agy_permissions.UNATTENDED_ENV, "1")
+
+
+def test_agy_permissions_unattended_force_ask_is_deny(
+    ws: Path, unattended: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(agy_permissions.worktree_environment.shutil, "which", lambda _: "/usr/bin/bwrap")
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_BACKEND", "bubblewrap")
+    decision = _decide("cat 'unterminated", ws)
+    assert decision.decision == "deny"
+    assert decision.reason.startswith("unattended:")
+
+
+def test_agy_permissions_merge_and_overwrite(ws: Path) -> None:
+    (ws / "packages" / "core" / "src").mkdir(parents=True)
+
+    routine = _decide("git status", ws)
+    assert routine.decision == "ask"
+    assert routine.overwrite is not None
+    assert routine.overwrite["CommandLine"].startswith("PYTHONPATH=")
+
+    denied = _decide("uv sync", ws)
+    assert denied.decision == "deny"
+    assert denied.overwrite is None
+
+    confirmed = _decide("find . -name x -delete", ws)
+    assert confirmed.decision == "force_ask"
+    assert confirmed.overwrite is not None
+    assert confirmed.overwrite["CommandLine"].startswith("PYTHONPATH=")
+    assert confirmed.overwrite["CommandLine"].endswith("find . -name x -delete")
+    assert "overwrite" not in agy_permissions._render(Decision("deny", overwrite=routine.overwrite))
+
+
+def test_agy_permissions_file_tools(ws: Path, tmp_path: Path) -> None:
+    inside = {
+        "toolCall": {"name": "write_file", "args": {"Path": "notes.txt", "Content": "x", "Overwrite": True}},
+        "workspacePaths": [str(ws)],
+    }
+    assert evaluate(inside, root=ws).decision == "ask"
+
+    for path in (str(tmp_path / "outside.txt"), "../outside.txt"):
+        payload = {"toolCall": {"name": "write_file", "args": {"Path": path}}, "workspacePaths": [str(ws)]}
+        assert evaluate(payload, root=ws).decision == "deny"
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (ws / "link").symlink_to(outside)
+    escaped = {"toolCall": {"name": "write_file", "args": {"Path": "link/escape.txt"}}, "workspacePaths": [str(ws)]}
+    assert evaluate(escaped, root=ws).decision == "deny"
+
+    shared = ws / ".venv"
+    shared.mkdir()
+    (shared / "pyvenv.cfg").write_text("home = /tmp", encoding="utf-8")
+    protected = {"toolCall": {"name": "write_file", "args": {"Path": ".venv/file"}}, "workspacePaths": [str(ws)]}
+    assert evaluate(protected, root=ws).decision == "deny"
+
+    missing = {"toolCall": {"name": "edit_file", "args": {}}, "workspacePaths": [str(ws)]}
+    assert evaluate(missing, root=ws).decision == "deny"
+    assert evaluate(inside, root=None).decision == "deny"
+
+
+def test_agy_permissions_unattended_wraps_and_requires_bubblewrap(
+    ws: Path, unattended: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (ws / "packages" / "core" / "src").mkdir(parents=True)
+    monkeypatch.setattr(agy_permissions.worktree_environment.shutil, "which", lambda _: "/usr/bin/bwrap")
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_BACKEND", "bubblewrap")
+    wrapped = _decide("git status", ws)
+    assert wrapped.decision == "ask"
+    assert wrapped.overwrite is not None
+    assert "bwrap" in wrapped.overwrite["CommandLine"]
+
+    monkeypatch.setattr(agy_permissions.worktree_environment.shutil, "which", lambda _: None)
+    assert _decide("git status", ws).decision == "deny"
+
+
+def test_main_unattended_failure_is_deny(unattended: None) -> None:
+    proc = _run_hook("not json")
+    assert proc.returncode == 0
+    out = json.loads(proc.stdout)
+    assert out["decision"] == "deny"
+    assert out["reason"].startswith("unattended:")
+
+
+def test_agy_hook_sh_unattended_fallback(tmp_path: Path) -> None:
+    script = tmp_path / "agy_hook.sh"
+    script.write_text(LAUNCHER.read_text(encoding="utf-8"), encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["GIT_CEILING_DIRECTORIES"] = str(tmp_path.parent)
+    env[agy_permissions.UNATTENDED_ENV] = "1"
+    proc = subprocess.run(
+        ["sh", str(script)], cwd=tmp_path, input="{}", capture_output=True, text=True, env=env, check=False
+    )
+    assert proc.returncode == 0
+    out = json.loads(proc.stdout)
+    assert out["decision"] == "deny"
+    assert out["reason"].startswith("unattended:")
