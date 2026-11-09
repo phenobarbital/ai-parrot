@@ -40,9 +40,7 @@ async def test_repair_structural_drift(tmp_path: Path) -> None:
     report = await bookstore.doctor(repair=True)
 
     repaired = catalog.get(card.book_id)
-    assert report["books"] == [
-        {"scope": "project", "book_id": card.book_id, "status": "drift", "repaired": True}
-    ]
+    assert report["books"] == [{"scope": "project", "book_id": card.book_id, "status": "drift", "repaired": True}]
     assert repaired is not None
     assert repaired.summary == "Manual description remains intact."
     assert repaired.source_sha256 == ""

@@ -511,9 +511,7 @@ class Bookstore:
         report["unjudged_book_ids"] = unjudged
         if relate and unjudged:
             try:
-                report["relate_summary"] = (
-                    await self.relate_books(unjudged, use_llm=use_llm)
-                ).model_dump()
+                report["relate_summary"] = (await self.relate_books(unjudged, use_llm=use_llm)).model_dump()
             except Exception as exc:  # noqa: BLE001 — report relation failure without discarding diagnosis
                 report["errors"].append({"error": str(exc)})
         return report
