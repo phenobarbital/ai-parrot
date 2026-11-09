@@ -85,7 +85,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -95,8 +95,9 @@
       "parallelism_notes": "TASK-5348: both modify tests/sdd/test_agy_permissions.py (5348 first); test_launcher_judges_write_file exercises the file-tool evaluate from TASK-5348",
       "assigned_to": null,
       "started_at": "2026-11-09T00:08:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5349-installer-agy-matcher.md"
+      "completed_at": "2026-11-09T01:31:48+00:00",
+      "file": "sdd/tasks/completed/TASK-5349-installer-agy-matcher.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5350",

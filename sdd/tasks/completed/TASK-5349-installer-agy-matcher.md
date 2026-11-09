@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-847 — SDD Antigravity CLI (AGY) Operational Compatibility
 **Spec**: `sdd/specs/sdd-agy-compatibility.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5348
@@ -251,10 +251,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 4.6 (host session)
+**Date**: 2026-11-09
+**Notes**: Widened managed AGY hook matcher from `run_command` to `run_command|write_file|edit_file`. Added `_AGY_MATCHER` and `_AGY_LEGACY_MATCHER` constants. `_agy_hook_entry` uses the widened matcher. `_agy_active_hook` accepts both legacy and widened matchers. Added `_agy_hook_matcher` (broader: returns any matcher for our command). `_install_agy_hook` migrates receipt-owned legacy entries in place, reports not-owned and user-edited matchers. `_agy_permissions_report` adds `matcher` and `stale` keys. Updated `.agents/hooks.json`. Added 5 new tests (migration, stale status, user-edited matcher, roundtrip, launcher write_file). All 27 + 212 + 115 tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `_agy_hook_matcher` returns any matcher for our command (not just legacy/managed), so user-edited matchers are detected correctly. `_agy_permissions_report` only calls `_agy_hook_matcher` when the hook is active (`command is not None`), keeping `matcher=None` and `stale=False` for fully inactive hooks.
