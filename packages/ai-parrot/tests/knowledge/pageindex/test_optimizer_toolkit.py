@@ -416,3 +416,24 @@ async def test_optimize_apply_with_empty_leaf(tmp_path: Path) -> None:
     published_root = (await toolkit.get_tree("guide"))["structure"][0]
     assert "guide/preface" in published_root.get("aliases", [])
     assert any(action["reason"] == "empty" for action in report["merged"])
+
+
+@pytest.mark.asyncio
+async def test_optimize_apply_reconciles_key_items(tmp_path: Path) -> None:
+    """A published key item anchored outside its node is re-homed, so the apply publishes (issue:66f376157327)."""
+    toolkit = await _tree_with_document(tmp_path)
+    tree = toolkit._store.load("guide")
+    root = tree["structure"][0]
+    first, second = root["nodes"][0], root["nodes"][-1]
+    stray_seq = int(second["owned"][0][0])
+    first["key_items"] = [{"label": "stray anchor", "kind": "abstractive", "seq": stray_seq}]
+    toolkit._store.save("guide", tree)
+
+    report = await toolkit.optimize("guide", apply=True, llm_passes=False)
+
+    assert report["errors"] == []
+    published = structure_to_list((await toolkit.get_tree("guide"))["structure"])
+    for node in published:
+        for item in node.get("key_items") or []:
+            assert any(int(start) <= item["seq"] < int(end) for start, end in node.get("owned") or []), node["title"]
+    assert any(item["label"] == "stray anchor" for node in published for item in node.get("key_items") or [])

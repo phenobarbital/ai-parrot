@@ -5,8 +5,14 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from parrot.knowledge.pageindex.framing import DATA_FRAMING_INSTRUCTION
-from parrot.knowledge.pageindex import builder
-from parrot.knowledge.pageindex.optimizer import OptimizeReport, OptimizerSettings, plan_deterministic
+from parrot.knowledge.pageindex import builder, optimizer_llm
+from parrot.knowledge.pageindex.optimizer import (
+    OptimizeReport,
+    OptimizerSettings,
+    pass_input,
+    plan_deterministic,
+    validate_candidate,
+)
 from parrot.knowledge.pageindex.optimizer_llm import (
     HeadingProposals,
     KeyItemProposal,
@@ -19,10 +25,13 @@ from parrot.knowledge.pageindex.optimizer_llm import (
     literal_in_anchor,
     propose_headings,
     propose_key_items,
+    reads_for,
     run_llm_passes,
     summarize_leaf,
+    window_reads,
 )
 from parrot.knowledge.pageindex.segments import DocumentRevision, revision_id, segment_text
+from parrot.knowledge.pageindex.utils import count_tokens
 
 
 @pytest.fixture
@@ -273,3 +282,213 @@ async def test_framed_document_description(monkeypatch: pytest.MonkeyPatch) -> N
     assert "<‍/document_text>" in prompt
     assert adapter.ask.await_args.kwargs["system_prompt"] == DATA_FRAMING_INSTRUCTION
     legacy.assert_not_called()
+
+
+# --- FEAT-853 TASK-5393: bounded LLM inputs and pass wiring --------------------------------------------------------
+
+
+def _revision_from(text: str) -> DocumentRevision:
+    """Build a revision from markdown text."""
+    segments = segment_text(text, ["Document"])
+    return DocumentRevision(
+        doc_id="doc",
+        revision=revision_id(segments),
+        source={"name": "document.md", "kind": "markdown"},
+        created_at="2026-01-01T00:00:00Z",
+        segments=segments,
+    )
+
+
+def _long_revision(paragraphs: int = 12) -> DocumentRevision:
+    """A revision of distinct, uniquely marked prose paragraphs."""
+    return _revision_from("\n\n".join(f"Marker{n:02d} " + "word " * 40 for n in range(paragraphs)))
+
+
+def _window_cost(window, revision: DocumentRevision) -> int:
+    return sum(revision.segments[read.seq].tokens + optimizer_llm._FRAME_OVERHEAD_TOKENS for read in window)
+
+
+def test_window_reads_respects_budget() -> None:
+    """Windows keep document order and stay within the budget; an oversized read is clipped."""
+    revision = _long_revision()
+    reads = reads_for({"owned": [[0, len(revision.segments)]]}, revision)
+
+    windows = window_reads(reads, revision, budget=150)
+
+    assert len(windows) > 1
+    assert [read.seq for window in windows for read in window] == [read.seq for read in reads]
+    assert all(_window_cost(window, revision) <= 150 for window in windows)
+
+    huge = _revision_from("palabra " * 3000)
+    (only,) = window_reads(reads_for({"owned": [[0, 1]]}, huge), huge, budget=100)
+    (clipped,) = only
+    assert clipped.truncated is True
+    assert count_tokens(clipped.text) <= 100 - optimizer_llm._FRAME_OVERHEAD_TOKENS
+    assert clipped.end == clipped.start + len(clipped.text)
+    assert window_reads([], huge) == []
+
+
+@pytest.mark.asyncio
+async def test_propose_headings_frames_only_candidates(revision: DocumentRevision) -> None:
+    """Only heading-like segments are framed; a node without candidates makes no call (issue:ab5235978ad7)."""
+    adapter = MagicMock(client=MagicMock())
+    adapter.ask_structured = AsyncMock(return_value=HeadingProposals(seqs=[0]))
+    report = OptimizeReport()
+
+    assert await propose_headings({"owned": [[0, 3]]}, revision, adapter, OptimizerSettings(), report=report) == [0]
+    prompt = adapter.ask_structured.await_args.args[0]
+    assert "Topic heading" in prompt and "Alpha concept" not in prompt and "| table |" not in prompt
+    assert report.llm_calls_made == 1
+
+    adapter.ask_structured.reset_mock()
+    assert await propose_headings({"owned": [[1, 3]]}, revision, adapter, OptimizerSettings()) == []
+    assert adapter.ask_structured.await_count == 0
+
+
+def test_heading_like_rejects_fragments() -> None:
+    """Sentence fragments and list items are not printed headings (issue:66f376157327)."""
+    revision = _revision_from(
+        "the information system enforces approved authorizations; and\n\n"
+        "(a) Policy and procedures\n\n"
+        "Access Control Policy\n\n"
+        "Scope:"
+    )
+    assert [heading_like(segment) for segment in revision.segments] == [False, False, True, False]
+
+
+@pytest.mark.asyncio
+async def test_propose_key_items_windows_and_caps(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An oversized leaf is windowed: one call per window, a per-window quota and a global cap."""
+    monkeypatch.setattr(optimizer_llm, "LLM_INPUT_BUDGET_TOKENS", 150)
+    revision = _long_revision()
+    node = {"owned": [[0, len(revision.segments)]]}
+    windows = window_reads(reads_for(node, revision), revision)
+    calls = {"n": 0}
+
+    def proposals(*_args, **_kwargs) -> KeyItemProposals:
+        calls["n"] += 1
+        return KeyItemProposals(
+            items=[KeyItemProposal(label=f"concept {calls['n']}.{i}", kind="abstractive", seq=0) for i in range(5)]
+        )
+
+    adapter = MagicMock(client=MagicMock())
+    adapter.ask_structured = AsyncMock(side_effect=proposals)
+    report = OptimizeReport()
+    settings = OptimizerSettings(max_key_items=4)
+
+    items = await propose_key_items(node, revision, adapter, settings, report=report)
+
+    assert len(windows) >= 3
+    assert adapter.ask_structured.await_count == len(windows) == report.llm_calls_made
+    assert len(items) == settings.max_key_items
+    quota = -(-settings.max_key_items // len(windows))
+    assert all(f"up to {quota} key concepts" in call.args[0] for call in adapter.ask_structured.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_summarize_leaf_map_reduce(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A leaf over the budget is summarized per window, then reduced from framed partial summaries."""
+    monkeypatch.setattr(optimizer_llm, "LLM_INPUT_BUDGET_TOKENS", 150)
+    revision = _long_revision()
+    node = {"owned": [[0, len(revision.segments)]]}
+    windows = len(window_reads(reads_for(node, revision), revision))
+    adapter = MagicMock(client=MagicMock())
+    adapter.ask_structured = AsyncMock(
+        side_effect=[SummaryOut(summary=f"part {k}") for k in range(windows)] + [SummaryOut(summary="combined")]
+    )
+    report = OptimizeReport()
+
+    result = await summarize_leaf(node, revision, adapter, OptimizerSettings(inline_summary_tokens=0), report=report)
+
+    assert result == ("combined", "llm")
+    assert windows > 1
+    assert adapter.ask_structured.await_count == windows + 1 == report.llm_calls_made
+    prompts = [call.args[0] for call in adapter.ask_structured.await_args_list]
+    assert all(prompt.count("Marker") < 12 for prompt in prompts[:-1])
+    assert "partial summaries" in prompts[-1] and "part 0" in prompts[-1]
+    assert all(
+        call.kwargs["system_prompt"] == DATA_FRAMING_INSTRUCTION for call in adapter.ask_structured.await_args_list
+    )
+
+
+@pytest.mark.asyncio
+async def test_compose_parent_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A parent frames clipped child summaries and only the first window of its own text."""
+    monkeypatch.setattr(optimizer_llm, "LLM_INPUT_BUDGET_TOKENS", 200)
+    revision = _long_revision()
+    node = {
+        "owned": [[0, len(revision.segments)]],
+        "nodes": [{"title": "Child", "summary": "resumen " * 2000}],
+    }
+    adapter = MagicMock(client=MagicMock())
+    adapter.ask_structured = AsyncMock(return_value=SummaryOut(summary="composed"))
+    report = OptimizeReport()
+
+    assert await compose_parent(node, revision, adapter, OptimizerSettings(), report=report) == ("composed", "composed")
+
+    prompt = adapter.ask_structured.await_args.args[0]
+    assert 0 < prompt.count("resumen") < 200
+    assert "Marker00" in prompt and "Marker11" not in prompt
+    assert report.llm_calls_made == 1
+
+
+@pytest.mark.asyncio
+async def test_llm_calls_made_counts_issued_calls(revision: DocumentRevision) -> None:
+    """llm_calls_made counts issued adapter calls; a rerun served from the retry cache adds none."""
+    settings = OptimizerSettings(target_leaf_tokens=0, inline_summary_tokens=0)
+    revisions = {(revision.doc_id, revision.revision): revision}
+    adapter = _live_adapter()
+
+    plan = plan_deterministic(_tree_for_revision(revision), revisions, settings, tree_name="x")
+    await run_llm_passes(plan, revisions, adapter, settings)
+    assert plan.report.llm_calls_made == adapter.ask_structured.await_count == 3
+    assert plan.report.llm_calls_estimated == 3
+
+    again = plan_deterministic(_tree_for_revision(revision), revisions, settings, tree_name="x")
+    again.llm_cache = plan.llm_cache
+    await run_llm_passes(again, revisions, adapter, settings)
+    assert adapter.ask_structured.await_count == 3
+    assert again.report.llm_calls_made == 0
+
+
+@pytest.mark.asyncio
+async def test_run_llm_passes_reconciles_before_summaries(revision: DocumentRevision) -> None:
+    """A drifted anchor is re-homed before the summary pass, so the candidate validates and stamps stay current."""
+    settings = OptimizerSettings(min_leaf_tokens=0)
+    revisions = {(revision.doc_id, revision.revision): revision}
+    first = {
+        "doc_id": "doc",
+        "revision": revision.revision,
+        "title": "A",
+        "span": [0, 1],
+        "owned": [[0, 1]],
+        "nodes": [],
+    }
+    second = {
+        "doc_id": "doc",
+        "revision": revision.revision,
+        "title": "B",
+        "span": [1, 3],
+        "owned": [[1, 3]],
+        "nodes": [],
+    }
+    root = {
+        "doc_id": "doc",
+        "revision": revision.revision,
+        "title": "Doc",
+        "span": [0, 3],
+        "owned": [],
+        "nodes": [first, second],
+    }
+    plan = plan_deterministic({"nodes": [root]}, revisions, settings, tree_name="x")
+    cand_first, cand_second = plan.candidate["nodes"][0]["nodes"]
+    cand_first["key_items"] = [{"label": "Alpha concept", "kind": "literal", "seq": 1}]
+
+    await run_llm_passes(plan, revisions, None, settings)
+
+    assert "key_items" not in cand_first
+    assert [item["label"] for item in cand_second["key_items"]] == ["Alpha concept"]
+    assert plan.report.key_items_rehomed == 1
+    assert plan.pending_stamps[id(cand_second)]["summary"].input == pass_input(cand_second, "summary")
+    errors = validate_candidate(plan, revisions, base_tree={"nodes": []})
+    assert not any("key_item anchor" in error for error in errors), errors
