@@ -1,10 +1,12 @@
 """Import paths produce, scan and stage document revisions (FEAT-840 / TASK-5308)."""
+import re
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
+from parrot.knowledge.pageindex.generation import generation_of
 from parrot.knowledge.pageindex.segments import validate_ownership
 from parrot.knowledge.pageindex.segment_store import SegmentStore
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
@@ -171,3 +173,109 @@ async def test_import_flags_injection_segment(toolkit, tmp_path):
     result = await off.insert_markdown("kb", md, doc_name="Flagged.md")
     rev = SegmentStore(tmp_path / "off").load_revision("kb", result["doc_id"], result["revision"])
     assert rev.scored_by is None and all(s.flags == [] for s in rev.segments)
+
+
+EBOOK_SECTIONS = [
+    {
+        "section_id": "s1",
+        "title": "Book",
+        "content": "Opening words of the book.",
+        "toc_order": 0,
+        "source_uri": "book.epub",
+    },
+    {
+        "section_id": "s2",
+        "title": "Chapter",
+        "content": "Chapter text here.\n\nSecond paragraph.",
+        "parent_id": "s1",
+        "toc_order": 1,
+        "source_uri": "book.epub",
+    },
+]
+
+
+def _tree_shape(toolkit, tree_name: str) -> tuple[int, int | None]:
+    """``(node count, generation id)`` of a published tree — the two things a re-import must not change."""
+    tree = toolkit._store.load(tree_name)
+    generation = generation_of(tree)
+    return len(structure_to_list(tree["structure"])), (generation.id if generation else None)
+
+
+@pytest.mark.asyncio
+async def test_reimport_same_markdown_is_reused(toolkit, tmp_path):
+    """AC-1/AC-2: a byte-identical re-import splices nothing and mints no generation."""
+    await toolkit.create_tree("kb")
+    first = await toolkit.insert_markdown("kb", MD, doc_name="Tutorial.md")
+    assert first["reused"] is False and first["new_node_ids"]
+    before = _tree_shape(toolkit, "kb")
+
+    again = await toolkit.insert_markdown("kb", MD, doc_name="Tutorial.md")
+
+    assert again["reused"] is True
+    assert (again["doc_id"], again["revision"]) == (first["doc_id"], first["revision"])
+    assert again["new_node_ids"] == []
+    assert _tree_shape(toolkit, "kb") == before
+    documents = await toolkit.list_documents("kb")
+    assert [d["doc_id"] for d in documents] == [first["doc_id"]]
+
+
+@pytest.mark.asyncio
+async def test_reimport_same_pdf_is_reused(toolkit, tmp_path, monkeypatch):
+    """AC-3: the same PDF bytes twice reuse the first import."""
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    monkeypatch.setattr("parrot.knowledge.pageindex.toolkit.build_page_index", _pdf_fake())
+    await toolkit.create_tree("t")
+    first = await toolkit.import_pdf("t", str(pdf))
+    assert first["reused"] is False
+    before = _tree_shape(toolkit, "t")
+
+    again = await toolkit.import_pdf("t", str(pdf))
+
+    assert again["reused"] is True
+    assert (again["doc_id"], again["revision"]) == (first["doc_id"], first["revision"])
+    assert again["new_node_ids"] == []
+    assert _tree_shape(toolkit, "t") == before
+
+
+@pytest.mark.asyncio
+async def test_reimport_same_ebook_is_reused(toolkit, tmp_path):
+    """AC-3: the same ebook sections twice reuse the first import."""
+    await toolkit.create_tree("kb")
+    first = await toolkit.insert_ebook("kb", EBOOK_SECTIONS)
+    assert first["reused"] is False
+    before = _tree_shape(toolkit, "kb")
+
+    again = await toolkit.insert_ebook("kb", EBOOK_SECTIONS)
+
+    assert again["reused"] is True
+    assert (again["doc_id"], again["revision"]) == (first["doc_id"], first["revision"])
+    assert again["new_node_ids"] == []
+    assert _tree_shape(toolkit, "kb") == before
+
+
+@pytest.mark.asyncio
+async def test_reimport_changed_content_gets_new_doc_id(toolkit, tmp_path):
+    """AC-4: changed bytes under the same name still get a suffixed doc_id."""
+    await toolkit.create_tree("kb")
+    first = await toolkit.insert_markdown("kb", MD, doc_name="Tutorial.md")
+    changed = await toolkit.insert_markdown(
+        "kb", MD + "\n## Extra\nAnother paragraph of entirely new guidance for the reader.\n", doc_name="Tutorial.md"
+    )
+
+    assert changed["reused"] is False
+    assert changed["doc_id"] != first["doc_id"]
+    assert re.fullmatch(r"tutorial-[0-9a-f]{6}", changed["doc_id"])
+    assert changed["new_node_ids"]
+
+
+@pytest.mark.asyncio
+async def test_explicit_doc_id_skips_reuse_shortcircuit(toolkit, tmp_path):
+    """AC-5: an explicit doc_id= keeps today's splicing behaviour."""
+    await toolkit.create_tree("kb")
+    await toolkit.insert_markdown("kb", MD, doc_name="Tutorial.md", doc_id="pinned")
+    second = await toolkit.insert_markdown("kb", MD, doc_name="Tutorial.md", doc_id="pinned")
+
+    assert second["reused"] is False
+    assert second["new_node_ids"]
+    assert second["doc_id"] == "pinned"

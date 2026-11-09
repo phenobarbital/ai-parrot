@@ -11,6 +11,7 @@ from .pageindex import PageIndexOrigin
 from .graphindex import GraphIndexOrigin
 from .wiki import ParrotWikiOrigin
 from .lancedb import LanceDBOrigin
+from .bookstore import BookstoreOrigin
 
 __all__ = (
     "SearchOrigin",
@@ -19,4 +20,5 @@ __all__ = (
     "GraphIndexOrigin",
     "ParrotWikiOrigin",
     "LanceDBOrigin",
+    "BookstoreOrigin",
 )

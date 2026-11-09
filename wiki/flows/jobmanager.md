@@ -1,3 +1,80 @@
+---
+title: JobManager
+summary: JobManager configuration, APIs and operational behavior.
+---
+
+# JobManager
+
+## Purpose
+
+`JobManager` is AI-Parrot's in-process async job lifecycle manager. It backs
+queued chat commands and can persist snapshots through `RedisJobStore` while
+retaining local execution ownership. It is not an external queue, worker
+framework, or process-distribution system.
+
+## Public API
+
+Import core job primitives from `parrot.jobs`:
+
+```python
+from parrot.jobs import Job, JobManager, JobStatus, RedisJobStore
+```
+
+The previous server import paths remain compatibility shims. `cancel_job(job_id,
+reason)` keeps a local live job record and transitions it to `CANCELLED` rather
+than deleting it. `list_jobs` and `list_jobs_async` accept `user_id` to support
+requester-scoped job controls.
+
+## Configuration & Parameters
+
+`JobManager` has a server identity (`id`) and optionally a `RedisJobStore`.
+Queued chat commands use the Redis prefix `parrot:chat_jobs`, with bounded
+persistence attempts and a local-memory fallback when Redis is unavailable.
+The Redis store maintains a per-user secondary index, so a user's recent jobs
+do not depend on scanning other users' records.
+
+## Usage Examples
+
+```python
+from parrot.jobs import JobManager
+
+
+manager = JobManager(id="chat:telegram:reviewer")
+await manager.start()
+# QueuedCommandService creates and executes managed jobs for chat commands.
+await manager.stop()
+```
+
+For a user-facing interface, use `/jobs`, `/job_status <job_id>`, and
+`/job_cancel <job_id>` through a platform that exposes queued commands rather
+than accessing another user's job directly.
+
+## Gotchas
+
+Execution is local-first: only the process that accepted a job owns its task.
+Foreign reads refresh Redis and do not make the job locally cancellable.
+Consequently, cancellation and deduplication do not cross workers, although
+Redis-backed status reads can. Local admission does not wait for Redis, and an
+outage temporarily removes cross-worker visibility rather than blocking work.
+
+There is no external-worker resumption. A restart does not rerun an interrupted
+job; non-terminal remote records eventually read as expired from their immutable
+total-lifetime deadline. Queue waiting and method execution have separate
+deadlines, and persistence work is bounded so it cannot hold admission open.
+
+## Related
+
+- [Queued chat commands](../integrations/queued-commands.md) — wrappers,
+  requester controls, and platform behavior.
+- [GitHub reviewer](../integrations/github-reviewer.md) — queued PR reviews.
+
+## Aspirational historical material
+
+The `JobManagerMixin` discussion below predates the current implementation.
+It describes conceptual RQ/Celery/FastAPI/Django patterns; it is not a supported
+AI-Parrot integration contract and must not be read as evidence of external
+workers, distributed cancellation, or restart resumption.
+
 # JobManagerMixin Architecture Documentation
 
 ## Overview

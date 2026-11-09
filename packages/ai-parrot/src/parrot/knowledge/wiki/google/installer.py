@@ -183,14 +183,29 @@ def _is_parrot_toolkit_shape(entry: Any, name: str) -> bool:
     )
 
 
+def _is_inside(path: Path, root: Path) -> bool:
+    """Whether ``path`` (resolved) is ``root`` or lives under it; ``False`` on filesystem errors."""
+    try:
+        resolved, base = path.resolve(), root.resolve()
+    except (OSError, RuntimeError):
+        return False
+    return resolved == base or base in resolved.parents
+
+
 def _global_parrot_command(root: Path, existing: dict[str, Any]) -> str:
     """``parrot`` command for the USER-GLOBAL toolkit entries.
 
-    Bare ``parrot`` when the managed launcher (under ``parrot_home()``) is on PATH; otherwise the command a
-    parrot-shaped entry already uses when it still exists (keeps the file stable across repositories);
-    otherwise this repository's resolved ``parrot`` binary.
+    Resolution order:
+
+    1. bare ``parrot`` when the managed launcher (under ``parrot_home()``) is first on PATH;
+    2. bare ``parrot`` when the managed launcher is installed on disk (the ``bin/`` shim AND the managed
+       venv script exist), whatever the PATH order — an active repository venv shadows ``~/.parrot/bin``
+       but the launcher still resolves the repository from the working directory;
+    3. the command a parrot-shaped entry already uses when it still exists (keeps the file stable across
+       repositories), with a warning when that command lives outside ``root``;
+    4. this repository's resolved ``parrot`` binary.
     """
-    from parrot.launcher import parrot_home
+    from parrot.launcher import parrot_home, script_path
 
     found = shutil.which("parrot")
     if found:
@@ -199,10 +214,24 @@ def _global_parrot_command(root: Path, existing: dict[str, Any]) -> str:
         for candidate in {Path(found), Path(found).resolve()}:
             if any(h == candidate or h in candidate.parents for h in homes):
                 return "parrot"
+    try:
+        home = parrot_home()
+        shim = home / "bin" / ("parrot.exe" if sys.platform == "win32" else "parrot")
+        if shim.is_file() and script_path(home / "venv", "parrot").is_file():
+            return "parrot"
+    except OSError:
+        pass
     for name, entry in existing.items():
         if name.startswith("parrot-") and _is_parrot_toolkit_shape(entry, name[len("parrot-") :]):
             command = entry["command"]
             if command == "parrot" or Path(command).is_file():
+                if command != "parrot" and not _is_inside(Path(command), root):
+                    logger.warning(
+                        "%s: reusing parrot command %s from another location for the user-global toolkit "
+                        "entries; install the managed launcher (parrot self install) or pass --portable",
+                        name,
+                        command,
+                    )
                 return command
     return assets.resolve_binary(root, "parrot")
 

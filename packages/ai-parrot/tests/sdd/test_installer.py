@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -496,6 +497,45 @@ def test_agents_dispatched_by_packaged_autopilot_are_installed(empty_repo: Path)
     assert not missing, missing
 
 
+_CODEX_LINK = "../../../docs/sdd/CODEX.md#codex-adaptation-contract"
+_AGY_LINK = "../../../docs/sdd/AGY.md#antigravity-adaptation-contract"
+
+
+@pytest.mark.parametrize("host", ["codex", "google"])
+def test_shared_skill_headers_name_both_host_contracts(empty_repo: Path, host: str) -> None:
+    install_sdd_integration(empty_repo, hosts=(host,))
+    skills = sorted((empty_repo / ".agents/skills").glob("*/SKILL.md"))
+    assert skills
+    for skill in skills:
+        text = skill.read_text(encoding="utf-8")
+        assert _CODEX_LINK in text and _AGY_LINK in text, skill
+
+
+def test_packaged_skills_match_repo() -> None:
+    """Packaged skill copies are byte-identical to the repo."""
+    manifest = load_manifest()
+    for entry in manifest:
+        if entry["target"].startswith(".agents/skills/"):
+            repo_path = Path(entry["target"])
+            # Assets are stored under "agents/skills/" not ".agents/skills/"
+            asset_rel_path = entry["target"].lstrip(".")
+            asset_path = Path("packages/ai-parrot/src/parrot/sdd/_assets") / asset_rel_path
+            assert repo_path.is_file(), f"Repo file missing: {repo_path}"
+            assert asset_path.is_file(), f"Asset file missing: {asset_path}"
+            assert repo_path.read_bytes() == asset_path.read_bytes(), f"Mismatch: {repo_path}"
+
+
+def test_fresh_shell_rule_no_wt_vars() -> None:
+    """No skill relies on a previous shell's WT/cd."""
+    skills = sorted(Path(".agents/skills").glob("*/SKILL.md"))
+    for skill in skills:
+        text = skill.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        for i, line in enumerate(lines, 1):
+            if "$WT" in line and "WT=" not in line:
+                pytest.fail(f"{skill}:{i} uses $WT without assignment: {line}")
+
+
 def test_uninstall_after_hand_deleting_one_asset_still_cleans_up(empty_repo: Path) -> None:
     """A managed file removed by hand must not leave the receipt, ledger hooks and blocks behind."""
     install_sdd_integration(empty_repo)
@@ -808,3 +848,54 @@ def test_install_prints_worktree_tests_note(empty_repo: Path) -> None:
     actions = install_sdd_integration(empty_repo, hosts=("codex",))
     assert any(a.startswith("note: worktree tests") and "pythonpath" in a for a in actions)
     assert not any(a.startswith("note: worktree tests") for a in install_sdd_integration(empty_repo, dry_run=True))
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_AGY_DOC = "docs/sdd/AGY.md"
+_AGY_MARKER = "<!-- agy-fresh-shell-example -->"
+
+
+@pytest.mark.parametrize("host", ["google", "codex"])
+def test_install_ships_agy_contract(empty_repo: Path, host: str) -> None:
+    install_sdd_integration(empty_repo, hosts=(host,))
+    text = (empty_repo / _AGY_DOC).read_text(encoding="utf-8")
+    assert "## Antigravity Adaptation Contract" in text
+
+
+def test_agy_contract_repo_copy_matches_package() -> None:
+    packaged = _REPO_ROOT / "packages/ai-parrot/src/parrot/sdd/_assets/sdd/AGY.md"
+    assert (_REPO_ROOT / _AGY_DOC).read_bytes() == packaged.read_bytes()
+
+
+@pytest.mark.parametrize(
+    "needle",
+    [
+        "invoke_subagent",
+        "manage_subagents",
+        'TypeName="self"',
+        "flash",
+        "inherit",
+        "PARROT_SDD_AGY_UNATTENDED",
+        "parrot sdd launch worker",
+        "install.sh",
+        "snap",
+    ],
+)
+def test_agy_contract_has_required_content(needle: str) -> None:
+    assert needle in (_REPO_ROOT / _AGY_DOC).read_text(encoding="utf-8")
+
+
+def test_agy_worktree_examples_run_in_fresh_shells(tmp_path: Path) -> None:
+    text = (_REPO_ROOT / _AGY_DOC).read_text(encoding="utf-8")
+    blocks = re.findall(re.escape(_AGY_MARKER) + r"\n```bash\n(.*?)\n```", text, re.DOTALL)
+    assert len(blocks) >= 2
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    subprocess.run(["git", "init", "-q", str(wt)], check=True)
+    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path)}
+    for block in blocks:
+        script = block.replace("/abs/path/to/worktree", str(wt))
+        result = subprocess.run(["bash", "-c", script], cwd=tmp_path, env=env, capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        if "rev-parse" in script:
+            assert Path(result.stdout.strip()).resolve() == wt.resolve()

@@ -14,6 +14,7 @@ from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 from parrot.knowledge.pageindex.utils import structure_to_list
 
 LLM_TOOLS = {
+    "pageindex_agentic_retrieve",
     "pageindex_insert_content",
     "pageindex_import_file",
     "pageindex_import_folder",

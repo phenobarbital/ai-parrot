@@ -26,7 +26,6 @@ from parrot.knowledge.pageindex.okf.ontology import RelationType
 from parrot.knowledge.pageindex.okf.projection import flatten_concept_id_for_filename
 from parrot.knowledge.pageindex.utils import structure_to_list
 
-
 # Markdown link pattern: [text](target) where target is the link destination
 _MD_LINK_RE = re.compile(r"\[(?:[^\[\]]*)\]\(([^)]+)\)")
 # Fenced code block delimiter
@@ -64,7 +63,7 @@ def parse_markdown_links(body: str) -> list[str]:
             if target.startswith("/"):
                 target = target[1:]
             # Skip empty, external URLs, and anchor-only links
-            if not target or target.startswith("http") or target.startswith("#"):
+            if not target or target.startswith(("http", "#")):
                 continue
             seen[target] = None
     return list(seen.keys())

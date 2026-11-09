@@ -150,6 +150,12 @@ Read tools (`bookstore_related_books`, `bookstore_communities`,
 `bookstore_get_community`) are SQL-only and work identically in both
 rows — they never touch an LLM, whether or not one is configured.
 
+## Agentic retrieval
+
+For per-book cited answers rather than book-to-book relations, see
+[Bookstore Agentic Retrieval](bookstore-agentic-retrieval.md): the
+`bookstore_agentic_retrieve` MCP tool, `bookstore ask`, and `bookstore doctor`.
+
 ## CLI reference
 
 ```bash
@@ -161,4 +167,6 @@ bookstore export-wiki [--out DIR] [--global] [--no-register]
 bookstore add FILE --relate            # relate the new book after ingest
 bookstore add-folder DIR --relate      # relate each file, communities once at the end
 bookstore list --by-community          # group the inventory by community
+bookstore ask BOOK_ID QUERY [--llm SPEC] [--budget-chars N] [--max-reads N] [--timeout S] [--json]
+bookstore doctor [--global] [--repair] [--relate] [--no-llm] [--llm SPEC] [--json]
 ```

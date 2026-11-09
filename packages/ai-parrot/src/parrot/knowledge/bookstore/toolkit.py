@@ -9,7 +9,8 @@ deliberately small and funnel-shaped for research:
     the book graph before opening anything (FEAT-533)
 2. ``bookstore_get_toc`` — orient inside the chosen book
 3. ``bookstore_search_book`` — targeted in-book hybrid search
-4. ``bookstore_read_section`` — read only the sections that matter
+4. ``bookstore_agentic_retrieve`` — validated, cited research within one book
+5. ``bookstore_read_section`` — read only the sections that matter
 
 Ingestion/removal is NOT exposed here — managing the library is the
 ``bookstore`` CLI's job (indexing a book is a minutes-long LLM batch,
@@ -35,6 +36,24 @@ class BookstoreToolkit(AbstractToolkit):
 
     name = "bookstore"
     tool_prefix = "bookstore"
+    read_tools: frozenset[str] = frozenset(
+        {
+            "agentic_retrieve",
+            "catalog_search",
+            "communities",
+            "get_card",
+            "get_community",
+            "get_toc",
+            "list_books",
+            "outline",
+            "read_pages",
+            "read_section",
+            "read_segments",
+            "related_books",
+            "search",
+            "search_book",
+        }
+    )
 
     def __init__(self, bookstore: Bookstore, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -109,6 +128,44 @@ class BookstoreToolkit(AbstractToolkit):
         """
         return await self._bookstore.search_book(book_id, query, top_k=max(1, min(top_k, 50)))
 
+    async def agentic_retrieve(
+        self,
+        book_id: str,
+        query: str,
+        top_k: int = 5,
+        draft_answer: bool = True,
+        budget_chars: Optional[int] = None,
+        max_reads: Optional[int] = None,
+        timeout_s: Optional[float] = None,
+    ) -> dict[str, Any]:
+        """Research one book with validated citations; requires PARROT_BOOKSTORE_LLM.
+
+        Args:
+            book_id: Stable identifier of the indexed book to research.
+            query: Research question for the bounded reading loop.
+            top_k: Number of first-stage candidates to consider.
+            draft_answer: Whether to ask the model for a final answer.
+            budget_chars: Optional total character budget for evidence reads.
+            max_reads: Optional maximum number of evidence reads.
+            timeout_s: Optional total request timeout in seconds.
+
+        Returns:
+            Validated evidence and citations decorated with book identity.
+
+        Raises:
+            BookstoreError: If indexed segments or a compatible LLM are unavailable.
+            ValueError: If a numeric argument is invalid.
+        """
+        return await self._bookstore.agentic_retrieve(
+            book_id,
+            query,
+            top_k=top_k,
+            draft_answer=draft_answer,
+            budget_chars=budget_chars,
+            max_reads=max_reads,
+            timeout_s=timeout_s,
+        )
+
     async def read_section(self, book_id: str, node_id: str) -> dict[str, Any]:
         """Read one section's full markdown content.
 
@@ -145,6 +202,7 @@ class BookstoreToolkit(AbstractToolkit):
         node_id: Optional[str] = None,
         max_chars: int = 12000,
         cursor: Optional[str] = None,
+        expected_revision: Optional[str] = None,
     ) -> dict[str, Any]:
         """Read paragraphs (segments) of a book by position ``[start, end)`` or one section's own text.
 
@@ -158,9 +216,23 @@ class BookstoreToolkit(AbstractToolkit):
             node_id: Section id from ``bookstore_get_toc``; reads only that section's own paragraphs.
             max_chars: Character budget for this call.
             cursor: ``next_cursor`` from a previous call.
+            expected_revision: Optional revision that the returned snapshot must match.
+
+        Returns:
+            Citable segments from the matching book snapshot.
+
+        Raises:
+            RevisionMismatchError: If the returned snapshot has a different revision.
+            BookstoreError: If the segments cannot be read.
         """
         return await self._bookstore.read_segments(
-            book_id, start=start, end=end, node_id=node_id, max_chars=max_chars, cursor=cursor
+            book_id,
+            start=start,
+            end=end,
+            node_id=node_id,
+            max_chars=max_chars,
+            cursor=cursor,
+            expected_revision=expected_revision,
         )
 
     async def outline(self, book_id: str, node_id: Optional[str] = None, max_depth: int = 3) -> dict[str, Any]:

@@ -35,6 +35,13 @@ jobs:
         with:
           version: "latest"
 
+      # A pyproject.toml change (new extra, new dependency, release version bump) must
+      # ship with a regenerated uv.lock. The sync below runs without --locked and would
+      # relock silently, so drift used to surface only in the nightly's
+      # `uv sync --locked`, failing every package suite at once.
+      - name: Check uv.lock is up to date
+        run: uv lock --check
+
       - name: Sync all workspace packages
         run: uv sync --all-packages
 
@@ -301,6 +308,12 @@ jobs:
       - name: Scaffold NavConfig environment
         run: mkdir -p env/dev && touch env/dev/.env
 
+      # FEAT-852: `--continue-on-collection-errors` stays. It does not mask a red
+      # job (collection errors already fail it); it only lets one run report
+      # every failure instead of aborting at the first. The real gap was that a
+      # never-collected file looked routine: four tests/knowledge/pageindex/ files
+      # were skipped on every run (issue:91822a3b8548). tests/test_stub_isolation.py
+      # closes that gap by failing loudly with file:line.
       - name: Run core tests
         run: uv run pytest tests/ -q --tb=short --ignore=tests/tools --continue-on-collection-errors
 

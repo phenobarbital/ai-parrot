@@ -1,0 +1,16 @@
+{
+  "parrot-sdd-permissions": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command|write_file|edit_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh ../scripts/sdd/agy_hook.sh",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}

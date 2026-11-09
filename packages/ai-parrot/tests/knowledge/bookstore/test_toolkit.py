@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from parrot.knowledge.bookstore.config import LibraryLocation
@@ -16,6 +18,7 @@ EXPECTED_TOOLS = {
     "bookstore_get_card",
     "bookstore_get_toc",
     "bookstore_search_book",
+    "bookstore_agentic_retrieve",
     "bookstore_read_section",
     "bookstore_related_books",
     "bookstore_communities",
@@ -50,6 +53,81 @@ def book_md(tmp_path):
 
 def test_tool_discovery_exposes_exactly_the_read_surface(toolkit):
     assert set(toolkit.list_tool_names()) == EXPECTED_TOOLS
+
+
+def test_agentic_and_revision_tools_expose_complete_schemas(toolkit):
+    tools = {tool.name: tool for tool in toolkit.get_tools_sync()}
+
+    agentic_schema = tools["bookstore_agentic_retrieve"].args_schema.model_json_schema()
+    assert set(agentic_schema["properties"]) == {
+        "book_id",
+        "query",
+        "top_k",
+        "draft_answer",
+        "budget_chars",
+        "max_reads",
+        "timeout_s",
+    }
+    revision_schema = tools["bookstore_read_segments"].args_schema.model_json_schema()
+    assert "expected_revision" in revision_schema["properties"]
+    assert "llm_dependent_tools" not in BookstoreToolkit.__dict__
+    assert BookstoreToolkit.llm_dependent_tools == frozenset()
+
+
+@pytest.mark.asyncio
+async def test_agentic_retrieve_forwards_every_argument(toolkit, bookstore, monkeypatch):
+    expected = {"evidence": [], "citations": []}
+    retrieve = AsyncMock(return_value=expected)
+    monkeypatch.setattr(bookstore, "agentic_retrieve", retrieve)
+
+    result = await toolkit.agentic_retrieve(
+        "book-1",
+        "How does it work?",
+        top_k=7,
+        draft_answer=False,
+        budget_chars=3456,
+        max_reads=4,
+        timeout_s=12.5,
+    )
+
+    assert result is expected
+    retrieve.assert_awaited_once_with(
+        "book-1",
+        "How does it work?",
+        top_k=7,
+        draft_answer=False,
+        budget_chars=3456,
+        max_reads=4,
+        timeout_s=12.5,
+    )
+
+
+@pytest.mark.asyncio
+async def test_read_segments_forwards_every_argument(toolkit, bookstore, monkeypatch):
+    expected = {"segments": [], "revision": "revision-1"}
+    read_segments = AsyncMock(return_value=expected)
+    monkeypatch.setattr(bookstore, "read_segments", read_segments)
+
+    result = await toolkit.read_segments(
+        "book-1",
+        start=2,
+        end=8,
+        node_id="chapter-1",
+        max_chars=4321,
+        cursor="next-page",
+        expected_revision="revision-1",
+    )
+
+    assert result is expected
+    read_segments.assert_awaited_once_with(
+        "book-1",
+        start=2,
+        end=8,
+        node_id="chapter-1",
+        max_chars=4321,
+        cursor="next-page",
+        expected_revision="revision-1",
+    )
 
 
 @pytest.mark.asyncio

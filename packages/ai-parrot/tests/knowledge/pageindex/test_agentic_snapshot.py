@@ -1,7 +1,9 @@
 """FEAT-843 — snapshot-bound search/read helpers (AC-16)."""
 
+import asyncio
 import copy
 import inspect
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -100,6 +102,30 @@ def test_snapshot_tools_named_like_public(paged_toolkit: PageIndexToolkit) -> No
     }
 
 
+def test_snapshot_tools_can_omit_read_pages(paged_toolkit: PageIndexToolkit) -> None:
+    tree = copy.deepcopy(paged_toolkit._load_tree("t"))
+    tools = paged_toolkit._agentic_read_tools("t", tree, include_read_pages=False)
+    assert {tool.name for tool in tools} == {
+        "pageindex_list_documents",
+        "pageindex_outline",
+        "pageindex_read_segments",
+    }
+
+
+def test_snapshot_has_pages_reflects_revision(paged_toolkit: PageIndexToolkit, monkeypatch: pytest.MonkeyPatch) -> None:
+    tree = copy.deepcopy(paged_toolkit._load_tree("t"))
+    assert paged_toolkit._snapshot_has_pages("t", tree) is True
+
+    real = paged_toolkit._segment_store.load_revision
+
+    def segment_only(tree_name: str, doc_id: str, revision: str):
+        rev = real(tree_name, doc_id, revision)
+        return rev.model_copy(update={"segments": [seg.model_copy(update={"page": None}) for seg in rev.segments]})
+
+    monkeypatch.setattr(paged_toolkit._segment_store, "load_revision", segment_only)
+    assert paged_toolkit._snapshot_has_pages("t", tree) is False
+
+
 @pytest.mark.asyncio
 async def test_snapshot_rejects_other_tree_name(paged_toolkit: PageIndexToolkit) -> None:
     tools = _snapshot_tools(paged_toolkit, copy.deepcopy(paged_toolkit._load_tree("t")))
@@ -168,3 +194,32 @@ def test_agentic_search_not_cached(paged_toolkit: PageIndexToolkit) -> None:
     assert engine._tree is snapshot
     assert engine.generation_id == snapshot["generation"]["id"]
     assert paged_toolkit._search == cached
+
+
+@pytest.mark.asyncio
+async def test_agentic_retrieve_times_out_on_snapshot(
+    paged_toolkit: PageIndexToolkit, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A tree load that cannot finish inside the deadline yields a timeout bundle, not an overrun.
+
+    The stub sleeps *synchronously*: before the snapshot moved to ``asyncio.to_thread`` under
+    ``asyncio.wait_for`` it would have blocked the event loop and the call would have returned
+    late instead of returning a timeout bundle.
+    """
+    real_load = paged_toolkit._load_tree
+
+    def slow_load(tree_name: str) -> dict:
+        time.sleep(0.6)
+        return real_load(tree_name)
+
+    monkeypatch.setattr(paged_toolkit, "_load_tree", slow_load)
+
+    started = asyncio.get_running_loop().time()
+    bundle = await paged_toolkit.agentic_retrieve("t", "what happened?", timeout_s=0.1)
+    elapsed = asyncio.get_running_loop().time() - started
+
+    assert bundle["stopped"] == "timeout"
+    assert bundle["candidates"] == []
+    assert bundle["generation"] is None
+    # The deadline is honoured: the request returns without waiting out the whole slow load.
+    assert elapsed < 0.5

@@ -149,7 +149,7 @@ class AutonomousOrchestrator:
         )
 ```
     """
-    
+
     def __init__(
         self,
         *,
@@ -179,13 +179,13 @@ class AutonomousOrchestrator:
         self.agent_registry = agent_registry
         self.scheduler = scheduler_manager
         self.redis_url = redis_url
-        
+
         # Components (initialized in start())
         self.event_bus: Optional[EventBus] = None
         self.job_injector: Optional[RedisJobInjector] = None
         self.webhook_listener: Optional[WebhookListener] = None
         self.hook_manager: HookManager = HookManager()
-        
+
         # Configuration
         self._use_event_bus = use_event_bus
         self._use_webhooks = use_webhooks
@@ -198,19 +198,19 @@ class AutonomousOrchestrator:
         self._hooks_via_bus = str(
             _nav_config.get("AUTONOMOUS_HOOKS_VIA_BUS", fallback="false")
         ).lower() in ("1", "true", "yes")
-        
+
         # Runtime state
         self._running = False
         self._agent_cache: Dict[str, "AbstractBot"] = {}
         self._execution_history: List[ExecutionResult] = []
         self._max_history = 1000
-        
+
         self.logger = logging.getLogger("parrot.autonomy.orchestrator")
-    
+
     # =========================================================================
     # Lifecycle
     # =========================================================================
-    
+
     async def start(
         self,
         ledger: "Optional[EventLedger]" = None,
@@ -298,7 +298,7 @@ class AutonomousOrchestrator:
                 self.logger.info("Resume complete: %d job(s) re-enqueued", count)
             except Exception:
                 self.logger.exception("Resume failed during start(); ignoring")
-    
+
     async def stop(self):
         """Stop all autonomy components."""
         self._running = False
@@ -325,7 +325,7 @@ class AutonomousOrchestrator:
             self.logger.debug("Observability flush skipped", exc_info=True)
 
         self.logger.info("Autonomy Orchestrator stopped")
-    
+
     def setup_routes(self, app):
         """Setup HTTP routes on the aiohttp application."""
         if self.webhook_listener:
@@ -367,6 +367,16 @@ class AutonomousOrchestrator:
                 )
             else:
                 setup_combined_auth_routes(app)
+                # FEAT-854: browser-mode completion endpoint (idempotent; the
+                # Telegram startup path also mounts it via attach_telegram_wrapper).
+                try:
+                    from parrot.integrations.telegram.browser_login import (
+                        setup_browser_auth_routes,
+                    )
+                except ImportError as exc:
+                    self.logger.warning("Telegram browser-auth route not mounted: %s", exc)
+                else:
+                    setup_browser_auth_routes(app)
 
     # =========================================================================
     # External Hooks
@@ -481,11 +491,11 @@ class AutonomousOrchestrator:
                         self.logger.error(
                             f"Auto-reply failed for hook '{event.hook_id}': {exc}"
                         )
-    
+
     # =========================================================================
     # Public API: Direct Execution
     # =========================================================================
-    
+
     async def execute_agent(
         self,
         agent_name: str,
@@ -518,9 +528,9 @@ class AutonomousOrchestrator:
             session_id=session_id or self._generate_session_id(),
             metadata={"method_name": method_name, **kwargs}
         )
-        
+
         return await self._execute(request)
-    
+
     async def execute_crew(
         self,
         crew_id: str,
@@ -607,9 +617,9 @@ class AutonomousOrchestrator:
             session_id=session_id or self._generate_session_id(),
             metadata=kwargs
         )
-        
+
         return await self._execute(request)
-    
+
     async def resume_agent(
         self,
         session_id: str,
@@ -631,10 +641,10 @@ class AutonomousOrchestrator:
         agent_name = state.get("agent_name")
         if not agent_name:
             raise ValueError("State must contain 'agent_name' to resume an agent.")
-            
+
         agent = await self._get_agent(agent_name)
         request_id = str(uuid.uuid4())
-        
+
         try:
             # Check if agent has resume capability (abstract bot / client)
             if hasattr(agent, "resume"):
@@ -643,7 +653,7 @@ class AutonomousOrchestrator:
                 self.logger.warning("Agent %s does not implement 'resume'. Attempting standard re-ask.", agent_name)
                 # We could try a normal `ask` if resume is missing, but it might not inject as a tool response
                 result = await agent.ask(str(user_input), session_id=session_id)
-                
+
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
             exec_result = ExecutionResult(
                 request_id=request_id,
@@ -653,7 +663,7 @@ class AutonomousOrchestrator:
                 result=result,
                 execution_time_ms=execution_time
             )
-            
+
             if self.event_bus:
                 await self.event_bus.emit(
                     "agent.execution.resumed.completed",
@@ -664,10 +674,10 @@ class AutonomousOrchestrator:
                     },
                     source="orchestrator"
                 )
-                
+
             self._add_to_history(exec_result)
             return exec_result
-            
+
         except Exception as e:
             from parrot.core.exceptions import HumanInteractionInterrupt
 
@@ -747,7 +757,7 @@ class AutonomousOrchestrator:
     # =========================================================================
     # Public API: Jobs & Async execution
     # =========================================================================
-    
+
     async def inject_job(
         self,
         target_type: Literal["agent", "crew"],
@@ -782,14 +792,14 @@ class AutonomousOrchestrator:
                 "Redis job injector not configured. "
                 "Provide redis_url to AutonomousOrchestrator."
             )
-        
+
         job_data = {
             "target_type": target_type,
             "target_id": target_id,
             "task": task,
             **kwargs
         }
-        
+
         return await self.job_injector.inject_job(
             agent_name=target_id,  # Backward compatible field
             prompt=task,
@@ -798,17 +808,17 @@ class AutonomousOrchestrator:
             callback_url=callback_url,
             metadata=job_data
         )
-    
+
     async def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Get the status of an injected job."""
         if not self.job_injector:
             return None
         return await self.job_injector.get_job_status(job_id)
-    
+
     # =========================================================================
     # Public API: Webhooks
     # =========================================================================
-    
+
     def register_webhook(
         self,
         path: str,
@@ -834,12 +844,12 @@ class AutonomousOrchestrator:
         """
         if not self.webhook_listener:
             raise RuntimeError("Webhook listener not configured")
-        
+
         # Store target type in metadata
         metadata = kwargs.pop("metadata", {})
         metadata["target_type"] = target_type
         metadata["execution_mode"] = execution_mode
-        
+
         return self.webhook_listener.register_endpoint(
             path=path,
             agent_name=target_id,  # Reuse existing field
@@ -848,11 +858,11 @@ class AutonomousOrchestrator:
             metadata=metadata,
             **kwargs
         )
-    
+
     # =========================================================================
     # Public API: Events
     # =========================================================================
-    
+
     def on_event(
         self,
         pattern: str,
@@ -881,7 +891,7 @@ class AutonomousOrchestrator:
         """
         if not self.event_bus:
             raise RuntimeError("Event bus not configured")
-        
+
         async def event_handler(event: Event):
             # Build task from event
             if task_builder:
@@ -889,7 +899,7 @@ class AutonomousOrchestrator:
             else:
                 import json
                 task = f"Process event: {json.dumps(event.payload, indent=2)}"
-            
+
             # Execute
             request = ExecutionRequest(
                 target_type=ExecutionTarget.CREW if target_type == "crew" else ExecutionTarget.AGENT,
@@ -903,15 +913,15 @@ class AutonomousOrchestrator:
                     **kwargs
                 }
             )
-            
+
             await self._execute(request)
-        
+
         return self.event_bus.subscribe(
             pattern=pattern,
             handler=event_handler,
             filter_fn=filter_fn
         )
-    
+
     async def emit_event(
         self,
         event_type: str,
@@ -922,17 +932,17 @@ class AutonomousOrchestrator:
         if not self.event_bus:
             raise RuntimeError("Event bus not configured")
         return await self.event_bus.emit(event_type, payload, **kwargs)
-    
+
     # =========================================================================
     # Internal: Unified Execution
     # =========================================================================
-    
+
     async def _execute(self, request: ExecutionRequest) -> ExecutionResult:
         """
         Unified execution handler for all request types.
         """
         start_time = datetime.now()
-        
+
         # Emit start event
         if self.event_bus:
             await self.event_bus.emit(
@@ -945,7 +955,7 @@ class AutonomousOrchestrator:
                 source="orchestrator",
                 correlation_id=request.request_id
             )
-        
+
         try:
             # Route to appropriate executor
             if request.target_type == ExecutionTarget.AGENT:
@@ -954,7 +964,7 @@ class AutonomousOrchestrator:
                 result = await self._execute_crew(request)
             else:
                 raise ValueError(f"Unknown target type: {request.target_type}")
-            
+
             # Build success result
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
             exec_result = ExecutionResult(
@@ -966,7 +976,7 @@ class AutonomousOrchestrator:
                 execution_time_ms=execution_time,
                 metadata=request.metadata
             )
-            
+
             # Emit completion event
             if self.event_bus:
                 await self.event_bus.emit(
@@ -980,12 +990,12 @@ class AutonomousOrchestrator:
                     source="orchestrator",
                     correlation_id=request.request_id
                 )
-            
+
             # Track history
             self._add_to_history(exec_result)
-            
+
             return exec_result
-            
+
         except Exception as e:
             from parrot.core.exceptions import HumanInteractionInterrupt
 
@@ -1059,16 +1069,16 @@ class AutonomousOrchestrator:
                         source="orchestrator",
                         correlation_id=request.request_id
                     )
-                
+
                 self._add_to_history(exec_result)
                 return exec_result
-                
+
             self.logger.error(
                 f"Execution failed for {request.target_type.value} "
                 f"'{request.target_id}': {e}",
                 exc_info=True
             )
-            
+
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
             exec_result = ExecutionResult(
                 request_id=request.request_id,
@@ -1078,7 +1088,7 @@ class AutonomousOrchestrator:
                 error=str(e),
                 execution_time_ms=execution_time
             )
-            
+
             # Emit failure event
             if self.event_bus:
                 await self.event_bus.emit(
@@ -1092,16 +1102,16 @@ class AutonomousOrchestrator:
                     priority=EventPriority.HIGH,
                     correlation_id=request.request_id
                 )
-            
+
             self._add_to_history(exec_result)
             return exec_result
-    
+
     async def _execute_agent(self, request: ExecutionRequest) -> Any:
         """Execute a single agent."""
         agent = await self._get_agent(request.target_id)
-        
+
         method_name = request.metadata.get("method_name")
-        
+
         if method_name and hasattr(agent, method_name):
             method = getattr(agent, method_name)
             return await method(request.task)
@@ -1111,17 +1121,17 @@ class AutonomousOrchestrator:
                 user_id=request.user_id,
                 session_id=request.session_id
             )
-    
+
     async def _execute_crew(self, request: ExecutionRequest) -> Any:
         """Execute an AgentCrew."""
         crew, crew_def = await self._get_crew(request.target_id)
-        
+
         # Determine execution mode
         mode = request.execution_mode
         if not mode and crew_def:
             mode = crew_def.execution_mode.value.lower()
         mode = mode or "sequential"
-        
+
         # Common kwargs
         common_kwargs = {
             "user_id": request.user_id,
@@ -1129,11 +1139,11 @@ class AutonomousOrchestrator:
             "synthesis_prompt": request.synthesis_prompt,
             **request.metadata
         }
-        
+
         self.logger.info(
             f"Executing crew '{request.target_id}' in '{mode}' mode"
         )
-        
+
         # Execute based on mode
         if mode == "sequential":
             return await crew.run_sequential(
@@ -1141,7 +1151,7 @@ class AutonomousOrchestrator:
                 agent_sequence=request.agent_sequence,
                 **common_kwargs
             )
-        
+
         elif mode == "parallel":
             # Build tasks list
             tasks = request.tasks
@@ -1155,13 +1165,13 @@ class AutonomousOrchestrator:
                 tasks=tasks,
                 **common_kwargs
             )
-        
+
         elif mode == "flow":
             return await crew.run_flow(
                 task=request.task,
                 **common_kwargs
             )
-        
+
         elif mode == "loop":
             if not request.loop_condition:
                 raise ValueError(
@@ -1174,14 +1184,14 @@ class AutonomousOrchestrator:
                 max_iterations=request.max_iterations,
                 **common_kwargs
             )
-        
+
         else:
             raise ValueError(f"Unknown execution mode: {mode}")
-    
+
     # =========================================================================
     # Internal: Resource Management
     # =========================================================================
-    
+
     async def _get_agent(self, agent_name: str) -> "AbstractBot":
         """Get an agent by name, with caching."""
         # Check cache
@@ -1208,7 +1218,7 @@ class AutonomousOrchestrator:
         # Cache
         self._agent_cache[agent_name] = agent
         return agent
-    
+
     async def _get_crew(
         self, 
         crew_id: str
@@ -1219,7 +1229,7 @@ class AutonomousOrchestrator:
                 "BotManager not configured. "
                 "Provide bot_manager to AutonomousOrchestrator for crew support."
             )
-        
+
         crew_data = await self.bot_manager.get_crew(crew_id)
 
         # get_crew() returns the truthy tuple (None, None) on a miss, so a
@@ -1229,27 +1239,27 @@ class AutonomousOrchestrator:
             raise ValueError(f"Crew '{crew_id}' not found")
 
         crew, crew_def = crew_data
-        
+
         # Auto-configure agents in crew
         for agent in crew.agents.values():
             if hasattr(agent, 'configure') and not self._agent_is_configured(agent):
                 await agent.configure()
-        
+
         return crew, crew_def
-    
+
     def _agent_is_configured(self, agent: "AbstractBot") -> bool:
         """Check if an agent is configured."""
         if hasattr(agent, '_llm'):
             return agent._llm is not None
         return True
-    
+
     # =========================================================================
     # Internal: Event Handlers
     # =========================================================================
-    
+
     def _setup_internal_event_handlers(self):
         """Setup internal event bus handlers."""
-        
+
         # Log all execution events
         @self.event_bus.on("*.execution.*")
         async def log_executions(event: Event):
@@ -1257,24 +1267,24 @@ class AutonomousOrchestrator:
                 f"Execution event: {event.event_type} - "
                 f"{event.payload.get('target_id')}"
             )
-        
+
         # Chain reactive executions
         @self.event_bus.on("*.execution.completed")
         async def handle_completion(event: Event):
             # Future: implement reactive agent chains
             pass
-    
+
     async def _handle_injected_job(self, job_data: Dict[str, Any]) -> Any:
         """Handle jobs injected via Redis."""
         metadata = job_data.get("metadata", {})
         target_type = metadata.get("target_type", "agent")
         target_id = job_data.get("agent_name") or metadata.get("target_id")
         task = job_data.get("prompt") or metadata.get("task")
-        
+
         self.logger.info(
             f"Processing injected job: {target_type} '{target_id}'"
         )
-        
+
         request = ExecutionRequest(
             target_type=ExecutionTarget.CREW if target_type == "crew" else ExecutionTarget.AGENT,
             target_id=target_id,
@@ -1284,10 +1294,10 @@ class AutonomousOrchestrator:
             loop_condition=metadata.get("loop_condition"),
             metadata=metadata
         )
-        
+
         result = await self._execute(request)
         return result.result if result.success else {"error": result.error}
-    
+
     async def _webhook_executor(
         self,
         agent_name: str,
@@ -1298,7 +1308,7 @@ class AutonomousOrchestrator:
         metadata = kwargs.get("metadata", {})
         target_type = metadata.get("target_type", "agent")
         execution_mode = metadata.get("execution_mode")
-        
+
         if target_type == "crew":
             result = await self.execute_crew(
                 crew_id=agent_name,
@@ -1310,23 +1320,23 @@ class AutonomousOrchestrator:
                 agent_name=agent_name,
                 task=prompt
             )
-        
+
         return result.result if result.success else None
-    
+
     # =========================================================================
     # Internal: Utilities
     # =========================================================================
-    
+
     def _generate_session_id(self) -> str:
         """Generate a unique session ID."""
         return f"{self._default_session_prefix}{uuid.uuid4().hex[:12]}"
-    
+
     def _add_to_history(self, result: ExecutionResult):
         """Add result to execution history."""
         self._execution_history.append(result)
         if len(self._execution_history) > self._max_history:
             self._execution_history = self._execution_history[-self._max_history:]
-    
+
     def get_execution_history(
         self,
         limit: int = 100,
@@ -1335,16 +1345,16 @@ class AutonomousOrchestrator:
     ) -> List[ExecutionResult]:
         """Get execution history with optional filtering."""
         results = self._execution_history[-limit:]
-        
+
         if target_type:
             target = ExecutionTarget(target_type)
             results = [r for r in results if r.target_type == target]
-        
+
         if success_only:
             results = [r for r in results if r.success]
-        
+
         return results
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """Get orchestrator statistics."""
         history = self._execution_history

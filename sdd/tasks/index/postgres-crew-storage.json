@@ -1,0 +1,248 @@
+{
+  "feature": "postgres-crew-storage",
+  "feature_id": "FEAT-860",
+  "spec": "sdd/specs/postgres-crew-storage.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-09T19:13:16.084308+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot-server/tests/unit/test_crew_redis_legacy_payloads.py",
+          "packages/ai-parrot-server/tests/unit/test_crew_definition_codec.py",
+          "packages/ai-parrot-server/tests/unit/test_crew_definition_config.py",
+          "packages/ai-parrot-server/tests/unit/test_crew_definition_docs.py",
+          "packages/ai-parrot-server/tests/unit/test_crew_redis_snapshot.py",
+          "packages/ai-parrot-server/tests/unit/test_crew_postgres_store.py",
+          "packages/ai-parrot-server/tests/unit/test_crew_definition_storage.py",
+          "packages/ai-parrot-server/tests/manager/test_crew_storage_wiring.py",
+          "packages/ai-parrot-server/tests/handlers/test_crew_storage_errors.py",
+          "packages/ai-parrot-server/tests/handlers/test_crew_postgres_store_live.py",
+          "packages/ai-parrot-server/tests/handlers/test_crew_migration_live.py",
+          "packages/ai-parrot/tests/test_botmanager_flags.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:0c199e81a20faff11dc516dd65f0c5fdc039cbed6d997edf85a9cc2bd1903ecc"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5443",
+      "slug": "crew-definition-codec",
+      "title": "Extract shared crew definition codec",
+      "feature_id": "FEAT-860",
+      "feature": "postgres-crew-storage",
+      "spec": "sdd/specs/postgres-crew-storage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent codec extraction; owns redis_persistence.py before TASK-5445 extends it.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5443-crew-definition-codec.md"
+    },
+    {
+      "id": "TASK-5444",
+      "slug": "crew-definition-config",
+      "title": "Add opt-in crew definition storage configuration",
+      "feature_id": "FEAT-860",
+      "feature": "postgres-crew-storage",
+      "spec": "sdd/specs/postgres-crew-storage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent configuration declarations in conf.py and isolated tests; no dependency on new storage classes.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5444-crew-definition-config.md"
+    },
+    {
+      "id": "TASK-5445",
+      "slug": "crew-redis-safe-snapshots",
+      "title": "Add strict Redis snapshots and conditional cleanup",
+      "feature_id": "FEAT-860",
+      "feature": "postgres-crew-storage",
+      "spec": "sdd/specs/postgres-crew-storage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5443"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes codec delegates from TASK-5443 and serializes the overlapping redis_persistence.py edits.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5445-crew-redis-safe-snapshots.md"
+    },
+    {
+      "id": "TASK-5446",
+      "slug": "crew-postgres-store",
+      "title": "Implement Postgres crew rows, tombstones and migration lock",
+      "feature_id": "FEAT-860",
+      "feature": "postgres-crew-storage",
+      "spec": "sdd/specs/postgres-crew-storage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5443",
+        "TASK-5444"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes definition_codec from TASK-5443 and CREW_DEFINITION_PG_DSN from TASK-5444; unit tests use fakes, no shared DDL.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5446-crew-postgres-store.md"
+    },
+    {
+      "id": "TASK-5447",
+      "slug": "crew-definition-composition",
+      "title": "Implement authoritative storage routing and deletion resolution",
+      "feature_id": "FEAT-860",
+      "feature": "postgres-crew-storage",
+      "spec": "sdd/specs/postgres-crew-storage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5445",
+        "TASK-5446"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes CrewRedisSnapshot/strict helpers from TASK-5445 and CrewPostgres row APIs from TASK-5446.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5447-crew-definition-composition.md"
+    },
+    {
+      "id": "TASK-5448",
+      "slug": "crew-redis-postgres-migration",
+      "title": "Implement verified Redis migration and dry-run reporting",
+      "feature_id": "FEAT-860",
+      "feature": "postgres-crew-storage",
+      "spec": "sdd/specs/postgres-crew-storage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5447"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes CrewDefinitionStorage/CrewMigrationReport from TASK-5447 and serializes modifications of definition_storage.py and test_crew_definition_storage.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5448-crew-redis-postgres-migration.md"
+    },
+    {
+      "id": "TASK-5449",
+      "slug": "crew-manager-storage-wiring",
+      "title": "Wire manager persistence ordering and tombstone retries",
+      "feature_id": "FEAT-860",
+      "feature": "postgres-crew-storage",
+      "spec": "sdd/specs/postgres-crew-storage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5448"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes initialized composition, migration hook and deletion resolver completed by TASK-5448; its transitive prerequisites provide config/PG helpers.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5449-crew-manager-storage-wiring.md"
+    },
+    {
+      "id": "TASK-5450",
+      "slug": "crew-http-storage-errors",
+      "title": "Propagate storage failures and atomic updates through HTTP",
+      "feature_id": "FEAT-860",
+      "feature": "postgres-crew-storage",
+      "spec": "sdd/specs/postgres-crew-storage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5449"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes BotManager.persist_crew_update, backend selection and error propagation from TASK-5449.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5450-crew-http-storage-errors.md"
+    },
+    {
+      "id": "TASK-5451",
+      "slug": "crew-live-migration-validation",
+      "title": "Validate Postgres constraints and Redis migration races live",
+      "feature_id": "FEAT-860",
+      "feature": "postgres-crew-storage",
+      "spec": "sdd/specs/postgres-crew-storage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5448"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Consumes complete migrate_from_redis and reports from TASK-5448. Exclusive: live ensure_schema applies shared navigator DDL outside declared files.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5451-crew-live-migration-validation.md"
+    },
+    {
+      "id": "TASK-5452",
+      "slug": "crew-definition-storage-documentation",
+      "title": "Documentation — crew-definition-storage and crew_handler",
+      "feature_id": "FEAT-860",
+      "feature": "postgres-crew-storage",
+      "spec": "sdd/specs/postgres-crew-storage.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5443",
+        "TASK-5444",
+        "TASK-5445",
+        "TASK-5446",
+        "TASK-5448",
+        "TASK-5449",
+        "TASK-5450"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Documents codec from TASK-5443, config from TASK-5444, Redis snapshots from TASK-5445, PG APIs from TASK-5446, migration/composition from TASK-5448, manager API from TASK-5449 and HTTP behavior from TASK-5450.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5452-crew-definition-storage-documentation.md"
+    }
+  ]
+}

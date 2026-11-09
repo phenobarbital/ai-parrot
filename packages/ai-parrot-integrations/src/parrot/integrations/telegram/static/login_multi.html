@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <meta http-equiv="Content-Security-Policy"
           content="default-src 'self' https://telegram.org; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline';">
+    <meta name="parrot-browser-complete-origins" content="">
     <title>Sign In</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
@@ -237,9 +238,154 @@
      *   token                  — JWT from Google or Azure SSO.
      */
     (function () {
-        var tg = window.Telegram.WebApp;
-        tg.ready();
-        tg.expand();
+        // FEAT-854 browser-mode completion — keep this block identical in all login pages.
+        var BROWSER_COMPLETE_PATH = '/api/auth/telegram/browser-complete';
+        var BROWSER_STATE_RE = /^browser\.[A-Za-z0-9_-]{43}$/;
+        var BROWSER_CTX_KEY = 'tg_browser_login_ctx';
+
+        function readBrowserContext() {
+            var q = new URLSearchParams(window.location.search);
+            var marker = null;
+            try { marker = JSON.parse(window.sessionStorage.getItem(BROWSER_CTX_KEY) || 'null'); } catch (e) { marker = null; }
+            var ctx = { mode: q.get('return_mode'), state: q.get('state'), completeUrl: q.get('complete_url'), marker: marker };
+            ctx.present = !!(ctx.mode || ctx.completeUrl || marker ||
+                             (ctx.state && ctx.state.indexOf('browser.') === 0));
+            return ctx;
+        }
+
+        function allowedCompletionOrigins() {
+            var meta = document.querySelector('meta[name="parrot-browser-complete-origins"]');
+            var extra = meta ? (meta.getAttribute('content') || '').split(/\s+/).filter(Boolean) : [];
+            return [window.location.origin].concat(extra);
+        }
+
+        function validateBrowserContext(ctx) {
+            // Check return_mode
+            if (ctx.present && ctx.mode !== 'browser') {
+                return 'Invalid return mode.';
+            }
+            // Check state format
+            if (ctx.present && ctx.state && !BROWSER_STATE_RE.test(ctx.state)) {
+                return 'Invalid state format.';
+            }
+            // Check marker matches state if both present
+            if (ctx.present && ctx.marker && ctx.state && ctx.marker.state !== ctx.state) {
+                return 'State mismatch.';
+            }
+            // Check complete_url
+            if (ctx.present && ctx.completeUrl) {
+                try {
+                    var u = new URL(ctx.completeUrl);
+                    // No query or hash allowed
+                    if (u.search || u.hash) {
+                        return 'Complete URL must not contain query or hash.';
+                    }
+                    // Must be the expected path
+                    if (u.pathname !== BROWSER_COMPLETE_PATH) {
+                        return 'Invalid completion endpoint.';
+                    }
+                    // Protocol check
+                    if (u.protocol !== 'https:' && u.protocol !== 'http:') {
+                        return 'Invalid protocol.';
+                    }
+                    // Same-origin allowed, otherwise check allowed list
+                    if (u.origin !== window.location.origin) {
+                        var allowed = allowedCompletionOrigins();
+                        if (allowed.indexOf(u.origin) === -1) {
+                            return 'Origin not allowed.';
+                        }
+                    }
+                } catch (e) {
+                    return 'Invalid complete URL.';
+                }
+            }
+            return null;
+        }
+
+        function appendBrowserParams(params) {
+            var ctx = readBrowserContext();
+            if (!ctx.present) { return true; }
+            var err = validateBrowserContext(ctx);
+            if (err) { showBrowserResult(false, err); return false; }
+            params.set('return_mode', 'browser');
+            params.set('state', ctx.state);
+            params.set('complete_url', ctx.completeUrl);
+            try { window.sessionStorage.setItem(BROWSER_CTX_KEY, JSON.stringify({ state: ctx.state })); } catch (e) { /* storage blocked */ }
+            return true;
+        }
+
+        function completeLogin(payload, legacySend) {
+            var ctx = readBrowserContext();
+            if (!ctx.present) { legacySend(); return; }
+            var err = validateBrowserContext(ctx);
+            if (err) { showBrowserResult(false, err); return; }
+            // POST to complete_url
+            var postData = Object.assign({}, payload, { state: ctx.state });
+            fetch(ctx.completeUrl, {
+                method: 'POST',
+                credentials: 'omit',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(postData)
+            }).then(function(resp) {
+                if (resp.ok) {
+                    return resp.json().then(function(data) {
+                        if (data.ok) {
+                            showBrowserResult(true, 'Authentication complete.', data.redirect_url);
+                        } else {
+                            showBrowserResult(false, data.message || 'Authentication failed.');
+                        }
+                    }).catch(function() {
+                        showBrowserResult(false, 'Invalid server response.');
+                    });
+                } else if (resp.status === 410) {
+                    showBrowserResult(false, 'Link expired. Send /login again.');
+                } else if (resp.status === 401) {
+                    showBrowserResult(false, 'Sign-in rejected.');
+                } else if (resp.status === 503) {
+                    showBrowserResult(false, 'Server temporarily unavailable.');
+                } else {
+                    showBrowserResult(false, 'Authentication failed (HTTP ' + resp.status + ').');
+                }
+            }).catch(function(err) {
+                showBrowserResult(false, 'Network error.');
+            });
+            // Clear the marker
+            try { window.sessionStorage.removeItem(BROWSER_CTX_KEY); } catch (e) { /* ignore */ }
+        }
+
+        function showBrowserResult(ok, message, redirectUrl) {
+            var card = document.querySelector('.login-card');
+            if (!card) { return; }
+            card.innerHTML = '';
+            var h1 = document.createElement('h1');
+            h1.textContent = ok ? 'Success' : 'Error';
+            h1.style.textAlign = 'center';
+            h1.style.marginBottom = '1rem';
+            card.appendChild(h1);
+            var p = document.createElement('p');
+            p.textContent = message;
+            p.style.textAlign = 'center';
+            p.style.marginTop = '1rem';
+            card.appendChild(p);
+            if (ok && redirectUrl && redirectUrl.indexOf('https://t.me/') === 0) {
+                var a = document.createElement('a');
+                a.href = redirectUrl;
+                a.textContent = 'Return to Telegram';
+                a.style.display = 'inline-block';
+                a.style.marginTop = '1.5rem';
+                a.style.padding = '14px 24px';
+                a.style.background = 'var(--tg-theme-button-color, #2481cc)';
+                a.style.color = 'var(--tg-theme-button-text-color, #fff)';
+                a.style.borderRadius = '10px';
+                a.style.textDecoration = 'none';
+                a.style.fontWeight = '600';
+                a.style.textAlign = 'center';
+                card.appendChild(a);
+            }
+        }
+
+        var tg = (window.Telegram && window.Telegram.WebApp) || null;
+        if (tg) { tg.ready(); tg.expand(); }
 
         var params = new URLSearchParams(window.location.search);
         var authUrl              = params.get('auth_url') || '';
@@ -289,12 +435,14 @@
         }
 
         function sendAndClose(payload) {
-            if (typeof tg.sendData === 'function') {
-                tg.sendData(JSON.stringify(payload));
-                setTimeout(function () { tg.close(); }, 400);
-            } else {
-                showStatus('&#x2705; Authenticated. Return to Telegram.', 'success');
-            }
+            completeLogin(payload, function legacySend() {
+                if (tg && typeof tg.sendData === 'function') {
+                    tg.sendData(JSON.stringify(payload));
+                    setTimeout(function () { tg.close(); }, 400);
+                } else {
+                    showStatus('&#x2705; Authenticated. Return to Telegram.', 'success');
+                }
+            });
         }
 
         function addDivider() {
@@ -567,6 +715,8 @@
                         preserveParams.set('next_auth_required', 'true');
                     }
                 }
+                // FEAT-854: append browser-mode params if present
+                if (!appendBrowserParams(preserveParams)) { return; }
                 var redirectUrl = pageBase + '?' + preserveParams.toString();
 
                 var sep = ssoUrl.indexOf('?') !== -1 ? '&' : '?';

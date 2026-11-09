@@ -1,4 +1,5 @@
 """Pure utility functions for PageIndex — no LLM dependency."""
+
 from __future__ import annotations
 
 import copy
@@ -57,8 +58,7 @@ def get_encoder(model: str = "gpt-4o") -> Any | None:
         except Exception:  # noqa: BLE001 — KeyError, network, cache errors
             continue
     logger.warning(
-        "tiktoken encoding unavailable (offline?) — falling back to a "
-        "character-based token estimate",
+        "tiktoken encoding unavailable (offline?) — falling back to a character-based token estimate",
     )
     return None
 
@@ -84,6 +84,7 @@ def count_tokens(text: str, model: str = "gpt-4o") -> int:
 
 # --- JSON Helpers ---
 
+
 def get_json_content(response: str) -> str:
     """Strip ```json fences from a string."""
     start_idx = response.find("```json")
@@ -99,33 +100,44 @@ def get_json_content(response: str) -> str:
 
 
 def extract_json(content: str) -> Any:
-    """Extract JSON from LLM response text."""
-    try:
-        start_idx = content.find("```json")
-        if start_idx != -1:
-            start_idx += 7
-            end_idx = content.rfind("```")
-            json_content = content[start_idx:end_idx].strip()
-        else:
-            json_content = content.strip()
+    """Extract JSON from an LLM reply.
 
-        json_content = json_content.replace("None", "null")
-        json_content = json_content.replace("\n", " ").replace("\r", " ")
-        json_content = " ".join(json_content.split())
+    Valid JSON parses unchanged. Otherwise a ```json fence is taken from
+    anywhere in the reply, ``None`` and trailing commas are repaired outside
+    quoted strings only, and raw newlines or tabs inside strings are accepted.
+
+    Args:
+        content: Raw LLM response text.
+
+    Returns:
+        The parsed value, or ``{}`` when the text cannot be parsed.
+    """
+    json_content = content.strip()
+    try:
         return json.loads(json_content)
     except json.JSONDecodeError:
+        # A reply that opens with prose or a fence wraps the JSON; a reply that
+        # opens with JSON is left whole so backticks inside strings survive.
+        if not json_content.startswith(("{", "[")) and "```" in json_content:
+            json_content = get_json_content(json_content)
+        # Match strings first so repairs never change titles, excerpts or code.
+        tokens = re.compile(r'"(?:[^"\\]|\\.)*"|\bNone\b|,\s*(?=[}\]])', re.DOTALL)
+        repaired = tokens.sub(
+            lambda match: (
+                match.group() if match.group().startswith('"') else ("null" if match.group() == "None" else "")
+            ),
+            json_content,
+        )
         try:
-            json_content = json_content.replace(",]", "]").replace(",}", "}")
-            return json.loads(json_content)
-        except Exception:
+            # strict=False: LLMs often emit raw newlines inside long string values.
+            return json.loads(repaired, strict=False)
+        except json.JSONDecodeError:
             logger.error("Failed to parse JSON even after cleanup")
             return {}
-    except Exception as e:
-        logger.error("Unexpected error extracting JSON: %s", e)
-        return {}
 
 
 # --- PDF Parsing ---
+
 
 def get_page_tokens(
     pdf_path: str | BytesIO,
@@ -161,10 +173,11 @@ def get_page_tokens(
         else:
             raise ValueError(f"Invalid pdf_path: {pdf_path}")
         page_list = []
-        for page in doc:
-            page_text = page.get_text()
-            token_length = measure(page_text)
-            page_list.append((page_text, token_length))
+        with doc:
+            for page in doc:
+                page_text = page.get_text()
+                token_length = measure(page_text)
+                page_list.append((page_text, token_length))
         return page_list
     else:
         raise ValueError(f"Unsupported PDF parser: {pdf_parser}")
@@ -236,11 +249,7 @@ def get_text_of_pdf_pages_with_labels(
     text = ""
     for page_num in range(start_page - 1, end_page):
         if 0 <= page_num < len(pdf_pages):
-            text += (
-                f"<physical_index_{page_num+1}>\n"
-                f"{pdf_pages[page_num][0]}\n"
-                f"<physical_index_{page_num+1}>\n"
-            )
+            text += f"<physical_index_{page_num+1}>\n{pdf_pages[page_num][0]}\n<physical_index_{page_num+1}>\n"
     return text
 
 
@@ -259,6 +268,7 @@ def sanitize_filename(filename: str, replacement: str = "-") -> str:
 
 # --- Tree Utilities ---
 
+
 def write_node_id(data: Any, node_id: int = 0) -> int:
     """Assign sequential node_id values to a tree structure."""
     if isinstance(data, dict):
@@ -276,12 +286,9 @@ def write_node_id(data: Any, node_id: int = 0) -> int:
 def get_nodes(structure: Any) -> list[dict]:
     """Flatten a tree into a list of nodes (without children)."""
     if isinstance(structure, dict):
-        structure_node = copy.deepcopy(structure)
-        structure_node.pop("nodes", None)
+        structure_node = copy.deepcopy({key: value for key, value in structure.items() if key != "nodes"})
         nodes = [structure_node]
-        for key in list(structure.keys()):
-            if "nodes" in key:
-                nodes.extend(get_nodes(structure[key]))
+        nodes.extend(get_nodes(structure.get("nodes", [])))
         return nodes
     elif isinstance(structure, list):
         nodes: list[dict] = []
@@ -328,6 +335,7 @@ def get_leaf_nodes(structure: Any) -> list[dict]:
 
 def is_leaf_node(data: Any, node_id: str) -> bool:
     """Check if a node with given node_id is a leaf."""
+
     def find_node(d: Any, nid: str) -> Optional[dict]:
         if isinstance(d, dict):
             if d.get("node_id") == nid:
@@ -370,6 +378,7 @@ def find_node_by_id(data: Any, node_id: str) -> Optional[dict]:
 
 def list_to_tree(data: list[dict]) -> list[dict]:
     """Convert a flat TOC list into a hierarchical tree."""
+
     def get_parent_structure(structure: Optional[str]) -> Optional[str]:
         if not structure:
             return None
@@ -423,6 +432,7 @@ def add_preface_if_needed(data: list[dict]) -> list[dict]:
 
 # --- Post-Processing ---
 
+
 def post_processing(structure: list[dict], end_physical_index: int) -> list[dict]:
     """Convert flat TOC list to tree with start/end indices."""
     for i, item in enumerate(structure):
@@ -475,9 +485,7 @@ def remove_fields(data: Any, fields: list[str] | None = None) -> Any:
     if fields is None:
         fields = ["text"]
     if isinstance(data, dict):
-        return {
-            k: remove_fields(v, fields) for k, v in data.items() if k not in fields
-        }
+        return {k: remove_fields(v, fields) for k, v in data.items() if k not in fields}
     elif isinstance(data, list):
         return [remove_fields(item, fields) for item in data]
     return data
@@ -496,6 +504,7 @@ def remove_structure_text(data: Any) -> Any:
 
 
 # --- Node Text & Summaries ---
+
 
 def add_node_text(node: Any, pdf_pages: list[tuple[str, int]]) -> None:
     """Add page text to tree nodes based on start/end indices."""
@@ -527,6 +536,7 @@ def add_node_text_with_labels(node: Any, pdf_pages: list[tuple[str, int]]) -> No
 
 # --- Physical Index Conversion ---
 
+
 def convert_physical_index_to_int(data: Any) -> Any:
     """Convert '<physical_index_X>' strings to integers."""
     if isinstance(data, list):
@@ -535,9 +545,7 @@ def convert_physical_index_to_int(data: Any) -> Any:
                 val = data[i]["physical_index"]
                 if isinstance(val, str):
                     if val.startswith("<physical_index_"):
-                        data[i]["physical_index"] = int(
-                            val.split("_")[-1].rstrip(">").strip()
-                        )
+                        data[i]["physical_index"] = int(val.split("_")[-1].rstrip(">").strip())
                     elif val.startswith("physical_index_"):
                         data[i]["physical_index"] = int(val.split("_")[-1].strip())
     elif isinstance(data, str):
@@ -565,6 +573,7 @@ def convert_page_to_int(data: list[dict]) -> list[dict]:
 
 # --- Validation ---
 
+
 def validate_and_truncate_physical_indices(
     toc_with_page_number: list[dict],
     page_list_length: int,
@@ -591,6 +600,7 @@ def validate_and_truncate_physical_indices(
 
 # --- Page Grouping ---
 
+
 def page_list_to_group_text(
     page_contents: list[str],
     token_lengths: list[int],
@@ -608,13 +618,9 @@ def page_list_to_group_text(
     current_token_count = 0
 
     expected_parts_num = math.ceil(num_tokens / max_tokens)
-    average_tokens_per_part = math.ceil(
-        ((num_tokens / expected_parts_num) + max_tokens) / 2
-    )
+    average_tokens_per_part = math.ceil(((num_tokens / expected_parts_num) + max_tokens) / 2)
 
-    for i, (page_content, page_tokens) in enumerate(
-        zip(page_contents, token_lengths, strict=False)
-    ):
+    for i, (page_content, page_tokens) in enumerate(zip(page_contents, token_lengths, strict=False)):
         if current_token_count + page_tokens > average_tokens_per_part:
             # Skip closing an empty group — happens when the very first page
             # already exceeds average_tokens_per_part on iteration 0; emitting
@@ -636,6 +642,7 @@ def page_list_to_group_text(
 
 # --- Matching & Offset ---
 
+
 def extract_matching_page_pairs(
     toc_page: list[dict],
     toc_physical_index: list[dict],
@@ -648,11 +655,13 @@ def extract_matching_page_pairs(
             if phy_item.get("title") == page_item.get("title"):
                 physical_index = phy_item.get("physical_index")
                 if physical_index is not None and int(physical_index) >= start_page_index:
-                    pairs.append({
-                        "title": phy_item.get("title"),
-                        "page": page_item.get("page"),
-                        "physical_index": physical_index,
-                    })
+                    pairs.append(
+                        {
+                            "title": phy_item.get("title"),
+                            "page": page_item.get("page"),
+                            "physical_index": physical_index,
+                        }
+                    )
     return pairs
 
 
@@ -687,6 +696,7 @@ def add_page_offset_to_toc_json(data: list[dict], offset: int) -> list[dict]:
 
 
 # --- Formatting ---
+
 
 def reorder_dict(data: dict, key_order: list[str]) -> dict:
     """Reorder dictionary keys."""
@@ -735,6 +745,7 @@ def print_toc(tree: list[dict], indent: int = 0) -> None:
 
 # --- Regex Helpers ---
 
+
 def get_first_start_page_from_text(text: str) -> int:
     """Extract first start_index page number from tagged text."""
     match = re.search(r"<start_index_(\d+)>", text)
@@ -757,6 +768,7 @@ def remove_first_physical_index_section(text: str) -> str:
 
 
 # --- Config ---
+
 
 class ConfigLoader:
     """Load PageIndex configuration from YAML with user overrides."""

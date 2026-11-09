@@ -32,16 +32,16 @@ class SegmentStore:
 
     def segments_dir(self, tree_name: str) -> Path:
         """Return ``<storage_dir>/<tree_name>/segments``; ValueError on a bad name."""
-        if not isinstance(tree_name, str) or not _TREE_NAME_RE.match(tree_name):
+        if not isinstance(tree_name, str) or not _TREE_NAME_RE.fullmatch(tree_name):
             raise ValueError(f"Invalid tree_name {tree_name!r}")
         return self._dir / tree_name / "segments"
 
     def revision_path(self, tree_name: str, doc_id: str, revision: str) -> Path:
         """Path of one revision file; ValueError on a malformed doc_id or revision."""
         directory = self.segments_dir(tree_name)
-        if not isinstance(doc_id, str) or not _DOC_ID_RE.match(doc_id):
+        if not isinstance(doc_id, str) or not _DOC_ID_RE.fullmatch(doc_id):
             raise ValueError(f"Invalid doc_id {doc_id!r}")
-        if not isinstance(revision, str) or not _REVISION_RE.match(revision):
+        if not isinstance(revision, str) or not _REVISION_RE.fullmatch(revision):
             raise ValueError(f"Invalid revision {revision!r}")
         return directory / f"{doc_id}.{revision}.json"
 
@@ -54,11 +54,34 @@ class SegmentStore:
     def _cache_evict(self, key: tuple[str, str, str]) -> None:
         self._cache.pop(key, None)
 
+    @staticmethod
+    def _scan_state(rev: DocumentRevision) -> tuple[Any, ...]:
+        """Scan results of ``rev``: the scorer plus every segment's flags and injection mark."""
+        return (
+            rev.scored_by,
+            [(seg.flags, seg.injection.model_dump() if seg.injection else None) for seg in rev.segments],
+        )
+
     def save_revision(self, tree_name: str, rev: DocumentRevision) -> Path:
-        """Write ``rev`` atomically; no-op when the file already exists."""
+        """Write ``rev`` atomically.
+
+        The revision id hashes segment texts only, so an existing file can hold the same text with
+        different (or no) injection-scan results. An existing file is left untouched unless ``rev``
+        carries scan results (``scored_by`` set) that differ from it, or it is unreadable; in that case it is
+        replaced atomically and its cache entry evicted. An unscanned ``rev`` never overwrites a scanned one.
+        """
         path = self.revision_path(tree_name, rev.doc_id, rev.revision)
-        if not path.is_file():
-            _atomic_write(path, rev.model_dump_json())
+        if path.is_file():
+            if rev.scored_by is None:
+                return path
+            try:
+                existing = DocumentRevision.model_validate_json(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                existing = None
+            if existing is not None and self._scan_state(existing) == self._scan_state(rev):
+                return path
+            self._cache_evict((tree_name, rev.doc_id, rev.revision))
+        _atomic_write(path, rev.model_dump_json())
         return path
 
     def load_revision(self, tree_name: str, doc_id: str, revision: str) -> Optional[DocumentRevision]:
@@ -90,15 +113,18 @@ class SegmentStore:
             if not entry.is_file() or entry.suffix != ".json":
                 continue
             doc_id, _, revision = entry.stem.rpartition(".")
-            if _DOC_ID_RE.match(doc_id) and _REVISION_RE.match(revision):
+            if _DOC_ID_RE.fullmatch(doc_id) and _REVISION_RE.fullmatch(revision):
                 pairs.append((doc_id, revision))
         return sorted(pairs)
 
     @staticmethod
     def live_revisions(tree: dict[str, Any]) -> set[tuple[str, str]]:
         """Every ``(doc_id, revision)`` named by a node of ``tree``."""
-        return {(n["doc_id"], n["revision"]) for n in structure_to_list(tree.get("structure", []))
-                if isinstance(n.get("doc_id"), str) and isinstance(n.get("revision"), str)}
+        return {
+            (n["doc_id"], n["revision"])
+            for n in structure_to_list(tree.get("structure", []))
+            if isinstance(n.get("doc_id"), str) and isinstance(n.get("revision"), str)
+        }
 
     def mark_superseded(self, tree_name: str, pairs: Iterable[tuple[str, str]]) -> int:
         """Restart the grace clock (``os.utime``) of revisions a new generation stopped referencing."""
