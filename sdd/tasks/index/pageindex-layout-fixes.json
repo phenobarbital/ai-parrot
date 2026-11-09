@@ -61,16 +61,17 @@
       "feature_id": "FEAT-856",
       "feature": "pageindex-layout-fixes",
       "spec": "sdd/specs/pageindex-layout-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-11-09T16:07:49+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-09T16:08:44+00:00",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency: touches only layout_structure.py (_level_to_depth) and test_layout_structure.py, disjoint from TASK-5412",
-      "file": "sdd/tasks/active/TASK-5413-increasing-level-map.md"
+      "file": "sdd/tasks/completed/TASK-5413-increasing-level-map.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5414",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-856 — PageIndex Layout Fixes — Enumerated Enhancement Headings
 **Spec**: `sdd/specs/pageindex-layout-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -210,8 +210,13 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude (Opus 5.5) — /sdd-fix session agent:sdd-fix:087cd628
+**Date**: 2026-11-09
+**Notes**: `_level_to_depth` keeps today's majority vote, then walks levels in ascending order and keeps a level only
+when its depth is greater than the last kept level's depth. Tests: `test_level_to_depth_strictly_increasing` (the five
+cases of the acceptance criteria, including the 800-53 map `{1: 1, 2: 1, 3: 2, 5: 3, 6: 3}` → `{1: 1, 3: 2, 5: 3}`)
+and `test_hybrid_nests_headings_below_stray_anchor` (unanchored `###` headings at depth 2, the anchored `PL-10 Odd`
+keeps depth 1). Both new tests fail against the baseline tree of origin/dev (4ace6b6d11) and pass here.
+Validation: test_layout_structure.py + test_builder_layout.py 25 passed; ruff clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
