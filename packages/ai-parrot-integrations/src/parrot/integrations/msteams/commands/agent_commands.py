@@ -184,7 +184,7 @@ class AgentCommandHandler:
 
         method = getattr(self.agent, method_name)
         spec = queued_spec_of(method)
-        if spec is not None:
+        if isinstance(getattr(spec, "command", None), str):
             await self.wrapper.send_text(f"Use /{spec.command} — it runs in the background.", turn_context)
             return
         await self.wrapper.send_typing(turn_context)
@@ -228,7 +228,7 @@ class AgentCommandHandler:
 
         method = getattr(self.agent, method_name)
         spec = queued_spec_of(method)
-        if spec is not None:
+        if isinstance(getattr(spec, "command", None), str):
             await self.wrapper.send_text(f"Use /{spec.command} — it runs in the background.", turn_context)
             return
         await self.wrapper.send_typing(turn_context)
