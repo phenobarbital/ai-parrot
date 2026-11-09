@@ -64,11 +64,11 @@
     {
       "id": "TASK-5386",
       "slug": "agentic-max-chars-and-provider-error",
-      "title": "Agentic retrieval \u2014 max_chars=None coercion and a provider_error stop reason",
+      "title": "Agentic retrieval — max_chars=None coercion and a provider_error stop reason",
       "feature_id": "FEAT-849",
       "feature": "pageindex-toolkit-tech-debt",
       "spec": "sdd/specs/pageindex-toolkit-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -76,8 +76,9 @@
       "parallelism_notes": "No dependency: touches only agentic.py and test_agentic_retrieval.py, which no other task in this feature declares.",
       "assigned_to": null,
       "started_at": "2026-11-09T12:23:05.238727+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5386-agentic-max-chars-and-provider-error.md"
+      "completed_at": "2026-11-09T12:28:01+00:00",
+      "file": "sdd/tasks/completed/TASK-5386-agentic-max-chars-and-provider-error.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5387",
@@ -102,7 +103,7 @@
     {
       "id": "TASK-5388",
       "slug": "documentation-agentic-retrieval-page",
-      "title": "Documentation \u2014 PageIndex agentic retrieval page",
+      "title": "Documentation — PageIndex agentic retrieval page",
       "feature_id": "FEAT-849",
       "feature": "pageindex-toolkit-tech-debt",
       "spec": "sdd/specs/pageindex-toolkit-tech-debt.spec.md",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-849 — PageIndex Toolkit Tech Debt
 **Spec**: `sdd/specs/pageindex-toolkit-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
