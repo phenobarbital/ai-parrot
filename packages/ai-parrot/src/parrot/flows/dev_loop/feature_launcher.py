@@ -17,7 +17,7 @@ import shutil
 import subprocess
 import sys
 import time
-from typing import Mapping, Sequence
+from typing import Literal, Mapping, Sequence
 
 if __package__:
     from . import native_claude_sandbox, worktree_environment
@@ -750,19 +750,93 @@ def launch(
     return _attach_session(name)
 
 
+AGY_UNATTENDED_ENV = "PARROT_SDD_AGY_UNATTENDED"
+AGY_WORKER_ARGS: tuple[str, ...] = ("--agent", "sdd-worker", "--dangerously-skip-permissions")
+
+
+def agy_environment(base_env: Mapping[str, str] | None, *, unattended: bool) -> dict[str, str]:
+    """Build an AGY environment without Claude-native sandbox markers.
+
+    Args:
+        base_env: Operator environment, or ``None`` to copy ``os.environ``.
+        unattended: Whether to enable the guarded Bubblewrap worker mode.
+
+    Returns:
+        A fresh environment mapping for the AGY process.
+    """
+    env = dict(os.environ if base_env is None else base_env)
+    for name in (
+        native_claude_sandbox.CACHE_DIR_ENV,
+        native_claude_sandbox.ROOTS_ENV,
+        native_claude_sandbox.DEGRADED_ENV,
+        native_claude_sandbox.BACKEND_ENV,
+        AGY_UNATTENDED_ENV,
+    ):
+        env.pop(name, None)
+    if unattended:
+        env[AGY_UNATTENDED_ENV] = "1"
+        env[native_claude_sandbox.BACKEND_ENV] = native_claude_sandbox.BACKEND_BUBBLEWRAP
+    return env
+
+
+def launch_agy_worker(
+    agy_args: Sequence[str],
+    *,
+    cwd: Path,
+    initial_prompt: str,
+    base_env: Mapping[str, str] | None = None,
+) -> int:
+    """Exec the guarded unattended ``sdd-worker`` AGY process.
+
+    Args:
+        agy_args: Additional arguments forwarded verbatim to AGY.
+        cwd: Feature worktree in which AGY runs.
+        initial_prompt: Prompt passed to AGY's print mode.
+        base_env: Operator environment, or ``None`` to copy ``os.environ``.
+
+    Returns:
+        A launch error code, or 1 if ``execvpe`` unexpectedly returns.
+    """
+    try:
+        agy = resolve_agy()
+        require_official_agy(agy)
+    except LaunchError as exc:
+        print(f"launch-worker: {exc}", file=sys.stderr)
+        return exc.exit_code
+    command = [str(agy), *AGY_WORKER_ARGS, *agy_args, "-p", initial_prompt]
+    env = agy_environment(base_env, unattended=True)
+    os.chdir(cwd)
+    os.execvpe(command[0], command, env)
+    return 1
+
+
 def launch_session(
     initial_prompt: str,
     *,
     cwd: Path,
     claude_args: Sequence[str] = (),
     base_env: Mapping[str, str] | None = None,
+    host: Literal["claude", "google"] = "claude",
 ) -> int:
-    """Open an interactive Claude session in ``cwd`` with ``initial_prompt`` as its first message (C30 item 5).
+    """Open an interactive Claude or AGY session in ``cwd`` with an initial prompt.
 
     Used by ``parrot sdd launch brief|fix``: no agent, no sandbox settings, no tmux — identical to typing the
     slash command by hand, except that the operator environment (``base_env``, captured before ``parrot`` was
-    imported) is what Claude starts from. Returns 1 when ``claude`` is not on PATH; otherwise never returns.
+    imported) is what the host starts from. AGY never receives ``--dangerously-skip-permissions``. Returns a
+    host prerequisite error code, or 1 if ``execvpe`` unexpectedly returns.
     """
+    if host == "google":
+        try:
+            agy = resolve_agy()
+            require_official_agy(agy)
+        except LaunchError as exc:
+            print(f"launch: {exc}", file=sys.stderr)
+            return exc.exit_code
+        command = [str(agy), *claude_args, "-i", initial_prompt]
+        env = agy_environment(base_env, unattended=False)
+        os.chdir(cwd)
+        os.execvpe(command[0], command, env)
+        return 1
     claude = shutil.which("claude")
     if claude is None:
         print("launch: missing host prerequisite(s): claude", file=sys.stderr)
