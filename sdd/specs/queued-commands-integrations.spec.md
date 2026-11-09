@@ -82,7 +82,7 @@ The existing strict gate `/review_pr` moves to the same queued path.
 - **G4 — Bounded execution.** Every queued command declares:
   - a `max_runtime`, enforced with a timeout;
   - a per-command concurrency cap (extra jobs wait for a slot, shown as
-    "queued");
+    "queued") and a positive `max_queue_wait` (default 1800 seconds);
   - an optional dedup key (e.g. one active review per PR).
 
   Shutdown cancels running jobs and tells each requester that their job was
@@ -134,7 +134,7 @@ The existing strict gate `/review_pr` moves to the same queued path.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:b26f6bbc1103c16151daca30e53b404e617f1d8e6c7ac0a58b45b4d6c1e14da5 evaluation_digest=sha256:726e05c30156c333132dc30b4650f80b6839a94dc74d6b6a384b59a9d4720ba1 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:ef62a2b99a5ea809776bbb077b09f6d357c28c3c32dba37752475fa7e844797a evaluation_digest=sha256:042eaacb4d424526dbfc85c22a7da9a2d01eaaa5213f1a7d6b5492dd134d018e rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -143,16 +143,18 @@ The existing strict gate `/review_pr` moves to the same queued path.
 **Three layers.** Each layer depends only on the one below it.
 
 1. **`parrot.jobs` (core, M1).** The existing `JobManager` / `Job` / `JobStatus` /
-   `RedisJobStore` are moved verbatim out of `ai-parrot-server`
+   `RedisJobStore` are moved out of `ai-parrot-server`
    (`parrot/handlers/jobs/{job,models,redis_store}.py`).
    - The three server modules become re-export shims, so
      `from parrot.handlers.jobs import JobManager` and every other existing
      import path keeps working.
-   - The move adds three things:
+   - The move adds the following contracts:
      - `JobManager.cancel_job(job_id, reason)` — a non-destructive cancel that
        keeps the record as `CANCELLED`. Today the only cancel is
        `delete_job`, which erases the record.
      - A `user_id` filter on `list_jobs` / `list_jobs_async`.
+     - Ownership-aware reads: foreign Redis jobs are refreshed on every read, never cached as locally owned jobs.
+     - A bounded persistence timeout and tracked persistence tasks; admission never awaits Redis.
      - A per-user Redis secondary index, so "my jobs" does not starve behind
        other users' jobs. Today `RedisJobStore.list_jobs` scans only the
        newest `limit*2` ids.
@@ -203,7 +205,7 @@ The existing strict gate `/review_pr` moves to the same queued path.
        SDD-spec fallback;
      - CI checks (informational);
      - wiki context, under the same lease and bounded wait as the strict path.
-  2. Ask the LLM, with the read tools, for a structured `FullPRReview`.
+  2. Ask an isolated review agent, with an explicit read-only tool allowlist enforced at dispatch, for a structured `FullPRReview`. Never reuse the reviewer's unrestricted tool manager.
   3. Apply the deterministic verdict floor (see Edge cases below).
   4. Render the report with exactly the Claude `/pr-review` headings.
   5. **Always post it as a PR comment**, unless `--dry-run`.
@@ -258,9 +260,7 @@ bot>  Your recent jobs:
 - **Shutdown.** Running jobs are cancelled. Each requester gets
   `🛑 Job <id> was interrupted — the bot is shutting down; run the command again`.
   The record ends `CANCELLED`.
-- **A job orphaned by a crash** (non-terminal in Redis, not tracked by any live
-  process) reads as `expired` once
-  `(started_at or created_at) + max_runtime + expiry_grace` has passed.
+- **Queue deadlines and crash expiry.** Queue waiting is bounded by `max_queue_wait`; expiry never uses `Job.started_at`, which precedes semaphore acquisition. At admission persist the immutable UTC `expires_at = created_at + max_queue_wait + max_runtime + notify_timeout + expiry_grace`. A fresh, non-terminal foreign record reads as `expired` only after that deadline; this means its entire allowed lifetime elapsed, not proof of a crash. A locally tracked live task never reads as expired. Missing deadline metadata means unknown liveness, not expired. Execution uses monotonic deadlines, and records `execution_started_at` only after acquiring a slot. Queue timeout produces `FAILED` plus a timed-out notice without invoking the method.
 - **Delivery failures** (chat gone, bot kicked) are logged and never change the
   job's recorded status.
 - **`/job_status` / `/job_cancel` on another user's job** answer exactly like an
@@ -321,13 +321,13 @@ bot>  Your recent jobs:
 
 | Existing Component | Integration Type | Notes |
 |---|---|---|
-| `JobManager` / `RedisJobStore` (`ai-parrot-server/.../handlers/jobs/`) | moved to core + extended | verbatim move to `parrot/jobs/`; server modules become shims; adds `cancel_job`, `user_id` filter, per-user index |
+| `JobManager` / `RedisJobStore` (`ai-parrot-server/.../handlers/jobs/`) | moved to core + extended | move to `parrot/jobs/`; server shims; adds cancel, user filtering/index, fresh foreign reads and bounded tracked persistence |
 | `TelegramAgentWrapper` | extended | registers the queued adapter after `_register_agent_commands()` (L337); new `send_parsed_to_chat()`; `close()` stops the service |
 | `discover_telegram_commands` | modified | skips methods that carry `_queued_command` (no double registration) |
 | `TelegramAgentWrapper.handle_function` / `_execute_agent_method` | modified | refuse queued methods |
 | `MSTeamsAgentWrapper` / `MSTeamsCommandRouter` | extended | `register_queued_commands(self._command_router, self)` after knowledge upload (L218); new `close_queued_commands()` |
 | `AgentCommandHandler.handle_function` / `handle_call` (Teams) | modified | refuse queued methods |
-| `SlackAgentWrapper` / `SlackCommandRouter` | extended | adapter registered after the router is built (L123); `start()` warms the service; `stop()` shuts it down; `_help_text` lists queued commands |
+| `SlackAgentWrapper` / `SlackCommandRouter` | extended | adapter registered after the router is built (L123); `start()` initializes the service without requiring Redis availability; `stop()` shuts it down; `_help_text` lists queued commands |
 | `IntegrationBotManager.shutdown` / `TelegramBotManager.shutdown` | modified | call `TelegramAgentWrapper.close()` before `bot.session.close()` (never called today); call `close_queued_commands()` on Teams wrappers |
 | `GitToolkit` | extended | four new read-only PR-context methods |
 | `GitHubReviewer` | extended | new `/pr_review` + full review; `/review_pr` decorator swap |
@@ -345,7 +345,8 @@ class QueuedCommandSpec(BaseModel):
     parse_mode: ParseMode = "raw"
     aliases: tuple[str, ...] = ()        # extra routing names (may contain '-'); never in the Telegram menu
     prepare: Optional[str] = None        # name of an agent method: (raw_or_parsed) -> PreparedCommand
-    max_runtime: float = 1800.0          # seconds, > 0
+    max_runtime: float = 1800.0          # execution seconds, > 0
+    max_queue_wait: float = 1800.0       # queue seconds, > 0
     max_concurrent: int = 2              # >= 1, slots of the semaphore
     concurrency_group: Optional[str] = None  # commands sharing a group share one semaphore (first spec's cap wins)
 
@@ -402,7 +403,7 @@ Job record mapping (stored through `JobManager`):
 | `user_id` | `requester.actor` |
 | `session_id` | `requester.chat_id` |
 | `execution_mode` | `"queued_command"` |
-| `metadata` | `{command, label, dedup_key, max_runtime, platform, chat_id, thread_id, phase: queued\|running, progress}` |
+| `metadata` | `{command, label, dedup_key, max_runtime, max_queue_wait, expires_at, execution_started_at, platform, chat_id, thread_id, phase: queued\|running, progress}` |
 | `result` | `{"text": <text output, truncated to 4000 chars>}` (JSON-safe; never the raw object) |
 
 ```python
@@ -480,7 +481,7 @@ class MyAgent(Agent):
 
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
-| M1: Core job primitives (`parrot.jobs`) | yes | verbatim move + shims; `cancel_job` / `user_id` / per-user index signatures fixed below | — |
+| M1: Core job primitives (`parrot.jobs`) | yes | move + shims; cancellation, fresh foreign reads, bounded persistence and user index contracts fixed below | — |
 | M2: Queued-command layer | no | — | service runner semantics (cancel reasons, notify timeout, expiry) need judgement while coding |
 | M3: Telegram adapter | yes | knowledge-upload adapter pattern; `send_parsed_to_chat` signature fixed below | — |
 | M4: MS Teams adapter | yes | knowledge-upload `continue_conversation` pattern; signatures fixed below | — |
@@ -492,9 +493,11 @@ class MyAgent(Agent):
 ### Module 1: Core job primitives (`parrot.jobs`)
 - **Path**: `packages/ai-parrot/src/parrot/jobs/` (new); shims in `packages/ai-parrot-server/src/parrot/handlers/jobs/{job,models,redis_store}.py`
 - **Responsibility**:
-  - Move `Job`, `JobStatus`, `JobManager` and `RedisJobStore` into core, unchanged. Use `git mv` semantics: the code moves, it is not copied.
+  - Move `Job`, `JobStatus`, `JobManager` and `RedisJobStore` into core, preserving existing APIs except for the explicit extensions below. Use `git mv` semantics: the code moves, it is not copied.
   - Keep every old import path working through re-export shims.
   - Add a non-destructive cancel, a `user_id` filter, and a per-user Redis index.
+  - `get_job_async` uses memory only for jobs created by this manager. Foreign jobs are fetched afresh from Redis on every read and never inserted into the owned `jobs` map; listings obey the same rule. If Redis is unavailable, return unavailable/unknown rather than a stale foreign snapshot.
+  - All persistence attempts have a finite `persistence_timeout` (default 0.5 seconds), log failure, and retain the local record. Track fire-and-forget persistence tasks, serialize saves per job so an old save cannot overwrite a terminal state, and drain/cancel them within a bounded shutdown budget. Never wait on a persistence task during admission. Add optional keyword-only initial metadata to `create_job` so the first snapshot includes deadlines and ownership. Local admission survives Redis failure; cross-worker visibility is unavailable until a save succeeds, and durability before acknowledgement is not promised.
   - Do not add a new pyproject dependency: `redis.asyncio` stays a lazy import inside `RedisJobStore`.
 - **Depends on**: nothing in this spec.
 - **Interface Skeleton**:
@@ -510,6 +513,10 @@ class MyAgent(Agent):
 
   # packages/ai-parrot/src/parrot/jobs/manager.py  (new — moved from handlers/jobs/job.py; class JobManager verified: job.py:22)
   class JobManager:
+      async def get_job_async(self, job_id: str) -> Optional[Job]:
+          """Return an owned local record, else fetch Redis anew without caching it as owned."""
+      # create_job adds keyword-only metadata: Optional[dict[str, Any]] = None.
+      # __init__ adds keyword-only persistence_timeout: float = 0.5 (> 0).
       async def cancel_job(self, job_id: str, reason: str = "Job was cancelled") -> bool:
           """Cancel this process's task for ``job_id`` but keep its record.
 
@@ -561,6 +568,7 @@ class MyAgent(Agent):
       aliases: Sequence[str] = (),
       prepare: Optional[str] = None,
       max_runtime: float = 1800.0,
+      max_queue_wait: float = 1800.0,
       max_concurrent: int = 2,
       concurrency_group: Optional[str] = None,
   ) -> Callable:
@@ -568,7 +576,7 @@ class MyAgent(Agent):
 
       Stores ``fn._queued_command = QueuedCommandSpec(...)`` and returns ``fn`` unchanged (no wrapper),
       so direct calls still run inline. Raises ``ValueError`` at decoration time when ``command`` does
-      not match ``^[a-z0-9_]{1,32}$`` or ``max_runtime``/``max_concurrent`` are not positive.
+      not match ``^[a-z0-9_]{1,32}$`` or ``max_runtime``/``max_queue_wait``/``max_concurrent`` are not positive.
       """
 
   def discover_queued_commands(agent: Any) -> List[QueuedCommand]:
@@ -615,6 +623,7 @@ class MyAgent(Agent):
           job_ttl: int = 86400,
           expiry_grace: float = 300.0,
           prepare_timeout: float = 10.0,
+          admission_timeout: float = 10.0,  # whole submit path; Slack uses 2.0
           notify_timeout: float = 30.0,
       ) -> None: ...
       async def start(self) -> None:
@@ -625,10 +634,13 @@ class MyAgent(Agent):
           then awaits JobManager.stop() (cancels + gathers); each runner delivers its notice."""
       async def submit(self, command: QueuedCommand, raw_args: str, requester: Requester,
                        deliver: Deliver) -> SubmitOutcome:
-          """Lazy start → parse raw_args per parse_mode (keyword via parrot.integrations.utils.parse_kwargs)
-          → prepare (bounded by prepare_timeout; CommandUsageError/timeout → 'rejected') → dedup
-          (active key → 'duplicate' with the existing job id) → create_job + update_metadata + execute_job
-          → 'accepted'. Never raises for user errors."""
+          """Bound the whole admission path by admission_timeout: local start → parse → prepare
+          (also bounded by prepare_timeout) → atomic dedup reservation and local create_job with initial
+          metadata → schedule execute_job → accepted. No Redis/network await before accepted.
+          Preparation must be nonblocking; timeout/usage error rejects with no job or reservation.
+          The reservation/create/schedule section contains no await, preventing half-admitted jobs.
+          Initial metadata includes phase=queued, queue deadline and expires_at. Persistence happens
+          only in tracked background tasks. Release reservations on all admission failures."""
       async def get(self, job_id: str, requester: Requester) -> Optional[JobView]:
           """get_job_async; ``None`` when unknown OR owned by another actor. Applies read-time expiry."""
       async def list_for(self, requester: Requester, limit: int = 10) -> List[JobView]:
@@ -637,9 +649,13 @@ class MyAgent(Agent):
           "cancelling", "not_found", "finished", "not_on_this_worker"]:
           """Owner-only; sets reason 'cancelled by the requester' then JobManager.cancel_job."""
 
-  # Runner semantics (inside execute_job): set current_command_job → update_metadata(phase="queued")
-  # → async with semaphore(group or command) → update_metadata(phase="running")
-  # → asyncio.wait_for(method(*args, **kwargs), max_runtime) → deliver(completed notice) → return
+  # Runner semantics: queue deadline starts at admission (not at runner scheduling).
+  # Bound all pre-method work and semaphore acquisition by the remaining max_queue_wait.
+  # After acquiring a slot, set execution_started_at and phase=running; include metadata work
+  # in the execution budget and bound method execution by its remaining max_runtime.
+  # Persist updates with the manager's bounded persistence; never extend either deadline.
+  # Queue timeout never invokes the method and reports "timed out waiting for a slot after Ns".
+  # Set current_command_job for the method → deliver(completed notice) → return
   # {"text": ...}. TimeoutError → deliver(timed_out) and raise TimeoutError("timed out after Ns").
   # Exception → deliver(failed, error=str(exc)[:300]) and re-raise. CancelledError → deliver(cancelled,
   # error=<cancel reason>) and re-raise. Every deliver is wrapped in wait_for(notify_timeout) +
@@ -698,7 +714,12 @@ class MyAgent(Agent):
           bot.send_message(chat_id, …, message_thread_id=…, reply_parameters=ReplyParameters(
           message_id=reply_to_message_id, allow_sending_without_reply=True)) with the same Markdown →
           plain fallback as _send_long_message (verified: wrapper.py:4164), then attachments via
-          _send_attachments(chat_id, parsed) (verified: wrapper.py:3304)."""
+          _send_attachments(chat_id, parsed, message_thread_id=message_thread_id,
+          reply_to_message_id=reply_to_message_id). Extend _send_attachments and _send_url_photos
+          with these optional keyword-only parameters (defaults None preserve existing callers).
+          Forward the topic and ReplyParameters to every photo, chart, document, video, audio and
+          fallback send; allow_sending_without_reply=True must retain the topic if the original
+          message was deleted. Text retries must retain the same destination too."""
       async def close(self) -> None:                           # verified: wrapper.py:3615
           """…existing body… + `if self._queued_commands: await self._queued_commands.shutdown()`."""
   # handle_function (wrapper.py:2379) and _execute_agent_method (wrapper.py:2747): after
@@ -764,7 +785,7 @@ class MyAgent(Agent):
   # slack/commands/queued_commands.py  (new)
   class SlackQueuedCommands:
       def __init__(self, wrapper: Any, commands: List[QueuedCommand]) -> None:
-          """Builds the service with prepare_timeout=2.0 (Slack's 3 s ack window)."""
+          """Builds the service with prepare_timeout=2.0 and admission_timeout=2.0; the whole admission path, not just preparation, must finish before Slack's 3 s ack window."""
       def register(self, router: "SlackCommandRouter") -> List[str]:
           """router.register(name, handler) for canonical + aliases + job commands (verified:
           slack/commands/__init__.py:50). Handler `async (payload: dict) -> dict`: Requester(platform=
@@ -773,7 +794,7 @@ class MyAgent(Agent):
           wrapper.post_message(channel, text=f"<@{user}> " + header + parsed.text,
           blocks=wrapper._build_blocks(parsed)) (verified: wrapper.py:674, :562). Returns the names
           registered (for _help_text and the manifest docs)."""
-      async def start(self) -> None: ...     # warms the service (Redis connect) before the first command
+      async def start(self) -> None: ...     # local setup only; Redis health is not an admission prerequisite
       async def shutdown(self) -> None: ...
 
   def register_queued_commands(router: "SlackCommandRouter", wrapper: Any) -> Optional[SlackQueuedCommands]: ...
@@ -904,9 +925,18 @@ class MyAgent(Agent):
           _await_wiki_refresh / _build_wiki_context under _wiki_review_lease (github_reviewer.py:1191)."""
 
       async def _ask_llm_for_full_review(self, context: "FullReviewContext") -> FullPRReview:
-          """Same call shape as _ask_llm_for_review (github_reviewer.py:2372): self.ask(question,
-          structured_output=FullPRReview, max_iterations=self.max_full_review_tool_calls + 1). Raises
-          FullReviewLLMError on any exception or a missing structured result (no approve=False fallback)."""
+          """Use an isolated per-review Agent/ToolManager and client context, via AbstractClient,
+          with only explicitly allowlisted read operations registered. Request structured_output=
+          FullPRReview and max_iterations=self.max_full_review_tool_calls + 1. Do not call self.ask
+          with its unrestricted manager. Reject unknown/non-allowlisted tool names at dispatch,
+          including fabricated calls to add_pr_comment, submit_pr_review and convert_pr_to_draft.
+          Do not register whole toolkits, dynamic tool loaders or default write-capable tools.
+          Build the read set from the verified PR/file/comment reads and needed read-only Jira/wiki
+          operations; each included callable must be audited as non-mutating. Do not mutate the
+          parent agent, shared client or shared tool manager, even temporarily. Fail closed before
+          invoking the LLM if isolation cannot be established. Cleanup must not close shared toolkits.
+          Raises FullReviewLLMError on exceptions or missing structured output; deterministic writes
+          happen only after successful validation and dry_run/auto_draft guards in the caller."""
 
       def _apply_verdict_floor(self, review: FullPRReview, *, ac_evaluated: bool) -> FullPRReview:
           """approved → needs_attention when no AC was evaluated or any criterion is not_met."""
@@ -960,7 +990,7 @@ class MyAgent(Agent):
 | `test_failure_notice_and_status` | M2 | method raises → notice `failed`, job `FAILED`, error truncated |
 | `test_stop_interrupts_and_notifies` | M2 | `stop()` during a run → notice `cancelled` with the shutdown reason, job `CANCELLED` |
 | `test_get_and_cancel_are_owner_scoped` | M2 | another actor → `get` is `None`, `cancel` is `not_found` |
-| `test_expired_view_for_orphan` | M2 | stored RUNNING job not tracked locally, past `max_runtime + expiry_grace` → view status `expired` |
+| `test_expired_view_for_orphan` | M2 | fresh foreign non-terminal record past persisted `expires_at` → expired; missing deadline is not proof of expiry; terminal states remain terminal |
 | `test_report_command_progress_visible_in_view` | M2 | method calls `report_command_progress("x")` → `get()` shows `progress == "x"`; no-op outside a job |
 | `test_deliver_failure_does_not_change_status` | M2 | deliver raises → job still `COMPLETED` |
 | `test_telegram_registers_queued_and_job_commands` | M3 | menu entries include `pr_review`, `jobs`, `job_status`, `job_cancel`; alias `pr-review` routed but not in the menu |
@@ -989,6 +1019,19 @@ class MyAgent(Agent):
 | `test_explicit_ticket_not_found_posts_nothing` | M7 | explicit key unreadable → status `ticket_not_found`, no comment |
 | `test_report_has_claude_headings_and_bot_tables` | M7 | rendered report contains every heading in §3 M7 and one table per bot that commented |
 | `test_comment_failure_returns_full_report_in_chat` | M7 | `add_pr_comment` raises → status `reviewed`, `comment.error` set, reply includes the report |
+
+### Review regression requirements (mandatory)
+
+| Test | Module | Description |
+|---|---|---|
+| `test_foreign_job_reads_refresh_without_ownership` | M1 | Two managers share a store: B reads A's queued/running job, A updates progress and completes, B observes every update; B never inserts the record into its owned jobs map or gains cancel ownership |
+| `test_persistence_is_bounded_ordered_and_drained` | M1 | Delayed/failing saves do not block admission; older snapshots cannot overwrite completion; shutdown leaves no untracked persistence task |
+| `test_slack_ack_with_slow_or_unavailable_redis` | M2/M5 | First and subsequent webhook/socket dispatch acknowledgements finish inside 3 s when Redis save/connect stalls beyond 5 s; accepted local jobs remain runnable; prepare timeout creates no job/reservation |
+| `test_remote_live_queue_does_not_expire_early` | M2 | Fake clock + two managers: queue wait exceeds max_runtime plus grace but is within max_queue_wait; remote view stays queued, then sees running/completed; Job.started_at is not the expiry clock |
+| `test_queue_deadline_never_invokes_method` | M2 | Queue deadline expires before slot acquisition; no method call, timed-out notice, FAILED record, dedup released; scheduling delay counts against queue budget |
+| `test_full_review_dispatch_rejects_write_tools` | M7 | Fake provider requests each write tool and an unknown tool through the actual isolated dispatcher, then returns or raises; dry-run and normal full review perform no model-originated writes. Do not mock _ask_llm_for_full_review |
+| `test_full_review_tool_isolation_under_concurrency` | M7 | Concurrent strict and full reviews keep separate tool sets; parent/shared client registry is unchanged, and only guarded caller code may write after validated full-review output |
+| `test_telegram_queued_attachments_keep_topic_and_reply` | M3 | Chart, local/remote image, document, video, audio and fallback sends all carry forum topic and reply parameters; deleted original message and text fallback retain topic; existing callers without routing kwargs still work |
 
 ### Integration Tests
 | Test | Description |
@@ -1047,7 +1090,11 @@ class _Recorder:
 - [ ] The method's result is delivered to the originating chat. On Telegram that means the same forum topic, as a reply to the command message. On Teams it is the same conversation. On Slack it is the same channel, mentioning the requester.
 - [ ] `/jobs`, `/job_status <id>` and `/job_cancel <id>` exist wherever a queued command is exposed, and only show or cancel the requester's own jobs. Another user's id reads exactly like an unknown id.
 - [ ] Usage errors are answered immediately and create no job. A duplicate dedup key returns the active job id.
-- [ ] A job longer than `max_runtime` ends `FAILED` with `timed out after`, and its requester is told.
+- [ ] Method execution is bounded by `max_runtime`; queue waiting is separately bounded by `max_queue_wait`. Each timeout ends `FAILED` with a timed-out notice. Foreign expiry uses the persisted total-lifetime deadline, never the pre-semaphore `Job.started_at`.
+- [ ] Slack acknowledgement completes inside 3 s even on the first request with slow/unavailable Redis; admission performs no network I/O and times out atomically without orphan jobs.
+- [ ] Cross-worker status reads observe fresh progress and terminal transitions; foreign records never become locally owned through reads.
+- [ ] Every Telegram attachment type retains the originating forum topic and reply target, including fallback sends.
+- [ ] Full-review dispatch permits only audited read tools, rejects fabricated write calls, and leaves shared strict/webhook tool state untouched under concurrency.
 - [ ] Shutdown (`IntegrationBotManager.shutdown`, `TelegramBotManager.shutdown`, `SlackAgentWrapper.stop`) cancels running jobs, and each requester gets an interruption notice. `TelegramAgentWrapper.close()` is now awaited before the bot session closes.
 - [ ] `/function` and `/call` (Telegram, Teams) refuse queued methods.
 - [ ] `/pr_review <PR> [JIRA-KEY] [--auto-draft] [--dry-run]` runs as a background job. It posts a report with the Claude `/pr-review` headings as a PR comment, unless `--dry-run`. It converts to draft only on `does_not_meet` with `--auto-draft`, and never submits an APPROVE or REQUEST_CHANGES review.
@@ -1241,7 +1288,7 @@ GITHUB_REVIEW_WIKI_WAIT: int = config.getint("GITHUB_REVIEW_WIKI_WAIT", fallback
 | `TeamsQueuedCommands` | `MSTeamsCommandRouter.register` + `adapter.continue_conversation` | router + proactive | `msteams/commands/__init__.py:81`, `msteams/commands/knowledge_upload.py:188` |
 | `SlackQueuedCommands` | `SlackCommandRouter.register` + `SlackAgentWrapper.post_message` | router + chat.postMessage | `slack/commands/__init__.py:50`, `slack/wrapper.py:674` |
 | `GitHubReviewer.pr_review` | `GitToolkit.list_pull_request_*` (new, M6), `add_pr_comment`, `convert_pr_to_draft` | method calls | `gittoolkit.py:1898, :2275` |
-| `GitHubReviewer._ask_llm_for_full_review` | `Agent.ask(structured_output=…)` | same call shape as the strict review | `github_reviewer.py:2372` |
+| `GitHubReviewer._ask_llm_for_full_review` | isolated `Agent.ask(structured_output=…)` | new read-only execution context; existing unrestricted self.ask is not reused | M7 must verify Agent/ToolManager construction and dispatcher isolation before implementation |
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`parrot.jobs`~~. No such package in any distribution yet (`git ls-tree -r origin/dev | grep /parrot/jobs` is empty); M1 creates it.
@@ -1355,16 +1402,16 @@ Verified against: `647e1df22f` (origin/dev). `/sdd-task` MUST re-run `grep -c` f
   - A job's task lives in the worker that accepted it.
   - Status reads work everywhere through Redis.
   - Cancel and dedup act only on the owning worker: `/job_cancel` elsewhere says so.
-  - Orphans read as `expired` after `max_runtime + expiry_grace`.
+  - Foreign non-terminal records read as `expired` only after the persisted total-lifetime `expires_at`; foreign reads always refresh Redis. Local live tasks never expire by age.
 - **Shutdown ordering.**
   - Interruption notices need an open bot session, so `TelegramAgentWrapper.close()` must run before `bot.session.close()`.
   - Neither manager calls `close()` today. Adding it also runs the existing knowledge-upload shutdown, transcriber close and reminder unregister, which is intended but new.
   - Each `close()` is isolated in try/except.
-- **Slack's 3 s window.** `prepare_timeout = 2.0` on Slack, and prepare hooks must not touch the network. `SlackAgentWrapper.start()` warms the service (the Redis connect) so the first command is not slow.
+- **Slack's 3 s window.** `admission_timeout = prepare_timeout = 2.0` bounds the whole submit path. Prepare hooks must not block or touch the network; acknowledgement depends only on local admission. Redis client construction is lazy and is not a connectivity check. Slow/unavailable Redis must not delay the first or subsequent acknowledgement. Tracked persistence runs in the background with finite timeouts.
 - **Teams proactive delivery needs `client_id`.** Without it the command is refused up front rather than run and lost. Conversation references for channel and group chats work with `continue_conversation`. The existing convref store keeps only personal chats, so the adapter captures its own reference at command time.
 - **Strict-path failure cascade.** In the strict gate an LLM failure becomes `approve=False`, then a blocking reason, then a draft and alerts (`_ask_llm_for_review` → `_merge_verdict`). The full review must not inherit this: `_ask_llm_for_full_review` raises `FullReviewLLMError`, and nothing is written to GitHub.
 - **Unchanged strict behavior.** `/review_pr` keeps strict-gate semantics, including `_notify_blocked_pr` Telegram alerts even when it is invoked from Slack or Teams.
-- **GitToolkit is fully registered as LLM tools** in `GitHubReviewer._attach_toolkit` (`github_reviewer.py:1296`). The four new read-only list methods therefore become callable by the review LLM, which is useful. The existing exposure of write tools predates this feature and is not changed here.
+- **Full-review tool isolation.** `_attach_toolkit` registers write tools for existing strict/chat paths. M7 must not reuse that tool manager for full review: use an isolated read-only agent and dispatcher, including during ordinary non-dry-run reviews. Prompt instructions or hiding schemas alone do not enforce this boundary. Preserve strict/webhook tool access and verify concurrent reviews cannot mutate one another's tool sets.
 - **GitToolkit uses `requests` through `asyncio.to_thread`** (`_request`, `gittoolkit.py:1286`). The new methods reuse that helper and add no import. ADR-SEED-0003 forbids blocking I/O on the loop, and thread offload keeps the loop free. Migrating the toolkit to aiohttp is a non-goal.
 - **Message and comment limits.**
   - Telegram: 4096-char chunks.
@@ -1433,7 +1480,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:b26f6bbc1103c16151daca30e53b404e617f1d8e6c7ac0a58b45b4d6c1e14da5 evaluation_digest=sha256:726e05c30156c333132dc30b4650f80b6839a94dc74d6b6a384b59a9d4720ba1 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:ef62a2b99a5ea809776bbb077b09f6d357c28c3c32dba37752475fa7e844797a evaluation_digest=sha256:042eaacb4d424526dbfc85c22a7da9a2d01eaaa5213f1a7d6b5492dd134d018e rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -1482,10 +1529,10 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:726e05c30156c333132dc30b4650f80b6839a94dc74d6b6a384b59a9d4720ba1",
+  "evaluation_digest": "sha256:042eaacb4d424526dbfc85c22a7da9a2d01eaaa5213f1a7d6b5492dd134d018e",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:b26f6bbc1103c16151daca30e53b404e617f1d8e6c7ac0a58b45b4d6c1e14da5",
+  "input_digest": "sha256:ef62a2b99a5ea809776bbb077b09f6d357c28c3c32dba37752475fa7e844797a",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -1539,7 +1586,8 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
     - declaring a `@queued_command` (prepare hooks, dedup, concurrency groups, `max_runtime`, progress);
     - the `/jobs`, `/job_status` and `/job_cancel` commands;
     - per-platform behavior and setup, including the Slack manifest slash commands and Teams `client_id`;
-    - multi-worker limits and expiry.
+    - multi-worker limits, fresh remote reads, queue versus execution deadlines and total-lifetime expiry;
+    - local-first admission, bounded background persistence and the lack of cross-worker visibility during Redis outages.
   - `wiki/integrations/github-reviewer.md` — update. Add the `/pr_review` grammar, flags, report structure and env keys (`GITHUB_REVIEW_FULL_MAX_TOOL_CALLS`, `GITHUB_REVIEW_COMMAND_MAX_RUNTIME`). Note that `/review_pr` now runs in the background.
   - `wiki/flows/jobmanager.md` — update. Add a "Real implementation" section: the `parrot.jobs` import path, `cancel_job`, the `user_id` filter and the per-user Redis index.
 - **API modules**:
@@ -1552,4 +1600,5 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 0.2 | 2026-11-09 | Codex | Resolve design review issues fa792594432e, b52e0167f328, 8995135cda17, cf600373da61 and 19c2b6e27900: enforce read-only review dispatch, bound Slack admission, refresh remote status, separate queue lifetime and preserve attachment routing; add regression requirements |
 | 0.1 | 2026-11-09 | Jesus Lara | Initial draft from `/sdd-spec` notes; four design decisions taken with the user (Telegram name, job store, PR writes, `/review_pr` queued) |
