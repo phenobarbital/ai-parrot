@@ -1,22 +1,31 @@
 """FEAT-854: browser-mode login registry, state format, verifier contract and pages."""
 
 import time
+from unittest.mock import AsyncMock
 
 import pytest
+import pytest_asyncio
+from aiohttp import web
+from aiohttp.test_utils import TestClient, TestServer
 from pydantic import ValidationError
 
 from parrot.integrations.telegram.browser_login import (
     BROWSER_LOGIN_APP_KEY,
+    BROWSER_COMPLETE_PATH,
+    TELEGRAM_WRAPPERS_APP_KEY,
     BrowserLoginEntry,
     BrowserLoginRegistry,
+    BrowserVerificationError,
+    BrowserVerifierUnavailableError,
     VerifiedBrowserIdentity,
-    get_browser_identity_verifier,
     get_or_create_browser_login_registry,
+    get_browser_identity_verifier,
     is_browser_state,
     new_browser_state,
     register_browser_identity_verifier,
     render_browser_error,
     render_browser_success,
+    setup_browser_auth_routes,
     telegram_deep_link,
 )
 
@@ -117,3 +126,155 @@ def test_error_page_escapes_message() -> None:
 
     assert "&lt;script&gt;" in page
     assert "<script>" not in page
+
+
+@pytest_asyncio.fixture
+async def browser_client():
+    """Provide an app with the browser completion endpoint mounted."""
+    app = web.Application()
+    setup_browser_auth_routes(app)
+    async with TestClient(TestServer(app)) as client:
+        yield app, client
+
+
+def _register(app: web.Application, *, created_at: float | None = None) -> BrowserLoginEntry:
+    """Register and return a fresh server-owned browser-login entry."""
+    entry = _entry(new_browser_state(), created_at=created_at)
+    get_or_create_browser_login_registry(app).register(entry)
+    return entry
+
+
+def _wrapper(*, result: object = True) -> object:
+    """Return a minimal wrapper double for endpoint delegation assertions."""
+    wrapper = type("BrowserWrapper", (), {})()
+    wrapper._complete_auth_payload = AsyncMock(return_value=result)
+    return wrapper
+
+
+async def test_browser_complete_handler_unknown_state_410(browser_client) -> None:
+    """Unknown, non-browser, and expired states are rejected before delegation."""
+    app, client = browser_client
+    wrapper = _wrapper()
+    app[TELEGRAM_WRAPPERS_APP_KEY] = {"7001": wrapper}
+    expired = _register(app, created_at=time.monotonic() - 601)
+
+    for state in (new_browser_state(), "legacy-state", expired.state):
+        response = await client.post(BROWSER_COMPLETE_PATH, json={"state": state, "token": "secret"})
+        assert response.status == 410
+        assert await response.json() == {"ok": False, "error": "expired"}
+    wrapper._complete_auth_payload.assert_not_awaited()
+
+
+async def test_browser_complete_handler_success(browser_client) -> None:
+    """A valid state delegates once using server-owned Telegram identifiers."""
+    app, client = browser_client
+    entry = _register(app)
+    wrapper = _wrapper()
+    app[TELEGRAM_WRAPPERS_APP_KEY] = {entry.bot_id: wrapper}
+
+    response = await client.post(
+        BROWSER_COMPLETE_PATH,
+        json={
+            "state": entry.state,
+            "auth_method": "basic",
+            "token": "secret-token",
+            "chat_id": 999,
+            "telegram_id": 888,
+            "bot_id": "untrusted",
+            "browser_entry": "untrusted",
+            "verified": True,
+        },
+    )
+
+    assert response.status == 200
+    assert await response.json() == {"ok": True, "redirect_url": "https://t.me/parrot_test_bot"}
+    wrapper._complete_auth_payload.assert_awaited_once_with(
+        {"auth_method": "basic", "token": "secret-token"},
+        telegram_id=entry.telegram_id,
+        chat_id=entry.chat_id,
+        browser_entry=entry,
+    )
+    replay = await client.post(BROWSER_COMPLETE_PATH, json={"state": entry.state, "token": "secret-token"})
+    assert replay.status == 410
+
+
+async def test_browser_complete_handler_error_mapping(browser_client) -> None:
+    """Malformed, rejected, unavailable, and missing-wrapper requests are mapped safely."""
+    app, client = browser_client
+    wrapper = _wrapper()
+    app[TELEGRAM_WRAPPERS_APP_KEY] = {"7001": wrapper}
+
+    for kwargs in ({"data": "not-json"}, {"json": []}, {"json": {}}):
+        response = await client.post(BROWSER_COMPLETE_PATH, **kwargs)
+        assert response.status == 400
+        assert await response.json() == {"ok": False, "error": "bad_request"}
+
+    rejected = _register(app)
+    wrapper._complete_auth_payload.side_effect = BrowserVerificationError("bad token")
+    response = await client.post(
+        BROWSER_COMPLETE_PATH, json={"state": rejected.state, "auth_method": "basic", "token": "secret-token"}
+    )
+    assert response.status == 401
+    assert "secret-token" not in await response.text()
+
+    false_result = _register(app)
+    wrapper._complete_auth_payload.side_effect = None
+    wrapper._complete_auth_payload.return_value = False
+    response = await client.post(BROWSER_COMPLETE_PATH, json={"state": false_result.state, "token": "secret-token"})
+    assert response.status == 401
+
+    invalid_method = _register(app)
+    response = await client.post(
+        BROWSER_COMPLETE_PATH, json={"state": invalid_method.state, "auth_method": "oauth2", "token": "secret-token"}
+    )
+    assert response.status == 401
+
+    invalid_method_shape = _register(app)
+    response = await client.post(
+        BROWSER_COMPLETE_PATH,
+        json={"state": invalid_method_shape.state, "auth_method": ["basic"], "token": "secret-token"},
+    )
+    assert response.status == 401
+
+    unavailable = _register(app)
+    wrapper._complete_auth_payload.side_effect = BrowserVerifierUnavailableError("down")
+    response = await client.post(BROWSER_COMPLETE_PATH, json={"state": unavailable.state, "token": "secret-token"})
+    assert response.status == 503
+
+    no_wrapper = _register(app)
+    app[TELEGRAM_WRAPPERS_APP_KEY] = {}
+    response = await client.post(BROWSER_COMPLETE_PATH, json={"state": no_wrapper.state, "token": "secret-token"})
+    assert response.status == 503
+
+
+async def test_setup_browser_auth_routes_idempotent() -> None:
+    """Repeated setup registers a single POST completion route."""
+    app = web.Application()
+
+    setup_browser_auth_routes(app)
+    setup_browser_auth_routes(app)
+
+    matching = [resource for resource in app.router.resources() if resource.canonical == BROWSER_COMPLETE_PATH]
+    assert len(matching) == 1
+    assert {route.method for route in matching[0]} == {"POST"}
+
+
+async def test_browser_mode_full_flow_basic(browser_client) -> None:
+    """The endpoint passes a basic browser payload through one successful completion call."""
+    app, client = browser_client
+    entry = _register(app)
+    wrapper = _wrapper(result=True)
+    app[TELEGRAM_WRAPPERS_APP_KEY] = {entry.bot_id: wrapper}
+
+    response = await client.post(
+        BROWSER_COMPLETE_PATH,
+        json={"state": entry.state, "auth_method": "basic", "token": "verified-token"},
+    )
+
+    assert response.status == 200
+    wrapper._complete_auth_payload.assert_awaited_once_with(
+        {"auth_method": "basic", "token": "verified-token"},
+        telegram_id=entry.telegram_id,
+        chat_id=entry.chat_id,
+        browser_entry=entry,
+    )

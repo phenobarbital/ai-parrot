@@ -367,6 +367,16 @@ class AutonomousOrchestrator:
                 )
             else:
                 setup_combined_auth_routes(app)
+                # FEAT-854: browser-mode completion endpoint (idempotent; the
+                # Telegram startup path also mounts it via attach_telegram_wrapper).
+                try:
+                    from parrot.integrations.telegram.browser_login import (
+                        setup_browser_auth_routes,
+                    )
+                except ImportError as exc:
+                    self.logger.warning("Telegram browser-auth route not mounted: %s", exc)
+                else:
+                    setup_browser_auth_routes(app)
 
     # =========================================================================
     # External Hooks

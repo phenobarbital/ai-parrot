@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, MutableMapping, Optional, Protocol, runtime_checkable
 
+from aiohttp import web
 from navconfig.logging import logging
 from pydantic import BaseModel, ConfigDict
 
@@ -238,3 +239,76 @@ def render_browser_error(message: str) -> str:
     safe_message = html_mod.escape(message)
     body = f"<p>{safe_message}</p><p>Return to Telegram and send <code>/login</code> again.</p>"
     return _render_page(title="Authentication Error", heading="Authentication failed", body=body)
+
+
+_RESERVED_PAYLOAD_KEYS = frozenset({"state", "browser_entry", "bot_id", "chat_id", "telegram_id", "verified"})
+
+
+def _json(status: int, **body: Any) -> web.Response:
+    """Return a JSON response with the supplied status and body."""
+    return web.json_response(body, status=status)
+
+
+async def browser_complete_handler(request: web.Request) -> web.Response:
+    """Consume a browser-mode login payload POSTed by a login page.
+
+    400 on malformed JSON / missing state; 410 on unknown or expired state;
+    401 on rejected credentials/identity mismatch; 503 on verifier unavailability;
+    200 {ok: true, redirect_url: "https://t.me/<bot>"} on success.
+    Never echoes tokens back in the response body.
+    """
+    try:
+        body = await request.json()
+    except (ValueError, UnicodeDecodeError):
+        return _json(400, ok=False, error="bad_request")
+    if not isinstance(body, dict):
+        return _json(400, ok=False, error="bad_request")
+    state = body.get("state")
+    if not isinstance(state, str) or not state:
+        return _json(400, ok=False, error="bad_request")
+    if not is_browser_state(state):
+        return _json(410, ok=False, error="expired")
+    registry = request.app.get(BROWSER_LOGIN_APP_KEY)
+    entry = registry.consume(state) if registry is not None else None
+    if entry is None:
+        return _json(410, ok=False, error="expired")
+
+    auth_method = body.get("auth_method")
+    if auth_method is not None and (
+        not isinstance(auth_method, str) or auth_method not in PAGE_AUTH_METHODS
+    ):
+        return _json(401, ok=False, error="rejected")
+    wrappers = request.app.get(TELEGRAM_WRAPPERS_APP_KEY)
+    wrapper = wrappers.get(entry.bot_id) if wrappers is not None else None
+    if wrapper is None:
+        return _json(503, ok=False, error="unavailable")
+    data = {key: value for key, value in body.items() if key not in _RESERVED_PAYLOAD_KEYS}
+    try:
+        authenticated = await wrapper._complete_auth_payload(
+            data,
+            telegram_id=entry.telegram_id,
+            chat_id=entry.chat_id,
+            browser_entry=entry,
+        )
+    except BrowserVerificationError:
+        return _json(401, ok=False, error="rejected")
+    except BrowserVerifierUnavailableError:
+        return _json(503, ok=False, error="unavailable")
+    if not authenticated:
+        return _json(401, ok=False, error="rejected")
+    return _json(200, ok=True, redirect_url=telegram_deep_link(entry.bot_username))
+
+
+def setup_browser_auth_routes(app: web.Application) -> None:
+    """Register BROWSER_COMPLETE_PATH on the aiohttp app (idempotent) and exclude it from auth."""
+    already = any(getattr(resource, "canonical", None) == BROWSER_COMPLETE_PATH for resource in app.router.resources())
+    if not already:
+        app.router.add_post(BROWSER_COMPLETE_PATH, browser_complete_handler)
+        logger.info("Registered Telegram browser-login completion endpoint at %s", BROWSER_COMPLETE_PATH)
+    try:  # pragma: no cover - navigator_auth is optional in tests
+        from navigator_auth.conf import exclude_list  # type: ignore
+
+        if BROWSER_COMPLETE_PATH not in exclude_list:
+            exclude_list.append(BROWSER_COMPLETE_PATH)
+    except ImportError:
+        pass
