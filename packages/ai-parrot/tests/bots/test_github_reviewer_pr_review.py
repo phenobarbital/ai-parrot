@@ -698,9 +698,7 @@ async def test_chat_summary_ticket_not_found_and_no_ticket() -> None:
 async def test_prepare_pr_review_grammar() -> None:
     """Full-review preparation normalizes flags, keys, labels, and dedup keys without I/O."""
     reviewer = _Reviewer()
-    prepared = await reviewer._prepare_pr_review(
-        "https://github.com/acme/api/pull/412 nav-8036 —auto-draft --dry-run"
-    )
+    prepared = await reviewer._prepare_pr_review("https://github.com/acme/api/pull/412 nav-8036 —auto-draft --dry-run")
 
     assert prepared.kwargs == {
         "target": "https://github.com/acme/api/pull/412",
@@ -718,7 +716,9 @@ async def test_prepare_pr_review_grammar() -> None:
 def _reviewer_for_orchestration() -> _Reviewer:
     """Return the existing full-review double with explicit write and LLM seams."""
     reviewer = _Reviewer()
-    reviewer.git_toolkit.add_pr_comment = AsyncMock(return_value={"id": 1, "html_url": "https://example.test/comment/1"})
+    reviewer.git_toolkit.add_pr_comment = AsyncMock(
+        return_value={"id": 1, "html_url": "https://example.test/comment/1"}
+    )
     reviewer.git_toolkit.convert_pr_to_draft = AsyncMock(return_value={"draft": True})
     reviewer._ask_llm_for_full_review = AsyncMock(return_value=_review())
     return reviewer
@@ -742,9 +742,7 @@ async def test_full_review_dry_run_writes_nothing() -> None:
     reviewer._ask_llm_for_full_review.return_value = _review(
         verdict="does_not_meet", recommended_action="CONVERT_TO_DRAFT"
     )
-    outcome = await reviewer.full_review_pull_request(
-        _payload(), jira_key="NAV-8036", auto_draft=True, dry_run=True
-    )
+    outcome = await reviewer.full_review_pull_request(_payload(), jira_key="NAV-8036", auto_draft=True, dry_run=True)
 
     assert outcome["draft"] == "skipped_dry_run"
     assert outcome["report"]

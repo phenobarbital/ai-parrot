@@ -5207,6 +5207,7 @@ class TestStrictReviewPullRequest:
 
 
 class TestReviewPRCommand:
+
     async def test_review_pr_is_a_queued_command(self) -> None:
         """Strict review remains raw but is now dispatched through the shared queue."""
         spec = GitHubReviewer.review_pr._queued_command

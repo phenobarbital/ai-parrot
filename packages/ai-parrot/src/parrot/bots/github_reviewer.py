@@ -3778,16 +3778,33 @@ class GitHubReviewer(Agent):
         repo = str(payload.get("repository") or self.repository)
         pr_number = payload.get("pr_number")
         if pr_number is None:
-            return {"status": "error", "reason": "missing pr_number", "verdict": None, "report": "", "comment": None,
-                    "draft": "not_applicable", "jira_key": jira_key, "requirement_source": None,
-                    "criteria_met": 0, "criteria_total": 0}
+            return {
+                "status": "error",
+                "reason": "missing pr_number",
+                "verdict": None,
+                "report": "",
+                "comment": None,
+                "draft": "not_applicable",
+                "jira_key": jira_key,
+                "requirement_source": None,
+                "criteria_met": 0,
+                "criteria_total": 0,
+            }
 
         context = await self._gather_full_review_context(repo, int(pr_number), payload, jira_key)
         if context.ticket_status == "not_found" and context.jira_key_explicit:
-            return {"status": "ticket_not_found", "verdict": None, "report": "", "comment": None,
-                    "draft": "not_applicable", "jira_key": context.jira_key,
-                    "requirement_source": context.requirement_source, "criteria_met": 0, "criteria_total": 0,
-                    "reason": "explicit ticket could not be read"}
+            return {
+                "status": "ticket_not_found",
+                "verdict": None,
+                "report": "",
+                "comment": None,
+                "draft": "not_applicable",
+                "jira_key": context.jira_key,
+                "requirement_source": context.requirement_source,
+                "criteria_met": 0,
+                "criteria_total": 0,
+                "reason": "explicit ticket could not be read",
+            }
 
         await report_command_progress("asking review agent")
         review = self._apply_verdict_floor(
@@ -3822,7 +3839,9 @@ class GitHubReviewer(Agent):
                 pr_number=int(pr_number), body=self._cap_full_review_comment(report), repository=repo
             )
         except Exception as exc:  # noqa: BLE001
-            self.logger.error("GitHubReviewer: could not post full review on %s#%s: %s", repo, pr_number, exc, exc_info=True)
+            self.logger.error(
+                "GitHubReviewer: could not post full review on %s#%s: %s", repo, pr_number, exc, exc_info=True
+            )
             outcome["comment"] = {"error": str(exc)}
 
         state = str(payload.get("state") or "").lower()
