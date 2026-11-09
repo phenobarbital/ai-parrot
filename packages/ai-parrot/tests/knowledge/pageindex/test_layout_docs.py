@@ -25,6 +25,10 @@ def test_page_has_frontmatter_and_names() -> None:
         "bookmarks_dropped",
         "bold_sizes",
         "BOLD_REPEAT_MIN_PAGES",
+        "enumerated_lines",
+        "ENUMERATED_SEPARATOR",
+        "MAX_CONTINUATION_ROWS",
+        "_level_to_depth",
     ):
         assert name in text
 

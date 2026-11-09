@@ -88,7 +88,7 @@ books (`bookstore add --force`, `add-folder`).
   crash sweep, `rename_tree(overwrite)` as the only publication step, cleanup of the staging tree on
   any `BaseException`.
 - **Evaluation runs on the host**, not in a worker sandbox (the FEAT-845/846 sandboxes had no
-  corpus, a coder invented metrics once); model `google:gemini-3.5-flash-lite`; the nine books in the
+  corpus, a coder invented metrics once); model `google:gemini-3.5-flash-lite`; seven of the nine books in the
   project library; numbers copied from the report into the wiki, never typed.
 - Async-first, `aiohttp` only, Pydantic v2, `self.logger`, tests next to each distribution.
 
@@ -101,7 +101,8 @@ books (`bookstore add --force`, `add-folder`).
 Bookstore gains `Bookstore.agentic_retrieve(book_id, query, …)` that resolves the card, calls
 `toolkit.agentic_retrieve(card.tree_name, query, …)` on the book's scope toolkit and **wraps** the
 bundle: `book_id`, `book_title` on top; each citation enriched with `book_id`, `title`, `chapter`
-(the depth-1 TOC entry whose page range or section path contains the citation) and a Bookstore label
+(the title of the tree node whose `owned` ranges contain the citation's `seq`, with fallbacks — see
+Internal Behavior §1) and a Bookstore label
 `[<title>, <chapter>, <label>]`. `BookstoreToolkit.agentic_retrieve` exposes it as
 `bookstore_agentic_retrieve`. Without an LLM it raises `BookstoreError("agentic retrieval requires an
 LLM — set PARROT_BOOKSTORE_LLM …")`, mirroring `search` without `bm25s`.
@@ -119,20 +120,26 @@ Re-index hardening, all inside `library.py`:
 - **Graph preservation**: compute the new card's `toc_digest` before the swap; when it equals the
   existing card's digest, skip `_invalidate_graph` and keep `community_id`/`community_label` on the
   upserted card (relations describe content the TOC proves unchanged).
-- **Per-slug lock**: wrap the ingest-to-upsert critical section in the FEAT-840 `tree_lock`
-  (`pageindex/locks.py:48`) on the **live** slug, so a second `add_book` of the same book waits or
-  fails with `TreeLockTimeout` instead of racing the rename.
+- **Per-slug lock, fail fast**: wrap the identity check and the ingest-to-upsert critical section in
+  the FEAT-840 `tree_lock` (`pageindex/locks.py:48`) on the **live** slug with a short timeout
+  (default 5 s), so a second `add_book` of the same book fails at once with a clear "re-index in
+  progress" error instead of racing the rename.
 - **Sweep on open**: `_sweep_reserved_trees` also runs once per scope on first `_toolkit(scope)` use
   (lazy, idempotent) and from a new `bookstore doctor` CLI that reports/sweeps reserved trees and
-  card/tree drift.
+  card/tree drift, and lists books with no relation judgements (`--relate` runs `relate_books` on
+  them; nothing else in `doctor` calls an LLM).
 - **Drift detection**: `resolve_book` (or `doctor`) compares the card's `toc_digest` with
   `derive_toc(tree)` of the live tree; a mismatch is reported, and `doctor --repair` re-derives the
   TOC into the card (no re-ingest).
 
-Plus a host-run evaluation task: fixed questions per book (three per book, nine books), run
-`bookstore_agentic_retrieve` with `google:gemini-3.5-flash-lite`, record `grounded`, citations kept /
-rejected, `chars_read`, `tool_calls`, `stopped`, wall time; sweep `budget_chars ∈ {20k, 40k, 60k}` and
-`max_reads ∈ {8, 12, 16}`; the report fixes Bookstore's defaults.
+Plus `bookstore ask <book_id> "<query>"`, a thin CLI over the same method, and a host-run
+evaluation task over **seven** books with `google:gemini-3.5-flash-lite`: the five that already
+have a segment store, plus the two EPUBs re-indexed first (they are legacy trees without segments).
+Three hand-written questions and five generated questions per book (56 in all), recording
+`grounded`, gold hit, citations kept / rejected, `chars_read`, `tool_calls`, `stopped` and wall time.
+All 56 run at the current defaults; the 21 hand-written ones also run a one-dimensional sweep
+(`budget_chars` 20k / 60k, `max_reads` 8 / 16). That is 140 runs; the report fixes Bookstore's
+defaults.
 
 ✅ **Pros:**
 - Zero new retrieval logic: every guarantee of FEAT-843 (ledger, validator, deadline, snapshot pin) is
@@ -286,7 +293,8 @@ FTS5 table of the catalog SQLite. `BookstoreOrigin` sets `supports_fts = True`; 
 
 **Trade-offs accepted**: two-step library-wide research (search, then agentic per book); origin
 excerpts are the node's leading paragraphs rather than the query-best passage; one additive enum
-value in `parrot.models.stores`.
+value in `parrot.models.stores`; budgets tuned on today's trees, which include degenerate ebook and
+PDF trees still being fixed elsewhere (`0a693a57b138`, `ab5235978ad7`), so they are provisional.
 
 ---
 
@@ -298,7 +306,9 @@ value in `parrot.models.stores`.
 budget_chars=None, max_reads=None, timeout_s=None)`** (toolkit, MCP, and in-process). Returns the
 FEAT-843 evidence bundle for that book plus `book_id`, `book_title`; every citation carries
 `book_id`, `title`, `chapter`, and `rendered_citations` reads
-`[Las Analectas, Introducción, p. 14 ¶3]; [Las Analectas, Libro I, p. 31 ¶1]`. `grounded` is false
+`[Las Meditaciones de Marco Aurelio, LIBRO I, p. 5 ¶2]` (PDF, owning node) or
+`[Don Quijote de la Mancha, PRIMERA PARTE, ¶12]` (MOBI, owning node, no pages); with no chapter it is
+`[<title>, <label>]`. `grounded` is false
 when no citation survived; `stopped` tells why the loop ended (`answered`, `budget`, `timeout`,
 `no_tool_calls`). Without an LLM the tool returns a `BookstoreError` whose message names
 `PARROT_BOOKSTORE_LLM`; the tool stays listed in `bookstore mcp`.
@@ -312,42 +322,81 @@ with the explanatory note, the other origins are unaffected.
 
 **Re-index behaviour.** `bookstore add --force` of a book whose TOC did not change keeps its
 relations and communities (log line says so). Two concurrent re-indexes of the same book no longer
-race: the second waits for the lock or fails with a clear `TreeLockTimeout` message. `bookstore
-doctor` lists reserved trees, sweeps stale staging trees, reports books whose card no longer matches
-the live tree, and `--repair` re-derives their TOC.
+race: the second fails within seconds with `re-index of <slug> already in progress — retry when it
+finishes`. `bookstore doctor` lists reserved trees, sweeps stale staging trees, reports books whose
+card no longer matches the live tree and books with no relation judgements; `--repair` re-derives
+drifted TOCs (deterministic, no LLM) and `--relate` runs `relate_books` on the unrelated books.
+
+**New CLI `bookstore ask <book_id> "<query>" [--llm provider:model] [--budget-chars N] [--max-reads N]
+[--timeout S] [--json]`.** Prints the drafted answer, then one rendered citation per line, then
+`grounded` / `stopped` / `chars_read`; `--json` prints the full bundle. It resolves the model the same
+way `bookstore optimize` does and prints the resolved `provider:model` first, because inside a Claude
+Code session the default resolution picks the `claude-code` client.
 
 **Evaluation report** at `artifacts/logs/bookstore_agentic_eval/<ts>/report.md`, with per-book
-grounded rate, kept/rejected citations, chars read, tool calls, wall time, per budget setting; the
-chosen defaults are written into the Bookstore wiki page with the report's sha256.
+grounded rate, gold-hit rate (hand-written and generated reported separately), kept/rejected
+citations, chars read, tool calls, wall time, per budget setting, plus each book's tree shape (node
+count, largest leaf in tokens, whether nodes carry `owned` ranges) so a re-run after the tree fixes is
+comparable. Metrics only: no book text in the report, because the Spanish translations may still be
+under copyright. The chosen defaults are written into the Bookstore wiki page with the report's
+sha256.
 
 ### Internal Behavior
 
 1. `Bookstore.agentic_retrieve` → `resolve_book(book_id)` → `_toolkit(loc.scope)` →
    `await toolkit.agentic_retrieve(card.tree_name, query, …)` (inherits lock, budgets, snapshot).
-   Decoration: for each `Citation`, find the depth-1 `TocEntry` covering `page` (PDF) or whose title
-   heads `section` (markdown/ebook); attach `book_id`, `title`, `chapter`; recompose
-   `rendered_citations`. No LLM call is added.
+   Decoration, for each `Citation`, resolves `chapter` and `section_path` in this order:
+   (a) the tree node whose `owned` ranges (the field `validate_ownership` reads) contain
+   `citation.seq` — `chapter` is that node's title, `section_path` the titles from the root to it;
+   (b) else the segment's own `section` path (markdown/ebook segments carry one, PDF segments always
+   have `section=None`); (c) else the depth-1 `TocEntry` whose `[start_page, end_page]` covers
+   `page`; (d) else no chapter. On this host (a) is the normal path: every book with a segment store
+   has `owned` on all its nodes but one (see Code Context, library state), and for MOBI books the
+   segment `section` equals the owning node's title, so (b) only matters for trees without ownership.
+   Then attach `book_id`,
+   `title`, `chapter`, `section_path` and recompose `rendered_citations`. No LLM call is added.
 2. `BookstoreOrigin.search(query, k)` → `Bookstore.search(query, max_books, top_k)` → for each
    per-book result with `node_id`: `Bookstore.read_segments(book_id, node_id=node_id,
    max_chars=excerpt_chars)` → first `SegmentRead`(s) → `OriginHit(content=text, metadata.citation=
    {doc_id, revision, seq, start, end, page, section, label, book_id, title, chapter}, origin_kind=
    BOOKSTORE, native_rank=i)`; `find_any_match(segment.text, content)` guards emission. Reads are
    concurrent per hit with a small semaphore; the origin's own `timeout` bounds the whole call.
-3. `add_book` hardening: acquire `tree_lock(trees_dir, slug, timeout=…)` before `create_tree(staging)`
-   and release after `catalog.upsert`; compute `toc_digest` from the staging tree, compare with
+3. `add_book` hardening: acquire `tree_lock(trees_dir, slug, timeout=reindex_lock_timeout_s)`
+   (constructor kwarg, default 5 s) **before** the identity check (`find_by_sha` / `find_by_path`), so
+   the "skipped / updated / added" decision and the swap happen under one lock, and release after
+   `catalog.upsert`; compute `toc_digest` from the staging tree, compare with
    `existing.toc_digest` when `status == "updated"`; call `_invalidate_graph` only on change (and
    carry `community_id/label` otherwise). `_toolkit(scope)` triggers a one-time
    `_sweep_reserved_trees(scope)` per process. `doctor` composes `_scan_reserved_trees`,
-   `_sweep_reserved_trees`, and a card/tree digest comparison via `derive_toc(get_tree(tree_name))`.
-4. Evaluation: a host script under `parrot.knowledge.bookstore` (`agentic_eval`) that loads the
-   project library, runs the fixed question set per book across the budget grid with
-   `google:gemini-3.5-flash-lite`, and writes the report; the SDD task copies numbers from the report.
+   `_sweep_reserved_trees`, a card/tree digest comparison via `derive_toc(get_tree(tree_name))`, and
+   a per-book count of `relation_judgements` rows; `--relate` calls `relate_books(ids)` (LLM by
+   default, `--no-llm` passes `use_llm=False`).
+4. `bookstore ask` is a CLI wrapper over `Bookstore.agentic_retrieve`; no logic of its own beyond
+   model resolution and output formatting.
+5. Evaluation: a host script `python -m parrot.knowledge.bookstore.agentic_eval --library <dir>
+   --questions <fixture> --llm google:gemini-3.5-flash-lite [--concurrency N]`. Before the first run
+   the task re-indexes the two legacy EPUBs (Zaratustra, Kierkegaard) with `bookstore add <epub>
+   --force --no-llm` from `parrot-bookstore/books/`, so they get a segment store. The two
+   page-extraction books are excluded: their markdown source under `/tmp` no longer exists and they
+   duplicate the Analectas and Meditaciones PDFs. Questions live in a
+   fixture committed under `sdd/state/<FEAT-ID>/agentic-eval-questions.json`: per book, three
+   hand-written questions with a gold node (or page) and five generated ones, each produced once by
+   the model from a sampled paragraph segment (≥ 40 tokens) and stored with its gold `seq`. The
+   fixture holds questions and addresses only, no book text, and is generated once, not per run. A
+   gold hit is a validated citation whose `seq` is the gold `seq` or is owned by the gold node.
+   Concurrency uses one `Bookstore` instance per worker, because agentic retrieval is serialised per
+   `PageIndexToolkit` instance (FEAT-843). The SDD task copies numbers from the report and never
+   types them.
 
 ### Edge Cases & Error Handling
 
 - **Book without segments** (legacy tree, no revision): `_document_of` already raises
   `BookstoreError("book has no segments — reindex it …")`; the agentic tool surfaces the same error
-  before any LLM call; the origin skips the book with a note.
+  before any LLM call; the origin skips the book with a note. Four such books exist on this host
+  today (both EPUBs and both page extractions, all indexed 2026-09-06 before FEAT-840).
+- **Uninformative node titles**: a MOBI without a usable table of contents yields one node titled
+  `Start` (Unamuno), so its citations read `[Amor y pedagogía, Start, ¶n]`. The label is rendered as
+  is; the ebook-heading fix `0a693a57b138` is what improves it.
 - **Re-import during a read**: PageIndex snapshot pinning returns `stopped="stale"` /
   `RevisionUnavailableError`; Bookstore passes the bundle through; origin hits carry the revision so
   a consumer re-reading gets `RevisionMismatchError`, never silently different text.
@@ -357,8 +406,11 @@ chosen defaults are written into the Bookstore wiki page with the report's sha25
   any search; same mapping.
 - **Concurrent agentic calls on one scope**: serialised by the scope toolkit's `_agentic_lock`; a
   caller whose `timeout_s` expires while waiting gets the `timeout` bundle unchanged (FEAT-843).
-- **Lock timeout on re-index**: `TreeLockTimeout` propagates as `BookstoreError("another re-index of
-  <slug> is in progress")`; the staging tree was never created, nothing to clean.
+- **Lock held on re-index**: after `reindex_lock_timeout_s` (5 s), `TreeLockTimeout` becomes
+  `BookstoreError("re-index of <slug> already in progress — retry when it finishes")`; nothing was
+  read or staged, so there is nothing to clean. `add-folder` reports the book as failed and continues.
+- **Citation with no resolvable chapter** (no `owned`, no `section`, no page-covering TOC entry):
+  `chapter` and `section_path` are omitted and the label falls back to `[<title>, <label>]`.
 - **Same-digest re-import with changed card text** (LLM re-drafted summary): relations are kept; the
   card's `summary/topics` still update; communities are recomputed only if `relate=True`.
 - **Drift repair on a book whose live tree is missing**: `doctor` reports it as *orphan card*; no
@@ -366,7 +418,10 @@ chosen defaults are written into the Bookstore wiki page with the report's sha25
 - **Excerpt longer than the segment** or `SegmentRead.truncated`: origin uses the truncated text and
   its real `[start, end)`; `find_any_match` still holds.
 - **Evaluation**: a provider error on one question is recorded as a row with `stopped="error"`, the
-  run continues; the report refuses to suggest defaults if fewer than 80 % of rows completed.
+  run continues; the report refuses to suggest defaults if fewer than 80 % of rows completed. The
+  single-node Unamuno tree and the 282k-token Don Quijote leaf are kept, as decided; their rows are
+  flagged with the tree shape so they can be read separately. If an EPUB re-index fails, that book
+  is reported as skipped and the run continues with the rest.
 
 ---
 
@@ -394,7 +449,7 @@ chosen defaults are written into the Bookstore wiki page with the report's sha25
 | `bookstore/library.py` `Bookstore` | extends | `agentic_retrieve`, `_decorate_citations`, hardening in `add_book`, lazy sweep in `_toolkit`, drift check helper |
 | `bookstore/toolkit.py` `BookstoreToolkit` | extends | new tool `agentic_retrieve` (11th tool); docstring is the LLM description |
 | `bookstore/mcp_server.py` | modifies (docs) | degradation matrix gains the agentic row; tool count 10 → 11 |
-| `bookstore/cli.py` | extends | `bookstore doctor [--repair]` |
+| `bookstore/cli.py` | extends | `bookstore doctor [--repair] [--relate]` and `bookstore ask <book_id> "<query>"` |
 | `bookstore/models.py` | extends (optional) | `BookCitation` **not** added; metadata dict only — decision in discovery |
 | `parrot_tools/multistoresearch/origins/bookstore.py` | new | `BookstoreOrigin` |
 | `parrot_tools/multistoresearch/origins/__init__.py` | extends | export |
@@ -477,6 +532,10 @@ class SegmentRead(BaseModel): address: SegmentAddress; seq: int; kind: SegmentKi
 class ReadResult(BaseModel): tree_name: str; doc_id: str; revision: str; generation: Optional[int];
     segments: list[SegmentRead]; truncated: bool; next_cursor: Optional[str]; framed: str  # line 110
 def validate_ownership(nodes: Sequence[dict], revision: DocumentRevision) -> list[str]:  # line 490
+#   reads node["owned"]: list of half-open [start, end) seq ranges           # lines 498-500
+#   PDF segments are built with section=None                                  # line 236
+def segment_text(text: str, section: list[str], *, seq_start: int = 0) -> list[Segment]:  # line 240
+#   markdown/ebook segments carry section=list(section)                       # line 245
 
 # From packages/ai-parrot/src/parrot/knowledge/pageindex/read_ledger.py
 class LedgerEntry(BaseModel):                                                # line 25
@@ -617,6 +676,23 @@ from parrot_tools.multistoresearch import MultiStoreSearchToolkit  # multistores
   `packages/ai-parrot-tools/tests/multistoresearch/{test_pageindex_origin,test_wiki_origin,test_toolkit}.py`,
   `packages/ai-parrot/tests/knowledge/pageindex/test_agentic_retrieval.py`.
 - Evaluation harness pattern: `pageindex/optimizer_eval.py` (`python -m …`, writes `artifacts/logs/<name>/<ts>/report.md`).
+- Library state on this host, 2026-11-09 (`~/proyectos/parrot/parrot-bookstore/.parrot/library`):
+
+  | book | format | segments | with `section` | nodes | nodes with `owned` |
+  |---|---|---|---|---|---|
+  | amor-y-pedagogia-unamuno-miguel | mobi | 1393 | 1393 | 1 | 1 |
+  | analectas-confucio | pdf | 1187 | 0 | 44 | 44 |
+  | critica-de-la-razon-pura-immanuel-kant | pdf | 1097 | 0 | 4 | 4 |
+  | don-quijote-de-la-mancha-cervantes-miguel | mobi | 3708 | 3708 | 9 | 9 |
+  | las-meditaciones-de-marco-aurelio-marco-aurelio | pdf | 1045 | 0 | 16 | 15 |
+  | asi-hablo-zaratustra-friedrich-nietzsche | epub | none | — | 8 | 0 |
+  | el-concepto-de-la-angustia-kierkegaard-soren | epub | none | — | 1 | 0 |
+  | analectas-extraccion-por-paginas-pdf | md | none | — | 146 | 0 |
+  | meditaciones-extraccion-por-paginas-pdf | md | none | — | 103 | 0 |
+
+  Every card is `card_origin` `fallback` or `manual`; `book_relations`, `relation_judgements` and
+  `communities` are empty. The Meditaciones node without `owned` is the empty "Preface" leaf of
+  issue `33ad15e686e9`.
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`parrot_tools.multistoresearch.origins.BookstoreOrigin`~~ — no Bookstore origin; `origins/` holds only
@@ -625,7 +701,9 @@ from parrot_tools.multistoresearch import MultiStoreSearchToolkit  # multistores
 - ~~`Bookstore.agentic_retrieve`~~ / ~~`BookstoreToolkit.agentic_retrieve`~~ / ~~`bookstore_agentic_retrieve`~~ — not present.
 - ~~`BookstoreToolkit.llm_dependent_tools`~~ — only `PageIndexToolkit` has it; Bookstore will not add it.
 - ~~`parrot.knowledge.bookstore.models.BookCitation`~~ — no such model (decision: metadata, not a model).
-- ~~`bookstore doctor`~~ CLI command — does not exist.
+- ~~`bookstore doctor`~~ and ~~`bookstore ask`~~ CLI commands — do not exist.
+- ~~A seq → owning-node lookup helper~~ in `pageindex/` — ownership is only *validated*
+  (`validate_ownership`); resolving a seq to its node is new code in Bookstore.
 - ~~`parrot.knowledge.bookstore.agentic_eval`~~ — no Bookstore evaluation harness yet.
 - ~~`OriginHit.citation`~~ — `OriginHit` has no citation field (Option C, rejected).
 - ~~Per-slug lock in `Bookstore.add_book`~~ — no `lock`/`Lock` usage in `library.py` today.
@@ -672,18 +750,37 @@ from parrot_tools.multistoresearch import MultiStoreSearchToolkit  # multistores
   `book_id`/`title`/`chapter` in metadata and renders `[<title>, <chapter>, <label>]`.
 - [x] Which hardenings — *Owner: Jesus Lara*: all four (graph preservation on same `toc_digest`,
   per-slug lock, sweep on open / `doctor`, card-vs-tree drift detection + repair).
-- [x] Budget evaluation in this slice — *Owner: Jesus Lara*: yes, host run over the nine indexed
+- [x] Budget evaluation in this slice — *Owner: Jesus Lara*: yes, host run over seven of the nine indexed
   books with `google:gemini-3.5-flash-lite`; report fixes Bookstore defaults.
 - [x] `SearchOriginKind` value — *Resolved in brainstorm*: add `BOOKSTORE = "bookstore"` (additive);
   reusing `PAGEINDEX` would hide which plane answered in `list_search_origins`.
-- [ ] `chapter` resolution for EPUB/MOBI books whose segments carry `section` paths but no pages: use the
-  first element of `section` or the depth-1 `TocEntry` by title match? Decide in spec from the
-  Analectas/Marco Aurelio trees. — *Owner: implementer*
-- [ ] Lock timeout for `add_book` (`tree_lock(..., timeout=?)`): long enough for a 492-page ingest
-  with LLM carding (minutes) or fail fast and let the caller retry? — *Owner: Jesus Lara*
-- [ ] Should `bookstore doctor --repair` also re-run `relate_books` for books whose graph was
-  invalidated and never recomputed? — *Owner: Jesus Lara*
-- [ ] CLI exposure of agentic retrieval (`bookstore ask <book_id> "<query>"`) in this slice or later? —
-  *Owner: Jesus Lara*
-- [ ] Fixed question set for the evaluation: three per book authored by hand, or drawn from each
-  card's `topics`? — *Owner: Jesus Lara*
+- [x] `chapter` resolution — *Owner: Jesus Lara*: the owning node first (the node whose `owned`
+  ranges contain the citation's `seq`), then the segment's `section` path, then the depth-1
+  `TocEntry` covering the page, else omitted; `section_path` carries the full title path. Reason: the
+  depth-1 TOC is useless as a chapter on this library (Analectas has one root node, Kant one node for
+  pages 2–206, EPUB/MOBI have no pages).
+- [x] Lock behaviour on re-index — *Owner: Jesus Lara*: fail fast. `reindex_lock_timeout_s`, default
+  5 s, then a clear "re-index in progress" error; the identity check moves inside the lock.
+- [x] Does `bookstore doctor` handle the relation graph — *Owner: Jesus Lara*: it reports books with
+  no relation judgements; `--relate` runs `relate_books` on them; `--repair` stays deterministic and
+  never calls an LLM. (Today the library has 0 relations, 0 judgements, 0 communities.)
+- [x] CLI exposure — *Owner: Jesus Lara*: yes, `bookstore ask` in this slice, reusing the
+  `--llm` resolution of `bookstore optimize`.
+- [x] Evaluation question set — *Owner: Jesus Lara*: both — three hand-written questions with a gold
+  node per book (drafted in the spec, reviewed by the owner) and five generated from sampled
+  segments with a known gold `seq`, reported separately. Card `topics` are unusable as a source:
+  every card is `fallback` or `manual`, so topics are TOC titles. Fixture holds questions and
+  addresses only, no book text.
+- [x] Which books, and when — *Owner: Jesus Lara*: seven books as indexed today, without waiting
+  for `0a693a57b138` / `ab5235978ad7`: the five with a segment store, plus the two EPUBs re-indexed
+  with `--force --no-llm` first. The two page-extraction duplicates are excluded because their
+  source is gone. (A first answer chose all nine; it was re-asked once it turned out four of them
+  have no segment store and cannot run agentic retrieval.) Consequence: the defaults are provisional
+  and the report records tree shape per book for a later comparison.
+- [x] Evaluation run size — *Resolved in brainstorm*: a full 3×3 grid over 56 questions would be
+  504 serialised agentic runs. The plan is 56 runs at the current defaults plus a one-dimensional
+  sweep of four settings over the 21 hand-written questions, 140 runs in all, with `--concurrency`
+  through separate `Bookstore` instances. The spec may change the grid; the number of runs must stay
+  in the report header.
+- [ ] Follow-up, not this slice: re-run the evaluation after the ebook-heading and large-leaf fixes
+  land and the books are re-indexed, and compare against this report. — *Owner: Jesus Lara*

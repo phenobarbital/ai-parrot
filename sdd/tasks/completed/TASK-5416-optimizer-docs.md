@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-857 — PageIndex Optimizer Fixes 2 — Page Fields and Footer-Safe Pseudo-Headings
 **Spec**: `sdd/specs/pageindex-optimizer-fixes-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5415
@@ -150,10 +150,8 @@ def test_optimizer_page_documents_feat_853_fixes() -> None   # names loop starts
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-fix session (Claude)
+**Date**: 2026-11-09
+**Notes**: Documented the `running_key` repeat rule and piece page fields in step 4; docs test asserts `running_key`, `start_index`, `end_index`. `techwiki check` ok; docs test passes.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-856 — PageIndex Layout Fixes — Enumerated Enhancement Headings
 **Spec**: `sdd/specs/pageindex-layout-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -375,8 +375,23 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude (Opus 5.5) — /sdd-fix session agent:sdd-fix:087cd628
+**Date**: 2026-11-09
+**Notes**: Implemented as blueprinted: `ENUMERATED_SEPARATOR`, `MAX_CONTINUATION_ROWS`, `EnumeratedLine`,
+`LayoutProfile.enumerated_lines`, helpers `_is_caps`, `_is_enumerated_row`, `_continues_title`,
+`_collect_enumerated_lines`; `analyze_layout` fills the field; `LayoutHeaders._enumerated_prefix` /
+`_inside_enumerated_line` and the new rule between the bold-row and bookmark rules. Tests:
+`test_enumerated_row_detection`, `test_enumerated_lines_in_profile`, `test_enumerated_title_continuations` (hand-built
+lines: same-block and next-block continuations, mixed-case and far-below rows not joined),
+`test_enumerated_repeat_filter`, `test_enumerated_prefix_level` (`#####`, capped `######`),
+`test_enumerated_heading_markdown`, plus `test_enumerated_wrapped_heading_markdown` (a wrapped title renders as one
+heading line through pymupdf4llm's same-prefix line join). Validation: test_layout.py 36 passed; ruff clean;
+test_builder_layout.py + test_layout_integration.py 15 passed, 1 failed — `test_fixture_import_is_hybrid_and_anchored`,
+which fails identically on the untouched base commit 252c96ee0e (optimizer-expanded nodes without start_index; filed
+as `issue:5396799daf67`, not caused by this task).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `EnumeratedLine.text` is built from the title's spans joined by single spaces (whitespace
+collapsed) instead of `_row_text`, because the marker and the title are separate spans of one PyMuPDF line
+(`(1)` + `ACCOUNT MANAGEMENT …`) and `_row_text` would record `(1)account management …`. It matches the heading text
+pymupdf4llm renders. One extra test, `test_enumerated_wrapped_heading_markdown` (spec §4's markdown row mentions the
+continuation).

@@ -38,6 +38,10 @@ ROW_OVERLAP: float = 0.5
 """Lines of one block share a visual row when their vertical extents overlap by this share of the shorter one."""
 BOLD_REPEAT_MIN_PAGES: int = 3
 """A bold row whose running_key text occurs on this many distinct pages is a label or table header."""
+ENUMERATED_SEPARATOR: str = "|"
+"""An enumerated title row names its control and enhancement around this separator."""
+MAX_CONTINUATION_ROWS: int = 2
+"""Caps-only rows that may continue a wrapped enumerated title."""
 _LIST_MARKER_RE = re.compile(r"^\(\s*[A-Za-z0-9]{1,4}\s*\)")
 _LIST_TAIL_RE = re.compile(r"(?:[;:]|;\s*(?:and|or))$", re.IGNORECASE)
 _ENUM_TITLE_RE = re.compile(r"^(page|p\.?)?\s*\d+$", re.IGNORECASE)
@@ -80,6 +84,13 @@ class BoldLine(BaseModel):
     size: Optional[int] = None  # rounded font size of the row; None (older profiles) means the body size
 
 
+class EnumeratedLine(BaseModel):
+    """A standalone enumerated caps title row (with its continuation rows) and its page geometry."""
+
+    text: str
+    bbox: tuple[float, float, float, float]
+
+
 class LayoutProfile(BaseModel):
     """Deterministic layout signals extracted from a PDF."""
 
@@ -92,6 +103,7 @@ class LayoutProfile(BaseModel):
     bookmark_rejection: Optional[str] = None
     bookmarks_dropped: int = 0
     bold_sizes: list[int] = Field(default_factory=list)  # largest first, body last; [] means [body_size]
+    enumerated_lines: dict[int, list[EnumeratedLine]] = Field(default_factory=dict)  # by 1-based page
 
 
 def running_key(text: str) -> str:
@@ -259,6 +271,113 @@ def _collect_bold_lines(
         if len(pages_by_key[key]) < BOLD_REPEAT_MIN_PAGES:
             bold_lines.setdefault(page_no, []).append(bold_line)
     return bold_lines
+
+
+def _is_caps(text: str) -> bool:
+    """Return whether ``text`` has at least one letter and no lowercase letter."""
+    letters = [char for char in text if char.isalpha()]
+    return bool(letters) and not any(char.islower() for char in letters)
+
+
+def _is_enumerated_row(row: Sequence[dict]) -> bool:
+    """Return whether a visual row opens an enumerated caps title.
+
+    At least two spans; the first span is bold and its stripped text fully matches ``_LIST_MARKER_RE``; the other
+    spans' space-joined text passes ``_is_caps`` and contains ``ENUMERATED_SEPARATOR``
+    (``(1) ACCOUNT MANAGEMENT | DISABLE ACCOUNTS``).
+
+    Args:
+        row: The row's line dicts.
+
+    Returns:
+        True when the row opens an enumerated title.
+    """
+    spans = [span for line in row for span in line["spans"]]
+    if len(spans) < 2 or not _is_bold(spans[0]) or not _LIST_MARKER_RE.fullmatch(str(spans[0]["text"]).strip()):
+        return False
+    rest = " ".join(" ".join(str(span["text"]) for span in spans[1:]).split())
+    return _is_caps(rest) and ENUMERATED_SEPARATOR in rest
+
+
+def _continues_title(row: Sequence[dict], previous: Sequence[dict], running_keys: set[tuple[str, str]]) -> bool:
+    """Return whether ``row`` continues the wrapped title whose last row is ``previous``.
+
+    The row contains no running line, has spans, does not start with an enumerator, its text passes ``_is_caps``,
+    and its top is at most half of ``previous``'s height below ``previous``'s bottom.
+
+    Args:
+        row: The candidate continuation row's line dicts.
+        previous: The title's last accepted row.
+        running_keys: ``(band, key)`` pairs of the running headers and footers.
+
+    Returns:
+        True when the row belongs to the title.
+    """
+    if any((line["band"], line["key"]) in running_keys for line in row):
+        return False
+    spans = [span for line in row for span in line["spans"]]
+    if not spans or _LIST_MARKER_RE.fullmatch(str(spans[0]["text"]).strip()) or not _is_caps(_row_text(row)):
+        return False
+    previous_top = min(float(line["bbox"][1]) for line in previous)
+    previous_bottom = max(float(line["bbox"][3]) for line in previous)
+    top = min(float(line["bbox"][1]) for line in row)
+    return top <= previous_bottom + 0.5 * (previous_bottom - previous_top)
+
+
+def _collect_enumerated_lines(
+    lines: Sequence[dict], running_keys: set[tuple[str, str]]
+) -> dict[int, list[EnumeratedLine]]:
+    """Return enumerated title rows per page, without titles repeated on ``BOLD_REPEAT_MIN_PAGES`` pages.
+
+    A block whose first row contains no running line and passes ``_is_enumerated_row`` opens a title. Continuation
+    candidates are the block's later rows or, when the block has one row, the first row of the next block on the
+    same page; they are taken in order while ``_continues_title`` accepts them, at most ``MAX_CONTINUATION_ROWS``.
+
+    Args:
+        lines: Every line dict of the document, in page/block/line order.
+        running_keys: ``(band, key)`` pairs of the running headers and footers.
+
+    Returns:
+        Enumerated titles keyed by 1-based page number, in document order.
+    """
+    blocks: dict[tuple[int, int], list[dict]] = {}
+    for line in lines:
+        blocks.setdefault((line["page"], line["block"]), []).append(line)
+    keys = list(blocks)
+    candidates: list[tuple[int, str, EnumeratedLine]] = []
+    for position, key in enumerate(keys):
+        page_no = key[0]
+        rows = _visual_rows(blocks[key])
+        if not rows or any((line["band"], line["key"]) in running_keys for line in rows[0]):
+            continue
+        if not _is_enumerated_row(rows[0]):
+            continue
+        followers = rows[1:]
+        if not followers and position + 1 < len(keys) and keys[position + 1][0] == page_no:
+            followers = _visual_rows(blocks[keys[position + 1]])[:1]
+        title_rows = [rows[0]]
+        for follower in followers[:MAX_CONTINUATION_ROWS]:
+            if not _continues_title(follower, title_rows[-1], running_keys):
+                break
+            title_rows.append(follower)
+        members = [line for title_row in title_rows for line in title_row]
+        # Spans joined with spaces: the marker and the title are separate spans of one line ("(1)" + "ACCOUNT …").
+        text = " ".join(" ".join(str(span["text"]) for line in members for span in line["spans"]).split())
+        bbox = (
+            min(float(line["bbox"][0]) for line in members),
+            min(float(line["bbox"][1]) for line in members),
+            max(float(line["bbox"][2]) for line in members),
+            max(float(line["bbox"][3]) for line in members),
+        )
+        candidates.append((page_no, running_key(text), EnumeratedLine(text=normalize_title(text), bbox=bbox)))
+    pages_by_key: dict[str, set[int]] = {}
+    for page_no, key, _ in candidates:
+        pages_by_key.setdefault(key, set()).add(page_no)
+    enumerated: dict[int, list[EnumeratedLine]] = {}
+    for page_no, key, enumerated_line in candidates:
+        if len(pages_by_key[key]) < BOLD_REPEAT_MIN_PAGES:
+            enumerated.setdefault(page_no, []).append(enumerated_line)
+    return enumerated
 
 
 def _keep_page_order(pages: Sequence[int]) -> list[int]:
@@ -433,6 +552,7 @@ def analyze_layout(pdf_path: str) -> LayoutProfile:
 
     bold_sizes = _bold_sizes(size_counts, body_size, heading_sizes)
     bold_lines = _collect_bold_lines(lines, running_keys, bold_sizes)
+    enumerated_lines = _collect_enumerated_lines(lines, running_keys)
 
     bookmarks, rejection, dropped = _read_bookmarks(raw_toc, page_count)
     if dropped:
@@ -452,6 +572,7 @@ def analyze_layout(pdf_path: str) -> LayoutProfile:
         bookmarks=bookmarks,
         bookmark_rejection=rejection,
         bookmarks_dropped=dropped,
+        enumerated_lines=enumerated_lines,
     )
 
 
@@ -488,6 +609,7 @@ class LayoutHeaders:
         self._bold_prefixes: dict[int, str] = {
             size: "#" * min(6, base + rank) + " " for rank, size in enumerate(bold_sizes)
         }
+        self._enumerated_prefix = "#" * min(6, base + len(bold_sizes)) + " "
         self._running: dict[str, list[str]] = {}
         for line in profile.running:
             self._running.setdefault(line.band, []).append(line.key)
@@ -513,6 +635,8 @@ class LayoutHeaders:
         if page_no is not None and bbox is not None and bold and size in self._bold_prefixes:
             if self._inside_bold_line(page_no, bbox):
                 return self._bold_prefixes[size]
+        if page_no is not None and bbox is not None and self._inside_enumerated_line(page_no, bbox):
+            return self._enumerated_prefix
         if page_no is not None and (bold or (body is not None and size > body and size not in self._bold_prefixes)):
             if self._matches_bookmark(page_no, text):
                 return self._body_bold_prefix
@@ -534,6 +658,18 @@ class LayoutHeaders:
             and x1 <= bold_line.bbox[2] + tolerance
             and y1 <= bold_line.bbox[3] + tolerance
             for bold_line in self.profile.bold_lines.get(page_no, [])
+        )
+
+    def _inside_enumerated_line(self, page_no: int, bbox: tuple[float, ...]) -> bool:
+        """Return whether ``bbox`` is inside a recorded enumerated line on ``page_no``."""
+        x0, y0, x1, y1 = bbox
+        tolerance = self.TOLERANCE
+        return any(
+            x0 >= line.bbox[0] - tolerance
+            and y0 >= line.bbox[1] - tolerance
+            and x1 <= line.bbox[2] + tolerance
+            and y1 <= line.bbox[3] + tolerance
+            for line in self.profile.enumerated_lines.get(page_no, [])
         )
 
     def _matches_bookmark(self, page_no: int, text: str) -> bool:
