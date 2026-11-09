@@ -10,7 +10,6 @@ import pytest
 
 from parrot import conf
 
-
 _SETTING_NAMES = {
     "CREW_DEFINITION_STORAGE",
     "CREW_DEFINITION_PG_DSN",
