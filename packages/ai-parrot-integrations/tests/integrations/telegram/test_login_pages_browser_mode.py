@@ -22,6 +22,17 @@ window.Telegram = { WebApp: { ready(){}, expand(){}, close(){},
 """
 
 
+async def _fill_credentials(page, username="testuser", password="testpass"):
+    """Set form credentials via JS (page.fill is unreliable on route-fulfilled pages)."""
+    await page.evaluate(
+        """([u, p]) => {
+            document.getElementById('username').value = u;
+            document.getElementById('password').value = p;
+        }""",
+        [username, password],
+    )
+
+
 @pytest.fixture
 async def browser_page():
     """Create a browser page with mocked Telegram WebApp and static file routing."""
@@ -33,20 +44,37 @@ async def browser_page():
         page = await browser.new_page()
         await page.add_init_script(INIT_SCRIPT)
 
-        # Route static file requests
+        # Route static file requests (** matches query strings containing /)
         async def route_static(route):
-            path = route.request.url.split("/static/")[-1]
-            file_path = STATIC / path
+            raw = route.request.url.split("/static/")[-1]
+            fname = raw.split("?")[0]
+            file_path = STATIC / fname
             if file_path.exists():
-                content = file_path.read_text(encoding="utf-8")
-                await route.fulfill(content=content, content_type="text/html")
+                await route.fulfill(path=str(file_path))
             else:
-                await route.abort(status=404)
+                await route.fulfill(status=404, body="Not Found")
 
-        await page.route(f"{PAGE_ORIGIN}/static/*", route_static)
+        await page.route(f"{PAGE_ORIGIN}/static/**", route_static)
 
         # Route Telegram.org to avoid real network requests
-        await page.route("https://telegram.org/**", lambda route: route.fulfill(body=""))
+        async def route_telegram(route):
+            await route.fulfill(body="")
+
+        await page.route("https://telegram.org/**", route_telegram)
+
+        # Route Navigator auth endpoint (basic credentials)
+        async def route_auth(route):
+            await route.fulfill(
+                json={
+                    "user_id": "test-user-1",
+                    "token": "test.jwt.token",
+                    "display_name": "Test User",
+                    "email": "test@example.com",
+                },
+                status=200,
+            )
+
+        await page.route(f"{NAV_ORIGIN}/api/v1/login**", route_auth)
 
         # Track POST requests to browser-complete
         page.complete_posts = []
@@ -86,9 +114,7 @@ async def test_basic_browser_mode_posts_payload_not_senddata(browser_page):
     page = browser_page
     await page.goto(url)
 
-    # Fill in credentials and submit
-    await page.fill("#username", "testuser")
-    await page.fill("#password", "testpass")
+    await _fill_credentials(page)
     await page.click("#submit-btn")
 
     # Wait for the POST to complete
@@ -124,9 +150,7 @@ async def test_basic_legacy_mode_uses_senddata(browser_page):
     url = f"{PAGE_ORIGIN}/static/login.html?auth_url={NAV_ORIGIN}/api/v1/login"
     await page.goto(url)
 
-    # Fill in credentials and submit
-    await page.fill("#username", "testuser")
-    await page.fill("#password", "testpass")
+    await _fill_credentials(page)
     await page.click("#submit-btn")
 
     # Wait for the request to complete
@@ -166,7 +190,7 @@ async def test_browser_mode_sso_redirect_round_trip(browser_page):
             headers={"Location": f"{redirect_uri}&token=test.jwt.token"},
         )
 
-    await page.route(f"{NAV_ORIGIN}/api/v1/auth/azure*", handle_nav)
+    await page.route(f"{NAV_ORIGIN}/api/v1/auth/azure**", handle_nav)
 
     # Test Azure button
     url = (
@@ -225,8 +249,7 @@ async def test_browser_mode_sso_context_failure(browser_page):
         f"&state={state}"  # Has state but no return_mode
     )
     await page.goto(url)
-    await page.fill("#username", "testuser")
-    await page.fill("#password", "testpass")
+    await _fill_credentials(page)
     await page.click("#submit-btn")
     await page.wait_for_timeout(500)
 
@@ -251,8 +274,7 @@ async def test_browser_mode_sso_context_failure(browser_page):
         f"&complete_url={bad_complete_url}"
     )
     await page.goto(url)
-    await page.fill("#username", "testuser")
-    await page.fill("#password", "testpass")
+    await _fill_credentials(page)
     await page.click("#submit-btn")
     await page.wait_for_timeout(500)
 
@@ -277,8 +299,7 @@ async def test_browser_mode_sso_context_failure(browser_page):
         f"&complete_url={bad_complete_url}"
     )
     await page.goto(url)
-    await page.fill("#username", "testuser")
-    await page.fill("#password", "testpass")
+    await _fill_credentials(page)
     await page.click("#submit-btn")
     await page.wait_for_timeout(500)
 
