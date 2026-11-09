@@ -131,9 +131,7 @@ class _ReadToolkit(AbstractToolkit):
         """Return fake issue comments."""
         return []
 
-    async def list_pull_request_reviews(
-        self, pr_number: int, repository: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    async def list_pull_request_reviews(self, pr_number: int, repository: Optional[str] = None) -> List[Dict[str, Any]]:
         """Return fake reviews."""
         return []
 
@@ -756,8 +754,7 @@ async def test_full_review_tool_isolation_under_concurrency() -> None:
     parent_client_manager = reviewer._llm.tool_manager
 
     tasks = [
-        asyncio.create_task(reviewer._ask_llm_for_full_review(_context(pr_number=PR + offset)))
-        for offset in (0, 1)
+        asyncio.create_task(reviewer._ask_llm_for_full_review(_context(pr_number=PR + offset))) for offset in (0, 1)
     ]
     while len(_FakeReviewClient.instances) < 2 or not all(
         client.ask_started.is_set() for client in _FakeReviewClient.instances

@@ -4068,9 +4068,7 @@ class GitHubReviewer(Agent):
                 tool = by_method.get(method_name)
                 callable_read = getattr(toolkit, method_name, None)
                 if tool is None or not inspect.iscoroutinefunction(callable_read):
-                    raise RuntimeError(
-                        f"Audited read method {type(toolkit).__name__}.{method_name} is unavailable"
-                    )
+                    raise RuntimeError(f"Audited read method {type(toolkit).__name__}.{method_name} is unavailable")
                 schema = tool.get_schema()
                 tool_name = schema.get("name")
                 parameters = schema.get("parameters")
