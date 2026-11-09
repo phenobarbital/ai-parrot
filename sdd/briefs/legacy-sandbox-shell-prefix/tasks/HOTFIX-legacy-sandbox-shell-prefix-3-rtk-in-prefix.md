@@ -140,4 +140,4 @@ running, and must never affect the `bwrap` decision.
 
 ## Completion Note
 
-Pending; populated by the task finalizer after implementation and validation.
+Implemented by seat gpt-5.6-terra (codex), 1 attempt, 511s, merged (lint aa76f3f35d). Merge-tier sweep: task steps 237 passed; importer sweep 572 passed, 2 failed (test_launcher_core::test_resolve_order_and_validity and ::test_worktree_prefers_local_then_main), both verified failing on the main checkout (issue:91d60a249533), so pre-existing. The engine reported outcome=timed_out for the overall budget, not a test failure.
