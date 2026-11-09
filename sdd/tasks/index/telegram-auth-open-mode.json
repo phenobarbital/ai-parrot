@@ -165,7 +165,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -178,8 +178,9 @@
       "parallelism_notes": "Reads config.auth_open_mode (TASK-5417); uses new_browser_state/BrowserLoginRegistry/TELEGRAM_WRAPPERS_APP_KEY (TASK-5418) and ensure_navigator_browser_verifiers (TASK-5420, browser_verifiers.py); edits wrapper.py and test_browser_identity_verification.py after TASK-5422.",
       "assigned_to": null,
       "started_at": "2026-11-09T16:55:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5423-browser-login-wiring.md"
+      "completed_at": "2026-11-09T17:26:26+00:00",
+      "file": "sdd/tasks/completed/TASK-5423-browser-login-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5424",
