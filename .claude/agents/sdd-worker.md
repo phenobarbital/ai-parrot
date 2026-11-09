@@ -401,10 +401,12 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
      `state="finished"`; `outcome="completed"`
      is the only green — `failed`/`timed_out`/`cancelled`, or a still `pending`/`running`/`unknown` status, is never
      treated as green and is never inferred from an empty log or a vanished process.
-     On green, close the task deterministically instead of the Fallback loop's manual Edit/Write/jq/mv dance: write a
+     On green, finish the semantic review and call `coder_record_review` before writing the task's evidence; use the
+     returned `review_ref` for finalization and never hand-write an artifact into the evidence store. Then close the
+     task deterministically instead of the Fallback loop's manual Edit/Write/jq/mv dance: write a
      `TaskCompletionEvidence` JSON (`feature_slug`, `task_id`, `implementation_sha=<post-merge HEAD>`,
      `validation_refs=[<the settled validation's own EvidenceRef>]`, `review_evidence=<this task's own recorded
-     review evidence ref>`, `fix_commits`, and a `completion_facts["seat_summary"]` entry formatted
+     review_ref>`, `fix_commits`, and a `completion_facts["seat_summary"]` entry formatted
      `Seat: <seat_label> · Backend: <backend> · Model: <model> · Attempts: <n> · Duration: <sum duration_s> ·
      Tokens: <usage>` taken from `attempts[*]`) and run
      `parrot sdd task finalize --evidence <path> --worktree <this worktree> --expected-head <post-merge HEAD>`.
@@ -493,8 +495,8 @@ unknown attempt (for example after a server restart), preserve the full record i
 review)` with `task_id`, `attempt_uid`, `backend`, `model`, `review_evidence`, and `fix_commits` (full SHAs of all
 reviewer corrections, or `[]`). Use `fix(<feature>): TASK-N review fixes` for those correction commits. Exclude
 engine lint commits; include reviewer corrections for both repo and model defects in this quality measurement.
-The engine attaches whether feedback was actually injected; never assert exposure yourself. Record review outcomes
-before the next chunk. After the feature, use `coder_feedback_report` for commits of correction per task/model
+The call returns `review_ref` for `finalize`. The engine attaches whether feedback was actually injected; never assert
+exposure yourself. Record each review before that task's `finalize`. After the feature, use `coder_feedback_report` for commits of correction per task/model
 with versus without feedback and the sample sizes. Missing history is not a zero baseline or proof of improvement.
 
 Patterns are deduplicated per model, count distinct deliveries, and expire from injection after 90 days without
