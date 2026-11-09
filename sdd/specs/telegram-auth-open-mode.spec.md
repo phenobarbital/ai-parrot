@@ -66,9 +66,7 @@ supports.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:2e1caa13aa9e097b363c1de931af525541891902fd37082ac4a75d3ebb281af5 evaluation_digest=sha256:422fef85df026aba3a193bc729cf4aa3fd54b03dc18af4d4e0fbbe9a3c32ab66 rules_version=1 status=pass -->
-
-No eligible decisions govern subsystems: integrations
+<!-- decision-audit: input_digest=sha256:834192f4b2bec0f9656c313c05a6a75264c42ba54baddc59b8c62de6ab2a5990 evaluation_digest=sha256:445602128db2eb2135c6ee054793c3da5a0d485cf40f667d09f796dbef7bbf13 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -549,11 +547,14 @@ tests:
 - packages/ai-parrot-integrations/tests/integrations/telegram/test_azure_integration.py
 - packages/ai-parrot-integrations/tests/integrations/telegram/test_browser_login.py
 - packages/ai-parrot-integrations/tests/integrations/telegram/test_browser_identity_verification.py
+- packages/ai-parrot-integrations/tests/integrations/telegram/test_login_pages_browser_mode.py
 markers: none
 
 The two browser test files are new M2/M4/M5 deliverables. M6 additionally supplies an
 executable page round-trip check using the repository's existing browser/JS test
-tooling; source-string assertions alone are insufficient. Record its command and
+tooling (`test_login_pages_browser_mode.py`, Python Playwright + headless Chromium,
+pattern of `tests/voice/test_voice_demo_broadcast_browser.py`); source-string
+assertions alone are insufficient. Record its command and
 evidence with the task. The concrete verifier and page checks are required completion
 evidence even where an issuer/browser fixture is unavailable locally; do not silently
 skip them and declare the feature complete. No new dependencies are authorized here.
@@ -852,7 +853,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:2e1caa13aa9e097b363c1de931af525541891902fd37082ac4a75d3ebb281af5 evaluation_digest=sha256:422fef85df026aba3a193bc729cf4aa3fd54b03dc18af4d4e0fbbe9a3c32ab66 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:834192f4b2bec0f9656c313c05a6a75264c42ba54baddc59b8c62de6ab2a5990 evaluation_digest=sha256:445602128db2eb2135c6ee054793c3da5a0d485cf40f667d09f796dbef7bbf13 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -890,16 +891,26 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:422fef85df026aba3a193bc729cf4aa3fd54b03dc18af4d4e0fbbe9a3c32ab66",
+  "evaluation_digest": "sha256:445602128db2eb2135c6ee054793c3da5a0d485cf40f667d09f796dbef7bbf13",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:2e1caa13aa9e097b363c1de931af525541891902fd37082ac4a75d3ebb281af5",
+  "input_digest": "sha256:834192f4b2bec0f9656c313c05a6a75264c42ba54baddc59b8c62de6ab2a5990",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
-    "inventory": {},
+    "inventory": {
+      "adr:doc:171b17ccd26bdbd2d71040746b22371a335d364d": "b22c79daae2a187f2091ea23449825e8769e2c07",
+      "adr:doc:34394c36f5bf140678b8e17d43c3628e3d2c1440": "3fa15352d0e9ed972bd5de7ac1fd60e06906e60b",
+      "adr:doc:666d8f740c695673063f76777db7b7b0e9d95a2e": "47f1bebe56724843f6c0981f67bbba72917b4b0b",
+      "adr:doc:87781d348dff80cbfb25c253989a8940badd08d1": "49458f64f4bb614a9ff42750b53d9caa806f81a0",
+      "adr:doc:89e808b78adee5c727e047ac239817bfd29e5cfe": "9feeb90ec52cb53395d978a3b946323a7b9072ab",
+      "adr:doc:96dabb33251cd210186d7ab5c456ded102a4b025": "b537050f62f77a85b651af8c2595f4dc7fd4cebe",
+      "adr:doc:c3c29b415ba46e730ee37c6fc520914a1905d022": "0cd9cc9f082b9d988da023e3886d310f8eed8eae",
+      "adr:doc:c6b0e17a26d4b1ae2be8569a33db9a3aeedc0fbd": "804496ec336c99570df5502580ff980a38f56bfc",
+      "adr:doc:e7c5ae770b06db3b35cdd4cba93001a58bfa7bef": "394f4656c71618a256427d81350fdc32335fa791"
+    },
     "rules_version": 1,
-    "structural_revision": "sha256:6105b9856eb7338a8eeb304efa17b9f7e76e56b489086a8b167e3a656fb0e686",
+    "structural_revision": "sha256:4352b858aea606efbb0f6d4f9638d97a0c15e4e91b4b487403798cc58f5674e5",
     "taxonomy_digest": "65548b9a71329b13ab44f4904dff99814e1aac0da4bb2b58171a7201e3a9ba39"
   },
   "status": "pass"
