@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -12,6 +14,7 @@ from parrot.handlers.crew.definition_storage import (
     CrewDefinitionStorage,
     CrewStorageUnavailable,
 )
+from parrot.handlers.crew.redis_persistence import CrewRedisCleanupResult
 from parrot.handlers.crew.models import AgentDefinition, CrewDefinition
 
 
@@ -46,6 +49,8 @@ class FakePostgres:
         self.delete_error: Exception | None = None
         self.ping_result = True
         self.closed = False
+        self.lock_acquired = True
+        self.lock_released = False
 
     async def ping(self) -> bool:
         """Return configurable health."""
@@ -60,6 +65,15 @@ class FakePostgres:
         if self.save_error:
             raise self.save_error
         self.rows = [row for row in self.rows if (row.tenant, row.name) != (crew.tenant, crew.name)]
+        self.rows.append(_row(crew))
+        return True
+
+    async def insert_if_absent(self, crew: CrewDefinition) -> bool:
+        """Insert only an unreserved name, preserving uniqueness failures."""
+        if await self._load_row(crew.name, crew.tenant) is not None:
+            return False
+        if await self._load_row_by_id(crew.crew_id, crew.tenant) is not None:
+            raise ValueError("identity conflict")
         self.rows.append(_row(crew))
         return True
 
@@ -88,6 +102,14 @@ class FakePostgres:
         """Return all rows for the requested tenant scope."""
         return [row for row in self.rows if tenant is None or row.tenant == (tenant or "global")]
 
+    @asynccontextmanager
+    async def migration_lock(self):
+        """Expose a releasable lock for migration tests."""
+        try:
+            yield self.lock_acquired
+        finally:
+            self.lock_released = True
+
     def _decode_row(self, row: SimpleNamespace) -> CrewDefinition:
         """Return the decoded fake document."""
         return row.definition
@@ -103,6 +125,7 @@ class FakeRedis:
         self.delete_crew = AsyncMock(return_value=True)
         self.closed = False
         self.incomplete_name: str | None = None
+        self.cleanup = AsyncMock(return_value=CrewRedisCleanupResult.deleted)
 
     async def ping(self) -> bool:
         """Return successful fake Redis health."""
@@ -134,6 +157,17 @@ class FakeRedis:
         if crew is None:
             return None
         return SimpleNamespace(tenant=crew.tenant, name=crew.name, definition=crew)
+
+    async def delete_snapshot(self, snapshot: SimpleNamespace) -> CrewRedisCleanupResult:
+        """Conditionally remove the captured fake source."""
+        result = await self.cleanup(snapshot)
+        if result is CrewRedisCleanupResult.deleted:
+            self.crews = [
+                crew
+                for crew in self.crews
+                if (crew.tenant, crew.name) != (snapshot.tenant, snapshot.name)
+            ]
+        return result
 
 
 @pytest.mark.asyncio
@@ -226,3 +260,61 @@ async def test_delete_failure_and_retry_resolution() -> None:
     resolution = await storage.resolve_for_delete("remove-id")
     assert resolution.state == "deleted"
     assert resolution.definition.crew_id == "remove-id"
+
+
+@pytest.mark.asyncio
+async def test_migration_preserves_different_and_changed_sources() -> None:
+    """Different authoritative documents and changed Redis snapshots remain intact."""
+    source = _crew("legacy", "legacy-id")
+    conflicting = source.model_copy(update={"description": "Postgres wins"})
+    redis = FakeRedis([source])
+    postgres = FakePostgres([_row(conflicting)])
+    storage = CrewDefinitionStorage(redis, postgres)
+
+    conflict_report = await storage.migrate_from_redis()
+    assert conflict_report.conflicts == ["global:legacy"]
+    assert conflict_report.failed == {"global:legacy": "definition conflict"}
+    assert redis.crews == [source]
+    redis.cleanup.assert_not_awaited()
+
+    postgres.rows = []
+    redis.cleanup.return_value = CrewRedisCleanupResult.source_changed
+    changed_report = await storage.migrate_from_redis()
+    assert changed_report.failed == {"global:legacy": "source changed"}
+    assert changed_report.migrated == []
+    assert redis.crews == [source]
+    assert postgres.lock_released is True
+
+
+@pytest.mark.asyncio
+async def test_dry_run_and_lock_failure_mutate_nothing() -> None:
+    """No DDL/data mutation on dry run, held lock, or inventory failure."""
+    source = _crew("legacy", "legacy-id")
+    redis = FakeRedis([source])
+    postgres = FakePostgres()
+    storage = CrewDefinitionStorage(redis, postgres)
+
+    dry_run = await storage.migrate_from_redis(dry_run=True)
+    assert dry_run.dry_run is True
+    assert dry_run.migrated == ["global:legacy"]
+    assert postgres.rows == []
+    redis.cleanup.assert_not_awaited()
+
+    postgres.lock_acquired = False
+    locked = await storage.migrate_from_redis()
+    assert locked.lock_acquired is False
+    assert locked.skipped_reason == "Migration advisory lock not acquired"
+    assert postgres.rows == []
+    redis.cleanup.assert_not_awaited()
+
+    postgres.lock_acquired = True
+    postgres.lock_released = False
+
+    async def cancelled_inventory() -> list[dict[str, str]]:
+        """Model cancellation while the migration lock is held."""
+        raise asyncio.CancelledError
+
+    redis.list_all_crews_strict = cancelled_inventory
+    with pytest.raises(asyncio.CancelledError):
+        await storage.migrate_from_redis()
+    assert postgres.lock_released is True

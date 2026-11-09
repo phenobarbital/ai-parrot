@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from .models import CrewDefinition
 from .postgres_persistence import CrewPostgres
-from .redis_persistence import CrewRedis
+from .redis_persistence import CrewRedis, CrewRedisCleanupResult
 
 
 class CrewStorageUnavailable(RuntimeError):
@@ -104,8 +104,10 @@ class CrewDefinitionStorage:
 
     async def initialize(self) -> CrewMigrationReport | None:
         """Probe configured stores and log startup failures without changing routing."""
+        redis_active = False
         try:
-            if not await self.redis.ping():
+            redis_active = bool(await self.redis.ping())
+            if not redis_active:
                 self.logger.warning("Redis crew definition storage health probe failed")
         except Exception:
             self.logger.warning("Redis crew definition storage health probe failed")
@@ -120,7 +122,116 @@ class CrewDefinitionStorage:
         except Exception:
             self._postgres_active = False
             self.logger.warning("Postgres crew definition storage health probe failed")
-        return None
+
+        if not self.migration:
+            return None
+        if not redis_active:
+            return CrewMigrationReport(skipped_reason="Redis health check failed")
+        if not self._postgres_active:
+            return CrewMigrationReport(skipped_reason="Postgres health check failed")
+        return await self.migrate_from_redis()
+
+    @staticmethod
+    def _documents_match(left: CrewDefinition, right: CrewDefinition) -> bool:
+        """Compare complete normalized definitions except storage timestamps."""
+        excluded = {"created_at", "updated_at"}
+        return left.model_dump(mode="json", exclude=excluded) == right.model_dump(mode="json", exclude=excluded)
+
+    async def migrate_from_redis(self, *, dry_run: bool = False) -> CrewMigrationReport:
+        """Copy, verify and conditionally clean sources under one session advisory lock."""
+        report = CrewMigrationReport(dry_run=dry_run)
+        if self.postgres is None:
+            report.lock_acquired = False
+            report.skipped_reason = "Postgres storage is not configured"
+            return report
+        if dry_run and not getattr(self.postgres, "_schema_ensured", True):
+            report.skipped_reason = "Postgres schema is not available for dry run"
+            return report
+
+        try:
+            async with self.postgres.migration_lock() as acquired:
+                report.lock_acquired = acquired
+                if not acquired:
+                    report.skipped_reason = "Migration advisory lock not acquired"
+                    return report
+                try:
+                    inventory = await self.redis.list_all_crews_strict()
+                except Exception as error:
+                    report.skipped_reason = f"Redis inventory failed: {error}"
+                    return report
+
+                snapshots = []
+                for entry in inventory:
+                    key = f"{entry['tenant']}:{entry['name']}"
+                    try:
+                        snapshot = await self.redis.snapshot_crew(entry["name"], entry["tenant"])
+                        if snapshot is None:
+                            raise CrewStorageUnavailable("Redis snapshot disappeared during migration")
+                        snapshots.append(snapshot)
+                    except Exception as error:
+                        if "conflicting namespaced and legacy" in str(error).lower():
+                            report.conflicts.append(key)
+                        report.failed[key] = str(error)
+
+                for snapshot in snapshots:
+                    key = f"{snapshot.tenant}:{snapshot.name}"
+                    try:
+                        existing = await self._load_authoritative_row(snapshot.name, snapshot.tenant)
+                        inserted = False
+                        if dry_run:
+                            if existing is None:
+                                outcome = "migrated"
+                                row = None
+                            else:
+                                row = existing
+                        else:
+                            inserted = await self.postgres.insert_if_absent(snapshot.definition)
+                            row = await self._load_authoritative_row(snapshot.name, snapshot.tenant)
+                        if row is None and not (dry_run and outcome == "migrated"):
+                            report.failed[key] = "Postgres row missing after migration insert"
+                            continue
+                        if row is not None and self._is_deleted(row):
+                            outcome = "deleted"
+                        elif row is not None:
+                            stored = self._decode_row(row)
+                            if stored is None:
+                                report.failed[key] = "Postgres definition is malformed"
+                                continue
+                            if not self._documents_match(stored, snapshot.definition):
+                                report.conflicts.append(key)
+                                report.failed[key] = "definition conflict"
+                                continue
+                            outcome = "migrated" if inserted or existing is None else "already_present"
+
+                        if dry_run:
+                            if outcome == "migrated":
+                                report.migrated.append(key)
+                            elif outcome == "already_present":
+                                report.already_present.append(key)
+                            else:
+                                report.deleted_sources.append(key)
+                            continue
+
+                        try:
+                            cleanup = await self.redis.delete_snapshot(snapshot)
+                        except Exception as error:
+                            self.logger.warning("Redis migration cleanup failed for %s: %s", key, error)
+                            report.redis_cleanup_failed.append(key)
+                            continue
+                        if cleanup is not CrewRedisCleanupResult.deleted:
+                            report.failed[key] = "source changed"
+                            continue
+                        if outcome == "migrated":
+                            report.migrated.append(key)
+                        elif outcome == "already_present":
+                            report.already_present.append(key)
+                        else:
+                            report.deleted_sources.append(key)
+                    except Exception as error:
+                        report.failed[key] = str(error)
+        except Exception as error:
+            report.skipped_reason = f"Migration lock failed: {error}"
+        return report
 
     async def _load_authoritative_row(self, name: str, tenant: str | None = None) -> object | None:
         """Load a Postgres row by name, translating backend failures."""
