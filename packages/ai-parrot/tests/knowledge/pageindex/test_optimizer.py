@@ -393,3 +393,104 @@ def test_reconcile_rehomes_or_drops(revision: DocumentRevision) -> None:
     assert "key_items" not in frozen
     assert report.key_items_rehomed == 1
     assert report.rejected_proposals == 1
+
+
+# --- FEAT-853 TASK-5392: heading-text rule and pseudo-heading fallback --------------------------------------------
+
+_PROSE = "Una frase larga de prosa que ocupa espacio suficiente para superar el presupuesto de la hoja. " * 30
+
+
+def _markdown_tree(text: str, title: str = "Libro") -> tuple[dict, dict]:
+    """Return a one-leaf optimizer tree and its revisions for a markdown text."""
+    segments = segment_text(text, [title])
+    revision = DocumentRevision(
+        doc_id="libro",
+        revision=revision_id(segments),
+        source={"name": "libro.md", "kind": "markdown"},
+        created_at="2026-01-01T00:00:00Z",
+        segments=segments,
+    )
+    tree = {
+        "nodes": [
+            {
+                "doc_id": "libro",
+                "revision": revision.revision,
+                "title": title,
+                "span": [0, len(segments)],
+                "owned": [[0, len(segments)]],
+                "nodes": [],
+            }
+        ]
+    }
+    return tree, {("libro", revision.revision): revision}
+
+
+def test_is_heading_text_rules() -> None:
+    """Fragments, trailing conjunctions and list markers are not headings; numbered and caps titles are."""
+    from parrot.knowledge.pageindex.optimizer import is_heading_text
+
+    rejected = [
+        "",
+        "the system shall enforce the access policy; and",
+        "Scope:",
+        "Notes,",
+        "A sentence.",
+        "(a) Policy and procedures",
+        "a) Policy",
+        "(iv) Review",
+        "- item",
+        "• bullet",
+        "Ends with y",
+        "Read or",
+        " ".join(["word"] * 21),
+    ]
+    accepted = ["1. Introduction", "Chapter 3", "SEGUNDA PARTE", "Topic heading", "Appendix E", "Capítulo I"]
+    assert [title for title in rejected if is_heading_text(title)] == []
+    assert [title for title in accepted if not is_heading_text(title)] == []
+
+
+def test_pseudo_headings_expand_bold_and_caps_lines() -> None:
+    """A leaf with no `#` headings is split at standalone bold and upper-case lines (issue:0a693a57b138)."""
+    tree, revisions = _markdown_tree(
+        f"**P****ROLOGO**\n\n{_PROSE}\n\nSEGUNDA PARTE\n\n{_PROSE}\n\n**Capítulo I**\n\n{_PROSE}"
+    )
+    settings = OptimizerSettings(target_leaf_tokens=100, min_leaf_tokens=20)
+
+    plan = plan_deterministic(tree, revisions, settings, tree_name="t")
+
+    root = plan.candidate["nodes"][0]
+    assert [node["title"] for node in root["nodes"]] == ["PROLOGO", "SEGUNDA PARTE", "Capítulo I"]
+    assert [action.source for action in plan.report.expanded] == ["layout"]
+    assert validate_candidate(plan, revisions, base_tree={"nodes": []}) == []
+
+
+def test_pseudo_headings_ignore_running_lines_and_real_headings() -> None:
+    """A caps line repeated three times is a running line; a leaf with `#` headings ignores pseudo-headings."""
+    from parrot.knowledge.pageindex.layout_structure import heading_title
+    from parrot.knowledge.pageindex.optimizer import pseudo_heading_segments
+
+    running = f"CRITICA DE LA RAZON PURA\n\n{_PROSE}\n\n" * 3 + f"**Prólogo**\n\n{_PROSE}"
+    tree, revisions = _markdown_tree(running)
+    leaf = tree["nodes"][0]
+    revision = next(iter(revisions.values()))
+    assert [heading_title(s.text) for s in pseudo_heading_segments(leaf, revision)] == ["Prólogo"]
+
+    mixed, mixed_revisions = _markdown_tree(f"# Real\n\n{_PROSE}\n\n**FAKE**\n\n{_PROSE}\n\n# Other\n\n{_PROSE}")
+    plan = plan_deterministic(
+        mixed, mixed_revisions, OptimizerSettings(target_leaf_tokens=100, min_leaf_tokens=20), tree_name="t"
+    )
+    assert [node["title"] for node in plan.candidate["nodes"][0]["nodes"]] == ["Real", "Other"]
+
+
+def test_coalesce_split_points_merges_tiny_pieces() -> None:
+    """A short stray line no longer vetoes the split: its piece is merged and every piece meets the minimum."""
+    text = f"**Uno**\n\n{_PROSE}\n\n**Dos**\n\nbreve\n\n**Tres**\n\n{_PROSE}\n\n**Cuatro**\n\n{_PROSE}\n\n**FIN**"
+    tree, revisions = _markdown_tree(text)
+    settings = OptimizerSettings(target_leaf_tokens=100, min_leaf_tokens=20)
+
+    plan = plan_deterministic(tree, revisions, settings, tree_name="t")
+
+    revision = next(iter(revisions.values()))
+    pieces = plan.candidate["nodes"][0]["nodes"]
+    assert [node["title"] for node in pieces] == ["Uno", "Dos", "Cuatro"]
+    assert all(owned_tokens(piece, revision) >= settings.min_leaf_tokens for piece in pieces)

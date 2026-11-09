@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import copy
+import re
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -24,6 +25,10 @@ from parrot.knowledge.pageindex.utils import structure_to_list
 
 OPTIMIZER_VERSION = "v1"
 Revisions = dict[tuple[str, str], DocumentRevision]
+# A pseudo-heading title seen more often than this in one leaf is a running header/footer, not a heading.
+PSEUDO_HEADING_MAX_REPEATS = 2
+_TRAILING_CONJUNCTIONS = frozenset({"and", "or", "nor", "y", "e", "o", "u", "ni"})
+_LIST_MARKER_RE = re.compile(r"^(?:\(\w{1,4}\)|[a-z]\)|[-•*–])\s")
 
 
 class OptimizerSettings(BaseModel):
@@ -423,6 +428,32 @@ def assign_ownership(node: dict) -> None:
     ]
 
 
+def is_heading_text(title: str) -> bool:
+    """Return whether a cleaned, single-line title reads as a printed heading.
+
+    False for empty or multi-line text, more than ``MAX_HEADING_WORDS`` words, a trailing ``.``, ``;``, ``:`` or
+    ``,``, a lower-case last word that is a conjunction (and, or, nor, y, e, o, u, ni), or a list-marker prefix
+    (``(a) ``, ``a) ``, ``(iv) ``, ``- ``, ``• ``, ``* ``). Numbered headings such as ``1. Introduction`` and
+    appendix labels such as ``Appendix E`` stay valid.
+
+    Args:
+        title: The title text, already cleaned with ``heading_title``.
+
+    Returns:
+        True when the text can be accepted as a heading.
+    """
+    text = (title or "").strip()
+    if not text or "\n" in text:
+        return False
+    words = text.split()
+    if len(words) > MAX_HEADING_WORDS or text.endswith((".", ";", ":", ",")):
+        return False
+    last = words[-1].strip("!?\"'()[]")
+    if last.islower() and last in _TRAILING_CONJUNCTIONS:
+        return False
+    return _LIST_MARKER_RE.match(text) is None
+
+
 def heading_segments(node: dict, revision: DocumentRevision) -> list[Segment]:
     """Return owned heading segments, excluding a matching first title heading."""
     headings = [
@@ -436,6 +467,100 @@ def heading_segments(node: dict, revision: DocumentRevision) -> list[Segment]:
     ):
         return headings[1:]
     return headings
+
+
+def _is_emphasis_wrapped(text: str) -> bool:
+    """Return whether a stripped line is fully wrapped in bold/underline emphasis markers."""
+    return len(text) > 4 and (
+        (text.startswith("**") and text.endswith("**")) or (text.startswith("__") and text.endswith("__"))
+    )
+
+
+def _is_upper_case(title: str) -> bool:
+    """Return whether every cased letter of ``title`` (at least two) is upper case."""
+    cased = [char for char in title if char.isalpha() and char.lower() != char.upper()]
+    return len(cased) >= 2 and all(char.isupper() for char in cased)
+
+
+def pseudo_heading_segments(node: dict, revision: DocumentRevision) -> list[Segment]:
+    """Return owned single-line paragraph segments that read as headings.
+
+    A candidate is a ``paragraph`` segment whose stripped text is one line, either fully wrapped in emphasis
+    (starts and ends with ``**`` or ``__``; split runs such as ``**P****ROLOGO**`` included) or whose cased letters
+    (at least two) are all upper case, and whose ``heading_title`` passes ``is_heading_text``. Titles occurring more
+    than ``PSEUDO_HEADING_MAX_REPEATS`` times among the node's owned paragraphs are dropped (running headers and
+    footers), as is a first candidate whose title matches the node title (same rule as ``heading_segments``).
+
+    Args:
+        node: The leaf whose owned segments are scanned.
+        revision: The document revision the node is anchored to.
+
+    Returns:
+        The candidate segments in document order.
+    """
+    paragraphs = [
+        segment
+        for start, end in node.get("owned") or []
+        for segment in revision.segments[max(int(start), 0) : min(int(end), len(revision.segments))]
+        if segment.kind == "paragraph"
+    ]
+    counts: dict[str, int] = {}
+    for segment in paragraphs:
+        key = heading_title(segment.text).casefold()
+        counts[key] = counts.get(key, 0) + 1
+    candidates: list[Segment] = []
+    for segment in paragraphs:
+        text = (segment.text or "").strip()
+        if not text or "\n" in text:
+            continue
+        title = heading_title(text)
+        if not (_is_emphasis_wrapped(text) or _is_upper_case(title)) or not is_heading_text(title):
+            continue
+        if counts.get(title.casefold(), 0) > PSEUDO_HEADING_MAX_REPEATS:
+            continue
+        candidates.append(segment)
+    if candidates and _titles_match(
+        normalize_title(node.get("title", "")), normalize_title(heading_title(candidates[0].text))
+    ):
+        return candidates[1:]
+    return candidates
+
+
+def _coalesce_split_points(
+    node: dict, revision: DocumentRevision, seqs: list[int], settings: OptimizerSettings
+) -> list[int]:
+    """Return the split points that leave no piece under ``settings.min_leaf_tokens``.
+
+    Walks the sorted points: a point whose piece since the last kept point is under the minimum is dropped
+    (merged forward); if the final piece is under the minimum and more than one point is kept, the last kept point
+    is dropped (merged backward). Token counts use ``owned_tokens`` over the owned ranges between points.
+
+    Args:
+        node: The leaf about to be split.
+        revision: The document revision the node is anchored to.
+        seqs: Candidate split sequences.
+        settings: Optimizer settings (``min_leaf_tokens``).
+
+    Returns:
+        The kept split points, sorted.
+    """
+    owned = list(node.get("owned") or [])
+    if not owned:
+        return []
+    points = sorted({int(seq) for seq in seqs if any(int(start) <= int(seq) < int(end) for start, end in owned)})
+    final_end = max(int(end) for _, end in owned)
+
+    def piece_tokens(start: int, end: int) -> int:
+        return owned_tokens({"owned": _owned_in_span(owned, start, end)}, revision)
+
+    kept: list[int] = []
+    for seq in points:
+        if kept and piece_tokens(kept[-1], seq) < settings.min_leaf_tokens:
+            continue
+        kept.append(seq)
+    if len(kept) > 1 and piece_tokens(kept[-1], final_end) < settings.min_leaf_tokens:
+        kept.pop()
+    return kept
 
 
 def routing_cost(pieces: list[dict], revision: DocumentRevision, settings: OptimizerSettings) -> int:
@@ -576,7 +701,12 @@ def split_at(
 def expand_at_headings(
     node: dict, revision: DocumentRevision, settings: OptimizerSettings, report: OptimizeReport, *, depth: int
 ) -> None:
-    """Recursively expand oversized leaves at their shallowest owned heading level."""
+    """Recursively expand oversized leaves at their shallowest owned heading level.
+
+    When the leaf owns no usable heading segment, it falls back to ``pseudo_heading_segments`` (standalone bold or
+    upper-case lines) and drops split points that would leave a piece under ``min_leaf_tokens``
+    (``_coalesce_split_points``) before ``split_at``; the expand action's source stays ``"layout"``.
+    """
     if is_locked(node) or depth >= settings.max_depth:
         return
     children = node.get("nodes") or []
@@ -592,17 +722,16 @@ def expand_at_headings(
         for segment in heading_segments(node, revision)
         if segment.level is not None and len(heading_title(segment.text).split()) <= MAX_HEADING_WORDS
     ]
-    if not headings:
-        return
-    shallowest = min(segment.level for segment in headings if segment.level is not None)
-    pieces = split_at(
-        node,
-        revision,
-        [segment.seq for segment in headings if segment.level == shallowest],
-        source="layout",
-        settings=settings,
-        report=report,
-    )
+    if headings:
+        shallowest = min(segment.level for segment in headings if segment.level is not None)
+        seqs = [segment.seq for segment in headings if segment.level == shallowest]
+    else:
+        seqs = _coalesce_split_points(
+            node, revision, [segment.seq for segment in pseudo_heading_segments(node, revision)], settings
+        )
+        if not seqs:
+            return
+    pieces = split_at(node, revision, seqs, source="layout", settings=settings, report=report)
     for piece in pieces:
         expand_at_headings(piece, revision, settings, report, depth=depth + 1)
 
