@@ -380,6 +380,142 @@ class Bookstore:
             except Exception:  # noqa: BLE001 — crash recovery is best-effort
                 logger.warning("Failed to sweep reserved tree %r", tree_name, exc_info=True)
 
+    async def doctor(
+        self,
+        scope: Optional[str] = None,
+        *,
+        repair: bool = False,
+        relate: bool = False,
+        use_llm: bool = True,
+    ) -> dict[str, Any]:
+        """Report recovery, structural drift and missing judgements; optionally repair or relate.
+
+        A structural comparison only covers the derived table of contents.  It
+        cannot prove that a crashed publication did not replace text with
+        different content having an identical table of contents.
+        """
+        locations = [self._location(scope)] if scope is not None else self.locations
+        report: dict[str, Any] = {
+            "reserved": [],
+            "books": [],
+            "unjudged_book_ids": [],
+            "errors": [],
+        }
+
+        for location in locations:
+            reserved_before = await asyncio.to_thread(self._scan_reserved_trees, location.trees_dir)
+            entries_by_name: dict[str, dict[str, Any]] = {}
+            for name, live_exists, mtime in reserved_before:
+                if REPLACED_MARKER in name:
+                    action = "delete" if live_exists else "restore"
+                    reason = "live tree exists" if live_exists else "live tree missing"
+                elif time.time() - mtime > _STAGING_MAX_AGE_S:
+                    action = "delete"
+                    reason = "stale staging tree"
+                else:
+                    action = "keep"
+                    reason = "active staging tree"
+                entry = {"scope": location.scope, "name": name, "action": action, "reason": reason}
+                report["reserved"].append(entry)
+                entries_by_name[name] = entry
+
+            try:
+                await self._sweep_reserved_trees(location.scope)
+            except Exception as exc:  # noqa: BLE001 — keep doctor reporting after recovery faults
+                report["errors"].append({"scope": location.scope, "error": str(exc)})
+            else:
+                reserved_after = await asyncio.to_thread(self._scan_reserved_trees, location.trees_dir)
+                remaining = {name for name, _live_exists, _mtime in reserved_after}
+                for name, entry in entries_by_name.items():
+                    if entry["action"] == "keep":
+                        continue
+                    if name not in remaining:
+                        entry["action"] = "restored" if entry["action"] == "restore" else "deleted"
+                        continue
+                    live_name = name.split(
+                        REPLACED_MARKER if REPLACED_MARKER in name else _STAGING_MARKER,
+                        maxsplit=1,
+                    )[0]
+                    try:
+                        async with self._book_operation_lock(location.scope, live_name, timeout=0):
+                            entry["action"] = "error"
+                            report["errors"].append(
+                                {
+                                    "scope": location.scope,
+                                    "name": name,
+                                    "error": "reserved tree remains after recovery sweep",
+                                }
+                            )
+                    except TreeLockTimeout:
+                        entry["action"] = "busy"
+
+            toolkit = self._toolkit(location.scope)
+            catalog = self._catalog(location.scope)
+            for initial_card in catalog.list_cards():
+                entry: dict[str, Any] = {
+                    "scope": location.scope,
+                    "book_id": initial_card.book_id,
+                    "status": "ok",
+                    "repaired": False,
+                }
+                report["books"].append(entry)
+                try:
+                    async with self._book_operation_lock(location.scope, initial_card.tree_name, timeout=0):
+                        card = catalog.get(initial_card.book_id)
+                        if card is None:
+                            continue
+                        try:
+                            tree = await toolkit.get_tree(card.tree_name)
+                        except (FileNotFoundError, KeyError):
+                            entry["status"] = "orphan_card"
+                            continue
+                        toc_entries, toc_digest = derive_toc(tree)
+                        if card.toc_digest == toc_digest and card.toc == toc_entries:
+                            continue
+                        entry["status"] = "drift"
+                        if repair:
+                            page_count = max(
+                                (toc_entry.end_page for toc_entry in toc_entries if toc_entry.end_page is not None),
+                                default=None,
+                            )
+                            repaired = card.model_copy(
+                                update={
+                                    "toc": toc_entries,
+                                    "toc_digest": toc_digest,
+                                    "page_count": page_count,
+                                    "chapter_count": sum(1 for toc_entry in toc_entries if toc_entry.depth == 1),
+                                    "source_sha256": "",
+                                }
+                            )
+                            catalog.upsert(repaired)
+                            self._invalidate_graph(card.book_id)
+                            entry["repaired"] = True
+                except TreeLockTimeout:
+                    entry["status"] = "busy"
+                except Exception as exc:  # noqa: BLE001 — each card remains independently diagnosable
+                    entry["status"] = "error"
+                    report["errors"].append(
+                        {"scope": location.scope, "book_id": initial_card.book_id, "error": str(exc)}
+                    )
+
+        judgement_cards = (
+            self.list_books()
+            if scope is None
+            else [card.model_copy(update={"scope": scope}) for card in self._catalog(scope).list_cards()]
+        )
+        unjudged = [
+            card.book_id
+            for card in judgement_cards
+            if sum(store.judgement_count(card.book_id) for _scope, store in self._stores()) == 0
+        ]
+        report["unjudged_book_ids"] = unjudged
+        if relate and unjudged:
+            try:
+                report["relate_summary"] = (await self.relate_books(unjudged, use_llm=use_llm)).model_dump()
+            except Exception as exc:  # noqa: BLE001 — report relation failure without discarding diagnosis
+                report["errors"].append({"error": str(exc)})
+        return report
+
     # ------------------------------------------------------------------
     # Read surface
     # ------------------------------------------------------------------
