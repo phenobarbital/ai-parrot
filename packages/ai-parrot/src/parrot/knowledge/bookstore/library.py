@@ -291,9 +291,7 @@ class Bookstore:
         return max(0.0, deadline - time.monotonic())
 
     @asynccontextmanager
-    async def _operation_locks(
-        self, locks: list[tuple[Path, str]], deadline: float
-    ) -> AsyncIterator[None]:
+    async def _operation_locks(self, locks: list[tuple[Path, str]], deadline: float) -> AsyncIterator[None]:
         """Acquire operation locks in canonical order under one deadline."""
         ordered = sorted(locks, key=lambda item: (str(item[0].resolve()), item[1]))
         async with AsyncExitStack() as stack:
@@ -1420,7 +1418,9 @@ class Bookstore:
                 # those edits to the fresh draft: keep title/authors/topics/summary
                 # unless this call overrides them explicitly.
                 preserved = (
-                    existing if existing is not None and status == "updated" and existing.card_origin == "manual" else None
+                    existing
+                    if existing is not None and status == "updated" and existing.card_origin == "manual"
+                    else None
                 )
                 if preserved is not None:
                     if not title:
