@@ -15,6 +15,12 @@ the contract (`planner_version` is checked before use).
 report `shared ledger is read-only`, do not request broader filesystem access, do not create a
 worktree-local ledger, and exit non-zero WITHOUT claiming anything.
 
+## Full procedure and host adaptations
+
+Before executing, read the [full sdd-fix procedure](../../../.claude/commands/sdd-fix.md)
+and your host's adaptation contract: the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract)
+on Codex, or the [Antigravity adaptation contract](../../../docs/sdd/AGY.md#antigravity-adaptation-contract) on Google Antigravity (`agy`).
+
 ## Usage
 $sdd-fix                          # interactive picker, severity-ordered
 $sdd-fix <issue-id>               # non-interactive: that issue's whole group

@@ -497,6 +497,45 @@ def test_agents_dispatched_by_packaged_autopilot_are_installed(empty_repo: Path)
     assert not missing, missing
 
 
+_CODEX_LINK = "../../../docs/sdd/CODEX.md#codex-adaptation-contract"
+_AGY_LINK = "../../../docs/sdd/AGY.md#antigravity-adaptation-contract"
+
+
+@pytest.mark.parametrize("host", ["codex", "google"])
+def test_shared_skill_headers_name_both_host_contracts(empty_repo: Path, host: str) -> None:
+    install_sdd_integration(empty_repo, hosts=(host,))
+    skills = sorted((empty_repo / ".agents/skills").glob("*/SKILL.md"))
+    assert skills
+    for skill in skills:
+        text = skill.read_text(encoding="utf-8")
+        assert _CODEX_LINK in text and _AGY_LINK in text, skill
+
+
+def test_packaged_skills_match_repo() -> None:
+    """Packaged skill copies are byte-identical to the repo."""
+    manifest = load_manifest()
+    for entry in manifest:
+        if entry["target"].startswith(".agents/skills/"):
+            repo_path = Path(entry["target"])
+            # Assets are stored under "agents/skills/" not ".agents/skills/"
+            asset_rel_path = entry["target"].lstrip(".")
+            asset_path = Path("packages/ai-parrot/src/parrot/sdd/_assets") / asset_rel_path
+            assert repo_path.is_file(), f"Repo file missing: {repo_path}"
+            assert asset_path.is_file(), f"Asset file missing: {asset_path}"
+            assert repo_path.read_bytes() == asset_path.read_bytes(), f"Mismatch: {repo_path}"
+
+
+def test_fresh_shell_rule_no_wt_vars() -> None:
+    """No skill relies on a previous shell's WT/cd."""
+    skills = sorted(Path(".agents/skills").glob("*/SKILL.md"))
+    for skill in skills:
+        text = skill.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        for i, line in enumerate(lines, 1):
+            if "$WT" in line and "WT=" not in line:
+                pytest.fail(f"{skill}:{i} uses $WT without assignment: {line}")
+
+
 def test_uninstall_after_hand_deleting_one_asset_still_cleans_up(empty_repo: Path) -> None:
     """A managed file removed by hand must not leave the receipt, ledger hooks and blocks behind."""
     install_sdd_integration(empty_repo)
