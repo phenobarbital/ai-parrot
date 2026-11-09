@@ -1,0 +1,33 @@
+{
+  "feature": "ontology-pg-live-validation",
+  "feature_id": "FEAT-864",
+  "spec": "sdd/specs/ontology-pg-live-validation.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-10T00:30:00+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-5455",
+      "feature_id": "FEAT-864",
+      "feature": "ontology-pg-live-validation",
+      "title": "Fix vocabulary PG test failures against live PostgreSQL",
+      "file": "sdd/tasks/active/TASK-5455-ontology-pg-test-fixes.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "small",
+      "depends_on": []
+    },
+    {
+      "id": "TASK-5456",
+      "feature_id": "FEAT-864",
+      "feature": "ontology-pg-live-validation",
+      "title": "Add CI job for ontology vocabulary PostgreSQL tests",
+      "file": "sdd/tasks/active/TASK-5456-ontology-pg-ci-job.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "small",
+      "depends_on": ["TASK-5455"]
+    }
+  ]
+}
