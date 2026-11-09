@@ -485,7 +485,7 @@ LAUNCHER = REPO_ROOT / "scripts" / "sdd" / "agy_hook.sh"
 def test_tracked_hooks_json_runs_the_repository_launcher() -> None:
     data = json.loads((REPO_ROOT / ".agents" / "hooks.json").read_text(encoding="utf-8"))
     (entry,) = data["parrot-sdd-permissions"]["PreToolUse"]
-    assert entry["matcher"] == "run_command"
+    assert entry["matcher"] == "run_command|write_file|edit_file"
     # agy runs the command from the folder holding hooks.json
     assert entry["hooks"][0]["command"] == "sh ../scripts/sdd/agy_hook.sh"
     assert LAUNCHER.is_file()
@@ -508,6 +508,32 @@ def test_launcher_serves_this_checkout(ws: Path) -> None:
         pytest.skip(f"main checkout has no usable .venv here: {out['reason']}")
     assert out["decision"] == "force_ask"
     assert "find -delete" in out["reason"]
+
+
+def test_launcher_judges_write_file(ws: Path) -> None:
+    """The tracked launcher denies a write_file whose Path escapes the workspace."""
+    if not (REPO_ROOT.parent / ".git").exists() and not (REPO_ROOT / ".git").exists():
+        pytest.skip("not running from a git checkout")
+    payload = {
+        "toolCall": {"name": "write_file", "args": {"Path": "/tmp/escape.txt"}},
+        "workspacePaths": [str(ws)],
+        "conversationId": "c",
+        "stepIdx": 1,
+    }
+    proc = subprocess.run(
+        ["sh", "../scripts/sdd/agy_hook.sh"],
+        cwd=REPO_ROOT / ".agents",
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0
+    out = json.loads(proc.stdout)
+    if "unavailable" in out.get("reason", ""):
+        pytest.skip(f"main checkout has no usable .venv here: {out['reason']}")
+    assert out["decision"] == "deny"
+    assert "outside" in out["reason"].lower()
 
 
 def test_launcher_outside_a_checkout_asks_for_every_command(tmp_path: Path) -> None:
