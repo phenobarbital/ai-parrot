@@ -1069,6 +1069,11 @@ def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> 
     return {"CLAUDE_CODE_SHELL_PREFIX": str(prefix_path), "PARROT_SDD_SHELL_PREFIX_POLICY": str(policy_path)}
 
 
+# The HOTFIX-legacy-sandbox-shell-prefix-3 live probe on Claude Code 2.1.321 did not observe a
+# prefix invocation while native sandboxing was active, so native sessions must not rely on it.
+_NATIVE_PREFIX_RTK_QUALIFIED = False
+
+
 def launch_worker(
     argv: Sequence[str],
     *,
@@ -1175,9 +1180,9 @@ def launch_worker(
                 )
                 env["PARROT_SDD_NOTIFY_PYTHON"] = str(Path(sys.executable).absolute())
                 env["PARROT_SDD_NOTIFY_HELPER"] = str(helper_path)
-    if mode == "legacy":
+    if mode == "legacy" or (not degraded and _NATIVE_PREFIX_RTK_QUALIFIED):
         try:
-            env.update(prepare_shell_prefix(cwd, settings, mode, rtk=False))
+            env.update(prepare_shell_prefix(cwd, settings, mode, rtk=True))
         except RuntimeError as exc:
             print(f"launch_worker: shell prefix unavailable ({exc})", file=sys.stderr)
             return 1

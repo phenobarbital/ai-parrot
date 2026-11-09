@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+import shlex
 
 import pytest
 
@@ -98,6 +99,59 @@ def test_preamble_never_matches_allowlist(tmp_path: Path, monkeypatch: pytest.Mo
 
     assert captured["argv"] == wrapped
     assert shell_prefix.TOKEN_ENV not in captured["environment"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf '%s' \"dollar:$HOME\"",
+        "printf '%s\\n' 'it'\"'\"'s done' && printf second",
+        "printf '%s' 'first line\nsecond line'",
+    ],
+)
+def test_rtk_payload_round_trip(command: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A rewritten eval word remains a shell-equivalent single command argument."""
+    preamble = f"true && eval {shlex.quote(command)} < /dev/null && true"
+    monkeypatch.setattr(shell_prefix, "rtk_rewrite", lambda value: f":; {value}")
+
+    rewritten = shell_prefix.rtk_payload(preamble)
+
+    expected = subprocess.run(["/bin/bash", "-c", preamble], capture_output=True, text=True, check=False)
+    actual = subprocess.run(["/bin/bash", "-c", rewritten], capture_output=True, text=True, check=False)
+    assert actual.returncode == expected.returncode
+    assert actual.stdout == expected.stdout
+    assert actual.stderr == expected.stderr
+
+
+def test_rtk_payload_leaves_unrecognised_input_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Malformed and ambiguous preambles do not invoke RTK or change bytes."""
+    monkeypatch.setattr(shell_prefix, "rtk_rewrite", lambda value: pytest.fail(f"unexpected RTK call: {value}"))
+    inputs = (
+        "true && eval 'one' < /dev/null && eval 'two' < /dev/null",
+        "true && eval 'missing stdin redirect' && true",
+        "true && eval 'unterminated < /dev/null",
+    )
+    for value in inputs:
+        assert shell_prefix.rtk_payload(value) == value
+
+
+def test_rtk_payload_respects_switch_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The global RTK switch leaves a recognised payload byte-identical."""
+    value = "true && eval 'git status --short' < /dev/null && true"
+    monkeypatch.setenv("PARROT_SANDBOX_RTK", "0")
+    assert shell_prefix.rtk_payload(value) == value
+
+
+def test_passthrough_is_never_rtk_rewritten(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Allowlisted hook commands never enter the payload optimiser."""
+    policy_path, _document = _write_policy(tmp_path, rtk=True)
+    monkeypatch.setenv(shell_prefix.POLICY_ENV, str(policy_path))
+    monkeypatch.setattr(shell_prefix, "rtk_payload", lambda value: pytest.fail(f"unexpected payload: {value}"))
+    captured = _capture_exec(monkeypatch)
+
+    shell_prefix.main(["echo hook-ran >&2; exit 0"])
+
+    assert captured["argv"] == ["/bin/bash", "-c", "echo hook-ran >&2; exit 0"]
 
 
 @pytest.mark.parametrize(

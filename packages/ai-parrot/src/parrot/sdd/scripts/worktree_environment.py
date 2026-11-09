@@ -691,8 +691,11 @@ def _wrap_bash(command: str, cwd: Path, tool_input: dict[str, Any], native: Any,
     if action in ("rewrite", "verdict") and value:
         command = value
     # After the guard, which must see the raw runner (`pytest`, not `rtk pytest`).
-    if optimized := rtk_rewrite(command):
-        command = optimized
+    # A token-authenticated RTK prefix already handles the exact command payload.
+    prefix_policy = _shell_prefix_policy()
+    if not (prefix_policy and prefix_policy.get("rtk") is True):
+        if optimized := rtk_rewrite(command):
+            command = optimized
     degraded = bool(native) and os.environ.get(native.DEGRADED_ENV) == "1"
     if degraded:
         command = DEGRADED_BANNER + command
