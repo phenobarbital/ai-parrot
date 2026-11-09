@@ -12,11 +12,14 @@
       "feature_id": "FEAT-864",
       "feature": "ontology-pg-live-validation",
       "title": "Fix vocabulary PG test failures against live PostgreSQL",
-      "file": "sdd/tasks/active/TASK-5455-ontology-pg-test-fixes.md",
-      "status": "pending",
+      "file": "sdd/tasks/completed/TASK-5455-ontology-pg-test-fixes.md",
+      "status": "done",
+      "started_at": "2026-11-10T00:35:00+00:00",
       "priority": "high",
       "effort": "small",
-      "depends_on": []
+      "depends_on": [],
+      "completed_at": "2026-11-09T23:36:00+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5456",
@@ -27,7 +30,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "small",
-      "depends_on": ["TASK-5455"]
+      "depends_on": [
+        "TASK-5455"
+      ]
     }
   ]
 }
