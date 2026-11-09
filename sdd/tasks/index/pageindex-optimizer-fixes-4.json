@@ -1,0 +1,75 @@
+{
+  "feature": "pageindex-optimizer-fixes-4",
+  "feature_id": "FEAT-861",
+  "spec": "sdd/specs/pageindex-optimizer-fixes-4.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-09T18:30:31+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/knowledge/pageindex/test_optimizer.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_optimizer_integration.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_layout_integration.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_optimizer_docs.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_layout_docs.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:4ef9482ec1d5b891abcc4fdcb6952bd2e7bb15ad3d2b5bd9d00f0c9a2b31bf36"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5441",
+      "slug": "table-page-splits",
+      "title": "Page splits for long table leaves",
+      "feature_id": "FEAT-861",
+      "feature": "pageindex-optimizer-fixes-4",
+      "spec": "sdd/specs/pageindex-optimizer-fixes-4.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "root task: modifies optimizer.py + test_optimizer.py only; no other task touches them",
+      "file": "sdd/tasks/active/TASK-5441-table-page-splits.md"
+    },
+    {
+      "id": "TASK-5442",
+      "slug": "evaluation-and-docs",
+      "title": "Host evaluation and documentation — table page splits",
+      "feature_id": "FEAT-861",
+      "feature": "pageindex-optimizer-fixes-4",
+      "spec": "sdd/specs/pageindex-optimizer-fixes-4.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5441"
+      ],
+      "parallel": false,
+      "parallelism_notes": "documents and measures table_page_splits / TABLE_SPLIT_MIN_SHARE created by TASK-5441 (optimizer.py); exclusive: host evaluation reads the git-ignored corpus PDFs from the main checkout",
+      "file": "sdd/tasks/active/TASK-5442-evaluation-and-docs.md"
+    }
+  ]
+}
