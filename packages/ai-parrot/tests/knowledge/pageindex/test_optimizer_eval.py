@@ -115,9 +115,7 @@ def test_optimizer_eval_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, 
     out = tmp_path / "out"
     # min_leaf_tokens=0 keeps normalization from absorbing nodes, so optimize(apply=True) publishes and the
     # post-optimize metrics reflect the LLM passes rather than a rejected candidate.
-    code = main(
-        [str(PDF), str(PDF), str(FIXTURES), "--llm", "fake:model", "--min-leaf-tokens", "0", "--out", str(out)]
-    )
+    code = main([str(PDF), str(PDF), str(FIXTURES), "--llm", "fake:model", "--min-leaf-tokens", "0", "--out", str(out)])
     assert code == 0
     assert reports and all(report["errors"] == [] for report in reports)
 

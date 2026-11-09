@@ -116,9 +116,7 @@ def _count_leaves(structure: list[dict[str, Any]]) -> int:
 
 def _summary_words_mean(structure: list[dict[str, Any]]) -> float:
     """Mean word count over the nodes that carry a non-empty summary; 0.0 when none does."""
-    counts = [
-        len(str(node.get("summary")).split()) for node in structure_to_list(structure) if node.get("summary")
-    ]
+    counts = [len(str(node.get("summary")).split()) for node in structure_to_list(structure) if node.get("summary")]
     return round(sum(counts) / len(counts), 3) if counts else 0.0
 
 
