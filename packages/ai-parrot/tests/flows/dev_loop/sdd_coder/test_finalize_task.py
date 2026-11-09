@@ -13,12 +13,13 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 import scripts.sdd as scripts_sdd_pkg
-from parrot.flows.dev_loop.sdd_coder.optimization_models import EvidenceRef, TaskCompletionEvidence
+from parrot.flows.dev_loop.sdd_coder.optimization_models import EvidenceRef, ReviewArtifact, TaskCompletionEvidence
 from parrot.flows.dev_loop.sdd_coder.telemetry import resolve_durable_root
 from scripts.sdd.finalize_task import (
     InvalidEvidenceError,
@@ -184,6 +185,21 @@ def _make_evidence_ref(durable_root: Path, relative_path: str, content: bytes) -
     )
 
 
+def _review_artifact_bytes(
+    *, task_id: str, feature_slug: str, execution_id: str, implementation_sha: str
+) -> bytes:
+    """Build the canonical review artifact content expected by finalization."""
+    return ReviewArtifact(
+        feature_slug=feature_slug,
+        task_id=task_id,
+        execution_id=execution_id,
+        source="manual",
+        summary="Review approved.",
+        head_sha=implementation_sha,
+        recorded_at=datetime(2026, 11, 9, tzinfo=timezone.utc),
+    ).model_dump_json().encode("utf-8")
+
+
 def _build_evidence(
     durable_root: Path,
     *,
@@ -194,7 +210,14 @@ def _build_evidence(
 ) -> TaskCompletionEvidence:
     exec_id = "11111111-1111-4111-8111-111111111111"
     review_ref = _make_evidence_ref(
-        durable_root, f"executions/{exec_id}/artifacts/review-{task_id}.json", b'{"verdict": "approved"}'
+        durable_root,
+        f"executions/{exec_id}/artifacts/review-{task_id}.json",
+        _review_artifact_bytes(
+            task_id=task_id,
+            feature_slug=feature_slug,
+            execution_id=exec_id,
+            implementation_sha=implementation_sha,
+        ),
     )
     validation_ref = _make_evidence_ref(
         durable_root, f"executions/{exec_id}/artifacts/validation-{task_id}.json", b'{"tests": "passed"}'
@@ -256,6 +279,90 @@ def test_semantic_evidence_and_head_required(tmp_path: Path, monkeypatch: pytest
         finalize_task(evidence=evidence, worktree=repo_root, expected_head=implementation_sha)
     assert task_md_path.read_text(encoding="utf-8") == original_md
     assert index_path.read_text(encoding="utf-8") == original_index
+
+
+def test_review_evidence_must_be_a_review_artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A validation log cannot satisfy the semantic review-evidence requirement."""
+    task_id = "TASK-9105"
+    feature_slug = "finalize-demo-d"
+    task_md_path, _index_path, implementation_sha = _build_repo(
+        tmp_path / "repo", task_id=task_id, feature_slug=feature_slug
+    )
+    repo_root = task_md_path.parents[3]
+    durable_root = tmp_path / "durable"
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
+    evidence = _build_evidence(
+        durable_root, task_id=task_id, feature_slug=feature_slug, implementation_sha=implementation_sha
+    )
+    evidence.review_evidence = _make_evidence_ref(
+        durable_root,
+        "executions/11111111-1111-4111-8111-111111111111/artifacts/validation-used-as-review.json",
+        b'{"tests": "passed"}',
+    )
+
+    with pytest.raises(InvalidEvidenceError, match="validation-used-as-review"):
+        finalize_task(evidence=evidence, worktree=repo_root, expected_head=implementation_sha)
+
+    assert task_md_path.is_file()
+    assert not (repo_root / "sdd" / "tasks" / "completed").exists()
+
+
+def test_review_artifact_must_match_task_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A valid review artifact cannot finalize a different task."""
+    task_id = "TASK-9106"
+    feature_slug = "finalize-demo-e"
+    task_md_path, _index_path, implementation_sha = _build_repo(
+        tmp_path / "repo", task_id=task_id, feature_slug=feature_slug
+    )
+    repo_root = task_md_path.parents[3]
+    durable_root = tmp_path / "durable"
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
+    evidence = _build_evidence(
+        durable_root, task_id=task_id, feature_slug=feature_slug, implementation_sha=implementation_sha
+    )
+    execution_id = "11111111-1111-4111-8111-111111111111"
+    evidence.review_evidence = _make_evidence_ref(
+        durable_root,
+        f"executions/{execution_id}/artifacts/review-other-task.json",
+        _review_artifact_bytes(
+            task_id="TASK-9199",
+            feature_slug=feature_slug,
+            execution_id=execution_id,
+            implementation_sha=implementation_sha,
+        ),
+    )
+
+    with pytest.raises(InvalidEvidenceError, match="review-other-task"):
+        finalize_task(evidence=evidence, worktree=repo_root, expected_head=implementation_sha)
+
+    assert task_md_path.is_file()
+    assert not (repo_root / "sdd" / "tasks" / "completed").exists()
+
+
+def test_review_artifact_non_json_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Malformed review evidence is rejected before task files are changed."""
+    task_id = "TASK-9107"
+    feature_slug = "finalize-demo-f"
+    task_md_path, _index_path, implementation_sha = _build_repo(
+        tmp_path / "repo", task_id=task_id, feature_slug=feature_slug
+    )
+    repo_root = task_md_path.parents[3]
+    durable_root = tmp_path / "durable"
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
+    evidence = _build_evidence(
+        durable_root, task_id=task_id, feature_slug=feature_slug, implementation_sha=implementation_sha
+    )
+    evidence.review_evidence = _make_evidence_ref(
+        durable_root,
+        "executions/11111111-1111-4111-8111-111111111111/artifacts/review-malformed.json",
+        b"not JSON",
+    )
+
+    with pytest.raises(InvalidEvidenceError, match="review-malformed"):
+        finalize_task(evidence=evidence, worktree=repo_root, expected_head=implementation_sha)
+
+    assert task_md_path.is_file()
+    assert not (repo_root / "sdd" / "tasks" / "completed").exists()
 
 
 def test_crash_resume_and_twin_conflict(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
