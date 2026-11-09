@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-09T19:13:16.084308+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-09T22:21:10+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -234,7 +234,7 @@
       "feature_id": "FEAT-860",
       "feature": "postgres-crew-storage",
       "spec": "sdd/specs/postgres-crew-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -250,8 +250,9 @@
       "parallelism_notes": "Documents codec from TASK-5443, config from TASK-5444, Redis snapshots from TASK-5445, PG APIs from TASK-5446, migration/composition from TASK-5448, manager API from TASK-5449 and HTTP behavior from TASK-5450.",
       "assigned_to": null,
       "started_at": "2026-11-09T19:16:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5452-crew-definition-storage-documentation.md"
+      "completed_at": "2026-11-09T22:21:10+00:00",
+      "file": "sdd/tasks/completed/TASK-5452-crew-definition-storage-documentation.md",
+      "verification": "verified"
     }
   ]
 }

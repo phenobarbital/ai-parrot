@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-860 — Postgres CrewDefinition Storage
 **Spec**: `sdd/specs/postgres-crew-storage.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (1–2h)
 **Depends-on**: TASK-5443, TASK-5444, TASK-5445, TASK-5446, TASK-5448, TASK-5449, TASK-5450
@@ -247,4 +247,16 @@ move the task, stamp completion, or run legacy task-close helpers.
 
 ## Completion Note
 
-Pending; populated by the task finalizer after implementation and validation.
+
+- Task: TASK-5452
+- Feature: postgres-crew-storage
+- Implementation SHA: 46a0487b8f65c86cde3ecdfc0790d9c888c5a312
+- Closed at (UTC): 2026-11-09T22:21:10+00:00
+- Fix commits: 46a0487b8f65c86cde3ecdfc0790d9c888c5a312
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 315.202s · Tokens: n/a |
+| validation_note | The attached validation log is the pre-fix merge-tier run (3 passed). The docs fix touched one Markdown bullet and the selector then reported the target as cached, so the docs test was re-run directly against the fixed page: 3 passed. |
