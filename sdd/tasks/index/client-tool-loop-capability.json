@@ -1,0 +1,136 @@
+{
+  "feature": "client-tool-loop-capability",
+  "feature_id": "FEAT-848",
+  "spec": "sdd/specs/client-tool-loop-capability.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-09T01:08:35+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "packages/ai-parrot/tests/clients/test_tool_loop_capability.py",
+          "packages/ai-parrot/tests/clients/test_credential_env.py",
+          "packages/ai-parrot/tests/clients/test_import_hygiene.py",
+          "packages/ai-parrot/tests/knowledge/pageindex/test_agentic_retrieval.py",
+          "packages/ai-parrot/tests/bots/test_tool_loop_warning.py",
+          "packages/ai-parrot/tests/bots/test_double_configure.py",
+          "packages/ai-parrot/tests/bots/test_configure_override_guards.py",
+          "packages/ai-parrot/tests/clients/test_tool_loop_docs.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:039476f003f426f09a1f19ecd29dd142bddd6fc083a9e7c97de3ca67f50502e3"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5379",
+      "slug": "capability-flag-and-provider-overrides",
+      "title": "Capability flag on AbstractClient and the three provider overrides",
+      "feature_id": "FEAT-848",
+      "feature": "client-tool-loop-capability",
+      "spec": "sdd/specs/client-tool-loop-capability.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "root: creates AbstractClient.supports_tool_loop (clients/base.py) and the hf/jev/google-live overrides; touches no file another wave-1 task touches",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5379-capability-flag-and-provider-overrides.md"
+    },
+    {
+      "id": "TASK-5380",
+      "slug": "agentic-retrieval-fail-fast",
+      "title": "Fail fast in agentic retrieval on a client without a tool loop",
+      "feature_id": "FEAT-848",
+      "feature": "client-tool-loop-capability",
+      "spec": "sdd/specs/client-tool-loop-capability.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "independent of TASK-5379: require_tool_loop reads getattr(client, 'supports_tool_loop', True) and its NoLoopClient declares the flag itself; touches only pageindex/agentic.py, toolkit.py and test_agentic_retrieval.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5380-agentic-retrieval-fail-fast.md"
+    },
+    {
+      "id": "TASK-5381",
+      "slug": "bot-configure-tool-loop-warning",
+      "title": "AbstractBot warns once at configure() when its client has no tool loop",
+      "feature_id": "FEAT-848",
+      "feature": "client-tool-loop-capability",
+      "spec": "sdd/specs/client-tool-loop-capability.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "independent of TASK-5379: the helper reads getattr(self._llm, 'supports_tool_loop', True) and its stub clients declare the flag; touches only bots/abstract.py and the new tests/bots/test_tool_loop_warning.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5381-bot-configure-tool-loop-warning.md"
+    },
+    {
+      "id": "TASK-5382",
+      "slug": "tool-loop-guard-test",
+      "title": "Guard test — the tool-loop flag matches every provider's resolved ask()",
+      "feature_id": "FEAT-848",
+      "feature": "client-tool-loop-capability",
+      "spec": "sdd/specs/client-tool-loop-capability.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-5379"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-5379: modifies tests/clients/test_tool_loop_capability.py that TASK-5379 creates, and asserts the supports_tool_loop values it declares on AbstractClient / TransformersClient / JevClient / GeminiLiveClient",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5382-tool-loop-guard-test.md"
+    },
+    {
+      "id": "TASK-5383",
+      "slug": "documentation",
+      "title": "Documentation — abstract-client, pageindex-agentic-retrieval",
+      "feature_id": "FEAT-848",
+      "feature": "client-tool-loop-capability",
+      "spec": "sdd/specs/client-tool-loop-capability.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5379",
+        "TASK-5380",
+        "TASK-5381"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents symbols created upstream: TASK-5379 AbstractClient.supports_tool_loop + the three False classes (clients/base.py); TASK-5380 require_tool_loop and its ValueError text (pageindex/agentic.py); TASK-5381 AbstractBot._warn_if_client_lacks_tool_loop warning (bots/abstract.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5383-documentation.md"
+    }
+  ]
+}
