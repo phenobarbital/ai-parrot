@@ -1,8 +1,8 @@
 ---
 type: feature
 base_branch: dev
-projects: [clients, knowledge-pageindex]
-tags: [clients, tool-loop, capability, agentic-retrieval, pageindex]
+projects: [clients, knowledge-pageindex, bots]
+tags: [clients, tool-loop, capability, agentic-retrieval, pageindex, bots]
 docs:
   policy: required
   pages:
@@ -17,7 +17,7 @@ docs:
 **Feature ID**: FEAT-848
 **Date**: 2026-11-09
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 2.2.0
 
 ---
@@ -70,17 +70,25 @@ wrong table (`wiki/knowledge/pageindex-agentic-retrieval.md:173`).
   exposure test (Codex's already exists).
 - G5 — The documentation says the right thing: the provider table in the agentic-retrieval page
   is corrected, and `abstract-client.md` documents the attribute.
+- G6 — `AbstractBot.configure()` logs one warning when the bot is in agent mode (tools enabled,
+  tools registered, operation mode not `conversational`) and its LLM client declares
+  `supports_tool_loop = False`. It never refuses. Today `TransformersClient` drops a bot's tools
+  with no log at all: the bot hands tools over through `tool_manager` with `use_tools=True`, and
+  hf only warns on inline `tools=` (`hf/client.py:373-374`). `JevClient` warns on every call.
 
 ### Non-Goals (explicitly out of scope)
 
 - Changing any provider's tool loop, adding a loop to hf/jev/live/codex, or adding a caller-
   settable turn cap to `ask()` (FEAT-843 §7 risk; separate work).
 - Declaring streaming capability or changing `ask_stream()`. Streaming already differs from
-  `ask()` in Grok and Meta's default Responses path; a separate flag is follow-up work.
+  `ask()` in Grok, Groq and Meta's default Responses path. No streaming flag will be added: those
+  three are provider defects, tracked in the ledger (`issue:2d16e4d75557` Grok,
+  `issue:3e76568cae48` Groq, `issue:3a0ea22ce45a` Meta) and fixed in the providers (§8).
 - Standardizing inline `tools` registration across providers. Callers must use the provider's
   supported registration and enabling path; the agent bridges expose registered manager tools.
-- Making `Agent`/`AbstractBot` consult the flag. They already degrade through their own prompt
-  path; wiring is a follow-up (§8).
+- Making `Agent`/`AbstractBot` refuse a `False` client, or change how they call it. They only
+  warn once at `configure()` (G6, §3 M5). Per-call client overrides and the
+  `ModelSwitchingMixin` secondary client are not checked.
 - A `typing.Protocol` (`ToolLoopCapable`) like `VoiceCapable` (`protocols.py:17`). A boolean
   class attribute is enough for a yes/no fact and matches `budget_supported_methods`.
 - Rewriting FEAT-843's spec §6. Specs are historical; the correction lives in this spec, the wiki
@@ -90,13 +98,14 @@ wrong table (`wiki/knowledge/pageindex-agentic-retrieval.md:173`).
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:c7c61619194ccfc1da5cddd122a7e20fb44ff90a5f54b36f8dcb23f035dc20bd evaluation_digest=sha256:5ef0f9b1b8c8392d9838d559c59c773ba1c6869438d337bdc2635ff24feac6c0 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:0136de3f01d443376d70e0bb4c26df2d69dd02ac8936059125179c1039e28ac8 evaluation_digest=sha256:9d1cd3108a4e1dc1cd3a0b50b758089649683741b6e53ef1504861bc40ba8cdb rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
 ### Overview
 
-A class attribute, three overrides, two fail-fast checks, one guard test, two doc pages.
+A class attribute, three overrides, two fail-fast checks, one configure-time bot warning, one
+guard test, two doc pages.
 
 ```python
 class AbstractClient(EventEmitterMixin, ABC):
@@ -128,8 +137,10 @@ already clears and registers its wrapped tools there, then calls `ask(tools=None
 (`agentic.py:295-304`). Preserve and test this delivery path. The flag is a class capability,
 not a guarantee that a particular model, configuration, or call will invoke a tool.
 
-`ask_stream()` is outside this contract: Grok ignores tools on that path, and Meta's default
-Responses streaming path omits tool round trips (`grok/client.py:417-558`, `meta/client.py:887-892`).
+`ask_stream()` is outside this contract: Grok ignores tools on that path, Groq sends them but
+discards the model's tool-call deltas, and Meta's default Responses streaming path omits tool
+round trips (`grok/client.py:417-558`, `groq/client.py:797-838`, `meta/client.py:887-892`). These
+are provider defects tracked in the ledger, not a second capability (§8).
 
 **Fail fast (FEAT-843 consumer).** `PageIndexToolkit._agentic_client()` (`toolkit.py:1145`)
 raises `ValueError` when the resolved client (override or clone) declares `False`; it runs at
@@ -139,6 +150,19 @@ the same error for direct constructions. The message names the class and `client
 (transformers) declares supports_tool_loop=False"`. `EvidenceBundle` and `StopReason` are
 unchanged — `no_tool_calls` remains the outcome for a `True` client whose model simply never
 called a tool.
+
+**Bot warning (G6).** A new private method `AbstractBot._warn_if_client_lacks_tool_loop()` runs in
+`configure()` right after the default client is created and synced (`abstract.py:1693-1694`). It
+first checks `getattr(self._llm, "supports_tool_loop", True) is False` and returns otherwise. The
+identity check matters: the `configure()` stubs in `test_double_configure.py` use a `MagicMock`
+client and a bot built with `object.__new__` that has no `enable_tools`, so a mock must never get
+past the first line. Only then it checks `self.is_agent_mode()` (`abstract.py:3704`) and logs one
+`self.logger.warning`:
+`"%s: LLM client %s (%s) declares supports_tool_loop=False; its %d registered tools will not be
+executed"` with the bot name, client class, `client_type` and `self.tool_manager.tool_count()`.
+It never raises. Every `Agent` with default settings registers `ToJsonTool` (`agent.py:466`), so an
+hf or jev `Agent` always gets this warning — that is intended, since those tools are never run.
+`configure()` is idempotent per instance (FEAT-721), so the warning fires once per real run.
 
 **Guard test.** `tests/clients/test_tool_loop_capability.py` enumerates
 `LLMFactory.supported_clients()` using `test_credential_env.py::_classes()` as the registry
@@ -172,6 +196,7 @@ AbstractClient.supports_tool_loop (base.py)          ── declarative, default
 
 PageIndexToolkit._agentic_client() ──checks──▶ client.supports_tool_loop ──False──▶ ValueError
 AgenticRetriever.__init__          ──checks──▶ client.supports_tool_loop ──False──▶ ValueError
+AbstractBot.configure()            ──checks──▶ self._llm.supports_tool_loop ──False + agent mode──▶ one warning
 
 tests/clients/test_tool_loop_capability.py ── MRO audit of every installed provider
 ```
@@ -186,6 +211,8 @@ tests/clients/test_tool_loop_capability.py ── MRO audit of every installed p
 | `GeminiLiveClient` (`google/live.py:328`) | modifies | `supports_tool_loop = False` after `client_name` (`:373`) |
 | `PageIndexToolkit._agentic_client` (`toolkit.py:1145`) | modifies | fail-fast `ValueError` |
 | `AgenticRetriever.__init__` (`agentic.py:163`) | modifies | fail-fast `ValueError` |
+| `AbstractBot.configure()` (`bots/abstract.py:1604`) | modifies | calls the new warning helper after `self.sync_tools(self._llm)` (`:1694`) |
+| `AbstractBot.is_agent_mode()` (`bots/abstract.py:3704`) | uses | agent-mode condition for the warning |
 | `LLMFactory.supported_clients()` (`factory.py`) | uses | provider enumeration in the guard test |
 | `wiki/knowledge/pageindex-agentic-retrieval.md:173` | updates | corrected provider table |
 | `wiki/clients/abstract-client.md` | updates | documents the attribute |
@@ -214,6 +241,7 @@ class AbstractClient(EventEmitterMixin, ABC):
 | M2: fail-fast in agentic retrieval | yes | two check sites, `ValueError`, exact message format | — |
 | M3: guard test | yes | provider enumeration, MRO + one-hop AST call rule, `TOOL_EXECUTION_METHODS`, both bridge exceptions, one Claude bridge exposure test | — |
 | M4: documentation | yes | two pages, corrected table, FEAT-843 §8 note | — |
+| M5: bot configure-time warning | yes | helper name and placement, `is False` identity check first, `is_agent_mode()` condition, exact message, never raises | — |
 
 ### Module 1: Capability flag and provider overrides
 - **Path**: `packages/ai-parrot/src/parrot/clients/base.py`,
@@ -332,12 +360,15 @@ class AbstractClient(EventEmitterMixin, ABC):
   `sdd/specs/pageindex-agentic-retrieval.spec.md` (one line)
 - **Responsibility**: document the attribute; replace the wrong provider table; close FEAT-843's
   escalated item by pointing at this spec.
-- **Depends on**: Module 1 (names), Module 2 (error text).
+- **Depends on**: Module 1 (names), Module 2 (error text), Module 5 (warning text).
 - **Interface Skeleton** (content contract, not code):
   - `abstract-client.md` — under `## Public API`: `supports_tool_loop` (what `True` promises, the
     ask-only classification rule, the three `False` classes, "declarative: `ask()` never reads it",
     and the registered-tool prerequisite for both agent bridges); under
-    `## Gotchas`: a `False` client offered tools warns and ignores them — check the flag first.
+    `## Gotchas`: a `False` client ignores offered tools (hf with no log when they come through
+    `tool_manager`) — check the flag first; `AbstractBot.configure()` logs one warning when an
+    agent-mode bot uses such a client, and never refuses it. `ask_stream()` has no capability
+    flag; the Grok, Groq and Meta (Responses) streaming gaps are tracked defects.
   - `pageindex-agentic-retrieval.md:170-178` — replace the two-column table with: **runs the loop**
     — every installed provider except: `hf`/`transformers` (`TransformersClient`), `jev`/`typesafe`
     (`JevClient`), `gemini-live` (`GeminiLiveClient`); `OpenAICodexClient` and `ClaudeAgentClient`
@@ -348,6 +379,48 @@ class AbstractClient(EventEmitterMixin, ABC):
     Remove "OpenRouter is not in the verified table" (it inherits `OpenAIBaseClient.ask`).
   - `pageindex-agentic-retrieval.spec.md:939` — append `— Resolved by FEAT-848 (client-tool-loop-capability)`
     to the open item; the checkbox stays as the FEAT-843 author left it (historical document).
+
+### Module 5: Bot configure-time warning
+- **Path**: `packages/ai-parrot/src/parrot/bots/abstract.py`;
+  `packages/ai-parrot/tests/bots/test_tool_loop_warning.py` (new)
+- **Responsibility**: tell the operator, once, that an agent-mode bot's tools will never run
+  because its client declares no tool loop. Log only; behaviour is unchanged.
+- **Depends on**: Module 1 (reads `supports_tool_loop` with a `getattr` default of `True`, so it
+  works before M1 lands).
+- **Interface Skeleton**:
+  ```python
+  # abstract.py (new private method, inserted before is_agent_mode :3704)
+  class AbstractBot:
+      def _warn_if_client_lacks_tool_loop(self) -> None:
+          """Log one warning when an agent-mode bot's client declares supports_tool_loop=False.
+
+          Order is part of the contract: return unless
+          ``getattr(self._llm, "supports_tool_loop", True) is False`` (identity check, so a
+          MagicMock client never passes); then return unless ``self.is_agent_mode()``; then
+          ``self.logger.warning("%s: LLM client %s (%s) declares supports_tool_loop=False; its %d "
+          "registered tools will not be executed", self.name, type(self._llm).__name__,
+          getattr(self._llm, "client_type", "?"), self.tool_manager.tool_count())``. Never raises."""
+
+  # abstract.py (modifies :1693-1694 inside configure(), same indentation as the if-statement)
+                      if self.tool_manager and hasattr(self._llm, "tool_manager"):   # verified: abstract.py:1693
+                          self.sync_tools(self._llm)                                 # verified: abstract.py:1694
+                      self._warn_if_client_lacks_tool_loop()                          # new, after the if-block
+
+  # tests/bots/test_tool_loop_warning.py (new) — bot shell and stub pattern from
+  # test_double_configure.py (_ConfigureTestBot :12, _stub_bot :32)
+  class _NoLoopClient:  supports_tool_loop = False; client_type = "noloop"
+  class _LoopClient:    supports_tool_loop = True;  client_type = "loop"
+  def test_warns_once_for_agent_mode_no_loop_client() -> None: ...     # enable_tools, 1 tool, adaptive → one warning naming bot, _NoLoopClient, noloop, 1
+  def test_silent_for_loop_client() -> None: ...                       # _LoopClient → no warning
+  def test_silent_when_not_agent_mode() -> None: ...                   # enable_tools False, or 0 tools, or "conversational" → no warning
+  def test_silent_for_mock_client_without_bot_state() -> None: ...     # MagicMock client on an object.__new__ bot with no enable_tools → no warning, no AttributeError
+  async def test_configure_calls_warning_after_client_creation() -> None: ...  # _stub_bot + _create_llm_client → _NoLoopClient; configure() warns once; a second configure() adds none
+  # _stub_bot defines no enable_tools/operation_mode and its tool_manager is a bare MagicMock:
+  # the positive tests set enable_tools=True, operation_mode="adaptive", name, and
+  # tool_manager.tool_count.return_value = 1 (is_agent_mode -> has_tools -> get_tools_count :4746).
+  # test_double_configure.py:46 and test_configure_override_guards.py:70 return a MagicMock client,
+  # which the identity check stops on the first line — both files pass unchanged.
+  ```
 
 ---
 
@@ -365,6 +438,11 @@ class AbstractClient(EventEmitterMixin, ABC):
 | `test_claude_bridge_exposes_registered_tools` | M3 | a sentinel registered in `ClaudeAgentClient().tool_manager` appears in `ClaudeAgentToolBridge(...).exposed_names()`; no SDK call (Codex side already covered by `test_codex_agent.py:129`) |
 | `test_agentic_retriever_rejects_no_loop_client` | M2 | construction raises `ValueError` with class name and `client_type` |
 | `test_agentic_retrieve_fails_fast_without_tool_loop` | M2 | toolkit raises before any `ask()`; stub call counter is 0 |
+| `test_warns_once_for_agent_mode_no_loop_client` | M5 | one warning with bot name, client class, `client_type` and tool count |
+| `test_silent_for_loop_client` | M5 | a `True` client logs nothing |
+| `test_silent_when_not_agent_mode` | M5 | tools disabled, no tools, or `conversational` mode log nothing |
+| `test_silent_for_mock_client_without_bot_state` | M5 | `MagicMock` client on a bare bot: no warning, no `AttributeError` |
+| `test_configure_calls_warning_after_client_creation` | M5 | `configure()` warns once; the idempotent second call adds none |
 
 ### Integration Tests
 | Test | Description |
@@ -379,6 +457,9 @@ tests:
 - packages/ai-parrot/tests/clients/test_credential_env.py
 - packages/ai-parrot/tests/clients/test_import_hygiene.py
 - packages/ai-parrot/tests/knowledge/pageindex/test_agentic_retrieval.py
+- packages/ai-parrot/tests/bots/test_tool_loop_warning.py
+- packages/ai-parrot/tests/bots/test_double_configure.py
+- packages/ai-parrot/tests/bots/test_configure_override_guards.py
 markers: none
 
 ### Test Data / Fixtures
@@ -415,6 +496,10 @@ markers: none
   `parrot sdd techwiki check` passes for both pages (G5).
 - [ ] AC-7 No breaking change: no signature changes, `EvidenceBundle`/`StopReason` unchanged,
   `test_import_hygiene.py` still passes (the attribute adds no import to `base.py`).
+- [ ] AC-8 `AbstractBot.configure()` logs exactly one warning, and never raises, when the bot is in
+  agent mode and its client declares `supports_tool_loop = False`; a `True` client, a non-agent-mode
+  bot and a `MagicMock` client log nothing. `test_double_configure.py` and
+  `test_configure_override_guards.py` still pass unchanged (G6).
 
 ---
 
@@ -509,6 +594,33 @@ class ScriptedToolLoopClient(StubClient)                                      # 
 def _read_tool() -> ToolkitTool; def _retriever(client) -> AgenticRetriever   # :110, :119
 agentic_toolkit fixture                                                       # :418
 def test_tool_listed_and_llm_dependent(tmp_path: Path) -> None                # :481 (last test in file)
+
+# packages/ai-parrot/src/parrot/bots/abstract.py   (verified dev @ 474fe3f682)
+class AbstractBot:
+    # __init__: self.enable_tools: bool = kwargs.get("enable_tools", kwargs.get("use_tools", True))   # :416
+    # __init__: self.operation_mode: str = kwargs.get("operation_mode", "adaptive")                   # :568
+    async def configure(self, app=None) -> None                                 # :1604
+    #   self._llm = self._create_llm_client(config)                             # :1692
+    #   if self.tool_manager and hasattr(self._llm, "tool_manager"):            # :1693
+    #       self.sync_tools(self._llm)                                          # :1694 (only occurrence)
+    def _create_llm_client(self, config: LLMConfig) -> AbstractClient           # :1042 (passes tool_manager=self.tool_manager)
+    def is_agent_mode(self) -> bool                                             # :3704 — enable_tools and has_tools() and operation_mode in ["agentic", "adaptive"]
+    def get_tools_count(self) -> int                                            # :4746 — self.tool_manager.tool_count()
+    def has_tools(self) -> bool                                                 # :4751
+
+# packages/ai-parrot/src/parrot/interfaces/tools.py
+    def sync_tools(self, llm: AbstractClient = None) -> None                    # :387 — llm.tool_manager = self.tool_manager; llm.enable_tools = True
+
+# packages/ai-parrot/src/parrot/bots/agent.py
+    def _get_default_tools(self, tools, *, use_tools: bool = True) -> List[AbstractTool]   # :451; appends ToJsonTool() :466
+
+# packages/ai-parrot/src/parrot/bots/base.py
+    async def ask(...)          # :1069; llm_kwargs "use_tools" :1467 → client.ask (no inline tools=)
+    async def ask_stream(...)   # :1878; llm_kwargs "use_tools" :2111 → client.ask_stream(**llm_kwargs) :2159
+
+# packages/ai-parrot/tests/bots/test_double_configure.py
+class _ConfigureTestBot(AbstractBot)                                          # :12
+def _stub_bot() -> AbstractBot                                                # :32; _create_llm_client → MagicMock() :46
 ```
 
 ### Provider audit (MRO-resolved, `dev @ 8758f61456`)
@@ -528,6 +640,21 @@ are unchanged since `8758f61456`) and reproduces this table exactly — 3 `False
 exceptions, 17 in-process classes; the committed test is implementation work, the classification
 is not.
 
+### Streaming audit (informational, `dev @ 474fe3f682`)
+
+The same AST rule applied to `ask_stream()` (open-question triage, §8) finds three providers whose
+`ask()` runs the loop but whose `ask_stream()` does not. This feature changes none of them and
+adds no streaming flag; each is a ledger issue.
+
+| Provider | `ask_stream()` behaviour | Ledger |
+|---|---|---|
+| `GroqClient` | sends tools with `tool_choice="auto"` but reads only `delta.content`; tool calls dropped, answer can be empty (`groq/client.py:797-838`) | `issue:3e76568cae48` (bug, major) |
+| `GrokClient` | `has_tools=False`; tools never sent (`grok/client.py:417-558`, `:451`) | `issue:2d16e4d75557` (bug, minor) |
+| `MetaClient` | default `use_responses=True` path streams text only; Chat Completions path runs the loop (`meta/client.py:887-892`) | `issue:3a0ea22ce45a` (feature_gap, minor) |
+
+The AST rule reports Meta's `ask_stream()` as `yes` because the Chat Completions branch reaches the
+loop — a per-instance setting (`use_responses`) that no class attribute can express.
+
 ### Integration Points
 
 | New Component | Connects To | Via | Verified At |
@@ -536,6 +663,7 @@ is not.
 | `require_tool_loop()` | `PageIndexToolkit._agentic_client()` | call before `return` | `toolkit.py:1145-1153` |
 | `require_tool_loop()` | `AgenticRetriever.__init__` | first statement | `agentic.py:163-174` |
 | guard test | `LLMFactory.supported_clients()` | enumeration | `test_credential_env.py:12-19` |
+| `AbstractBot._warn_if_client_lacks_tool_loop()` | `AbstractBot.configure()` | call after the `sync_tools` if-block | `abstract.py:1693-1694` |
 
 ### Does NOT Exist (Anti-Hallucination)
 
@@ -544,6 +672,8 @@ is not.
 - ~~`parrot.clients.protocols.ToolLoopCapable`~~ — only `VoiceCapable` exists (`protocols.py:17`); this spec adds no Protocol.
 - ~~`AgenticRetriever.require_tool_loop`~~ — the helper is module-level in `agentic.py`, not a method.
 - ~~`StopReason` value `"unsupported_client"`~~ — not added; the fail-fast path raises instead.
+- ~~`supports_stream_tool_loop`~~ / any `ask_stream()` capability attribute — not added (§8); streaming gaps are ledger issues.
+- ~~`AbstractBot.supports_tool_loop`~~ — the bot has no flag of its own; it reads `self._llm.supports_tool_loop`.
 - ~~`OpenAIBaseClient.ask` without a loop~~ — it does run `_run_tool_call_loop` (`:995`); FEAT-843 §6's "NO tool execution in ask(): meta, local, vllm, moonshot, nvidia" is wrong and must not be copied.
 - ~~`parrot sdd ids` ownership of FEAT-847 by this slug~~ — the ledger reserved FEAT-847 under this label first, but `sdd-agy-compatibility.spec.md` already carried a hand-assigned FEAT-847; this spec uses the second reservation, FEAT-848 (§8).
 
@@ -560,6 +690,9 @@ Verified against: `8758f61456`
 | `packages/ai-parrot/src/parrot/knowledge/pageindex/agentic.py` | MODIFY | `def clone_for_tools(client: AbstractClient) -> AbstractClient:` (helper inserted before) | `agentic.py:82` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/pageindex/agentic.py` | MODIFY | `load_revision: Callable[[str, str], Optional[DocumentRevision]],` (check inserted at the start of the body below) | `agentic.py:169` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py` | MODIFY | `self._agentic_clone = clone_for_tools(self._adapter.client)` | `toolkit.py:1152` | 1 |
+| `packages/ai-parrot/src/parrot/bots/abstract.py` | MODIFY | `self.sync_tools(self._llm)` (warning call added after this if-block, at the `if` indentation) | `abstract.py:1694` (verified `474fe3f682`) | 1 |
+| `packages/ai-parrot/src/parrot/bots/abstract.py` | MODIFY | `def is_agent_mode(self) -> bool:` (helper inserted before) | `abstract.py:3704` (verified `474fe3f682`) | 1 |
+| `packages/ai-parrot/tests/bots/test_tool_loop_warning.py` | CREATE | — | — | — |
 | `packages/ai-parrot/tests/clients/test_tool_loop_capability.py` | CREATE | — | — | — |
 | `packages/ai-parrot/tests/knowledge/pageindex/test_agentic_retrieval.py` | MODIFY | `def test_tool_listed_and_llm_dependent(tmp_path: Path) -> None:` (append after this test) | `test_agentic_retrieval.py:481` | 1 |
 | `wiki/knowledge/pageindex-agentic-retrieval.md` | MODIFY | `\| anthropic, google, openai (via` (table row to replace) | `:173` | 1 |
@@ -584,6 +717,8 @@ Verified against: `8758f61456`
   exceptions; an installed provider's import or audit failure must fail AC-5 visibly.
 - Satellite tests are not touched; everything lives in `packages/ai-parrot/tests` and skips when a
   satellite is not installed (the enumeration drops uninstalled extras, `test_credential_env.py:16-18`).
+- Bot warning: `self.logger.warning` with `%`-style arguments (no f-string), one call per real
+  `configure()` run; check `supports_tool_loop is False` before reading any bot attribute.
 
 ### Known Risks / Gotchas
 - **The AST audit remains structural, not proof of runtime execution.** A provider that renames
@@ -595,9 +730,14 @@ Verified against: `8758f61456`
   being offered — still `True` for the class flag (the client *can* run the loop). Neither bridge
   registers inline `tools` passed to `ask()`. Preserve PageIndex's manager-registration path and
   configure exposure explicitly in bridge tests.
-- **Streaming diverges today**: Grok ignores tools in `ask_stream()`; Meta's default Responses
-  streaming path does not run tool round trips. This flag must never be used to infer streaming
-  capability. No streaming implementation change belongs to this feature.
+- **Streaming diverges today**: Grok ignores tools in `ask_stream()`; Groq sends them but drops the
+  tool calls; Meta's default Responses streaming path does not run tool round trips. This flag must
+  never be used to infer streaming capability. No streaming implementation change belongs to this
+  feature; the three fixes are ledger issues (§6 Streaming audit).
+- **Bot warning scope**: only the default client created in `configure()` is checked. A per-call
+  client override and the `ModelSwitchingMixin` secondary client are not. Every hf/jev `Agent`
+  gets the warning because `Agent` registers `ToJsonTool` by default; that is correct, not noise.
+  The warning must stay a log line: refusing would break every existing hf/jev `Agent`.
 - **`GeminiLiveClient.ask` is a voice iterator**; `False` is about the text `ask()` contract.
   `LiveToolAdapter` (`live.py:81`) executes function calls inside the realtime session — that is not
   the `ask()` loop and must not flip the flag.
@@ -621,7 +761,7 @@ schema_version: 1
 document_id: client-tool-loop-capability
 entries:
   - id: tool-loop-flag-is-declarative
-    statement: AbstractClient declares text ask() tool-loop capability through supports_tool_loop (default True), assuming provider-supported tool registration and enabling; ask() never reads it. Providers without that loop set False. The flag makes no claim about streaming or inline tools registration; Codex and Claude agent bridges expose registered ToolManager tools.
+    statement: AbstractClient declares text ask() tool-loop capability through supports_tool_loop (default True), assuming provider-supported tool registration and enabling; ask() never reads it. Providers without that loop set False. The flag makes no claim about streaming or inline tools registration; Codex and Claude agent bridges expose registered ToolManager tools. No separate ask_stream() capability flag is declared; providers whose ask_stream() skips the loop their ask() runs (Groq, Grok, Meta on the Responses path) are defects fixed in the provider and tracked as ledger issues.
     relation: requires
     about: [clients]
     targets:
@@ -632,6 +772,7 @@ entries:
     rejected_alternatives:
       - "A typing.Protocol (ToolLoopCapable) — a yes/no fact does not need structural typing; budget_supported_methods is the precedent."
       - "Detecting the loop at runtime from EvidenceBundle.stopped — costs the LLM call the flag exists to avoid."
+      - "A separate supports_stream_tool_loop flag — only three providers diverge and BaseBot.ask_stream already passes use_tools, so fixing them removes the need; a class attribute also cannot describe MetaClient, whose streaming path depends on the per-instance use_responses setting."
   - id: agentic-retrieval-requires-tool-loop
     statement: PageIndexToolkit.agentic_retrieve and AgenticRetriever reject a client with supports_tool_loop False by raising ValueError before any candidate search or LLM call.
     relation: requires
@@ -644,11 +785,23 @@ entries:
     rationale: "stopped=no_tool_calls stays reserved for a capable client whose model made no call; a configuration error should not look like a model outcome."
     rejected_alternatives:
       - "A new StopReason value (unsupported_client) — changes the bundle contract for a case that is a caller error."
+  - id: bot-warns-on-no-tool-loop-client
+    statement: AbstractBot.configure() logs one warning, and never raises, when the bot is in agent mode and its default LLM client declares supports_tool_loop False. The check reads the flag with an identity test against False before touching any bot state.
+    relation: requires
+    about: [bots]
+    targets:
+      - file:packages/ai-parrot/src/parrot/bots/abstract.py
+    contradicts: []
+    supersedes: []
+    rationale: "TransformersClient drops a bot's tools with no log (the bot passes them through tool_manager, hf only warns on inline tools=); operators need one visible signal without breaking existing agents."
+    rejected_alternatives:
+      - "Refusing with ValueError at configure — breaks every existing hf/jev Agent, since Agent always registers ToJsonTool."
+      - "Warning on every ask() — JevClient already does so per call; once per configure is enough."
 ```
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:c7c61619194ccfc1da5cddd122a7e20fb44ff90a5f54b36f8dcb23f035dc20bd evaluation_digest=sha256:5ef0f9b1b8c8392d9838d559c59c773ba1c6869438d337bdc2635ff24feac6c0 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:0136de3f01d443376d70e0bb4c26df2d69dd02ac8936059125179c1039e28ac8 evaluation_digest=sha256:9d1cd3108a4e1dc1cd3a0b50b758089649683741b6e53ef1504861bc40ba8cdb rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -659,9 +812,9 @@ Diagnostics:
 - none
 
 Coverage:
-- Subsystems: clients, knowledge-pageindex
+- Subsystems: bots, clients, knowledge-pageindex
 - Unmapped tags: agentic-retrieval, capability, tool-loop
-- Targets resolved: 3/3
+- Targets resolved: 4/4
 - Impact complete: true
 - Inventory complete: true
 - Omitted ids: not recorded
@@ -673,11 +826,12 @@ Coverage:
     "inventory_complete": true,
     "omitted_ids": [],
     "subsystems": [
+      "bots",
       "clients",
       "knowledge-pageindex"
     ],
-    "targets_resolved": 3,
-    "targets_total": 3,
+    "targets_resolved": 4,
+    "targets_total": 4,
     "unmapped_tags": [
       "agentic-retrieval",
       "capability",
@@ -685,10 +839,10 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:5ef0f9b1b8c8392d9838d559c59c773ba1c6869438d337bdc2635ff24feac6c0",
+  "evaluation_digest": "sha256:9d1cd3108a4e1dc1cd3a0b50b758089649683741b6e53ef1504861bc40ba8cdb",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:c7c61619194ccfc1da5cddd122a7e20fb44ff90a5f54b36f8dcb23f035dc20bd",
+  "input_digest": "sha256:0136de3f01d443376d70e0bb4c26df2d69dd02ac8936059125179c1039e28ac8",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -704,7 +858,7 @@ Coverage:
       "adr:doc:e7c5ae770b06db3b35cdd4cba93001a58bfa7bef": "394f4656c71618a256427d81350fdc32335fa791"
     },
     "rules_version": 1,
-    "structural_revision": "sha256:bb381ecbfeb0f4e84ed2b2cbe385cd9a76a9c2ec15ca304256d083c253d9c532",
+    "structural_revision": "sha256:8884be97d7d460a4ba13ab682d409b5b0ce4191dbe664c3cc8c1415e2e01475a",
     "taxonomy_digest": "65548b9a71329b13ab44f4904dff99814e1aac0da4bb2b58171a7201e3a9ba39"
   },
   "status": "pass"
@@ -725,12 +879,22 @@ Coverage:
   already carries a hand-assigned FEAT-847 (never reserved). This spec takes the second reservation,
   FEAT-848, so no two specs share an ID; the ledger's FEAT-847 row therefore covers the agy spec under
   the wrong label (cosmetic — `existing-feature-id` resolves by spec, not by ledger label).
-- [ ] Should `AbstractBot`/`Agent` warn (or refuse) when a `False` client is configured with tools,
-  instead of silently running prompt-only? — *Owner: Jesus Lara*; follow-up, not this slice.
-- [x] Does this flag cover `ask_stream()`? — *Resolved in review*: no; Grok and Meta already
+- [x] Should `AbstractBot`/`Agent` warn (or refuse) when a `False` client is configured with tools,
+  instead of silently running prompt-only? — *Resolved (Jesus Lara, 2026-11-09)*: warn, never refuse,
+  and do it in this feature (G6, §3 M5, AC-8). One `logger.warning` per real `configure()` run when the
+  bot is in agent mode and its client declares `False`. The premise holds: `TransformersClient`
+  drops a bot's tools with no log, because the bot hands them over through `tool_manager` with
+  `use_tools=True` and hf only warns on inline `tools=`. Refusing was rejected: `Agent` always
+  registers `ToJsonTool`, so every existing hf/jev `Agent` would fail to start.
+- [x] Does this flag cover `ask_stream()`? — *Resolved in review*: no; Grok and Meta (and Groq, found in the 0.4 audit) already
   diverge. All contracts, documentation and guard assertions in this feature cover text `ask()` only.
-- [ ] Should `ask_stream()` gain a separate capability flag and provider audit? — *Owner: Jesus Lara*;
-  follow-up, not this slice.
+- [x] Should `ask_stream()` gain a separate capability flag and provider audit? — *Resolved (Jesus Lara,
+  2026-11-09)*: no flag. The audit (§6 Streaming audit) found three providers whose `ask_stream()`
+  skips the loop their `ask()` runs: Groq (newly found — tool calls are dropped and the answer can
+  come back empty), Grok and Meta's Responses path. They are fixed in the providers, not declared:
+  `issue:3e76568cae48` (Groq), `issue:2d16e4d75557` (Grok), `issue:3a0ea22ce45a` (Meta). A class
+  attribute could not describe Meta anyway, since its streaming path depends on the per-instance
+  `use_responses` setting.
 
 ---
 
@@ -753,7 +917,8 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 - **Policy**: `required`
 - **Pages**:
   - `wiki/clients/abstract-client.md` — update: document `supports_tool_loop` under Public API and
-    a Gotcha for `False` clients.
+    a Gotcha for `False` clients, including the `AbstractBot.configure()` warning and the absence of
+    a streaming flag.
   - `wiki/knowledge/pageindex-agentic-retrieval.md` — update: corrected provider table, fail-fast
     behaviour, `no_tool_calls` semantics.
 - **API modules**:
@@ -767,3 +932,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | 0.1 | 2026-11-09 | Jesus Lara | Initial draft from FEAT-843 §8 escalation; MRO audit corrects the provider list. |
 | 0.2 | 2026-11-09 | Codex | Apply review findings: ask-only capability, AST call evidence with both bridge exceptions, mocked bridge delivery tests, and explicit tool-registration prerequisites. |
 | 0.3 | 2026-11-09 | Jesus Lara | Triage of 0.2: every code claim verified (CONFIRM ask-only scope, AST rule, Claude bridge exception); AST rule prototyped over all installed providers — classification confirmed; bridge *delivery* tests trimmed to one Claude *exposure* test (Codex already covered; execution is the bridges' contract); generated Governing Decisions / Consequences re-rendered (gate pass). |
+| 0.4 | 2026-11-09 | Jesus Lara | Open questions closed. Bot warning folded in as G6 / M5 / AC-8 (warn once at `configure()`, never refuse). No streaming flag: an `ask_stream()` audit found Groq, Grok and Meta (Responses) gaps, filed as ledger issues `3e76568cae48`, `2d16e4d75557`, `3a0ea22ce45a`; Groq added to every streaming note. Decisions gain `bot-warns-on-no-tool-loop-client`; `tool-loop-flag-is-declarative` now records "no streaming flag"; generated sections re-rendered. |
