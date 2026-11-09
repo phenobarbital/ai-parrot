@@ -100,7 +100,7 @@ class CrewDefinitionStorage:
     @staticmethod
     def _is_deleted(row: object) -> bool:
         """Return whether a stored row is a durable tombstone."""
-        return getattr(row, "deleted_at") is not None
+        return row.deleted_at is not None
 
     async def initialize(self) -> CrewMigrationReport | None:
         """Probe configured stores and log startup failures without changing routing."""
@@ -156,7 +156,11 @@ class CrewDefinitionStorage:
             crew = await self.redis.load_crew(identifier, tenant)
             if crew is None:
                 crew = await self.redis.load_crew_by_id(identifier, tenant)
-            return CrewDeletionResolution(state="active", definition=crew) if crew else CrewDeletionResolution(state="absent")
+            return (
+                CrewDeletionResolution(state="active", definition=crew)
+                if crew
+                else CrewDeletionResolution(state="absent")
+            )
 
         row = await self._load_authoritative_row(identifier, tenant)
         if row is None:
