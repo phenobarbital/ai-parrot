@@ -19,7 +19,7 @@ docs:
 **Feature ID**: FEAT-851
 **Date**: 2026-11-09
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 2.2.0
 
 ---
@@ -1561,9 +1561,9 @@ Coverage:
 - [x] Where the chat job store comes from — *Resolved by Jesus Lara (2026-11-09)*: move `JobManager` / `Job` / `JobStatus` / `RedisJobStore` to core `parrot.jobs`. `parrot.handlers.jobs` keeps re-exporting them (M1).
 - [x] What `/pr_review` writes to GitHub by default — *Resolved by Jesus Lara (2026-11-09)*: always post the report as a PR comment, like the Claude command. `--auto-draft` drafts on failing criteria; `--dry-run` keeps it chat-only. No APPROVE or REQUEST_CHANGES review.
 - [x] Whether `/review_pr` also becomes queued — *Resolved by Jesus Lara (2026-11-09)*: yes, queue it too, with arguments and verdict text unchanged (G6, M7).
-- [ ] In group chats, should `/jobs` list every job of the chat rather than only the requester's? The default is requester-only. — *Owner: Jesus Lara*
-- [ ] Should webhook-triggered reviews (`review_pull_request`) also be registered as jobs, so they appear in `/jobs` and `/job_status`? Deferred; not needed for G1–G7. — *Owner: Jesus Lara*
-- [ ] Cross-worker dedup (a Redis `SET NX` lease on the dedup key) if production runs several gunicorn workers per bot. Deferred to a follow-up. — *Owner: Jesus Lara*
+- [x] In group chats, should `/jobs` list every job of the chat rather than only the requester's? — *Resolved by Jesus Lara (2026-11-09)*: requester-only, as designed. Another user's id reads like an unknown id.
+- [x] Should webhook-triggered reviews (`review_pull_request`) also be registered as jobs? — *Resolved by Jesus Lara (2026-11-09)*: no. Deferred to a follow-up; out of scope for G1–G7 (no requester or chat to show `/jobs` to).
+- [x] Cross-worker dedup (a Redis `SET NX` lease on the dedup key)? — *Resolved by Jesus Lara (2026-11-09)*: deferred. Dedup and cancel stay on the owning worker (§7).
 
 ---
 
@@ -1600,5 +1600,6 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 0.3 | 2026-11-09 | Jesus Lara | Resolve the last three open questions: `/jobs` stays requester-only; webhook-review jobs and cross-worker dedup deferred to follow-ups (no design change) |
 | 0.2 | 2026-11-09 | Codex | Resolve design review issues fa792594432e, b52e0167f328, 8995135cda17, cf600373da61 and 19c2b6e27900: enforce read-only review dispatch, bound Slack admission, refresh remote status, separate queue lifetime and preserve attachment routing; add regression requirements |
 | 0.1 | 2026-11-09 | Jesus Lara | Initial draft from `/sdd-spec` notes; four design decisions taken with the user (Telegram name, job store, PR writes, `/review_pr` queued) |
