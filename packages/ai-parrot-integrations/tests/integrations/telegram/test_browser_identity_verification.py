@@ -6,13 +6,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import jwt
 import pytest
-from aiogram.types import ReplyKeyboardRemove
+from aiohttp import web
+from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 from parrot.integrations.telegram.browser_login import (
+    BROWSER_LOGIN_APP_KEY,
     BrowserLoginEntry,
     BrowserVerificationError,
     BrowserVerifierUnavailableError,
     VerifiedBrowserIdentity,
+    get_or_create_browser_login_registry,
     get_browser_identity_verifier,
     register_browser_identity_verifier,
 )
@@ -212,6 +215,39 @@ def _entry() -> BrowserLoginEntry:
     )
 
 
+def _browser_config(*, methods: list[str], **kwargs: Any) -> TelegramAgentConfig:
+    """Return a valid browser-mode configuration for a wrapper integration test."""
+    config = {
+        "name": "BrowserBot",
+        "chatbot_id": "browser_bot",
+        "bot_token": "7001:test-token",
+        "auth_methods": methods,
+        "auth_open_mode": "browser",
+        "public_base_url": "https://parrot.example.test",
+        "auth_url": "https://navigator.example.test/login",
+        "login_page_url": "https://parrot.example.test/login.html",
+        "azure_auth_url": "https://navigator.example.test/azure/",
+        "google_auth_url": "https://navigator.example.test/google/",
+        "oauth2_client_id": "client-id",
+        "oauth2_client_secret": "client-secret",
+        "oauth2_redirect_uri": "https://parrot.example.test/oauth2/callback",
+    }
+    config.update(kwargs)
+    return TelegramAgentConfig(**config)
+
+
+def _browser_wrapper(config: TelegramAgentConfig, *, app: Any = None, bot_id: int = 7001) -> TelegramAgentWrapper:
+    """Build a real wrapper with mocked external Telegram and agent dependencies."""
+    agent = MagicMock()
+    agent.get_available_tools.return_value = []
+    bot = MagicMock()
+    bot.id = bot_id
+    bot.get_me = AsyncMock(return_value=MagicMock(username="browser_bot"))
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr("parrot.integrations.telegram.wrapper.CallbackRegistry", MagicMock())
+        return TelegramAgentWrapper(agent=agent, bot=bot, config=config, app=app)
+
+
 @pytest.mark.asyncio
 async def test_complete_auth_payload_success_notifies_chat() -> None:
     """A successful legacy callback stores, links, initializes, and notifies once."""
@@ -351,3 +387,104 @@ async def test_browser_mode_combined_post_auth() -> None:
     assert candidate.nav_user_id == "42"
     assert wrapper._begin_login_attempt.await_args.kwargs["chat_id"] == 88124
     assert wrapper._user_sessions == {}
+
+
+@pytest.mark.asyncio
+async def test_browser_startup_requires_verifiers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Browser wrappers fail early without page-method identity verification."""
+    monkeypatch.setattr(
+        "parrot.integrations.telegram.browser_verifiers.navigator_key_material_configured", lambda: False
+    )
+    basic_config = _browser_config(methods=["basic"])
+
+    with pytest.raises(ValueError, match="basic"):
+        _browser_wrapper(basic_config, app=web.Application())
+
+    app = web.Application()
+    verifier = MagicMock()
+    register_browser_identity_verifier(app, bot_id="7001", auth_method="basic", verifier=verifier)
+    wrapper = _browser_wrapper(basic_config, app=app)
+    assert app["telegram_wrappers"]["7001"] is wrapper
+
+    oauth2_wrapper = _browser_wrapper(_browser_config(methods=["oauth2"]), app=web.Application())
+    assert oauth2_wrapper._enabled_auth_methods() == {"oauth2"}
+
+    composite_app = web.Application()
+    register_browser_identity_verifier(composite_app, bot_id="7001", auth_method="basic", verifier=verifier)
+    with pytest.raises(ValueError, match="azure"):
+        _browser_wrapper(_browser_config(methods=["basic", "azure"]), app=composite_app)
+
+    with pytest.raises(ValueError, match="shared aiohttp app"):
+        _browser_wrapper(basic_config, app=None)
+
+    no_id_config = _browser_config(methods=["basic"], bot_token="invalid-token")
+    with pytest.raises(ValueError, match="could not resolve the bot id"):
+        _browser_wrapper(no_id_config, app=web.Application(), bot_id=None)
+
+
+@pytest.mark.asyncio
+async def test_handle_login_browser_mode_registers_state() -> None:
+    """Browser /login registers state before sending a browser URL keyboard."""
+    app = web.Application()
+    register_browser_identity_verifier(app, bot_id="7001", auth_method="basic", verifier=MagicMock())
+    wrapper = _browser_wrapper(_browser_config(methods=["basic"]), app=app)
+    build_keyboard = wrapper._auth_strategy.build_login_keyboard
+    wrapper._auth_strategy.build_login_keyboard = AsyncMock(wraps=build_keyboard)
+    wrapper._is_authorized = MagicMock(return_value=True)
+    session = TelegramUserSession(telegram_id=88123, telegram_first_name="Alice")
+    wrapper._get_user_session = MagicMock(return_value=session)
+    message = MagicMock()
+    message.chat.id = 88124
+    message.answer = AsyncMock()
+
+    await wrapper.handle_login(message)
+
+    registry = get_or_create_browser_login_registry(app)
+    assert len(registry) == 1
+    state = wrapper._auth_strategy.build_login_keyboard.await_args.args[1]
+    entry = registry.peek(state)
+    assert entry is not None
+    assert entry.state.startswith("browser.")
+    assert entry.telegram_id == 88123
+    assert entry.chat_id == 88124
+    assert entry.bot_username == "browser_bot"
+    reply = message.answer.await_args
+    assert isinstance(reply.kwargs["reply_markup"], InlineKeyboardMarkup)
+    assert "browser" in reply.args[0].lower()
+
+
+@pytest.mark.asyncio
+async def test_handle_login_webview_mode_unchanged() -> None:
+    """Webview /login keeps its reply keyboard and creates no browser registry."""
+    app = web.Application()
+    config = _browser_config(methods=["basic"], auth_open_mode="webview", public_base_url=None)
+    wrapper = _browser_wrapper(config, app=app)
+    wrapper._is_authorized = MagicMock(return_value=True)
+    wrapper._get_user_session = MagicMock(return_value=TelegramUserSession(telegram_id=88123, telegram_first_name="Alice"))
+    message = MagicMock()
+    message.chat.id = 88124
+    message.answer = AsyncMock()
+
+    await wrapper.handle_login(message)
+
+    assert BROWSER_LOGIN_APP_KEY not in app
+    assert isinstance(message.answer.await_args.kwargs["reply_markup"], ReplyKeyboardMarkup)
+
+
+@pytest.mark.asyncio
+async def test_handle_login_keyboard_error_drops_entry() -> None:
+    """A keyboard build failure consumes the pre-registered browser state."""
+    app = web.Application()
+    register_browser_identity_verifier(app, bot_id="7001", auth_method="basic", verifier=MagicMock())
+    wrapper = _browser_wrapper(_browser_config(methods=["basic"]), app=app)
+    wrapper._is_authorized = MagicMock(return_value=True)
+    wrapper._get_user_session = MagicMock(return_value=TelegramUserSession(telegram_id=88123, telegram_first_name="Alice"))
+    wrapper._auth_strategy.build_login_keyboard = AsyncMock(side_effect=ValueError("bad keyboard"))
+    message = MagicMock()
+    message.chat.id = 88124
+    message.answer = AsyncMock()
+
+    await wrapper.handle_login(message)
+
+    assert len(get_or_create_browser_login_registry(app)) == 0
+    assert "Login configuration error" in message.answer.await_args.args[0]

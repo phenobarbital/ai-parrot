@@ -44,12 +44,16 @@ from .suggestion_buttons import SUGGESTION_PREFIX, SuggestionButtonStore, build_
 from .context import telegram_chat_scope
 from .models import TelegramAgentConfig
 from .browser_login import (
+    TELEGRAM_WRAPPERS_APP_KEY,
     PAGE_AUTH_METHODS,
     BrowserLoginEntry,
     BrowserVerificationError,
     BrowserVerifierUnavailableError,
+    get_or_create_browser_login_registry,
     get_browser_identity_verifier,
+    new_browser_state,
 )
+from .browser_verifiers import ensure_navigator_browser_verifiers
 from .auth import (
     TelegramUserSession,
     AbstractAuthStrategy,
@@ -285,6 +289,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         # Register message handlers
         self._register_handlers()
+        # FEAT-854: browser-mode login wiring (no-op in webview mode).
+        self._setup_browser_mode()
 
     def _register_handlers(self) -> None:
         """Register aiogram message handlers on the router."""
@@ -2489,6 +2495,63 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         finally:
             typing_task.cancel()
 
+    def _enabled_auth_methods(self) -> set:
+        """Names of the auth methods this bot's strategy actually serves."""
+        strategy = self._auth_strategy
+        if strategy is None:
+            return set()
+        if isinstance(strategy, CompositeAuthStrategy):
+            return set(strategy.strategies)
+        return {strategy.name}
+
+    def _setup_browser_mode(self) -> None:
+        """Validate and wire browser-mode login at construction (FEAT-854).
+
+        Raises:
+            ValueError: browser mode is configured but cannot work.
+        """
+        if getattr(self.config, "auth_open_mode", "webview") != "browser" or self._auth_strategy is None:
+            return
+        name = getattr(self.config, "name", "?")
+        if self.app is None:
+            raise ValueError(
+                f"Agent '{name}': auth_open_mode='browser' requires the shared aiohttp app "
+                "(the completion endpoints and the bot must run in the same server)."
+            )
+        if not self._bot_id:
+            raise ValueError(f"Agent '{name}': auth_open_mode='browser' could not resolve the bot id.")
+        bot_id = str(self._bot_id)
+        get_or_create_browser_login_registry(self.app)
+        page_methods = sorted(self._enabled_auth_methods() & PAGE_AUTH_METHODS)
+        missing = ensure_navigator_browser_verifiers(
+            self.app, bot_id=bot_id, methods=page_methods, tenant_id=self.config.tenant
+        )
+        if missing:
+            methods = ", ".join(missing)
+            raise ValueError(
+                f"Agent '{name}': browser mode requires identity verifiers for: {methods}. "
+                f"Register a verifier under app['telegram_browser_identity_verifiers']['{bot_id}']"
+                "[<method>] before startup, or configure AUTH_SECRET_KEY / OAUTH_JWT_KEYS "
+                "shared with the Navigator issuer."
+            )
+        self.app.setdefault(TELEGRAM_WRAPPERS_APP_KEY, {})[bot_id] = self
+        self.logger.info(
+            "Browser-mode login enabled for bot %s (methods: %s)", bot_id, sorted(self._enabled_auth_methods())
+        )
+
+    async def _get_bot_username(self) -> Optional[str]:
+        """Return the bot's @username (cached after the first success), or None."""
+        cached = getattr(self, "_bot_username", None)
+        if cached:
+            return cached
+        try:
+            me = await self.bot.get_me()
+        except Exception:  # noqa: BLE001 - deep link is optional
+            self.logger.debug("get_me() failed; browser success page will omit the deep link", exc_info=True)
+            return None
+        self._bot_username = getattr(me, "username", None)
+        return self._bot_username
+
     async def handle_login(self, message: Message) -> None:
         """Handle /login — show login WebApp button via configured strategy."""
         chat_id = message.chat.id
@@ -2513,12 +2576,30 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             await message.answer("❌ Authentication is not configured for this bot.")
             return
 
-        # Generate CSRF state and delegate keyboard to strategy
-        state = secrets.token_urlsafe(32)
+        # Generate CSRF state and delegate keyboard to strategy.
+        browser_mode = getattr(self.config, "auth_open_mode", "webview") == "browser"
+        registry = None
+        if browser_mode:
+            state = new_browser_state()
+            registry = get_or_create_browser_login_registry(self.app)
+            registry.register(
+                BrowserLoginEntry(
+                    state=state,
+                    telegram_id=session.telegram_id,
+                    chat_id=chat_id,
+                    bot_id=str(self._bot_id or ""),
+                    bot_username=await self._get_bot_username(),
+                    created_at=time.monotonic(),
+                )
+            )
+        else:
+            state = secrets.token_urlsafe(32)
 
         try:
             keyboard = await self._auth_strategy.build_login_keyboard(self.config, state)
         except ValueError as exc:
+            if registry is not None:
+                registry.consume(state)
             await message.answer(f"❌ Login configuration error: {exc}")
             return
 
@@ -2543,6 +2624,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 "🔐 *Navigator Authentication*\n\n" "Tap the button below to sign in with your Navigator credentials."
             )
 
+        if browser_mode:
+            prompt_text += "\n\nThe link opens in your browser. Come back here when you are done."
         await message.answer(prompt_text, reply_markup=keyboard, parse_mode="Markdown")
 
     async def handle_logout(self, message: Message) -> None:
