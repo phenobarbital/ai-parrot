@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-862 — Launcher Trust Gate Reads git Errors in the C Locale
 **Spec**: `sdd/specs/launcher-test-launcher-core-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -249,8 +249,18 @@ When you pick up this task:
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: /sdd-fix session (Claude, agent:sdd-fix:88be2347)
+**Date**: 2026-11-10
+**Notes**: `_project_venv_trusted` now builds `git_env` from `os.environ` without `LANGUAGE` and with `LC_ALL=C` and
+passes it to the `git ls-files` call; the docstring says why. `test_trust_gate_reads_git_errors_in_c_locale` added
+(commit `30a18d909f`). Evidence, machine locale `LANG=es_ES.UTF-8 LANGUAGE=es`:
+- before: 6 of 38 launcher tests failed; after: 39/39 pass (38 + the new one), and 39/39 with `LC_ALL=C`.
+- AC-2: the new test fails with `launcher.py` reverted and passes with the fix.
+- `ruff check` clean on both files.
 
-**Deviations from spec**: none | describe if any
+Gotcha for anyone re-running in a worktree: `test_launcher_reexec.py` spawns `python -c` with `cwd` set to a tmp
+dir, so a relative `PYTHONPATH=packages/ai-parrot/src` resolves to nothing there and the child imports the MAIN
+checkout's `launcher.py`. Use an absolute `PYTHONPATH` (`$PWD/packages/ai-parrot/src`), or the four reexec tests look
+like they still fail.
+
+**Deviations from spec**: none
