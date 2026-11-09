@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-855 — PageIndex Layout Structure Fixes
 **Spec**: `sdd/specs/pageindex-layout-structure-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5408, TASK-5409, TASK-5410
@@ -198,8 +198,28 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude (Opus 5.5) — /sdd-fix session agent:sdd-fix:cdd27bba
+**Date**: 2026-11-09
+**Notes**: Host run from the main checkout with `PYTHONPATH=<worktree>/packages/ai-parrot/src` (feature branch at
+72267fd08b; the JSON carries `CandidateScore.dropped`, which only the branch code has). Layout report
+`artifacts/logs/layout_eval/20261109T135450Z.json`, sha256 `76fbc0356b4614eda6bc4fe1e3bf282b274d9d3ca299e84b763bf8b80e80fca0`:
 
-**Deviations from spec**: none | describe if any
+| Pair | Source | Bookmarks conf / dropped | recall_top | recall_all | page_agreement | layout_nodes |
+|---|---|---|---:|---:|---:|---:|
+| arxiv | hybrid | 1.000 / 0 | 1.000 | 1.000 | 1.000 | 17 |
+| nist_800_53 | hybrid | 0.997 / 1 | 1.000 | 1.000 | 0.805 | 391 |
+| nist_csf_2_0 | hybrid | 1.000 / 0 | 0.643 | 0.643 | 1.000 | 22 |
+| aicpa_tsc | layout | 0.000 / 0 | 1.000 | 0.611 | 1.000 | 16 |
+
+Every spec §5 threshold is met (800-53: source hybrid, dropped 1, confidence 0.997 >= 0.95, recall_all 1.000 >= 0.95,
+page_agreement 0.805 >= 0.75, layout_nodes 391 <= 420; AICPA recall_all 0.611 >= 0.6, recall_top 1.0; arxiv and CSF
+unchanged). Optimizer (deterministic, 800-53): `artifacts/logs/optimizer_eval/feat_855_deterministic/optimizer_eval-20261109T135423866777Z.json`,
+sha256 `25d4a7c30c990fddbfac320465df8f996966639f7af7dd6407612a63c7ba83b1` — 392 -> 326 nodes, 290 leaves, p50/p90/max
+611/1694/28862, 35 over target. Facts written to the wiki were re-checked with the final code: 82 body-size bold
+candidates in 800-53, 58 removed as list markers + 20 as list tails/lead-ins, 4 kept; all 7 remaining AICPA misses sit
+in markdown table lines (checked locally, titles not recorded). Wiki page updated (outline repair, heading-detection
+rules, new run, CSF caption finding, corrected body-size bold-line paragraph, gotchas); docs test extended with
+`bookmarks_dropped`, `bold_sizes`, `BOLD_REPEAT_MIN_PAGES` — 2 passed; `parrot sdd techwiki check` → Docs: required — ok.
+Follow-up ledger issue opened: `issue:92245af971f3` (800-53 control enhancements, discovered_from spec:FEAT-855).
+
+**Deviations from spec**: none

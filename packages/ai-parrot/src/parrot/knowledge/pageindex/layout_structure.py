@@ -33,6 +33,7 @@ class CandidateScore(BaseModel):
     entries: int
     anchored: int
     rejected: Optional[str] = None
+    dropped: int = 0  # out-of-order bookmarks removed before scoring (bookmarks candidate only)
 
 
 class StructureReport(BaseModel):
@@ -98,7 +99,15 @@ def score_bookmarks(profile: LayoutProfile, segments: Sequence[Segment]) -> tupl
     usable = list(profile.bookmarks)
     if profile.bookmark_rejection or not usable:
         reason = profile.bookmark_rejection or "no usable bookmarks"
-        return CandidateScore(source="bookmarks", confidence=0.0, entries=len(usable), anchored=0, rejected=reason), []
+        score = CandidateScore(
+            source="bookmarks",
+            confidence=0.0,
+            entries=len(usable),
+            anchored=0,
+            rejected=reason,
+            dropped=profile.bookmarks_dropped,
+        )
+        return score, []
     by_page = _segments_by_page(segments)
     used: set[tuple[int, int]] = set()
     items: list[dict] = []
@@ -127,7 +136,14 @@ def score_bookmarks(profile: LayoutProfile, segments: Sequence[Segment]) -> tupl
         )
     confidence = round(found / len(usable), 3)
     logger.debug("bookmarks: %d usable, %d found, %d anchored -> %.3f", len(usable), found, anchored, confidence)
-    return CandidateScore(source="bookmarks", confidence=confidence, entries=len(usable), anchored=anchored), items
+    score = CandidateScore(
+        source="bookmarks",
+        confidence=confidence,
+        entries=len(usable),
+        anchored=anchored,
+        dropped=profile.bookmarks_dropped,
+    )
+    return score, items
 
 
 def score_layout(profile: LayoutProfile, segments: Sequence[Segment]) -> tuple[CandidateScore, list[dict]]:

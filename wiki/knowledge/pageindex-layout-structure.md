@@ -23,13 +23,41 @@ PageIndex can build a PDF's tree structure from the PDF itself, without calling 
 For a PDF given by path, `build_page_index` runs the following pipeline:
 
 1. **get_page_tokens** — open the PDF, raise `UnreadablePDFError` on failure, raise `NoTextLayerError` if no non-whitespace text exists on any page.
-2. **analyze_layout** — measure body text, rank heading sizes, find running headers/footers, read bookmarks, collect standalone bold lines. Returns a `LayoutProfile`.
+2. **analyze_layout** — measure body text, rank heading sizes, find running headers/footers, read bookmarks (dropping a few out-of-order entries), collect standalone bold rows. Returns a `LayoutProfile`.
 3. **extract_markdown_per_page** — use `LayoutHeaders(profile)` to decide which spans are headings, then segment pages (FEAT-840 splitter).
 4. **build_structure** — score a **bookmarks** candidate and a **layout** candidate, return the chosen structure or nothing.
 5. **LLM fallback** — if nothing was chosen, run the existing LLM structure pipeline (framed) when an adapter is configured and `structure_mode` allows it.
 6. **page fallback** — if the LLM pipeline fails or no adapter is configured, build one node per page.
 
-**Bookmarks candidate.** Each usable bookmark is anchored to a heading segment on its page (normalized equality first, then `_titles_match`). A bookmark is *found* when it is anchored or when its normalized title is contained in the text of any segment of its page. `confidence = found / usable`. Bookmarks are rejected when there are fewer than 2 usable entries, when page numbers ever decrease (non-monotonic), or when they are a per-page enumeration (e.g., "Page 1", "Page 2", ...).
+**Bookmarks candidate.** Each usable bookmark is anchored to a heading segment on its page (normalized equality first, then `_titles_match`). A bookmark is *found* when it is anchored or when its normalized title is contained in the text of any segment of its page. `confidence = found / usable`. Bookmarks are rejected when there are fewer than 2 usable entries, when their page order cannot be repaired (non-monotonic), or when they are a per-page enumeration (e.g., "Page 1", "Page 2", ...).
+
+**Outline repair (FEAT-855).** Before those checks, `_read_bookmarks` keeps one longest non-decreasing page
+subsequence of the valid entries. When the entries left out number at most
+`floor(BOOKMARK_MAX_DROPPED_SHARE × valid entries)` (5 %, rounded down), they are dropped and the rest is used; the
+count is stored as `LayoutProfile.bookmarks_dropped`, logged at INFO and reported as `dropped` on the bookmarks
+`CandidateScore` in `structure_report.candidates`. Otherwise nothing is dropped and the outline is rejected with
+`non-monotonic: page decreases at entry N`. An outline under 20 entries therefore tolerates no drop. NIST SP 800-53 r5
+is the case that motivated this: one of its 358 bookmarks (`PS-1 POLICY AND PROCEDURES`, filed under §3.15) points
+back to page 249, which used to discard the whole outline.
+
+**Heading detection (`LayoutHeaders`).** pymupdf4llm asks `LayoutHeaders.get_header_id` for each span; a line takes
+the highest level found on any of its spans. In order:
+1. Running headers and footers are never headings.
+2. A span at a size-ranked heading size (above body, at most 10 % of the characters, up to 4 sizes) gets `#` to `####`.
+3. **Bold rows.** A bold span inside a recorded bold row of its page gets that row size's level. `analyze_layout`
+   records bold rows at the sizes in `LayoutProfile.bold_sizes`: the body size plus at most one larger *body-text*
+   size (above body but holding more than 10 % of the characters, so not a heading size), largest first, one level
+   each below every size-ranked heading. Lines of one block whose vertical extents overlap by at least half are one
+   visual row, so a code cell and a title cell printed on one baseline (`AC-2` + `ACCOUNT MANAGEMENT`) are one row
+   and one heading `AC-2 ACCOUNT MANAGEMENT`. A row counts when every span is bold at one eligible size, it is
+   standalone (its block's only row, or the first row with no other all-bold row), it has at most 12 words, and it
+   does not end with `.` or `,`. It does not count when it is a list item (starts with `(a)`, `(1)`, `(iv)`…, or ends
+   with `;`, `:`, `; and`, `; or`), starts with a lowercase letter (glossary terms), or its text recurs on
+   `BOLD_REPEAT_MIN_PAGES` (3) or more pages (table headers, labels).
+4. **Bookmark rule.** With a usable outline, a span that is bold, or larger than body and not a body-text size, is
+   tagged when its normalized text equals a bookmark title of its page, is a word-boundary prefix of it, or begins
+   with the whole title. Mid-title words (`attempts.` in `AC-7 UNSUCCESSFUL LOGON ATTEMPTS`) and prose that merely
+   contains a title do not match; the title's first span does, and that tags the whole line.
 
 **Layout candidate.** The heading segments whose text is not a running-line key and whose title is non-empty. Fewer than 2 → confidence 0. Otherwise `confidence = clean × density_factor × start_factor`, where:
 - `clean` is the share of headings with at most 20 words not ending in `.`.
@@ -122,7 +150,7 @@ python -m parrot.knowledge.pageindex.layout_eval \
 The CLI writes JSON and markdown reports to `artifacts/logs/layout_eval/<UTC>.json` and `<UTC>.md`. It measures for each pair:
 - `structure_source` — the chosen candidate
 - `chosen_confidence` — the confidence of the chosen candidate
-- `candidates` — list of `CandidateScore` (source, confidence, entries, anchored, rejected)
+- `candidates` — list of `CandidateScore` (source, confidence, entries, anchored, rejected, dropped — JSON report only)
 - `reference_nodes` / `layout_nodes` — node counts
 - `recall_top` — top-level title recall (depth-1 references matched by any built node title)
 - `recall_all` — all reference title recall (excluding "Preface")
@@ -144,19 +172,57 @@ The CLI writes JSON and markdown reports to `artifacts/logs/layout_eval/<UTC>.js
 | aicpa_tsc | 75 | layout | 1.000 | 0.000 / 1.000 | 18 | 11 | 0.778 | 0.389 | 1.000 | 16.4 |
 
 `suggest_threshold` returned `None`: every chosen candidate scores at least 0.94, so no threshold separates good
-from bad pairs. The misses are systematic, not a confidence problem: in 800-53 the unmatched titles are the
-per-control headings (`ACCOUNT MANAGEMENT`, `SC-22 …`, `POLICY AND PROCEDURES`), in CSF 2.0 the mid-level sections
-(`CSF Core structure`, `CSF Functions`, …). That gap is tracked as ledger `issue:a3d282c67ed0`.
+from bad pairs. The misses were systematic, not a confidence problem: in 800-53 the unmatched titles are the
+per-control headings (`ACCOUNT MANAGEMENT`, `SC-22 …`, `POLICY AND PROCEDURES`). Ledger `issue:a3d282c67ed0`
+tracked that gap; FEAT-855 fixed it (next run).
+
+**Four-pair run after FEAT-855 (2026-11-09, host, `feat-FEAT-855-pageindex-layout-structure-fixes @ 72267fd08b`,
+`--min-confidence 0.6`).** Report `artifacts/logs/layout_eval/20261109T135450Z.json` (git-ignored), sha256
+`76fbc0356b4614eda6bc4fe1e3bf282b274d9d3ca299e84b763bf8b80e80fca0`:
+
+| Pair | Pages | Source | Chosen confidence | Candidates (bookmarks / layout) | Reference nodes | Layout nodes | Recall top | Recall all | Page agreement | Seconds |
+|---|---:|---|---:|---|---:|---:|---:|---:|---:|---:|
+| arxiv | 9 | hybrid | 1.000 | 1.000 / 1.000 | 10 | 17 | 1.000 | 1.000 | 1.000 | 9.0 |
+| nist_800_53 | 492 | hybrid | 0.997 | 0.997 / 1.000 | 164 | 391 | 1.000 | 1.000 | 0.805 | 133.2 |
+| nist_csf_2_0 | 32 | hybrid | 1.000 | 1.000 / 1.000 | 14 | 22 | 0.643 | 0.643 | 1.000 | 3.6 |
+| aicpa_tsc | 75 | layout | 1.000 | 0.000 / 1.000 | 18 | 16 | 1.000 | 0.611 | 1.000 | 15.4 |
+
+800-53's bookmarks candidate reports 357 entries with `dropped = 1`. Its outline (every family and control) is now
+used, and the 11 pt bold control rows anchor it. Two causes lifted the numbers: the outline repair, and bold rows at
+a body-text size. 800-53 sets its control headings in 11 pt bold, and AICPA its section sub-headings in 12 pt bold,
+both on 10 pt body text. Those sizes carry so much prose (11.3 % and 34.7 % of the characters) that they are not
+heading sizes. Either fix alone lifts 800-53 to `recall_all` 1.0; only the bold-row rule helps AICPA. The remaining
+misses are not structure bugs:
+- **CSF 2.0** — the five unmatched titles are figure captions (`Fig. 1. CSF Core structure`, `Fig. 2. CSF Functions`,
+  …) that the LLM reference tree listed as sections; the layout tree is right not to.
+- **AICPA** — seven unmatched titles sit inside the criteria tables, which pymupdf4llm renders as markdown tables,
+  where no header rule applies.
+
+Deterministic optimizer on the new 800-53 tree (`python -m parrot.knowledge.pageindex.optimizer_eval`, report
+`artifacts/logs/optimizer_eval/feat_855_deterministic/optimizer_eval-20261109T135423866777Z.json`, sha256
+`25d4a7c30c990fddbfac320465df8f996966639f7af7dd6407612a63c7ba83b1`): 392 → 326 nodes, 290 leaves, leaf tokens
+p50 / p90 / max 611 / 1694 / 28862, 35 leaves over target (the 2026-11-09 baseline: 106 nodes, 69 leaves,
+1214 / 8271 / 28862, 28 over target — more, smaller leaves now). The widest leaves left are the 38-page
+`CONTROL SUMMARIES` table section and long controls (SA-8 spans 15 pages) whose enhancements (`(1) ACCOUNT MANAGEMENT |
+AUTOMATED SYSTEM ACCOUNT MANAGEMENT`, a bold marker plus 9 pt small caps) are not headings; no heading rule can split
+those.
 
 **Threshold:** `structure_min_confidence` is **fixed at `0.6`** (decision 2026-11-09, from the run above; closes
 ledger `issue:ca2daac2be1d`).
 
-**Open question 2 (spec §8):** Body-size standalone bold lines do **not** count as headings when the document has no bookmarks. The layout candidate's `clean` factor already filters out noisy bold lines, and the hybrid rule requires both scores to pass, so the risk of false positives is low. The decision is to keep the current heuristic (only size-rank and bookmark-matching rules).
+**Body-size bold lines (FEAT-845 open question 2, settled by FEAT-855).** Standalone bold rows at the body size *are*
+headings, with or without bookmarks (an earlier version of this page said otherwise; the code never matched that).
+FEAT-855 added the list-item, lowercase-start and repeat guards because, in 800-53, 78 of the 82 body-size bold
+candidates were enumerated list items and list lead-ins (`(a) Have expired;`, `Release information outside of the
+system only if:`). With the guards, 4 remain, and the arxiv and CSF 2.0 trees are unchanged.
 
 ## Gotchas
 
 - **Re-imports of FEAT-840 PDFs.** Re-importing a PDF that was indexed with the old per-page markdown (no headings) creates a new revision. The new headings carry `#` markers, so the old revision remains as a historical snapshot.
-- **Bold-line label noise.** Document-level standalone bold lines are a heuristic; both bookmark and layout scores must pass `structure_min_confidence` for hybrid insertion. This prevents noisy bold lines from creating spurious structure.
+- **Re-imports after FEAT-855.** A PDF with a body-text-size bold row, a heading split across a baseline, a repaired outline or a formerly over-tagged span renders different markdown, so re-importing it creates a new revision.
+- **Bold-row guards cut real headings too.** A bold heading that ends with `:`, starts with a lowercase letter, or is printed identically on 3 or more pages (a `Summary` per chapter at body size) is not a heading. Size-ranked headings are unaffected.
+- **Bold-line label noise.** Standalone bold rows are a heuristic; in hybrid mode both bookmark and layout scores must pass `structure_min_confidence` before any unbookmarked row is inserted.
+- **Same-level heading lines merge.** pymupdf4llm joins consecutive heading lines of one level, so a bold link line directly above a control heading can come out as one title (`Quick link … PT-1 POLICY AND PROCEDURES` in 800-53).
 - **BytesIO keeps the LLM path.** When you pass a `BytesIO` stream to `build_page_index`, it skips layout analysis and extraction, keeping the existing LLM pipeline (no structure from bookmarks or layout).
 - **pymupdf4llm hint.** pymupdf4llm prints a `pymupdf_layout` hint on import (e.g., "Suggest installing pymupdf_layout for better results"). This is harmless and can be ignored.
 - **Headings at <= 12 pt.** Before this feature, headings at 12 pt or less were treated as body text by pymupdf4llm's default `IdentifyHeaders`. Now they are detected by the layout profile, so they become heading segments.

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-855 — PageIndex Layout Structure Fixes
 **Spec**: `sdd/specs/pageindex-layout-structure-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5408
@@ -374,8 +374,18 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude (Opus 5.5) — /sdd-fix session agent:sdd-fix:cdd27bba
+**Date**: 2026-11-09
+**Notes**: Implemented as blueprinted: constants (`MAX_BOLD_LEVELS`, `ROW_OVERLAP`, `BOLD_REPEAT_MIN_PAGES`,
+`_LIST_MARKER_RE`, `_LIST_TAIL_RE`), `BoldLine.size`, `LayoutProfile.bold_sizes`, helpers `_bold_sizes`,
+`_visual_rows`, `_row_all_bold`, `_bold_row_size`, `_collect_bold_lines`; `analyze_layout` delegates bold detection;
+`LayoutHeaders._bold_prefixes` drives rule 4. Tests: `test_visual_rows_groups_same_baseline_lines`,
+`test_secondary_text_size_bold_rows`, `test_split_row_heading` (the synthetic PDF yields one block with two lines on
+one baseline — the 800-53 shape), `test_bold_row_guards`, `test_header_prefix_levels_with_secondary_size`.
+Validation: test_layout.py 19 passed; test_builder_layout.py + test_layout_integration.py 16 passed; ruff clean.
+Existing tests (`test_header_detector_rules`, `test_bold_heading_occurrence_collision`, `test_bold_standalone_lines`)
+pass unchanged.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: one extra private helper, `_row_text` (joins a row's line texts), shared by
+`_bold_row_size` and `_collect_bold_lines` so the text is built one way; `_collect_bold_lines`' `running_keys` is
+typed `set[tuple[str, str]]` (the type `analyze_layout` builds) instead of the blueprint's `Optional[str]` band.
