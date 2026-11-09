@@ -1,4 +1,5 @@
 """FEAT-860 regression tests for manager storage wiring."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -23,9 +24,11 @@ def _definition(name: str = "crew", crew_id: str = "crew-id") -> CrewDefinition:
 
 def _manager(storage: MagicMock) -> BotManager:
     """Build a PostgreSQL-mode manager with the supplied storage fake."""
-    with patch("parrot.manager.manager.CrewRedis"), \
-         patch("parrot.manager.manager.CrewPostgres"), \
-         patch("parrot.manager.manager.agent_registry"):
+    with (
+        patch("parrot.manager.manager.CrewRedis"),
+        patch("parrot.manager.manager.CrewPostgres"),
+        patch("parrot.manager.manager.agent_registry"),
+    ):
         manager = BotManager(enable_crews=True, crew_storage_backend="postgres")
     manager.crew_storage = storage
     return manager
