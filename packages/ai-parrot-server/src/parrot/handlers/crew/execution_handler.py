@@ -13,6 +13,7 @@ from parrot.handlers.crew.models import (
 )
 from ..jobs import JobManager
 from ._tenancy import resolve_session_tenant
+from .definition_storage import CrewStorageConflict, CrewStorageUnavailable
 
 
 @is_authenticated()
@@ -65,7 +66,6 @@ class CrewExecutionHandler(BaseView):
     async def start_cleanup_task(app: WebApp):
         """Start background cleanup for finished jobs/crews if needed."""
         # Placeholder for future cleanup logic if not handled by JobManager
-        pass
 
     @classmethod
     def configure(cls, app: WebApp = None, path: str = None, **kwargs) -> WebApp:
@@ -758,8 +758,10 @@ class CrewExecutionHandler(BaseView):
                     else:
                         raise ValueError(f"Unknown mode: {mode}")
 
-                    if hasattr(result, 'to_dict'): return result.to_dict()
-                    elif hasattr(result, '__dict__'): return result.__dict__
+                    if hasattr(result, 'to_dict'):
+                        return result.to_dict()
+                    if hasattr(result, '__dict__'):
+                        return result.__dict__
                     return result
                 except Exception as e:
                     self.logger.error("Error executing crew %s: %s", crew_id, e, exc_info=True)
@@ -777,6 +779,10 @@ class CrewExecutionHandler(BaseView):
                 "execution_mode": selected_mode.value
             }, status=202)
 
+        except CrewStorageUnavailable:
+            return self.error(response={"message": "Crew storage is unavailable"}, status=503)
+        except CrewStorageConflict:
+            return self.error(response={"message": "Crew storage conflict"}, status=409)
         except web.HTTPError:
             # FEAT-446: let resolve_session_tenant's 403/400 (and any other
             # deliberately-raised HTTP error) propagate instead of being
