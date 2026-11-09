@@ -67,6 +67,12 @@ Without `llm:` the server serves every tool except the six that need a model, wh
 - `pageindex_search_documents_scoped`
 - `pageindex_agentic_retrieve`
 
+Not in that list, so served without a model:
+
+- `pageindex_optimize` — dry-run/apply the tree optimizer; works without `llm:` (deterministic passes and
+  summaries; the report then says `llm_passes: "skipped (no model)"`). See
+  [PageIndex Tree Optimizer](pageindex-tree-optimizer.md).
+
 Everything else works with no model: `pageindex_list_trees`, `create_tree`, `delete_tree`, `rename_tree`, `get_tree`,
 `get_generation`, `vacuum_tree`, `search` (BM25), `retrieve`, `insert_markdown`, `insert_ebook`, `tag_node`,
 `add_node`, `update_node`, `update_node_content`, `delete_node`, plus the read tools of the segment store
