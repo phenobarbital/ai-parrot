@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-846 — PageIndex Tree Optimizer
 **Spec**: `sdd/specs/pageindex-tree-optimizer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5373
@@ -163,4 +163,9 @@ CLI half of spec §4 `test_optimize_book_and_cli`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed**: 2026-11-09 | **Implementation commit**: 690063133d
+
+Delivered via sdd-coder pool (merged). Scope: parrot pageindex CLI.
+Validation: optimizer + bookstore suites run directly — 229 passed; only pre-existing bookstore/test_integration_graph.py sqlite failures (reproduced on baseline).
+Deviations: none noted.
+

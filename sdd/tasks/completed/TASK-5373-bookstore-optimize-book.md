@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-846 — PageIndex Tree Optimizer
 **Spec**: `sdd/specs/pageindex-tree-optimizer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5371
@@ -163,4 +163,9 @@ Spec §4 row `test_optimize_book_and_cli` (bookstore half).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed**: 2026-11-09 | **Implementation commit**: 527f93363c
+
+Delivered via sdd-coder pool (merged). Scope: bookstore optimize_book.
+Validation: merge-tier wave (5372+5373) — 212 passed, exit 0.
+Deviations: none noted.
+

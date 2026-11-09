@@ -906,7 +906,11 @@ async def test_reindex_roundtrip_markdown(store: Bookstore, book_md: Path) -> No
     book_md.write_text(
         SAMPLE_MARKDOWN + "\n## Replacement Chapter\n"
         "Atomic swap roundtrip phrase with plenty of descriptive content to clear the "
-        "thinning threshold of the markdown parser and keep this node visible.\n",
+        "thinning threshold of the markdown parser and keep this node visible. "
+        + "The optimizer keeps a section as its own node only when it clears the minimum leaf size, "
+        "so this chapter carries enough descriptive prose about swapping a book revision atomically "
+        "while readers keep searching the previous revision until the new one is published. " * 4
+        + "\n",
         encoding="utf-8",
     )
 

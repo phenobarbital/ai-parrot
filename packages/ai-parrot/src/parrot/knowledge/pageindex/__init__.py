@@ -29,6 +29,7 @@ from .layout_structure import StructureReport
 from .read_ledger import ReadLedger
 from .citations import Citation, validate_citations
 from .agentic import EvidenceBundle
+from .optimizer import OptimizeReport, OptimizerSettings
 
 __all__ = [
     "build_page_index",
@@ -67,4 +68,6 @@ __all__ = [
     "Citation",
     "validate_citations",
     "EvidenceBundle",
+    "OptimizerSettings",
+    "OptimizeReport",
 ]

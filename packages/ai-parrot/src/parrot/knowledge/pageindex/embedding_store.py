@@ -38,6 +38,7 @@ from typing import Callable, Optional
 
 import numpy as np
 
+from .hybrid_search import key_item_text
 from .store import JSONTreeStore
 
 logger = logging.getLogger("parrot.knowledge.pageindex.embedding_store")
@@ -94,8 +95,11 @@ class NodeEmbeddingStore:
     # ---- content key ---------------------------------------------------
 
     @staticmethod
-    def content_key(model_id: str, title: str, summary: str) -> str:
+    def content_key(model_id: str, title: str, summary: str, extra: str = "") -> str:
         """Compute the SHA-1 content-addressed cache key.
+
+        The digest is unchanged from the three-argument form when ``extra``
+        is empty.
 
         The ``"\\x00"`` separator prevents collisions between prefix-equal
         strings: ``("ab", "c")`` and ``("a", "bc")`` hash to different values.
@@ -104,11 +108,14 @@ class NodeEmbeddingStore:
             model_id: Embedding model identifier.
             title: Node title text.
             summary: Node summary text.
+            extra: Additional text that participates in the key when present.
 
         Returns:
             40-character lowercase hex SHA-1 digest.
         """
         raw = f"{model_id}\x00{title}\x00{summary}"
+        if extra:
+            raw += f"\x00{extra}"
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
     # ---- storage paths -------------------------------------------------
@@ -293,8 +300,9 @@ class NodeEmbeddingStore:
             node_id = node.get("node_id") or ""
             title = node.get("title") or ""
             summary = node.get("summary") or node.get("prefix_summary") or ""
-            key = self.content_key(self._model_id, title, summary)
-            text = f"{title} {summary}".strip() if (title or summary) else ""
+            labels = key_item_text(node)
+            key = self.content_key(self._model_id, title, summary, extra=labels)
+            text = f"{title} {summary} {labels}".strip() if (title or summary or labels) else ""
             items.append((node_id, key, text))
 
         # Determine which keys need fresh embeddings.

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-846 — PageIndex Tree Optimizer
 **Spec**: `sdd/specs/pageindex-tree-optimizer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5370
@@ -205,4 +205,9 @@ Spec §4 rows `test_optimize_dry_run_and_apply`, `test_final_staging_validation`
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed**: 2026-11-09 | **Implementation commit**: 25c93aafa2
+
+Delivered via sdd-coder pool (merged). Scope: toolkit optimize tool.
+Validation: merge-tier — 316 passed, exit 0.
+Deviations: none noted.
+

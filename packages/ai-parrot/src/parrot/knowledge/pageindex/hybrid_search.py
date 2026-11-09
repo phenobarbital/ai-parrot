@@ -49,6 +49,11 @@ _RERANK_TEXT_LIMIT = 2000
 _BM25_TEXT_LIMIT = 4000
 
 
+def key_item_text(node: dict) -> str:
+    """Space-joined ``key_items`` labels of ``node`` or ``""``."""
+    return " ".join(str(item.get("label", "")) for item in (node.get("key_items") or []) if item.get("label"))
+
+
 class HybridPageIndexSearch:
     """BM25 + LLM-walk + dense-cosine hybrid retrieval wrapping a single tree.
 
@@ -176,7 +181,7 @@ class HybridPageIndexSearch:
                 body = self._load_body(node_id)[:_BM25_TEXT_LIMIT]
             else:
                 body = node.get("text") or ""
-            texts.append(f"{title} {summary} {body}".strip())
+            texts.append(f"{title} {summary} {key_item_text(node)} {body}".strip())
             ids.append(node_id)
         return ids, texts
 
@@ -416,15 +421,16 @@ class HybridPageIndexSearch:
             node = nodes_by_id.get(node_id)
             if not node:
                 continue
-            results.append(
-                {
-                    "node_id": node_id,
-                    "title": node.get("title", ""),
-                    "summary": node.get("summary") or node.get("prefix_summary") or "",
-                    "score": score,
-                    "source": source,
-                }
-            )
+            entry: dict[str, Any] = {
+                "node_id": node_id,
+                "title": node.get("title", ""),
+                "summary": node.get("summary") or node.get("prefix_summary") or "",
+                "score": score,
+                "source": source,
+            }
+            if node.get("key_items"):
+                entry["key_items"] = node["key_items"]
+            results.append(entry)
 
         if rerank and self._reranker is not None and results:
             results = await self._apply_reranker(query, results, top_k)

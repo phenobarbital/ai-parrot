@@ -174,6 +174,7 @@ cli._lazy_commands = {
     "wiki": "parrot.knowledge.wiki.cli",
     "ontology": "parrot.knowledge.ontology.vocabulary.cli",
     "bookstore": "parrot.knowledge.bookstore.cli",
+    "pageindex": "parrot.knowledge.pageindex.cli",
     "mcp": "parrot.mcp.cli",
     "mcp-local": "parrot.mcp.local_cli",
     "toolkits": "parrot.cli.toolkits",
