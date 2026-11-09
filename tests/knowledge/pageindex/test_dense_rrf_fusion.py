@@ -9,64 +9,21 @@ Tests:
   - search(use_vec=False) is byte-identical to baseline (AC1).
   - search(use_vec=True) produces fused BM25 + LLM + dense results.
 
-Import note:
-    Importing ``parrot.knowledge.pageindex.hybrid_search`` via the package
-    ``__init__.py`` would trigger the heavy import chain (aiohttp_cors not
-    installed).  We therefore load both modules via
-    ``importlib.util.spec_from_file_location``.
+Imports ``parrot.knowledge.pageindex`` normally (FEAT-852) — see
+tests/knowledge/pageindex/test_embedding_store.py for why the previous
+``sys.modules`` package stub was removed (issue:91822a3b8548).
 """
 from __future__ import annotations
 
 import asyncio
-import importlib.util
-import sys
-from pathlib import Path
 from typing import Callable
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
 import pytest
 
-
-# ---------------------------------------------------------------------------
-# Direct module loading (bypass heavy __init__.py)
-# ---------------------------------------------------------------------------
-
-_WT = Path(__file__).parents[3]  # <worktree root>
-
-
-def _load_module(name: str, rel_path: str):
-    """Load a module by file path, bypassing __init__.py chains."""
-    if name in sys.modules:
-        return sys.modules[name]
-    full = _WT / rel_path
-    spec = importlib.util.spec_from_file_location(name, str(full))
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-# Load embedding_store first (it has no internal parrot deps)
-_es_mod = _load_module(
-    "parrot.knowledge.pageindex.embedding_store",
-    "packages/ai-parrot/src/parrot/knowledge/pageindex/embedding_store.py",
-)
-NodeEmbeddingStore = _es_mod.NodeEmbeddingStore
-
-# Pre-import HybridPageIndexSearch via normal import — but we need to ensure
-# the parrot.knowledge.pageindex __init__ does NOT fire.  We register a stub
-# __init__ module before the first import so Python skips the real one.
-if "parrot.knowledge.pageindex" not in sys.modules:
-    import types as _types
-    _pkg_stub = _types.ModuleType("parrot.knowledge.pageindex")
-    _pkg_stub.__path__ = [  # type: ignore[attr-defined]
-        str(_WT / "packages/ai-parrot/src/parrot/knowledge/pageindex")
-    ]
-    _pkg_stub.__package__ = "parrot.knowledge.pageindex"
-    sys.modules["parrot.knowledge.pageindex"] = _pkg_stub
-
-from parrot.knowledge.pageindex.hybrid_search import HybridPageIndexSearch  # noqa: E402
+from parrot.knowledge.pageindex.embedding_store import NodeEmbeddingStore
+from parrot.knowledge.pageindex.hybrid_search import HybridPageIndexSearch
 
 
 # ---------------------------------------------------------------------------

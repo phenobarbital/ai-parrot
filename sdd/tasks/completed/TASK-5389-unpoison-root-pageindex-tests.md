@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-852 — Unpoison the root `tests/knowledge/pageindex` tree
 **Spec**: `sdd/specs/pageindex-test-embedding-store-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
