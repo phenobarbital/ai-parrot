@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-848 — Client tool-loop capability flag
 **Spec**: `sdd/specs/client-tool-loop-capability.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5379, TASK-5380, TASK-5381
@@ -274,10 +274,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: minimax (nova). documentation: wiki pages, spec note, test_tool_loop_docs.py. Merge-tier validation green.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker
+**Date**: 2026-11-09
+**Notes**: documentation: wiki pages, spec note, test_tool_loop_docs.py
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

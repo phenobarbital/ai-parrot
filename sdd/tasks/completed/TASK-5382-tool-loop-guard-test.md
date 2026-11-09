@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-848 — Client tool-loop capability flag
 **Spec**: `sdd/specs/client-tool-loop-capability.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5379
@@ -385,10 +385,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra (codex). tool-loop guard tests (test_tool_loop_capability.py). Merge-tier validation green.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker
+**Date**: 2026-11-09
+**Notes**: tool-loop guard tests (test_tool_loop_capability.py)
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
