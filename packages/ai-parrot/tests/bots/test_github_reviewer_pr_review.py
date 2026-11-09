@@ -7,15 +7,19 @@ Every external system (GitHub, Jira, wiki) is an ``AsyncMock`` double.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import ValidationError
 
 from parrot.bots import github_reviewer
+from parrot.clients.base import AbstractClient
+from parrot.models.basic import CompletionUsage
+from parrot.models.responses import AIMessage
 from parrot.bots.github_reviewer import (
     BotFindingAssessment,
     CodeObservation,
@@ -28,6 +32,8 @@ from parrot.bots.github_reviewer import (
     PRChecksSummary,
     _classify_review_bot,
 )
+from parrot.tools.manager import ToolManager
+from parrot.tools.toolkit import AbstractToolkit
 
 pytestmark = pytest.mark.asyncio
 
@@ -98,6 +104,159 @@ class _Reviewer:
     _render_full_review_report = GitHubReviewer._render_full_review_report
     _format_pr_review_reply = GitHubReviewer._format_pr_review_reply
     _cap_full_review_comment = staticmethod(GitHubReviewer._cap_full_review_comment)
+
+
+class _ReadToolkit(AbstractToolkit):
+    """Deterministic audited read surface used by the isolated-dispatch tests."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.cleanup_called = False
+
+    async def get_pull_request(self, pr_number: int, repository: Optional[str] = None) -> Dict[str, Any]:
+        """Return fake PR metadata."""
+        return {"number": pr_number, "repository": repository}
+
+    async def get_pull_request_diff(self, pr_number: int, repository: Optional[str] = None) -> Dict[str, Any]:
+        """Return a fake PR diff."""
+        return {"diff": "", "pr_number": pr_number, "repository": repository}
+
+    async def list_pull_request_files(self, pr_number: int, repository: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return fake changed files."""
+        return [{"filename": "a.py", "pr_number": pr_number, "repository": repository}]
+
+    async def list_pull_request_comments(
+        self, pr_number: int, repository: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Return fake issue comments."""
+        return []
+
+    async def list_pull_request_reviews(
+        self, pr_number: int, repository: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Return fake reviews."""
+        return []
+
+    async def list_pull_request_review_comments(
+        self, pr_number: int, repository: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Return fake inline comments."""
+        return []
+
+    async def get_file_content_at_ref(self, path: str, ref: str, repository: Optional[str] = None) -> str:
+        """Return fake file content."""
+        return f"{repository}:{ref}:{path}"
+
+    async def compare_pr_versions(self, pr_number: int, path: str, repository: Optional[str] = None) -> Dict[str, Any]:
+        """Return fake before/after content."""
+        return {"pr_number": pr_number, "path": path, "repository": repository}
+
+    async def search_repo_code(self, query: str, repository: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return fake code-search results."""
+        return [{"query": query, "repository": repository}]
+
+    async def cleanup(self) -> None:
+        """Record accidental cleanup of this borrowed toolkit."""
+        self.cleanup_called = True
+
+
+class _FakeReviewClient(AbstractClient):
+    """Offline provider that drives requested names through the real manager dispatcher."""
+
+    client_type = "fake-review"
+    client_name = "fake-review"
+    plans: List[Dict[str, Any]] = []
+    instances: List["_FakeReviewClient"] = []
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs.setdefault("model", "fake-review")
+        super().__init__(**kwargs)
+        self.plan = self.plans.pop(0) if self.plans else {}
+        self.dispatch_results: List[Dict[str, Any]] = []
+        self.closed = False
+        self.ask_started = asyncio.Event()
+        self.instances.append(self)
+
+    async def get_client(self) -> "_FakeReviewClient":
+        """Return this in-process client."""
+        return self
+
+    async def ask(self, prompt: Any, max_iterations: Optional[int] = None, **kwargs: Any) -> AIMessage:
+        """Dispatch planned tool names and return or raise deterministically."""
+        self.plan["ask_kwargs"] = {**kwargs, "max_iterations": max_iterations}
+        self.ask_started.set()
+        for tool_name in self.plan.get("tool_names", []):
+            tool_input = self.plan.get("tool_inputs", {}).get(tool_name, {})
+            result = await self.tool_manager.execute_tool_call(
+                {"name": tool_name, "input": tool_input, "id": f"call-{tool_name}"}
+            )
+            self.dispatch_results.append(result)
+        wait_for = self.plan.get("wait_for")
+        if wait_for is not None:
+            await wait_for.wait()
+        failure = self.plan.get("failure")
+        if failure is not None:
+            raise failure
+        structured = self.plan.get("output", _review())
+        return AIMessage(
+            input=str(prompt),
+            output=structured,
+            response="",
+            model="fake-review",
+            provider="fake-review",
+            usage=CompletionUsage(),
+            structured_output=structured,
+            is_structured=structured is not None,
+        )
+
+    async def ask_stream(self, prompt: Any, **kwargs: Any) -> AsyncIterator[str]:
+        """Satisfy the abstract streaming contract."""
+        yield str(prompt)
+
+    async def resume(self, session_id: str, user_input: str, state: Dict[str, Any]) -> AIMessage:
+        """Satisfy the abstract resume contract."""
+        return await self.ask(user_input)
+
+    async def invoke(self, prompt: Any, **kwargs: Any) -> AIMessage:
+        """Satisfy the abstract invocation contract."""
+        return await self.ask(prompt, **kwargs)
+
+    async def close(self) -> None:
+        """Record cleanup of this review-owned provider."""
+        self.closed = True
+
+
+class _DispatchReviewer:
+    """Minimal owner for the real isolated-dispatch implementation."""
+
+    def __init__(self) -> None:
+        self.name = "dispatch-reviewer"
+        self.agent_id = "dispatch-reviewer"
+        self.logger = logging.getLogger("test.full_review.dispatch")
+        self.max_full_review_tool_calls = 4
+        self.git_toolkit = _ReadToolkit()
+        self.jira_toolkit = None
+        self.tool_manager = ToolManager(include_search_tool=False)
+        self._llm = MagicMock(tool_manager=self.tool_manager)
+        self._llm_config = MagicMock(
+            client_class=_FakeReviewClient,
+            client_instance=None,
+            model="fake-review",
+            temperature=0.0,
+            top_k=1,
+            top_p=1.0,
+            max_tokens=1024,
+            extra={},
+        )
+
+    _ask_llm_for_full_review = GitHubReviewer._ask_llm_for_full_review
+
+
+@pytest.fixture(autouse=True)
+def _reset_fake_review_client() -> None:
+    """Reset provider plans and instances between dispatch tests."""
+    _FakeReviewClient.plans = []
+    _FakeReviewClient.instances = []
 
 
 def _payload(**extra: Any) -> Dict[str, Any]:
@@ -525,3 +684,153 @@ async def test_chat_summary_ticket_not_found_and_no_ticket() -> None:
     )
     assert "no ticket linked — acceptance criteria not evaluated" in reply
     assert "Draft: converted to draft" in reply
+
+
+# --------------------------------------------------------------------------- TASK-5405 AC1-AC5
+
+
+async def test_full_review_dispatch_rejects_write_tools() -> None:
+    """AC1/AC2: write and fabricated names are rejected by the actual isolated dispatcher."""
+    requested = ["add_pr_comment", "submit_pr_review", "convert_pr_to_draft", "invented_write"]
+    for mode in ("dry-run", "normal"):
+        plan: Dict[str, Any] = {"tool_names": requested, "output": _review(summary=mode)}
+        _FakeReviewClient.plans.append(plan)
+        reviewer = _DispatchReviewer()
+
+        result = await reviewer._ask_llm_for_full_review(_context())
+
+        assert result.summary == mode
+        client = _FakeReviewClient.instances[-1]
+        assert len(client.dispatch_results) == len(requested)
+        assert all(item.get("is_error") is True for item in client.dispatch_results)
+        assert all("not allowed during a full review" in item["content"] for item in client.dispatch_results)
+        assert client.closed
+        assert reviewer.git_toolkit.cleanup_called is False
+        assert set(requested).isdisjoint(reviewer.tool_manager.list_tools())
+
+
+async def test_full_review_dispatch_allows_audited_reads() -> None:
+    """AC1: an explicitly audited read reaches the borrowed callable through the isolated dispatcher."""
+    _FakeReviewClient.plans.append(
+        {
+            "tool_names": ["get_pull_request"],
+            "tool_inputs": {"get_pull_request": {"pr_number": PR, "repository": REPO}},
+        }
+    )
+    reviewer = _DispatchReviewer()
+
+    await reviewer._ask_llm_for_full_review(_context())
+
+    dispatched = _FakeReviewClient.instances[-1].dispatch_results
+    assert dispatched == [
+        {
+            "type": "tool_result",
+            "tool_use_id": "call-get_pull_request",
+            "content": str({"number": PR, "repository": REPO}),
+        }
+    ]
+
+
+async def test_full_review_tool_isolation_under_concurrency() -> None:
+    """AC3: concurrent reviews own distinct registries/clients and cannot alter strict tools."""
+    release = asyncio.Event()
+    first_plan: Dict[str, Any] = {"wait_for": release, "output": _review(summary="first")}
+    second_plan: Dict[str, Any] = {"wait_for": release, "output": _review(summary="second")}
+    _FakeReviewClient.plans.extend([first_plan, second_plan])
+    reviewer = _DispatchReviewer()
+    writes: List[str] = []
+
+    async def strict_write() -> str:
+        writes.append("strict")
+        return "written"
+
+    reviewer.tool_manager.register_tool(
+        {
+            "name": "add_pr_comment",
+            "description": "Strict-path write double",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+            "_tool_instance": strict_write,
+        }
+    )
+    parent_tools = tuple(reviewer.tool_manager.list_tools())
+    parent_client_manager = reviewer._llm.tool_manager
+
+    tasks = [
+        asyncio.create_task(reviewer._ask_llm_for_full_review(_context(pr_number=PR + offset)))
+        for offset in (0, 1)
+    ]
+    while len(_FakeReviewClient.instances) < 2 or not all(
+        client.ask_started.is_set() for client in _FakeReviewClient.instances
+    ):
+        await asyncio.sleep(0)
+
+    isolated_managers = [client.tool_manager for client in _FakeReviewClient.instances]
+    assert isolated_managers[0] is not isolated_managers[1]
+    assert all(manager is not reviewer.tool_manager for manager in isolated_managers)
+    assert _FakeReviewClient.instances[0] is not _FakeReviewClient.instances[1]
+    assert all("add_pr_comment" not in manager.list_tools() for manager in isolated_managers)
+    assert await reviewer.tool_manager.execute_tool("add_pr_comment", {}) == "written"
+
+    release.set()
+    results = await asyncio.gather(*tasks)
+    assert {result.summary for result in results} == {"first", "second"}
+    assert tuple(reviewer.tool_manager.list_tools()) == parent_tools
+    assert reviewer._llm.tool_manager is parent_client_manager
+    assert writes == ["strict"]
+    assert all(client.closed for client in _FakeReviewClient.instances)
+
+
+async def test_full_review_llm_failure_writes_nothing() -> None:
+    """AC4: provider failure becomes FullReviewLLMError and cannot reach a parent write."""
+    _FakeReviewClient.plans.append({"failure": RuntimeError("provider offline")})
+    reviewer = _DispatchReviewer()
+    writes: List[str] = []
+
+    async def parent_write() -> None:
+        writes.append("write")
+
+    reviewer.tool_manager.register_tool(
+        {
+            "name": "add_pr_comment",
+            "description": "Parent write double",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+            "_tool_instance": parent_write,
+        }
+    )
+
+    with pytest.raises(FullReviewLLMError, match="provider offline"):
+        await reviewer._ask_llm_for_full_review(_context())
+
+    assert writes == []
+    assert _FakeReviewClient.instances[-1].closed
+    assert reviewer.git_toolkit.cleanup_called is False
+
+
+async def test_full_review_structured_contract_and_malformed_output() -> None:
+    """AC4: structured type/cap are forwarded and malformed output fails closed."""
+    valid_plan: Dict[str, Any] = {"output": _review()}
+    _FakeReviewClient.plans.append(valid_plan)
+    reviewer = _DispatchReviewer()
+    await reviewer._ask_llm_for_full_review(_context())
+
+    ask_kwargs = valid_plan["ask_kwargs"]
+    assert ask_kwargs["structured_output"].output_type is FullPRReview
+    assert ask_kwargs["max_iterations"] == reviewer.max_full_review_tool_calls + 1
+
+    _FakeReviewClient.plans.append({"output": {"verdict": "invented"}})
+    with pytest.raises(FullReviewLLMError):
+        await reviewer._ask_llm_for_full_review(_context())
+
+
+async def test_full_review_isolation_failure_precedes_llm_and_closes_owned_resources() -> None:
+    """AC5: registry construction failure skips ask, closes the client, and leaves borrowed reads open."""
+    _FakeReviewClient.plans.append({"output": _review()})
+    reviewer = _DispatchReviewer()
+    reviewer.git_toolkit = None
+
+    with pytest.raises(FullReviewLLMError, match="required full-review read toolkit"):
+        await reviewer._ask_llm_for_full_review(_context())
+
+    client = _FakeReviewClient.instances[-1]
+    assert not client.ask_started.is_set()
+    assert client.closed

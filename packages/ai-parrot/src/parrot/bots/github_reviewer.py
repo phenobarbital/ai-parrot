@@ -60,7 +60,7 @@ from navconfig import config
 from pydantic import BaseModel, Field
 
 from parrot import conf
-from parrot.bots import Agent
+from parrot.bots.agent import Agent
 from parrot.core.hooks.github_webhook import GitHubWebhookHook
 from parrot.knowledge.wiki.context import pack_results, truncate_to_tokens
 from parrot.knowledge.wiki.models import WikiConfig
@@ -77,6 +77,7 @@ from parrot.core.hooks import GitHubWebhookConfig, HookEvent
 from parrot.integrations.core.queued import current_job_id, report_command_progress
 from parrot.integrations.telegram import telegram_command
 from parrot.scheduler import ScheduleType, schedule, schedule_daily_report, schedule_weekly_report
+from parrot.tools.manager import ToolManager
 from parrot_tools.gittoolkit import (
     ContributorStats,
     ContributorWeek,
@@ -130,6 +131,66 @@ _STRUCTURAL_READ_TOOLS: tuple[str, ...] = (
     "outline",
     "blast_radius",
 )
+
+#: Audited, non-mutating methods that a full-review agent may invoke.  These
+#: names are deliberately method names rather than whatever happens to be in
+#: the parent manager: registration below resolves each one from its owning
+#: toolkit and copies only its schema and bound callable into a fresh manager.
+_FULL_REVIEW_GIT_READ_TOOLS: tuple[str, ...] = (
+    "get_pull_request",
+    "get_pull_request_diff",
+    "list_pull_request_files",
+    "list_pull_request_comments",
+    "list_pull_request_reviews",
+    "list_pull_request_review_comments",
+    "get_file_content_at_ref",
+    "compare_pr_versions",
+    "search_repo_code",
+)
+_FULL_REVIEW_JIRA_READ_TOOLS: tuple[str, ...] = ("jira_get_issue",)
+
+
+class _FullReviewToolManager(ToolManager):
+    """Per-review dispatcher that cannot execute outside its frozen allowlist."""
+
+    def __init__(self, *, logger: _stdlib_logging.Logger) -> None:
+        """Create an empty manager with search/dynamic discovery disabled."""
+        super().__init__(logger=logger, include_search_tool=False)
+        self._review_allowed_tools: frozenset[str] = frozenset()
+        self._review_sealed = False
+
+    def seal(self) -> None:
+        """Freeze registration and make the current registry the dispatch boundary."""
+        self._review_allowed_tools = frozenset(self.list_tools())
+        self._review_sealed = True
+
+    def register_tool(self, *args: Any, **kwargs: Any) -> None:
+        """Register an audited tool only while the review context is being built."""
+        if self._review_sealed:
+            raise PermissionError("The full-review tool registry is sealed")
+        super().register_tool(*args, **kwargs)
+
+    def register_toolkit(self, *args: Any, **kwargs: Any) -> List[Any]:
+        """Reject whole-toolkit registration; callers must select audited callables."""
+        raise PermissionError("Full reviews cannot register whole toolkits")
+
+    async def execute_tool(
+        self,
+        tool_name: str,
+        parameters: Dict[str, Any],
+        permission_context: Optional[Any] = None,
+        *,
+        return_tool_result: bool = False,
+    ) -> Any:
+        """Reject fabricated or non-audited names before the base dispatcher runs."""
+        if tool_name not in self._review_allowed_tools:
+            raise PermissionError(f"Tool '{tool_name}' is not allowed during a full review")
+        return await super().execute_tool(
+            tool_name,
+            parameters,
+            permission_context=permission_context,
+            return_tool_result=return_tool_result,
+        )
 
 
 def _read_only_excludes(toolkit_cls: type, keep: Sequence[str]) -> tuple[str, ...]:
@@ -3971,6 +4032,156 @@ class GitHubReviewer(Agent):
         if (dry_run or post_failed) and isinstance(report, str) and report:
             lines.extend(["", report])
         return "\n".join(lines)
+
+    async def _ask_llm_for_full_review(self, context: "FullReviewContext") -> FullPRReview:
+        """Run an isolated read-only review and validate the structured result.
+
+        The review agent owns its client and tool manager.  The registered
+        tools are fresh definitions around explicitly audited read methods;
+        neither the parent manager nor its ``ToolkitTool`` objects are shared.
+
+        Args:
+            context: Bounded evidence gathered for this full review.
+
+        Returns:
+            The provider's validated structured review.
+
+        Raises:
+            FullReviewLLMError: Isolation could not be established, the LLM
+                failed, or its structured response was missing/malformed.
+        """
+        review_agent: Optional[Agent] = None
+        manager = _FullReviewToolManager(logger=self.logger)
+
+        def register_audited_tools(toolkit: Any, method_names: Sequence[str], *, required: bool) -> None:
+            """Copy selected schemas/callables from one borrowed toolkit."""
+            if toolkit is None:
+                if required:
+                    raise RuntimeError("A required full-review read toolkit is unavailable")
+                return
+            try:
+                generated = toolkit.get_tools()
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError(f"Could not inspect {type(toolkit).__name__} tools") from exc
+            by_method = {getattr(tool, "_method_name", getattr(tool, "name", "")): tool for tool in generated}
+            for method_name in method_names:
+                tool = by_method.get(method_name)
+                callable_read = getattr(toolkit, method_name, None)
+                if tool is None or not inspect.iscoroutinefunction(callable_read):
+                    raise RuntimeError(
+                        f"Audited read method {type(toolkit).__name__}.{method_name} is unavailable"
+                    )
+                schema = tool.get_schema()
+                tool_name = schema.get("name")
+                parameters = schema.get("parameters")
+                if not isinstance(tool_name, str) or not tool_name or not isinstance(parameters, dict):
+                    raise RuntimeError(f"Audited read method {method_name} has no valid tool schema")
+                manager.register_tool(
+                    {
+                        "name": tool_name,
+                        "description": schema.get("description") or callable_read.__doc__ or f"Read via {method_name}",
+                        "parameters": parameters,
+                        "_tool_instance": callable_read,
+                    }
+                )
+                if tool_name not in manager.list_tools():
+                    raise RuntimeError(f"Audited read method {method_name} was not registered")
+
+        def register_attached_wiki_reads() -> None:
+            """Copy only audited wiki reads already attached to the parent."""
+            parent_manager = getattr(self, "tool_manager", None)
+            if parent_manager is None:
+                return
+            owners: Dict[int, Tuple[Any, Sequence[str]]] = {}
+            for tool in parent_manager.get_tools():
+                bound = getattr(tool, "bound_method", None)
+                owner = getattr(bound, "__self__", None)
+                if isinstance(owner, LLMWikiToolkit):
+                    owners[id(owner)] = (owner, _WIKI_READ_TOOLS)
+                elif isinstance(owner, CodeStructuralToolkit):
+                    owners[id(owner)] = (owner, _STRUCTURAL_READ_TOOLS)
+            for owner, methods in owners.values():
+                register_audited_tools(owner, methods, required=False)
+
+        try:
+            llm_config = getattr(self, "_llm_config", None)
+            client_class = getattr(llm_config, "client_class", None)
+            if llm_config is None or getattr(llm_config, "client_instance", None) is not None:
+                raise RuntimeError("Full reviews require a client factory, not a shared client instance")
+            if not isinstance(client_class, type):
+                raise RuntimeError("Full-review provider selection did not resolve to a client class")
+
+            review_agent = Agent(
+                name=f"{self.name}-full-review",
+                agent_id=f"{self.agent_id}-full-review",
+                llm=client_class,
+                model=llm_config.model,
+                temperature=llm_config.temperature,
+                top_k=llm_config.top_k,
+                top_p=llm_config.top_p,
+                max_tokens=llm_config.max_tokens,
+                use_tools=False,
+                tools=[],
+                include_search_tool=False,
+                injection_detection=False,
+                strict_mode=False,
+                **dict(llm_config.extra),
+            )
+            client = getattr(review_agent, "_llm", None)
+            if client is None or client is getattr(self, "_llm", None):
+                raise RuntimeError("Full-review client isolation could not be established")
+            if manager is getattr(self, "tool_manager", None):
+                raise RuntimeError("Full-review tool-manager isolation could not be established")
+
+            review_agent.tool_manager = manager
+            client.tool_manager = manager
+            client.enable_tools = True
+
+            register_audited_tools(self.git_toolkit, _FULL_REVIEW_GIT_READ_TOOLS, required=True)
+            register_audited_tools(self.jira_toolkit, _FULL_REVIEW_JIRA_READ_TOOLS, required=False)
+            register_attached_wiki_reads()
+            manager.seal()
+            if not manager.list_tools():
+                raise RuntimeError("The full-review read allowlist is empty")
+
+            prompt = (
+                "Perform a full pull-request review using only the supplied evidence and the read-only tools "
+                "registered for this call. Never request a write, mutation, dynamic tool load, or toolkit "
+                "registration. Return a FullPRReview structured result.\n\n"
+                f"FullReviewContext:\n{json.dumps(context.model_dump(mode='json'), ensure_ascii=False)}"
+            )
+            response = await review_agent.ask(
+                question=prompt,
+                structured_output=FullPRReview,
+                max_iterations=self.max_full_review_tool_calls + 1,
+                use_tools=True,
+                use_vector_context=False,
+                use_conversation_history=False,
+                return_sources=False,
+            )
+            output = getattr(response, "structured_output", None)
+            if output is None:
+                output = getattr(response, "output", None)
+            if output is None:
+                raise ValueError("LLM returned no structured full-review output")
+            return FullPRReview.model_validate(output)
+        except FullReviewLLMError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "GitHubReviewer: isolated full-review LLM call failed for %s#%s: %s",
+                context.repository,
+                context.pr_number,
+                exc,
+                exc_info=True,
+            )
+            raise FullReviewLLMError(str(exc)) from exc
+        finally:
+            if review_agent is not None:
+                # Tool definitions borrow bound read callables. Remove them
+                # before agent cleanup so borrowed toolkits are never closed.
+                manager.clear_tools()
+                await review_agent.cleanup()
 
     def _format_command_reply(
         self,
