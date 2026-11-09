@@ -173,10 +173,14 @@ class TestToolkitEmbeddingWiring:
         engine = toolkit._search_for("t")
         assert engine._embedding_store is None
 
-    def test_dirty_propagation_via_persist(
+    async def test_dirty_propagation_via_publish(
         self, mock_adapter, tmp_path
     ) -> None:
-        """_persist calls engine.mark_dirty which invalidates embedding matrix."""
+        """A published write drops the cached engine and its embedding view.
+
+        Matrices are keyed by tree generation, so the engine rebuilt after the
+        write reads the new generation's key and never the stale matrix.
+        """
         with patch("parrot.embeddings.registry.EmbeddingRegistry"):
             toolkit = _make_toolkit(
                 mock_adapter, tmp_path,
@@ -185,33 +189,38 @@ class TestToolkitEmbeddingWiring:
                 embedding_dimension=16,
             )
 
-        tree = {"doc_name": "my-tree", "structure": []}
-        toolkit._trees["my-tree"] = tree
+        await toolkit.create_tree("my-tree", doc_name="v1")
 
         # Build the engine first by calling _search_for
         engine = toolkit._search_for("my-tree")
         assert toolkit._search.get("my-tree") is engine
+        old_generation = engine.generation_id
 
-        # Build a fake tree matrix to verify invalidation
         import numpy as np
 
-        # Use a tiny embed_fn to build the matrix
+        # Use a tiny embed_fn to build the matrix for the current generation
         def _tiny_embed(texts):
             return np.random.default_rng(0).standard_normal(
                 (len(texts), 16)
             ).astype(np.float32)
 
         store = toolkit._embedding_store
+        assert store is not None
         store.build_tree_matrix("my-tree", [
             {"node_id": "0001", "title": "Root", "summary": "Root"}
-        ], _tiny_embed)
-        assert store.load_tree_matrix("my-tree") is not None
+        ], _tiny_embed, generation_id=old_generation)
+        assert store.load_tree_matrix("my-tree", generation_id=old_generation) is not None
 
-        # Calling _persist should mark dirty → invalidate embedding matrix
-        with patch.object(toolkit._store, "save"):
-            toolkit._persist("my-tree")
+        # Publishing a write must drop the cached engine
+        async with toolkit._write("my-tree") as txn:
+            txn.tree["doc_name"] = "v2"
+        assert "my-tree" not in toolkit._search
 
-        assert store.load_tree_matrix("my-tree") is None
+        # The rebuilt engine reads the new generation, which has no matrix yet
+        new_engine = toolkit._search_for("my-tree")
+        assert new_engine is not engine
+        assert new_engine.generation_id != old_generation
+        assert store.load_tree_matrix("my-tree", generation_id=new_engine.generation_id) is None
 
     def test_embedding_store_dimension_parameter(
         self, mock_adapter, tmp_path

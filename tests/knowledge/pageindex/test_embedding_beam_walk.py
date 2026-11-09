@@ -257,7 +257,12 @@ class TestEmbeddingTreeWalk:
     async def test_respects_max_depth(
         self, deep_tree, embedding_store, mock_embed_fn
     ) -> None:
-        """Beam walk with max_depth=1 never descends past the first level."""
+        """Beam walk never descends past ``max_depth`` levels.
+
+        Levels are counted from the top of ``structure``: the walk scores the
+        root-level nodes first, so they can be candidates themselves
+        (see ``test_beam_scores_roots_and_uses_snapshot_key``).
+        """
         nodes: list[dict] = []
         def _gather(struct):
             for node in (struct if isinstance(struct, list) else [struct]):
@@ -269,18 +274,18 @@ class TestEmbeddingTreeWalk:
         rng = np.random.default_rng(99)
         q = rng.standard_normal(_DIM).astype(np.float32)
 
-        # With max_depth=1, walk can only visit root children (one level).
+        # max_depth=1: only the root level ("structure" holds 0001).
         result = await embedding_tree_walk(
             deep_tree, q, embedding_store, beam_width=5, max_depth=1
         )
-        # All returned ids must be from the first level of structure (0001 or children
-        # of root: 0002, 0003 — never leaf 0004..0006 which are grandchildren).
-        # Root-level is "structure" list containing 0001; its children are 0002, 0003.
-        level1_ids = {"0002", "0003"}  # children of root 0001
-        for nid in result:
-            assert nid in level1_ids, (
-                f"max_depth=1 should only yield 1st-level nodes, got {nid}"
-            )
+        assert result == ["0001"]
+
+        # max_depth=2: the root level and its children (0002, 0003),
+        # never the grandchildren 0004..0006.
+        result = await embedding_tree_walk(
+            deep_tree, q, embedding_store, beam_width=5, max_depth=2
+        )
+        assert set(result) == {"0001", "0002", "0003"}
 
     @pytest.mark.asyncio
     async def test_no_embeddings_fallback(
