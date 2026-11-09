@@ -647,6 +647,16 @@ class CatalogStore:
             ).fetchall()
         return {row["dst_book_id"] for row in rows}
 
+    def judgement_count(self, book_id: str) -> int:
+        """Count judgement rows touching either endpoint, including ``rel='none'``."""
+        with self._connection() as conn:
+            self._ensure_schema(conn)
+            row = conn.execute(
+                "SELECT COUNT(*) AS count FROM relation_judgements " "WHERE src_book_id = ? OR dst_book_id = ?",
+                (book_id, book_id),
+            ).fetchone()
+        return int(row["count"])
+
     def delete_judgements(self, book_id: str) -> int:
         """Delete every judgement row touching ``book_id`` in either direction."""
         with self._connection() as conn:
