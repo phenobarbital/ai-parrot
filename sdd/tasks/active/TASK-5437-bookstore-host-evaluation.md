@@ -221,4 +221,4 @@ The logs are intentional execution artifacts outside this task's committed file 
 
 ## Completion Note
 
-Populated by the task finalizer after implementation, validation and the exact implementation commit.
+NOT COMPLETED - needs the owner host. The task requires the real library, an explicit model, re-indexing the two legacy EPUBs and the owner's review of the 21 handwritten questions; the worker sandbox cannot do this and must not fabricate a corpus. Two coder attempts (gpt-5.6-terra, gpt-5.6-sol) both returned empty_delivery. Harness from TASK-5436 is merged and ready. After the owner runs it, TASK-5438 (docs, depends on 5437) can proceed.

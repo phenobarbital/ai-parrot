@@ -262,7 +262,7 @@
       "feature_id": "FEAT-858",
       "feature": "bookstore-agentic-retrieval",
       "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -272,7 +272,7 @@
       "parallel": false,
       "parallelism_notes": "TASK-5431: serializes overlapping writes to packages/ai-parrot/src/parrot/knowledge/bookstore/library.py; TASK-5436: serializes overlapping writes to packages/ai-parrot/tests/knowledge/bookstore/test_agentic_eval.py; Exclusive host-only execution mutates shared corpus EPUB trees/catalog and calls the provider outside declared committed files.",
       "assigned_to": null,
-      "started_at": "2026-11-09T17:17:43+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5437-bookstore-host-evaluation.md"
     },
@@ -283,7 +283,7 @@
       "feature_id": "FEAT-858",
       "feature": "bookstore-agentic-retrieval",
       "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -295,7 +295,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5432: documents toolkit/MCP retrieval and guarded read symbols; TASK-5434: documents BookstoreOrigin and section diagnostics; TASK-5435: documents ask_cmd/doctor_cmd and their doctor facade dependency; TASK-5437: consumes the reviewed question fixture, actual report and measured defaults",
       "assigned_to": null,
-      "started_at": "2026-11-09T17:17:43+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5438-bookstore-agentic-documentation.md"
     }
