@@ -49,7 +49,7 @@
       "feature_id": "FEAT-849",
       "feature": "pageindex-toolkit-tech-debt",
       "spec": "sdd/specs/pageindex-toolkit-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -57,13 +57,14 @@
       "parallelism_notes": "No dependency: creates _reused_document and edits the three apply bodies in toolkit.py; no other task's symbols are needed.",
       "assigned_to": null,
       "started_at": "2026-11-09T12:19:55.826508+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5385-idempotent-same-source-reimport.md"
+      "completed_at": "2026-11-09T12:22:33+00:00",
+      "file": "sdd/tasks/completed/TASK-5385-idempotent-same-source-reimport.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5386",
       "slug": "agentic-max-chars-and-provider-error",
-      "title": "Agentic retrieval \u2014 max_chars=None coercion and a provider_error stop reason",
+      "title": "Agentic retrieval — max_chars=None coercion and a provider_error stop reason",
       "feature_id": "FEAT-849",
       "feature": "pageindex-toolkit-tech-debt",
       "spec": "sdd/specs/pageindex-toolkit-tech-debt.spec.md",
@@ -101,7 +102,7 @@
     {
       "id": "TASK-5388",
       "slug": "documentation-agentic-retrieval-page",
-      "title": "Documentation \u2014 PageIndex agentic retrieval page",
+      "title": "Documentation — PageIndex agentic retrieval page",
       "feature_id": "FEAT-849",
       "feature": "pageindex-toolkit-tech-debt",
       "spec": "sdd/specs/pageindex-toolkit-tech-debt.spec.md",
