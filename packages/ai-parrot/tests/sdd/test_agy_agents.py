@@ -73,3 +73,40 @@ def test_wt_usage_is_self_contained(name: str) -> None:
             # fenced snippet; prose lines must not rely on a previous command.
             stripped = line.strip()
             assert stripped.startswith(("git -C", "cd ", "#")) or "assign" in stripped or "..." in stripped, line
+
+
+AUTOPILOT = AGENTS_DIR / "sdd-autopilot" / "agent.md"
+
+
+def test_agents_dispatched_by_google_autopilot_are_installed(google_repo: Path) -> None:
+    """Every `agy --agent <name>` the shipped Google autopilot runs resolves to a shipped Google agent."""
+    text = (google_repo / ".agents/agents/sdd-autopilot/agent.md").read_text(encoding="utf-8")
+    names = set(re.findall(r"agy --agent ([a-z][a-z-]*)", text))
+    assert {"code-reviewer", "qa-runner"} <= names
+    missing = sorted(n for n in names if not (google_repo / ".agents/agents" / n / "agent.md").is_file())
+    assert not missing, missing
+
+
+@pytest.mark.parametrize("token", ("claude --agent", "claude -p", "--setting-sources", "--mode auto"))
+def test_google_autopilot_has_no_claude_cli(token: str) -> None:
+    """The Google autopilot shells out to `agy` only, without Claude-only or account-gated flags."""
+    assert token not in AUTOPILOT.read_text(encoding="utf-8")
+
+
+def test_google_autopilot_stages_run_unattended() -> None:
+    """The worker stage uses the guarded Google launcher; every `agy` stage call skips permission prompts."""
+    text = AUTOPILOT.read_text(encoding="utf-8")
+    assert 'parrot sdd launch worker "$FEAT_ID" --host google' in text
+    assert "PARROT_SDD_AGY_UNATTENDED=1" in text
+    lines = text.splitlines()
+    calls = [i for i, line in enumerate(lines) if re.match(r"\s*\"?agy (--agent|--dangerously|-p)", line)]
+    assert len(calls) >= 6
+    for i in calls:
+        window = " ".join(lines[i : i + 2])
+        assert "--dangerously-skip-permissions" in window, lines[i]
+
+
+def test_packaged_google_autopilot_matches_source() -> None:
+    """The wheel copy is regenerated from `.agents/agents/sdd-autopilot/agent.md`."""
+    packaged = REPO_ROOT / "packages/ai-parrot/src/parrot/sdd/_assets/agents/agents/sdd-autopilot/agent.md"
+    assert packaged.read_text(encoding="utf-8") == AUTOPILOT.read_text(encoding="utf-8")
