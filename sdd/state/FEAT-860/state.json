@@ -3,7 +3,7 @@
   "feat_id": "FEAT-860",
   "feature_slug": "postgres-crew-storage",
   "started_at": "2026-11-09T17:11:28Z",
-  "updated_at": "2026-11-09T17:55:00Z",
+  "updated_at": "2026-11-09T17:58:00Z",
   "source": {
     "kind": "inline",
     "jira_key": null,
@@ -14,7 +14,7 @@
     "summary_oneline": "Postgres CrewDefinition storage (navigator.crew_definitions) alongside Redis, with migration=True to move existing crews from Redis to Postgres"
   },
   "mode": "auto",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "phases": {
     "source": {
       "status": "completed",
@@ -123,7 +123,7 @@
       "started_at": "2026-11-09T17:48:00Z",
       "completed_at": "2026-11-09T17:55:00Z",
       "proposal_path": "sdd/proposals/postgres-crew-storage.proposal.md",
-      "commit_sha": null,
+      "commit_sha": "23e3f5e429",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "Localization is high-confidence and the request fixes the architecture; U1-U5 answered in Q&A."
     }
@@ -151,8 +151,8 @@
     }
   ],
   "resume_hint": {
-    "next_phase": "commit",
-    "next_action": "commit proposal + state on dev and push"
+    "next_phase": "done",
+    "next_action": "/sdd-spec FEAT-860"
   },
   "detected_mode": "enrichment"
 }
