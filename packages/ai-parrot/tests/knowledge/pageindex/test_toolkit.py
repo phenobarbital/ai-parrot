@@ -71,6 +71,7 @@ def toolkit(tmp_path: Path) -> PageIndexToolkit:
         adapter=_adapter(),
         storage_dir=tmp_path,
         lightweight_model="light",
+        optimize_on_import=False,
     )
 
 
