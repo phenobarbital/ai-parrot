@@ -460,7 +460,9 @@ async def test_handle_login_webview_mode_unchanged() -> None:
     config = _browser_config(methods=["basic"], auth_open_mode="webview", public_base_url=None)
     wrapper = _browser_wrapper(config, app=app)
     wrapper._is_authorized = MagicMock(return_value=True)
-    wrapper._get_user_session = MagicMock(return_value=TelegramUserSession(telegram_id=88123, telegram_first_name="Alice"))
+    wrapper._get_user_session = MagicMock(
+        return_value=TelegramUserSession(telegram_id=88123, telegram_first_name="Alice")
+    )
     message = MagicMock()
     message.chat.id = 88124
     message.answer = AsyncMock()
@@ -478,7 +480,9 @@ async def test_handle_login_keyboard_error_drops_entry() -> None:
     register_browser_identity_verifier(app, bot_id="7001", auth_method="basic", verifier=MagicMock())
     wrapper = _browser_wrapper(_browser_config(methods=["basic"]), app=app)
     wrapper._is_authorized = MagicMock(return_value=True)
-    wrapper._get_user_session = MagicMock(return_value=TelegramUserSession(telegram_id=88123, telegram_first_name="Alice"))
+    wrapper._get_user_session = MagicMock(
+        return_value=TelegramUserSession(telegram_id=88123, telegram_first_name="Alice")
+    )
     wrapper._auth_strategy.build_login_keyboard = AsyncMock(side_effect=ValueError("bad keyboard"))
     message = MagicMock()
     message.chat.id = 88124
