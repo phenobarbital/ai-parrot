@@ -1,0 +1,77 @@
+{
+  "feature": "pageindex-test-embedding-store-fixes",
+  "feature_id": "FEAT-852",
+  "spec": "sdd/specs/pageindex-test-embedding-store-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-09T14:05:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 2,
+    "runners": [
+      {
+        "kind": "pytest",
+        "targets": [
+          "tests/knowledge/pageindex/test_dense_rrf_fusion.py",
+          "tests/knowledge/pageindex/test_embedding_beam_walk.py",
+          "tests/knowledge/pageindex/test_embedding_store.py",
+          "tests/knowledge/pageindex/test_toolkit_embedding_wiring.py",
+          "tests/knowledge/wiki/test_cli.py",
+          "tests/knowledge/wiki/test_cli_checkpoint.py",
+          "tests/test_stub_isolation.py"
+        ],
+        "settings": {
+          "markers": ""
+        },
+        "tiers": [
+          "task",
+          "merge",
+          "feature"
+        ]
+      }
+    ],
+    "digest": "sha256:7f4d70f0f06b09f41227a9d4461e56a4bf391027b72a19e025328c0025f272d1"
+  },
+  "tasks": [
+    {
+      "id": "TASK-5389",
+      "slug": "unpoison-root-pageindex-tests",
+      "title": "Unpoison the four root pageindex test modules (plain imports)",
+      "feature_id": "FEAT-852",
+      "feature": "pageindex-test-embedding-store-fixes",
+      "spec": "sdd/specs/pageindex-test-embedding-store-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: first task. Touches only the four files under tests/knowledge/pageindex/, which no other task in this feature declares.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5389-unpoison-root-pageindex-tests.md"
+    },
+    {
+      "id": "TASK-5390",
+      "slug": "root-tree-stub-isolation-guard",
+      "title": "Root-tree stub-isolation guard + pageindex package marker + CI decision comment",
+      "feature_id": "FEAT-852",
+      "feature": "pageindex-test-embedding-store-fixes",
+      "spec": "sdd/specs/pageindex-test-embedding-store-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-5389"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-5389: tests/test_stub_isolation.py asserts the stub-free state TASK-5389 creates in tests/knowledge/pageindex/*.py and fails by design against the pre-TASK-5389 tree. Exclusive because it adds tests/knowledge/pageindex/__init__.py, a package marker that changes the import identity of sibling test files outside its own declared set.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-5390-root-tree-stub-isolation-guard.md"
+    }
+  ]
+}
