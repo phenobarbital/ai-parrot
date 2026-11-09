@@ -823,16 +823,54 @@ def _agy_command_policy(cwd: Path, command: str) -> None:
     Raises:
         ValueError: If one simple command violates the environment policy.
     """
-    segments = command
-    for marker in _COMPOUND_MARKERS:
-        segments = segments.replace(marker, ";")
-    for segment in segments.split(";"):
-        try:
-            words = shlex.split(segment)
-        except ValueError:
-            continue
+    for words in _agy_simple_commands(command):
         if error := command_policy_error(cwd, words):
             raise ValueError(error)
+
+
+_AGY_SEPARATORS = frozenset(";&|()")
+_AGY_GROUP_WORDS = frozenset({"{", "}", "!", "then", "do", "else", "elif", "time"})
+
+
+def _agy_simple_commands(command: str) -> list[list[str]]:
+    """Split shell text into the simple commands it would run.
+
+    Separators are ``;``, ``&``, ``&&``, ``||``, ``|``, newlines, parentheses (subshells and ``$(...)``) and
+    backticks, recognised outside quotes. Leading grouping words (``{``, ``!``, ``then`` ...) are dropped so
+    the real command word is first. Text the lexer cannot tokenise (an unbalanced quote) falls back to the
+    quote-blind marker split, so no fragment is ever skipped unchecked.
+
+    Args:
+        command: Shell text from an Antigravity ``run_command`` event.
+
+    Returns:
+        One word list per simple command, empty segments removed.
+    """
+    text = command.replace("\n", ";").replace("`", ";")
+    try:
+        lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        legacy = text
+        for marker in (*_COMPOUND_MARKERS, "&", "(", ")"):
+            legacy = legacy.replace(marker, ";")
+        return [words for part in legacy.split(";") if (words := _agy_strip_group(part.split()))]
+    segments: list[list[str]] = [[]]
+    for token in tokens:
+        if token and set(token) <= _AGY_SEPARATORS:
+            segments.append([])
+        else:
+            segments[-1].append(token)
+    return [words for segment in segments if (words := _agy_strip_group(segment))]
+
+
+def _agy_strip_group(words: list[str]) -> list[str]:
+    """Drop leading grouping/keyword words so the command word comes first."""
+    index = 0
+    while index < len(words) and words[index] in _AGY_GROUP_WORDS:
+        index += 1
+    return words[index:]
 
 
 def _literal_pythonpath(checkout: Path) -> str | None:

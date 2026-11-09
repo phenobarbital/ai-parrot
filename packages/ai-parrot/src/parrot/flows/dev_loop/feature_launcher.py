@@ -207,7 +207,7 @@ def google_worker_sandbox(sandbox: str | None, allowed_domains: Sequence[str]) -
     bwrap = shutil.which("bwrap")
     if bwrap is None:
         raise LaunchError(1, "missing host prerequisite(s): bwrap — the Google worker requires Bubblewrap")
-    usable, reason = native_claude_sandbox._bwrap_probe(bwrap)
+    usable, reason = native_claude_sandbox.bwrap_probe(bwrap)
     if not usable:
         raise LaunchError(1, f"Bubblewrap probe failed ({reason}); refusing to launch agy")
     return native_claude_sandbox.BACKEND_BUBBLEWRAP

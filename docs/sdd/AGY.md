@@ -64,6 +64,12 @@ The hook answers verified on agy 1.4.12 and 1.5.3:
 - Under `--dangerously-skip-permissions` only `deny` stops a call.
 - The unattended worker sets `PARROT_SDD_AGY_UNATTENDED=1`: every `force_ask` becomes `deny` (reason prefixed
   `unattended:`) and commands are wrapped in Bubblewrap.
+- Unattended, a `run_command` whose `Cwd` resolves outside the checkout is denied (attended, it answers `ask`).
+- A workspace the hook cannot resolve to a checkout root has no worktree guard to apply, so every `run_command`
+  is denied: the hook fails closed outside a Git checkout.
+- `PARROT_ALLOW_DANGEROUS=1` is the operator escape hatch: attended, it makes the hook answer `ask` for everything.
+  It is ignored when `PARROT_SDD_AGY_UNATTENDED=1`, so a value inherited from the launching shell never disarms
+  an unattended worker. The launcher never sets it.
 - Interactive sessions use the managed allow-rules the installer merges into the agy settings, plus operator
   approval; the hook only denies or asks.
 - **Only `parrot sdd launch worker <FEAT-ID> --host google` is a supported unattended mode.** A hand-started

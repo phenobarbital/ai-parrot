@@ -1365,7 +1365,9 @@ def evaluate(payload: dict[str, Any], *, root: Path | None) -> Decision:
     unattended = os.environ.get(UNATTENDED_ENV) == "1"
     call = payload.get("toolCall")
     name = call.get("name") if isinstance(call, dict) else None
-    if os.environ.get(dangerous_actions.ESCAPE_ENV) == "1":
+    # The escape hatch is for an operator at the keyboard. An unattended worker runs without one and under
+    # --dangerously-skip-permissions, so a variable inherited from the launching shell must never lift the guard.
+    if not unattended and os.environ.get(dangerous_actions.ESCAPE_ENV) == "1":
         return _ASK
     if name in worktree_environment.AGY_FILE_TOOLS:
         decision = _verdict(payload, root=root, unattended=unattended)
@@ -1415,7 +1417,7 @@ def _policy(payload: dict[str, Any], *, root: Path | None) -> Decision:
         ``deny`` for a destructive command, ``force_ask`` for a covered command the policy cannot positively
         classify as routine, else ``ask``.
     """
-    if os.environ.get(dangerous_actions.ESCAPE_ENV) == "1":
+    if os.environ.get(UNATTENDED_ENV) != "1" and os.environ.get(dangerous_actions.ESCAPE_ENV) == "1":
         return _ASK
     call = payload.get("toolCall")
     if not isinstance(call, dict) or call.get("name") != "run_command":

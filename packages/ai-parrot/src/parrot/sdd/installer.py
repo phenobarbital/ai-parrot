@@ -625,6 +625,18 @@ def _hooks_file_inside(root: Path, path: Path) -> bool:
     return not path.is_symlink() and _under(Path(os.path.realpath(path)), Path(os.path.realpath(root)))
 
 
+def _widen_legacy_matcher(path: Path, data: dict[str, Any]) -> None:
+    """Widen our named hook's first legacy ``run_command`` group to ``_AGY_MATCHER`` in place and write the file.
+
+    Only the matcher changes; the group's command and timeout are kept.
+    """
+    for group in data[AGY_HOOK_NAME]["PreToolUse"]:
+        if isinstance(group, dict) and group.get("matcher") == _AGY_LEGACY_MATCHER:
+            group["matcher"] = _AGY_MATCHER
+            break
+    _write_json_object(path, data)
+
+
 def _install_agy_hook(root: Path, receipt: dict[str, Any], *, portable: bool | None) -> tuple[bool, list[str]]:
     """Write the named agy hook into ``.agents/hooks.json``, keeping every other named hook.
 
@@ -648,25 +660,16 @@ def _install_agy_hook(root: Path, receipt: dict[str, Any], *, portable: bool | N
         return True, [f"{AGY_HOOKS_PATH} — agy permission hook already registered"]
     active = _agy_active_hook(data)
     matcher = _agy_hook_matcher(data)
+    widened = f"{AGY_HOOKS_PATH} — agy permission hook matcher widened to {_AGY_MATCHER}"
     if active is not None and _AGY_LAUNCHER in active:
         if matcher == _AGY_LEGACY_MATCHER and owned:
-            groups = data[AGY_HOOK_NAME]["PreToolUse"]
-            for group in groups:
-                if isinstance(group, dict) and group.get("matcher") == _AGY_LEGACY_MATCHER:
-                    group["matcher"] = _AGY_MATCHER
-                    break
-            _write_json_object(path, data)
-            return True, [f"{AGY_HOOKS_PATH} — agy permission hook matcher widened to {_AGY_MATCHER} (repository launcher kept)"]
+            _widen_legacy_matcher(path, data)
+            return True, [f"{widened} (repository launcher kept)"]
         return True, [f"{AGY_HOOKS_PATH} — agy permission hook already registered (repository launcher kept)"]
     if matcher == _AGY_LEGACY_MATCHER:
         if owned:
-            groups = data[AGY_HOOK_NAME]["PreToolUse"]
-            for group in groups:
-                if isinstance(group, dict) and group.get("matcher") == _AGY_LEGACY_MATCHER:
-                    group["matcher"] = _AGY_MATCHER
-                    break
-            _write_json_object(path, data)
-            return True, [f"{AGY_HOOKS_PATH} — agy permission hook matcher widened to {_AGY_MATCHER}"]
+            _widen_legacy_matcher(path, data)
+            return True, [widened]
         return True, [f"note: {AGY_HOOKS_PATH} — stale matcher 'run_command' (not owned by this install); widen it by hand"]
     if matcher is not None and matcher != _AGY_MATCHER:
         return True, [f"warning: {AGY_HOOKS_PATH} — user-edited matcher '{matcher}'; keeping it"]

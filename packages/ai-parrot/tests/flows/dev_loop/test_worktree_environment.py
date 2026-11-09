@@ -1579,7 +1579,21 @@ def test_worktree_env_agy_verdict_rewrite(tmp_path: Path) -> None:
     assert "printf" not in overwrite["CommandLine"]
 
 
-@pytest.mark.parametrize("command", ["uv sync", "cd sub && uv pip install x"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "uv sync",
+        "cd sub && uv pip install x",
+        "echo a\nuv pip install foo",
+        "echo a & uv pip install foo",
+        "(uv pip install foo)",
+        "echo $(uv pip install foo)",
+        "echo `uv pip install foo`",
+        "{ uv pip install foo; }",
+        "if true; then uv pip install foo; fi",
+        "echo don't\nuv pip install foo",
+    ],
+)
 def test_worktree_env_agy_verdict_denies_shared_environment_mutations(tmp_path: Path, command: str) -> None:
     """Every simple command in an AGY compound is checked for uv mutation."""
     repo = tmp_path / "repo"
@@ -1589,6 +1603,16 @@ def test_worktree_env_agy_verdict_denies_shared_environment_mutations(tmp_path: 
     )
     assert (decision, overwrite) == ("deny", None)
     assert reason == policy.POLICY_MESSAGE
+
+
+def test_worktree_env_agy_quoted_separator_is_not_a_command_boundary(tmp_path: Path) -> None:
+    """A separator inside quotes is data, so an echoed command name never triggers the policy."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    decision, _reason, _overwrite = policy.agy_verdict(
+        _agy([repo], CommandLine="echo 'a; uv pip install foo' && ls"), root=repo, backend="bubblewrap", unattended=False
+    )
+    assert decision == "ask"
 
 
 def test_worktree_env_agy_verdict_leaves_no_source_or_existing_rewrite(tmp_path: Path) -> None:

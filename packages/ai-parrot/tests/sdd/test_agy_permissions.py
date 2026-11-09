@@ -404,6 +404,25 @@ def test_escape_hatch(ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert _decide("find . -delete", ws).decision == "ask"
 
 
+@pytest.mark.parametrize("command", ["git push origin main", "find . -delete", "echo hi"])
+def test_escape_hatch_never_lifts_the_unattended_guard(
+    ws: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    """A PARROT_ALLOW_DANGEROUS inherited from the launching shell must not disarm an unattended worker."""
+    monkeypatch.setenv("PARROT_ALLOW_DANGEROUS", "1")
+    monkeypatch.setenv("PARROT_SDD_AGY_UNATTENDED", "1")
+    monkeypatch.delenv("PARROT_SDD_SANDBOX_BACKEND", raising=False)
+    decision = _decide(command, ws)
+    assert decision.decision == "deny"
+
+
+def test_no_checkout_root_denies_run_command(ws: Path) -> None:
+    """Without a resolvable checkout root the worktree guard cannot judge a command, so it fails closed."""
+    decision = evaluate(_payload("echo hi", ws), root=None)
+    assert decision.decision == "deny"
+    assert "no checkout root" in decision.reason
+
+
 def test_unparseable_command_is_confirmed(ws: Path) -> None:
     decision = _decide("cat 'unterminated", ws)
     assert decision.decision == "force_ask"
