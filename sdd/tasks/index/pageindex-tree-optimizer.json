@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-08T23:06:34+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-09T00:51:53+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -349,7 +349,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -362,8 +362,9 @@
       "parallelism_notes": "TASK-5376: page states the shipped target_leaf_tokens + report sha256; TASK-5374: documents parrot pageindex optimize; TASK-5369: documents alias export; TASK-5377: last test task so all documented symbols exist",
       "assigned_to": null,
       "started_at": "2026-11-08T23:08:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5378-optimizer-documentation.md"
+      "completed_at": "2026-11-09T00:51:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5378-optimizer-documentation.md",
+      "verification": "verified"
     }
   ]
 }

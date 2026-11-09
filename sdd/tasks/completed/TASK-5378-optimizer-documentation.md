@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-846 — PageIndex Tree Optimizer
 **Spec**: `sdd/specs/pageindex-tree-optimizer.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5376, TASK-5374, TASK-5369, TASK-5377
@@ -150,4 +150,9 @@ Spec §4 row `test_optimizer_docs.py`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed**: 2026-11-09 | **Implementation commit**: 699ad11b68
+
+Delivered via sdd-coder pool (merged). Scope: optimizer documentation (wiki pages + docs test); tuning explicitly marked pending, no metrics cited.
+Validation: docs tests — passed (see run above); techwiki check reported by coder: ok.
+Deviations: none noted.
+
