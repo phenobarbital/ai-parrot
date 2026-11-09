@@ -59,7 +59,7 @@ docs:
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:e30eadbbff40173ab14e7d57f9129dace65c54e7855ea36aa35a5e116277518f evaluation_digest=sha256:ac565d1f254e889abcd69ecdf66f8aaab6f6f28d7375fe4311e3d5a5b601026d rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:bc124c59b59a17c589f90a110a7d7cfd6e41570c45ec563b32b5b5197a1d132f evaluation_digest=sha256:e875587ad8d0dc85233f090db9847de6283febce60f4725229c810e2ac4acb49 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -120,17 +120,12 @@ def _piece_pages(piece: dict, revision: DocumentRevision) -> Optional[tuple[int,
 | `test_layout_integration.py::test_fixture_import_is_hybrid_and_anchored` | previously failing on dev |
 
 ### Validation Contract
-```yaml
-runners:
-  - kind: pytest
-    targets:
-      - packages/ai-parrot/tests/knowledge/pageindex/test_optimizer.py
-      - packages/ai-parrot/tests/knowledge/pageindex/test_layout_integration.py
-      - packages/ai-parrot/tests/knowledge/pageindex/test_optimizer_docs.py
-    settings:
-      markers: ""
-    tiers: [task, merge, feature]
-```
+
+tests:
+- packages/ai-parrot/tests/knowledge/pageindex/test_optimizer.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_layout_integration.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_optimizer_docs.py
+markers: none
 
 ## 5. Acceptance Criteria
 - [ ] Pieces of a paged revision carry `start_index <= end_index` taken from their owned segments' pages.
@@ -187,7 +182,7 @@ no cross-feature dependency (FEAT-856 does not touch `optimizer.py`).
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:e30eadbbff40173ab14e7d57f9129dace65c54e7855ea36aa35a5e116277518f evaluation_digest=sha256:ac565d1f254e889abcd69ecdf66f8aaab6f6f28d7375fe4311e3d5a5b601026d rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:bc124c59b59a17c589f90a110a7d7cfd6e41570c45ec563b32b5b5197a1d132f evaluation_digest=sha256:e875587ad8d0dc85233f090db9847de6283febce60f4725229c810e2ac4acb49 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -238,10 +233,10 @@ Coverage:
       "path": "/home/jesuslara/proyectos/ai-parrot/sdd/specs/pageindex-optimizer-fixes-2.spec.md"
     }
   ],
-  "evaluation_digest": "sha256:ac565d1f254e889abcd69ecdf66f8aaab6f6f28d7375fe4311e3d5a5b601026d",
+  "evaluation_digest": "sha256:e875587ad8d0dc85233f090db9847de6283febce60f4725229c810e2ac4acb49",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:e30eadbbff40173ab14e7d57f9129dace65c54e7855ea36aa35a5e116277518f",
+  "input_digest": "sha256:bc124c59b59a17c589f90a110a7d7cfd6e41570c45ec563b32b5b5197a1d132f",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
