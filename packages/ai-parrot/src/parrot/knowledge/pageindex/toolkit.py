@@ -35,7 +35,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Optional, TypeVar
 from parrot.clients.base import AbstractClient
 from parrot.tools.toolkit import AbstractToolkit, ToolkitTool
 from .builder import build_page_index
-from .agentic import AgenticRetriever, EvidenceBundle, clone_for_tools
+from .agentic import AgenticRetriever, EvidenceBundle, clone_for_tools, require_tool_loop
 from .content_store import NodeContentStore
 from .embedding_store import NodeEmbeddingStore
 from .generation import StaleGenerationError, WriteTransaction, generation_of
@@ -1221,14 +1221,21 @@ class PageIndexToolkit(AbstractToolkit):
         return tools
 
     def _agentic_client(self) -> AbstractClient:
-        """Return the dedicated agentic client, cloning the adapter client when needed."""
+        """Return the dedicated agentic client, cloning the adapter client when needed.
+
+        Raises ``ValueError`` when no LLM is configured, or when the resolved client declares
+        ``supports_tool_loop = False`` (FEAT-848) — before any candidate search or LLM call.
+        """
         if self._agentic_client_override is not None:
-            return self._agentic_client_override
-        if self._adapter is None:
-            raise ValueError("agentic retrieval requires an LLM; configure a model for this toolkit")
-        if self._agentic_clone is None:
-            self._agentic_clone = clone_for_tools(self._adapter.client)
-        return self._agentic_clone
+            client = self._agentic_client_override
+        else:
+            if self._adapter is None:
+                raise ValueError("agentic retrieval requires an LLM; configure a model for this toolkit")
+            if self._agentic_clone is None:
+                self._agentic_clone = clone_for_tools(self._adapter.client)
+            client = self._agentic_clone
+        require_tool_loop(client)
+        return client
 
     async def agentic_retrieve(
         self,
