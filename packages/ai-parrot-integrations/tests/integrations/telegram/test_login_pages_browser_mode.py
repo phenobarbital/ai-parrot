@@ -1,4 +1,5 @@
 """FEAT-854 M6: executable round-trip checks for the dual-mode Telegram login pages."""
+
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -52,10 +53,12 @@ async def browser_page():
 
         async def route_complete(route):
             if route.request.method == "POST":
-                page.complete_posts.append({
-                    "url": route.request.url,
-                    "post_data": route.request.post_data,
-                })
+                page.complete_posts.append(
+                    {
+                        "url": route.request.url,
+                        "post_data": route.request.post_data,
+                    }
+                )
             await route.fulfill(
                 json={"ok": True, "redirect_url": "https://t.me/TestBot"},
                 status=200,
@@ -98,6 +101,7 @@ async def test_basic_browser_mode_posts_payload_not_senddata(browser_page):
     assert BROWSER_COMPLETE_PATH in post["url"]
 
     import json
+
     data = json.loads(post["post_data"])
     assert data["state"] == state
     assert data["auth_method"] == "basic"
@@ -136,6 +140,7 @@ async def test_basic_legacy_mode_uses_senddata(browser_page):
     assert len(send_data) == 1, f"Expected 1 sendData call, got {len(send_data)}"
 
     import json
+
     payload = json.loads(send_data[0])
     assert payload["auth_method"] == "basic"
 
@@ -154,6 +159,7 @@ async def test_browser_mode_sso_redirect_round_trip(browser_page):
         # Simulate Navigator redirecting back with token
         redirect_uri = route.request.url.split("redirect_uri=")[1]
         from urllib.parse import unquote
+
         redirect_uri = unquote(redirect_uri)
         await route.fulfill(
             status=302,
