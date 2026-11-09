@@ -447,9 +447,7 @@ async def test_stop_waits_for_in_flight_admission_before_cancelling() -> None:
         await asyncio.Event().wait()
 
     service = _service()
-    submit_task = asyncio.create_task(
-        service.submit(_command(method, prepare=prepare), "", _requester(), recorder)
-    )
+    submit_task = asyncio.create_task(service.submit(_command(method, prepare=prepare), "", _requester(), recorder))
     await preparing.wait()
     stop_task = asyncio.create_task(service.stop())
     await asyncio.sleep(0)
@@ -499,9 +497,13 @@ async def test_expired_view_for_orphan() -> None:
     requester = _requester()
     past = datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat()
     common = {"command": "review", "label": "PR", "phase": "queued"}
-    expired = manager.create_job("expired", "owner:review", {}, user_id=requester.actor, metadata={**common, "expires_at": past})
+    expired = manager.create_job(
+        "expired", "owner:review", {}, user_id=requester.actor, metadata={**common, "expires_at": past}
+    )
     unknown = manager.create_job("unknown", "owner:review", {}, user_id=requester.actor, metadata=common)
-    terminal = manager.create_job("terminal", "owner:review", {}, user_id=requester.actor, metadata={**common, "expires_at": past})
+    terminal = manager.create_job(
+        "terminal", "owner:review", {}, user_id=requester.actor, metadata={**common, "expires_at": past}
+    )
     terminal.status = JobStatus.COMPLETED
 
     assert (await service.get(expired.job_id, requester)).status == "expired"

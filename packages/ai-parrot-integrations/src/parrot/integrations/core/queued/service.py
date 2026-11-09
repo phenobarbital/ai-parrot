@@ -207,10 +207,7 @@ class QueuedCommandService:
         admission_time = datetime.now(timezone.utc)
         admission_monotonic = asyncio.get_running_loop().time()
         expires_at = admission_time + timedelta(
-            seconds=command.spec.max_queue_wait
-            + command.spec.max_runtime
-            + self._notify_timeout
-            + self._expiry_grace
+            seconds=command.spec.max_queue_wait + command.spec.max_runtime + self._notify_timeout + self._expiry_grace
         )
         metadata = {
             "command": command.spec.command,
