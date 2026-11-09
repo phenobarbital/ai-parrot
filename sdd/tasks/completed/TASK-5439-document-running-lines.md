@@ -300,3 +300,8 @@ there with the bug (`APPENDIX C PAGE 432` offered / used as a piece title), and 
 Code commit `58789357fe`.
 
 **Deviations from spec**: black also reflowed one existing call in `test_split_at_sets_page_fields` (style only).
+Follow-up found by TASK-5440's host run: `plan_deterministic` treats each top-level section as its own root, so
+computing the set per `expand_at_headings` call tree recomputed it per section (HIPAA, 68 roots, never expands:
+0.01 → 0.84 s; 800-53: 0.08 → 0.96 s). `plan_deterministic` now computes it once per `(doc_id, revision)` and passes it
+in (HIPAA 0.02 s, 800-53 0.13 s; splits identical on all 8 probe PDFs). `test_expand_computes_running_keys_once` gained
+a two-root case. Spec AC-4 ("once per document root") still holds, now as once per document.

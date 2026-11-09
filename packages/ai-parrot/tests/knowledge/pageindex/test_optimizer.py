@@ -669,7 +669,7 @@ def test_expand_does_not_split_short_leaf_at_document_footer() -> None:
 
 
 def test_expand_computes_running_keys_once(monkeypatch) -> None:
-    """One document root computes its running-line set once, however many leaves the expansion visits."""
+    """A document computes its running-line set once, however many roots and leaves the expansion visits."""
     from parrot.knowledge.pageindex import optimizer
 
     calls: list[str] = []
@@ -680,7 +680,15 @@ def test_expand_computes_running_keys_once(monkeypatch) -> None:
         return original(revision)
 
     monkeypatch.setattr(optimizer, "document_running_keys", counting)
+    settings = OptimizerSettings(target_leaf_tokens=100, min_leaf_tokens=20)
     tree, revisions, _ = _short_table_tree()
-    plan_deterministic(tree, revisions, OptimizerSettings(target_leaf_tokens=100, min_leaf_tokens=20), tree_name="t")
+    plan_deterministic(tree, revisions, settings, tree_name="t")
+    assert len(calls) == 1
 
+    calls.clear()
+    tree, revisions, _ = _short_table_tree()
+    two_roots = {"nodes": tree["nodes"][0]["nodes"]}  # each top-level section is its own optimizable root
+    plan = plan_deterministic(two_roots, revisions, settings, tree_name="t")
+    assert len(optimizable_roots(two_roots, revisions)) == 2
+    assert not plan.report.errors
     assert len(calls) == 1

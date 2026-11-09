@@ -927,6 +927,8 @@ def plan_deterministic(
     report.nodes_before = len(structure_to_list(candidate))
     roots = optimizable_roots(candidate, revisions, node_id=node_id)
     report.documents = sorted({str(root["doc_id"]) for root in roots})
+    # One document can have many roots (one per top-level section); scan its running lines once.
+    running_by_revision: dict[tuple[str, str], frozenset[str]] = {}
     for root in roots:
         key = (root["doc_id"], root["revision"])
         revision = revisions[key]
@@ -937,7 +939,9 @@ def plan_deterministic(
             continue
         normalize(root.get("nodes") or [], revision, settings, report, parent=root)
         assign_ownership(root)
-        expand_at_headings(root, revision, settings, report, depth=0)
+        if key not in running_by_revision:
+            running_by_revision[key] = document_running_keys(revision)
+        expand_at_headings(root, revision, settings, report, depth=0, running_keys=running_by_revision[key])
         assign_ownership(root)
 
     def mark_mutable(node: dict, ancestor_locked: bool = False) -> None:
