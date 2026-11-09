@@ -187,7 +187,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -197,8 +197,9 @@
       "parallelism_notes": "TASK-5353: passes host= to feature_launcher.launch()/launch_session() and shares test_sdd_launch.py",
       "assigned_to": null,
       "started_at": "2026-11-09T00:08:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5354-launch-cli-host-option.md"
+      "completed_at": "2026-11-09T02:05:50+00:00",
+      "file": "sdd/tasks/completed/TASK-5354-launch-cli-host-option.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5355",
