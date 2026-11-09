@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from parrot.knowledge.pageindex import toolkit as toolkit_module
 from parrot.knowledge.pageindex.optimizer_llm import run_llm_passes
 from parrot.knowledge.pageindex.segments import segment_pages
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
@@ -239,3 +240,52 @@ async def test_optimize_without_model(tmp_path: Path) -> None:
     assert "pageindex_optimize" in toolkit.list_tool_names()
     assert "pageindex_optimize" not in toolkit.llm_dependent_tools
     assert report["llm_passes"] == "skipped (no model)"
+
+
+@pytest.mark.asyncio
+async def test_locked_semantics(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Edits lock segment-backed nodes without invoking optimization."""
+    toolkit = await _tree_with_document(tmp_path)
+    original_plan = toolkit_module.plan_deterministic
+    planner = MagicMock(wraps=original_plan)
+    monkeypatch.setattr(toolkit_module, "plan_deterministic", planner)
+
+    before = await toolkit.get_tree("guide")
+    root = before["structure"][0]
+    edited = root["nodes"][0]
+    sibling = root["nodes"][1]
+
+    manual_lock = await toolkit.update_node("guide", sibling["node_id"], locked=True)
+    assert manual_lock["locked"] is True
+    unlocked = await toolkit.update_node("guide", sibling["node_id"], locked=False)
+    assert unlocked["locked"] is False
+
+    await toolkit.update_node_content("guide", edited["node_id"], "Hand-edited body")
+    assert planner.call_count == 0
+
+    after_edit = await toolkit.get_tree("guide")
+    edited_after = after_edit["structure"][0]["nodes"][0]
+    assert edited_after["locked"] is True
+    assert edited_after["locked_reason"] == "body_edited"
+    edited_body_ref = edited_after["body_ref"]
+    edited_body = toolkit._content_store.load_node("guide", edited_after)
+
+    sibling_id = after_edit["structure"][0]["nodes"][1]["node_id"]
+    await toolkit.optimize("guide", node_id=sibling_id, apply=True, llm_passes=False)
+    await toolkit.optimize("guide", apply=True, llm_passes=False)
+
+    after_optimizing = await toolkit.get_tree("guide")
+    edited_after_optimizing = after_optimizing["structure"][0]["nodes"][0]
+    assert edited_after_optimizing["body_ref"] == edited_body_ref
+    assert toolkit._content_store.load_node("guide", edited_after_optimizing) == edited_body
+
+    root_id = after_optimizing["structure"][0]["node_id"]
+    descendant_id = after_optimizing["structure"][0]["nodes"][0]["node_id"]
+    await toolkit.update_node("guide", root_id, locked=True)
+    locked_tree = await toolkit.get_tree("guide")
+    locked_descendants = locked_tree["structure"][0]["nodes"]
+
+    excluded = await toolkit.optimize("guide", node_id=descendant_id, llm_passes=False)
+
+    assert excluded["documents"] == []
+    assert (await toolkit.get_tree("guide"))["structure"][0]["nodes"] == locked_descendants
