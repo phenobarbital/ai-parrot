@@ -1359,7 +1359,7 @@ Coverage:
 - [x] Hand-off from FEAT-842 — *Recorded there*: when PDF import is deterministic, this spec removes `pageindex_import_pdf` from `llm_dependent_tools` (M9; FEAT-842 merged in PR #2029).
 - [x] Should Bookstore accept PDFs without an LLM once structure comes from the PDF? — *Resolved (Jesus Lara, 2026-11-08)*: yes; deterministic structure, no summaries or description (M8).
 - [x] How is the confidence threshold set? — *Resolved (Jesus Lara, 2026-11-08)*: by a deterministic evaluation over the local corpus — the committed fixture and the three PDF trees of `corpus/compliance_soc2_hipaa/` (AICPA metrics only) — with the fixture comparison also kept as a CI test (M10). The Bookstore library, first proposed as the corpus, is empty.
-- [ ] Final `structure_min_confidence` default (provisional 0.6) — *Owner: M10 task*, from the evaluation report.
+- [x] Final `structure_min_confidence` default (provisional 0.6) — *Resolved (Jesus Lara, 2026-11-09)*: fixed at 0.6. The four-pair host run (`wiki/knowledge/pageindex-layout-structure.md` § Evaluation) chooses candidates at confidence 0.94–1.0 on every pair and `suggest_threshold` returns `None`; the remaining recall gap is a candidate-class problem (`issue:a3d282c67ed0`), not a threshold one.
 - [ ] Should body-size bold standalone lines count as headings when the document has no bookmarks, or only to confirm bookmarks? — *Owner: M10 task*: decide from the evaluation (recall vs. noise); the rule ships enabled.
 
 ---

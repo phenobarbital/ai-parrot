@@ -131,13 +131,25 @@ The CLI writes JSON and markdown reports to `artifacts/logs/layout_eval/<UTC>.js
 
 **Metrics (TASK-5344).** The committed fixture pair (`docling_structure.json`) was measured with
 `python -m parrot.knowledge.pageindex.layout_eval`: `recall_top = 1.0`, `recall_all = 1.0`,
-`page_agreement = 1.0`, `structure_source = hybrid` (9 pages, confidence 1.0). The four-pair run
-against the local corpus (arxiv, nist_800_53, nist_csf_2_0, aicpa_tsc) was **not executed** here:
-those PDFs are not available in the repository or CI. Run the four-pair command above locally and
-record the metrics before changing `structure_min_confidence`.
+`page_agreement = 1.0`, `structure_source = hybrid` (9 pages, confidence 1.0).
 
-**Threshold:** `structure_min_confidence` stays at the default `0.6` because no four-pair data exists
-to justify a different value.
+**Four-pair run (2026-11-09, host, `dev @ 09c95b1646`, `--min-confidence 0.6`).** Report
+`artifacts/logs/layout_eval/20261109T122050Z.json` (git-ignored), sha256 `c203ca912ba536a8677aae6ab0b54c3e7d1ebc1b1b3806adf5fec450aa4c2130`:
+
+| Pair | Pages | Source | Chosen confidence | Candidates (bookmarks / layout) | Reference nodes | Layout nodes | Recall top | Recall all | Page agreement | Seconds |
+|---|---:|---|---:|---|---:|---:|---:|---:|---:|---:|
+| arxiv | 9 | hybrid | 1.000 | 1.000 / 1.000 | 10 | 17 | 1.000 | 1.000 | 1.000 | 9.3 |
+| nist_800_53 | 492 | layout | 0.940 | 0.000 / 0.940 | 164 | 117 | 1.000 | 0.409 | 0.627 | 137.3 |
+| nist_csf_2_0 | 32 | hybrid | 1.000 | 1.000 / 1.000 | 14 | 22 | 0.643 | 0.643 | 1.000 | 3.7 |
+| aicpa_tsc | 75 | layout | 1.000 | 0.000 / 1.000 | 18 | 11 | 0.778 | 0.389 | 1.000 | 16.4 |
+
+`suggest_threshold` returned `None`: every chosen candidate scores at least 0.94, so no threshold separates good
+from bad pairs. The misses are systematic, not a confidence problem: in 800-53 the unmatched titles are the
+per-control headings (`ACCOUNT MANAGEMENT`, `SC-22 …`, `POLICY AND PROCEDURES`), in CSF 2.0 the mid-level sections
+(`CSF Core structure`, `CSF Functions`, …). That gap is tracked as ledger `issue:a3d282c67ed0`.
+
+**Threshold:** `structure_min_confidence` is **fixed at `0.6`** (decision 2026-11-09, from the run above; closes
+ledger `issue:ca2daac2be1d`).
 
 **Open question 2 (spec §8):** Body-size standalone bold lines do **not** count as headings when the document has no bookmarks. The layout candidate's `clean` factor already filters out noisy bold lines, and the hybrid rule requires both scores to pass, so the risk of false positives is low. The decision is to keep the current heuristic (only size-rank and bookmark-matching rules).
 

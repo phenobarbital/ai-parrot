@@ -130,3 +130,14 @@ Not run: the four compliance PDFs do not exist (`corpus/compliance_soc2_hipaa/ra
 
 Follow-ups filed: issue:7111d74a3066 (run the deterministic tuning on the host; AC-19 unmet until then) and issue:336eef8010a1 (LLM-mode tuning run, required by this task).
 
+**Addendum 2026-11-09 (host run, closes issue:7111d74a3066 and issue:336eef8010a1).** The tuning run was executed on
+the host over the four compliance PDFs and the arXiv fixture (`dev @ 09c95b1646`), plus three Spanish PDFs from the
+local Bookstore library, deterministically and in LLM mode (`google:gemini-3.5-flash-lite`). Report paths and sha256:
+`artifacts/logs/optimizer_eval/deterministic_corpus_only/optimizer_eval-20261109T122507348707Z.json` `b7affece84d877fe28cfbe3d8ce1a428d6d5c4e296de09b47a77484b4b824e43` (suggested target 1100);
+`artifacts/logs/optimizer_eval/deterministic/optimizer_eval-20261109T121801073795Z.json` `fe02a470e2101f067a99475a6ff5851e587f1b737a70266df82666193a5890e2` (8 PDFs, suggested 2100);
+`artifacts/logs/optimizer_eval/llm_small/optimizer_eval-20261109T122255854142Z.json` `680cdf81a824923dd7efccbfa2061434eef880068b12572388a7435a75ade3d9` (suggested 2200);
+`artifacts/logs/optimizer_eval/llm_800_53/optimizer_eval-20261109T122706159755Z.json` `7651c039e41d02c793fb80f4f9aff8050d576c4ecb9790663639c8520a777660`.
+Every metric is copied into `wiki/knowledge/pageindex-tree-optimizer.md` § Evaluation. Decision (Jesus Lara):
+`target_leaf_tokens` stays 1500 — the suggestion is a pooled p75 and swings with corpus composition
+(`issue:adae36a70919`). Bugs surfaced by the run: `issue:66f376157327`, `issue:33ad15e686e9`, `issue:ab5235978ad7`,
+`issue:0a693a57b138`.

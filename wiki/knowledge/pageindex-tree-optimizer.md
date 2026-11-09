@@ -89,10 +89,11 @@ Tokens are always counted over the segments a node **owns** (its `owned` ranges)
 | `max_depth` | `8` | Depth limit for recursive heading expansion. |
 | `llm_passes` | `True` | Run the model-backed passes when a live adapter exists. |
 
-The defaults are **provisional**. The deterministic tuning run of the evaluation harness (TASK-5376) has not been
-executed — the compliance corpus PDFs were not available where the task ran — so no report, date or sha256 exists
-yet, and `target_leaf_tokens` stays at its pre-tuning value of 1500. The pending run is tracked as ledger issue
-`issue:7111d74a3066`; the LLM-mode follow-up is `issue:336eef8010a1` (see [Evaluation](#evaluation-optimizer_eval)).
+The defaults were **confirmed on 2026-11-09** by the host evaluation run (deterministic and LLM mode, see
+[Evaluation](#evaluation-optimizer_eval)): `target_leaf_tokens` stays at 1500 because the harness suggestion moves
+with the corpus composition (1100 on the compliance corpus alone, 2100 with three Spanish books added, 2200 in LLM
+mode), so no single number is better supported than the shipped one. Ledger issues `issue:7111d74a3066` and
+`issue:336eef8010a1` were closed by that run.
 
 `settings_hash()` returns a 16-character digest of the settings; it is part of every completion stamp.
 
@@ -280,10 +281,51 @@ stem and numbers only — never a node title: `pages`, `nodes_before/after`, `le
 leaves, rounded to 100, and is `None` with fewer than three PDFs. The command prints `tuned_target`, which returns the
 suggestion only when it lies in `[2 × min_leaf_tokens, 2 × target_leaf_tokens]` of the current defaults, else `None`.
 
-**How the shipped `target_leaf_tokens` was set: provisional.** The deterministic tuning run over the four compliance
-PDFs and the arXiv fixture has not been executed yet (ledger `issue:7111d74a3066`); until it runs, the default stays
-1500 and no metrics are published here. An LLM-mode run that measures `llm_heading_splits`, `key_items` and summary
-lengths and settles the LLM-dependent defaults is a separate follow-up (ledger `issue:336eef8010a1`).
+**How the shipped `target_leaf_tokens` was set.** Host run of 2026-11-09 on `dev @ 09c95b1646`, settings
+`target_leaf_tokens=1500`, `min_leaf_tokens=200`. Inputs: the four compliance PDFs of `corpus/compliance_soc2_hipaa/raw/`,
+the arXiv fixture, and three public-domain Spanish PDFs from the local Bookstore library (Analectas, Kant's *Crítica*,
+Marco Aurelio's *Meditaciones*). Reports live under `artifacts/logs/optimizer_eval/` (git-ignored); their sha256:
+
+| Report | sha256 |
+|---|---|
+| `deterministic/optimizer_eval-20261109T121801073795Z.json` (8 PDFs) | `fe02a470e2101f067a99475a6ff5851e587f1b737a70266df82666193a5890e2` |
+| `deterministic_corpus_only/optimizer_eval-20261109T122507348707Z.json` (corpus + arXiv) | `b7affece84d877fe28cfbe3d8ce1a428d6d5c4e296de09b47a77484b4b824e43` |
+| `llm_small/optimizer_eval-20261109T122255854142Z.json` (`google:gemini-3.5-flash-lite`) | `680cdf81a824923dd7efccbfa2061434eef880068b12572388a7435a75ade3d9` |
+| `llm_800_53/optimizer_eval-20261109T122706159755Z.json` (`google:gemini-3.5-flash-lite`) | `7651c039e41d02c793fb80f4f9aff8050d576c4ecb9790663639c8520a777660` |
+
+Deterministic run (no model):
+
+| PDF | Pages | Nodes before → after | Leaves after | Leaf tokens p50 / p90 / max | Leaves over target after | Key items | Seconds |
+|---|---:|---|---:|---|---:|---:|---:|
+| aicpa_tsc_2017 | 75 | 12 → 12 | 8 | 1560 / 11245 / 27651 | 4 | 0 | 20.8 |
+| hipaa_45cfr164_2022 | 61 | 129 → 129 | 68 | 896 / 968 / 1126 | 0 | 0 | 14.5 |
+| nist_800_53_r5 | 492 | 118 → 106 | 69 | 1214 / 8271 / 28862 | 28 | 12 | 149.4 |
+| nist_csf_2_0 | 32 | 23 → 23 | 20 | 577 / 1396 / 4338 | 2 | 0 | 4.2 |
+| arxiv_2408_09869 | 9 | 18 → 14 | 11 | 382 / 1730 / 5398 | 2 | 4 | 9.9 |
+| Analectas (Confucio) | 150 | 45 → 45 | 39 | 2086 / 3179 / 9744 | 30 | 0 | 15.5 |
+| Crítica de la razón pura (Kant) | 206 | 5 → 5 | 3 | 6 / 123592 / 154488 | 1 | 0 | 27.6 |
+| Meditaciones (Marco Aurelio) | 105 | 18 → 17 | 12 | 5622 / 6002 / 6022 | 10 | 0 | 9.4 |
+
+`suggested_target_leaf_tokens`: **2100** over the eight PDFs, **1100** over the corpus plus arXiv only. The suggestion
+is a pooled p75, so a dozen long leaves from one book double it; that instability (ledger `issue:adae36a70919`) is
+why the default was kept at 1500. Two documents expose optimizer bugs rather than tuning signals: Kant has no
+typographic headings and stays one 154k-token leaf (`issue:ab5235978ad7`), and the Marco Aurelio `apply` is rejected
+with `protected node … was removed` (`issue:33ad15e686e9`).
+
+LLM mode (`--llm google:gemini-3.5-flash-lite`):
+
+| PDF | Nodes before → after | Leaves after | Leaf tokens p50 / p90 / max | Over target after | Key items | Summary words (mean) | LLM calls | Heading splits | Seconds |
+|---|---|---:|---|---:|---:|---:|---:|---:|---:|
+| nist_csf_2_0 | 23 → 23 | 20 | 577 / 1396 / 4338 | 2 | 11 | 49.7 | 39 | 0 | 34.0 |
+| arxiv_2408_09869 | 18 → 15 | 11 | 382 / 1730 / 2361 | 2 | 19 | 45.4 | 26 | 1 | 32.5 |
+| Analectas (Confucio) | 45 → 53 | 46 | 1960 / 2908 / 4300 | 31 | 211 | 52.4 | 122 | 1 | 87.1 |
+| nist_800_53_r5 | 118 → 132 | 81 | 991 / 7661 / 28862 | 28 | 0 | 0.0 | 221 | 8 | 246.9 |
+
+`suggested_target_leaf_tokens` in LLM mode: 2200. Summaries land under the 60-word cap (45–52 words mean) and the
+heading pass splits only at printed headings (Analectas: the 14-page introduction became 8 titled sections). The
+800-53 row is a rejected candidate: two `key_items` whose anchors left their node's owned ranges failed
+`validate_candidate`, so none of the 221 calls was published (`issue:66f376157327`). The LLM-dependent defaults
+(`inline_summary_tokens`, `summary_max_words`, `max_key_items`) were kept.
 
 ## Usage Examples
 
