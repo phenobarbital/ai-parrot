@@ -70,35 +70,35 @@ and [skill discovery](https://developers.openai.com/codex/skills) documentation.
 The `bookstore_agentic_retrieve` tool provides per-book cited retrieval through the PageIndex agentic loop. It returns a validated evidence bundle with book identity, exact-range citations, and the same `stopped` values as PageIndex (no `stale` value). Use it when you need evidence you can quote and check:
 
 ```text
-$bookstore agentic_retrieve amor-y-pedagogia-unamuno-miguel "What does Avito want to achieve with his son's education?"
+Using bookstore, answer with citations from amor-y-pedagogia-unamuno-miguel: what does Avito want to achieve with his son's education?
 ```
 
-The tool supports optional revision guards on segment reads and deterministic drift repair via `bookstore doctor`. For programmatic access, see [Bookstore Agentic Retrieval](bookstore-agentic-retrieval.md).
+If an answer cites a revision that changed under you, see recovery below. For programmatic access, see [Bookstore Agentic Retrieval](bookstore-agentic-retrieval.md).
 
 ## Recovery and drift repair
 
 Run `bookstore doctor` to report drift, orphans, and unjudged books:
 
 ```bash
-parrot bookstore doctor
+bookstore doctor
 ```
 
 Repair cards with drift (TOC mismatch):
 
 ```bash
-parrot bookstore doctor --repair
+bookstore doctor --repair
 ```
 
 Build missing judgements without LLM (deterministic):
 
 ```bash
-parrot bookstore doctor --relate --no-llm
+bookstore doctor --relate --no-llm
 ```
 
 For full recovery: repair + relate:
 
 ```bash
-parrot bookstore doctor --repair --relate --llm google:gemini-3.5-flash-lite
+bookstore doctor --repair --relate --llm google:gemini-3.5-flash-lite
 ```
 
 The report includes `reserved` entries (scope/name/action/reason), `books` entries (scope/book_id/status/repaired), `unjudged_book_ids`, `errors`, and optional `relate_summary`. Statuses are `ok`, `drift`, `orphan_card`, `busy`, or `error`. See [Bookstore Agentic Retrieval](bookstore-agentic-retrieval.md) for details.

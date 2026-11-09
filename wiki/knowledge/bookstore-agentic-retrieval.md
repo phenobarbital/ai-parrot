@@ -1,172 +1,117 @@
 ---
 title: Bookstore Agentic Retrieval
-summary: Per-book cited retrieval, multi-origin excerpts, safe re-indexing and measured budgets.
+summary: Per-book cited retrieval, multi-origin excerpts, safe re-indexing and the measured default budgets.
 ---
 
 # Bookstore Agentic Retrieval
 
 ## Purpose
 
-Bookstore provides per-book agentic retrieval through `bookstore_agentic_retrieve`, which delegates to the existing `PageIndexToolkit.agentic_retrieve` loop. The method returns a validated evidence bundle with book identity, exact-range citations, and the same `stopped` values as PageIndex (no `stale` value). It supports optional revision guards on segment reads and deterministic drift repair via `bookstore doctor`.
-
-Use `bookstore_agentic_retrieve` when a caller needs evidence it can quote and check: an in-process agent, a Bookstore origin, or a local MCP host that wants `[Document.pdf, p. 12 ¶3]` style references. The loop reuses the client's own tool loop (`AbstractClient.ask(tools=...)`) on a dedicated client clone, so no provider SDK is called directly and `parrot.bots` is not involved.
+`Bookstore.agentic_retrieve` answers a question about one indexed book by delegating to the
+PageIndex agentic loop (`PageIndexToolkit.agentic_retrieve`) and returns a validated evidence
+bundle: book identity, exact-range citations, rendered citation labels and a `stopped` reason.
+The loop uses the model's own tool loop through the Bookstore LLM adapter; no provider SDK is
+called directly. Use it when a caller needs evidence it can quote and check.
 
 ## Public API
 
-- [`Bookstore.agentic_retrieve`](ref:parrot.knowledge.bookstore.library) — stage-1 search plus the bounded reading loop; returns the evidence bundle as a dict with book identity and decorated citations
-- [`Bookstore.read_segments`](ref:parrot.knowledge.bookstore.library) — read a sna... (see [Revision guard](#revision-guard))
-- [`Bookstore.doctor`](ref:parrot.knowledge.bookstore.library) — sweep safely, report drift/orphans/unjudged books, optionally repair cards and build missing judgements
-- [`BookstoreOrigin`](ref:parrot_tools.multistoresearch.origins.bookstore) — stage-1 origin that produces exact single-segment excerpts with immutable addresses in `OriginHit.metadata["citation"]`
-- [`BookstoreToolkit`](ref:parrot.knowledge.bookstore.toolkit) — 14 read-only tools, including `agentic_retrieve`, `catalog_search`, `related_books`, `communities`, `get_toc`, `search_book`, `read_section`, and the three graph tools from FEAT-533
-- [`ask_cmd`](ref:parrot.knowledge.bookstore.cli) — CLI entry point for a single cited research question
-- [`doctor_cmd`](ref:parrot.knowledge.bookstore.cli) — CLI entry point for recovery and drift repair
+- `Bookstore.agentic_retrieve` (`parrot.knowledge.bookstore.library`) — stage-1 search plus the bounded reading loop.
+- `Bookstore.read_segments(..., expected_revision=None)` — segment reads with an optional revision guard.
+- `Bookstore.doctor` — report and repair drift between trees and catalog cards.
+- `BookstoreToolkit.agentic_retrieve` (`parrot.knowledge.bookstore.toolkit`) — the LLM-facing tool, exposed over MCP as `bookstore_agentic_retrieve`. It stays visible without an LLM and returns a configuration error.
+- `BookstoreOrigin` (`parrot_tools.multistoresearch.origins.bookstore`) — a multi-store search origin returning exact single-segment excerpts.
+- CLI: `bookstore ask` and `bookstore doctor`.
 
-## Configuration & Parameters
+## Parameters
 
-### Bookstore constructor
-
-| Constructor kwarg | Default | Effect |
-|---|---:|---|
-| `reindex_lock_timeout_s` | `5.0` | Deadline for acquiring any operation lock; timeout raises `BookstoreError` naming the slug/source |
-| `max_books` | `3` | Maximum books returned by `BookstoreOrigin.search` (clamped to 1-10) |
-| `top_k` | `5` | Maximum candidates per book in `agentic_retrieve` (clamped to 1-50) |
-| `excerpt_chars` | `600` | Maximum characters per excerpt in `BookstoreOrigin` (clamped to 1-12000) |
-| `timeout` | `120.0` | Per-call timeout for `agentic_retrieve` and origin searches |
-
-### agentic_retrieve arguments
+### `agentic_retrieve`
 
 | Argument | Default | Effect |
 |---|---|---|
-| `book_id` | required | Book to search |
+| `book_id` | required | Book to research |
 | `query` | required | Research question |
-| `top_k` | `5` | Stage-1 candidates per book (clamped 1-50) |
-| `draft_answer` | `True` | If `False`, model returns citations only and `answer` is `null` |
-| `budget_chars` | `40000` | Stored-text characters the reads may deliver to the model per request |
-| `max_reads` | `12` | Read results recorded per request |
-| `max_tool_calls` | `20` | Tool invocations admitted per request across all four tools |
-| `timeout_s` | `120.0` | One wall-clock deadline per request, shared by every phase |
+| `top_k` | `5` | Stage-1 candidates considered |
+| `draft_answer` | `True` | When `False`, no answer is drafted and `answer` is `null` |
+| `budget_chars` | `None` | Total characters the reads may deliver; `None` uses the PageIndex default (40000) |
+| `max_reads` | `None` | Reads recorded per request; `None` uses the PageIndex default (12) |
+| `timeout_s` | `None` | One wall-clock deadline per request; `None` uses the PageIndex default (120 s) |
 
-### read_segments expected_revision
+PageIndex also caps tool invocations at 20 per request. Bookstore adds no defaults of its own: the
+host evaluation below found no setting better than these PageIndex defaults.
 
-`read_segments(..., expected_revision=None)` is backward compatible. When set, compare the expected value with the **actual returned ReadResult.revision** before releasing any result text to the caller. A mismatch raises `RevisionMismatchError` (a ValueError), propagated by Bookstore rather than flattened to BookstoreError. Cursor mismatch retains the same exception. The guard promises that the returned snapshot matches, not that it remains live afterward.
+### `Bookstore` constructor
 
-## Usage Examples
+`Bookstore(locations, adapter=None, lightweight_model=None, *, reindex_lock_timeout_s=5.0)`.
+`reindex_lock_timeout_s` bounds how long an operation waits for a book's lock; a timeout raises
+`BookstoreError`.
 
-### ask_cmd — single cited research question
+### `BookstoreOrigin` constructor
+
+`BookstoreOrigin(bookstore, *, scope=None, book_ids=None, max_books=3, top_k=5, excerpt_chars=600, name="bookstore", description=None, timeout=None)`.
+`max_books` is capped at 10, `top_k` at 50. `scope` is `project`, `global` or `None`.
+
+### `read_segments(expected_revision=...)`
+
+The guard compares the revision of the result actually returned, not a preflight lookup. A
+mismatch raises `RevisionMismatchError` before any text is released; a cursor from another revision
+raises the same error. The guarantee is that the returned snapshot matches, not that it stays live.
+
+## Usage
 
 ```bash
-parrot bookstore ask amor-y-pedagogia-unamuno-miguel \
+bookstore ask amor-y-pedagogia-unamuno-miguel \
   "¿Qué pretende conseguir Avito con la educación de su hijo?" \
-  --llm google:gemini-3.5-flash-lite \
-  --budget-chars 40000 \
-  --max-reads 12 \
-  --timeout 120 \
-  --json
+  --llm google:gemini-3.5-flash-lite --json
 ```
 
-Normal stdout shows answer, rendered citations and grounded/stopped/chars_read; JSON stdout is exactly the serialized bundle. Missing models and Bookstore errors use ClickException. Diagnostics must not contaminate MCP or JSON output.
-
-### agentic_retrieve — programmatic access
+`--json` prints exactly the serialized bundle on stdout; the resolved provider and model are written
+to stderr only.
 
 ```python
-from parrot.clients.factory import LLMFactory
-from parrot.knowledge.bookstore.library import Bookstore
-
-client = LLMFactory.create("google:gemini-3.5-flash-lite")
-bookstore = Bookstore(
-    library_path=Path(".parrot/library"),
-    reindex_lock_timeout_s=5.0,
-    max_books=3,
-    top_k=5,
-    excerpt_chars=600,
-    timeout=120.0,
-)
-
 bundle = await bookstore.agentic_retrieve(
     "amor-y-pedagogia-unamuno-miguel",
     "¿Qué pretende conseguir Avito con la educación de su hijo?",
-    top_k=5,
-    draft_answer=True,
-    budget_chars=40000,
-    max_reads=12,
-    timeout_s=120.0,
 )
-
 if bundle["grounded"]:
-    print(bundle["answer"])
-    print(bundle["rendered_citations"])  # e.g. [Amor y pedagogía, p. 12 ¶3]; [Amor y pedagogía, p. 13 ¶1]
-    for citation in bundle["citations"]:
-        print(citation["label"], citation["start"], citation["end"], citation["excerpt"])
+    print(bundle["answer"], bundle["rendered_citations"])
 else:
     print("no citation survived:", bundle["stopped"])
-    for rejected in bundle["rejected"]:
-        print(rejected["reason"], rejected["proposed"]["address"])
 ```
 
-### BookstoreOrigin — multi-origin excerpts
-
-```python
-from parrot_tools.multistoresearch.origins.bookstore import BookstoreOrigin
-from parrot.clients.factory import LLMFactory
-
-client = LLMFactory.create("google:gemini-3.5-flash-lite")
-origin = BookstoreOrigin(
-    scope="project",
-    book_ids=["amor-y-pedagogia-unamuno-miguel", "analectas-confucio"],
-    max_books=3,
-    top_k=5,
-    excerpt_chars=600,
-    name="bookstore",
-    timeout=120.0,
-)
-
-hits = await origin.search("What is the relationship between education and reflection?", k=5)
-for hit in hits:
-    print(hit.metadata["citation"])  # doc_id/revision/seq/start/end/page/ordinal/section/label/document/excerpt/book_id/title
-```
-
-### doctor_cmd — recovery and drift repair
+Recovery and drift:
 
 ```bash
-# Report drift, orphans, and unjudged books
-parrot bookstore doctor
-
-# Repair cards with drift (TOC mismatch)
-parrot bookstore doctor --repair
-
-# Build missing judgements without LLM (deterministic)
-parrot bookstore doctor --relate --no-llm
-
-# Full recovery: repair + relate
-parrot bookstore doctor --repair --relate --llm google:gemini-3.5-flash-lite
+bookstore doctor                          # report drift, orphans and unjudged books
+bookstore doctor --repair                 # repair cards whose TOC drifted
+bookstore doctor --relate --no-llm        # build missing deterministic judgements
 ```
 
-The report includes `reserved` entries (scope/name/action/reason), `books` entries (scope/book_id/status/repaired), `unjudged_book_ids`, `errors`, and optional `relate_summary`. Statuses are `ok`, `drift`, `orphan_card`, `busy`, or `error`.
+The report holds `reserved`, `books`, `unjudged_book_ids`, `errors` and an optional
+`relate_summary`. Book statuses are `ok`, `drift`, `orphan_card`, `busy` and `error`.
 
 ## Gotchas
 
-### No-LLM mode
+- **No LLM.** Without a configured model (`PARROT_BOOKSTORE_LLM` or `--llm`), `agentic_retrieve` raises `BookstoreError` explaining that an LLM is required. Invalid numeric arguments raise `ValueError`.
+- **Stop reasons.** `stopped` is one of `answered`, `budget`, `max_tool_calls`, `timeout`, `no_tool_calls`, `parse_error`, `provider_error`. There is no `stale` value.
+- **Ungrounded answers.** When no citation survives validation, `grounded` is false and `answer` may be `null`; this is a result, not an error.
+- **Citation decoration.** Chapter and section paths are added only when the tree snapshot matches the generation the retrieval used; otherwise the citation keeps its stored section and omits the chapter.
+- **Identical-TOC drift.** `doctor` detects drift by comparing the live TOC with the card's TOC digest. A crash that swaps different text under an identical TOC cannot be detected this way; full transactional catalog publication is out of scope.
+- **EPUB books have no pages.** Page-based reads fail on segment-only documents; see ledger `issue:7e09c516a2d3`.
 
-Without an LLM configured (`PARROT_BOOKSTORE_LLM` unset), `agentic_retrieve` raises `ValueError` unless `agentic_client` is given. The `_NullAdapter` is not a real provider. Missing/unsupported tool-loop configuration becomes `BookstoreError` with `PARROT_BOOKSTORE_LLM` guidance, preserving the original reason. Do not mislabel numeric parameter validation errors as missing LLM configuration.
+## Host evaluation
 
-### Actual stop reasons
+Run on 2026-11-09 with `google:gemini-3.5-flash-lite`, seed 858, over seven books: 56 questions
+(21 handwritten, 35 generated) and 140 planned rows, all completed. On the 21 handwritten questions the
+baseline (40000 chars, 12 reads) grounded 16 and hit gold on 8; the four sweeps grounded 13-17 and
+hit gold on 9-10. No sweep beat the baseline strictly on median characters read and median wall time,
+so the recommendation is `retain_baseline` and the defaults are unchanged. Gold hits are low
+overall (8 of 21 handwritten, 5 of 35 generated) and median characters read was 12000 in every setting.
 
-The loop returns the same `stopped` values as PageIndex: `answered`, `budget`, `max_tool_calls`, `timeout`, `no_tool_calls`, `parse_error`, `provider_error`. There is **no `stale` value**. Preserve returned bundles and real errors; do not fabricate a stale bundle.
-
-### Snapshot fallback
-
-`agentic_retrieve` pins a private deep copy of the tree before stage-1. A re-import during the request does not switch the request to a new revision; cursors and addresses keep naming the revision they were issued for. The bundle's `generation` is the pinned generation. Old revisions stay readable for the grace period described in [PageIndex Segment Store](pageindex-segment-store.md). After it, a revision the request read but can no longer load is rejected as `revision_unavailable`.
-
-### Identical-TOC drift limitation
-
-`doctor` repairs drift by comparing the live tree's TOC with the card's TOC digest. If the source hash and TOC both match, the graph is preserved; otherwise the graph is invalidated. However, a crash that swaps different text with identical TOC cannot be detected by TOC-only drift detection — this limitation must be reported/documented (full transactional catalog publication is out of scope).
-
-### Host evaluation
-
-The provisional Bookstore defaults (40000 chars / 12 reads / 20 tool calls / 120 s) are selected from the host evaluation report. The report includes SHA256 of the qualified host report and the fixture hash of `sdd/state/FEAT-858/agentic-eval-questions.json`. Do not type-infer measurements; copy them programmatically from the report.
+- Report sha256: `1a62ca75295dfeb96e9f3e3fa88dc7a6d488eb91fed20007a9ecc82d28b72f56`
+- Fixture sha256: `393e8facd6bcb427790ccb96d39b9466e40376642805c2028790b5ddf2bc86d5`
 
 ## Related
 
-- [PageIndex Agentic Retrieval and Citations](../pageindex-agentic-retrieval.md) — the underlying loop and citation contract
+- [PageIndex Agentic Retrieval and Citations](pageindex-agentic-retrieval.md) — the underlying loop and citation contract
 - [Bookstore in Codex](bookstore-codex.md) — Codex installer and session guide
-- [Bookstore Conceptual Relations — the book graph](bookstore-graph.md) — relation types, communities, and the `relate` cost model
+- [Bookstore Conceptual Relations](bookstore-graph.md) — relation types, communities and the `relate` cost model
