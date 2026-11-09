@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-853 — PageIndex Optimizer Fixes
 **Spec**: `sdd/specs/pageindex-optimizer-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -369,8 +369,20 @@ def test_validate_accepts_preface_shaped_tree(revision):
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: Claude (Opus 5.5) — /sdd-fix session, actor agent:sdd-fix:5b4f798e
+**Date**: 2026-11-09
+**Notes**: Implemented as blueprinted in `optimizer.py` (commit 7d6b30fd41): `OptimizeReport.key_items_rehomed`;
+`_absorb` widens the absorber span over the absorbed owned extent; `normalize(..., parent=)` absorbs empty leaves
+into the parent (reason `empty`) and keeps a published empty leaf without `concept_id`; `split_at` calls
+`_move_key_items_to_pieces`; `reconcile_key_items` runs at the end of `plan_deterministic`. Small private helpers
+`_item_seq`, `_item_key`, `_owns_seq`, `_add_key_item` are shared by the move and the reconcile. A node whose key
+items all move away loses the `key_items` key instead of keeping `[]`.
+Tests: 7 unit tests in `test_optimizer.py` (one more than planned: `test_expand_at_headings_moves_persisted_key_items`
+covers the deterministic split path) and `test_optimize_apply_with_empty_leaf` in `test_optimizer_toolkit.py`.
+All 8 fail against the unfixed `dev` code (run from a scratch copy so only the main checkout's code was importable)
+and pass here. Validation: test_optimizer + test_optimizer_toolkit + test_optimizer_integration + test_optimizer_llm
+— 47 passed; ruff and black clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: one line outside the blueprint — `zip(ordered, ordered[1:], strict=False)` in
+`_ranges_contiguous` (pre-existing ruff B905 in a changed file; behaviour identical, the two inputs differ in length
+by design).
