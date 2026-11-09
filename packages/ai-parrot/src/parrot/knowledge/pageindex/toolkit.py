@@ -1245,6 +1245,12 @@ class PageIndexToolkit(AbstractToolkit):
         Returns an evidence bundle: candidates, the exact ranges read, validated citations
         (``[Report.pdf, p. 12 ¶3]``), rejected ones with reasons, and optionally a drafted
         answer. ``grounded`` is false when no citation survived validation. Requires an LLM.
+
+        **Serialised per toolkit instance.** A single ``_agentic_lock`` guards the whole
+        request, so exactly one agentic retrieval runs at a time per ``PageIndexToolkit``. A
+        second concurrent caller waits for the lock and, if its own ``timeout_s`` expires first,
+        receives a ``stopped="timeout"`` bundle without ever having searched. Scale out with
+        separate toolkit instances, not with concurrent calls on one.
         """
         resolved_budget = self._agentic_budget_chars if budget_chars is None else budget_chars
         resolved_reads = self._agentic_max_reads if max_reads is None else max_reads
@@ -1292,7 +1298,16 @@ class PageIndexToolkit(AbstractToolkit):
             except TimeoutError:
                 return timeout_bundle()
 
-            tree = copy.deepcopy(self._load_tree(tree_name))
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return timeout_bundle()
+            try:
+                tree = await asyncio.wait_for(
+                    asyncio.to_thread(lambda: copy.deepcopy(self._load_tree(tree_name))),
+                    timeout=remaining,
+                )
+            except TimeoutError:
+                return timeout_bundle()
             generation = generation_of(tree)
             generation_id = generation.id if generation else None
             remaining = deadline - loop.time()
@@ -1935,18 +1950,29 @@ class PageIndexToolkit(AbstractToolkit):
         segments, own_by_id = await asyncio.to_thread(_section_segments, subtree.get("structure", []), node_markdown)
         report = await self._scan(segments)
         source = SourceInfo(name=doc_name or "ingested.md", kind="markdown", sha256=_texts_sha256(segments))
-        imported: dict[str, Optional[str]] = {"doc_id": None, "revision": None}
+        imported: dict[str, Any] = {"doc_id": None, "revision": None, "reused": False}
 
         async def apply(txn: WriteTransaction) -> list[str]:
+            taken = await self._doc_ids_in(tree_name, txn.tree)
+            if doc_id is None and segments:
+                hit = self._reused_document(txn.tree, source, taken)
+                if hit is not None:
+                    txn.noop = True  # nothing changed: do not mint an empty generation
+                    logger.info(
+                        "same-source re-import of %r into %r: reusing %s@%s",
+                        source.name,
+                        tree_name,
+                        hit["doc_id"],
+                        hit["revision"],
+                    )
+                    imported.update(doc_id=hit["doc_id"], revision=hit["revision"], reused=True)
+                    return []
             fresh = copy.deepcopy(subtree)
             original_id_to_node = _capture_node_id_object_map(fresh)
             revision = None
             if segments:
                 revision = self._new_revision(
-                    doc_id
-                    or derive_doc_id(
-                        source.name, taken=await self._doc_ids_in(tree_name, txn.tree), source_sha256=source.sha256
-                    ),
+                    doc_id or derive_doc_id(source.name, taken=taken, source_sha256=source.sha256),
                     segments,
                     source,
                     report,
@@ -1994,18 +2020,29 @@ class PageIndexToolkit(AbstractToolkit):
             kind="ebook",
             sha256=_texts_sha256(segments),
         )
-        imported: dict[str, Optional[str]] = {"doc_id": None, "revision": None}
+        imported: dict[str, Any] = {"doc_id": None, "revision": None, "reused": False}
 
         async def apply(txn: WriteTransaction) -> list[str]:
+            taken = await self._doc_ids_in(tree_name, txn.tree)
+            if doc_id is None and segments:
+                hit = self._reused_document(txn.tree, source, taken)
+                if hit is not None:
+                    txn.noop = True  # nothing changed: do not mint an empty generation
+                    logger.info(
+                        "same-source re-import of %r into %r: reusing %s@%s",
+                        source.name,
+                        tree_name,
+                        hit["doc_id"],
+                        hit["revision"],
+                    )
+                    imported.update(doc_id=hit["doc_id"], revision=hit["revision"], reused=True)
+                    return []
             fresh = copy.deepcopy(subtree)
             original_id_to_node = _capture_node_id_object_map(fresh)
             revision = None
             if segments:
                 revision = self._new_revision(
-                    doc_id
-                    or derive_doc_id(
-                        source.name, taken=await self._doc_ids_in(tree_name, txn.tree), source_sha256=source.sha256
-                    ),
+                    doc_id or derive_doc_id(source.name, taken=taken, source_sha256=source.sha256),
                     segments,
                     source,
                     report,
@@ -2140,18 +2177,29 @@ class PageIndexToolkit(AbstractToolkit):
             source = SourceInfo(
                 name=get_pdf_name(pdf_path), kind="pdf", path=str(pdf_path), sha256=sha, pages=len(pages)
             )
-        imported: dict[str, Optional[str]] = {"doc_id": None, "revision": None}
+        imported: dict[str, Any] = {"doc_id": None, "revision": None, "reused": False}
 
         async def apply(txn: WriteTransaction) -> list[str]:
+            taken = await self._doc_ids_in(tree_name, txn.tree)
+            if doc_id is None and segments and source is not None:
+                hit = self._reused_document(txn.tree, source, taken)
+                if hit is not None:
+                    txn.noop = True  # nothing changed: do not mint an empty generation
+                    logger.info(
+                        "same-source re-import of %r into %r: reusing %s@%s",
+                        source.name,
+                        tree_name,
+                        hit["doc_id"],
+                        hit["revision"],
+                    )
+                    imported.update(doc_id=hit["doc_id"], revision=hit["revision"], reused=True)
+                    return []
             fresh = copy.deepcopy(subtree)
             original_id_to_node = _capture_node_id_object_map(fresh)
             revision = None
             if segments and source is not None:
                 revision = self._new_revision(
-                    doc_id
-                    or derive_doc_id(
-                        source.name, taken=await self._doc_ids_in(tree_name, txn.tree), source_sha256=source.sha256
-                    ),
+                    doc_id or derive_doc_id(source.name, taken=taken, source_sha256=source.sha256),
                     segments,
                     source,
                     report,
@@ -2226,6 +2274,50 @@ class PageIndexToolkit(AbstractToolkit):
                 sha = rev.source.sha256 if rev is not None else None
             taken[doc_id] = sha
         return taken
+
+    def _reused_document(
+        self,
+        tree: dict[str, Any],
+        source: Optional[SourceInfo],
+        taken: dict[str, Optional[str]],
+    ) -> Optional[dict[str, Any]]:
+        """The already-imported document ``source`` would re-create, or ``None``.
+
+        A hit means the slug :func:`derive_doc_id` picks for ``source`` is already held by a
+        document whose ``source.sha256`` is identical, i.e. byte-identical content is being
+        re-imported. Callers splice nothing in that case (FEAT-849 spec section 3, D-1).
+
+        Args:
+            tree: The open transaction's tree (``txn.tree``), never a cached snapshot.
+            source: Source info of the incoming import; ``None`` is never a hit.
+            taken: ``doc_id -> source sha256`` map from :meth:`_doc_ids_in` for ``tree``.
+
+        Returns:
+            ``{"doc_id": str, "revision": Optional[str], "node_ids": list[str]}`` on a hit,
+            ``None`` otherwise.
+        """
+        if source is None or source.sha256 is None:
+            return None
+        slug = derive_doc_id(source.name, taken=taken, source_sha256=source.sha256)
+        if slug not in taken or taken[slug] != source.sha256:
+            return None
+        found: dict[str, Any] = {"doc_id": slug, "revision": None, "node_ids": []}
+
+        def walk(nodes: Any, inherited: bool) -> None:
+            for node in nodes or []:
+                if not isinstance(node, dict):
+                    continue
+                owns = node.get("doc_id") == slug
+                if owns and not inherited:
+                    node_id = node.get("node_id")
+                    if isinstance(node_id, str):
+                        found["node_ids"].append(node_id)
+                    if found["revision"] is None and isinstance(node.get("revision"), str):
+                        found["revision"] = node["revision"]
+                walk(node.get("nodes"), inherited or owns)
+
+        walk(tree.get("structure", []), False)
+        return found
 
     def _revisions_for(self, tree_name: str, roots: list[dict]) -> Revisions:
         """Load revisions named under ``roots`` through SegmentStore, skipping missing files."""

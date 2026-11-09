@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-849 — PageIndex Toolkit Tech Debt
 **Spec**: `sdd/specs/pageindex-toolkit-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -514,8 +514,27 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: Claude Code session ai-parrot-b5 (/sdd-fix d34c567792ef)
+**Date**: 2026-11-09
+**Notes**: Added `PageIndexToolkit._reused_document` after `_doc_ids_in_sync`: it derives the
+slug through `derive_doc_id` (so the two can never disagree), confirms `taken[slug]` holds the
+same `source.sha256`, and walks the nested structure for that doc_id's root nodes and revision.
+The three `apply(txn)` bodies (`insert_markdown`, `insert_ebook`, `import_pdf`) now hoist
+`taken = await self._doc_ids_in(...)` once, short-circuit on a hit with
+`txn.noop = True` + `return []`, and reuse the hoisted map for `derive_doc_id`. All three
+`imported` dicts widened to `dict[str, Any]` and seeded with `reused: False`.
 
-**Deviations from spec**: none | describe if any
+Five tests added to `test_segment_import.py` (AC-1…AC-5), plus a shared `_tree_shape` helper
+asserting node count and generation id are unchanged. 10/10 pass in that module; 95/95 across
+`test_toolkit.py`, `test_folder_import.py`, `test_generation.py`.
+
+The pre-existing `test_insert_markdown_section_addresses` assertion that a re-import returns the
+same `(doc_id, revision)` still passes — identity was already content-addressed; only the
+duplicate structure splice changed.
+
+**Deviations from spec**: none. Two notes:
+- `ruff check` reports one B905 (`zip()` without `strict=`) at `toolkit.py:2390`; verified
+  pre-existing on `origin/dev` and outside this task's scope, so left alone.
+- `black --check` wants to reflow `test_segment_import.py`, but every reflow is in
+  pre-existing lines (the file predates black here); the appended tests are already
+  black-clean, so the file was not reformatted.

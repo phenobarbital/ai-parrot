@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-849 — PageIndex Toolkit Tech Debt
 **Spec**: `sdd/specs/pageindex-toolkit-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5385, TASK-5386, TASK-5387
@@ -353,8 +353,27 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: Claude Code session ai-parrot-b5 (/sdd-fix d34c567792ef)
+**Date**: 2026-11-09
+**Notes**: `provider_error` was placed at rank 3 of the `stopped` precedence list, verified
+against the merged `agentic.py`: it is set in the `asyncio.wait` else-branch before answer
+parsing and is in both guard sets, so `parse_error`, `budget` and `no_tool_calls` can never
+overwrite it, while `timeout` and `max_tool_calls` are decided earlier. Items 3-6 were
+renumbered to 4-7.
 
-**Deviations from spec**: none | describe if any
+The blanket "Exceptions still propagate:" paragraph was corrected — it was false for the most
+common failure once TASK-5386 landed.
+
+Four Gotchas bullets added (cap-fill, the provider-done/stop tie, the per-instance lock, the
+re-import no-op), each with behaviour + symptom + remedy in the list's existing style.
+
+`test_agentic_docs.py` gained `"provider_error"` in the name tuple plus two tests:
+`test_page_documents_cap_fill_lock_and_reuse` (one distinctive phrase per semantic) and
+`test_page_does_not_claim_every_exception_propagates`, which fails if the corrected paragraph is
+ever reverted. 5/5 pass; 40/40 across the three agentic modules.
+`parrot sdd techwiki check --spec ... --root .` → "Docs: required — ok".
+
+**Deviations from spec**: none, with one addition — the second docs test
+(`test_page_does_not_claim_every_exception_propagates`) was not in the task's Test Specification.
+It was added because correcting a false sentence is worthless if nothing guards the correction,
+and the task's own Steps list the correction as step 3.

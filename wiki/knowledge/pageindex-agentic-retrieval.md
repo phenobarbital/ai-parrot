@@ -219,15 +219,19 @@ ungrounded; treat `grounded` as the signal to show citations, and `answer` as un
    Repair does not start after expiry.
 2. `max_tool_calls` — the call cap was reached. The provider task is cancelled and awaited, there is no repair call and
    no answer; the reads already recorded remain. Refused calls count toward the cap.
-3. `parse_error` — the final output, after one repair call, is not an `AgenticAnswer`. No answer, no citations.
-4. `budget` — the model answered, but at least one read was refused because the character or read budget ran out. The
+3. `provider_error` — the provider call raised. The exception is logged and **not** re-raised: there is no answer,
+   no repair call and no citation validation, while the reads already charged against the budget remain in `reads`
+   and `chars_read`. `asyncio.CancelledError` is never converted — an external cancellation still propagates.
+4. `parse_error` — the final output, after one repair call, is not an `AgenticAnswer`. No answer, no citations.
+5. `budget` — the model answered, but at least one read was refused because the character or read budget ran out. The
    answer is still validated and kept.
-5. `no_tool_calls` — the model answered without admitting any tool call. Every citation is then `revision_unread`,
+6. `no_tool_calls` — the model answered without admitting any tool call. Every citation is then `revision_unread`,
    so `grounded` is `False`. This is also what an unsupported provider produces.
-6. `answered` — the normal case.
+7. `answered` — the normal case.
 
-Exceptions still propagate: an external cancellation of the caller is re-raised after cleanup rather than returned as a
-bundle, and `ValueError` is raised for invalid arguments or a missing LLM.
+Some exceptions still propagate: an external cancellation of the caller is re-raised after cleanup rather than
+returned as a bundle, and `ValueError` is raised for invalid arguments or a missing LLM. A failure of the provider
+call itself does **not** propagate — it comes back as `stopped="provider_error"` (item 3 above).
 
 ### Other behaviour to know
 
@@ -240,6 +244,19 @@ bundle, and `ValueError` is raised for invalid arguments or a missing LLM.
 - **Metadata calls count.** `list_documents` and `outline` spend a tool call (and so count toward `max_tool_calls`)
   but spend no characters.
 - **No persistence.** Bundles and citations are request results; nothing is written to storage.
+- **Cap-fill ends the loop immediately.** The controller stops the request as soon as the last admitted tool call
+  completes, so a model that uses *exactly* `max_tool_calls` reads returns `stopped="max_tool_calls"` with no answer.
+  Size `agentic_max_tool_calls` one above the read count you expect.
+- **A provider-done / stop tie resolves to `max_tool_calls`.** When the provider finishes in the same tick the cap is
+  reached, `asyncio.wait` reports both and the stop branch wins — a completed answer is discarded. Same remedy: leave
+  one call of headroom.
+- **One agentic request at a time per toolkit.** A single `_agentic_lock` guards the whole request, so a second
+  concurrent caller waits for it and, if its own `timeout_s` expires first, gets a `stopped="timeout"` bundle with no
+  candidates. Scale out with separate `PageIndexToolkit` instances, not with concurrent calls on one.
+- **A byte-identical re-import is a no-op.** Importing the same source twice into one tree splices nothing and mints
+  no generation: the call returns the existing `doc_id` and `revision` with `reused: true` and an empty
+  `new_node_ids`. Changed bytes under the same name still get their own suffixed `doc_id`, and an explicit `doc_id=`
+  always splices.
 
 ## Related
 
