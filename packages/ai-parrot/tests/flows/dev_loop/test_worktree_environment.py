@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import shlex
@@ -934,6 +935,49 @@ def test_bubblewrap_hook_is_idempotent_on_own_output(
     first = policy.hook_response(payload, backend="bubblewrap")
     second = _resend(first, payload, "bubblewrap")
     assert second == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def test_bubblewrap_hook_skips_wrap_only_with_valid_prefix_token(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Legacy prefix proof avoids a redundant rewrite; absent or forged proof still fails closed to bwrap."""
+    worktree, _environment = checkout
+    document = {
+        "schema_version": 1,
+        "mode": "legacy",
+        "worktree": str(worktree),
+        "hook_commands": [],
+        "mcp_argv": [],
+        "rtk": False,
+    }
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_text(json.dumps(document))
+    payload = {"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "git status"}}
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", hashlib.sha256(policy_path.read_bytes()).hexdigest())
+    assert policy.hook_response(payload, backend="bubblewrap") == {
+        "hookSpecificOutput": {"hookEventName": "PreToolUse"}
+    }
+
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", "forged")
+    monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
+    wrapped = policy.hook_response(payload, backend="bubblewrap")["hookSpecificOutput"]["updatedInput"]["command"]
+    assert "bwrap" in wrapped
+
+
+def test_bubblewrap_prefix_output_is_fixed_point(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The bounded explicit-call shape emitted under the prefix is idempotent."""
+    worktree, _environment = checkout
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_text(json.dumps({"schema_version": 1, "mode": "legacy"}))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", hashlib.sha256(policy_path.read_bytes()).hexdigest())
+    payload = {"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "sleep 1", "timeout": 30_000}}
+    first = policy.hook_response(payload, backend="bubblewrap")
+    assert "bwrap" not in first["hookSpecificOutput"]["updatedInput"]["command"]
+    assert _resend(first, payload, "bubblewrap") == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
 
 
 def test_lookalike_wrapper_is_still_guarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
