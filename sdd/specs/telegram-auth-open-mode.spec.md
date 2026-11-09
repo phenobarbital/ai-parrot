@@ -14,7 +14,7 @@ docs:
 **Feature ID**: FEAT-854
 **Date**: 2026-11-09
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 2.2.0
 
 ---
@@ -912,7 +912,7 @@ Coverage:
 
 - [ ] Q1: Should browser-mode state move to Redis (shared with the FEAT-108 pattern) to
       support multi-worker deployments, or is single-process documented-and-accepted for
-      v1? — *Owner: Jesus Lara* (v1 ships in-process; this decides the follow-up)
+      v1? — *Owner: Jesus Lara* (v1 ships in-process; this decides the follow-up): multi-worker deployments
 - [ ] Q2: Should the inline login button message be edited/deleted after successful
       browser login (requires storing `message_id` in the registry entry)? — *Owner:
       implementation* (nice-to-have; decide at task time)
