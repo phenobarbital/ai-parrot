@@ -667,6 +667,6 @@
       "F013",
       "F019"
     ],
-    "notes": "overall_confidence is medium because scope confidence is medium until U1-U4 are answered; median claim and localization confidence are high. One citation is ambiguous rather than wrong (utcnow anchor at redis_persistence.py:235 and :538)."
+    "notes": "overall_confidence is medium because scope confidence is medium until U1-U4 are answered; median claim and localization confidence are high. One citation is ambiguous rather than wrong (utcnow anchor at redis_persistence.py:235 and :538). Follow-up Q&A (2026-11-09): U6 Postgres always wins on (tenant, name) conflicts (migration inserts only when absent; Redis fallback only for crews Postgres lacks); U7 Postgres unreachable or no DSN -> keep serving from Redis with a clear warning, skip migration."
   }
 }

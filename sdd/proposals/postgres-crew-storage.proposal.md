@@ -172,11 +172,15 @@ with `--full-history` or `--grep=FEAT-446` (F011).
   navigator.crew_definitions` + indexes, applied lazily by an `ensure_schema()` that tolerates races
   (U4).
 - **Storage composition** — Redis initialized first, then Postgres; Postgres serves reads and writes;
-  Redis is a read-only fallback for crews not yet migrated (U1).
+  Redis is a read-only fallback consulted only for a crew Postgres does not have (U1, U6).
 - **Migration** (`migration=True`) — under a pg advisory lock in `BotManager.load_crews`: iterate
-  `CrewRedis.list_all_crews()` + `load_crew()`, upsert into Postgres, re-read and compare, then delete
-  the crew's Redis keys through `CrewRedis.delete_crew` (which also clears legacy keys); per-crew report,
-  one failure never aborts the sweep (U2, U3).
+  `CrewRedis.list_all_crews()` + `load_crew()`; insert into Postgres only when the `(tenant, name)` is
+  not already there (Postgres always wins — `ON CONFLICT DO NOTHING`, never overwrite); re-read from
+  Postgres to verify, then delete the crew's Redis keys through `CrewRedis.delete_crew` (which also
+  clears legacy keys); per-crew report, one failure never aborts the sweep (U2, U3, U6).
+- **Degraded mode** — when Postgres is unreachable or no DSN resolves, startup continues serving crews
+  from Redis, logs a clear warning, and skips the migration (no Redis key is deleted without a verified
+  Postgres copy) (U7).
 - **Config** — `CREW_DEFINITION_STORAGE`, `CREW_DEFINITION_MIGRATION`, `CREW_DEFINITION_PG_DSN`
   (fallback `default_dsn`) in `parrot.conf`, overridable by `BotManager` / store kwargs (U5).
 - **Shared deserialization helper** extracted from `CrewRedis._strip_unknown_keys` / `_deserialize_crew`.
@@ -225,7 +229,8 @@ with `--full-history` or `--grep=FEAT-446` (F011).
   Redis would reappear through the fallback read or `sync_crews`. *Mitigation*: `remove_crew` also
   deletes the Redis copy while the fallback is active.  *Evidence*: F002
 - **Concurrent startup migration**: every worker runs `load_crews`. *Mitigation*: pg advisory lock +
-  `ON CONFLICT` upsert; workers that lose the lock skip the migration.  *Evidence*: F010, F002
+  insert-if-absent (`ON CONFLICT DO NOTHING`); workers that lose the lock skip the migration.
+  *Evidence*: F010, F002
 - **Deleting Redis keys after a swallowed Postgres failure**: permanent crew loss. *Mitigation*: delete
   only after re-reading the crew from Postgres and comparing it to the Redis copy.  *Evidence*: F001, F002
 - **Crews that no longer validate** (model validators, not unknown keys): *Mitigation*: per-crew error
@@ -261,7 +266,7 @@ with `--full-history` or `--grep=FEAT-446` (F011).
 Distribution: **15** high, **3** medium, **0** low.
 
 > Overall confidence stays **medium**: localization and the median claim are high, but three
-> design-level claims (C6, C9, C12) are inferences, and two behaviours are left for the spec (§5).
+> design-level claims (C6, C9, C12) are inferences from the code, not observed behaviour.
 
 ---
 
@@ -285,26 +290,27 @@ Distribution: **15** high, **3** medium, **0** low.
   (`CREW_DEFINITION_STORAGE`, `CREW_DEFINITION_MIGRATION`, `CREW_DEFINITION_PG_DSN` → `default_dsn`),
   overridable by `BotManager` / store kwargs.
   *Resolves claims*: C9, C17
+- [x] **U6 — Conflict during migration** (a `(tenant, name)` present in both Postgres and Redis) —
+  *Resolved*: Postgres always wins. If the crew exists in Postgres, that row is used; the Redis copy is
+  never written over it. The same rule applies to the Redis read fallback: Redis is consulted only for a
+  crew that Postgres does not have.
+  *Resolves claims*: C12
+- [x] **U7 — Postgres unreachable or no DSN while `CREW_DEFINITION_STORAGE=postgres`** — *Resolved*:
+  degrade, do not fail closed. Keep serving crews from Redis and log a clear warning that Postgres is
+  unavailable and crews are being served from Redis.
+  *Resolves claims*: C9
 
 ### Unresolved (defer to spec / implementation)
 
-- [ ] **Conflict during migration** — a `(tenant, name)` already in Postgres and also in Redis: keep
-  the Postgres row (it is the source of truth) and still delete the Redis copy, or compare `updated_at`?
-  — *Owner*: tbd
-  *Blocks claims*: C12
-  *Plausible answers*: a) Postgres wins, Redis copy deleted · b) newer `updated_at` wins
-- [ ] **Postgres unreachable or no DSN while `CREW_DEFINITION_STORAGE=postgres`** — fail closed at
-  startup (Studio precedent) or degrade to Redis-only with a warning? — *Owner*: tbd
-  *Blocks claims*: C9
-  *Plausible answers*: a) fail closed · b) degrade to Redis with a loud warning
+None.
 
 ---
 
 ## 6. Recommended Next Step
 
 **`/sdd-spec FEAT-860`** — *Rationale*: localization is high-confidence and the request already fixes
-the architecture (Redis + Postgres store + migration flag); the policy forks (U1–U5) were answered in this
-proposal, leaving two behaviours for the spec to pin down.
+the architecture (Redis + Postgres store + migration flag); every policy fork (U1–U7) was answered in
+this proposal.
 
 ### Alternatives
 
