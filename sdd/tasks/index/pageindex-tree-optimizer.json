@@ -305,7 +305,7 @@
       "feature_id": "FEAT-846",
       "feature": "pageindex-tree-optimizer",
       "spec": "sdd/specs/pageindex-tree-optimizer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -316,8 +316,9 @@
       "parallelism_notes": "TASK-5375: runs optimizer_eval.main; TASK-5372: last toolkit change before measuring; may edit the target_leaf_tokens default in optimizer.py (TASK-5364/5365, reached transitively). NOT for a coder seat (FEAT-845 TASK-5344 precedent)",
       "assigned_to": null,
       "started_at": "2026-11-08T23:08:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5376-optimizer-tuning-run.md"
+      "completed_at": "2026-11-09T00:39:07+00:00",
+      "file": "sdd/tasks/completed/TASK-5376-optimizer-tuning-run.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-5377",
