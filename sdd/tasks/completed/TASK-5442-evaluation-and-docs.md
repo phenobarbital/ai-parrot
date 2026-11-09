@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-861 — PageIndex Optimizer Fixes 4 — Page Splits for Long Table Leaves
 **Spec**: `sdd/specs/pageindex-optimizer-fixes-4.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (1-2h)
 **Depends-on**: TASK-5441
@@ -209,10 +209,19 @@ No new tests: `test_optimizer_docs.py` gains two names; `test_layout_docs.py` mu
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-fix session (Claude)
+**Date**: 2026-11-09
+**Notes**: Host `optimizer_eval` (deterministic, target 1500 / min 200) with `PYTHONPATH` on the worktree (module path
+confirmed, `table_page_splits` present): report
+`artifacts/logs/optimizer_eval/feat861_90442976dc_deterministic/optimizer_eval-20261109T183947944098Z.json`, sha256
+`018fb80a935c7943cad38158ddb25bfab0c11b38fef4c4badf5c1599e9e09229`. 800-53: 1259 -> 740 nodes, p50/p90/max
+350/780/1704, over target 1/1; AICPA: 17 -> 39, 1208/1474/4206, over 4/3. Per-leaf dump (same code): 800-53 739 nodes
+below the root, 21 page-range pieces of 557-1,277 tokens, 8 expansions, no footer-titled node, only
+`(17) INFORMATION FLOW ENFORCEMENT | DOMAIN AUTHENTICATION` (1,704) over target; AICPA 23 pieces of 667-1,470 tokens.
+All figures match the spec's prototype. The 8-PDF cached-revision probe re-run on the final code leaves the arxiv
+fixture, CSF 2.0, HIPAA and the three books identical to `dev`. Wiki: page-split paragraph in the optimizer page (step
+4), report row + two result rows + "After FEAT-861" paragraph in the layout page; no AICPA title in either page.
+`test_optimizer_docs.py` + `test_layout_docs.py` 5 passed; techwiki check ok. Docs commit `5601dbec90`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. The AICPA "all four" row was relabelled "before FEAT-861 (all four runs above)" so the
+new FEAT-861 row reads unambiguously.
