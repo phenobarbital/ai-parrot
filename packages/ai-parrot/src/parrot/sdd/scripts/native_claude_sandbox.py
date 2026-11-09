@@ -1062,7 +1062,7 @@ def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> 
     prefix_path = session_dir / "prefix"
     shell_prefix = Path(__file__).resolve().with_name("shell_prefix.py")
     prefix_path.write_text(
-        f"#!/bin/sh\nexec {shlex.quote(str(Path(sys.executable).resolve()))} -E -s {shlex.quote(str(shell_prefix))} \"$@\"\n",
+        f'#!/bin/sh\nexec {shlex.quote(str(Path(sys.executable).resolve()))} -E -s {shlex.quote(str(shell_prefix))} "$@"\n',
         encoding="utf-8",
     )
     prefix_path.chmod(0o500)

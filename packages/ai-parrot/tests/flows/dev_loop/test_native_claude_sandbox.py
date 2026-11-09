@@ -394,9 +394,7 @@ def test_prepare_shell_prefix_writes_policy_and_launcher(
     assert prefix_path.parent.stat().st_mode & 0o777 == 0o700
 
 
-def test_prepare_shell_prefix_refuses_writable_root(
-    linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_prepare_shell_prefix_refuses_writable_root(linked: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
     """A policy beneath any session-writable root is rejected before launch."""
     feature, _main = linked
     monkeypatch.setenv("XDG_STATE_HOME", str(feature))

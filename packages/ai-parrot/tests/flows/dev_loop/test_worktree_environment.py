@@ -942,13 +942,22 @@ def test_bubblewrap_hook_skips_wrap_only_with_valid_prefix_token(
 ) -> None:
     """Legacy prefix proof avoids a redundant rewrite; absent or forged proof still fails closed to bwrap."""
     worktree, _environment = checkout
-    document = {"schema_version": 1, "mode": "legacy", "worktree": str(worktree), "hook_commands": [], "mcp_argv": [], "rtk": False}
+    document = {
+        "schema_version": 1,
+        "mode": "legacy",
+        "worktree": str(worktree),
+        "hook_commands": [],
+        "mcp_argv": [],
+        "rtk": False,
+    }
     policy_path = tmp_path / "policy.json"
     policy_path.write_text(json.dumps(document))
     payload = {"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "git status"}}
     monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
     monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", hashlib.sha256(policy_path.read_bytes()).hexdigest())
-    assert policy.hook_response(payload, backend="bubblewrap") == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+    assert policy.hook_response(payload, backend="bubblewrap") == {
+        "hookSpecificOutput": {"hookEventName": "PreToolUse"}
+    }
 
     monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", "forged")
     monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
