@@ -1235,10 +1235,10 @@ class Bookstore:
                 logger.debug("Cleanup of tree %r failed", staging, exc_info=True)
             raise
 
-        if status == "updated":
-            self._invalidate_graph(slug)
         self._content_stores.pop(scope, None)
         catalog.upsert(card)
+        if status == "updated":
+            self._invalidate_graph(slug)
         if relate:
             await self.relate_books([card.book_id], communities=False)
         return card, status
