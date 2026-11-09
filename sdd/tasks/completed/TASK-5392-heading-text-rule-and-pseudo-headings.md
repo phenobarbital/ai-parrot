@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-853 — PageIndex Optimizer Fixes
 **Spec**: `sdd/specs/pageindex-optimizer-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5391
@@ -297,8 +297,18 @@ def test_pseudo_headings_expand_bold_and_caps_lines() -> None:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: Claude (Opus 5.5) — /sdd-fix session, actor agent:sdd-fix:5b4f798e
+**Date**: 2026-11-09
+**Notes**: Implemented in `optimizer.py` (commit bb07896225): `is_heading_text`, `pseudo_heading_segments` (with
+private `_is_emphasis_wrapped` / `_is_upper_case` helpers), `_coalesce_split_points`, and the fallback branch in
+`expand_at_headings`. The real-heading branch computes exactly what it computed before. Four tests in
+`test_optimizer.py`. `**P****ROLOGO**` becomes the piece title `PROLOGO` through `heading_title`; a caps line repeated
+three times is ignored; a stray short `**Tres**` piece and a trailing `**FIN**` piece are coalesced away.
+Validation: test_optimizer + test_optimizer_integration — 27 passed; test_optimizer_eval, test_optimizer_bookstore,
+test_optimizer_toolkit, test_optimizer_llm, test_optimizer_docs — 29 passed (the PDF fixtures are unaffected);
+ruff and black clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the trailing-conjunction rule rejects the last word only when it is **lower case**
+(spec: "casefolded"). With a casefolded match, appendix labels such as `Appendix E` / `Anexo O` (Spanish `e`, `o`)
+would be rejected; sentence fragments end in a lower-case conjunction (`…; and`, `Ends with y`), so the
+lower-case rule keeps both behaviours. Covered by `test_is_heading_text_rules`.

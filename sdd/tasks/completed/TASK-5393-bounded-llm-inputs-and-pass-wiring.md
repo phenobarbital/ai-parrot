@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-853 — PageIndex Optimizer Fixes
 **Spec**: `sdd/specs/pageindex-optimizer-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-5391, TASK-5392
@@ -385,8 +385,21 @@ async def test_propose_headings_frames_only_candidates(revision, monkeypatch):
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: Claude (Opus 5.5) — /sdd-fix session, actor agent:sdd-fix:5b4f798e
+**Date**: 2026-11-09
+**Notes**: Implemented in `optimizer_llm.py` (commit 225ffbb27f): `LLM_INPUT_BUDGET_TOKENS`, `_FRAME_OVERHEAD_TOKENS`,
+`_clip_text`, `_read_cost`, `window_reads`, `_record_call`; `heading_like` → `is_heading_text(heading_title(text))`;
+the four pass functions bounded as specified (single-window prompts and call counts identical to before — the
+existing call-count tests pass unchanged); `run_llm_passes` lost its three `llm_calls_made += 1` lines, passes
+`report=` to the summary functions and calls `reconcile_key_items` before the summary pass (outside `if live:`);
+`_estimate_llm_calls` counts windows. The budget is read at call time, so tests monkeypatch the module constant.
+Tests: 8 in `test_optimizer_llm.py` and `test_optimize_apply_reconciles_key_items` in `test_optimizer_toolkit.py`
+(a published key item anchored in the sibling section is re-homed and the apply publishes).
+Validation: the full Validation Contract (test_optimizer, test_optimizer_llm, test_optimizer_toolkit,
+test_optimizer_integration, test_optimizer_eval, test_optimizer_bookstore, test_optimizer_docs) — 65 passed;
+ruff and black clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: one change outside the blueprint inside `run_llm_passes`: the headings/key-items lambdas
+bind `revision=revision` and `summarize` takes `revision` as a default parameter — this clears the pre-existing ruff
+B023 findings (6 on `dev`) in a changed file without changing behaviour (each closure was already awaited in the
+same loop iteration).

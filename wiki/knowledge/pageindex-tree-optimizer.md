@@ -12,8 +12,9 @@ while its siblings hold a single short paragraph each. The optimizer reshapes th
 (nodes that carry a `doc_id` and a `revision` in the [segment store](pageindex-segment-store.md)) so that the tree is
 cheaper to route and to read:
 
-- it merges duplicate, empty and undersized leaves into a neighbour;
-- it splits leaves over `target_leaf_tokens` at the printed headings they contain;
+- it merges duplicate and undersized leaves into a neighbour, and folds empty leaves into their parent;
+- it splits leaves over `target_leaf_tokens` at the printed headings they contain — or, when a leaf has none, at
+  standalone bold or upper-case title lines;
 - with a model, it can split at heading-like printed lines the layout missed and attach `key_items` to leaves that
   stay large;
 - it writes capped summaries bottom-up (deterministic without a model).
@@ -37,6 +38,10 @@ Tokens are always counted over the segments a node **owns** (its `owned` ranges)
 - [`KeyItem`](ref:parrot.knowledge.pageindex.optimizer.KeyItem) — an anchored label on a node
 - [`plan_deterministic`](ref:parrot.knowledge.pageindex.optimizer.plan_deterministic) — the model-free planner
 - [`validate_candidate`](ref:parrot.knowledge.pageindex.optimizer.validate_candidate) — ownership, anchor and protected-node checks
+- [`reconcile_key_items`](ref:parrot.knowledge.pageindex.optimizer.reconcile_key_items) — re-homes or drops key items whose anchor left their node
+- [`is_heading_text`](ref:parrot.knowledge.pageindex.optimizer.is_heading_text) — the "reads like a printed heading" rule
+- [`pseudo_heading_segments`](ref:parrot.knowledge.pageindex.optimizer.pseudo_heading_segments) — bold/upper-case title lines used when a leaf has no heading segment
+- [`window_reads`](ref:parrot.knowledge.pageindex.optimizer_llm.window_reads) — splits a node's segments into windows under `LLM_INPUT_BUDGET_TOKENS`
 - [`run_llm_passes`](ref:parrot.knowledge.pageindex.optimizer_llm.run_llm_passes) — heading, key-item and summary passes
 - [`describe_document`](ref:parrot.knowledge.pageindex.optimizer_llm.describe_document) — framed document description on optimized imports
 - [`evaluate_corpus`](ref:parrot.knowledge.pageindex.optimizer_eval.evaluate_corpus) — the evaluation harness
@@ -50,11 +55,15 @@ Tokens are always counted over the segments a node **owns** (its `owned` ranges)
 1. **Repair ownership.** `validate_ownership` runs over the document's nodes. An **overlap** aborts that document and
    is reported in `errors`. A **gap** (segments no node owns, for example after a deleted child) is re-owned by the
    deepest, narrowest unlocked node whose span covers it, and counted in `repaired_gaps`.
-2. **Normalize.** Bottom-up, per sibling list: empty leaves (no children, no owned ranges) are dropped; a leaf whose
-   `span` equals a later sibling's absorbs it (`duplicate_span`); a leaf under `min_leaf_tokens` is merged into the
-   previous or next sibling leaf when their owned ranges are contiguous (`under_minimum`). A non-contiguous small leaf
-   stays. The absorbing node keeps the absorbed `concept_id` in `aliases` and gains a `literal` key item labelled with
-   the absorbed title, anchored at its first owned segment. Nothing is dropped from the text.
+2. **Normalize.** Bottom-up, per sibling list: an empty leaf (no children, no owned ranges) is folded into its
+   **parent** (`empty`) — its `concept_id` becomes a parent alias, so a published tree with a blank "Preface" or
+   title-page node still validates; a published empty leaf without a `concept_id` is kept, because removing it could
+   never validate. A leaf whose `span` equals a later sibling's absorbs it (`duplicate_span`); a leaf under
+   `min_leaf_tokens` is merged into the previous or next sibling leaf when their owned ranges are contiguous
+   (`under_minimum`). A non-contiguous small leaf stays. The absorbing node keeps the absorbed `concept_id` in
+   `aliases` and gains a `literal` key item labelled with the absorbed title, anchored at its first owned segment; its
+   `span` widens over the absorbed owned ranges, so step 3 keeps them (and that key item) with it. Nothing is dropped
+   from the text.
 3. **Assign ownership.** Parent spans widen to cover their children; a parent owns the residual text before, between
    and after its children (`render_body` shows `<!-- continues in: <title> -->` markers where a child takes over).
 4. **Expand at headings.** A leaf over `target_leaf_tokens` with heading segments inside (excluding a first heading
@@ -62,15 +71,33 @@ Tokens are always counted over the segments a node **owns** (its `owned` ranges)
    is taken only when the cost model allows it: every piece has at least `min_leaf_tokens`, and the routing cost of
    the new children (title tokens plus summary tokens, or `routing_tokens_per_child` when a piece has no summary yet)
    plus the largest piece is smaller than the leaf it replaces.
-5. **LLM heading pass** (live model and `llm_passes` only). Each leaf's owned segments are sent framed; the model
+   A leaf with **no** usable heading segment falls back to pseudo-headings (`pseudo_heading_segments`): single-line
+   paragraphs fully wrapped in `**…**` / `__…__` (split runs such as `**P****ROLOGO**` included) or written in upper
+   case, whose cleaned title passes `is_heading_text`. A title repeated more than `PSEUDO_HEADING_MAX_REPEATS` (2)
+   times in the leaf is a running header or footer and is ignored, and split points that would leave a piece under
+   `min_leaf_tokens` are dropped first, so one stray short line cannot veto the split. This is how ebook and markdown
+   imports, whose chapter titles arrive as bold paragraphs rather than `#` headings, are expanded without a model;
+   segment kinds are not changed (the segmenter still types those lines `paragraph`). Every split — layout or LLM —
+   moves the split leaf's key items onto the piece that now owns their anchor.
+5. **LLM heading pass** (live model and `llm_passes` only). Only the leaf's heading-like segments are sent, framed
+   and windowed under `LLM_INPUT_BUDGET_TOKENS` (see [Framing](#framing)); a leaf without any makes no call. The model
    returns segment numbers of printed sub-headings. A proposal is accepted only when it names a segment the leaf owns
-   and that segment is heading-like (one line, not a table/code/caption segment, at most `MAX_HEADING_WORDS` words,
-   not ending in `.`). Accepted seqs go through the same cost model (`source: "llm"`). Rejections count in
-   `rejected_proposals`.
+   and that segment is heading-like: one line, not a table/code/caption segment, and its cleaned text passes
+   `is_heading_text` — at most `MAX_HEADING_WORDS` words, no trailing `.`, `;`, `:` or `,`, no trailing lower-case
+   conjunction (`and`, `or`, `nor`, `y`, `e`, `o`, `u`, `ni`), no list-marker prefix (`(a) `, `a) `, `(iv) `, `- `,
+   `• `, `* `). `1. Introduction` and `Appendix E` stay valid; a sentence fragment ending in `; and` does not.
+   Accepted seqs go through the same cost model (`source: "llm"`). Rejections count in `rejected_proposals`.
 6. **Key-items pass** (live model only). Leaves still over `target_leaf_tokens` get up to `max_key_items` key items.
-7. **Summary pass.** Depth by depth, deepest first, so a parent is composed after its children (see
+   An oversized leaf is windowed: each window is asked for its share (`ceil(max_key_items / windows)`) and at most
+   `max_key_items` are accepted in total.
+7. **Re-home key items.** `reconcile_key_items` moves any key item whose anchor left its node's owned ranges (after a
+   split, or after the toolkit restores the ranges a merge absorbed) to the node that now owns the anchor, counted in
+   `key_items_rehomed`. When that node is outside the optimizer's scope the item is dropped and counted in
+   `rejected_proposals`. It runs at the end of deterministic planning and again before the summary pass, so summary
+   digests see the final key items. One stale anchor therefore no longer discards the whole candidate.
+8. **Summary pass.** Depth by depth, deepest first, so a parent is composed after its children (see
    [Summaries](#summaries)).
-8. **Validate.** `validate_candidate` checks that the owned ranges of every document form a partition of the revision,
+9. **Validate.** `validate_candidate` checks that the owned ranges of every document form a partition of the revision,
    that every key item's anchor is inside its node's owned ranges, and that no protected node was removed or changed.
    A candidate with errors publishes nothing; the report carries `errors`.
 
@@ -151,8 +178,13 @@ await toolkit.optimize(
 (list of `MergeAction`: absorbed/into concept id and title, `reason` one of `duplicate_span`, `empty`,
 `under_minimum`), `expanded` (list of `ExpandAction`: parent title and concept id, piece titles, `source` `layout` or
 `llm`), `key_items_added`, `summaries_written`, `repaired_gaps`, `skipped_locked`, `skipped_stamped`,
-`rejected_proposals`, `llm_passes` (`"ran"`, `"skipped (no model)"` or `"skipped (disabled)"`),
-`llm_calls_estimated`, `llm_calls_made`, `errors`, and the effective `settings`.
+`rejected_proposals` (rejected model proposals and dropped key items), `key_items_rehomed`, `llm_passes` (`"ran"`,
+`"skipped (no model)"` or `"skipped (disabled)"`), `llm_calls_estimated`, `llm_calls_made`, `errors`, and the
+effective `settings`.
+
+`llm_calls_made` counts adapter calls actually issued: every window is one call, and results served from the retry
+cache (for example an apply that reuses its dry run) are not counted. `llm_calls_estimated` counts the windows each
+pass is expected to send on the current candidate.
 
 ## `key_items`
 
@@ -210,10 +242,12 @@ Each node keeps an `optimizer` record: `passes` maps `headings`, `key_items` and
 ## Summaries
 
 - A leaf at or below `inline_summary_tokens` uses its own owned text (trimmed) — no LLM call (`summary: "inline"`).
-- A larger leaf: with a live model, one framed call capped at `summary_max_words` (`"llm"`); without one, its own
-  text trimmed to the cap.
-- A parent is composed after its children: with a model, from the child summaries, its key items and its own framed
-  text; without one, its own text plus `Subsections cover: <child titles>` (`"composed"`).
+- A larger leaf: with a live model, one framed call capped at `summary_max_words` (`"llm"`) — or, when the leaf
+  exceeds `LLM_INPUT_BUDGET_TOKENS`, one call per window followed by one reduce call over the framed partial
+  summaries; without a model, its own text trimmed to the cap.
+- A parent is composed after its children: with a model, from the child summaries and its key items (each clipped
+  to a quarter of `LLM_INPUT_BUDGET_TOKENS`) and the first window of its own framed text that fits the remaining
+  budget; without one, its own text plus `Subsections cover: <child titles>` (`"composed"`).
 - Every summary is trimmed to 1.2 × `summary_max_words` words.
 - With no adapter, or an adapter without a client (Bookstore's `_NullAdapter`), no call is made and the deterministic
   summaries are used.
@@ -224,6 +258,15 @@ Every optimizer prompt — headings, key items, leaf summaries, parent compositi
 `<document_text …>` frames (`frame_segments`) and passes `DATA_FRAMING_INSTRUCTION` as the system prompt;
 instructions stay outside the frame and the framing helpers neutralize embedded closing tags.
 
+**Bounded prompts.** No optimizer call frames more than `LLM_INPUT_BUDGET_TOKENS` (20 000) tokens of document text.
+`window_reads` splits a node's segments, in order, into windows under that budget (each segment costs its stored
+token count plus a small frame allowance); a single segment over the budget forms its own window, clipped and marked
+`truncated`. The heading pass frames only heading-like candidates, the key-items pass and leaf summaries make one call
+per window (summaries add a reduce call whose partial summaries are framed too), and parent composition clips its
+inputs. A 157k-token leaf therefore fits a 200k-context model instead of producing a ~300k-token request that every
+attempt rejects. The budget is a module constant in `optimizer_llm`, deliberately not an `OptimizerSettings` field and
+not tied to the prompt version, so changing it does not invalidate completion stamps.
+
 On an optimized `import_pdf`, the document description (`with_doc_description=True` and a live adapter) comes from
 `describe_document`, which frames the cleaned structure with `frame_text`; the legacy unframed description helper is
 not used on that path. A model proposal that names a segment it was not shown is rejected, including a cached
@@ -231,7 +274,8 @@ proposal replayed after a retry.
 
 ## Aliases
 
-When normalization merges node B into node A, B's `concept_id` is added to A's `aliases`.
+When normalization merges node B into node A, B's `concept_id` is added to A's `aliases`. An empty leaf folded into
+its parent leaves its `concept_id` on the parent the same way.
 
 - **Toolkit lookup**: `OKFToolkit.get_concept` and `cite` resolve an alias to the absorbing node. A live
   `concept_id` always wins over an equal alias.

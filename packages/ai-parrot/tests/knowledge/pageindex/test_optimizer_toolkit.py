@@ -385,3 +385,55 @@ async def test_locked_semantics(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 
     assert excluded["documents"] == []
     assert (await toolkit.get_tree("guide"))["structure"][0]["nodes"] == locked_descendants
+
+
+@pytest.mark.asyncio
+async def test_optimize_apply_with_empty_leaf(tmp_path: Path) -> None:
+    """A published tree with an empty first leaf re-optimizes; the leaf survives as a root alias (FEAT-853)."""
+    toolkit = await _tree_with_document(tmp_path)
+    tree = toolkit._store.load("guide")
+    root = tree["structure"][0]
+    used_ids = {node.get("node_id") for node in structure_to_list(tree["structure"])}
+    preface_id = next(f"{n:04d}" for n in range(9000, 10000) if f"{n:04d}" not in used_ids)
+    root["nodes"].insert(
+        0,
+        {
+            "title": "Preface",
+            "concept_id": "guide/preface",
+            "node_id": preface_id,
+            "doc_id": root["doc_id"],
+            "revision": root["revision"],
+            "span": [root["span"][0], root["span"][0]],
+            "owned": [],
+            "nodes": [],
+        },
+    )
+    toolkit._store.save("guide", tree)
+
+    report = await toolkit.optimize("guide", apply=True, llm_passes=False)
+
+    assert report["errors"] == []
+    published_root = (await toolkit.get_tree("guide"))["structure"][0]
+    assert "guide/preface" in published_root.get("aliases", [])
+    assert any(action["reason"] == "empty" for action in report["merged"])
+
+
+@pytest.mark.asyncio
+async def test_optimize_apply_reconciles_key_items(tmp_path: Path) -> None:
+    """A published key item anchored outside its node is re-homed, so the apply publishes (issue:66f376157327)."""
+    toolkit = await _tree_with_document(tmp_path)
+    tree = toolkit._store.load("guide")
+    root = tree["structure"][0]
+    first, second = root["nodes"][0], root["nodes"][-1]
+    stray_seq = int(second["owned"][0][0])
+    first["key_items"] = [{"label": "stray anchor", "kind": "abstractive", "seq": stray_seq}]
+    toolkit._store.save("guide", tree)
+
+    report = await toolkit.optimize("guide", apply=True, llm_passes=False)
+
+    assert report["errors"] == []
+    published = structure_to_list((await toolkit.get_tree("guide"))["structure"])
+    for node in published:
+        for item in node.get("key_items") or []:
+            assert any(int(start) <= item["seq"] < int(end) for start, end in node.get("owned") or []), node["title"]
+    assert any(item["label"] == "stray anchor" for node in published for item in node.get("key_items") or [])
