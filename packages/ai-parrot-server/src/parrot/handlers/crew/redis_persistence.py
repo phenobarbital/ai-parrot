@@ -498,7 +498,7 @@ class CrewRedis:
             crews = set(await self.redis.smembers(self._get_list_key(tenant)))
             if tenant == "global":
                 crews.update(await self.redis.smembers(self._get_legacy_list_key()))
-            return sorted(list(crews))
+            return sorted(crews)
         except Exception as e:
             self.logger.error("Error listing crews: %s", e)
             return []

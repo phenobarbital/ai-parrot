@@ -66,7 +66,6 @@ class CrewExecutionHandler(BaseView):
     async def start_cleanup_task(app: WebApp):
         """Start background cleanup for finished jobs/crews if needed."""
         # Placeholder for future cleanup logic if not handled by JobManager
-        pass
 
     @classmethod
     def configure(cls, app: WebApp = None, path: str = None, **kwargs) -> WebApp:
@@ -759,8 +758,10 @@ class CrewExecutionHandler(BaseView):
                     else:
                         raise ValueError(f"Unknown mode: {mode}")
 
-                    if hasattr(result, 'to_dict'): return result.to_dict()
-                    elif hasattr(result, '__dict__'): return result.__dict__
+                    if hasattr(result, 'to_dict'):
+                        return result.to_dict()
+                    if hasattr(result, '__dict__'):
+                        return result.__dict__
                     return result
                 except Exception as e:
                     self.logger.error("Error executing crew %s: %s", crew_id, e, exc_info=True)
