@@ -494,3 +494,71 @@ def test_coalesce_split_points_merges_tiny_pieces() -> None:
     pieces = plan.candidate["nodes"][0]["nodes"]
     assert [node["title"] for node in pieces] == ["Uno", "Dos", "Cuatro"]
     assert all(owned_tokens(piece, revision) >= settings.min_leaf_tokens for piece in pieces)
+
+
+def _paged_tree(pages: list[tuple[int, str]], title: str = "Libro") -> tuple[dict, dict]:
+    """Return a one-leaf optimizer tree and its revisions for a paged source."""
+    from parrot.knowledge.pageindex.segments import segment_pages
+
+    segments = segment_pages(pages)
+    revision = DocumentRevision(
+        doc_id="libro",
+        revision=revision_id(segments),
+        source={"name": "libro.pdf", "kind": "pdf"},
+        created_at="2026-01-01T00:00:00Z",
+        segments=segments,
+    )
+    tree = {
+        "nodes": [
+            {
+                "doc_id": "libro",
+                "revision": revision.revision,
+                "title": title,
+                "span": [0, len(segments)],
+                "owned": [[0, len(segments)]],
+                "nodes": [],
+            }
+        ]
+    }
+    return tree, {("libro", revision.revision): revision}
+
+
+# --- FEAT-857: page fields on expanded pieces, footer-safe pseudo-heading counts ----------------------------------
+
+
+def test_split_at_sets_page_fields() -> None:
+    """Pieces of a paged revision carry start_index/end_index from their owned segments' pages."""
+    tree, revisions = _paged_tree(
+        [(1, f"# Alpha\n\n{_PROSE}"), (2, f"{_PROSE}\n\n# Beta\n\n{_PROSE}"), (3, _PROSE)]
+    )
+    plan = plan_deterministic(
+        tree, revisions, OptimizerSettings(target_leaf_tokens=100, min_leaf_tokens=20), tree_name="t"
+    )
+
+    pieces = plan.candidate["nodes"][0]["nodes"]
+    assert [piece["title"] for piece in pieces] == ["Alpha", "Beta"]
+    assert [(piece["start_index"], piece["end_index"]) for piece in pieces] == [(1, 2), (2, 3)]
+
+
+def test_split_at_unpaged_has_no_page_fields() -> None:
+    """Pieces of a markdown (unpaged) revision carry neither page key."""
+    tree, revisions = _markdown_tree(f"# Real\n\n{_PROSE}\n\n# Other\n\n{_PROSE}")
+    plan = plan_deterministic(
+        tree, revisions, OptimizerSettings(target_leaf_tokens=100, min_leaf_tokens=20), tree_name="t"
+    )
+
+    pieces = plan.candidate["nodes"][0]["nodes"]
+    assert [piece["title"] for piece in pieces] == ["Real", "Other"]
+    assert all("start_index" not in piece and "end_index" not in piece for piece in pieces)
+
+
+def test_pseudo_headings_drop_numbered_footers() -> None:
+    """One footer per page that differs only by its number is not a pseudo-heading; a real bold title is."""
+    from parrot.knowledge.pageindex.layout_structure import heading_title
+    from parrot.knowledge.pageindex.optimizer import pseudo_heading_segments
+
+    footers = "".join(f"CHAPTER THREE PAGE {n}\n\n{_PROSE}\n\n" for n in (19, 21, 22, 23))
+    tree, revisions = _markdown_tree(f"{footers}**Real Title**\n\n{_PROSE}")
+    revision = next(iter(revisions.values()))
+
+    assert [heading_title(s.text) for s in pseudo_heading_segments(tree["nodes"][0], revision)] == ["Real Title"]

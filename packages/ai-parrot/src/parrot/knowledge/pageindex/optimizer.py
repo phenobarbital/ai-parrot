@@ -11,6 +11,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.pageindex import utils as _utils
+from parrot.knowledge.pageindex.layout import running_key
 from parrot.knowledge.pageindex.layout_structure import MAX_HEADING_WORDS, heading_title
 from parrot.knowledge.pageindex.segments import (
     DocumentRevision,
@@ -506,7 +507,7 @@ def pseudo_heading_segments(node: dict, revision: DocumentRevision) -> list[Segm
     ]
     counts: dict[str, int] = {}
     for segment in paragraphs:
-        key = heading_title(segment.text).casefold()
+        key = running_key(heading_title(segment.text))
         counts[key] = counts.get(key, 0) + 1
     candidates: list[Segment] = []
     for segment in paragraphs:
@@ -516,7 +517,7 @@ def pseudo_heading_segments(node: dict, revision: DocumentRevision) -> list[Segm
         title = heading_title(text)
         if not (_is_emphasis_wrapped(text) or _is_upper_case(title)) or not is_heading_text(title):
             continue
-        if counts.get(title.casefold(), 0) > PSEUDO_HEADING_MAX_REPEATS:
+        if counts.get(running_key(title), 0) > PSEUDO_HEADING_MAX_REPEATS:
             continue
         candidates.append(segment)
     if candidates and _titles_match(
@@ -642,6 +643,17 @@ def _move_key_items_to_pieces(node: dict, pieces: list[dict], report: OptimizeRe
         node.pop("key_items", None)
 
 
+def _piece_pages(piece: dict, revision: DocumentRevision) -> Optional[tuple[int, int]]:
+    """Return the first and last page of a piece's owned segments, or ``None`` when none is paged."""
+    pages = [
+        segment.page
+        for start, end in piece.get("owned") or []
+        for segment in revision.segments[max(int(start), 0) : min(int(end), len(revision.segments))]
+        if segment.page is not None
+    ]
+    return (min(pages), max(pages)) if pages else None
+
+
 def split_at(
     node: dict,
     revision: DocumentRevision,
@@ -686,6 +698,10 @@ def split_at(
         return []
     node["nodes"] = pieces
     assign_ownership(node)
+    for piece in pieces:
+        pages = _piece_pages(piece, revision)
+        if pages is not None:
+            piece["start_index"], piece["end_index"] = pages
     _move_key_items_to_pieces(node, pieces, report)
     report.expanded.append(
         ExpandAction(
