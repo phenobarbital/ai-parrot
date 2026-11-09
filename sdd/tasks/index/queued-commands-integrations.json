@@ -171,11 +171,11 @@
       "priority": "high",
       "effort": "M",
       "parallelism_notes": "TASK-5398 supplies QueuedCommandService; TASK-5400 also modifies integrations/manager.py, so its Telegram shutdown changes must land before this task edits the Teams shutdown branch.",
-      "file": "sdd/tasks/active/TASK-5401-teams-queued-adapter.md",
+      "file": "sdd/tasks/completed/TASK-5401-teams-queued-adapter.md",
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [
         "TASK-5398",
         "TASK-5400"
@@ -183,7 +183,8 @@
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-11-09T16:09:42+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-09T17:02:45+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5402",
@@ -254,18 +255,19 @@
       "priority": "high",
       "effort": "M",
       "parallelism_notes": "TASK-5404 creates FullReviewContext, FullPRReview and FullReviewLLMError; serialize overlapping github_reviewer.py and test_github_reviewer_pr_review.py writes.",
-      "file": "sdd/tasks/active/TASK-5405-full-review-isolated-dispatch.md",
+      "file": "sdd/tasks/completed/TASK-5405-full-review-isolated-dispatch.md",
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [
         "TASK-5404"
       ],
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-11-09T16:09:42+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-09T17:02:46+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5406",
