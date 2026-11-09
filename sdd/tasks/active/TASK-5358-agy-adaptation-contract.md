@@ -49,6 +49,8 @@ every file a skill links. Keep `docs/sdd/AGY.md` byte-identical to `_assets/sdd/
 | `packages/ai-parrot/pyproject.toml` | MODIFY | package-data `"_assets/sdd/AGY.md"` |
 | `packages/ai-parrot/src/parrot/sdd/_assets/manifest.json` | MODIFY | regenerated |
 | `packages/ai-parrot/tests/sdd/test_installer.py` | MODIFY | ship/identity/sections/fresh-shell tests |
+| `packages/ai-parrot/tests/sdd/fixtures/asset_targets.json` | MODIFY | add docs/sdd/AGY.md target |
+| `tests/sdd_scripts/test_check_asset_sync.py` | MODIFY | hard-coded asset count 91 -> 92 |
 
 ---
 
@@ -97,7 +99,9 @@ def test_non_claude_host_skills_have_every_file_they_read(empty_repo, host)   # 
     {"path": "scripts/sdd/check_asset_sync.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/pyproject.toml", "action": "MODIFY"},
     {"path": "packages/ai-parrot/src/parrot/sdd/_assets/manifest.json", "action": "MODIFY"},
-    {"path": "packages/ai-parrot/tests/sdd/test_installer.py", "action": "MODIFY"}
+    {"path": "packages/ai-parrot/tests/sdd/test_installer.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/sdd/fixtures/asset_targets.json", "action": "MODIFY"},
+    {"path": "tests/sdd_scripts/test_check_asset_sync.py", "action": "MODIFY"}
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/sdd/installer.py#install_sdd_integration"
