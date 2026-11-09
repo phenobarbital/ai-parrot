@@ -12,7 +12,7 @@ error containment) is the toolkit's responsibility, not the adapter's.
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from parrot.models import OriginHit, SearchOriginKind
+from parrot.models import OriginHit, OriginSection, SearchOriginKind
 
 
 class SearchOrigin(ABC):
@@ -50,6 +50,25 @@ class SearchOrigin(ABC):
             Normalized hits in the origin's own native rank order.
         """
         raise NotImplementedError
+
+    async def search_section(self, query: str, k: int) -> OriginSection:
+        """Wrap search hits in a successful section; leave exceptions to the toolkit.
+
+        Args:
+            query: The search query text.
+            k: Maximum number of hits to return.
+
+        Returns:
+            A successful section containing the normalized search hits.
+        """
+        return OriginSection(
+            origin=self.name,
+            origin_kind=self.kind,
+            description=self.description,
+            status="ok",
+            note=None,
+            hits=await self.search(query, k),
+        )
 
     async def fts_search(self, query: str, k: int) -> List[OriginHit]:
         """Run a full-text search against this origin, if supported.
