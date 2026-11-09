@@ -128,7 +128,7 @@
       "feature_id": "FEAT-860",
       "feature": "postgres-crew-storage",
       "spec": "sdd/specs/postgres-crew-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -139,8 +139,9 @@
       "parallelism_notes": "Consumes CrewRedisSnapshot/strict helpers from TASK-5445 and CrewPostgres row APIs from TASK-5446.",
       "assigned_to": null,
       "started_at": "2026-11-09T19:16:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5447-crew-definition-composition.md"
+      "completed_at": "2026-11-09T21:35:41+00:00",
+      "file": "sdd/tasks/completed/TASK-5447-crew-definition-composition.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5448",
