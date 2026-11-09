@@ -231,6 +231,7 @@ async def test_redis_user_index_lists_and_prunes() -> None:
     try:
         older = Job("older", "agent", "query", user_id="alice")
         newer = Job("newer", "agent", "query", user_id="alice")
+        older.created_at = datetime(2024, 1, 1, tzinfo=timezone.utc)
         newer.created_at = datetime(2025, 1, 1, tzinfo=timezone.utc)
         await store.save(older)
         await store.save(newer)
