@@ -48,6 +48,8 @@ def test_optimizer_page_documents_feat_853_fixes() -> None:
         "PSEUDO_HEADING_MAX_REPEATS",
         "document_running_keys",
         "RUNNING_LINE_MIN_DENSITY",
+        "table_page_splits",
+        "TABLE_SPLIT_MIN_SHARE",
     ):
         assert name in text, name
 

@@ -30,6 +30,8 @@ Revisions = dict[tuple[str, str], DocumentRevision]
 PSEUDO_HEADING_MAX_REPEATS = 2
 RUNNING_LINE_MIN_DENSITY = 0.8
 """Share of its page range a repeated paragraph title must cover to count as a running header or footer."""
+TABLE_SPLIT_MIN_SHARE = 0.5
+"""Share of a leaf's owned tokens that must be ``table`` segments before it may be split at page boundaries."""
 _TRAILING_CONJUNCTIONS = frozenset({"and", "or", "nor", "y", "e", "o", "u", "ni"})
 _LIST_MARKER_RE = re.compile(r"^(?:\(\w{1,4}\)|[a-z]\)|[-•*–])\s")
 
@@ -689,6 +691,75 @@ def _piece_pages(piece: dict, revision: DocumentRevision) -> Optional[tuple[int,
     return (min(pages), max(pages)) if pages else None
 
 
+def table_page_splits(node: dict, revision: DocumentRevision, settings: OptimizerSettings) -> dict[int, str]:
+    """Return page-boundary split points for a long table leaf, mapped to their piece titles.
+
+    Applies only when ``table`` segments hold at least ``TABLE_SPLIT_MIN_SHARE`` of the leaf's owned tokens and sit on
+    at least two pages. The owned segments from the first ``table`` segment on are grouped into page blocks (a block
+    starts where the page changes; an unpaged segment joins the current block) and packed from the last block
+    backward: a boundary goes before a block when adding it would exceed ``settings.target_leaf_tokens``, so a short
+    trailing page joins the piece before it. The points (the first ``table`` segment plus those boundaries) then pass
+    through ``_coalesce_split_points``. Each piece is titled after the leaf plus ``(page N)`` / ``(pages N-M)``. The
+    text before the first ``table`` segment stays with the leaf (the parent once split).
+
+    Args:
+        node: The oversized leaf.
+        revision: The document revision the node is anchored to.
+        settings: Optimizer settings (``target_leaf_tokens``, ``min_leaf_tokens``).
+
+    Returns:
+        The split sequences mapped to piece titles, in order; ``{}`` when the rule does not apply or fewer than two
+        points remain.
+    """
+    owned = list(node.get("owned") or [])
+    segments = [
+        segment
+        for start, end in owned
+        for segment in revision.segments[max(int(start), 0) : min(int(end), len(revision.segments))]
+    ]
+    total = sum(segment.tokens for segment in segments)
+    tables = [segment for segment in segments if segment.kind == "table"]
+    if not total or sum(segment.tokens for segment in tables) < TABLE_SPLIT_MIN_SHARE * total:
+        return {}
+    if len({segment.page for segment in tables if segment.page is not None}) < 2:
+        return {}
+    first = next(index for index, segment in enumerate(segments) if segment.kind == "table")
+    starts: list[int] = [tables[0].seq]
+    blocks: list[int] = [0]
+    page = tables[0].page
+    for segment in segments[first:]:
+        if segment.page is not None and page is not None and segment.page != page:
+            starts.append(segment.seq)
+            blocks.append(0)
+        if segment.page is not None:
+            page = segment.page
+        blocks[-1] += segment.tokens
+    boundaries: list[int] = []
+    running = 0
+    for index in range(len(blocks) - 1, -1, -1):
+        if running and running + blocks[index] > settings.target_leaf_tokens:
+            boundaries.append(starts[index + 1])
+            running = 0
+        running += blocks[index]
+    kept = _coalesce_split_points(node, revision, [starts[0], *sorted(boundaries)], settings)
+    if len(kept) < 2:
+        return {}
+    final_end = max(int(end) for _, end in owned)
+    title = str(node.get("title") or "").strip()
+    titles: dict[int, str] = {}
+    for index, seq in enumerate(kept):
+        end = kept[index + 1] if index + 1 < len(kept) else final_end
+        pages = _piece_pages({"owned": _owned_in_span(owned, seq, end)}, revision)
+        if pages is None:
+            suffix = f"(part {index + 1})"
+        elif pages[0] == pages[1]:
+            suffix = f"(page {pages[0]})"
+        else:
+            suffix = f"(pages {pages[0]}-{pages[1]})"
+        titles[seq] = f"{title} {suffix}".strip()
+    return titles
+
+
 def split_at(
     node: dict,
     revision: DocumentRevision,
@@ -697,8 +768,12 @@ def split_at(
     source: str,
     settings: OptimizerSettings,
     report: OptimizeReport,
+    titles: Optional[dict[int, str]] = None,
 ) -> list[dict]:
-    """Create children at valid owned split sequences when the cost model permits it."""
+    """Create children at valid owned split sequences when the cost model permits it.
+
+    A piece takes its title from its first segment's text, unless its start sequence is in ``titles``.
+    """
     owned = list(node.get("owned") or [])
     valid_seqs = sorted(
         {
@@ -722,7 +797,7 @@ def split_at(
                 "revision": node.get("revision"),
                 "span": [seq, end],
                 "owned": piece_owned,
-                "title": heading_title(revision.segments[seq].text),
+                "title": titles[seq] if titles and seq in titles else heading_title(revision.segments[seq].text),
                 "nodes": [],
             }
         )
@@ -764,7 +839,8 @@ def expand_at_headings(
     upper-case lines) and drops split points that would leave a piece under ``min_leaf_tokens``
     (``_coalesce_split_points``) before ``split_at``; the expand action's source stays ``"layout"``. The document's
     running-line keys are computed once (``document_running_keys``) when ``running_keys`` is ``None`` and passed down
-    the recursion.
+    the recursion. A leaf with no heading and no pseudo-heading split point falls back to ``table_page_splits``:
+    page-range pieces of a long table, titled through ``split_at(..., titles=...)``.
     """
     if is_locked(node) or depth >= settings.max_depth:
         return
@@ -783,6 +859,7 @@ def expand_at_headings(
         for segment in heading_segments(node, revision)
         if segment.level is not None and len(heading_title(segment.text).split()) <= MAX_HEADING_WORDS
     ]
+    titles: Optional[dict[int, str]] = None
     if headings:
         shallowest = min(segment.level for segment in headings if segment.level is not None)
         seqs = [segment.seq for segment in headings if segment.level == shallowest]
@@ -790,8 +867,11 @@ def expand_at_headings(
         candidates = pseudo_heading_segments(node, revision, running_keys=running_keys)
         seqs = _coalesce_split_points(node, revision, [segment.seq for segment in candidates], settings)
         if not seqs:
+            titles = table_page_splits(node, revision, settings)
+            seqs = list(titles)
+        if not seqs:
             return
-    pieces = split_at(node, revision, seqs, source="layout", settings=settings, report=report)
+    pieces = split_at(node, revision, seqs, source="layout", settings=settings, report=report, titles=titles)
     for piece in pieces:
         expand_at_headings(piece, revision, settings, report, depth=depth + 1, running_keys=running_keys)
 
