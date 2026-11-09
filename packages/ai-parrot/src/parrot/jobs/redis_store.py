@@ -310,7 +310,7 @@ class RedisJobStore:
                 pipe.hgetall(self._job_key(jid))
             results = await pipe.execute()
             expired_ids: list[str] = []
-            for jid, data in zip(job_ids, results):
+            for jid, data in zip(job_ids, results, strict=False):
                 if not data:
                     expired_ids.append(jid)
                     continue
