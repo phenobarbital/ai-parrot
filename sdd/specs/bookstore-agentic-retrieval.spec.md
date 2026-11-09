@@ -21,7 +21,7 @@ docs:
 **Feature ID**: FEAT-858
 **Date**: 2026-11-09
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next feature release from dev (current core version: 2.1.2)
 
 ## 1. Motivation & Business Requirements
