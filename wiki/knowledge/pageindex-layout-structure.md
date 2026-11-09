@@ -23,7 +23,7 @@ PageIndex can build a PDF's tree structure from the PDF itself, without calling 
 For a PDF given by path, `build_page_index` runs the following pipeline:
 
 1. **get_page_tokens** — open the PDF, raise `UnreadablePDFError` on failure, raise `NoTextLayerError` if no non-whitespace text exists on any page.
-2. **analyze_layout** — measure body text, rank heading sizes, find running headers/footers, read bookmarks (dropping a few out-of-order entries), collect standalone bold rows. Returns a `LayoutProfile`.
+2. **analyze_layout** — measure body text, rank heading sizes, find running headers/footers, read bookmarks (dropping a few out-of-order entries), collect standalone bold rows and enumerated title rows. Returns a `LayoutProfile`.
 3. **extract_markdown_per_page** — use `LayoutHeaders(profile)` to decide which spans are headings, then segment pages (FEAT-840 splitter).
 4. **build_structure** — score a **bookmarks** candidate and a **layout** candidate, return the chosen structure or nothing.
 5. **LLM fallback** — if nothing was chosen, run the existing LLM structure pipeline (framed) when an adapter is configured and `structure_mode` allows it.
@@ -58,6 +58,17 @@ the highest level found on any of its spans. In order:
    tagged when its normalized text equals a bookmark title of its page, is a word-boundary prefix of it, or begins
    with the whole title. Mid-title words (`attempts.` in `AC-7 UNSUCCESSFUL LOGON ATTEMPTS`) and prose that merely
    contains a title do not match; the title's first span does, and that tags the whole line.
+5. **Enumerated rows (FEAT-856).** A block's first visual row is an *enumerated title* when its first span is bold and
+   is a parenthesized enumerator (`(1)`, `(a)`, `(iv)`), and the rest of the row has no lowercase letter and contains
+   `ENUMERATED_SEPARATOR` (`|`). NIST SP 800-53 prints every control enhancement this way: a bold 10 pt `(1)`, then
+   `ACCOUNT MANAGEMENT | AUTOMATED SYSTEM ACCOUNT MANAGEMENT` in 9 pt small caps that are not bold, which no size,
+   bold-row or bookmark rule matches. A wrapped title keeps up to `MAX_CONTINUATION_ROWS` (2) more rows: later rows
+   of the same block, or the first row of the next block, that are caps-only, do not start with an enumerator and
+   start within half a row height of the row above. Titles are stored in `LayoutProfile.enumerated_lines` (rows
+   containing a running line are skipped, and a title recurring on `BOLD_REPEAT_MIN_PAGES` pages is dropped). Every
+   span inside one gets the level one below the lowest bold row (at most `######`); pymupdf4llm joins consecutive
+   heading lines of one level, so a wrapped title becomes one heading. Mixed-case rows (`(a) Have expired;`) stay
+   list items, and a caps row without `|` is not a heading.
 
 **Layout candidate.** The heading segments whose text is not a running-line key and whose title is non-empty. Fewer than 2 → confidence 0. Otherwise `confidence = clean × density_factor × start_factor`, where:
 - `clean` is the share of headings with at most 20 words not ending in `.`.
@@ -73,6 +84,14 @@ the highest level found on any of its spans. In order:
 - `L` lower (shallower) than every mapped level → not structure; its text stays owned by the node it falls in.
 - `L` mapped → that depth.
 - `L` unmapped but deeper than some mapped level → `depth(M) + (L − M)`, where `M` is the deepest mapped level below `L`.
+
+**The level map only grows deeper (FEAT-856).** `_level_to_depth` visits the levels in ascending order and keeps a
+level only when its majority depth is greater than the depth kept for the nearest shallower level; a dropped level is
+placed by the third rule above. Without this, one bookmarked heading at a deep level could pull every unanchored
+heading of that level up to its depth. In NIST SP 800-53 the control `PL-10 BASELINE SELECTION` is set in 10 pt bold
+(level 6, depth 3) while the other controls are 11 pt (level 5, depth 3), and level 6 is also where the enumerated
+enhancement titles sit: the raw map `{1: 1, 2: 1, 3: 2, 5: 3, 6: 3}` placed all of them beside their control. The
+kept map `{1: 1, 3: 2, 5: 3}` nests them at depth 4. Bookmark items keep their own depth.
 
 **Page conventions.** Page fields follow the convention of the LLM path: `start_index` is the item's page; `end_index` is the next item's page, minus 1 when the next item *appears at the start* of its page, or `page_count` for the last item. An item appears at the start when its anchor segment is the first segment of its page once running-line segments are skipped. When the first item starts after page 1, a `Preface` node covers the pages before it.
 
@@ -204,8 +223,8 @@ Deterministic optimizer on the new 800-53 tree (`python -m parrot.knowledge.page
 p50 / p90 / max 611 / 1694 / 28862, 35 leaves over target (the 2026-11-09 baseline: 106 nodes, 69 leaves,
 1214 / 8271 / 28862, 28 over target — more, smaller leaves now). The widest leaves left are the 38-page
 `CONTROL SUMMARIES` table section and long controls (SA-8 spans 15 pages) whose enhancements (`(1) ACCOUNT MANAGEMENT |
-AUTOMATED SYSTEM ACCOUNT MANAGEMENT`, a bold marker plus 9 pt small caps) are not headings; no heading rule can split
-those.
+AUTOMATED SYSTEM ACCOUNT MANAGEMENT`, a bold marker plus 9 pt small caps) were not headings yet — FEAT-856's
+enumerated rows split them (see "Runs after FEAT-856" below).
 
 **Threshold:** `structure_min_confidence` is **fixed at `0.6`** (decision 2026-11-09, from the run above; closes
 ledger `issue:ca2daac2be1d`).
@@ -216,10 +235,52 @@ FEAT-855 added the list-item, lowercase-start and repeat guards because, in 800-
 candidates were enumerated list items and list lead-ins (`(a) Have expired;`, `Release information outside of the
 system only if:`). With the guards, 4 remain, and the arxiv and CSF 2.0 trees are unchanged.
 
+**Runs after FEAT-856 (2026-11-09, host, `feat-FEAT-856-pageindex-layout-fixes`, `--min-confidence 0.6`).** Four-pair
+report `artifacts/logs/layout_eval/20261109T161154Z.json` (git-ignored), sha256
+`c626d2fb194b1fe826882049c87b7aee064930696e3415cadce624554dcd91c5`:
+
+| Pair | Pages | Source | Chosen confidence | Candidates (bookmarks / layout) | Reference nodes | Layout nodes | Recall top | Recall all | Page agreement | Seconds |
+|---|---:|---|---:|---|---:|---:|---:|---:|---:|---:|
+| arxiv | 9 | hybrid | 1.000 | 1.000 / 1.000 | 10 | 17 | 1.000 | 1.000 | 1.000 | 8.7 |
+| nist_800_53 | 492 | hybrid | 0.997 | 0.997 / 1.000 | 164 | 1258 | 1.000 | 1.000 | 0.799 | 131.5 |
+| nist_csf_2_0 | 32 | hybrid | 1.000 | 1.000 / 1.000 | 14 | 22 | 0.643 | 0.643 | 1.000 | 3.4 |
+| aicpa_tsc | 75 | layout | 1.000 | 0.000 / 1.000 | 18 | 16 | 1.000 | 0.611 | 1.000 | 15.3 |
+
+Only 800-53 changed: 391 → 1258 layout nodes, the 867 enhancement titles (the bookmarks candidate still reports 357
+entries, `dropped = 1`). `page_agreement` moved from 0.805 to 0.799 because `layout_eval` matches a reference title to
+the first node whose title contains it: the reference `SECURITY AND PRIVACY ATTRIBUTES` (AC-16, page 71) now first
+meets the enhancement `(1) INFORMATION FLOW ENFORCEMENT | OBJECT SECURITY AND PRIVACY ATTRIBUTES` on page 56. The
+AC-16 node itself did not change. In the built 800-53 tree (layout mode, no LLM, 1,258 nodes) every enhancement sits at
+depth 4 directly under its control, no enhancement title is cut mid-phrase, and SA-8 (pages 284–298, one leaf before)
+has 33 enhancement children.
+
+Deterministic optimizer (`python -m parrot.knowledge.pageindex.optimizer_eval`, target 1500, min 200, no LLM), report
+`artifacts/logs/optimizer_eval/feat_856_deterministic/optimizer_eval-20261109T161416884344Z.json`, sha256
+`1d5ecd8ad374e4b942e550ce190d243b53849c01ba2309ff9a21f5fe050558bb`; `dev` before FEAT-856 (after FEAT-853's optimizer
+fixes) for comparison, report `artifacts/logs/optimizer_eval/dev_4ace6b6d11_deterministic/optimizer_eval-20261109T151738665862Z.json`,
+sha256 `d4e9734e31446f38fff9cfa8afb163ebfcab57f9217d38ac3a0abf0f488c9b0a`:
+
+| Document | Run | Nodes before → after | Leaf tokens p50 / p90 / max | Leaves over target before / after |
+|---|---|---|---|---|
+| nist_800_53_r5 | `dev` before FEAT-856 | 392 → 494 | 596 / 1051 / 3987 | 34 / 5 |
+| nist_800_53_r5 | FEAT-856 | 1259 → 735 | 351 / 779 / 1704 | 1 / 1 |
+| aicpa_tsc_2017 | both | 17 → 16 | 1273 / 11239 / 27651 | 4 / 4 |
+
+Before FEAT-856 the optimizer reached its numbers by splitting long controls at pseudo-headings, and the pieces took
+the running footer or a statement fragment as their title (`CHAPTER THREE PAGE 19`). Now the controls arrive already
+split into titled enhancements; the optimizer merges the short ones (withdrawn enhancements are one line) into a
+sibling enhancement. The 38-page `CONTROL SUMMARIES` table section is still split by that fallback with footer titles
+(`APPENDIX C PAGE 428`) — ledger `issue:38e4627b2284`.
+
 ## Gotchas
 
 - **Re-imports of FEAT-840 PDFs.** Re-importing a PDF that was indexed with the old per-page markdown (no headings) creates a new revision. The new headings carry `#` markers, so the old revision remains as a historical snapshot.
 - **Re-imports after FEAT-855.** A PDF with a body-text-size bold row, a heading split across a baseline, a repaired outline or a formerly over-tagged span renders different markdown, so re-importing it creates a new revision.
+- **Re-imports after FEAT-856.** A PDF with enumerated title rows (NIST 800-53 and its relatives) renders new
+  headings, and a PDF whose hybrid level map was not increasing places its inserted headings deeper, so re-importing
+  either creates a new revision.
+- **Enumerated rows need the `|` separator.** A document that titles its enumerated items in caps with `—` or `:`
+  between the parts gets no enumerated headings; no corpus PDF has that shape yet.
 - **Bold-row guards cut real headings too.** A bold heading that ends with `:`, starts with a lowercase letter, or is printed identically on 3 or more pages (a `Summary` per chapter at body size) is not a heading. Size-ranked headings are unaffected.
 - **Bold-line label noise.** Standalone bold rows are a heuristic; in hybrid mode both bookmark and layout scores must pass `structure_min_confidence` before any unbookmarked row is inserted.
 - **Same-level heading lines merge.** pymupdf4llm joins consecutive heading lines of one level, so a bold link line directly above a control heading can come out as one title (`Quick link … PT-1 POLICY AND PROCEDURES` in 800-53).
