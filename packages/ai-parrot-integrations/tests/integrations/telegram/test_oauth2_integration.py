@@ -30,10 +30,10 @@ from parrot.integrations.telegram.browser_login import (
 from parrot.integrations.telegram.models import TelegramAgentConfig
 from parrot.integrations.telegram.oauth2_callback import oauth2_callback_handler, setup_oauth2_routes
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_wrapper(config: TelegramAgentConfig, *, app: web.Application | None = None):
     """Create a TelegramAgentWrapper with mocked bot/agent dependencies."""
