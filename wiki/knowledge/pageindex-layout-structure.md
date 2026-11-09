@@ -254,23 +254,38 @@ AC-16 node itself did not change. In the built 800-53 tree (layout mode, no LLM,
 depth 4 directly under its control, no enhancement title is cut mid-phrase, and SA-8 (pages 284–298, one leaf before)
 has 33 enhancement children.
 
-Deterministic optimizer (`python -m parrot.knowledge.pageindex.optimizer_eval`, target 1500, min 200, no LLM), report
-`artifacts/logs/optimizer_eval/feat_856_deterministic/optimizer_eval-20261109T161416884344Z.json`, sha256
-`1d5ecd8ad374e4b942e550ce190d243b53849c01ba2309ff9a21f5fe050558bb`; `dev` before FEAT-856 (after FEAT-853's optimizer
-fixes) for comparison, report `artifacts/logs/optimizer_eval/dev_4ace6b6d11_deterministic/optimizer_eval-20261109T151738665862Z.json`,
-sha256 `d4e9734e31446f38fff9cfa8afb163ebfcab57f9217d38ac3a0abf0f488c9b0a`:
+Deterministic optimizer (`python -m parrot.knowledge.pageindex.optimizer_eval`, target 1500, min 200, no LLM). Reports
+(git-ignored) under `artifacts/logs/optimizer_eval/`:
+
+| Run | Report | sha256 |
+|---|---|---|
+| `dev` before FEAT-856 (after FEAT-853's optimizer fixes) | `dev_4ace6b6d11_deterministic/optimizer_eval-20261109T151738665862Z.json` | `d4e9734e31446f38fff9cfa8afb163ebfcab57f9217d38ac3a0abf0f488c9b0a` |
+| FEAT-856 branch | `feat_856_deterministic/optimizer_eval-20261109T161416884344Z.json` | `1d5ecd8ad374e4b942e550ce190d243b53849c01ba2309ff9a21f5fe050558bb` |
+| `dev` after FEAT-856 + FEAT-857 (`d643c0c0d4`) | `dev_d643c0c0d4_deterministic/optimizer_eval-20261109T163506928918Z.json` | `550ff81dc66dc73684b04e4f4a1c53af123f20014497059e125df4cb6fae2c04` |
 
 | Document | Run | Nodes before → after | Leaf tokens p50 / p90 / max | Leaves over target before / after |
 |---|---|---|---|---|
 | nist_800_53_r5 | `dev` before FEAT-856 | 392 → 494 | 596 / 1051 / 3987 | 34 / 5 |
 | nist_800_53_r5 | FEAT-856 | 1259 → 735 | 351 / 779 / 1704 | 1 / 1 |
-| aicpa_tsc_2017 | both | 17 → 16 | 1273 / 11239 / 27651 | 4 / 4 |
+| nist_800_53_r5 | FEAT-856 + FEAT-857 | 1259 → 722 | 341 / 735 / 3864 | 1 / 5 |
+| aicpa_tsc_2017 | all three | 17 → 16 | 1273 / 11239 / 27651 | 4 / 4 |
 
 Before FEAT-856 the optimizer reached its numbers by splitting long controls at pseudo-headings, and the pieces took
 the running footer or a statement fragment as their title (`CHAPTER THREE PAGE 19`). Now the controls arrive already
 split into titled enhancements; the optimizer merges the short ones (withdrawn enhancements are one line) into a
-sibling enhancement. The 38-page `CONTROL SUMMARIES` table section is still split by that fallback with footer titles
-(`APPENDIX C PAGE 428`) — ledger `issue:38e4627b2284`.
+sibling enhancement.
+
+**After FEAT-857.** The 38-page `CONTROL SUMMARIES` table section used to be cut at every page footer (`APPENDIX C PAGE
+428`, …), which kept its pieces small but meaningless. FEAT-857's `running_key` repeat rule drops those footers, so the
+section now splits at its real table titles (`TABLE C-1: ACCESS CONTROL FAMILY` … `TABLE C-20: SUPPLY CHAIN RISK
+MANAGEMENT FAMILY`). Four of those tables span four to five pages and are single leaves over the target —
+`TABLE C-17` (3,864 tokens, pages 481–485), `TABLE C-18` (3,789), `TABLE C-1` (3,213), `TABLE C-19` (2,828) — together
+with one enhancement, `(17) INFORMATION FLOW ENFORCEMENT | DOMAIN
+AUTHENTICATION` (1,704); that is why the leaf maximum and the over-target count rose while every title became
+meaningful. Table rows have no headings, so no heading rule splits them further. Three shorter tables (`TABLE C-3`,
+`C-5`, `C-7`) are still cut once at a footer (`APPENDIX C PAGE 434`): the repeat rule counts footers inside one leaf,
+and a two- or three-page leaf holds its footer only once or twice — ledger `issue:5a605ae51f61`. Leaf titles and sizes
+come from a per-leaf dump of the same deterministic run (same settings, identical node counts).
 
 ## Gotchas
 
