@@ -1158,8 +1158,26 @@ class PageIndexToolkit(AbstractToolkit):
             generation_id=generation_id,
         )
 
-    def _agentic_read_tools(self, tree_name: str, tree: dict[str, Any]) -> list[ToolkitTool]:
-        """Build four request-local tools bound to this tree snapshot and its revisions."""
+    def _snapshot_has_pages(self, tree_name: str, tree: dict[str, Any]) -> bool:
+        """Whether any document of this snapshot carries page numbers (blocking; run off-loop).
+
+        An unreadable revision counts as paged so the tool stays offered and the failure
+        surfaces at read time exactly as before.
+        """
+        for doc_id, info in self._documents_of(tree).items():
+            rev = self._segment_store.load_revision(tree_name, doc_id, info["revision"])
+            if rev is None or any(seg.page is not None for seg in rev.segments):
+                return True
+        return False
+
+    def _agentic_read_tools(
+        self, tree_name: str, tree: dict[str, Any], *, include_read_pages: bool = True
+    ) -> list[ToolkitTool]:
+        """Build request-local tools bound to this tree snapshot and its revisions.
+
+        ``read_pages`` is left out when ``include_read_pages`` is false (a snapshot whose
+        documents have no pages, e.g. EPUB), so the model is never offered a tool that can only fail.
+        """
         bound = tree_name
 
         def _check(name: str) -> None:
@@ -1214,6 +1232,8 @@ class PageIndexToolkit(AbstractToolkit):
             (self.read_pages, read_pages),
             (self.read_segments, read_segments),
         ):
+            if public.__name__ == "read_pages" and not include_read_pages:
+                continue
             fn.__doc__ = public.__doc__
             tools.append(
                 ToolkitTool(name=f"{self.tool_prefix}_{public.__name__}", bound_method=fn, description=public.__doc__)
@@ -1346,10 +1366,16 @@ class PageIndexToolkit(AbstractToolkit):
             remaining = deadline - loop.time()
             if remaining <= 0:
                 return timeout_bundle(candidates, generation_id)
+            try:
+                has_pages = await asyncio.wait_for(
+                    asyncio.to_thread(self._snapshot_has_pages, tree_name, tree), timeout=remaining
+                )
+            except TimeoutError:
+                return timeout_bundle(candidates, generation_id)
             bundle = await AgenticRetriever(
                 client=client,
                 model=self._model,
-                read_tools=self._agentic_read_tools(tree_name, tree),
+                read_tools=self._agentic_read_tools(tree_name, tree, include_read_pages=has_pages),
                 load_revision=lambda doc_id, revision: self._segment_store.load_revision(tree_name, doc_id, revision),
             ).run(
                 tree_name=tree_name,

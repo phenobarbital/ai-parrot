@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -77,6 +78,8 @@ def test_optimize_book_and_cli(monkeypatch: Any, tmp_path: Path) -> None:
     store.adapter = None
     monkeypatch.setattr(store, "resolve_book", lambda book_id: (card, location))
     monkeypatch.setattr(store, "_toolkit", lambda scope: toolkit)
+    monkeypatch.setattr(store, "_ready_toolkit", AsyncMock(return_value=toolkit))
+    monkeypatch.setattr(store, "_book_operation_lock", lambda *args, **kwargs: contextlib.nullcontext())
     monkeypatch.setattr(store, "_catalog", lambda scope: catalog)
 
     dry_run_report = asyncio.run(store.optimize_book("handbook"))

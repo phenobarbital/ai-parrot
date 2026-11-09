@@ -102,6 +102,30 @@ def test_snapshot_tools_named_like_public(paged_toolkit: PageIndexToolkit) -> No
     }
 
 
+def test_snapshot_tools_can_omit_read_pages(paged_toolkit: PageIndexToolkit) -> None:
+    tree = copy.deepcopy(paged_toolkit._load_tree("t"))
+    tools = paged_toolkit._agentic_read_tools("t", tree, include_read_pages=False)
+    assert {tool.name for tool in tools} == {
+        "pageindex_list_documents",
+        "pageindex_outline",
+        "pageindex_read_segments",
+    }
+
+
+def test_snapshot_has_pages_reflects_revision(paged_toolkit: PageIndexToolkit, monkeypatch: pytest.MonkeyPatch) -> None:
+    tree = copy.deepcopy(paged_toolkit._load_tree("t"))
+    assert paged_toolkit._snapshot_has_pages("t", tree) is True
+
+    real = paged_toolkit._segment_store.load_revision
+
+    def segment_only(tree_name: str, doc_id: str, revision: str):
+        rev = real(tree_name, doc_id, revision)
+        return rev.model_copy(update={"segments": [seg.model_copy(update={"page": None}) for seg in rev.segments]})
+
+    monkeypatch.setattr(paged_toolkit._segment_store, "load_revision", segment_only)
+    assert paged_toolkit._snapshot_has_pages("t", tree) is False
+
+
 @pytest.mark.asyncio
 async def test_snapshot_rejects_other_tree_name(paged_toolkit: PageIndexToolkit) -> None:
     tools = _snapshot_tools(paged_toolkit, copy.deepcopy(paged_toolkit._load_tree("t")))
@@ -199,4 +223,3 @@ async def test_agentic_retrieve_times_out_on_snapshot(
     assert bundle["generation"] is None
     # The deadline is honoured: the request returns without waiting out the whole slow load.
     assert elapsed < 0.5
-

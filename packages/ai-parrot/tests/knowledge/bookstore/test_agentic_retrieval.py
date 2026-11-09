@@ -103,7 +103,7 @@ async def test_generation_safe_labels(tmp_path: Path) -> None:
         "ledger": [{"start": 2, "end": 5}],
     }
 
-    decorated = await bookstore._decorate_citations(card, "project", source)
+    decorated = await bookstore.decorate_citations(card, "project", source)
 
     assert source["citations"][0] == {
         "doc_id": "doc",

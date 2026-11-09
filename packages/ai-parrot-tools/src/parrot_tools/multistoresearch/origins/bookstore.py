@@ -391,7 +391,10 @@ class BookstoreOrigin(SearchOrigin):
         if not isinstance(doc_id, str) or not isinstance(revision_id, str) or tree_name != card.tree_name:
             diagnostics.stale_revisions += 1
             return []
-        store = stores.setdefault(Path(location.trees_dir), SegmentStore(location.trees_dir))
+        store_key = Path(location.trees_dir)
+        store = stores.get(store_key)
+        if store is None:
+            store = stores[store_key] = SegmentStore(location.trees_dir)
         try:
             stored = await asyncio.to_thread(store.load_revision, tree_name, doc_id, revision_id)
         except Exception:  # noqa: BLE001 - a swept or concurrently evicted revision is simply stale
@@ -415,7 +418,7 @@ class BookstoreOrigin(SearchOrigin):
         if not citations:
             return []
 
-        decorated = await self.bookstore._decorate_citations(
+        decorated = await self.bookstore.decorate_citations(
             card, location.scope, {"generation": read.get("generation"), "citations": citations}
         )
         hits: list[OriginHit] = []

@@ -260,7 +260,11 @@ class Bookstore:
         return self._toolkits[scope]
 
     async def _ready_toolkit(self, scope: str) -> PageIndexToolkit:
-        """Await successful reserved-tree recovery before returning an async toolkit."""
+        """Await successful reserved-tree recovery before returning an async toolkit.
+
+        Recovery runs once per scope per process. An interruption in ANOTHER process is only
+        repaired at the next ``add_book`` (which sweeps again) or ``doctor`` run, never mid-read.
+        """
         if scope in self._ready_scopes:
             return self._toolkit(scope)
 
@@ -322,7 +326,13 @@ class Bookstore:
             if loc.db_path.is_file():
                 taken |= self._catalog(loc.scope).taken_slugs()
             if loc.trees_dir.is_dir():
-                taken |= {p.stem for p in loc.trees_dir.glob("*.json") if not _is_reserved_tree_name(p.stem)}
+                for tree_path in loc.trees_dir.glob("*.json"):
+                    stem = tree_path.stem
+                    if _STAGING_MARKER in stem:
+                        # An in-flight add in ANOTHER process reserves its slug only through its staging tree.
+                        taken.add(stem.split(_STAGING_MARKER, maxsplit=1)[0])
+                    elif not _is_reserved_tree_name(stem):
+                        taken.add(stem)
         return taken
 
     def _staging_tree_name(self, slug: str) -> str:
@@ -646,10 +656,12 @@ class Bookstore:
             if "requires an LLM" in message or "supports_tool_loop=False" in message:
                 raise BookstoreError(message) from exc
             raise
-        return await self._decorate_citations(card, loc.scope, bundle)
+        return await self.decorate_citations(card, loc.scope, bundle)
 
-    async def _decorate_citations(self, card: BookCard, scope: str, bundle: dict[str, Any]) -> dict[str, Any]:
+    async def decorate_citations(self, card: BookCard, scope: str, bundle: dict[str, Any]) -> dict[str, Any]:
         """Copy and enrich citations, using ownership only from the matching snapshot.
+
+        Public so other packages (the multi-store origin) decorate citations identically.
 
         A current tree is safe to consult only when it is the same generation captured by
         the PageIndex retrieval.  It may otherwise describe a re-indexed document whose
@@ -664,7 +676,7 @@ class Bookstore:
         try:
             candidate = await toolkit.get_tree(card.tree_name)
             generation = (candidate.get("generation") or {}).get("id")
-            if generation == expected_generation:
+            if expected_generation is not None and generation == expected_generation:
                 tree = candidate
         except (KeyError, ValueError):
             self.logger.debug("Unable to load citation-decoration snapshot for %s", card.book_id, exc_info=True)
@@ -1675,8 +1687,6 @@ class Bookstore:
 
                             card, status = await ingest(None, "added", slug, after_staging=release_allocation)
                             break
-                    if "card" in locals():
-                        break
         except TreeLockTimeout as exc:
             raise BookstoreError(f"Re-index already in progress for source {path} or its book") from exc
 
