@@ -3711,17 +3711,20 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         changes behaviour. The flag is checked first, by identity: ``configure()`` test stubs use a
         ``MagicMock`` client on a bot that has no ``enable_tools``.
         """
-        if getattr(self._llm, "supports_tool_loop", True) is not False:
-            return
-        if not self.is_agent_mode():
-            return
-        self.logger.warning(
-            "%s: LLM client %s (%s) declares supports_tool_loop=False; " "its %d registered tools will not be executed",
-            self.name,
-            type(self._llm).__name__,
-            getattr(self._llm, "client_type", "?"),
-            self.tool_manager.tool_count(),
-        )
+        try:
+            if getattr(self._llm, "supports_tool_loop", True) is not False:
+                return
+            if not self.is_agent_mode():
+                return
+            self.logger.warning(
+                "%s: LLM client %s (%s) declares supports_tool_loop=False; its %d registered tools will not be executed",
+                self.name,
+                type(self._llm).__name__,
+                getattr(self._llm, "client_type", "?"),
+                self.tool_manager.tool_count(),
+            )
+        except Exception:
+            self.logger.debug("_warn_if_client_lacks_tool_loop: suppressed unexpected error", exc_info=True)
 
     def is_agent_mode(self) -> bool:
         """Check if the bot is configured to operate in agent mode."""
