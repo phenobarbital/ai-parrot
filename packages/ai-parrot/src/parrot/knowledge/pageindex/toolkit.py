@@ -2557,6 +2557,9 @@ class PageIndexToolkit(AbstractToolkit):
             if node is None:
                 raise KeyError(f"node_id {node_id!r} not found in tree {tree_name!r}")
             txn.set_body(node, body or "")
+            if node.get("doc_id"):
+                node["locked"] = True
+                node["locked_reason"] = "body_edited"
 
         await self._mutate(tree_name, apply)
         return {
@@ -2571,6 +2574,7 @@ class PageIndexToolkit(AbstractToolkit):
         node_id: str,
         title: Optional[str] = None,
         summary: Optional[str] = None,
+        locked: Optional[bool] = None,
     ) -> dict[str, Any]:
         """Rename and/or re-summarize an existing node.
 
@@ -2579,14 +2583,21 @@ class PageIndexToolkit(AbstractToolkit):
         are untouched — use :meth:`update_node_content` or
         :meth:`tag_node` for those.
 
+        Args:
+            tree_name: Name of the tree containing the node.
+            node_id: Identifier of the node to update.
+            title: Replacement title when provided.
+            summary: Replacement summary when provided.
+            locked: Manual lock state. Unlocking removes the lock reason.
+
         Raises:
             KeyError: If ``node_id`` does not exist.
-            ValueError: If neither ``title`` nor ``summary`` is set.
+            ValueError: If no update field is set.
         """
-        if title is None and summary is None:
+        if title is None and summary is None and locked is None:
             raise ValueError("update_node needs at least one of title / summary")
 
-        async def apply(txn: WriteTransaction) -> tuple[Any, Any]:
+        async def apply(txn: WriteTransaction) -> tuple[Any, Any, bool]:
             node = find_node_by_id(txn.tree.get("structure", []), node_id)
             if node is None:
                 raise KeyError(f"node_id {node_id!r} not found in tree {tree_name!r}")
@@ -2596,15 +2607,24 @@ class PageIndexToolkit(AbstractToolkit):
                 node["title"] = title.strip()
             if summary is not None:
                 node["summary"] = summary
-            return node.get("title"), node.get("summary")
+            if locked is True:
+                node["locked"] = True
+                node["locked_reason"] = "manual"
+            elif locked is False:
+                node.pop("locked", None)
+                node.pop("locked_reason", None)
+            return node.get("title"), node.get("summary"), node.get("locked", False)
 
-        updated_title, updated_summary = await self._mutate(tree_name, apply)
-        return {
+        updated_title, updated_summary, updated_locked = await self._mutate(tree_name, apply)
+        result = {
             "tree_name": tree_name,
             "node_id": node_id,
             "title": updated_title,
             "summary": updated_summary,
         }
+        if locked is not None:
+            result["locked"] = updated_locked
+        return result
 
 
 # ---- module-level helpers ----------------------------------------------
