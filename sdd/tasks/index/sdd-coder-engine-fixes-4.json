@@ -37,14 +37,15 @@
       "feature_id": "FEAT-866",
       "feature": "sdd-coder-engine-fixes-4",
       "spec": "sdd/specs/sdd-coder-engine-fixes-4.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task: modifies review_checkpoint.py, engine.py and their two test files; no other task in this feature",
       "assigned_to": "sdd-fix session (Claude, agent:sdd-fix:88be2347)",
-      "file": "sdd/tasks/active/TASK-5458-review-record-json-errors.md"
+      "file": "sdd/tasks/active/TASK-5458-review-record-json-errors.md",
+      "started_at": "2026-11-09T23:44:13+00:00"
     }
   ]
 }
