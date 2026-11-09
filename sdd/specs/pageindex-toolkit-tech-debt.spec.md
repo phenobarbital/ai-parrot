@@ -229,6 +229,27 @@ already bracket search, outline and the retriever.
 - **FR-5.3** The wiki page's stop-reason table lists `provider_error`, and gains a
   short "same-source re-import" note pointing at FR-1.
 
+
+### Validation Contract
+
+tests:
+- packages/ai-parrot/tests/knowledge/pageindex/test_segment_import.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_agentic_retrieval.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_agentic_snapshot.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_agentic_docs.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_read_tools.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_read_ledger.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_citations.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_toolkit.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_toolkit_no_llm.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_segment_integration.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_layout_import.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_folder_import.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_generation.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_locks.py
+
+markers: []
+
 ---
 
 ## 5. Acceptance Criteria
