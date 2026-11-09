@@ -19,8 +19,19 @@ def text() -> str:
 
 @pytest.mark.parametrize(
     "needle",
-    ["invoke_subagent", "manage_subagents", "coder_begin_execution", "coder_plan", "coder_run_chunk",
-     "coder_prepare_native", "coder_merge", "coder_end_execution", "Brief Lane", "FEAT-584", 'Model="flash"'],
+    [
+        "invoke_subagent",
+        "manage_subagents",
+        "coder_begin_execution",
+        "coder_plan",
+        "coder_run_chunk",
+        "coder_prepare_native",
+        "coder_merge",
+        "coder_end_execution",
+        "Brief Lane",
+        "FEAT-584",
+        'Model="flash"',
+    ],
 )
 def test_worker_has_agy_orchestrator_loop(text: str, needle: str) -> None:
     assert needle in text
@@ -38,9 +49,9 @@ def test_worker_forbidden_patterns(text: str) -> None:
         "coder_next_wave",
         "coder_run_wave",
         "coder_finalize_task",
-        "--mode auto"
+        "--mode auto",
     ]
-    
+
     for pattern in forbidden_patterns:
         assert pattern not in text, f"Forbidden pattern '{pattern}' found in worker prompt"
 
