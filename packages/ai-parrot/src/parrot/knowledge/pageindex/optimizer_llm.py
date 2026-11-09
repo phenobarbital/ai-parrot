@@ -5,25 +5,29 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import re
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel
 
+from parrot.knowledge.pageindex import utils as _utils
 from parrot.knowledge.pageindex.builder import _LLM_SEMAPHORE, _limited_gather
 from parrot.knowledge.pageindex.framing import DATA_FRAMING_INSTRUCTION, frame_segments, frame_text
-from parrot.knowledge.pageindex.layout_structure import MAX_HEADING_WORDS
+from parrot.knowledge.pageindex.layout_structure import heading_title
 from parrot.knowledge.pageindex.optimizer import (
     KeyItem,
     OptimizePlan,
     OptimizerSettings,
     PassStamp,
     Revisions,
+    is_heading_text,
     is_stamped,
     owned_tokens,
     pass_cache_key,
     pass_input,
+    reconcile_key_items,
     refresh_after_counts,
     split_at,
 )
@@ -31,6 +35,10 @@ from parrot.knowledge.pageindex.segments import DocumentRevision, Segment, Segme
 from parrot.knowledge.pageindex.utils import create_clean_structure_for_description
 
 PROMPT_VERSION = "v1"
+# Per-call cap on framed document tokens: an oversized node is windowed, never sent whole (FEAT-853).
+LLM_INPUT_BUDGET_TOKENS = 20_000
+# Per-segment allowance for the <segment …> wrapper frame_segments adds around each read.
+_FRAME_OVERHEAD_TOKENS = 24
 _NON_HEADING_KINDS = frozenset({"table", "code", "caption"})
 
 
@@ -105,12 +113,93 @@ def reads_for(node: dict, revision: DocumentRevision) -> list[SegmentRead]:
     return reads
 
 
+def _clip_text(text: str, budget: int) -> str:
+    """Return ``text`` cut proportionally until its token count fits ``budget``.
+
+    Args:
+        text: The text to clip.
+        budget: Maximum token count.
+
+    Returns:
+        ``text`` itself when it fits, otherwise its longest prefix found that fits.
+    """
+    clipped = text
+    tokens = _utils.count_tokens(clipped)
+    while clipped and tokens > budget:
+        keep = max(1, int(len(clipped) * budget / tokens * 0.9))
+        clipped = clipped[: min(keep, len(clipped) - 1)]
+        tokens = _utils.count_tokens(clipped)
+    return clipped
+
+
+def _read_cost(read: SegmentRead, revision: DocumentRevision) -> int:
+    """Return the framed token cost of one read (stored segment tokens for a complete read)."""
+    segment = revision.segments[read.seq] if 0 <= read.seq < len(revision.segments) else None
+    if segment is not None and read.start == 0 and read.text == segment.text:
+        tokens = segment.tokens
+    else:
+        tokens = _utils.count_tokens(read.text)
+    return tokens + _FRAME_OVERHEAD_TOKENS
+
+
+def window_reads(
+    reads: list[SegmentRead], revision: DocumentRevision, *, budget: Optional[int] = None
+) -> list[list[SegmentRead]]:
+    """Split reads, in order, into consecutive windows whose cost stays within ``budget``.
+
+    Cost of a read = its segment's stored ``tokens`` plus ``_FRAME_OVERHEAD_TOKENS``. A single read over the budget
+    forms its own window, its ``text`` clipped proportionally until ``count_tokens`` fits the budget
+    (``truncated=True``, ``end`` adjusted).
+
+    Args:
+        reads: Segment reads in document order.
+        revision: The revision the reads come from.
+        budget: Token budget per window; defaults to ``LLM_INPUT_BUDGET_TOKENS`` read at call time.
+
+    Returns:
+        The windows, or ``[]`` for no reads.
+    """
+    limit = budget or LLM_INPUT_BUDGET_TOKENS
+    windows: list[list[SegmentRead]] = []
+    current: list[SegmentRead] = []
+    used = 0
+    for read in reads:
+        cost = _read_cost(read, revision)
+        if cost > limit:
+            if current:
+                windows.append(current)
+                current, used = [], 0
+            clipped = _clip_text(read.text, max(1, limit - _FRAME_OVERHEAD_TOKENS))
+            windows.append(
+                [read.model_copy(update={"text": clipped, "end": read.start + len(clipped), "truncated": True})]
+            )
+            continue
+        if current and used + cost > limit:
+            windows.append(current)
+            current, used = [], 0
+        current.append(read)
+        used += cost
+    if current:
+        windows.append(current)
+    return windows
+
+
+def _record_call(report: Optional[Any]) -> None:
+    """Count one issued adapter call on a compatible optimizer report when supplied."""
+    if report is not None:
+        report.llm_calls_made += 1
+
+
 def heading_like(segment: Segment) -> bool:
-    """Return whether a segment can be accepted as a printed sub-heading."""
+    """Return whether a segment can be accepted as a printed sub-heading.
+
+    A single line that is not a table, code block or caption, whose cleaned text passes ``is_heading_text``
+    (word cap, no trailing ``.``/``;``/``:``/``,``, no trailing conjunction, no list-marker prefix).
+    """
     text = (segment.text or "").strip()
     if not text or "\n" in text or segment.kind in _NON_HEADING_KINDS:
         return False
-    return len(text.split()) <= MAX_HEADING_WORDS and not text.endswith(".")
+    return is_heading_text(heading_title(text))
 
 
 def literal_in_anchor(label: str, text: str) -> bool:
@@ -139,22 +228,33 @@ async def propose_headings(
     *,
     report: Optional[Any] = None,
 ) -> list[int]:
-    """Return valid printed-heading sequences proposed by a live, framed LLM call."""
+    """Return valid printed-heading sequences proposed by live, framed LLM calls.
+
+    Only the node's ``heading_like`` segments are framed, windowed under ``LLM_INPUT_BUDGET_TOKENS`` (one call per
+    window); a node without candidates makes no call. Every proposal is validated against the node's owned segments.
+    """
     if not settings.llm_passes or not adapter_is_live(adapter):
         return []
 
-    prompt = (
-        "Identify the segments that are printed sub-headings. Return only their sequence numbers.\n\n"
-        f"{frame_segments(reads_for(node, revision), source=f'{revision.doc_id}@{revision.revision}')}"
-    )
-    proposals = await adapter.ask_structured(
-        prompt,
-        HeadingProposals,
-        system_prompt=DATA_FRAMING_INSTRUCTION,
-    )
+    candidates = [read for read in reads_for(node, revision) if heading_like(revision.segments[read.seq])]
+    if not candidates:
+        return []
+    proposed: list[int] = []
+    for window in window_reads(candidates, revision):
+        prompt = (
+            "Identify the segments that are printed sub-headings. Return only their sequence numbers.\n\n"
+            f"{frame_segments(window, source=f'{revision.doc_id}@{revision.revision}')}"
+        )
+        proposals = await adapter.ask_structured(
+            prompt,
+            HeadingProposals,
+            system_prompt=DATA_FRAMING_INSTRUCTION,
+        )
+        _record_call(report)
+        proposed.extend(proposals.seqs)
     owned = _owned_segments(node, revision)
     accepted: list[int] = []
-    for seq in proposals.seqs:
+    for seq in proposed:
         segment = owned.get(seq)
         if segment is None or not heading_like(segment):
             _record_rejection(report)
@@ -172,39 +272,50 @@ async def propose_key_items(
     *,
     report: Optional[Any] = None,
 ) -> list[KeyItem]:
-    """Return valid, capped key items proposed by a live, framed LLM call."""
+    """Return valid, capped key items proposed by live, framed LLM calls.
+
+    The node's segments are windowed under ``LLM_INPUT_BUDGET_TOKENS``; each window is asked for up to
+    ``ceil(max_key_items / windows)`` items and at most ``max_key_items`` are accepted in total. Every proposal is
+    validated against the node's owned segments (literal labels must occur in their anchor).
+    """
     if not settings.llm_passes or not adapter_is_live(adapter):
         return []
 
-    prompt = (
-        "Identify up to "
-        f"{settings.max_key_items} key concepts. Each item must provide a label, a literal or abstractive kind, "
-        "and the sequence number of its anchor segment.\n\n"
-        f"{frame_segments(reads_for(node, revision), source=f'{revision.doc_id}@{revision.revision}')}"
-    )
-    proposals = await adapter.ask_structured(
-        prompt,
-        KeyItemProposals,
-        system_prompt=DATA_FRAMING_INSTRUCTION,
-    )
+    windows = window_reads(reads_for(node, revision), revision) or [[]]
+    quota = max(1, math.ceil(settings.max_key_items / len(windows)))
     owned = _owned_segments(node, revision)
     accepted: list[KeyItem] = []
-    for proposal in proposals.items:
-        segment = owned.get(proposal.seq)
-        if segment is None or (proposal.kind == "literal" and not literal_in_anchor(proposal.label, segment.text)):
-            _record_rejection(report)
-            continue
-        if len(accepted) >= settings.max_key_items:
-            continue
-        accepted.append(
-            KeyItem(
-                label=proposal.label,
-                kind=proposal.kind,
-                seq=proposal.seq,
-                page=segment.page,
-                ordinal=segment.ordinal,
-            )
+    for window in windows:
+        prompt = (
+            "Identify up to "
+            f"{quota} key concepts. Each item must provide a label, a literal or abstractive kind, "
+            "and the sequence number of its anchor segment.\n\n"
+            f"{frame_segments(window, source=f'{revision.doc_id}@{revision.revision}')}"
         )
+        proposals = await adapter.ask_structured(
+            prompt,
+            KeyItemProposals,
+            system_prompt=DATA_FRAMING_INSTRUCTION,
+        )
+        _record_call(report)
+        taken = 0
+        for proposal in proposals.items:
+            segment = owned.get(proposal.seq)
+            if segment is None or (proposal.kind == "literal" and not literal_in_anchor(proposal.label, segment.text)):
+                _record_rejection(report)
+                continue
+            if len(accepted) >= settings.max_key_items or taken >= quota:
+                continue
+            accepted.append(
+                KeyItem(
+                    label=proposal.label,
+                    kind=proposal.kind,
+                    seq=proposal.seq,
+                    page=segment.page,
+                    ordinal=segment.ordinal,
+                )
+            )
+            taken += 1
     return accepted
 
 
@@ -226,19 +337,42 @@ async def summarize_leaf(
     revision: DocumentRevision,
     adapter: Optional[Any],
     settings: OptimizerSettings,
+    *,
+    report: Optional[Any] = None,
 ) -> tuple[str, str]:
-    """Return an inline or framed, capped summary for a leaf node."""
+    """Return an inline or framed, capped summary for a leaf node.
+
+    A live leaf that fits ``LLM_INPUT_BUDGET_TOKENS`` is summarized in one call; a larger one is summarized per
+    window, then one reduce call combines the framed partial summaries.
+    """
     text = _summary_text(node, revision)
     if owned_tokens(node, revision) <= settings.inline_summary_tokens:
         return text, "inline"
     if not adapter_is_live(adapter):
         return _trim_summary(text, settings.summary_max_words), "llm"
 
+    source = f"{revision.doc_id}@{revision.revision}"
+    partials: list[str] = []
+    for window in window_reads(reads_for(node, revision), revision) or [[]]:
+        prompt = (
+            f"Summarize this document text in at most {settings.summary_max_words} words.\n\n"
+            f"{frame_segments(window, source=source)}"
+        )
+        result = await adapter.ask_structured(prompt, SummaryOut, system_prompt=DATA_FRAMING_INSTRUCTION)
+        _record_call(report)
+        partials.append(result.summary)
+    if len(partials) == 1:
+        return _trim_summary(partials[0], settings.summary_max_words), "llm"
+
+    # Partial summaries derive from untrusted document text: frame them like the segments.
+    combined = _clip_text("\n".join(partials), LLM_INPUT_BUDGET_TOKENS)
     prompt = (
-        f"Summarize this document text in at most {settings.summary_max_words} words.\n\n"
-        f"{frame_segments(reads_for(node, revision), source=f'{revision.doc_id}@{revision.revision}')}"
+        "Combine these partial summaries of one document section into a single summary of at most "
+        f"{settings.summary_max_words} words.\n\n"
+        f"{frame_text(combined, source=f'{source} partial summaries')}"
     )
     result = await adapter.ask_structured(prompt, SummaryOut, system_prompt=DATA_FRAMING_INSTRUCTION)
+    _record_call(report)
     return _trim_summary(result.summary, settings.summary_max_words), "llm"
 
 
@@ -247,8 +381,15 @@ async def compose_parent(
     revision: DocumentRevision,
     adapter: Optional[Any],
     settings: OptimizerSettings,
+    *,
+    report: Optional[Any] = None,
 ) -> tuple[str, str]:
-    """Compose a parent summary from child summaries, text, and key items."""
+    """Compose a parent summary from child summaries, text, and key items.
+
+    With a model, the joined child summaries and the key items are each clipped to a quarter of
+    ``LLM_INPUT_BUDGET_TOKENS``, and only the first window of the node's own text that fits the remaining budget
+    is framed.
+    """
     children = node.get("nodes") or []
     child_titles = [str(child.get("title", "")) for child in children if child.get("title")]
     child_summaries = [str(child.get("summary", "")) for child in children if child.get("summary")]
@@ -266,21 +407,22 @@ async def compose_parent(
             )
         return _trim_summary(summary, settings.summary_max_words), "composed"
 
+    budget = LLM_INPUT_BUDGET_TOKENS
+    used = 0
     parts = ["Compose a concise parent summary from the framed document data below."]
     # Child summaries and key items derive from untrusted document text: frame them like the segments.
     if child_summaries:
-        parts.append(
-            frame_text("\n".join(child_summaries), source=f"{revision.doc_id}@{revision.revision} child summaries")
-        )
+        summaries_text = _clip_text("\n".join(child_summaries), budget // 4)
+        used += _utils.count_tokens(summaries_text)
+        parts.append(frame_text(summaries_text, source=f"{revision.doc_id}@{revision.revision} child summaries"))
     if key_items:
-        parts.append(
-            frame_text(
-                "\n".join(str(item) for item in key_items if item),
-                source=f"{revision.doc_id}@{revision.revision} key items",
-            )
-        )
-    parts.append(frame_segments(reads_for(node, revision), source=f"{revision.doc_id}@{revision.revision}"))
+        key_items_text = _clip_text("\n".join(str(item) for item in key_items if item), budget // 4)
+        used += _utils.count_tokens(key_items_text)
+        parts.append(frame_text(key_items_text, source=f"{revision.doc_id}@{revision.revision} key items"))
+    own_windows = window_reads(reads_for(node, revision), revision, budget=max(budget // 4, budget - used))
+    parts.append(frame_segments(own_windows[0] if own_windows else [], source=f"{revision.doc_id}@{revision.revision}"))
     result = await adapter.ask_structured("\n\n".join(parts), SummaryOut, system_prompt=DATA_FRAMING_INSTRUCTION)
+    _record_call(report)
     return _trim_summary(result.summary, settings.summary_max_words), "composed"
 
 
@@ -337,23 +479,30 @@ def _estimate_llm_calls(
     *,
     with_summaries: bool,
 ) -> int:
-    """Count the LLM calls the passes would make on the current candidate (splits made later add more)."""
+    """Count the LLM calls the passes would make on the current candidate (splits made later add more).
+
+    Each pass counts its windows: candidate windows for headings, leaf windows for key items, leaf windows (plus
+    one reduce call when there are several) for a leaf summary, and one call for a parent summary.
+    """
     estimate = 0
     execution = execution_digest(adapter, mode="live")
     for node in nodes:
         if id(node) not in plan.mutable:
             continue
         is_leaf = not node.get("nodes")
+        reads = reads_for(node, revision)
+        windows = len(window_reads(reads, revision)) or 1
         if is_leaf:
             if not _is_completed(plan, node, settings, "headings", pass_input(node, "headings"), execution):
-                estimate += 1
+                candidates = [read for read in reads if heading_like(revision.segments[read.seq])]
+                estimate += len(window_reads(candidates, revision))
             if owned_tokens(node, revision) > settings.target_leaf_tokens and not _is_completed(
                 plan, node, settings, "key_items", pass_input(node, "key_items"), execution
             ):
-                estimate += 1
+                estimate += windows
         if with_summaries and (not is_leaf or owned_tokens(node, revision) > settings.inline_summary_tokens):
             if not _is_completed(plan, node, settings, "summary", pass_input(node, "summary"), execution):
-                estimate += 1
+                estimate += windows + 1 if is_leaf and windows > 1 else 1
     return estimate
 
 
@@ -409,9 +558,10 @@ async def run_llm_passes(
                     try:
                         headings = await cached_call(
                             key,
-                            lambda node=node: propose_headings(node, revision, adapter, settings, report=plan.report),
+                            lambda node=node, revision=revision: propose_headings(
+                                node, revision, adapter, settings, report=plan.report
+                            ),
                         )
-                        plan.report.llm_calls_made += 1
                         split_at(node, revision, headings, source="llm", settings=settings, report=plan.report)
                         for piece in node.get("nodes") or []:
                             plan.mutable.add(id(piece))
@@ -436,7 +586,9 @@ async def run_llm_passes(
                     try:
                         items = await cached_call(
                             key,
-                            lambda node=node: propose_key_items(node, revision, adapter, settings, report=plan.report),
+                            lambda node=node, revision=revision: propose_key_items(
+                                node, revision, adapter, settings, report=plan.report
+                            ),
                         )
                         # Keep key items already attached (e.g. titles absorbed by a merge); add proposals after them.
                         merged_items: list[Any] = list(node.get("key_items") or [])
@@ -450,17 +602,19 @@ async def run_llm_passes(
                                 merged_items.append(item.model_dump())
                         node["key_items"] = merged_items
                         plan.report.key_items_added += len(items)
-                        plan.report.llm_calls_made += 1
                         _record_stamp(plan, node, "key_items", input_hash, execution)
                     except Exception as error:
                         plan.report.errors.append(str(error))
 
+            # Anchors must follow every ownership change (splits, merged-range restores) before the summary pass:
+            # summary input digests include key_items, so moving items afterwards would orphan their stamps.
+            reconcile_key_items(root, revision, plan.mutable, plan.report)
             if not with_summaries:
                 continue
             levels = _nodes_by_depth(root)
             for depth in sorted(levels, reverse=True):
 
-                async def summarize(node: dict) -> None:
+                async def summarize(node: dict, revision: DocumentRevision = revision) -> None:
                     if id(node) not in plan.mutable:
                         return
                     input_hash = pass_input(node, "summary")
@@ -478,16 +632,16 @@ async def run_llm_passes(
                         summary, kind = await cached_call(
                             key,
                             lambda node=node: (
-                                summarize_leaf(node, revision, adapter if live else None, settings)
+                                summarize_leaf(node, revision, adapter if live else None, settings, report=plan.report)
                                 if not node.get("nodes")
-                                else compose_parent(node, revision, adapter if live else None, settings)
+                                else compose_parent(
+                                    node, revision, adapter if live else None, settings, report=plan.report
+                                )
                             ),
                         )
                         node["summary"] = summary
                         node["optimizer"] = {**(node.get("optimizer") or {}), "summary": kind}
                         plan.report.summaries_written += 1
-                        if live and not (is_leaf and owned_tokens(node, revision) <= settings.inline_summary_tokens):
-                            plan.report.llm_calls_made += 1
                         _record_stamp(plan, node, "summary", input_hash, execution)
                     except Exception as error:
                         plan.report.errors.append(str(error))

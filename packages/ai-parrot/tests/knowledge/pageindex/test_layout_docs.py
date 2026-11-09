@@ -22,6 +22,9 @@ def test_page_has_frontmatter_and_names() -> None:
         "UnreadablePDFError",
         "DATA_FRAMING_INSTRUCTION",
         "layout_eval",
+        "bookmarks_dropped",
+        "bold_sizes",
+        "BOLD_REPEAT_MIN_PAGES",
     ):
         assert name in text
 

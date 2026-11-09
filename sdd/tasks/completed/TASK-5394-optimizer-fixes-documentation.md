@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-853 — PageIndex Optimizer Fixes
 **Spec**: `sdd/specs/pageindex-optimizer-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-5391, TASK-5392, TASK-5393
@@ -184,8 +184,14 @@ See the blueprint test above. It must pass together with the existing
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: Claude (Opus 5.5) — /sdd-fix session, actor agent:sdd-fix:5b4f798e
+**Date**: 2026-11-09
+**Notes**: Updated `wiki/knowledge/pageindex-tree-optimizer.md`: Purpose bullets; Public API (+ `reconcile_key_items`,
+`is_heading_text`, `pseudo_heading_segments`, `window_reads`); "The passes, in order" (empty-leaf parent alias, span
+widening, pseudo-heading fallback, candidate-only heading pass with the `is_heading_text` rule, windowed key items,
+new step 7 "Re-home key items", renumbered summary/validate); "The report" (`key_items_rehomed`, `llm_calls_made` /
+`llm_calls_estimated` semantics); Summaries (map-reduce, bounded composition); Framing ("Bounded prompts"); Aliases.
+The evaluation tables recorded by d2d7fc5bbf are untouched. `test_optimizer_page_documents_feat_853_fixes` added
+(also asserts `window_reads`). Validation: test_optimizer_docs — 3 passed; `parrot sdd techwiki check` — ok.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
