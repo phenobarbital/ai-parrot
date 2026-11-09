@@ -45,14 +45,14 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: only worktree_environment.py and its test file; creates agy_verdict/AGY_FILE_TOOLS for TASK-5348",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T00:08:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5347-agy-verdict-worktree-env.md"
     },
@@ -63,7 +63,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -72,7 +72,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5347: evaluate calls worktree_environment.agy_verdict and AGY_FILE_TOOLS (sdd/scripts/worktree_environment.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T00:08:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5348-agy-permissions-merge-unattended.md"
     },
@@ -83,7 +83,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -92,7 +92,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5348: both modify tests/sdd/test_agy_permissions.py (5348 first); test_launcher_judges_write_file exercises the file-tool evaluate from TASK-5348",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T00:08:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5349-installer-agy-matcher.md"
     },
@@ -103,14 +103,14 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: only models/google_coding.py and test_google_coding_dispatcher.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T00:08:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5350-google-coding-profile-literals.md"
     },
@@ -121,14 +121,14 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: opens the feature_launcher.py / test_sdd_launch.py chain (5351 -> 5352 -> 5353 -> 5354)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T00:08:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5351-launcher-google-preflight.md"
     },
@@ -139,7 +139,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -148,7 +148,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5351: calls resolve_agy/require_official_agy (feature_launcher.py) and shares feature_launcher.py + test_sdd_launch.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T00:08:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5352-launcher-agy-exec.md"
     },
@@ -159,7 +159,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -169,7 +169,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5352: wires launch_agy_worker/AGY_UNATTENDED_ENV into launch()/main() (same files); TASK-5349: _require_agy_hooks reads the 'stale'/'matcher' keys it adds to installer._agy_permissions_report",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T00:08:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5353-launcher-host-propagation.md"
     },
@@ -180,7 +180,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -189,7 +189,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5353: passes host= to feature_launcher.launch()/launch_session() and shares test_sdd_launch.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T00:08:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5354-launch-cli-host-option.md"
     },
@@ -200,14 +200,14 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: first editor of scripts/sdd/check_asset_sync.py and _assets/manifest.json (before TASK-5358); creates tests/sdd/test_agy_agents.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T00:08:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5355-agy-missing-subagents.md"
     },
@@ -218,7 +218,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -227,7 +227,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5355: extends tests/sdd/test_agy_agents.py (google_repo fixture) and resolves the code-reviewer/qa-runner agents it ships",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T00:08:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5356-agy-autopilot.md"
     },
@@ -238,7 +238,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -247,7 +247,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5358: the ported prompt's 'Antigravity runtime' section links docs/sdd/AGY.md#antigravity-adaptation-contract, which TASK-5358 creates",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T00:08:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5357-agy-sdd-worker-sync.md"
     },
@@ -258,7 +258,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -267,7 +267,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5355: both modify scripts/sdd/check_asset_sync.py and _assets/manifest.json (5355 first)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T00:08:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5358-agy-adaptation-contract.md"
     },
@@ -278,7 +278,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -287,7 +287,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5358: skills link docs/sdd/AGY.md#antigravity-adaptation-contract it creates (codex/google link check); both modify tests/sdd/test_installer.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T00:08:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5359-shared-skill-host-headers.md"
     },
@@ -298,7 +298,7 @@
       "feature_id": "FEAT-847",
       "feature": "sdd-agy-compatibility",
       "spec": "sdd/specs/sdd-agy-compatibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -312,7 +312,7 @@
       "parallel": true,
       "parallelism_notes": "documents agy_verdict/evaluate/matcher (TASK-5349, covering 5347-5348), the profile (TASK-5350), the launcher CLI (TASK-5354, covering 5351-5353), the agents (TASK-5356 covering 5355, TASK-5357) and AGY.md + skill headers (TASK-5359 covering 5358)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T00:08:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5360-documentation.md"
     }
