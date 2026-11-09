@@ -107,8 +107,29 @@
       ]
     },
     {
+      "source": "agents/agents/code-reviewer/agent.md",
+      "target": ".agents/agents/code-reviewer/agent.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agents/agents/qa-runner/agent.md",
+      "target": ".agents/agents/qa-runner/agent.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
       "source": "agents/agents/sdd-autopilot/agent.md",
       "target": ".agents/agents/sdd-autopilot/agent.md",
+      "hosts": [
+        "google"
+      ]
+    },
+    {
+      "source": "agents/agents/sdd-coder/agent.md",
+      "target": ".agents/agents/sdd-coder/agent.md",
       "hosts": [
         "google"
       ]

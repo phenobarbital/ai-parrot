@@ -42,6 +42,8 @@ ASSET_SOURCES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (".agent/workflows/sdd-*.md", ("google",)),
     (".agent/workflows/remove-worktree.md", ("google",)),
     (".agents/agents/sdd-*/agent.md", ("google",)),
+    (".agents/agents/code-reviewer/agent.md", ("google",)),  # FEAT-847 — dispatched by sdd-autopilot on agy
+    (".agents/agents/qa-runner/agent.md", ("google",)),  # FEAT-847
     ("sdd/templates/*", HOST_ORDER),
     ("sdd/WORKFLOW.md", HOST_ORDER),
     ("sdd/CONVENTIONS.md", HOST_ORDER),  # C10 — seed, see SEED_TARGETS
