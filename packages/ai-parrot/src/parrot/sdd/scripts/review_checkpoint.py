@@ -21,7 +21,9 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from parrot.flows.dev_loop.procs import git_env, run_bounded
 from parrot.flows.dev_loop.sdd_coder.checkpoint import (
+    GIT_TIMEOUT_S,
     CheckpointBusyError,
     CheckpointError,
     CheckpointIncompleteError,
@@ -30,7 +32,7 @@ from parrot.flows.dev_loop.sdd_coder.checkpoint import (
     prepare_review_checkpoint,
     validate_review_checkpoint,
 )
-from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
+from parrot.flows.dev_loop.sdd_coder.evidence import EvidenceCorruptionError, ExecutionEvidenceStore
 from parrot.flows.dev_loop.sdd_coder.optimization_models import ReviewArtifact, ReviewCheckpoint
 from parrot.flows.dev_loop.sdd_coder.telemetry import resolve_durable_root
 
@@ -96,13 +98,17 @@ async def _run_record(
     fix_commits: list[str],
     store: ExecutionEvidenceStore,
 ) -> dict[str, object]:
-    """Publish a manual semantic review artifact for task finalization."""
-    head_sha = subprocess.run(
-        ["git", "-C", str(worktree), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    """Publish a manual semantic review artifact for task finalization.
+
+    HEAD is read through the bounded, headless ``run_bounded`` helper so the
+    event loop never blocks on git; a failed, timed-out or missing git raises
+    ``subprocess.CalledProcessError`` with git's stderr attached.
+    """
+    argv = ["git", "-C", str(worktree), "rev-parse", "HEAD"]
+    rc, stdout, stderr = await run_bounded(argv, timeout_s=GIT_TIMEOUT_S, env=git_env())
+    if rc:
+        raise subprocess.CalledProcessError(rc, argv, output=stdout, stderr=stderr)
+    head_sha = stdout.strip()
     artifact = ReviewArtifact(
         feature_slug=feature,
         task_id=task,
@@ -121,6 +127,9 @@ def main(argv: list[str] | None = None) -> int:
     """Prepare, validate, or record reviews with stable JSON output.
 
     Exit codes: 0 success, 1 operation error, 2 invalid input, 3 stale/busy.
+
+    ``record`` without ``--execution-id`` generates a fresh execution UUID; the
+    output reports it as ``execution_id`` with ``execution_id_generated: true``.
     """
     parser = argparse.ArgumentParser(prog="python -m scripts.sdd.review_checkpoint", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -141,7 +150,11 @@ def main(argv: list[str] | None = None) -> int:
     record_parser.add_argument("--task", required=True)
     record_parser.add_argument("--worktree", required=True)
     record_parser.add_argument("--summary", required=True)
-    record_parser.add_argument("--execution-id")
+    record_parser.add_argument(
+        "--execution-id",
+        help="Execution UUID that owns the review artifact. When omitted, a fresh UUID is generated and "
+        "reported as execution_id with execution_id_generated=true.",
+    )
     record_parser.add_argument("--fix-commit", action="append", default=[])
 
     args = parser.parse_args(argv)
@@ -169,6 +182,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
         else:
+            execution_id_generated = not args.execution_id
             execution_id = args.execution_id or str(uuid.uuid4())
             result = asyncio.run(
                 _run_record(
@@ -181,11 +195,14 @@ def main(argv: list[str] | None = None) -> int:
                     store=store,
                 )
             )
+            result["execution_id_generated"] = execution_id_generated
     except (ValidationError, ValueError) as exc:
         print(json.dumps({"ok": False, "error": "invalid_input", "message": str(exc)}))
         return 2
     except subprocess.CalledProcessError as exc:
-        print(json.dumps({"ok": False, "error": "operation_error", "message": str(exc)}))
+        detail = (exc.stderr or "").strip()
+        message = f"{exc}: {detail}" if detail else str(exc)
+        print(json.dumps({"ok": False, "error": "operation_error", "message": message}))
         return 1
     except (CheckpointBusyError, CheckpointStaleError, CheckpointIncompleteError) as exc:
         print(json.dumps({"ok": False, "error": exc.error_code, "message": str(exc)}))
@@ -193,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
     except CheckpointError as exc:
         print(json.dumps({"ok": False, "error": exc.error_code, "message": str(exc)}))
         return 1
-    except OSError as exc:
+    except (OSError, EvidenceCorruptionError) as exc:
         print(json.dumps({"ok": False, "error": "operation_error", "message": str(exc)}))
         return 1
 
