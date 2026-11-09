@@ -277,3 +277,25 @@ async def test_browser_mode_full_flow_basic(browser_client) -> None:
         chat_id=entry.chat_id,
         browser_entry=entry,
     )
+
+
+from pathlib import Path
+
+_WIKI_PAGE = Path(__file__).resolve().parents[5] / "wiki/integrations/telegram-auth-open-mode.md"
+
+
+def test_wiki_page_documents_browser_mode():
+    """The operator page names every knob and failure mode of browser mode."""
+    text = _WIKI_PAGE.read_text(encoding="utf-8")
+    for needle in (
+        "auth_open_mode",
+        "public_base_url",
+        "/api/auth/telegram/browser-complete",
+        "telegram_browser_identity_verifiers",
+        "AUTH_SECRET_KEY",
+        "parrot-browser-complete-origins",
+        "browser.",
+        "410",
+        "Wayland",
+    ):
+        assert needle in text, needle
