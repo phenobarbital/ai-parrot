@@ -11,6 +11,7 @@ excerpts, failed reads) are kept in local variables of one collector call and
 surfaced through :meth:`BookstoreOrigin.search_section` — never in mutable
 instance state, so concurrent requests cannot leak notes into each other.
 """
+
 from __future__ import annotations
 
 import asyncio

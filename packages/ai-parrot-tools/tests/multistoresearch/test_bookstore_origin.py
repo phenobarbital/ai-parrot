@@ -1,4 +1,5 @@
 """Deterministic Bookstore origin evidence and isolation tests (FEAT-858 / TASK-5434)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -145,8 +146,17 @@ async def test_scope_and_dual_result_shapes(tmp_path: Path) -> None:
     store.read_segments = AsyncMock(side_effect=read)
 
     # Constructor validation.
-    for kwargs in ({"max_books": True}, {"max_books": 11}, {"top_k": 51}, {"top_k": 0}, {"excerpt_chars": -1},
-                   {"scope": "team"}, {"timeout": float("inf")}, {"timeout": 0}, {"book_ids": "book-a"}):
+    for kwargs in (
+        {"max_books": True},
+        {"max_books": 11},
+        {"top_k": 51},
+        {"top_k": 0},
+        {"excerpt_chars": -1},
+        {"scope": "team"},
+        {"timeout": float("inf")},
+        {"timeout": 0},
+        {"book_ids": "book-a"},
+    ):
         with pytest.raises(ValueError):
             BookstoreOrigin(store, **kwargs)
     origin = BookstoreOrigin(store)
@@ -154,8 +164,15 @@ async def test_scope_and_dual_result_shapes(tmp_path: Path) -> None:
 
     # LLM shape (node_list), unfiltered: Bookstore shortlists itself, duplicates collapse.
     store.search.return_value = {
-        "books": [{"book_id": "book-a", "title": "A", "scope": "project", "node_list": ["n1", "n1", "n2"],
-                   "context": "SYNTHETIC CONTEXT MUST NOT BE EVIDENCE"}]
+        "books": [
+            {
+                "book_id": "book-a",
+                "title": "A",
+                "scope": "project",
+                "node_list": ["n1", "n1", "n2"],
+                "context": "SYNTHETIC CONTEXT MUST NOT BE EVIDENCE",
+            }
+        ]
     }
     hits = await origin.search("judgement", 10)
     store.search.assert_awaited_with("judgement", max_books=3, top_k=5)
@@ -167,8 +184,14 @@ async def test_scope_and_dual_result_shapes(tmp_path: Path) -> None:
 
     # BM25 shape (results[].node_id) keeps native scores; top_k caps nodes per book.
     store.search.return_value = {
-        "books": [{"book_id": "book-a", "title": "A", "scope": "project",
-                   "results": [{"node_id": "n2", "score": 3.5}, {"node_id": "n1", "score": 1.25}]}]
+        "books": [
+            {
+                "book_id": "book-a",
+                "title": "A",
+                "scope": "project",
+                "results": [{"node_id": "n2", "score": 3.5}, {"node_id": "n1", "score": 1.25}],
+            }
+        ]
     }
     hits = await BookstoreOrigin(store, top_k=1).search("judgement", 10)
     assert [(hit.metadata["node_id"], hit.score) for hit in hits] == [("n2", 3.5)]
@@ -249,8 +272,7 @@ async def test_pinned_clipped_excerpts(tmp_path: Path) -> None:
             }
         )
         store.search.return_value = {
-            "books": [{"book_id": "book-a", "node_list": ["clip", "offset", "tampered", "stale", "legacy",
-                                                          "gone"]}]
+            "books": [{"book_id": "book-a", "node_list": ["clip", "offset", "tampered", "stale", "legacy", "gone"]}]
         }
         origin = BookstoreOrigin(store, top_k=10, excerpt_chars=40)
         section = await origin.search_section("categories", 10)
@@ -270,7 +292,7 @@ async def test_pinned_clipped_excerpts(tmp_path: Path) -> None:
     assert clip.content == long_text[:40] and len(clip.content) == 40
     citation = clip.metadata["citation"]
     assert (citation["start"], citation["end"]) == (0, 40)
-    assert rev.segments[citation["seq"]].text[citation["start"]:citation["end"]] == clip.content
+    assert rev.segments[citation["seq"]].text[citation["start"] : citation["end"]] == clip.content
 
     offset = by_node["offset"][0]
     assert offset.content == long_text[10:50]
@@ -287,8 +309,21 @@ async def test_pinned_clipped_excerpts(tmp_path: Path) -> None:
     assert [hit.native_rank for hit in multi] == [1, 2]
 
     # Full citation metadata, decorated with book identity, pinned to the read revision.
-    assert set(citation) >= {"doc_id", "revision", "seq", "start", "end", "page", "ordinal", "section",
-                             "label", "document", "excerpt", "book_id", "title"}
+    assert set(citation) >= {
+        "doc_id",
+        "revision",
+        "seq",
+        "start",
+        "end",
+        "page",
+        "ordinal",
+        "section",
+        "label",
+        "document",
+        "excerpt",
+        "book_id",
+        "title",
+    }
     assert citation["revision"] == rev.revision and citation["document"] == "Synthetic Book"
     assert citation["book_id"] == "book-a" and citation["title"] == "Critique"
     assert citation["section_path"] == ["Chapter One"] and citation["chapter"] == "Chapter One"
