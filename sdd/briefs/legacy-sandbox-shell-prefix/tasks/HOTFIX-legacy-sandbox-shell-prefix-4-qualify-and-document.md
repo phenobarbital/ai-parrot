@@ -133,4 +133,4 @@ haiku, one short prompt each.
 
 ## Completion Note
 
-Pending; populated by the task finalizer after implementation and validation.
+Implemented by seat gpt-5.6-terra (codex), 1 attempt, 354s, merged (lint 1fb7e4ca87). Merge-tier validation green: 20 passed, 1 skipped (the live test, skipped without PARROT_TEST_REAL_LLM=1). The two sdd-worker.md copies are byte-identical (cmp). NOT verified by the worker session: AC1 (live test passing with PARROT_TEST_REAL_LLM=1 on the host) and the before/after counts in automode-rewrites.md, whose replay script is uncommitted and whose transcripts are not reachable from the sandbox. Run the live test on the host and spot-check the counts before merging.

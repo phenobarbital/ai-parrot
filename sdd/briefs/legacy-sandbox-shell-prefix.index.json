@@ -74,7 +74,7 @@
       "feature_id": "BRIEF-legacy-sandbox-shell-prefix",
       "feature": "legacy-sandbox-shell-prefix",
       "spec": "sdd/briefs/legacy-sandbox-shell-prefix.brief.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -84,7 +84,7 @@
       "parallelism_notes": "needs the finished prefix to measure and document it",
       "assigned_to": null,
       "started_at": "2026-11-09T21:50:27+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-09T23:33:11+00:00",
       "file": "sdd/briefs/legacy-sandbox-shell-prefix/tasks/HOTFIX-legacy-sandbox-shell-prefix-4-qualify-and-document.md"
     }
   ]
