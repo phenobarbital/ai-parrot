@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shlex
 import stat
 import sys
@@ -20,14 +21,15 @@ from pathlib import Path
 from typing import Literal, NoReturn, Sequence
 
 if __package__:
-    from .worktree_environment import protected_argv
+    from .worktree_environment import protected_argv, rtk_rewrite
 else:  # run as a script: this file's directory is sys.path[0]
-    from worktree_environment import protected_argv
+    from worktree_environment import protected_argv, rtk_rewrite
 
 
 POLICY_ENV = "PARROT_SDD_SHELL_PREFIX_POLICY"
 TOKEN_ENV = "PARROT_SDD_SHELL_PREFIX_TOKEN"
 _POLICY_KEYS = {"schema_version", "mode", "worktree", "hook_commands", "mcp_argv", "rtk"}
+_EVAL_PAYLOAD = re.compile(r''' && eval (?P<word>(?:'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s'"<])+?) < /dev/null''')
 
 
 @dataclass(frozen=True)
@@ -152,6 +154,32 @@ def decide(arg: str, policy: PrefixPolicy, cwd: Path) -> PrefixDecision:
     return PrefixDecision("run", shell_argv)
 
 
+def rtk_payload(arg: str) -> str:
+    """Rewrite the one Claude Bash ``eval`` payload when RTK has an equivalent command.
+
+    Args:
+        arg: Claude Code's complete Bash preamble passed to the shell prefix.
+
+    Returns:
+        The preamble with only its eval word replaced, or the original bytes when it does not have
+        exactly one supported payload or RTK cannot improve it.
+    """
+    matches = tuple(_EVAL_PAYLOAD.finditer(arg))
+    if len(matches) != 1:
+        return arg
+    match = matches[0]
+    try:
+        parsed = shlex.split(match.group("word"), posix=True)
+    except ValueError:
+        return arg
+    if len(parsed) != 1:
+        return arg
+    rewritten = rtk_rewrite(parsed[0])
+    if rewritten is None or rewritten == parsed[0]:
+        return arg
+    return f"{arg[:match.start('word')]}{shlex.quote(rewritten)}{arg[match.end('word') :]}"
+
+
 def _fail(reason: str) -> NoReturn:
     """Report a fail-closed prefix error and terminate.
 
@@ -177,6 +205,10 @@ def main(argv: Sequence[str] | None = None) -> NoReturn:
     try:
         policy, token = load_policy(policy_path)
         decision = decide(arguments[0], policy, Path.cwd())
+        if decision.kind in {"wrap", "run"} and policy.rtk:
+            rewritten = rtk_payload(arguments[0])
+            if rewritten != arguments[0]:
+                decision = decide(rewritten, policy, Path.cwd())
         environment = os.environ.copy()
         if decision.kind == "passthrough":
             environment[TOKEN_ENV] = token

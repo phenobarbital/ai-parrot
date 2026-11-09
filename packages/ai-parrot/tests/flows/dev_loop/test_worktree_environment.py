@@ -980,6 +980,46 @@ def test_bubblewrap_prefix_output_is_fixed_point(
     assert _resend(first, payload, "bubblewrap") == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
 
 
+def test_hook_skips_rtk_under_prefix_policy(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An authenticated RTK prefix owns the rewrite after the scope guard."""
+    worktree, _environment = checkout
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_text(json.dumps({"schema_version": 1, "mode": "legacy", "rtk": True}))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", hashlib.sha256(policy_path.read_bytes()).hexdigest())
+    monkeypatch.setattr(policy, "rtk_rewrite", lambda command: pytest.fail(f"unexpected RTK rewrite: {command}"))
+
+    response = policy.hook_response(
+        {"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "git status --short"}},
+        backend="bubblewrap",
+    )
+
+    assert response == {"hookSpecificOutput": {"hookEventName": "PreToolUse"}}
+
+
+def test_scope_guard_still_blocks_under_prefix_policy(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Prefix RTK suppression does not run before the raw-command scope guard."""
+    worktree, _environment = checkout
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_text(json.dumps({"schema_version": 1, "mode": "legacy", "rtk": True}))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_POLICY", str(policy_path))
+    monkeypatch.setenv("PARROT_SDD_SHELL_PREFIX_TOKEN", hashlib.sha256(policy_path.read_bytes()).hexdigest())
+    seen: list[str] = []
+    monkeypatch.setattr(policy, "_scope_guard", lambda command, cwd: (seen.append(command), ("block", "blocked"))[1])
+    monkeypatch.setattr(policy, "rtk_rewrite", lambda command: pytest.fail(f"unexpected RTK rewrite: {command}"))
+
+    response = policy.hook_response(
+        {"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "pytest"}}, backend="bubblewrap"
+    )
+
+    assert seen == ["pytest"]
+    assert response["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
 def test_lookalike_wrapper_is_still_guarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A hand-written wrapper whose inner command the guard rewrites is wrapped again, never passed through."""
     feature, _task, _main = _native_hook_worktrees(tmp_path)
