@@ -25,8 +25,17 @@ import uuid
 
 if __package__:
     from . import worktree_environment as _we
+    from .shell_prefix import PrefixPolicy
 else:  # run as a script: this file's directory is sys.path[0]
     import worktree_environment as _we
+
+    _prefix_spec = importlib.util.spec_from_file_location("shell_prefix", Path(__file__).with_name("shell_prefix.py"))
+    if _prefix_spec is None or _prefix_spec.loader is None:
+        raise ImportError("could not load shell_prefix.py")
+    _prefix_module = importlib.util.module_from_spec(_prefix_spec)
+    sys.modules.setdefault("shell_prefix", _prefix_module)
+    _prefix_spec.loader.exec_module(_prefix_module)
+    PrefixPolicy = _prefix_module.PrefixPolicy
 
 BACKEND_ENV = "PARROT_SDD_SANDBOX_BACKEND"
 BACKEND_NATIVE = "claude-native"
@@ -900,6 +909,171 @@ def _allocate_session_cache() -> Path:
     return session_cache
 
 
+def shell_prefix_state_root() -> Path:
+    """Return the per-user state root for immutable shell-prefix sessions."""
+    state_home = os.environ.get("XDG_STATE_HOME")
+    if state_home:
+        return Path(state_home) / "parrot-sdd" / "shell-prefix"
+    return Path.home() / ".local" / "state" / "parrot-sdd" / "shell-prefix"
+
+
+def _prefix_writable_roots(cwd: Path) -> tuple[Path, ...]:
+    """Return every path that the legacy Bubblewrap session can write."""
+    worktree, _git_dir, primary = _native_roots(cwd)
+    return (
+        _canonical(worktree),
+        _canonical(_worktree_admin_dir(worktree)),
+        _canonical(primary),
+        _canonical(primary / ".parrot" / "ledger"),
+        _canonical(primary / "artifacts" / "logs" / "sdd-coder-usage"),
+        _canonical(_we.claude_scratch_root()),
+    )
+
+
+def _hook_commands(document: object) -> list[str]:
+    """Collect command hooks from a Claude settings document or hooks frontmatter."""
+    commands: list[str] = []
+    if isinstance(document, dict):
+        command = document.get("command")
+        if isinstance(command, str):
+            commands.append(command)
+        for value in document.values():
+            commands.extend(_hook_commands(value))
+    elif isinstance(document, list):
+        for value in document:
+            commands.extend(_hook_commands(value))
+    return commands
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    """Load an optional JSON object, treating absent or malformed files as empty."""
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _agent_hook_commands(path: Path) -> list[str]:
+    """Extract literal command values from the agent's YAML frontmatter without a YAML dependency."""
+    try:
+        frontmatter = path.read_text(encoding="utf-8").split("---", 2)[1]
+    except (OSError, IndexError):
+        return []
+    commands: list[str] = []
+    for match in re.finditer(r"^\s*command:\s*(.*?)\s*$", frontmatter, re.MULTILINE):
+        raw = match.group(1)
+        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {"'", '"'}:
+            raw = raw[1:-1]
+        if raw:
+            commands.append(raw)
+    return commands
+
+
+def _prefix_mcp_argv(path: Path) -> list[list[str]]:
+    """Collect command argv values from an optional worktree MCP configuration."""
+    servers = _load_json(path).get("mcpServers")
+    if not isinstance(servers, dict):
+        return []
+    result: list[list[str]] = []
+    for server in servers.values():
+        if not isinstance(server, dict) or not isinstance(command := server.get("command"), str):
+            continue
+        arguments = server.get("args", [])
+        if isinstance(arguments, list) and all(isinstance(argument, str) for argument in arguments):
+            result.append([command, *arguments])
+    return result
+
+
+def _remove_expired_prefix_sessions(state_root: Path) -> None:
+    """Remove old session directories without following links outside the state root."""
+    cutoff = time.time() - 7 * 24 * 60 * 60
+    try:
+        candidates = tuple(state_root.iterdir())
+    except OSError:
+        return
+    for candidate in candidates:
+        try:
+            metadata = candidate.lstat()
+            session = uuid.UUID(candidate.name)
+        except (OSError, ValueError):
+            continue
+        if session.version != 4 or str(session) != candidate.name or metadata.st_mtime >= cutoff:
+            continue
+        if candidate.is_dir() and not candidate.is_symlink():
+            shutil.rmtree(candidate)
+
+
+def prepare_shell_prefix(cwd: Path, settings: dict, mode: str, *, rtk: bool) -> dict[str, str]:
+    """Write an immutable legacy shell-prefix policy and executable launcher.
+
+    Args:
+        cwd: The linked worker worktree.
+        settings: Final launcher settings, including notification hooks.
+        mode: Prefix sandbox mode.
+        rtk: Whether the prefix applies RTK rewrites.
+
+    Returns:
+        Environment variables that select this prefix and its policy.
+
+    Raises:
+        RuntimeError: If the configured state root is writable by the session.
+    """
+    state_root = _canonical(shell_prefix_state_root())
+    writable = _prefix_writable_roots(cwd)
+    if any(_is_within(state_root, root) for root in writable):
+        raise RuntimeError(f"shell prefix state root is writable by the session: {state_root}")
+    state_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if state_root.is_symlink():
+        raise RuntimeError("shell prefix state root must not be a symlink")
+    state_root.chmod(0o700)
+    _remove_expired_prefix_sessions(state_root)
+    session_dir = state_root / str(uuid.uuid4())
+    session_dir.mkdir(mode=0o700)
+
+    hook_commands = _hook_commands(settings.get("hooks", {}))
+    for path in (cwd / ".claude" / "settings.json", cwd / ".claude" / "settings.local.json"):
+        hook_commands.extend(_hook_commands(_load_json(path).get("hooks", {})))
+    hook_commands.extend(_agent_hook_commands(cwd / ".claude" / "agents" / "sdd-worker.md"))
+    policy = PrefixPolicy(
+        schema_version=1,
+        mode=mode,
+        worktree=str(_canonical(cwd)),
+        hook_commands=tuple(hook_commands),
+        mcp_argv=tuple(tuple(argv) for argv in _prefix_mcp_argv(cwd / ".mcp.json")),
+        rtk=rtk,
+    )
+    policy_path = session_dir / "policy.json"
+    policy_path.write_text(
+        json.dumps(
+            {
+                "schema_version": policy.schema_version,
+                "mode": policy.mode,
+                "worktree": policy.worktree,
+                "hook_commands": list(policy.hook_commands),
+                "mcp_argv": [list(argv) for argv in policy.mcp_argv],
+                "rtk": policy.rtk,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    policy_path.chmod(0o400)
+    prefix_path = session_dir / "prefix"
+    shell_prefix = Path(__file__).resolve().with_name("shell_prefix.py")
+    prefix_path.write_text(
+        f'#!/bin/sh\nexec {shlex.quote(str(Path(sys.executable).resolve()))} -E -s {shlex.quote(str(shell_prefix))} "$@"\n',
+        encoding="utf-8",
+    )
+    prefix_path.chmod(0o500)
+    return {"CLAUDE_CODE_SHELL_PREFIX": str(prefix_path), "PARROT_SDD_SHELL_PREFIX_POLICY": str(policy_path)}
+
+
+# The HOTFIX-legacy-sandbox-shell-prefix-3 live probe on Claude Code 2.1.321 did not observe a
+# prefix invocation while native sandboxing was active, so native sessions must not rely on it.
+_NATIVE_PREFIX_RTK_QUALIFIED = False
+
+
 def launch_worker(
     argv: Sequence[str],
     *,
@@ -1006,6 +1180,12 @@ def launch_worker(
                 )
                 env["PARROT_SDD_NOTIFY_PYTHON"] = str(Path(sys.executable).absolute())
                 env["PARROT_SDD_NOTIFY_HELPER"] = str(helper_path)
+    if mode == "legacy" or (not degraded and _NATIVE_PREFIX_RTK_QUALIFIED):
+        try:
+            env.update(prepare_shell_prefix(cwd, settings, mode, rtk=True))
+        except RuntimeError as exc:
+            print(f"launch_worker: shell prefix unavailable ({exc})", file=sys.stderr)
+            return 1
     command = [claude, "--agent", "sdd-worker"]
     if not has_sources:
         command += ["--setting-sources", "project,local"]

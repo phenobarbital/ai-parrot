@@ -1128,6 +1128,26 @@ def test_launch_worker_starts_claude_from_base_env(tmp_path: Path, monkeypatch: 
     assert execs[0]["PATH"] == "/usr/bin"
 
 
+def test_launch_worker_legacy_exports_shell_prefix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A legacy worker launch receives the launcher-created shell-prefix environment."""
+    native = launcher.native_claude_sandbox
+    exported = {"CLAUDE_CODE_SHELL_PREFIX": "/state/prefix", "PARROT_SDD_SHELL_PREFIX_POLICY": "/state/policy"}
+    monkeypatch.setattr(native.shutil, "which", lambda name: "/usr/bin/claude" if name == "claude" else None)
+    monkeypatch.setattr(native, "_native_roots", lambda cwd: (tmp_path, tmp_path / ".git", tmp_path))
+    monkeypatch.setattr(native, "resolve_sandbox_mode", lambda root: "legacy")
+    monkeypatch.setattr(native, "plan_native_launch", lambda *args, **kwargs: ("legacy", False, "", {"hooks": {}}))
+    monkeypatch.setattr(native, "native_root_env", lambda cwd: {})
+    monkeypatch.setattr(native, "_allocate_session_cache", lambda: tmp_path / "cache")
+    monkeypatch.setattr(native, "prepare_shell_prefix", lambda cwd, settings, mode, *, rtk: exported)
+    monkeypatch.setattr(native.os, "chdir", lambda path: None)
+    execs: list[dict[str, str]] = []
+    monkeypatch.setattr(native.os, "execvpe", lambda file, args, env: execs.append(env))
+
+    assert native.launch_worker([], cwd=tmp_path, base_env={"PATH": "/usr/bin"}) == 1
+    assert execs[0]["CLAUDE_CODE_SHELL_PREFIX"] == exported["CLAUDE_CODE_SHELL_PREFIX"]
+    assert execs[0]["PARROT_SDD_SHELL_PREFIX_POLICY"] == exported["PARROT_SDD_SHELL_PREFIX_POLICY"]
+
+
 def test_tmux_child_script_runs_without_site_packages(tmp_path: Path) -> None:
     """The tmux child is stdlib-only under ``python -S``: parrot/navconfig cannot even be imported there."""
     script = str(Path(launcher.__file__).resolve())
