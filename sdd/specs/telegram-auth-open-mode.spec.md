@@ -90,7 +90,8 @@ Two existing mechanisms are generalized rather than invented:
 
 **Flow (browser mode):**
 
-1. `/login` → `handle_login` generates `state`, registers
+1. `/login` → `handle_login` generates `state` as `"browser." + secrets.token_urlsafe(32)`
+   in browser mode (the dot cannot occur in legacy `token_urlsafe` states), registers
    `state → (telegram_id, chat_id, bot_id)` in the new `BrowserLoginRegistry` (stored on
    `app["telegram_browser_login"]`), and sends an inline keyboard whose button URL opens
    in the system browser.
@@ -99,22 +100,67 @@ Two existing mechanisms are generalized rather than invented:
      with extra query params `return_mode=browser&state=<state>&complete_url=<abs URL>`.
 2. The user authenticates in the system browser.
    - `oauth2`: the provider redirects to the existing `/oauth2/callback` endpoint. The
-     handler finds `state` in the registry → **browser branch**: it resolves the wrapper,
-     exchanges the code server-side via the existing strategy methods, and renders a
-     success page with a `t.me` deep link. Unknown state → legacy `sendData()` HTML
-     (webview flow unchanged).
+     handler recognizes the `browser.` prefix before any legacy response handling,
+     consumes the registry entry, and delegates exactly once to `_complete_auth_payload`.
+     That helper alone invokes the strategy to exchange the code and fetch userinfo.
+     Unknown, expired, or consumed browser states return HTTP 410 without `sendData()`.
+     Only unprefixed states use legacy HTML (webview flow unchanged); the prefix is a
+     routing discriminator, never authentication evidence.
    - page-based strategies: the login page detects `return_mode=browser` and **POSTs**
      the exact same JSON payload it would have passed to `sendData()` to the new
-     `POST /api/auth/telegram/browser-complete` endpoint (plus the `state`).
+     `POST /api/auth/telegram/browser-complete` endpoint (plus the `state`). Azure and
+     multi-login SSO redirect builders preserve all three browser parameters across
+     the Navigator round trip. The JSON is untrusted input, not proof of identity.
 3. The completion endpoint calls the wrapper's new transport-agnostic
-   `_complete_auth_payload(data, telegram_id=..., chat_id=...)` — the same logic
-   `handle_web_app_data` runs today (strategy callback → persist principal link →
-   initialize user context → combined/post-auth actions), minus the `Message` dependency.
+   `_complete_auth_payload(data, telegram_id=..., chat_id=..., browser_entry=entry)`.
+   For page-based browser logins it verifies the token through the server-owned
+   verifier described below and builds a candidate from the returned identity; it
+   never authenticates through the trusting legacy Basic/Azure/Google callbacks.
+   For OAuth2 it invokes the existing strategy callback exactly once. Both paths then
+   share persistence, initialization, and the pending combined/post-auth lane, without
+   a `Message` dependency. Only the webview adapter omits `browser_entry`.
 4. The user gets a proactive `bot.send_message` confirmation in the chat and a success
    page in the browser with the deep link back.
 
 `auth_open_mode: webview` (default) changes nothing: reply-keyboard WebApp buttons,
 `sendData()`, `handle_web_app_data` — all byte-for-byte current behavior.
+
+### Browser identity verification boundary
+
+State correlates a login with a Telegram user; it does **not** authenticate that user's
+Navigator identity. `BasicAuthStrategy.handle_callback` trusts `data.user_id`, while
+Azure/Google callbacks decode JWT payloads without signature verification. Neither
+those callbacks nor the existing `validate_token` checks constitute browser verification.
+
+- M2 defines a new async `BrowserIdentityVerifier.verify(token, *, auth_method, bot_id,
+  tenant_id) -> VerifiedBrowserIdentity` contract and a Pydantic v2 result containing
+  `user_id`, `display_name`, and `email`. Rejection raises a typed verification error.
+  No caller-supplied identity fields are passed to the verifier or used as authority.
+- The host wires real verifiers before wrapper startup under
+  `app["telegram_browser_identity_verifiers"][bot_id][auth_method]`. Each verifier is
+  bound to a server-configured issuer, audience/application, and tenant. JWT adapters
+  verify signatures using trusted keys and an explicit algorithm allowlist, expiry,
+  issuer and audience; opaque-token adapters use an authoritative authenticated
+  issuer lookup/introspection and derive identity from that response. Neither URLs,
+  key locations, algorithms, nor tenant selection may come from the browser payload.
+- This is a **new integration contract**, not an existing Navigator API. Do not assume
+  a token-verification endpoint exists at `auth_url`. Implementation must supply and
+  wire a concrete adapter for the deployment's issuer using existing dependencies,
+  with contract tests against that verifier. A mock-only adapter or a nonempty-token
+  check does not satisfy this feature. Browser startup fails clearly when any enabled
+  basic/azure/google method (including composite members) lacks a verifier. OAuth2
+  continues to authenticate through its server-side code exchange and userinfo flow.
+- M4 selects only a configured method: infer the sole method when absent for legacy
+  basic payloads; require an explicit enabled `auth_method` for composites. Empty
+  tokens, invalid credentials, mismatched client identity fields, or verifier failures
+  fail closed before session mutation, principal linking, or post-auth actions. If
+  supplied, `user_id`, `display_name`, and `email` must match verified values; otherwise
+  reject them. Build the candidate exclusively from verified values and the verified
+  token, recording `metadata["auth_method"]` for composite dispatch.
+- Invalid credentials return HTTP 401; unavailable verifier/backend returns HTTP 503.
+  Both consume the login attempt and require a fresh `/login`; neither falls back to
+  legacy callbacks or returns tokens. Any pending secondary authorization still gates
+  promotion/persistence according to the existing coordinator contract.
 
 ### Component Diagram
 
@@ -141,7 +187,7 @@ Two existing mechanisms are generalized rather than invented:
                    ▼                               ▼
         wrapper._complete_auth_payload(data, telegram_id, chat_id)
                    │
-                   ├─ strategy.handle_callback(data, session)
+                   ├─ verified browser identity OR one OAuth2/legacy callback
                    ├─ _persist_principal_link / _initialize_user_context
                    └─ bot.send_message(chat_id, "✅ Authenticated…")
 ```
@@ -195,10 +241,10 @@ def setup_browser_auth_routes(app: web.Application) -> None: ...
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
 | M1: Config fields | yes | field names, default, `__post_init__` validation pattern fixed below | — |
-| M2: BrowserLoginRegistry | yes | dataclass + TTL registry mirroring `_pending_states` (auth.py:1125-1152); HTML templates mirroring `oauth2_callback.py` | — |
+| M2: BrowserLoginRegistry and verification contract | yes | TTL registry, browser-state discriminator, verifier protocol/result and app registration contract fixed in §2 | — |
 | M3: Strategy keyboards | yes | per-strategy branch on `config.auth_open_mode`; exact URLs/params fixed below | — |
 | M4: Wrapper refactor | no | — | extraction of `_complete_auth_payload` from `handle_web_app_data`/`_handle_combined_auth` needs judgment about the combined/post-auth path |
-| M5: Server endpoints | yes | handler contracts and route paths fixed below | — |
+| M5: Server endpoints and verifier wiring | no | endpoint contracts fixed below | concrete deployment issuer adapter must be verified against its real backend; no existing Navigator verification endpoint is assumed |
 | M6: Login pages dual-mode | yes | JS contract fixed: same payload as `sendData()`, POSTed with `state` | — |
 | M7: Wiki page | yes | content outline in §10 | — |
 
@@ -224,18 +270,22 @@ def setup_browser_auth_routes(app: web.Application) -> None: ...
   #   raises ValueError when auth_open_mode == "browser" and not public_base_url
   ```
 
-### Module 2: Browser login registry + result pages
+### Module 2: Browser login registry, verification contract + result pages
 - **Path**: `packages/ai-parrot-integrations/src/parrot/integrations/telegram/browser_login.py` (new)
 - **Responsibility**: `BrowserLoginEntry` + `BrowserLoginRegistry` (register/consume/peek,
   TTL sweep reusing the 600 s policy of `_STATE_TTL_SECONDS`, auth.py:1058); browser
   success/error HTML templates with `https://t.me/<bot_username>` deep link; app-key
   accessor `get_or_create_browser_login_registry(app)` mirroring
-  `get_or_create_telegram_notifier` (connection_notifier.py:227).
+  `get_or_create_telegram_notifier` (connection_notifier.py:227). Also owns the
+  `BrowserIdentityVerifier` protocol, `VerifiedBrowserIdentity` Pydantic result and
+  typed rejection/unavailable errors specified in §2. Host verifier adapters and their
+  startup wiring are required integration work in M5, not provided by legacy strategies.
 - **Depends on**: nothing (M4/M5 consume it).
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot-integrations/src/parrot/integrations/telegram/browser_login.py (new)
   BROWSER_LOGIN_APP_KEY = "telegram_browser_login"
+  BROWSER_STATE_PREFIX = "browser."
   _REGISTRY_TTL_SECONDS = 600  # same policy as auth.py:1058
 
   @dataclass
@@ -255,7 +305,7 @@ def setup_browser_auth_routes(app: web.Application) -> None: ...
       def consume(self, state: str) -> Optional[BrowserLoginEntry]:
           """Pop and return the entry (single-use); None if unknown/expired."""
       def peek(self, state: str) -> Optional[BrowserLoginEntry]:
-          """Non-destructive lookup (used to route the oauth2 callback branch)."""
+          """Non-destructive lookup; never use a miss to select legacy routing."""
 
   def get_or_create_browser_login_registry(app: "web.Application") -> BrowserLoginRegistry:
       """Return the app-scoped registry, creating it under BROWSER_LOGIN_APP_KEY."""
@@ -266,6 +316,13 @@ def setup_browser_auth_routes(app: web.Application) -> None: ...
   def render_browser_error(message: str) -> str:
       """HTML error page (no auth data echoed back)."""
   ```
+
+  `register` accepts only states generated with `BROWSER_STATE_PREFIX` plus
+  `secrets.token_urlsafe(32)` (32 bytes of entropy). `consume` performs TTL validation and removal synchronously, before
+  any await, so concurrent callbacks cannot both authenticate. A missing browser entry
+  is always rejected, including after sweep/restart; the prefix survives without
+  tombstones. Unknown unprefixed states retain the legacy GET behavior only. POST
+  completion never supports legacy routing. No identity is trusted from the prefix.
 
 ### Module 3: Browser-mode keyboards in auth strategies
 - **Path**: `packages/ai-parrot-integrations/src/parrot/integrations/telegram/auth.py`
@@ -306,7 +363,9 @@ def setup_browser_auth_routes(app: web.Application) -> None: ...
 - **Responsibility**:
   1. `handle_login` (wrapper.py:2485): when browser mode, register the state in the
      registry (with `chat_id`, `telegram_id`, cached `bot_username`) before sending the
-     keyboard; adjust prompt copy ("the link opens in your browser").
+     keyboard; use `browser.` plus `secrets.token_urlsafe(32)` and pass that exact value
+     unchanged to the OAuth2 PKCE store/authorize URL, including composite OAuth2.
+     Adjust prompt copy ("the link opens in your browser").
   2. Extract the success path of `handle_web_app_data` (wrapper.py:2583) and
      `_handle_combined_auth` into `_complete_auth_payload`, callable without a `Message`;
      `handle_web_app_data` becomes a thin webview adapter over it (behavior preserved,
@@ -314,6 +373,13 @@ def setup_browser_auth_routes(app: web.Application) -> None: ...
   3. Expose `wrapper` lookup for the endpoints: wrappers self-register in an app-scoped
      map `app["telegram_wrappers"][bot_id]` (pattern: `app.get("telegram_connection_notifier")`,
      wrapper.py:2717).
+  4. Browser startup validates the shared app and all required verifier registrations
+     (§2). `_complete_auth_payload` owns the only primary-auth execution: verified
+     candidate construction for browser basic/azure/google, one strategy callback for
+     OAuth2, or the unchanged legacy callback for the webview adapter. Endpoints must
+     not call `handle_callback`, `_consume_state`, `exchange_code`, or `fetch_userinfo`.
+     The new registry state and the strategy's PKCE state are separate stores, each
+     consumed exactly once by its owner. Failure never retries a consumed code.
 - **Depends on**: Modules 1, 2.
 - **Interface Skeleton**:
   ```python
@@ -326,6 +392,7 @@ def setup_browser_auth_routes(app: web.Application) -> None: ...
           telegram_id: int,
           chat_id: int,
           notify: bool = True,
+          browser_entry: Optional[BrowserLoginEntry] = None,
       ) -> bool:
           """Run the primary auth callback and post-success pipeline.
 
@@ -334,27 +401,41 @@ def setup_browser_auth_routes(app: web.Application) -> None: ...
           Sends the ✅/❌ chat notification via self.bot.send_message when notify.
           Routes combined/post_auth_actions payloads through the pending-attempt
           lane with explicit chat ids (no Message object).
+          browser_entry is server-owned correlation context, never read from JSON.
+          When present, enforce the verification boundary in §2 before promotion.
+          All browser HTTP adapters must supply it and use its Telegram/chat ids.
           """
   ```
 
 ### Module 5: Server-side completion endpoints
 - **Path**: `packages/ai-parrot-integrations/src/parrot/integrations/telegram/oauth2_callback.py`
-  (browser branch) + `browser_login.py` (new POST handler + route setup) +
+  (browser branch) + `browser_login.py` (new POST handler, verifier adapters + route setup) +
   `packages/ai-parrot-server/src/parrot/autonomous/orchestrator.py` (mount).
 - **Responsibility**:
-  1. `oauth2_callback_handler` (oauth2_callback.py:138): before rendering sendData HTML,
-     `peek` the registry; on hit → `consume`, resolve the wrapper by `bot_id`, run the
-     oauth2 completion (`_consume_state`/`exchange_code`/`fetch_userinfo` via the
-     strategy's existing `handle_callback`, auth.py:1245), then
-     `_complete_auth_payload(...)` and render `render_browser_success/error`. On miss →
-     legacy behavior unchanged.
+  1. `oauth2_callback_handler` (oauth2_callback.py:138): classify `state` by the
+     `browser.` prefix before provider-error/missing-code rendering or legacy HTML.
+     For a browser state, atomically `consume` the entry; a miss returns HTTP 410
+     browser error HTML without `sendData`, session mutation, or strategy invocation.
+     On a hit, resolve the wrapper and pass `{auth_method: "oauth2", code, state}` to
+     `_complete_auth_payload(..., browser_entry=entry)` exactly once, with the entry's
+     Telegram/chat ids. This also supports composite strategy dispatch. Do not invoke
+     strategy methods in this endpoint. Valid browser-state provider errors or missing
+     codes consume the attempt and return HTTP 400 browser error HTML; they do not
+     enter legacy handling. Only unprefixed states retain legacy behavior unchanged.
   2. New `browser_complete_handler` (`POST /api/auth/telegram/browser-complete`): JSON
      body = the exact payload the login pages pass to `sendData()` today, plus `state`.
-     Consume state → wrapper → `_complete_auth_payload`. Responds JSON
-     `{ok, redirect_url}`; the page renders the deep link.
+     Validate JSON object and string state → consume browser state → resolve wrapper
+     → `_complete_auth_payload(..., browser_entry=entry)`, using only entry-owned ids.
+     Enforce the §2 verification boundary before any mutation. Responds JSON
+     `{ok, redirect_url}` on success; the page renders the server-derived deep link.
+     Never honor browser-supplied `browser_entry`, bot/chat ids, or a verification flag.
   3. `setup_browser_auth_routes(app)` registers the POST route; mounted in
      `orchestrator.py` beside `setup_combined_auth_routes(app)` (orchestrator.py:369)
      with the same try/except ImportError degrade.
+  4. Wire concrete issuer verifier adapters through the §2 app registration contract
+     before wrappers start; browser bots requiring unavailable verification fail
+     startup. Document deployment wiring and test real verification behavior (including
+     forged credentials). Do not invent an existing Navigator verification route.
 - **Depends on**: Modules 2, 4.
 - **Interface Skeleton**:
   ```python
@@ -365,6 +446,7 @@ def setup_browser_auth_routes(app: web.Application) -> None: ...
       """Consume a browser-mode login payload POSTed by a login page.
 
       400 on malformed JSON / missing state; 410 on unknown or expired state;
+      401 on rejected credentials/identity mismatch; 503 on verifier unavailability;
       200 {ok: true, redirect_url: "https://t.me/<bot>"} on success.
       Never echoes tokens back in the response body.
       """
@@ -383,20 +465,37 @@ def setup_browser_auth_routes(app: web.Application) -> None: ...
 - **Responsibility**: When the query string carries `return_mode=browser`, the page —
   after its existing auth logic produces the payload it would `sendData()` — instead
   POSTs `{...payload, state}` to `complete_url` and renders success (with
-  `redirect_url` deep link) or error. The `sendData()` path is untouched when the param
-  is absent.
+  `redirect_url` deep link) or error. The `sendData()` path is untouched only when no
+  browser context is present (including retained attempt context after SSO).
+- **Redirect continuity**: update the explicit `preserveParams` allowlists in
+  `azure_login.html` (current lines 247–257) and `login_multi.html` (552–570), not just
+  their `sendData` call sites. Preserve `return_mode=browser`, the exact original
+  `state`, and `complete_url` in Navigator's `redirect_uri` for both Azure and Google.
+  Navigator's internal OAuth state remains separate. Return-page initialization must
+  recover this context before handling `?token=`; missing/invalid browser context must
+  show an error and must never fall back to `sendData`. A `browser.` state or retained
+  browser attempt marker with missing mode also fails closed. Preserve legacy behavior
+  only for pages genuinely opened without browser context.
+- **Completion destination**: `complete_url` is generated from the server's
+  `public_base_url` and constant path. The deployed page validates it against a
+  server-provided allowed completion origin/path before sending credentials; query
+  parameters alone cannot establish that allowlist. Preserve it unchanged across SSO
+  redirects. Never POST credentials to an arbitrary query-supplied URL.
 - **Depends on**: Module 5 (endpoint contract).
 - **Interface Skeleton**: *(JS contract, not Python)*
   ```javascript
   // shared snippet added to the three pages
-  // completeLogin(payload): if return_mode === "browser" → POST JSON to
-  // complete_url with {…payload, state}; else Telegram.WebApp.sendData(payload)
+  // completeLogin(payload): browser context → validate mode/state/destination,
+  // then POST JSON {…payload, state}; incomplete browser context → show error.
+  // Only genuine legacy context → Telegram.WebApp.sendData(JSON.stringify(payload)).
   ```
 
 ### Module 7: Documentation
 - **Path**: `wiki/integrations/telegram-auth-open-mode.md` (new)
 - **Responsibility**: Configuration reference (`auth_open_mode`, `public_base_url`),
-  flow diagrams for both modes, Wayland/WebKitGTK context, PassKey/MCP follow-up notes.
+  flow diagrams for both modes, verifier registration/issuer requirements and startup
+  errors, browser-state routing, SSO parameter continuity, Wayland/WebKitGTK context,
+  PassKey/MCP follow-up notes.
 - **Depends on**: Modules 1–6.
 
 ---
@@ -418,9 +517,18 @@ def setup_browser_auth_routes(app: web.Application) -> None: ...
 | `test_complete_auth_payload_success_notifies_chat` | M4 | strategy mock → bot.send_message called with chat_id |
 | `test_handle_web_app_data_delegates_to_complete` | M4 | webview path behavior preserved |
 | `test_oauth2_callback_browser_branch` | M5 | registered state → server-side completion + success HTML (no sendData script) |
-| `test_oauth2_callback_legacy_branch_unchanged` | M5 | unknown state → sendData HTML (existing contract) |
+| `test_oauth2_callback_legacy_branch_unchanged` | M5 | unknown **unprefixed** state → legacy sendData HTML (existing contract) |
 | `test_browser_complete_handler_unknown_state_410` | M5 | expired/unknown state → 410, no session created |
 | `test_browser_complete_handler_success` | M5 | valid payload → 200 + redirect_url, session authenticated |
+| `test_browser_startup_requires_verifiers` | M4/M5 | Missing verifier for any enabled basic/azure/google member fails startup; OAuth2-only needs none |
+| `test_browser_basic_rejects_forged_identity` | M4/M5 | Valid login state plus arbitrary user_id and empty/fake token → 401; no callback, mutation, link, or post-auth action |
+| `test_browser_sso_rejects_invalid_tokens` | M4/M5 | Azure/Google: unsigned or tampered JWT, expired token, wrong issuer/audience/tenant → 401; no session/link mutation |
+| `test_browser_identity_uses_verified_claims` | M4/M5 | Candidate derives solely from verifier; conflicting client identity rejected; composite selects only enabled method |
+| `test_browser_verifier_unavailable_fails_closed` | M4/M5 | Backend failure → 503; consumed state cannot retry; legacy callbacks never invoked |
+| `test_oauth2_browser_replay_expiry_410` | M2/M5 | Consumed, expired, swept, restart-lost and unknown prefixed states → GET 410; no sendData, strategy invocation or mutation |
+| `test_oauth2_browser_callback_exactly_once` | M4/M5 | Single and composite OAuth2: callback, PKCE consume, exchange and userinfo each invoked once; persistence/initialization once on success |
+| `test_oauth2_browser_concurrent_callbacks` | M2/M5 | Two callbacks for one state → one completion and one 410; one exchange total |
+| `test_oauth2_browser_error_no_legacy_fallback` | M5 | Prefixed state plus provider error/missing code uses browser error response; no sendData or strategy call |
 
 ### Integration Tests
 
@@ -429,6 +537,9 @@ def setup_browser_auth_routes(app: web.Application) -> None: ...
 | `test_browser_mode_full_flow_oauth2` | `/login` → registry entry → simulated provider redirect → authenticated session + proactive message |
 | `test_browser_mode_full_flow_basic` | `/login` → POST to browser-complete with basic payload → authenticated session |
 | `test_browser_mode_combined_post_auth` | browser primary + post_auth_actions → pending attempt lane engages with explicit chat_id |
+| `test_browser_mode_sso_redirect_round_trip` | Execute Azure and multi-login page JS for Azure/Google: parse generated redirect_uri, simulate Navigator token return and verify exact browser state/completion URL preserved, one POST, zero sendData calls |
+| `test_browser_mode_sso_context_failure` | Remove/corrupt browser return context or tamper completion origin; page reports error, sends no credential POST and never falls back to sendData |
+| `test_browser_mode_real_verifier_contract` | Concrete deployment verifier accepts issuer-produced credentials, rejects forged/wrong-context ones, and returns authoritative identity; do not substitute a mock for this contract test |
 
 ### Validation Contract
 
@@ -436,7 +547,16 @@ tests:
 - packages/ai-parrot-integrations/tests/integrations/telegram/test_auth_strategies.py
 - packages/ai-parrot-integrations/tests/integrations/telegram/test_oauth2_integration.py
 - packages/ai-parrot-integrations/tests/integrations/telegram/test_azure_integration.py
+- packages/ai-parrot-integrations/tests/integrations/telegram/test_browser_login.py
+- packages/ai-parrot-integrations/tests/integrations/telegram/test_browser_identity_verification.py
 markers: none
+
+The two browser test files are new M2/M4/M5 deliverables. M6 additionally supplies an
+executable page round-trip check using the repository's existing browser/JS test
+tooling; source-string assertions alone are insufficient. Record its command and
+evidence with the task. The concrete verifier and page checks are required completion
+evidence even where an issuer/browser fixture is unavailable locally; do not silently
+skip them and declare the feature complete. No new dependencies are authorized here.
 
 ### Test Data / Fixtures
 
@@ -468,8 +588,21 @@ def browser_config():
       `TelegramUserSession` → proactive `bot.send_message` confirmation.
 - [ ] A basic/azure/google browser login completes via
       `POST /api/auth/telegram/browser-complete` with the page's legacy payload + state.
+- [ ] Browser page payloads authenticate only after server-side issuer verification;
+      identity is derived from verified results, not JSON fields or unverified JWT
+      claims. Forged/mismatched credentials yield 401, verifier failure yields 503,
+      and neither mutates sessions/links nor starts post-auth actions. All enabled
+      page-based methods have concrete verifiers wired before startup.
+- [ ] Azure/Google (including composite) preserve `return_mode`, `state`, and the
+      validated `complete_url` across the actual Navigator redirect round trip;
+      missing browser context fails closed with no sendData fallback.
 - [ ] Browser-mode `state` is single-use and TTL-bound (600 s); replay or expiry yields
-      HTTP 410 and no session mutation.
+      HTTP 410 and no session mutation on **both GET OAuth callback and POST completion**.
+      The `browser.` prefix remains recognizable after consumption, sweep, or restart;
+      only unprefixed GET states retain the legacy response.
+- [ ] `_complete_auth_payload` exclusively owns primary authentication: OAuth2 callback,
+      PKCE consumption, code exchange, and userinfo occur exactly once per successful
+      single/composite login; duplicate/concurrent callbacks perform no second exchange.
 - [ ] `auth_open_mode: browser` without `public_base_url` fails at config load with a
       clear ValueError.
 - [ ] Browser success page contains the `https://t.me/<bot_username>` deep link.
@@ -586,11 +719,11 @@ class PendingLoginCoordinator:  # line 137
 |---|---|---|---|
 | `BrowserLoginRegistry` | aiohttp app state | `app["telegram_browser_login"]` (pattern: `app.get("telegram_connection_notifier")`) | `telegram/wrapper.py:2717` |
 | M3 browser keyboards | `InlineKeyboardMarkup` precedent | same construction as /connect buttons | `telegram/wrapper.py:2698-2700` |
-| M4 `_complete_auth_payload` | `self._auth_strategy.handle_callback(data, session)` | method call | `telegram/wrapper.py:2609` |
+| M4 `_complete_auth_payload` | `self._auth_strategy.handle_callback(data, session)` | once for OAuth2/webview only; browser page methods use verified candidates (§2) | `telegram/wrapper.py:2609` |
 | M4 proactive notify | `self.bot.send_message(chat_id=...)` | method call | `telegram/wrapper.py:2723` |
-| M5 oauth2 browser branch | `OAuth2AuthStrategy.handle_callback` | code+state payload | `telegram/auth.py:1245` |
+| M5 oauth2 browser branch | M4 completion helper → `OAuth2AuthStrategy.handle_callback` | one delegation with auth_method+code+state; no direct strategy call in M5 | `telegram/auth.py:1245` |
 | M5 route mount | orchestrator combined-auth mount block | `setup_browser_auth_routes(app)` beside line 369 | `orchestrator.py:359-369` |
-| M6 pages | `Telegram.WebApp.sendData` legacy path | preserved when `return_mode` absent | `telegram/static/*.html` (all three contain sendData) |
+| M6 pages | `Telegram.WebApp.sendData` legacy path | preserved only when no browser attempt context exists | `telegram/static/*.html` (all three contain sendData) |
 
 ### Does NOT Exist (Anti-Hallucination)
 
@@ -601,6 +734,12 @@ class PendingLoginCoordinator:  # line 137
 - ~~`TelegramAgentWrapper._complete_auth_payload`~~ — does not exist (M4 extracts it).
 - ~~`app["telegram_wrappers"]`~~ — no such app-scoped wrapper map exists yet (M4 adds
   it); the only precedent app keys are `telegram_connection_notifier` and the manager's.
+- ~~Browser identity verification via existing `validate_token`~~ — not a verified
+  identity lookup. Basic callback trusts submitted identity; Azure/Google decode JWT
+  claims without signature checks. `BrowserIdentityVerifier`, its Pydantic result,
+  concrete issuer adapters and `telegram_browser_identity_verifiers` app map are new
+  contracts in this feature, not pre-existing APIs. Task decomposition must identify
+  the concrete deployed issuer's verification contract; no guessed Navigator route.
 - ~~Redis-backed state for primary oauth2 login~~ — `_pending_states` is an in-memory
   dict (auth.py:1125); only the FEAT-108 Jira combined flow uses Redis, via
   `JiraOAuthManager`, not available for generic strategies.
@@ -641,8 +780,11 @@ Verified against: `77f8c54f58`
 - Logging via module logger (`navconfig.logging`), pattern of `oauth2_callback.py:13`.
 - App-scoped singletons via `get_or_create_*` accessor, pattern of
   `connection_notifier.py:227`.
-- The browser branch in `oauth2_callback_handler` must be **additive**: unknown state →
-  byte-identical legacy response (webview deployments see zero change).
+- The browser branch in `oauth2_callback_handler` must be **additive**: unknown
+  unprefixed state → byte-identical legacy response; unknown `browser.` state → 410.
+  Registry misses must never decide the presentation mode. Prefix classification is
+  performed before legacy error rendering, while registry membership authenticates
+  the correlation and the verifier/provider authenticates identity.
 - `bot_username` for the deep link: cache `(await self.bot.get_me()).username` once in
   the wrapper at startup/first login; store it in the registry entry.
 
@@ -802,7 +944,9 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 - **Pages**:
   - `wiki/integrations/telegram-auth-open-mode.md` — create: configuration reference
     (`auth_open_mode`, `public_base_url`), both flow diagrams, Wayland/WebKitGTK
-    motivation, single-process constraint, PassKey/MCP-tools follow-up pointers.
+    motivation, single-process constraint, verifier adapter wiring and issuer contract,
+    browser-state replay routing, SSO return-context preservation, PassKey/MCP-tools
+    follow-up pointers.
 - **API modules**:
   - `parrot.integrations.telegram.browser_login`
 
@@ -820,8 +964,9 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
   - M7 → all (documents the result)
   - M1 and M2 have no edges between them — expected concurrent.
 - **Shared files**: `auth.py` (M3 only), `wrapper.py` (M4 only), `oauth2_callback.py`
-  (M5 only), `models.py` (M1 only) — no file is touched by two modules; the three
-  static HTML pages belong to M6 only.
+  (M5 only), `models.py` (M1 only); the three static HTML pages belong to M6 only.
+  `browser_login.py` is created by M2 and extended by M5 after M2 completes; do not
+  schedule those edits concurrently. M5 owns host verifier wiring in `orchestrator.py`.
 - **Exclusive resources**: none (no native builds, no migrations, no lockfile).
 - **Cross-feature dependencies**: none — no open feature touches
   `telegram/auth.py`/`wrapper.py` per `sdd/tasks/index/` at spec time.
@@ -833,3 +978,17 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-09 | Jesus Lara + Claude | Initial draft (scope resolved interactively: all strategies) |
+| 0.2 | 2026-11-09 | Codex | Resolve four design-review findings: verified browser identities, SSO context preservation, explicit browser replay routing, and single-owner OAuth completion; extend tests and acceptance criteria. |
+
+### Review resolution evidence (specification changes only)
+
+| Ledger issue | Resolution | Required implementation evidence |
+|---|---|---|
+| `4d8c2ca6b557` | §2 verification boundary; M2 protocol, M4 verified candidate construction, M5 concrete verifier wiring | Forged-identity/JWT rejection, issuer contract tests, no mutation on failure |
+| `2a71290fb8bf` | M6 redirect allowlists preserve browser context before token handling | Executed Azure/Google page round trips and missing-context failures |
+| `b2c02f74fc6d` | `browser.` state namespace; M2 atomic consumption; M5 classifies before legacy rendering | GET/POST expiry and replay → 410, including swept/restart-lost entries |
+| `1152c28db7d5` | M4 sole primary-auth owner; M5 delegates exactly once | Single/composite OAuth callback/exchange once; concurrent replay has no second exchange |
+
+These issues track defects in the draft design and are resolved by revision 0.2.
+Their closure does not claim the feature is implemented or its acceptance tests pass;
+the status remains draft and all implementation acceptance criteria remain unchecked.
