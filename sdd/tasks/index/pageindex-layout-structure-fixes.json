@@ -61,7 +61,7 @@
       "feature_id": "FEAT-855",
       "feature": "pageindex-layout-structure-fixes",
       "spec": "sdd/specs/pageindex-layout-structure-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -70,7 +70,7 @@
       "parallel": true,
       "parallelism_notes": "serialized after TASK-5408: both modify layout.py (LayoutProfile gains bookmarks_dropped then bold_sizes) and test_layout.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T13:47:23+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5409-bold-row-headings.md"
     },
