@@ -3716,8 +3716,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         if not self.is_agent_mode():
             return
         self.logger.warning(
-            "%s: LLM client %s (%s) declares supports_tool_loop=False; "
-            "its %d registered tools will not be executed",
+            "%s: LLM client %s (%s) declares supports_tool_loop=False; " "its %d registered tools will not be executed",
             self.name,
             type(self._llm).__name__,
             getattr(self._llm, "client_type", "?"),
