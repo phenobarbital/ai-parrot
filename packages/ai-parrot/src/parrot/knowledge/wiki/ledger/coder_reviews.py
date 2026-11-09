@@ -26,7 +26,7 @@ class CoderReview(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    task_id: str = Field(pattern=r"^TASK-\d{1,5}$")
+    task_id: str = Field(pattern=r"^(?:TASK-\d{1,5}|HOTFIX-[A-Za-z0-9][A-Za-z0-9._-]*-\d{1,5})$")
     attempt_uid: str = Field(min_length=1, max_length=128)
     backend: str = Field(min_length=1, max_length=80)
     model: str = Field(min_length=1, max_length=160)
