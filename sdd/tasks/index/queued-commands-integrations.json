@@ -68,18 +68,19 @@
       "priority": "high",
       "effort": "M",
       "parallelism_notes": "TASK-5395 creates parrot.jobs.JobManager and RedisJobStore; serializes edits to the moved manager/store and test_parrot_jobs_core.py.",
-      "file": "sdd/tasks/active/TASK-5396-jobs-owned-lifecycle.md",
+      "file": "sdd/tasks/completed/TASK-5396-jobs-owned-lifecycle.md",
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [
         "TASK-5395"
       ],
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-11-09T16:09:42+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-09T16:27:06+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5397",
