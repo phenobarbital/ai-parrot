@@ -12,6 +12,7 @@ from typing import Dict, Optional, Callable, Awaitable, Any, TYPE_CHECKING
 import asyncio
 import uuid
 import contextlib
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from navconfig.logging import logging
 from .models import JobStatus, Job
@@ -46,7 +47,11 @@ class JobManager:
         cleanup_interval: int = 3600,
         job_ttl: int = 86400,
         store: Optional["RedisJobStore"] = None,
+        *,
+        persistence_timeout: float = 0.5,
     ):
+        if persistence_timeout <= 0:
+            raise ValueError("persistence_timeout must be positive")
         self.id = id
         self.jobs: Dict[str, Job] = {}
         self.tasks: Dict[str, asyncio.Task] = {}
@@ -56,6 +61,10 @@ class JobManager:
         self._cleanup_task: Optional[asyncio.Task] = None
         self._running = False
         self._store: Optional["RedisJobStore"] = store
+        self.persistence_timeout = persistence_timeout
+        self._persistence_tasks: set[asyncio.Task] = set()
+        self._persistence_locks: Dict[str, asyncio.Lock] = {}
+        self._persistence_versions: Dict[str, int] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -67,14 +76,9 @@ class JobManager:
             self._running = True
             self._cleanup_task = asyncio.create_task(self._cleanup_loop())
             self.logger.info("JobManager started (store=%s)", type(self._store).__name__)
-            # Connect to Redis store if provided
+            # Redis availability is intentionally not part of admission.
             if self._store is not None:
-                try:
-                    await self._store.connect()
-                    self.logger.info("RedisJobStore connected")
-                except Exception as exc:  # pylint: disable=broad-except
-                    self.logger.warning("RedisJobStore connection failed — jobs will be in-memory only: %s", exc)
-                    self._store = None
+                self._track_persistence_task(self._connect_store())
 
     async def stop(self) -> None:
         """Stop the job manager and cancel all running tasks."""
@@ -88,21 +92,56 @@ class JobManager:
             task.cancel()
         if running_tasks:
             await asyncio.gather(*running_tasks, return_exceptions=True)
+        await self._drain_persistence_tasks()
         if self._store is not None:
-            await self._store.close()
+            try:
+                await asyncio.wait_for(self._store.close(), timeout=self.persistence_timeout)
+            except (TimeoutError, Exception) as exc:  # pylint: disable=broad-except
+                self.logger.warning("RedisJobStore.close failed: %s", exc)
         self.logger.info("JobManager stopped")
 
     # ------------------------------------------------------------------
     # Persistence helpers
     # ------------------------------------------------------------------
 
-    async def _persist(self, job: Job) -> None:
-        """Save a job to the Redis store (silent on failure)."""
+    def _track_persistence_task(self, coroutine: Awaitable[Any]) -> None:
+        """Track a bounded background persistence operation."""
+        task = asyncio.create_task(coroutine)
+        self._persistence_tasks.add(task)
+        task.add_done_callback(self._persistence_tasks.discard)
+
+    def _queue_persist(self, job: Job) -> None:
+        """Queue an immutable persistence snapshot without blocking admission."""
+        job_id = job.job_id
+        version = self._persistence_versions.get(job_id, 0) + 1
+        self._persistence_versions[job_id] = version
+        self._track_persistence_task(self._persist(deepcopy(job), version))
+
+    async def _connect_store(self) -> None:
+        """Connect the optional store within the persistence budget."""
         if self._store is None:
             return
         try:
-            await self._store.save(job)
-        except Exception as exc:  # pylint: disable=broad-except
+            await asyncio.wait_for(self._store.connect(), timeout=self.persistence_timeout)
+            self.logger.info("RedisJobStore connected")
+        except (TimeoutError, Exception) as exc:  # pylint: disable=broad-except
+            self.logger.warning("RedisJobStore connection failed — jobs will be in-memory only: %s", exc)
+
+    async def _persist(self, job: Job, version: Optional[int] = None) -> None:
+        """Save a job to the Redis store (silent on failure)."""
+        if self._store is None:
+            return
+        job_id = job.job_id
+        if version is None:
+            version = self._persistence_versions.get(job_id, 0) + 1
+            self._persistence_versions[job_id] = version
+        lock = self._persistence_locks.setdefault(job_id, asyncio.Lock())
+        try:
+            async with lock:
+                if version < self._persistence_versions.get(job_id, version):
+                    return
+                await asyncio.wait_for(self._store.save(job), timeout=self.persistence_timeout)
+        except (TimeoutError, Exception) as exc:  # pylint: disable=broad-except
             self.logger.warning("RedisJobStore.save failed for job %s: %s", job.job_id, exc)
 
     async def _remove_from_store(self, job_id: str) -> None:
@@ -110,9 +149,21 @@ class JobManager:
         if self._store is None:
             return
         try:
-            await self._store.delete(job_id)
-        except Exception as exc:  # pylint: disable=broad-except
+            await asyncio.wait_for(self._store.delete(job_id), timeout=self.persistence_timeout)
+        except (TimeoutError, Exception) as exc:  # pylint: disable=broad-except
             self.logger.warning("RedisJobStore.delete failed for job %s: %s", job_id, exc)
+
+    async def _drain_persistence_tasks(self) -> None:
+        """Drain background persistence within a finite shutdown budget."""
+        tasks = list(self._persistence_tasks)
+        if not tasks:
+            return
+        done, pending = await asyncio.wait(tasks, timeout=self.persistence_timeout)
+        del done
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     # ------------------------------------------------------------------
     # Progress reporting
@@ -144,7 +195,7 @@ class JobManager:
         if job.metadata is None:
             job.metadata = {}
         job.metadata.update(values)
-        await self._persist(job)
+        await self._persist(deepcopy(job))
         return job
 
     async def report_progress(self, job_id: str, progress: Any) -> Optional[Job]:
@@ -175,6 +226,8 @@ class JobManager:
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         execution_mode: Optional[str] = None,
+        *,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> Job:
         """Create a new job and register it in memory (and Redis if configured).
 
@@ -198,11 +251,12 @@ class JobManager:
             user_id=user_id,
             session_id=session_id,
             execution_mode=execution_mode,
+            metadata=deepcopy(metadata) if metadata is not None else {},
         )
         self.jobs[job_id] = job
         self.logger.info("Created job %s for object %s", job_id, obj_id)
         # Persist asynchronously without blocking the caller
-        asyncio.get_running_loop().create_task(self._persist(job))
+        self._queue_persist(job)
         return job
 
     async def execute_job(
@@ -222,6 +276,7 @@ class JobManager:
             return
         task = asyncio.create_task(self._run_job(job_id, execution_func))
         self.tasks[job_id] = task
+        task.add_done_callback(lambda _: self.tasks.pop(job_id, None))
         self.logger.info("Started execution of job %s", job_id)
 
     async def _run_job(
@@ -237,7 +292,7 @@ class JobManager:
         try:
             job.status = JobStatus.RUNNING
             job.started_at = datetime.now(timezone.utc)
-            await self._persist(job)
+            await self._persist(deepcopy(job))
             self.logger.info("Job %s started execution", job_id)
 
             result = await execution_func()
@@ -245,7 +300,7 @@ class JobManager:
             job.status = JobStatus.COMPLETED
             job.result = result
             job.completed_at = datetime.now(timezone.utc)
-            await self._persist(job)
+            await self._persist(deepcopy(job))
             self.logger.info(
                 "Job %s completed successfully in %.2fs",
                 job_id,
@@ -255,8 +310,8 @@ class JobManager:
         except asyncio.CancelledError:
             job.status = JobStatus.CANCELLED
             job.completed_at = datetime.now(timezone.utc)
-            job.error = "Job was cancelled"
-            await self._persist(job)
+            job.error = job.error or "Job was cancelled"
+            await self._persist(deepcopy(job))
             self.logger.warning("Job %s was cancelled", job_id)
             raise
 
@@ -264,11 +319,25 @@ class JobManager:
             job.status = JobStatus.FAILED
             job.completed_at = datetime.now(timezone.utc)
             job.error = str(exc)
-            await self._persist(job)
+            await self._persist(deepcopy(job))
             self.logger.error("Job %s failed: %s", job_id, exc, exc_info=True)
 
         finally:
             self.tasks.pop(job_id, None)
+
+    async def cancel_job(self, job_id: str, reason: str = "Job was cancelled") -> bool:
+        """Cancel an owned live task while retaining its record and reason."""
+        job = self.jobs.get(job_id)
+        task = self.tasks.get(job_id)
+        terminal = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}
+        if job is None or task is None or task.done() or job.status in terminal:
+            return False
+        job.status = JobStatus.CANCELLED
+        job.error = reason
+        job.completed_at = datetime.now(timezone.utc)
+        task.cancel()
+        await self._persist(deepcopy(job))
+        return True
 
     def get_job(self, job_id: str) -> Optional[Job]:
         """Return a job from the in-memory store.
@@ -287,9 +356,8 @@ class JobManager:
     async def get_job_async(self, job_id: str) -> Optional[Job]:
         """Return a job from memory or Redis.
 
-        Checks the in-memory dict first (fast path).  If not found and a
-        Redis store is configured, queries Redis and — on a hit — re-hydrates
-        the in-memory dict so subsequent calls are fast.
+        Owned records are served from memory. Foreign records are always read
+        afresh from Redis and are never added to the owned map.
 
         Args:
             job_id: Job identifier.
@@ -307,8 +375,6 @@ class JobManager:
             try:
                 job = await self._store.get(job_id)
                 if job is not None:
-                    # Re-hydrate memory cache
-                    self.jobs[job_id] = job
                     return job
             except Exception as exc:  # pylint: disable=broad-except
                 self.logger.warning("RedisJobStore.get failed for job %s: %s", job_id, exc)
@@ -320,6 +386,7 @@ class JobManager:
         obj_id: Optional[str] = None,
         status: Optional[JobStatus] = None,
         limit: int = 100,
+        user_id: Optional[str] = None,
     ) -> list:
         """List in-memory jobs with optional filtering (newest first).
 
@@ -338,6 +405,8 @@ class JobManager:
             jobs = [j for j in jobs if j.obj_id == obj_id]
         if status:
             jobs = [j for j in jobs if j.status == status]
+        if user_id:
+            jobs = [j for j in jobs if j.user_id == user_id]
         jobs.sort(key=lambda j: j.created_at, reverse=True)
         return jobs[:limit]
 
@@ -346,6 +415,7 @@ class JobManager:
         obj_id: Optional[str] = None,
         status: Optional[JobStatus] = None,
         limit: int = 100,
+        user_id: Optional[str] = None,
     ) -> list:
         """List jobs from Redis (if store configured) or memory.
 
@@ -359,10 +429,10 @@ class JobManager:
         """
         if self._store is not None:
             try:
-                return await self._store.list_jobs(obj_id=obj_id, status=status, limit=limit)
+                return await self._store.list_jobs(obj_id=obj_id, status=status, limit=limit, user_id=user_id)
             except Exception as exc:  # pylint: disable=broad-except
                 self.logger.warning("RedisJobStore.list_jobs failed, falling back to memory: %s", exc)
-        return self.list_jobs(obj_id=obj_id, status=status, limit=limit)
+        return self.list_jobs(obj_id=obj_id, status=status, limit=limit, user_id=user_id)
 
     def delete_job(self, job_id: str) -> bool:
         """Delete a job from memory (and Redis if configured).
@@ -378,7 +448,7 @@ class JobManager:
                 self.tasks[job_id].cancel()
                 del self.tasks[job_id]
             del self.jobs[job_id]
-            asyncio.get_running_loop().create_task(self._remove_from_store(job_id))
+            self._track_persistence_task(self._remove_from_store(job_id))
             self.logger.info("Deleted job %s", job_id)
             return True
         return False
