@@ -307,9 +307,13 @@ def test_standalone_loader_resolves_kernel_by_path() -> None:
 
 @pytest.mark.parametrize("subagent", ["sdd-worker", "sdd-coder"])
 def test_programmatic_claude_protection_does_not_depend_on_project_settings(
-    linked_worktree: Path, subagent: str
+    linked_worktree: Path, monkeypatch: pytest.MonkeyPatch, subagent: str
 ) -> None:
     """Programmatic prompts lose frontmatter, so protection must be injected."""
+    # The assertion concerns hook injection, not whether this host can create
+    # Bubblewrap namespaces.  Keep the launch planner deterministic on hosts
+    # where the configured legacy backend cannot start Bubblewrap.
+    monkeypatch.setenv("PARROT_SDD_SANDBOX_MODE", "off")
     dispatcher = ClaudeCodeDispatcher(max_concurrent=1, redis_url="redis://unused", stream_ttl_seconds=1)
     profile = ClaudeCodeDispatchProfile(subagent=subagent, setting_sources=[])
     options = dispatcher._resolve_run_options(profile, str(linked_worktree))
