@@ -185,7 +185,14 @@ def _make_evidence_ref(durable_root: Path, relative_path: str, content: bytes) -
     )
 
 
-def _review_artifact_bytes(*, task_id: str, feature_slug: str, execution_id: str, implementation_sha: str) -> bytes:
+def _review_artifact_bytes(
+    *,
+    task_id: str,
+    feature_slug: str,
+    execution_id: str,
+    implementation_sha: str,
+    fix_commits: list[str] | None = None,
+) -> bytes:
     """Build the canonical review artifact content expected by finalization."""
     return (
         ReviewArtifact(
@@ -194,6 +201,7 @@ def _review_artifact_bytes(*, task_id: str, feature_slug: str, execution_id: str
             execution_id=execution_id,
             source="manual",
             summary="Review approved.",
+            fix_commits=fix_commits or [],
             head_sha=implementation_sha,
             recorded_at=datetime(2026, 11, 9, tzinfo=timezone.utc),
         )
@@ -361,6 +369,136 @@ def test_review_artifact_non_json_is_refused(tmp_path: Path, monkeypatch: pytest
     )
 
     with pytest.raises(InvalidEvidenceError, match="review-malformed"):
+        finalize_task(evidence=evidence, worktree=repo_root, expected_head=implementation_sha)
+
+    assert task_md_path.is_file()
+    assert not (repo_root / "sdd" / "tasks" / "completed").exists()
+
+
+def _replace_review(
+    evidence: TaskCompletionEvidence,
+    durable_root: Path,
+    name: str,
+    **artifact_fields: object,
+) -> None:
+    """Swap the evidence's review artifact for one built from *artifact_fields*."""
+    execution_id = "11111111-1111-4111-8111-111111111111"
+    fields: dict[str, object] = {
+        "task_id": evidence.task_id,
+        "feature_slug": evidence.feature_slug,
+        "execution_id": execution_id,
+        "implementation_sha": evidence.implementation_sha,
+    }
+    fields.update(artifact_fields)
+    evidence.review_evidence = _make_evidence_ref(
+        durable_root,
+        f"executions/{execution_id}/artifacts/{name}.json",
+        _review_artifact_bytes(**fields),  # type: ignore[arg-type]
+    )
+
+
+def _review_binding_setup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, task_id: str, feature_slug: str
+) -> tuple[Path, Path, Path, str]:
+    """Build a repo plus durable root; return `(task_md_path, repo_root, durable_root, implementation_sha)`."""
+    task_md_path, _index_path, implementation_sha = _build_repo(
+        tmp_path / "repo", task_id=task_id, feature_slug=feature_slug
+    )
+    durable_root = tmp_path / "durable"
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
+    return task_md_path, task_md_path.parents[3], durable_root, implementation_sha
+
+
+def test_review_artifact_must_match_feature_slug(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A review recorded for the same task id in another feature cannot finalize this one."""
+    task_id, feature_slug = "TASK-9108", "finalize-demo-g"
+    task_md_path, repo_root, durable_root, implementation_sha = _review_binding_setup(
+        tmp_path, monkeypatch, task_id=task_id, feature_slug=feature_slug
+    )
+    evidence = _build_evidence(
+        durable_root, task_id=task_id, feature_slug=feature_slug, implementation_sha=implementation_sha
+    )
+    _replace_review(evidence, durable_root, "review-other-feature", feature_slug="another-feature")
+
+    with pytest.raises(InvalidEvidenceError, match="feature_slug.*review-other-feature"):
+        finalize_task(evidence=evidence, worktree=repo_root, expected_head=implementation_sha)
+
+    assert task_md_path.is_file()
+    assert not (repo_root / "sdd" / "tasks" / "completed").exists()
+
+
+def test_review_head_must_be_ancestor_of_implementation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A review recorded on unrelated history is refused."""
+    task_id, feature_slug = "TASK-9109", "finalize-demo-h"
+    task_md_path, repo_root, durable_root, implementation_sha = _review_binding_setup(
+        tmp_path, monkeypatch, task_id=task_id, feature_slug=feature_slug
+    )
+    # A parentless commit with the same tree: it exists in the repo but is not an ancestor of HEAD.
+    side_sha = _git(["commit-tree", "HEAD^{tree}", "-m", "side"], cwd=repo_root).stdout.strip()
+    evidence = _build_evidence(
+        durable_root, task_id=task_id, feature_slug=feature_slug, implementation_sha=implementation_sha
+    )
+    _replace_review(evidence, durable_root, "review-side-branch", implementation_sha=side_sha)
+
+    with pytest.raises(InvalidEvidenceError, match="head_sha.*not an ancestor.*review-side-branch"):
+        finalize_task(evidence=evidence, worktree=repo_root, expected_head=implementation_sha)
+
+    assert task_md_path.is_file()
+    assert not (repo_root / "sdd" / "tasks" / "completed").exists()
+
+
+def test_review_head_unknown_to_repo_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A well-formed head_sha that does not exist in the repository is refused (fail-closed)."""
+    task_id, feature_slug = "TASK-9110", "finalize-demo-i"
+    task_md_path, repo_root, durable_root, implementation_sha = _review_binding_setup(
+        tmp_path, monkeypatch, task_id=task_id, feature_slug=feature_slug
+    )
+    evidence = _build_evidence(
+        durable_root, task_id=task_id, feature_slug=feature_slug, implementation_sha=implementation_sha
+    )
+    _replace_review(evidence, durable_root, "review-unknown-head", implementation_sha="f" * 40)
+
+    with pytest.raises(InvalidEvidenceError, match="head_sha.*review-unknown-head"):
+        finalize_task(evidence=evidence, worktree=repo_root, expected_head=implementation_sha)
+
+    assert task_md_path.is_file()
+    assert not (repo_root / "sdd" / "tasks" / "completed").exists()
+
+
+def test_review_head_older_ancestor_is_accepted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A review recorded before a later (lint) commit still finalizes the moved HEAD."""
+    task_id, feature_slug = "TASK-9111", "finalize-demo-j"
+    task_md_path, repo_root, durable_root, review_sha = _review_binding_setup(
+        tmp_path, monkeypatch, task_id=task_id, feature_slug=feature_slug
+    )
+    (repo_root / "src" / "demo" / "foo.py").write_text("value = 1  # lint\n", encoding="utf-8")
+    _git(["add", "--", "src/demo/foo.py"], cwd=repo_root)
+    _git(["commit", "-q", "-m", f"style: {task_id} lint"], cwd=repo_root)
+    new_head = _git(["rev-parse", "HEAD"], cwd=repo_root).stdout.strip()
+    assert new_head != review_sha
+    evidence = _build_evidence(durable_root, task_id=task_id, feature_slug=feature_slug, implementation_sha=new_head)
+    _replace_review(evidence, durable_root, "review-before-lint", implementation_sha=review_sha)
+
+    result = finalize_task(evidence=evidence, worktree=repo_root, expected_head=new_head)
+
+    assert result["replayed"] is False
+    assert (repo_root / "sdd" / "tasks" / "completed" / task_md_path.name).exists()
+
+
+def test_review_fix_commits_must_be_in_evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A review's reviewer corrections must all appear in the evidence's fix_commits."""
+    task_id, feature_slug = "TASK-9112", "finalize-demo-k"
+    task_md_path, repo_root, durable_root, implementation_sha = _review_binding_setup(
+        tmp_path, monkeypatch, task_id=task_id, feature_slug=feature_slug
+    )
+    fix_sha = _git(["rev-parse", "HEAD~1"], cwd=repo_root).stdout.strip()
+    evidence = _build_evidence(
+        durable_root, task_id=task_id, feature_slug=feature_slug, implementation_sha=implementation_sha
+    )
+    _replace_review(evidence, durable_root, "review-with-fixes", fix_commits=[fix_sha])
+    assert evidence.fix_commits == []
+
+    with pytest.raises(InvalidEvidenceError, match=f"fix_commits.*{fix_sha}.*review-with-fixes"):
         finalize_task(evidence=evidence, worktree=repo_root, expected_head=implementation_sha)
 
     assert task_md_path.is_file()
