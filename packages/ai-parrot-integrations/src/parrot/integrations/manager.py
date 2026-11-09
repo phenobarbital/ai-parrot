@@ -1167,7 +1167,11 @@ class IntegrationBotManager:
                 self.logger.error("Error while cancelling polling tasks: %s", e)
 
         # Now close bot sessions
-        for name, (bot, _dp, _) in self.telegram_bots.items():
+        for name, (bot, _dp, wrapper) in self.telegram_bots.items():
+            try:
+                await wrapper.close()
+            except Exception as exc:
+                self.logger.error("Error closing Telegram wrapper '%s': %s", name, exc)
             try:
                 self.logger.debug("Closing session for bot '%s'", name)
                 await bot.session.close()
