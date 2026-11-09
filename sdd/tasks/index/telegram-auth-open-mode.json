@@ -79,7 +79,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -90,8 +90,9 @@
       "parallelism_notes": "Reads TelegramAgentConfig.auth_open_mode/public_base_url from TASK-5417 (models.py) and also appends to test_auth_strategies.py after it; imports BROWSER_COMPLETE_PATH from TASK-5418 (browser_login.py).",
       "assigned_to": null,
       "started_at": "2026-11-09T16:55:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5419-strategy-browser-keyboards.md"
+      "completed_at": "2026-11-09T17:11:37+00:00",
+      "file": "sdd/tasks/completed/TASK-5419-strategy-browser-keyboards.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5420",
@@ -100,7 +101,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -110,8 +111,9 @@
       "parallelism_notes": "Implements BrowserIdentityVerifier and raises BrowserVerificationError/BrowserVerifierUnavailableError, and calls register/get_browser_identity_verifier, all created by TASK-5418 (browser_login.py).",
       "assigned_to": null,
       "started_at": "2026-11-09T16:55:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5420-navigator-jwt-verifier.md"
+      "completed_at": "2026-11-09T17:11:38+00:00",
+      "file": "sdd/tasks/completed/TASK-5420-navigator-jwt-verifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5421",
@@ -120,7 +122,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -130,8 +132,9 @@
       "parallelism_notes": "The Playwright test imports BROWSER_COMPLETE_PATH and new_browser_state from TASK-5418 (browser_login.py) to build complete_url/state; the HTML pages touch no other task's files.",
       "assigned_to": null,
       "started_at": "2026-11-09T16:55:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5421-dual-mode-login-pages.md"
+      "completed_at": "2026-11-09T17:11:38+00:00",
+      "file": "sdd/tasks/completed/TASK-5421-dual-mode-login-pages.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5422",
