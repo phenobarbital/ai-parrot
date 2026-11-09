@@ -98,7 +98,7 @@ wrong table (`wiki/knowledge/pageindex-agentic-retrieval.md:173`).
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:0136de3f01d443376d70e0bb4c26df2d69dd02ac8936059125179c1039e28ac8 evaluation_digest=sha256:9d1cd3108a4e1dc1cd3a0b50b758089649683741b6e53ef1504861bc40ba8cdb rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:e7f03f7320757d6476c8c6456d6105f1ec09f11e58ce91dd1a8b815aeabb58ee evaluation_digest=sha256:44d3f846758c517a2da47bb39ab9f535f672bff85a38bc7ca24baa7b648fdf9a rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -357,7 +357,8 @@ class AbstractClient(EventEmitterMixin, ABC):
 
 ### Module 4: Documentation
 - **Path**: `wiki/clients/abstract-client.md`, `wiki/knowledge/pageindex-agentic-retrieval.md`,
-  `sdd/specs/pageindex-agentic-retrieval.spec.md` (one line)
+  `sdd/specs/pageindex-agentic-retrieval.spec.md` (one line),
+  `packages/ai-parrot/tests/clients/test_tool_loop_docs.py` (new — AC-6 content checks)
 - **Responsibility**: document the attribute; replace the wrong provider table; close FEAT-843's
   escalated item by pointing at this spec.
 - **Depends on**: Module 1 (names), Module 2 (error text), Module 5 (warning text).
@@ -443,6 +444,8 @@ class AbstractClient(EventEmitterMixin, ABC):
 | `test_silent_when_not_agent_mode` | M5 | tools disabled, no tools, or `conversational` mode log nothing |
 | `test_silent_for_mock_client_without_bot_state` | M5 | `MagicMock` client on a bare bot: no warning, no `AttributeError` |
 | `test_configure_calls_warning_after_client_creation` | M5 | `configure()` warns once; the idempotent second call adds none |
+| `test_agentic_provider_table_is_corrected` | M4 | the agentic-retrieval provider table names the three `False` classes and no inherited-loop provider (AC-6) |
+| `test_abstract_client_documents_the_flag` | M4 | `abstract-client.md` documents the attribute, the bot warning and the absence of a streaming flag (AC-6) |
 
 ### Integration Tests
 | Test | Description |
@@ -460,6 +463,7 @@ tests:
 - packages/ai-parrot/tests/bots/test_tool_loop_warning.py
 - packages/ai-parrot/tests/bots/test_double_configure.py
 - packages/ai-parrot/tests/bots/test_configure_override_guards.py
+- packages/ai-parrot/tests/clients/test_tool_loop_docs.py
 markers: none
 
 ### Test Data / Fixtures
@@ -801,7 +805,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:0136de3f01d443376d70e0bb4c26df2d69dd02ac8936059125179c1039e28ac8 evaluation_digest=sha256:9d1cd3108a4e1dc1cd3a0b50b758089649683741b6e53ef1504861bc40ba8cdb rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:e7f03f7320757d6476c8c6456d6105f1ec09f11e58ce91dd1a8b815aeabb58ee evaluation_digest=sha256:44d3f846758c517a2da47bb39ab9f535f672bff85a38bc7ca24baa7b648fdf9a rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -839,10 +843,10 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:9d1cd3108a4e1dc1cd3a0b50b758089649683741b6e53ef1504861bc40ba8cdb",
+  "evaluation_digest": "sha256:44d3f846758c517a2da47bb39ab9f535f672bff85a38bc7ca24baa7b648fdf9a",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:0136de3f01d443376d70e0bb4c26df2d69dd02ac8936059125179c1039e28ac8",
+  "input_digest": "sha256:e7f03f7320757d6476c8c6456d6105f1ec09f11e58ce91dd1a8b815aeabb58ee",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
