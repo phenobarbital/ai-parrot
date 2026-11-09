@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-11-09T17:12:18.890007+00:00",
-  "completed_at": null,
+  "completed_at": "2026-11-09T19:19:07+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -284,7 +284,7 @@
       "feature_id": "FEAT-858",
       "feature": "bookstore-agentic-retrieval",
       "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -297,8 +297,9 @@
       "parallelism_notes": "TASK-5432: documents toolkit/MCP retrieval and guarded read symbols; TASK-5434: documents BookstoreOrigin and section diagnostics; TASK-5435: documents ask_cmd/doctor_cmd and their doctor facade dependency; TASK-5437: consumes the reviewed question fixture, actual report and measured defaults",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5438-bookstore-agentic-documentation.md"
+      "completed_at": "2026-11-09T19:19:07+00:00",
+      "file": "sdd/tasks/completed/TASK-5438-bookstore-agentic-documentation.md",
+      "verification": "verified"
     }
   ]
 }
