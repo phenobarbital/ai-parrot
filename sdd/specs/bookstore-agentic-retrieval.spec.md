@@ -59,7 +59,7 @@ guard on segment reads. These supersede the corresponding brainstorm mechanics.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:fe643c945df78c1f5f13c19d48f59c6ae87f723f7a3d624046dd7926c0e35045 evaluation_digest=sha256:50e5b850aa843d68015ac0674597dac1057be84edb6088f2741bf98a2231e3d2 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:89b8b75521927b0ccce05923767d68d49d81e48d593c12e661036dc61e85826b evaluation_digest=sha256:6226f21429e312d938a3282c08908610bbd8f5036c20496d3835e83ba0ecdaf1 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -542,7 +542,10 @@ tests:
 - packages/ai-parrot-tools/tests/multistoresearch/test_wiki_origin.py
 - packages/ai-parrot-tools/tests/multistoresearch/test_bookstore_origin.py
 - packages/ai-parrot-tools/tests/multistoresearch/test_origin_sections.py
+- packages/ai-parrot/tests/sdd/test_techwiki_check.py
 markers: none
+
+### Validation Notes
 
 New operands above are created by their owning modules before feature validation. No
 real_llm operand is in this deterministic contract; host evaluation is separate evidence.
@@ -1044,7 +1047,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:fe643c945df78c1f5f13c19d48f59c6ae87f723f7a3d624046dd7926c0e35045 evaluation_digest=sha256:50e5b850aa843d68015ac0674597dac1057be84edb6088f2741bf98a2231e3d2 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:89b8b75521927b0ccce05923767d68d49d81e48d593c12e661036dc61e85826b evaluation_digest=sha256:6226f21429e312d938a3282c08908610bbd8f5036c20496d3835e83ba0ecdaf1 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -1092,7 +1095,7 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:50e5b850aa843d68015ac0674597dac1057be84edb6088f2741bf98a2231e3d2",
+  "evaluation_digest": "sha256:6226f21429e312d938a3282c08908610bbd8f5036c20496d3835e83ba0ecdaf1",
   "exit_code": 0,
   "findings": [
     {
@@ -1159,7 +1162,7 @@ Coverage:
       "waived_by": null
     }
   ],
-  "input_digest": "sha256:fe643c945df78c1f5f13c19d48f59c6ae87f723f7a3d624046dd7926c0e35045",
+  "input_digest": "sha256:89b8b75521927b0ccce05923767d68d49d81e48d593c12e661036dc61e85826b",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
