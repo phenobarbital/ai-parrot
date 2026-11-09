@@ -759,9 +759,7 @@ class Bookstore:
         toolkit = await self._ready_toolkit(loc.scope)
         doc = await self._document_of(card, toolkit)
         try:
-            result = await toolkit.read_pages(
-                card.tree_name, doc["doc_id"], pages, max_chars=max_chars, cursor=cursor
-            )
+            result = await toolkit.read_pages(card.tree_name, doc["doc_id"], pages, max_chars=max_chars, cursor=cursor)
         except (KeyError, ValueError) as exc:
             raise BookstoreError(self._message(exc)) from exc
         return self._book_result(card, result)
@@ -1638,16 +1636,28 @@ class Bookstore:
                             card, status = await ingest(refreshed, "updated", slug)
                             break
 
+                    own_storage_dir = self._operation_storage_dir(scope)
                     allocation_locks = [
-                        (location.root / ".bookstore-operations", "allocation") for location in self.locations
+                        (location.root / ".bookstore-operations", "allocation")
+                        for location in self.locations
+                        if location.scope == scope or location.root.exists()
                     ]
                     async with AsyncExitStack() as allocations:
                         for storage_dir, name in sorted(
                             allocation_locks, key=lambda item: (str(item[0].resolve()), item[1])
                         ):
-                            await allocations.enter_async_context(
-                                tree_lock(storage_dir, name, timeout=self._lock_remaining(deadline))
-                            )
+                            try:
+                                await allocations.enter_async_context(
+                                    tree_lock(storage_dir, name, timeout=self._lock_remaining(deadline))
+                                )
+                            except TreeLockTimeout:
+                                raise
+                            except OSError:
+                                # A location this call cannot write to (read-only global library) cannot
+                                # receive a concurrent add either, so there is nothing to serialize against.
+                                if storage_dir == own_storage_dir:
+                                    raise
+                                self.logger.debug("Skipping allocation lock for read-only %s", storage_dir)
                         refreshed, _ = identity()
                         if refreshed is not None:
                             continue

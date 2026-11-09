@@ -215,3 +215,13 @@ def test_human_output_and_errors(harness: dict[str, Any]) -> None:
     result = _runner().invoke(bookstore, ["doctor"])
     assert result.exit_code == 1
     assert "No project library location available" in result.stderr
+
+
+def test_ask_human_output_strips_terminal_escapes(harness: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Book- or model-derived text cannot carry terminal control sequences to stdout."""
+    monkeypatch.setitem(BUNDLE, "answer", "line one\n\x1b]0;pwned\x07line two\tend")
+    monkeypatch.setitem(BUNDLE, "rendered_citations", "[Ethics\x1b[31m, p. 12]")
+    result = _runner().invoke(bookstore, ["ask", "ethics", "q"])
+    assert result.exit_code == 0, result.output
+    assert "\x1b" not in result.stdout and "\x07" not in result.stdout
+    assert "line one\n" in result.stdout and "line two\tend" in result.stdout

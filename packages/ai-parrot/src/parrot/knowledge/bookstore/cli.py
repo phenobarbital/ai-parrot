@@ -626,6 +626,12 @@ def _inline(value: Any) -> str:
     return " ".join("".join(ch if ch.isprintable() else " " for ch in text).split())
 
 
+def _safe_text(value: Any) -> str:
+    """Neutralise terminal control sequences in book- or model-derived text, keeping newlines and tabs."""
+    text = "" if value is None else str(value)
+    return "".join(ch if ch in "\n\t" or ch.isprintable() else " " for ch in text)
+
+
 def _echo_identity(store: Any) -> None:
     """Report the resolved provider/model on stderr (never stdout)."""
     adapter = getattr(store, "adapter", None)
@@ -689,10 +695,10 @@ def ask_cmd(
         click.echo(json.dumps(bundle, indent=2, default=str))
         return
     answer = bundle.get("answer")
-    click.echo(answer if answer else "(no answer drafted)")
+    click.echo(_safe_text(answer) if answer else "(no answer drafted)")
     rendered = bundle.get("rendered_citations")
     if rendered:
-        click.echo(f"\ncitations: {rendered}")
+        click.echo(f"\ncitations: {_safe_text(rendered)}")
     else:
         click.echo("\ncitations: (none)")
     click.echo(
@@ -745,14 +751,14 @@ def doctor_cmd(
     reserved = report.get("reserved", [])
     click.echo(f"reserved trees: {len(reserved)}")
     for entry in reserved:
-        click.echo(f"  {entry.get('action')}: {entry.get('name')} ({entry.get('reason')})")
+        click.echo(f"  {_inline(entry.get('action'))}: {_inline(entry.get('name'))} ({_inline(entry.get('reason'))})")
     books = report.get("books", [])
     problems = [entry for entry in books if entry.get("status") != "ok"]
     repaired = sum(1 for entry in books if entry.get("repaired"))
     click.echo(f"books: {len(books)}  issues: {len(problems)}  repaired: {repaired}")
     for entry in problems:
         suffix = " (repaired)" if entry.get("repaired") else ""
-        click.echo(f"  {entry.get('status')}: {entry.get('book_id')}{suffix}")
+        click.echo(f"  {_inline(entry.get('status'))}: {_inline(entry.get('book_id'))}{suffix}")
     unjudged = report.get("unjudged_book_ids", [])
     click.echo(f"unjudged books: {len(unjudged)}")
     summary = report.get("relate_summary")
@@ -766,7 +772,7 @@ def doctor_cmd(
             click.echo(f"  LLM skipped: {summary['skipped_llm_reason']}")
     for error in report.get("errors", []):
         target = error.get("book_id") or error.get("name") or error.get("scope") or "-"
-        click.echo(f"error: {target}: {error.get('error')}", err=True)
+        click.echo(f"error: {_inline(target)}: {_inline(error.get('error'))}", err=True)
 
 
 @bookstore.command("remove")

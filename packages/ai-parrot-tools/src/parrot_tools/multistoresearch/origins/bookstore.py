@@ -394,7 +394,7 @@ class BookstoreOrigin(SearchOrigin):
         store = stores.setdefault(Path(location.trees_dir), SegmentStore(location.trees_dir))
         try:
             stored = await asyncio.to_thread(store.load_revision, tree_name, doc_id, revision_id)
-        except (OSError, ValueError):
+        except Exception:  # noqa: BLE001 - a swept or concurrently evicted revision is simply stale
             stored = None
         if stored is None or stored.doc_id != doc_id or stored.revision != revision_id:
             diagnostics.stale_revisions += 1
