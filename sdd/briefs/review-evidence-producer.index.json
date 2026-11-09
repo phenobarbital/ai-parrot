@@ -5,7 +5,7 @@
   "type": "brief",
   "base_branch": "dev",
   "created_at": "2026-11-09",
-  "completed_at": null,
+  "completed_at": "2026-11-09T23:14:08Z",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -34,7 +34,7 @@
       "feature_id": "BRIEF-review-evidence-producer",
       "feature": "review-evidence-producer",
       "spec": "sdd/briefs/review-evidence-producer.brief.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -44,7 +44,7 @@
       "parallelism_notes": "touches only finalize_task.py and its test; disjoint from task 3",
       "assigned_to": null,
       "started_at": "2026-11-09T21:48:30+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-09T23:14:08+00:00",
       "file": "sdd/briefs/review-evidence-producer/tasks/HOTFIX-review-evidence-producer-2-finalize-checks-review-artifact.md"
     },
     {
@@ -54,7 +54,7 @@
       "feature_id": "BRIEF-review-evidence-producer",
       "feature": "review-evidence-producer",
       "spec": "sdd/briefs/review-evidence-producer.brief.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -64,7 +64,7 @@
       "parallelism_notes": "touches review_checkpoint.py, cli.py and the sdd-start prompts; disjoint from task 2",
       "assigned_to": null,
       "started_at": "2026-11-09T21:48:30+00:00",
-      "completed_at": null,
+      "completed_at": "2026-11-09T23:14:08+00:00",
       "file": "sdd/briefs/review-evidence-producer/tasks/HOTFIX-review-evidence-producer-3-review-record-cli.md"
     }
   ]

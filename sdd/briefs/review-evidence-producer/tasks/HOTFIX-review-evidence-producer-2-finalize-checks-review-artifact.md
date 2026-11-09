@@ -2,7 +2,7 @@
 
 **Feature**: review-evidence-producer — produce the review evidence that `parrot sdd task finalize` requires
 **Spec**: `sdd/briefs/review-evidence-producer.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: HOTFIX-review-evidence-producer-1
@@ -110,4 +110,6 @@ Read the brief first. Touch only the listed files. Run the validation commands w
 
 ## Completion Note
 
-Pending; populated by the task finalizer after implementation and validation.
+Merged by the engine; merge-tier and feature-tier validation green (93 passed, exit 0; supervisor labels the outcome
+`timed_out` despite exit 0 well inside its budget). Delivered on the first attempt by gpt-5.6-terra. Orchestrator reviewed the diff against the task contract: no corrections.
+HEAD at close: 587abc55cbd24d7630f71d996b8497fd8be59bd0.
