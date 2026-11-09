@@ -55,7 +55,7 @@
       "feature_id": "FEAT-858",
       "feature": "bookstore-agentic-retrieval",
       "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -63,8 +63,9 @@
       "parallelism_notes": "Independent guarded-read contract; no prerequisite symbols are created by another task.",
       "assigned_to": null,
       "started_at": "2026-11-09T17:17:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5427-bookstore-revision-guard.md"
+      "completed_at": "2026-11-09T17:24:50+00:00",
+      "file": "sdd/tasks/completed/TASK-5427-bookstore-revision-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5428",
@@ -173,7 +174,7 @@
       "feature_id": "FEAT-858",
       "feature": "bookstore-agentic-retrieval",
       "spec": "sdd/specs/bookstore-agentic-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -181,8 +182,9 @@
       "parallelism_notes": "Independent origin protocol task; modifies only base/toolkit and its own tests.",
       "assigned_to": null,
       "started_at": "2026-11-09T17:17:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5433-origin-section-diagnostics.md"
+      "completed_at": "2026-11-09T17:24:51+00:00",
+      "file": "sdd/tasks/completed/TASK-5433-origin-section-diagnostics.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5434",
