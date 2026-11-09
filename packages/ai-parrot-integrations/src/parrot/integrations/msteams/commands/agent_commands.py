@@ -333,7 +333,7 @@ class AgentCommandHandler:
 
         try:
             if skill_def is not None:
-                setattr(self.agent, "_active_skill", skill_def)
+                self.agent._active_skill = skill_def
                 try:
                     response = await self.agent.ask(
                         question,

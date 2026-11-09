@@ -12,7 +12,6 @@ from parrot.integrations.core.queued import (
     discover_queued_commands,
 )
 from parrot.integrations.core.queued.messages import (
-    JOB_COMMANDS,
     format_ack,
     format_cancel,
     format_job_list,
@@ -37,6 +36,7 @@ class TeamsQueuedCommands:
         """Register async turn-context handlers and owner-scoped controls."""
 
         for command in self.commands:
+
             async def command_handler(turn_context: TurnContext, _command: QueuedCommand = command) -> None:
                 client_id = getattr(self.wrapper.config, "client_id", None)
                 if not client_id:
@@ -98,7 +98,9 @@ class TeamsQueuedCommands:
     async def _jobs(self, turn_context: TurnContext) -> None:
         """Show the calling user's recent queued jobs."""
 
-        await self.wrapper.send_text(format_job_list(await self.service.list_for(self._requester(turn_context))), turn_context)
+        await self.wrapper.send_text(
+            format_job_list(await self.service.list_for(self._requester(turn_context))), turn_context
+        )
 
     async def _job_status(self, turn_context: TurnContext) -> None:
         """Show one requester-owned queued job."""
