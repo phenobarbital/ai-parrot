@@ -337,6 +337,14 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         # Register agent-declared commands (@telegram_command decorator)
         self._register_agent_commands()
 
+        from parrot.integrations.core.queued import discover_queued_commands
+        from .queued_commands import TelegramQueuedCommands
+
+        commands = discover_queued_commands(self.agent)
+        self._queued_commands = TelegramQueuedCommands(self, commands) if commands else None
+        if self._queued_commands:
+            self._add_platform_commands(self._queued_commands.register(self.router))
+
         # ─── Knowledge upload (FEAT-647) — before generic text/document handlers ───
         self._knowledge_upload = None
         if self.config.knowledge_upload.enabled:
@@ -2412,6 +2420,12 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if not callable(method):
             await message.answer(f"❌ `{method_name}` is not callable.")
             return
+        from parrot.integrations.core.queued import queued_spec_of
+
+        spec = queued_spec_of(method)
+        if spec is not None:
+            await message.answer(f"Use /{spec.command} — it runs in the background.")
+            return
 
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
         try:
@@ -2757,6 +2771,12 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         method = getattr(self.agent, method_name)
         if not callable(method):
             await message.answer(f"❌ '{method_name}' is not callable.")
+            return
+        from parrot.integrations.core.queued import queued_spec_of
+
+        spec = queued_spec_of(method)
+        if spec is not None:
+            await message.answer(f"Use /{spec.command} — it runs in the background.")
             return
 
         # Start typing indicator
@@ -3837,6 +3857,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         # FEAT-647: cancel running knowledge-upload jobs (their finally deletes staged files)
         if getattr(self, "_knowledge_upload", None) is not None:
             await self._knowledge_upload.shutdown()
+        if getattr(self, "_queued_commands", None) is not None:
+            await self._queued_commands.shutdown()
 
     async def handle_voice(self, message: Message) -> None:
         """Handle voice note (ContentType.VOICE) and audio file (ContentType.AUDIO).
