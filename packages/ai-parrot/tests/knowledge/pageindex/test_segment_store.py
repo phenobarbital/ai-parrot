@@ -98,3 +98,69 @@ def test_delete_tree_removes_segments(tmp_path):
 def test_package_exports():
     from parrot.knowledge.pageindex import DocumentRevision as DR, ReadResult, Segment, SegmentAddress  # noqa: F401
     assert DR is DocumentRevision
+
+
+def _scanned(scored_by="regex", flag=True, **kw):
+    rev = _rev(**kw)
+    rev.scored_by = scored_by
+    if flag:
+        rev.segments[0].flags = ["injection"]
+    return rev
+
+
+def test_save_revision_upgrades_unscanned_to_scanned(tmp_path):
+    store = SegmentStore(tmp_path)
+    plain, scanned = _rev(), _scanned()
+    assert plain.revision == scanned.revision
+    store.save_revision("t", plain)
+    store.save_revision("t", scanned)
+    loaded = store.load_revision("t", "d", scanned.revision)
+    assert loaded.scored_by == "regex"
+    assert loaded.segments[0].flags == ["injection"]
+
+
+def test_save_revision_never_downgrades_scanned(tmp_path):
+    store = SegmentStore(tmp_path)
+    scanned = _scanned()
+    store.save_revision("t", scanned)
+    store.save_revision("t", _rev())
+    loaded = store.load_revision("t", "d", scanned.revision)
+    assert loaded.scored_by == "regex"
+    assert loaded.segments[0].flags == ["injection"]
+
+
+def test_save_revision_replaces_on_different_engine(tmp_path):
+    store = SegmentStore(tmp_path)
+    store.save_revision("t", _scanned("regex"))
+    other = _scanned("llm", flag=False)
+    store.save_revision("t", other)
+    loaded = store.load_revision("t", "d", other.revision)
+    assert loaded.scored_by == "llm"
+    assert loaded.segments[0].flags == []
+
+
+def test_save_revision_replace_evicts_cache(tmp_path):
+    store = SegmentStore(tmp_path)
+    plain = _rev()
+    store.save_revision("t", plain)
+    assert store.load_revision("t", "d", plain.revision).scored_by is None  # populates the LRU
+    store.save_revision("t", _scanned())
+    assert store.load_revision("t", "d", plain.revision).scored_by == "regex"
+
+
+def test_save_revision_identical_scanned_is_noop(tmp_path):
+    store = SegmentStore(tmp_path)
+    path = store.save_revision("t", _scanned())
+    mtime = path.stat().st_mtime_ns
+    store.save_revision("t", _scanned())
+    assert path.stat().st_mtime_ns == mtime
+
+
+def test_save_revision_replaces_corrupt_file(tmp_path):
+    store = SegmentStore(tmp_path)
+    rev = _scanned()
+    path = store.revision_path("t", rev.doc_id, rev.revision)
+    path.parent.mkdir(parents=True)
+    path.write_text("not json", encoding="utf-8")
+    store.save_revision("t", rev)
+    assert store.load_revision("t", "d", rev.revision).scored_by == "regex"
