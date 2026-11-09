@@ -66,7 +66,7 @@ supports.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:834192f4b2bec0f9656c313c05a6a75264c42ba54baddc59b8c62de6ab2a5990 evaluation_digest=sha256:445602128db2eb2135c6ee054793c3da5a0d485cf40f667d09f796dbef7bbf13 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:f92a66b06c47d34aa5d2113c88ba930044b6e3b7d16fa90951c14d5b867c70d8 evaluation_digest=sha256:3ec88849705d47b1d9fe25d468a1193da74af051af7d4c95e19f1c5f941397c1 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -550,14 +550,14 @@ tests:
 - packages/ai-parrot-integrations/tests/integrations/telegram/test_login_pages_browser_mode.py
 markers: none
 
-The two browser test files are new M2/M4/M5 deliverables. M6 additionally supplies an
-executable page round-trip check using the repository's existing browser/JS test
-tooling (`test_login_pages_browser_mode.py`, Python Playwright + headless Chromium,
-pattern of `tests/voice/test_voice_demo_broadcast_browser.py`); source-string
-assertions alone are insufficient. Record its command and
-evidence with the task. The concrete verifier and page checks are required completion
-evidence even where an issuer/browser fixture is unavailable locally; do not silently
-skip them and declare the feature complete. No new dependencies are authorized here.
+> The two browser test files are new M2/M4/M5 deliverables. M6 additionally supplies an
+> executable page round-trip check using the repository's existing browser/JS test
+> tooling (`test_login_pages_browser_mode.py`, Python Playwright + headless Chromium,
+> pattern of `tests/voice/test_voice_demo_broadcast_browser.py`); source-string
+> assertions alone are insufficient. Record its command and
+> evidence with the task. The concrete verifier and page checks are required completion
+> evidence even where an issuer/browser fixture is unavailable locally; do not silently
+> skip them and declare the feature complete. No new dependencies are authorized here.
 
 ### Test Data / Fixtures
 
@@ -853,7 +853,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:834192f4b2bec0f9656c313c05a6a75264c42ba54baddc59b8c62de6ab2a5990 evaluation_digest=sha256:445602128db2eb2135c6ee054793c3da5a0d485cf40f667d09f796dbef7bbf13 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:f92a66b06c47d34aa5d2113c88ba930044b6e3b7d16fa90951c14d5b867c70d8 evaluation_digest=sha256:3ec88849705d47b1d9fe25d468a1193da74af051af7d4c95e19f1c5f941397c1 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -891,10 +891,10 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:445602128db2eb2135c6ee054793c3da5a0d485cf40f667d09f796dbef7bbf13",
+  "evaluation_digest": "sha256:3ec88849705d47b1d9fe25d468a1193da74af051af7d4c95e19f1c5f941397c1",
   "exit_code": 0,
   "findings": [],
-  "input_digest": "sha256:834192f4b2bec0f9656c313c05a6a75264c42ba54baddc59b8c62de6ab2a5990",
+  "input_digest": "sha256:f92a66b06c47d34aa5d2113c88ba930044b6e3b7d16fa90951c14d5b867c70d8",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
