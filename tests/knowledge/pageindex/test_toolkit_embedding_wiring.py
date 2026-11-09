@@ -6,63 +6,21 @@ Tests:
   - _search_for passes embedding_store + flags to HybridPageIndexSearch.
   - Publishing a generation prunes stale per-generation embedding matrices.
 
-Import note:
-    We use PageIndexToolkit via normal import since toolkit.py does not
-    import from parrot.knowledge.pageindex package __init__ — it uses
-    direct relative imports of submodules (content_store, hybrid_search, etc.).
-    We pre-register the package stub to prevent __init__.py from loading.
+Imports ``parrot.knowledge.pageindex`` normally (FEAT-852). The old note here
+claimed ``toolkit.py`` does not import the package ``__init__``; in fact
+``toolkit.py:40`` imports ``.embedding_store``, which is exactly the leg that
+closed the cycle once a stub package suppressed ``__init__``
+(issue:91822a3b8548).
 """
 from __future__ import annotations
 
-import importlib.util
-import sys
-import types
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-
-# ---------------------------------------------------------------------------
-# Module loading helpers (bypass heavy __init__.py)
-# ---------------------------------------------------------------------------
-
-_WT = Path(__file__).parents[3]  # <worktree root>
-
-
-def _load_module(name: str, rel_path: str):
-    """Load a module by file path, bypassing __init__.py chains."""
-    if name in sys.modules:
-        return sys.modules[name]
-    full = _WT / rel_path
-    spec = importlib.util.spec_from_file_location(name, str(full))
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-# Pre-register stub package to avoid __init__.py execution.
-if "parrot.knowledge.pageindex" not in sys.modules:
-    _pkg_stub = types.ModuleType("parrot.knowledge.pageindex")
-    _pkg_stub.__path__ = [  # type: ignore[attr-defined]
-        str(_WT / "packages/ai-parrot/src/parrot/knowledge/pageindex")
-    ]
-    _pkg_stub.__package__ = "parrot.knowledge.pageindex"
-    sys.modules["parrot.knowledge.pageindex"] = _pkg_stub
-
-# Load embedding_store (no internal parrot deps)
-_es_mod = _load_module(
-    "parrot.knowledge.pageindex.embedding_store",
-    "packages/ai-parrot/src/parrot/knowledge/pageindex/embedding_store.py",
-)
-NodeEmbeddingStore = _es_mod.NodeEmbeddingStore
-
-# Load HybridPageIndexSearch via module stub
-from parrot.knowledge.pageindex.hybrid_search import HybridPageIndexSearch  # noqa: E402
-
-# Load PageIndexToolkit
-from parrot.knowledge.pageindex.toolkit import PageIndexToolkit  # noqa: E402
+from parrot.knowledge.pageindex.embedding_store import NodeEmbeddingStore
+from parrot.knowledge.pageindex.hybrid_search import HybridPageIndexSearch
+from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 
 
 # ---------------------------------------------------------------------------
