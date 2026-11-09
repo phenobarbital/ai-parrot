@@ -149,11 +149,11 @@
       "priority": "high",
       "effort": "M",
       "parallelism_notes": "TASK-5398 supplies QueuedCommandService and progress APIs; TASK-5399 supplies send_parsed_to_chat and serializes overlapping telegram/wrapper.py and test_queued_commands_telegram.py edits.",
-      "file": "sdd/tasks/active/TASK-5400-telegram-queued-adapter.md",
+      "file": "sdd/tasks/completed/TASK-5400-telegram-queued-adapter.md",
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [
         "TASK-5398",
         "TASK-5399"
@@ -161,7 +161,8 @@
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-11-09T16:09:42+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-09T16:48:27+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5401",
@@ -191,18 +192,19 @@
       "priority": "high",
       "effort": "M",
       "parallelism_notes": "TASK-5398 supplies QueuedCommandService.submit/start/stop and requester-scoped controls; Slack adapter/wrapper/test files have no overlapping writers.",
-      "file": "sdd/tasks/active/TASK-5402-slack-queued-adapter.md",
+      "file": "sdd/tasks/completed/TASK-5402-slack-queued-adapter.md",
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [
         "TASK-5398"
       ],
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-11-09T16:09:42+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-09T16:48:28+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5403",
@@ -230,11 +232,11 @@
       "priority": "high",
       "effort": "M",
       "parallelism_notes": "TASK-5398 supplies current_job_id and report_command_progress; TASK-5403 supplies all four GitToolkit.list_pull_request_* reads consumed by _gather_full_review_context.",
-      "file": "sdd/tasks/active/TASK-5404-full-review-context-report.md",
+      "file": "sdd/tasks/completed/TASK-5404-full-review-context-report.md",
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [
         "TASK-5398",
         "TASK-5403"
@@ -242,7 +244,8 @@
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-11-09T16:09:42+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-09T16:48:28+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5405",
