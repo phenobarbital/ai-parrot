@@ -8,7 +8,7 @@ import math
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Any, Literal, Optional, Sequence
+from typing import Any, Literal, Mapping, Optional, Sequence
 
 from pydantic import BaseModel, Field
 
@@ -32,6 +32,14 @@ _HEADING_SHARE_CAP: float = 0.10
 _MAX_BOLD_WORDS: int = 12
 BOOKMARK_MAX_DROPPED_SHARE: float = 0.05
 """Out-of-order entries an outline may lose (share of its valid entries, rounded down) and still be used."""
+MAX_BOLD_LEVELS: int = 2
+"""Bold-row heading levels: the body size plus at most one larger body-text size."""
+ROW_OVERLAP: float = 0.5
+"""Lines of one block share a visual row when their vertical extents overlap by this share of the shorter one."""
+BOLD_REPEAT_MIN_PAGES: int = 3
+"""A bold row whose running_key text occurs on this many distinct pages is a label or table header."""
+_LIST_MARKER_RE = re.compile(r"^\(\s*[A-Za-z0-9]{1,4}\s*\)")
+_LIST_TAIL_RE = re.compile(r"(?:[;:]|;\s*(?:and|or))$", re.IGNORECASE)
 _ENUM_TITLE_RE = re.compile(r"^(page|p\.?)?\s*\d+$", re.IGNORECASE)
 _DIGITS_RE = re.compile(r"\d+")
 
@@ -65,10 +73,11 @@ class RunningLine(BaseModel):
 
 
 class BoldLine(BaseModel):
-    """A standalone body-size bold line and its page geometry."""
+    """A standalone bold row (body size or a larger body-text size) and its page geometry."""
 
     text: str
     bbox: tuple[float, float, float, float]
+    size: Optional[int] = None  # rounded font size of the row; None (older profiles) means the body size
 
 
 class LayoutProfile(BaseModel):
@@ -82,6 +91,7 @@ class LayoutProfile(BaseModel):
     bookmarks: list[Bookmark] = Field(default_factory=list)
     bookmark_rejection: Optional[str] = None
     bookmarks_dropped: int = 0
+    bold_sizes: list[int] = Field(default_factory=list)  # largest first, body last; [] means [body_size]
 
 
 def running_key(text: str) -> str:
@@ -103,6 +113,152 @@ def _band(y0: float, y1: float, height: float) -> Optional[Literal["top", "botto
     if y1 > (1.0 - RUNNING_BAND) * height:
         return "bottom"
     return None
+
+
+def _bold_sizes(size_counts: Mapping[int, int], body_size: Optional[int], heading_sizes: Sequence[int]) -> list[int]:
+    """Return the body size preceded by at most ``MAX_BOLD_LEVELS - 1`` larger body-text sizes, largest first.
+
+    A body-text size is above ``body_size``, not in ``heading_sizes`` and holds more than
+    ``_HEADING_SHARE_CAP`` of the counted characters.
+
+    Args:
+        size_counts: Characters per rounded font size, running lines excluded.
+        body_size: The dominant size, or None for a document without text.
+        heading_sizes: The size-ranked heading sizes.
+
+    Returns:
+        Sizes whose standalone bold rows are heading candidates; ``[]`` when ``body_size`` is None.
+    """
+    if body_size is None:
+        return []
+    total = sum(size_counts.values())
+    secondary = sorted(
+        (
+            size
+            for size, count in size_counts.items()
+            if size > body_size and size not in heading_sizes and total and count / total > _HEADING_SHARE_CAP
+        ),
+        reverse=True,
+    )
+    return [*secondary[: MAX_BOLD_LEVELS - 1], body_size]
+
+
+def _visual_rows(block_lines: Sequence[dict]) -> list[list[dict]]:
+    """Group a block's lines, in order, into visual rows.
+
+    A line joins the current row when its vertical extent overlaps the row's extent by at least
+    ``ROW_OVERLAP`` of the shorter of the two heights; otherwise it starts a new row.
+
+    Args:
+        block_lines: Line dicts of one block, in PyMuPDF order, each with a ``bbox``.
+
+    Returns:
+        The rows, each a list of line dicts.
+    """
+    rows: list[list[dict]] = []
+    for line in block_lines:
+        y0, y1 = float(line["bbox"][1]), float(line["bbox"][3])
+        if rows:
+            row_y0 = min(float(other["bbox"][1]) for other in rows[-1])
+            row_y1 = max(float(other["bbox"][3]) for other in rows[-1])
+            if min(y1, row_y1) - max(y0, row_y0) >= ROW_OVERLAP * min(y1 - y0, row_y1 - row_y0):
+                rows[-1].append(line)
+                continue
+        rows.append([line])
+    return rows
+
+
+def _row_all_bold(row: Sequence[dict]) -> bool:
+    """Return whether a row has spans and every one of them is bold."""
+    spans = [span for line in row for span in line["spans"]]
+    return bool(spans) and all(_is_bold(span) for span in spans)
+
+
+def _row_text(row: Sequence[dict]) -> str:
+    """Return the row's line texts joined by single spaces."""
+    return " ".join(line["text"] for line in row if line["text"]).strip()
+
+
+def _bold_row_size(row: Sequence[dict], bold_sizes: Sequence[int]) -> Optional[int]:
+    """Return the row's rounded size when the row is a bold heading candidate, else None.
+
+    Candidate: every span bold; one rounded size, in ``bold_sizes``; the joined text has at most
+    ``_MAX_BOLD_WORDS`` words, does not end with ``.`` or ``,``, is not a list item (``_LIST_MARKER_RE`` /
+    ``_LIST_TAIL_RE``), and its first alphanumeric character is not lowercase.
+
+    Args:
+        row: The row's line dicts.
+        bold_sizes: Sizes eligible for bold-row headings.
+
+    Returns:
+        The row size, or None when the row is not a candidate.
+    """
+    if not _row_all_bold(row):
+        return None
+    sizes = {round(float(span["size"])) for line in row for span in line["spans"]}
+    if len(sizes) != 1:
+        return None
+    size = next(iter(sizes))
+    if size not in bold_sizes:
+        return None
+    text = _row_text(row)
+    if not text or len(text.split()) > _MAX_BOLD_WORDS or text.endswith((".", ",")):
+        return None
+    if _LIST_MARKER_RE.match(text) or _LIST_TAIL_RE.search(text):
+        return None
+    first = next((char for char in text if char.isalnum()), "")
+    if first.islower():
+        return None
+    return size
+
+
+def _collect_bold_lines(
+    lines: Sequence[dict], running_keys: set[tuple[str, str]], bold_sizes: Sequence[int]
+) -> dict[int, list[BoldLine]]:
+    """Return standalone bold heading rows per page, without rows repeated on ``BOLD_REPEAT_MIN_PAGES`` pages.
+
+    A row is standalone when its block has one row, or it is the block's first row and no other row of the
+    block is all-bold. Rows containing a running line are skipped.
+
+    Args:
+        lines: Every line dict of the document, in page/block/line order.
+        running_keys: ``(band, key)`` pairs of the running headers and footers.
+        bold_sizes: Sizes eligible for bold-row headings.
+
+    Returns:
+        Bold rows keyed by 1-based page number, in document order.
+    """
+    blocks: dict[tuple[int, int], list[dict]] = {}
+    for line in lines:
+        blocks.setdefault((line["page"], line["block"]), []).append(line)
+    candidates: list[tuple[int, str, BoldLine]] = []
+    for (page_no, _), block_lines in blocks.items():
+        rows = _visual_rows(block_lines)
+        for row_index, row in enumerate(rows):
+            if any((line["band"], line["key"]) in running_keys for line in row):
+                continue
+            size = _bold_row_size(row, bold_sizes)
+            if size is None:
+                continue
+            standalone = len(rows) == 1 or (row_index == 0 and not any(_row_all_bold(other) for other in rows[1:]))
+            if not standalone:
+                continue
+            text = _row_text(row)
+            bbox = (
+                min(float(line["bbox"][0]) for line in row),
+                min(float(line["bbox"][1]) for line in row),
+                max(float(line["bbox"][2]) for line in row),
+                max(float(line["bbox"][3]) for line in row),
+            )
+            candidates.append((page_no, running_key(text), BoldLine(text=normalize_title(text), bbox=bbox, size=size)))
+    pages_by_key: dict[str, set[int]] = {}
+    for page_no, key, _ in candidates:
+        pages_by_key.setdefault(key, set()).add(page_no)
+    bold_lines: dict[int, list[BoldLine]] = {}
+    for page_no, key, bold_line in candidates:
+        if len(pages_by_key[key]) < BOLD_REPEAT_MIN_PAGES:
+            bold_lines.setdefault(page_no, []).append(bold_line)
+    return bold_lines
 
 
 def _keep_page_order(pages: Sequence[int]) -> list[int]:
@@ -275,29 +431,8 @@ def analyze_layout(pdf_path: str) -> LayoutProfile:
         else []
     )
 
-    bold_lines: dict[int, list[BoldLine]] = {}
-    for line in lines:
-        if (line["band"], line["key"]) in running_keys or body_size is None:
-            continue
-        spans = line["spans"]
-        if not spans or any(round(float(span["size"])) != body_size or not _is_bold(span) for span in spans):
-            continue
-        text = line["text"]
-        if len(text.split()) > _MAX_BOLD_WORDS or text.endswith((".", ",")):
-            continue
-        other_lines = [
-            other
-            for other in lines
-            if other["page"] == line["page"] and other["block"] == line["block"] and other["index"] != line["index"]
-        ]
-        standalone = line["block_lines"] == 1 or (
-            line["index"] == 0
-            and all(not other["spans"] or not all(_is_bold(span) for span in other["spans"]) for other in other_lines)
-        )
-        if standalone:
-            bold_lines.setdefault(line["page"], []).append(
-                BoldLine(text=normalize_title(text), bbox=tuple(float(value) for value in line["bbox"]))
-            )
+    bold_sizes = _bold_sizes(size_counts, body_size, heading_sizes)
+    bold_lines = _collect_bold_lines(lines, running_keys, bold_sizes)
 
     bookmarks, rejection, dropped = _read_bookmarks(raw_toc, page_count)
     if dropped:
@@ -313,6 +448,7 @@ def analyze_layout(pdf_path: str) -> LayoutProfile:
         heading_sizes=heading_sizes,
         running=running,
         bold_lines=bold_lines,
+        bold_sizes=bold_sizes,
         bookmarks=bookmarks,
         bookmark_rejection=rejection,
         bookmarks_dropped=dropped,
@@ -328,6 +464,11 @@ class LayoutHeaders:
         self.profile = profile
         self._size_rank: dict[int, int] = {size: rank for rank, size in enumerate(profile.heading_sizes)}
         self._body_bold_prefix = "#" * (len(profile.heading_sizes) + 1) + " "
+        bold_sizes = profile.bold_sizes or ([profile.body_size] if profile.body_size is not None else [])
+        base = len(profile.heading_sizes) + 1
+        self._bold_prefixes: dict[int, str] = {
+            size: "#" * min(6, base + rank) + " " for rank, size in enumerate(bold_sizes)
+        }
         self._running: dict[str, list[str]] = {}
         for line in profile.running:
             self._running.setdefault(line.band, []).append(line.key)
@@ -350,9 +491,9 @@ class LayoutHeaders:
             return "#" * (self._size_rank[size] + 1) + " "
         bold = _is_bold(span)
         body = self.profile.body_size
-        if page_no is not None and bbox is not None and bold and body is not None and size == body:
+        if page_no is not None and bbox is not None and bold and size in self._bold_prefixes:
             if self._inside_bold_line(page_no, bbox):
-                return self._body_bold_prefix
+                return self._bold_prefixes[size]
         if page_no is not None and (bold or (body is not None and size > body)):
             if self._matches_bookmark(page_no, text):
                 return self._body_bold_prefix

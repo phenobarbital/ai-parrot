@@ -19,6 +19,7 @@ from parrot.knowledge.pageindex.layout import (  # noqa: E402
     UnreadablePDFError,
     _keep_page_order,
     _read_bookmarks,
+    _visual_rows,
     analyze_layout,
 )
 
@@ -297,3 +298,94 @@ def test_running_lines_never_headings(tmp_path: Path) -> None:
     assert not any("ACME Manual" in line or "Page " in line for line in heading_lines)
     assert all("ACME Manual" in text for text in text_by_page)
     assert any(line.startswith("# ") and "Chapter" in line for line in heading_lines)
+
+
+def _all_bold_texts(profile: LayoutProfile) -> list[str]:
+    """Return every recorded bold-row text in page order."""
+    return [line.text for page in sorted(profile.bold_lines) for line in profile.bold_lines[page]]
+
+
+def test_visual_rows_groups_same_baseline_lines() -> None:
+    """Lines on one baseline share a row; a line below starts the next row."""
+    lines = [
+        {"bbox": (72, 100, 100, 112), "spans": [], "text": "AC-2"},
+        {"bbox": (108, 100, 250, 112), "spans": [], "text": "ACCOUNT MANAGEMENT"},
+        {"bbox": (72, 120, 250, 132), "spans": [], "text": "Control:"},
+    ]
+    rows = _visual_rows(lines)
+    assert [[line["text"] for line in row] for row in rows] == [["AC-2", "ACCOUNT MANAGEMENT"], ["Control:"]]
+    assert _visual_rows([]) == []
+
+
+def test_secondary_text_size_bold_rows(tmp_path: Path) -> None:
+    """A standalone bold line at a larger body-text size is a bold row with its own size."""
+    prose_12 = [(72, 630 + index * 16, FILLER, 12, "helv") for index in range(8)]
+    pages = [[(72, 100, "Revisions In This Version", 12, "hebo"), *_body(200, 30), *prose_12]]
+    path = _write_pdf(tmp_path / "secondary.pdf", pages)
+
+    profile = analyze_layout(str(path))
+
+    assert profile.body_size == 10
+    assert 12 not in profile.heading_sizes
+    assert profile.bold_sizes == [12, 10]
+    rows = profile.bold_lines[1]
+    assert [(line.text, line.size) for line in rows] == [("revisions in this version", 12)]
+    chunks = pymupdf4llm.to_markdown(str(path), page_chunks=True, hdr_info=LayoutHeaders(profile))
+    heading_lines = [line for line in chunks[0]["text"].splitlines() if line.startswith("#")]
+    assert len(heading_lines) == 1
+    assert "Revisions In This Version" in heading_lines[0]
+
+
+def test_split_row_heading(tmp_path: Path) -> None:
+    """A code cell and a title cell printed on one baseline form one bold row and one heading line."""
+    code_width = pymupdf.get_text_length("AC-2", fontname="hebo", fontsize=10)
+    pages = [[(72, 100, "AC-2", 10, "hebo"), (72 + code_width + 14, 100, "ACCOUNT MANAGEMENT", 10, "hebo"), *_body(150, 30)]]
+    path = _write_pdf(tmp_path / "split.pdf", pages)
+
+    profile = analyze_layout(str(path))
+
+    assert _all_bold_texts(profile) == ["ac-2 account management"]
+    chunks = pymupdf4llm.to_markdown(str(path), page_chunks=True, hdr_info=LayoutHeaders(profile))
+    heading_lines = [line for line in chunks[0]["text"].splitlines() if line.startswith("#")]
+    assert len(heading_lines) == 1
+    assert "AC-2" in heading_lines[0] and "ACCOUNT MANAGEMENT" in heading_lines[0]
+
+
+def test_bold_row_guards(tmp_path: Path) -> None:
+    """List items, lowercase-start rows and rows repeated on three pages are not bold rows."""
+    first_page = [
+        (72, 100, "(a) Have expired;", 10, "hebo"),
+        (72, 140, "Monitor changes to roles; and", 10, "hebo"),
+        (72, 180, "adequate security", 10, "hebo"),
+        (72, 220, "Important Notes", 10, "hebo"),
+        (72, 260, "Release information only if:", 10, "hebo"),
+    ]
+    pages = [
+        [*(first_page if number == 0 else []), (72, 320, "DATE TYPE REVISION", 10, "hebo"), *_body(360, 20)]
+        for number in range(3)
+    ]
+    profile = analyze_layout(str(_write_pdf(tmp_path / "guards.pdf", pages)))
+
+    assert _all_bold_texts(profile) == ["important notes"]
+
+
+def test_header_prefix_levels_with_secondary_size() -> None:
+    """Each bold size gets its own level below every size-ranked heading, larger size first."""
+    profile = LayoutProfile(
+        page_count=1,
+        body_size=10,
+        heading_sizes=[16, 14],
+        bold_sizes=[12, 10],
+        bold_lines={
+            1: [
+                BoldLine(text="revisions", bbox=(72.0, 90.0, 200.0, 104.0), size=12),
+                BoldLine(text="important notes", bbox=(72.0, 190.0, 200.0, 204.0), size=10),
+            ]
+        },
+    )
+    headers = LayoutHeaders(profile)
+
+    assert headers.get_header_id(_span("Revisions", 12, (72.0, 92.0, 150.0, 103.0), bold=True), page=_page(0)) == "### "
+    assert headers.get_header_id(_span("Important", 10, (72.0, 192.0, 150.0, 203.0), bold=True), page=_page(0)) == "#### "
+    assert headers.get_header_id(_span("Revisions", 12, (72.0, 300.0, 150.0, 311.0), bold=True), page=_page(0)) == ""
+    assert headers.get_header_id(_span("Chapter", 16, (72.0, 400.0, 150.0, 416.0)), page=_page(0)) == "# "
