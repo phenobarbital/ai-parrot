@@ -14,7 +14,6 @@ from typing import List, Optional
 
 from parrot.models import OriginHit, OriginSection, SearchOriginKind
 
-
 class SearchOrigin(ABC):
     """Abstract adapter contract for one multi-search origin.
 

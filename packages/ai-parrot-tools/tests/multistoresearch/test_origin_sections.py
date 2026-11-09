@@ -166,9 +166,7 @@ async def test_legacy_fts_and_timeout_compatibility() -> None:
     assert slow.cancelled.is_set()
 
     fts_origins: list[Any] = [FtsOrigin(), LegacyDuckOrigin()]
-    fts_response = await MultiStoreSearchToolkit(origins=fts_origins).fts_search(
-        "terms"
-    )
+    fts_response = await MultiStoreSearchToolkit(origins=fts_origins).fts_search("terms")
     fts_sections = {section.origin: section for section in fts_response.sections}
 
     assert fts_sections["fts"].status == "ok"
