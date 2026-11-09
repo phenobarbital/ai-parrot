@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -12,9 +13,10 @@ from click.testing import CliRunner
 
 from parrot.knowledge.bookstore import cli as bookstore_cli
 from parrot.knowledge.bookstore.library import Bookstore
+from parrot.knowledge.pageindex import cli as pageindex_cli
 
 
-def test_optimize_book_and_cli(monkeypatch: Any) -> None:
+def test_optimize_book_and_cli(monkeypatch: Any, tmp_path: Path) -> None:
     """Apply refreshes structural card fields while dry-run and CLI wiring stay safe."""
     card = SimpleNamespace(
         book_id="handbook",
@@ -108,3 +110,60 @@ def test_optimize_book_and_cli(monkeypatch: Any) -> None:
     assert json.loads(result.output) == report
     open_store.assert_called_once_with(llm_spec=None, scope_needed="global", use_llm=False)
     cli_store.optimize_book.assert_awaited_once_with("handbook", apply=True, llm_passes=False)
+
+    pageindex_toolkit = SimpleNamespace(optimize=AsyncMock(return_value=report))
+    toolkit_factory = MagicMock(return_value=pageindex_toolkit)
+    monkeypatch.setattr("parrot.knowledge.pageindex.PageIndexToolkit", toolkit_factory)
+
+    dry_run_result = CliRunner().invoke(
+        pageindex_cli.pageindex,
+        ["optimize", "handbook", "--storage-dir", str(tmp_path), "--target-tokens", "1200"],
+    )
+
+    assert dry_run_result.exit_code == 0, dry_run_result.output
+    assert "dry-run: handbook" in dry_run_result.output
+    assert "nodes: 2 -> 3; merged: 0; expanded: 1" in dry_run_result.output
+    assert "llm: skipped (disabled)" in dry_run_result.output
+    toolkit_factory.assert_called_once_with(storage_dir=str(tmp_path), llm_client=None)
+    pageindex_toolkit.optimize.assert_awaited_once_with(
+        "handbook",
+        node_id=None,
+        apply=False,
+        target_leaf_tokens=1200,
+    )
+
+    apply_result = CliRunner().invoke(
+        pageindex_cli.pageindex,
+        ["optimize", "handbook", "--storage-dir", str(tmp_path), "--node", "0001", "--apply", "--json"],
+    )
+
+    assert apply_result.exit_code == 0, apply_result.output
+    assert json.loads(apply_result.output) == report
+    assert toolkit_factory.call_count == 2
+    pageindex_toolkit.optimize.assert_awaited_with(
+        "handbook",
+        node_id="0001",
+        apply=True,
+        target_leaf_tokens=None,
+    )
+
+    fake_client = object()
+    resolve_adapter = MagicMock(return_value=(object(), None, fake_client))
+    monkeypatch.setattr("parrot.knowledge.bookstore._llm.resolve_adapter", resolve_adapter)
+
+    llm_result = CliRunner().invoke(
+        pageindex_cli.pageindex,
+        [
+            "optimize",
+            "handbook",
+            "--storage-dir",
+            str(tmp_path),
+            "--llm",
+            "test:model",
+            "--json",
+        ],
+    )
+
+    assert llm_result.exit_code == 0, llm_result.output
+    resolve_adapter.assert_called_once_with("test:model")
+    toolkit_factory.assert_called_with(storage_dir=str(tmp_path), llm_client=fake_client)
