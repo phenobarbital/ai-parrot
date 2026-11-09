@@ -355,7 +355,9 @@ async def test_telegram_ack_then_reply_in_topic() -> None:
     message = _QueuedMessage()
 
     await router.message.handlers[0](message)
-    assert message.answers == ["⏳ Accepted — job `job-1`: review.\nI'll post the result here. Track it with /job_status job-1"]
+    assert message.answers == [
+        "⏳ Accepted — job `job-1`: review.\nI'll post the result here. Track it with /job_status job-1"
+    ]
     await service.delivery(
         JobNotice(job_id="job-1", command="pr_review", label="review", status="completed", result="done")
     )
@@ -427,7 +429,9 @@ async def test_managers_call_wrapper_close_before_session_close() -> None:
         events: List[str] = []
         manager = manager_type.__new__(manager_type)
         manager.logger = MagicMock()
-        setattr(manager, bot_key, {"test": (SimpleNamespace(session=_CloseSession(events)), None, _CloseWrapper(events))})
+        setattr(
+            manager, bot_key, {"test": (SimpleNamespace(session=_CloseSession(events)), None, _CloseWrapper(events))}
+        )
         manager._polling_tasks = []
         if manager_type is IntegrationBotManager:
             manager.msteams_bots = {}
