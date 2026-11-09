@@ -41,7 +41,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -49,8 +49,9 @@
       "parallelism_notes": "No dependencies: only edits telegram/models.py and appends TestAuthOpenModeConfig to test_auth_strategies.py; runs alongside TASK-5418.",
       "assigned_to": null,
       "started_at": "2026-11-09T16:55:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5417-auth-open-mode-config.md"
+      "completed_at": "2026-11-09T17:00:52+00:00",
+      "file": "sdd/tasks/completed/TASK-5417-auth-open-mode-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5418",
@@ -59,7 +60,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -67,8 +68,9 @@
       "parallelism_notes": "No dependencies: creates the new module telegram/browser_login.py and test_browser_login.py; nothing it imports is created by another task.",
       "assigned_to": null,
       "started_at": "2026-11-09T16:55:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5418-browser-login-registry-and-verifier-contract.md"
+      "completed_at": "2026-11-09T17:00:53+00:00",
+      "file": "sdd/tasks/completed/TASK-5418-browser-login-registry-and-verifier-contract.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5419",
