@@ -262,13 +262,15 @@ Deterministic optimizer (`python -m parrot.knowledge.pageindex.optimizer_eval`, 
 | `dev` before FEAT-856 (after FEAT-853's optimizer fixes) | `dev_4ace6b6d11_deterministic/optimizer_eval-20261109T151738665862Z.json` | `d4e9734e31446f38fff9cfa8afb163ebfcab57f9217d38ac3a0abf0f488c9b0a` |
 | FEAT-856 branch | `feat_856_deterministic/optimizer_eval-20261109T161416884344Z.json` | `1d5ecd8ad374e4b942e550ce190d243b53849c01ba2309ff9a21f5fe050558bb` |
 | `dev` after FEAT-856 + FEAT-857 (`d643c0c0d4`) | `dev_d643c0c0d4_deterministic/optimizer_eval-20261109T163506928918Z.json` | `550ff81dc66dc73684b04e4f4a1c53af123f20014497059e125df4cb6fae2c04` |
+| FEAT-859 branch (`60237d38c6`) | `feat859_60237d38c6_deterministic/optimizer_eval-20261109T172759957700Z.json` | `38036a234c771620c8861f816edece75cd1d2b0cec83a02477c956785e54a8ed` |
 
 | Document | Run | Nodes before → after | Leaf tokens p50 / p90 / max | Leaves over target before / after |
 |---|---|---|---|---|
 | nist_800_53_r5 | `dev` before FEAT-856 | 392 → 494 | 596 / 1051 / 3987 | 34 / 5 |
 | nist_800_53_r5 | FEAT-856 | 1259 → 735 | 351 / 779 / 1704 | 1 / 1 |
 | nist_800_53_r5 | FEAT-856 + FEAT-857 | 1259 → 722 | 341 / 735 / 3864 | 1 / 5 |
-| aicpa_tsc_2017 | all three | 17 → 16 | 1273 / 11239 / 27651 | 4 / 4 |
+| nist_800_53_r5 | FEAT-859 | 1259 → 719 | 341 / 755 / 3864 | 1 / 8 |
+| aicpa_tsc_2017 | all four | 17 → 16 | 1273 / 11239 / 27651 | 4 / 4 |
 
 Before FEAT-856 the optimizer reached its numbers by splitting long controls at pseudo-headings, and the pieces took
 the running footer or a statement fragment as their title (`CHAPTER THREE PAGE 19`). Now the controls arrive already
@@ -282,10 +284,18 @@ MANAGEMENT FAMILY`). Four of those tables span four to five pages and are single
 `TABLE C-17` (3,864 tokens, pages 481–485), `TABLE C-18` (3,789), `TABLE C-1` (3,213), `TABLE C-19` (2,828) — together
 with one enhancement, `(17) INFORMATION FLOW ENFORCEMENT | DOMAIN
 AUTHENTICATION` (1,704); that is why the leaf maximum and the over-target count rose while every title became
-meaningful. Table rows have no headings, so no heading rule splits them further. Three shorter tables (`TABLE C-3`,
-`C-5`, `C-7`) are still cut once at a footer (`APPENDIX C PAGE 434`): the repeat rule counts footers inside one leaf,
-and a two- or three-page leaf holds its footer only once or twice — ledger `issue:5a605ae51f61`. Leaf titles and sizes
-come from a per-leaf dump of the same deterministic run (same settings, identical node counts).
+meaningful. Table rows have no headings, so no heading rule splits them further. Leaf titles and sizes come from a
+per-leaf dump of the same deterministic run (same settings, identical node counts).
+
+**After FEAT-859.** Three shorter tables (`TABLE C-3`, `C-5`, `C-7`) were still cut once more at a footer
+(`APPENDIX C PAGE 434`, `437`, `441`): FEAT-857's repeat rule counts footers inside one leaf, and a two- or three-page
+leaf holds its footer only once or twice (`issue:5a605ae51f61`). FEAT-859's document running lines
+(`document_running_keys`, see [pageindex-tree-optimizer.md](pageindex-tree-optimizer.md)) drop a footer in any leaf,
+so no node is titled after a footer any more. The three tables become single leaves just over the target —
+`TABLE C-7` 1,801 tokens (pages 468–470), `TABLE C-3` 1,654 (461–463), `TABLE C-5` 1,545 (464–466) — which is why the
+over-target count rose from 5 to 8 while the leaf maximum stayed at 3,864. The per-leaf dump of the FEAT-859 run
+lists 718 nodes below the tree root (the report's 719 counts the root) and no title ending in `PAGE <n>`. Run over the
+arxiv fixture, CSF 2.0, HIPAA, AICPA and three book PDFs, the same code leaves every split unchanged.
 
 ## Gotchas
 

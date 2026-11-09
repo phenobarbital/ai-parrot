@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-859 — PageIndex Optimizer Fixes 3 — Document-Wide Running Lines for Pseudo-Headings
 **Spec**: `sdd/specs/pageindex-optimizer-fixes-3.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (1-2h)
 **Depends-on**: TASK-5439
@@ -194,10 +194,18 @@ report path + sha256 next to the existing run list.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-fix session (Claude)
+**Date**: 2026-11-09
+**Notes**: Host run on the final code (`60237d38c6`), `PYTHONPATH=<worktree>/packages/ai-parrot/src` (module path
+verified in the dump), deterministic, target 1500 / min 200. Report
+`artifacts/logs/optimizer_eval/feat859_60237d38c6_deterministic/optimizer_eval-20261109T172759957700Z.json`, sha256
+`38036a234c771620c8861f816edece75cd1d2b0cec83a02477c956785e54a8ed`: 800-53 1259 → 719 nodes, p50/p90/max 341/755/3864,
+over target 1/8; AICPA 17 → 16, 1273/11239/27651, 4/4 (unchanged). Per-leaf dump of the same run: 718 nodes below the
+root (report counts the root), no title ending in `PAGE <n>`, over target: TABLE C-17 3864, C-18 3789, C-1 3213,
+C-19 2828, C-7 1801, (17) INFORMATION FLOW ENFORCEMENT | DOMAIN AUTHENTICATION 1704, C-3 1654, C-5 1545. Matches the
+spec §2 prototype. The plan_deterministic probe over 8 PDFs (5 corpus + arxiv + 3 books) leaves every split unchanged
+outside 800-53. Docs tests 5 passed; `parrot sdd techwiki check` → `Docs: required — ok`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the first host run (on `83f81064fa`) showed the running-line set recomputed per top-level
+section (HIPAA 0.01 → 0.84 s); fixed in `60237d38c6` (TASK-5439 follow-up, see its note) and the evaluation re-run on
+that commit — the numbers above are from the re-run and match the first run exactly.

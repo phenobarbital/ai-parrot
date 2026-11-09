@@ -46,6 +46,8 @@ def test_optimizer_page_documents_feat_853_fixes() -> None:
         "is_heading_text",
         "pseudo_heading_segments",
         "PSEUDO_HEADING_MAX_REPEATS",
+        "document_running_keys",
+        "RUNNING_LINE_MIN_DENSITY",
     ):
         assert name in text, name
 
