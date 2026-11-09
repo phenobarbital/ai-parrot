@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-848 — Client tool-loop capability flag
 **Spec**: `sdd/specs/client-tool-loop-capability.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -326,10 +326,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: opus (native). AbstractBot._warn_if_client_lacks_tool_loop in configure(). Merge-tier validation green (only baseline reds).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker
+**Date**: 2026-11-09
+**Notes**: AbstractBot._warn_if_client_lacks_tool_loop in configure()
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

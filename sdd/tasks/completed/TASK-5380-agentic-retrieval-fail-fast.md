@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-848 — Client tool-loop capability flag
 **Spec**: `sdd/specs/client-tool-loop-capability.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -318,10 +318,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-sol (codex). require_tool_loop fail-fast in AgenticRetriever/PageIndexToolkit. Merge-tier validation green (only baseline reds).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker
+**Date**: 2026-11-09
+**Notes**: require_tool_loop fail-fast in AgenticRetriever/PageIndexToolkit
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
