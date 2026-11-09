@@ -10,7 +10,6 @@ from parrot.integrations.telegram.auth import (
 )
 from parrot.integrations.telegram.models import TelegramAgentConfig
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

@@ -242,13 +242,9 @@ class TelegramAgentConfig:
         if self.auth_open_mode == "browser":
             public_base_url = self.public_base_url.strip() if isinstance(self.public_base_url, str) else ""
             parsed_public_base_url = urlsplit(public_base_url)
-            if (
-                parsed_public_base_url.scheme not in {"http", "https"}
-                or not parsed_public_base_url.netloc
-            ):
+            if parsed_public_base_url.scheme not in {"http", "https"} or not parsed_public_base_url.netloc:
                 raise ValueError(
-                    f"Agent '{self.name}': browser mode requires public_base_url "
-                    "to be an absolute http(s) URL"
+                    f"Agent '{self.name}': browser mode requires public_base_url " "to be an absolute http(s) URL"
                 )
 
     @property
