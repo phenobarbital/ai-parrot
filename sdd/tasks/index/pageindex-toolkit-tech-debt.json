@@ -64,7 +64,7 @@
     {
       "id": "TASK-5386",
       "slug": "agentic-max-chars-and-provider-error",
-      "title": "Agentic retrieval — max_chars=None coercion and a provider_error stop reason",
+      "title": "Agentic retrieval \u2014 max_chars=None coercion and a provider_error stop reason",
       "feature_id": "FEAT-849",
       "feature": "pageindex-toolkit-tech-debt",
       "spec": "sdd/specs/pageindex-toolkit-tech-debt.spec.md",
@@ -104,11 +104,11 @@
     {
       "id": "TASK-5388",
       "slug": "documentation-agentic-retrieval-page",
-      "title": "Documentation — PageIndex agentic retrieval page",
+      "title": "Documentation \u2014 PageIndex agentic retrieval page",
       "feature_id": "FEAT-849",
       "feature": "pageindex-toolkit-tech-debt",
       "spec": "sdd/specs/pageindex-toolkit-tech-debt.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -119,7 +119,7 @@
       "parallel": true,
       "parallelism_notes": "Documents behaviour the other three tasks create: provider_error (TASK-5386, agentic.py StopReason), the agentic_retrieve lock/snapshot note (TASK-5387) and the reused: true import result (TASK-5385).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T12:31:06.511166+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5388-documentation-agentic-retrieval-page.md"
     }
