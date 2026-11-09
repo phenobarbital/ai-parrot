@@ -81,6 +81,27 @@ def test_score_bookmarks_found_and_anchored():
     assert rejected_items == []
 
 
+def test_score_bookmarks_reports_dropped():
+    """The bookmarks candidate carries the profile's out-of-order drop count; the default is 0."""
+    segments = _segs("# Intro\n\nText.", "## Usage\n\nMore.")
+    profile = _profile(2, bookmarks=[(1, "Intro", 1), (1, "Usage", 2)])
+
+    default_score, _ = score_bookmarks(profile, segments)
+    assert default_score.dropped == 0
+
+    score, items = score_bookmarks(profile.model_copy(update={"bookmarks_dropped": 1}), segments)
+    assert score.dropped == 1
+    assert score.confidence == 1.0
+    assert len(items) == 2
+
+    rejected, _ = score_bookmarks(
+        profile.model_copy(update={"bookmark_rejection": "fewer than 2 usable entries", "bookmarks_dropped": 0}),
+        segments,
+    )
+    assert rejected.dropped == 0
+    assert score_layout(profile, segments)[0].dropped == 0
+
+
 def test_score_layout_factors():
     """Layout confidence applies the clean, density, and start factors exactly."""
     one_score, _ = score_layout(_profile(1), _segs("# Only"))

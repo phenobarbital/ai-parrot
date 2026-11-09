@@ -17,6 +17,7 @@ from parrot.knowledge.pageindex.layout import (  # noqa: E402
     LayoutProfile,
     RunningLine,
     UnreadablePDFError,
+    _keep_page_order,
     _read_bookmarks,
     analyze_layout,
 )
@@ -116,11 +117,57 @@ def test_bold_standalone_lines(tmp_path: Path) -> None:
 
 def test_bookmarks_usable_and_levels_normalized() -> None:
     """Invalid bookmark entries are skipped and level jumps are normalized."""
-    bookmarks, rejection = _read_bookmarks([[1, "A", 1], [3, "B", 2], [1, "C", 9], [1, "  ", 2], [2, "D", 3]], 4)
+    bookmarks, rejection, dropped = _read_bookmarks(
+        [[1, "A", 1], [3, "B", 2], [1, "C", 9], [1, "  ", 2], [2, "D", 3]], 4
+    )
     assert [bookmark.title for bookmark in bookmarks] == ["A", "B", "D"]
     assert [bookmark.level for bookmark in bookmarks] == [1, 2, 2]
     assert [bookmark.page for bookmark in bookmarks] == [1, 2, 3]
     assert rejection is None
+    assert dropped == 0
+
+
+def test_keep_page_order_longest_subsequence() -> None:
+    """The kept indices form one longest non-decreasing page subsequence."""
+    assert _keep_page_order([1, 5, 2, 3, 4]) == [0, 2, 3, 4]
+    assert _keep_page_order([]) == []
+    assert _keep_page_order([1, 1, 2, 3]) == [0, 1, 2, 3]
+    assert _keep_page_order([3, 1, 2]) == [1, 2]
+
+
+def test_bookmarks_out_of_order_entry_dropped() -> None:
+    """A single mis-filed entry in a long outline is dropped instead of rejecting the outline."""
+    toc = [[1 if number % 5 == 1 else 2, f"Section {number}", number] for number in range(1, 41)]
+    toc.insert(30, [2, "Stray", 3])
+    bookmarks, rejection, dropped = _read_bookmarks(toc, 200)
+    assert rejection is None
+    assert dropped == 1
+    assert len(bookmarks) == 40
+    assert "Stray" not in [bookmark.title for bookmark in bookmarks]
+    assert [bookmark.page for bookmark in bookmarks] == sorted(bookmark.page for bookmark in bookmarks)
+
+
+def test_bookmarks_too_many_out_of_order_rejected() -> None:
+    """More out-of-order entries than the tolerated share keep today's non-monotonic rejection."""
+    toc = [[1, f"Section {number}", number] for number in range(1, 21)]
+    toc.insert(10, [1, "Stray A", 2])
+    toc.insert(15, [1, "Stray B", 3])
+    bookmarks, rejection, dropped = _read_bookmarks(toc, 200)
+    assert rejection is not None
+    assert rejection.startswith("non-monotonic: page decreases at entry")
+    assert dropped == 0
+    assert len(bookmarks) == 22
+
+
+def test_bookmarks_dropped_recorded_in_profile(tmp_path: Path) -> None:
+    """The profile records how many out-of-order entries were dropped."""
+    toc = [[1 if number % 5 == 1 else 2, f"Section {number}", number] for number in range(1, 21)]
+    toc.insert(10, [2, "Stray", 2])
+    pdf = _write_pdf(tmp_path / "stray.pdf", [_body(100, 3) for _ in range(30)], toc)
+    profile = analyze_layout(str(pdf))
+    assert profile.bookmark_rejection is None
+    assert profile.bookmarks_dropped == 1
+    assert len(profile.bookmarks) == 20
 
 
 def test_bookmarks_rejected_non_monotonic(tmp_path: Path) -> None:

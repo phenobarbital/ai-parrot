@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import bisect
 import logging
 import math
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Sequence
 
 from pydantic import BaseModel, Field
 
@@ -29,6 +30,8 @@ RUNNING_BAND: float = 0.08
 RUNNING_MIN_SHARE: float = 0.3
 _HEADING_SHARE_CAP: float = 0.10
 _MAX_BOLD_WORDS: int = 12
+BOOKMARK_MAX_DROPPED_SHARE: float = 0.05
+"""Out-of-order entries an outline may lose (share of its valid entries, rounded down) and still be used."""
 _ENUM_TITLE_RE = re.compile(r"^(page|p\.?)?\s*\d+$", re.IGNORECASE)
 _DIGITS_RE = re.compile(r"\d+")
 
@@ -78,6 +81,7 @@ class LayoutProfile(BaseModel):
     bold_lines: dict[int, list[BoldLine]] = Field(default_factory=dict)
     bookmarks: list[Bookmark] = Field(default_factory=list)
     bookmark_rejection: Optional[str] = None
+    bookmarks_dropped: int = 0
 
 
 def running_key(text: str) -> str:
@@ -101,13 +105,54 @@ def _band(y0: float, y1: float, height: float) -> Optional[Literal["top", "botto
     return None
 
 
-def _read_bookmarks(raw_toc: list[list], page_count: int) -> tuple[list[Bookmark], Optional[str]]:
-    """Return usable normalized bookmarks and any rejection reason.
+def _keep_page_order(pages: Sequence[int]) -> list[int]:
+    """Return the indices of one longest non-decreasing subsequence of ``pages``, in order.
 
-    ``raw_toc`` is ``doc.get_toc(simple=True)``: ``[[level, title, page], ...]``.
+    Deterministic patience sort (``bisect.bisect_right`` over the tails, predecessor links); empty input
+    returns ``[]``.
+
+    Args:
+        pages: Page numbers in outline order.
+
+    Returns:
+        The indices of the kept entries, ascending.
     """
-    usable: list[Bookmark] = []
-    previous_level = 0
+    tails: list[int] = []
+    tail_indices: list[int] = []
+    previous = [-1] * len(pages)
+    for index, page in enumerate(pages):
+        position = bisect.bisect_right(tails, page)
+        if position == len(tails):
+            tails.append(page)
+            tail_indices.append(index)
+        else:
+            tails[position] = page
+            tail_indices[position] = index
+        previous[index] = tail_indices[position - 1] if position else -1
+    kept: list[int] = []
+    cursor = tail_indices[-1] if tail_indices else -1
+    while cursor != -1:
+        kept.append(cursor)
+        cursor = previous[cursor]
+    return kept[::-1]
+
+
+def _read_bookmarks(raw_toc: list[list], page_count: int) -> tuple[list[Bookmark], Optional[str], int]:
+    """Return usable normalized bookmarks, any rejection reason and the out-of-order entries dropped.
+
+    ``raw_toc`` is ``doc.get_toc(simple=True)``: ``[[level, title, page], ...]``. Valid entries are collected
+    first; when the entries outside ``_keep_page_order`` number at most
+    ``floor(BOOKMARK_MAX_DROPPED_SHARE * len(entries))`` they are removed, otherwise nothing is removed and the
+    outline is rejected as non-monotonic. Levels are normalized after the removal.
+
+    Args:
+        raw_toc: The PDF outline as returned by PyMuPDF.
+        page_count: Number of pages in the document.
+
+    Returns:
+        ``(usable, rejection, dropped)``; ``dropped`` is 0 whenever the outline is rejected as non-monotonic.
+    """
+    entries: list[tuple[int, str, int]] = []
     for entry in raw_toc:
         if not isinstance(entry, (list, tuple)) or len(entry) < 3:
             continue
@@ -120,16 +165,28 @@ def _read_bookmarks(raw_toc: list[list], page_count: int) -> tuple[list[Bookmark
             continue
         if not title or not 1 <= page <= page_count:
             continue
+        entries.append((level, title, page))
+
+    keep = _keep_page_order([page for _, _, page in entries])
+    removable = len(entries) - len(keep)
+    dropped = 0
+    if 0 < removable <= math.floor(BOOKMARK_MAX_DROPPED_SHARE * len(entries)):
+        entries = [entries[index] for index in keep]
+        dropped = removable
+
+    usable: list[Bookmark] = []
+    previous_level = 0
+    for level, title, page in entries:
         level = max(1, min(level, previous_level + 1))
         usable.append(Bookmark(level=level, title=title, page=page))
         previous_level = level
 
     if len(usable) < 2:
-        return usable, "fewer than 2 usable entries"
+        return usable, "fewer than 2 usable entries", dropped
 
     for index, (previous, current) in enumerate(zip(usable, usable[1:], strict=False), start=2):
         if current.page < previous.page:
-            return usable, f"non-monotonic: page decreases at entry {index}"
+            return usable, f"non-monotonic: page decreases at entry {index}", 0
 
     page_entries = Counter(bookmark.page for bookmark in usable)
     one_per_page = sum(count == 1 for count in page_entries.values()) >= 0.8 * page_count
@@ -140,8 +197,8 @@ def _read_bookmarks(raw_toc: list[list], page_count: int) -> tuple[list[Bookmark
         and len(usable) >= 0.8 * page_count
         and (one_per_page or enumeration_titles)
     ):
-        return usable, "per-page enumeration"
-    return usable, None
+        return usable, "per-page enumeration", dropped
+    return usable, None, dropped
 
 
 def analyze_layout(pdf_path: str) -> LayoutProfile:
@@ -242,7 +299,11 @@ def analyze_layout(pdf_path: str) -> LayoutProfile:
                 BoldLine(text=normalize_title(text), bbox=tuple(float(value) for value in line["bbox"]))
             )
 
-    bookmarks, rejection = _read_bookmarks(raw_toc, page_count)
+    bookmarks, rejection, dropped = _read_bookmarks(raw_toc, page_count)
+    if dropped:
+        logger.info(
+            "analyze_layout %s: dropped %d out-of-order bookmark(s) of %d", pdf_path, dropped, len(bookmarks) + dropped
+        )
     logger.debug(
         "analyze_layout %s: %d pages, %d bookmarks, rejection=%s", pdf_path, page_count, len(bookmarks), rejection
     )
@@ -254,6 +315,7 @@ def analyze_layout(pdf_path: str) -> LayoutProfile:
         bold_lines=bold_lines,
         bookmarks=bookmarks,
         bookmark_rejection=rejection,
+        bookmarks_dropped=dropped,
     )
 
 
