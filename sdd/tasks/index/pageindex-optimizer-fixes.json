@@ -61,7 +61,7 @@
       "feature_id": "FEAT-853",
       "feature": "pageindex-optimizer-fixes",
       "spec": "sdd/specs/pageindex-optimizer-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -70,7 +70,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-5391: both modify optimizer.py and test_optimizer.py (same-file serialization); no symbol dependency.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T13:14:42.365452+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5392-heading-text-rule-and-pseudo-headings.md"
     },
