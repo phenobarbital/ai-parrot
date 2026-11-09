@@ -190,6 +190,23 @@ async def test_union_snapshot_order_and_incomplete_inventory() -> None:
 
 
 @pytest.mark.asyncio
+async def test_redis_only_crew_resolves_active_for_delete() -> None:
+    """A Redis-only crew must resolve as active so it can receive a tombstone."""
+    crew = _crew("legacy", "legacy-id")
+    storage = CrewDefinitionStorage(FakeRedis([crew]), FakePostgres())
+
+    by_name = await storage.resolve_for_delete("legacy")
+    by_id = await storage.resolve_for_delete("legacy-id")
+    assert by_name.state == by_id.state == "active"
+    assert by_name.definition.crew_id == by_id.definition.crew_id == "legacy-id"
+
+    assert await storage.delete_crew(by_name.definition) is True
+    resolution = await storage.resolve_for_delete("legacy")
+    assert resolution.state == "deleted"
+    assert (await storage.resolve_for_delete("missing")).state == "absent"
+
+
+@pytest.mark.asyncio
 async def test_delete_failure_and_retry_resolution() -> None:
     """Failed deletes retain Redis, while retry resolution finds a tombstone."""
     crew = _crew("remove-me", "remove-id")

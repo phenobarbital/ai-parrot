@@ -166,6 +166,13 @@ class CrewDefinitionStorage:
         if row is None:
             row = await self._load_authoritative_id_row(identifier, tenant)
         if row is None:
+            crew = await self.redis.load_crew(identifier, tenant)
+            if crew is None:
+                crew = await self.redis.load_crew_by_id(identifier, tenant)
+                if crew is not None and crew.crew_id != identifier:
+                    crew = None
+            if crew is not None and await self._redis_candidate_is_unreserved(crew, tenant):
+                return CrewDeletionResolution(state="active", definition=crew)
             return CrewDeletionResolution(state="absent")
         state: Literal["active", "deleted"] = "deleted" if self._is_deleted(row) else "active"
         return CrewDeletionResolution(state=state, definition=self._decode_row(row))
