@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-856 — PageIndex Layout Fixes — Enumerated Enhancement Headings
 **Spec**: `sdd/specs/pageindex-layout-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-5412, TASK-5413
@@ -226,8 +226,27 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude (Opus 5.5) — /sdd-fix session agent:sdd-fix:087cd628
+**Date**: 2026-11-09
+**Notes**: Host runs from the main checkout with `PYTHONPATH=<worktree>/packages/ai-parrot/src` (import verified to
+resolve to the worktree's `layout.py`):
+- `layout_eval` four pairs, `--min-confidence 0.6`: `artifacts/logs/layout_eval/20261109T161154Z.json`, sha256
+  `c626d2fb194b1fe826882049c87b7aee064930696e3415cadce624554dcd91c5` — nist_800_53 hybrid, recall_top 1.000,
+  recall_all 1.000, page_agreement 0.799, 1258 layout nodes (bookmarks 357 entries, dropped 1); arxiv 17 nodes
+  1.000/1.000/1.000; nist_csf_2_0 22 nodes, recall_all 0.643, page_agreement 1.000; aicpa_tsc 16 nodes, recall_top
+  1.000, recall_all 0.611. All §5 layout thresholds met.
+- `optimizer_eval` 800-53 + AICPA (target 1500, min 200, no LLM):
+  `artifacts/logs/optimizer_eval/feat_856_deterministic/optimizer_eval-20261109T161416884344Z.json`, sha256
+  `1d5ecd8ad374e4b942e550ce190d243b53849c01ba2309ff9a21f5fe050558bb` — nist_800_53_r5 1259 → 735 nodes,
+  p50/p90/max 351/779/1704, over target 1/1 (≤ 2 and ≤ 2000 met); aicpa_tsc_2017 17 → 16, max 27651, 4/4 (unchanged).
+- Tree check (`build_page_index`, layout mode, no LLM): 1258 nodes, 867 enhancement nodes, all at depth 4 and all
+  directly under a control; 0 titles cut mid-phrase; SA-8 has 33 enhancement children.
+- `parrot sdd techwiki check --spec sdd/specs/pageindex-layout-fixes.spec.md --root .` → `Docs: required — ok`;
+  test_layout_docs.py 2 passed.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) The "Runs after FEAT-856" section sits above `## Gotchas` instead of above
+`**Threshold:**`, so the threshold paragraph's "from the run above" still points at the FEAT-855 run. (2) For the
+before/after comparison the page also cites the `dev` (4ace6b6d11) optimizer run from the spec's prototype work,
+copied to `artifacts/logs/optimizer_eval/dev_4ace6b6d11_deterministic/optimizer_eval-20261109T151738665862Z.json`
+(sha256 `d4e9734e31446f38fff9cfa8afb163ebfcab57f9217d38ac3a0abf0f488c9b0a`). (3) The FEAT-855 sentence saying no heading
+rule can split the enhancements now points to the new section.
