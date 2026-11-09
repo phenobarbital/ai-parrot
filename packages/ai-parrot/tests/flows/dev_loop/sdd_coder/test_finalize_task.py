@@ -185,19 +185,21 @@ def _make_evidence_ref(durable_root: Path, relative_path: str, content: bytes) -
     )
 
 
-def _review_artifact_bytes(
-    *, task_id: str, feature_slug: str, execution_id: str, implementation_sha: str
-) -> bytes:
+def _review_artifact_bytes(*, task_id: str, feature_slug: str, execution_id: str, implementation_sha: str) -> bytes:
     """Build the canonical review artifact content expected by finalization."""
-    return ReviewArtifact(
-        feature_slug=feature_slug,
-        task_id=task_id,
-        execution_id=execution_id,
-        source="manual",
-        summary="Review approved.",
-        head_sha=implementation_sha,
-        recorded_at=datetime(2026, 11, 9, tzinfo=timezone.utc),
-    ).model_dump_json().encode("utf-8")
+    return (
+        ReviewArtifact(
+            feature_slug=feature_slug,
+            task_id=task_id,
+            execution_id=execution_id,
+            source="manual",
+            summary="Review approved.",
+            head_sha=implementation_sha,
+            recorded_at=datetime(2026, 11, 9, tzinfo=timezone.utc),
+        )
+        .model_dump_json()
+        .encode("utf-8")
+    )
 
 
 def _build_evidence(

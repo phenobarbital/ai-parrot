@@ -168,7 +168,9 @@ def _verify_evidence_refs(durable_root: Path, evidence: TaskCompletionEvidence) 
         review_payload = json.loads(review_path.read_bytes())
         review_artifact = ReviewArtifact.model_validate(review_payload)
     except (json.JSONDecodeError, UnicodeDecodeError, ValidationError) as exc:
-        raise InvalidEvidenceError(f"review evidence is not a valid ReviewArtifact: {review_ref.relative_path!r}") from exc
+        raise InvalidEvidenceError(
+            f"review evidence is not a valid ReviewArtifact: {review_ref.relative_path!r}"
+        ) from exc
     if review_artifact.task_id != evidence.task_id:
         raise InvalidEvidenceError(
             f"review evidence task_id does not match {evidence.task_id!r}: {review_ref.relative_path!r}"
