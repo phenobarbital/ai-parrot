@@ -71,9 +71,7 @@ async def test_optimize_on_import_paths(tmp_path: Path, monkeypatch: pytest.Monk
     for tree_name in ("pdf", "markdown", "ebook"):
         await enabled.create_tree(tree_name)
 
-    pdf_result = await enabled.import_pdf(
-        "pdf", str(pdf), with_summaries=True, with_doc_description=True
-    )
+    pdf_result = await enabled.import_pdf("pdf", str(pdf), with_summaries=True, with_doc_description=True)
     await enabled.insert_markdown("markdown", "# Markdown chapter\n\nMarkdown body text.")
     await enabled.insert_ebook(
         "ebook",
@@ -101,9 +99,7 @@ async def test_optimize_on_import_paths(tmp_path: Path, monkeypatch: pytest.Monk
     disabled = PageIndexToolkit(adapter=None, storage_dir=tmp_path / "disabled", optimize_on_import=False)
     await disabled.create_tree("pdf")
     await disabled.create_tree("markdown")
-    disabled_pdf = await disabled.import_pdf(
-        "pdf", str(pdf), with_summaries=True, with_doc_description=True
-    )
+    disabled_pdf = await disabled.import_pdf("pdf", str(pdf), with_summaries=True, with_doc_description=True)
     await disabled.insert_markdown("markdown", "# Markdown chapter\n\nMarkdown body text.")
 
     assert pdf_options[1]["if_add_node_summary"] == "yes"

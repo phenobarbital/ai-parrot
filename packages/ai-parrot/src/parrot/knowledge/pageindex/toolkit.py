@@ -1931,9 +1931,7 @@ class PageIndexToolkit(AbstractToolkit):
             if revision is not None:
                 self._stage_document(txn, revision, fresh["structure"])
                 if self._optimize_on_import:
-                    await self._optimize_import(
-                        txn, revision, fresh["structure"], with_summaries=with_summaries
-                    )
+                    await self._optimize_import(txn, revision, fresh["structure"], with_summaries=with_summaries)
                     if with_doc_description and adapter_is_live(self._adapter):
                         subtree["doc_description"] = await describe_document(fresh["structure"], self._adapter)
                 imported.update(doc_id=revision.doc_id, revision=revision.revision)
