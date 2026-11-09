@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-867 — finalize_task binds the ReviewArtifact to the feature and the branch history
 **Spec**: `sdd/specs/scripts-finalize-task-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -425,10 +425,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-opus-5-5 via /sdd-fix (actor `agent:sdd-fix:c445f42d`)
+**Date**: 2026-11-10
+**Notes**: `_verify_evidence_refs(durable_root, evidence, repo_root)` now refuses a `ReviewArtifact`
+whose `feature_slug` differs from the evidence, whose `fix_commits` are not all in
+`evidence.fix_commits` (the message lists the missing SHAs, sorted), or whose `head_sha` is not an
+ancestor of (or equal to) `implementation_sha`. `git merge-base --is-ancestor` exit 1 reports
+"is not an ancestor of"; any other non-zero exit reports git's stderr. Both refuse (fail-closed).
+The pure checks run before the git call. The only caller (`finalize_task`) passes `repo_root`.
+Implementation commit: `9653ed45b3dc3e163db3b2f1d2ab270b600fc8f1`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Validation: `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_finalize_task.py
+packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_optimization_workflow_contracts.py::test_stale_fix_and_full_compatibility -q`
+gives 12 passed (with `PYTHONPATH=packages/ai-parrot/src`, import path checked to be the worktree);
+`ruff check` and `black --check -l 120` are clean on both files. Regression proof: a copy of the
+new test file run against the unfixed `dev` code (`finalize_task.py` without `repo_root`) gives
+4 failed (`DID NOT RAISE InvalidEvidenceError` for feature_slug, side-branch head, unknown head,
+missing fix commit) and 1 passed (older ancestor accepted).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. One small addition to the blueprint: a test-only
+`_review_binding_setup` helper shares the repo/durable-root setup across the five new tests.
+Resolves `issue:2d1816987583`.
