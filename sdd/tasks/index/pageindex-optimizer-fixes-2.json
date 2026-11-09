@@ -53,7 +53,7 @@
     {
       "id": "TASK-5416",
       "slug": "optimizer-docs",
-      "title": "Documentation — wiki/knowledge/pageindex-tree-optimizer.md",
+      "title": "Documentation \u2014 wiki/knowledge/pageindex-tree-optimizer.md",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -65,9 +65,9 @@
       "feature_id": "FEAT-857",
       "feature": "pageindex-optimizer-fixes-2",
       "spec": "sdd/specs/pageindex-optimizer-fixes-2.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:24:09+00:00",
       "completed_at": null
     }
   ]
