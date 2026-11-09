@@ -85,7 +85,7 @@
       "feature_id": "FEAT-860",
       "feature": "postgres-crew-storage",
       "spec": "sdd/specs/postgres-crew-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -95,8 +95,9 @@
       "parallelism_notes": "Consumes codec delegates from TASK-5443 and serializes the overlapping redis_persistence.py edits.",
       "assigned_to": null,
       "started_at": "2026-11-09T19:16:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5445-crew-redis-safe-snapshots.md"
+      "completed_at": "2026-11-09T21:24:04+00:00",
+      "file": "sdd/tasks/completed/TASK-5445-crew-redis-safe-snapshots.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5446",
@@ -105,7 +106,7 @@
       "feature_id": "FEAT-860",
       "feature": "postgres-crew-storage",
       "spec": "sdd/specs/postgres-crew-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -116,8 +117,9 @@
       "parallelism_notes": "Consumes definition_codec from TASK-5443 and CREW_DEFINITION_PG_DSN from TASK-5444; unit tests use fakes, no shared DDL.",
       "assigned_to": null,
       "started_at": "2026-11-09T19:16:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-5446-crew-postgres-store.md"
+      "completed_at": "2026-11-09T21:24:06+00:00",
+      "file": "sdd/tasks/completed/TASK-5446-crew-postgres-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-5447",
