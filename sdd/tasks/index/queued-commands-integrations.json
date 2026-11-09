@@ -108,11 +108,11 @@
       "priority": "high",
       "effort": "M",
       "parallelism_notes": "TASK-5396 supplies cancel_job, initial metadata, fresh foreign reads and bounded persistence; TASK-5397 creates QueuedCommand/Requester/JobView, discovery and messages, and shares __init__.py and test_queued_commands.py writes.",
-      "file": "sdd/tasks/active/TASK-5398-queued-command-service.md",
+      "file": "sdd/tasks/completed/TASK-5398-queued-command-service.md",
       "feature_id": "FEAT-851",
       "feature": "queued-commands-integrations",
       "spec": "sdd/specs/queued-commands-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [
         "TASK-5396",
         "TASK-5397"
@@ -120,7 +120,8 @@
       "parallel": true,
       "assigned_to": null,
       "started_at": "2026-11-09T16:09:42+00:00",
-      "completed_at": null
+      "completed_at": "2026-11-09T16:38:37+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-5399",
