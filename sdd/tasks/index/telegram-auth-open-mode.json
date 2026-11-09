@@ -41,14 +41,14 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: only edits telegram/models.py and appends TestAuthOpenModeConfig to test_auth_strategies.py; runs alongside TASK-5418.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:55:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5417-auth-open-mode-config.md"
     },
@@ -59,14 +59,14 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: creates the new module telegram/browser_login.py and test_browser_login.py; nothing it imports is created by another task.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:55:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5418-browser-login-registry-and-verifier-contract.md"
     },
@@ -77,7 +77,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -87,7 +87,7 @@
       "parallel": true,
       "parallelism_notes": "Reads TelegramAgentConfig.auth_open_mode/public_base_url from TASK-5417 (models.py) and also appends to test_auth_strategies.py after it; imports BROWSER_COMPLETE_PATH from TASK-5418 (browser_login.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:55:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5419-strategy-browser-keyboards.md"
     },
@@ -98,7 +98,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -107,7 +107,7 @@
       "parallel": true,
       "parallelism_notes": "Implements BrowserIdentityVerifier and raises BrowserVerificationError/BrowserVerifierUnavailableError, and calls register/get_browser_identity_verifier, all created by TASK-5418 (browser_login.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:55:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5420-navigator-jwt-verifier.md"
     },
@@ -118,7 +118,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -127,7 +127,7 @@
       "parallel": true,
       "parallelism_notes": "The Playwright test imports BROWSER_COMPLETE_PATH and new_browser_state from TASK-5418 (browser_login.py) to build complete_url/state; the HTML pages touch no other task's files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:55:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5421-dual-mode-login-pages.md"
     },
@@ -138,7 +138,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -148,7 +148,7 @@
       "parallel": true,
       "parallelism_notes": "Imports BrowserLoginEntry, PAGE_AUTH_METHODS, the two typed errors and get_browser_identity_verifier from TASK-5418 (browser_login.py); appends to test_browser_identity_verification.py, which TASK-5420 creates.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:55:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5422-complete-auth-payload.md"
     },
@@ -159,7 +159,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -171,7 +171,7 @@
       "parallel": true,
       "parallelism_notes": "Reads config.auth_open_mode (TASK-5417); uses new_browser_state/BrowserLoginRegistry/TELEGRAM_WRAPPERS_APP_KEY (TASK-5418) and ensure_navigator_browser_verifiers (TASK-5420, browser_verifiers.py); edits wrapper.py and test_browser_identity_verification.py after TASK-5422.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:55:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5423-browser-login-wiring.md"
     },
@@ -182,7 +182,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -193,7 +193,7 @@
       "parallel": true,
       "parallelism_notes": "Appends to browser_login.py and test_browser_login.py (TASK-5418); calls TelegramAgentWrapper._complete_auth_payload (TASK-5422); resolves wrappers via app['telegram_wrappers'] populated by TASK-5423 and its full-flow test drives handle_login's browser branch (TASK-5423).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:55:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5424-browser-complete-endpoint.md"
     },
@@ -204,7 +204,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -215,7 +215,7 @@
       "parallel": true,
       "parallelism_notes": "Imports is_browser_state, render_browser_* and the registry key from TASK-5418; delegates to _complete_auth_payload (TASK-5422); tests rely on handle_login registering the browser state and the wrapper map (TASK-5423). Touches oauth2_callback.py/test_oauth2_integration.py only, so it runs alongside TASK-5424.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:55:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5425-oauth2-callback-browser-branch.md"
     },
@@ -226,7 +226,7 @@
       "feature_id": "FEAT-854",
       "feature": "telegram-auth-open-mode",
       "spec": "sdd/specs/telegram-auth-open-mode.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -238,7 +238,7 @@
       "parallel": true,
       "parallelism_notes": "Documents symbols from every task: keyboards (TASK-5419), page meta allowlist (TASK-5421), POST endpoint/setup_browser_auth_routes (TASK-5424), OAuth2 browser routing (TASK-5425), and transitively TASK-5417/5418/5420/5422/5423; appends to test_browser_login.py after TASK-5424.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-11-09T16:55:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-5426-telegram-auth-open-mode-docs.md"
     }
