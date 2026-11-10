@@ -9,6 +9,62 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [2.1.3] — 2026-11-10 — PageIndex segment store and optimizer, ontology backend, AGY compatibility
+
+Patch release. Core and its siblings move to `2.1.3`; the fifteen `ai-parrot-client-*`
+satellites and `ai-parrot-openlit-bridge` move to `1.1.3`. Every sibling now pins
+`ai-parrot>=2.1.3`.
+
+### Added
+- **PageIndex segment store:** immutable document revisions, `list_documents` / `outline` /
+  `read_pages` / `read_segments` read tools, and an injection scan on every import path.
+- **PageIndex layout structure builder:** heading detection, outline repair for out-of-order
+  bookmarks, anchored attach, and framed LLM structure prompts.
+- **PageIndex tree optimizer:** `optimize` with an evaluation harness, OKF alias resolution
+  and bundle export rewriting, and bounded LLM inputs.
+- **PageIndex local MCP toolkit:** `PageIndexToolkit` constructible without an LLM, bounded
+  retrieve output (`max_result_chars`), and a packaged template and example.
+- **Agentic retrieval** for PageIndex (deadline-bound snapshot) and for Bookstore
+  (`BookstoreOrigin`, `ask` and `doctor` CLI commands, frozen evaluation fixture).
+- **Ontology backend:** `PostgresOntologyStore`, snapshot store and sources, read-only
+  vocabulary HTTP routes, a shared conformance suite, and a CI job for the vocabulary
+  PostgreSQL tests.
+- **Postgres crew storage** (FEAT-860).
+- **Telegram browser auth and open mode:** dual-mode login pages (FEAT-854).
+- **Queued commands for integrations:** Telegram topic and reply routing for every result
+  type, paginated `GitToolkit` PR context reads, and full-review report rendering.
+- **Client tool loop capability:** a `supports_tool_loop` flag; `AbstractBot` warns once at
+  `configure()` when its client has no tool loop.
+- **Roost:** `RoostEndpoint` runs `WAKE_LLM` / `RUN_TOOL` turns in tracked background tasks.
+- **AGY (Google Antigravity) compatibility for SDD:** launcher preflight (refuses the snap
+  build, fails closed on the worker sandbox), a ported `sdd-autopilot`, Google sub-agents
+  (`sdd-coder`, `code-reviewer`, `qa-runner`), and an AGY permission hook.
+- **Review evidence:** `record_review` publishes a `ReviewArtifact`.
+
+### Changed
+- Installers pin the uv SHA-256, add a PowerShell probe, `--install-cli`, and a `py`
+  launcher; the POSIX and PowerShell installers resolve uv at runtime; the installers accept
+  the `pageindex` component.
+- Test scope: one green-cache namespace; contract runner settings reach the invocation.
+- `parrot doctor` references corrected to `parrot self doctor`.
+
+### Fixed
+- Dangerous-actions guard matches protected branches as whole tokens and refuses to disable
+  push protection over a common push URL.
+- `mcp-local`: a portable `--config` resolves from the main checkout inside a linked worktree.
+- The sandbox binds the sdd-coder evidence store (HOTFIX-c61e28722cca-1).
+- Bookstore `add_book` upserts the card before invalidating the graph.
+- Review-round fixes across PageIndex, ontology, Postgres crew storage, queued commands and
+  AGY: `zip(strict=True)`, JSON parsing when wrapped in prose, the generation grace floor,
+  and stdout purity of the stdio server.
+- CI fails PRs whose `uv.lock` is stale; the `ontology-store` extra is fixed in CI and the
+  lock is regenerated for the ontology extra.
+- Test suite: nine test files realigned after nightly failures; a stub-isolation guard covers
+  the whole `parrot` namespace; the Google installer tests stay out of the real `$HOME`.
+- Wiki: 35 dangling references unlinked.
+
+---
+
 ## [2.1.2] — 2026-11-07 — Worktree root under .parrot/, --stale work-loss fixes, A2UI body limits
 
 Patch release. Core and its siblings move to `2.1.2`; the fifteen `ai-parrot-client-*`
