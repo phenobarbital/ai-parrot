@@ -8,31 +8,34 @@
       "cwd": "/home/jesuslara/proyectos/ai-parrot"
     },
     "parrot-bounded-source": {
-      "command": "parrot",
+      "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/parrot",
       "args": [
         "mcp-local",
         "bounded-source",
         "--config",
-        ".parrot/mcp-toolkits.yaml"
-      ]
+        "/home/jesuslara/proyectos/ai-parrot/.parrot/mcp-toolkits.yaml"
+      ],
+      "cwd": "/home/jesuslara/proyectos/ai-parrot"
     },
     "parrot-sdd-coder": {
-      "command": "parrot",
+      "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/parrot",
       "args": [
         "mcp-local",
         "sdd-coder",
         "--config",
-        ".parrot/mcp-toolkits.yaml"
-      ]
+        "/home/jesuslara/proyectos/ai-parrot/.parrot/mcp-toolkits.yaml"
+      ],
+      "cwd": "/home/jesuslara/proyectos/ai-parrot"
     },
     "parrot-memory": {
-      "command": "parrot",
+      "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/parrot",
       "args": [
         "mcp-local",
         "memory",
         "--config",
-        ".parrot/mcp-toolkits.yaml"
-      ]
+        "/home/jesuslara/proyectos/ai-parrot/.parrot/mcp-toolkits.yaml"
+      ],
+      "cwd": "/home/jesuslara/proyectos/ai-parrot"
     }
   }
 }
