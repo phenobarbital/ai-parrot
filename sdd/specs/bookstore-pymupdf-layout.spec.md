@@ -4,13 +4,7 @@ base_branch: dev
 projects: [ai-parrot]
 tags: [bookstore, pageindex, pdf, layout]
 docs:
-  policy: required
-  pages:
-    - wiki/knowledge/pageindex-layout-structure.md
-    - wiki/knowledge/bookstore-pymupdf-layout.md
-  api_modules:
-    - parrot.knowledge.pageindex.pdf_to_markdown
-    - parrot.knowledge.pageindex.pdf_layout_backend
+  policy: none
 ---
 
 # Feature Specification: Optional PyMuPDF Layout for Bookstore PDF Ingestion
@@ -18,7 +12,7 @@ docs:
 **Feature ID**: FEAT-875
 **Date**: 2026-11-10
 **Author**: Jesus Lara / Codex
-**Status**: approved
+**Status**: superseded
 **Target version**: next feature release (unassigned)
 
 ## 1. Motivation & Business Requirements
@@ -542,3 +536,4 @@ Codebase contracts were verified directly. No independent review is claimed.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-10 | Jesus Lara / Codex | Draft from implementation plan; verified contracts, optional backend, compatibility and quality gates |
+| 0.2 | 2026-11-10 | Jesus Lara / Claude | **Superseded.** M1 (`sdd/state/FEAT-875/layout-compatibility.md`) found `pymupdf-layout` is Polyform Noncommercial, native headings are flat (hierarchy lost) versus the legacy extractor, and the extra conflicts with the `agents` pins. Decision: do not adopt `pymupdf.layout`; improve the current extractor instead. Only a tolerant `pymupdf`/`fitz` import (`pageindex/_pymupdf.py`) landed under this feature. Tasks TASK-5470..5474 were removed. |
