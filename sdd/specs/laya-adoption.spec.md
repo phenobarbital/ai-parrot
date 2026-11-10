@@ -5,6 +5,7 @@ slug: laya-adoption
 type: feature
 base_branch: dev
 status: approved
+implementation_status: reopened
 projects: [ai-parrot, ai-parrot-client-jev]
 tags: [laya, classification, model-routing, guardrails, evaluation]
 proposal: sdd/proposals/laya-adoption.proposal.md
@@ -303,6 +304,117 @@ async def test_real_cpu_scenarios() -> None:
     """Opt-in run of all scenarios with real local inference; distinguish unavailable live evidence."""
 ```
 
+### Reopened evaluation scope (2026-11-10)
+
+The implementation is reopened at the requester's direction. Design status remains approved
+so follow-up tasks can execute; the index completion timestamp is cleared. Preserve TASK-3605
+through TASK-3618 as completed history. Their planning blueprints contain FILL IN snippets,
+but those are not executable source. Current `artifacts/laya/*.py` contains no executable
+NotImplementedError; `Predictor.predict` is a Protocol signature. The failed report
+`completion-cpu-1` records the previously fixed event-loop issue and is retained as history.
+
+The real outstanding work is durable evidence, usable deterministic rubric checks, and
+explicit cheaper-model coverage. No production integration, new dependency, automatic paid
+call, forced routing threshold adjustment or revision of prior measured reports is authorized
+by this decomposition. A branch/worktree is provisioned only when implementation starts.
+
+### Module 6: Retained minimal provider evidence (TASK-5466)
+
+Add `SampleResult.provider_evidence: dict[str, str]` with an empty default, compatible with
+schema-1 historical reports. Capture ONLY provider plus string-valued raw `model`,
+`model_version`, `modelVersion`; omit unknown keys, nested objects, credentials, headers and
+response content. Persist this before interpreting it, including when the provider tag is
+unknown. Resolve only known provider tags using the existing extraction precedence. Never
+use AIMessage.model as actual-model proof. Missing evidence remains model_unverified.
+Keep extract_model_evidence's signature and call sites stable; factor its resolution through
+the retained mapping so saved evidence can be reinterpreted offline without paid calls.
+
+```python
+# proposed in artifacts/laya/live.py
+from parrot.models.responses import AIMessage
+
+def capture_provider_evidence(message: AIMessage) -> dict[str, str]:
+    """Capture only the allowlisted provider/model identity strings."""
+
+def resolve_provider_model(evidence: dict[str, str]) -> str | None:
+    """Resolve a provider-returned version without substituting requested metadata."""
+```
+
+### Module 7: Versioned deterministic rubric checks (TASK-5467)
+
+Preserve legacy rubric files and their scoring semantics. Add an explicitly selected v2 file
+(`--rubric-file`, default None) and record its SHA-256 and version in EvaluationReport.
+A v2 envelope is `{"version": 2, "cases": {case_id: rubric}}`; a rubric has
+`all_of: list[list[str]]` (each group requires one literal alternative) and
+`none_of: list[str]` (forbidden literals). Validate through new Pydantic RubricV2 and
+RubricFileV2 models with extra=forbid; reject empty groups/strings, missing case coverage,
+wrong root types and unsupported versions before starting a worker or paid calls.
+Use Unicode normalization, casefold and collapsed whitespace; match literal terms at word
+boundaries. Do not execute regular expressions or call a model judge. These are explicitly
+heuristic checks, not semantic equivalence or population accuracy. Keep rubric_pass returning
+bool or None and load_rubrics returning a case mapping for existing callers.
+
+Create `artifacts/laya/fixtures/routing_rubrics_v2.json` with deterministic fact/contradiction
+checks and synthetic positive, paraphrased, negative and adversarial examples in tests.
+Do not alter old fixtures or old reports and do not call this newly authored rubric held-out
+validation of previously observed provider responses. Missing rubrics still score None.
+
+```python
+# proposed fields in artifacts/laya/models.py
+# EvaluationConfig.rubric_file: Path | None = None
+# EvaluationReport.rubric_sha256: str | None = None
+# EvaluationReport.rubric_version: int | None = None
+class RubricV2(_Record):
+    """Nonempty groups of literal alternatives and optional forbidden terms."""
+    all_of: list[list[str]]
+    none_of: list[str] = Field(default_factory=list)
+
+class RubricFileV2(_Record):
+    """Versioned case-to-rubric envelope; reject unsupported versions."""
+    version: Literal[2]
+    cases: dict[str, RubricV2]
+```
+
+Existing load_rubrics(path: Path) and rubric_pass(answer: str, rubric: dict[str, Any] | None)
+remain the integration interfaces. Normalize v2 entries to dictionaries tagged with version=2;
+legacy mappings retain their old shape. Only explicitly selected v2 rubrics use new scoring.
+
+### Module 8: Explicit cheap-model comparison and coverage (TASK-5468)
+
+Add `EvaluationConfig.include_cheap_baseline: bool=False` and CLI
+`--include-cheap-baseline`. Require live routing mode (scenario routing or all), two distinct
+model IDs and the usual credentials/cap. Default execution remains the existing pair. When
+selected, each fixture runs primary, routed, then cheap, with all three logical-call slots
+reserved atomically before the first arm. Never start a partial group. Failures consume slots.
+A separate `arm="cheap"` uses a RouteDecision bound to the configured cheap model with reason
+`cheap_baseline`; it is NOT a Laya selection and must not enter Laya routing proportions.
+No mutation of the client default; preserve thresholds and use the same generation settings.
+
+```python
+# proposed method on artifacts/laya/live.py::LiveCallBudget
+# Existing reserve_pair delegates to reserve_group(2), preserving its API.
+def reserve_group(self, size: int) -> bool:
+    """Reserve a positive group size atomically, or return False without dispatch."""
+```
+
+Extend SampleResult.arm to include cheap. Existing run_live_routing_pairs signature remains
+stable and follows config.include_cheap_baseline. Reports include all requested arms and a
+coverage block: logical calls attempted, arms with provider-model evidence, models actually
+reported, and whether the cheap baseline actually returned the configured model. Alias
+mismatches remain visible; never label a mismatched actual model as proven cheap execution.
+Report missing cheap evidence explicitly rather than claim savings. Missing per-model price
+or usage must make that arm's cost null rather than report a partial underestimated total.
+Close the evaluation Agent in a finally block after configuration/live calls; cancellation
+must still propagate. Provide fake-agent lifecycle tests and opt-in real integration commands.
+No paid verification is a default test; absent prerequisites remain reported skips.
+
+#### Follow-up delegation eligibility
+
+All three tasks use the normal implementation route, without a Delegation Contract. Behavioral
+edge cases and tests require reasoning; no full-file mechanical writer packet is claimed.
+Tasks 5467 and 5468 are serialized by consumed evidence/rubric contracts and overlapping models,
+live runner and CLI files. Isolation itself is not the reason for those dependencies.
+
 ## 4. Test Specification
 
 ### Unit Tests
@@ -322,9 +434,26 @@ async def test_real_cpu_scenarios() -> None:
 
 ### Validation Contract
 
-`packages/ai-parrot/tests/unit/laya_eval packages/ai-parrot/tests/unit/test_laya_evaluation.py packages/ai-parrot/tests/integration/test_laya_evaluation.py`
-
-Paid tests remain opt-in; routine verification does not repeat paid calls.
+tests:
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_adapter.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_context_limits.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_evaluate_cli.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_fixtures.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_live.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_live_pairs.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_models.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_reporting.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_routing.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_runtime.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_scenarios.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_validation.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_worker.py
+  - packages/ai-parrot/tests/unit/test_laya_evaluation.py
+  - packages/ai-parrot/tests/integration/test_laya_evaluation.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_evidence_retention.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_rubrics_v2.py
+  - packages/ai-parrot/tests/unit/laya_eval/test_laya_cheap_baseline.py
+markers: none
 
 ### Integration Tests
 
@@ -382,6 +511,17 @@ Evidence: `sdd/state/FEAT-589/verification/evaluation-summary.json` and
 `artifacts/laya/README.md`. Acceptance is for an exploratory evaluation framework, not production
 adoption. The full paid run retains incomplete model evidence; only the two-call confirmation
 verifies provider versions. No cheaper-model execution or cost savings were demonstrated.
+
+### Open follow-up acceptance criteria
+
+- [ ] R1: Allowlisted provider evidence survives JSON serialization and can be resolved offline;
+  missing/unknown identities do not become requested-model proof; secret/content fields are absent.
+- [ ] R2: Explicit v2 rubrics validate before dispatch, carry version/hash provenance, cover
+  positive/paraphrased/negative/contradictory synthetic answers, and leave legacy results unchanged.
+- [ ] R3: An explicit cheap baseline uses a separate arm, atomic three-call budgets, request-local
+  model selection and finally-cleanup; its evidence is reported separately from Laya decisions.
+- [ ] R4: Cost/coverage never overclaim incomplete actual-model, price or usage evidence;
+  focused regressions pass and optional paid runs are clearly distinguished from offline tests.
 
 ## 6. Codebase Contract
 
@@ -605,3 +745,8 @@ See `artifacts/laya/README.md` for reproducible flags and measured outcomes. The
 Anthropic U2 model preference remains recorded; it does not govern this requested Google run.
 Durable results and original report hashes are recorded in
 `sdd/state/FEAT-589/verification/evaluation-summary.json`.
+
+## Reopening record
+
+2026-11-10: retain FEAT-589 identity, reopen implementation, and add TASK-5466–TASK-5468.
+Historical evaluation acceptance remains checked; R1–R4 are open. No code is implemented by this planning run.
