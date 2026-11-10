@@ -37,15 +37,16 @@
       "feature_id": "FEAT-871",
       "feature": "sdd-coder-engine-fixes-5",
       "spec": "sdd/specs/sdd-coder-engine-fixes-5.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task; no dependencies; touches only engine.py and test_brief_index_resolution.py",
-      "assigned_to": "unassigned",
+      "assigned_to": "agent:sdd-fix:9824d687",
       "file": "sdd/tasks/active/TASK-5463-inspection-tools-brief-index.md",
-      "discovered_from": "issue:36d572b7feae"
+      "discovered_from": "issue:36d572b7feae",
+      "started_at": "2026-11-10T00:21:43+00:00"
     }
   ]
 }
