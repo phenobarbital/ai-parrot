@@ -160,8 +160,13 @@ def test_book_card_defaults_kind_book():
 
 
 def test_relation_origin_manual_and_source_format_tree():
-    notes = _card(book_id="clean-code--notes", tree_name="clean-code--notes", source_format="tree",
-                  kind="notes", notes_for="clean-code")
+    notes = _card(
+        book_id="clean-code--notes",
+        tree_name="clean-code--notes",
+        source_format="tree",
+        kind="notes",
+        notes_for="clean-code",
+    )
     assert notes.kind == "notes"
     assert notes.notes_for == "clean-code"
     rel = BookRelation(
