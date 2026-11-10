@@ -9,6 +9,7 @@ docs:
     - wiki/stores/user-stores.md
     - wiki/bots/agentstudio/db-storage.md
     - wiki/stores/documentdb_interface.md
+    - wiki/bots/orchestration/crew-definition-storage.md
   api_modules:
     - parrot.userstore
     - parrot.security.vault_utils
@@ -58,7 +59,8 @@ document, and `read_one` may keep returning the stale one.
 
 ### Goals
 - G1: Run ai-parrot (core, server, Telegram integration) with **no MongoDB server**: every
-  collection in the table above can live in Redis.
+  collection in the table above can live in Redis, and crew/flow results default to Redis too
+  when `CREW_RESULT_STORAGE` is unset.
 - G2: **Redis is the default** for all user stores. DocumentDB (and Postgres where FEAT-621 provides
   it) stays available by explicit configuration.
 - G3: One switch for the whole installation (`PARROT_USER_STORE`), overridable per store.
@@ -68,12 +70,13 @@ document, and `read_one` may keep returning the stale one.
 - G5: Sealed values keep their format and AAD context in every backend, so data copies verbatim:
   a one-shot DocumentDB → Redis copy CLI ships with the feature.
 - G6: navigator-vault keyring rotation covers credentials and BYOK keys stored in Redis.
-- G7: Misconfiguration fails closed at startup; risky Redis setups (evicting policy, no
-  persistence) and the default change itself are reported loudly in the startup log.
+- G7: Misconfiguration fails closed at startup — including an implicit Redis default on an
+  installation that has DocumentDB configured (the upgrade case); risky Redis setups (evicting
+  policy, no persistence) are reported in the startup log.
 
 ### Non-Goals (explicitly out of scope)
-- Crew/flow result storage (`CREW_RESULT_STORAGE`, FEAT-147) — it already has a Redis backend;
-  its `documentdb` default is untouched here (see §8 Q2).
+- Changing the crew/flow result backends themselves (FEAT-147) or the 7-day TTL of
+  `RedisResultStorage`; only the default selection changes (M14).
 - Conversation memory, artifacts, chat storage (FEAT-116) — already pluggable.
 - A Redis → DocumentDB or Redis → Postgres copy path; and Postgres backends for the four collections
   FEAT-621 did not cover.
@@ -85,7 +88,7 @@ document, and `read_one` may keep returning the stale one.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:1c0f81b79f2e8abcadde79ea1ec157535499c7bcc76bdb5c0315af8e80c2221d evaluation_digest=sha256:ba9c682aa4d9ec724b84189e8bfe04ada52330b9e5a4443cab408d345e6014ce rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:164351031ae492756fe387a57f13f96bffc0ac3453941950d66ffb5cfc24d9c9 evaluation_digest=sha256:24187f1e386bbbd7f261701a55624ba38e7778892647665eaca266612dbc0808 rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -125,6 +128,7 @@ Only equality filters exist; sorting is done by callers. The client is
 loop, closed by `close_user_store_redis()` on server cleanup. Default URL:
 `redis://{REDIS_HOST}:{REDIS_PORT}/{PARROT_USER_STORE_REDIS_DB}` with `PARROT_USER_STORE_REDIS_DB`
 defaulting to `6` — a dedicated logical DB, so a `FLUSHDB` of the cache/job DBs never wipes secrets.
+Redis Cluster (DB 0 only) and similar managed services set `PARROT_USER_STORE_REDIS_URL` explicitly.
 
 **Document shape rule.** A Redis document mirrors the DocumentDB document of the same collection
 field for field (without `_id`), with datetimes as ISO-8601 strings. Sealed fields (`credential`,
@@ -169,15 +173,26 @@ verbatim into `DocumentDbDashboardStore`; handlers call a `DashboardStore` chose
 Redis), so startup no longer contacts MongoDB when dashboards live in Redis. Creating a dashboard or
 tab whose id already exists answers `409` in both backends.
 
-**Startup (server).** `BotManager.setup()` validates every switch (raises `UserStoreMisconfigured`),
-adds an `on_startup` diagnostic and an `on_cleanup` that closes the Redis client. The diagnostic runs
-only when some store resolves to `redis` and never fails startup: `PING` (warn when unreachable),
-`CONFIG GET maxmemory-policy` (warn on any `allkeys-*` policy — it can evict secrets), `CONFIG GET
-appendonly` / `save` (warn when both persistence modes are off); `CONFIG` errors (managed Redis) are
-logged at debug and skipped. When a store resolves to `redis` **by default** while
-`DOCUMENTDB_HOSTNAME` is configured, it logs one WARNING per store naming the switch, saying that
-existing DocumentDB data is not read, and pointing to `PARROT_USER_STORE=documentdb` or the copy CLI.
+**Startup (server).** `BotManager.setup()` validates every switch and raises
+`UserStoreMisconfigured` on an invalid value **or on an implicit Redis default on a DocumentDB
+installation**: when `DOCUMENTDB_HOSTNAME` or `DOCUMENTDB_DBNAME` is set (the rule
+`vault_targets._default_docdb_factory` already uses) and some store — or an unset
+`CREW_RESULT_STORAGE` — resolves to Redis only because nothing was configured, startup stops with
+one error that lists those stores and both fixes: `PARROT_USER_STORE=documentdb` (keep MongoDB) or
+`PARROT_USER_STORE=redis` (move; run the copy CLI first). Setting the global switch, or every
+per-store switch, to either value clears the guard; an installation with neither DocumentDB
+variable is never affected. `setup()` then adds an `on_startup` diagnostic and an `on_cleanup` that
+closes the Redis client. The diagnostic runs only when some store resolves to `redis` and never
+fails startup: `PING` (warn when unreachable), `CONFIG GET maxmemory-policy` (warn on any
+`allkeys-*` policy — it can evict secrets), `CONFIG GET appendonly` / `save` (warn when both
+persistence modes are off); `CONFIG` errors (managed Redis) are logged at debug and skipped.
 The Studio backend computes its `postgres` switches through the same resolver.
+
+**Crew/flow results.** `CREW_RESULT_STORAGE` loses its hard-coded `documentdb` fallback: when it is
+unset, `get_result_storage()` uses `default_result_storage()` — the value of `PARROT_USER_STORE`,
+else `redis`. An explicit `CREW_RESULT_STORAGE` (including `postgres`) is unchanged. Results keep
+their own Redis URL (`CREW_RESULT_STORAGE_REDIS_URL`, default `REDIS_URL`) and 7-day TTL; they are
+not secrets and do not move to db 6.
 
 **Copy CLI.** `python -m parrot.userstore.copy` copies DocumentDB documents into Redis for the
 selected collections: insert-only by default (an existing Redis document is `skipped`),
@@ -211,7 +226,8 @@ factories do when DocumentDB is not configured). Quarantine moves a document to
   vault_utils ◀── CredentialsHandler, AgentTalk MCP restore, ToolkitConfig secrets, OAuth2 vault names
   userstore.copy:  DocumentDb ──read──▶ RedisDocumentStore (verbatim)
   vault_targets:   RedisDocumentTarget ◀── navigator-vault rotation (entry points)
-  BotManager.setup: validate → on_startup diagnostics → on_cleanup close client
+  BotManager.setup: validate (+ implicit-default guard) → on_startup diagnostics → on_cleanup close client
+  get_result_storage(): CREW_RESULT_STORAGE → default_result_storage() (PARROT_USER_STORE → redis)
 ```
 
 ### Integration Points
@@ -231,6 +247,7 @@ factories do when DocumentDB is not configured). Quarantine moves a document to
 | Studio `backend._postgres_switches` | modifies | uses the resolver |
 | `BotManager.setup` | modifies | validation, diagnostics hook, cleanup hook |
 | `parrot.vault_targets` + `pyproject.toml` entry points | extends | Redis rotation targets |
+| `get_result_storage` (FEAT-147) | modifies | an unset `CREW_RESULT_STORAGE` follows `PARROT_USER_STORE` |
 
 ### Data Models
 ```python
@@ -268,6 +285,8 @@ Collection registry (`parrot.userstore.collections`):
 def resolve_store_backend(switch: str) -> StoreBackend: ...
 def store_backend_source(switch: str) -> Literal["switch", "global", "default"]: ...
 def validate_user_store_settings() -> dict[str, StoreBackend]: ...
+def implicit_redis_stores() -> list[str]: ...
+def default_result_storage() -> Literal["redis", "documentdb"]: ...
 class UserStoreMisconfigured(RuntimeError): ...
 def get_user_store_redis() -> "redis.asyncio.Redis": ...
 async def close_user_store_redis() -> None: ...
@@ -299,6 +318,7 @@ async def vault_credential_exists(user_id: str, vault_name: str) -> bool: ...
 | M11: server startup wiring | yes | checks and messages fixed in §2 | — |
 | M12: copy CLI | yes | flags, counts, exit code fixed in §2 | — |
 | M13: Redis rotation targets | yes | subclass of `DocumentDbTarget`, factories fixed | — |
+| M14: crew result default | yes | conf fallback `None` + factory call fixed | — |
 
 ### Module 1: User store settings and resolver
 - **Path**: `packages/ai-parrot/src/parrot/userstore/__init__.py`, `packages/ai-parrot/src/parrot/userstore/settings.py`
@@ -322,7 +342,19 @@ async def vault_credential_exists(user_id: str, vault_name: str) -> bool: ...
       """Which level decided ``resolve_store_backend(switch)`` (used by the startup warning)."""
 
   def validate_user_store_settings() -> dict[str, StoreBackend]:
-      """Resolve every switch; raise the first UserStoreMisconfigured. Returns {switch: backend}."""
+      """Resolve every switch; raise UserStoreMisconfigured on the first invalid value, or when
+      documentdb_configured() and implicit_redis_stores() is non-empty (the message lists those
+      stores and the two PARROT_USER_STORE fixes). Returns {switch: backend}."""
+
+  def documentdb_configured() -> bool:
+      """DOCUMENTDB_HOSTNAME or DOCUMENTDB_DBNAME is set (same rule as vault_targets._default_docdb_factory)."""
+
+  def implicit_redis_stores() -> list[str]:
+      """Switch names resolving to redis with store_backend_source() == "default", plus
+      "CREW_RESULT_STORAGE" when it is unset and PARROT_USER_STORE is unset."""
+
+  def default_result_storage() -> Literal["redis", "documentdb"]:
+      """Crew/flow result backend when CREW_RESULT_STORAGE is unset: PARROT_USER_STORE, else "redis"."""
 
   def redis_url() -> str:
       """PARROT_USER_STORE_REDIS_URL, else redis://{REDIS_HOST}:{REDIS_PORT}/{PARROT_USER_STORE_REDIS_DB} (db 6)."""
@@ -599,8 +631,9 @@ async def vault_credential_exists(user_id: str, vault_name: str) -> bool: ...
   ```python
   # packages/ai-parrot/src/parrot/userstore/checks.py  (new)
   async def run_user_store_diagnostics(logger: logging.Logger | None = None) -> list[str]:
-      """Never raises. Returns the warning lines it logged (ping, eviction policy, persistence,
-      default-change notice). Skipped entirely when no switch resolves to redis."""
+      """Never raises. Returns the warning lines it logged (ping, eviction policy, persistence).
+      Skipped entirely when no switch resolves to redis. The implicit-default guard is NOT here:
+      it lives in validate_user_store_settings() and does stop startup."""
 
   # modifies manager.py — BotManager.setup(), after `self._register_shared_redis()` (verified: manager.py:2422)
   #   validate_user_store_settings(); app.on_startup.append(<diagnostics hook>);
@@ -651,6 +684,19 @@ async def vault_credential_exists(user_id: str, vault_name: str) -> bool: ...
   # parrot_redis_user_llm_keys = "parrot.vault_targets:redis_user_llm_keys_factory"
   ```
 
+### Module 14: Crew/flow result storage follows the global switch
+- **Path**: modifies `packages/ai-parrot/src/parrot/conf.py`, `packages/ai-parrot/src/parrot/bots/flows/core/storage/backends/factory.py`
+- **Responsibility**: an unset `CREW_RESULT_STORAGE` resolves through `default_result_storage()`; explicit values are unchanged.
+- **Depends on**: M1.
+- **Interface Skeleton**:
+  ```python
+  # modifies conf.py
+  CREW_RESULT_STORAGE = config.get("CREW_RESULT_STORAGE", fallback=None)  # verified: conf.py:313 (was fallback="documentdb"); only reader: factory.py:7
+  # modifies factory.py — get_result_storage() (verified: factory.py:34)
+  name = name_or_instance or CREW_RESULT_STORAGE or default_result_storage()  # verified: factory.py:58 (was `or "documentdb"`)
+  #   docstring precedence step 3 (factory.py:42) updated to match
+  ```
+
 ### Legacy tests that must pin `documentdb`
 
 With Redis as the default, tests that mock `DocumentDb` inside a service take the Redis path. The
@@ -665,6 +711,8 @@ to that service's existing test modules — never a package-wide default:
 | M7 | `packages/ai-parrot-server/tests/studio/test_toolkit_overrides.py`, `packages/ai-parrot-server/tests/test_agenttalk_toolkit_overrides.py` |
 | M8 | `packages/ai-parrot/tests/unit/test_mcp_persistence.py`, `packages/ai-parrot/tests/unit/test_mcp_helper_handler.py` |
 | M9 | `packages/ai-parrot-integrations/tests/integrations/telegram/test_mcp_documentdb_gate.py`, `.../test_mcp_commands.py` |
+| M14 | `tests/bots/flows/core/storage/test_factory.py` — `test_factory_defaults_to_documentdb` (line 48) becomes "defaults follow `PARROT_USER_STORE`" |
+| M11 | every test that runs `BotManager.setup()` while the loaded env sets `DOCUMENTDB_HOSTNAME`/`DOCUMENTDB_DBNAME` (the implicit-default guard): set `PARROT_USER_STORE` in its fixture |
 
 The task re-runs each listed module to confirm which ones actually need the pin; a module that does
 not reach DocumentDB is left untouched.
@@ -710,13 +758,18 @@ Redis-backed tests use the real local Redis on db 15 through `parrot.userstore.t
 | `test_dashboard_duplicate_create_409` | M10 | both backends |
 | `test_dashboard_delete_cascades_tabs` | M10 | tabs gone after dashboard delete |
 | `test_startup_rejects_invalid_switch` | M11 | `BotManager.setup` raises `UserStoreMisconfigured` |
-| `test_diagnostics_warnings` | M11 | allkeys policy, persistence off, default-change notice; `CONFIG` error skipped |
+| `test_guard_implicit_redis_with_documentdb` | M1/M11 | `DOCUMENTDB_HOSTNAME` set, no switches → `UserStoreMisconfigured` listing every store + `CREW_RESULT_STORAGE`, message names both fixes |
+| `test_guard_cleared_by_explicit_switch` | M1 | `PARROT_USER_STORE=redis` or `=documentdb` (or all per-store switches + `CREW_RESULT_STORAGE`) → no error |
+| `test_guard_absent_without_documentdb_config` | M1 | neither `DOCUMENTDB_HOSTNAME` nor `DOCUMENTDB_DBNAME` → default redis, no error |
+| `test_diagnostics_warnings` | M11 | allkeys policy, persistence off; `CONFIG` error skipped; never raises |
 | `test_studio_postgres_switches_resolver` | M11 | `PARROT_USER_STORE=documentdb` + `VAULT_STORE=postgres` → `["VAULT_STORE"]` |
 | `test_copy_insert_only_and_overwrite` | M12 | skip existing; `--overwrite` newer-wins; dry-run writes nothing |
 | `test_copy_collapses_duplicates` | M12 | duplicate DocumentDB docs → newest copied, `duplicates` counted |
 | `test_copy_no_secret_in_logs` | M12 | caplog contains no ciphertext |
 | `test_redis_target_rotation_cycle` | M13 | iter_batches → write with new key_version → quarantine → restore_raw |
 | `test_redis_target_factories` | M13 | factory returns None unless the switch resolves redis |
+| `test_result_storage_default_follows_global` | M14 | unset → `RedisResultStorage`; `PARROT_USER_STORE=documentdb` → `DocumentDbResultStorage` |
+| `test_result_storage_explicit_value_wins` | M14 | `CREW_RESULT_STORAGE=postgres` → `PostgresResultStorage` whatever the global switch |
 
 ### Integration Tests
 | Test | Description |
@@ -753,6 +806,7 @@ tests:
 - packages/ai-parrot-integrations/tests/integrations/telegram/test_mcp_persistence_redis.py
 - packages/ai-parrot-integrations/tests/integrations/telegram/test_mcp_documentdb_gate.py
 - tests/unit/integrations/oauth2/test_persistence.py
+- tests/bots/flows/core/storage/test_factory.py
 markers: none
 
 ### Test Data / Fixtures
@@ -785,17 +839,20 @@ def vault_keyring(monkeypatch):
 - [ ] AC10: Dashboards CRUD works on Redis with identical URLs and bodies; duplicate create answers 409; startup does not contact MongoDB when `DASHBOARDS_STORE` resolves to `redis`.
 - [ ] AC11: A credential sealed into DocumentDB, copied with `python -m parrot.userstore.copy`, decrypts from Redis with the same keyring; re-running the copy is a no-op; `--overwrite` only replaces strictly newer sources.
 - [ ] AC12: navigator-vault rotation over `redis:user_credentials` / `redis:user_llm_keys` re-seals values and they still decrypt; quarantine and restore round-trip.
-- [ ] AC13: Startup logs a WARNING for an `allkeys-*` eviction policy, for disabled persistence, and for each store that defaults to Redis while `DOCUMENTDB_HOSTNAME` is set; none of these stop startup.
+- [ ] AC13: Startup logs a WARNING for an `allkeys-*` eviction policy and for disabled persistence; neither stops startup.
 - [ ] AC14: No log line written by this feature contains a credential value, a ciphertext or a Redis password.
 - [ ] AC15: `ruff check` passes on every touched file (TID251 import bans included); all Validation Contract tests pass.
 - [ ] AC16: Documentation pages declared in §10 exist under `wiki/` (`parrot sdd techwiki check`).
+- [ ] AC17: With `DOCUMENTDB_HOSTNAME` (or `DOCUMENTDB_DBNAME`) set and no `PARROT_USER_STORE`, `BotManager.setup()` raises `UserStoreMisconfigured` listing every store (and `CREW_RESULT_STORAGE` when unset) that would default to Redis, naming both fixes; `PARROT_USER_STORE` set to either value starts normally; with neither DocumentDB variable set, startup is unaffected.
+- [ ] AC18: With `CREW_RESULT_STORAGE` unset, `get_result_storage()` returns `RedisResultStorage` by default and `DocumentDbResultStorage` when `PARROT_USER_STORE=documentdb`; an explicit `CREW_RESULT_STORAGE` wins.
 
 ---
 
 ## 6. Codebase Contract
 
 > **CRITICAL — Anti-Hallucination Anchor.** Verified against `origin/dev` @ `b93e626659`
-> (2026-11-11). Line numbers drift; `/sdd-task` re-runs `grep -c` for every anchor it uses.
+> (2026-11-11); re-checked unchanged at `41df674d50` (M14 rows added there). Line numbers drift;
+> `/sdd-task` re-runs `grep -c` for every anchor it uses.
 
 ### Verified Imports
 ```python
@@ -874,6 +931,16 @@ class UserCredentialsTarget(DocumentDbTarget): name = "docdb:user_credentials"
 class UserLlmKeysTarget(DocumentDbTarget): name = "docdb:user_llm_keys"
 def user_llm_keys_factory(resources: Mapping[str, Any]) -> Optional[UserLlmKeysTarget]:  # line 260
 
+# packages/ai-parrot/src/parrot/vault_targets.py (cont.)
+def _default_docdb_factory() -> Optional[Callable[[], Any]]:  # line 235 — DOCUMENTDB_HOSTNAME or DOCUMENTDB_DBNAME rule
+
+# packages/ai-parrot/src/parrot/conf.py
+CREW_RESULT_STORAGE = config.get("CREW_RESULT_STORAGE", fallback="documentdb")  # line 313 — only reader: factory.py:7
+
+# packages/ai-parrot/src/parrot/bots/flows/core/storage/backends/factory.py
+def get_result_storage(name_or_instance: Union[str, "ResultStorage", None] = None) -> "ResultStorage":  # line 34
+    name = name_or_instance or CREW_RESULT_STORAGE or "documentdb"  # line 58
+
 # packages/ai-parrot-server/src/parrot/handlers/credentials.py
 class CredentialsHandler(...):
     COLLECTION: str = "user_credentials"                       # line 71
@@ -941,7 +1008,7 @@ class TelegramMCPPersistenceService:                           # line 134; COLLE
 
 ### Edit Sites (Blueprint Anchors)
 
-Verified against: `b93e626659`
+Verified against: `b93e626659` (no drift in these files at `41df674d50`, where the M14 rows were verified)
 
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
@@ -997,6 +1064,8 @@ Verified against: `b93e626659`
 | `packages/ai-parrot-integrations/src/parrot/integrations/telegram/mcp_persistence.py` | MODIFY | `def documentdb_enabled() -> bool:` | `mcp_persistence.py:44` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/telegram/mcp_persistence.py` | MODIFY | `class TelegramMCPPersistenceService:` | `mcp_persistence.py:134` | 1 |
 | `packages/ai-parrot-integrations/src/parrot/integrations/telegram/mcp_commands.py` | MODIFY | `documentdb_enabled` (import :53, uses :262 :383 :449) | `mcp_commands.py:53` | 4 |
+| `packages/ai-parrot/src/parrot/conf.py` | MODIFY | `CREW_RESULT_STORAGE = config.get("CREW_RESULT_STORAGE", fallback="documentdb")` | `conf.py:313` | 1 |
+| `packages/ai-parrot/src/parrot/bots/flows/core/storage/backends/factory.py` | MODIFY | `name = name_or_instance or CREW_RESULT_STORAGE or "documentdb"` | `factory.py:58` | 1 |
 
 ---
 
@@ -1014,16 +1083,24 @@ Verified against: `b93e626659`
 
 ### Known Risks / Gotchas
 - **Breaking default.** An upgraded deployment that relied on the implicit DocumentDB default
-  starts reading empty Redis stores: credentials, OAuth connections and overrides "disappear"
-  (they are still in MongoDB). Mitigation: the per-store startup WARNING when `DOCUMENTDB_HOSTNAME`
-  is set, release notes, the wiki page, and `PARROT_USER_STORE=documentdb` as the one-line opt-out.
-  Whether this should fail startup instead is §8 Q1.
+  would read empty Redis stores: credentials, OAuth connections and overrides "disappear"
+  (they are still in MongoDB). Mitigation: startup fails closed when DocumentDB is configured and
+  any store defaults implicitly (§2), with the one-line fix in the error; release notes and the
+  wiki page repeat it.
+- **Local env files.** A developer `env/.env` that still sets `DOCUMENTDB_HOSTNAME` (this
+  repository's does: `localhost`) must add `PARROT_USER_STORE=redis` or `=documentdb` once. Tests
+  that run `BotManager.setup()` under such an env hit the guard; the M11 task finds them and sets
+  the switch in their fixtures.
+- **Crew results expire in Redis.** With the new default, results use `RedisResultStorage` and its
+  7-day TTL, unlike DocumentDB. Installations that keep results longer set
+  `CREW_RESULT_STORAGE=documentdb|postgres` or raise `CREW_RESULT_STORAGE_REDIS_TTL` (`0` disables it).
 - **Redis is not a cache here.** Secrets have no TTL. An `allkeys-*` eviction policy or a Redis
   without RDB/AOF loses them. The diagnostic warns; operators of managed Redis must check settings
   that `CONFIG GET` cannot read.
 - **Shared logical DB.** Default db 6 avoids the cache (2), sessions (0), jobs/general (1),
-  history/datasets (3) and services/OAuth state (4) DBs used today; confirm nothing else in the
-  deployment uses db 6.
+  history/datasets (3) and services/OAuth state (4) DBs used today (§8 Q3). Redis Cluster and
+  DB-0-only services must set `PARROT_USER_STORE_REDIS_URL`; the startup `PING` diagnostic reports
+  a URL whose DB the server rejects.
 - **Event loops.** A `redis.asyncio` client is bound to the loop that first used it; the per-loop
   client cache avoids "attached to a different loop" errors in tests and multi-loop hosts.
 - **Index consistency.** Index maintenance must be transactional (WATCH/MULTI) — a crash between
@@ -1055,7 +1132,7 @@ schema_version: 1
 document_id: redis-user-stores
 entries:
   - id: redis-default-user-stores
-    statement: User-scoped stores resolve their backend per store switch, then PARROT_USER_STORE, then Redis as the default; an invalid value fails closed.
+    statement: User-scoped stores resolve their backend per store switch, then PARROT_USER_STORE, then Redis as the default; an unset CREW_RESULT_STORAGE follows the same global switch; an invalid value, or an implicit Redis default on an installation with DocumentDB configured, fails closed at startup.
     relation: constrains
     about: [config]
     targets:
@@ -1067,6 +1144,8 @@ entries:
     rejected_alternatives:
       - Keep DocumentDB as the default and make Redis opt-in.
       - Auto-detect the backend from DOCUMENTDB_HOSTNAME.
+      - Only warn when a DocumentDB installation silently defaults to Redis.
+      - Keep CREW_RESULT_STORAGE defaulting to documentdb independently of the global switch.
   - id: vault-access-through-vault-utils
     statement: Every read or write of user_credentials goes through parrot.security.vault_utils; handlers never open DocumentDB for it directly.
     relation: requires
@@ -1096,7 +1175,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:1c0f81b79f2e8abcadde79ea1ec157535499c7bcc76bdb5c0315af8e80c2221d evaluation_digest=sha256:ba9c682aa4d9ec724b84189e8bfe04ada52330b9e5a4443cab408d345e6014ce rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:164351031ae492756fe387a57f13f96bffc0ac3453941950d66ffb5cfc24d9c9 evaluation_digest=sha256:24187f1e386bbbd7f261701a55624ba38e7778892647665eaca266612dbc0808 rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -1149,7 +1228,7 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:ba9c682aa4d9ec724b84189e8bfe04ada52330b9e5a4443cab408d345e6014ce",
+  "evaluation_digest": "sha256:24187f1e386bbbd7f261701a55624ba38e7778892647665eaca266612dbc0808",
   "exit_code": 0,
   "findings": [
     {
@@ -1221,7 +1300,7 @@ Coverage:
       "waived_by": null
     }
   ],
-  "input_digest": "sha256:1c0f81b79f2e8abcadde79ea1ec157535499c7bcc76bdb5c0315af8e80c2221d",
+  "input_digest": "sha256:164351031ae492756fe387a57f13f96bffc0ac3453941950d66ffb5cfc24d9c9",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -1249,9 +1328,9 @@ Coverage:
 - [x] How is Redis mode switched on? — *Resolved with the user 2026-11-11*: a global `PARROT_USER_STORE` plus per-store switches that override it.
 - [x] Default when nothing is configured? — *Resolved with the user 2026-11-11*: Redis; production must declare DocumentDB (or Postgres) explicitly.
 - [x] Scope beyond the five collections? — *Resolved with the user 2026-11-11*: include BYOK `user_llm_keys`, dashboards, a DocumentDB → Redis copy script and Redis keyring rotation.
-- [ ] Q1: Should startup **fail** (instead of warn) when a store defaults to Redis while `DOCUMENTDB_HOSTNAME` is configured, to protect production upgrades? Failing would also stop local `env/.env` files that still set `DOCUMENTDB_HOSTNAME`. — *Owner: Jesus Lara*
-- [ ] Q2: Should `CREW_RESULT_STORAGE` (default `documentdb`) follow `PARROT_USER_STORE` so a fresh install never touches MongoDB, or stay independent? — *Owner: Jesus Lara*
-- [ ] Q3: Is logical DB 6 free in every deployment, or should the default reuse `REDIS_URL` with only the key prefix for isolation? — *Owner: Jesus Lara*
+- [x] Q1: Should startup fail (instead of warn) when a store defaults to Redis while DocumentDB is configured? — *Resolved with the user 2026-11-11*: fail, with an error listing the stores and both fixes (`PARROT_USER_STORE=documentdb` / `=redis`); only when `DOCUMENTDB_HOSTNAME` or `DOCUMENTDB_DBNAME` is set. See §2 Startup, M1, AC17.
+- [x] Q2: Should `CREW_RESULT_STORAGE` follow `PARROT_USER_STORE`? — *Resolved with the user 2026-11-11*: yes, when `CREW_RESULT_STORAGE` is unset (new M14, AC18); explicit values win.
+- [x] Q3: Dedicated logical DB or `REDIS_URL` + prefix? — *Resolved with the user 2026-11-11*: dedicated logical DB 6; DB-0-only deployments (Redis Cluster) set `PARROT_USER_STORE_REDIS_URL`.
 
 ---
 
@@ -1265,9 +1344,12 @@ Coverage:
   - M11 → M1 + M2 (`validate_user_store_settings`, `get_user_store_redis`).
   - M12 → M2 (`RedisDocumentStore`, `USER_STORE_COLLECTIONS`).
   - M13 → M2 (`RedisDocumentStore`).
-  - After M1+M2, the modules M3, M5–M13 have no edges between them and run concurrently; M4 follows M3.
+  - M14 → M1 (`default_result_storage`).
+  - After M1 (M14) and M1+M2 (the rest), the modules M3, M5–M14 have no edges between them and run
+    concurrently; M4 follows M3.
 - **Shared files**: none between modules (each module owns its files). `vault_utils.py` is M3 only;
-  `studio/byok.py` M6 only; `manager.py` and `backend.py` M11 only.
+  `studio/byok.py` M6 only; `manager.py` and `backend.py` M11 only; `conf.py` and the result-storage
+  `factory.py` M14 only.
 - **Exclusive resources**: M13 edits `packages/ai-parrot/pyproject.toml` (entry points; metadata
   reinstall) → `parallel: false`.
 - **Cross-feature dependencies**: none. FEAT-621 (agentstudio-db-storage) is merged; its Postgres
@@ -1291,7 +1373,8 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 
 - **Policy**: `required`
 - **Pages**:
-  - `wiki/stores/user-stores.md` — create: switches and precedence, Redis layout, durability requirements (no eviction, persistence on), startup warnings, copy CLI, rotation targets, upgrade checklist for production (`PARROT_USER_STORE=documentdb`).
+  - `wiki/stores/user-stores.md` — create: switches and precedence, Redis layout and db 6 (Cluster: set the URL), durability requirements (no eviction, persistence on), the implicit-default startup guard and its two fixes, startup warnings, copy CLI, rotation targets, upgrade checklist for production (`PARROT_USER_STORE=documentdb`).
+  - `wiki/bots/orchestration/crew-definition-storage.md` — update: an unset `CREW_RESULT_STORAGE` now follows `PARROT_USER_STORE` (Redis by default, 7-day TTL).
   - `wiki/bots/agentstudio/db-storage.md` — update: phase-2 switches accept `redis`; default is now Redis via `PARROT_USER_STORE`; `postgres` without registration fails closed for the vault too.
   - `wiki/stores/documentdb_interface.md` — update: DocumentDB is no longer the default for user stores; link to `user-stores.md`.
 - **API modules**:
@@ -1306,3 +1389,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-11-11 | Jesus Lara | Initial draft (design decisions from the 2026-11-11 interview) |
 | 0.2 | 2026-11-11 | Jesus Lara | Approved; §8 Q1–Q3 left open (spec defaults apply: warn, CREW_RESULT_STORAGE independent, Redis db 6) |
+| 0.3 | 2026-11-11 | Jesus Lara | Resolved §8 Q1–Q3: implicit Redis default on a DocumentDB install fails startup; unset CREW_RESULT_STORAGE follows PARROT_USER_STORE (M14); dedicated Redis db 6 |
