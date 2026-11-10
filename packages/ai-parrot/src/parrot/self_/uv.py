@@ -115,7 +115,7 @@ def find_path_uv() -> Path | None:
 def read_recorded_uv() -> Path | None:
     """Return the first non-empty recorded uv path, if present."""
     try:
-        lines = uv_path_file().read_text(encoding="utf-8").splitlines()
+        lines = uv_path_file().read_text(encoding="utf-8-sig").splitlines()
     except OSError:
         return None
     line = next((line.strip() for line in lines if line.strip()), "")

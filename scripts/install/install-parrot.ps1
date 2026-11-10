@@ -287,7 +287,7 @@ function Install-Global {
         $uvPath = Join-Path $libexec 'uv-path'
         Run -Why "record your uv $($script:SysUvVer) ($($script:SysUv)) in $libexec\uv-path" -Cmd {
           if (-not (Test-Path $uvPath)) { $script:Created.Add($uvPath) }
-          Set-Content -LiteralPath "$uvPath.tmp" -Value $script:SysUv -Encoding utf8
+          [IO.File]::WriteAllText("$uvPath.tmp", "$($script:SysUv)`n", (New-Object Text.UTF8Encoding $false))
           Move-Item "$uvPath.tmp" $uvPath -Force
         }
       }
