@@ -341,6 +341,111 @@ class TestRenderCardSpec:
             render(spec, max_card_bytes=1_000)
 
 
+def _wide_table(n_rows: int, n_cols: int):
+    from parrot.outputs.cards.sections import TableSection
+    return TableSection(
+        columns=[f"column_{c}" for c in range(n_cols)],
+        rows=[[f"value {r}-{c} 12,345.67" for c in range(n_cols)] for r in range(n_rows)],
+    )
+
+
+def _card_bytes(card: dict) -> int:
+    return len(json.dumps(card).encode("utf-8"))
+
+
+def _body_texts(card: dict) -> list[str]:
+    return [b.get("text", "") for b in card["body"] if b.get("type") == "TextBlock"]
+
+
+class TestRenderFit:
+    """``render(fit=True)`` shrinks an oversize card instead of raising."""
+
+    @pytest.mark.parametrize("version", ["1.4", "1.5"])
+    def test_large_table_is_shrunk_to_fit(self, version):
+        from parrot.outputs.cards.renderer import CardRenderError, render
+        from parrot.outputs.cards.spec import CardSpec
+        from parrot.outputs.cards.toggle import AutoCollapsePolicy
+        spec = CardSpec(sections=[_wide_table(50, 8)], auto_collapse=AutoCollapsePolicy(), version=version)
+        with pytest.raises(CardRenderError):
+            render(spec)
+        card = render(spec, fit=True)
+        assert _card_bytes(card) <= 28_000
+        texts = _body_texts(card)
+        assert "Showing 15 of 50" in texts
+        assert any("shortened" in t for t in texts)
+
+    def test_fitting_card_is_unchanged(self):
+        from parrot.outputs.cards.renderer import render
+        from parrot.outputs.cards.spec import CardSpec
+        from parrot.outputs.cards.toggle import AutoCollapsePolicy
+        spec = CardSpec(sections=[_wide_table(5, 3)], auto_collapse=AutoCollapsePolicy())
+        assert render(spec, fit=True) == render(spec)
+
+    def test_rows_halved_until_fit(self):
+        from parrot.outputs.cards.renderer import render
+        from parrot.outputs.cards.spec import CardSpec
+        spec = CardSpec(sections=[_wide_table(50, 25)])
+        card = render(spec, fit=True)
+        assert _card_bytes(card) <= 28_000
+        shown = [t for t in _body_texts(card) if t.startswith("Showing ")]
+        assert len(shown) == 1
+        assert shown[0].endswith(" of 50")
+
+    def test_total_rows_preserved_in_footer(self):
+        from parrot.outputs.cards.renderer import render
+        from parrot.outputs.cards.spec import CardSpec
+        table = _wide_table(50, 10).model_copy(update={"total_rows": 1_000})
+        card = render(CardSpec(sections=[table]), max_card_bytes=20_000, fit=True)
+        assert any(t.startswith("Showing ") and t.endswith(" of 1000") for t in _body_texts(card))
+
+    def test_inline_image_dropped_but_table_kept(self):
+        from parrot.outputs.cards.renderer import render
+        from parrot.outputs.cards.sections import ImageEntry, ImageSection
+        from parrot.outputs.cards.spec import CardSpec
+        from parrot.outputs.cards.toggle import AutoCollapsePolicy
+        chart = ImageSection(images=[
+            ImageEntry(url="data:image/png;base64," + "A" * 60_000),
+            ImageEntry(url="https://cdn.example/fig.png"),
+        ])
+        spec = CardSpec(sections=[_wide_table(30, 6), chart], auto_collapse=AutoCollapsePolicy())
+        card = render(spec, fit=True)
+        assert _card_bytes(card) <= 28_000
+        urls = [b["url"] for b in card["body"] if b.get("type") == "Image"]
+        assert urls == ["https://cdn.example/fig.png"]
+        texts = _body_texts(card)
+        assert "Showing 15 of 30" in texts
+        assert any("1 embedded image omitted" in t for t in texts)
+
+    def test_long_text_is_truncated(self):
+        from parrot.outputs.cards.renderer import render
+        from parrot.outputs.cards.sections import TextSection
+        from parrot.outputs.cards.spec import CardSpec
+        from parrot.outputs.cards.toggle import AutoCollapsePolicy
+        spec = CardSpec(sections=[TextSection(text="lorem ipsum " * 5_000)], auto_collapse=AutoCollapsePolicy())
+        card = render(spec, fit=True)
+        assert _card_bytes(card) <= 28_000
+        assert card["body"][0]["text"].endswith(" …")
+
+    def test_original_spec_not_mutated(self):
+        from parrot.outputs.cards.renderer import render
+        from parrot.outputs.cards.spec import CardSpec
+        table = _wide_table(50, 8)
+        spec = CardSpec(sections=[table])
+        render(spec, fit=True)
+        assert len(spec.sections) == 1
+        assert len(spec.sections[0].rows) == 50
+        assert spec.sections[0].max_display_rows == 50
+
+    def test_raises_when_nothing_can_shrink(self):
+        from parrot.outputs.cards.elements import TextBlock
+        from parrot.outputs.cards.renderer import CardRenderError, render
+        from parrot.outputs.cards.sections import RawElementsSection
+        from parrot.outputs.cards.spec import CardSpec
+        raw = RawElementsSection(elements=[TextBlock(text="x" * 40_000)])
+        with pytest.raises(CardRenderError):
+            render(CardSpec(sections=[raw]), fit=True)
+
+
 class TestRenderText:
     def test_fallback(self):
         from parrot.outputs.cards.renderer import render_text
