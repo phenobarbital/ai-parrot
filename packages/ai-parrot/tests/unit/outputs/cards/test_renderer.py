@@ -8,11 +8,11 @@ class TestRenderTextSection:
     def test_simple_text(self):
         from parrot.outputs.cards.renderer import render
         from parrot.outputs.cards.sections import TextSection
-        from parrot.outputs.cards.spec import CardSpec
+        from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION, CardSpec
         spec = CardSpec(sections=[TextSection(text="Hello world")])
         card = render(spec)
         assert card["type"] == "AdaptiveCard"
-        assert card["version"] == "1.5"
+        assert card["version"] == DEFAULT_ADAPTIVE_CARD_VERSION
         assert card["$schema"] == "http://adaptivecards.io/schemas/adaptive-card.json"
         body = card["body"]
         assert len(body) == 1
@@ -44,7 +44,7 @@ class TestRenderTableSection:
         from parrot.outputs.cards.renderer import render
         from parrot.outputs.cards.sections import TableSection
         from parrot.outputs.cards.spec import CardSpec
-        spec = CardSpec(sections=[TableSection(
+        spec = CardSpec(version="1.5", sections=[TableSection(
             columns=["Name", "Age"],
             rows=[["Alice", "30"], ["Bob", "25"]],
         )])
@@ -56,6 +56,26 @@ class TestRenderTableSection:
         assert len(table["columns"]) == 2
         # Header row + 2 data rows
         assert len(table["rows"]) == 3
+
+    def test_columnset_table_below_1_5(self):
+        """AC <= 1.4 has no native Table: header and rows become ColumnSets."""
+        from parrot.outputs.cards.renderer import render
+        from parrot.outputs.cards.sections import TableSection
+        from parrot.outputs.cards.spec import CardSpec
+        spec = CardSpec(version="1.4", sections=[TableSection(
+            columns=["Name", "Age"],
+            rows=[["Alice", "30"], ["Bob", "25"]],
+        )])
+        card = render(spec)
+        assert not [e for e in card["body"] if e["type"] == "Table"]
+        column_sets = [e for e in card["body"] if e["type"] == "ColumnSet"]
+        # Header row + 2 data rows
+        assert len(column_sets) == 3
+        header = column_sets[0]
+        assert header["separator"] is True
+        assert [c["items"][0]["text"] for c in header["columns"]] == ["Name", "Age"]
+        assert all(c["items"][0]["weight"] == "Bolder" for c in header["columns"])
+        assert [c["items"][0]["text"] for c in column_sets[1]["columns"]] == ["Alice", "30"]
 
     def test_truncation_note(self):
         from parrot.outputs.cards.renderer import render
@@ -75,7 +95,7 @@ class TestRenderTableSection:
         from parrot.outputs.cards.renderer import render
         from parrot.outputs.cards.sections import TableSection
         from parrot.outputs.cards.spec import CardSpec
-        spec = CardSpec(sections=[TableSection(
+        spec = CardSpec(version="1.5", sections=[TableSection(
             columns=["a", "b", "c"],
             rows=[["1"], ["1", "2", "3", "4"]],
         )])
@@ -83,6 +103,20 @@ class TestRenderTableSection:
         table = [e for e in card["body"] if e["type"] == "Table"][0]
         for row in table["rows"]:
             assert len(row["cells"]) == 3
+
+    def test_ragged_rows_normalized_below_1_5(self):
+        from parrot.outputs.cards.renderer import render
+        from parrot.outputs.cards.sections import TableSection
+        from parrot.outputs.cards.spec import CardSpec
+        spec = CardSpec(version="1.4", sections=[TableSection(
+            columns=["a", "b", "c"],
+            rows=[["1"], ["1", "2", "3", "4"]],
+        )])
+        card = render(spec)
+        column_sets = [e for e in card["body"] if e["type"] == "ColumnSet"]
+        assert len(column_sets) == 3
+        for column_set in column_sets:
+            assert len(column_set["columns"]) == 3
 
 
 class TestRenderMetricsSection:
