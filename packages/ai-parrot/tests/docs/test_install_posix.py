@@ -202,7 +202,9 @@ def test_dry_run_downloads_when_system_uv_is_out_of_range(tmp_path: Path) -> Non
     """An incompatible system uv stays untouched and causes a private download plan."""
     result = _run_global(tmp_path, system_uv="0.13.0")
     assert result.returncode == 0, result.stderr
-    assert "download pinned uv 0.11.28" in result.stdout and "libexec" in result.stdout and "left as is" in result.stdout
+    assert (
+        "download pinned uv 0.11.28" in result.stdout and "libexec" in result.stdout and "left as is" in result.stdout
+    )
 
 
 def _fake_bin(tmp: Path, *, drop: tuple[str, ...] = (), scripts: dict[str, str] | None = None) -> str:
@@ -377,7 +379,10 @@ def test_offline_install_out_of_range_system_uv_is_untouched(tmp_path: Path) -> 
     system = tmp_path / "fakebin" / "uv"
     result = _run_offline_install(tmp_path, fake_parrot=_PARROT_REPO_NOT_READY, system_uv="0.13.0")
     assert result.returncode == 0, result.stderr
-    assert system.read_bytes() == _FAKE_UV.replace("$FIXTURES", str(tmp_path / "fixtures")).replace("0.11.28", "0.13.0").encode()
+    assert (
+        system.read_bytes()
+        == _FAKE_UV.replace("$FIXTURES", str(tmp_path / "fixtures")).replace("0.11.28", "0.13.0").encode()
+    )
     assert system.stat().st_mtime_ns == 1_700_000_000_000_000_000
     home = tmp_path / "home" / ".parrot"
     assert (home / "libexec" / "uv").exists() and not (home / "bin" / "uv").exists()
