@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-865 fixgroup-eb6709b6a57b
 **Spec**: `sdd/specs/fixgroup-eb6709b6a57b.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: none
@@ -42,4 +42,9 @@ ruff check packages/ai-parrot/src/parrot/sdd/scripts/worktree_push_protection.py
 ```
 
 ## Completion Note
-_(filled on close)_
+Implemented in 33288798ec. `disable()` refuses (exit 2, nothing written) when the common config sets
+`remote.origin.pushurl`, naming `git config --file <common> --unset-all remote.origin.pushurl`; `status`
+appends the same notice. One rule line added to the three sdd-done twins and their `_assets` copies.
+Validation: test_worktree_push_protection.py 12 passed; ruff clean; 410 sdd doc/asset contract tests pass.
+Pre-existing unrelated failure on dev: test_worker_notification_protocol_order.
+Resolves `issue:d0c89274743b`.

@@ -211,6 +211,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - First run `wikitoolkit ledger outbox status --repo-root <worktree> --json`; on exit 4 report the
      `contaminated_paths` and point to `wiki/sdd-tooling/sdd/ledger-outbox.md` § Legacy feature diff — do not restore or
      drop them and do not block the code PR
+   - Never use `git remote set-url --push` or `git config remote.origin.pushurl` to get past the guard: from a worktree they write the shared `.git/config` and block every checkout (issue:d0c89274743b). If `push-protection disable` refuses, stop and report its message to the operator.
    - Then `parrot sdd worktree push-protection disable <worktree>` (FEAT-813: removes the `no_push` guard a
      sandboxed worker left; idempotent) — on failure warn and continue
    - `git -C <worktree> push origin <branch>`
