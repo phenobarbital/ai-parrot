@@ -174,17 +174,23 @@ def derive_toc(tree: dict[str, Any], max_depth: int = 2) -> tuple[list[TocEntry]
     return entries, "\n".join(lines)
 
 
-def fallback_card_fields(file_path: Path, toc_entries: list[TocEntry]) -> CardDraft:
+def fallback_card_fields(
+    file_path: Path,
+    toc_entries: list[TocEntry],
+    *,
+    metadata_title: str | None = None,
+) -> CardDraft:
     """Deterministic card draft when no LLM is configured.
 
-    Title comes from the de-slugified filename stem; topics from the
-    top-level chapter titles.
+    Title comes from the ebook metadata when available, otherwise from the
+    de-slugified filename stem; topics from the top-level chapter titles.
 
     Args:
         file_path: The ingested source file.
         toc_entries: Structured ToC from :func:`derive_toc`.
+        metadata_title: Book title extracted from EPUB/MOBI metadata.
     """
-    title = _stem_to_title(file_path.stem) or file_path.name
+    title = metadata_title or _stem_to_title(file_path.stem) or file_path.name
     topics = [e.title for e in toc_entries if e.depth == 1][:10]
     return CardDraft(title=title, topics=topics)
 

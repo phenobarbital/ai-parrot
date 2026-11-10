@@ -74,6 +74,87 @@ _STAGING_MARKER = "--staging-"
 _STAGING_MAX_AGE_S = 3600
 
 
+def _epub_metadata_title(payload: bytes) -> str | None:
+    """Read the Dublin Core title from an EPUB's OPF without full content parsing."""
+    import io
+    import zipfile
+    from xml.etree import ElementTree
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(payload)) as zf:
+            container = ElementTree.fromstring(zf.read("META-INF/container.xml"))
+            rootfiles = container.findall(
+                ".//{urn:oasis:names:tc:opendocument:xmlns:container}rootfile"
+            )
+            if not rootfiles:
+                return None
+            opf_path = rootfiles[0].get("full-path", "")
+            if not opf_path:
+                return None
+            opf = ElementTree.fromstring(zf.read(opf_path))
+            title_el = opf.find(".//{http://purl.org/dc/elements/1.1/}title")
+            if title_el is not None and title_el.text and title_el.text.strip():
+                return title_el.text.strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _mobi_metadata_title(payload: bytes) -> str | None:
+    """Read the book title from a MOBI file's EXTH header or full-name field."""
+    try:
+        if len(payload) < 132:
+            return None
+        num_records = int.from_bytes(payload[76:78], "big")
+        if len(payload) < 78 + 8 * num_records:
+            return None
+        record0_offset = int.from_bytes(payload[78:82], "big")
+        mobi_start = record0_offset + 16
+        if len(payload) < mobi_start + 116:
+            return None
+        mobi_length = int.from_bytes(payload[mobi_start + 4 : mobi_start + 8], "big")
+        exth_flags = int.from_bytes(payload[mobi_start + 112 : mobi_start + 116], "big")
+        if exth_flags & 0x40:
+            exth_offset = mobi_start + mobi_length
+            if len(payload) >= exth_offset + 12 and payload[exth_offset : exth_offset + 4] == b"EXTH":
+                count = int.from_bytes(payload[exth_offset + 8 : exth_offset + 12], "big")
+                pos = exth_offset + 12
+                for _ in range(min(count, 200)):
+                    if len(payload) < pos + 8:
+                        break
+                    rec_type = int.from_bytes(payload[pos : pos + 4], "big")
+                    rec_len = int.from_bytes(payload[pos + 4 : pos + 8], "big")
+                    if rec_len < 8:
+                        break
+                    if rec_type == 503:
+                        raw = payload[pos + 8 : pos + rec_len]
+                        title = raw.decode("utf-8", errors="replace").strip()
+                        if title:
+                            return title
+                    pos += rec_len
+        if len(payload) >= mobi_start + 92:
+            name_offset = int.from_bytes(payload[mobi_start + 68 : mobi_start + 72], "big")
+            name_length = int.from_bytes(payload[mobi_start + 72 : mobi_start + 76], "big")
+            abs_offset = record0_offset + name_offset
+            if 0 < name_length <= 1024 and len(payload) >= abs_offset + name_length:
+                title = payload[abs_offset : abs_offset + name_length].decode("utf-8", errors="replace").strip()
+                if title:
+                    return title
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _extract_ebook_metadata_title(payload: bytes, suffix: str) -> str | None:
+    """Extract the book title from EPUB/MOBI binary metadata without full content parsing."""
+    suffix = suffix.lower()
+    if suffix == ".epub":
+        return _epub_metadata_title(payload)
+    if suffix == ".mobi":
+        return _mobi_metadata_title(payload)
+    return None
+
+
 def _is_reserved_tree_name(name: str) -> bool:
     """Identify reserved staging and replacement tree names."""
     return _STAGING_MARKER in name or REPLACED_MARKER in name
@@ -1473,6 +1554,11 @@ class Bookstore:
         await self._sweep_reserved_trees(scope)
         payload = await asyncio.to_thread(path.read_bytes)
         sha256 = hashlib.sha256(payload).hexdigest()
+        ebook_metadata_title: str | None = None
+        if fmt in ("epub", "mobi"):
+            ebook_metadata_title = await asyncio.to_thread(
+                _extract_ebook_metadata_title, payload, path.suffix
+            )
         deadline = time.monotonic() + self._reindex_lock_timeout_s
         source_locks = [
             (self._operation_storage_dir(scope), f"path-{hashlib.sha256(str(path).encode()).hexdigest()}"),
@@ -1496,7 +1582,7 @@ class Bookstore:
             doc_description = ""
             self._active_staging_slugs.add(slug)
             try:
-                await toolkit.create_tree(staging, doc_name=title or path.stem)
+                await toolkit.create_tree(staging, doc_name=title or ebook_metadata_title or path.stem)
                 if after_staging is not None:
                     await after_staging()
                 if fmt == "pdf":
@@ -1550,6 +1636,7 @@ class Bookstore:
                     toc_digest=toc_digest,
                     toc_entries=toc_entries,
                     tree=tree,
+                    metadata_title=ebook_metadata_title,
                 )
                 if not title:
                     taken_titles = {c.title.casefold() for c in self.list_books() if c.book_id != slug}
@@ -1673,7 +1760,7 @@ class Bookstore:
                         refreshed, _ = identity()
                         if refreshed is not None:
                             continue
-                        slug = unique_slug(slugify(title or path.stem), self._all_taken_slugs())
+                        slug = unique_slug(slugify(title or ebook_metadata_title or path.stem), self._all_taken_slugs())
                         async with self._operation_locks(
                             [(self._operation_storage_dir(scope), f"book-{slug}")], deadline
                         ):
@@ -1703,9 +1790,10 @@ class Bookstore:
         toc_digest: str,
         toc_entries: list,
         tree: dict,
+        metadata_title: str | None = None,
     ) -> CardDraft:
         if not self.has_llm:
-            return fallback_card_fields(path, toc_entries)
+            return fallback_card_fields(path, toc_entries, metadata_title=metadata_title)
         # Pinned to ``tree``: ids resolve via load_node (body_ref first), so a
         # stale <node_id>.md left by an overwrite can never be sampled instead
         # of the live body.
@@ -1722,7 +1810,7 @@ class Bookstore:
             )
         except Exception as exc:  # noqa: BLE001 — carding must not block ingest
             logger.warning("LLM carding failed (%s); using fallback card", exc)
-            return fallback_card_fields(path, toc_entries)
+            return fallback_card_fields(path, toc_entries, metadata_title=metadata_title)
 
     async def _docx_to_markdown(self, path: Path) -> str:
         """Convert a Word document to markdown.
