@@ -36,15 +36,15 @@
       "feature_id": "FEAT-872",
       "feature": "self--uv-fixes",
       "spec": "sdd/specs/self--uv-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task: modifies packages/ai-parrot/src/parrot/self_/uv.py and packages/ai-parrot/tests/self_/test_uv.py only; no other task in this feature",
-      "assigned_to": "unassigned",
+      "assigned_to": "sdd-fix session (agent:sdd-fix:3a25996f)",
       "file": "sdd/tasks/active/TASK-5465-guard-migrate-legacy-uv-symlinks.md",
-      "started_at": null,
+      "started_at": "2026-11-10T01:17:35+00:00",
       "completed_at": null
     }
   ]
