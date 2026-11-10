@@ -81,6 +81,27 @@ def test_score_bookmarks_found_and_anchored():
     assert rejected_items == []
 
 
+def test_score_bookmarks_reports_dropped():
+    """The bookmarks candidate carries the profile's out-of-order drop count; the default is 0."""
+    segments = _segs("# Intro\n\nText.", "## Usage\n\nMore.")
+    profile = _profile(2, bookmarks=[(1, "Intro", 1), (1, "Usage", 2)])
+
+    default_score, _ = score_bookmarks(profile, segments)
+    assert default_score.dropped == 0
+
+    score, items = score_bookmarks(profile.model_copy(update={"bookmarks_dropped": 1}), segments)
+    assert score.dropped == 1
+    assert score.confidence == 1.0
+    assert len(items) == 2
+
+    rejected, _ = score_bookmarks(
+        profile.model_copy(update={"bookmark_rejection": "fewer than 2 usable entries", "bookmarks_dropped": 0}),
+        segments,
+    )
+    assert rejected.dropped == 0
+    assert score_layout(profile, segments)[0].dropped == 0
+
+
 def test_score_layout_factors():
     """Layout confidence applies the clean, density, and start factors exactly."""
     one_score, _ = score_layout(_profile(1), _segs("# Only"))
@@ -124,11 +145,11 @@ def test_page_structure():
 
 
 from parrot.knowledge.pageindex.layout_structure import (  # noqa: E402
+    _level_to_depth,
     build_structure,
     insert_layout_headings,
     items_to_tree,
 )
-
 
 HYBRID_PAGES = (
     "# Report Title\n\n## 1 Intro\n\nText.\n\n### 1.1 Scope\n\nText.",
@@ -170,6 +191,41 @@ def test_hybrid_rejects_noisy_layout():
     assert result.report.inserted_headings == 0
     assert [candidate.source for candidate in result.report.candidates] == ["bookmarks", "layout"]
     assert result.report.candidates[1].confidence < 0.6
+
+
+def _anchored(*pairs: tuple[int, int]) -> list[dict]:
+    """Build anchored bookmark items from (level, depth) pairs."""
+    return [{"level": level, "depth": depth} for level, depth in pairs]
+
+
+def test_level_to_depth_strictly_increasing():
+    """A level whose depth is not deeper than the nearest shallower kept level is dropped from the map."""
+    assert _level_to_depth(_anchored((5, 3), (5, 3), (5, 3), (6, 3))) == {5: 3}
+    assert _level_to_depth(_anchored((3, 1), (4, 2))) == {3: 1, 4: 2}
+    assert _level_to_depth(_anchored((2, 2), (3, 1))) == {2: 2}
+    assert _level_to_depth(_anchored((1, 1), (2, 1), (3, 2), (5, 3), (6, 3))) == {1: 1, 3: 2, 5: 3}
+    assert _level_to_depth([]) == {}
+
+
+def test_hybrid_nests_headings_below_stray_anchor():
+    """One bookmarked heading at a deep level does not flatten the unanchored headings of that level."""
+    segments = _segs(
+        "## AC-1 Control\n\nText.\n\n### (1) AC ONE | FIRST\n\nText.",
+        "## AC-2 Control\n\nText.\n\n### PL-10 Odd\n\nText.\n\n### (1) AC TWO | SECOND\n\nText.",
+    )
+    profile = _profile(2, bookmarks=[(1, "AC-1 Control", 1), (1, "AC-2 Control", 2), (1, "PL-10 Odd", 2)])
+    _, bookmark_items = score_bookmarks(profile, segments)
+
+    items, inserted = insert_layout_headings(bookmark_items, profile, segments)
+
+    assert inserted == 2
+    assert [(item["title"], item["depth"]) for item in items] == [
+        ("AC-1 Control", 1),
+        ("(1) AC ONE | FIRST", 2),
+        ("AC-2 Control", 1),
+        ("PL-10 Odd", 1),
+        ("(1) AC TWO | SECOND", 2),
+    ]
 
 
 def test_hybrid_confidence_and_empty_mapping():

@@ -119,3 +119,35 @@ def test_no_live_calls_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     report = json.loads((tmp_path / "out" / "results.json").read_text(encoding="utf-8"))
     assert report["status"] == "incomplete"
     assert any("--live not requested" in limitation for limitation in report["limitations"])
+
+
+@pytest.mark.parametrize("error_code", ["context_overflow", "invalid_answer", "worker_protocol_error"])
+def test_local_prediction_errors_never_report_complete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error_code: str,
+) -> None:
+    """Every operational error must make even a single-scenario run incomplete."""
+    from artifacts.laya.models import PredictionResult
+    from artifacts.laya import runtime
+
+    class ErrorWorker:
+        ready = None
+
+        def __init__(self, config: EvaluationConfig) -> None:
+            """Accept the runner configuration without spawning a process."""
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def predict(self, request):
+            return PredictionResult(request_id=request.request_id, status="error", error_code=error_code)
+
+    monkeypatch.setattr(runtime, "LayaWorker", ErrorWorker)
+    assert evaluate.main(_argv(tmp_path, "--scenario", "grounded")) == 3
+    report = json.loads((tmp_path / "out" / "results.json").read_text())
+    assert report["status"] == "incomplete"
+    assert all(sample["error_code"] == error_code for sample in report["samples"])

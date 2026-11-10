@@ -2,7 +2,8 @@
 
 Subcommands: ``add`` / ``add-folder`` / ``list`` / ``show`` / ``search`` /
 ``toc`` / ``card`` / ``related`` / ``relate`` / ``communities`` /
-``export-wiki`` / ``remove`` / ``mcp`` / ``locations`` (FEAT-533 adds
+``export-wiki`` / ``optimize`` / ``ask`` / ``doctor`` / ``remove`` / ``mcp`` /
+``locations`` (FEAT-858 adds ``ask``/``doctor``; FEAT-533 adds
 ``related``/``relate``/``communities``/``export-wiki`` — see
 ``wiki/knowledge/bookstore-graph.md``). Heavy parrot imports are deferred into
 command bodies (the ``wiki/cli.py`` discipline) so ``bookstore --help``
@@ -564,6 +565,214 @@ def export_wiki(out_dir: Optional[str], global_scope: bool, no_register: bool) -
         click.echo(f"registered namespace 'bookstore' in {result['registered_in']}")
     else:
         click.echo("namespace registration skipped")
+
+
+@bookstore.command("optimize")
+@click.argument("book_id")
+@click.option("--global", "global_scope", is_flag=True, help="Use the global library.")
+@click.option("--apply", is_flag=True, help="Publish the optimized tree and rebuild the card TOC.")
+@click.option("--no-llm", is_flag=True, help="Skip model-backed optimizer passes.")
+@click.option(
+    "--llm",
+    default=None,
+    help="LLM spec 'provider:model' (default: $PARROT_BOOKSTORE_LLM).",
+)
+@click.option("--json", "as_json", is_flag=True, help="JSON output.")
+def optimize_cmd(
+    book_id: str,
+    global_scope: bool,
+    apply: bool,
+    no_llm: bool,
+    llm: Optional[str],
+    as_json: bool,
+) -> None:
+    """Optimize a book's PageIndex tree; dry-run unless ``--apply`` is passed."""
+    from .library import BookstoreError
+
+    scope = "global" if global_scope else "project"
+    store = _open_bookstore(
+        llm_spec=llm,
+        scope_needed=scope,
+        use_llm=not no_llm,
+    )
+    try:
+        report = asyncio.run(
+            store.optimize_book(
+                book_id,
+                apply=apply,
+                llm_passes=False if no_llm else None,
+            )
+        )
+    except BookstoreError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if as_json:
+        click.echo(json.dumps(report, indent=2, default=str))
+        return
+    mode = "applied" if apply else "dry-run"
+    click.echo(f"{mode}: {book_id}")
+    click.echo(
+        f"nodes: {report.get('nodes_before', 0)} -> {report.get('nodes_after', 0)}; "
+        f"merged: {len(report.get('merged', []))}; expanded: {len(report.get('expanded', []))}"
+    )
+    click.echo(f"llm: {report.get('llm_passes', 'unknown')}")
+    for error in report.get("errors", []):
+        click.echo(f"error: {error}", err=True)
+
+
+def _inline(value: Any) -> str:
+    """Collapse a provider-supplied value to one printable line."""
+    text = "" if value is None else str(value)
+    return " ".join("".join(ch if ch.isprintable() else " " for ch in text).split())
+
+
+def _safe_text(value: Any) -> str:
+    """Neutralise terminal control sequences in book- or model-derived text, keeping newlines and tabs."""
+    text = "" if value is None else str(value)
+    return "".join(ch if ch in "\n\t" or ch.isprintable() else " " for ch in text)
+
+
+def _echo_identity(store: Any) -> None:
+    """Report the resolved provider/model on stderr (never stdout)."""
+    adapter = getattr(store, "adapter", None)
+    if adapter is None:
+        return
+    client = getattr(adapter, "client", None)
+    provider = getattr(client, "client_name", None) or type(client).__name__
+    model = getattr(adapter, "model", None)
+    line = f"model: {_inline(provider)}:{_inline(model)}"
+    light = getattr(store, "lightweight_model", None)
+    if light:
+        line += f" (light: {_inline(light)})"
+    click.echo(line, err=True)
+
+
+@bookstore.command("ask")
+@click.argument("book_id")
+@click.argument("query")
+@click.option(
+    "--llm",
+    default=None,
+    help="LLM spec 'provider:model' (default: $PARROT_BOOKSTORE_LLM).",
+)
+@click.option("--budget-chars", type=int, default=None, help="Maximum characters read from the book.")
+@click.option("--max-reads", type=int, default=None, help="Maximum read operations.")
+@click.option("--timeout", "timeout_s", type=float, default=None, help="Total timeout in seconds.")
+@click.option("--json", "as_json", is_flag=True, help="JSON output (the full evidence bundle).")
+def ask_cmd(
+    book_id: str,
+    query: str,
+    llm: Optional[str],
+    budget_chars: Optional[int],
+    max_reads: Optional[int],
+    timeout_s: Optional[float],
+    as_json: bool,
+) -> None:
+    """Research one book with cited evidence."""
+    from .library import BookstoreError
+
+    store = _open_bookstore(llm_spec=llm, require_exists=True)
+    if getattr(store, "adapter", None) is None:
+        raise click.ClickException(
+            "agentic retrieval requires an LLM — pass --llm provider:model or set PARROT_BOOKSTORE_LLM"
+        )
+    _echo_identity(store)
+    try:
+        bundle = asyncio.run(
+            store.agentic_retrieve(
+                book_id,
+                query,
+                draft_answer=True,
+                budget_chars=budget_chars,
+                max_reads=max_reads,
+                timeout_s=timeout_s,
+            )
+        )
+    except (BookstoreError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if as_json:
+        click.echo(json.dumps(bundle, indent=2, default=str))
+        return
+    answer = bundle.get("answer")
+    click.echo(_safe_text(answer) if answer else "(no answer drafted)")
+    rendered = bundle.get("rendered_citations")
+    if rendered:
+        click.echo(f"\ncitations: {_safe_text(rendered)}")
+    else:
+        click.echo("\ncitations: (none)")
+    click.echo(
+        f"grounded: {bundle.get('grounded')}  stopped: {bundle.get('stopped')}  "
+        f"chars_read: {bundle.get('chars_read')}"
+    )
+
+
+@bookstore.command("doctor")
+@click.option("--global", "global_scope", is_flag=True, help="Examine the global library instead of the project one.")
+@click.option("--repair", is_flag=True, help="Repair drifted catalog cards from their live trees.")
+@click.option("--relate", is_flag=True, help="Build relations for books with no judgements.")
+@click.option("--no-llm", is_flag=True, help="Deterministic relations only (with --relate).")
+@click.option(
+    "--llm",
+    default=None,
+    help="LLM spec 'provider:model' for --relate (default: $PARROT_BOOKSTORE_LLM).",
+)
+@click.option("--json", "as_json", is_flag=True, help="JSON output (the full report).")
+def doctor_cmd(
+    global_scope: bool,
+    repair: bool,
+    relate: bool,
+    no_llm: bool,
+    llm: Optional[str],
+    as_json: bool,
+) -> None:
+    """Report recovery and drift, optionally repair cards and build missing judgements."""
+    from .library import BookstoreError
+
+    scope = "global" if global_scope else "project"
+    use_llm = relate and not no_llm
+    store = _open_bookstore(
+        llm_spec=llm,
+        require_exists=True,
+        scope_needed=scope,
+        use_llm=use_llm,
+    )
+    if use_llm:
+        _echo_identity(store)
+    try:
+        report = asyncio.run(store.doctor(scope=scope, repair=repair, relate=relate, use_llm=not no_llm))
+    except (BookstoreError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if as_json:
+        click.echo(json.dumps(report, indent=2, default=str))
+        return
+    click.echo(f"scope: {scope}")
+    reserved = report.get("reserved", [])
+    click.echo(f"reserved trees: {len(reserved)}")
+    for entry in reserved:
+        click.echo(f"  {_inline(entry.get('action'))}: {_inline(entry.get('name'))} ({_inline(entry.get('reason'))})")
+    books = report.get("books", [])
+    problems = [entry for entry in books if entry.get("status") != "ok"]
+    repaired = sum(1 for entry in books if entry.get("repaired"))
+    click.echo(f"books: {len(books)}  issues: {len(problems)}  repaired: {repaired}")
+    for entry in problems:
+        suffix = " (repaired)" if entry.get("repaired") else ""
+        click.echo(f"  {_inline(entry.get('status'))}: {_inline(entry.get('book_id'))}{suffix}")
+    unjudged = report.get("unjudged_book_ids", [])
+    click.echo(f"unjudged books: {len(unjudged)}")
+    summary = report.get("relate_summary")
+    if summary:
+        click.echo(
+            f"relate: targets {len(summary.get('targets', []))}, "
+            f"deterministic edges {summary.get('deterministic_edges', 0)}, "
+            f"LLM edges {summary.get('llm_edges', 0)}"
+        )
+        if summary.get("skipped_llm_reason"):
+            click.echo(f"  LLM skipped: {summary['skipped_llm_reason']}")
+    for error in report.get("errors", []):
+        target = error.get("book_id") or error.get("name") or error.get("scope") or "-"
+        click.echo(f"error: {_inline(target)}: {_inline(error.get('error'))}", err=True)
 
 
 @bookstore.command("remove")

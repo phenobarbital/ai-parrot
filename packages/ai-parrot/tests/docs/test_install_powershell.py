@@ -11,6 +11,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from parrot.self_ import uv as uv_mod
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SCRIPT = REPO_ROOT / "scripts" / "install" / "install-parrot.ps1"
@@ -98,7 +99,7 @@ def test_global_rejects_unknown_component(tmp_path: Path) -> None:
     )
     assert result.returncode != 0
     assert "unknown component 'sdd' for -With" in _flat(result.stdout + result.stderr)
-    assert "never used or modified" not in _flat(result.stdout)
+    assert "never modified, moved or removed" not in _flat(result.stdout)
     assert not home.exists()
 
 
@@ -113,6 +114,30 @@ def test_global_pins_and_verifies_uv() -> None:
     assert "Get-FileHash" in _TEXT
     assert "'User'" in _TEXT
     assert "'Machine'" not in _TEXT
+
+
+def test_uv_constants_match_runtime() -> None:
+    """PowerShell uv constants remain aligned with the runtime resolver."""
+    found = {key: re.search(rf"\${key} = '([^']+)'", _TEXT).group(1) for key in ("UvVersion", "UvMin", "UvMax")}
+    assert found == {
+        "UvVersion": uv_mod.PINNED_UV_VERSION,
+        "UvMin": uv_mod.UV_MIN_VERSION,
+        "UvMax": uv_mod.UV_MAX_VERSION,
+    }
+
+
+def test_uv_goes_to_libexec_and_uvx_is_not_installed() -> None:
+    """The ordinary install places only uv.exe in libexec, never the PATH bin."""
+    body = _TEXT[_TEXT.index("function Install-Global") :]
+    assert "'libexec'" in body
+    assert "@('uv.exe', 'uvx.exe')" not in body.split("legacy")[0]
+
+
+def test_skew_guard_follows_pip_and_cleanup_follows_doctor() -> None:
+    """Compatibility fallback happens after pip; legacy cleanup follows the doctor."""
+    body = _TEXT[_TEXT.index("function Install-Global") :]
+    assert body.index("pip install") < body.index("import parrot.self_.uv")
+    assert body.index("self doctor --runtime-only") < body.index("remove the legacy")
 
 
 def test_preflight_gate_precedes_first_write() -> None:
@@ -159,8 +184,7 @@ def _run_offline_install(tmp_path: Path, *, fake_parrot: str) -> subprocess.Comp
     stub = (
         "function Invoke-WebRequest { param($Uri, $OutFile, $Method, [switch]$UseBasicParsing) "
         "if ($Method -eq 'Head') { return }; "
-        f"if ($Uri -like '*.sha256') {{ Copy-Item '{fixtures / 'uv.zip.sha256'}' $OutFile }} "
-        f"else {{ Copy-Item '{zip_path}' $OutFile }} }}; "
+        f"Copy-Item '{zip_path}' $OutFile }}; "
         f"& '{SCRIPT}' -Global"
     )
     env = {
@@ -168,6 +192,7 @@ def _run_offline_install(tmp_path: Path, *, fake_parrot: str) -> subprocess.Comp
         "HOME": str(home),
         "PARROT_HOME": str(home / ".parrot"),
         "FAKE_PARROT_BODY": fake_parrot,
+        "PARROT_UV_SHA256": digest,  # the fixture zip is not the real uv release
     }
     return subprocess.run(
         ["pwsh", "-NoProfile", "-Command", stub], capture_output=True, text=True, check=False, env=env
@@ -224,7 +249,7 @@ def test_global_dry_run(tmp_path: Path) -> None:
     assert "ai-parrot-tools==9.9.9" in result.stdout      # rev 0.5 C20: same version pin as ai-parrot
     assert not home.exists()
     # C14a/C14b: plan paragraph and gate summary precede the first "->" announcement
-    assert "never used or modified" in _flat(result.stdout) and "SHA256SUMS" in result.stdout
+    assert "never modified, moved or removed" in _flat(result.stdout) and "SHA256SUMS" in result.stdout
     assert result.stdout.index("preflight: network checks skipped") < result.stdout.index("->")
 
 
@@ -285,3 +310,23 @@ def test_preflight_warns_when_python_is_missing() -> None:
     gate = gate[: gate.index("\n}\n")]
     assert "Get-Command python3" in gate and "Get-Command python " in gate
     assert "Write-Warning 'python3 not found" in gate
+
+
+def test_uv_checksum_is_pinned_not_fetched() -> None:
+    """issue:6e31d9355edc — no .sha256 download; both Windows assets carry a pinned SHA-256."""
+    assert '"$url.sha256"' not in _TEXT
+    assert "'0.11.28/uv-x86_64-pc-windows-msvc.zip'" in _TEXT and "'0.11.28/uv-aarch64-pc-windows-msvc.zip'" in _TEXT
+    assert "Test-UvArchive" in _TEXT
+
+
+def test_import_probe_cannot_abort_under_stop() -> None:
+    """issue:2e35462be4bb — the parrot.self_.uv probe runs under Continue inside try/catch."""
+    i = _TEXT.index("import parrot.self_.uv")
+    window = _TEXT[i - 400 : i + 200]
+    assert "$ErrorActionPreference = 'Continue'" in window and "try {" in window and "catch" in window
+
+
+def test_python_defaults_fall_back_to_py_launcher() -> None:
+    """issue:a786fec203e1 — with no -Python and no python on PATH, the py launcher is used."""
+    assert "$Python = 'py'; $PythonArgs = @('-3')" in _TEXT
+    assert "& $Python @PythonArgs -m venv $Venv" in _TEXT

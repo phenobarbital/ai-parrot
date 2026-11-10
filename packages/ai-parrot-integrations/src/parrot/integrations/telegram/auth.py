@@ -7,7 +7,7 @@ FEAT-109 for mixed-identity deployments.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any, Tuple, TYPE_CHECKING
+from typing import Optional, Dict, Any, Tuple, TYPE_CHECKING, Union
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -26,12 +26,14 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
     KeyboardButton,
     WebAppInfo,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
 )
 from navconfig import config as navconfig_settings
 from navconfig.logging import logging
 
 from parrot.integrations.core.auth.oauth2_providers import get_provider, OAuth2ProviderConfig
-
+from parrot.integrations.telegram.browser_login import BROWSER_COMPLETE_PATH
 
 logger = logging.getLogger("parrot.Telegram.Auth")
 
@@ -299,6 +301,33 @@ class NavigatorAuthClient:
 # Auth strategy abstraction
 # ---------------------------------------------------------------------------
 
+
+def _is_browser_mode(config: Any) -> bool:
+    """Return True when the bot is configured for system-browser auth (FEAT-854)."""
+    return getattr(config, "auth_open_mode", "webview") == "browser"
+
+
+def _browser_page_params(config: Any, state: str) -> Dict[str, str]:
+    """Query params a login page needs to complete a browser-mode login.
+
+    Raises:
+        ValueError: when ``public_base_url`` is not configured.
+    """
+    base = (getattr(config, "public_base_url", None) or "").rstrip("/")
+    if not base:
+        raise ValueError("public_base_url is required when auth_open_mode='browser'")
+    return {
+        "return_mode": "browser",
+        "state": state,
+        "complete_url": f"{base}{BROWSER_COMPLETE_PATH}",
+    }
+
+
+def _browser_keyboard(text: str, url: str) -> InlineKeyboardMarkup:
+    """Inline keyboard whose single button opens ``url`` in the system browser."""
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=text, url=url)]])
+
+
 class AbstractAuthStrategy(ABC):
     """Base class for Telegram authentication strategies.
 
@@ -326,8 +355,8 @@ class AbstractAuthStrategy(ABC):
         *,
         next_auth_url: Optional[str] = None,
         next_auth_required: bool = False,
-    ) -> ReplyKeyboardMarkup:
-        """Return the keyboard markup with the login button/WebApp.
+    ) -> Union[ReplyKeyboardMarkup, InlineKeyboardMarkup]:
+        """Return the login markup for the configured WebApp or browser mode.
 
         Args:
             config: TelegramAgentConfig instance.
@@ -339,7 +368,7 @@ class AbstractAuthStrategy(ABC):
                 Strategies that do not support the post-auth chain may ignore.
 
         Returns:
-            aiogram ReplyKeyboardMarkup with the login button.
+            A ReplyKeyboardMarkup WebApp button or InlineKeyboardMarkup URL button.
         """
         ...
 
@@ -410,8 +439,8 @@ class BasicAuthStrategy(AbstractAuthStrategy):
         *,
         next_auth_url: Optional[str] = None,
         next_auth_required: bool = False,
-    ) -> ReplyKeyboardMarkup:
-        """Build the Navigator login WebApp keyboard.
+    ) -> Union[ReplyKeyboardMarkup, InlineKeyboardMarkup]:
+        """Build the Navigator login keyboard for WebApp or browser mode.
 
         Args:
             config: TelegramAgentConfig (used for login_page_url fallback).
@@ -426,7 +455,7 @@ class BasicAuthStrategy(AbstractAuthStrategy):
                 silently falling back to BasicAuth-only ``sendData``.
 
         Returns:
-            ReplyKeyboardMarkup with a WebApp button pointing to the login page.
+            ReplyKeyboardMarkup with a WebApp button or InlineKeyboardMarkup URL button.
 
         Raises:
             ValueError: If no login_page_url is configured.
@@ -443,6 +472,9 @@ class BasicAuthStrategy(AbstractAuthStrategy):
             params["next_auth_required"] = (
                 "true" if next_auth_required else "false"
             )
+        if _is_browser_mode(config):
+            params.update(_browser_page_params(config, state))
+            return _browser_keyboard("\U0001f510 Sign in to Navigator", f"{page_url}?{urlencode(params)}")
         full_url = f"{page_url}?{urlencode(params)}"
 
         return ReplyKeyboardMarkup(
@@ -573,8 +605,8 @@ class AzureAuthStrategy(AbstractAuthStrategy):
         *,
         next_auth_url: Optional[str] = None,
         next_auth_required: bool = False,
-    ) -> ReplyKeyboardMarkup:
-        """Build the Azure SSO WebApp keyboard.
+    ) -> Union[ReplyKeyboardMarkup, InlineKeyboardMarkup]:
+        """Build the Azure SSO keyboard for WebApp or browser mode.
 
         Args:
             config: TelegramAgentConfig (used for login_page_url fallback).
@@ -588,8 +620,8 @@ class AzureAuthStrategy(AbstractAuthStrategy):
                 mandatory. Passed through to ``azure_login.html``.
 
         Returns:
-            ReplyKeyboardMarkup with a WebApp button pointing to
-            ``azure_login.html?azure_auth_url=...``.
+            ReplyKeyboardMarkup WebApp button or InlineKeyboardMarkup URL button
+            pointing to ``azure_login.html?azure_auth_url=...``.
 
         Raises:
             ValueError: If no login_page_url is configured.
@@ -604,6 +636,9 @@ class AzureAuthStrategy(AbstractAuthStrategy):
         if next_auth_url:
             params["next_auth_url"] = next_auth_url
             params["next_auth_required"] = "true" if next_auth_required else "false"
+        if _is_browser_mode(config):
+            params.update(_browser_page_params(config, state))
+            return _browser_keyboard("\U0001f510 Sign in with Azure", f"{page_url}?{urlencode(params)}")
         full_url = f"{page_url}?{urlencode(params)}"
 
         return ReplyKeyboardMarkup(
@@ -850,8 +885,8 @@ class GoogleAuthStrategy(AbstractAuthStrategy):
         *,
         next_auth_url: Optional[str] = None,
         next_auth_required: bool = False,
-    ) -> ReplyKeyboardMarkup:
-        """Build the Google SSO WebApp keyboard.
+    ) -> Union[ReplyKeyboardMarkup, InlineKeyboardMarkup]:
+        """Build the Google SSO keyboard for WebApp or browser mode.
 
         Args:
             config: TelegramAgentConfig (used for login_page_url fallback).
@@ -862,8 +897,8 @@ class GoogleAuthStrategy(AbstractAuthStrategy):
                 mandatory.
 
         Returns:
-            ReplyKeyboardMarkup with a WebApp button pointing to the
-            login page with ``google_auth_url=...``.
+            ReplyKeyboardMarkup WebApp button or InlineKeyboardMarkup URL button
+            pointing to the login page with ``google_auth_url=...``.
 
         Raises:
             ValueError: If no login_page_url is configured.
@@ -878,6 +913,9 @@ class GoogleAuthStrategy(AbstractAuthStrategy):
         if next_auth_url:
             params["next_auth_url"] = next_auth_url
             params["next_auth_required"] = "true" if next_auth_required else "false"
+        if _is_browser_mode(config):
+            params.update(_browser_page_params(config, state))
+            return _browser_keyboard("\U0001f510 Sign in with Google", f"{page_url}?{urlencode(params)}")
         full_url = f"{page_url}?{urlencode(params)}"
 
         return ReplyKeyboardMarkup(
@@ -1196,12 +1234,12 @@ class OAuth2AuthStrategy(AbstractAuthStrategy):
         *,
         next_auth_url: Optional[str] = None,
         next_auth_required: bool = False,
-    ) -> ReplyKeyboardMarkup:
-        """Build the OAuth2 authorization keyboard.
+    ) -> Union[ReplyKeyboardMarkup, InlineKeyboardMarkup]:
+        """Build the OAuth2 authorization keyboard for WebApp or browser mode.
 
         Generates PKCE challenge, stores the state, and returns a
-        ``ReplyKeyboardMarkup`` with a WebApp button pointing to the
-        provider's authorization URL.
+        ReplyKeyboardMarkup with a WebApp button or InlineKeyboardMarkup URL
+        button pointing to the provider's authorization URL.
 
         Args:
             config: TelegramAgentConfig instance.
@@ -1211,7 +1249,7 @@ class OAuth2AuthStrategy(AbstractAuthStrategy):
             next_auth_required: Accepted for interface uniformity; ignored.
 
         Returns:
-            aiogram ReplyKeyboardMarkup.
+            A ReplyKeyboardMarkup WebApp button or InlineKeyboardMarkup URL button.
         """
         code_verifier, code_challenge = self._generate_pkce()
         self._store_state(state, code_verifier)
@@ -1231,6 +1269,8 @@ class OAuth2AuthStrategy(AbstractAuthStrategy):
         )
 
         provider_label = self._provider.name.capitalize()
+        if _is_browser_mode(config):
+            return _browser_keyboard(f"\U0001f510 Sign in with {provider_label}", authorize_url)
         return ReplyKeyboardMarkup(
             keyboard=[
                 [KeyboardButton(
@@ -1504,8 +1544,8 @@ class CompositeAuthStrategy(AbstractAuthStrategy):
         *,
         next_auth_url: Optional[str] = None,
         next_auth_required: bool = False,
-    ) -> ReplyKeyboardMarkup:
-        """Build a WebApp keyboard pointing at ``login_multi.html``.
+    ) -> Union[ReplyKeyboardMarkup, InlineKeyboardMarkup]:
+        """Build a login keyboard pointing at ``login_multi.html``.
 
         Collects per-method auth URLs from the member strategies and
         assembles a merged query string so the multi-method login page has
@@ -1519,7 +1559,7 @@ class CompositeAuthStrategy(AbstractAuthStrategy):
             next_auth_required: Whether secondary auth is mandatory.
 
         Returns:
-            ReplyKeyboardMarkup with a single WebApp button.
+            ReplyKeyboardMarkup with a WebApp button or InlineKeyboardMarkup URL button.
         """
         params: Dict[str, str] = {}
 
@@ -1549,6 +1589,9 @@ class CompositeAuthStrategy(AbstractAuthStrategy):
             params["next_auth_url"] = next_auth_url
             params["next_auth_required"] = "true" if next_auth_required else "false"
 
+        if _is_browser_mode(config):
+            params.update(_browser_page_params(config, state))
+            return _browser_keyboard("\U0001f510 Sign in", f"{self.login_page_url}?{urlencode(params)}")
         full_url = f"{self.login_page_url}?{urlencode(params)}"
 
         return ReplyKeyboardMarkup(

@@ -38,26 +38,10 @@ from typing import Callable, Optional
 
 import numpy as np
 
+from .hybrid_search import key_item_text
+from .store import JSONTreeStore
+
 logger = logging.getLogger("parrot.knowledge.pageindex.embedding_store")
-
-
-def _validate_tree_name(tree_name: str) -> None:
-    """Validate ``tree_name`` with the same rule as :class:`JSONTreeStore`.
-
-    The import is deferred on purpose. A module-level ``from .store import``
-    runs the package ``__init__``, which imports ``toolkit``, which imports
-    this module again while it is only half loaded. Some tests load this file
-    on its own to skip that ``__init__``, and they hit exactly that cycle.
-
-    Args:
-        tree_name: Tree name to check.
-
-    Raises:
-        ValueError: If the name is not 1-128 characters from ``[A-Za-z0-9_-]``.
-    """
-    from .store import JSONTreeStore
-
-    JSONTreeStore._validate_name(tree_name)
 
 
 class NodeEmbeddingStore:
@@ -111,8 +95,11 @@ class NodeEmbeddingStore:
     # ---- content key ---------------------------------------------------
 
     @staticmethod
-    def content_key(model_id: str, title: str, summary: str) -> str:
+    def content_key(model_id: str, title: str, summary: str, extra: str = "") -> str:
         """Compute the SHA-1 content-addressed cache key.
+
+        The digest is unchanged from the three-argument form when ``extra``
+        is empty.
 
         The ``"\\x00"`` separator prevents collisions between prefix-equal
         strings: ``("ab", "c")`` and ``("a", "bc")`` hash to different values.
@@ -121,18 +108,21 @@ class NodeEmbeddingStore:
             model_id: Embedding model identifier.
             title: Node title text.
             summary: Node summary text.
+            extra: Additional text that participates in the key when present.
 
         Returns:
             40-character lowercase hex SHA-1 digest.
         """
         raw = f"{model_id}\x00{title}\x00{summary}"
+        if extra:
+            raw += f"\x00{extra}"
         return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
     # ---- storage paths -------------------------------------------------
 
     def _global_dir(self, tree_name: str) -> Path:
         """Return the global-tier directory for a tree."""
-        _validate_tree_name(tree_name)
+        JSONTreeStore._validate_name(tree_name)
         return self._storage_dir / tree_name / "embeddings" / "global"
 
     def _global_path(self, tree_name: str, key: str) -> Path:
@@ -145,7 +135,7 @@ class NodeEmbeddingStore:
         Generation zero retains the legacy filename.
         """
         suffix = "" if generation_id == 0 else f".g{generation_id}"
-        _validate_tree_name(tree_name)
+        JSONTreeStore._validate_name(tree_name)
         return self._storage_dir / tree_name / "embeddings" / f"{tree_name}{suffix}.matrix.npy"
 
     def _order_path(self, tree_name: str, generation_id: int = 0) -> Path:
@@ -154,7 +144,7 @@ class NodeEmbeddingStore:
         Generation zero retains the legacy filename.
         """
         suffix = "" if generation_id == 0 else f".g{generation_id}"
-        _validate_tree_name(tree_name)
+        JSONTreeStore._validate_name(tree_name)
         return self._storage_dir / tree_name / "embeddings" / f"{tree_name}{suffix}.node_order.json"
 
     def prune_tree_matrices(self, tree_name: str, keep: set[int]) -> int:
@@ -259,7 +249,7 @@ class NodeEmbeddingStore:
         Returns:
             1-D float32 numpy array if cached; ``None`` otherwise.
         """
-        _validate_tree_name(tree_name)
+        JSONTreeStore._validate_name(tree_name)
         key = self.content_key(self._model_id, title, summary)
         # 1) In-memory LRU
         vec = self._cache_get(key)
@@ -300,7 +290,7 @@ class NodeEmbeddingStore:
         Raises:
             ValueError: When ``nodes`` is empty.
         """
-        _validate_tree_name(tree_name)
+        JSONTreeStore._validate_name(tree_name)
         if not nodes:
             raise ValueError("nodes must be non-empty")
 
@@ -310,8 +300,9 @@ class NodeEmbeddingStore:
             node_id = node.get("node_id") or ""
             title = node.get("title") or ""
             summary = node.get("summary") or node.get("prefix_summary") or ""
-            key = self.content_key(self._model_id, title, summary)
-            text = f"{title} {summary}".strip() if (title or summary) else ""
+            labels = key_item_text(node)
+            key = self.content_key(self._model_id, title, summary, extra=labels)
+            text = f"{title} {summary} {labels}".strip() if (title or summary or labels) else ""
             items.append((node_id, key, text))
 
         # Determine which keys need fresh embeddings.

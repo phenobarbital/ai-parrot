@@ -275,6 +275,7 @@ Prefer task-context inspection when the engine is present; fallback keeps explic
 Use the existing declared test selector, environment protection and semantic delivery review.
 Finalize only with structured green evidence and the exact implementation HEAD; call
 parrot sdd task finalize, inspect returned staged paths and commit explicitly.
+After the semantic review, run `parrot sdd task review record --feature <slug> --task <id> --worktree <path> --summary "<review>"` and use the printed `review_ref` as `review_evidence`; never write into the evidence store by hand.
 Reject stale evidence and divergent active/completed twins; never reset unrelated staging.
 Do not compact for every task. Feature handoff uses a durable checkpoint and fresh reviewer;
 Codex/Antigravity without a verified adapter report unsupported_host, never call Claude /compact.

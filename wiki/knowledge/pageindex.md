@@ -26,6 +26,7 @@ PageIndex builds a **hierarchical semantic tree** from PDF and Markdown document
 - [Local MCP Toolkit](pageindex-local-mcp.md)
 - [Segment Store](pageindex-segment-store.md)
 - [Agentic Retrieval and Citations](pageindex-agentic-retrieval.md)
+- [Tree Optimizer](pageindex-tree-optimizer.md)
 - [API Reference](#api-reference)
 
 ---
@@ -476,6 +477,13 @@ Options passed to `build_page_index` or `md_to_tree`:
 | `structure_mode` | `str` | `"auto"` | PDF structure source: `"auto"` (bookmarks/layout, LLM fallback), `"layout"` (no LLM structure call), `"llm"` |
 | `structure_min_confidence` | `float` | `0.6` | Confidence a bookmarks/layout candidate needs before the fallback |
 
+Tree-optimizer options passed to `PageIndexToolkit` (see [PageIndex Tree Optimizer](pageindex-tree-optimizer.md)):
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `optimize_on_import` | `bool` | `True` | Run the optimizer inside `import_pdf`, `insert_markdown` and `insert_ebook`: contiguous leaves under `min_leaf_tokens` merge into a sibling, leaves over `target_leaf_tokens` split at printed headings, summaries are written by the optimizer. `False` keeps the pre-optimizer import output. |
+| `optimizer_settings` | `OptimizerSettings \| dict \| None` | `None` (all defaults) | `target_leaf_tokens` (1500, provisional), `min_leaf_tokens` (200), `inline_summary_tokens` (120), `summary_max_words` (60), `max_key_items` (8), `routing_tokens_per_child` (48), `max_depth` (8), `llm_passes` (`True`). A dict is validated into `OptimizerSettings`; missing keys keep their defaults. |
+
 ---
 
 ## API Reference
@@ -493,6 +501,10 @@ from parrot.knowledge.pageindex import (
     TocItem,                # Pydantic model for TOC entries
 )
 ```
+
+The tree optimizer (`OptimizerSettings`, `PageIndexToolkit.optimize`, `optimize_on_import`, the
+`parrot pageindex optimize` CLI and the `optimizer_eval` harness) is documented in
+[PageIndex Tree Optimizer](pageindex-tree-optimizer.md).
 
 ### `build_page_index(doc, adapter=None, options=None) → dict`
 

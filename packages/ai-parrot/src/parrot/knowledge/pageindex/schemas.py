@@ -131,6 +131,11 @@ class PageIndexNode(BaseModel):
     span: Optional[list[int]] = None
     owned: Optional[list[list[int]]] = None
     structure_source: Optional[str] = None
+    key_items: Optional[list[dict]] = None
+    locked: Optional[bool] = None
+    locked_reason: Optional[str] = None
+    aliases: Optional[list[str]] = None
+    optimizer: Optional[dict] = None
     nodes: Optional[list[PageIndexNode]] = None
 
     model_config = {"extra": "allow"}

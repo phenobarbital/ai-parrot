@@ -131,6 +131,41 @@ class EvidenceRef(OptimizationModel):
     media_type: str = Field(min_length=1)
 
 
+class ReviewArtifact(OptimizationModel):
+    """Durable semantic review recorded for one coder delivery."""
+
+    schema_version: Literal[1] = 1
+    kind: Literal["task_review"] = "task_review"
+    feature_slug: str = Field(min_length=1)
+    task_id: str = Field(pattern=_TASK_ID_PATTERN)
+    execution_id: str = Field(min_length=1)
+    source: Literal["coder_review", "manual"]
+    summary: str = Field(min_length=1, max_length=4000)
+    fix_commits: list[str] = Field(default_factory=list)
+    head_sha: str
+    recorded_at: datetime
+    attempt_uid: str | None = None
+    backend: str | None = None
+    model: str | None = None
+
+    _exec_uuid = field_validator("execution_id")(_check_uuid)
+    _head_sha = field_validator("head_sha")(_check_full_sha)
+    _recorded_at_utc = field_validator("recorded_at")(_require_utc)
+
+    @field_validator("fix_commits")
+    @classmethod
+    def _check_fix_commits(cls, value: list[str]) -> list[str]:
+        """Require full git SHAs for every reviewer correction commit."""
+        return [_check_full_sha(item) for item in value]
+
+
+class CoderReviewReceipt(OptimizationModel):
+    """Ledger identity and optional durable artifact for a recorded review."""
+
+    feedback_id: str
+    review_ref: EvidenceRef | None = None
+
+
 # Minimal event kinds from spec R3, mapped to the identity fields each one
 # must carry when present. A kind outside this table is a producer-defined
 # extension: R3 lists these ten as the *minimum* set, not a closed one, so

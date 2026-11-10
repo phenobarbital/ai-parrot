@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -12,6 +13,8 @@ import tempfile
 from pathlib import Path
 
 import pytest
+
+from parrot.self_ import uv as uv_mod
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SCRIPT = REPO_ROOT / "scripts" / "install" / "install-parrot.sh"
@@ -60,9 +63,17 @@ def test_script_rejects_unsupported_python() -> None:
         assert "unsupported Python" in result.stderr
 
 
-def _run_global(tmp: Path, *extra: str) -> subprocess.CompletedProcess[str]:
-    """Run the installer in --global --dry-run with HOME and PARROT_HOME sandboxed under tmp."""
-    env = {**os.environ, "HOME": str(tmp / "home"), "PARROT_HOME": str(tmp / "home" / ".parrot"), "SHELL": "/bin/bash"}
+def _run_global(tmp: Path, *extra: str, system_uv: str | None = None) -> subprocess.CompletedProcess[str]:
+    """Run the installer in --global --dry-run with HOME, PARROT_HOME, and PATH sandboxed under tmp."""
+    sandbox = tmp / "dry-run-path"
+    sandbox.mkdir(exist_ok=True)
+    scripts = {"uv": f'#!/bin/sh\necho "uv {system_uv} (fake 2026-01-01)"\n'} if system_uv else None
+    env = {
+        "HOME": str(tmp / "home"),
+        "PARROT_HOME": str(tmp / "home" / ".parrot"),
+        "SHELL": "/bin/bash",
+        "PATH": _fake_bin(sandbox, scripts=scripts),
+    }
     return subprocess.run(
         ["bash", str(SCRIPT), "--global", "--dry-run", *extra],
         capture_output=True,
@@ -158,8 +169,9 @@ def test_global_dry_run_prints_plan_and_gate(tmp_path: Path) -> None:
     """C14a/C14b: the plan paragraph and the gate summary precede any `→` announcement."""
     result = _run_global(tmp_path)
     assert result.returncode == 0, result.stderr
-    assert "0.11.28" in result.stdout and ".sha256" in result.stdout and "SHA256SUMS" in result.stdout
-    assert "never used or modified" in result.stdout
+    assert "0.11.28" in result.stdout and "SHA-256 pinned" in result.stdout and "SHA256SUMS" in result.stdout
+    assert ".sha256" not in result.stdout  # the checksum is pinned, never fetched from the release
+    assert "never modified, moved or removed" in result.stdout
     assert result.stdout.index("preflight: network checks skipped") < result.stdout.index("→")
 
 
@@ -167,6 +179,33 @@ _TOOLS = (
     "bash", "uname", "df", "awk", "dirname", "tar", "gzip", "mkdir", "rm", "ln", "mv", "grep", "cat", "cp",
     "chmod", "mktemp", "stat", "env", "sed", "sha256sum", "git", "curl", "wget",
 )
+
+
+def test_uv_constants_match_runtime() -> None:
+    """The POSIX installer and runtime use the same pinned uv compatibility range."""
+    text = SCRIPT.read_text(encoding="utf-8")
+    found = {key: re.search(rf'\b{key}="([^"]+)"', text).group(1) for key in ("UV_VERSION", "UV_MIN", "UV_MAX")}
+    assert found == {
+        "UV_VERSION": uv_mod.PINNED_UV_VERSION,
+        "UV_MIN": uv_mod.UV_MIN_VERSION,
+        "UV_MAX": uv_mod.UV_MAX_VERSION,
+    }
+
+
+def test_dry_run_uses_a_compatible_system_uv(tmp_path: Path) -> None:
+    """A compatible system uv is selected before the dry-run plan is emitted."""
+    result = _run_global(tmp_path, system_uv="0.11.30")
+    assert result.returncode == 0, result.stderr
+    assert "use your uv 0.11.30" in result.stdout and "download pinned uv" not in result.stdout
+
+
+def test_dry_run_downloads_when_system_uv_is_out_of_range(tmp_path: Path) -> None:
+    """An incompatible system uv stays untouched and causes a private download plan."""
+    result = _run_global(tmp_path, system_uv="0.13.0")
+    assert result.returncode == 0, result.stderr
+    assert (
+        "download pinned uv 0.11.28" in result.stdout and "libexec" in result.stdout and "left as is" in result.stdout
+    )
 
 
 def _fake_bin(tmp: Path, *, drop: tuple[str, ...] = (), scripts: dict[str, str] | None = None) -> str:
@@ -235,16 +274,26 @@ esac
 """
 _FAKE_UV = """#!/bin/sh
 case "$1" in
+  --version) echo "uv 0.11.28" ;;
   venv)
     mkdir -p "$2/bin"
-    for n in python wikitoolkit bookstore; do printf '#!/bin/sh\\n' > "$2/bin/$n"; chmod 755 "$2/bin/$n"; done
+    cp "$FIXTURES/python" "$2/bin/python"; chmod 755 "$2/bin/python"
+    for n in wikitoolkit bookstore; do printf '#!/bin/sh\\n' > "$2/bin/$n"; chmod 755 "$2/bin/$n"; done
     cp "$FIXTURES/parrot" "$2/bin/parrot"; chmod 755 "$2/bin/parrot" ;;
   pip) exit 0 ;;
 esac
 """
 
 
-def _run_offline_install(tmp_path: Path, *, fake_parrot: str) -> subprocess.CompletedProcess[str]:
+def _run_offline_install(
+    tmp_path: Path,
+    *,
+    fake_parrot: str,
+    system_uv: str | None = None,
+    legacy: bool = False,
+    old_ai_parrot: bool = False,
+    tamper: bool = False,
+) -> subprocess.CompletedProcess[str]:
     """C14b harness: a real non-dry-run `--global` with fakes — never touches the network or the real HOME."""
     fixtures = tmp_path / "fixtures"
     stage = fixtures / "uv-x86_64-unknown-linux-gnu"
@@ -252,15 +301,18 @@ def _run_offline_install(tmp_path: Path, *, fake_parrot: str) -> subprocess.Comp
     (stage / "uv").write_text(_FAKE_UV.replace("$FIXTURES", str(fixtures)), encoding="utf-8")
     (stage / "uv").chmod(0o755)
     (fixtures / "parrot").write_text(fake_parrot, encoding="utf-8")
+    (fixtures / "python").write_text("#!/bin/sh\nexit 1\n" if old_ai_parrot else "#!/bin/sh\n", encoding="utf-8")
     tarball = fixtures / "uv.tar.gz"
     with tarfile.open(tarball, "w:gz") as tar:
         tar.add(stage, arcname="uv-x86_64-unknown-linux-gnu")
     digest = hashlib.sha256(tarball.read_bytes()).hexdigest()
     (fixtures / "uv.tar.gz.sha256").write_text(f"{digest}  uv-x86_64-unknown-linux-gnu.tar.gz\n", encoding="utf-8")
-    path = _fake_bin(
-        tmp_path,
-        scripts={"uname": _FAKE_UNAME, "curl": _FAKE_CURL.replace("$FIXTURES", str(fixtures))},
-    )
+    scripts = {"uname": _FAKE_UNAME, "curl": _FAKE_CURL.replace("$FIXTURES", str(fixtures))}
+    if system_uv:
+        scripts["uv"] = _FAKE_UV.replace("$FIXTURES", str(fixtures)).replace("0.11.28", system_uv)
+    path = _fake_bin(tmp_path, scripts=scripts)
+    if system_uv:
+        os.utime(tmp_path / "fakebin" / "uv", ns=(1_700_000_000_000_000_000, 1_700_000_000_000_000_000))
     scratch = tmp_path / "scratch"
     scratch.mkdir()
     env = {
@@ -269,7 +321,14 @@ def _run_offline_install(tmp_path: Path, *, fake_parrot: str) -> subprocess.Comp
         "SHELL": "/bin/bash",
         "TMPDIR": str(scratch),
         "PATH": path,
+        # the fixture tarball is not the real uv release: pin its digest (or a wrong one) instead
+        "PARROT_UV_SHA256": "0" * 64 if tamper else digest,
     }
+    if legacy:
+        bin_dir = tmp_path / "home" / ".parrot" / "bin"
+        bin_dir.mkdir(parents=True)
+        for name in ("uv", "uvx"):
+            (bin_dir / name).write_text("legacy", encoding="utf-8")
     return subprocess.run(["bash", str(SCRIPT), "--global"], capture_output=True, text=True, check=False, env=env)
 
 
@@ -303,8 +362,57 @@ def test_post_install_repo_readiness_failures_keep_runtime(tmp_path: Path) -> No
     assert "--runtime-only" in result.stdout and "gh: not authenticated" not in result.stdout
     home = tmp_path / "home" / ".parrot"
     assert (home / "bin" / "parrot").exists() and (home / "venv").exists()
-    assert (home / "bin" / "uv").exists()
+    assert (home / "libexec" / "uv").exists()
+    assert not (home / "bin" / "uv").exists()
     assert "# >>> parrot >>>" in (tmp_path / "home" / ".bashrc").read_text(encoding="utf-8")
+
+
+def test_offline_install_records_a_compatible_system_uv(tmp_path: Path) -> None:
+    """A compatible system uv is recorded without downloading or placing uv on PATH."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_REPO_NOT_READY, system_uv="0.11.30")
+    assert result.returncode == 0, result.stderr
+    home = tmp_path / "home" / ".parrot"
+    system = Path((home / "libexec" / "uv-path").read_text(encoding="utf-8").strip())
+    assert system == tmp_path / "fakebin" / "uv"
+    assert not (home / "libexec" / "uv").exists() and not (home / "bin" / "uv").exists()
+    assert not (tmp_path / "fixtures" / "dlmode").exists()
+
+
+def test_offline_install_out_of_range_system_uv_is_untouched(tmp_path: Path) -> None:
+    """An incompatible system uv remains byte- and timestamp-identical while the pinned uv is private."""
+    system = tmp_path / "fakebin" / "uv"
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_REPO_NOT_READY, system_uv="0.13.0")
+    assert result.returncode == 0, result.stderr
+    assert (
+        system.read_bytes()
+        == _FAKE_UV.replace("$FIXTURES", str(tmp_path / "fixtures")).replace("0.11.28", "0.13.0").encode()
+    )
+    assert system.stat().st_mtime_ns == 1_700_000_000_000_000_000
+    home = tmp_path / "home" / ".parrot"
+    assert (home / "libexec" / "uv").exists() and not (home / "bin" / "uv").exists()
+
+
+def test_offline_install_removes_legacy_uv_after_success(tmp_path: Path) -> None:
+    """Legacy uv binaries are removed only after the managed runtime passes its doctor."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_REPO_NOT_READY, legacy=True)
+    assert result.returncode == 0, result.stderr
+    home = tmp_path / "home" / ".parrot"
+    assert not (home / "bin" / "uv").exists() and not (home / "bin" / "uvx").exists()
+
+
+def test_offline_install_failure_keeps_legacy_uv(tmp_path: Path) -> None:
+    """A failed runtime doctor leaves legacy uv intact because rollback cannot restore it."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_RUNTIME_BROKEN, legacy=True)
+    assert result.returncode != 0
+    assert (tmp_path / "home" / ".parrot" / "bin" / "uv").exists()
+
+
+def test_offline_install_old_ai_parrot_keeps_legacy_layout(tmp_path: Path) -> None:
+    """A pre-layout ai-parrot release receives a pinned legacy uv so its old doctor can run."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_REPO_NOT_READY, old_ai_parrot=True)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "home" / ".parrot" / "bin" / "uv").exists()
+    assert "predates the libexec" in result.stderr
 
 
 def _real_doctor_path_parrot() -> str:
@@ -398,3 +506,32 @@ def test_global_dry_run_warns_when_python3_is_missing(tmp_path: Path, with_pytho
     )
     assert result.returncode == 0, result.stderr
     assert ("warning: python3 not found" in result.stderr) is (not with_python3)
+
+
+def test_tampered_uv_archive_aborts_and_rolls_back(tmp_path: Path) -> None:
+    """issue:6e31d9355edc — an archive whose hash differs from the pin aborts before installing uv."""
+    result = _run_offline_install(tmp_path, fake_parrot="#!/bin/sh\nexit 0\n", tamper=True)
+    assert result.returncode != 0
+    assert "checksum mismatch" in result.stderr
+    assert not (tmp_path / "home" / ".parrot" / "libexec" / "uv").exists()
+
+
+def test_uv_sha256_pins_cover_every_target() -> None:
+    """Every uv_target the POSIX script can select has a pinned SHA-256; no .sha256 is downloaded."""
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert 'fetch "$url.sha256"' not in text
+    for target in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin"):
+        assert f"uv-{target}.tar.gz) echo " in text
+
+
+def test_global_rejects_install_cli(tmp_path: Path) -> None:
+    """issue:73295db52ee4 — --global --install-cli is refused instead of silently dropped."""
+    result = _run_global(tmp_path, "--install-cli")
+    assert result.returncode == 1
+    assert "--global cannot be combined with --install-cli" in result.stderr
+
+
+def test_no_internal_feature_breadcrumb() -> None:
+    """issue:3b2432011ac9 — the public installers carry no internal FEAT-<NNN> id."""
+    for name in ("install-parrot.sh", "install-parrot.ps1"):
+        assert "FEAT-586" not in (SCRIPT.parent / name).read_text(encoding="utf-8")

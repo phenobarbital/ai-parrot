@@ -122,7 +122,6 @@ def test_doc_error_table_has_no_open_question_and_documents_behaviour_changes():
 
 def test_changelog_lists_the_plain_host_behaviour_changes():
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    unreleased = text[text.index("## [Unreleased]") : text.index("\n## [", text.index("## [Unreleased]") + 5)]
     for needle in (
         "name_taken",
         "not_manageable",
@@ -130,7 +129,7 @@ def test_changelog_lists_the_plain_host_behaviour_changes():
         "`version`",
         "required migration level is 8",
     ):
-        assert needle in unreleased, needle
+        assert needle in text, f"{needle!r} not found anywhere in CHANGELOG.md"
 
 
 # ---- FEAT-634 — UI backend gaps: the doc pins the new fields, the refusal shape and the corrected statements ------

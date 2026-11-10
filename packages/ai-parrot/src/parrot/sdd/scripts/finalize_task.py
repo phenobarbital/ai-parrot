@@ -47,7 +47,7 @@ from typing import Iterable, Sequence
 from pydantic import ValidationError
 
 from parrot.flows.dev_loop.sdd_coder.fidelity import check_fidelity, parse_task_files
-from parrot.flows.dev_loop.sdd_coder.optimization_models import EvidenceRef, TaskCompletionEvidence
+from parrot.flows.dev_loop.sdd_coder.optimization_models import EvidenceRef, ReviewArtifact, TaskCompletionEvidence
 from parrot.flows.dev_loop.sdd_coder.telemetry import resolve_durable_root
 
 try:  # POSIX only -- degrades to a no-op lock, matching evidence.py's convention.
@@ -149,22 +149,66 @@ def _validate_expected_head(evidence: TaskCompletionEvidence, expected_head: str
         )
 
 
-def _verify_evidence_refs(durable_root: Path, evidence: TaskCompletionEvidence) -> None:
+def _verify_evidence_refs(durable_root: Path, evidence: TaskCompletionEvidence, repo_root: Path) -> None:
     """Resolve every evidence reference against durable storage; never trust a claim.
 
     Rejects an empty `validation_refs` (no settled validation recorded) and
     any `EvidenceRef` whose content does not durably exist with matching
-    hash and size under *durable_root* -- `review_evidence` is never
-    fabricated. NOTE: this only proves each ref is a settled, tamper-evident
-    record (existence + hash/size match) -- it does NOT inspect or require
-    a passing (`outcome == "completed"`) validation. The checkpoint stays
-    neutral raw evidence by design (see engine.py's `_assert_no_pending_validations`
-    docstring); a downstream reviewer must open the referenced logs to judge
-    pass/fail, per AC9's "checkpoint neutral y diff completo por referencias".
+    hash and size under *durable_root*. `review_evidence` must additionally
+    be a `ReviewArtifact` bound to this evidence: same `task_id` and
+    `feature_slug`, every reviewer correction in `fix_commits` also listed
+    by the evidence, and a `head_sha` that is an ancestor of (or equal to)
+    `implementation_sha` in *repo_root* (later lint commits may move HEAD
+    past the review, so equality is not required). Validation references
+    remain neutral raw evidence: this function does not inspect them or
+    require a passing (`outcome == "completed"`) validation.
     """
     if not evidence.validation_refs:
         raise InvalidEvidenceError("evidence.validation_refs must include at least one settled validation reference")
-    for ref in (evidence.review_evidence, *evidence.validation_refs):
+    review_ref = evidence.review_evidence
+    _verify_one_ref(durable_root, review_ref)
+    review_path = durable_root / review_ref.relative_path
+    try:
+        review_payload = json.loads(review_path.read_bytes())
+        review_artifact = ReviewArtifact.model_validate(review_payload)
+    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError) as exc:
+        raise InvalidEvidenceError(
+            f"review evidence is not a valid ReviewArtifact: {review_ref.relative_path!r}"
+        ) from exc
+    if review_artifact.task_id != evidence.task_id:
+        raise InvalidEvidenceError(
+            f"review evidence task_id does not match {evidence.task_id!r}: {review_ref.relative_path!r}"
+        )
+    if review_artifact.feature_slug != evidence.feature_slug:
+        raise InvalidEvidenceError(
+            f"review evidence feature_slug {review_artifact.feature_slug!r} does not match "
+            f"{evidence.feature_slug!r} (re-record the review with feature {evidence.feature_slug!r}): "
+            f"{review_ref.relative_path!r}"
+        )
+    missing_fix_commits = sorted(set(review_artifact.fix_commits) - set(evidence.fix_commits))
+    if missing_fix_commits:
+        raise InvalidEvidenceError(
+            f"review evidence fix_commits {missing_fix_commits} are missing from evidence.fix_commits: "
+            f"{review_ref.relative_path!r}"
+        )
+    lineage = _run_git(
+        ["merge-base", "--is-ancestor", review_artifact.head_sha, evidence.implementation_sha],
+        cwd=repo_root,
+        check=False,
+    )
+    if lineage.returncode == 1:
+        raise InvalidEvidenceError(
+            f"review evidence head_sha {review_artifact.head_sha!r} is not an ancestor of "
+            f"implementation_sha {evidence.implementation_sha!r}: {review_ref.relative_path!r}"
+        )
+    if lineage.returncode != 0:
+        raise InvalidEvidenceError(
+            f"review evidence head_sha {review_artifact.head_sha!r} could not be checked against "
+            f"implementation_sha {evidence.implementation_sha!r} ({lineage.stderr.strip() or 'git error'}): "
+            f"{review_ref.relative_path!r}"
+        )
+
+    for ref in evidence.validation_refs:
         _verify_one_ref(durable_root, ref)
 
 
@@ -530,7 +574,7 @@ def finalize_task(*, evidence: TaskCompletionEvidence, worktree: Path, expected_
             return result
 
         # -- validation: never mutates anything below this point until it passes. --
-        _verify_evidence_refs(durable_root, evidence)
+        _verify_evidence_refs(durable_root, evidence, repo_root)
 
         index_path = repo_root / "sdd" / "tasks" / "index" / f"{evidence.feature_slug}.json"
         if not index_path.is_file():

@@ -7,63 +7,19 @@ Tests:
   - Beam walk respects beam_width.
   - use_embedding_walk=False does not affect search output (flag-gating).
 
-Import note:
-    Direct file loading is used to bypass parrot.knowledge.pageindex.__init__.py
-    which imports PageIndexLoader (triggers aiohttp_cors import chain).
+Imports ``parrot.knowledge.pageindex`` normally (FEAT-852) — see
+tests/knowledge/pageindex/test_embedding_store.py for why the previous
+``sys.modules`` package stub was removed (issue:91822a3b8548).
 """
 from __future__ import annotations
 
 import asyncio
-import importlib.util
-import sys
-import types
-from pathlib import Path
 
 import numpy as np
 import pytest
 
-
-# ---------------------------------------------------------------------------
-# Module loading helpers (bypass heavy __init__.py)
-# ---------------------------------------------------------------------------
-
-_WT = Path(__file__).parents[3]  # <worktree root>
-
-
-def _load_module(name: str, rel_path: str):
-    """Load a module by file path, bypassing __init__.py chains."""
-    if name in sys.modules:
-        return sys.modules[name]
-    full = _WT / rel_path
-    spec = importlib.util.spec_from_file_location(name, str(full))
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-# Pre-register stub package to avoid __init__.py execution.
-if "parrot.knowledge.pageindex" not in sys.modules:
-    _pkg_stub = types.ModuleType("parrot.knowledge.pageindex")
-    _pkg_stub.__path__ = [  # type: ignore[attr-defined]
-        str(_WT / "packages/ai-parrot/src/parrot/knowledge/pageindex")
-    ]
-    _pkg_stub.__package__ = "parrot.knowledge.pageindex"
-    sys.modules["parrot.knowledge.pageindex"] = _pkg_stub
-
-# Load modules in dependency order.
-_es_mod = _load_module(
-    "parrot.knowledge.pageindex.embedding_store",
-    "packages/ai-parrot/src/parrot/knowledge/pageindex/embedding_store.py",
-)
-NodeEmbeddingStore = _es_mod.NodeEmbeddingStore
-
-_vw_mod = _load_module(
-    "parrot.knowledge.pageindex.vector_walk",
-    "packages/ai-parrot/src/parrot/knowledge/pageindex/vector_walk.py",
-)
-FlatMatrixSearch = _vw_mod.FlatMatrixSearch
-embedding_tree_walk = _vw_mod.embedding_tree_walk
+from parrot.knowledge.pageindex.embedding_store import NodeEmbeddingStore
+from parrot.knowledge.pageindex.vector_walk import FlatMatrixSearch, embedding_tree_walk
 
 
 # ---------------------------------------------------------------------------
@@ -257,12 +213,7 @@ class TestEmbeddingTreeWalk:
     async def test_respects_max_depth(
         self, deep_tree, embedding_store, mock_embed_fn
     ) -> None:
-        """Beam walk never descends past ``max_depth`` levels.
-
-        Levels are counted from the top of ``structure``: the walk scores the
-        root-level nodes first, so they can be candidates themselves
-        (see ``test_beam_scores_roots_and_uses_snapshot_key``).
-        """
+        """Beam walk with max_depth=1 never descends past the first level."""
         nodes: list[dict] = []
         def _gather(struct):
             for node in (struct if isinstance(struct, list) else [struct]):
@@ -274,18 +225,26 @@ class TestEmbeddingTreeWalk:
         rng = np.random.default_rng(99)
         q = rng.standard_normal(_DIM).astype(np.float32)
 
-        # max_depth=1: only the root level ("structure" holds 0001).
+        # With max_depth=1, walk can only visit root children (one level).
         result = await embedding_tree_walk(
             deep_tree, q, embedding_store, beam_width=5, max_depth=1
         )
-        assert result == ["0001"]
-
-        # max_depth=2: the root level and its children (0002, 0003),
-        # never the grandchildren 0004..0006.
-        result = await embedding_tree_walk(
-            deep_tree, q, embedding_store, beam_width=5, max_depth=2
+        # `max_depth` counts LEVELS VISITED, starting at the "structure" list itself
+        # (vector_walk.py:140 scores `current_level`, which begins as the root nodes,
+        # and only then descends). So max_depth=1 visits exactly the root level and
+        # returns ["0001"] — it never reaches 0002/0003, let alone the grandchildren
+        # 0004..0006. The assertion that matters is that nothing below the first
+        # visited level appears. (FEAT-852: this test never ran before — the module
+        # failed to collect — and its original `level1_ids = {"0002", "0003"}`
+        # contradicted both the implementation and this comment's own wording.)
+        deeper_ids = {"0004", "0005", "0006"}
+        for nid in result:
+            assert nid not in deeper_ids, (
+                f"max_depth=1 must not descend past the first visited level, got {nid}"
+            )
+        assert result == ["0001"], (
+            f"max_depth=1 visits only the root level of `structure`, expected ['0001'], got {result}"
         )
-        assert set(result) == {"0001", "0002", "0003"}
 
     @pytest.mark.asyncio
     async def test_no_embeddings_fallback(

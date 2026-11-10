@@ -2,10 +2,14 @@
 # Brief agy-permission-hook — launcher for the agy PreToolUse permission policy (tracked .agents/hooks.json).
 # Runs the policy from THIS checkout's source with the shared .venv of the main checkout, so a linked worktree
 # evaluates its own branch (like scripts/sdd/codex_hook.sh). agy blocks a command whose hook fails, and a silent
-# pass would drop the narrowing while the broad agy rules stay active, so every failure answers force_ask:
-# agy then asks before each command until the hook works again.
+# pass would drop the narrowing while the broad agy rules stay active. Failures answer force_ask in interactive
+# sessions and deny in unattended sessions, where force_ask would otherwise run without an operator.
 unavailable() {
-    printf '%s\n' "{\"decision\": \"force_ask\", \"reason\": \"agy permission hook unavailable ($1); confirm each command\"}"
+    if [ "${PARROT_SDD_AGY_UNATTENDED:-}" = "1" ]; then
+        printf '%s\n' "{\"decision\": \"deny\", \"reason\": \"unattended: agy permission hook unavailable ($1)\"}"
+    else
+        printf '%s\n' "{\"decision\": \"force_ask\", \"reason\": \"agy permission hook unavailable ($1); confirm each command\"}"
+    fi
     exit 0
 }
 top=$(git rev-parse --show-toplevel 2>/dev/null) || unavailable "not a git checkout"

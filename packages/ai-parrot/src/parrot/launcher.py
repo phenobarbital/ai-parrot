@@ -217,6 +217,8 @@ def _project_venv_trusted(venv: Path, script: str) -> bool:
     ``wikitoolkit claude-hook`` call would then run attacker code. The venv is trusted only when (POSIX) it is
     owned by the current user AND nothing under it is tracked by git — a venv a developer created locally is
     ignored/untracked, a committed one arrives with the clone. Fails closed when the repo cannot be queried.
+    The ``git`` call runs with ``LC_ALL=C`` and without ``LANGUAGE``: git localizes its messages, and the fallback
+    below matches the English "not a git repository".
     """
     import subprocess
 
@@ -229,9 +231,11 @@ def _project_venv_trusted(venv: Path, script: str) -> bool:
         work_tree = venv.parent
         if not (work_tree / ".git").exists():
             return True  # not a git checkout (e.g. an explicit PARROT_PROJECT dir): nothing can be tracked
+        git_env = {key: value for key, value in os.environ.items() if key != "LANGUAGE"}
+        git_env["LC_ALL"] = "C"
         tracked = subprocess.run(
             ["git", "-C", str(work_tree), "ls-files", "-z", "--", venv.name],
-            capture_output=True, check=False, timeout=5,
+            capture_output=True, check=False, timeout=5, env=git_env,
         )
         if tracked.returncode != 0:
             # a `.git` that git itself rejects as a repository cannot be a clone's tracked content

@@ -20,6 +20,8 @@ from parrot.sdd.installer import (
     AGY_HOOK_LINE,
     AGY_HOOK_NAME,
     AGY_OWNERSHIP_NAME,
+    _AGY_MATCHER,
+    _AGY_LEGACY_MATCHER,
     agy_hook_command,
     agy_settings_paths,
     install_sdd_integration,
@@ -76,7 +78,7 @@ def _write(path: Path, data: object) -> None:
 def test_install_registers_hook_rules_and_ownership(repo: Path, home: Path) -> None:
     actions = _install(repo)
     (entry,) = _read(repo / HOOKS)[AGY_HOOK_NAME]["PreToolUse"]
-    assert entry["matcher"] == "run_command"
+    assert entry["matcher"] == _AGY_MATCHER
     assert entry["hooks"] == [{"type": "command", "command": AGY_HOOK_LINE, "timeout": 10}]
     assert _allow(home / SETTINGS) == list(SDD_ALLOW_RULES)
     assert _read(home / OWNERS) == {"rules": sorted(SDD_ALLOW_RULES), "repos": [str(repo.resolve())]}
@@ -275,7 +277,8 @@ def test_status_reports_hook_and_missing_rules(repo: Path, home: Path) -> None:
 
 
 def test_repository_launcher_form_is_kept(repo: Path, home: Path) -> None:
-    """ai-parrot's own tracked hook runs scripts/sdd/agy_hook.sh; install must not rewrite it."""
+    """ai-parrot's own tracked hook runs scripts/sdd/agy_hook.sh; install keeps the launcher command but widens the matcher when owned."""
+    _install(repo)
     launcher = {
         AGY_HOOK_NAME: {
             "PreToolUse": [
@@ -284,12 +287,17 @@ def test_repository_launcher_form_is_kept(repo: Path, home: Path) -> None:
         }
     }
     _write(repo / HOOKS, launcher)
-    before = (repo / HOOKS).read_bytes()
     actions = _install(repo)
-    assert (repo / HOOKS).read_bytes() == before
+    data = _read(repo / HOOKS)
+    entry = data[AGY_HOOK_NAME]["PreToolUse"][0]
+    assert entry["matcher"] == _AGY_MATCHER
+    assert entry["hooks"][0]["command"] == "sh ../scripts/sdd/agy_hook.sh"
+    assert any("matcher widened" in a for a in actions)
     assert any("repository launcher kept" in a for a in actions)
     assert sdd_status(repo)["agy_permissions"]["form"] == "launcher"
-    assert _allow(home / SETTINGS) == list(SDD_ALLOW_RULES)
+    before = (repo / HOOKS).read_bytes()
+    _install(repo)
+    assert (repo / HOOKS).read_bytes() == before
 
 
 def test_status_ignores_an_inactive_hook(repo: Path, home: Path) -> None:
@@ -312,3 +320,83 @@ def test_cli_flag_skips_agy_permissions(repo: Path, home: Path) -> None:
     result = CliRunner().invoke(cli, args)
     assert result.exit_code == 0, result.output
     assert (repo / HOOKS).is_file()
+
+
+# --- TASK-5349: matcher migration, stale status, roundtrip ---
+
+
+def test_receipt_owned_legacy_matcher_is_widened(repo: Path, home: Path) -> None:
+    """Install, then rewrite matcher to legacy by hand, reinstall -> widened, command/timeout kept."""
+    _install(repo)
+    hooks = _read(repo / HOOKS)
+    group = hooks[AGY_HOOK_NAME]["PreToolUse"][0]
+    original_command = group["hooks"][0]["command"]
+    original_timeout = group["hooks"][0]["timeout"]
+    group["matcher"] = _AGY_LEGACY_MATCHER
+    _write(repo / HOOKS, hooks)
+    actions = _install(repo)
+    hooks = _read(repo / HOOKS)
+    group = hooks[AGY_HOOK_NAME]["PreToolUse"][0]
+    assert group["matcher"] == _AGY_MATCHER
+    assert group["hooks"][0]["command"] == original_command
+    assert group["hooks"][0]["timeout"] == original_timeout
+    assert any("matcher widened" in a for a in actions)
+
+
+def test_not_owned_legacy_matcher_emits_note(repo: Path, home: Path) -> None:
+    """A legacy entry that is not receipt-owned is left untouched with a note."""
+    legacy = {
+        AGY_HOOK_NAME: {
+            "PreToolUse": [
+                {"matcher": "run_command", "hooks": [{"type": "command", "command": AGY_HOOK_LINE, "timeout": 10}]}
+            ]
+        }
+    }
+    _write(repo / HOOKS, legacy)
+    before = (repo / HOOKS).read_bytes()
+    actions = install_sdd_integration(repo, ("google",), sdd_coder=False, portable=True)
+    assert (repo / HOOKS).read_bytes() == before
+    assert any("stale matcher" in a for a in actions)
+    assert any("not owned" in a for a in actions)
+
+
+def test_user_edited_matcher_emits_warning(repo: Path, home: Path) -> None:
+    """A user-edited matcher (neither legacy nor managed) is left untouched with a warning."""
+    _install(repo)
+    hooks = _read(repo / HOOKS)
+    hooks[AGY_HOOK_NAME]["PreToolUse"][0]["matcher"] = "run_command|write_file"
+    _write(repo / HOOKS, hooks)
+    before = (repo / HOOKS).read_bytes()
+    actions = _install(repo)
+    assert (repo / HOOKS).read_bytes() == before
+    assert any("user-edited matcher" in a for a in actions)
+
+
+def test_status_reports_stale_and_matcher(repo: Path, home: Path) -> None:
+    """_agy_permissions_report: widened -> stale False; legacy -> stale True; inactive -> command None."""
+    _install(repo)
+    report = sdd_status(repo)["agy_permissions"]
+    assert report["matcher"] == _AGY_MATCHER
+    assert report["stale"] is False
+    hooks = _read(repo / HOOKS)
+    hooks[AGY_HOOK_NAME]["PreToolUse"][0]["matcher"] = _AGY_LEGACY_MATCHER
+    _write(repo / HOOKS, hooks)
+    report = sdd_status(repo)["agy_permissions"]
+    assert report["matcher"] == _AGY_LEGACY_MATCHER
+    assert report["stale"] is True
+    hooks[AGY_HOOK_NAME]["PreToolUse"][0]["matcher"] = "wrong_tool"
+    _write(repo / HOOKS, hooks)
+    report = sdd_status(repo)["agy_permissions"]
+    assert report["command"] is None
+    assert report["matcher"] is None
+    assert report["stale"] is False
+
+
+def test_sdd_install_google_roundtrip(repo: Path, home: Path) -> None:
+    """install_sdd_integration(google) -> hooks present with widened matcher; uninstall -> hooks removed."""
+    install_sdd_integration(repo, hosts=("google",), sdd_coder=False, portable=True)
+    hooks = _read(repo / HOOKS)
+    assert hooks[AGY_HOOK_NAME]["PreToolUse"][0]["matcher"] == _AGY_MATCHER
+    assert (repo / ".agents").is_dir()
+    uninstall_sdd_integration(repo, ("google",))
+    assert not (repo / HOOKS).exists()

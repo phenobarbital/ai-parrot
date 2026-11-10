@@ -1,0 +1,71 @@
+{
+  "feature": "installer-uv-shadowing",
+  "feature_id": "BRIEF-installer-uv-shadowing",
+  "spec": "sdd/briefs/installer-uv-shadowing.brief.md",
+  "type": "brief",
+  "base_branch": "main",
+  "created_at": "2026-11-08",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-installer-uv-shadowing-1",
+      "slug": "runtime-uv-resolver",
+      "title": "Bounded uv resolver, libexec layout and legacy migration in the Python runtime",
+      "feature_id": "BRIEF-installer-uv-shadowing",
+      "feature": "installer-uv-shadowing",
+      "spec": "sdd/briefs/installer-uv-shadowing.brief.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Tasks 2 and 3 import parrot.self_.uv in their parity tests.",
+      "assigned_to": null,
+      "started_at": "2026-11-10T00:25:41+00:00",
+      "completed_at": "2026-11-10T00:38:25+00:00",
+      "file": "sdd/briefs/installer-uv-shadowing/tasks/HOTFIX-installer-uv-shadowing-1-runtime-uv-resolver.md"
+    },
+    {
+      "id": "HOTFIX-installer-uv-shadowing-2",
+      "slug": "posix-installer",
+      "title": "POSIX installer: use a compatible system uv, keep the pinned uv off PATH, migrate legacy installs",
+      "feature_id": "BRIEF-installer-uv-shadowing",
+      "feature": "installer-uv-shadowing",
+      "spec": "sdd/briefs/installer-uv-shadowing.brief.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "HOTFIX-installer-uv-shadowing-1"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Rewrites SHA256SUMS and docs/getting-started.md, which task 3 also edits.",
+      "assigned_to": null,
+      "started_at": "2026-11-10T00:25:41+00:00",
+      "completed_at": "2026-11-10T00:47:13+00:00",
+      "file": "sdd/briefs/installer-uv-shadowing/tasks/HOTFIX-installer-uv-shadowing-2-posix-installer.md"
+    },
+    {
+      "id": "HOTFIX-installer-uv-shadowing-3",
+      "slug": "powershell-installer",
+      "title": "PowerShell installer: same uv model as the POSIX installer",
+      "feature_id": "BRIEF-installer-uv-shadowing",
+      "feature": "installer-uv-shadowing",
+      "spec": "sdd/briefs/installer-uv-shadowing.brief.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "HOTFIX-installer-uv-shadowing-2"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Runs after task 2: same SHA256SUMS and docs page.",
+      "assigned_to": null,
+      "started_at": "2026-11-10T00:25:41+00:00",
+      "completed_at": "2026-11-10T00:56:39+00:00",
+      "file": "sdd/briefs/installer-uv-shadowing/tasks/HOTFIX-installer-uv-shadowing-3-powershell-installer.md"
+    }
+  ]
+}

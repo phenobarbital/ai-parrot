@@ -1,6 +1,6 @@
 """Bookstore MCP server entry point (``bookstore mcp``).
 
-Wires the ten read-only ``bookstore_*`` tools into a core
+Wires the fourteen read-only ``bookstore_*`` tools into a core
 :class:`~parrot.mcp.local_server.StdioMCPServer` so Claude Code (and any
 MCP client) can research the personal indexed library with first-class
 tools — same pattern and stdout-purity discipline as
@@ -9,9 +9,10 @@ tools — same pattern and stdout-purity discipline as
 Degradation matrix:
 
 - LLM configured (``PARROT_BOOKSTORE_LLM``): full surface — hybrid
-  in-book search and scoped cross-book tree-walks.
+  in-book search, validated agentic retrieval and scoped cross-book tree-walks.
 - No LLM, ``bm25s`` installed: ``search_book``/``search`` run BM25-only.
-- No LLM, no ``bm25s``: those two tools error explanatorily, while
+- No LLM: ``agentic_retrieve`` remains discoverable and errors explanatorily.
+- No LLM, no ``bm25s``: ``search_book``/``search`` also error explanatorily, while
   ``catalog_search`` / ``list_books`` / ``get_card`` / ``get_toc`` /
   ``read_section`` / ``related_books`` / ``communities`` /
   ``get_community`` (the core funnel plus the FEAT-533 graph tools,
@@ -92,10 +93,11 @@ def create_bookstore_mcp_server(
     description = (
         f"Personal indexed book library — {book_count} book(s). "
         "Research funnel: bookstore_catalog_search (which book covers X) → "
-        "bookstore_get_toc → bookstore_search_book → bookstore_read_section."
+        "bookstore_agentic_retrieve (validated citations), with bookstore_get_toc → "
+        "bookstore_search_book → bookstore_read_section for targeted reading."
     )
     if adapter is None:
-        description += " (no LLM configured: lexical search only)"
+        description += " (no LLM configured: agentic retrieval remains visible but returns a configuration error)"
 
     _ensure_stderr_logging()
     server = StdioMCPServer(

@@ -11,7 +11,7 @@ model: inherit
 
 ## Overview
 
-A two-phase orchestration pipeline for Claude Code that takes a Jira ticket
+A two-phase orchestration pipeline for the Antigravity CLI (`agy`) that takes a Jira ticket
 from inception to reviewed PR with minimal human intervention.
 
 **Phase 1 — Planning (interactive):** `/sdd-fromjira` command
@@ -27,11 +27,11 @@ once the spec is approved.
 
 ### The Key Insight: Shell-Level AgentCrew
 
-Claude Code agents run as separate CLI processes. Orchestration happens at the
-shell level via `claude -p "prompt"` (non-interactive) and `claude --agent <name>`
+`agy` agents run as separate CLI processes. Orchestration happens at the
+shell level via `agy -p "prompt"` (non-interactive) and `agy --agent <name>`
 invocations. This mirrors the `AgentCrew.run_flow()` DAG pattern but with:
 
-- **Agents** = Claude Code agent definitions (`.claude/agents/*.md`)
+- **Agents** = `agy` agent definitions (`.agents/agents/<name>/agent.md`)
 - **Tasks** = CLI invocations with structured prompts
 - **Dependencies** = sequential execution with exit code checks
 - **Context passing** = files on disk (reports, diffs, task index)
@@ -277,11 +277,11 @@ git worktree add -b feat-<FEAT-ID>-<slug> \
 
    To execute autonomously:
      cd "$WORKTREES_DIR/feat-071-jira-oauth"
-     claude --agent sdd-autopilot --verbose
+     agy --agent sdd-autopilot --dangerously-skip-permissions -p "run FEAT-071"
 
    Or manually:
      cd "$WORKTREES_DIR/feat-071-jira-oauth"
-     parrot sdd launch worker <FEAT-ID>
+     parrot sdd launch worker <FEAT-ID> --host google
 ```
 
 ---
@@ -292,25 +292,36 @@ git worktree add -b feat-<FEAT-ID>-<slug> \
 
 Autonomous orchestrator that chains: worker → reviewer → QA → done → pr-review.
 Runs inside the feature worktree. Each sub-agent is invoked as a separate
-Claude Code process via `claude -p` or `claude --agent`.
+`agy` process via `agy -p` or `agy --agent`.
+
+Approval: every unattended stage passes `--dangerously-skip-permissions`; leave
+`--mode` unset (its `auto` value is account-gated). Only `parrot sdd launch worker <FEAT-ID>
+--host google` sets the unattended guard (`PARROT_SDD_AGY_UNATTENDED=1`, Bubblewrap,
+the hook's `deny` as the per-call guard), so the autopilot prefers it wherever it
+launches the worker. A raw `agy --agent sdd-worker --dangerously-skip-permissions`
+call (needed for the review/QA fix prompts below) runs WITHOUT that guard: under
+`--dangerously-skip-permissions` only a hook `deny` stops a call.
 
 ### Agent Definition
 
-File: `.claude/agents/sdd-autopilot.md`
+File: `.agents/agents/sdd-autopilot/agent.md`
 
 ```markdown
 ---
 name: sdd-autopilot
-description: |
+description: >-
   End-to-end autonomous feature pipeline. Orchestrates sdd-worker,
   code-reviewer, qa-runner, sdd-done, and pr-review sequentially
   with quality gates between each stage.
-model: sonnet
-color: green
-permissionMode: bypassPermissions
-tools: Read, Write, Edit, Bash, Glob, Grep
+subagent: true
+mainAgent: false
+model: inherit
 ---
 ```
+
+`agy` agent frontmatter carries no `tools`, `permissionMode` or `color` keys:
+approval comes from `--dangerously-skip-permissions` on the command line plus
+the SDD permission hook.
 
 ### Orchestration Engine
 
@@ -331,15 +342,13 @@ REVIEW_ITERATION=0
 # ──────────────────────────────────────────────
 # Stage 1: IMPLEMENT (sdd-worker)
 # ──────────────────────────────────────────────
-# Not natively sandboxed: a non-interactive `-p` run cannot go through `parrot sdd launch worker` (it starts an interactive session).
-claude --agent sdd-worker --setting-sources project,local \
-  --model sonnet \
-  --verbose \
-  --output-format json \
-  -p "Implement all tasks for $FEAT_ID" \
+# The supported unattended worker launch: it runs
+# `agy --agent sdd-worker --dangerously-skip-permissions -p "run $FEAT_ID"`
+# with PARROT_SDD_AGY_UNATTENDED=1 inside Bubblewrap, and fails closed without it.
+parrot sdd launch worker "$FEAT_ID" --host google \
   2>&1 | tee .autopilot/worker-output.log
 
-WORKER_EXIT=$?
+WORKER_EXIT=${PIPESTATUS[0]}
 if [[ $WORKER_EXIT -ne 0 ]]; then
     echo "❌ sdd-worker failed. Check .autopilot/worker-output.log"
     exit 1
@@ -349,8 +358,8 @@ fi
 # Stage 2: CODE REVIEW (code-reviewer)
 # ──────────────────────────────────────────────
 while [[ $REVIEW_ITERATION -lt $MAX_REVIEW_ITERATIONS ]]; do
-    claude --agent code-reviewer \
-      --model sonnet \
+    agy --agent code-reviewer \
+      --dangerously-skip-permissions \
       -p "Review all code in this worktree for $FEAT_ID. \
           Check: correctness, security, performance, tests. \
           Output a structured report to .autopilot/review-report.md \
@@ -367,9 +376,9 @@ while [[ $REVIEW_ITERATION -lt $MAX_REVIEW_ITERATIONS ]]; do
     echo "⚠️ Code review: NEEDS_CHANGES (iteration $((REVIEW_ITERATION + 1)))"
     
     # Feed review findings back to worker for fixes
-    # Not natively sandboxed: a non-interactive `-p` run cannot go through `parrot sdd launch worker` (it starts an interactive session).
-    claude --agent sdd-worker --setting-sources project,local \
-      --model sonnet \
+    # Raw call: `parrot sdd launch worker` takes no custom prompt, so this run lacks the unattended guard.
+    agy --agent sdd-worker \
+      --dangerously-skip-permissions \
       -p "Fix the issues found in .autopilot/review-report.md for $FEAT_ID. \
           Only fix the issues listed — no scope creep." \
       2>&1 | tee .autopilot/fix-output-$REVIEW_ITERATION.log
@@ -386,8 +395,8 @@ fi
 # ──────────────────────────────────────────────
 # Stage 3: QA / TESTING (qa-runner)
 # ──────────────────────────────────────────────
-claude --agent qa-runner \
-  --model sonnet \
+agy --agent qa-runner \
+  --dangerously-skip-permissions \
   -p "Run test suite for $FEAT_ID. Execute: \
       1. Unit tests for all new/modified files \
       2. Integration tests if test fixtures exist \
@@ -402,16 +411,15 @@ if [[ "$QA_VERDICT" != "PASS" ]]; then
     echo "❌ QA failed. See .autopilot/qa-report.md"
     echo "   Attempting auto-fix..."
     
-    # Not natively sandboxed: a non-interactive `-p` run cannot go through `parrot sdd launch worker` (it starts an interactive session).
-    
-    claude --agent sdd-worker --setting-sources project,local \
-      --model sonnet \
+    # Raw call: `parrot sdd launch worker` takes no custom prompt, so this run lacks the unattended guard.
+    agy --agent sdd-worker \
+      --dangerously-skip-permissions \
       -p "Fix failing tests described in .autopilot/qa-report.md for $FEAT_ID." \
       2>&1 | tee .autopilot/qa-fix-output.log
     
     # Re-run QA once
-    claude --agent qa-runner \
-      --model sonnet \
+    agy --agent qa-runner \
+      --dangerously-skip-permissions \
       -p "Re-run test suite for $FEAT_ID after fixes." \
       2>&1 | tee .autopilot/qa-rerun-output.log
 
@@ -445,7 +453,7 @@ echo "PR created: $PR_URL"
 JIRA_KEY=$(grep -oP '(?<=jira:\s)\S+' sdd/specs/*.spec.md || echo "")
 
 if [[ -n "$JIRA_KEY" ]]; then
-    claude -p "/pr-review $PR_URL $JIRA_KEY --auto-draft" \
+    agy --dangerously-skip-permissions -p "/pr-review $PR_URL $JIRA_KEY --auto-draft" \
       2>&1 | tee .autopilot/pr-review-output.log
 fi
 
@@ -553,17 +561,17 @@ Produces a structured report.
 
 ### Agent Definition
 
-File: `.claude/agents/qa-runner.md`
+File: `.agents/agents/qa-runner/agent.md`
 
 ```markdown
 ---
 name: qa-runner
-description: |
+description: >-
   QA agent that validates a feature implementation by running tests,
   linting, and type checking. Produces a structured qa-report.md.
-model: sonnet
-color: yellow
-tools: Read, Bash, Glob, Grep
+subagent: true
+mainAgent: false
+model: inherit
 ---
 
 # QA Runner
@@ -618,7 +626,7 @@ Write `.autopilot/qa-report.md`:
 
 ### The Problem
 
-`sdd-worker` runs with `permissionMode: bypassPermissions` but still needs
+`sdd-worker` runs with `--dangerously-skip-permissions` but still needs
 to understand WHAT to build. If tasks are vague ("implement OAuth support"),
 the worker either asks questions (blocking automation) or guesses (producing
 wrong code).
@@ -713,7 +721,7 @@ async def test_oauth_callback_invalid_state():
 
 # Then walk away
 cd "$WORKTREES_DIR/feat-071-jira-oauth"
-claude --agent sdd-autopilot --verbose
+agy --agent sdd-autopilot --dangerously-skip-permissions -p "run FEAT-071"
 # ... coffee ...
 # Come back to a ready-to-review PR
 ```
@@ -726,8 +734,8 @@ claude --agent sdd-autopilot --verbose
 
 # Run worker + reviewer only
 cd "$WORKTREES_DIR/feat-071-jira-oauth"
-parrot sdd launch worker <FEAT-ID>
-claude --agent code-reviewer -p "Review feat-071"
+parrot sdd launch worker <FEAT-ID> --host google
+agy --agent code-reviewer --dangerously-skip-permissions -p "Review feat-071"
 
 # Human reviews code, then:
 /sdd-done FEAT-071
@@ -739,7 +747,7 @@ claude --agent code-reviewer -p "Review feat-071"
 ```bash
 cd "$WORKTREES_DIR/feat-071-jira-oauth"
 tmux new -s feat-071 \
-  "claude --agent sdd-autopilot --verbose 2>&1 | tee .autopilot/full.log"
+  "agy --agent sdd-autopilot --dangerously-skip-permissions -p 'run FEAT-071' 2>&1 | tee .autopilot/full.log"
 # Ctrl+B, D to detach
 # tmux attach -t feat-071 to check progress
 ```
@@ -798,19 +806,20 @@ curl -s -X POST "$SLACK_WEBHOOK_URL" \
 
 | File | Type | Purpose | Status |
 |------|------|---------|--------|
-| `.claude/commands/sdd-fromjira.md` | Command | Interactive Jira-seeded planner | exists |
-| `.claude/agents/sdd-autopilot.md` | Agent | Autonomous orchestrator (this doc) | exists |
-| `.claude/agents/qa-runner.md` | Agent | Test execution & reporting | exists |
-| `.claude/commands/pr-review.md` | Command | PR vs Jira AC review | see `pr-review` skill |
+| `.agents/skills/sdd-fromjira/SKILL.md` | Skill | Interactive Jira-seeded planner | exists |
+| `.agents/agents/sdd-autopilot/agent.md` | Agent | Autonomous orchestrator (this doc) | exists |
+| `.agents/agents/code-reviewer/agent.md` | Agent | Code review with structured verdict | exists |
+| `.agents/agents/qa-runner/agent.md` | Agent | Test execution & reporting | exists |
+| `/pr-review` | Prompt | PR vs Jira AC review | see `pr-review` skill |
 
 ---
 
 ## Comparison with ai-parrot AgentCrew
 
-| Aspect | AgentCrew (ai-parrot) | sdd-autopilot (Claude Code) |
+| Aspect | AgentCrew (ai-parrot) | sdd-autopilot (`agy`) |
 |--------|----------------------|----------------------------|
-| Runtime | Python asyncio | Bash + Claude CLI processes |
-| Agent type | `BasicAgent` / `AbstractBot` | `.claude/agents/*.md` files |
+| Runtime | Python asyncio | Bash + `agy` CLI processes |
+| Agent type | `BasicAgent` / `AbstractBot` | `.agents/agents/*/agent.md` files |
 | Context passing | In-memory `AgentContext` | Files on disk (`.autopilot/`) |
 | Dependency graph | `task_flow()` + DAG resolver | Sequential with gates |
 | Error handling | `on_error` transitions | Exit codes + retry loops |

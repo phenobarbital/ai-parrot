@@ -38,6 +38,10 @@ from pathlib import Path
 from typing import Any, Literal, Sequence
 
 from parrot.sdd.scripts import dangerous_actions
+from parrot.sdd.scripts import worktree_environment
+
+UNATTENDED_ENV = "PARROT_SDD_AGY_UNATTENDED"
+_RANK = {"ask": 0, "force_ask": 1, "deny": 2}
 
 # --------------------------------------------------------------------------
 # managed rules
@@ -121,6 +125,7 @@ class Decision:
 
     decision: Literal["deny", "force_ask", "ask"]
     reason: str = ""
+    overwrite: dict[str, str] | None = None
 
 
 _ASK = Decision("ask")
@@ -1356,7 +1361,53 @@ def _hotfix_branches(root: Path | None) -> frozenset[str]:
 
 
 def evaluate(payload: dict[str, Any], *, root: Path | None) -> Decision:
-    """Pure decision for one agy PreToolUse payload.
+    """Combine command policy and worktree verdict for one agy PreToolUse payload."""
+    unattended = os.environ.get(UNATTENDED_ENV) == "1"
+    call = payload.get("toolCall")
+    name = call.get("name") if isinstance(call, dict) else None
+    # The escape hatch is for an operator at the keyboard. An unattended worker runs without one and under
+    # --dangerously-skip-permissions, so a variable inherited from the launching shell must never lift the guard.
+    if not unattended and os.environ.get(dangerous_actions.ESCAPE_ENV) == "1":
+        return _ASK
+    if name in worktree_environment.AGY_FILE_TOOLS:
+        decision = _verdict(payload, root=root, unattended=unattended)
+    else:
+        decision = _policy(payload, root=root)
+        args = call.get("args") if isinstance(call, dict) else None
+        command = args.get("CommandLine") if isinstance(args, dict) else None
+        if name == "run_command" and isinstance(command, str) and command.strip():
+            decision = _merge(decision, _verdict(payload, root=root, unattended=unattended))
+    return _unattended(decision) if unattended else decision
+
+
+def _verdict(payload: dict[str, Any], *, root: Path | None, unattended: bool) -> Decision:
+    """Return the worktree-environment verdict as a :class:`Decision`."""
+    if root is None:
+        return Decision("deny", "agy-permissions: no checkout root for this workspace")
+    backend = os.environ.get("PARROT_SDD_SANDBOX_BACKEND", "")
+    decision, reason, overwrite = worktree_environment.agy_verdict(
+        payload, root=root, backend=backend, unattended=unattended
+    )
+    return Decision(decision, reason, overwrite)
+
+
+def _merge(policy: Decision, verdict: Decision) -> Decision:
+    """Merge decisions with deny > force_ask > ask precedence."""
+    winner, other = (verdict, policy) if _RANK[verdict.decision] > _RANK[policy.decision] else (policy, verdict)
+    reason = winner.reason or other.reason
+    overwrite = None if winner.decision == "deny" else verdict.overwrite
+    return Decision(winner.decision, reason, overwrite)
+
+
+def _unattended(decision: Decision) -> Decision:
+    """Map a non-interactive confirmation to a denial."""
+    if decision.decision != "force_ask":
+        return decision
+    return Decision("deny", f"unattended: {decision.reason}".rstrip())
+
+
+def _policy(payload: dict[str, Any], *, root: Path | None) -> Decision:
+    """PR #2040 command policy for one run_command payload.
 
     Args:
         payload: The agy hook payload (``toolCall.name``, ``toolCall.args.CommandLine``, ``workspacePaths``).
@@ -1366,7 +1417,7 @@ def evaluate(payload: dict[str, Any], *, root: Path | None) -> Decision:
         ``deny`` for a destructive command, ``force_ask`` for a covered command the policy cannot positively
         classify as routine, else ``ask``.
     """
-    if os.environ.get(dangerous_actions.ESCAPE_ENV) == "1":
+    if os.environ.get(UNATTENDED_ENV) != "1" and os.environ.get(dangerous_actions.ESCAPE_ENV) == "1":
         return _ASK
     call = payload.get("toolCall")
     if not isinstance(call, dict) or call.get("name") != "run_command":
@@ -1411,10 +1462,12 @@ def evaluate(payload: dict[str, Any], *, root: Path | None) -> Decision:
     return _ASK
 
 
-def _render(decision: Decision) -> dict[str, str]:
-    out = {"decision": decision.decision}
+def _render(decision: Decision) -> dict[str, Any]:
+    out: dict[str, Any] = {"decision": decision.decision}
     if decision.reason:
         out["reason"] = decision.reason
+    if decision.overwrite and decision.decision != "deny":
+        out["overwrite"] = dict(decision.overwrite)
     return out
 
 
@@ -1431,10 +1484,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         first = paths[0] if isinstance(paths, list) and paths and isinstance(paths[0], str) else os.getcwd()
         result = _render(evaluate(payload, root=dangerous_actions.find_root(first)))
     except Exception as exc:  # noqa: BLE001 — never neutral on failure: the broad agy rules would apply unnarrowed
-        result = {
-            "decision": "force_ask",
-            "reason": f"agy-permissions: checks failed ({type(exc).__name__}: {exc}); confirm this command",
-        }
+        reason = f"agy-permissions: checks failed ({type(exc).__name__}: {exc}); confirm this command"
+        if os.environ.get(UNATTENDED_ENV) == "1":
+            result = {"decision": "deny", "reason": f"unattended: {reason}"}
+        else:
+            result = {"decision": "force_ask", "reason": reason}
     sys.stdout.write(json.dumps(result) + "\n")
 
 

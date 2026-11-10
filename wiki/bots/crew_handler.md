@@ -1,6 +1,9 @@
-"""
-AgentCrew REST API Documentation
-=================================
+---
+title: Crew Handler
+summary: REST API contracts for creating, reading, updating, deleting and executing agent crews.
+---
+
+# Crew Handler
 
 Complete API documentation for managing and executing agent crews.
 
@@ -599,7 +602,19 @@ When `CREW_AI_KEY` is unset, behavior is exactly as before: clients fall back to
 
 ### Persistence and Logging
 
-The key is never stored in a `CrewDefinition`, so it never reaches Redis and never appears in `GET /api/v1/crew`, and it is never logged.
+The key is never stored in a `CrewDefinition`, so it never reaches crew definition storage (Redis or PostgreSQL),
+never appears in `GET /api/v1/crew`, and is never logged.
+
+Crew definition storage defaults to Redis. In PostgreSQL mode, persistence is authoritative and happens before a
+new or updated definition is published to the in-memory cache. Storage outages fail closed with `503 Service
+Unavailable`; identity conflicts, including a rename update, return `409 Conflict`. Updates can replace only the
+same crew name and preserve its ID and creation timestamp.
+
+Deletion commits a PostgreSQL tombstone before cache eviction and Redis cleanup. Retrying a committed tombstone is
+successful even after restart. Tombstones are not automatically purged, and conflicting or cleanup-failed Redis
+sources remain available for operator reconciliation instead of being deleted. Redis-only mode retains its legacy
+best-effort persistence behavior. See [Crew Definition Storage](orchestration/crew-definition-storage.md) for
+configuration, migration reporting, rollout limits and recovery guidance.
 
 ### Programmatic Use
 

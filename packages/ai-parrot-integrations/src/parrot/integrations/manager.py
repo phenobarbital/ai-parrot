@@ -200,6 +200,11 @@ def attach_telegram_wrapper(app: Any, wrapper: Any, bot: Any) -> None:
         notifier.attach(wrapper._bot_id, bot)
     wrapper._register_jira_session_hook()
     wrapper._attach_login_coordinator()
+    # FEAT-854: browser-mode bots need the completion endpoint in this same app.
+    if getattr(getattr(wrapper, "config", None), "auth_open_mode", "webview") == "browser":
+        from parrot.integrations.telegram.browser_login import setup_browser_auth_routes
+
+        setup_browser_auth_routes(app)
 
 
 def _connection_publisher(app: Any) -> ConnectionEventPublisher:
@@ -1167,7 +1172,11 @@ class IntegrationBotManager:
                 self.logger.error("Error while cancelling polling tasks: %s", e)
 
         # Now close bot sessions
-        for name, (bot, _dp, _) in self.telegram_bots.items():
+        for name, (bot, _dp, wrapper) in self.telegram_bots.items():
+            try:
+                await wrapper.close()
+            except Exception as exc:
+                self.logger.error("Error closing Telegram wrapper '%s': %s", name, exc)
             try:
                 self.logger.debug("Closing session for bot '%s'", name)
                 await bot.session.close()
@@ -1194,6 +1203,11 @@ class IntegrationBotManager:
         # voice transcriber); each close is isolated so one failure never
         # skips the other.
         for name, wrapper in self.msteams_bots.items():
+            try:
+                self.logger.debug("Closing queued commands for MS Teams bot '%s'", name)
+                await wrapper.close_queued_commands()
+            except Exception as exc:
+                self.logger.error("Error closing queued commands for MS Teams bot '%s': %s", name, exc)
             try:
                 self.logger.debug("Closing FormDesigner client for MS Teams bot '%s'", name)
                 await wrapper.close_formdesigner_client()

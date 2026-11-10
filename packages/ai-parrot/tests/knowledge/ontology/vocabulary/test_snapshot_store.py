@@ -14,7 +14,17 @@ from parrot.knowledge.ontology.vocabulary.postgres_store import PostgresOntology
 from parrot.knowledge.ontology.vocabulary.publisher import PostgresOntologyPublisher
 from parrot.knowledge.ontology.vocabulary.snapshot import SnapshotOntologyStore, build_snapshot
 
-from .store_conformance import ALL_CASES
+from .store_conformance import (
+    ALL_CASES,
+    LEGAL_ENTITY_IRI,
+    ORGANIZATION_IRI,
+    PUBLIC_AUTHORITY_IRI,
+    PUBLIC_BODY_IRI,
+    case_expand_multiple_inheritance,
+)
+
+# A snapshot serves only its own version, so cases that read history (as_of) cannot run against it.
+SNAPSHOT_CASES = tuple(case for case in ALL_CASES if case is not case_expand_multiple_inheritance)
 
 
 @pytest_asyncio.fixture
@@ -60,12 +70,34 @@ async def published(
         await pg_store.close()
 
 
-@pytest.mark.parametrize("case", ALL_CASES, ids=lambda c: c.__name__)
+@pytest.mark.parametrize("case", SNAPSHOT_CASES, ids=lambda c: c.__name__)
 @pytest.mark.asyncio
 async def test_conformance_snapshot(
     case,
     published: tuple[PostgresOntologyPublisher, SnapshotOntologyStore, str],
 ) -> None:
-    """Run all conformance cases against SnapshotOntologyStore."""
+    """Run every version-agnostic conformance case against SnapshotOntologyStore."""
     _publisher, store, ontology_id = published
     await case(store, ontology_id)
+
+
+@pytest.mark.asyncio
+async def test_snapshot_v1_multiple_inheritance(
+    published: tuple[PostgresOntologyPublisher, SnapshotOntologyStore, str],
+    pg_pool: asyncpg.Pool,
+    pg_schema_name: str,
+    tmp_path: Path,
+) -> None:
+    """A v1 snapshot expands PublicAuthority up through both of its v1 parents."""
+    _publisher, _store, ontology_id = published
+    pg_store = PostgresOntologyStore(pg_pool, schema=pg_schema_name)
+    try:
+        content = await pg_store.load_version(ontology_id, version=1)
+    finally:
+        await pg_store.close()
+    v1_dir = tmp_path / "snapshots_v1"
+    await build_snapshot(content, v1_dir)
+    store = SnapshotOntologyStore(v1_dir)
+    assert await store.version(ontology_id) == 1
+    ancestors = await store.expand(ontology_id, [PUBLIC_AUTHORITY_IRI], family="subclass", direction="up")
+    assert {PUBLIC_AUTHORITY_IRI, ORGANIZATION_IRI, PUBLIC_BODY_IRI, LEGAL_ENTITY_IRI} <= set(ancestors)

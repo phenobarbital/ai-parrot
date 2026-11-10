@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 
 from parrot.knowledge.pageindex.embedding_store import NodeEmbeddingStore
@@ -34,6 +36,34 @@ def test_build_and_load_per_generation(tmp_path):
     assert store.load_tree_matrix("t", generation_id=2) is not None
     assert store.load_tree_matrix("t") is None
     assert list(store._matrix_path("t", 2).parent.glob("*.npy")) == [store._matrix_path("t", 2)]
+
+
+def test_content_key_and_embedded_text_include_key_item_labels(tmp_path):
+    store = NodeEmbeddingStore(storage_dir=tmp_path, model_id="m", dimension=4)
+    legacy_digest = hashlib.sha1(b"m\x00a\x00b").hexdigest()
+    captured: list[str] = []
+
+    def capture_embed(texts: list[str]) -> np.ndarray:
+        captured.extend(texts)
+        return _embed(texts)
+
+    assert store.content_key("m", "a", "b") == legacy_digest
+    assert store.content_key("m", "a", "b", extra="") == legacy_digest
+    assert store.content_key("m", "a", "b", extra="semantic routing") != legacy_digest
+
+    nodes = [
+        {
+            "node_id": "0001",
+            "title": "a",
+            "summary": "b",
+            "key_items": [{"label": "semantic routing"}, {"kind": "literal"}],
+        }
+    ]
+    store.build_tree_matrix("t", nodes, capture_embed)
+
+    assert captured == ["a b semantic routing"]
+    label_key = store.content_key("m", "a", "b", extra="semantic routing")
+    assert store._global_path("t", label_key).exists()
 
 
 def test_invalidate_and_prune(tmp_path):

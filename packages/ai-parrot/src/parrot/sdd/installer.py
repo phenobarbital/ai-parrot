@@ -499,6 +499,8 @@ AGY_HOOK_LINE = "parrot sdd hooks agy-permissions --hook"
 _AGY_SUFFIX = " sdd hooks agy-permissions --hook"
 AGY_HOOKS_PATH = Path(".agents/hooks.json")
 AGY_HOOK_NAME = "parrot-sdd-permissions"
+_AGY_MATCHER = "run_command|write_file|edit_file"
+_AGY_LEGACY_MATCHER = "run_command"
 #: ai-parrot's own tracked hook runs this repository launcher (fails to force_ask); install keeps that form
 _AGY_LAUNCHER = "scripts/sdd/agy_hook.sh"
 #: agy settings files relative to the home directory: the official install, then the snap build.
@@ -583,8 +585,9 @@ def _write_json_object(path: Path, data: dict[str, Any]) -> None:
 
 
 def _agy_hook_entry(command: str) -> dict[str, Any]:
+    """Managed PreToolUse entry for the agy permission hook (matcher _AGY_MATCHER)."""
     return {
-        "PreToolUse": [{"matcher": "run_command", "hooks": [{"type": "command", "command": command, "timeout": 10}]}]
+        "PreToolUse": [{"matcher": _AGY_MATCHER, "hooks": [{"type": "command", "command": command, "timeout": 10}]}]
     }
 
 
@@ -622,6 +625,18 @@ def _hooks_file_inside(root: Path, path: Path) -> bool:
     return not path.is_symlink() and _under(Path(os.path.realpath(path)), Path(os.path.realpath(root)))
 
 
+def _widen_legacy_matcher(path: Path, data: dict[str, Any]) -> None:
+    """Widen our named hook's first legacy ``run_command`` group to ``_AGY_MATCHER`` in place and write the file.
+
+    Only the matcher changes; the group's command and timeout are kept.
+    """
+    for group in data[AGY_HOOK_NAME]["PreToolUse"]:
+        if isinstance(group, dict) and group.get("matcher") == _AGY_LEGACY_MATCHER:
+            group["matcher"] = _AGY_MATCHER
+            break
+    _write_json_object(path, data)
+
+
 def _install_agy_hook(root: Path, receipt: dict[str, Any], *, portable: bool | None) -> tuple[bool, list[str]]:
     """Write the named agy hook into ``.agents/hooks.json``, keeping every other named hook.
 
@@ -637,14 +652,29 @@ def _install_agy_hook(root: Path, receipt: dict[str, Any], *, portable: bool | N
     command, form = agy_hook_command(portable=portable)
     entry = _agy_hook_entry(command)
     previous = data.get(AGY_HOOK_NAME)
+    owned = "agy-permissions" in receipt.get("settings_hooks", [])
     recorded = receipt.setdefault("settings_hooks", [])
     if "agy-permissions" not in recorded:
         recorded.append("agy-permissions")
     if previous == entry:
         return True, [f"{AGY_HOOKS_PATH} — agy permission hook already registered"]
     active = _agy_active_hook(data)
+    matcher = _agy_hook_matcher(data)
+    widened = f"{AGY_HOOKS_PATH} — agy permission hook matcher widened to {_AGY_MATCHER}"
     if active is not None and _AGY_LAUNCHER in active:
+        if matcher == _AGY_LEGACY_MATCHER and owned:
+            _widen_legacy_matcher(path, data)
+            return True, [f"{widened} (repository launcher kept)"]
         return True, [f"{AGY_HOOKS_PATH} — agy permission hook already registered (repository launcher kept)"]
+    if matcher == _AGY_LEGACY_MATCHER:
+        if owned:
+            _widen_legacy_matcher(path, data)
+            return True, [widened]
+        return True, [
+            f"note: {AGY_HOOKS_PATH} — stale matcher 'run_command' (not owned by this install); widen it by hand"
+        ]
+    if matcher is not None and matcher != _AGY_MATCHER:
+        return True, [f"warning: {AGY_HOOKS_PATH} — user-edited matcher '{matcher}'; keeping it"]
     data[AGY_HOOK_NAME] = entry
     _write_json_object(path, data)
     verb = "updated" if previous is not None else "registered"
@@ -771,11 +801,11 @@ def _remove_agy_permissions(root: Path, receipt: dict[str, Any]) -> list[str]:
 
 
 def _agy_active_hook(data: dict[str, Any]) -> str | None:
-    """The command of our named hook when it is wired as an active ``run_command`` PreToolUse command hook."""
+    """The command of our named hook when it is wired as an active PreToolUse command hook."""
     entry = data.get(AGY_HOOK_NAME)
     groups = entry.get("PreToolUse") if isinstance(entry, dict) and entry.get("enabled", True) is not False else None
     for group in groups if isinstance(groups, list) else []:
-        if not isinstance(group, dict) or group.get("matcher") != "run_command":
+        if not isinstance(group, dict) or group.get("matcher") not in (_AGY_LEGACY_MATCHER, _AGY_MATCHER):
             continue
         for hook in group.get("hooks", []) if isinstance(group.get("hooks"), list) else []:
             if not isinstance(hook, dict) or hook.get("type", "command") != "command":
@@ -788,11 +818,31 @@ def _agy_active_hook(data: dict[str, Any]) -> str | None:
     return None
 
 
+def _agy_hook_matcher(data: dict[str, Any]) -> str | None:
+    """The matcher of the group holding our command (any matcher value), else None."""
+    entry = data.get(AGY_HOOK_NAME)
+    groups = entry.get("PreToolUse") if isinstance(entry, dict) and entry.get("enabled", True) is not False else None
+    for group in groups if isinstance(groups, list) else []:
+        if not isinstance(group, dict):
+            continue
+        for hook in group.get("hooks", []) if isinstance(group.get("hooks"), list) else []:
+            if not isinstance(hook, dict) or hook.get("type", "command") != "command":
+                continue
+            command = hook.get("command")
+            if isinstance(command, str) and (
+                command.rstrip().endswith(_AGY_SUFFIX.strip()) or _AGY_LAUNCHER in command
+            ):
+                return group.get("matcher")
+    return None
+
+
 def _agy_permissions_report(root: Path) -> dict[str, Any]:
     """Status: the active hook's form/command and, per agy settings file, how many managed rules are missing."""
     from parrot.sdd.scripts.agy_permissions import SDD_ALLOW_RULES
 
-    command = _agy_active_hook(_read_json_object(root / AGY_HOOKS_PATH) or {})
+    hooks_data = _read_json_object(root / AGY_HOOKS_PATH) or {}
+    command = _agy_active_hook(hooks_data)
+    matcher = _agy_hook_matcher(hooks_data) if command is not None else None
     settings: list[dict[str, Any]] = []
     for path in agy_settings_paths():
         allow = _agy_allow_list(_read_json_object(path) or {}) or []
@@ -803,6 +853,8 @@ def _agy_permissions_report(root: Path) -> dict[str, Any]:
     return {
         "form": form,
         "command": command,
+        "matcher": matcher,
+        "stale": matcher is not None and matcher != _AGY_MATCHER,
         "settings": settings,
         "missing_rules": max((s["missing_rules"] for s in settings), default=len(SDD_ALLOW_RULES)),
     }

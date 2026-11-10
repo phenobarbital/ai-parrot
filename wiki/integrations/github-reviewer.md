@@ -1,4 +1,81 @@
-# GitHub Reviewer Agent
+---
+title: GitHub reviewer
+summary: GitHub reviewer configuration, APIs and operational behavior.
+---
+
+# GitHub reviewer
+
+## Purpose
+
+`GitHubReviewer` provides the existing strict Jira-and-CI gate and the queued
+full pull-request review. `/review_pr` keeps the strict gate's existing
+semantics, but is now asynchronous; `/pr_review` produces a structured report
+against a Jira ticket in the background and sends the result back to the
+requesting chat.
+
+## Public API
+
+- `GitHubReviewer` provides
+  `review_pr`, `pr_review`, and `full_review_pull_request`.
+- `JobManager` supplies the lifecycle behind the
+  queued commands; see [Queued chat commands](queued-commands.md) for platform
+  controls and delivery behavior.
+
+## Configuration & Parameters
+
+The two queued-review settings are `GITHUB_REVIEW_FULL_MAX_TOOL_CALLS`
+(default `15`) and `GITHUB_REVIEW_COMMAND_MAX_RUNTIME` (default `1800`
+seconds). Existing GitHub and Jira credentials remain required. The strict
+review's `GITHUB_REVIEW_MIN_CHECK_PASS_RATIO` and
+`GITHUB_REVIEW_REQUIRE_CHECKS` continue to apply only to its CI gate.
+
+`/pr_review` accepts:
+
+```text
+/pr_review <PR> [JIRA-KEY] [--auto-draft] [--dry-run]
+```
+
+`<PR>` may be a PR URL, `owner/repo#123`, or a bare number for the configured
+repository. Smart-quote dash variants before the two flags are normalized.
+`--dry-run` takes precedence over `--auto-draft`: it sends the full report to
+chat and performs no GitHub write.
+
+## Usage Examples
+
+```text
+/review_pr https://github.com/acme/api/pull/412
+/pr_review acme/api#412 NAV-8036 --auto-draft
+/pr-review 412 --dry-run
+```
+
+The full-review report has the headings **Acceptance Criteria Compliance**,
+**Description Alignment**, **Code Observations**, **AI Bot Review Findings**,
+and **Verdict & Recommendation**. Except for dry runs, it is posted as a PR
+comment. `--auto-draft` converts only an open PR whose verdict is
+`does_not_meet`; an already-draft PR is reported as such. Full reviews never
+submit an `APPROVE` or `REQUEST_CHANGES` review.
+
+## Gotchas
+
+The full-review command is a queued command: it first returns a job id, then
+delivers the completed result asynchronously. An LLM failure ends that job as
+failed and writes nothing to GitHub. An explicit Jira key that cannot be read
+also writes nothing. With no resolvable ticket, the review runs but its verdict
+is capped at `needs_attention` and auto-draft does not run.
+
+The strict `/review_pr` path is intentionally different: its failure and
+notification behavior stays unchanged, including its configured CI handling.
+For both commands, concurrency and deduplication are local to the accepting
+wrapper; use `/jobs`, `/job_status`, and `/job_cancel` as described in the
+queued-command documentation.
+
+## Related
+
+- [Queued chat commands](queued-commands.md) — declaration, platform setup,
+  job controls, and operational limits.
+- [JobManager](../flows/jobmanager.md) — local execution and Redis persistence.
+
+## Existing strict-review reference
 
 An autonomous AI-Parrot agent that reviews GitHub pull requests against the
 acceptance criteria of the linked Jira ticket, requests changes when the PR
@@ -383,9 +460,11 @@ Return values:
 | `"ticket_not_found"`  | Jira returned a non-`ok` envelope.                       |
 | `"error"`             | Internal precondition failed (e.g. missing PR number).   |
 
-### `review_pr(target: str) -> str` — Telegram command `/review_pr`
+### `review_pr(target: str) -> str` — queued strict command `/review_pr`
 
-On-demand strict gate, exposed as a Telegram command (not a schedule):
+On-demand strict gate, exposed as a queued command on Telegram, Teams, and
+Slack (not a schedule). It first acknowledges the request with a job id and
+delivers this unchanged strict-review verdict when the background job finishes:
 
 ```
 /review_pr https://github.com/owner/repo/pull/123
@@ -395,7 +474,7 @@ On-demand strict gate, exposed as a Telegram command (not a schedule):
 
 Declared with `parse_mode="raw"`, so a pasted URL arrives intact — keyword
 parsing would mangle it. The reply goes to whoever asked; the consequences
-below land on GitHub and Telegram.
+below land on GitHub and the configured strict-review notification channels.
 
 It runs the same review pipeline as `review_pull_request` (ticket →
 acceptance criteria → diff → wiki-assisted LLM comparison) and then adds a

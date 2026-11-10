@@ -308,8 +308,61 @@ jobs:
       - name: Scaffold NavConfig environment
         run: mkdir -p env/dev && touch env/dev/.env
 
+      # FEAT-852: `--continue-on-collection-errors` stays. It does not mask a red
+      # job (collection errors already fail it); it only lets one run report
+      # every failure instead of aborting at the first. The real gap was that a
+      # never-collected file looked routine: four tests/knowledge/pageindex/ files
+      # were skipped on every run (issue:91822a3b8548). tests/test_stub_isolation.py
+      # closes that gap by failing loudly with file:line.
       - name: Run core tests
         run: uv run pytest tests/ -q --tb=short --ignore=tests/tools --continue-on-collection-errors
+
+  test-ontology-pg:
+    name: "Test ontology vocabulary (PostgreSQL)"
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: ontology_test
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "latest"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Sync workspace with ontology extra
+        run: uv sync --all-packages --extra ontology-store
+
+      - name: Scaffold NavConfig environment
+        run: mkdir -p env/dev && touch env/dev/.env
+
+      - name: Enable pg_trgm extension
+        run: PGPASSWORD=test psql -h localhost -U test -d ontology_test -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'
+
+      - name: Run ontology vocabulary PG tests
+        env:
+          ONTOLOGY_PG_DSN: "postgresql://test:test@localhost:5432/ontology_test"
+        run: uv run pytest packages/ai-parrot/tests/knowledge/ontology/vocabulary/ -q --tb=short -k "pg or postgres or publisher or conformance or temporal or schema"
 
   test-wiki-extras:
     name: "Test wikitoolkit with wiki-languages + wiki-structural extras"

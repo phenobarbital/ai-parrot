@@ -1,0 +1,89 @@
+{
+  "summary": "Independent read-only Codex reviewer examined accepted brainstorm plus three owner amendments. Seven contract refinements identified. Normalized to the workflow schema by the author; raw reviewer output is retained separately.",
+  "suggestions": [
+    {
+      "id": "S1",
+      "kind": "architecture",
+      "title": "Await scope initialization explicitly",
+      "rationale": "library.py:234 is synchronous; async sweep at :293 calls _toolkit at :300. Use an awaited once-per-scope helper, retry after cancellation.",
+      "affected_paths": [
+        "packages/ai-parrot/src/parrot/knowledge/bookstore/library.py"
+      ],
+      "risk": "medium",
+      "confidence": "high"
+    },
+    {
+      "id": "S2",
+      "kind": "risk",
+      "title": "Coordinate recovery and imports with operation locks",
+      "rationale": "library.py:303-312 acts on a stale scan; age can exceed one hour for active imports. Identity at :1110-1124 needs source locking and revalidation.",
+      "affected_paths": [
+        "packages/ai-parrot/src/parrot/knowledge/bookstore/library.py"
+      ],
+      "risk": "high",
+      "confidence": "high"
+    },
+    {
+      "id": "S3",
+      "kind": "api",
+      "title": "Check expected revision against returned read",
+      "rationale": "library.py:446-460 separates document lookup from read; toolkit.py:1082-1114 selects its own snapshot. A preliminary check alone races.",
+      "affected_paths": [
+        "packages/ai-parrot/src/parrot/knowledge/bookstore/library.py",
+        "packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py",
+        "packages/ai-parrot/src/parrot/knowledge/pageindex/segments.py"
+      ],
+      "risk": "high",
+      "confidence": "high"
+    },
+    {
+      "id": "S4",
+      "kind": "risk",
+      "title": "Decorate only against matching generation",
+      "rationale": "toolkit.py:1349-1366 returns a bundle without its tree. agentic.py:43-51 has no stale stop reason. Fall back to stored section or omit chapter when generations differ.",
+      "affected_paths": [
+        "packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py",
+        "packages/ai-parrot/src/parrot/knowledge/pageindex/agentic.py"
+      ],
+      "risk": "high",
+      "confidence": "high"
+    },
+    {
+      "id": "S5",
+      "kind": "api",
+      "title": "Handle empty filters and request-local notes",
+      "rationale": "library.py:525-534 treats empty IDs as unfiltered; multistoresearch/toolkit.py:304-331 sets successful note=None. Avoid mutable last_note.",
+      "affected_paths": [
+        "packages/ai-parrot/src/parrot/knowledge/bookstore/library.py",
+        "packages/ai-parrot-tools/src/parrot_tools/multistoresearch/toolkit.py"
+      ],
+      "risk": "medium",
+      "confidence": "high"
+    },
+    {
+      "id": "S6",
+      "kind": "risk",
+      "title": "Clip and validate against the stored revision",
+      "rationale": "toolkit.py:886 clamps reads to at least 500; :910-933 returns offsets. citations.py:102 checks only substring membership; do not validate excerpt against itself.",
+      "affected_paths": [
+        "packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py",
+        "packages/ai-parrot/src/parrot/knowledge/pageindex/citations.py"
+      ],
+      "risk": "high",
+      "confidence": "high"
+    },
+    {
+      "id": "S7",
+      "kind": "testing",
+      "title": "Pin gold fixtures and specify deterministic tuning",
+      "rationale": "Brainstorm:376-389 fixes runs but omits tuning policy and stale gold behavior. agentic.py:43-51 has no error stop reason; optimizer_eval.py:211-239 supplies metrics-only precedent.",
+      "affected_paths": [
+        "sdd/proposals/bookstore-agentic-retrieval.brainstorm.md",
+        "packages/ai-parrot/src/parrot/knowledge/pageindex/agentic.py",
+        "packages/ai-parrot/src/parrot/knowledge/pageindex/optimizer_eval.py"
+      ],
+      "risk": "medium",
+      "confidence": "high"
+    }
+  ]
+}

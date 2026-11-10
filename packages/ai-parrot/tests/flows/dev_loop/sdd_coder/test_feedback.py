@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 from unittest.mock import AsyncMock
 
@@ -10,6 +11,7 @@ from pydantic import ValidationError
 
 from parrot.flows.dev_loop.sdd_coder.engine import CoderFailure, SddCoderEngine
 from parrot.flows.dev_loop.sdd_coder.models import RosterConfig, RosterSeat
+from parrot.flows.dev_loop.sdd_coder.optimization_models import ReviewArtifact
 from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedback, CoderFeedbackStore
 from parrot.knowledge.wiki.ledger.events import LedgerEvent
 from parrot.knowledge.wiki.ledger.coder_reviews import CoderReview, CoderReviewMeasurement, CoderReviewStore
@@ -268,6 +270,200 @@ async def test_review_commit_validation_and_zero_fix_baseline(git_sandbox_featur
     report = await engine.feedback_report("demo", str(worktree))
     assert report.rows[0].reviewed_tasks == 1
     assert report.rows[0].correction_commits == 1
+
+
+async def test_record_review_publishes_review_artifact(git_sandbox_feature: tuple, noop_probe: object) -> None:
+    """A review with execution identity publishes a resolvable content-addressed artifact."""
+    from .test_engine_dispatch import _git
+
+    worktree, _branch, base_path, _index = git_sandbox_feature
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")], feedback={"enabled": False}),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    execution_id = "550e0000-0000-4000-8000-000000000072"
+    await engine.begin_execution("demo", str(worktree), execution_id)
+    prep = await engine.prepare_native("demo", str(worktree), "TASK-0001", execution_id)
+    review = CoderReview(
+        task_id=prep.task_id,
+        attempt_uid=prep.attempt_uid,
+        backend="native",
+        model=prep.model,
+        fix_commits=[],
+        review_evidence="Semantic review completed; task validation passed.",
+    )
+
+    receipt = await engine.record_review("demo", str(worktree), review, execution_id)
+
+    assert receipt.review_ref is not None
+    assert engine._evidence_store is not None
+    artifact_path = engine._evidence_store.root / receipt.review_ref.relative_path
+    encoded = artifact_path.read_bytes()
+    assert receipt.review_ref.sha256 == hashlib.sha256(encoded).hexdigest()
+    assert receipt.review_ref.size_bytes == len(encoded)
+    artifact = ReviewArtifact.model_validate_json(encoded)
+    _rc, head_sha, _error = await _git("rev-parse", "HEAD", cwd=str(worktree))
+    assert artifact.kind == "task_review"
+    assert artifact.source == "coder_review"
+    assert artifact.task_id == prep.task_id
+    assert artifact.execution_id == execution_id
+    assert artifact.head_sha == head_sha.strip()
+    assert artifact.feature_slug == "demo"
+
+
+@pytest.mark.parametrize(
+    ("index_path", "slug"),
+    [
+        ("/wt/sdd/tasks/index/FEAT-156.json", "FEAT-156"),
+        ("/wt/sdd/tasks/index/lyria-toolkit.json", "lyria-toolkit"),
+        ("/wt/sdd/briefs/agy-permission-hook.index.json", "agy-permission-hook"),
+    ],
+)
+def test_index_slug_inverts_resolve_index_path(index_path: str, slug: str) -> None:
+    """Per-spec indexes yield their file stem, brief indexes their name minus `.index.json`."""
+    from parrot.flows.dev_loop.sdd_coder.engine import _index_slug
+
+    assert _index_slug(index_path) == slug
+
+
+async def test_record_review_writes_index_file_slug(git_sandbox_feature: tuple, noop_probe: object) -> None:
+    """The stored feature_slug is the index file's slug, not its header `feature` (issue:b9ff30bf709e).
+
+    Legacy indexes such as FEAT-213-telegram-voice-reply-tts.json carry a header `feature` without the FEAT
+    prefix; finalize_task opens sdd/tasks/index/<feature_slug>.json, so only the file slug can finalize.
+    """
+    from .conftest import _run_git
+
+    worktree, _branch, base_path, _index = git_sandbox_feature
+    await _run_git("mv", "sdd/tasks/index/demo.json", "sdd/tasks/index/FEAT-549-demo.json", cwd=worktree)
+    await _run_git("commit", "-m", "rename index to a legacy file name", cwd=worktree)
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")], feedback={"enabled": False}),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    execution_id = "550e0000-0000-4000-8000-000000000075"
+    await engine.begin_execution("demo", str(worktree), execution_id)
+    prep = await engine.prepare_native("demo", str(worktree), "TASK-0001", execution_id)
+    review = CoderReview(
+        task_id=prep.task_id,
+        attempt_uid=prep.attempt_uid,
+        backend="native",
+        model=prep.model,
+        fix_commits=[],
+        review_evidence="Semantic review completed; task validation passed.",
+    )
+
+    receipt = await engine.record_review("demo", str(worktree), review, execution_id)
+
+    assert receipt.review_ref is not None
+    assert engine._evidence_store is not None
+    encoded = (engine._evidence_store.root / receipt.review_ref.relative_path).read_bytes()
+    assert ReviewArtifact.model_validate_json(encoded).feature_slug == "FEAT-549-demo"
+
+
+async def test_record_review_without_store_fails_before_ledger_write(
+    git_sandbox_feature: tuple, noop_probe: object
+) -> None:
+    """Execution-scoped review recording fails closed before appending its ledger row."""
+    worktree, _branch, base_path, _index = git_sandbox_feature
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")], feedback={"enabled": False}),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    execution_id = "550e0000-0000-4000-8000-000000000073"
+    await engine.begin_execution("demo", str(worktree), execution_id)
+    prep = await engine.prepare_native("demo", str(worktree), "TASK-0001", execution_id)
+    review = CoderReview(
+        task_id=prep.task_id,
+        attempt_uid=prep.attempt_uid,
+        backend="native",
+        model=prep.model,
+        fix_commits=[],
+        review_evidence="Semantic review completed.",
+    )
+    ledger = CoderFeedbackStore.from_root(Path(worktree)).log
+    before = list(ledger.iter_events())
+    engine._evidence_store = None
+
+    with pytest.raises(CoderFailure) as exc_info:
+        await engine.record_review("demo", str(worktree), review, execution_id)
+
+    assert exc_info.value.code == "evidence_persistence_failed"
+    assert list(ledger.iter_events()) == before
+
+
+async def test_record_review_without_execution_id_is_ledger_only(
+    git_sandbox_feature: tuple, noop_probe: object
+) -> None:
+    """Historical callers retain ledger-only behavior without an execution identity."""
+    worktree, _branch, base_path, _index = git_sandbox_feature
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")], feedback={"enabled": False}),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    prep = await engine.prepare_native("demo", str(worktree), "TASK-0001")
+    review = CoderReview(
+        task_id=prep.task_id,
+        attempt_uid=prep.attempt_uid,
+        backend="native",
+        model=prep.model,
+        fix_commits=[],
+        review_evidence="Semantic review completed.",
+    )
+
+    receipt = await engine.record_review("demo", str(worktree), review)
+
+    assert receipt.feedback_id.startswith("coder-review:")
+    assert receipt.review_ref is None
+
+
+async def test_record_review_invalid_artifact_raises_coder_failure(
+    git_sandbox_feature: tuple, noop_probe: object
+) -> None:
+    """A review that cannot form a ReviewArtifact is a CoderFailure, before any ledger write (issue:f64fd3bb663f)."""
+    worktree, _branch, base_path, _index = git_sandbox_feature
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")], feedback={"enabled": False}),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    execution_id = "550e0000-0000-4000-8000-000000000074"
+    await engine.begin_execution("demo", str(worktree), execution_id)
+    prep = await engine.prepare_native("demo", str(worktree), "TASK-0001", execution_id)
+    review = CoderReview(
+        task_id=prep.task_id,
+        attempt_uid=prep.attempt_uid,
+        backend="native",
+        model=prep.model,
+        fix_commits=[],
+        review_evidence="Semantic review completed.",
+    )
+    ledger = CoderFeedbackStore.from_root(Path(worktree)).log
+    before = list(ledger.iter_events())
+
+    with pytest.raises(CoderFailure) as exc_info:
+        await engine.record_review("demo", str(worktree), review, "not-a-uuid")
+
+    assert exc_info.value.code == "invalid_arguments"
+    assert list(ledger.iter_events()) == before
+
+
+def test_coder_review_accepts_brief_task_ids() -> None:
+    """Review measurements accept both formal and brief-local task identifiers."""
+    common = {
+        "attempt_uid": "attempt-1",
+        "backend": "native",
+        "model": "codex",
+        "fix_commits": [],
+        "review_evidence": "Semantic review completed.",
+    }
+
+    assert CoderReview(task_id="HOTFIX-review-evidence-producer-1", **common).task_id.startswith("HOTFIX-")
+    assert CoderReview(task_id="TASK-12345", **common).task_id == "TASK-12345"
 
 
 async def test_feedback_tool_validates_source_through_mcp_adapter(
@@ -591,6 +787,8 @@ async def test_record_tools_store_a_valid_payload_through_mcp_adapter(
     result = await MCPToolAdapter(tools["coder_record_review"]).execute({**scope, "review": review})
     payload = json.loads(result["content"][0]["text"])
     assert payload["status"] == "ok", payload
+    assert payload["data"]["feedback_id"].startswith("coder-review:")
+    assert payload["data"]["review_ref"]["artifact_id"]
 
     lesson = feedback(
         task_id=prep.task_id, attempt_uid=prep.attempt_uid, backend="native", model=prep.model

@@ -42,6 +42,8 @@ ASSET_SOURCES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (".agent/workflows/sdd-*.md", ("google",)),
     (".agent/workflows/remove-worktree.md", ("google",)),
     (".agents/agents/sdd-*/agent.md", ("google",)),
+    (".agents/agents/code-reviewer/agent.md", ("google",)),  # FEAT-847 — dispatched by sdd-autopilot on agy
+    (".agents/agents/qa-runner/agent.md", ("google",)),  # FEAT-847
     ("sdd/templates/*", HOST_ORDER),
     ("sdd/WORKFLOW.md", HOST_ORDER),
     ("sdd/CONVENTIONS.md", HOST_ORDER),  # C10 — seed, see SEED_TARGETS
@@ -53,6 +55,7 @@ PACKAGED_ONLY: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (".claude/agents/code-reviewer.md", "claude/agents/code-reviewer.md", ("claude",)),
     (".claude/agents/qa-runner.md", "claude/agents/qa-runner.md", ("claude",)),
     ("docs/sdd/CODEX.md", "sdd/CODEX.md", ("codex", "google")),
+    ("docs/sdd/AGY.md", "sdd/AGY.md", ("codex", "google")),  # FEAT-847 — linked by the shared .agents/skills
 )
 PACKAGED_SOURCES: frozenset[str] = frozenset(source for _target, source, _hosts in PACKAGED_ONLY)
 #: rev 0.5 C22 — `/sdd-insight` does not ship on any host (it depends on unshipped `reference/sdd-insight/`
