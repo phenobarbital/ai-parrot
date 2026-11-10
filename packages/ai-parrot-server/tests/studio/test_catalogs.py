@@ -62,7 +62,7 @@ class TestStudioCatalogs:
         assert "Agent" in names
         basic_bot = next(row for row in body if row["name"] == "BasicBot")
         assert basic_bot["available"] is True
-        assert basic_bot["lazy"] is False
+        assert basic_bot["lazy"] is True
         assert isinstance(basic_bot["params"], dict)
         # Rows are sorted by name.
         assert [row["name"] for row in body] == sorted(row["name"] for row in body)

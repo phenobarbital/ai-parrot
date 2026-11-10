@@ -1,0 +1,27 @@
+{
+  "feature": "install-install-parrot-fixes",
+  "feature_id": "FEAT-873",
+  "spec": "sdd/specs/install-install-parrot-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-11-10T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-5464",
+      "slug": "install-parrot-fixes",
+      "title": "install-parrot fix group",
+      "feature_id": "FEAT-873",
+      "feature": "install-install-parrot-fixes",
+      "spec": "sdd/specs/install-install-parrot-fixes.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-5464-install-parrot-fixes.md",
+      "discovered_from": "issue:6e31d9355edc"
+    }
+  ]
+}

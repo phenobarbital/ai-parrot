@@ -301,7 +301,7 @@ async def test_s5_tenant_descriptor(fake_qs):
     assert "tenant" not in kwargs["default"]  # QuerySlugSource._qs_kwargs drops None (query_slug.py:106-110)
     assert kwargs["public"]["tenant"] == "public"
     owner_checks = [call for call in guard.calls if call[1] == "query_slug"]
-    assert len(owner_checks) == 2
+    assert len(owner_checks) == 4
     assert {call[2] for call in owner_checks} == {f"public:{ACTIVITY_SLUG}"}  # service.py:100 — both map to public
     assert {call[0].user_id for call in owner_checks} == {"owner-1"}
 

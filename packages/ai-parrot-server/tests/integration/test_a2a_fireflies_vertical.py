@@ -278,7 +278,7 @@ class TestFirefliesVertical:
 
         # Broker internal dict has the resolver.
         assert "fireflies" in broker._resolvers
-        assert broker._resolvers["fireflies"] is resolver
+        assert broker._resolvers["fireflies"] == (resolver, "oauth2")
 
         # A2AServer built with the broker uses it for gating.
         agent = MagicMock()

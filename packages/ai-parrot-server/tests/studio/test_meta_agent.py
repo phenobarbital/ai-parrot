@@ -61,7 +61,7 @@ def _patch_fake_anthropic(monkeypatch):
         instance.model = model
         return instance
 
-    monkeypatch.setattr(agent_module, "AnthropicClient", _fake_constructor)
+    monkeypatch.setattr("parrot.clients.anthropic.AnthropicClient", _fake_constructor)
     monkeypatch.setattr(tools_module, "build_studio_tools", list)
     return captured
 
