@@ -7,15 +7,15 @@ summary: How the SDD workflow, its hook guard and its sub-agents run under the a
 
 ## Purpose
 
-The SDD workflow runs fully on Google Antigravity CLI (`agy`) with both interactive and unattended modes. It uses the `parrot-sdd-permissions` hook for command validation, worktree environment protection, and file containment. The workflow supports all SDD operations including task decomposition, implementation, code review, and PR management through specialized sub-agents. See [Antigravity Adaptation Contract](../../../docs/sdd/AGY.md) for detailed runtime adaptations.
+The SDD workflow runs fully on Google Antigravity CLI (`agy`) with both interactive and unattended modes. It uses the `parrot-sdd-permissions` hook for command validation, worktree environment protection, and file containment. The workflow supports all SDD operations including task decomposition, implementation, code review, and PR management through specialized sub-agents. See the Antigravity Adaptation Contract (`docs/sdd/AGY.md`) for detailed runtime adaptations.
 
 ## Public API
 
-- [`agy_verdict`](ref:parrot.sdd.scripts.worktree_environment.agy_verdict) — worktree-environment guard and file containment for one AGY event
-- [`evaluate`](ref:parrot.sdd.scripts.agy_permissions.evaluate) — the `parrot-sdd-permissions` hook decision (deny > force_ask > ask, unattended mapping)
-- [`launch_agy_worker`](ref:parrot.flows.dev_loop.feature_launcher.launch_agy_worker) — the unattended worker launch
-- [`launch_session`](ref:parrot.flows.dev_loop.feature_launcher.launch_session) — interactive brief/fix sessions
-- [`GoogleCodingDispatchProfile`](ref:parrot.flows.dev_loop.models.google_coding.GoogleCodingDispatchProfile) — dispatcher seat profile
+- `agy_verdict` — worktree-environment guard and file containment for one AGY event
+- `evaluate` — the `parrot-sdd-permissions` hook decision (deny > force_ask > ask, unattended mapping)
+- `launch_agy_worker` — the unattended worker launch
+- `launch_session` — interactive brief/fix sessions
+- `GoogleCodingDispatchProfile` — dispatcher seat profile
 
 ## Configuration & Parameters
 
@@ -66,5 +66,5 @@ Expected refusals include:
 ## Related
 
 - [Antigravity notes](ANTIGRAVITY.md) — earlier agy integration notes
-- [Antigravity Adaptation Contract](../../../docs/sdd/AGY.md) — runtime adaptations for Google Antigravity CLI
+- Antigravity Adaptation Contract (`docs/sdd/AGY.md`) — runtime adaptations for Google Antigravity CLI
 - [AGY Permission Hook](../../../.agents/hooks.json) — the managed permission hook configuration

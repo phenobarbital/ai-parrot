@@ -13,11 +13,11 @@ backend is Redis, while `postgres` mode makes PostgreSQL authoritative for ackno
 
 ## Public API
 
-- [`CrewPostgres`](ref:parrot.handlers.crew.postgres_persistence.CrewPostgres) — stores active definitions and
+- `CrewPostgres` — stores active definitions and
   deletion tombstones in PostgreSQL.
-- [`CrewDefinitionStorage`](ref:parrot.handlers.crew.definition_storage.CrewDefinitionStorage) — routes definition
+- `CrewDefinitionStorage` — routes definition
   operations to the configured authority and performs safe Redis migration.
-- [`crew_definition_from_dict`](ref:parrot.handlers.crew.definition_codec.crew_definition_from_dict) — validates a
+- `crew_definition_from_dict` — validates a
   stored document as a `CrewDefinition`, including legacy timestamp and unknown-key compatibility.
 
 ## Configuration & Parameters
