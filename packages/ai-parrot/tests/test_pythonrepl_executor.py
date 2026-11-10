@@ -21,7 +21,11 @@ from parrot.tools.repl_worker.protocol import WorkerConfig
 
 
 @pytest.fixture
-async def tool(tmp_path):
+async def tool(tmp_path, monkeypatch):
+    monkeypatch.setenv("STATIC_DIR", str(tmp_path))
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr("parrot.tools.abstract.STATIC_DIR", str(tmp_path))
+    monkeypatch.setattr("parrot.tools.abstract.OUTPUT_DIR", str(tmp_path))
     instance = PythonREPLTool(report_dir=tmp_path, sanitize_input_enabled=True)
     yield instance
     if instance._worker_pool is not None:
@@ -88,8 +92,10 @@ class TestDedicatedExecutor:
             data_mod.PandasAgent(name="t", python_repl_executor_max_workers=7)
         assert captured["executor_max_workers"] == 7
 
-    async def test_pool_size_configurable(self, tmp_path):
+    async def test_pool_size_configurable(self, tmp_path, monkeypatch):
         """executor_max_workers kwarg overrides the default bound."""
+        monkeypatch.setattr("parrot.tools.abstract.STATIC_DIR", str(tmp_path))
+        monkeypatch.setattr("parrot.tools.abstract.OUTPUT_DIR", str(tmp_path))
         custom_tool = PythonREPLTool(report_dir=tmp_path, executor_max_workers=2)
         assert custom_tool._repl_executor._max_workers == 2
 
