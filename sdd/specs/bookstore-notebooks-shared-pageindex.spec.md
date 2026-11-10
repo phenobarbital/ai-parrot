@@ -646,6 +646,11 @@ tests:
 - packages/ai-parrot/tests/knowledge/bookstore/test_reindex_hardening.py
 - packages/ai-parrot/tests/knowledge/bookstore/test_skill_text.py
 - packages/ai-parrot/tests/mcp/test_pageindex_template.py
+- packages/ai-parrot/tests/knowledge/bookstore/test_pageindex_facade.py
+- packages/ai-parrot/tests/knowledge/bookstore/test_notebooks.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_write_policy.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_toolkit.py
+- packages/ai-parrot/tests/knowledge/pageindex/test_toolkit_no_llm.py
 markers: none
 
 ### Test Data / Fixtures
