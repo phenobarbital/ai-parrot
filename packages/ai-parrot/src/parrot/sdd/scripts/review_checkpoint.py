@@ -35,6 +35,7 @@ from parrot.flows.dev_loop.sdd_coder.checkpoint import (
 from parrot.flows.dev_loop.sdd_coder.evidence import EvidenceCorruptionError, ExecutionEvidenceStore
 from parrot.flows.dev_loop.sdd_coder.optimization_models import ReviewArtifact, ReviewCheckpoint
 from parrot.flows.dev_loop.sdd_coder.telemetry import resolve_durable_root
+from parrot.flows.dev_loop.task_scheduler import resolve_index_path
 
 #: Mirrors `scripts.sdd.finalize_task._TELEMETRY_ROOT_ENV` -- the same
 #: env-var contract, so `prepare` and `validate_review_checkpoint`'s own
@@ -61,6 +62,27 @@ def _checkpoint_summary(checkpoint: ReviewCheckpoint) -> dict[str, object]:
         "neutral_brief": checkpoint.neutral_brief,
         "relative_path": f"executions/{checkpoint.execution_id}/review/{checkpoint.checkpoint_id}.json",
     }
+
+
+def _require_index(worktree: Path, feature: str) -> None:
+    """Reject a ``--feature`` that is not the slug of an index in ``worktree``.
+
+    ``finalize_task`` matches ``ReviewArtifact.feature_slug`` against the per-spec index file stem, so a review
+    recorded under a FEAT-ID, a substring or a path could never finalize (issue:b9ff30bf709e). The lookup is the
+    one ``prepare`` uses (``resolve_index_path``: per-spec index, then brief index).
+
+    Args:
+        worktree: The feature worktree root.
+        feature: The ``--feature`` value to check.
+
+    Raises:
+        ValueError: ``feature`` contains a path separator or names no existing index.
+    """
+    if Path(feature).name != feature or not resolve_index_path(worktree, feature).is_file():
+        raise ValueError(
+            f"--feature {feature!r} names no index in {worktree}: expected sdd/tasks/index/{feature}.json or "
+            f"sdd/briefs/{feature}.index.json (pass the index file's slug, not a FEAT-ID or a substring)"
+        )
 
 
 def _build_store(worktree: Path) -> ExecutionEvidenceStore:
@@ -109,6 +131,7 @@ async def _run_record(
     if rc:
         raise subprocess.CalledProcessError(rc, argv, output=stdout, stderr=stderr)
     head_sha = stdout.strip()
+    await asyncio.to_thread(_require_index, worktree, feature)
     artifact = ReviewArtifact(
         feature_slug=feature,
         task_id=task,

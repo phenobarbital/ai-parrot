@@ -307,6 +307,7 @@ def test_record_publishes_manual_review_artifact(
     assert artifact.source == "manual"
     assert artifact.head_sha == head_sha
     assert artifact.fix_commits == [head_sha]
+    assert artifact.feature_slug == FEATURE_SLUG
 
 
 def test_record_generates_execution_id_when_omitted(
@@ -480,3 +481,60 @@ def test_record_reads_head_without_blocking_subprocess_run(
         ExecutionEvidenceStore(durable_root).read_artifact(EXECUTION_ID, result["review_ref"]["artifact_id"])
     )
     assert ReviewArtifact.model_validate_json(page["content"]).head_sha == head_sha
+
+
+def _record_argv_for(worktree: Path, feature: str) -> list[str]:
+    """`_record_argv` with `--feature` set to `feature` instead of FEATURE_SLUG."""
+    argv = _record_argv(worktree)
+    argv[argv.index("--feature") + 1] = feature
+    return argv
+
+
+@pytest.mark.parametrize(
+    "feature",
+    [FEATURE_ID, "checkpoint", f"../index/{FEATURE_SLUG}"],
+    ids=["feature_id", "substring", "path_traversal"],
+)
+def test_record_rejects_feature_without_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], feature: str
+) -> None:
+    """A --feature that is not an index slug is invalid_input with nothing stored (issue:b9ff30bf709e).
+
+    finalize_task matches the stored feature_slug against the per-spec index file stem, so any other form would
+    only fail later, at finalize. The traversal case resolves to the real index and is refused for its separator.
+    """
+    worktree = _build_repo(tmp_path)
+    durable_root = tmp_path / "durable"
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
+
+    exit_code = main(_record_argv_for(worktree, feature))
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 2
+    assert result["ok"] is False
+    assert result["error"] == "invalid_input"
+    assert repr(feature) in result["message"]
+    assert not (durable_root / "executions" / EXECUTION_ID / "artifacts").exists()
+
+
+def test_record_accepts_brief_index_slug(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A brief index slug resolves like in `prepare` and is stored as the artifact's feature_slug."""
+    worktree = _build_repo(tmp_path)
+    durable_root = tmp_path / "durable"
+    monkeypatch.setenv("SDD_CODER_TELEMETRY_DIR", str(durable_root))
+    brief_dir = worktree / "sdd" / "briefs"
+    brief_dir.mkdir(parents=True)
+    (brief_dir / "brief-demo.index.json").write_text(
+        json.dumps({"feature": "brief-demo", "tasks": []}), encoding="utf-8"
+    )
+
+    exit_code = main(_record_argv_for(worktree, "brief-demo"))
+
+    result = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    page = asyncio.run(
+        ExecutionEvidenceStore(durable_root).read_artifact(EXECUTION_ID, result["review_ref"]["artifact_id"])
+    )
+    assert ReviewArtifact.model_validate_json(page["content"]).feature_slug == "brief-demo"
