@@ -17,7 +17,7 @@ docs:
 **Feature ID**: FEAT-876
 **Date**: 2026-11-10
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 > Source: `sdd/proposals/bookstore-notebooks-shared-pageindex.brainstorm.md` (accepted, Option A).
@@ -1093,7 +1093,7 @@ Coverage:
 - [x] Who catalogues a notebook created over the PageIndex MCP? — *Resolved in brainstorm*: naming convention on disk + lazy registration by Bookstore on its next read; the MCP toolkit only reads the catalog, never writes it.
 - [x] Scopes — *Resolved in brainstorm*: one server serves both the project and the global library (a Bookstore-owned facade routing to the per-scope toolkits, not a multi-directory `PageIndexToolkit`; one `_library_notes` per scope, `find_books` merges project-first, anchors carry `scope`).
 - [ ] Should `read_section` become `async` (cleanest for `annotations_for`) or keep its sync signature with a sync notebook read? Implementation call; the MCP tool contract is unchanged either way. — *Owner: implementer (M4 task)*
-- [ ] Q2 (design-research S5, escalated): the plain `pageindex` template pointed at `library/trees` bypasses the facade's policy. This spec only *documents* that as unsupported and lets `doctor` detect damage. Should v1 add a **generic storage-ownership marker** honoured by `PageIndexToolkit` itself (e.g. a `.owner` file in `storage_dir` that a toolkit constructed without the matching `owner=` refuses to write to — Bookstore-agnostic, so the dependency direction holds), or is "protection only through the new server" acceptable for v1? — *Owner: Jesus*
+- [x] Q2 (design-research S5, escalated): the plain `pageindex` template pointed at `library/trees` bypasses the facade's policy. This spec only *documents* that as unsupported and lets `doctor` detect damage. Should v1 add a **generic storage-ownership marker** honoured by `PageIndexToolkit` itself (e.g. a `.owner` file in `storage_dir` that a toolkit constructed without the matching `owner=` refuses to write to — Bookstore-agnostic, so the dependency direction holds), or is "protection only through the new server" acceptable for v1? — *Owner: Jesus*: **Resolved 2026-11-11** — protection only through the new server for v1; no generic ownership marker. The plain-template setup stays documented as unsupported and `doctor` detects damage.
 
 ---
 
