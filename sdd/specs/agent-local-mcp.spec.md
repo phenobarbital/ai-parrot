@@ -1064,7 +1064,7 @@ Coverage:
 - [x] Is `ask()` exposed? — *Resolved with the user (2026-11-10)*: never, not even through the allowlist (FEAT-477 parity).
 - [x] What does a YAML-only agent expose? — *Resolved with the user (2026-11-10)*: only the own-class methods of the class it names; its registered tools are not exposed.
 - [x] Do Python agents need an explicit declaration too? — *Resolved with the user (2026-11-10)*: yes, symmetric opt-in (`mcp_local=` on `@register_agent`).
-- [ ] Q1 — Should a section be able to warm the agent at server start (e.g. `kwargs: {warm: true}`) to avoid first-call `configure()` latency? Not needed for v1. — *Owner: Jesus Lara*
+- [x] Q1 — Should a section be able to warm the agent at server start (e.g. `kwargs: {warm: true}`) to avoid first-call `configure()` latency? Not needed for v1. — *Owner: Jesus Lara*: yes
 
 ---
 
