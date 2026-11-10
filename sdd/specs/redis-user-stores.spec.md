@@ -19,7 +19,7 @@ docs:
 **Feature ID**: FEAT-878
 **Date**: 2026-11-11
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor (breaking default — see §7)
 
 ---
@@ -85,7 +85,7 @@ document, and `read_one` may keep returning the stale one.
 
 ## Governing Decisions
 
-<!-- decision-audit: input_digest=sha256:b5418ec165cfda5490fe9d26908b86bce82103b855303118a49b9aae479ee5ac evaluation_digest=sha256:17c33137e795b65211fc3796cc5e2f70d64564f19f770a94a9c757f1e79ba360 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:1c0f81b79f2e8abcadde79ea1ec157535499c7bcc76bdb5c0315af8e80c2221d evaluation_digest=sha256:ba9c682aa4d9ec724b84189e8bfe04ada52330b9e5a4443cab408d345e6014ce rules_version=1 status=pass -->
 
 ## 2. Architectural Design
 
@@ -1096,7 +1096,7 @@ entries:
 
 ## Consequences
 
-<!-- decision-audit: input_digest=sha256:b5418ec165cfda5490fe9d26908b86bce82103b855303118a49b9aae479ee5ac evaluation_digest=sha256:17c33137e795b65211fc3796cc5e2f70d64564f19f770a94a9c757f1e79ba360 rules_version=1 status=pass -->
+<!-- decision-audit: input_digest=sha256:1c0f81b79f2e8abcadde79ea1ec157535499c7bcc76bdb5c0315af8e80c2221d evaluation_digest=sha256:ba9c682aa4d9ec724b84189e8bfe04ada52330b9e5a4443cab408d345e6014ce rules_version=1 status=pass -->
 
 Audit status: `pass` (exit 0)
 
@@ -1149,7 +1149,7 @@ Coverage:
     ]
   },
   "diagnostics": [],
-  "evaluation_digest": "sha256:17c33137e795b65211fc3796cc5e2f70d64564f19f770a94a9c757f1e79ba360",
+  "evaluation_digest": "sha256:ba9c682aa4d9ec724b84189e8bfe04ada52330b9e5a4443cab408d345e6014ce",
   "exit_code": 0,
   "findings": [
     {
@@ -1221,7 +1221,7 @@ Coverage:
       "waived_by": null
     }
   ],
-  "input_digest": "sha256:b5418ec165cfda5490fe9d26908b86bce82103b855303118a49b9aae479ee5ac",
+  "input_digest": "sha256:1c0f81b79f2e8abcadde79ea1ec157535499c7bcc76bdb5c0315af8e80c2221d",
   "snapshot": {
     "approvals_digest": "6e5b5a5fb07d04ec7e7cdbf3afac1a634711ea195aa4061a8261bcf61b19992f",
     "config_digest": "sha256:a6bce9c0800713c30eaa78146ad0c06399f6ec0e9b083129e494abb6fd073343",
@@ -1305,3 +1305,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-11-11 | Jesus Lara | Initial draft (design decisions from the 2026-11-11 interview) |
+| 0.2 | 2026-11-11 | Jesus Lara | Approved; §8 Q1–Q3 left open (spec defaults apply: warn, CREW_RESULT_STORAGE independent, Redis db 6) |
