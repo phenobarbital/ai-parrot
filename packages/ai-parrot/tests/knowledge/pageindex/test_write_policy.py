@@ -1,4 +1,5 @@
 """FEAT-876 M2 — PageIndexToolkit write-policy hook."""
+
 from __future__ import annotations
 
 import ast
@@ -147,9 +148,7 @@ async def test_rename_authorizes_both_endpoints(
     assert (tmp_path / "b.json").exists()
 
 
-async def test_optimize_dry_run_is_not_a_write(
-    toolkit: PageIndexToolkit, ro_toolkit: PageIndexToolkit
-) -> None:
+async def test_optimize_dry_run_is_not_a_write(toolkit: PageIndexToolkit, ro_toolkit: PageIndexToolkit) -> None:
     await toolkit.create_tree("t")
     await toolkit.add_node("t", "Alpha", body="alpha body text")
     # A dry run is a read: must not raise PageIndexWriteDenied.
